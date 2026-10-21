@@ -29,8 +29,10 @@ struct RamCommand final {
                ipc::Endpoint ce,
                ipc::Endpoint se,
                U64 cleanup,
-               RamFileFraming::Right right)
-        : caller(c), service(s), caller_endpoint(ce), service_endpoint(se), cleanup_epoch(cleanup), framing(right) {
+               RamFileFraming::Right right,
+               unsigned expected_replace_count = 50)
+        : caller(c), service(s), caller_endpoint(ce), service_endpoint(se), cleanup_epoch(cleanup),
+          framing(right, expected_replace_count) {
     }
 };
 std::optional<RamLifetime> ram_lifetime;
@@ -48,4 +50,8 @@ unsigned ram_commands{};
 #ifdef AURORA_RUNTIME_FIXTURE
 bool ram_fixture_injected{};
 U64 ram_epoch_ceiling = UINT64_MAX;
+#endif
+
+#ifdef AURORA_RAM_SCRATCHPAD_CONSOLE
+auto scratchpad_discard() -> void;
 #endif

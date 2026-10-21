@@ -31,21 +31,27 @@ public:
 
 private:
     const Right right_;
+    // 50 leaves the legacy binary fixture length unbound. Console admission
+    // supplies an exact 0..49 length; this is framing, never committed state.
+    const unsigned expected_replace_count_;
     State state_ = State::fresh;
     Outcome outcome_ = Outcome::none;
     unsigned count_{}, offset_{}, target_{};
-    std::uint64_t request_{};
+    std::uint64_t request_{}, terminal_reply_{};
     bool commit_delivered_{}, delivered_{};
 
 public:
-    explicit constexpr RamFileFraming(Right right) : right_(right) {
+    explicit constexpr RamFileFraming(Right right, unsigned expected_replace_count = 50)
+        : right_(right), expected_replace_count_(expected_replace_count) {
     }
     [[nodiscard]] constexpr auto permits(std::uint64_t word) const -> bool {
-        if (count_ >= maximum_exchanges || (state_ != State::fresh && state_ != State::open))
+        if (expected_replace_count_ > 50 || count_ >= maximum_exchanges ||
+            (state_ != State::fresh && state_ != State::open))
             return false;
         if (state_ == State::fresh)
             return right_ == Right::read ? word == 1
-                                         : right_ == Right::replace && (word & 255) == 3 && word <= (49U << 8 | 3U);
+                                         : right_ == Right::replace && (word & 255) == 3 && word <= (49U << 8 | 3U) &&
+                                               (expected_replace_count_ == 50 || word >> 8 == expected_replace_count_);
         if (right_ == Right::read)
             return word == (std::uint64_t{offset_} << 8 | 2U) && offset_ <= 49;
         if (right_ != Right::replace)
@@ -99,6 +105,8 @@ public:
             outcome_ = Outcome::committed;
         } else
             return false;
+        if (state_ == State::terminal)
+            terminal_reply_ = word;
         request_ = 0;
         delivered_ = false;
         return true;
@@ -131,6 +139,12 @@ public:
     }
     [[nodiscard]] constexpr auto request() const -> std::uint64_t {
         return request_;
+    }
+    [[nodiscard]] constexpr auto terminal_reply() const -> std::uint64_t {
+        return terminal_reply_;
+    }
+    [[nodiscard]] constexpr auto data_count() const -> unsigned {
+        return right_ == Right::read ? offset_ : 0;
     }
     [[nodiscard]] constexpr auto count() const -> unsigned {
         return count_;

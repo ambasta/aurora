@@ -84,9 +84,36 @@ class GeneratorBoundaries(unittest.TestCase):
     def test_reflection_is_closed_only_for_admitted_consumers(self):
         recipe = (ROOT / "kernel-images/meson.build").read_text()
         selection = (
-            "if admission == 'program'\n    root_args += ['--referenced-reflection-only', '--local-symbols']\n  endif"
+            "if admission == 'program' or ram_scratchpad\n"
+            "    root_args += ['--referenced-reflection-only', '--local-symbols']\n  endif"
         )
         self.assertIn(selection, recipe)
+        self.assertIn(
+            "ram_scratchpad = platform == 'uefi' and mode in "
+            "['ram-scratchpad-console', 'ram-scratchpad-console-fixture']",
+            recipe,
+        )
+        self.assertIn(
+            "profile_options = kernel_options + "
+            "{'optimization': (admission == 'program' or ram_scratchpad) ? 's' : '2'}",
+            recipe,
+        )
+        self.assertEqual(recipe.count("profile_options ="), 1)
+        self.assertIn("override_options: profile_options", recipe)
+        self.assertEqual(recipe.count("if admission == 'program' or bios_console or ram_scratchpad"), 2)
+        self.assertIn(
+            "if admission == 'program' or ram_scratchpad\n"
+            "      root_args += ['--bridge', kernel_source / 'kernel/uefi/kernel-policy-entry.S']",
+            recipe,
+        )
+        self.assertIn(
+            "if admission == 'program' or ram_scratchpad\n      metadata_outputs += ['program-poll-metadata.json']",
+            recipe,
+        )
+        self.assertIn(
+            "if '--service-budget' in user_options\n      metadata_outputs += ['service-timer-metadata.json']",
+            recipe,
+        )
         self.assertEqual(recipe.count("--referenced-reflection-only"), 3)
         self.assertEqual(recipe.count("--local-symbols"), 3)
         uart_recipe = recipe[
@@ -303,7 +330,16 @@ class GeneratorBoundaries(unittest.TestCase):
                         name.startswith(("uefi/runtime-owned-text", "uefi/runtime-console-region")) and index == 0
                     )
                     blocking_call = "-DAURORA_BLOCKING_CALL" in recipe["flags"] and index == 0
-                    ram_client = name in ("uefi/user-ram-file", "uefi/user-ram-file-fixture") and index == 0
+                    ram_client = (
+                        name
+                        in (
+                            "uefi/user-ram-file",
+                            "uefi/user-ram-file-fixture",
+                            "uefi/ram-scratchpad-console",
+                            "uefi/ram-scratchpad-console-fixture",
+                        )
+                        and index == 0
+                    )
                     self.assertEqual(
                         user["max_pages"], 3 if enabled or owned_text else 2 if blocking_call or ram_client else 1
                     )
@@ -319,12 +355,14 @@ class GeneratorBoundaries(unittest.TestCase):
     def test_ram_file_roles_are_exact_and_legacy_profiles_unchanged(self):
         recipes = profiles.profiles()
         ram_profiles = {"uefi/user-ram-file", "uefi/user-ram-file-fixture"}
+        scratchpad_profiles = {"uefi/ram-scratchpad-console", "uefi/ram-scratchpad-console-fixture"}
         self.assertEqual({name for name in recipes if "user-ram-file" in name}, ram_profiles)
+        self.assertEqual(len(recipes), 233)
         for name, recipe in recipes.items():
-            ram_file = name in ram_profiles
+            ram_file = name in ram_profiles | scratchpad_profiles
             self.assertEqual("-DAURORA_RAM_FILE" in recipe["flags"], ram_file)
             self.assertEqual("--ram-file" in recipe["user_options"], ram_file)
-            if not ram_file:
+            if name not in ram_profiles:
                 continue
             self.assertEqual(recipe["checks"], ["ram-file"])
             self.assertEqual(recipe["user_options"], ["--service-budget", "--user-budget", "--ram-file"])
@@ -345,13 +383,106 @@ class GeneratorBoundaries(unittest.TestCase):
                 self.assertEqual(user["source"], "tests/kernel-programs/" + source + ".au")
                 self.assertEqual(user["entry"], "kernel/uefi/ipc-user-entry.S")
                 self.assertTrue(user["combined"])
-        # Complete canonical records from base 6d12fecd, excluding only the two new profiles.
-        legacy = {name: recipe for name, recipe in recipes.items() if name not in ram_profiles}
+        # Complete canonical records from base 6d12fecd, excluding the two RAM-file
+        # profiles checked above and the two separately checked scratchpad additions.
+        legacy = {name: recipe for name, recipe in recipes.items() if name not in ram_profiles | scratchpad_profiles}
         self.assertEqual(len(legacy), 229)
         self.assertEqual(
             hashlib.sha256(json.dumps(legacy, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
             "bd4b5327b168cbe3a9f6f4322963bedc0a06b21a909ef046f1586187f9be3efc",
         )
+
+    def test_scratchpad_profiles_are_exact_and_share_production_caller(self):
+        recipes = profiles.profiles()
+        names = {"uefi/ram-scratchpad-console", "uefi/ram-scratchpad-console-fixture"}
+        self.assertEqual({name for name in recipes if "scratchpad" in name}, names)
+        for name, recipe in recipes.items():
+            scratchpad = name in names
+            fixture = name == "uefi/ram-scratchpad-console-fixture"
+            self.assertEqual("-DAURORA_RAM_SCRATCHPAD_CONSOLE" in recipe["flags"], scratchpad)
+            self.assertEqual("-DAURORA_SCRATCHPAD_FIXTURE" in recipe["flags"], fixture)
+            self.assertEqual("--ram-scratchpad-console" in recipe["user_options"], scratchpad)
+            self.assertEqual("--ram-scratchpad-fixture" in recipe["user_options"], fixture)
+            self.assertEqual("ram-scratchpad" in recipe["checks"], scratchpad)
+            if not scratchpad:
+                continue
+            self.assertEqual(profiles.canonical_profile("uefi", recipe["mode"]), recipe["mode"])
+            self.assertEqual(
+                recipe["flags"],
+                [
+                    "-DAURORA_UEFI_ACPI",
+                    "-DAURORA_UEFI_PCI",
+                    "-DAURORA_UEFI_RUNTIME",
+                    "-DAURORA_UEFI_IPC",
+                    "-DAURORA_UEFI_SERVICE_BUDGET",
+                    "-DAURORA_UEFI_USER_BUDGET",
+                    "-DAURORA_RAM_FILE",
+                    "-DAURORA_RAM_SCRATCHPAD_CONSOLE",
+                ]
+                + (["-DAURORA_SCRATCHPAD_FIXTURE"] if fixture else [])
+                + ["-DAURORA_RUNTIME_IMAGE_POLICY=call"],
+            )
+            self.assertEqual(recipe["checks"], ["ram-scratchpad"])
+            self.assertEqual(recipe["admission"], "")
+            self.assertEqual(recipe["language"], "examples/kernel-ram-scratchpad-console.au")
+            self.assertEqual(recipe["bridge"], "kernel/uefi/ram-scratchpad-console-entry.S")
+            self.assertEqual(recipe["image_options"], ["--ipc-policy"])
+            self.assertEqual(recipe["user_kind"], "ipc")
+            self.assertEqual(recipe["user_mode"], "normal")
+            self.assertEqual(
+                recipe["user_options"],
+                ["--service-budget", "--user-budget", "--ram-file", "--ram-scratchpad-console"]
+                + (["--ram-scratchpad-fixture"] if fixture else []),
+            )
+            self.assertEqual(tuple(recipe["users"]), ("clean", "bounds"))
+            self.assertEqual(
+                recipe["users"]["clean"],
+                dict(
+                    source="examples/kernel-ram-scratchpad-client.au",
+                    roots=["library"],
+                    base=0x10000000000,
+                    entry="kernel/uefi/ram-scratchpad-client-entry.S",
+                    entry_flags=[],
+                    combined=True,
+                    max_pages=2,
+                ),
+            )
+            self.assertEqual(
+                recipe["users"]["bounds"],
+                dict(
+                    source="tests/kernel-programs/"
+                    + ("scratchpad-service-fixture.au" if fixture else "ram-file-service.au"),
+                    roots=["library"],
+                    base=0x10000004000,
+                    entry="kernel/uefi/ipc-user-entry.S",
+                    entry_flags=["--defsym", "SERVE_SERVICE=1"],
+                    combined=True,
+                    max_pages=1,
+                ),
+            )
+
+    def test_scratchpad_linked_controls_retain_full_boot_and_disabled_gates(self):
+        recipe = (ROOT / "tests/native/meson.build").read_text()
+        inventory = (ROOT / "tests/native/kernel-image-tests.txt").read_text().splitlines()
+        self.assertEqual(len(inventory), 11)
+        self.assertEqual(len(set(inventory)), 11)
+        for mode in ("ram-scratchpad-console", "ram-scratchpad-console-fixture"):
+            self.assertIn("native-uefi-" + mode + "-linked-image", inventory)
+        begin = recipe.index("  foreach mode : ['ram-scratchpad-console', 'ram-scratchpad-console-fixture']")
+        linked = recipe[begin : recipe.index("  endforeach", begin)]
+        self.assertIn("test('native-uefi-' + mode + '-linked-image', python,", linked)
+        self.assertIn(
+            "args: ['-B', '-O', files('../../tests/kernel-uefi-user-phases-image.py'), '--ram-scratchpad-build-dir',",
+            linked,
+        )
+        self.assertIn("meson.project_build_root() / 'kernel-images/uefi' / mode", linked)
+        self.assertIn("mode == 'ram-scratchpad-console-fixture' ? ['--ram-scratchpad-fixture'] : []", linked)
+        self.assertIn("depends: kernel_profile_images['uefi/' + mode]", linked)
+        self.assertIn("suite: ['full', 'slow', 'integration', 'boot']", linked)
+        disabled = recipe[recipe.index("  foreach image_name : fs.read('kernel-image-tests.txt')") :]
+        self.assertIn("test(image_name, python,", disabled)
+        self.assertIn('raise SystemExit("Kernel images disabled:', disabled)
+        self.assertIn("suite: ['full', 'slow', 'integration', 'boot']", disabled)
 
     def test_noapic_rejection_is_exact_and_cannot_retain_runtime_authority(self):
         recipes = profiles.profiles()

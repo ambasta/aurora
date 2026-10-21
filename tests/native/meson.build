@@ -385,6 +385,11 @@ test('native-kernel-program-console-transcript-optimized', python, args: ['-B', 
 test('native-uefi-tables-stack-controls', python, args: ['-B', files('../../tests/kernel-uefi-tables-stack.py'), '--self-test'],
      suite: ['full', 'slow', 'integration'], env: native_test_env,
      workdir: native_root, timeout: 180)
+test('native-scratchpad-console-transcript', python,
+    args: ['-B', '-O', files('../../tests/kernel-scratchpad-console-transcript.py')],
+    suite: ['full', 'dev', 'slow', 'integration'], env: native_test_env,
+    workdir: native_root, timeout: 120)
+
 test('native-program-console-routing', python, args: ['-B', files('../../tests/kernel-program-console-routing.py')],
      suite: ['full', 'slow', 'integration'], env: native_test_env,
      workdir: native_root, timeout: 180)
@@ -469,6 +474,14 @@ if get_option('kernel_images')
              meson.project_build_root() / 'kernel-images/uefi/user-ram-file'],
       depends: kernel_profile_images['uefi/user-ram-file'], suite: ['full', 'slow', 'integration', 'boot'],
       env: native_test_env, workdir: native_root, timeout: 900)
+  foreach mode : ['ram-scratchpad-console', 'ram-scratchpad-console-fixture']
+    test('native-uefi-' + mode + '-linked-image', python,
+      args: ['-B', '-O', files('../../tests/kernel-uefi-user-phases-image.py'), '--ram-scratchpad-build-dir',
+             meson.project_build_root() / 'kernel-images/uefi' / mode]
+            + (mode == 'ram-scratchpad-console-fixture' ? ['--ram-scratchpad-fixture'] : []),
+      depends: kernel_profile_images['uefi/' + mode], suite: ['full', 'slow', 'integration', 'boot'],
+      env: native_test_env, workdir: native_root, timeout: 900)
+  endforeach
   test('native-bios-image', python,
       args: ['-B', files('../../tests/kernel-image.py'), '--build-dir', bios_image_dir, '--check-only'],
       depends: bios_image, suite: ['full', 'slow', 'integration', 'boot'],

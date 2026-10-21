@@ -1,0 +1,10 @@
+module kernel_ram_scratchpad_client;
+import console.scratchpad;
+import console.scratchpad_client;
+
+auto aurora_user_main(builtin::CallSession& session, console::ScratchpadCommand command) -> console::ScratchpadResult {
+    static_assert(size_of(console::ScratchpadCommand) == 80);
+    static_assert(size_of(console::ScratchpadResult) == 80);
+    const console::ScratchpadResult result = console::run_scratchpad_command(session, command);
+    return result;
+}

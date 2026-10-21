@@ -71,6 +71,7 @@ foreach profile_id : profile_data['profiles'].split('|')
   checks = []
   admission = profile_data[key + '.admission']
   bios_console = platform == 'bios' and mode == 'console'
+  ram_scratchpad = platform == 'uefi' and mode in ['ram-scratchpad-console', 'ram-scratchpad-console-fixture']
   image_option_text = profile_data[key + '.image_options']
   image_options = image_option_text == '' ? [] : image_option_text.split('|')
   if admission != ''
@@ -84,7 +85,7 @@ foreach profile_id : profile_data['profiles'].split('|')
     root_args += ['--module-root', kernel_source / root]
   endforeach
   # The closed supervisor exposes only its bridge-declared scalar/native ABI.
-  if admission == 'program'
+  if admission == 'program' or ram_scratchpad
     root_args += ['--referenced-reflection-only', '--local-symbols']
   endif
   bridge = profile_data[key + '.bridge']
@@ -92,11 +93,11 @@ foreach profile_id : profile_data['profiles'].split('|')
   language_outputs = [platform == 'bios' ? 'kernel-language.s' : 'language.s',
                       platform == 'bios' ? 'kernel-language.stack.json' : 'language.stack.json']
   language_dependencies = compiler_files
-  if admission == 'program' or bios_console
+  if admission == 'program' or bios_console or ram_scratchpad
     language_outputs += [bios_console ? 'kernel-language.abi.json' : 'language.abi.json']
     root_args += ['--abi-facts', '@OUTPUT2@', '--bridge', kernel_source / bridge]
     language_dependencies += bridge_input + files('../scripts/bootstrap_frontend.py')
-    if admission == 'program'
+    if admission == 'program' or ram_scratchpad
       root_args += ['--bridge', kernel_source / 'kernel/uefi/kernel-policy-entry.S']
       language_dependencies += files('../kernel/uefi/kernel-policy-entry.S')
     endif
@@ -109,7 +110,7 @@ foreach profile_id : profile_data['profiles'].split('|')
     command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
               '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--depfile', '@DEPFILE@'] + root_args)
   aurora_facts += [language[1]]
-  if admission == 'program' or bios_console
+  if admission == 'program' or bios_console or ram_scratchpad
     aurora_facts += [language[2]]
   endif
   # Private local symbols require the bridge and generated source in ONE as command.
@@ -247,7 +248,8 @@ foreach profile_id : profile_data['profiles'].split('|')
 
   # Native Meson compiles own C++ dependency files and compile_commands entries.
   # Keep the closed protected supervisor within its existing 128 KiB reservation.
-  profile_options = kernel_options + {'optimization': admission == 'program' ? 's' : '2'}
+  # Both bounded scratchpad compositions use the existing protected Console size recipe.
+  profile_options = kernel_options + {'optimization': (admission == 'program' or ram_scratchpad) ? 's' : '2'}
   cpp_names = profile_data[key + '.cpp'].split('|')
   foreach name : cpp_names
     source = files('../' + profile_data[key + '.cpp.' + name])
@@ -299,7 +301,7 @@ foreach profile_id : profile_data['profiles'].split('|')
     if admission in ['console', 'graphical']
       metadata_outputs += ['console-poll-metadata.json']
     endif
-    if admission == 'program'
+    if admission == 'program' or ram_scratchpad
       metadata_outputs += ['program-poll-metadata.json']
     endif
     if '--service-budget' in user_options
@@ -360,6 +362,12 @@ foreach profile_id : profile_data['profiles'].split('|')
           output: 'call-stack.json', build_subdir: output_subdir,
           depend_files: validation_dependencies,
           command: [python, '-B', files('../scripts/kernel-uefi-ipc-images.py'), '--output', output_dir, '--call-stack'])]
+      endif
+      if check == 'ram-scratchpad'
+        checks += [custom_target(prefix + '-ram-scratchpad-stack', input: [elf, binary, user_metadata] + user_inputs + native_exports + aurora_facts,
+          output: 'ram-scratchpad-stack.json', build_subdir: output_subdir,
+          depend_files: validation_dependencies,
+          command: [python, '-B', files('../scripts/kernel-uefi-ipc-images.py'), '--output', output_dir, '--ram-scratchpad-stack'] + (mode == 'ram-scratchpad-console-fixture' ? ['--ram-scratchpad-fixture'] : []))]
       endif
       if check == 'ram-file'
         checks += [custom_target(prefix + '-ram-file-stack', input: [elf, binary, user_metadata] + user_inputs + native_exports + aurora_facts,

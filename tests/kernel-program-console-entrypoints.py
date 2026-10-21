@@ -55,6 +55,10 @@ case "$*" in
     "-B scripts/qemu_transport.py "*) exec "$REAL_PYTHON" "$@" ;;
     "-B scripts/kernel_program_console_admission.py checked --mode "*)
         echo checked >> "$CALLS"; exit "${CHECK_STATUS:-0}" ;;
+    "-B scripts/kernel-uefi-ipc-images.py "*)
+        echo scratchpad-checked >> "$CALLS"; exit "${CHECK_STATUS:-0}" ;;
+    "-B tests/kernel-scratchpad-console-pty.py "*)
+        echo "scratchpad-pty|$*" >> "$CALLS"; exit "${PTY_STATUS:-0}" ;;
     "-B tests/kernel-program-console-pty.py "*)
         echo "pty|$*" >> "$CALLS"
         case "$*" in *--read-only-recovery) exit "${READ_PTY_STATUS:-0}" ;; esac
@@ -174,6 +178,36 @@ exit "${BUILD_STATUS:-0}"
         self.clear()
         for args in (("program-owner", "--console"), ("program-invalid", "--smoke")):
             self.assertIn("FAIL:", self.run_script(name="kernel-run.sh", args=args, expected=1))
+            self.assertEqual(self.calls(), [])
+
+    def test_scratchpad_exact_public_selector(self):
+        for selector in ("--ram-scratchpad-console", "ram-scratchpad-console"):
+            for status, expected in ((33, 0), (0, 1), (35, 35), (124, 124), (137, 137)):
+                self.run_script(
+                    name="kernel-run.sh", args=(selector,), env={"GUEST_STATUS": str(status)}, expected=expected
+                )
+                self.assertEqual(self.calls(), ["build|ram-scratchpad-console", "scratchpad-checked", "clock", "guest"])
+                self.clear()
+        self.run_script(name="kernel-run.sh", args=("--ram-scratchpad-console", "--smoke"))
+        self.assertEqual(
+            self.calls(),
+            [
+                "build|ram-scratchpad-console",
+                "scratchpad-pty|-B tests/kernel-scratchpad-console-pty.py --build-dir "
+                f"{self.repo}/build/native profiles/ram-scratchpad-console",
+            ],
+        )
+        self.clear()
+        self.run_script(name="kernel-run.sh", args=("--ram-scratchpad-console",), env={"CHECK_STATUS": "9"}, expected=9)
+        self.assertEqual(self.calls(), ["build|ram-scratchpad-console", "scratchpad-checked"])
+        self.clear()
+        for args in (
+            ("ram-scratchpad-console-fixture",),
+            ("--ram-scratchpad-console-fixture",),
+            ("--ram-scratchpad-console", "--build-only"),
+            ("--ram-scratchpad-console", "--console", "extra"),
+        ):
+            self.run_script(name="kernel-run.sh", args=args, expected=2)
             self.assertEqual(self.calls(), [])
 
     def test_alias_argument_errors_remain_failures(self):

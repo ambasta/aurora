@@ -29,6 +29,8 @@ UEFI_FAMILIES = [
             "-DAURORA_RAM_FILE",
         ],
         {
+            "ram-scratchpad-console": ["-DAURORA_RAM_SCRATCHPAD_CONSOLE"],
+            "ram-scratchpad-console-fixture": ["-DAURORA_RAM_SCRATCHPAD_CONSOLE", "-DAURORA_SCRATCHPAD_FIXTURE"],
             "user-ram-file": [],
             "user-ram-file-fixture": ["-DAURORA_RUNTIME_FIXTURE"],
         },
@@ -455,6 +457,7 @@ def user_images(
     blocking_call=False,
     file_call=False,
     ram_file=False,
+    scratchpad=False,
 ):
     """Exact source/adapter composition; Meson owns every compile/link edge."""
     result = {}
@@ -494,7 +497,11 @@ def user_images(
                 source = "call-client" if index == 0 else "file-call-service"
             if ram_file:
                 source = "ram-file-client" if index == 0 else "ram-file-service"
-            entry = "kernel/uefi/ipc-user-entry.S"
+            entry = (
+                "kernel/uefi/ram-scratchpad-client-entry.S"
+                if scratchpad and index == 0
+                else "kernel/uefi/ipc-user-entry.S"
+            )
             hostile = (index == 0 and mode in ("owner", "stale", "version", "phase", "site", "unknown", "ordinal")) or (
                 index == 1 and mode in ("transaction", "mmio", "softint", "fpu", "context")
             )
@@ -505,7 +512,7 @@ def user_images(
             defines = ["IPC_" + mode.upper().replace("-", "_") + "=1"] if hostile else []
             if user_budget and mode == "context" and index == 0:
                 defines.append("IPC_CLIENT_CONTEXT=1")
-            if (blocking_call or ram_file) and index == 0:
+            if (blocking_call or ram_file) and not scratchpad and index == 0:
                 defines.append("CALL_CLIENT=1")
             if ram_file and index == 1:
                 defines.append("SERVE_SERVICE=1")
@@ -516,7 +523,11 @@ def user_images(
                 if mode in ("reply-reserved", "reply-byte"):
                     defines.append("SNAPSHOT_" + mode.upper().replace("-", "_") + "=1")
         result[name] = dict(
-            source="tests/kernel-programs/" + source + ".au",
+            source=(
+                "examples/kernel-ram-scratchpad-client.au"
+                if scratchpad and index == 0
+                else "tests/kernel-programs/" + source + ".au"
+            ),
             roots=["library"] + (["kernel/policies"] if snapshot or program or blocking_call else []),
             base=LAYOUT.user_code + index * LAYOUT.code_stride,
             entry=entry,
@@ -650,16 +661,18 @@ def bios_profile(mode, controls):
 
 
 def uefi_profile(mode, flags):
-    runtime = mode.startswith(("runtime", "ipc", "budget", "dispatch", "user-", "program-", "snapshot"))
-    ipc = mode.startswith(("ipc", "budget", "dispatch", "user-", "program-", "snapshot"))
+    scratchpad = mode in ("ram-scratchpad-console", "ram-scratchpad-console-fixture")
+    scratchpad_fixture = mode == "ram-scratchpad-console-fixture"
+    runtime = scratchpad or mode.startswith(("runtime", "ipc", "budget", "dispatch", "user-", "program-", "snapshot"))
+    ipc = scratchpad or mode.startswith(("ipc", "budget", "dispatch", "user-", "program-", "snapshot"))
     console_region = mode.startswith("runtime-console-region")
     owned_text = mode.startswith("runtime-owned-text") or console_region
-    budget = mode.startswith(("budget", "dispatch", "user-", "program-")) or owned_text
+    budget = scratchpad or mode.startswith(("budget", "dispatch", "user-", "program-")) or owned_text
     file_call = mode.startswith("program-file-call")
     blocking_call = mode.startswith("user-call") or file_call
-    ram_file = mode in ("user-ram-file", "user-ram-file-fixture")
+    ram_file = scratchpad or mode in ("user-ram-file", "user-ram-file-fixture")
     dispatcher = mode.startswith(("dispatch", "user-")) and not (blocking_call or ram_file)
-    user_budget = mode.startswith(("user-", "program-"))
+    user_budget = scratchpad or mode.startswith(("user-", "program-"))
     program = mode.startswith("program-")
     snapshot = mode.startswith("snapshot")
     console = mode == "console" or mode.startswith("console-service-")
@@ -714,6 +727,8 @@ def uefi_profile(mode, flags):
             (blocking_call, "--blocking-call"),
             (file_call, "--file-call"),
             (ram_file, "--ram-file"),
+            (scratchpad, "--ram-scratchpad-console"),
+            (scratchpad_fixture, "--ram-scratchpad-fixture"),
         )
         if enabled
     ]
@@ -729,6 +744,7 @@ def uefi_profile(mode, flags):
             blocking_call=blocking_call,
             file_call=file_call,
             ram_file=ram_file,
+            scratchpad=scratchpad,
         )
         if runtime
         else {}
@@ -737,6 +753,8 @@ def uefi_profile(mode, flags):
         users["clean"]["source"] = "tests/kernel-programs/call-client-fixture.au"
     if mode == "user-ram-file-fixture":
         users["bounds"]["source"] = "tests/kernel-programs/ram-file-service-fixture.au"
+    if scratchpad_fixture:
+        users["bounds"]["source"] = "tests/kernel-programs/scratchpad-service-fixture.au"
     if owned_text:
         users["clean"].update(
             source=(
@@ -812,6 +830,7 @@ def uefi_profile(mode, flags):
         (framebuffer, "display-service", "display-service"),
         (program, "program-console", "program-note"),
         (file_call, "program-file-call", "program-file-call"),
+        (scratchpad, "ram-scratchpad-console", "ram-scratchpad-console"),
         (mode == "owned-bytes", "owned-bytes", "owned-bytes"),
         (snapshot or (blocking_call and not file_call), "snapshot", "snapshot"),
         (console, "console-service", "console-service"),
@@ -860,7 +879,7 @@ def uefi_profile(mode, flags):
         + (["snapshot"] if snapshot else [])
         + (["note"] if program else [])
         + (["call"] if blocking_call and not file_call else [])
-        + (["ram-file"] if ram_file else [])
+        + (["ram-scratchpad"] if scratchpad else ["ram-file"] if ram_file else [])
         + (["tables"] if mode.startswith("runtime-table-") else [])
         + (["ivrs"] if mode.startswith("ivrs-") else [])
         + (["nvme"] if mode == "bar-prepare" else [])

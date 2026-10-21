@@ -28,6 +28,7 @@ def verify(
     copied_note=False,
     note_entry=None,
     call_entry=None,
+    copied_call=False,
     serve_entry=None,
     owned_entry=None,
 ):
@@ -57,6 +58,10 @@ def verify(
     )
     need(offset + filesz <= len(data) and data[offset : offset + filesz] == blob, "Exact installed image bytes")
     need(not (copied_snapshot and copied_note), "Distinct copied service records")
+    need(
+        not copied_call or call_entry is not None and owned_entry is None and max_pages == 2,
+        "Copied Call requires its exact two-page singleton caller profile",
+    )
     compiled = "__au_v_m1_16snapshot_service_n0__d16aurora_user_main" if copied_snapshot else "aurora_user_main"
     if copied_note:
         need(type(note_entry) is str and bool(note_entry), "Missing compiler-produced note entry")

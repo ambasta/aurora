@@ -70,6 +70,12 @@ test('volatile-file-source-native', python,
     depends: aurorac, suite: ['full', 'dev', 'core', 'bytes', 'compiler'],
     env: oracle_env, workdir: meson.current_build_dir(), timeout: 120, is_parallel: true)
 
+test('scratchpad-source-native', python,
+    args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/scratchpad.py'), aurorac,
+           '--artifacts', '@ARTIFACTS@'],
+    depends: aurorac, suite: ['full', 'dev', 'core', 'bytes', 'compiler'],
+    env: oracle_env, workdir: meson.current_build_dir(), timeout: 180, is_parallel: true)
+
 initialization_facts = executable(
     'initialization-facts',
     'compiler/initialization_facts.cpp',

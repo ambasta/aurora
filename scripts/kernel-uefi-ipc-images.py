@@ -32,6 +32,7 @@ def verify(
     copied_note=False,
     note_entry=None,
     call_entry=None,
+    copied_call=False,
     serve_entry=None,
 ):
     result = _base.verify(
@@ -45,6 +46,7 @@ def verify(
         copied_note=copied_note,
         note_entry=note_entry,
         call_entry=call_entry,
+        copied_call=copied_call,
         serve_entry=serve_entry,
     )
     need(result["probe_offset"] == 0, "IPC has no address literal authority")
@@ -136,7 +138,17 @@ def validate_composition(
     blocking_call=False,
     file_call=False,
     ram_file=False,
+    ram_scratchpad_console=False,
+    ram_scratchpad_fixture=False,
 ):
+    need(
+        not ram_scratchpad_fixture or ram_scratchpad_console,
+        "Scratchpad fixture requires its exact copied console composition",
+    )
+    need(
+        not ram_scratchpad_console or ram_file,
+        "Scratchpad requires the exact retained RAM-file composition",
+    )
     need(
         not ram_file
         or service_budget
@@ -272,9 +284,21 @@ def emit_metadata(
     blocking_call=False,
     file_call=False,
     ram_file=False,
+    ram_scratchpad_console=False,
+    ram_scratchpad_fixture=False,
 ):
     validate_composition(
-        mode, service_budget, dispatcher, user_budget, program_console, snapshot, blocking_call, file_call, ram_file
+        mode,
+        service_budget,
+        dispatcher,
+        user_budget,
+        program_console,
+        snapshot,
+        blocking_call,
+        file_call,
+        ram_file,
+        ram_scratchpad_console,
+        ram_scratchpad_fixture,
     )
     records = {}
     header = ["#pragma once", "#include <array>", "#include <cstddef>", "namespace aurora::uefi::images {"]
@@ -309,7 +333,15 @@ def emit_metadata(
             compiled = call_entry_abi(json.loads(prefix.with_suffix(".abi.json").read_text()))
         if ram_file:
             abi = ram_file_facts(prefix.with_suffix(".abi.json"))
-            compiled = call_entry_abi(abi) if index == 0 else serve_entry_abi(abi)
+            compiled = (
+                scratchpad_call_entry_abi(abi)
+                if ram_scratchpad_console and index == 0
+                else call_entry_abi(abi)
+                if index == 0
+                else scratchpad_service_entry_abi(abi, fixture=ram_scratchpad_fixture)
+                if ram_scratchpad_console
+                else serve_entry_abi(abi)
+            )
         meta = verify(
             elf.read_bytes(),
             blob,
@@ -321,11 +353,19 @@ def emit_metadata(
             copied_note=program_console and index == 1,
             note_entry=compiled if program_console and index == 1 else None,
             call_entry=compiled if (blocking_call or ram_file) and index == 0 else None,
+            copied_call=ram_scratchpad_console and index == 0,
             serve_entry=compiled if ram_file and index == 1 else None,
         )
         if ram_file:
             need(meta["probe_pc"] == 0, "RAM-file has no hostile-PC authority")
-            ram_file_user_stack(prefix, service=index == 1)
+            if ram_scratchpad_console and index == 0:
+                scratchpad_user_stack(prefix)
+            else:
+                ram_file_user_stack(
+                    prefix,
+                    service=index == 1,
+                    scratchpad_fixture=ram_scratchpad_fixture if ram_scratchpad_console else None,
+                )
         if service_budget:
             functions = [
                 line.split()
@@ -467,7 +507,7 @@ def call_stack(directory):
     print("PASS: call linked kernel/IRQ/drain and user stack; kernel peak " + str(result["peak_with_fault_reserve"]))
 
 
-def ram_file_user_stack(prefix, *, service):
+def ram_file_user_stack(prefix, *, service, scratchpad_fixture=None):
     """Closed role-specific code graph and exact retained-stack entry envelope."""
     import kernel_stack as stack
     from kernel_program_console_admission import check_referenced_reflection
@@ -477,7 +517,17 @@ def ram_file_user_stack(prefix, *, service):
     symbols = {symbol.name: symbol for symbol in user.symbols}
     code, _ = stack.disassemble(user.path)
     abi = ram_file_facts(prefix.with_suffix(".abi.json"))
-    entry = serve_entry_abi(abi) if service else call_entry_abi(abi)
+    need(
+        scratchpad_fixture is None or service and type(scratchpad_fixture) is bool,
+        "Scratchpad service selection applies only to the retained Serve role",
+    )
+    entry = (
+        scratchpad_service_entry_abi(abi, fixture=scratchpad_fixture)
+        if scratchpad_fixture is not None
+        else serve_entry_abi(abi)
+        if service
+        else call_entry_abi(abi)
+    )
     facts = ram_file_facts(prefix.with_suffix(".stack.json"))["functions"]
     kind = "builtin::ServeSession" if service else "builtin::CallSession"
     parameters = [[kind, 16]] + ([] if service else [["scalar", 8]] * 3)
@@ -534,6 +584,183 @@ def ram_file_user_stack(prefix, *, service):
     return result
 
 
+def scratchpad_call_entry_abi(facts):
+    from kernel_program_console_admission import check_scratchpad_abi
+
+    return check_scratchpad_abi(facts, role="call")
+
+
+def scratchpad_service_entry_abi(facts, *, fixture=False):
+    """The fixture substitutes only its named Serve source, never the caller ABI."""
+    import kernel_stack as stack
+
+    need(type(fixture) is bool, "Exact scratchpad service variant")
+    entry = serve_entry_abi(facts)
+    need(
+        stack.aurora_module(entry) == ("scratchpad_service_fixture" if fixture else "ram_file_service"),
+        "Exact source-selected scratchpad Serve variant",
+    )
+    return entry
+
+
+def scratchpad_user_stack(prefix):
+    """Exact fixed copies plus compiler-verified singleton Call loan provenance.
+
+    Current generic ABI gives the prefix storage, not its nominal service kind.
+    A closed reachable Call-only graph binds that singleton prefix to Call; the
+    compiler's loan/type checking is trusted. No new service-record fact is used.
+    """
+    import kernel_stack as stack
+    from kernel_program_console_admission import check_referenced_reflection
+
+    user = stack.Elf(prefix.with_suffix(".elf"))
+    generated = stack.Elf(prefix.parent / "objects" / (prefix.name + ".o"))
+    need(not any(symbol.name and not symbol.section for symbol in user.symbols), "Scratchpad undefined import")
+    need(
+        not any(symbol.name and not symbol.section for symbol in generated.symbols),
+        "Scratchpad object undefined import",
+    )
+    symbols = {symbol.name: symbol for symbol in user.symbols}
+    code, _ = stack.disassemble(user.path)
+    abi = ram_file_facts(prefix.with_suffix(".abi.json"))
+    entry = scratchpad_call_entry_abi(abi)
+    facts = ram_file_facts(prefix.with_suffix(".stack.json"))["functions"]
+    need(set(abi["functions"]) == set(facts), "Copied Call generic/stack function inventory mismatch")
+    host = "__au_runtime_call"
+    need(
+        set(user.functions) == set(generated.functions) == set(facts) | {host}, "Closed copied Call function inventory"
+    )
+    need(
+        {name for name in symbols if name.startswith("__au_runtime_")} == {host},
+        "Copied Call rejects unused or hidden foreign runtime imports",
+    )
+    for symbol in generated.functions.values():
+        stack.associate_object(user, generated, symbol)
+    starts = {symbol.address: name for name, symbol in user.functions.items()}
+    need(len(starts) == len(user.functions), "Ambiguous copied Call function starts")
+    functions = stack.aurora_stack_functions(prefix.with_suffix(".stack.json"), user.functions, code, starts, facts)
+    need(
+        functions[entry]["copied_record"] is None,
+        "Copied Call uses full generic ABI, not a scalar copied-record shortcut",
+    )
+    service = functions[entry].get("service_abi")
+    need(service is None or service["record"] is None, "Copied Call must not invent a service entry record")
+    stub = user.functions[host]
+    need(
+        stub.size == 3
+        and symbols["aurora_call_return_pc"].address == stub.address + 2
+        and user.function_bytes(stub) == b"\xcd\x82\xc3",
+        "Exact unchanged copied Call INT82/ret stub",
+    )
+    functions[host] = dict(local_peak=8, calls=[], returns=1)
+    stack.singleton_service_graph(functions, set(facts), entry, host, "builtin::CallSession")
+    check_referenced_reflection(functions, set(facts), bridges={host})
+    base = symbols["aurora_program_entry"].address
+    targets = {symbols[name].address: name for name in ("bad_entry", entry)}
+    rows = [row for address, row in sorted(code.items()) if base <= address < stub.address]
+    wrapper = [(row.op, targets.get(stack.target_of(row)) if row.op in ("call", "jne") else row.args) for row in rows]
+    expected = [("or", f"%{reg},%rax") for reg in ("rbx", "rbp", "r10", "r11", "r12", "r13", "r14", "r15")]
+    expected += [("jne", "bad_entry"), ("cmpq", "$0x0,-0x8(%rsp)"), ("jne", "bad_entry"), ("sub", "$0xc0,%rsp")]
+    expected += [("push", f"%{reg}") for reg in ("rdi", "rdx", "rcx", "r8", "r9")]
+    expected += [
+        ("sub", "$0x8,%rsp"),
+        ("mov", "0x20(%rsp),%rax"),
+        ("mov", "%rax,0x30(%rsp)"),
+        ("mov", "0x18(%rsp),%rax"),
+        ("mov", "%rax,0x38(%rsp)"),
+        ("lea", "0x30(%rsp),%r11"),
+        ("lea", "0x90(%rsp),%r10"),
+        ("call", entry),
+        ("add", "$0x8,%rsp"),
+    ]
+    expected += [("pop", f"%{reg}") for reg in ("r9", "r8", "rcx", "rdx", "rdi")]
+    expected += [
+        ("add", "$0xc0,%rsp"),
+        ("mov", "$0x1,%eax"),
+        ("mov", "$0x1,%esi"),
+        ("int", "$0x81"),
+        ("ud2", ""),
+        ("ud2", ""),
+    ]
+    need(wrapper == expected, "Exact copied Call wrapper reservations, fixed LEAs, private prefix, restore and marker")
+    need(
+        rows[0].address == base
+        and rows[-1].next == stub.address
+        and all(left.next == right.address for left, right in zip(rows, rows[1:]))
+        and symbols["aurora_program_return_pc"].address == rows[-2].address
+        and symbols["bad_entry"].address == rows[-1].address,
+        "Copied Call exact wrapper coverage and terminal PCs",
+    )
+    need(
+        stub.address + stub.size <= min(symbol.address for name, symbol in user.functions.items() if name != host),
+        "Copied Call wrapper/stub overlaps generated code",
+    )
+    result = stack.calculate(functions, entry)
+    # local_peak already includes each generated CALL return address. The
+    # wrapper adds exactly the upper 192 plus the 48-byte launch envelope.
+    result["peak_with_wrapper"] = 240 + result["peak"]
+    need(result["peak_with_wrapper"] <= stack.STACK_CAP, "Copied Call full fixed/generated stack reserve")
+    result["fixed_regions"] = dict(argument=[-192, -96], result=[-96, -16], sentinel=[-16, 0], envelope=[-240, -192])
+    return result
+
+
+def scratchpad_stack(directory, *, fixture=False):
+    import kernel_stack as stack
+    from kernel_program_console_admission import (
+        SCRATCHPAD_INPUT_BRIDGE,
+        SCRATCHPAD_RESPONSE_BRIDGE,
+        CONSOLE_OPERATIONS,
+        scratchpad_console_evidence,
+        check_program_input_wait,
+    )
+
+    bridges = (SCRATCHPAD_INPUT_BRIDGE, SCRATCHPAD_RESPONSE_BRIDGE)
+    graph = stack.image_stack_graph(
+        directory, ("payload", "acpi", "pci", "runtime"), ROOT, protected=True, bridges=bridges
+    )
+    result = stack.service_discovery_stack(graph)
+    result["console"] = scratchpad_console_evidence(directory, graph)
+    need(
+        set(bridges) <= set(result["normal"]["closure"]),
+        "Both scratchpad Console turns must be reachable from the actual kernel entry",
+    )
+    functions, linked = graph["functions"], graph["linked"]
+    forbidden = (
+        set(bridges)
+        | CONSOLE_OPERATIONS
+        | {
+            result["console"]["input_entry"],
+            result["console"]["response_entry"],
+        }
+    )
+    need(not forbidden.intersection(result["irq_dispatch"]["closure"]), "Scratchpad IRQ acquired Console authority")
+    points = {}
+    for label in ("uefi_program_poll_begin", "uefi_service_drain_begin"):
+        sites = [symbol.address for symbol in linked.symbols if symbol.name == label]
+        need(len(sites) == 1, "Exact scratchpad interruptible site " + label)
+        owners = [
+            name
+            for name, symbol in linked.functions.items()
+            if symbol.address <= sites[0] < symbol.address + symbol.size
+        ]
+        need(len(owners) == 1, "Exact scratchpad interruptible owner " + label)
+        path = stack.calculate(functions, "uefi_payload_entry", target=owners[0])
+        path["irq_fault_peak"] = path["peak"] + result["irq_dispatch"]["peak_with_entry"] + result["fault_reserve"]
+        need(path["irq_fault_peak"] <= stack.STACK_CAP, "Scratchpad complete poll/drain/IRQ/fault stack reserve")
+        if label == "uefi_program_poll_begin":
+            check_program_input_wait(
+                functions, owners[0], result["console"]["input_entry"], bridge=SCRATCHPAD_INPUT_BRIDGE
+            )
+        points[label] = path
+    result["interruptible_paths"] = points
+    result["user"] = scratchpad_user_stack(directory / "user-clean")
+    result["service"] = ram_file_user_stack(directory / "user-bounds", service=True, scratchpad_fixture=fixture)
+    (directory / "ram-scratchpad-stack.json").write_text(json.dumps(result, indent=2) + "\n")
+    print(
+        "PASS: copied scratchpad caller, exact Serve variant, Console and full linked kernel/IRQ/drain stack admission"
+    )
+
+
 def ram_file_stack(directory):
     import kernel_stack as stack
 
@@ -585,11 +812,21 @@ if __name__ == "__main__":
     parser.add_argument("--blocking-call", action="store_true")
     parser.add_argument("--file-call", action="store_true")
     parser.add_argument("--ram-file", action="store_true")
+    parser.add_argument("--ram-scratchpad-console", action="store_true")
+    parser.add_argument("--ram-scratchpad-stack", action="store_true")
+    parser.add_argument("--ram-scratchpad-fixture", action="store_true")
     parser.add_argument("--call-stack", action="store_true")
     parser.add_argument("--ram-file-stack", action="store_true")
     args = parser.parse_args()
+    need(sum((args.call_stack, args.ram_file_stack, args.ram_scratchpad_stack)) <= 1, "Select one stack profile")
+    need(
+        not args.ram_scratchpad_fixture or not (args.call_stack or args.ram_file_stack),
+        "Scratchpad fixture cannot select a legacy stack gate",
+    )
+    if args.ram_scratchpad_stack:
+        scratchpad_stack(Path(args.output).resolve(), fixture=args.ram_scratchpad_fixture)
+        raise SystemExit(0)
     if args.call_stack:
-        need(not args.ram_file_stack, "Select one stack profile")
         call_stack(Path(args.output).resolve())
         raise SystemExit(0)
     if args.ram_file_stack:
@@ -606,4 +843,6 @@ if __name__ == "__main__":
         args.blocking_call,
         args.file_call,
         args.ram_file,
+        args.ram_scratchpad_console,
+        args.ram_scratchpad_fixture,
     )

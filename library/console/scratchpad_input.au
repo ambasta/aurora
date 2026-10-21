@@ -1,0 +1,86 @@
+export module console.scratchpad_input;
+import console.io;
+import console.line;
+import console.scratchpad;
+import console.scratchpad_parse;
+
+namespace console {
+    auto scratchpad_input_text(builtin::ConsoleSession& session, builtin::span<const u8> text) -> bool {
+        const WriteResult result = write_bytes(session, text);
+        return result.complete();
+    }
+}
+
+export namespace console {
+    auto read_scratchpad_input(builtin::ConsoleSession& session, bool after_cr) -> ScratchpadSubmission {
+        Line64 line = Line64(after_cr);
+        const ScratchpadCommand empty = ScratchpadCommand(ScratchpadOperation::get, 0u64);
+        while (true) {
+            const builtin::ConsoleSample sample = session.next();
+            if (sample.damaged) {
+                line.reject();
+            }
+            if (sample.byte_present) {
+                const ConsoleEvent event = line.consume(sample.byte);
+                u64 carry = 0u64;
+                if (line.after_cr_pending()) {
+                    carry = 1u64;
+                }
+                bool okay = true;
+                if (event == ConsoleEvent::echo) {
+                    okay = session.put(sample.byte) == builtin::ConsolePutResult::success;
+                } else {
+                    if (event == ConsoleEvent::erased) {
+                        okay = scratchpad_input_text(session, "\b \b");
+                    } else {
+                        if (event != ConsoleEvent::ignored) {
+                            if (event == ConsoleEvent::rejected) {
+                                okay = scratchpad_input_text(session,
+                                    "\r\nLine rejected: too long, non-ASCII/control byte, or UART error.\r\naurora> ");
+                            } else {
+                                if (event == ConsoleEvent::help) {
+                                    okay = scratchpad_input_text(session,
+                                        "\r\nput [text]  Replace the session scratchpad (0..49 printable ASCII bytes)\r\nget         Read the session scratchpad\r\nhelp        Show commands\r\nstatus      Show static capacity and service availability\r\nexit        Close this session and discard all data\r\naurora> ");
+                                } else {
+                                    if (event == ConsoleEvent::status) {
+                                        okay = scratchpad_input_text(session,
+                                            "\r\nstatus: capacity=49 printable ASCII bytes; command ceiling=64; retained service=available\r\naurora> ");
+                                    } else {
+                                        if (event == ConsoleEvent::exit) {
+                                            okay = scratchpad_input_text(session, "\r\nAURORA_CONSOLE_EXIT\r\n");
+                                            if (okay) {
+                                                return ScratchpadSubmission(empty,
+                                                    ScratchpadInputAction::requested_exit, carry);
+                                            }
+                                        } else {
+                                            if (event == ConsoleEvent::empty) {
+                                                okay = scratchpad_input_text(session, "\r\naurora> ");
+                                            } else {
+                                                const ScratchpadCommand command = parse_scratchpad_command(line);
+                                                if (command.valid()) {
+                                                    // A failed delimiter must not dispatch a protected command.
+                                                    if (!scratchpad_input_text(session, "\r\n")) {
+                                                        return ScratchpadSubmission(empty,
+                                                            ScratchpadInputAction::output_failure, carry);
+                                                    }
+                                                    return ScratchpadSubmission(command, ScratchpadInputAction::command,
+                                                        carry);
+                                                }
+                                                okay = scratchpad_input_text(session,
+                                                    "\r\nInvalid command. Type help; put accepts at most 49 printable ASCII bytes.\r\naurora> ");
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (!okay) {
+                    return ScratchpadSubmission(empty, ScratchpadInputAction::output_failure, carry);
+                }
+            }
+        }
+        return ScratchpadSubmission(empty, ScratchpadInputAction::output_failure, 0u64);
+    }
+}

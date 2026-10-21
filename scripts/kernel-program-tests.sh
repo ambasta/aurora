@@ -25,5 +25,6 @@ python3 -B -O tests/kernel-program-admission.py
 
 python3 -B tests/kernel-program-console-routing.py
 python3 -B -O tests/kernel-program-console-transcript.py
+python3 -B -O tests/kernel-scratchpad-console-transcript.py
 
 python3 -B -O tests/kernel-program-console-entrypoints.py

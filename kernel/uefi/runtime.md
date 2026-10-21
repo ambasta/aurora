@@ -171,14 +171,15 @@ Stack and fault-reserve caps are unchanged.
 
 ## Bounded retained volatile RAM file
 
-The opt-in `user-ram-file` implementation candidate keeps one unnamed binary file
+The merged opt-in `user-ram-file` implementation keeps one unnamed binary file
 of at most 49 bytes in one compiled CPL3 service's ordinary private stack locals.
 The file is either missing or present (including present-empty). A retired writer
 and fresh reader communicate actual bytes through the existing scalar Call ABI;
 there is no supervisor file copy. A second replacement, bytes 0/128/255, empty and
 49-byte transfers, caller precommit abort and postcommit failure are separate
 compiled scenarios. This is not the console namespace, durability, a general
-filesystem or a daemon/scheduler API. Final qualification is pending.
+filesystem or a daemon/scheduler API. Its bounded implementation was qualified in #234;
+that receipt does not qualify subsequent source changes or the separate interactive consumer.
 
 The singleton `builtin::ServeSession.exchange(reply)` returns copied status/value
 qwords. Domain 0 admits only the exact Call `INT 0x82; ret` site; domain 1 admits
@@ -228,3 +229,54 @@ complete kernel/IRQ/drain paths must pass linked admission. Native image tests d
 not run QEMU; actual guest controls, final GCC 16 full/normal restoration and
 independent exact-source review remain required. Legacy `program-file-call`
 profiles retain their scrubbed-reentry and supervisor-store semantics unchanged.
+
+
+## Opt-in interactive RAM scratchpad
+
+The separate `ram-scratchpad-console` composition accepts actual `put [text]`,
+`get`, `help`, `status` and `exit` input. It is implemented with focused source,
+native, linked-image and real-PTY evidence; final integrated qualification remains
+pending. Run `scripts/kernel-run.sh --ram-scratchpad-console` for an explicitly
+bounded five-minute session, or add `--smoke` for the strict PTY oracle. External
+timeout/kill is an interrupted, unverified teardown, not a clean exit.
+
+The unnamed file starts missing; bare `put` creates a present-empty file. It
+contains at most 49 printable ASCII bytes and is lost on service reset or session
+exit. One separator after `put` is grammar; remaining spaces are
+file bytes. At most 64 protected commands are admitted; local help/status and
+rejected input do not reset that count. This is not the legacy four-file console,
+a mounted filesystem, persistence or a general shell.
+
+Aurora owns the line grammar, exact client scalar requests, result bytes and
+presentation. Native code stages an 80-byte command and captures an 80-byte
+result at fixed disjoint locations in the existing caller stack; no user pointer,
+new capability, general copied transport or native file store is introduced.
+The supervisor releases its Console loan before creating each fresh Call-only
+caller. The retained Serve-only service is unchanged in production. Its original
+four stack leases and live source locals survive prompt waits and Console turns.
+The new strict-idle predicate authenticates that dormant service while requiring
+no caller, endpoint, transaction, active run, timer owner or pending result
+authority. Legacy zero-stack boundaries remain unchanged.
+
+Only a clean exact caller return after final timer drain can yield a candidate.
+Its operation and result must match authenticated EOF/DATA count, MISSING,
+COMMITTED or REJECTED framing. Original identity remains bound until receipt
+settlement, revocation and physical caller retirement; a one-way promotion then
+produces ordinary response data. No Console publication occurs before verified
+idle, and no partial read is printed. Precommit caller loss requires the same
+service's reserved ABORTED cleanup. Accepted COMMITTED with failed caller/result
+reports commitment without retry. An unresolved delivered COMMIT resets as
+indeterminate/data-lost. Reset invalidates even an already captured candidate.
+Stale authority or reclamation uncertainty fails closed before publication.
+
+The single `ram-scratchpad-console-fixture` image adds explicit test-only disposal,
+malformed-copy, captured-reset, saved-backing and Console timeout selectors. Its
+alternate source Serve program faults after actual COMMIT publication but before
+reply. Fixture Console timeout is a source transport return, not physical UART
+fault qualification. The production image contains none of these selectors.
+Both new compositions use the existing protected Console size-optimization recipe
+and retain the two-page caller, one-page service, 15,360-byte stack, 51-exchange,
+128/120+8 budget and 64-command limits. The handwritten native adapter grows the
+bootstrap trusted surface; this is not native-code retirement or a general safety
+proof. Exact linked poll/IRQ/drain graphs, adversarial transcripts, legacy
+regressions, final GCC 16 full/normal boots and independent review remain required.
