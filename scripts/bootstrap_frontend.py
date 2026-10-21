@@ -136,7 +136,7 @@ def normalize_function_abi(facts, function):
             or type(root["selector"]) is not int
             or root["selector"] != -ordinal
             or type(root["mutable"]) is not bool
-            or (ordinal > 0 and root["mutable"])
+            or (ordinal > 0 and root["mutable"] and (ordinal != 1 or not roots[0]["mutable"]))
             or type(root["type_name"]) is not str
         ):
             raise ValueError("invalid compiler ABI borrowed root lane")
