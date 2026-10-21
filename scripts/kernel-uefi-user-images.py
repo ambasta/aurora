@@ -28,6 +28,7 @@ def verify(
     copied_note=False,
     note_entry=None,
     call_entry=None,
+    serve_entry=None,
     owned_entry=None,
 ):
     need(len(data) >= 64, "Truncated ELF header")
@@ -66,18 +67,36 @@ def verify(
     )
     if owned_entry is not None:
         need(
-            not copied_snapshot and not copied_note and call_entry is None and base == BASE and image_count == 2,
+            not copied_snapshot
+            and not copied_note
+            and call_entry is None
+            and serve_entry is None
+            and base == BASE
+            and image_count == 2,
             "Exact owned-byte user slot",
         )
         need(type(owned_entry) is str and bool(owned_entry), "Missing owned-byte compiler entry")
         compiled = owned_entry
     if call_entry is not None:
         need(
-            not copied_snapshot and not copied_note and base == BASE and image_count == 2,
+            not copied_snapshot and not copied_note and serve_entry is None and base == BASE and image_count == 2,
             "Exact singleton call client slot",
         )
         need(type(call_entry) is str and bool(call_entry), "Missing compiler-produced call entry")
         compiled = call_entry
+    if serve_entry is not None:
+        need(
+            not copied_snapshot
+            and not copied_note
+            and call_entry is None
+            and owned_entry is None
+            and base == BASE + LAYOUT.code_stride
+            and image_count == 2
+            and max_pages == 1,
+            "Exact singleton Serve service slot",
+        )
+        need(type(serve_entry) is str and bool(serve_entry), "Missing compiler-produced Serve entry")
+        compiled = serve_entry
     need(
         symbols.get("aurora_program_entry") == base and base <= symbols.get(compiled, 0) < base + len(blob),
         "Compiled entry",

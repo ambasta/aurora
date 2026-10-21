@@ -22,6 +22,9 @@
 #endif
 #ifdef AURORA_UEFI_USER_BUDGET
 #include "user-run-policy.hpp"
+#ifdef AURORA_RAM_FILE
+#include "ram-file-policy.hpp"
+#endif
 #endif
 #ifdef AURORA_UEFI_SERVICE_BUDGET
 #include "acpi.hpp"
@@ -39,7 +42,8 @@
 #endif
 #include <array>
 #include <optional>
-#if defined(AURORA_USER_RESUME) || defined(AURORA_BLOCKING_CALL) || defined(AURORA_CONSOLE_REGION)
+#if defined(AURORA_USER_RESUME) || defined(AURORA_BLOCKING_CALL) || defined(AURORA_RAM_FILE) ||                        \
+    defined(AURORA_CONSOLE_REGION)
 #include <memory>
 #endif
 #if defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_CONSOLE_REGION)
@@ -62,7 +66,8 @@ auto enter(std::uint64_t, std::uint64_t) -> std::uint64_t asm("uefi_runtime_ente
     __attribute__((visibility("hidden")));
 #endif
 auto handler(unsigned) -> std::uint64_t asm("uefi_runtime_handler") __attribute__((visibility("hidden")));
-#if defined(AURORA_USER_RESUME) || defined(AURORA_BLOCKING_CALL) || defined(AURORA_CONSOLE_REGION)
+#if defined(AURORA_USER_RESUME) || defined(AURORA_BLOCKING_CALL) || defined(AURORA_RAM_FILE) ||                        \
+    defined(AURORA_CONSOLE_REGION)
 auto resume(std::uint64_t) -> std::uint64_t asm("uefi_runtime_resume") __attribute__((visibility("hidden")));
 #endif
 namespace {
@@ -112,15 +117,20 @@ using hardware::Serial;
 #endif
 using user::ProgramEvent;
 using L = RuntimeLayout;
-#if defined(AURORA_USER_RESUME) || defined(AURORA_BLOCKING_CALL) || defined(AURORA_CONSOLE_REGION)
+#if defined(AURORA_USER_RESUME) || defined(AURORA_BLOCKING_CALL) || defined(AURORA_RAM_FILE) ||                        \
+    defined(AURORA_CONSOLE_REGION)
 // Saved transport state is shared; each caller retains its distinct authority checks.
 class ParkedRun final {
 public:
     std::optional<ServiceContext> context;
 #ifdef AURORA_USER_RESUME
     std::optional<RunAuthority> authority;
-#elif defined(AURORA_BLOCKING_CALL)
+#elif defined(AURORA_BLOCKING_CALL) || defined(AURORA_RAM_FILE)
+#ifdef AURORA_RAM_FILE
+    std::optional<RamFileRunAuthority> authority;
+#else
     std::optional<ProgramRunAuthority> authority;
+#endif
     std::optional<user::DomainHandle> service;
     ipc::Endpoint endpoint;
     U64 ticket{};
@@ -182,11 +192,14 @@ constinit std::optional<ipc::Mailbox> mailbox;
 constinit ipc::SnapshotSlot snapshot_slot;
 #endif
 #endif
-#if defined(AURORA_UEFI_DISPATCH) || defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_BLOCKING_CALL)
+#if defined(AURORA_UEFI_DISPATCH) || defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_BLOCKING_CALL) ||          \
+    defined(AURORA_RAM_FILE)
 unsigned selected_client = 2;
 #endif
 #ifdef AURORA_UEFI_USER_BUDGET
-#if defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_BLOCKING_CALL)
+#ifdef AURORA_RAM_FILE
+using SelectedRunAuthority = RamFileRunAuthority;
+#elif defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_BLOCKING_CALL)
 using SelectedRunAuthority = ProgramRunAuthority;
 #else
 using SelectedRunAuthority = RunAuthority;
@@ -210,9 +223,14 @@ constinit kernel::bytes::Region text_region;
 std::optional<user::DomainHandle> text_owner;
 U64 text_epoch{};
 #endif
+#ifdef AURORA_RAM_FILE
+#include "ram-file-state.inc"
+#endif
 #if defined(AURORA_UEFI_SERVICE_BUDGET) && !defined(AURORA_OWNED_TEXT)
 auto service_delivered() -> bool {
-#ifdef AURORA_UEFI_DISPATCH
+#ifdef AURORA_RAM_FILE
+    return ram_service_admitted();
+#elif defined(AURORA_UEFI_DISPATCH)
     return dispatcher && dispatcher->selected() == selected_client &&
            dispatcher->state(selected_client) == ipc::State::delivered;
 #else
@@ -231,7 +249,7 @@ unsigned active = L::domain_count;
     asm volatile("mov %%cr3,%0" : "=r"(result));
     return result;
 }
-[[nodiscard]] auto stack() -> U64 {
+[[maybe_unused, nodiscard]] auto stack() -> U64 {
     U64 result;
     asm volatile("mov %%rsp,%0" : "=r"(result));
     return result;
@@ -485,7 +503,7 @@ auto install_architecture() -> void {
         put(gate,
             5,
             (vector == 129
-#if defined(AURORA_BLOCKING_CALL) || defined(AURORA_OWNED_TEXT)
+#if defined(AURORA_BLOCKING_CALL) || defined(AURORA_RAM_FILE) || defined(AURORA_OWNED_TEXT)
              || vector == 130
 #endif
              )
@@ -607,6 +625,8 @@ auto execute(unsigned index, ProgramEvent wanted) -> void {
 #include "user-lifecycle.inc"
 #endif
 #endif
+#elif defined(AURORA_RAM_FILE)
+#include "ram-file.inc"
 #elif defined(AURORA_FILE_CALL)
 #include "program-console.inc"
 #elif defined(AURORA_BLOCKING_CALL)
@@ -711,6 +731,10 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
         return text_trap(frame);
 #endif
 #endif
+#ifdef AURORA_RAM_FILE
+    if (vector == 130)
+        return ram_trap(frame);
+#endif
 #ifdef AURORA_BLOCKING_CALL
     if (vector == 130)
         return call_trap(frame);
@@ -755,7 +779,9 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
     const user::ProgramContext context{vector, error, pc, cs, captured.get(168), captured.get(160), saved_flags, frame};
     require(program.accept(context, result), "exception site authority");
 #ifdef AURORA_UEFI_IPC
-#ifdef AURORA_BLOCKING_CALL
+#ifdef AURORA_RAM_FILE
+    ram_terminal();
+#elif defined(AURORA_BLOCKING_CALL)
     call_envelope(captured, result);
 #elif defined(AURORA_UEFI_PROGRAM_CONSOLE)
     program_console_envelope(captured, result);
@@ -859,6 +885,8 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
 #else
     run_dispatcher();
 #endif
+#elif defined(AURORA_RAM_FILE)
+    run_ram_file();
 #elif defined(AURORA_FILE_CALL)
 #ifdef AURORA_RUNTIME_FIXTURE
     select_fixture(Fixture::file_fault, Fixture::file_budget);

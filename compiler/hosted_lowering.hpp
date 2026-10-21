@@ -11,8 +11,9 @@ namespace aurora {
 // Each selected prelude is checked explicitly; no arbitrary prefix is exempted
 // from the output graph's ownership contract.
 inline constexpr std::int64_t hostedLoweringPreludeRows = 10 + service::operations.size();
-inline constexpr std::int64_t hostedLoweringPrefixRows(bool includeCall, bool includePort = false) {
-    return 10 + service::operationCount(includeCall, includePort);
+inline constexpr std::int64_t
+hostedLoweringPrefixRows(bool includeCall, bool includePort = false, bool includeServe = false) {
+    return 10 + service::operationCount(includeCall, includePort, includeServe);
 }
 
 // These views own no Session descriptor. HostedResolution copies each published

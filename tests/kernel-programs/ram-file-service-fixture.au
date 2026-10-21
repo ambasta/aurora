@@ -1,0 +1,47 @@
+module ram_file_service_fixture;
+import console.volatile_file;
+
+// Consolidated runtime fixture only. Writer A takes seven requests, then a
+// fresh reader begins at eight and encounters this actual source bounds fault
+// at nine. A restarted incarnation first proves missing with two requests.
+auto aurora_user_main(builtin::ServeSession& session) -> u64 {
+    console::VolatileFile file = console::VolatileFile();
+    array<u64, 2> sentinel = {
+        11400714819323198485u64,
+        0u64
+    };
+    u64 exchanges = 0u64;
+    u64 requests = 0u64;
+    u64 reply = 0u64;
+    while (true) {
+        const builtin::ServeRequest request = session.exchange(reply);
+        if (sentinel[0] != 11400714819323198485u64 || sentinel[1] != exchanges) {
+            return 0u64;
+        }
+        exchanges = exchanges + 1u64;
+        sentinel[1] = exchanges;
+        if (request.status == builtin::ServeStatus::cancelled) {
+            reply = file.cancel();
+        } else {
+            requests = requests + 1u64;
+            if (requests == 1u64) {
+                // Exercise an IRQ at a compiled source PC, not merely the
+                // exchange stub. This spends the existing command allowance.
+                u64 turns = 0u64;
+                u64 checksum = sentinel[0];
+                while (turns < 1000000u64) {
+                    checksum = sentinel[0] - checksum;
+                    turns = turns + 1u64;
+                }
+                if (checksum != sentinel[0]) {
+                    return 0u64;
+                }
+            }
+            if (requests == 9u64) {
+                return sentinel[i64(requests)];
+            }
+            reply = file.request(request.value);
+        }
+    }
+    return 0u64;
+}

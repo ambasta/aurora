@@ -168,3 +168,63 @@ using the existing noinline preparation route and arena-owned MCFG snapshot.
 For multipage, Call and snapshot admission, the shared linked discovery gate
 rejects a parser-to-PCI call path and bounds the wrapper, parser and PCI frames.
 Stack and fault-reserve caps are unchanged.
+
+## Bounded retained volatile RAM file
+
+The opt-in `user-ram-file` implementation candidate keeps one unnamed binary file
+of at most 49 bytes in one compiled CPL3 service's ordinary private stack locals.
+The file is either missing or present (including present-empty). A retired writer
+and fresh reader communicate actual bytes through the existing scalar Call ABI;
+there is no supervisor file copy. A second replacement, bytes 0/128/255, empty and
+49-byte transfers, caller precommit abort and postcommit failure are separate
+compiled scenarios. This is not the console namespace, durability, a general
+filesystem or a daemon/scheduler API. Final qualification is pending.
+
+The singleton `builtin::ServeSession.exchange(reply)` returns copied status/value
+qwords. Domain 0 admits only the exact Call `INT 0x82; ret` site; domain 1 admits
+only the distinct Serve site. A stable lifetime handle/grant/root/contract binds
+all four original move-only stack leases. Every service activation revalidates
+allocator ownership and exact mappings, consumes its dormant integer context,
+and mints a new immutable run authority for startup, exchange or abort cleanup.
+No pointer or caller-supplied endpoint/ticket/budget crosses the Serve ABI.
+
+Read and Replace rights are fixed at native command admission, not selected by a
+request word. Transport enforces closed framing, lengths, sequential offsets,
+reply shapes and a maximum 51 exchanges; only source owns existence, committed
+bytes/length, staging, commit and read results. Service startup has one 8-unit
+allowance per incarnation. Each command has cumulative caller 128 and service
+120 normal units, plus an exclusive 8-unit abort reserve. Every exchange boundary
+is charged conservatively: parking charges the discarded partial timer interval,
+while synchronous refusal adds a debit without rearming the timer. Neither a new
+exchange nor resumption renews a command budget. A cleanup epoch is reserved
+before admitting its caller.
+
+On precommit disposal, execution is disabled, the original mailbox receipt is
+settled once while its original handles are live, transport is revoked/scrubbed,
+and the caller is retired. ABORTING admits no new caller. The same service is
+resumed only with cancelled/zero and must acknowledge ABORTED after source staging
+cleanup. A pending COMMITTED receipt is consumed without reviving a disposed
+caller. After COMMIT delivery, an undecidable result is indeterminate, never a
+false cancelled result. Authenticated service faults reset the incarnation and
+lose all data; restart begins missing. Unknown trap/grant/frame/root/mapping
+failures remain fail-stop, with no unsafe reclamation or new command admission.
+
+`user-ram-file-fixture` consolidates known source service faults, a pending committed
+receipt with a logically disposed caller, a post-COMMIT pre-reply fault, caller and
+service/cleanup allowance exhaustion, pending interrupt drain, and final-epoch
+cleanup. The source-fault case repeats reset, proves missing in each new
+incarnation, and checks naturally reused service frames reject the original owner.
+`user-ram-file-grant`, `user-ram-file-site`, `user-ram-file-frame` and
+`user-ram-file-root` are fail-stop controls, not recoverable data errors. Existing native authority/IPC and image/transcript
+harnesses carry the corresponding negative controls. The source file class has
+an actual generated-code protocol runner, not a native content-store model. A
+bounded fixture-only source loop exercises real compiled-PC timer interrupts;
+conservative boundary-withholding controls separately exercise quota exhaustion.
+
+The profile retains the Call envelope: caller at most two RX pages, service one,
+four private stack pages per domain, and the existing 15,360-byte effective stack
+cap. Both role graphs, copied ABI facts, exact handwritten wrappers/stubs and the
+complete kernel/IRQ/drain paths must pass linked admission. Native image tests do
+not run QEMU; actual guest controls, final GCC 16 full/normal restoration and
+independent exact-source review remain required. Legacy `program-file-call`
+profiles retain their scrubbed-reentry and supervisor-store semantics unchanged.

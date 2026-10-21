@@ -387,7 +387,7 @@ export namespace compiler_ir_initialization {
             return compiler_ir_metadata::count_sum(wordCount * 16, serviceCapacity * 32);
         }
         auto acquire_service_loan(i64 id, i64 root, i64 kind) -> i64 {
-            if (statusValue != InitializationStatus::success || id <= 0 || root <= 0 || kind < 0 || kind > 4) {
+            if (statusValue != InitializationStatus::success || id <= 0 || root <= 0 || kind < 0 || kind > 5) {
                 reject();
                 return -1;
             }

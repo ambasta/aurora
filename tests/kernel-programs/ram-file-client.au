@@ -1,0 +1,122 @@
+module ram_file_client;
+
+// Payloads and expected bytes are constructed by compiled source, never copied
+// from a supervisor file projection. The second replacement is not a prefix.
+auto payload(u64 variant, u64 index) -> u64 {
+    if (variant == 13u64 || variant == 14u64) {
+        return 255u64;
+    }
+    if (variant == 8u64 || variant == 9u64) {
+        return (index * 73u64 + 19u64) & 255u64;
+    }
+    if (variant == 1u64 || variant == 2u64 || variant == 7u64 || variant == 15u64 || variant == 16u64) {
+        const array<u8, 5> bytes = {
+            0u8,
+            255u8,
+            128u8,
+            65u8,
+            127u8
+        };
+        return u64(bytes[i64(index)]);
+    }
+    const array<u8, 3> bytes = {
+        227u8,
+        0u8,
+        90u8
+    };
+    return u64(bytes[i64(index)]);
+}
+
+auto expect(builtin::CallSession& session, u64 request, u64 expected) -> bool {
+    const builtin::CallResult reply = session.call(request);
+    return reply.status == builtin::CallStatus::replied && reply.value == expected;
+}
+
+auto aurora_user_main(builtin::CallSession& session, u64 phase, u64 first, u64 second) -> u64 {
+    if (first != 0u64 || second != 0u64 || phase > 16u64) {
+        return 0u64;
+    }
+    if (phase >= 10u64 && phase <= 12u64) {
+        u64 malformed = 3u64 | (50u64 << 8);
+        if (phase == 11u64) {
+            malformed = 65537u64;
+        }
+        if (phase == 12u64) {
+            malformed = 4u64;
+        }
+        const builtin::CallResult rejected = session.call(malformed);
+        if ((rejected.status == builtin::CallStatus::replied && rejected.value == 6u64) || (rejected.status
+            == builtin::CallStatus::rejected && rejected.value == 0u64)) {
+            return 42u64;
+        }
+        return 0u64;
+    }
+    u64 length = 0u64;
+    if (phase == 1u64 || phase == 2u64 || phase == 7u64 || phase == 15u64 || phase == 16u64) {
+        length = 5u64;
+    }
+    if (phase == 3u64 || phase == 4u64) {
+        length = 3u64;
+    }
+    if (phase == 8u64 || phase == 9u64) {
+        length = 49u64;
+    }
+    if (phase == 13u64 || phase == 14u64) {
+        length = 1u64;
+    }
+    const bool writing = phase == 1u64 || phase == 3u64 || phase == 5u64 || phase == 7u64 || phase == 8u64 || phase
+        == 13u64 || phase == 15u64 || phase == 16u64;
+    u64 begin = 1u64;
+    if (writing) {
+        begin = 3u64 | (length << 8);
+    }
+    if (!expect(session, begin, 1u64)) {
+        return 0u64;
+    }
+    u64 index = 0u64;
+    while (index < length) {
+        const u64 byte = payload(phase, index);
+        u64 request = 2u64 | (index << 8);
+        u64 expected = 2u64 | (byte << 8);
+        if (writing) {
+            request = 4u64 | (index << 8) | (byte << 16);
+            expected = 1u64;
+        }
+        if (!expect(session, request, expected)) {
+            return 0u64;
+        }
+        if (phase == 7u64) {
+            // The runtime must revoke this caller and obtain ABORTED from the
+            // retained service before binding any subsequent reader.
+            return 42u64;
+        }
+        if (phase == 15u64) {
+            const array<u64, 2> bounds = {
+                1u64,
+                2u64
+            };
+            return bounds[i64(phase)];
+        }
+        index = index + 1u64;
+    }
+    u64 terminal = 2u64 | (length << 8);
+    u64 expected = 3u64;
+    if (writing) {
+        terminal = 5u64;
+        expected = 5u64;
+    }
+    if (phase == 0u64) {
+        expected = 4u64;
+    }
+    if (!expect(session, terminal, expected)) {
+        return 0u64;
+    }
+    if (phase == 16u64) {
+        const array<u64, 2> bounds = {
+            1u64,
+            2u64
+        };
+        return bounds[i64(phase)];
+    }
+    return 42u64;
+}

@@ -80,9 +80,12 @@ export namespace compiler_x86 {
         }
         return class_reserved(metadata, class_id);
     }
-    auto port_service_signature(const compiler_ir_metadata::MetadataStore& metadata, i64 callable) -> bool {
-        return parameter_count(metadata, callable) > 0 && type_kind(metadata, parameter_type(metadata, callable, 0))
-            == 19;
+    auto port_or_serve_signature(const compiler_ir_metadata::MetadataStore& metadata, i64 callable) -> bool {
+        if (parameter_count(metadata, callable) == 0) {
+            return false;
+        }
+        const i64 kind = type_kind(metadata, parameter_type(metadata, callable, 0));
+        return kind == 19 || kind == 20;
     }
     auto port_service_record_bytes(const compiler_ir_metadata::MetadataStore& metadata, i64 callable) -> i64 {
         const i64 result = result_type(metadata, callable);
@@ -108,7 +111,7 @@ export namespace compiler_x86 {
             >= metadata.callable_count()) {
             return 0;
         }
-        if (!has_receiver(metadata, callable) && port_service_signature(metadata, callable)) {
+        if (!has_receiver(metadata, callable) && port_or_serve_signature(metadata, callable)) {
             return port_service_record_bytes(metadata, callable);
         }
         const i64 result = result_type(metadata, callable);
@@ -628,6 +631,9 @@ export namespace compiler_x86 {
         if (kind == 19) {
             return workspace.text("\"builtin::PortRange\"");
         }
+        if (kind == 20) {
+            return workspace.text("\"builtin::ServeSession\"");
+        }
         if (kind == 12) {
             return workspace.text("\"builtin::ByteRegion\"");
         }
@@ -669,7 +675,7 @@ export namespace compiler_x86 {
                     }
                     const i64 type = parameter_type(metadata, row.symbol(), at);
                     workspace.byte('[');
-                    if (port_service_signature(metadata, row.symbol()) && type_kind(metadata, type) == 5) {
+                    if (port_or_serve_signature(metadata, row.symbol()) && type_kind(metadata, type) == 5) {
                         workspace.text("\"copied_class\"");
                     } else {
                         fact_emit_service_kind(workspace, type_kind(metadata, type));
@@ -681,7 +687,7 @@ export namespace compiler_x86 {
                 }
                 workspace.text("],\"result_bytes\":");
                 workspace.number(row.service());
-                if (port_service_signature(metadata, row.symbol()) && type_kind(metadata, result_type(metadata,
+                if (port_or_serve_signature(metadata, row.symbol()) && type_kind(metadata, result_type(metadata,
                     row.symbol())) == 5) {
                     workspace.text(",\"result_kind\":\"copied_class\"");
                 }
@@ -1084,7 +1090,7 @@ export namespace compiler_x86 {
             workspace.byte(',');
             fact_emit_type(workspace, metadata, type);
             if ((at < 2 && compiler_ir_metadata::console_region_signature(metadata, row)) || type_kind(metadata, type)
-                == 19) {
+                == 19 || type_kind(metadata, type) == 20) {
                 workspace.text(",\"type_name\":");
                 fact_emit_service_kind(workspace, type_kind(metadata, type));
             }

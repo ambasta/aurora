@@ -88,8 +88,8 @@ class ClockContractTests(unittest.TestCase):
         for family, wrappers in WRAPPERS.items():
             for wrapper in wrappers:
                 inventory += [(family, mode) for mode in wrapper_modes(wrapper)]
-        self.assertEqual(len(inventory), 184)
-        self.assertEqual(len(set(inventory)), 184)
+        self.assertEqual(len(inventory), 197)
+        self.assertEqual(len(set(inventory)), 197)
         snapshots = {
             ("uefi", mode)
             for mode in (
@@ -133,7 +133,25 @@ class ClockContractTests(unittest.TestCase):
         self.assertTrue(all(CLOCK.clock_profile(*key) == CLOCK.ORIGINAL for key in snapshots))
         self.assertEqual(CLOCK.clock_profile("uefi", "owned-bytes"), CLOCK.ORIGINAL)
         selected = [mode for (family, mode), profile in CLOCK.MODE_CLOCKS.items() if profile == CLOCK.FIXED0]
-        self.assertEqual(len(selected), 69)
+        self.assertEqual(len(selected), 82)
+        self.assertEqual(
+            {mode for mode in selected if mode.startswith("user-ram-file")},
+            {
+                "user-ram-file",
+                "user-ram-file-service-fault",
+                "user-ram-file-grant",
+                "user-ram-file-site",
+                "user-ram-file-frame",
+                "user-ram-file-root",
+                "user-ram-file-settlement",
+                "user-ram-file-commit-fault",
+                "user-ram-file-caller-budget",
+                "user-ram-file-service-budget",
+                "user-ram-file-abort-budget",
+                "user-ram-file-epochs",
+                "user-ram-file-pending",
+            },
+        )
         self.assertEqual(CLOCK.clock_profile("uefi", "user-resume"), CLOCK.FIXED0)
         self.assertEqual(sum(p == CLOCK.ORIGINAL for p in CLOCK.MODE_CLOCKS.values()), 143)
         self.assertEqual(
@@ -143,7 +161,8 @@ class ClockContractTests(unittest.TestCase):
                         sorted(
                             mode
                             for mode in selected
-                            if mode
+                            if not mode.startswith("user-ram-file")
+                            and mode
                             not in (
                                 "runtime-console-region",
                                 "runtime-console-region-cancel",
@@ -214,7 +233,7 @@ class ClockContractTests(unittest.TestCase):
     def test_every_mode_profile_and_hostile_clock_pairings(self):
         cases = dict(CLOCK.MODE_CLOCKS)
         cases.update(CLOCK.AUXILIARY_CLOCKS)
-        self.assertEqual(len(cases), 217)
+        self.assertEqual(len(cases), 230)
         for (family, mode), profile in cases.items():
             with self.subTest(family=family, mode=mode):
                 original = ["qemu", "-accel", "tcg"]
@@ -270,7 +289,7 @@ class ClockContractTests(unittest.TestCase):
 
     def test_real_shell_array_for_all_uefi_build_modes(self):
         modes = sorted(mode for family, mode in CLOCK.MODE_CLOCKS if family != "bios")
-        self.assertEqual(len(modes), 173)
+        self.assertEqual(len(modes), 186)
         for mode in modes:
             for data in ("", "/nonexistent data files"):
                 with self.subTest(mode=mode, data=data):

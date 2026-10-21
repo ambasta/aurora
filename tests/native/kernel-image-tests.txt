@@ -4,3 +4,6 @@ native-uefi-runtime-owned-text-image
 native-uefi-runtime-owned-text-fixture-image
 native-uefi-runtime-console-region-image
 native-uefi-runtime-console-region-fixture-image
+native-uefi-user-ram-file-image
+native-uefi-user-ram-file-fixture-image
+native-uefi-ram-file-linked-image

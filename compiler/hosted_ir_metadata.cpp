@@ -195,6 +195,9 @@ static_assert(service::capabilityBytes == 16);
 static_assert(static_cast<std::int64_t>(TypeKind::CallSession) == 18 &&
               static_cast<std::int64_t>(TypeKind::CallSession) ==
                   static_cast<std::int64_t>(wire::MetadataTypeKind::CallSession));
+static_assert(static_cast<std::int64_t>(TypeKind::ServeSession) == 20 &&
+              static_cast<std::int64_t>(TypeKind::ServeSession) ==
+                  static_cast<std::int64_t>(wire::MetadataTypeKind::ServeSession));
 static_assert(static_cast<std::int64_t>(TypeKind::PortRange) == 19 &&
               static_cast<std::int64_t>(TypeKind::PortRange) ==
                   static_cast<std::int64_t>(wire::MetadataTypeKind::PortRange));

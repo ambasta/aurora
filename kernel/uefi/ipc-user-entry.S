@@ -4,6 +4,14 @@
 .ifdef PROGRAM_NOTE_SERVICE
 .set COPIED_SERVICE,1
 .endif
+.ifdef SERVE_SERVICE
+.ifdef CALL_CLIENT
+.error "Serve and Call entry roles are disjoint"
+.endif
+.ifdef COPIED_SERVICE
+.error "Serve has no copied snapshot entry"
+.endif
+.endif
 .section .text.user_entry,"ax"
 .code64
 .global aurora_program_entry
@@ -143,6 +151,18 @@ skip_context_probe:
     call @aurora_user_main@
     add $48,%rsp
 .else
+.ifdef SERVE_SERVICE
+    # The sole capability prefix is the saved launch grant and generation.
+    # Service state lives below this fixed record for the entire incarnation.
+    sub $16,%rsp
+    mov 48(%rsp),%rax
+    mov %rax,0(%rsp)
+    mov 40(%rsp),%rax
+    mov %rax,8(%rsp)
+    mov %rsp,%r11
+    call @aurora_user_main@
+    add $16,%rsp
+.else
 .ifdef COPIED_SERVICE
     lea 48(%rsp),%r11
 .ifdef PROGRAM_NOTE_SERVICE
@@ -153,6 +173,7 @@ skip_context_probe:
 .else
     call aurora_user_main
 .endif
+ .endif
  .endif
     add $8,%rsp
     pop %r9
@@ -215,8 +236,20 @@ aurora_call_return_pc:
     ret
 .size __au_runtime_call,.-__au_runtime_call
 .endif
+.ifdef SERVE_SERVICE
+.global __au_runtime_serve_exchange
+.type __au_runtime_serve_exchange,@function
+__au_runtime_serve_exchange:
+    int $0x82
+.global aurora_serve_return_pc
+aurora_serve_return_pc:
+    ret
+.size __au_runtime_serve_exchange,.-__au_runtime_serve_exchange
+.endif
 .ifndef COPIED_SERVICE
 .ifndef CALL_CLIENT
+.ifndef SERVE_SERVICE
 .section .note.GNU-stack,"",@progbits
+.endif
 .endif
 .endif

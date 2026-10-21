@@ -15,10 +15,10 @@ auto receive(builtin::ConsoleSession& session) -> builtin::ConsoleSample {
 
 ## Source and lifetime
 
-`ConsoleSession`, `DisplaySession`, `IommuEventSession`, `CallSession` and `PortRange` are distinct
+`ConsoleSession`, `DisplaySession`, `IommuEventSession`, `CallSession`, `PortRange` and `ServeSession` are distinct
 compiler-owned sealed service kinds. An explicit contiguous leading group of one or two exclusive service
-reference free-function formals is accepted. The explicit group allowlist is Console, Display, Event, Call or Port alone, Console+Display
-in either order, and Event+Console in either order. Call and Port cannot mix with any other kind. Event+Display, duplicate kinds
+reference free-function formals is accepted. The explicit group allowlist is Console, Display, Event, Call, Port or Serve alone, Console+Display
+in either order, and Event+Console in either order. Call, Port and Serve cannot mix with any other kind. Event+Display, duplicate kinds
 and all triples are rejected. There is no
 by-value or const variant. It cannot be constructed, copied, moved, assigned, stored in a
 local/field/array, returned, reflected or converted. A reference is a parameter
@@ -145,6 +145,41 @@ original epoch and remaining quota, changing only RAX/RDX in the retained frame.
 A second call in the same incarnation returns rejected/zero without publication.
 Retirement cancels outstanding work and scrubs retained authority before reuse.
 This is one fixed client/service pair, not general scheduling or concurrent calls.
+
+## Retained service exchange
+
+`ServeSession.exchange(u64 reply)` returns `builtin::ServeRequest`, with public
+`status: builtin::ServeStatus` and `value: u64` fields at offsets 0 and 8. Its
+closed statuses are `request` (0) and `cancelled` (1); cancelled requires zero
+value. The exact 16-byte sealed capability is a singleton exclusive parameter,
+not a copied value or an endpoint. Existing synchronous helper forwarding and
+copied-value rules apply; no construction, storage, return, reflection, mixed
+capability group, escaping borrow or asynchronous language feature is admitted.
+
+`__au_runtime_serve_exchange` receives grant, generation and reply in RDI, RSI
+and RDX, then returns status in RAX and value in RDX. Full-width status and
+cancelled-value checks run before any typed local write. Its stack fact is
+`sysv_arguments: 3, result_max: 1`. The protected entry is exactly
+`aurora_user_main(builtin::ServeSession&) -> u64`; an ordinary return is service
+death rather than successful completion. Only the separately admitted exchange
+trap parks the runtime service with its ordinary locals retained.
+
+Permanent identities append kind 5, operation 8 and metadata type 20. The
+singleton group mask is 32, so its catalogue bit is the full-width value
+4294967296. Parser admission permits restrictive subsets of the closed group
+allowlist; lowering accepts exactly the eight old/base plus optional Call,
+Port and Serve catalogue combinations. No mixed Serve bit is authorized.
+Only admitted graph syntax referencing ServeSession, ServeRequest or ServeStatus
+activates the family, including unused templates; comments, strings and unrelated
+names do not. Serve-free catalogue, reflection, assembly and ABI behavior stays
+unchanged. Serve helper facts identify copied classes and exact layout widths,
+while the runtime entry remains the exact singleton 16-byte prefix.
+
+This boundary supports only the separately qualified opt-in bounded volatile
+RAM-file profile. It is not a general daemon, scheduler or filesystem API.
+Source, hostile IR, full-width raw ABI, image/stack and guest qualification are
+required independently; implementing the primitive alone establishes no retained
+file functionality.
 
 ## Bounded IOMMU event observation
 

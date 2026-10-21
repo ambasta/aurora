@@ -1982,8 +1982,10 @@ void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *m
                             state.current = Value{service::eventAckResultType(), {}};
                         } else if (operation.operation == service::Operation::Next ||
                                    operation.operation == service::Operation::IommuPoll ||
-                                   operation.operation == service::Operation::Call) {
-                            if (operation.operation == service::Operation::Call)
+                                   operation.operation == service::Operation::Call ||
+                                   operation.operation == service::Operation::ServeExchange) {
+                            if (operation.operation == service::Operation::Call ||
+                                operation.operation == service::Operation::ServeExchange)
                                 current(Type::U64);
                             const int base = operation.resultOffset;
                             require(state.activeObjects.contains(base) && !initialization.objectWasConstructed(base),
