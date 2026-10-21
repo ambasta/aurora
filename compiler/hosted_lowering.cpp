@@ -559,7 +559,7 @@ class Projection {
             invalidLowering();
         }
         callable.borrowedRootCount = values.scalar(OperandRole::BorrowedRootCount);
-        callable.firstBorrowedMutable = values.scalar(OperandRole::FirstBorrowedMutable);
+        callable.mutableBorrowedRootCount = values.scalar(OperandRole::MutableBorrowedRootCount);
         const auto &spanOperand = values.take();
         if (spanOperand.operandRole == OperandRole::ReceiverSpanField) {
             callable.flags |= metadataFlagMasks().callableSpanSummary;

@@ -318,6 +318,15 @@ def abi_generation(facts):
         _, row = abi_declaration(facts, "records", "compiler_ir_metadata::" + source)
         field = next(field for field in row["fields"] if field["name"] == member)
         require(field["kind"] == "u64" and field["bytes"] == 8, "metadata flags were narrowed or signed")
+    # The mutable-prefix count reuses the former first-mutable i64 lane.
+    # Its physical layout is independently pinned, not inferred from C++ sizeof.
+    for source, offset in (("CallableOptions", 32), ("CallableRow", 72)):
+        _, row = abi_declaration(facts, "records", "compiler_ir_metadata::" + source)
+        field = next(field for field in row["fields"] if field["name"] == "mutableBorrowedRootCount")
+        require(
+            (field["kind"], field["offset"], field["bytes"]) == ("i64", offset, 8),
+            "mutable borrowed prefix changed the physical transport lane",
+        )
     _, code_row = abi_declaration(facts, "records", "compiler_ir_instructions::CodeRow")
     require(
         [(field["name"], field["kind"], field["offset"], field["bytes"]) for field in code_row["fields"]]

@@ -645,24 +645,30 @@ classes. No temporary/projected argument, reference local/
 field/result, reference template/overload or ownership transfer is added.
 
 A bounded multi-root form accepts a leading sequence of up to three borrowed
-owning roots. The first may be mutable or readonly; every later root is readonly.
+owning roots. A mutable prefix may contain zero, one or two roots; every
+remaining root is readonly. Thus `(T&, U&)` and `(T&, U&, const V&)` are
+supported, but readonly-then-mutable and three-mutable signatures are not.
 Roots and trailing parameters together fit the existing six-parameter limit.
 With two or more roots, trailing parameters and the result are scalar/enum values.
 The single-root copied/span argument and copied-result rules above are unchanged.
 This enables algorithms that update a workspace while reading independent owners,
-including the verifier's instruction and metadata owners.
+including the verifier's instruction and metadata owners. Two mutable roots also
+support independently updating two complete owners; this does not add compiler
+adoption, a new bootstrap stage, nested owners or mixed builtin root signatures.
 
 Every actual root is complete, named and pairwise distinct, even when all borrows
 are readonly or the classes are empty. Different instances of the same class are
-permitted. Each formal has its own loan and binding identity. None of the formal
-roots may produce a span in the multi-root form; public scalar and copied-value
+permitted. Distinctness means separate complete owner identities, not unequal
+variable names, nominal types or physical regions. Forwarded formals inherit
+separation from their checked caller. Each formal has its own loan and binding
+identity. None of the formal roots may produce a span in the multi-root form; public scalar and copied-value
 getters remain usable. Independent local spans are unaffected. No owning-reference
 method parameters, reference locals or general lifetime syntax are added.
 
 ### Authority and argument evaluation
 
-The first argument names a complete owning root or the current named borrowed
-formal. The loan begins before any later argument is evaluated, and remains live
+Each root argument names a complete owning root or the current named borrowed
+formal. Its loan begins before any later argument is evaluated, and remains live
 through the synchronous call. A mutable loan excludes every other access to its
 root during argument evaluation. Precompute a size or other observation before
 passing it as a later argument. Shared loans permit readonly aliasing but cannot
@@ -707,7 +713,13 @@ bound formals and positive exact owner slots for locals. Selectors are bounded
 before negation and never interpreted as ordinary frame offsets. One ordered
 root/loan/field range replaces separate first/second call lanes. Verification checks all
 loan identities, authorities and pairwise distinctness independently. The existing
-single-root direct-pointer and two-root sixteen-byte tuple ABIs are preserved.
+single-root direct-pointer, two-root sixteen-byte and three-root thirty-two-byte
+tuple reservations are preserved. The existing i64 permission lane records the
+mutable-prefix count (0, 1 or 2, never greater than the root count); source and
+native readers reject invalid counts before granting mutable authority. It is
+not a boolean, and the record layout is not widened. Borrowed entries remain
+private: the trusted host must construct genuinely separate live complete
+owners and payloads, not pass arbitrary raw tuples or rely on pointer inequality.
 
 Canonical callable metadata stores every explicit formal in source order, with a
 bounded borrowed-root prefix and a tail-only value-parameter view. Genuine method

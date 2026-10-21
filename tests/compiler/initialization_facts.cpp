@@ -303,7 +303,7 @@ std::unique_ptr<Metadata> objectDeclarations(const std::vector<int> &scalars = o
             entry == ReceiverEntry::borrowed_pair) {
             function.parameters = {Type("Receiver")};
             function.borrowedRootCount = 1;
-            function.firstBorrowedMutable = entry == ReceiverEntry::mutable_borrowed;
+            function.mutableBorrowedRootCount = entry == ReceiverEntry::mutable_borrowed;
             if (entry == ReceiverEntry::borrowed_pair) {
                 module.classLayouts["OtherOwner"] = {};
                 module.classFields["OtherOwner"] = {{Type::OwnedBytes, 0, 0, false}};
