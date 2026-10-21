@@ -201,11 +201,25 @@ def check_commands(manifest, records, root, build):
     # The selected predecessor is a per-machine path; record it by role.
     options = Path(build) / "meson-info/intro-buildoptions.json"
     predecessor = None
+    role_values = {}
     if options.exists():
         values = json.loads(options.read_text())
         predecessor = next((option["value"] for option in values if option["name"] == "bootstrap_compiler"), None)
         if predecessor is None:
             raise ValueError("Meson build options lack bootstrap_compiler")
+        receipt = next((option["value"] for option in values if option["name"] == "bootstrap_receipt"), None)
+        if receipt:
+            evidence = json.loads(Path(receipt).read_text())
+            oracle = next(
+                stage["artifact"]
+                for stage in evidence["stages"]
+                if stage["source"]["name"] == evidence["route"]["historical_cpp_oracle"]
+            )
+            role_values = {
+                receipt: "@BOOTSTRAP_RECEIPT@",
+                oracle["path"]: "@HISTORICAL_CPP_ORACLE@",
+                oracle["sha256"]: "@HISTORICAL_CPP_ORACLE_SHA256@",
+            }
     arguments = {record["name"]: {Path(arg).resolve() for arg in record["cmd"]} for record in records}
     for runner, entry in manifest.items():
         expected = entry.get("meson_commands", {})
@@ -219,7 +233,10 @@ def check_commands(manifest, records, root, build):
             record = by_name[name]
             # The Python executable can differ per toolchain environment; all
             # runner arguments, wrappers, fixtures, profiles and modes are exact.
-            raw = ["@PREDECESSOR@" if value == predecessor else value for value in record["cmd"][1:]]
+            raw = [
+                role_values.get(value, "@PREDECESSOR@" if value == predecessor else value)
+                for value in record["cmd"][1:]
+            ]
             command = canonical_command(raw, root, build, record.get("workdir"))
             command = ["@PYTHON@" if value == record["cmd"][0] else value for value in command]
             if command != declaration["arguments"]:

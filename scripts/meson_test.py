@@ -14,6 +14,7 @@ import sys
 import tempfile
 
 import meson_toolchain
+import bootstrap
 import kernel_profiles
 
 import compiler_contract as contract
@@ -111,6 +112,18 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
             "BOOTSTRAP_COMPILER must name an absolute executable predecessor; see compiler/README.md#source-bootstrap",
         )
         requested_bootstrap = str(selected.resolve())
+    requested_sha256 = env.get("BOOTSTRAP_COMPILER_SHA256")
+    requested_receipt = env.get("BOOTSTRAP_RECEIPT")
+    if requested_bootstrap is not None:
+        try:
+            bootstrap.verify(requested_bootstrap, requested_sha256, requested_receipt)
+        except ValueError as error:
+            raise contract.ContractError(str(error)) from error
+    else:
+        contract.require(
+            requested_sha256 is None and requested_receipt is None,
+            "BOOTSTRAP_COMPILER is required with BOOTSTRAP_COMPILER_SHA256/BOOTSTRAP_RECEIPT",
+        )
     supplied = env.get("MESON_BUILD_DIR")
     default = "meson" if kernel_images else "meson-compiler"
     build = (root / supplied if supplied else root / "build" / default).resolve()
@@ -126,6 +139,8 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
                 str(build),
                 str(root),
                 "-Dbootstrap_compiler=" + (requested_bootstrap or "/absolute/path/to/aurorac"),
+                "-Dbootstrap_compiler_sha256=" + (requested_sha256 or "<receipt-sha256>"),
+                "-Dbootstrap_receipt=" + (requested_receipt or "/absolute/path/to/receipt.json"),
             ]
         )
         + (" -Dkernel_images=false" if not kernel_images else "")
@@ -176,6 +191,8 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
             "uefi_ld",
             "cpp_args",
             "bootstrap_compiler",
+            "bootstrap_compiler_sha256",
+            "bootstrap_receipt",
         } - options.keys()
         contract.require(
             not missing,
@@ -200,11 +217,19 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
                 f"Configured {name} differs from request ({options.get(name)!r} != {expected!r}); "
                 "select a matching MESON_BUILD_DIR",
             )
-        if (
-            requested_bootstrap is not None
-            and str(Path(options["bootstrap_compiler"]).resolve()) != requested_bootstrap
+        if requested_bootstrap is not None and (
+            str(Path(options["bootstrap_compiler"]).resolve()) != requested_bootstrap
+            or options["bootstrap_compiler_sha256"] != requested_sha256
+            or options["bootstrap_receipt"] != requested_receipt
         ):
-            setup = ["setup", "--reconfigure", str(build), "-Dbootstrap_compiler=" + requested_bootstrap]
+            setup = [
+                "setup",
+                "--reconfigure",
+                str(build),
+                "-Dbootstrap_compiler=" + requested_bootstrap,
+                "-Dbootstrap_compiler_sha256=" + requested_sha256,
+                "-Dbootstrap_receipt=" + requested_receipt,
+            ]
             contract.require(
                 not supplied,
                 "Configured bootstrap_compiler differs from BOOTSTRAP_COMPILER; run "
@@ -222,6 +247,12 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
             "Configured bootstrap_compiler must select an absolute predecessor; "
             "see compiler/README.md#source-bootstrap",
         )
+        try:
+            bootstrap.verify(
+                options["bootstrap_compiler"], options["bootstrap_compiler_sha256"], options["bootstrap_receipt"]
+            )
+        except ValueError as error:
+            raise contract.ContractError(str(error)) from error
         if tests:
             registered = {item["name"] for item in introspect("--tests")}
             unknown = sorted(set(tests) - registered)

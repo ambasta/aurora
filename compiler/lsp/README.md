@@ -12,11 +12,12 @@ explicitly with an externally installed `nlohmann_json >= 3.11.3` development
 package and the normal Meson/Ninja tools:
 
 First complete the [source-bootstrap recipe](../README.md#source-bootstrap);
-`P` below selects that independently built predecessor.
+`P`, `SHA` and `RECEIPT` below are the three values printed by reconstruction.
 
 ```sh
 meson setup build/lsp -Dlsp=true \
-  "-Dbootstrap_compiler=$P"
+  "-Dbootstrap_compiler=$P" "-Dbootstrap_compiler_sha256=$SHA" \
+  "-Dbootstrap_receipt=$RECEIPT"
 meson compile -C build/lsp --jobs 1 aurora-lsp lsp-units
 meson test -C build/lsp --no-rebuild --suite lsp --print-errorlogs
 build/lsp/aurora-lsp --module-root "$PWD/library"
@@ -35,7 +36,8 @@ and sysroot only for configuration. For example:
 ```sh
 PKG_CONFIG_PATH="$PREFIX/usr/share/pkgconfig" \
 PKG_CONFIG_SYSROOT_DIR="$PREFIX" meson setup build/lsp -Dlsp=true \
-  "-Dbootstrap_compiler=$P"
+  "-Dbootstrap_compiler=$P" "-Dbootstrap_compiler_sha256=$SHA" \
+  "-Dbootstrap_receipt=$RECEIPT"
 ```
 
 JSON and compiler implementation headers are confined to separate translation

@@ -180,6 +180,8 @@ class DeveloperCommands(unittest.TestCase):
         controls = {
             "MESON_BUILD_DIR": "build/path with spaces;$(do-not-execute)",
             "BOOTSTRAP_COMPILER": "/workspace/build/predecessor with spaces;literal",
+            "BOOTSTRAP_COMPILER_SHA256": "1" * 64,
+            "BOOTSTRAP_RECEIPT": "/workspace/build/receipt with spaces;literal.json",
             "AURORA_BUILD_JOBS": "2",
             "AURORA_TEST_JOBS": "",
         }

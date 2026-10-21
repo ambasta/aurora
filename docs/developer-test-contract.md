@@ -54,12 +54,15 @@ Current compiler source has no C++ expression seed. Select a predecessor built b
 the explicit [source-bootstrap recipe](../compiler/README.md#source-bootstrap),
 or reuse a retained artifact under the
 [bootstrap evolution policy](../compiler/README.md#bootstrap-evolution-policy),
-before using Meson or ordinary Make shortcuts. Current Meson setup checks the
-absolute executable path; Ninja tracks that executable as an input. The deprecated
-`bootstrap_compiler_sha256` option is ignored, not checked before generation.
-Artifact reuse therefore requires explicit digest and source/build/tool provenance
-verification against retained qualification evidence before path selection; no
-automated cache or pin enforcement is implemented yet.
+before using Meson or ordinary Make shortcuts. The checked-in six-source manifest
+pins commit/tree and build options, independently naming the final predecessor
+and historical C++ oracle. Setup requires `bootstrap_compiler`, its mandatory
+`bootstrap_compiler_sha256` and `bootstrap_receipt`. The same receipt/digest checks
+run before predecessor generation, historical-oracle execution and Make
+reconfiguration; Ninja still tracks the executable and receipt as inputs.
+The reconstruction driver reuses a cached artifact only after source/config/tool,
+recorded inputs/logs and executable checks. Its local receipt records provenance,
+not a signed attestation or independent qualification.
 
 All current source-consuming targets link the Aurora frontend. Current C1/C2
 regeneration and corpus checks use the existing bootstrap gate. A digest proves
