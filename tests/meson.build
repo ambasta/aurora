@@ -64,6 +64,12 @@ foreach entry : [
     )
 endforeach
 
+test('volatile-file-source-native', python,
+    args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/volatile_file.py'), aurorac,
+           '--artifacts', '@ARTIFACTS@'],
+    depends: aurorac, suite: ['full', 'dev', 'core', 'bytes', 'compiler'],
+    env: oracle_env, workdir: meson.current_build_dir(), timeout: 120, is_parallel: true)
+
 initialization_facts = executable(
     'initialization-facts',
     'compiler/initialization_facts.cpp',
@@ -371,6 +377,19 @@ test('port-service-source-native', python,
      args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/port_service.py'), aurorac,
             port_service_ir.full_path(), '--artifacts', '@ARTIFACTS@'],
      depends: [aurorac, port_service_ir], suite: ['full', 'slow', 'core', 'compiler'], env: oracle_env,
+     workdir: meson.current_build_dir(), timeout: 300)
+
+# Serve keeps an exact copied two-register result and singleton grant.
+serve_service_ir = executable(
+    'serve-service-ir', 'compiler/serve_service_ir.cpp',
+    dependencies: hosted_frontend,
+    include_directories: include_directories('../compiler'), native: true, install: false,
+)
+test('serve-service-ir', serve_service_ir, suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
+test('serve-service-source-native', python,
+     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/serve_service.py'), aurorac,
+            serve_service_ir.full_path(), '--artifacts', '@ARTIFACTS@'],
+     depends: [aurorac, serve_service_ir], suite: ['full', 'slow', 'core', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
 
 # Event intake retains the existing service loan graph and executes the real

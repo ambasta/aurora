@@ -457,6 +457,18 @@ if get_option('kernel_images')
       depends: kernel_profile_images['uefi/' + mode], suite: ['full', 'slow', 'integration', 'boot'],
       env: native_test_env, workdir: native_root, timeout: 900)
   endforeach
+  foreach mode : ['user-ram-file', 'user-ram-file-fixture']
+    test('native-uefi-' + mode + '-image', python,
+      args: ['-B', files('../../tests/kernel-uefi-image.py'), '--build-dir',
+             meson.project_build_root() / 'kernel-images/uefi' / mode, '--ipc-policy', '--check-only'],
+      depends: kernel_profile_images['uefi/' + mode], suite: ['full', 'slow', 'integration', 'boot'],
+      env: native_test_env, workdir: native_root, timeout: 900)
+  endforeach
+  test('native-uefi-ram-file-linked-image', python,
+      args: ['-B', '-O', files('../../tests/kernel-uefi-user-phases-image.py'), '--ram-file-build-dir',
+             meson.project_build_root() / 'kernel-images/uefi/user-ram-file'],
+      depends: kernel_profile_images['uefi/user-ram-file'], suite: ['full', 'slow', 'integration', 'boot'],
+      env: native_test_env, workdir: native_root, timeout: 900)
   test('native-bios-image', python,
       args: ['-B', files('../../tests/kernel-image.py'), '--build-dir', bios_image_dir, '--check-only'],
       depends: bios_image, suite: ['full', 'slow', 'integration', 'boot'],

@@ -84,7 +84,7 @@ hosted_abi::compiler_parser::AdmissionConfig admissionConfiguration() {
     configuration.console_mask = 1;
     configuration.display_mask = 2;
     configuration.event_mask = 4;
-    configuration.service_groups = service::supportedGroupBitmap();
+    configuration.service_groups = service::supportedGroupBitmap(true, true, true);
     return configuration;
 }
 class ImportedSyntax {
@@ -403,6 +403,9 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             const auto callName = [](const std::string &value) {
                 return value == "CallSession" || value == "CallResult" || value == "CallStatus";
             };
+            const auto serveName = [](const std::string &value) {
+                return value == "ServeSession" || value == "ServeRequest" || value == "ServeStatus";
+            };
             const auto portName = [](const std::string &value) {
                 return value == "PortRange" || value == "PortWriteResult";
             };
@@ -417,6 +420,9 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                 if ((type.tag == TypeSyntaxKind::builtin_type || type.tag == TypeSyntaxKind::builtin_class) &&
                     portName(text(type.name_end)))
                     parsed.portFamily = true;
+                if ((type.tag == TypeSyntaxKind::builtin_type || type.tag == TypeSyntaxKind::builtin_class) &&
+                    serveName(text(type.name_end)))
+                    parsed.serveFamily = true;
             }
             // Enum cases can appear without a declaration/type node, including
             // in an uninstantiated template body.
@@ -433,6 +439,10 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                     node.name_end >= node.token_index + 2 && text(node.token_index) == "builtin" &&
                     text(node.token_index + 1) == "::" && portName(text(node.token_index + 2)))
                     parsed.portFamily = true;
+                if ((node.tag == NodeKind::name || node.tag == NodeKind::call || node.tag == NodeKind::construct) &&
+                    node.name_end >= node.token_index + 2 && text(node.token_index) == "builtin" &&
+                    text(node.token_index + 1) == "::" && serveName(text(node.token_index + 2)))
+                    parsed.serveFamily = true;
             }
             parsed.root = result.root_node;
             parsed.moduleName = name(preamble.token_index, preamble.binding_token);
@@ -855,6 +865,12 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                 value = Type::PortRange;
             else if (builtin == "PortWriteResult")
                 value = service::portWriteResultType();
+            else if (builtin == "ServeSession")
+                value = Type::ServeSession;
+            else if (builtin == "ServeRequest")
+                value = service::serveRequestType();
+            else if (builtin == "ServeStatus")
+                value = service::serveStatusType();
             else if (builtin == "CallSession")
                 value = Type::CallSession;
             else if (builtin == "CallResult")

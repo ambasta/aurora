@@ -28,6 +28,9 @@ runtime-console-region runtime-console-region-cancel runtime-console-region-canc
 runtime-console-region-fault runtime-console-region-output runtime-console-region-budget
 runtime-owned-text runtime-owned-text-site runtime-owned-text-region runtime-owned-text-stale
 user-context user-resume user-call user-call-pending user-call-owner user-call-site
+user-ram-file user-ram-file-service-fault user-ram-file-grant user-ram-file-site user-ram-file-settlement
+user-ram-file-commit-fault user-ram-file-caller-budget user-ram-file-service-budget user-ram-file-abort-budget
+user-ram-file-epochs user-ram-file-pending user-ram-file-frame user-ram-file-root
 user-retire-pending user-request-budget user-completion-budget
 user-request-bounds user-completion-bounds user-request-overflow
 user-completion-overflow user-pending user-role user-phase user-transaction user-epoch

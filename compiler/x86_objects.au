@@ -203,10 +203,15 @@ export namespace compiler_x86 {
             workspace.service_completion("__au_runtime_port_write8", 4, 0);
             return workspace.ok();
         }
-        if (operation == 5) {
+        if (operation == 5 || operation == 8) {
             workspace.line("movq %rax, %rdx");
-            workspace.call_runtime("__au_runtime_call");
-            workspace.service_completion("__au_runtime_call", 3, 2);
+            if (operation == 8) {
+                workspace.call_runtime("__au_runtime_serve_exchange");
+                workspace.service_completion("__au_runtime_serve_exchange", 3, 1);
+            } else {
+                workspace.call_runtime("__au_runtime_call");
+                workspace.service_completion("__au_runtime_call", 3, 2);
+            }
             // The trap returns copied scalars only. Never pass the result address
             // to the kernel, and reject a nonzero value for every failure status.
             workspace.line("xorq %rcx, %rcx");

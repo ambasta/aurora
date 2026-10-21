@@ -376,7 +376,9 @@ complete import graph references `builtin::CallSession`, `builtin::CallResult`
 or `builtin::CallStatus`, including unused templates and enum-case expressions.
 Graphs without those references retain the historical builtin catalogue, IDs,
 ABI facts and emitted reflection output. Comments, strings and user type names
-do not activate it. Registration does not alter per-module visibility.
+do not activate it. Port and Serve are likewise independently syntax-activated
+optional families; their appended identities do not change Serve-free or Port-free
+catalogues. Registration does not alter per-module visibility.
 
 `--referenced-reflection-only` is an explicit closed-image output mode. It emits
 only helpers directly referenced by runtime metadata queries in retained, validated

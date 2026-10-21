@@ -62,13 +62,35 @@ class ProfileMetadata(unittest.TestCase):
 
     def test_no_legacy_clock_admission_or_inherited_receipt(self):
         clock = load("graphical_metadata_clock", "scripts/kernel_emulator_clock.py")
-        self.assertEqual(len(clock.MODE_CLOCKS), 212)
-        self.assertEqual(sum(value == clock.FIXED0 for value in clock.MODE_CLOCKS.values()), 69)
+        ram_modes = {
+            "user-ram-file",
+            "user-ram-file-service-fault",
+            "user-ram-file-grant",
+            "user-ram-file-site",
+            "user-ram-file-frame",
+            "user-ram-file-root",
+            "user-ram-file-settlement",
+            "user-ram-file-commit-fault",
+            "user-ram-file-caller-budget",
+            "user-ram-file-service-budget",
+            "user-ram-file-abort-budget",
+            "user-ram-file-epochs",
+            "user-ram-file-pending",
+        }
+        self.assertEqual(
+            {key for key in clock.MODE_CLOCKS if key[1].startswith("user-ram-file")},
+            {("uefi", mode) for mode in ram_modes},
+        )
+        for mode in ram_modes:
+            self.assertEqual(clock.clock_profile("uefi", mode), clock.FIXED0)
+        self.assertEqual(len(clock.MODE_CLOCKS), 212 + 13)
+        self.assertEqual(sum(value == clock.FIXED0 for value in clock.MODE_CLOCKS.values()), 69 + 13)
         self.assertEqual(clock.clock_profile("uefi", "user-resume"), clock.FIXED0)
         selected = sorted(
             mode
             for (family, mode), value in clock.MODE_CLOCKS.items()
             if value == clock.FIXED0
+            and mode not in ram_modes
             and mode
             not in (
                 "runtime-console-region",

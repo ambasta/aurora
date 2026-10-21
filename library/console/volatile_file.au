@@ -1,0 +1,88 @@
+export module console.volatile_file;
+
+export namespace console {
+    // Decode only the protocol tag. This does not validate a request or confer
+    // authority; the receiver must still check reserved bits, bounds and order.
+    auto volatile_file_tag(u64 word) -> u64 {
+        return word & 255u64;
+    }
+
+    // One unnamed binary file, owned entirely by the containing service local.
+    // The scalar protocol is data, never authority to read or replace the file.
+    class VolatileFile {
+        // Use the same checked inline byte-array storage as BinaryBuffer64,
+        // without importing unrelated codecs into the one-page service image.
+        array<u8, 64> committed;
+        array<u8, 64> staging;
+        i64 length;
+        u64 target;
+        u64 next;
+        u64 mode;
+    public:
+        VolatileFile() : committed{}, staging{}, length(-1), target(0u64), next(0u64), mode(0u64) {
+        }
+
+        // Cancellation is a private continuation result, not a request opcode.
+        // Clear every staging byte, including the unused suffix, before ABORTED.
+        auto cancel() -> u64 {
+            i64 index = 0;
+            while (index < 64) {
+                staging[index] = 0u8;
+                index = index + 1;
+            }
+            target = 0u64;
+            next = 0u64;
+            mode = 0u64;
+            return 7u64;
+        }
+
+        auto request(u64 word) -> u64 {
+            const u64 tag = volatile_file_tag(word);
+            const u64 offset =(word >> 8) & 255u64;
+            if (mode == 0u64 && word == 1u64) {
+                mode = 1u64;
+                return 1u64;
+            }
+            if (mode == 0u64 && tag == 3u64 && word < 65536u64 && offset <= 49u64) {
+                target = offset;
+                mode = 2u64;
+                return 1u64;
+            }
+            if (mode == 1u64 && tag == 2u64 && word < 65536u64 && offset <= 49u64 && offset == next) {
+                if (length < 0 || offset == u64(length)) {
+                    mode = 0u64;
+                    next = 0u64;
+                    if (length < 0) {
+                        return 4u64;
+                    }
+                    return 3u64;
+                }
+                if (offset < u64(length)) {
+                    next = next + 1u64;
+                    return 2u64 | (u64(committed[i64(offset)]) << 8);
+                }
+            }
+            if (mode == 2u64 && tag == 4u64 && word < 16777216u64 && offset == next && next < target) {
+                staging[i64(offset)] = u8(word >> 16);
+                next = next + 1u64;
+                return 1u64;
+            }
+            if (mode == 2u64 && word == 5u64 && next == target) {
+                // No exchange occurs between validation, whole-file publication
+                // and COMMITTED. A fault instead destroys this incarnation.
+                i64 index = 0;
+                while (index < 64) {
+                    committed[index] = staging[index];
+                    index = index + 1;
+                }
+                length = i64(target);
+                cancel();
+                return 5u64;
+            }
+            // Closed encodings, bounds and command order all fail identically.
+            // A rejected staging sequence never changes the committed record.
+            cancel();
+            return 6u64;
+        }
+    };
+}

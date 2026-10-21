@@ -2414,7 +2414,7 @@ extern "C" void aurora_hosted_parser_admit(void *arena, const void *input, void 
     std::memcpy(capturedAdmissionInput.data(), input, sizeof(capturedAdmissionInput));
     require(std::equal(capturedAdmissionInput.begin(), capturedAdmissionInput.begin() + 7, capturedInput.begin()) &&
                 capturedAdmissionInput[7] == static_cast<std::uint64_t>(result[1]) && capturedAdmissionInput[8] == 64 &&
-                capturedAdmissionInput[9] == 512 && capturedAdmissionInput[10] == 65854 &&
+                capturedAdmissionInput[9] == 512 && capturedAdmissionInput[10] == 4295033150ULL &&
                 capturedAdmissionInput[11] == 1 && capturedAdmissionInput[12] == 2 && capturedAdmissionInput[13] == 4,
             "admission changed its copied source/root or canonical layout/service configuration");
     ++admitted;

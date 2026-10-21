@@ -12,7 +12,7 @@ import aurora.compiler.lowering_common;
 
 // A bounded immutable setup contract. It is not a semantic query surface.
 // Row0 reserves diagnostics; row1 has limits/mode; rows2..8 have scalar
-// descriptors; the next five through eight rows hold the exact selected service
+// descriptors; the next five through nine rows hold the exact selected service
 // catalog, followed by initial layout order and then semantic output.
 export namespace compiler_lowering {
     class LoweringConfig {
@@ -54,7 +54,7 @@ export namespace compiler_lowering {
             return serviceGroups;
         }
         auto set_policy(i64 mode, i64 groups) -> bool {
-            if (mode < 0 || mode > 1 || groups < 0 || groups > 2147483647) {
+            if (mode < 0 || mode > 1 || !valid_service_groups(groups)) {
                 return false;
             }
             analysisMode = mode;
@@ -152,7 +152,7 @@ export namespace compiler_lowering {
         return session.fail_storage(compiler_resolver::StorageStatus::invalid);
     }
     // Permanent group-bit identities: legacy groups, optional singleton Call,
-    // optional singleton Port. Selected contract row positions are not IDs.
+    // optional singleton Port and Serve. Selected contract row positions are not IDs.
     auto base_service_groups() -> i64 {
         return 62;
     }
@@ -162,11 +162,17 @@ export namespace compiler_lowering {
     auto port_service_group() -> i64 {
         return 65536;
     }
+    auto serve_service_group() -> i64 {
+        return 4294967296;
+    }
     auto valid_service_groups(i64 groups) -> bool {
         const i64 base = base_service_groups();
         const i64 call = call_service_group();
         const i64 port = port_service_group();
-        return groups == base || groups == base + call || groups == base + port || groups == base + call + port;
+        const i64 serve = serve_service_group();
+        return groups == base || groups == base + call || groups == base + port || groups == base + call + port
+            || groups == base + serve || groups == base + call + serve || groups == base + port + serve || groups
+            == base + call + port + serve;
     }
     auto has_call_service(i64 groups) -> bool {
         const i64 mask = call_service_group();
@@ -174,6 +180,10 @@ export namespace compiler_lowering {
     }
     auto has_port_service(i64 groups) -> bool {
         const i64 mask = port_service_group();
+        return (u64(groups) & u64(mask)) != 0u64;
+    }
+    auto has_serve_service(i64 groups) -> bool {
+        const i64 mask = serve_service_group();
         return (u64(groups) & u64(mask)) != 0u64;
     }
     auto service_contract_count(compiler_resolver::Session& session) -> i64 {
@@ -188,6 +198,9 @@ export namespace compiler_lowering {
         if (has_port_service(groups)) {
             count = count + 2;
         }
+        if (has_serve_service(groups)) {
+            count = count + 1;
+        }
         return count;
     }
     auto selected_operation_id(compiler_resolver::Session& session, i64 ordinal) -> i64 {
@@ -195,10 +208,26 @@ export namespace compiler_lowering {
             return setup_invalid(session);
         }
         const i64 groups = record_signed(session, 1, OperandRole::SupportedServiceGroups);
-        if (ordinal < 5 || has_call_service(groups)) {
+        if (ordinal < 5) {
             return ordinal;
         }
-        return ordinal + 1;
+        i64 next = ordinal - 5;
+        if (has_call_service(groups)) {
+            if (next == 0) {
+                return 5;
+            }
+            next = next - 1;
+        }
+        if (has_port_service(groups)) {
+            if (next < 2) {
+                return 6 + next;
+            }
+            next = next - 2;
+        }
+        if (has_serve_service(groups) && next == 0) {
+            return 8;
+        }
+        return setup_invalid(session);
     }
     auto operation_kind_id(i64 operation) -> i64 {
         if (operation == 0 || operation == 1) {
@@ -215,6 +244,9 @@ export namespace compiler_lowering {
         }
         if (operation == 6 || operation == 7) {
             return 4;
+        }
+        if (operation == 8) {
+            return 5;
         }
         return -1;
     }
@@ -233,6 +265,9 @@ export namespace compiler_lowering {
         }
         if (kind == 4) {
             return compiler_resolver::ResolvedTypeKind::port_range;
+        }
+        if (kind == 5) {
+            return compiler_resolver::ResolvedTypeKind::serve_session;
         }
         return compiler_resolver::ResolvedTypeKind::invalid;
     }
@@ -449,7 +484,7 @@ export namespace compiler_lowering {
         return ordinal + 9;
     }
     auto service_group_supported(compiler_resolver::Session& session, i64 first, i64 second) -> bool {
-        if (first < 0 || first > 4 || second < -1 || second > 4) {
+        if (first < 0 || first > 5 || second < -1 || second > 5) {
             setup_invalid(session);
             return false;
         }

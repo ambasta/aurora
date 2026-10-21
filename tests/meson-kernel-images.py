@@ -4,6 +4,7 @@
 import importlib.util
 from contextlib import contextmanager
 import ctypes
+import hashlib
 import json
 import os
 import shutil
@@ -98,7 +99,7 @@ class GeneratorBoundaries(unittest.TestCase):
         self.assertIn("kernel/uart-policy-entry.S", uart_recipe)
         self.assertLess(recipe.index(selection), recipe.index("language = custom_target"))
         caller_selection = (
-            "if (call_client and name == 'clean') or owned_text\n"
+            "if (call_client and name == 'clean') or owned_text or ram_file\n"
             "        user_root_args += ['--referenced-reflection-only']\n"
             "      endif"
         )
@@ -106,6 +107,8 @@ class GeneratorBoundaries(unittest.TestCase):
             "call_client = combined and '--blocking-call' in profile_data[key + '.user_options'].split('|')",
             recipe,
         )
+        self.assertIn("ram_file = '--ram-file' in profile_data[key + '.user_options'].split('|')", recipe)
+        self.assertEqual(recipe.count("if admission == 'program' or call_client or owned_text or ram_file"), 2)
         user_recipe = recipe[recipe.index("user_root_args = []") :]
         self.assertIn(caller_selection, user_recipe)
         self.assertEqual(user_recipe.count("--referenced-reflection-only"), 1)
@@ -300,7 +303,10 @@ class GeneratorBoundaries(unittest.TestCase):
                         name.startswith(("uefi/runtime-owned-text", "uefi/runtime-console-region")) and index == 0
                     )
                     blocking_call = "-DAURORA_BLOCKING_CALL" in recipe["flags"] and index == 0
-                    self.assertEqual(user["max_pages"], 3 if enabled or owned_text else 2 if blocking_call else 1)
+                    ram_client = name in ("uefi/user-ram-file", "uefi/user-ram-file-fixture") and index == 0
+                    self.assertEqual(
+                        user["max_pages"], 3 if enabled or owned_text else 2 if blocking_call or ram_client else 1
+                    )
                     self.assertEqual(user["base"], 0x10000000000 + index * 16384)
                 else:
                     self.assertNotIn("max_pages", user)
@@ -309,6 +315,43 @@ class GeneratorBoundaries(unittest.TestCase):
         for options in (["--multipage", "--ipc-policy"], ["--owned-bytes", "--multipage"]):
             with self.assertRaises(ValueError):
                 image.image_options(options)
+
+    def test_ram_file_roles_are_exact_and_legacy_profiles_unchanged(self):
+        recipes = profiles.profiles()
+        ram_profiles = {"uefi/user-ram-file", "uefi/user-ram-file-fixture"}
+        self.assertEqual({name for name in recipes if "user-ram-file" in name}, ram_profiles)
+        for name, recipe in recipes.items():
+            ram_file = name in ram_profiles
+            self.assertEqual("-DAURORA_RAM_FILE" in recipe["flags"], ram_file)
+            self.assertEqual("--ram-file" in recipe["user_options"], ram_file)
+            if not ram_file:
+                continue
+            self.assertEqual(recipe["checks"], ["ram-file"])
+            self.assertEqual(recipe["user_options"], ["--service-budget", "--user-budget", "--ram-file"])
+            self.assertNotIn("-DAURORA_BLOCKING_CALL", recipe["flags"])
+            self.assertEqual(tuple(recipe["users"]), ("clean", "bounds"))
+            for role, pages, define, source in (
+                ("clean", 2, "CALL_CLIENT=1", "ram-file-client"),
+                (
+                    "bounds",
+                    1,
+                    "SERVE_SERVICE=1",
+                    "ram-file-service-fixture" if name.endswith("-fixture") else "ram-file-service",
+                ),
+            ):
+                user = recipe["users"][role]
+                self.assertEqual(user["max_pages"], pages)
+                self.assertEqual(user["entry_flags"], ["--defsym", define])
+                self.assertEqual(user["source"], "tests/kernel-programs/" + source + ".au")
+                self.assertEqual(user["entry"], "kernel/uefi/ipc-user-entry.S")
+                self.assertTrue(user["combined"])
+        # Complete canonical records from base 6d12fecd, excluding only the two new profiles.
+        legacy = {name: recipe for name, recipe in recipes.items() if name not in ram_profiles}
+        self.assertEqual(len(legacy), 229)
+        self.assertEqual(
+            hashlib.sha256(json.dumps(legacy, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
+            "bd4b5327b168cbe3a9f6f4322963bedc0a06b21a909ef046f1586187f9be3efc",
+        )
 
     def test_noapic_rejection_is_exact_and_cannot_retain_runtime_authority(self):
         recipes = profiles.profiles()

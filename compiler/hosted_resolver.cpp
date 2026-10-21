@@ -399,6 +399,9 @@ class Projection {
         case ResolvedTypeKind::display_session:
             result = Type::DisplaySession;
             break;
+        case ResolvedTypeKind::serve_session:
+            result = Type::ServeSession;
+            break;
         case ResolvedTypeKind::port_range:
             result = Type::PortRange;
             break;
@@ -1002,8 +1005,9 @@ struct BuiltinCatalog {
                             Type::DisplaySession,
                             Type::IommuEventSession,
                             Type::CallSession,
-                            Type::PortRange};
-    std::array<service::CopiedDefinition, 12> definitions = service::copiedDefinitions();
+                            Type::PortRange,
+                            Type::ServeSession};
+    std::array<service::CopiedDefinition, 14> definitions = service::copiedDefinitions();
     BuiltinCatalog() {
         for (const auto &definition : definitions)
             types.push_back(definition.type);
@@ -1070,7 +1074,7 @@ std::uint64_t resolutionQuota() {
     const auto P = mul(sum({mul(34, N), S, K}), D);
     const auto storage = sum({64, U, textCount, mul(2, Q), P, L, H});
     const auto storageIndexes = sum({U, mul(2, Q), P, N, L, H, mul(2, M)});
-    const auto primitiveKinds = static_cast<std::uint64_t>(ResolvedTypeKind::port_range) + 1;
+    const auto primitiveKinds = static_cast<std::uint64_t>(ResolvedTypeKind::serve_session) + 1;
     const auto types = sum({mul(2, Sx), K, primitiveKinds}), categories = mul(7, M + 1);
     const auto nominals = add(Sx, K), authority = mul(I, nominals);
     const auto semantic = sum({2,
@@ -1356,6 +1360,8 @@ ResolvedTypeKind wireKind(const Type &type) {
         return ResolvedTypeKind::console_session;
     case TypeKind::DisplaySession:
         return ResolvedTypeKind::display_session;
+    case TypeKind::ServeSession:
+        return ResolvedTypeKind::serve_session;
     case TypeKind::PortRange:
         return ResolvedTypeKind::port_range;
     case TypeKind::CallSession:
@@ -1400,7 +1406,7 @@ class HostedResolution::Impl {
             invalidResolution();
         return result;
     }
-    bool callFamily = false, portFamily = false;
+    bool callFamily = false, portFamily = false, serveFamily = false;
     void seed(int extension = 0) {
         const auto add = [&](const Type &type) {
             hosted_abi::ResolverSeedBuiltinInput input;
@@ -1420,6 +1426,8 @@ class HostedResolution::Impl {
                 return 1;
             if (type == Type::PortRange || type == service::portWriteResultType())
                 return 2;
+            if (type == Type::ServeSession || type == service::serveRequestType() || type == service::serveStatusType())
+                return 3;
             return 0;
         };
         for (const auto &type : catalog.types)
@@ -1481,7 +1489,7 @@ class HostedResolution::Impl {
         default:
             invalidResolution();
         }
-        limits.serviceGroups = service::supportedGroupBitmap(callFamily, portFamily);
+        limits.serviceGroups = service::supportedGroupBitmap(callFamily, portFamily, serveFamily);
         if (aurora_hosted_lowering_begin(owner.data(), &configuration) != 1) {
             lowerStorage();
             invalidResolution();
@@ -1500,13 +1508,14 @@ class HostedResolution::Impl {
                 invalidResolution();
             }
         }
-        const auto operationCount = service::operationCount(callFamily, portFamily);
-        if (serviceKinds.size() != service::capabilityTypes.size() - (callFamily ? 0 : 1) - (portFamily ? 0 : 1) ||
+        const auto operationCount = service::operationCount(callFamily, portFamily, serveFamily);
+        if (serviceKinds.size() !=
+                service::capabilityTypes.size() - (callFamily ? 0 : 1) - (portFamily ? 0 : 1) - (serveFamily ? 0 : 1) ||
             serviceSpellings.size() != operationCount)
             invalidResolution();
         std::size_t index = 0;
         for (const auto &operation : service::operations) {
-            if (!service::active(operation.kind, callFamily, portFamily))
+            if (!service::active(operation.kind, callFamily, portFamily, serveFamily))
                 continue;
             const auto kind = std::find(serviceKinds.begin(), serviceKinds.end(), operation.kind);
             if (kind == serviceKinds.end())
@@ -1569,7 +1578,8 @@ class HostedResolution::Impl {
         if (success) {
             lowerStorage();
             if (result.result_reason != lowering::LoweringError::none ||
-                result.root_row < hostedLoweringPrefixRows(callFamily, portFamily) || result.diagnostic_row != 0)
+                result.root_row < hostedLoweringPrefixRows(callFamily, portFamily, serveFamily) ||
+                result.diagnostic_row != 0)
                 invalidResolution();
         } else if ((result.result_status != lowering::LoweringStatus::semantic_failure &&
                     result.result_status != lowering::LoweringStatus::invalid) ||
@@ -1625,6 +1635,7 @@ public:
                 callFamily = true;
             }
             portFamily = portFamily || parsed.portFamily;
+            serveFamily = serveFamily || parsed.serveFamily;
             hosted_abi::ResolverSourceInput input;
             input.source = span(source->text);
             const auto index = aurora_hosted_resolver_append_source(owner.data(), &input);
@@ -1711,6 +1722,8 @@ public:
         // import discovery order. Ingestion only retains admitted syntax.
         if (portFamily)
             seed(2);
+        if (serveFamily)
+            seed(3);
         const auto result = aurora_hosted_resolver_run(owner.data());
         storage();
         const auto final = status();

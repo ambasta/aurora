@@ -949,6 +949,7 @@ def aurora_stack_functions(path, symbols, code, starts, generated_names):
                 "builtin::IommuEventSession",
                 "builtin::CallSession",
                 "builtin::PortRange",
+                "builtin::ServeSession",
             }
             if record is not None:
                 require(
@@ -982,6 +983,7 @@ def aurora_stack_functions(path, symbols, code, starts, generated_names):
                 )
             if record is not None:
                 port = any(row[0] == "builtin::PortRange" for row in record["parameters"])
+                serve = any(row[0] == "builtin::ServeSession" for row in record["parameters"])
                 require(
                     not port
                     or record["parameters"][0] == ["builtin::PortRange", 16]
@@ -990,8 +992,9 @@ def aurora_stack_functions(path, symbols, code, starts, generated_names):
                 )
                 require(
                     port
+                    or serve
                     or ("result_kind" not in record and all(row[0] != "copied_class" for row in record["parameters"])),
-                    "Copied service records require Port",
+                    "Copied service records require singleton Port or Serve",
                 )
             if record is not None and any(row[0] == "builtin::ByteRegion" for row in record["parameters"]):
                 require(
@@ -1004,6 +1007,7 @@ def aurora_stack_functions(path, symbols, code, starts, generated_names):
                 "__au_runtime_display_pixel",
                 "__au_runtime_iommu_event_acknowledge",
                 "__au_runtime_call",
+                "__au_runtime_serve_exchange",
             }
             port_hosts = {
                 "__au_runtime_port_read8": {"sysv_arguments": 3, "result_max": 255},
@@ -1028,14 +1032,27 @@ def aurora_stack_functions(path, symbols, code, starts, generated_names):
                     service_calls["__au_runtime_call"] == {"sysv_arguments": 3, "result_max": 2},
                     "Invalid Call register contract",
                 )
+            if "__au_runtime_serve_exchange" in service_calls:
+                require(
+                    service_calls["__au_runtime_serve_exchange"] == {"sysv_arguments": 3, "result_max": 1},
+                    "Invalid Serve register contract",
+                )
             if record is not None and any(row[0] == "builtin::CallSession" for row in record["parameters"]):
                 require(
                     record["parameters"][0] == ["builtin::CallSession", 16]
                     and all(row == ["scalar", 8] for row in record["parameters"][1:]),
                     "Call requires a singleton leading capability",
                 )
+            if record is not None and any(row[0] == "builtin::ServeSession" for row in record["parameters"]):
+                require(
+                    record["parameters"][0] == ["builtin::ServeSession", 16]
+                    and all(row[0] in ("scalar", "copied_class") for row in record["parameters"][1:]),
+                    "Serve requires a singleton leading capability",
+                )
         if "__au_runtime_call" in fact["calls"]:
             require(service_abi is not None, "Missing Call register contract")
+        if "__au_runtime_serve_exchange" in fact["calls"]:
+            require(service_abi is not None, "Missing Serve register contract")
         if set(fact["calls"]) & {"__au_runtime_port_read8", "__au_runtime_port_write8"}:
             require(service_abi is not None, "Missing Port register contract")
         local, edges = fact["local_bytes"], fact["calls"]

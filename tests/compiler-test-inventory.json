@@ -380,30 +380,6 @@
     "make": true,
     "meson": true,
     "meson_commands": {
-      "emitter-differential-default": {
-        "arguments": [
-          "-B",
-          "@SOURCE@/tests/meson_artifacts.py",
-          "@PYTHON@",
-          "-B",
-          "@SOURCE@/tests/compiler/emitter_differential.py",
-          "--old-compiler",
-          "@PREDECESSOR@",
-          "--new-compiler",
-          "@BUILD@/aurorac-stage2",
-          "--stage1-compiler",
-          "@BUILD@/aurorac",
-          "--source-root",
-          "@SOURCE@",
-          "--artifacts",
-          "@ARTIFACTS@"
-        ],
-        "suites": [
-          "compiler",
-          "full",
-          "slow"
-        ]
-      },
       "emitter-differential-closed": {
         "arguments": [
           "-B",
@@ -421,6 +397,30 @@
           "@SOURCE@",
           "--local-symbols",
           "--referenced-reflection-only",
+          "--artifacts",
+          "@ARTIFACTS@"
+        ],
+        "suites": [
+          "compiler",
+          "full",
+          "slow"
+        ]
+      },
+      "emitter-differential-default": {
+        "arguments": [
+          "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
+          "@SOURCE@/tests/compiler/emitter_differential.py",
+          "--old-compiler",
+          "@PREDECESSOR@",
+          "--new-compiler",
+          "@BUILD@/aurorac-stage2",
+          "--stage1-compiler",
+          "@BUILD@/aurorac",
+          "--source-root",
+          "@SOURCE@",
           "--artifacts",
           "@ARTIFACTS@"
         ],
@@ -1781,6 +1781,35 @@
     "reason": "Complete executable runner; also imported as a helper where applicable.",
     "root_make": true
   },
+  "serve_service.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "meson_commands": {
+      "serve-service-source-native": {
+        "arguments": [
+          "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
+          "-O",
+          "@SOURCE@/tests/compiler/serve_service.py",
+          "@BUILD@/aurorac",
+          "@BUILD@/tests/serve-service-ir",
+          "--artifacts",
+          "@ARTIFACTS@"
+        ],
+        "suites": [
+          "compiler",
+          "core",
+          "full",
+          "slow"
+        ]
+      }
+    },
+    "reason": "Sealed Serve source and independent IR/private ABI execution with hostile status and failure-value checks.",
+    "root_make": true
+  },
   "service_group.py": {
     "kind": "composed-runner",
     "make": false,
@@ -2191,6 +2220,35 @@
       }
     },
     "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "volatile_file.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "meson_commands": {
+      "volatile-file-source-native": {
+        "arguments": [
+          "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
+          "-O",
+          "@SOURCE@/tests/compiler/volatile_file.py",
+          "@BUILD@/aurorac",
+          "--artifacts",
+          "@ARTIFACTS@"
+        ],
+        "suites": [
+          "bytes",
+          "compiler",
+          "core",
+          "dev",
+          "full"
+        ]
+      }
+    },
+    "reason": "Generated-code volatile one-file protocol and privacy rejection runner.",
     "root_make": true
   },
   "xfs_file.py": {

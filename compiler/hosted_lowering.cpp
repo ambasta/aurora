@@ -746,8 +746,9 @@ class Projection {
         std::int64_t layoutRow = -1;
         for (bool call : {false, true})
             for (bool port : {false, true})
-                if (groups == service::supportedGroupBitmap(call, port))
-                    layoutRow = hostedLoweringPrefixRows(call, port) - 1;
+                for (bool serve : {false, true})
+                    if (groups == service::supportedGroupBitmap(call, port, serve))
+                        layoutRow = hostedLoweringPrefixRows(call, port, serve) - 1;
         if (layoutRow < 0)
             invalidLowering();
         if (input.rows.size() <= sizeValue(layoutRow) || input.moduleRoot <= layoutRow)

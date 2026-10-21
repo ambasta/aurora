@@ -4516,11 +4516,19 @@ void rawLinkageCaches() {
 }
 
 void rawCatalogueControls() {
-    context = "exact historical and Call lowering preludes";
+    context = "exact historical and optional Call/Port/Serve lowering preludes";
     namespace Wire = aurora::hosted_abi::compiler_resolver;
     namespace Lowering = aurora::hosted_abi::compiler_lowering;
-    for (const std::int64_t groups : {62, 318}) {
-        const std::int64_t count = groups == 62 ? 5 : 6;
+    for (const std::int64_t groups :
+         std::vector<std::int64_t>{62, 318, 65598, 65854, 4294967358, 4294967614, 4295032894, 4295033150}) {
+        std::vector<std::int64_t> operations{0, 1, 2, 3, 4};
+        if ((groups & 256) != 0)
+            operations.push_back(5);
+        if ((groups & 65536) != 0)
+            operations.insert(operations.end(), {6, 7});
+        if ((groups & (std::int64_t{1} << 32)) != 0)
+            operations.push_back(8);
+        const auto count = static_cast<std::int64_t>(operations.size());
         for (int delta : {-1, 0, 1}) {
             Allocations allocations;
             RawResolution resolution(allocations);
@@ -4556,14 +4564,18 @@ void rawCatalogueControls() {
                                        Wire::ResolvedTypeKind::display_session,
                                        Wire::ResolvedTypeKind::event_session,
                                        Wire::ResolvedTypeKind::event_session,
-                                       Wire::ResolvedTypeKind::call_session};
-            const std::array<std::int64_t, 6> serviceKinds{0, 0, 1, 2, 2, 3};
+                                       Wire::ResolvedTypeKind::call_session,
+                                       Wire::ResolvedTypeKind::port_range,
+                                       Wire::ResolvedTypeKind::port_range,
+                                       Wire::ResolvedTypeKind::serve_session};
+            const std::array<std::int64_t, 9> serviceKinds{0, 0, 1, 2, 2, 3, 4, 4, 5};
             for (std::int64_t at = 0; at < count + delta; ++at) {
                 aurora::hosted_abi::LoweringServiceInput service{};
-                const auto index = static_cast<std::size_t>(std::min(at, count - 1));
+                const auto index =
+                    static_cast<std::size_t>(operations[static_cast<std::size_t>(std::min(at, count - 1))]);
                 service.seed.receiverKind = receivers[index];
                 service.seed.kindId = serviceKinds[index];
-                service.seed.operationId = at;
+                service.seed.operationId = operations[static_cast<std::size_t>(std::min(at, count - 1))];
                 service.seed.spellingSource = name;
                 service.seed.resultType = scalarType.signedValue;
                 const auto accepted = aurora_hosted_lowering_seed_service(resolution.data(), &service);
@@ -4585,7 +4597,21 @@ void rawCatalogueControls() {
             ++cases;
         }
     }
-    for (const std::int64_t groups : {0, 61, 63, 317, 319, 65535}) {
+    for (const std::int64_t groups : std::vector<std::int64_t>{0,
+                                                               54,
+                                                               61,
+                                                               63,
+                                                               317,
+                                                               319,
+                                                               65535,
+                                                               4294967296,
+                                                               4294967357,
+                                                               4294967359,
+                                                               62 | (std::int64_t{1} << 31),
+                                                               62 | (std::int64_t{1} << 33),
+                                                               62 | (std::int64_t{1} << 48),
+                                                               std::numeric_limits<std::int64_t>::max(),
+                                                               -1}) {
         Allocations allocations;
         RawResolution resolution(allocations);
         aurora::hosted_abi::LoweringBeginInput begin{};
@@ -5444,7 +5470,9 @@ void rawInstructionAdmission() {
         {{{release(1)}}}, // No lexical acquisition or completed call is required statically.
         {{{release(1, 1),
            release(INT64_MAX, 2),
-           release(2, 3)}}}, // Closed kinds need no matching entry or live loan here.
+           release(2, 3),
+           release(3, 4),
+           release(4, 5)}}}, // Closed kinds need no matching entry or live loan here.
         {{{acquire(1), release(1), acquire(1)}}},
         {{{acquire(7), acquire(7), acquire(7)}}},
         {{{acquire(1), acquire(1, 32, 1)}}, Reason::service_loan_identity},
@@ -5462,7 +5490,7 @@ void rawInstructionAdmission() {
         services.push_back({{{acquire(id)}}, Reason::service_loan_identity});
         services.push_back({{{release(id)}}, Reason::service_release});
     }
-    for (const auto kind : {std::int64_t{-1}, std::int64_t{5}, INT64_MAX}) {
+    for (const auto kind : {std::int64_t{-1}, std::int64_t{6}, INT64_MAX}) {
         services.push_back({{{acquire(1, 16, kind)}}, Reason::service_loan_root});
         services.push_back({{{release(1, kind)}}, Reason::service_release});
         services.push_back({{{operation(1, kind)}}, Reason::service_operation_kind});
@@ -5471,7 +5499,10 @@ void rawInstructionAdmission() {
         services.push_back({{{acquire(1, offset)}}, Reason::service_loan_root});
         services.push_back({{{operation(1, 0, offset)}}, Reason::service_operation_root});
     }
-    for (const auto op : {INT64_MIN, std::int64_t{-1}, std::int64_t{8}, INT64_MAX})
+    services.push_back({{{acquire(1, 16, 5)}}, Reason::service_loan_root});
+    services.push_back({{{operation(1, 5)}}, Reason::service_operation_kind});
+    services.push_back({{{operation(8, 0)}}, Reason::service_operation_kind});
+    for (const auto op : {INT64_MIN, std::int64_t{-1}, std::int64_t{9}, INT64_MAX})
         services.push_back({{{operation(op, 0)}}, Reason::service_operation});
     for (const auto &[op, kind, offset, reason] :
          std::vector<std::tuple<std::int64_t, std::int64_t, std::int64_t, Reason>>{
@@ -6299,6 +6330,45 @@ void rawAdmission() {
                 "admission ignored its copied scalar limit or supported service-group mask");
         arena.finish();
         require(allocations.successful == allocations.released, "configuration admission leaked an owner");
+        ++cases;
+    }
+    // Raw parser policies may narrow the closed group set, but may not
+    // authorize a new mixed Serve group or an unknown high-bit identity.
+    for (const auto groups : std::vector<std::int64_t>{0,
+                                                       54,
+                                                       62,
+                                                       4294967296,
+                                                       4295033150,
+                                                       -1,
+                                                       1,
+                                                       64,
+                                                       std::int64_t{1} << 31,
+                                                       std::int64_t{1} << 33,
+                                                       std::int64_t{1} << 48,
+                                                       std::int64_t{1} << 62}) {
+        const std::string source = "module admitted;auto f()->u64{return 0u64;}";
+        Allocations allocations;
+        RawArena arena(allocations);
+        const auto parsed = arena.parse(source, Stop::module_definition);
+        require(parsed[0] == wire(Status::success), "raw group fixture failed grammar");
+        const auto result = arena.admit(source, parsed[1], {64, 512, groups, 1, 2, 4});
+        const bool allowed = groups >= 0 && (groups & 4295033150LL) == groups;
+        require(result[0] == wire(allowed ? AdmissionStatus::success : AdmissionStatus::invalid),
+                "parser group policy lost closed full-width admission");
+        arena.finish();
+        require(allocations.successful == allocations.released, "raw group admission leaked an owner");
+        ++cases;
+    }
+    {
+        const std::string source = "module admitted;auto f(builtin::ServeSession& s)->u64{return 0u64;}";
+        Allocations allocations;
+        RawArena arena(allocations);
+        const auto parsed = arena.parse(source, Stop::module_definition);
+        require(parsed[0] == wire(Status::success), "Serve raw group fixture failed grammar");
+        require(arena.admit(source, parsed[1], {64, 512, 4294967296, 1, 2, 4})[0] == wire(AdmissionStatus::success),
+                "exact Serve singleton group bit was narrowed or truncated");
+        arena.finish();
+        require(allocations.successful == allocations.released, "Serve group admission leaked an owner");
         ++cases;
     }
     context = "post-grammar admission scratch growth and every allocation failure";

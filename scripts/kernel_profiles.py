@@ -26,6 +26,21 @@ UEFI_FAMILIES = [
             "-DAURORA_UEFI_IPC",
             "-DAURORA_UEFI_SERVICE_BUDGET",
             "-DAURORA_UEFI_USER_BUDGET",
+            "-DAURORA_RAM_FILE",
+        ],
+        {
+            "user-ram-file": [],
+            "user-ram-file-fixture": ["-DAURORA_RUNTIME_FIXTURE"],
+        },
+    ),
+    (
+        [
+            "-DAURORA_UEFI_ACPI",
+            "-DAURORA_UEFI_PCI",
+            "-DAURORA_UEFI_RUNTIME",
+            "-DAURORA_UEFI_IPC",
+            "-DAURORA_UEFI_SERVICE_BUDGET",
+            "-DAURORA_UEFI_USER_BUDGET",
             "-DAURORA_BLOCKING_CALL",
         ],
         {
@@ -439,6 +454,7 @@ def user_images(
     snapshot=False,
     blocking_call=False,
     file_call=False,
+    ram_file=False,
 ):
     """Exact source/adapter composition; Meson owns every compile/link edge."""
     result = {}
@@ -476,6 +492,8 @@ def user_images(
                 source = "call-client-fixture" if index == 0 else "call-snapshot-service"
             if file_call:
                 source = "call-client" if index == 0 else "file-call-service"
+            if ram_file:
+                source = "ram-file-client" if index == 0 else "ram-file-service"
             entry = "kernel/uefi/ipc-user-entry.S"
             hostile = (index == 0 and mode in ("owner", "stale", "version", "phase", "site", "unknown", "ordinal")) or (
                 index == 1 and mode in ("transaction", "mmio", "softint", "fpu", "context")
@@ -487,8 +505,10 @@ def user_images(
             defines = ["IPC_" + mode.upper().replace("-", "_") + "=1"] if hostile else []
             if user_budget and mode == "context" and index == 0:
                 defines.append("IPC_CLIENT_CONTEXT=1")
-            if blocking_call and index == 0:
+            if (blocking_call or ram_file) and index == 0:
                 defines.append("CALL_CLIENT=1")
+            if ram_file and index == 1:
+                defines.append("SERVE_SERVICE=1")
             if (snapshot or program or blocking_call) and index == 1:
                 defines.append(
                     "SNAPSHOT_SERVICE=1" if snapshot or (blocking_call and not file_call) else "PROGRAM_NOTE_SERVICE=1"
@@ -501,7 +521,9 @@ def user_images(
             base=LAYOUT.user_code + index * LAYOUT.code_stride,
             entry=entry,
             entry_flags=[value for define in defines for value in ("--defsym", define)],
-            combined=((snapshot or program or blocking_call) and index == 1) or (blocking_call and index == 0),
+            combined=ram_file
+            or ((snapshot or program or blocking_call) and index == 1)
+            or (blocking_call and index == 0),
         )
     return result
 
@@ -635,7 +657,8 @@ def uefi_profile(mode, flags):
     budget = mode.startswith(("budget", "dispatch", "user-", "program-")) or owned_text
     file_call = mode.startswith("program-file-call")
     blocking_call = mode.startswith("user-call") or file_call
-    dispatcher = mode.startswith(("dispatch", "user-")) and not blocking_call
+    ram_file = mode in ("user-ram-file", "user-ram-file-fixture")
+    dispatcher = mode.startswith(("dispatch", "user-")) and not (blocking_call or ram_file)
     user_budget = mode.startswith(("user-", "program-"))
     program = mode.startswith("program-")
     snapshot = mode.startswith("snapshot")
@@ -690,6 +713,7 @@ def uefi_profile(mode, flags):
             (snapshot, "--snapshot"),
             (blocking_call, "--blocking-call"),
             (file_call, "--file-call"),
+            (ram_file, "--ram-file"),
         )
         if enabled
     ]
@@ -704,12 +728,15 @@ def uefi_profile(mode, flags):
             snapshot=snapshot,
             blocking_call=blocking_call,
             file_call=file_call,
+            ram_file=ram_file,
         )
         if runtime
         else {}
     )
     if mode == "program-file-call-fixture":
         users["clean"]["source"] = "tests/kernel-programs/call-client-fixture.au"
+    if mode == "user-ram-file-fixture":
+        users["bounds"]["source"] = "tests/kernel-programs/ram-file-service-fixture.au"
     if owned_text:
         users["clean"].update(
             source=(
@@ -728,7 +755,7 @@ def uefi_profile(mode, flags):
         "multipage"
         if "-DAURORA_RUNTIME_MULTIPAGE" in flags
         else "call"
-        if blocking_call
+        if blocking_call or ram_file
         else "owned_text"
         if owned_text
         else "one_page"
@@ -748,15 +775,15 @@ def uefi_profile(mode, flags):
         )
         if owned_text:
             runtime_flags += ["--defsym", "AURORA_OWNED_TEXT=1"]
-        if mode == "user-resume" or blocking_call or console_region:
+        if mode == "user-resume" or blocking_call or ram_file or console_region:
             runtime_flags += ["--defsym", "AURORA_USER_RESUME=1"]
-        if blocking_call:
+        if blocking_call or ram_file:
             runtime_flags += ["--defsym", "AURORA_BLOCKING_CALL=1"]
         assembly["runtime-entry"] = dict(source="kernel/uefi/runtime-entry.S", flags=["--64"] + runtime_flags)
         assembly["runtime-exceptions"] = dict(
             source="kernel/exceptions.S",
             flags=["--64", "--defsym", "AURORA_RELATIVE_ONLY=1"]
-            + (["--defsym", "AURORA_BLOCKING_CALL=1"] if blocking_call else [])
+            + (["--defsym", "AURORA_BLOCKING_CALL=1"] if blocking_call or ram_file else [])
             + (["--defsym", "AURORA_OWNED_TEXT=1"] if owned_text else []),
         )
         runtime_objects = ["runtime-entry", "runtime-exceptions"]
@@ -833,6 +860,7 @@ def uefi_profile(mode, flags):
         + (["snapshot"] if snapshot else [])
         + (["note"] if program else [])
         + (["call"] if blocking_call and not file_call else [])
+        + (["ram-file"] if ram_file else [])
         + (["tables"] if mode.startswith("runtime-table-") else [])
         + (["ivrs"] if mode.startswith("ivrs-") else [])
         + (["nvme"] if mode == "bar-prepare" else [])

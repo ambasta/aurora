@@ -24,7 +24,8 @@ export namespace compiler_resolver {
         event_session,
         owned_values,
         call_session,
-        port_range
+        port_range,
+        serve_session
     };
     enum class DeclarationKind {
         invalid,

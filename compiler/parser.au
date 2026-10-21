@@ -132,6 +132,9 @@ export namespace compiler_parser {
             if (service == 4) {
                 return 16;
             }
+            if (service == 5) {
+                return 32;
+            }
             return 0;
         }
     };
@@ -509,8 +512,11 @@ namespace compiler_parser {
         const array<u8,
             82> names3 = "ByteRegion;OwnedBytes;CallSession;CallResult;CallStatus;PortRange;PortWriteResult;";
         const builtin::span<const u8> words3 = borrow_bytes(names3);
+        const array<u8, 38> names4 = "ServeSession;ServeRequest;ServeStatus;";
+        const builtin::span<const u8> words4 = borrow_bytes(names4);
         return word_list_matches(source, token, words0) || word_list_matches(source, token, words1)
-            || word_list_matches(source, token, words2) || word_list_matches(source, token, words3);
+            || word_list_matches(source, token, words2) || word_list_matches(source, token, words3)
+            || word_list_matches(source, token, words4);
     }
     enum class TypeWord {
         invalid,
@@ -889,7 +895,8 @@ namespace compiler_parser {
                                                 return TypeResult(ParseStatus::expected_array, -1, token);
                                             }
                                             kind = TypeKind::builtin_type;
-                                            const array<u8, 42> samples = "ConsoleSample;IommuEventSample;CallResult;";
+                                            const array<u8,
+                                                55> samples = "ConsoleSample;IommuEventSample;CallResult;ServeRequest;";
                                             const builtin::span<const u8> samples_words = borrow_bytes(samples);
                                             if (word_list_matches(source, token, samples_words)) {
                                                 kind = TypeKind::builtin_class;
@@ -3064,9 +3071,15 @@ namespace compiler_parser {
         if (word_matches(source, token, words, 82, 91)) {
             return AdmissionType(AdmissionKind::service, configuration.service_mask(4), token);
         }
+        const array<u8, 12> serve_name = "ServeSession";
+        const builtin::span<const u8> serve_word = borrow_bytes(serve_name);
+        if (word_matches(source, token, serve_word, 0, 12)) {
+            return AdmissionType(AdmissionKind::service, configuration.service_mask(5), token);
+        }
         const array<u8, 70> enums = "ConsolePutResult;ConsoleCompletion;DisplayPutResult;DisplayCompletion;";
         const array<u8,
-            80> event_enums = "EventPollResult;EventAckResult;EventIntakeCompletion;CallStatus;PortWriteResult;";
+            92> event_enums =
+            "EventPollResult;EventAckResult;EventIntakeCompletion;CallStatus;PortWriteResult;ServeStatus;";
         const builtin::span<const u8> enum_words = borrow_bytes(enums);
         const builtin::span<const u8> event_words = borrow_bytes(event_enums);
         if (word_list_matches(source, token, enum_words) || word_list_matches(source, token, event_words)) {
@@ -3297,21 +3310,27 @@ namespace compiler_parser {
         }
         return admission_done(AdmissionStatus::success, token);
     }
+    // Admission policy may restrict the closed group set. Unlike the lowering
+    // seed catalogue, a subset is intentional (for example disabling a pair).
+    // Only the appended singleton Serve bit is new; mixed/high bits stay closed.
+    auto admission_service_groups(i64 groups) -> bool {
+        return groups >= 0 && (u64(groups) & 4295033150u64) == u64(groups);
+    }
     auto admission_module(AstArena& arena, builtin::span<const u8> source, i64 root,
         AdmissionConfig configuration) -> AdmissionResult {
         if (!arena.ok()) {
             return admission_result(AdmissionStatus::allocation_failure);
         }
         if (root < 0 || root != arena.syntax_size() - 1 || configuration.array_limit(false) < 1
-            || configuration.array_limit(true) < 1 || configuration.groups() < 0 || configuration.groups()
-            > 2147483647) {
+            || configuration.array_limit(true) < 1 || !admission_service_groups(configuration.groups())) {
             return admission_result(AdmissionStatus::invalid);
         }
         u64 masks = 0u64;
         i64 service = 0;
-        while (service < 5) {
+        while (service < 6) {
             const i64 mask = configuration.service_mask(service);
-            if ((mask != 1 && mask != 2 && mask != 4 && mask != 8 && mask != 16) || (masks & u64(mask)) != 0u64) {
+            if ((mask != 1 && mask != 2 && mask != 4 && mask != 8 && mask != 16 && mask != 32) || (masks & u64(mask))
+                != 0u64) {
                 return admission_result(AdmissionStatus::invalid);
             }
             masks = masks | u64(mask);

@@ -1,4 +1,5 @@
 #include "../kernel/ipc-policy.hpp"
+#include "../kernel/uefi/ram-file-policy.hpp"
 #include <array>
 #include <cstdlib>
 #include <iostream>
@@ -534,7 +535,86 @@ auto generation_exhaustion() -> void {
     }
 }
 
+auto retained_file_framing() -> void {
+    using F = aurora::uefi::RamFileFraming;
+    for (unsigned length = 0; length <= 49; ++length) {
+        F write{F::Right::replace};
+        check(!write.permits(1) && !write.permits(5), "RAM write immutable right and begin order");
+        check(write.publish((length << 8) | 3), "RAM bounded replace begin");
+        check(!write.reply(1), "RAM reply requires delivery");
+        check(write.delivered((length << 8) | 3) && !write.delivered((length << 8) | 3), "RAM one-shot delivery");
+        check(write.reply(1) && !write.reply(1), "RAM one-shot begin reply");
+        for (unsigned offset = 0; offset < length; ++offset) {
+            for (unsigned byte = 0; byte < 256; ++byte)
+                check(write.permits((byte << 16) | (offset << 8) | 4), "RAM every binary byte admitted");
+            const auto word = (255U << 16) | (offset << 8) | 4;
+            check(!write.permits(word | (1ULL << 24)) && !write.permits(word + 256), "RAM reserved/order rejection");
+            check(!write.permits(5), "RAM no premature COMMIT");
+            check(write.publish(word) && write.delivered(word) && write.reply(1), "RAM sequential staging framing");
+        }
+        check(write.publish(5) && !write.commit_delivered(), "RAM COMMIT publication not delivery");
+        check(write.delivered(5) && write.commit_delivered() && !write.begin_abort(), "RAM no post-COMMIT abort");
+        check(!write.reply(1) && !write.reply(5 | (1ULL << 63)) && write.reply(5), "RAM exact committed reply");
+        check(write.outcome() == F::Outcome::committed && write.count() == length + 2 && !write.permits(1),
+              "RAM terminal command cannot renew allowance");
+        F read{F::Right::read};
+        check(!read.permits(3) && read.publish(1) && read.delivered(1) && read.reply(1), "RAM read right");
+        for (unsigned offset = 0; offset < length; ++offset) {
+            check(read.publish((offset << 8) | 2) && read.delivered((offset << 8) | 2), "RAM read offset");
+            check(!read.reply(0x10002) && !read.reply(7) && read.reply(0xff02), "RAM bounded binary reply");
+        }
+        check(read.publish((length << 8) | 2) && read.delivered((length << 8) | 2) && read.reply(3), "RAM EOF framing");
+        check(read.count() == length + 2 && read.state() == F::State::terminal, "RAM maximum51 exchanges");
+    }
+    for (const auto word : std::array<std::uint64_t, 6>{0, 6, 50U << 8 | 3U, 1ULL << 63 | 3, 0x10003, UINT64_MAX}) {
+        F bad{F::Right::replace};
+        check(!bad.publish(word) && bad.state() == F::State::fresh && bad.count() == 0, "RAM malformed nonmutation");
+    }
+    F missing{F::Right::read};
+    check(missing.publish(1) && missing.delivered(1) && missing.reply(1) && missing.publish(2) &&
+              missing.delivered(2) && missing.reply(4),
+          "RAM missing permitted only offsetzero");
+    F abort{F::Right::replace};
+    check(abort.publish(259) && abort.delivered(259) && abort.reply(1) && abort.begin_abort(), "RAM precommit abort");
+    check(!abort.permits(3) && !abort.publish(3) && !abort.delivered(3) && !abort.reply(7) &&
+              !abort.acknowledge_abort(0) && !abort.acknowledge_abort(7 | (1ULL << 63)),
+          "RAM abort exclusive private acknowledgement");
+    check(abort.acknowledge_abort(7) && !abort.acknowledge_abort(7) && abort.outcome() == F::Outcome::aborted,
+          "RAM exact ABORTED once");
+    F pending_commit{F::Right::replace};
+    check(pending_commit.publish(3) && pending_commit.delivered(3) && pending_commit.reply(1) &&
+              pending_commit.publish(5) && pending_commit.begin_abort(),
+          "RAM undelivered COMMIT can abort");
+}
+auto retained_file_settlement() -> void {
+    DomainRegistry registry;
+    const auto caller = registry.create(), service = registry.create();
+    check(caller && service, "RAM settlement original owners");
+    Mailbox mailbox{registry};
+    check(mailbox.bind(*caller, *service), "RAM settlement binding");
+    const auto ce = *mailbox.endpoint(*caller), se = *mailbox.endpoint(*service);
+    const auto ticket = mailbox.submit(*caller, Phase::request, ce, Request{5, 0});
+    check(ticket && mailbox.receive(*service, Phase::service, se, *ticket), "RAM COMMIT delivered");
+    bool execution_disabled = true;
+    check(execution_disabled && registry.ready(*caller), "RAM logical disposal retains original handle");
+    check(mailbox.reply(*service, Phase::service, se, *ticket, 5), "RAM committed after caller disposal");
+    check(!mailbox.cancel(Phase::inactive) && !mailbox.consume(*caller, Phase::completion, ce, *ticket + 1),
+          "RAM stale cancellation preserves committed receipt");
+    const auto receipt = mailbox.consume(*caller, Phase::completion, ce, *ticket);
+    check(receipt && receipt->outcome() == Outcome::replied && receipt->value() == 5,
+          "RAM original caller settlement not false cancelled");
+    check(!mailbox.consume(*caller, Phase::completion, ce, *ticket) && mailbox.revoke(Phase::inactive),
+          "RAM settlement once then revoke");
+    check(registry.destroy(*caller) && registry.ready(*service),
+          "RAM physical retirement after settlement preserves service");
+    const auto fresh = registry.create();
+    check(fresh && mailbox.bind(*fresh, *service) && !mailbox.submit(*fresh, Phase::request, ce, Request{1, 0}),
+          "RAM fresh caller cannot inherit revoked endpoint");
+}
+
 auto main() -> int {
+    retained_file_framing();
+    retained_file_settlement();
     lifecycle_and_copies();
     domain_incarnations();
     generation_exhaustion();

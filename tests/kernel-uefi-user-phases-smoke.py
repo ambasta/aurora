@@ -541,7 +541,305 @@ def validate_call(status, text, mode, metadata):
             )
 
 
+RAM_MODES = (
+    "user-ram-file",
+    "user-ram-file-service-fault",
+    "user-ram-file-grant",
+    "user-ram-file-site",
+    "user-ram-file-settlement",
+    "user-ram-file-commit-fault",
+    "user-ram-file-caller-budget",
+    "user-ram-file-service-budget",
+    "user-ram-file-abort-budget",
+    "user-ram-file-epochs",
+    "user-ram-file-pending",
+    "user-ram-file-frame",
+    "user-ram-file-root",
+)
+RAM_SCENARIOS = [0, 1, 2, 3, 4, 7, 4, 15, 4, 16, 2, 5, 6, 8, 9, 13, 14, 10, 14, 11, 14, 12, 14, 5, 6]
+
+
+def ram_scenarios(mode):
+    return {
+        "user-ram-file": RAM_SCENARIOS,
+        "user-ram-file-service-fault": [1, 2, 0, 3, 4, 0],
+        "user-ram-file-commit-fault": [5, 1, 0],
+        "user-ram-file-settlement": [13, 14],
+        "user-ram-file-caller-budget": [13, 1, 14],
+        "user-ram-file-service-budget": [1, 0],
+        "user-ram-file-abort-budget": [7, 0],
+        "user-ram-file-epochs": [13, 1],
+        "user-ram-file-pending": [0],
+    }.get(mode, [])
+
+
+def ram_trace(text, mode, metadata, call_pc, serve_pc):
+    """Parse every authority/IRQ/settlement record against the fixture-owned plan."""
+    lines = text.splitlines()
+    start = next(
+        (
+            i
+            for i, row in enumerate(lines)
+            if row.startswith(
+                (
+                    "AURORA_UEFI_TIMER_",
+                    "AURORA_RAM_FILE",
+                    "AURORA_UEFI_USER_",
+                    "AURORA_UEFI_DOMAIN_",
+                    "AURORA_UEFI_RUNTIME_",
+                )
+            )
+        ),
+        None,
+    )
+    need(start is not None, "RAM missing admitted timer")
+    prefix = "\n".join(lines[:start]) + "\n"
+    budget.firmware_prefix(prefix, "budget")
+    arena = int(re.search(r"AURORA_UEFI_OWNERSHIP_OK: arena=(\d+)", prefix)[1])
+    kernel = arena + LAYOUT.kernel_tables_offset
+    roots = [arena + LAYOUT.tables_offset, arena + LAYOUT.tables_offset + LAYOUT.table_pages * LAYOUT.page_size]
+    records = [row for row in lines[start:] if "AURORA" in row]
+    position = 0
+    compiled_total = 0
+
+    def peek():
+        return records[position] if position < len(records) else ""
+
+    def take(wanted):
+        nonlocal position
+        need(peek() == wanted, "RAM sequence expected " + wanted + "; got " + peek())
+        position += 1
+
+    def run(domain, epoch, source, transaction, remaining):
+        role, phase = ("client", "request") if domain == 0 else ("service", "service")
+        take(
+            f"AURORA_UEFI_USER_RUN: epoch={epoch} role={role} phase={phase} client=0 "
+            f"transaction={transaction} source={source} root={roots[domain]}"
+        )
+        take(f"AURORA_UEFI_TIMER_ARM: epoch={epoch} budget={remaining} root={roots[domain]}")
+
+    def segment(
+        domain, epoch, limit, used=0, compiled=0, terminal=130, probe=False, pending=False, refused=False, denied=False
+    ):
+        nonlocal compiled_total
+        image = metadata["images"][NAMES[domain]]
+
+        def interrupts():
+            nonlocal used, compiled, compiled_total
+            while True:
+                event = re.fullmatch(EVENT, peek())
+                if event is None or int(event[1]) != 64 or int(event[4]) != 3:
+                    break
+                pc = int(event[3])
+                need(
+                    used + 1 < limit and image["entry"] <= pc < image["entry"] + image["size"],
+                    "RAM finite hardware interrupt owned image/allowance",
+                )
+                take(event_line(arena, domain, 64, pc))
+                tick = re.fullmatch(
+                    r"AURORA_UEFI_TIMER_TICK: epoch=(\d+) used=(\d+) remaining=(\d+) pc=(\d+) flags=(\d+)", peek()
+                )
+                need(tick is not None, "RAM hardware IRQ has immediate charge")
+                e, n, left, address, flags = map(int, tick.groups())
+                need(
+                    (e, n, left, address) == (epoch, used + 1, limit - used - 1, pc)
+                    and flags & 0x202 == 0x202
+                    and flags & ~LAYOUT.allowed_user_flags == 0,
+                    "RAM exact IRQ identity, flags and debit",
+                )
+                take(tick[0])
+                used += 1
+                hit = image["compiled_begin"] <= pc < image["compiled_end"]
+                compiled += hit
+                compiled_total += hit
+
+        interrupts()
+        pc = (
+            (call_pc if domain == 0 else serve_pc)
+            if terminal == 130
+            else image["bounds_pc" if terminal == 6 else "return_pc"]
+        )
+        take(event_line(arena, domain, terminal, pc))
+        if denied:
+            reason = (
+                "RAM Serve grant and dormant capacity"
+                if mode.endswith("-grant")
+                else "RAM active exchange authority"
+                if mode.endswith("-root")
+                else "RAM exact role selected exchange site"
+            )
+            take("AURORA_UEFI_RUNTIME_FAIL: " + reason)
+            return used, compiled
+        if terminal == 130:
+            if probe:
+                take(f"AURORA_RAM_FILE_BUDGET_PROBE: role={domain} initial={limit}")
+                used = limit - 1  # Explicit conservative withholding, never an IRQ claim.
+            used += 1
+            need(used <= limit, "RAM boundary within original allowance")
+            take(f"AURORA_RAM_FILE_DEBIT: epoch={epoch} used={used} remaining={limit - used}")
+        if refused:
+            interrupts()
+            take(event_line(arena, domain, 129, image["return_pc"]))
+        if pending:
+            take(f"AURORA_UEFI_TIMER_PENDING: epoch={epoch}")
+        drains = 0
+        while re.fullmatch(EVENT, peek()):
+            event = re.fullmatch(EVENT, peek())
+            vector, error, pc, cpl, root, frame, cr2 = map(int, event.groups())
+            need(
+                (vector, error, cpl, root, cr2) == (64, 0, 0, kernel, 0)
+                and arena + LAYOUT.kernel_stack_bottom
+                <= frame
+                <= arena + LAYOUT.kernel_stack_top - LAYOUT.fault_frame_size
+                and frame % 8 == 0
+                and arena + LAYOUT.kernel_payload_offset + metadata["kernel"]["drain_begin"]
+                <= pc
+                <= arena + LAYOUT.kernel_payload_offset + metadata["kernel"]["drain_end"],
+                "RAM exact kernel drain authority",
+            )
+            take(event[0])
+            take(f"AURORA_UEFI_TIMER_DRAIN: epoch={epoch} root={kernel} ss=16")
+            drains += 1
+        need(not pending or drains > 0, "RAM forced pending must drain")
+        take(
+            f"AURORA_UEFI_TIMER_QUIET: epoch={epoch} ticks={used} drains={drains}"
+            f" compiled={compiled} context=0 root={kernel}"
+        )
+        return used, compiled
+
+    take(f"AURORA_UEFI_TIMER_READY: physical=4276092928 virtual={budget.APIC} id=0 root={kernel}")
+    if mode != "user-ram-file":
+        take("AURORA_FIXTURE_READY")
+    epoch = 1
+    run(1, epoch, 1, 0, 8)
+    denied = mode.endswith(("-grant", "-site", "-frame", "-root"))
+    segment(1, epoch, 8, pending=mode.endswith("-pending"), denied=denied)
+    if denied:
+        need(position == len(records), "RAM authority denial cannot reset or continue")
+        return
+    generation, caller, ticket = 1, 2, 0
+    counts = {
+        0: 2,
+        1: 7,
+        2: 7,
+        3: 5,
+        4: 5,
+        5: 2,
+        6: 2,
+        7: 2,
+        8: 51,
+        9: 51,
+        10: 0,
+        11: 0,
+        12: 0,
+        13: 3,
+        14: 3,
+        15: 2,
+        16: 7,
+    }
+    for index, phase in enumerate(ram_scenarios(mode)):
+        exhausted_caller = index == 1 and mode.endswith(("-caller-budget", "-epochs"))
+        resetting = (
+            (index in (1, 4) and mode.endswith("-service-fault")) or (index == 1 and mode.endswith("-commit-fault"))
+        ) or (index == 0 and mode.endswith(("-service-budget", "-abort-budget")))
+        fault = resetting and mode.endswith(("-service-fault", "-commit-fault"))
+        if exhausted_caller and mode.endswith("-epochs"):
+            epoch = (1 << 64) - 3
+        cleanup, client_epoch = epoch + 1, epoch + 2
+        epoch = client_epoch
+        caller += 1
+        ticket += 1  # Binding mints a fresh endpoint generation, not a transaction.
+        take(f"AURORA_RAM_FILE_BEGIN: phase={phase} service={generation} caller={caller} root={roots[1]}")
+        if exhausted_caller and mode.endswith("-epochs"):
+            take("AURORA_RAM_FILE_EPOCH_PROBE: cleanup=18446744073709551614 ceiling=18446744073709551615")
+        run(0, client_epoch, phase, 0, 128)
+        count = counts[phase]
+        if exhausted_caller or (resetting and not mode.endswith("-commit-fault")):
+            count = 1 if mode.endswith("-epochs") else 2
+        caller_used = caller_compiled = service_used = 0
+        for exchange in range(count):
+            caller_used, caller_compiled = segment(0, client_epoch, 128, caller_used, caller_compiled)
+            ticket += 1
+            if exhausted_caller and mode.endswith("-epochs"):
+                break  # Real publication occurred, but no new service epoch exists.
+            epoch += 1
+            run(1, epoch, 2, ticket, 120 - service_used)
+            last = exchange == count - 1
+            service_used, _ = segment(
+                1,
+                epoch,
+                120,
+                service_used,
+                terminal=6 if fault and last else 130,
+                probe=resetting and mode.endswith("-service-budget") and last,
+            )
+        disposed = mode.endswith("-settlement") and index == 0
+        aborted = phase in (7, 10, 11, 12, 15) or exhausted_caller
+        if not (fault or (resetting and mode.endswith("-service-budget")) or disposed):
+            if exhausted_caller and mode.endswith("-caller-budget"):
+                segment(0, client_epoch, 128, caller_used, caller_compiled, probe=True)
+            elif not (exhausted_caller and mode.endswith("-epochs")):
+                segment(
+                    0,
+                    client_epoch,
+                    128,
+                    caller_used,
+                    caller_compiled,
+                    terminal=130 if phase in (10, 11, 12) else 6 if phase in (15, 16) else 129,
+                    refused=phase in (10, 11, 12),
+                )
+        if aborted:
+            run(1, cleanup, 3, 0, 8)
+            segment(1, cleanup, 8, probe=resetting and mode.endswith("-abort-budget"))
+        if resetting:
+            outcome = "indeterminate" if mode.endswith("-commit-fault") else "reset"
+            take(f"AURORA_RAM_FILE_RESET: outcome={outcome} data_lost=1")
+            epoch += 1
+            generation += 1
+            caller += 2  # Fresh reservation and service owner, before a new caller.
+            run(1, epoch, 1, 0, 8)
+            segment(1, epoch, 8)
+            if mode.endswith("-service-fault"):
+                take(f"AURORA_RAM_FILE_REUSE: generation={generation} pages=4 old_owner_denied=1")
+            continue
+        value = 0 if disposed or exhausted_caller or phase in (15, 16) else 42
+        outcome = "aborted" if aborted else "completed"
+        take(f"AURORA_RAM_FILE_COMMAND: phase={phase} exchanges={count} result={value} outcome={outcome} retained=1")
+        if disposed:
+            take("AURORA_RAM_FILE_SETTLED: caller_disabled=1 committed=1 consumed_once=1 retained=1")
+    take("AURORA_UEFI_RAM_FILE_OK: used=0 volatile=1")
+    take("AURORA_UEFI_LANGUAGE_OK: value=42")
+    take("AURORA_UEFI_OK")
+    need(position == len(records), "RAM duplicate or trailing authority evidence")
+    if mode != "user-ram-file":
+        need(compiled_total > 0, "RAM fixture requires an actual compiled-PC hardware IRQ")
+
+
+def validate_ram_file(status, text, mode, metadata):
+    need(mode in RAM_MODES and type(text) is str, "RAM file exact mode")
+    text = text.replace("\r", "")
+    denied = mode.endswith(("-grant", "-site", "-frame", "-root"))
+    need(type(status) is int and status == (35 if denied else 33), "RAM file process exit")
+    cleaned = copy.deepcopy(metadata)
+    call_pc = cleaned["images"]["clean"].pop("call_pc")
+    serve_pc = cleaned["images"]["bounds"].pop("serve_pc")
+    for name, pc in (("clean", call_pc), ("bounds", serve_pc)):
+        row = cleaned["images"][name]
+        need(type(pc) is int and row["return_pc"] + 4 <= pc < row["compiled_begin"], "RAM exact role trap range")
+        need(
+            pc
+            not in [
+                row[key] for key in ("return_pc", "bounds_pc", "overflow_pc", "division_zero_pc", "shift_count_pc")
+            ],
+            "RAM trap nonalias",
+        )
+    budget.metadata_valid(cleaned, "user-call")
+    ram_trace(text, mode, metadata, call_pc, serve_pc)
+
+
 def validate(status, text, mode, metadata):
+    if mode.startswith("user-ram-file"):
+        return validate_ram_file(status, text, mode, metadata)
     if mode in ("user-call", "user-call-pending", "user-call-owner", "user-call-site"):
         return validate_call(status, text, mode, metadata)
     if mode == "user-resume":
@@ -821,6 +1119,85 @@ def fixtures(client_ticks=True):
         yield mode, 33 if mode in SUCCESS else 35, prefix + "\n".join(rows) + "\n", metadata
 
 
+def ram_receipt_fixture(meta, prefix, denied=None):
+    """Small independent transcript: retained startup, missing read, full scrub."""
+    arena = 0x1000000
+    kernel = arena + LAYOUT.kernel_tables_offset
+    roots = [arena + LAYOUT.tables_offset, arena + LAYOUT.tables_offset + LAYOUT.table_pages * LAYOUT.page_size]
+    service = meta["images"]["bounds"]
+    client = meta["images"]["clean"]
+    rows = [f"AURORA_UEFI_TIMER_READY: physical=4276092928 virtual={budget.APIC} id=0 root={kernel}"]
+
+    def run(domain, epoch, source, transaction, remaining):
+        role, phase = ("client", "request") if domain == 0 else ("service", "service")
+        rows.extend(
+            [
+                f"AURORA_UEFI_USER_RUN: epoch={epoch} role={role} phase={phase} client=0"
+                f" transaction={transaction} source={source} root={roots[domain]}",
+                f"AURORA_UEFI_TIMER_ARM: epoch={epoch} budget={remaining} root={roots[domain]}",
+            ]
+        )
+
+    def quiet(epoch, used, compiled=0, drains=0):
+        rows.append(
+            f"AURORA_UEFI_TIMER_QUIET: epoch={epoch} ticks={used} drains={drains}"
+            f" compiled={compiled} context=0 root={kernel}"
+        )
+
+    def exchange(domain, epoch, used, limit):
+        pc = client["call_pc"] if domain == 0 else service["serve_pc"]
+        rows.extend(
+            [
+                event_line(arena, domain, 130, pc),
+                f"AURORA_RAM_FILE_DEBIT: epoch={epoch} used={used} remaining={limit - used}",
+            ]
+        )
+
+    rows.append("AURORA_FIXTURE_READY")
+    run(1, 1, 1, 0, 8)
+    if denied:
+        rows.extend([event_line(arena, 1, 130, service["serve_pc"]), "AURORA_UEFI_RUNTIME_FAIL: " + denied])
+        return prefix + "\n".join(rows) + "\n"
+    exchange(1, 1, 1, 8)
+    drain_pc = arena + LAYOUT.kernel_payload_offset + meta["kernel"]["drain_begin"]
+    frame = arena + LAYOUT.kernel_stack_top - LAYOUT.fault_frame_size
+    rows.extend(
+        [
+            "AURORA_UEFI_TIMER_PENDING: epoch=1",
+            f"AURORA_UEFI_DOMAIN_EVENT: vector=64 error=0 pc={drain_pc} cpl=0 root={kernel} frame={frame} cr2=0",
+            f"AURORA_UEFI_TIMER_DRAIN: epoch=1 root={kernel} ss=16",
+        ]
+    )
+    quiet(1, 1, drains=1)
+    rows.append(f"AURORA_RAM_FILE_BEGIN: phase=0 service=1 caller=3 root={roots[1]}")
+    run(0, 3, 0, 0, 128)
+    exchange(0, 3, 1, 128)
+    quiet(3, 1)
+    run(1, 4, 2, 2, 120)
+    pc = service["compiled_begin"] + 1
+    rows.extend(
+        [event_line(arena, 1, 64, pc), f"AURORA_UEFI_TIMER_TICK: epoch=4 used=1 remaining=119 pc={pc} flags=514"]
+    )
+    exchange(1, 4, 2, 120)
+    quiet(4, 2, compiled=1)
+    exchange(0, 3, 2, 128)
+    quiet(3, 2)
+    run(1, 5, 2, 3, 118)
+    exchange(1, 5, 3, 120)
+    quiet(5, 3)
+    rows.append(event_line(arena, 0, 129, client["return_pc"]))
+    quiet(3, 2)
+    rows.extend(
+        [
+            "AURORA_RAM_FILE_COMMAND: phase=0 exchanges=2 result=42 outcome=completed retained=1",
+            "AURORA_UEFI_RAM_FILE_OK: used=0 volatile=1",
+            "AURORA_UEFI_LANGUAGE_OK: value=42",
+            "AURORA_UEFI_OK",
+        ]
+    )
+    return prefix + "\n".join(rows) + "\n"
+
+
 def self_test():
     rejected = positives = 0
 
@@ -1020,6 +1397,52 @@ def self_test():
     ):
         changed = "\n".join(row for row in call_text.splitlines() if not row.startswith(prefix))
         reject(33, changed, "user-call", call_meta, "missing caller/peer evidence")
+    ram_meta = copy.deepcopy(call_meta)
+    ram_meta["images"]["bounds"]["serve_pc"] = BASE + LAYOUT.code_stride + 70
+    prefix = next(fixtures())[2].split("AURORA_UEFI_TIMER_READY:")[0]
+    ram_text = ram_receipt_fixture(ram_meta, prefix)
+    validate(33, ram_text, "user-ram-file-pending", ram_meta)
+    positives += 1
+    ram_lines = ram_text.splitlines()
+    start = next(i for i, row in enumerate(ram_lines) if row.startswith("AURORA_UEFI_TIMER_READY:"))
+    for index in range(start, len(ram_lines)):
+        for label, changed in (
+            ("missing", ram_lines[:index] + ram_lines[index + 1 :]),
+            ("duplicate", ram_lines[:index] + [ram_lines[index]] + ram_lines[index:]),
+            ("unknown", ram_lines[:index] + ["AURORA_RAM_FILE_UNKNOWN: value=1"] + ram_lines[index:]),
+        ):
+            reject(33, "\n".join(changed) + "\n", "user-ram-file-pending", ram_meta, "RAM " + label)
+        if index + 1 < len(ram_lines):
+            changed = ram_lines[:index] + [ram_lines[index + 1], ram_lines[index]] + ram_lines[index + 2 :]
+            reject(33, "\n".join(changed) + "\n", "user-ram-file-pending", ram_meta, "RAM reordered authority")
+        for match in re.finditer(r"(?<==)\d+", ram_lines[index]):
+            # IRQ positions and kernel frames may vary within admitted ranges.
+            field = ram_lines[index][: match.start()].rsplit(" ", 1)[-1]
+            value = 0 if field in ("flags=", "pc=", "frame=") else int(match[0]) + 1
+            changed = ram_lines.copy()
+            changed[index] = ram_lines[index][: match.start()] + str(value) + ram_lines[index][match.end() :]
+            reject(33, "\n".join(changed) + "\n", "user-ram-file-pending", ram_meta, "RAM exact numeric authority")
+    for suffix, reason in (
+        ("grant", "RAM Serve grant and dormant capacity"),
+        ("site", "RAM exact role selected exchange site"),
+        ("frame", "RAM exact role selected exchange site"),
+        ("root", "RAM active exchange authority"),
+    ):
+        denied_text = ram_receipt_fixture(ram_meta, prefix, reason)
+        validate(35, denied_text, "user-ram-file-" + suffix, ram_meta)
+        positives += 1
+        reject(
+            35,
+            denied_text + "AURORA_RAM_FILE_RESET: outcome=reset data_lost=1\n",
+            "user-ram-file-" + suffix,
+            ram_meta,
+            "RAM authority failure cannot recover",
+        )
+    for key in ("call_pc", "serve_pc"):
+        changed = copy.deepcopy(ram_meta)
+        name = "clean" if key == "call_pc" else "bounds"
+        changed["images"][name][key] = changed["images"][name]["return_pc"]
+        reject(33, ram_text, "user-ram-file-pending", changed, "RAM role stub alias")
     print(f"PASS: user-phase transcripts {positives} positive and {rejected} negative cases")
 
 

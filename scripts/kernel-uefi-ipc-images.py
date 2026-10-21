@@ -32,6 +32,7 @@ def verify(
     copied_note=False,
     note_entry=None,
     call_entry=None,
+    serve_entry=None,
 ):
     result = _base.verify(
         data,
@@ -44,6 +45,7 @@ def verify(
         copied_note=copied_note,
         note_entry=note_entry,
         call_entry=call_entry,
+        serve_entry=serve_entry,
     )
     need(result["probe_offset"] == 0, "IPC has no address literal authority")
     probe = result["probe_pc"]
@@ -78,6 +80,26 @@ def verify(
         result["call_pc"] = call_pc
     else:
         need(call_pc == call_stub == 0, "Call authority outside singleton client")
+    serve_pc = symbols.get("aurora_serve_return_pc", 0)
+    serve_stub = symbols.get("__au_runtime_serve_exchange", 0)
+    if serve_entry is not None:
+        need(
+            base + 2 <= serve_pc < base + len(blob)
+            and serve_stub == serve_pc - 2
+            and blob[serve_stub - base : serve_pc - base + 1] == b"\xcd\x82\xc3",
+            "Exact INT82 returning Serve stub",
+        )
+        need(
+            all(
+                not (serve_stub < result[k] + 2 and result[k] < serve_pc + 1)
+                for k in ("return_pc", "bounds_pc", "overflow_pc", "division_zero_pc", "shift_count_pc", "probe_pc")
+                if result[k]
+            ),
+            "Serve stub aliases terminal or hostile site",
+        )
+        result["serve_pc"] = serve_pc
+    else:
+        need(serve_pc == serve_stub == 0, "Serve authority outside singleton service")
     return result
 
 
@@ -113,7 +135,16 @@ def validate_composition(
     snapshot=False,
     blocking_call=False,
     file_call=False,
+    ram_file=False,
 ):
+    need(
+        not ram_file
+        or service_budget
+        and user_budget
+        and not any((dispatcher, program_console, snapshot, blocking_call, file_call))
+        and mode == "normal",
+        "RAM file requires its exclusive two-domain timer composition",
+    )
     need(
         not blocking_call
         or service_budget
@@ -139,7 +170,10 @@ def validate_composition(
         not program_console or mode in ("normal", "owner", "ordinal", "unknown", "transaction"),
         "Unsupported protected console mode",
     )
-    need(not user_budget or dispatcher or program_console or blocking_call, "User budgets require dispatcher profile")
+    need(
+        not user_budget or dispatcher or program_console or blocking_call or ram_file,
+        "User budgets require an admitted protected profile",
+    )
     need(not dispatcher or service_budget, "Dispatcher requires service timer profile")
 
 
@@ -165,6 +199,68 @@ def call_entry_abi(facts):
     return symbol
 
 
+def serve_entry_abi(facts):
+    """Bind copied entry/result facts to the independently fixed native ABI."""
+    from bootstrap_frontend import abi_declaration
+
+    def exact(actual, expected, reason):
+        # Unlike Python equality, this also distinguishes booleans from integers.
+        need(json.dumps(actual, sort_keys=True) == json.dumps(expected, sort_keys=True), reason)
+
+    need(type(facts.get("version")) is int and facts["version"] == 2, "Expected current Serve ABI facts v2")
+    symbol, function = abi_declaration(facts, "functions", "aurora_user_main")
+    _, request = abi_declaration(facts, "records", "__au_serve_request")
+    status_name, status = abi_declaration(facts, "enums", "__au_serve_status")
+    exact(
+        status,
+        dict(source_name="__au_serve_status", cases=dict(request=0, cancelled=1)),
+        "Exact Serve status ordinals",
+    )
+    exact(
+        request,
+        dict(
+            source_name="__au_serve_request",
+            size=16,
+            alignment=8,
+            reserved=16,
+            fields=[
+                dict(name="status", offset=0, bytes=8, array_length=0, kind="enum", type_name=status_name),
+                dict(name="value", offset=8, bytes=8, array_length=0, kind="u64"),
+            ],
+        ),
+        "Exact two-register ServeRequest layout",
+    )
+    exact(
+        function,
+        dict(
+            source_name="aurora_user_main",
+            receiver=None,
+            receiver_mutable=None,
+            borrowed_root_count=0,
+            borrowed_roots=[],
+            borrowed_root_abi=dict(
+                kind="none", register=None, tuple_payload_bytes=0, tuple_reserved_bytes=0, saved_root_reserved_bytes=0
+            ),
+            parameter_bytes=16,
+            parameters=[dict(offset=0, bytes=16, kind="service", type_name="builtin::ServeSession")],
+            result=dict(bytes=8, kind="u64"),
+        ),
+        "Exact singleton Serve entry ABI",
+    )
+    return symbol
+
+
+def ram_file_facts(path):
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            need(key not in result, "Duplicate RAM-file fact key")
+            result[key] = value
+        return result
+
+    return json.loads(path.read_text(), object_pairs_hook=unique)
+
+
 def emit_metadata(
     out,
     mode,
@@ -175,9 +271,10 @@ def emit_metadata(
     snapshot=False,
     blocking_call=False,
     file_call=False,
+    ram_file=False,
 ):
     validate_composition(
-        mode, service_budget, dispatcher, user_budget, program_console, snapshot, blocking_call, file_call
+        mode, service_budget, dispatcher, user_budget, program_console, snapshot, blocking_call, file_call, ram_file
     )
     records = {}
     header = ["#pragma once", "#include <array>", "#include <cstddef>", "namespace aurora::uefi::images {"]
@@ -210,6 +307,9 @@ def emit_metadata(
             compiled = abi_function_symbol(json.loads(prefix.with_suffix(".abi.json").read_text()), "aurora_user_main")
         if blocking_call and index == 0:
             compiled = call_entry_abi(json.loads(prefix.with_suffix(".abi.json").read_text()))
+        if ram_file:
+            abi = ram_file_facts(prefix.with_suffix(".abi.json"))
+            compiled = call_entry_abi(abi) if index == 0 else serve_entry_abi(abi)
         meta = verify(
             elf.read_bytes(),
             blob,
@@ -220,8 +320,12 @@ def emit_metadata(
             copied_snapshot=(snapshot or (blocking_call and not file_call)) and index == 1,
             copied_note=program_console and index == 1,
             note_entry=compiled if program_console and index == 1 else None,
-            call_entry=compiled if blocking_call and index == 0 else None,
+            call_entry=compiled if (blocking_call or ram_file) and index == 0 else None,
+            serve_entry=compiled if ram_file and index == 1 else None,
         )
+        if ram_file:
+            need(meta["probe_pc"] == 0, "RAM-file has no hostile-PC authority")
+            ram_file_user_stack(prefix, service=index == 1)
         if service_budget:
             functions = [
                 line.split()
@@ -231,6 +335,8 @@ def emit_metadata(
             need(len(functions) == 1 and functions[0][3] == "FUNC", "Exact compiled function symbol")
             need(int(functions[0][1], 16) == symbols[compiled], "Consistent function entry")
             meta = service_metadata(meta, blob, symbols, int(functions[0][2]), compiled)
+            if ram_file:
+                need(meta["context_begin"] == meta["context_end"] == 0, "RAM-file has no register-probe authority")
         records[name] = meta
         header.append(
             f"inline constexpr std::array<std::byte,{len(blob)}> {name}_bytes = {{"
@@ -361,6 +467,90 @@ def call_stack(directory):
     print("PASS: call linked kernel/IRQ/drain and user stack; kernel peak " + str(result["peak_with_fault_reserve"]))
 
 
+def ram_file_user_stack(prefix, *, service):
+    """Closed role-specific code graph and exact retained-stack entry envelope."""
+    import kernel_stack as stack
+    from kernel_program_console_admission import check_referenced_reflection
+
+    user = stack.Elf(prefix.with_suffix(".elf"))
+    need(not any(symbol.name and not symbol.section for symbol in user.symbols), "RAM-file undefined import")
+    symbols = {symbol.name: symbol for symbol in user.symbols}
+    code, _ = stack.disassemble(user.path)
+    abi = ram_file_facts(prefix.with_suffix(".abi.json"))
+    entry = serve_entry_abi(abi) if service else call_entry_abi(abi)
+    facts = ram_file_facts(prefix.with_suffix(".stack.json"))["functions"]
+    kind = "builtin::ServeSession" if service else "builtin::CallSession"
+    parameters = [[kind, 16]] + ([] if service else [["scalar", 8]] * 3)
+    need(
+        facts[entry]["service_abi"]["record"] == dict(parameters=parameters, result_bytes=8),
+        "Exact RAM-file role entry fact",
+    )
+    host = "__au_runtime_serve_exchange" if service else "__au_runtime_call"
+    need(set(user.functions) == set(facts) | {host}, "Closed RAM-file role function inventory")
+    starts = {symbol.address: name for name, symbol in user.functions.items()}
+    need(len(starts) == len(user.functions), "Ambiguous RAM-file function starts")
+    functions = stack.aurora_stack_functions(prefix.with_suffix(".stack.json"), user.functions, code, starts, facts)
+    stub = user.functions[host]
+    return_symbol = "aurora_serve_return_pc" if service else "aurora_call_return_pc"
+    need(
+        stub.size == 3
+        and symbols[return_symbol].address == stub.address + 2
+        and user.function_bytes(stub) == b"\xcd\x82\xc3"
+        and [(code[stub.address].op, code[stub.address].args), (code[stub.address + 2].op, code[stub.address + 2].args)]
+        == [("int", "$0x82"), ("ret", "")],
+        "Exact linked role-specific exchange stub",
+    )
+    functions[host] = dict(local_peak=8, calls=[], returns=1)
+    check_referenced_reflection(functions, set(facts), bridges={host})
+    # Admission independently checks every handwritten push, record copy, and
+    # transfer. Generated facts account for the call's return address and locals.
+    targets = {symbols[name].address: name for name in ("bad_entry", entry)}
+    wrapper = [
+        (row.op, targets.get(stack.target_of(row)) if row.op in ("call", "jne") else row.args)
+        for address, row in sorted(code.items())
+        if symbols["aurora_program_entry"].address <= address < stub.address
+    ]
+    expected = [("or", f"%{reg},%rax") for reg in ("rbx", "rbp", "r10", "r11", "r12", "r13", "r14", "r15")]
+    expected += [("jne", "bad_entry"), ("cmpq", "$0x0,-0x8(%rsp)"), ("jne", "bad_entry")]
+    expected += [("push", f"%{reg}") for reg in ("rdi", "rdx", "rcx", "r8", "r9")]
+    expected += [("sub", "$0x8,%rsp"), ("mov", "%r9,%rdx")]
+    expected += [("sub", "$0x10,%rsp" if service else "$0x30,%rsp")]
+    copies = (("0x30", ""), ("0x28", "0x8")) if service else (("0x50", ""), ("0x48", "0x8"), ("0x58", "0x10"))
+    for source, target in copies:
+        expected += [("mov", f"{source}(%rsp),%rax"), ("mov", f"%rax,{target}(%rsp)")]
+    if not service:
+        expected += [("mov", "%rsi,0x18(%rsp)"), ("mov", "%r9,0x20(%rsp)")]
+    expected += [("mov", "%rsp,%r11"), ("call", entry)]
+    expected += [("add", "$0x10,%rsp" if service else "$0x30,%rsp"), ("add", "$0x8,%rsp")]
+    expected += [("pop", f"%{reg}") for reg in ("r9", "r8", "rcx", "rdx", "rdi")]
+    expected += [("mov", "$0x1,%esi"), ("int", "$0x81"), ("ud2", ""), ("ud2", "")]
+    need(wrapper == expected, "Exact RAM-file role wrapper record/envelope and stack depth")
+    for name in functions:
+        stack.calculate(functions, name)
+    result = stack.calculate(functions, entry)
+    need(host in result["closure"], "RAM-file role must execute its exchange operation")
+    result["peak_with_wrapper"] = (64 if service else 96) + result["peak"]
+    need(result["peak_with_wrapper"] <= stack.STACK_CAP, "RAM-file user stack reserve")
+    return result
+
+
+def ram_file_stack(directory):
+    import kernel_stack as stack
+
+    graph = stack.image_stack_graph(directory, ("payload", "acpi", "pci", "runtime"), ROOT, protected=True)
+    result = stack.service_discovery_stack(graph)
+    linked = graph["linked"]
+    site = next(s.address for s in linked.symbols if s.name == "uefi_service_drain_begin")
+    owner = next(n for n, s in linked.functions.items() if s.address <= site < s.address + s.size)
+    result["drain"] = stack.calculate(graph["functions"], "uefi_payload_entry", target=owner)
+    result["drain_irq_fault_peak"] = result["drain"]["peak"] + result["irq_dispatch"]["peak_with_entry"] + 512
+    need(result["drain_irq_fault_peak"] <= stack.STACK_CAP, "RAM-file drain interrupt/fault reserve")
+    result["user"] = ram_file_user_stack(directory / "user-clean", service=False)
+    result["service"] = ram_file_user_stack(directory / "user-bounds", service=True)
+    (directory / "ram-file-stack.json").write_text(json.dumps(result, indent=2) + "\n")
+    print("PASS: RAM-file linked kernel/IRQ/drain and role-specific user stack admission")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", default="build/uefi")
@@ -394,10 +584,16 @@ if __name__ == "__main__":
     parser.add_argument("--snapshot", action="store_true")
     parser.add_argument("--blocking-call", action="store_true")
     parser.add_argument("--file-call", action="store_true")
+    parser.add_argument("--ram-file", action="store_true")
     parser.add_argument("--call-stack", action="store_true")
+    parser.add_argument("--ram-file-stack", action="store_true")
     args = parser.parse_args()
     if args.call_stack:
+        need(not args.ram_file_stack, "Select one stack profile")
         call_stack(Path(args.output).resolve())
+        raise SystemExit(0)
+    if args.ram_file_stack:
+        ram_file_stack(Path(args.output).resolve())
         raise SystemExit(0)
     emit_metadata(
         Path(args.output).resolve(),
@@ -409,4 +605,5 @@ if __name__ == "__main__":
         args.snapshot,
         args.blocking_call,
         args.file_call,
+        args.ram_file,
     )

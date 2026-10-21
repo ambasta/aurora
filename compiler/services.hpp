@@ -12,7 +12,8 @@ enum class Kind {
     Display,
     IommuEvent,
     Call,
-    Port
+    Port,
+    Serve
 };
 enum class Operation {
     Next,
@@ -22,13 +23,15 @@ enum class Operation {
     IommuAcknowledge,
     Call,
     PortRead8,
-    PortWrite8
+    PortWrite8,
+    ServeExchange
 };
 inline const std::array capabilityTypes{std::pair{Kind::Console, Type::ConsoleSession},
                                         std::pair{Kind::Display, Type::DisplaySession},
                                         std::pair{Kind::IommuEvent, Type::IommuEventSession},
                                         std::pair{Kind::Call, Type::CallSession},
-                                        std::pair{Kind::Port, Type::PortRange}};
+                                        std::pair{Kind::Port, Type::PortRange},
+                                        std::pair{Kind::Serve, Type::ServeSession}};
 inline Kind kind(const Type &type) {
     for (const auto &[identity, candidate] : capabilityTypes)
         if (candidate == type)
@@ -44,10 +47,11 @@ inline Type capabilityType(Kind kind) {
 inline bool supportedGroup(const std::set<Kind> &kinds) {
     return kinds == std::set<Kind>{Kind::Console} || kinds == std::set<Kind>{Kind::Display} ||
            kinds == std::set<Kind>{Kind::IommuEvent} || kinds == std::set<Kind>{Kind::Call} ||
-           kinds == std::set<Kind>{Kind::Port} || kinds == std::set<Kind>{Kind::Console, Kind::Display} ||
+           kinds == std::set<Kind>{Kind::Port} || kinds == std::set<Kind>{Kind::Serve} ||
+           kinds == std::set<Kind>{Kind::Console, Kind::Display} ||
            kinds == std::set<Kind>{Kind::Console, Kind::IommuEvent};
 }
-inline std::int64_t supportedGroupBitmap(bool includeCall = true, bool includePort = true) {
+inline std::int64_t supportedGroupBitmap(bool includeCall = true, bool includePort = true, bool includeServe = false) {
     std::int64_t result = 0;
     for (unsigned mask = 0; mask < (1U << capabilityTypes.size()); ++mask) {
         std::set<Kind> group;
@@ -55,7 +59,7 @@ inline std::int64_t supportedGroupBitmap(bool includeCall = true, bool includePo
             if (mask & (1U << index))
                 group.insert(capabilityTypes[index].first);
         if ((includeCall || !group.contains(Kind::Call)) && (includePort || !group.contains(Kind::Port)) &&
-            supportedGroup(group))
+            (includeServe || !group.contains(Kind::Serve)) && supportedGroup(group))
             result |= std::int64_t{1} << mask;
     }
     return result;
@@ -78,11 +82,14 @@ inline Type eventAckResultType();
 inline Type callResultType();
 inline Type callStatusType();
 inline Type portWriteResultType();
+inline Type serveRequestType();
+inline Type serveStatusType();
 inline Type portReadType() {
     return Type::U8;
 }
-inline constexpr bool active(Kind kind, bool includeCall, bool includePort) {
-    return (kind != Kind::Call || includeCall) && (kind != Kind::Port || includePort);
+inline constexpr bool active(Kind kind, bool includeCall, bool includePort, bool includeServe = false) {
+    return (kind != Kind::Call || includeCall) && (kind != Kind::Port || includePort) &&
+           (kind != Kind::Serve || includeServe);
 }
 class OperationDescription {
 public:
@@ -118,11 +125,12 @@ inline constexpr std::array operations{
     OperationDescription{Kind::Call, Operation::Call, "call", callResultType, {TypeKind::U64}, 1},
     OperationDescription{Kind::Port, Operation::PortRead8, "read8", portReadType, {TypeKind::U64}, 1},
     OperationDescription{
-        Kind::Port, Operation::PortWrite8, "write8", portWriteResultType, {TypeKind::U64, TypeKind::U8}, 2}};
-inline constexpr std::size_t operationCount(bool includeCall, bool includePort = false) {
+        Kind::Port, Operation::PortWrite8, "write8", portWriteResultType, {TypeKind::U64, TypeKind::U8}, 2},
+    OperationDescription{Kind::Serve, Operation::ServeExchange, "exchange", serveRequestType, {TypeKind::U64}, 1}};
+inline constexpr std::size_t operationCount(bool includeCall, bool includePort = false, bool includeServe = false) {
     std::size_t count = 0;
     for (const auto &entry : operations)
-        if (active(entry.kind, includeCall, includePort))
+        if (active(entry.kind, includeCall, includePort, includeServe))
             ++count;
     return count;
 }
@@ -192,11 +200,22 @@ inline Type portWriteResultType() {
     result.displayName = "builtin::PortWriteResult";
     return result;
 }
+inline Type serveRequestType() {
+    Type result{std::string("__au_serve_request")};
+    result.displayName = "builtin::ServeRequest";
+    return result;
+}
+inline Type serveStatusType() {
+    Type result = Type::enumeration("__au_serve_status");
+    result.displayName = "builtin::ServeStatus";
+    return result;
+}
 inline bool copiedType(const Type &type) {
-    return type == portWriteResultType() || type == sampleType() || type == putResultType() ||
-           type == completionType() || type == displayPutResultType() || type == displayCompletionType() ||
-           type == eventSampleType() || type == callResultType() || type == callStatusType() ||
-           type == eventPollResultType() || type == eventAckResultType() || type == eventIntakeCompletionType();
+    return type == serveRequestType() || type == serveStatusType() || type == portWriteResultType() ||
+           type == sampleType() || type == putResultType() || type == completionType() ||
+           type == displayPutResultType() || type == displayCompletionType() || type == eventSampleType() ||
+           type == callResultType() || type == callStatusType() || type == eventPollResultType() ||
+           type == eventAckResultType() || type == eventIntakeCompletionType();
 }
 // Canonical copied service data, shared by descriptor seeding and existing
 // semantic helpers. The source type helpers above retain identity authority.
@@ -206,7 +225,7 @@ public:
     std::vector<std::pair<std::string, Type>> fields;
     std::vector<std::string> cases;
 };
-inline std::array<CopiedDefinition, 12> copiedDefinitions() {
+inline std::array<CopiedDefinition, 14> copiedDefinitions() {
     return {
         CopiedDefinition{sampleType(), {{"byte_present", Type::Bool}, {"byte", Type::U8}, {"damaged", Type::Bool}}, {}},
         CopiedDefinition{putResultType(), {}, {"success", "timeout"}},
@@ -230,6 +249,8 @@ inline std::array<CopiedDefinition, 12> copiedDefinitions() {
                           "output_failure"}},
         CopiedDefinition{callResultType(), {{"status", callStatusType()}, {"value", Type::U64}}, {}},
         CopiedDefinition{callStatusType(), {}, {"replied", "cancelled", "rejected"}},
-        CopiedDefinition{portWriteResultType(), {}, {"issued"}}};
+        CopiedDefinition{portWriteResultType(), {}, {"issued"}},
+        CopiedDefinition{serveRequestType(), {{"status", serveStatusType()}, {"value", Type::U64}}, {}},
+        CopiedDefinition{serveStatusType(), {}, {"request", "cancelled"}}};
 }
 } // namespace aurora::service

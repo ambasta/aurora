@@ -162,8 +162,9 @@ foreach profile_id : profile_data['profiles'].split('|')
       combined = profile_data[user_key + '.combined'] == '1'
       owned_text = '--owned-text' in image_options and name == 'clean'
       call_client = combined and '--blocking-call' in profile_data[key + '.user_options'].split('|')
+      ram_file = '--ram-file' in profile_data[key + '.user_options'].split('|')
       # Closed callers and owned text have independently checked linked graphs.
-      if (call_client and name == 'clean') or owned_text
+      if (call_client and name == 'clean') or owned_text or ram_file
         user_root_args += ['--referenced-reflection-only']
       endif
       if owned_text
@@ -171,7 +172,7 @@ foreach profile_id : profile_data['profiles'].split('|')
       endif
       user_outputs = ['user-' + name + '.s', 'user-' + name + '.stack.json']
       user_dependencies = compiler_files
-      if admission == 'program' or call_client or owned_text
+      if admission == 'program' or call_client or owned_text or ram_file
         user_outputs += ['user-' + name + '.abi.json']
         user_root_args += ['--abi-facts', '@OUTPUT2@']
         if combined
@@ -186,7 +187,7 @@ foreach profile_id : profile_data['profiles'].split('|')
         command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
                   '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--depfile', '@DEPFILE@'] + user_root_args)
       aurora_facts += [user_assembly[1]]
-      if admission == 'program' or call_client or owned_text
+      if admission == 'program' or call_client or owned_text or ram_file
         aurora_facts += [user_assembly[2]]
       endif
       entry_flags_text = profile_data[user_key + '.entry_flags']
@@ -359,6 +360,12 @@ foreach profile_id : profile_data['profiles'].split('|')
           output: 'call-stack.json', build_subdir: output_subdir,
           depend_files: validation_dependencies,
           command: [python, '-B', files('../scripts/kernel-uefi-ipc-images.py'), '--output', output_dir, '--call-stack'])]
+      endif
+      if check == 'ram-file'
+        checks += [custom_target(prefix + '-ram-file-stack', input: [elf, binary, user_metadata] + user_inputs + native_exports + aurora_facts,
+          output: 'ram-file-stack.json', build_subdir: output_subdir,
+          depend_files: validation_dependencies,
+          command: [python, '-B', files('../scripts/kernel-uefi-ipc-images.py'), '--output', output_dir, '--ram-file-stack'])]
       endif
       if check in ['snapshot', 'note']
         checks += [custom_target(prefix + '-user-abi', input: user_inputs + [user_metadata] + aurora_facts,

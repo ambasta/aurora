@@ -36,6 +36,7 @@ public:
     bool interfaceUnit = false;
     bool callFamily = false;
     bool portFamily = false;
+    bool serveFamily = false;
     std::vector<Token> imports;
     std::vector<std::int64_t> importSyntax;
 };
