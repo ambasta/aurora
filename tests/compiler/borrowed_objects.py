@@ -839,6 +839,198 @@ __au_runtime_bytes_test_entry:
     suite.run(exe, 4, 4, 1, 42, 3, 2, fail_after=3, release_order=[1, 2, 3])
 
 
+def bounded_root_facts(suite, executable):
+    """Bind the adapter to real emitted roots, independently of fixed host entries."""
+    if executable is None:
+        return  # The explicitly partial smoke profile omits this program.
+    import sys
+    from copy import deepcopy
+
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from bootstrap_frontend import abi_declaration, normalize_function_abi
+
+    output = executable.parent / "roots.abi.json"
+    result = owned_bytes.command(
+        [
+            suite.compiler,
+            *suite.module_args,
+            executable.parent / "input.au",
+            "--abi-facts",
+            output,
+            "-o",
+            executable.parent / "roots.s",
+        ]
+    )
+    require(result.returncode == 0, f"bounded root facts emission failed: {result.stderr.decode()}")
+    facts = json.loads(output.read_text())
+    pristine = deepcopy(facts)
+    accepted, rejected = [], []
+    owner, _ = abi_declaration(facts, "records", "std::ByteBuffer")
+    copied, _ = abi_declaration(facts, "records", "Count")
+    for count in range(1, 4):
+        for mutable in range(min(count, 2) + 1):
+            for tail in range(7 - count):
+                for prefix in ("", "forward_"):
+                    source = f"{prefix}roots_{count}_{mutable}_{tail}"
+                    _, function = abi_declaration(facts, "functions", source)
+                    require(
+                        function["borrowed_roots"]
+                        == [dict(ordinal=i, selector=-i, type_name=owner, mutable=i < mutable) for i in range(count)],
+                        f"emitted root authority/order differs: {source}",
+                    )
+                    require(function["borrowed_root_count"] == count, f"emitted root count differs: {source}")
+                    require(
+                        function["borrowed_root_abi"]
+                        == dict(
+                            kind="direct" if count == 1 else "tuple",
+                            register="r10",
+                            tuple_payload_bytes=8 * count if count > 1 else 0,
+                            tuple_reserved_bytes=16 * ((count + 1) // 2) if count > 1 else 0,
+                            saved_root_reserved_bytes=16 * ((count + 1) // 2),
+                        ),
+                        f"emitted root transport differs: {source}",
+                    )
+                    require(
+                        normalize_function_abi(facts, function) == function, f"root normalization differs: {source}"
+                    )
+                    accepted.append(source)
+    # Also preserve real zero-root functions, methods and single-root copied tails.
+    for function in facts["functions"].values():
+        require(normalize_function_abi(facts, function) == function, "existing emitted ABI normalization differs")
+
+    _, triple = abi_declaration(facts, "functions", "roots_3_2_1")
+
+    def reject(label, mutation, expected):
+        function = deepcopy(triple)
+        mutation(function)
+        try:
+            normalize_function_abi(facts, function)
+        except ValueError as error:
+            require(str(error) == expected, f"{label} failed the wrong guard: {error}")
+            rejected.append(dict(case=label, guard=expected))
+            return
+        raise AssertionError("unsafe bounded root facts accepted: " + label)
+
+    lane_error = "invalid compiler ABI borrowed root lane"
+    for lane in range(3):
+        for key, value in (
+            ("ordinal", 4),
+            ("ordinal", False),
+            ("selector", -6),
+            ("selector", False),
+            ("type_name", 1),
+            ("type_name", "missing-root"),
+            ("type_name", copied),
+            ("mutable", 1),
+            ("extra", 0),
+        ):
+            reject(
+                f"lane {lane} {key}={value!r}",
+                lambda f, lane=lane, key=key, value=value: f["borrowed_roots"][lane].__setitem__(key, value),
+                lane_error,
+            )
+        reject(
+            f"lane {lane} missing selector", lambda f, lane=lane: f["borrowed_roots"][lane].pop("selector"), lane_error
+        )
+        reject(
+            f"lane {lane} not a record", lambda f, lane=lane: f["borrowed_roots"].__setitem__(lane, None), lane_error
+        )
+    for label, mutate in (
+        ("const then mutable", lambda f: f["borrowed_roots"][0].__setitem__("mutable", False)),
+        ("third mutable", lambda f: f["borrowed_roots"][2].__setitem__("mutable", True)),
+        (
+            "nonleading mutable",
+            lambda f: (
+                f["borrowed_roots"][1].__setitem__("mutable", False),
+                f["borrowed_roots"][2].__setitem__("mutable", True),
+            ),
+        ),
+        ("reversed lanes", lambda f: f["borrowed_roots"].reverse()),
+    ):
+        reject(label, mutate, lane_error)
+    # All builtin lane metadata is otherwise valid: reject the mixture itself,
+    # not an unknown key, missing descriptor, bad element or unknown record.
+    reject(
+        "builtin mixed with concrete owners",
+        lambda f: f["borrowed_roots"].__setitem__(
+            1,
+            dict(
+                ordinal=1,
+                selector=-1,
+                mutable=True,
+                type_name="builtin::OwnedValues",
+                kind="owned_values",
+                element_type_name=copied,
+                descriptor_bytes=32,
+            ),
+        ),
+        "invalid compiler ABI borrowed typed buffer",
+    )
+    for label, mutate in (
+        ("boolean count", lambda f: f.__setitem__("borrowed_root_count", True)),
+        ("missing lane", lambda f: f["borrowed_roots"].pop()),
+        (
+            "four complete lanes",
+            lambda f: (
+                f["borrowed_roots"].append(dict(ordinal=3, selector=-3, type_name=owner, mutable=False)),
+                f.__setitem__("borrowed_root_count", 4),
+                f["borrowed_root_abi"].update(tuple_payload_bytes=32),
+            ),
+        ),
+    ):
+        reject(label, mutate, "invalid compiler ABI borrowed root count")
+    reject(
+        "method receiver collision",
+        lambda f: f.update(receiver=owner, receiver_mutable=True),
+        "borrowed roots cannot also grant a method receiver",
+    )
+    reject(
+        "receiver flag without receiver",
+        lambda f: f.update(receiver_mutable=True),
+        "invalid compiler ABI receiver facts",
+    )
+    for key, value in (
+        ("kind", "direct"),
+        ("register", "r11"),
+        ("tuple_payload_bytes", 16),
+        ("tuple_reserved_bytes", 16),
+        ("saved_root_reserved_bytes", 16),
+        ("extra", 0),
+    ):
+        reject(
+            f"transport {key}",
+            lambda f, key=key, value=value: f["borrowed_root_abi"].__setitem__(key, value),
+            "invalid compiler ABI borrowed root transport",
+        )
+    for shape in (
+        dict(kind="class", type_name=copied, bytes=facts["records"][copied]["reserved"]),
+        dict(kind="span", bytes=facts["span_bytes"]),
+        dict(kind="region", bytes=8),
+        dict(kind="owner", bytes=32),
+    ):
+        reject(
+            f"non-scalar tail {shape['kind']}",
+            lambda f, shape=shape: f.update(parameters=[dict(offset=0, **shape)], parameter_bytes=shape["bytes"]),
+            "invalid compiler ABI borrowed root tail",
+        )
+        reject(
+            f"non-scalar result {shape['kind']}",
+            lambda f, shape=shape: f.update(result=shape),
+            "invalid compiler ABI borrowed root tail",
+        )
+    reject(
+        "seventh parameter",
+        lambda f: f.update(parameters=[dict(offset=8 * i, bytes=8, kind="i64") for i in range(4)], parameter_bytes=32),
+        "invalid compiler ABI borrowed root tail",
+    )
+    require(facts == pristine, "bounded root mutations changed emitted facts")
+    require(len(accepted) == 78 and len(rejected) == 58, "bounded root ABI case inventory changed")
+    (executable.parent / "roots-validation.json").write_text(
+        json.dumps(dict(accepted=accepted, rejected=rejected), indent=2) + "\n"
+    )
+    print("PASS 78 emitted root/forward/tail shapes and 58 isolated malformed root guards")
+
+
 def bounded_borrowing_cases(suite):
     """One compact real program crosses every prefix/tail boundary and forwards it."""
     definitions = [HELPERS, "enum class RootMode { zero, one };"]
@@ -882,6 +1074,7 @@ def bounded_borrowing_cases(suite):
     body += f"if (flag == 1 && roots_growth({actuals})) {{ return 0; }}"
     body += "".join(f"if (v{index}.capacity() != n || v{index}.size() != 0) {{ return 0; }}" for index in range(3))
     executable = suite.compile("bounded-roots-one-through-three", program(body + "return 42;", "".join(definitions)))
+    bounded_root_facts(suite, executable)
     for length in (0, 2):
         suite.run(executable, 3 * length, length, 0, 42, 3, 3)
         suite.run(executable, 3 * length, length, 1, 42, 3, 3, fail_after=3)
@@ -1458,6 +1651,8 @@ def main():
     inputs = {path: path.read_bytes() for path in (ROOT / "library").rglob("*.au")}
     for path in (
         Path(__file__).resolve(),
+        ROOT / "scripts/bootstrap_frontend.py",
+        ROOT / "scripts/frontend_bridge.py",
         ROOT / "tests/compiler/byte_buffer.py",
         ROOT / "tests/compiler/owned_bytes.py",
         ROOT / "tests/compiler/unsigned_oracle.py",
