@@ -194,6 +194,8 @@ class ClockContractTests(unittest.TestCase):
         # Protected-console profiles share the budget machinery but run through
         # the separate original-clock PTY route, not the fixed-clock smoke map.
         protected_modes = {
+            "ram-scratchpad-console",
+            "ram-scratchpad-console-fixture",
             "program-console",
             "program-file-call",
             "program-file-call-fault",
@@ -212,14 +214,23 @@ class ClockContractTests(unittest.TestCase):
         }
         admitted = []
         protected = []
+        scratchpad_modes = set()
         for common, variants in profiles.UEFI_FAMILIES:
             for mode, extra in variants.items():
                 flags = common + extra
                 if "-DAURORA_UEFI_SERVICE_BUDGET" in flags:
                     modes = [name for name, (image, _) in profiles.FIXTURE_MODES.items() if image == mode] or [mode]
                     admitted.extend(modes)
-                    if "-DAURORA_UEFI_PROGRAM_CONSOLE" in flags:
+                    if "-DAURORA_RAM_SCRATCHPAD_CONSOLE" in flags:
+                        scratchpad_modes.update(modes)
+                    if "-DAURORA_UEFI_PROGRAM_CONSOLE" in flags or "-DAURORA_RAM_SCRATCHPAD_CONSOLE" in flags:
                         protected.extend(modes)
+        self.assertEqual(scratchpad_modes, {"ram-scratchpad-console", "ram-scratchpad-console-fixture"})
+        for mode in scratchpad_modes:
+            self.assertNotIn(("uefi", mode), CLOCK.MODE_CLOCKS)
+            self.assertNotIn(("uefi", mode), CLOCK.AUXILIARY_CLOCKS)
+            with self.assertRaises(ValueError):
+                CLOCK.clock_profile("uefi", mode)
         self.assertEqual(len(admitted), len(set(admitted)))
         self.assertEqual(len(protected), len(set(protected)))
         self.assertEqual(set(protected), protected_modes)

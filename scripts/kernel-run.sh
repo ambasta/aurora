@@ -5,6 +5,7 @@ usage() {
     printf '%s\n' \
         'Usage: scripts/kernel-run.sh [PROFILE] [--console|--smoke]' \
         'Profiles: bios, uefi, bios-console, uefi-console, program-console, program-*.' \
+        '--ram-scratchpad-console selects the bounded RAM scratchpad: put/get/help/status/exit.' \
         'Default: bios --smoke. bios-console/uefi-console default to --console; program-* to --smoke.' \
         'bios/uefi --console selects the ordinary interactive console (300 seconds).' \
         'Normal boots are bounded self-tests, not an interactive OS shell (BIOS 15s/UEFI 30s).' \
@@ -32,17 +33,18 @@ case "$profile" in
         exec python3 "scripts/kernel-uefi-${profile%%-*}-run.py" "$profile" "$@" ;;
 esac
 if (( $# > 2 )) || [[ $# == 2 && -z "$2" ]]; then usage >&2; exit 2; fi
-action="${2:-}"; protected=false; strict=false
+action="${2:-}"; protected=false; strict=false; scratchpad=false
 case "$profile" in
     bios|uefi) platform="$profile"; mode=normal; action="${action:---smoke}" ;;
     bios-console|uefi-console) platform="${profile%-console}"; mode=console; action="${action:---console}" ;;
+    --ram-scratchpad-console|ram-scratchpad-console) platform=uefi; mode=ram-scratchpad-console; profile=ram-scratchpad-console; scratchpad=true; strict=true; label='RAM scratchpad Console'; action="${action:---console}" ;;
     program-*) platform=uefi; mode="$profile"; protected=true; strict=true; action="${action:---smoke}" ;;
     graphical-console|iommu-event) platform=uefi; mode="$profile"; action="${action:---smoke}" ;;
     framebuffer) platform=uefi; mode="$profile"; strict=true; label='framebuffer preview'; action="${action:-preview}" ;;
     *) usage >&2; exit 2 ;;
 esac
 case "$action:$profile" in
-    --console:bios|--console:uefi|--console:bios-console|--console:uefi-console|--console:program-*|--smoke:*) ;;
+    --console:bios|--console:uefi|--console:bios-console|--console:uefi-console|--console:program-*|--console:ram-scratchpad-console|--smoke:*) ;;
     --build-only:iommu-event|--build-only:graphical-console) ;;
     preview:framebuffer) [[ $# == 1 ]] || { usage >&2; exit 2; } ;;
     --full-smoke:framebuffer) action=--smoke ;;
@@ -94,7 +96,7 @@ else
     required=("$qemu" timeout)
     if [[ "$mode" == console ]]; then required+=(python3); fi
 fi
-if [[ "$mode" == console && "$action" == --smoke || "$protected" == true ]]; then export QEMU="$qemu"; fi
+if [[ "$mode" == console && "$action" == --smoke || "$protected" == true || "$scratchpad" == true ]]; then export QEMU="$qemu"; fi
 for tool in "${required[@]}"; do
     if ! command -v "$tool" >/dev/null; then
         if [[ "$strict" == true ]]; then profile_blocked "missing dependency: $tool"; fi
@@ -204,6 +206,9 @@ if image_dir="$(build_profile)"; then :; else
     exit "$status"
 fi
 if [[ "$action" == --smoke ]]; then
+    if [[ "$scratchpad" == true ]]; then
+        exec python3 -B tests/kernel-scratchpad-console-pty.py --build-dir "$image_dir"
+    fi
     if [[ "$protected" == true ]]; then
         if python3 -B tests/kernel-program-console-pty.py --mode "$mode" --build-dir "$image_dir"; then :; else
             status=$?; echo "FAIL: protected-console PTY exited $status" >&2; exit "$status"
@@ -222,6 +227,8 @@ if [[ "$action" == --smoke ]]; then
 fi
 if [[ "$protected" == true ]]; then
     python3 -B scripts/kernel_program_console_admission.py checked --mode "$mode" --build-dir "$image_dir"
+elif [[ "$scratchpad" == true ]]; then
+    python3 -B scripts/kernel-uefi-ipc-images.py --output "$image_dir" --ram-scratchpad-stack
 fi
 if [[ "$platform" == bios ]]; then
     options=(--image "$image_dir/aurora.img" --snapshot)
@@ -237,11 +244,15 @@ fi
 if [[ "$platform" == uefi ]]; then
     clock=console; python_flags=()
     if [[ "$protected" == true ]]; then clock=program-console-interactive; python_flags=(-B); fi
+    if [[ "$scratchpad" == true ]]; then clock=ram-scratchpad-console-interactive; python_flags=(-B); fi
     python3 "${python_flags[@]}" scripts/kernel_uefi_console_clock.py "$qemu" "$UEFI_FIRMWARE_COMBINED" \
         "$UEFI_FIRMWARE_CODE" "$UEFI_FIRMWARE_VARS" "${QEMU_DATA:-}" --esp "$image_dir/esp" -- "${qemu_argv[@]}" \
         >"$image_dir/$clock.clock.json"
 fi
-if [[ "$protected" == true ]]; then echo 'Protected Aurora console: upper, then a line of text; exit closes QEMU.'
+if [[ "$scratchpad" == true ]]; then
+    echo 'RAM scratchpad: put [text], get, help, status, exit; 49 printable ASCII bytes, 64 commands.'
+    echo 'All data is lost on service reset or exit. External five-minute timeout is not verified teardown.'
+elif [[ "$protected" == true ]]; then echo 'Protected Aurora console: upper, then a line of text; exit closes QEMU.'
 else echo "${platform^^} serial console in QEMU: type help or exit. Session limit: five minutes."; fi
 set +e
 # Foreground preserves terminal serial stdio; transport owns the disposable guest.
@@ -252,5 +263,10 @@ if [[ "$status" == 33 ]]; then exit 0; fi
 if [[ "$protected" == true ]]; then
     echo "FAIL: protected console guest exited $status" >&2
     if [[ "$status" == 0 ]]; then exit 1; fi
-elif [[ "$status" == 124 ]]; then echo 'Console session reached its five-minute limit.' >&2; fi
+elif [[ "$status" == 124 ]]; then
+    if [[ "$scratchpad" == true ]]; then echo 'Scratchpad external timeout: interrupted session, teardown unverified.' >&2
+    else echo 'Console session reached its five-minute limit.' >&2; fi
+elif [[ "$scratchpad" == true && "$status" == 0 ]]; then
+    echo 'FAIL: scratchpad guest exited without its verified exit status.' >&2; exit 1
+fi
 exit "$status"

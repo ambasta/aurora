@@ -1,0 +1,50 @@
+module scratchpad_service_fixture;
+import console.volatile_file;
+
+// Adversarial profile only. The production service has no payload-triggered
+// behavior. This local marker observes actual acknowledged request bytes; it
+// is not a second file or native copy of committed content.
+auto aurora_user_main(builtin::ServeSession& session) -> u64 {
+    console::VolatileFile file = console::VolatileFile();
+    array<u64, 2> sentinel = {
+        11400714819323198485u64,
+        0u64
+    };
+    u64 exchanges = 0u64;
+    u64 reply = 0u64;
+    u64 marker = 0u64;
+    while (true) {
+        const builtin::ServeRequest request = session.exchange(reply);
+        if (sentinel[0] != 11400714819323198485u64 || sentinel[1] != exchanges) {
+            return 0u64;
+        }
+        exchanges = exchanges + 1u64;
+        sentinel[1] = exchanges;
+        if (request.status == builtin::ServeStatus::cancelled) {
+            marker = 0u64;
+            reply = file.cancel();
+        } else {
+            reply = file.request(request.value);
+            if ((request.value & 255u64) == 3u64 || reply == 6u64) {
+                marker = 0u64;
+            }
+            // WRITE_BYTE(0, '~'), then WRITE_BYTE(1, 'i'), both acknowledged.
+            if (reply == 1u64 && request.value == (4u64 | (126u64 << 16))) {
+                marker = 1u64;
+            }
+            if (reply == 1u64 && (request.value & 65535u64) == 260u64) {
+                if (marker == 1u64 && request.value == (260u64 | (105u64 << 16))) {
+                    marker = 2u64;
+                } else {
+                    marker = 0u64;
+                }
+            }
+            if (request.value == 5u64 && reply == 5u64 && marker == 2u64) {
+                // COMMIT has really published into the source-owned file, but
+                // COMMITTED has not reached exchange. Fault at checked index 5.
+                return sentinel[i64(request.value)];
+            }
+        }
+    }
+    return 0u64;
+}

@@ -1675,6 +1675,35 @@
     "reason": "Complete executable runner; also imported as a helper where applicable.",
     "root_make": true
   },
+  "scratchpad.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "meson_commands": {
+      "scratchpad-source-native": {
+        "arguments": [
+          "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
+          "-O",
+          "@SOURCE@/tests/compiler/scratchpad.py",
+          "@BUILD@/aurorac",
+          "--artifacts",
+          "@ARTIFACTS@"
+        ],
+        "suites": [
+          "bytes",
+          "compiler",
+          "core",
+          "dev",
+          "full"
+        ]
+      }
+    },
+    "reason": "Generated-code scratchpad grammar, copied records, Call codec and Console transcript runner.",
+    "root_make": true
+  },
   "sector.py": {
     "kind": "runner",
     "make": true,

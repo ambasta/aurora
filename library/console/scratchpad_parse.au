@@ -1,0 +1,33 @@
+export module console.scratchpad_parse;
+import console.line;
+import console.scratchpad;
+
+export namespace console {
+    // Only a completed, undamaged editor line can yield a valid command. The
+    // invalid local sentinel never crosses the copied input boundary.
+    auto parse_scratchpad_command(Line64 line) -> ScratchpadCommand {
+        const i64 length = line.submission_size();
+        if (length == 3 && line.submission_byte(0) == 'g' && line.submission_byte(1) == 'e' && line.submission_byte(2)
+            == 't') {
+            return ScratchpadCommand(ScratchpadOperation::get, 0u64);
+        }
+        if (length >= 3 && length <= 53 && line.submission_byte(0) == 'p' && line.submission_byte(1) == 'u'
+            && line.submission_byte(2) == 't') {
+            if (length == 3) {
+                return ScratchpadCommand(ScratchpadOperation::put, 0u64);
+            }
+            if (line.submission_byte(3) == ' ') {
+                ScratchpadCommand command = ScratchpadCommand(ScratchpadOperation::put, u64(length - 4));
+                i64 index = 4;
+                while (index < length) {
+                    if (!command.set(u64(index - 4), line.submission_byte(index))) {
+                        return ScratchpadCommand(ScratchpadOperation::get, 64u64);
+                    }
+                    index = index + 1;
+                }
+                return command;
+            }
+        }
+        return ScratchpadCommand(ScratchpadOperation::get, 64u64);
+    }
+}

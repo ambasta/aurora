@@ -173,6 +173,47 @@ def main():
             bad = copy.deepcopy(facts)
             bad["functions"]["private_call"]["parameters"][index][field] = value
             reject(lambda: builder.call_entry_abi(bad), "call entry ABI parameter")
+    # The new copied envelope is opt-in and cannot enter a legacy/mixed profile.
+    builder.validate_composition(
+        "normal", service_budget=True, user_budget=True, ram_file=True, ram_scratchpad_console=True
+    )
+    positives += 1
+    reject(
+        lambda: builder.validate_composition(
+            "normal", service_budget=True, user_budget=True, ram_scratchpad_console=True
+        ),
+        "scratchpad without retained service composition",
+    )
+    for extra in (
+        dict(dispatcher=True),
+        dict(snapshot=True),
+        dict(blocking_call=True),
+        dict(file_call=True),
+        dict(program_console=True),
+        dict(service_budget=False),
+        dict(user_budget=False),
+    ):
+        options = dict(service_budget=True, user_budget=True, ram_file=True, ram_scratchpad_console=True) | extra
+        reject(lambda: builder.validate_composition("normal", **options), "scratchpad mixed composition")
+    reject(
+        lambda: builder.call_entry_abi({"version": 2, "functions": {"private_call": dict(entry, parameter_bytes=96)}}),
+        "legacy Call entry must not accept copied envelope",
+    )
+    builder.validate_composition(
+        "normal",
+        service_budget=True,
+        user_budget=True,
+        ram_file=True,
+        ram_scratchpad_console=True,
+        ram_scratchpad_fixture=True,
+    )
+    positives += 1
+    reject(
+        lambda: builder.validate_composition(
+            "normal", service_budget=True, user_budget=True, ram_file=True, ram_scratchpad_fixture=True
+        ),
+        "scratchpad fixture without copied composition",
+    )
     # Retained Serve is a distinct singleton role, never a broadened Call site.
     builder.validate_composition("normal", service_budget=True, user_budget=True, ram_file=True)
     for extra in (
@@ -253,10 +294,21 @@ def main():
         bad = copy.deepcopy(serve)
         bad["enums"]["private_status"]["cases"]["cancelled"] = value
         reject(lambda: builder.serve_entry_abi(bad), "Serve exact status ordinal")
+    for selected in (False, True):
+        module = "scratchpad_service_fixture" if selected else "ram_file_service"
+        symbol = "__au_v_m1_" + str(len(module)) + module + "_n0__d16aurora_user_main"
+        variant = copy.deepcopy(serve)
+        variant["functions"] = {symbol: variant["functions"]["private_serve"]}
+        builder.scratchpad_service_entry_abi(variant, fixture=selected)
+        positives += 1
+        reject(
+            lambda: builder.scratchpad_service_entry_abi(variant, fixture=not selected),
+            "scratchpad production/fixture source substitution",
+        )
     print(f"PASS: user-phase images {positives} positive and {negatives} negative cases")
 
 
-def ram_file_linked_controls(directory):
+def ram_file_linked_controls(directory, *, scratchpad=False, scratchpad_fixture=False):
     """Mutate copied actual role artifacts, never the build's admitted inputs."""
     import kernel_stack as stack
 
@@ -267,17 +319,32 @@ def ram_file_linked_controls(directory):
             prefix = Path(temporary) / ("user-" + role)
             host = "__au_runtime_serve_exchange" if service else "__au_runtime_call"
             status_max = 1 if service else 2
+            copied = scratchpad and not service
+
+            def admit():
+                return (
+                    builder.scratchpad_user_stack(prefix)
+                    if copied
+                    else builder.ram_file_user_stack(
+                        prefix,
+                        service=service,
+                        scratchpad_fixture=scratchpad_fixture if scratchpad else None,
+                    )
+                )
 
             def reset():
                 for suffix in (".elf", ".bin", ".stack.json", ".abi.json"):
                     shutil.copyfile(source.with_suffix(suffix), prefix.with_suffix(suffix))
+                if copied:
+                    (prefix.parent / "objects").mkdir(exist_ok=True)
+                    shutil.copyfile(directory / "objects/user-clean.o", prefix.parent / "objects/user-clean.o")
 
             def reject(mutate, label):
                 nonlocal negatives
                 reset()
                 mutate()
                 try:
-                    builder.ram_file_user_stack(prefix, service=service)
+                    admit()
                 except (ValueError, TypeError, KeyError):
                     negatives += 1
                 else:
@@ -308,6 +375,31 @@ def ram_file_linked_controls(directory):
                 mutate(data, found[0])
                 path.write_bytes(data)
 
+            def inject_import(name, *, undefined):
+                # Extend only non-load metadata in the temporary ELF. This adds
+                # an otherwise unused hidden symbol without deleting any code,
+                # function, wrapper label, or compiler fact.
+                path = prefix.with_suffix(".elf")
+                image = stack.Elf(path)
+                data = bytearray(path.read_bytes())
+                tables = [(index, section) for index, section in enumerate(image.sections) if section[1] == 2]
+                if len(tables) != 1:
+                    raise RuntimeError("Import mutation requires one exact symbol table")
+                index, table = tables[0]
+                strings = image.section_data(table[6])
+                string_data = strings + name.encode() + b"\0"
+                symbols_data = image.section_data(index) + struct.pack(
+                    "<IBBHQQ", len(strings), 0x10, 2, 0 if undefined else 1, 0, 0
+                )
+                string_offset = len(data)
+                data.extend(string_data)
+                symbol_offset = len(data)
+                data.extend(symbols_data)
+                section_offset = struct.unpack_from("<Q", data, 40)[0]
+                struct.pack_into("<QQ", data, section_offset + table[6] * 64 + 24, string_offset, len(string_data))
+                struct.pack_into("<QQ", data, section_offset + index * 64 + 24, symbol_offset, len(symbols_data))
+                path.write_bytes(data)
+
             def change_instruction(address, value):
                 # Keep linked ELF and installed bytes consistent so this tests
                 # the handwritten instruction contract, not a stale-bin check.
@@ -324,9 +416,25 @@ def ram_file_linked_controls(directory):
                 binary = bytearray(prefix.with_suffix(".bin").read_bytes())
                 binary[address - base] = value
                 prefix.with_suffix(".bin").write_bytes(binary)
+                if copied:
+                    # Mutate the temporary combined object as well, so exact
+                    # wrapper/stub rejection is not merely object-byte mismatch.
+                    object_path = prefix.parent / "objects/user-clean.o"
+                    original = stack.Elf(object_path)
+                    entry = next(s for s in original.symbols if s.name == "aurora_program_entry")
+                    section = original.sections[entry.section]
+                    payload = bytearray(object_path.read_bytes())
+                    payload[section[4] + entry.address - section[3] + address - base] = value
+                    object_path.write_bytes(payload)
 
             reset()
-            builder.ram_file_user_stack(prefix, service=service)
+            admitted = admit()
+            if copied and (
+                admitted["peak_with_wrapper"] != admitted["peak"] + 240
+                or admitted["fixed_regions"]
+                != dict(argument=[-192, -96], result=[-96, -16], sentinel=[-16, 0], envelope=[-240, -192])
+            ):
+                raise RuntimeError("Copied Call changed independent fixed-stack accounting")
             positives += 1
             facts = json.loads(source.with_suffix(".stack.json").read_text())["functions"]
             callers = [name for name, fact in facts.items() if host in fact["calls"]]
@@ -365,7 +473,7 @@ def ram_file_linked_controls(directory):
             code, _ = stack.disassemble(image.path)
             stub = image.functions[host]
             base = next(s.address for s in image.symbols if s.name == "aurora_program_entry")
-            reserve = "$0x10,%rsp" if service else "$0x30,%rsp"
+            reserve = "$0x10,%rsp" if service else "$0xc0,%rsp" if copied else "$0x30,%rsp"
             record = [
                 row
                 for address, row in code.items()
@@ -377,6 +485,144 @@ def ram_file_linked_controls(directory):
                 lambda: change_instruction(record[0].next - 1, 32 if service else 64),
                 "altered handwritten record reservation",
             )
+            if copied:
+                for foreign in ("__au_runtime_console_put", "__au_runtime_serve_exchange"):
+                    for undefined in (False, True):
+                        reject(lambda: inject_import(foreign, undefined=undefined), "hidden unused foreign import")
+                abi = json.loads(source.with_suffix(".abi.json").read_text())
+                entry = builder.scratchpad_call_entry_abi(abi)
+
+                def change_abi(mutate):
+                    path = prefix.with_suffix(".abi.json")
+                    document = json.loads(path.read_text())
+                    mutate(document)
+                    path.write_text(json.dumps(document))
+
+                reject(
+                    lambda: change_abi(
+                        lambda doc: doc["functions"].__setitem__(
+                            "injected_unused_function",
+                            dict(doc["functions"][entry], source_name="injected_unused_function"),
+                        )
+                    ),
+                    "copied Call injected generic function fact",
+                )
+                for field, value in (
+                    ("parameter_bytes", 88),
+                    ("result", dict(bytes=80, kind="u64")),
+                    ("borrowed_root_count", 1),
+                    ("injected", 0),
+                ):
+                    reject(
+                        lambda: change_abi(lambda doc: doc["functions"][entry].__setitem__(field, value)),
+                        "copied Call exact entry " + field,
+                    )
+                for index in (0, 1):
+                    for field, value in (("offset", 8), ("bytes", 16), ("kind", "pointer"), ("injected", 0)):
+                        if index == 0 and field == "bytes":
+                            value = 8
+                        reject(
+                            lambda: change_abi(
+                                lambda doc: doc["functions"][entry]["parameters"][index].__setitem__(field, value)
+                            ),
+                            "copied Call parameter field " + field,
+                        )
+                for foreign in ("builtin::ConsoleSession", "builtin::ServeSession"):
+                    reject(
+                        lambda: change_abi(
+                            lambda doc: doc["functions"][entry]["parameters"][0].__setitem__("type_name", foreign)
+                        ),
+                        "copied Call same-width nominal substitution",
+                    )
+                for symbol, record in abi["records"].items():
+                    if record["source_name"] not in ("console::ScratchpadCommand", "console::ScratchpadResult"):
+                        continue
+                    for field, value in (("size", 88), ("alignment", True), ("reserved", 80.0), ("injected", 0)):
+                        reject(
+                            lambda: change_abi(lambda doc: doc["records"][symbol].__setitem__(field, value)),
+                            "copied Call record " + field,
+                        )
+                    for index in range(len(record["fields"])):
+                        for field, value in (
+                            ("offset", 99),
+                            ("bytes", 4),
+                            ("array_length", True),
+                            ("kind", "reference"),
+                            ("injected", 0),
+                        ):
+                            reject(
+                                lambda: change_abi(
+                                    lambda doc: doc["records"][symbol]["fields"][index].__setitem__(field, value)
+                                ),
+                                "copied Call nested field " + field,
+                            )
+                for symbol, enum in abi["enums"].items():
+                    if not enum["source_name"].startswith("console::Scratchpad"):
+                        continue
+                    # Only declarations referenced by transported records are
+                    # required when the compiler prunes unused nominal records.
+                    if enum["source_name"] not in ("console::ScratchpadOperation", "console::ScratchpadResultKind"):
+                        continue
+                    for case in enum["cases"]:
+                        for value in (True, 0.0, 99):
+                            reject(
+                                lambda: change_abi(lambda doc: doc["enums"][symbol]["cases"].__setitem__(case, value)),
+                                "copied Call enum ordinal",
+                            )
+                reject(
+                    lambda: prefix.with_suffix(".abi.json").write_text(
+                        '{"version":2,' + source.with_suffix(".abi.json").read_text()[1:]
+                    ),
+                    "copied Call duplicate ABI key",
+                )
+                reject(
+                    lambda: change_facts(
+                        lambda rows: rows[entry].__setitem__(
+                            "service_abi",
+                            dict(record=dict(parameters=[["builtin::ConsoleSession", 16]], result_bytes=8), calls={}),
+                        )
+                    ),
+                    "copied Call invented Console service record",
+                )
+                reject(
+                    lambda: change_facts(
+                        lambda rows: rows[entry].__setitem__(
+                            "copied_record", dict(parameter_bytes=[16, 80], result_bytes=80)
+                        )
+                    ),
+                    "copied Call invented scalar-record shortcut",
+                )
+                for op, args, immediate_bytes, value in (
+                    ("lea", "0x30(%rsp),%r11", 1, 0x38),
+                    ("lea", "0x90(%rsp),%r10", 4, 0x30),
+                    ("lea", "0x90(%rsp),%r10", 4, 0xA0),
+                    ("mov", "%rax,0x30(%rsp)", 1, 0x40),
+                    ("mov", "%rax,0x38(%rsp)", 1, 0x48),
+                    ("sub", "$0xc0,%rsp", 4, 0xB0),
+                    ("add", "$0xc0,%rsp", 4, 0xB0),
+                    ("mov", "$0x1,%eax", 4, 2),
+                    ("mov", "$0x1,%esi", 4, 2),
+                ):
+                    matches = [
+                        row
+                        for address, row in code.items()
+                        if base <= address < stub.address and (row.op, row.args) == (op, args)
+                    ]
+                    if len(matches) != 1:
+                        raise RuntimeError("Copied mutation lacks exact wrapper instruction " + op + " " + args)
+                    reject(
+                        lambda: change_instruction(matches[0].next - immediate_bytes, value),
+                        "copied Call fixed pointer/prefix/reservation/restoration/marker",
+                    )
+                terminal = next(symbol.address for symbol in image.symbols if symbol.name == "aurora_program_return_pc")
+                reject(
+                    lambda: change_symbol(
+                        "aurora_program_return_pc", lambda data, at: struct.pack_into("<Q", data, at + 8, terminal + 2)
+                    ),
+                    "copied Call shifted terminal PC",
+                )
+                for at in range(stub.address, stub.address + 3):
+                    reject(lambda: change_instruction(at, 0x90), "copied Call wrong INT82/ret opcode")
             returned = "aurora_serve_return_pc" if service else "aurora_call_return_pc"
             reject(
                 lambda: change_symbol(
@@ -391,7 +637,17 @@ def ram_file_linked_controls(directory):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--ram-file-build-dir", type=Path)
+    parser.add_argument("--ram-scratchpad-build-dir", type=Path)
+    parser.add_argument("--ram-scratchpad-fixture", action="store_true")
     args = parser.parse_args()
+    if args.ram_scratchpad_fixture and not args.ram_scratchpad_build_dir:
+        parser.error("--ram-scratchpad-fixture requires --ram-scratchpad-build-dir")
     main()
     if args.ram_file_build_dir:
         ram_file_linked_controls(args.ram_file_build_dir.resolve(strict=True))
+    if args.ram_scratchpad_build_dir:
+        ram_file_linked_controls(
+            args.ram_scratchpad_build_dir.resolve(strict=True),
+            scratchpad=True,
+            scratchpad_fixture=args.ram_scratchpad_fixture,
+        )

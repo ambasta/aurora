@@ -1103,6 +1103,34 @@ def aurora_stack_functions(path, symbols, code, starts, generated_names):
     return functions
 
 
+def singleton_service_graph(functions, generated, entry, host, kind):
+    """Narrow opt-in proof over compiler-checked loans and exact linked calls.
+
+    This does not infer a capability from its byte width. The only external
+    operation reachable through the singleton typed loan must be the expected
+    host. All generated code, including unreachable helpers, stays in that
+    closed inventory. Existing service metadata schemas remain unchanged.
+    """
+    require(kind == "builtin::CallSession" and host == "__au_runtime_call", "Unknown copied singleton service graph")
+    require(
+        set(functions) == set(generated) | {host} and entry in generated, "Closed copied singleton service inventory"
+    )
+    for name in generated:
+        body = functions[name]
+        record = (body.get("service_abi") or {}).get("record")
+        if record is not None:
+            require(
+                record["parameters"][0] == [kind, 16] and all(row == ["scalar", 8] for row in record["parameters"][1:]),
+                "Foreign service loan in copied Call graph",
+            )
+        for call in body["calls"]:
+            require(call["target"] in generated or call["target"] == host, "Copied Call graph acquired a foreign host")
+            if call["target"] == host:
+                require(call["live_bytes"] % 16 == 0, "Misaligned copied Call host boundary")
+        calculate(functions, name)
+    require(host in calculate(functions, entry)["closure"], "Copied singleton entry must actually reach Call")
+
+
 def language_stack_functions(directory, linked, language, code, starts, bridges=(), stem="language"):
     require(set(bridges) <= language.functions.keys(), "Missing handwritten language bridge")
     for symbol in language.functions.values():

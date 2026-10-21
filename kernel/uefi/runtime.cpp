@@ -46,15 +46,19 @@
     defined(AURORA_CONSOLE_REGION)
 #include <memory>
 #endif
-#if defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_CONSOLE_REGION)
+#if defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_CONSOLE_REGION) || defined(AURORA_RAM_SCRATCHPAD_CONSOLE)
 #include "console-context.hpp"
 #include "../console-session.hpp"
 #include "../console-uart.hpp"
+#ifdef AURORA_RAM_SCRATCHPAD_CONSOLE
+#include "../ram-scratchpad.hpp"
+#else
 #include "../program-input.hpp"
 #include "../program-stream.hpp"
 #include "../program-note.hpp"
 #include "../program-files.hpp"
 #include "../file-service-transport.hpp"
+#endif
 #endif
 namespace aurora::uefi {
 extern std::uint64_t saved_rsp asm("uefi_runtime_saved_rsp") __attribute__((visibility("hidden")));
@@ -72,6 +76,11 @@ auto resume(std::uint64_t) -> std::uint64_t asm("uefi_runtime_resume") __attribu
 #endif
 namespace {
 using U64 = std::uint64_t;
+#ifdef AURORA_SCRATCHPAD_FIXTURE
+// Explicit test-image controls, absent from the production composition.
+unsigned char scratchpad_probe{};
+unsigned scratchpad_output_left = UINT32_MAX;
+#endif
 #if defined(AURORA_UEFI_SNAPSHOT) || (defined(AURORA_BLOCKING_CALL) && !defined(AURORA_FILE_CALL))
 // Keep repeated bootstrap diagnostics shared in this bounded combined image.
 // The underlying serial behavior is unchanged; neither helper carries authority.
@@ -85,7 +94,7 @@ public:
     }
 };
 using Serial = SnapshotDiagnostics;
-#elif defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_CONSOLE_REGION)
+#elif defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_CONSOLE_REGION) || defined(AURORA_RAM_SCRATCHPAD_CONSOLE)
 // Runtime diagnostics and input share the same sticky LSR error latch. A raw
 // hardware::Serial read during a protected command would otherwise erase OE.
 class ProgramSerialAdapter final {
@@ -99,6 +108,14 @@ public:
         return Uart::next();
     }
     static auto try_put(std::uint8_t byte) -> console::PutResult {
+#ifdef AURORA_SCRATCHPAD_FIXTURE
+        // Source Console timeout, not a claim of physical UART fault injection.
+        if (scratchpad_output_left != UINT32_MAX) {
+            if (!scratchpad_output_left)
+                return console::PutResult::timeout;
+            --scratchpad_output_left;
+        }
+#endif
         return Uart::try_put(byte);
     }
     static void put(std::uint8_t byte) {
@@ -627,6 +644,9 @@ auto execute(unsigned index, ProgramEvent wanted) -> void {
 #endif
 #elif defined(AURORA_RAM_FILE)
 #include "ram-file.inc"
+#ifdef AURORA_RAM_SCRATCHPAD_CONSOLE
+#include "ram-scratchpad-console.inc"
+#endif
 #elif defined(AURORA_FILE_CALL)
 #include "program-console.inc"
 #elif defined(AURORA_BLOCKING_CALL)
@@ -641,7 +661,7 @@ auto execute(unsigned index, ProgramEvent wanted) -> void {
 #endif
 #endif
 } // namespace
-#ifdef AURORA_UEFI_PROGRAM_CONSOLE
+#if defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_RAM_SCRATCHPAD_CONSOLE)
 auto program_console_next(const void *, U64, console::RawSample *) -> void asm("__au_runtime_console_next")
     __attribute__((visibility("hidden")));
 auto program_console_next(const void *grant, U64 generation, console::RawSample *output) -> void {
@@ -661,7 +681,7 @@ extern "C" [[noreturn]] void __au_runtime_bytes_kernel_fault(U64) noexcept {
 auto dispatch(U64, U64, U64, U64, U64, U64) -> U64 asm("aurora_exception_dispatch")
     __attribute__((visibility("hidden")));
 auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U64 {
-#if defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_CONSOLE_REGION)
+#if defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_CONSOLE_REGION) || defined(AURORA_RAM_SCRATCHPAD_CONSOLE)
     if (program_console_interrupt(vector, error, pc, cs, frame))
         return 0;
 #endif
@@ -886,7 +906,11 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
     run_dispatcher();
 #endif
 #elif defined(AURORA_RAM_FILE)
+#ifdef AURORA_RAM_SCRATCHPAD_CONSOLE
+    run_ram_scratchpad_console();
+#else
     run_ram_file();
+#endif
 #elif defined(AURORA_FILE_CALL)
 #ifdef AURORA_RUNTIME_FIXTURE
     select_fixture(Fixture::file_fault, Fixture::file_budget);

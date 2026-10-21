@@ -37,6 +37,8 @@ MODES = (
 )
 PROGRAM_INPUT_BRIDGE = "__au_runtime_program_input"
 PROGRAM_RESPONSE_BRIDGE = "__au_runtime_program_response"
+SCRATCHPAD_INPUT_BRIDGE = "__au_runtime_scratchpad_input"
+SCRATCHPAD_RESPONSE_BRIDGE = "__au_runtime_scratchpad_response"
 CONSOLE_OPERATIONS = frozenset(("__au_runtime_console_next", "__au_runtime_console_put"))
 
 
@@ -699,7 +701,236 @@ def check_program_console_abi(facts, *, response=False):
     return entry
 
 
-def check_program_console_calls(functions, generated, public, input_entry, response_entry):
+def check_scratchpad_abi(facts, *, role):
+    """Narrow copied boundary using current generic facts, never a new service fact.
+
+    A 16-byte service parameter is storage, not a nominal capability proof. The
+    corresponding admission must also bind the compiler-produced objects and
+    the closed, reachable Call-only or Console-only loan graph below.
+    """
+    need(role in ("call", "input", "response"), "Unknown scratchpad ABI role")
+    need(
+        type(facts) is dict
+        and set(facts) == {"version", "span_bytes", "records", "enums", "functions"}
+        and type(facts["version"]) is int
+        and facts["version"] == 2
+        and type(facts["span_bytes"]) is int
+        and facts["span_bytes"] == 56
+        and all(
+            type(facts[group]) is dict and all(type(value) is dict for value in facts[group].values())
+            for group in ("records", "enums", "functions")
+        ),
+        "Exact current scratchpad generic ABI document",
+    )
+    enums = {
+        "ScratchpadOperation": dict(get=0, put=1),
+        "ScratchpadResultKind": dict(incomplete=0, content=1, missing=2, saved=3, refused=4),
+        "ScratchpadInputAction": dict(command=0, requested_exit=1, output_failure=2),
+        "ScratchpadResponseKind": dict(
+            ready=0,
+            content=1,
+            missing=2,
+            saved=3,
+            rejected=4,
+            aborted=5,
+            read_failed=6,
+            committed_caller_failed=7,
+            indeterminate_reset=8,
+            reset=9,
+            unavailable=10,
+            limit=11,
+        ),
+    }
+    records = {
+        "ScratchpadCommand": ("ScratchpadOperation", "operation"),
+        "ScratchpadResult": ("ScratchpadResultKind", "kind"),
+        "ScratchpadResponse": ("ScratchpadResponseKind", "kind"),
+    }
+    selected = {
+        "call": ("ScratchpadCommand", "ScratchpadResult"),
+        "input": ("ScratchpadCommand", "ScratchpadSubmission"),
+        "response": ("ScratchpadResponse",),
+    }[role]
+    known = {"console::" + name for name in (*records, "ScratchpadSubmission", *enums)}
+    for group in ("records", "enums"):
+        need(
+            all(
+                not value.get("source_name", "").startswith("console::Scratchpad") or value["source_name"] in known
+                for value in facts[group].values()
+            ),
+            "Unknown scratchpad nominal declaration",
+        )
+    checked = {}
+
+    def record(name):
+        if name in checked:
+            return checked[name]
+        source = "console::" + name
+        symbol, value = compiler_abi.abi_declaration(facts, "records", source)
+        if name == "ScratchpadSubmission":
+            command = record("ScratchpadCommand")
+            enum, field = "ScratchpadInputAction", "action"
+            fields = [dict(name="command", offset=0, bytes=80, array_length=0, kind="class", type_name=command)]
+            fields += [dict(name=field, offset=80, bytes=8, array_length=0, kind="enum", type_name="")]
+            fields += [dict(name="after_cr", offset=88, bytes=8, array_length=0, kind="u64")]
+            size, enum_at = 96, 1
+        else:
+            enum, field = records[name]
+            fields = [
+                dict(name="bytes", offset=0, bytes=64, array_length=64, kind="u8"),
+                dict(name="count", offset=64, bytes=8, array_length=0, kind="u64"),
+                dict(name=field, offset=72, bytes=8, array_length=0, kind="enum", type_name=""),
+            ]
+            size, enum_at = 80, 2
+        kind, operation = compiler_abi.abi_declaration(facts, "enums", "console::" + enum)
+        exact_abi(operation, dict(source_name="console::" + enum, cases=enums[enum]), "Exact scratchpad enum " + enum)
+        fields[enum_at]["type_name"] = kind
+        exact_abi(
+            value,
+            dict(source_name=source, size=size, alignment=8, reserved=size, fields=fields),
+            "Exact scratchpad nominal layout " + name,
+        )
+        checked[name] = symbol
+        return symbol
+
+    for name in selected:
+        record(name)
+    # Check every transported nominal declaration present, even if unused by
+    # this root, so injected alternate layouts do not hide in imported facts.
+    for name in (*records, "ScratchpadSubmission"):
+        if any(value.get("source_name") == "console::" + name for value in facts["records"].values()):
+            record(name)
+    source = {"call": "aurora_user_main", "input": "read_scratchpad_input", "response": "present_scratchpad_response"}[
+        role
+    ]
+    entry, function = compiler_abi.abi_declaration(facts, "functions", source)
+    argument = (
+        dict(offset=16, bytes=8, kind="bool")
+        if role == "input"
+        else dict(
+            offset=16,
+            bytes=80,
+            kind="class",
+            type_name=record("ScratchpadCommand" if role == "call" else "ScratchpadResponse"),
+        )
+    )
+    result = (
+        dict(bytes=8, kind="bool")
+        if role == "response"
+        else dict(
+            bytes=80 if role == "call" else 96,
+            kind="class",
+            type_name=record("ScratchpadResult" if role == "call" else "ScratchpadSubmission"),
+        )
+    )
+    exact_abi(
+        function,
+        dict(
+            source_name=source,
+            receiver=None,
+            receiver_mutable=None,
+            borrowed_roots=[],
+            borrowed_root_count=0,
+            borrowed_root_abi=dict(
+                kind="none", register=None, tuple_payload_bytes=0, tuple_reserved_bytes=0, saved_root_reserved_bytes=0
+            ),
+            parameter_bytes=24 if role == "input" else 96,
+            parameters=[dict(offset=0, bytes=16, kind="service"), argument],
+            result=result,
+        ),
+        "Exact scratchpad " + role + " copied entry ABI",
+    )
+    return entry
+
+
+def scratchpad_console_evidence(directory, graph):
+    """Bind both Console roots, imports, wrappers and full nominal copies."""
+    decoder = stack_facts
+    linked, functions = graph["linked"], graph["functions"]
+    generated = decoder.Elf(directory / "objects/language.o")
+    code, _ = decoder.disassemble(linked.path)
+    names = {row.name for row in linked.symbols if row.section}
+    bridges = {SCRATCHPAD_INPUT_BRIDGE, SCRATCHPAD_RESPONSE_BRIDGE}
+    need(
+        {name for name in names if name.startswith("__au_runtime_")} == bridges | CONSOLE_OPERATIONS,
+        "Closed scratchpad supervisor runtime inventory",
+    )
+    need(
+        {row.name for row in generated.symbols if row.name and row.section == 0} == CONSOLE_OPERATIONS,
+        "Scratchpad supervisor imports only Console next/put",
+    )
+    need(
+        not any(name.startswith(("__cxa_", "_GLOBAL__sub_I", "_Zn", "_Zd")) for name in names),
+        "Scratchpad supervisor acquired constructor or heap machinery",
+    )
+    public = {
+        row.split()[2]
+        for row in subprocess.check_output(["nm", "-g", "--defined-only", str(generated.path)], text=True).splitlines()
+        if len(row.split()) == 3
+    }
+    policies = {
+        "aurora_kernel_value",
+        "aurora_kernel_budget_tick",
+        "aurora_kernel_round_robin_next",
+        "aurora_kernel_ipc_transition",
+        "aurora_kernel_client_disposal",
+        "aurora_kernel_terminal_event",
+    }
+    need(
+        {name for name in public if not is_reflection_helper(name)} == policies | bridges,
+        "Exact scratchpad supervisor exports; no legacy file store",
+    )
+    facts = read_json(directory / "language.abi.json")
+    need(
+        set(facts["functions"]) == set(generated.functions) - bridges,
+        "Scratchpad Console generic/object function inventory mismatch",
+    )
+    reader = check_scratchpad_abi(facts, role="input")
+    presenter = check_scratchpad_abi(facts, role="response")
+    calls = check_program_console_calls(functions, set(generated.functions), public, reader, presenter, bridges=bridges)
+    check_referenced_reflection(functions, set(generated.functions), bridges)
+    result = []
+    for bridge, entry, input_bytes, result_bytes, check in (
+        (SCRATCHPAD_INPUT_BRIDGE, reader, 24, 96, check_note_bridge),
+        (SCRATCHPAD_RESPONSE_BRIDGE, presenter, 96, 8, check_response_bridge),
+    ):
+        need(entry in generated.functions and entry not in public, "Private scratchpad Console source root")
+        symbol = linked.functions[bridge]
+        wrapper = [
+            (
+                row.op,
+                entry if row.op == "call" and decoder.target_of(row) == linked.functions[entry].address else row.args,
+            )
+            for address, row in sorted(code.items())
+            if symbol.address <= address < symbol.address + symbol.size
+        ]
+        check(wrapper, entry)
+        decoder.associate_object(linked, generated, generated.functions[bridge])
+        need(
+            functions[entry]["copied_record"] is None,
+            "Copied Console entry must use generic ABI, not an invented scalar copied fact",
+        )
+        result.append(
+            dict(
+                bridge=bridge,
+                private_entry=entry,
+                input_bytes=input_bytes,
+                result_bytes=result_bytes,
+                console_calls=calls[entry],
+            )
+        )
+    return dict(bridges=result, input_entry=reader, response_entry=presenter)
+
+
+def check_program_console_calls(
+    functions,
+    generated,
+    public,
+    input_entry,
+    response_entry,
+    *,
+    bridges=(PROGRAM_INPUT_BRIDGE, PROGRAM_RESPONSE_BRIDGE),
+):
     """Input may read/write; response may only write; copied policies have no authority."""
 
     def closure(root):
@@ -726,7 +957,7 @@ def check_program_console_calls(functions, generated, public, input_entry, respo
     need(imports == CONSOLE_OPERATIONS, "Program reader must use only Console next/put")
     presenter, imports = closure(response_entry)
     need(imports == {"__au_runtime_console_put"}, "Program response must use only Console put")
-    for root in public - {PROGRAM_INPUT_BRIDGE, PROGRAM_RESPONSE_BRIDGE}:
+    for root in public - set(bridges):
         _, authority = closure(root)
         need(not authority, "Copied policy/store graph acquired Console authority")
     sites = []
@@ -746,9 +977,9 @@ def check_program_console_calls(functions, generated, public, input_entry, respo
     }
 
 
-def check_program_input_wait(functions, owner, entry):
+def check_program_input_wait(functions, owner, entry, *, bridge=PROGRAM_INPUT_BRIDGE):
     """Every path to the timer wait retains the private reader and Console call."""
-    required = (PROGRAM_INPUT_BRIDGE, entry, "__au_runtime_console_next")
+    required = (bridge, entry, "__au_runtime_console_next")
     reaches = {owner}
     while True:
         larger = reaches | {

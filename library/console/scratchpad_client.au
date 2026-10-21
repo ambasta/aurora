@@ -1,0 +1,80 @@
+export module console.scratchpad_client;
+import console.scratchpad;
+
+export namespace console {
+    // Actual command bytes are encoded into the unchanged scalar protocol.
+    // An incomplete exchange discards every accumulated byte. Only exact
+    // REJECTED is represented as refused; native settlement still decides why.
+    auto run_scratchpad_command(builtin::CallSession& session, ScratchpadCommand command) -> ScratchpadResult {
+        if (!command.valid()) {
+            return ScratchpadResult(ScratchpadResultKind::incomplete);
+        }
+        const bool writing = command.selection() == ScratchpadOperation::put;
+        u64 begin = 1u64;
+        if (writing) {
+            begin = 3u64 | (command.size() << 8);
+        }
+        const builtin::CallResult started = session.call(begin);
+        if (started.status != builtin::CallStatus::replied) {
+            return ScratchpadResult(ScratchpadResultKind::incomplete);
+        }
+        if (started.value == 6u64) {
+            return ScratchpadResult(ScratchpadResultKind::refused);
+        }
+        if (started.value != 1u64) {
+            return ScratchpadResult(ScratchpadResultKind::incomplete);
+        }
+        u64 index = 0u64;
+        if (writing) {
+            while (index < command.size()) {
+                const u64 word = 4u64 | (index << 8) | (u64(command.at(index)) << 16);
+                const builtin::CallResult written = session.call(word);
+                if (written.status != builtin::CallStatus::replied) {
+                    return ScratchpadResult(ScratchpadResultKind::incomplete);
+                }
+                if (written.value == 6u64) {
+                    return ScratchpadResult(ScratchpadResultKind::refused);
+                }
+                if (written.value != 1u64) {
+                    return ScratchpadResult(ScratchpadResultKind::incomplete);
+                }
+                index = index + 1u64;
+            }
+            const builtin::CallResult committed = session.call(5u64);
+            if (committed.status != builtin::CallStatus::replied) {
+                return ScratchpadResult(ScratchpadResultKind::incomplete);
+            }
+            if (committed.value == 6u64) {
+                return ScratchpadResult(ScratchpadResultKind::refused);
+            }
+            if (committed.value == 5u64) {
+                return ScratchpadResult(ScratchpadResultKind::saved);
+            }
+            return ScratchpadResult(ScratchpadResultKind::incomplete);
+        }
+        ScratchpadResult result = ScratchpadResult(ScratchpadResultKind::content);
+        while (index <= 49u64) {
+            const builtin::CallResult received = session.call(2u64 | (index << 8));
+            if (received.status != builtin::CallStatus::replied) {
+                return ScratchpadResult(ScratchpadResultKind::incomplete);
+            }
+            if (received.value == 3u64) {
+                return result;
+            }
+            if (received.value == 4u64 && index == 0u64) {
+                return ScratchpadResult(ScratchpadResultKind::missing);
+            }
+            if (received.value == 6u64) {
+                return ScratchpadResult(ScratchpadResultKind::refused);
+            }
+            if ((received.value & 255u64) != 2u64 || received.value >= 65536u64 || index == 49u64) {
+                return ScratchpadResult(ScratchpadResultKind::incomplete);
+            }
+            if (!result.append(u8(received.value >> 8))) {
+                return ScratchpadResult(ScratchpadResultKind::incomplete);
+            }
+            index = index + 1u64;
+        }
+        return ScratchpadResult(ScratchpadResultKind::incomplete);
+    }
+}

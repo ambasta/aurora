@@ -1,0 +1,79 @@
+export module console.scratchpad_output;
+import console.io;
+import console.scratchpad;
+
+namespace console {
+    auto scratchpad_output_text(builtin::ConsoleSession& session, builtin::span<const u8> text) -> bool {
+        const WriteResult result = write_bytes(session, text);
+        return result.complete();
+    }
+}
+
+export namespace console {
+    // This accepts settled copied data only. It cannot interpret a caller's
+    // enum as proof of commitment, cancellation, reset or publication rights.
+    auto present_scratchpad_response(builtin::ConsoleSession& session, ScratchpadResponse response) -> bool {
+        if (!response.valid()) {
+            return false;
+        }
+        const ScratchpadResponseKind kind = response.status();
+        if (kind == ScratchpadResponseKind::content) {
+            if (!scratchpad_output_text(session, "data: ")) {
+                return false;
+            }
+            u64 index = 0u64;
+            while (index < response.size()) {
+                if (session.put(response.at(index)) != builtin::ConsolePutResult::success) {
+                    return false;
+                }
+                index = index + 1u64;
+            }
+            if (!scratchpad_output_text(session, "\r\n")) {
+                return false;
+            }
+        } else {
+            if (kind == ScratchpadResponseKind::ready) {
+                if (!scratchpad_output_text(session, "AURORA_RAM_SCRATCHPAD_READY: 49-byte session scratchpad; ")
+                    || !scratchpad_output_text(session, "all data is lost on service reset or session exit.\r\n")) {
+                    return false;
+                }
+            }
+            if (kind == ScratchpadResponseKind::missing && !scratchpad_output_text(session, "missing\r\n")) {
+                return false;
+            }
+            if (kind == ScratchpadResponseKind::saved && !scratchpad_output_text(session, "saved\r\n")) {
+                return false;
+            }
+            if (kind == ScratchpadResponseKind::rejected && !scratchpad_output_text(session, "rejected\r\n")) {
+                return false;
+            }
+            if (kind == ScratchpadResponseKind::aborted && !scratchpad_output_text(session,
+                "aborted: previous data retained\r\n")) {
+                return false;
+            }
+            if (kind == ScratchpadResponseKind::read_failed && !scratchpad_output_text(session,
+                "read failed: output discarded\r\n")) {
+                return false;
+            }
+            if (kind == ScratchpadResponseKind::committed_caller_failed && !scratchpad_output_text(session,
+                "committed; caller failed: do not retry automatically\r\n")) {
+                return false;
+            }
+            if (kind == ScratchpadResponseKind::indeterminate_reset && !scratchpad_output_text(session,
+                "commit indeterminate; service reset: all data lost; do not retry automatically\r\n")) {
+                return false;
+            }
+            if (kind == ScratchpadResponseKind::reset && !scratchpad_output_text(session,
+                "service reset: all data lost\r\n")) {
+                return false;
+            }
+            if (kind == ScratchpadResponseKind::unavailable) {
+                return scratchpad_output_text(session, "scratchpad unavailable; session closed\r\n");
+            }
+            if (kind == ScratchpadResponseKind::limit) {
+                return scratchpad_output_text(session, "command limit reached; session closed\r\n");
+            }
+        }
+        return scratchpad_output_text(session, "aurora> ");
+    }
+}

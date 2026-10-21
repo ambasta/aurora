@@ -1,0 +1,229 @@
+export module console.scratchpad;
+
+export namespace console {
+    auto scratchpad_printable(u8 byte) -> bool {
+        return byte >= ' ' && byte <= '~';
+    }
+
+    enum class ScratchpadOperation {
+        get,
+        put
+    };
+
+    enum class ScratchpadResultKind {
+        incomplete,
+        content,
+        missing,
+        saved,
+        refused
+    };
+
+    enum class ScratchpadInputAction {
+        command,
+        requested_exit,
+        output_failure
+    };
+
+    enum class ScratchpadResponseKind {
+        ready,
+        content,
+        missing,
+        saved,
+        rejected,
+        aborted,
+        read_failed,
+        committed_caller_failed,
+        indeterminate_reset,
+        reset,
+        unavailable,
+        limit
+    };
+
+    // These classes own ordinary inline transport bytes, not service state or
+    // publication authority. Native ingress checks their raw representation.
+    class ScratchpadCommand {
+        array<u8, 64> bytes;
+        u64 count;
+        ScratchpadOperation operation;
+    public:
+        ScratchpadCommand(ScratchpadOperation selection, u64 length) : bytes{}, count(length), operation(selection) {
+        }
+        auto size() const -> u64 {
+            return count;
+        }
+        auto selection() const -> ScratchpadOperation {
+            return operation;
+        }
+        auto at(u64 index) const -> u8 {
+            if (index >= count || index >= 49u64) {
+                return 0u8;
+            }
+            return bytes[i64(index)];
+        }
+        auto set(u64 index, u8 byte) -> bool {
+            if (operation != ScratchpadOperation::put || count > 49u64 || index >= count
+                || !scratchpad_printable(byte)) {
+                return false;
+            }
+            bytes[i64(index)] = byte;
+            return true;
+        }
+        auto valid() const -> bool {
+            if (count > 49u64 || (operation != ScratchpadOperation::get && operation != ScratchpadOperation::put)) {
+                return false;
+            }
+            if (operation == ScratchpadOperation::get && count != 0u64) {
+                return false;
+            }
+            u64 index = 0u64;
+            while (index < 64u64) {
+                if (index < count) {
+                    if (!scratchpad_printable(bytes[i64(index)])) {
+                        return false;
+                    }
+                } else {
+                    if (bytes[i64(index)] != 0u8) {
+                        return false;
+                    }
+                }
+                index = index + 1u64;
+            }
+            return true;
+        }
+    };
+
+    class ScratchpadResult {
+        array<u8, 64> bytes;
+        u64 count;
+        ScratchpadResultKind kind;
+    public:
+        ScratchpadResult(ScratchpadResultKind outcome) : bytes{}, count(0u64), kind(outcome) {
+        }
+        auto status() const -> ScratchpadResultKind {
+            return kind;
+        }
+        auto size() const -> u64 {
+            return count;
+        }
+        auto at(u64 index) const -> u8 {
+            if (index >= count || index >= 49u64) {
+                return 0u8;
+            }
+            return bytes[i64(index)];
+        }
+        auto append(u8 byte) -> bool {
+            if (kind != ScratchpadResultKind::content || count >= 49u64 || !scratchpad_printable(byte)) {
+                return false;
+            }
+            bytes[i64(count)] = byte;
+            count = count + 1u64;
+            return true;
+        }
+        auto valid() const -> bool {
+            if (count > 49u64 || (kind != ScratchpadResultKind::incomplete && kind != ScratchpadResultKind::content
+                && kind != ScratchpadResultKind::missing && kind != ScratchpadResultKind::saved && kind
+                != ScratchpadResultKind::refused)) {
+                return false;
+            }
+            if (kind != ScratchpadResultKind::content && count != 0u64) {
+                return false;
+            }
+            u64 index = 0u64;
+            while (index < 64u64) {
+                if (index < count) {
+                    if (!scratchpad_printable(bytes[i64(index)])) {
+                        return false;
+                    }
+                } else {
+                    if (bytes[i64(index)] != 0u8) {
+                        return false;
+                    }
+                }
+                index = index + 1u64;
+            }
+            return true;
+        }
+    };
+
+    class ScratchpadSubmission {
+        ScratchpadCommand command;
+        ScratchpadInputAction action;
+        u64 after_cr;
+    public:
+        ScratchpadSubmission(ScratchpadCommand value, ScratchpadInputAction outcome, u64 carry) : command(value),
+            action(outcome), after_cr(carry) {
+        }
+        auto value() const -> ScratchpadCommand {
+            return command;
+        }
+        auto status() const -> ScratchpadInputAction {
+            return action;
+        }
+        auto carry() const -> u64 {
+            return after_cr;
+        }
+        auto valid() const -> bool {
+            if (!command.valid() || after_cr > 1u64 || (action != ScratchpadInputAction::command && action
+                != ScratchpadInputAction::requested_exit && action != ScratchpadInputAction::output_failure)) {
+                return false;
+            }
+            return action == ScratchpadInputAction::command || command.selection() == ScratchpadOperation::get;
+        }
+    };
+
+    class ScratchpadResponse {
+        array<u8, 64> bytes;
+        u64 count;
+        ScratchpadResponseKind kind;
+    public:
+        ScratchpadResponse(ScratchpadResponseKind outcome) : bytes{}, count(0u64), kind(outcome) {
+        }
+        auto status() const -> ScratchpadResponseKind {
+            return kind;
+        }
+        auto size() const -> u64 {
+            return count;
+        }
+        auto at(u64 index) const -> u8 {
+            if (index >= count || index >= 49u64) {
+                return 0u8;
+            }
+            return bytes[i64(index)];
+        }
+        auto append(u8 byte) -> bool {
+            if (kind != ScratchpadResponseKind::content || count >= 49u64 || !scratchpad_printable(byte)) {
+                return false;
+            }
+            bytes[i64(count)] = byte;
+            count = count + 1u64;
+            return true;
+        }
+        auto valid() const -> bool {
+            if (count > 49u64 || (kind != ScratchpadResponseKind::ready && kind != ScratchpadResponseKind::content
+                && kind != ScratchpadResponseKind::missing && kind != ScratchpadResponseKind::saved && kind
+                != ScratchpadResponseKind::rejected && kind != ScratchpadResponseKind::aborted && kind
+                != ScratchpadResponseKind::read_failed && kind != ScratchpadResponseKind::committed_caller_failed
+                && kind != ScratchpadResponseKind::indeterminate_reset && kind != ScratchpadResponseKind::reset && kind
+                != ScratchpadResponseKind::unavailable && kind != ScratchpadResponseKind::limit)) {
+                return false;
+            }
+            if (kind != ScratchpadResponseKind::content && count != 0u64) {
+                return false;
+            }
+            u64 index = 0u64;
+            while (index < 64u64) {
+                if (index < count) {
+                    if (!scratchpad_printable(bytes[i64(index)])) {
+                        return false;
+                    }
+                } else {
+                    if (bytes[i64(index)] != 0u8) {
+                        return false;
+                    }
+                }
+                index = index + 1u64;
+            }
+            return true;
+        }
+    };
+}

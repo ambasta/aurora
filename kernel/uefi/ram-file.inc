@@ -350,6 +350,9 @@ auto ram_settle_caller() -> void {
     require(retire(0), "RAM retired caller scrub");
 }
 auto ram_reset() -> void {
+#ifdef AURORA_RAM_SCRATCHPAD_CONSOLE
+    scratchpad_discard(); // No candidate can cross a reset or a new incarnation.
+#endif
     require(ram_state == RamState::poisoned && ram_lifetime_valid(), "RAM authenticated reset only");
     const bool uncertain = ram_command && ram_command->framing.commit_delivered() &&
                            ram_command->framing.outcome() != RamFileFraming::Outcome::committed &&
@@ -363,8 +366,8 @@ auto ram_reset() -> void {
     require(retire(1) && frames.used() == 0 && mailbox->revoked(), "RAM reset full reclamation");
     ram_clear(ram_command);
     ram_state = RamState::absent;
-    Serial::text(uncertain ? "AURORA_RAM_FILE_RESET: outcome=indeterminate data_lost=1\r\n"
-                           : "AURORA_RAM_FILE_RESET: outcome=reset data_lost=1\r\n");
+    Serial::text(uncertain ? std::string_view{"AURORA_RAM_FILE_RESET: outcome=indeterminate data_lost=1\r\n"}
+                           : std::string_view{"AURORA_RAM_FILE_RESET: outcome=reset data_lost=1\r\n"});
 }
 [[nodiscard]] auto ram_start() -> bool {
     require(ram_state == RamState::absent && !ram_lifetime && !ram_command && !ram_service_wait.context && mailbox &&
@@ -395,6 +398,52 @@ auto ram_reset() -> void {
     ram_state = RamState::idle;
     return true;
 }
+// Shared scenario-free exchange mechanism; fixture selection stays in its caller.
+auto ram_exchange_commands() -> void {
+    while (ram_caller_wait.context && !ram_command->caller_disabled && ram_state != RamState::poisoned) {
+        const auto epoch = ram_mint_epoch();
+        if (!epoch) {
+            ram_command->caller_disabled = true;
+            break;
+        }
+        require(ram_lifetime_valid() && ram_command_valid() && ram_service_wait.context &&
+                    ram_service_wait.context->call_frame(ram_lifetime->contract, images::bounds_serve_pc),
+                "RAM pre-delivery continuation authority");
+        const auto request = mailbox->receive(
+            ram_command->service, ipc::Phase::service, ram_command->service_endpoint, ram_caller_wait.ticket);
+        require(request && request->second() == 0 && ram_command->framing.delivered(request->first()),
+                "RAM exact one-shot delivery");
+        ram_command->delivered = true;
+        ram_resume_service(0, request->first(), *epoch);
+        if (ram_state == RamState::poisoned)
+            break;
+        require(ram_service_wait.context && mailbox->state() == ipc::State::replied, "RAM parked before caller reply");
+#ifdef AURORA_SCRATCHPAD_FIXTURE
+        // Exercise caller loss with the real pending receipt. DATA #2 means
+        // the unchanged caller already accumulated DATA #1 in its private result.
+        if (ram_commands == 2 &&
+            ((scratchpad_probe == '1' && ram_command->framing.count() == 2) ||
+             (scratchpad_probe == '2' && ram_command->framing.data_count() == 2) ||
+             (scratchpad_probe == '3' && ram_command->framing.outcome() == RamFileFraming::Outcome::committed))) {
+            ram_command->caller_disabled = true;
+            break;
+        }
+#endif
+#ifdef AURORA_RUNTIME_FIXTURE
+        if (fixture == Fixture::ram_settlement &&
+            ram_command->framing.outcome() == RamFileFraming::Outcome::committed) {
+            // Dispose execution before consuming the committed receipt. Its
+            // original identity remains alive solely for the settlement below.
+            ram_command->caller_disabled = true;
+            break;
+        }
+#endif
+        const auto ticket = ram_caller_wait.ticket;
+        require(!ram_resume_caller((ticket == UINT64_MAX ? ticket - 1 : ticket + 1)) && ram_resume_caller(ticket),
+                "RAM exact reply wake");
+    }
+}
+#ifndef AURORA_RAM_SCRATCHPAD_CONSOLE
 [[nodiscard]] auto ram_command_run(U64 scenario, RamFileFraming::Right right) -> bool {
     require(ram_state == RamState::idle && ram_lifetime_valid() && ram_service_wait.context && !ram_command &&
                 !domains[0].handle && !ram_caller_wait.context && mailbox->revoked(),
@@ -448,37 +497,7 @@ auto ram_reset() -> void {
 #endif
     ram_state = RamState::command;
     ram_launch(0, scenario, *caller_epoch);
-    while (ram_caller_wait.context && !ram_command->caller_disabled && ram_state != RamState::poisoned) {
-        const auto epoch = ram_mint_epoch();
-        if (!epoch) {
-            ram_command->caller_disabled = true;
-            break;
-        }
-        require(ram_lifetime_valid() && ram_command_valid() && ram_service_wait.context &&
-                    ram_service_wait.context->call_frame(ram_lifetime->contract, images::bounds_serve_pc),
-                "RAM pre-delivery continuation authority");
-        const auto request = mailbox->receive(
-            ram_command->service, ipc::Phase::service, ram_command->service_endpoint, ram_caller_wait.ticket);
-        require(request && request->second() == 0 && ram_command->framing.delivered(request->first()),
-                "RAM exact one-shot delivery");
-        ram_command->delivered = true;
-        ram_resume_service(0, request->first(), *epoch);
-        if (ram_state == RamState::poisoned)
-            break;
-        require(ram_service_wait.context && mailbox->state() == ipc::State::replied, "RAM parked before caller reply");
-#ifdef AURORA_RUNTIME_FIXTURE
-        if (fixture == Fixture::ram_settlement &&
-            ram_command->framing.outcome() == RamFileFraming::Outcome::committed) {
-            // Dispose execution before consuming the committed receipt. Its
-            // original identity remains alive solely for the settlement below.
-            ram_command->caller_disabled = true;
-            break;
-        }
-#endif
-        const auto ticket = ram_caller_wait.ticket;
-        require(!ram_resume_caller((ticket == UINT64_MAX ? ticket - 1 : ticket + 1)) && ram_resume_caller(ticket),
-                "RAM exact reply wake");
-    }
+    ram_exchange_commands();
     if (ram_state == RamState::poisoned) {
         ram_reset();
         return false;
@@ -605,3 +624,5 @@ auto run_ram_file() -> void {
     mailbox.reset();
     Serial::text("AURORA_UEFI_RAM_FILE_OK: used=0 volatile=1\r\n");
 }
+
+#endif // !AURORA_RAM_SCRATCHPAD_CONSOLE

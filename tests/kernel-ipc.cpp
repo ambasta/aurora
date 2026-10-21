@@ -1,4 +1,5 @@
 #include "../kernel/ipc-policy.hpp"
+#include "../kernel/ram-scratchpad.hpp"
 #include "../kernel/uefi/ram-file-policy.hpp"
 #include <array>
 #include <cstdlib>
@@ -538,6 +539,9 @@ auto generation_exhaustion() -> void {
 auto retained_file_framing() -> void {
     using F = aurora::uefi::RamFileFraming;
     for (unsigned length = 0; length <= 49; ++length) {
+        F fixed{F::Right::replace, length};
+        for (unsigned other = 0; other <= 50; ++other)
+            check(fixed.permits((other << 8) | 3) == (other == length), "scratchpad exact admitted BEGIN length");
         F write{F::Right::replace};
         check(!write.permits(1) && !write.permits(5), "RAM write immutable right and begin order");
         check(write.publish((length << 8) | 3), "RAM bounded replace begin");
@@ -557,6 +561,7 @@ auto retained_file_framing() -> void {
         check(!write.reply(1) && !write.reply(5 | (1ULL << 63)) && write.reply(5), "RAM exact committed reply");
         check(write.outcome() == F::Outcome::committed && write.count() == length + 2 && !write.permits(1),
               "RAM terminal command cannot renew allowance");
+        check(write.terminal_reply() == 5 && write.data_count() == 0, "RAM committed terminal evidence");
         F read{F::Right::read};
         check(!read.permits(3) && read.publish(1) && read.delivered(1) && read.reply(1), "RAM read right");
         for (unsigned offset = 0; offset < length; ++offset) {
@@ -565,6 +570,7 @@ auto retained_file_framing() -> void {
         }
         check(read.publish((length << 8) | 2) && read.delivered((length << 8) | 2) && read.reply(3), "RAM EOF framing");
         check(read.count() == length + 2 && read.state() == F::State::terminal, "RAM maximum51 exchanges");
+        check(read.terminal_reply() == 3 && read.data_count() == length, "RAM exact EOF/data-count evidence");
     }
     for (const auto word : std::array<std::uint64_t, 6>{0, 6, 50U << 8 | 3U, 1ULL << 63 | 3, 0x10003, UINT64_MAX}) {
         F bad{F::Right::replace};
@@ -574,6 +580,12 @@ auto retained_file_framing() -> void {
     check(missing.publish(1) && missing.delivered(1) && missing.reply(1) && missing.publish(2) &&
               missing.delivered(2) && missing.reply(4),
           "RAM missing permitted only offsetzero");
+    check(missing.terminal_reply() == 4 && missing.data_count() == 0, "RAM missing terminal distinct from empty EOF");
+    F invalid_length{F::Right::replace, 51};
+    check(!invalid_length.permits(3), "RAM invalid fixed length closed");
+    F rejected{F::Right::read};
+    check(rejected.publish(1) && rejected.delivered(1) && rejected.reply(6) && rejected.terminal_reply() == 6,
+          "RAM exact rejected terminal");
     F abort{F::Right::replace};
     check(abort.publish(259) && abort.delivered(259) && abort.reply(1) && abort.begin_abort(), "RAM precommit abort");
     check(!abort.permits(3) && !abort.publish(3) && !abort.delivered(3) && !abort.reply(7) &&
@@ -612,7 +624,120 @@ auto retained_file_settlement() -> void {
           "RAM fresh caller cannot inherit revoked endpoint");
 }
 
+auto scratchpad_copied_records() -> void {
+    using namespace aurora::scratchpad;
+    using S = CopiedStack;
+    std::array<std::byte, S::reservation> bytes{};
+    const auto put_word = [&](std::size_t at, std::uint64_t value) {
+        for (unsigned i = 0; i < 8; ++i)
+            bytes[at + i] = std::byte{static_cast<unsigned char>(value >> (8 * i))};
+    };
+    Command command;
+    Result result;
+    check(command.valid() && result.valid(), "scratchpad pristine get/incomplete");
+    for (std::uint64_t operation = 0; operation < 3; ++operation)
+        for (std::uint64_t kind = 0; kind < 6; ++kind)
+            for (std::uint64_t reply = 0; reply < 8; ++reply)
+                for (std::uint64_t count = 0; count < 3; ++count) {
+                    scrub(result);
+                    result.kind = kind;
+                    const bool accepted =
+                        operation <= 1 &&
+                        ((operation == 0 && kind == 1 && reply == 3 && count == 0) ||
+                         (operation == 0 && kind == 2 && reply == 4 && count == 0) ||
+                         (operation == 1 && kind == 3 && reply == 5 && count == 0) || (kind == 4 && reply == 6));
+                    check(result.terminal_for(operation, reply, count) == accepted,
+                          "scratchpad exhaustive operation/result/terminal relation");
+                }
+    result.kind = 1;
+    result.count = 1;
+    result.bytes[0] = 'P';
+    check(result.terminal_for(0, 3, 1) && !result.terminal_for(0, 3, 0) && !result.terminal_for(0, 3, 2),
+          "scratchpad complete content must match every accepted DATA reply");
+    scrub(result);
+    for (std::uint64_t operation = 0; operation <= 3; ++operation)
+        for (std::uint64_t length = 0; length <= 50; ++length) {
+            scrub(command);
+            command.operation = operation;
+            command.count = length;
+            for (std::size_t i = 0; i < length; ++i)
+                command.bytes[i] = 32;
+            check(command.valid() == (operation <= 1 && length <= 49 && (operation == 1 || length == 0)),
+                  "scratchpad closed raw operation/count");
+        }
+    scrub(command);
+    command.operation = 1;
+    command.count = 1;
+    for (unsigned byte = 0; byte <= 255; ++byte) {
+        command.bytes[0] = static_cast<std::uint8_t>(byte);
+        check(command.valid() == (byte >= 32 && byte <= 126), "scratchpad exact printable-byte boundary");
+    }
+    command.bytes[0] = 'X';
+    for (std::size_t suffix = 1; suffix < 64; ++suffix) {
+        command.bytes[suffix] = 1;
+        check(!command.valid(), "scratchpad every hidden command suffix denied");
+        command.bytes[suffix] = 0;
+    }
+    check(S::stage(bytes, command) && !S::stage(bytes, command), "scratchpad pristine fixed-window stage once");
+    put_word(8, 23); // Caller endpoint slot zero is valid, generation must not be zero.
+    put_word(S::result + 72, 3);
+    check(S::capture(bytes, 0, 23, 1, 1, result) && result.kind == 3 && result.count == 0,
+          "scratchpad slotzero canonical saved result");
+    for (const auto slot : std::array<std::uint64_t, 2>{1, UINT64_MAX})
+        check(!S::capture(bytes, slot, 23, 1, 1, result), "scratchpad foreign caller slot denied");
+    check(!S::capture(bytes, 0, 0, 1, 1, result) && !S::capture(bytes, 0, 24, 1, 1, result),
+          "scratchpad zero/stale generation denied");
+    check(!S::capture(bytes, 0, 23, 0, 0, result) && !S::capture(bytes, 0, 23, 1, 2, result),
+          "scratchpad operation/count cannot change admitted authority");
+    for (std::size_t at = S::sentinel; at < S::reservation; ++at) {
+        bytes[at] = std::byte{1};
+        check(!S::capture(bytes, 0, 23, 1, 1, result), "scratchpad entire sentinel verified");
+        bytes[at] = std::byte{0};
+    }
+    for (const auto kind : std::array<std::uint64_t, 2>{5, UINT64_MAX}) {
+        put_word(S::result + 72, kind);
+        check(!S::capture(bytes, 0, 23, 1, 1, result) && result.kind == 0,
+              "scratchpad malformed result scrubs partial copy");
+    }
+    put_word(S::result + 72, 1);
+    put_word(S::result + 64, 1);
+    bytes[S::result] = std::byte{'Y'};
+    check(S::capture(bytes, 0, 23, 1, 1, result) && result.bytes[0] == 'Y',
+          "scratchpad copies actual complete result bytes, not the command bytes");
+    for (std::size_t suffix = 1; suffix < 64; ++suffix) {
+        bytes[S::result + suffix] = std::byte{1};
+        check(!S::capture(bytes, 0, 23, 1, 1, result) && result.count == 0 && result.bytes[0] == 0,
+              "scratchpad malformed result suffix cannot leak a prefix");
+        bytes[S::result + suffix] = std::byte{0};
+    }
+    for (std::size_t at = 0; at < S::reservation; ++at) {
+        bytes.fill(std::byte{0});
+        bytes[at] = std::byte{1};
+        check(!S::stage(bytes, command), "scratchpad every nonpristine window byte refused");
+    }
+    Submission submission;
+    for (std::uint64_t action = 0; action < 4; ++action)
+        for (std::uint64_t carry = 0; carry < 3; ++carry) {
+            submission.action = action;
+            submission.after_cr = carry;
+            check(submission.valid() == (action <= 2 && carry <= 1), "scratchpad closed submission action/carry");
+        }
+    submission.action = 1;
+    submission.after_cr = 0;
+    submission.command = command;
+    check(!submission.valid(), "scratchpad exit cannot hide a put");
+    for (std::uint64_t kind = 0; kind < 13; ++kind) {
+        Response response;
+        response.kind = kind;
+        check(response.valid() == (kind <= 11), "scratchpad closed output kind");
+        response.count = 1;
+        response.bytes[0] = 'Q';
+        check(response.valid() == (kind == 1), "scratchpad outcome-only cannot carry content");
+    }
+}
+
 auto main() -> int {
+    scratchpad_copied_records();
     retained_file_framing();
     retained_file_settlement();
     lifecycle_and_copies();

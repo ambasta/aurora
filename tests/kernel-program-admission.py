@@ -31,8 +31,182 @@ def body(frame, *calls):
     return dict(local_peak=frame, calls=[dict(target=target, live_bytes=live) for target, live in calls])
 
 
+def scratchpad_facts():
+    """Independent native layouts for the three exact copied entry roles."""
+    enums = {
+        "operation": ("ScratchpadOperation", dict(get=0, put=1)),
+        "result_kind": ("ScratchpadResultKind", dict(incomplete=0, content=1, missing=2, saved=3, refused=4)),
+        "action": ("ScratchpadInputAction", dict(command=0, requested_exit=1, output_failure=2)),
+        "response_kind": (
+            "ScratchpadResponseKind",
+            dict(
+                ready=0,
+                content=1,
+                missing=2,
+                saved=3,
+                rejected=4,
+                aborted=5,
+                read_failed=6,
+                committed_caller_failed=7,
+                indeterminate_reset=8,
+                reset=9,
+                unavailable=10,
+                limit=11,
+            ),
+        ),
+    }
+    facts = dict(
+        version=2,
+        span_bytes=56,
+        records={},
+        functions={},
+        enums={symbol: dict(source_name="console::" + name, cases=cases) for symbol, (name, cases) in enums.items()},
+    )
+    for symbol, name, kind, field in (
+        ("command", "ScratchpadCommand", "operation", "operation"),
+        ("result", "ScratchpadResult", "result_kind", "kind"),
+        ("response", "ScratchpadResponse", "response_kind", "kind"),
+    ):
+        facts["records"][symbol] = dict(
+            source_name="console::" + name,
+            size=80,
+            reserved=80,
+            alignment=8,
+            fields=[
+                dict(name="bytes", offset=0, bytes=64, array_length=64, kind="u8"),
+                dict(name="count", offset=64, bytes=8, array_length=0, kind="u64"),
+                dict(name=field, offset=72, bytes=8, array_length=0, kind="enum", type_name=kind),
+            ],
+        )
+    facts["records"]["submission"] = dict(
+        source_name="console::ScratchpadSubmission",
+        size=96,
+        reserved=96,
+        alignment=8,
+        fields=[
+            dict(name="command", offset=0, bytes=80, array_length=0, kind="class", type_name="command"),
+            dict(name="action", offset=80, bytes=8, array_length=0, kind="enum", type_name="action"),
+            dict(name="after_cr", offset=88, bytes=8, array_length=0, kind="u64"),
+        ],
+    )
+    for role, name, parameter_bytes, argument, result in (
+        (
+            "call",
+            "aurora_user_main",
+            96,
+            dict(offset=16, bytes=80, kind="class", type_name="command"),
+            dict(bytes=80, kind="class", type_name="result"),
+        ),
+        (
+            "input",
+            "read_scratchpad_input",
+            24,
+            dict(offset=16, bytes=8, kind="bool"),
+            dict(bytes=96, kind="class", type_name="submission"),
+        ),
+        (
+            "response",
+            "present_scratchpad_response",
+            96,
+            dict(offset=16, bytes=80, kind="class", type_name="response"),
+            dict(bytes=8, kind="bool"),
+        ),
+    ):
+        facts["functions"][role] = dict(
+            source_name=name,
+            receiver=None,
+            receiver_mutable=None,
+            borrowed_roots=[],
+            borrowed_root_count=0,
+            borrowed_root_abi=dict(
+                kind="none", register=None, tuple_payload_bytes=0, tuple_reserved_bytes=0, saved_root_reserved_bytes=0
+            ),
+            parameter_bytes=parameter_bytes,
+            parameters=[dict(offset=0, bytes=16, kind="service"), argument],
+            result=result,
+        )
+    return facts
+
+
+def scratchpad_controls():
+    facts = scratchpad_facts()
+    for role in ("call", "input", "response"):
+        need(admission.check_scratchpad_abi(facts, role=role) == role, "Exact scratchpad " + role + " ABI")
+        changes = [
+            lambda value: value.__setitem__("injected", 0),
+            lambda value: value.__setitem__("version", True),
+            lambda value: value["functions"][role].__setitem__("parameter_bytes", 16),
+            lambda value: value["functions"][role].__setitem__("receiver", "hidden"),
+            lambda value: value["functions"][role]["result"].__setitem__("kind", "u64"),
+            lambda value: value["functions"][role]["parameters"][0].__setitem__("type_name", "builtin::ConsoleSession"),
+            lambda value: value["functions"][role]["parameters"][0].__setitem__("type_name", "builtin::ServeSession"),
+            lambda value: value["functions"][role]["parameters"][1].__setitem__("offset", 24),
+        ]
+        for mutate in changes:
+            changed = deepcopy(facts)
+            mutate(changed)
+            reject(
+                lambda: admission.check_scratchpad_abi(changed, role=role), "scratchpad signature/metadata substitution"
+            )
+        for symbol, record in facts["records"].items():
+            for field, replacement in (("size", 88), ("reserved", True), ("alignment", 8.0), ("injected", 0)):
+                changed = deepcopy(facts)
+                changed["records"][symbol][field] = replacement
+                reject(lambda: admission.check_scratchpad_abi(changed, role=role), "scratchpad complete nominal layout")
+            for index in range(len(record["fields"])):
+                for field, replacement in (
+                    ("offset", 99),
+                    ("bytes", 4),
+                    ("array_length", True),
+                    ("kind", "pointer"),
+                    ("injected", 0),
+                ):
+                    changed = deepcopy(facts)
+                    changed["records"][symbol]["fields"][index][field] = replacement
+                    reject(lambda: admission.check_scratchpad_abi(changed, role=role), "scratchpad nested field layout")
+        for symbol, enum in facts["enums"].items():
+            for name in enum["cases"]:
+                for replacement in (True, 0.0, 99):
+                    changed = deepcopy(facts)
+                    changed["enums"][symbol]["cases"][name] = replacement
+                    reject(
+                        lambda: admission.check_scratchpad_abi(changed, role=role), "scratchpad full-width enum ordinal"
+                    )
+    stack = admission.stack_facts
+    host = "__au_runtime_call"
+    graph = {"entry": body(96, ("helper", 96)), "helper": body(32, (host, 32)), host: body(8)}
+    stack.singleton_service_graph(graph, {"entry", "helper"}, "entry", host, "builtin::CallSession")
+    for foreign in ("__au_runtime_console_put", "__au_runtime_serve_exchange", "hidden_unused_import"):
+        changed = deepcopy(graph)
+        changed["helper"]["calls"][0]["target"] = foreign
+        reject(
+            lambda: stack.singleton_service_graph(changed, {"entry", "helper"}, "entry", host, "builtin::CallSession"),
+            "scratchpad foreign host substitution",
+        )
+        changed = dict(graph, **{foreign: body(8)})
+        reject(
+            lambda: stack.singleton_service_graph(changed, {"entry", "helper"}, "entry", host, "builtin::CallSession"),
+            "scratchpad unused import",
+        )
+    for kind in ("builtin::ConsoleSession", "builtin::ServeSession"):
+        changed = deepcopy(graph)
+        changed["helper"]["service_abi"] = dict(record=dict(parameters=[[kind, 16]], result_bytes=8), calls={})
+        reject(
+            lambda: stack.singleton_service_graph(changed, {"entry", "helper"}, "entry", host, "builtin::CallSession"),
+            "scratchpad same-width foreign loan",
+        )
+    changed = deepcopy(graph)
+    changed["entry"]["calls"] = []
+    reject(
+        lambda: stack.singleton_service_graph(changed, {"entry", "helper"}, "entry", host, "builtin::CallSession"),
+        "scratchpad unreachable Call operation",
+    )
+
+
 def main():
     from collections import namedtuple
+
+    scratchpad_controls()
 
     lifecycle = "aurora_kernel_file_service_transition"
     lifecycle_graph = {"uefi_payload_entry": body(0, (lifecycle, 0)), lifecycle: body(0)}

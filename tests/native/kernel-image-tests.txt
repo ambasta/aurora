@@ -7,3 +7,5 @@ native-uefi-runtime-console-region-fixture-image
 native-uefi-user-ram-file-image
 native-uefi-user-ram-file-fixture-image
 native-uefi-ram-file-linked-image
+native-uefi-ram-scratchpad-console-linked-image
+native-uefi-ram-scratchpad-console-fixture-linked-image

@@ -29,13 +29,18 @@ def verify(runtime, program, timer):
         r"\[\[gnu::noinline\]\] static void number\(unsigned long long value\)\s*\{\s*"
         r"hardware::Serial::number\(value\);\s*\}\s*\};\s*"
         r"using Serial\s*=\s*SnapshotDiagnostics;\s*"
-        r"#elif defined\(AURORA_UEFI_PROGRAM_CONSOLE\)(?: \|\| defined\(AURORA_CONSOLE_REGION\))?)\s*"
+        r"#elif defined\(AURORA_UEFI_PROGRAM_CONSOLE\)(?: \|\| defined\(AURORA_CONSOLE_REGION\))?"
+        r"(?: \|\| defined\(AURORA_RAM_SCRATCHPAD_CONSOLE\))?)\s*"
         r"(?:using Serial\s*=\s*console::Uart<hardware::Io,\s*console::FifoTrigger::fourteen>;|"
         r"class ProgramSerialAdapter final\s*\{\s*"
         r"using Uart\s*=\s*console::Uart<hardware::Io,\s*console::FifoTrigger::fourteen>;\s*public:\s*"
         r"static void initialize_input\(\)\s*\{\s*Uart::initialize_input\(\);\s*\}\s*"
         r"static auto next\(\)\s*->\s*console::Sample\s*\{\s*return Uart::next\(\);\s*\}\s*"
         r"static auto try_put\(std::uint8_t byte\)\s*->\s*console::PutResult\s*\{\s*"
+        r"(?:#ifdef AURORA_SCRATCHPAD_FIXTURE\s*"
+        r"if \(scratchpad_output_left != UINT32_MAX\)\s*\{\s*"
+        r"if \(!scratchpad_output_left\)\s*return console::PutResult::timeout;\s*"
+        r"--scratchpad_output_left;\s*\}\s*#endif\s*)?"
         r"return Uart::try_put\(byte\);\s*\}\s*"
         r"static void put\(std::uint8_t byte\)\s*\{\s*Uart::put\(byte\);\s*\}\s*"
         r"\[\[gnu::noinline\]\] static void text\(std::string_view value\)\s*\{\s*Uart::text\(value\);\s*\}\s*"
@@ -57,11 +62,44 @@ def verify(runtime, program, timer):
     )
 
 
+def verify_scratchpad_route(runtime, scratchpad):
+    runtime, scratchpad = map(clean, (runtime, scratchpad))
+    need(
+        re.search(r"using ProgramInputSession\s*=\s*console::Session<Serial,\s*ScratchpadInputPlatform>;", scratchpad),
+        "Scratchpad Console must use the same runtime sticky UART",
+    )
+    need(
+        not re.search(r"hardware\s*::\s*Serial|0x0*3fd\b|\b1021\b", scratchpad, re.I),
+        "Scratchpad must not bypass the shared sticky UART",
+    )
+    need(
+        re.search(
+            r"#elif defined\(AURORA_UEFI_PROGRAM_CONSOLE\) \|\| defined\(AURORA_CONSOLE_REGION\)"
+            r" \|\| defined\(AURORA_RAM_SCRATCHPAD_CONSOLE\)",
+            runtime,
+        ),
+        "Scratchpad profile must select the shared runtime UART adapter",
+    )
+
+
 def main():
     runtime = (ROOT / "kernel/uefi/runtime.cpp").read_text()
     program = (ROOT / "kernel/uefi/program-console.inc").read_text()
     timer = (ROOT / "kernel/uefi/service-timer.inc").read_text()
     verify(runtime, program, timer)
+    scratchpad = (ROOT / "kernel/uefi/ram-scratchpad-console.inc").read_text()
+    verify_scratchpad_route(runtime, scratchpad)
+    for changed_runtime, changed_scratchpad in (
+        (runtime.replace(" || defined(AURORA_RAM_SCRATCHPAD_CONSOLE)", ""), scratchpad),
+        (runtime, scratchpad.replace("Session<Serial,", "Session<Other,")),
+        (runtime, scratchpad + " hardware::Serial::put(42);"),
+        (runtime, scratchpad + " read(0x3fd);"),
+    ):
+        try:
+            verify_scratchpad_route(changed_runtime, changed_scratchpad)
+        except ValueError:
+            continue
+        raise ValueError("Accepted changed scratchpad UART routing contract")
     # Formatting changes preserve the exact specialization and ordered arguments.
     formatted = """
 #ifdef AURORA_UEFI_PROGRAM_CONSOLE
@@ -132,6 +170,15 @@ using Serial = ProgramSerialAdapter;
         (combined.replace("hardware::Serial::number(value);", "read(0x3fd);"), alias, ""),
         (combined + " hardware::Serial::put(42);", alias, ""),
     )
+    # The bounded timeout hook is accepted only under the exact fixture guard.
+    try:
+        verify(
+            runtime.replace("#ifdef AURORA_SCRATCHPAD_FIXTURE", "#ifdef AURORA_RAM_SCRATCHPAD_CONSOLE"), program, timer
+        )
+    except ValueError:
+        pass
+    else:
+        raise ValueError("Accepted scratchpad timeout in the production profile")
     for inputs in invalid:
         try:
             verify(*inputs)

@@ -37,8 +37,12 @@ working bounded mechanisms, not a general process or runtime API. The
 compiled application with scoped recovery and authority-failure qualification.
 The file-call path now implements a reusable bounded read-service incarnation
 for `wc` and `crc`, with fresh per-command caller/grant authority and full cleanup
-after failure. Its final-source qualification remains required. General program
-lifetime and service-owned mutable RAM storage remain subsequent dependencies.
+after failure. The bounded retained source-owned mutable RAM-file service is also
+implemented and was qualified in #234; it is separate from that reusable read
+service and is not a general filesystem or scheduler. The new opt-in interactive
+scratchpad supplies real protected command input/output and explicit user-facing
+lifecycle outcomes, with final integrated qualification pending. General program
+lifetime, mounted durable storage and broader service APIs remain dependencies.
 
 Build capability-scoped blocking request/reply on the bounded two-program
 suspend/resume mechanism, then integrate protected-program startup/lifecycle and file
