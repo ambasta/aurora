@@ -247,7 +247,7 @@ class NativeArtifacts(unittest.TestCase):
                 analyze=False,
             )
             record = dict(
-                parameters=[["builtin::PortRange", 16], ["copied_class", 48]],
+                parameters=[["builtin::Com1UartGrant", 16], ["copied_class", 48]],
                 result_bytes=48,
                 result_kind="copied_class",
             )
@@ -271,7 +271,7 @@ class NativeArtifacts(unittest.TestCase):
             for size in (8, 24, 48, 65536):
                 changed = deepcopy(fact)
                 changed["service_abi"]["record"].update(
-                    parameters=[["builtin::PortRange", 16], ["copied_class", size]], result_bytes=size
+                    parameters=[["builtin::Com1UartGrant", 16], ["copied_class", size]], result_bytes=size
                 )
                 self.assertEqual(check(changed)["service_abi"]["record"]["result_bytes"], size)
             for mutate in (
@@ -281,7 +281,7 @@ class NativeArtifacts(unittest.TestCase):
                 lambda f: f["service_abi"]["record"].pop("result_kind"),
                 lambda f: f["service_abi"]["record"].update(result_kind="scalar"),
                 lambda f: f["service_abi"]["record"]["parameters"].reverse(),
-                lambda f: f["service_abi"]["record"]["parameters"].append(["builtin::PortRange", 16]),
+                lambda f: f["service_abi"]["record"]["parameters"].append(["builtin::Com1UartGrant", 16]),
                 lambda f: f["service_abi"]["record"]["parameters"].append(["builtin::ConsoleSession", 16]),
                 lambda f: f["service_abi"]["record"]["parameters"].append(["builtin::ByteRegion", 8]),
                 lambda f: f["service_abi"]["record"]["parameters"][0].__setitem__(0, "builtin::ConsoleSession"),

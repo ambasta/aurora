@@ -35,7 +35,7 @@ export namespace compiler_ir_metadata {
         IommuEventSession,
         OwnedValues,
         CallSession,
-        PortRange,
+        Com1UartGrant,
         ServeSession
     };
     enum class MetadataError {

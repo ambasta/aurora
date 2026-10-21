@@ -17,7 +17,7 @@ export namespace kernel {
         }
     };
 
-    auto uart_status(builtin::PortRange& ports, UartTransfer input) -> UartTransfer {
+    auto uart_status(builtin::Com1UartGrant& ports, UartTransfer input) -> UartTransfer {
         u64 value = u64(ports.read8(5u64));
         bool error = input.receive_error;
         if ((value & 30u64) != 0u64) {
@@ -32,7 +32,7 @@ export namespace kernel {
         return result;
     }
 
-    auto uart_initialize(builtin::PortRange& ports, UartTransfer input) -> UartTransfer {
+    auto uart_initialize(builtin::Com1UartGrant& ports, UartTransfer input) -> UartTransfer {
         const UartTransfer initial = UartTransfer(false, input.trigger, 0u64, false, false, true);
         ports.write8(2u64, u8(input.trigger) | 7u8);
         const UartTransfer result = uart_status(ports, initial);
@@ -40,7 +40,7 @@ export namespace kernel {
         return result;
     }
 
-    auto uart_next(builtin::PortRange& ports, UartTransfer input) -> UartTransfer {
+    auto uart_next(builtin::Com1UartGrant& ports, UartTransfer input) -> UartTransfer {
         const UartTransfer before = uart_status(ports, input);
         const bool prior_damage = before.receive_error;
         if ((before.value & 1u64) == 0u64) {
@@ -60,7 +60,7 @@ export namespace kernel {
         return result;
     }
 
-    auto uart_put(builtin::PortRange& ports, UartTransfer input, u8 byte) -> UartTransfer {
+    auto uart_put(builtin::Com1UartGrant& ports, UartTransfer input, u8 byte) -> UartTransfer {
         bool error = input.receive_error;
         u64 value = input.value;
         u64 remaining = 1000000u64;

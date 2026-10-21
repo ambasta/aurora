@@ -403,7 +403,7 @@ class Projection {
             result = Type::ServeSession;
             break;
         case ResolvedTypeKind::port_range:
-            result = Type::PortRange;
+            result = Type::Com1UartGrant;
             break;
         case ResolvedTypeKind::call_session:
             result = Type::CallSession;
@@ -1005,7 +1005,7 @@ struct BuiltinCatalog {
                             Type::DisplaySession,
                             Type::IommuEventSession,
                             Type::CallSession,
-                            Type::PortRange,
+                            Type::Com1UartGrant,
                             Type::ServeSession};
     std::array<service::CopiedDefinition, 14> definitions = service::copiedDefinitions();
     BuiltinCatalog() {
@@ -1362,7 +1362,7 @@ ResolvedTypeKind wireKind(const Type &type) {
         return ResolvedTypeKind::display_session;
     case TypeKind::ServeSession:
         return ResolvedTypeKind::serve_session;
-    case TypeKind::PortRange:
+    case TypeKind::Com1UartGrant:
         return ResolvedTypeKind::port_range;
     case TypeKind::CallSession:
         return ResolvedTypeKind::call_session;
@@ -1424,7 +1424,7 @@ class HostedResolution::Impl {
         const auto family = [](const Type &type) {
             if (type == Type::CallSession || type == service::callResultType() || type == service::callStatusType())
                 return 1;
-            if (type == Type::PortRange || type == service::portWriteResultType())
+            if (type == Type::Com1UartGrant || type == service::portWriteResultType())
                 return 2;
             if (type == Type::ServeSession || type == service::serveRequestType() || type == service::serveStatusType())
                 return 3;

@@ -52,7 +52,7 @@ public:
         stop(0x11);
     }
 };
-using PortService = hardware::PortRange<Platform>;
+using PortService = hardware::Com1UartGrant<Platform>;
 using Transport = SourceUart<PortService, Platform>;
 using Service = Session<Transport, Platform>;
 

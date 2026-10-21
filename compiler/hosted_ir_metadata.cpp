@@ -198,9 +198,9 @@ static_assert(static_cast<std::int64_t>(TypeKind::CallSession) == 18 &&
 static_assert(static_cast<std::int64_t>(TypeKind::ServeSession) == 20 &&
               static_cast<std::int64_t>(TypeKind::ServeSession) ==
                   static_cast<std::int64_t>(wire::MetadataTypeKind::ServeSession));
-static_assert(static_cast<std::int64_t>(TypeKind::PortRange) == 19 &&
-              static_cast<std::int64_t>(TypeKind::PortRange) ==
-                  static_cast<std::int64_t>(wire::MetadataTypeKind::PortRange));
+static_assert(static_cast<std::int64_t>(TypeKind::Com1UartGrant) == 19 &&
+              static_cast<std::int64_t>(TypeKind::Com1UartGrant) ==
+                  static_cast<std::int64_t>(wire::MetadataTypeKind::Com1UartGrant));
 static_assert(sizeof(bytes::NativeOwner) == 32);
 
 static_assert(static_cast<std::int64_t>(TypeKind::I64) == static_cast<std::int64_t>(wire::MetadataTypeKind::I64));

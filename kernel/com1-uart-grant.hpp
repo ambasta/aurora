@@ -14,7 +14,7 @@ public:
 // this grant. The UART policy may read RBR/IIR/LSR and write THR/FCR, never change
 // baud, interrupt enables or PIC ownership. Platform owns the quiescence proof.
 template <class Platform, class Ports = Io, std::uint64_t GenerationLimit = std::numeric_limits<std::uint64_t>::max()>
-class PortRange final {
+class Com1UartGrant final {
     static constexpr std::uint64_t kind = 0x415552504f525404ULL;
     static constexpr std::uint64_t base = 0x3f8, length = 8;
     class Grant final {

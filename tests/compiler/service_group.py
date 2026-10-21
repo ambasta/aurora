@@ -74,19 +74,23 @@ def catalogue_checks(compiler, work):
     cases = {label: (text, active, False) for label, (text, active) in cases.items()}
     cases.update(
         {
-            "port-comment": (plain + " // builtin::PortRange builtin::PortWriteResult\n", False, False),
+            "port-comment": (plain + " // builtin::Com1UartGrant builtin::PortWriteResult\n", False, False),
             "port-string": (
                 'module catalogue; auto f()->i64{const array<u8,24> s="builtin::PortWriteResult";return i64(s[0]);}',
                 False,
                 False,
             ),
             "port-user-name": (
-                "module catalogue; class PortRange {public:i64 n;}; class PortWriteResult {public:i64 n;}; "
-                "auto f()->i64{return size_of(PortRange);}",
+                "module catalogue; class Com1UartGrant {public:i64 n;}; class PortWriteResult {public:i64 n;}; "
+                "auto f()->i64{return size_of(Com1UartGrant);}",
                 False,
                 False,
             ),
-            "port-type": ("module catalogue; auto f(builtin::PortRange& p)->u8{return p.read8(7u64);}", False, True),
+            "port-type": (
+                "module catalogue; auto f(builtin::Com1UartGrant& p)->u8{return p.read8(5u64);}",
+                False,
+                True,
+            ),
             "port-status-type": (
                 "module catalogue; auto f(builtin::PortWriteResult r)->bool{return "
                 "r==builtin::PortWriteResult::issued;}",
@@ -113,13 +117,13 @@ def catalogue_checks(compiler, work):
                 True,
             ),
             "port-sparse-operations": (
-                "module catalogue; auto f(builtin::PortRange& p)->builtin::PortWriteResult{const u8 "
-                "b=p.read8(7u64);return p.write8(7u64,b);}",
+                "module catalogue; auto f(builtin::Com1UartGrant& p)->builtin::PortWriteResult{const u8 "
+                "b=p.read8(5u64);return p.write8(0u64,b);}",
                 False,
                 True,
             ),
             "both-port-first": (
-                "module catalogue; auto p(builtin::PortRange& p)->u8{return p.read8(7u64);} auto "
+                "module catalogue; auto p(builtin::Com1UartGrant& p)->u8{return p.read8(5u64);} auto "
                 "c(builtin::CallSession& c)->builtin::CallResult{const builtin::CallResult "
                 "result=c.call(42u64);return result;}",
                 True,
@@ -127,8 +131,8 @@ def catalogue_checks(compiler, work):
             ),
             "both-call-first": (
                 "module catalogue; auto c(builtin::CallSession& c)->builtin::CallResult{const "
-                "builtin::CallResult result=c.call(42u64);return result;} auto p(builtin::PortRange& "
-                "p)->u8{return p.read8(7u64);}",
+                "builtin::CallResult result=c.call(42u64);return result;} auto p(builtin::Com1UartGrant& "
+                "p)->u8{return p.read8(5u64);}",
                 True,
                 True,
             ),
@@ -171,8 +175,8 @@ def catalogue_checks(compiler, work):
     (work / "port_leaf.au").write_text(
         "export module port_leaf; export template<Scalar T> auto unused_port(T v)->bool{"
         "return builtin::PortWriteResult::issued==builtin::PortWriteResult::issued;}"
-        " export auto port_leaf(builtin::PortRange& p)->builtin::PortWriteResult{"
-        "const u8 b=p.read8(7u64);return p.write8(7u64,b);}"
+        " export auto port_leaf(builtin::Com1UartGrant& p)->builtin::PortWriteResult{"
+        "const u8 b=p.read8(5u64);return p.write8(0u64,b);}"
     )
     (work / "port_middle.au").write_text(
         "export module port_middle; import port_leaf; export auto port_middle()->i64{return 7;}"

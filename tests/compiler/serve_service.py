@@ -200,7 +200,7 @@ __au_runtime_group_entry:
                 "const builtin::CallResult r=c.call(42u64);return r;}"
             )
         if port:
-            declarations.append("auto port(builtin::PortRange& p)->u8{return p.read8(0u64);}")
+            declarations.append("auto port(builtin::Com1UartGrant& p)->u8{return p.read8(0u64);}")
         if serve:
             declarations.append(
                 "auto serve(builtin::ServeSession& s)->builtin::ServeRequest{"
@@ -281,7 +281,14 @@ __au_runtime_group_entry:
         f"auto f({p})->u64{{return h(s,s.exchange(0u64));}}",
         "raw": "auto __au_runtime_serve_exchange()->u64{return 0u64;}",
     }
-    for kind in ("ConsoleSession", "DisplaySession", "IommuEventSession", "CallSession", "PortRange", "ServeSession"):
+    for kind in (
+        "ConsoleSession",
+        "DisplaySession",
+        "IommuEventSession",
+        "CallSession",
+        "Com1UartGrant",
+        "ServeSession",
+    ):
         for reverse in (False, True):
             pair = [p, f"builtin::{kind}& other"]
             if reverse:

@@ -15,7 +15,7 @@ auto receive(builtin::ConsoleSession& session) -> builtin::ConsoleSample {
 
 ## Source and lifetime
 
-`ConsoleSession`, `DisplaySession`, `IommuEventSession`, `CallSession`, `PortRange` and `ServeSession` are distinct
+`ConsoleSession`, `DisplaySession`, `IommuEventSession`, `CallSession`, `Com1UartGrant` and `ServeSession` are distinct
 compiler-owned sealed service kinds. An explicit contiguous leading group of one or two exclusive service
 reference free-function formals is accepted. The explicit group allowlist is Console, Display, Event, Call, Port or Serve alone, Console+Display
 in either order, and Event+Console in either order. Call, Port and Serve cannot mix with any other kind. Event+Display, duplicate kinds
@@ -85,15 +85,20 @@ The closed compiler operation table in `services.hpp` owns host linkage:
   valid out-of-range coordinates return 1 with zero writes. Native transport owns
   completion ordering. This compiler contract does not qualify a display driver.
 
-## Sealed byte-port range
+## Fixed COM1 UART grant
 
-`builtin::PortRange&` is a singleton exclusive service parameter. It has the same
-non-constructible, non-storable, non-copyable and non-reflectable capability
-contract as the other sealed services. It never exposes a numeric port, pointer,
+`builtin::Com1UartGrant&` is a singleton exclusive service parameter for the fixed
+COM1 UART at base `0x3f8`, count 8. It is not a general port-range capability.
+It has the same non-constructible, non-storable, non-copyable and non-reflectable
+capability contract as the other sealed services. It never exposes a numeric port, pointer,
 grant constructor, revocation operation, generic I/O intrinsic or wider I/O width.
 Ordinary helpers may forward it with copied scalar/class inputs and results.
+Offsets are checked at runtime, not compile time: `read8(1000u64)` typechecks but
+fails closed at the native grant before I/O. Read offsets are 0/2/5; write offsets
+are 0/2. Only BIOS console UART policy has migrated; native UEFI UART and
+early-boot serial consumers remain.
 
-- `read8(u64 offset) -> u8` requests one byte from an offset within the live grant.
+- `read8(u64 offset) -> u8` requests one byte from an allowed offset in the live grant.
 - `write8(u64 offset, u8 value) -> builtin::PortWriteResult` has the sole copied
   result `issued` (0): exactly one OUT instruction was issued. It does not mean
   device acknowledgement, successful transmission, a retry, or completion.
@@ -109,12 +114,12 @@ Port+ByteRegion prefix, u16/u32 operation or device-address escape is admitted.
 
 Permanent wire identities append Port kind 4, read operation 6, write operation 7
 and metadata type 19 without changing existing values. The Port copied enum and
-service contracts activate only when admitted syntax references `PortRange` or
+service contracts activate only when admitted syntax references `Com1UartGrant` or
 `PortWriteResult`, including imported and unused-template syntax and enum-case
 expressions. Comments, strings and unrelated user names do not activate them.
 Call and Port activate independently: selected contract row positions are not
 permanent operation/kind IDs. Port-free descriptor/reflection/ABI output retains
-the legacy catalog. Port ABI parameters name `builtin::PortRange` explicitly.
+the legacy catalog. Port ABI parameters name `builtin::Com1UartGrant` explicitly.
 The Port-only stack record distinguishes copied class parameters with
 `copied_class` and copied results with `result_kind: copied_class`; their widths
 come from admitted canonical class layouts, including padding, rather than a

@@ -38,7 +38,7 @@ enum class TypeKind {
     IommuEventSession,
     OwnedValues,
     CallSession,
-    PortRange,
+    Com1UartGrant,
     ServeSession
 };
 enum class TemplateArgumentKind {
@@ -140,8 +140,8 @@ public:
     }
     bool isService() const {
         return kind == TypeKind::ConsoleSession || kind == TypeKind::DisplaySession ||
-               kind == TypeKind::IommuEventSession || kind == TypeKind::CallSession || kind == TypeKind::PortRange ||
-               kind == TypeKind::ServeSession;
+               kind == TypeKind::IommuEventSession || kind == TypeKind::CallSession ||
+               kind == TypeKind::Com1UartGrant || kind == TypeKind::ServeSession;
     }
     bool isBytes() const {
         return kind == TypeKind::OwnedBytes;
@@ -184,7 +184,7 @@ public:
         return type;
     }
     static const Type I64, U64, U8, Bool, Own, Ref, MutRef, ByteSpan, ByteRegion, OwnedBytes, ConsoleSession,
-        DisplaySession, IommuEventSession, CallSession, PortRange, ServeSession;
+        DisplaySession, IommuEventSession, CallSession, Com1UartGrant, ServeSession;
 };
 inline const Type Type::I64{TypeKind::I64};
 inline const Type Type::U64{TypeKind::U64};
@@ -200,7 +200,7 @@ inline const Type Type::ConsoleSession{TypeKind::ConsoleSession};
 inline const Type Type::DisplaySession{TypeKind::DisplaySession};
 inline const Type Type::IommuEventSession{TypeKind::IommuEventSession};
 inline const Type Type::CallSession{TypeKind::CallSession};
-inline const Type Type::PortRange{TypeKind::PortRange};
+inline const Type Type::Com1UartGrant{TypeKind::Com1UartGrant};
 inline const Type Type::ServeSession{TypeKind::ServeSession};
 inline std::string typeName(const Type &type) {
     switch (type.kind) {
@@ -226,8 +226,8 @@ inline std::string typeName(const Type &type) {
         return "builtin::CallSession";
     case TypeKind::ServeSession:
         return "builtin::ServeSession";
-    case TypeKind::PortRange:
-        return "builtin::PortRange";
+    case TypeKind::Com1UartGrant:
+        return "builtin::Com1UartGrant";
     case TypeKind::IommuEventSession:
         return "builtin::IommuEventSession";
     case TypeKind::DisplaySession:

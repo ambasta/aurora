@@ -58,7 +58,7 @@ public:
                        : 78);
     }
 };
-using Service = aurora::hardware::PortRange<Platform, Ports>;
+using Service = aurora::hardware::Com1UartGrant<Platform, Ports>;
 template <class Test> void rejects(Test test) {
     const auto child = fork();
     need(child >= 0);
@@ -258,7 +258,7 @@ int main() {
                 quiescent = false;
             static_cast<void>(Service::open());
         });
-    using Exhaustible = aurora::hardware::PortRange<Platform, Ports, 2>;
+    using Exhaustible = aurora::hardware::Com1UartGrant<Platform, Ports, 2>;
     for (std::uint64_t generation = 1; generation <= 2; ++generation) {
         const auto grant = Exhaustible::open();
         need(grant.generation == generation);
@@ -362,6 +362,6 @@ int main() {
     rejects([] {
         static_cast<void>(Adapter::try_put(65));
     });
-    std::puts("PASS PortRange: exact byte operations; direction, bounds, value, identity, lifetime, ownership, "
+    std::puts("PASS Com1UartGrant: exact byte operations; direction, bounds, value, identity, lifetime, ownership, "
               "IF, overlap, exhaustion and reentry reject without target I/O; copied UART results fail closed");
 }

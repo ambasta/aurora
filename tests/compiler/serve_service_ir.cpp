@@ -90,7 +90,7 @@ int main(int argc, char **argv) {
                       Type::DisplaySession,
                       Type::IommuEventSession,
                       Type::CallSession,
-                      Type::PortRange,
+                      Type::Com1UartGrant,
                       Type::ServeSession,
                       Type::ByteRegion})
         bad(serveOperation(), [=](auto &m) {

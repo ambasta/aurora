@@ -1,6 +1,6 @@
 #pragma once
 #include "console-uart.hpp"
-#include "port-range.hpp"
+#include "com1-uart-grant.hpp"
 #include <cstddef>
 
 namespace aurora::console {

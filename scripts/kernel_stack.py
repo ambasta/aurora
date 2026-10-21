@@ -948,7 +948,7 @@ def aurora_stack_functions(path, symbols, code, starts, generated_names):
                 "builtin::DisplaySession",
                 "builtin::IommuEventSession",
                 "builtin::CallSession",
-                "builtin::PortRange",
+                "builtin::Com1UartGrant",
                 "builtin::ServeSession",
             }
             if record is not None:
@@ -982,11 +982,11 @@ def aurora_stack_functions(path, symbols, code, starts, generated_names):
                     "Invalid service entry record fact",
                 )
             if record is not None:
-                port = any(row[0] == "builtin::PortRange" for row in record["parameters"])
+                port = any(row[0] == "builtin::Com1UartGrant" for row in record["parameters"])
                 serve = any(row[0] == "builtin::ServeSession" for row in record["parameters"])
                 require(
                     not port
-                    or record["parameters"][0] == ["builtin::PortRange", 16]
+                    or record["parameters"][0] == ["builtin::Com1UartGrant", 16]
                     and all(row[0] in ("scalar", "copied_class") for row in record["parameters"][1:]),
                     "Port requires a singleton leading capability",
                 )

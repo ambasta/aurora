@@ -8,7 +8,7 @@ qualification. Do not write these images to a physical disk or change a bootload
 
 | Profile | Current behavior | Boundary |
 |---|---|---|
-| BIOS | Aurora-owned `help`, `status`, `exit` session; IRQ4-woken serial editor | Sealed ConsoleSession and PortRange; Aurora UART policy, trusted PIC/byte I/O |
+| BIOS | Aurora-owned `help`, `status`, `exit` session; IRQ4-woken serial editor | Sealed ConsoleSession and Com1UartGrant; Aurora UART policy, trusted PIC/byte I/O |
 | Simple UEFI | Aurora-owned editor, commands, RAM note and four named RAM files | Sealed ConsoleSession; trusted boot, UART, LAPIC and wake-frame checks |
 | [Graphical](framebuffer-console.md) | Same RAM commands, two text rows and dirty-cell drawing; serial input | Separate ConsoleSession/DisplaySession grants; bounded emulator fixture |
 | [Protected commands](program-console-contract.md) | `upper`, protected note read and uppercase replacement | Aurora input turns through ConsoleSession; native dispatch and authenticated two-domain IPC |
@@ -126,7 +126,8 @@ and generation exhaustion. Polling revalidates across each trusted wait; closing
 checks the closed completion code and exact active invocation once. Output timeout
 terminates rather than retrying a partial response. Traps fail stop; no unwinder
 or restarted editor is supplied. Console application source receives no pointer or device authority.
-The separate BIOS UART policy receives only a sealed, offset-checked PortRange.
+The separate BIOS UART policy receives only a sealed, fixed COM1 UART grant
+(`Com1UartGrant`), with runtime offset checks.
 
 Every console LSR read, including transmit polling, latches receive errors.
 RX-only flushing invalidates the old data-ready sample. Damage applies before
@@ -151,8 +152,9 @@ its transitions. The `SourceUart` adapter validates canonical result lanes. Its
 private bridge resolves symbols and verifies every field/argument/result byte
 against compiler ABI facts.
 
-`kernel/port-range.hpp` admits one fixed COM1 grant only after trusted boot setup
-and exclusive ownership. Read offsets are 0/2/5 and write offsets are 0/2; other
+`kernel/com1-uart-grant.hpp` admits one fixed COM1 grant only after trusted boot setup
+and exclusive ownership, at base `0x3f8`, count 8. Read offsets are 0/2/5 and
+write offsets are 0/2; these are runtime checks, not compile-time proofs. Other
 directions, full-width out-of-range offsets and values are denied before I/O.
 The exact grant pointer, kind, nonzero generation, operation, IF-clear owner and
 exhaustion checks precede each access. Each accepted primitive executes exactly
@@ -162,12 +164,12 @@ Grant rejection performs no target-UART I/O, including logging. Normal shutdown
 revokes the grant before native IER teardown. Active BIOS diagnostics use the
 same source carry; exceptions fail stop before any bootstrap LSR reader can run.
 
-This is a partial migration. `console-uart.hpp` remains the native UART policy
+This is a partial driver migration. `console-uart.hpp` remains the native UART policy
 for simple UEFI, protected, graphical and event profiles. Native `Serial`, `Uart`
 and `SourceUart` share byte-preserving text and unsigned decimal formatting in
 `output-format.hpp`; this removes duplicate formatting, not UART policy. BIOS
-`Serial` retains its non-inlined diagnostic routing boundaries and unchanged
-image/stack admission gates. Qualification applies to the exact source/toolchain
+`Serial` still serves early boot and retains its non-inlined diagnostic routing
+boundaries and unchanged image/stack admission gates. Qualification applies to the exact source/toolchain
 recorded in the relevant PR. Trusted boot serial initialization, PIC setup, IRQ
 acknowledgement and synchronous waiting remain native. This is not a stateful driver daemon, general port allocator or hardware
 qualification. Both existing FIFO triggers remain covered by the generated UART

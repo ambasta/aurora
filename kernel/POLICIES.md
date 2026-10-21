@@ -1,6 +1,6 @@
 # Kernel policies
 
-Most Aurora modules calculate bounded decisions over copied values. The BIOS UART module additionally uses the sealed fixed PortRange described below. Trusted C++/assembly retain live identities, rights, frames, timers, storage and commit authority. Host decoders reject malformed decisions; they do not replace a refused Aurora decision with success. This single-CPU bootstrap has no stable foreign ABI, general scheduler or concurrency guarantee.
+Most Aurora modules calculate bounded decisions over copied values. The BIOS UART module additionally uses the sealed fixed COM1 UART grant (`Com1UartGrant`) described below. Trusted C++/assembly retain live identities, rights, frames, timers, storage and commit authority. Host decoders reject malformed decisions; they do not replace a refused Aurora decision with success. This single-CPU bootstrap has no stable foreign ABI, general scheduler or concurrency guarantee.
 
 ## Interrupt budgets
 
@@ -389,7 +389,7 @@ performance parity, complete native aggregate, physical-hardware support or
 self-hosting is claimed. Selected guest and host qualification is recorded below.
 
 
-## BIOS byte-port UART
+## BIOS fixed COM1 UART grant
 
 `kernel.uart` owns the BIOS console's destructive LSR reads, sticky receive-error
 carry, FIFO reset and one-million-poll transmit bound. Its input/result is the
@@ -397,7 +397,11 @@ ordinary six-field copied `UartTransfer`; no capability escapes in that record.
 `examples/kernel-uart.au` exposes real free-function entries for the private
 compiler-fact-derived bridge. The fixed native COM1 grant enforces exclusive
 quiescent ownership, generation, permissions and full-width port/value checks.
+Its base is `0x3f8`, count 8, with read offsets 0/2/5 and write offsets 0/2.
+Offset checks are runtime checks, not compile-time bounds checking or a general
+port API. Driver migration is partial: native UART policy serves UEFI consumers
+and native serial setup/output remains necessary for early boot.
 See [console services](../docs/native-console-service.md#bios-transport) for the
 partial migration boundary, generated scripted-port coverage and pending gates.
 This source policy is not an ordinary pure copied decision: each successful
-PortRange primitive has exactly one device effect; a timeout never retries output.
+Com1UartGrant primitive has exactly one device effect; a timeout never retries output.

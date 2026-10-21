@@ -8,9 +8,9 @@ Module portOperation(bool write = false) {
     Module m;
     m.enumCases[service::portWriteResultType().className] = 1;
     auto f = entry(write ? "port_write" : "port_read");
-    f.parameters = {Type::PortRange};
+    f.parameters = {Type::Com1UartGrant};
     f.result = write ? service::portWriteResultType() : Type::U8;
-    f.code = {BindServiceParameter{0, 16, service::Kind::Port}, Constant{7, Type::U64}};
+    f.code = {BindServiceParameter{0, 16, service::Kind::Port}, Constant{write ? 0 : 5, Type::U64}};
     if (write)
         f.code.insert(f.code.end(), {Push{}, Constant{255, Type::U8}, Push{}});
     f.code.insert(
@@ -36,7 +36,7 @@ Module portForwarded() {
                    AcquireServiceLoan{1, 16, service::Kind::Port},
                    ServiceCall{"port_read", 1, 0, {0}, service::Kind::Port},
                    ReleaseServiceLoan{1, service::Kind::Port},
-                   Constant{7, Type::U64},
+                   Constant{0, Type::U64},
                    Push{},
                    Constant{255, Type::U8},
                    Push{},
@@ -50,7 +50,7 @@ Module portCopied(int shape) {
     auto m = copiedArguments(shape);
     m.enumCases[service::portWriteResultType().className] = 1;
     for (auto &f : m.functions) {
-        f.parameters[0] = Type::PortRange;
+        f.parameters[0] = Type::Com1UartGrant;
         for (auto &i : f.code) {
             if (auto *v = std::get_if<BindServiceParameter>(&i))
                 v->kind = service::Kind::Port;
@@ -69,7 +69,7 @@ int main(int argc, char **argv) {
     need(static_cast<int>(service::Kind::Port) == 4 && static_cast<int>(service::Operation::PortRead8) == 6 &&
              static_cast<int>(service::Operation::PortWrite8) == 7,
          "permanent Port wire identities changed");
-    need(static_cast<int>(Type::PortRange.kind) == 19, "permanent Port type identity changed");
+    need(static_cast<int>(Type::Com1UartGrant.kind) == 19, "permanent Port type identity changed");
     for (bool write : {false, true}) {
         const auto checked = validate(portOperation(write));
         X86Emitter emitter;
@@ -125,8 +125,11 @@ int main(int argc, char **argv) {
         bad(portOperation(write), [](auto &m) {
             m.functions[0].code.insert(m.functions[0].code.begin() + 1, AcquireServiceLoan{1, 16, service::Kind::Port});
         });
-        for (auto type :
-             {Type::ConsoleSession, Type::DisplaySession, Type::IommuEventSession, Type::CallSession, Type::PortRange})
+        for (auto type : {Type::ConsoleSession,
+                          Type::DisplaySession,
+                          Type::IommuEventSession,
+                          Type::CallSession,
+                          Type::Com1UartGrant})
             bad(portOperation(write), [=](auto &m) {
                 m.functions[0].parameters.push_back(type);
             });

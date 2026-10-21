@@ -30,7 +30,7 @@ inline const std::array capabilityTypes{std::pair{Kind::Console, Type::ConsoleSe
                                         std::pair{Kind::Display, Type::DisplaySession},
                                         std::pair{Kind::IommuEvent, Type::IommuEventSession},
                                         std::pair{Kind::Call, Type::CallSession},
-                                        std::pair{Kind::Port, Type::PortRange},
+                                        std::pair{Kind::Port, Type::Com1UartGrant},
                                         std::pair{Kind::Serve, Type::ServeSession}};
 inline Kind kind(const Type &type) {
     for (const auto &[identity, candidate] : capabilityTypes)
