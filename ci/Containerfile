@@ -99,9 +99,9 @@ RUN test "$(gcc -dumpfullversion)" = 16.2.0 \
 # Only the three reviewed dependency patches are supplied as an additional context.
 COPY --from=event-patches /0001-event-record-transport.patch \
     /0002-mode1-requester-permissions-v2.patch /0003-command-stop-v1.patch /tmp/event-patches/
-COPY build-event.py /tmp/build-event.py
+COPY build-event.py qemu-skip-unpack-edk2-blobs.patch /tmp/
 COPY Containerfile /opt/aurora-event/share/source/Containerfile
-RUN python3 /tmp/build-event.py && rm -rf /tmp/build-event.py /tmp/event-patches
+RUN python3 /tmp/build-event.py && rm -rf /tmp/build-event.py /tmp/qemu-skip-unpack-edk2-blobs.patch /tmp/event-patches
 ENV EVENT_TOOL_PREFIX=/opt/aurora-event
 
 # Clean-NVMe OVMF is a dependency build; its guest behavior is qualified locally.

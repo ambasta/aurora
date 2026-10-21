@@ -162,3 +162,19 @@ configuration or fall back to stock QEMU after failure. The historical binary pi
 and fixture admission instructions above apply to historical replay only.
 See [developer execution](../../docs/iommu-dma-conformance.md#supported-local-developer-execution)
 for mtools/config support, exact captures, cleanup and normal restoration.
+
+### Debian source packaging correction
+
+`ci/build-event.py` applies the byte-pinned official Debian
+`skip-unpack-edk2-blobs.patch` after the three model patches. It only disables
+unpacking EDK2 blobs stripped from the pinned `10.0.13+ds` source; it does not
+change the model, device configuration, runtime identity or six-artifact inventory.
+The builder verifies the patch and complete `pc-bios/meson.build` pre/post images,
+and installs the attributed patch and separate provenance under
+`share/source/packaging/`. That record includes source/package URLs, sizes and
+hashes, application order and the builder digest. Source-chain provenance is
+imported from the pinned Debian source package, not a fresh signature check by
+the builder. Debian's `debian/copyright` is in the identified packaging archive;
+QEMU's source license files remain in the installed source archive and `COPYING`
+is also installed separately. Offline diff/recipe checks are not source-to-binary
+attestation or fresh Event guest qualification.
