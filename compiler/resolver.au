@@ -3,6 +3,7 @@ import aurora.compiler.resolution_kinds;
 import aurora.compiler.resolution_arena;
 import aurora.compiler.resolution_rows;
 import aurora.compiler.resolution_names;
+import aurora.compiler.resolution_linkage;
 import aurora.compiler.lowering_kinds;
 import aurora.compiler.lowering_errors;
 import aurora.compiler.lowering_storage;
@@ -13,7 +14,7 @@ import aurora.compiler.lexer;
 export namespace compiler_resolver {
     // Metadata indices are identities, never addresses. These private index
     // domains are separate from the arena's source/atom/prefix indices.
-    // Symbol words: unused,module_id,scope,qualified,source,syntax,exported,
+    // Symbol words: linkage-source,module_id,scope,qualified,source,syntax,exported,
     // receiver,parameters,instance,overload,signature,public-types,visit,next.
     // Type words: unused,nominal,element,length,unresolved-source.
     // Instance words: prototype,count,arg0,arg1,nominal-depth,symbol.
@@ -46,6 +47,11 @@ export namespace compiler_resolver {
     // ranges L <= S+seed-text references; name-cache N <= projected refs+L+seeds.
     // Lookup creates at most 32 ancestor candidates per distinct scoped source
     // occurrence; no source name bytes or display-specialization names are copied.
+    // Linkage adds one source-reference per symbol and immutable byte caches.
+    // A length-prefixed base uses <=2*D+8320 bytes; nested nominal arguments
+    // duplicate <=31 bases, function tuples <=63, plus <=32 per signature edge.
+    // Module normalization charges <=4096 components/module separately; spelling
+    // scratch adds <=2*X+4096 rows above the existing saved caller base.
     // All bit operations use u64 with <=32 live bits; checked i64 conversion
     // when storing the mask is exact. No cached visibility bitset protocol exists.
     class BindContext {
@@ -823,6 +829,9 @@ export namespace compiler_resolver {
         }
         declaration.set_native_mode(native);
         session.set_meta(symbol, declaration);
+        if (native != NativeMode::ordinary_overload) {
+            finalize_linkage(session, symbol);
+        }
         return symbol;
     }
     auto index_members(Session& session, i64 symbol) -> i64 {
@@ -898,6 +907,7 @@ export namespace compiler_resolver {
                         session.set_meta(method, value);
                         session.index_insert(46, symbol, name, 0, 0, method);
                         set_rw(session, member, 1, method);
+                        finalize_linkage(session, method);
                     }
                 }
             }
@@ -1574,6 +1584,7 @@ export namespace compiler_resolver {
             value.set_word(13, 0);
             symbol = session.append_meta(value);
             session.index_insert(50, descriptor, 0, 0, 0, symbol);
+            finalize_linkage(session, symbol);
         }
         return concrete_type(session, kind, symbol, -1, 0);
     }
@@ -1740,6 +1751,7 @@ export namespace compiler_resolver {
         }
         const i64 copied_root = clone_tree(session, prototype, instance_id);
         MetaRow symbol = session.meta(prototype);
+        symbol.set_word(0, -1);
         DeclarationKind kind = DeclarationKind::class_value;
         NativeMode native = NativeMode::class_value;
         if (function) {
@@ -1761,6 +1773,7 @@ export namespace compiler_resolver {
         set_mw(session, instance_id, 5, result);
         session.index_insert(35, prototype, first, second, count, instance_id);
         append_symbol(session, result);
+        finalize_linkage(session, result);
         if (!function && session.good()) {
             register_members(session, result);
         }
@@ -2784,6 +2797,7 @@ export namespace compiler_resolver {
             return reject(session, SemanticError::duplicate_function, node, unit, name);
         }
         session.index_insert(54, group, tuple, count, 0, symbol);
+        finalize_linkage(session, symbol);
         return 0;
     }
     auto resolve_signatures(Session& session) -> i64 {

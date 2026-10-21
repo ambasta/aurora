@@ -895,7 +895,7 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 facts = {"version": 2, "functions": {"fixture_symbol": {"source_name": "fixture::entry"}}}
 assert module.abi_function_symbol(facts, "fixture::entry") == "fixture_symbol"
-assert len(module.PASS_ENTRIES) == 113
+assert len(module.PASS_ENTRIES) == 114
 """
     with tempfile.TemporaryDirectory(prefix="bridge-import-") as temporary:
         subprocess.run(
@@ -909,7 +909,7 @@ assert len(module.PASS_ENTRIES) == 113
     assembly, header = frontend_bridge(None, facts), frontend_abi_header(facts)
     operations = ["emitter_" + name for name in EMITTER_OPERATIONS]
     operations += ["initialization_" + name for name in INITIALIZATION_OPERATIONS]
-    require(assembly.count(".globl ") == 113, "private bridge inventory drift")
+    require(assembly.count(".globl ") == 114, "private bridge inventory drift")
     for alias in operations:
         require(f".globl aurora_hosted_{alias}\n" in assembly, "missing private host entry: " + alias)
         require(f" aurora_hosted_{alias}(" in header, "missing private host declaration: " + alias)
@@ -942,6 +942,11 @@ assert len(module.PASS_ENTRIES) == 113
     # These host contracts predate the table and independently cover the newly
     # generated transports, including consuming input and record scalar lanes.
     for alias, moves, signature in (
+        (
+            "resolver_linkage_chunk",
+            [("%rdi", "%r10"), ("%rsi", "%rdi"), ("%rdx", "%rsi"), ("%rcx", "%r11")],
+            "void aurora_hosted_resolver_linkage_chunk(const void *, std::int64_t, std::int64_t, void *);",
+        ),
         (
             "resolver_ingest",
             [("%rdi", "%r11"), ("%rsi", "%r10")],
@@ -1003,7 +1008,7 @@ assert len(module.PASS_ENTRIES) == 113
             except ValueError:
                 continue
         raise AssertionError("unsafe private bridge policy accepted: " + repr(changed))
-    print("PASS all 113 host entries, transport exemplars and malformed bridge policies")
+    print("PASS all 114 host entries, transport exemplars and malformed bridge policies")
 
 
 def borrowed_root_generation(facts):
@@ -1460,6 +1465,7 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
             "read_syntax",
             "read_meta",
             "read_resolved",
+            "linkage_chunk",
             "status",
             "seed_builtin",
             "seed_member",

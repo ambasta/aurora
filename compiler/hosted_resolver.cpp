@@ -59,30 +59,6 @@ auto words(const wire::MetaRow &row) {
                       row.value13,
                       row.value14};
 }
-// This spelling routine is moved from the former resolver. Identity choice and
-// complete parameter/instance tuples have already been fixed by Aurora.
-std::string mangle(char kind, const std::string &module, const std::string &scope, const std::string &name) {
-    const auto split = [](const std::string &value, const std::string &separator) {
-        std::vector<std::string> result;
-        std::size_t start = 0;
-        while (start < value.size()) {
-            const auto end = value.find(separator, start);
-            result.push_back(value.substr(start, end == std::string::npos ? end : end - start));
-            if (end == std::string::npos)
-                break;
-            start = end + separator.size();
-        }
-        return result;
-    };
-    const auto modules = split(module, "."), spaces = split(scope, "::");
-    std::string result = "__au_" + std::string(1, kind) + "_m" + std::to_string(modules.size()) + "_";
-    for (const auto &part : modules)
-        result += std::to_string(part.size()) + part;
-    result += "_n" + std::to_string(spaces.size()) + "_";
-    for (const auto &part : spaces)
-        result += std::to_string(part.size()) + part;
-    return result + "_d" + std::to_string(name.size()) + name;
-}
 struct ModuleSource {
     std::shared_ptr<const SourceText> source;
     HostedModule header;
@@ -98,7 +74,7 @@ class Projection {
     std::vector<wire::MetaRow> metadata;
     std::vector<std::optional<Type>> types;
     std::vector<std::optional<std::string>> natives;
-    std::vector<bool> activeType, activeNative;
+    std::vector<bool> activeType;
     int constructionDepth = 0;
     class Depth {
         int &count;
@@ -251,19 +227,6 @@ class Projection {
         }
         return result + ">";
     }
-    static std::string nativeSuffix(const std::vector<TemplateArgument> &arguments) {
-        std::string result = "_t" + std::to_string(arguments.size());
-        for (const auto &argument : arguments) {
-            if (argument.kind == TemplateArgumentKind::Value)
-                result += "_v" + std::to_string(argument.value);
-            else if (argument.type == TypeKind::Class || argument.type == TypeKind::Enum)
-                result += std::string(argument.type == TypeKind::Class ? "_c" : "_e") +
-                          std::to_string(argument.className.size()) + argument.className;
-            else
-                result += "_" + typeName(Type(argument.type));
-        }
-        return result;
-    }
     std::string rawTypeName(std::int64_t root, int depth = 0) const {
         if (depth >= 128)
             invalidResolution();
@@ -364,80 +327,28 @@ class Projection {
         return result;
     }
     std::string native(std::int64_t symbol) {
-        Depth depth(constructionDepth);
         const auto &value = meta(symbol, MetaTag::symbol);
+        if (value.native_tag < NativeMode::root_entry || value.native_tag > NativeMode::sealed_builtin)
+            invalidResolution();
+        if (value.native_tag != NativeMode::sealed_builtin)
+            module(value.value1);
         auto &cached = natives[sizeValue(symbol)];
         if (cached)
             return *cached;
-        if (activeNative[sizeValue(symbol)])
+        const auto &name = meta(value.value0, MetaTag::source_reference);
+        if (name.value0 != -1 || name.value9 != symbol || name.value1 < 0 || name.value2 <= name.value1 ||
+            name.value2 > sourceBytes)
             invalidResolution();
-        activeNative[sizeValue(symbol)] = true;
-        std::string result;
-        if (value.native_tag == NativeMode::sealed_builtin) {
-            result = sourceToken(meta(value.value8, MetaTag::context).value3).text;
-        } else {
-            const auto &unit = module(value.value1);
-            const auto name = sourceToken(value.value4).text;
-            const auto scope = prefix(value.value2);
-            if (value.native_tag == NativeMode::root_entry)
-                result = name;
-            else {
-                char kind = 0;
-                switch (value.native_tag) {
-                case NativeMode::function:
-                    kind = 'f';
-                    break;
-                case NativeMode::value_function:
-                    kind = 'v';
-                    break;
-                case NativeMode::ordinary_overload:
-                    kind = 'o';
-                    break;
-                case NativeMode::class_value:
-                    kind = 'c';
-                    break;
-                case NativeMode::class_template:
-                    kind = 't';
-                    break;
-                case NativeMode::function_template:
-                    kind = 'g';
-                    break;
-                case NativeMode::enumeration:
-                    kind = 'e';
-                    break;
-                case NativeMode::method:
-                    kind = 'm';
-                    break;
-                case NativeMode::constructor:
-                    kind = 'k';
-                    break;
-                default:
-                    invalidResolution();
-                }
-                auto nativeScope = scope;
-                if (value.native_tag == NativeMode::method || value.native_tag == NativeMode::constructor)
-                    nativeScope = prefix(meta(value.value7, MetaTag::symbol).value3);
-                result = mangle(kind, unit.header.moduleName, nativeScope, name);
-                if (value.native_tag == NativeMode::ordinary_overload) {
-                    const auto signature = links(value.value11, MetaTag::signature, 3);
-                    if (signature.empty())
-                        invalidResolution();
-                    result += "_p" + std::to_string(signature.size() - 1) + "_";
-                    for (std::size_t i = 1; i < signature.size(); ++i) {
-                        const auto parameter = type(meta(signature[i], MetaTag::signature).value1);
-                        const auto component =
-                            std::to_string(static_cast<int>(parameter.kind)) + "_" + parameter.className;
-                        result += std::to_string(component.size()) + component;
-                    }
-                }
-                auto instance = value.value9;
-                if (value.native_tag == NativeMode::method || value.native_tag == NativeMode::constructor)
-                    instance = meta(value.value7, MetaTag::symbol).value9;
-                if (instance >= 0)
-                    result += nativeSuffix(arguments(instance));
-            }
+        const auto size = name.value2 - name.value1;
+        std::string result(sizeValue(size), '\0');
+        for (std::int64_t offset = 0; offset < size;) {
+            wire::LinkageChunk chunk{};
+            aurora_hosted_resolver_linkage_chunk(session, symbol, offset, &chunk);
+            if (chunk.byteCount <= 0 || chunk.byteCount > 512 || chunk.byteCount > size - offset)
+                invalidResolution();
+            std::copy_n(chunk.payload.begin(), sizeValue(chunk.byteCount), result.begin() + offset);
+            offset += chunk.byteCount;
         }
-        activeNative[sizeValue(symbol)] = false;
         cached = result;
         return result;
     }
@@ -553,7 +464,6 @@ public:
         types.resize(metadata.size());
         natives.resize(metadata.size());
         activeType.resize(metadata.size());
-        activeNative.resize(metadata.size());
     }
     [[noreturn]] void diagnostic(const wire::SessionStatus &status);
     std::vector<std::int64_t> declarations(std::size_t field) const {
@@ -1293,14 +1203,26 @@ std::uint64_t resolutionQuota() {
                                       mul(3, carriers),
                                       mul(2, descriptors),
                                       32});
-    const auto records = sum({storage, semantic, loweringMetadata});
-    const auto indexRecords = sum({storageIndexes, indexes, loweringIndexes});
+    // Cached linkage: length-prefix digits never exceed component bytes. A
+    // base name fits 2*D + 2*4096 bytes plus 128 marker/count bytes. Depth-four
+    // binary nominal arguments contain <=31 names; a function's two arguments
+    // add at most 63. Ordinary overloads separately charge every signature edge
+    // (including rejected >6-parameter inputs), not the later lowering limit.
+    const auto linkageBase = sum({mul(2, D), 2 * 4096, 128});
+    const auto linkageBytes = mul(sum({mul(63, nominals), mul(32, mul(2, Sx))}), linkageBase);
+    // Module token normalization adds <=4096 components/module, with a range,
+    // coordinate/atom/prefix rows and their indexes. Each symbol adds one cache
+    // source-reference; failed unpublished prefixes are within the same charge.
+    const auto moduleComponents = mul(M, 4096);
+    const auto records = sum({storage, semantic, loweringMetadata, nominals, mul(3, moduleComponents), M});
+    const auto indexRecords = sum({storageIndexes, indexes, loweringIndexes, mul(4, moduleComponents), mul(2, M)});
     // Lowering layout DFS uses at most eight WorkRows (two per depth-four
     // logical frame; physical frames use four). Name helpers retain their
     // existing <=2*D scratch above that saved base. The initial class-order
     // permutation is a separate phase with at most one mark per nominal.
     const auto loweringWork = std::max(nominals, add(8, mul(2, D)));
-    const auto work = std::max({mul(12, b), sum({mul(3, Sx), types, mul(2, D), 128}), loweringWork});
+    // Linkage's temporary signature/prefix lists restore their caller's base.
+    const auto work = std::max({mul(12, b), sum({mul(5, Sx), types, mul(2, D), 4096, 128}), loweringWork});
     const auto capacity = [&](std::uint64_t count) {
         return add(mul(2, count), 8);
     };
@@ -1309,7 +1231,7 @@ std::uint64_t resolutionQuota() {
     // Continuations are one function + block/control + expression path (384),
     // with all six argument lanes embedded in the generated copied row.
     const auto snapshots = mul(384, localHigh);
-    const auto session = sum({capacity(sum({B, textBytes, literalBytes})),
+    const auto session = sum({capacity(sum({B, textBytes, literalBytes, linkageBytes})),
                               mul(sizeof(wire::SyntaxRow), capacity(Sx)),
                               mul(sizeof(wire::MetaRow), capacity(records)),
                               mul(sizeof(wire::IndexRow), capacity(indexRecords)),

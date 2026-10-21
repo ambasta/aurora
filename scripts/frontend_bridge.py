@@ -264,6 +264,13 @@ ROWS = (
         "",
     ),
     (
+        "resolver_linkage_chunk(const compiler_resolver::Session& session, i64 symbol, i64 offset) -> "
+        "compiler_resolver::LinkageChunk",
+        "copy session.linkage_chunk(symbol, offset)",
+        "",
+        "",
+    ),
+    (
         "resolver_status(const compiler_resolver::Session& session) -> compiler_resolver::SessionStatus",
         "copy compiler_resolver::status(session)",
         "",

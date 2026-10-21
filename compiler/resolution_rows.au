@@ -18,6 +18,8 @@ import aurora.compiler.syntax_arena;
 //                   graph-order, module-scope, root-flag.
 // source-reference: module-id, begin/end bytes, begin line/column, ordinal/half,
 //                   end line/column, synthetic-origin (zero for real modules).
+// Immutable linkage references use module -1 and word 9 = owning symbol; only
+// their begin/end range is observable, never a diagnostic token coordinate.
 // atom: source-start/length/reference. prefix: parent/atom/depth.
 // index: domain, four keys, value, left/right/parent/height.
 // import: defining-module, target-module, syntax, exact-name-reference, next.
@@ -55,6 +57,33 @@ export namespace compiler_resolver {
         request,
         link,
         context
+    };
+    // A copied linkage-only view. Invalid selectors return size -1; offset equal
+    // to the name length returns an empty chunk. No source address escapes.
+    class LinkageChunk {
+        builtin::array<u8, 512> payload;
+        i64 byteCount;
+    public:
+        LinkageChunk() : payload{}, byteCount(0) {
+        }
+        auto size() const -> i64 {
+            return byteCount;
+        }
+        auto at(i64 index) const -> u8 {
+            return payload[index];
+        }
+        auto append(u8 value) -> bool {
+            if (byteCount >= 512) {
+                return false;
+            }
+            payload[byteCount] = value;
+            byteCount = byteCount + 1;
+            return true;
+        }
+        auto invalidate() -> bool {
+            byteCount = -1;
+            return false;
+        }
     };
     class SyntaxRow {
         SyntaxTag tag;

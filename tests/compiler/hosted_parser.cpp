@@ -4104,6 +4104,90 @@ void resolvedVisibility() {
     ++cases;
 }
 
+void resolvedLinkageNames() {
+    context = "exact linkage ordinals, ordered overload tuples and nested nominal suffixes";
+    const auto resolved = [] {
+        aurora::HostedResolution resolution;
+        const auto root = resolution.add(std::make_shared<const aurora::SourceText>(
+            "linkage.au",
+            "module alpha // module gap\n . beta;namespace ns {"
+            "enum class E {one};class C {public:i64 value;};"
+            "template<Value T,Value U> class Pair {public:T first;U second;"
+            "Pair(T a,U b):first(a),second(b){}};"
+            "template<Value T> class Box {public:T value;Box(T item):value(item){}};"
+            "template<Value T> auto measure()->i64{return size_of(T);}"
+            "auto choose(i64 value)->i64{return 0;}auto choose(bool value)->i64{return 0;}"
+            "auto choose(u64 value)->i64{return 0;}auto choose(u8 value)->i64{return 0;}"
+            "auto choose(C value)->i64{return 0;}auto choose(E value)->i64{return 0;}"
+            "auto choose(builtin::span<const u8> value)->i64{return 0;}"
+            "auto order(i64 a,bool b)->i64{return a;}auto order(bool a,i64 b)->bool{return a;}"
+            "}auto answer()->i64{return ns::measure<ns::Box<ns::Pair<ns::C,ns::E>>>();}"));
+        return resolution.resolve({root.id}, root.id, aurora::AnalysisMode::Check, true);
+    }();
+    const auto &abi = resolved.abiDeclarations;
+    const std::string base = "_m2_5alpha4beta_n1_2ns_d";
+    const std::string className = "__au_c" + base + "1C", enumName = "__au_e" + base + "1E";
+    for (const auto &component :
+         std::vector<std::string>{"0_", "1_", "7_", "10_", "5_" + className, "9_" + enumName, "11_"}) {
+        const auto name = "__au_o" + base + "6choose_p1_" + std::to_string(component.size()) + component;
+        require(abi.functions.contains(name),
+                "overload serialized a resolved-kind ordinal or changed nominal spelling");
+    }
+    require(abi.functions.contains("__au_o" + base + "5order_p2_20_21_") &&
+                abi.functions.contains("__au_o" + base + "5order_p2_21_20_"),
+            "overload reordered parameters or serialized its return type");
+    const auto nominal = [](const std::string &name) {
+        return "_c" + std::to_string(name.size()) + name;
+    };
+    const auto enumeration = "_e" + std::to_string(enumName.size()) + enumName;
+    const auto pair = "__au_c" + base + "4Pair_t2" + nominal(className) + enumeration;
+    const auto box = "__au_c" + base + "3Box_t1" + nominal(pair);
+    const auto measure = "__au_g" + base + "7measure_t1" + nominal(box);
+    require(abi.records.contains(pair) && abi.records.contains(box) && abi.functions.contains(measure) &&
+                abi.functions.contains("answer"),
+            "nested instance inherited prototype cache or changed root spelling");
+    ++cases;
+}
+
+void linkageFailureDiagnostics() {
+    context = "nominal linkage caches remain readable in resolver and lowering diagnostics";
+    struct Fixture {
+        std::string source, message;
+        aurora::DiagnosticCode code;
+    };
+    for (const auto &fixture :
+         std::vector<Fixture>{{"export module fail;namespace ns {class Hidden{public:i64 value;};"
+                               "export auto expose(Hidden value)->i64{return 0;}}",
+                               "exported function signature exposes private type: ns::Hidden",
+                               aurora::DiagnosticCode::Module},
+                              {"export module fail;namespace ns {enum class Hidden{one};"
+                               "export auto expose(Hidden value)->i64{return 0;}}",
+                               "exported function signature exposes private type: ns::Hidden",
+                               aurora::DiagnosticCode::Module},
+                              {"module fail;namespace ns {enum class E{one};}auto answer()->i64{return ns::E::one;}",
+                               "expected i64, got ns::E",
+                               aurora::DiagnosticCode::Semantic},
+                              {"module fail;class C{public:i64 value;};auto answer()->i64{"
+                               "const C value=C{.value=1};return value.missing;}",
+                               "unknown field 'missing' in C",
+                               aurora::DiagnosticCode::Semantic}}) {
+        const auto source = std::make_shared<const aurora::SourceText>("linkage-failure.au", fixture.source);
+        std::optional<aurora::Diagnostic> diagnostic;
+        try {
+            aurora::HostedResolution resolution;
+            const auto root = resolution.add(source);
+            static_cast<void>(resolution.resolve({root.id}, root.id));
+        } catch (const aurora::Error &error) {
+            diagnostic = error.diagnostic;
+        }
+        require(diagnostic && diagnostic->code == fixture.code && diagnostic->message == fixture.message,
+                "cached nominal spelling replaced the original failed-session diagnostic");
+        if (fixture.code == aurora::DiagnosticCode::Semantic)
+            require(diagnostic->span.source == source, "lowering failure lost its original source ownership");
+        ++cases;
+    }
+}
+
 template <class Record> class GuardedRecord {
 public:
     std::uint64_t before = canary;
@@ -4247,6 +4331,189 @@ public:
         require(region.close(), "released resolution region did not close");
     }
 };
+
+void rawLinkageModes() {
+    namespace Wire = aurora::hosted_abi::compiler_resolver;
+    context = "every linkage mode including sealed seeds and cloned template names";
+    Allocations allocations;
+    RawResolution resolution(allocations);
+    const auto text = [&](const std::string &spelling) {
+        aurora::hosted_abi::ResolverTextInput input{};
+        input.text.backing = spelling.data();
+        input.text.length = static_cast<std::int64_t>(spelling.size());
+        return aurora_hosted_resolver_append_text(resolution.data(), &input);
+    };
+    aurora::hosted_abi::ResolverSeedBuiltinInput seed{};
+    seed.definition.value1 = text("builtin::Frozen");
+    seed.definition.value3 = text("frozen_name");
+    seed.definition.concrete_tag = Wire::ResolvedTypeKind::class_value;
+    require(aurora_hosted_resolver_seed_builtin(resolution.data(), &seed) >= 0, "linkage seed rejected");
+    require(resolution.ingest("module mode;namespace n {"
+                              "enum class E{one};class C{i64 value;public:C():value(0){}"
+                              "auto m()->i64{return value;}};"
+                              "template<Scalar T> class Box{public:T value;};"
+                              "template<Scalar T> auto g(T value)->T{return value;}"
+                              "auto f()->i64{return 0;}auto v(C value)->i64{return 0;}"
+                              "auto choose(i64 value)->i64{return 0;}auto choose(bool value)->i64{return 0;}"
+                              "}auto answer()->i64{return n::g<i64>(1)+size_of(n::Box<i64>);}"),
+            "linkage modes fixture failed ingestion");
+    aurora::hosted_abi::ResolverOrderInput order{};
+    order.root = 1;
+    require(aurora_hosted_resolver_order_module(resolution.data(), &order) == 1 &&
+                aurora_hosted_resolver_run(resolution.data()) == 0,
+            "linkage modes fixture failed resolution");
+    std::map<Wire::NativeMode, std::set<std::string>> actual;
+    const auto count = checked_hosted_resolver_count(resolution.data(), 2);
+    for (std::int64_t index = 0; index < count; ++index) {
+        const auto symbol = resolution.meta(index);
+        if (symbol.tag != Wire::MetaTag::symbol)
+            continue;
+        GuardedRecord<Wire::LinkageChunk> chunk;
+        aurora_hosted_resolver_linkage_chunk(resolution.data(), index, 0, &chunk.value);
+        chunk.check();
+        require(chunk.value.byteCount > 0 && chunk.value.byteCount < 512, "mode cache was not finalized");
+        actual[symbol.native_tag].emplace(reinterpret_cast<const char *>(chunk.value.payload.data()),
+                                          static_cast<std::size_t>(chunk.value.byteCount));
+    }
+    const std::string base = "_m1_4mode_n1_1n_d";
+    const std::map<Wire::NativeMode, std::set<std::string>> expected{
+        {Wire::NativeMode::root_entry, {"answer"}},
+        {Wire::NativeMode::function, {"__au_f" + base + "1f"}},
+        {Wire::NativeMode::value_function, {"__au_v" + base + "1v"}},
+        {Wire::NativeMode::ordinary_overload, {"__au_o" + base + "6choose_p1_20_", "__au_o" + base + "6choose_p1_21_"}},
+        {Wire::NativeMode::class_value, {"__au_c" + base + "1C", "__au_c" + base + "3Box_t1_i64"}},
+        {Wire::NativeMode::class_template, {"__au_t" + base + "3Box"}},
+        {Wire::NativeMode::function_template, {"__au_g" + base + "1g", "__au_g" + base + "1g_t1_i64"}},
+        {Wire::NativeMode::enumeration, {"__au_e" + base + "1E"}},
+        {Wire::NativeMode::method, {"__au_m_m1_4mode_n2_1n1C_d1m"}},
+        {Wire::NativeMode::constructor, {"__au_k_m1_4mode_n2_1n1C_d1C"}},
+        {Wire::NativeMode::sealed_builtin, {"frozen_name"}}};
+    require(actual == expected, "source linkage changed a native mode or inherited a prototype cache");
+    resolution.finish();
+    require(allocations.successful == allocations.released, "linkage mode caches leaked");
+    ++cases;
+}
+
+void rawLinkageCaches() {
+    namespace Wire = aurora::hosted_abi::compiler_resolver;
+    context = "immutable linkage caches, copied chunk bounds and failed-session reads";
+    const std::string scope(513, 'n');
+    const std::string prefix = "module alpha // module trivia\n . beta;namespace " + scope +
+                               " { class C { public: i64 value; };auto f()->i64{return 1;} }";
+    const auto execute = [&](bool fail, std::size_t allowance) {
+        Allocations allocations;
+        RawResolution resolution(allocations);
+        require(resolution.ingest(prefix +
+                                  (fail ? "auto answer()->i64{return absent();}" : "auto answer()->i64{return 0;}")),
+                "linkage fixture failed before resolver entry");
+        aurora::hosted_abi::ResolverOrderInput order{};
+        order.module = order.order = order.scope = 0;
+        order.root = 1;
+        require(aurora_hosted_resolver_order_module(resolution.data(), &order) == 1,
+                "linkage fixture module order rejected");
+        const auto baseline = allocations.successful;
+        if (allowance != std::numeric_limits<std::size_t>::max())
+            allocations.allowed = baseline + allowance;
+        const auto result = aurora_hosted_resolver_run(resolution.data());
+        const auto status = resolution.status();
+        const auto used = allocations.successful - baseline;
+        if (status.storage == Wire::StorageStatus::allocation) {
+            require(result == -1 && status.diagnostic == Wire::SemanticError::none,
+                    "allocation failure published resolver success");
+            const auto count = checked_hosted_resolver_count(resolution.data(), 2);
+            for (std::int64_t index = 0; index < count; ++index) {
+                const auto symbol = resolution.meta(index);
+                if (symbol.tag != Wire::MetaTag::symbol || symbol.value0 == -1)
+                    continue;
+                const auto name = resolution.meta(symbol.value0);
+                require(name.tag == Wire::MetaTag::source_reference && name.value9 == index && name.value1 >= 0 &&
+                            name.value2 > name.value1,
+                        "failed fragment published a partial cache reference");
+                std::int64_t copied = 0;
+                std::string bytes;
+                while (copied < name.value2 - name.value1) {
+                    GuardedRecord<Wire::LinkageChunk> chunk;
+                    aurora_hosted_resolver_linkage_chunk(resolution.data(), index, copied, &chunk.value);
+                    chunk.check();
+                    require(chunk.value.byteCount == std::min<std::int64_t>(512, name.value2 - name.value1 - copied),
+                            "allocation failure invalidated an earlier completed cache");
+                    bytes.append(reinterpret_cast<const char *>(chunk.value.payload.data()),
+                                 static_cast<std::size_t>(chunk.value.byteCount));
+                    copied += chunk.value.byteCount;
+                }
+                const auto base = "_m2_5alpha4beta_n1_513" + scope + "_d1";
+                const std::map<Wire::NativeMode, std::string> expected{
+                    {Wire::NativeMode::class_value, "__au_c" + base + "C"},
+                    {Wire::NativeMode::function, "__au_f" + base + "f"},
+                    {Wire::NativeMode::root_entry, "answer"}};
+                require(expected.contains(symbol.native_tag) && bytes == expected.at(symbol.native_tag),
+                        "failed fragment corrupted an earlier immutable cache");
+            }
+        } else {
+            require(status.storage == Wire::StorageStatus::none &&
+                        status.diagnostic ==
+                            (fail ? Wire::SemanticError::unknown_function : Wire::SemanticError::none) &&
+                        result == (fail ? -1 : 0),
+                    "linkage writer replaced resolver outcome");
+            std::int64_t nominal = -1;
+            const auto count = checked_hosted_resolver_count(resolution.data(), 2);
+            for (std::int64_t index = 0; index < count; ++index) {
+                const auto row = resolution.meta(index);
+                if (row.tag == Wire::MetaTag::symbol && row.declaration_tag == Wire::DeclarationKind::class_value)
+                    nominal = index;
+            }
+            require(nominal >= 0, "linkage fixture lost its nominal");
+            const std::string expected = "__au_c_m2_5alpha4beta_n1_513" + scope + "_d1C";
+            const auto reference = resolution.meta(resolution.meta(nominal).value0);
+            require(reference.tag == Wire::MetaTag::source_reference && reference.value9 == nominal &&
+                        reference.value2 - reference.value1 == static_cast<std::int64_t>(expected.size()),
+                    "symbol published an incomplete or inherited cache");
+            std::string copied;
+            for (std::int64_t offset = 0; offset < static_cast<std::int64_t>(expected.size()); offset += 512) {
+                GuardedRecord<Wire::LinkageChunk> chunk;
+                aurora_hosted_resolver_linkage_chunk(resolution.data(), nominal, offset, &chunk.value);
+                chunk.check();
+                const auto remaining = static_cast<std::int64_t>(expected.size()) - offset;
+                require(chunk.value.byteCount == std::min<std::int64_t>(512, remaining),
+                        "linkage chunk lost its exact bounded extent");
+                copied.append(reinterpret_cast<const char *>(chunk.value.payload.data()),
+                              static_cast<std::size_t>(chunk.value.byteCount));
+            }
+            require(copied == expected, "module trivia or long namespace changed exact linkage bytes");
+            for (const auto &[symbol, offset, expectedSize] :
+                 std::vector<std::tuple<std::int64_t, std::int64_t, std::int64_t>>{
+                     {nominal, -1, -1},
+                     {nominal, static_cast<std::int64_t>(expected.size()), 0},
+                     {nominal, static_cast<std::int64_t>(expected.size()) + 1, -1},
+                     {-1, 0, -1},
+                     {0, 0, -1}}) {
+                GuardedRecord<Wire::LinkageChunk> chunk;
+                aurora_hosted_resolver_linkage_chunk(resolution.data(), symbol, offset, &chunk.value);
+                chunk.check();
+                require(chunk.value.byteCount == expectedSize, "linkage reader accepted an invalid selector");
+            }
+            if (fail) {
+                const auto attempts = allocations.attempted;
+                aurora::hosted_abi::ResolverTextInput text{};
+                text.text.backing = "x";
+                text.text.length = 1;
+                require(aurora_hosted_resolver_append_text(resolution.data(), &text) == -1 &&
+                            allocations.attempted == attempts && resolution.status().diagnostic == status.diagnostic &&
+                            resolution.status().node == status.node && resolution.status().first == status.first &&
+                            resolution.status().second == status.second,
+                        "failed-session writer changed the selected diagnostic or allocated");
+            }
+        }
+        resolution.finish();
+        require(allocations.successful == allocations.released, "linkage cache or failure prefix leaked");
+        ++cases;
+        return used;
+    };
+    const auto allocations = execute(false, std::numeric_limits<std::size_t>::max());
+    execute(true, std::numeric_limits<std::size_t>::max());
+    for (std::size_t prefixCount = 0; prefixCount < allocations; ++prefixCount)
+        execute(false, prefixCount);
+}
 
 void rawCatalogueControls() {
     context = "exact historical and Call lowering preludes";
@@ -5612,11 +5879,11 @@ void loweringImplementationSources(const std::vector<aurora::Token> &tokens,
 }
 
 void resolvedCompilerSources(char **paths) {
-    context = "all thirty-seven real compiler modules and decimal digit dependency through production typed lowering";
-    const std::array<std::size_t, 38> arguments{0,  1,  2,  15, 19, 20, 21, 32, 16, 33, 34, 17, 22,
+    context = "all thirty-eight real compiler modules and decimal digit dependency through production typed lowering";
+    const std::array<std::size_t, 39> arguments{0,  1,  2,  15, 19, 20, 21, 32, 16, 33, 34, 17, 22,
                                                 23, 24, 25, 28, 29, 30, 31, 26, 27, 35, 37, 38, 39,
-                                                40, 41, 49, 42, 43, 44, 45, 46, 47, 48, 50, 18};
-    const std::array<std::string, 38> modules{"lexer",
+                                                40, 41, 49, 42, 43, 44, 45, 46, 47, 48, 50, 51, 18};
+    const std::array<std::string, 39> modules{"lexer",
                                               "syntax_arena",
                                               "parser",
                                               "resolution_kinds",
@@ -5653,8 +5920,9 @@ void resolvedCompilerSources(char **paths) {
                                               "x86_facts",
                                               "x86_module",
                                               "formatter",
+                                              "resolution_linkage",
                                               "frontend"};
-    const std::array<std::vector<std::string>, 38> classNames{{
+    const std::array<std::vector<std::string>, 39> classNames{{
         {"Cursor", "Lexeme"},
         {"ParseFrame", "AstNode", "ChildEdge", "TypeSyntax", "SyntaxNode", "AstArena"},
         {"AdmissionConfig",
@@ -5671,7 +5939,7 @@ void resolvedCompilerSources(char **paths) {
         {},
         {"LoweringResult"},
         {"OutputRow", "OperandRow", "SnapshotRow", "LocalRow", "ArgumentLane", "ContinuationRow"},
-        {"SyntaxRow", "MetaRow", "IndexRow", "ResolvedRow", "WorkRow", "SessionStatus"},
+        {"LinkageChunk", "SyntaxRow", "MetaRow", "IndexRow", "ResolvedRow", "WorkRow", "SessionStatus"},
         {"Session"},
         {},
         {},
@@ -5705,10 +5973,11 @@ void resolvedCompilerSources(char **paths) {
         {},
         {"Row", "Workspace"},
         {},
+        {},
     }};
-    // Frontend's direct imports give this DFS postorder, independent of file argv.
-    std::array<aurora::Program, 38> syntax;
-    std::array<aurora::HostedModule, 38> headers;
+    // Explicit module order preserves scope assertions, independent of file argv.
+    std::array<aurora::Program, 39> syntax;
+    std::array<aurora::HostedModule, 39> headers;
     const auto resolved = [&] {
         aurora::HostedResolution resolution;
         for (std::size_t index = 0; index < modules.size(); ++index) {
@@ -5861,7 +6130,7 @@ void resolvedCompilerSources(char **paths) {
             ++enums;
         }
     }
-    require(enums == 48 && classes == 92 && fields > 228 && methods > 307 &&
+    require(enums == 48 && classes == 93 && fields > 228 && methods > 307 &&
                 retainedFunctions == module.functions.size() && functions == abi.functions.size() &&
                 sourceFunctionNames == abiFunctionNames,
             "real compiler typed graph omitted or appended an unaccounted declaration");
@@ -7726,11 +7995,13 @@ int main(int argc, char **argv) {
     try {
         context = "fixture arguments";
         require(
-            argc == 52,
-            "expected thirty-seven compiler, one scalar library, six aggregate and seven typed consumer source paths");
+            argc == 53,
+            "expected thirty-eight compiler, one scalar library, six aggregate and seven typed consumer source paths");
         grammarExpectations();
         callCatalogueIsolation();
         rawCatalogueControls();
+        rawLinkageCaches();
+        rawLinkageModes();
         diagnosticExpectations();
         // Table rows cover ordinary semicolon inputs. Keep distinct trivia,
         // boundary/depth and alternate stop-mode contracts explicit here.
@@ -7876,6 +8147,8 @@ int main(int argc, char **argv) {
         rawAggregates();
         resolvedModules();
         resolvedVisibility();
+        resolvedLinkageNames();
+        linkageFailureDiagnostics();
         rawResolutionOwnership();
         rawMetadataOwnership();
         rawInstructionOwnership();
@@ -7905,7 +8178,7 @@ int main(int argc, char **argv) {
                "typed native identities, dependency/instance order, exact nominal reflection views, selected "
                "overloads, "
                "independent concrete layouts and retained lint/template-error source spans; "
-               "thirty-eight-module frontend graph, fifteen typed classes/14 enums/513 cases, all implementation "
+               "thirty-nine-module frontend graph, fifteen typed classes/14 enums/513 cases, all implementation "
                "declaration boundaries, generated typed-row extents and eleven-owner Session failure/release "
                "prefixes\n";
     } catch (const std::exception &error) {

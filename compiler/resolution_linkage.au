@@ -1,0 +1,322 @@
+export module aurora.compiler.resolution_linkage;
+import aurora.compiler.resolution_kinds;
+import aurora.compiler.resolution_rows;
+import aurora.compiler.resolution_arena;
+import aurora.compiler.resolution_names;
+import aurora.compiler.syntax_arena;
+import aurora.compiler.lexer;
+import aurora.compiler.lowering_kinds;
+import aurora.compiler.lowering_errors;
+import aurora.compiler.lowering_storage;
+import std.decimal_digits;
+
+// Linkage spelling is finalized with its symbol, never by a projection reader.
+// One immutable source-reference in symbol word 0 owns the completed spelling.
+// Dependencies must already have published names, so cycles fail closed without
+// recursion; the resolver retains its depth-four nominal limit. No lazy writer
+// exists. The existing source pool retains bytes, including an unpublished
+// prefix on allocation failure, until ordinary Session cleanup.
+export namespace compiler_resolver {
+    auto linkage_text(Session& session, builtin::span<const u8> text) -> i64 {
+        return session.append_linkage_text(text);
+    }
+    auto linkage_decimal(Session& session, i64 value) -> i64 {
+        if (value < 0) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        i64 place = std_decimal::width_u64(u64(value));
+        while (place > 0 && session.good()) {
+            place = place - 1;
+            session.append_literal_byte(std_decimal::digit_at_u64(u64(value), place));
+        }
+        return 0;
+    }
+    auto linkage_reference(Session& session, i64 reference, bool length) -> i64 {
+        const MetaRow source = session.meta(reference);
+        if (source.kind() != MetaTag::source_reference || source.word(1) < 0 || source.word(2) <= source.word(1)
+            || source.word(2) > session.source_size()) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        if (length) {
+            linkage_decimal(session, source.word(2) - source.word(1));
+        }
+        return session.append_linkage_range(source.word(1), source.word(2));
+    }
+    auto linkage_prefix(Session& session, i64 prefix) -> i64 {
+        const i64 base = session.work_count();
+        i64 part = prefix;
+        while (part != -1 && session.good()) {
+            const MetaRow row = session.meta(part);
+            if (row.kind() != MetaTag::prefix || row.word(0) < -1 || row.word(0) >= part) {
+                session.fail_storage(StorageStatus::invalid);
+            } else {
+                session.append_work(WorkRow(row.word(1), 0, 0, 0, 0, 0));
+                part = row.word(0);
+            }
+        }
+        const i64 count = session.work_count() - base;
+        linkage_decimal(session, count);
+        linkage_text(session, "_");
+        i64 at = session.work_count();
+        while (at > base && session.good()) {
+            at = at - 1;
+            const WorkRow item = session.work(at);
+            const MetaRow atom = session.meta(item.word(0));
+            if (atom.kind() != MetaTag::atom) {
+                session.fail_storage(StorageStatus::invalid);
+            } else {
+                linkage_reference(session, atom.word(2), true);
+            }
+        }
+        session.truncate_work(base);
+        return 0;
+    }
+    auto linkage_nominal(Session& session, MetaRow type) -> i64 {
+        const MetaRow nominal = session.meta(type.word(1));
+        DeclarationKind expected = DeclarationKind::class_value;
+        if (type.type_kind() == ResolvedTypeKind::enum_value) {
+            expected = DeclarationKind::enumeration;
+        }
+        if (type.kind() != MetaTag::concrete_type || (type.type_kind() != ResolvedTypeKind::class_value
+            && type.type_kind() != ResolvedTypeKind::enum_value) || nominal.kind() != MetaTag::symbol
+            || nominal.declaration_kind() != expected || nominal.word(0) < 0) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        const MetaRow name = session.meta(nominal.word(0));
+        if (name.kind() != MetaTag::source_reference || name.word(0) != -1 || name.word(9) != type.word(1)) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        return nominal.word(0);
+    }
+    auto linkage_arguments(Session& session, i64 instance) -> i64 {
+        const MetaRow row = session.meta(instance);
+        if (row.kind() != MetaTag::instance || row.word(1) < 1 || row.word(1) > 2 || row.word(4) < 1 || row.word(4)
+            > 5) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        linkage_text(session, "_t");
+        linkage_decimal(session, row.word(1));
+        i64 at = 0;
+        while (at < row.word(1) && session.good()) {
+            const i64 argument = row.word(2 + at);
+            if (argument < 0) {
+                if (argument > -2 || argument < -65) {
+                    return session.fail_storage(StorageStatus::invalid);
+                }
+                linkage_text(session, "_v");
+                linkage_decimal(session, -argument - 1);
+            } else {
+                const MetaRow type = session.meta(argument);
+                const ResolvedTypeKind kind = type.type_kind();
+                if (type.kind() != MetaTag::concrete_type) {
+                    return session.fail_storage(StorageStatus::invalid);
+                }
+                if (kind == ResolvedTypeKind::class_value || kind == ResolvedTypeKind::enum_value) {
+                    const i64 reference = linkage_nominal(session, type);
+                    if (kind == ResolvedTypeKind::class_value) {
+                        linkage_text(session, "_c");
+                    } else {
+                        linkage_text(session, "_e");
+                    }
+                    linkage_reference(session, reference, true);
+                } else {
+                    if (kind == ResolvedTypeKind::i64_value) {
+                        linkage_text(session, "_i64");
+                    } else {
+                        if (kind == ResolvedTypeKind::u64_value) {
+                            linkage_text(session, "_u64");
+                        } else {
+                            if (kind == ResolvedTypeKind::u8_value) {
+                                linkage_text(session, "_u8");
+                            } else {
+                                if (kind != ResolvedTypeKind::bool_value) {
+                                    return session.fail_storage(StorageStatus::invalid);
+                                }
+                                linkage_text(session, "_bool");
+                            }
+                        }
+                    }
+                }
+            }
+            at = at + 1;
+        }
+        return 0;
+    }
+    // These native ordinals are pinned with MetadataTypeKind in hosted_ir_metadata.
+    // Aurora enums intentionally have no integer conversion; ResolvedTypeKind's
+    // unrelated ordinal is never serialized into a name.
+    auto linkage_parameter_kind(Session& session, ResolvedTypeKind kind) -> i64 {
+        if (kind == ResolvedTypeKind::i64_value) {
+            return 0;
+        }
+        if (kind == ResolvedTypeKind::u64_value) {
+            return 7;
+        }
+        if (kind == ResolvedTypeKind::u8_value) {
+            return 10;
+        }
+        if (kind == ResolvedTypeKind::bool_value) {
+            return 1;
+        }
+        if (kind == ResolvedTypeKind::class_value) {
+            return 5;
+        }
+        if (kind == ResolvedTypeKind::enum_value) {
+            return 9;
+        }
+        if (kind == ResolvedTypeKind::byte_span) {
+            return 11;
+        }
+        return session.fail_storage(StorageStatus::invalid);
+    }
+    auto linkage_parameters(Session& session, i64 symbol, i64 signature) -> i64 {
+        const i64 base = session.work_count();
+        i64 edge = signature;
+        i64 steps = 0;
+        while (edge != -1 && session.good()) {
+            const MetaRow row = session.meta(edge);
+            if (row.kind() != MetaTag::signature || row.word(0) != symbol || steps >= session.meta_count()) {
+                session.fail_storage(StorageStatus::invalid);
+            } else {
+                if (steps > 0) {
+                    session.append_work(WorkRow(row.word(1), 0, 0, 0, 0, 0));
+                }
+                edge = row.word(3);
+                steps = steps + 1;
+            }
+        }
+        if (steps < 1) {
+            session.fail_storage(StorageStatus::invalid);
+        }
+        linkage_text(session, "_p");
+        const i64 count = session.work_count() - base;
+        linkage_decimal(session, count);
+        linkage_text(session, "_");
+        i64 at = base;
+        while (at < session.work_count() && session.good()) {
+            const WorkRow item = session.work(at);
+            const MetaRow type = session.meta(item.word(0));
+            const i64 kind = linkage_parameter_kind(session, type.type_kind());
+            if (type.kind() != MetaTag::concrete_type || !session.good()) {
+                session.truncate_work(base);
+                return session.fail_storage(StorageStatus::invalid);
+            }
+            i64 reference = -1;
+            i64 length = std_decimal::width_u64(u64(kind)) + 1;
+            if (type.type_kind() == ResolvedTypeKind::class_value || type.type_kind() == ResolvedTypeKind::enum_value) {
+                reference = linkage_nominal(session, type);
+                const MetaRow name = session.meta(reference);
+                if (name.kind() != MetaTag::source_reference || name.word(1) < 0 || name.word(2) <= name.word(1)
+                    || name.word(2) > session.source_size() || name.word(2) - name.word(1) > 9223372036854775807
+                    - length) {
+                    session.fail_storage(StorageStatus::invalid);
+                } else {
+                    length = length + name.word(2) - name.word(1);
+                }
+            }
+            linkage_decimal(session, length);
+            linkage_decimal(session, kind);
+            linkage_text(session, "_");
+            if (reference >= 0) {
+                linkage_reference(session, reference, false);
+            }
+            at = at + 1;
+        }
+        session.truncate_work(base);
+        return 0;
+    }
+    auto finalize_linkage(Session& session, i64 symbol) -> i64 {
+        if (!session.good()) {
+            return -1;
+        }
+        MetaRow value = session.meta(symbol);
+        if (value.kind() != MetaTag::symbol || value.word(0) != -1) {
+            return session.fail_storage(StorageStatus::invalid);
+        }
+        const NativeMode mode = value.native_mode();
+        const i64 begin = session.source_size();
+        if (mode == NativeMode::root_entry || mode == NativeMode::sealed_builtin) {
+            linkage_reference(session, value.word(4), false);
+        } else {
+            u8 kind = 0u8;
+            if (mode == NativeMode::function) {
+                kind = 'f';
+            }
+            if (mode == NativeMode::value_function) {
+                kind = 'v';
+            }
+            if (mode == NativeMode::ordinary_overload) {
+                kind = 'o';
+            }
+            if (mode == NativeMode::class_value) {
+                kind = 'c';
+            }
+            if (mode == NativeMode::class_template) {
+                kind = 't';
+            }
+            if (mode == NativeMode::function_template) {
+                kind = 'g';
+            }
+            if (mode == NativeMode::enumeration) {
+                kind = 'e';
+            }
+            if (mode == NativeMode::method) {
+                kind = 'm';
+            }
+            if (mode == NativeMode::constructor) {
+                kind = 'k';
+            }
+            if (kind == 0u8) {
+                return session.fail_storage(StorageStatus::invalid);
+            }
+            const MetaRow unit = session.meta(value.word(1));
+            const SyntaxRow root = session.syntax(unit.word(10));
+            const SyntaxRow preamble = session.syntax(root.word(7));
+            if (unit.kind() != MetaTag::module_unit || preamble.declaration_kind()
+                != compiler_parser::SyntaxKind::preamble) {
+                return session.fail_storage(StorageStatus::invalid);
+            }
+            const i64 module_name = source_name_range(session, preamble.word(0), preamble.word(6));
+            i64 scope = value.word(2);
+            i64 instance = value.word(9);
+            if (mode == NativeMode::method || mode == NativeMode::constructor) {
+                const MetaRow receiver = session.meta(value.word(7));
+                if (receiver.kind() != MetaTag::symbol || receiver.declaration_kind() != DeclarationKind::class_value
+                    || receiver.word(0) < 0) {
+                    return session.fail_storage(StorageStatus::invalid);
+                }
+                scope = receiver.word(3);
+                instance = receiver.word(9);
+            }
+            linkage_text(session, "__au_");
+            session.append_literal_byte(kind);
+            linkage_text(session, "_m");
+            linkage_prefix(session, module_name);
+            linkage_text(session, "_n");
+            linkage_prefix(session, scope);
+            linkage_text(session, "_d");
+            linkage_reference(session, value.word(4), true);
+            if (mode == NativeMode::ordinary_overload) {
+                linkage_parameters(session, symbol, value.word(11));
+            }
+            if (instance >= 0) {
+                linkage_arguments(session, instance);
+            }
+        }
+        if (!session.good()) {
+            return -1;
+        }
+        MetaRow reference = MetaRow(MetaTag::source_reference);
+        reference.set_word(0, -1);
+        reference.set_word(1, begin);
+        reference.set_word(2, session.source_size());
+        reference.set_word(9, symbol);
+        const i64 name = session.append_meta(reference);
+        if (!session.good()) {
+            return -1;
+        }
+        value.set_word(0, name);
+        session.set_meta(symbol, value);
+        return name;
+    }
+}
