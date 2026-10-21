@@ -237,18 +237,23 @@ auto timer_begin(unsigned index) -> void {
         (launch[0] == 5 || launch[0] == 6 || launch[0] == 7) ? 3U
                                                              : 128U;
 #endif
-    auto authorization = SelectedRunAuthority::authorize(registry,
-                                                         *domains[index].handle,
-                                                         selected_role,
-                                                         selected_phase,
-                                                         selected_client,
-                                                         transaction,
-                                                         launch[0],
-                                                         arena,
-                                                         root(),
-                                                         *domains[index].contract,
-                                                         next_epoch,
-                                                         budget);
+#ifdef AURORA_RAM_FILE
+    auto authorization = SelectedRunAuthority::authorize_retained_session(
+#else
+    auto authorization = SelectedRunAuthority::authorize(
+#endif
+        registry,
+        *domains[index].handle,
+        selected_role,
+        selected_phase,
+        selected_client,
+        transaction,
+        launch[0],
+        arena,
+        root(),
+        *domains[index].contract,
+        next_epoch,
+        budget);
     require(authorization.has_value(), "user timer immutable authority");
     run_authority.emplace(*authorization);
     require(selected_role != SelectedRunAuthority::Role::service || service_delivered(), "user service selection");

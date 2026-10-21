@@ -167,7 +167,7 @@ using ProgramInputSession = console::Session<Serial, ScratchpadInputPlatform>;
                 !timer_owner && !timer_owner_epoch && !run_authority && !program.running() && !saved_rsp &&
                 domains[0].contract && domains[0].tables && registry.ready(scratchpad_transfer->caller) &&
                 registry.index(scratchpad_transfer->caller) == 0 && registry.index(scratchpad_transfer->service) == 1 &&
-                RamFileRunAuthority::same_contract(scratchpad_transfer->contract, *domains[0].contract) &&
+                user::same_contract(scratchpad_transfer->contract, *domains[0].contract) &&
                 domains[0].tables->root() == scratchpad_transfer->caller_root &&
                 ram_lifetime->root == scratchpad_transfer->service_root &&
                 ram_lifetime->generation == scratchpad_transfer->service_generation &&

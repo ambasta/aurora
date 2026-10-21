@@ -143,11 +143,7 @@ public:
 #ifdef AURORA_USER_RESUME
     std::optional<RunAuthority> authority;
 #elif defined(AURORA_BLOCKING_CALL) || defined(AURORA_RAM_FILE)
-#ifdef AURORA_RAM_FILE
-    std::optional<RamFileRunAuthority> authority;
-#else
     std::optional<ProgramRunAuthority> authority;
-#endif
     std::optional<user::DomainHandle> service;
     ipc::Endpoint endpoint;
     U64 ticket{};
@@ -214,9 +210,7 @@ constinit ipc::SnapshotSlot snapshot_slot;
 unsigned selected_client = 2;
 #endif
 #ifdef AURORA_UEFI_USER_BUDGET
-#ifdef AURORA_RAM_FILE
-using SelectedRunAuthority = RamFileRunAuthority;
-#elif defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_BLOCKING_CALL)
+#if defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_BLOCKING_CALL) || defined(AURORA_RAM_FILE)
 using SelectedRunAuthority = ProgramRunAuthority;
 #else
 using SelectedRunAuthority = RunAuthority;
@@ -621,6 +615,20 @@ auto execute(unsigned index, ProgramEvent wanted) -> void {
 }
 #endif
 #ifdef AURORA_UEFI_SERVICE_BUDGET
+#if defined(AURORA_BLOCKING_CALL) || defined(AURORA_RAM_FILE)
+// Frame and INT82/RET site only; each caller retains its own authority and errors.
+[[nodiscard]] auto capture_exchange(unsigned index, U64 frame, U64 pc) -> std::optional<ServiceContext> {
+    const auto &contract = *domains[index].contract;
+    const auto context = ServiceContext::capture_call(
+        std::span<const U64>{reinterpret_cast<const U64 *>(frame), 22}, frame, contract, pc);
+    const auto site = pc - contract.entry();
+    const Bytes code{view(arena + L::image_page(index), contract.size())};
+    if (!context || site < 2 || site >= contract.size() || code.get(site - 2, 1) != 0xcd ||
+        code.get(site - 1, 1) != 0x82 || code.get(site, 1) != 0xc3)
+        return std::nullopt;
+    return context;
+}
+#endif
 #ifdef AURORA_OWNED_TEXT
 [[nodiscard]] auto text_active() -> bool;
 #endif

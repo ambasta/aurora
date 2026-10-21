@@ -12,6 +12,9 @@ source and toolchain recorded in the relevant PR; pending checks remain pending.
 | Native binutils/glibc/Mesa alternatives | Six pinned source-bootstrap predecessors have a reconstruction command and local digest/receipt checks, including the replacement final typed-buffer checkpoint; core libraries exist; standalone native rebuilding, toolchain/runtime and graphics replacements are incomplete. |
 | Applications, terminal and tiling desktop | Bounded serial and graphical consoles exist; a separate [protected RAM scratchpad consumer](https://github.com/ambasta/aurora/pull/235) is implemented with bounded local qualification; general applications, terminal sessions and desktop are incomplete. |
 
+The retained-run authority and transcript deduplication is implemented but awaits
+exact-source requalification; the historical RAM receipts above do not qualify it.
+
 Component details: [compiler](../compiler/ARCHITECTURE.md),
 [libraries](../library/README.md), [kernel](../kernel/README.md),
 [protected runtime](../kernel/uefi/runtime.md), [allocation](kernel-owned-bytes.md)

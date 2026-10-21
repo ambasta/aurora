@@ -46,19 +46,6 @@ private:
           source_phase_(source_phase), arena_(arena), root_(root), contract_(contract), epoch_(epoch), budget_(budget) {
     }
 
-    [[nodiscard]] static constexpr auto same_layout(const user::ProgramLayout &a, const user::ProgramLayout &b)
-        -> bool {
-        return a.code_begin() == b.code_begin() && a.code_end() == b.code_end() &&
-               a.max_image_pages() == b.max_image_pages() && a.user_stack_bottom() == b.user_stack_bottom() &&
-               a.user_stack_top() == b.user_stack_top() && a.entry_stack_bottom() == b.entry_stack_bottom() &&
-               a.entry_stack_top() == b.entry_stack_top();
-    }
-    [[nodiscard]] static constexpr auto same_contract(const user::ProgramContract &a, const user::ProgramContract &b)
-        -> bool {
-        return same_layout(a.layout(), b.layout()) && a.entry() == b.entry() && a.size() == b.size() &&
-               a.return_pc() == b.return_pc() && a.bounds_pc() == b.bounds_pc() && a.overflow_pc() == b.overflow_pc() &&
-               a.division_zero_pc() == b.division_zero_pc() && a.shift_count_pc() == b.shift_count_pc();
-    }
     [[nodiscard]] static constexpr auto valid_phase(Role role, ipc::Phase phase, std::uint64_t transaction) -> bool {
         if (role == Role::service)
             return phase == ipc::Phase::service && transaction != 0;
@@ -78,7 +65,7 @@ private:
                                                           Layout::user_stack_end(domain),
                                                           arena + Layout::rsp0_bottom,
                                                           arena + Layout::rsp0_top);
-        return expected && same_layout(*expected, contract.layout()) &&
+        return expected && user::same_layout(*expected, contract.layout()) &&
                contract.entry() == Layout::code_begin(domain) && Layout::code_pages(domain, contract.size()) != 0;
     }
     [[nodiscard]] auto same_live_owner(const user::DomainRegistry &registry, user::DomainHandle owner) const -> bool {
@@ -113,6 +100,38 @@ public:
         return BoundedRunAuthority{
             owner, role, phase, client, transaction, source_phase, owned_arena, actual_root, contract, epoch, budget};
     }
+    // Retained sessions have distinct startup/abort-only zero-transaction runs.
+    // Reuse immutable storage, never broaden ordinary authorize()/valid_phase().
+    // Stable lifetime, grant and backing-lease ownership remain adapter checks.
+    [[nodiscard]] static auto authorize_retained_session(const user::DomainRegistry &registry,
+                                                         user::DomainHandle owner,
+                                                         Role role,
+                                                         ipc::Phase phase,
+                                                         std::size_t client,
+                                                         std::uint64_t transaction,
+                                                         std::uint64_t source_phase,
+                                                         std::uint64_t owned_arena,
+                                                         std::uint64_t actual_root,
+                                                         const user::ProgramContract &contract,
+                                                         std::uint64_t epoch,
+                                                         unsigned budget) -> std::optional<BoundedRunAuthority> {
+        // A body assertion avoids constrained-member ABI aliases in linked stack facts.
+        static_assert(Domains == 2);
+        const auto domain = registry.index(owner);
+        if (!domain || !registry.active(owner) || client != 0 || epoch == 0 ||
+            !owned_contract(owned_arena, *domain, contract) ||
+            actual_root != owned_arena + Layout::table_offset(*domain))
+            return std::nullopt;
+        const bool caller =
+            role == Role::client && *domain == 0 && phase == ipc::Phase::request && transaction == 0 && budget == 128;
+        const bool service = role == Role::service && *domain == 1 && phase == ipc::Phase::service &&
+                             ((source_phase == 2 && transaction != 0 && budget == 120) ||
+                              ((source_phase == 1 || source_phase == 3) && transaction == 0 && budget == 8));
+        if (!caller && !service)
+            return std::nullopt;
+        return BoundedRunAuthority{
+            owner, role, phase, client, transaction, source_phase, owned_arena, actual_root, contract, epoch, budget};
+    }
     // Use before accepting either a timer or a terminal user frame. Only after
     // this succeeds may the adapter capture ServiceContext under contract().
     [[nodiscard]] auto matches_active(const user::DomainRegistry &registry,
@@ -128,7 +147,8 @@ public:
                                       std::uint64_t epoch) const -> bool {
         return same_live_owner(registry, owner) && registry.active(owner_) && registry.active(owner) && role == role_ &&
                phase == phase_ && client == client_ && transaction == transaction_ && source_phase == source_phase_ &&
-               owned_arena == arena_ && actual_root == root_ && same_contract(contract_, contract) && epoch == epoch_;
+               owned_arena == arena_ && actual_root == root_ && user::same_contract(contract_, contract) &&
+               epoch == epoch_;
     }
     // Narrow ownership evidence after deactivation, for pending-IRQ drain only.
     // This cannot authorize any user frame. The adapter separately proves the
