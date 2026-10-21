@@ -629,7 +629,7 @@ export namespace compiler_x86 {
             return workspace.text("\"builtin::CallSession\"");
         }
         if (kind == 19) {
-            return workspace.text("\"builtin::PortRange\"");
+            return workspace.text("\"builtin::Com1UartGrant\"");
         }
         if (kind == 20) {
             return workspace.text("\"builtin::ServeSession\"");

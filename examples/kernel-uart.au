@@ -3,15 +3,15 @@ import kernel.uart;
 
 // Real entry functions keep this graph independently compilable and its ABI
 // inspectable. The native bridge resolves these symbols from compiler facts.
-auto uart_initialize(builtin::PortRange& ports, kernel::UartTransfer input) -> kernel::UartTransfer {
+auto uart_initialize(builtin::Com1UartGrant& ports, kernel::UartTransfer input) -> kernel::UartTransfer {
     const kernel::UartTransfer result = kernel::uart_initialize(ports, input);
     return result;
 }
-auto uart_next(builtin::PortRange& ports, kernel::UartTransfer input) -> kernel::UartTransfer {
+auto uart_next(builtin::Com1UartGrant& ports, kernel::UartTransfer input) -> kernel::UartTransfer {
     const kernel::UartTransfer result = kernel::uart_next(ports, input);
     return result;
 }
-auto uart_put(builtin::PortRange& ports, kernel::UartTransfer input, u8 byte) -> kernel::UartTransfer {
+auto uart_put(builtin::Com1UartGrant& ports, kernel::UartTransfer input, u8 byte) -> kernel::UartTransfer {
     const kernel::UartTransfer result = kernel::uart_put(ports, input, byte);
     return result;
 }

@@ -126,7 +126,7 @@ public:
     }
 };
 #ifdef AURORA_GENERATED_UART
-using PortService = aurora::hardware::PortRange<Platform, Ports>;
+using PortService = aurora::hardware::Com1UartGrant<Platform, Ports>;
 #endif
 auto queue(std::string_view bytes) -> void {
     for (const auto byte : bytes)

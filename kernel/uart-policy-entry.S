@@ -1,4 +1,4 @@
-# UART_POLICY_ABI: validate the exact copied record and PortRange signatures.
+# UART_POLICY_ABI: validate the exact copied record and Com1UartGrant signatures.
 # SysV receives a private copied-argument record and copied-result destination.
 # Only compiler facts select the source symbols. R11/R10 are compiler-private.
 .text

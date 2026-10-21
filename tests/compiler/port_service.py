@@ -21,17 +21,17 @@ def need(value, message):
 
 SOURCE = """module port_probe;
 class State {public:u8 value;u64 offset;};
-auto read_port_byte(builtin::PortRange& p)->u8{return p.read8(7u64);}
-auto write_port_state(builtin::PortRange& p, State state)->State{
+auto read_port_byte(builtin::Com1UartGrant& p)->u8{return p.read8(5u64);}
+auto write_port_state(builtin::Com1UartGrant& p, State state)->State{
     State result=state;
     if(p.write8(state.offset,state.value)!=builtin::PortWriteResult::issued){result.value=0u8;}
     result.offset=result.offset+1u64;
     return result;
 }
-auto port_entry(builtin::PortRange& p)->i64{
-    State s=State{.value=read_port_byte(p),.offset=7u64};
+auto port_entry(builtin::Com1UartGrant& p)->i64{
+    State s=State{.value=read_port_byte(p),.offset=0u64};
     State r=write_port_state(p,s);
-    if(r.value!=255u8 || r.offset!=8u64 || s.value!=255u8 || s.offset!=7u64){return 1;}
+    if(r.value!=255u8 || r.offset!=1u64 || s.value!=255u8 || s.offset!=0u64){return 1;}
     return 42;
 }
 """
@@ -42,7 +42,7 @@ struct Grant {std::uint64_t grant, generation;};
 static unsigned mode, reads, writes;
 extern "C" std::uint64_t checked_group_entry(const Grant*);
 extern "C" std::uint64_t __au_runtime_port_read8(std::uint64_t grant,std::uint64_t generation,std::uint64_t offset){
-    if(grant!=0x504f5254 || generation!=91 || offset!=7 || reads++ || writes) std::abort();
+    if(grant!=0x504f5254 || generation!=91 || offset!=5 || reads++ || writes) std::abort();
     if(mode==1) return 256;
     if(mode==2) return 0x100000000ULL;
     if(mode==3) return UINT64_MAX;
@@ -50,7 +50,7 @@ extern "C" std::uint64_t __au_runtime_port_read8(std::uint64_t grant,std::uint64
 }
 extern "C" std::uint64_t __au_runtime_port_write8(
     std::uint64_t grant,std::uint64_t generation,std::uint64_t offset,std::uint64_t value){
-    if(grant!=0x504f5254 || generation!=91 || offset!=7 || value!=255 || reads!=1 || writes++) std::abort();
+    if(grant!=0x504f5254 || generation!=91 || offset!=0 || value!=255 || reads!=1 || writes++) std::abort();
     if(mode==4) return 1;
     if(mode==5) return 256;
     if(mode==6) return 0x100000000ULL;
@@ -114,7 +114,7 @@ def main():
                 copied[0]["copied_record"] is None
                 and copied[0]["service_abi"]["record"]
                 == {
-                    "parameters": [["builtin::PortRange", 16], ["copied_class", 16]],
+                    "parameters": [["builtin::Com1UartGrant", 16], ["copied_class", 16]],
                     "result_bytes": 16,
                     "result_kind": "copied_class",
                 },
@@ -127,7 +127,7 @@ def main():
                 and row["service_abi"]["record"].get("result_kind") != "copied_class"
             ]
             need(
-                any(row == {"parameters": [["builtin::PortRange", 16]], "result_bytes": 1} for row in scalar),
+                any(row == {"parameters": [["builtin::Com1UartGrant", 16]], "result_bytes": 1} for row in scalar),
                 "read helper must retain scalar u8 result width",
             )
             abi = json.loads(abi_path.read_text())
@@ -145,7 +145,7 @@ def main():
                     "offset": 0,
                     "bytes": 16,
                     "kind": "service",
-                    "type_name": "builtin::PortRange",
+                    "type_name": "builtin::Com1UartGrant",
                 },
                 "Port authority identity/width lost from generic ABI",
             )
@@ -207,14 +207,18 @@ __au_runtime_group_entry:
                 f"{name} mode {mode}: expected canonicality gate, got {result.returncode}: {result.stderr!r}",
             )
 
-    p = "builtin::PortRange& p"
+    p = "builtin::Com1UartGrant& p"
     invalid = {
+        "old-spelling": (
+            "auto f(builtin::PortRange& p)->u8{return p.read8(0u64);}",
+            "AU2001: expected 'array' (found 'PortRange')",
+        ),
         "value": (
-            "auto f(builtin::PortRange p)->i64{return 0;}",
+            "auto f(builtin::Com1UartGrant p)->i64{return 0;}",
             "AU3001: service functions require one leading exclusive sealed service reference and copied result",
         ),
         "const": (
-            "auto f(const builtin::PortRange& p)->i64{return 0;}",
+            "auto f(const builtin::Com1UartGrant& p)->i64{return 0;}",
             "AU3001: service functions require one leading exclusive sealed service reference and copied result",
         ),
         "late": (
@@ -222,34 +226,34 @@ __au_runtime_group_entry:
             "AU2001: borrowed parameters require a supported leading ownership reference signature "
             "on an ordinary function (found 'p')",
         ),
-        "mint": ("auto f()->i64{builtin::PortRange p;return 0;}", "AU2001: expected '=' (found ';')"),
+        "mint": ("auto f()->i64{builtin::Com1UartGrant p;return 0;}", "AU2001: expected '=' (found ';')"),
         "construct": (
-            "auto f()->i64{builtin::PortRange p=builtin::PortRange();return 0;}",
+            "auto f()->i64{builtin::Com1UartGrant p=builtin::Com1UartGrant();return 0;}",
             "AU4001: reserved builtin namespace or identifier: builtin",
         ),
         "store": (
-            "class Holder{builtin::PortRange p;};auto f()->i64{return 0;}",
-            "AU2003: unsupported class field type 'builtin::PortRange': class fields require scalar, class, "
+            "class Holder{builtin::Com1UartGrant p;};auto f()->i64{return 0;}",
+            "AU2003: unsupported class field type 'builtin::Com1UartGrant': class fields require scalar, class, "
             "private fixed-array or private owned-byte storage",
         ),
         "copy": (
-            f"auto f({p})->i64{{builtin::PortRange copy=p;return 0;}}",
+            f"auto f({p})->i64{{builtin::Com1UartGrant copy=p;return 0;}}",
             "AU3001: service capability cannot be stored in a local",
         ),
         "move": (
-            f"auto f({p})->i64{{builtin::PortRange copy=move(p);return 0;}}",
+            f"auto f({p})->i64{{builtin::Com1UartGrant copy=move(p);return 0;}}",
             "AU3001: service capability cannot be stored in a local",
         ),
         "return": (
-            f"auto f({p})->builtin::PortRange{{return p;}}",
+            f"auto f({p})->builtin::Com1UartGrant{{return p;}}",
             "AU2001: only scalar function results or scalar-field class values are supported (found '{')",
         ),
         "reflect": (
-            "auto f()->i64{return size_of(builtin::PortRange);}",
+            "auto f()->i64{return size_of(builtin::Com1UartGrant);}",
             "AU3001: resource capabilities are unavailable to reflection",
         ),
         "reflect-id": (
-            "auto f()->u64{return reflect_size(type_id(builtin::PortRange));}",
+            "auto f()->u64{return reflect_size(type_id(builtin::Com1UartGrant));}",
             "AU3001: resource capabilities are unavailable to reflection",
         ),
         "cast": (f"auto f({p})->u64{{return u64(p);}}", "AU3001: service capability is not a value"),
@@ -298,7 +302,7 @@ __au_runtime_group_entry:
                 f"auto f({p})->i64{{p.{op}{width}(0u64);return 0;}}",
                 "AU3001: unknown operation for sealed service kind",
             )
-    for kind in ("ConsoleSession", "DisplaySession", "IommuEventSession", "CallSession", "PortRange"):
+    for kind in ("ConsoleSession", "DisplaySession", "IommuEventSession", "CallSession", "Com1UartGrant"):
         for reverse in (False, True):
             pair = [p, f"builtin::{kind}& other"]
             if reverse:

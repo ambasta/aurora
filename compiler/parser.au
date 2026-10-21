@@ -510,7 +510,7 @@ namespace compiler_parser {
         const array<u8, 64> names2 = "ConsoleSession;ConsoleSample;ConsolePutResult;ConsoleCompletion;";
         const builtin::span<const u8> words2 = borrow_bytes(names2);
         const array<u8,
-            82> names3 = "ByteRegion;OwnedBytes;CallSession;CallResult;CallStatus;PortRange;PortWriteResult;";
+            86> names3 = "ByteRegion;OwnedBytes;CallSession;CallResult;CallStatus;Com1UartGrant;PortWriteResult;";
         const builtin::span<const u8> words3 = borrow_bytes(names3);
         const array<u8, 38> names4 = "ServeSession;ServeRequest;ServeStatus;";
         const builtin::span<const u8> words4 = borrow_bytes(names4);
@@ -3048,7 +3048,8 @@ namespace compiler_parser {
             return AdmissionType(AdmissionKind::invalid, 0, token);
         }
         const array<u8,
-            92> names = "ByteRegion;OwnedBytes;ConsoleSession;DisplaySession;IommuEventSession;CallSession;PortRange;";
+            96> names =
+            "ByteRegion;OwnedBytes;ConsoleSession;DisplaySession;IommuEventSession;CallSession;Com1UartGrant;";
         const builtin::span<const u8> words = borrow_bytes(names);
         if (word_matches(source, token, words, 0, 10)) {
             return AdmissionType(AdmissionKind::region, 0, token);
@@ -3068,7 +3069,7 @@ namespace compiler_parser {
         if (word_matches(source, token, words, 70, 81)) {
             return AdmissionType(AdmissionKind::service, configuration.service_mask(3), token);
         }
-        if (word_matches(source, token, words, 82, 91)) {
+        if (word_matches(source, token, words, 82, 95)) {
             return AdmissionType(AdmissionKind::service, configuration.service_mask(4), token);
         }
         const array<u8, 12> serve_name = "ServeSession";

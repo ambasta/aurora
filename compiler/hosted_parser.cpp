@@ -407,7 +407,7 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                 return value == "ServeSession" || value == "ServeRequest" || value == "ServeStatus";
             };
             const auto portName = [](const std::string &value) {
-                return value == "PortRange" || value == "PortWriteResult";
+                return value == "Com1UartGrant" || value == "PortWriteResult";
             };
             for (std::int64_t index = 0; index < typeCount; ++index) {
                 TypeSyntax type;
@@ -861,8 +861,8 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                 value = Type::ConsoleSession;
             else if (builtin == "DisplaySession")
                 value = Type::DisplaySession;
-            else if (builtin == "PortRange")
-                value = Type::PortRange;
+            else if (builtin == "Com1UartGrant")
+                value = Type::Com1UartGrant;
             else if (builtin == "PortWriteResult")
                 value = service::portWriteResultType();
             else if (builtin == "ServeSession")

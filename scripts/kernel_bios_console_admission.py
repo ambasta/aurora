@@ -71,7 +71,7 @@ def bridge_contract(rows, starts, target, copied_result):
 
 def verify_uart_record(record, bridge):
     stack.require(bridge in UART_BRIDGES, "Unknown UART bridge")
-    expected = [["builtin::PortRange", 16], ["copied_class", 48]]
+    expected = [["builtin::Com1UartGrant", 16], ["copied_class", 48]]
     if bridge.endswith("_put"):
         expected.append(["scalar", 8])
     stack.require(

@@ -268,7 +268,7 @@ class BiosUartAdmission(unittest.TestCase):
         functions = {}
         for suffix in ("initialize", "next", "put"):
             parameters = [
-                dict(offset=0, bytes=16, kind="service", type_name="builtin::PortRange"),
+                dict(offset=0, bytes=16, kind="service", type_name="builtin::Com1UartGrant"),
                 dict(offset=16, bytes=48, kind="class", type_name="copied_uart_record"),
             ]
             if suffix == "put":
@@ -338,7 +338,7 @@ class BiosUartAdmission(unittest.TestCase):
     def test_bios_copied_stack_record_is_not_a_scalar_size_escape(self):
         for suffix in ("initialize", "next", "put"):
             bridge = "__au_runtime_uart_" + suffix
-            parameters = [["builtin::PortRange", 16], ["copied_class", 48]]
+            parameters = [["builtin::Com1UartGrant", 16], ["copied_class", 48]]
             if suffix == "put":
                 parameters.append(["scalar", 8])
             record = dict(parameters=parameters, result_bytes=48, result_kind="copied_class")

@@ -65,7 +65,7 @@ def validate_uart_policy_abi(facts):
         _, raw = abi_declaration(facts, "functions", name)
         function = normalize_function_abi(facts, raw)
         parameters = [
-            {"offset": 0, "bytes": 16, "kind": "service", "type_name": "builtin::PortRange"},
+            {"offset": 0, "bytes": 16, "kind": "service", "type_name": "builtin::Com1UartGrant"},
             {"offset": 16, "bytes": 48, "kind": "class", "type_name": record_symbol},
         ]
         if name == "uart_put":
