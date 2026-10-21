@@ -1,8 +1,6 @@
 #pragma once
 #include "console.hpp"
-#include <array>
 #include <cstdint>
-#include <string_view>
 
 namespace aurora::console {
 // A UART LSR read can clear receive-error bits even when performed for TX.
@@ -24,7 +22,8 @@ enum class FifoTrigger : std::uint8_t {
     fourteen = 0xc0
 };
 
-template <class Ports = hardware::Io, FifoTrigger Trigger = FifoTrigger::one> class Uart final {
+template <class Ports = hardware::Io, FifoTrigger Trigger = FifoTrigger::one>
+class Uart final : public OutputFormat<Uart<Ports, Trigger>> {
     static_assert(Trigger == FifoTrigger::one || Trigger == FifoTrigger::fourteen);
     static constexpr auto fifo_trigger = static_cast<std::uint8_t>(Trigger);
     static inline bool receive_error_{};
@@ -78,22 +77,6 @@ public:
     // Native diagnostic output shares the same sticky receive-error latch.
     static auto put(std::uint8_t value) -> void {
         static_cast<void>(try_put(value));
-    }
-    static auto text(std::string_view value) -> void {
-        for (const auto byte : value) {
-            put(static_cast<std::uint8_t>(byte));
-        }
-    }
-    static auto number(std::uint64_t value) -> void {
-        std::array<char, 20> digits{};
-        std::size_t length = 0;
-        do {
-            digits[length++] = static_cast<char>('0' + value % 10);
-            value /= 10;
-        } while (value != 0);
-        while (length != 0) {
-            put(static_cast<std::uint8_t>(digits[--length]));
-        }
     }
 };
 } // namespace aurora::console

@@ -219,6 +219,7 @@ class ProfileMetadata(unittest.TestCase):
             "kernel/console-session.hpp",
             "kernel/console-uart.hpp",
             "kernel/console.hpp",
+            "kernel/output-format.hpp",
             "kernel/display-session.hpp",
             "kernel/graphical-session.hpp",
             "kernel/interactive-console.hpp",

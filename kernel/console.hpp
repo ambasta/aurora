@@ -1,6 +1,5 @@
 #pragma once
-#include <array>
-#include <string_view>
+#include "output-format.hpp"
 #ifdef AURORA_INTERACTIVE_CONSOLE
 #include "interactive-console.hpp"
 #endif
@@ -55,21 +54,13 @@ public:
     [[gnu::noinline, gnu::noclone, gnu::noipa]]
 #endif
     static auto text(std::string_view value) -> void {
-        for (const auto character : value)
-            put(static_cast<Byte>(character));
+        console::OutputFormat<Serial, unsigned long long>::text(value);
     }
 #ifdef AURORA_INTERACTIVE_CONSOLE
     [[gnu::noinline, gnu::noclone, gnu::noipa]]
 #endif
     static auto number(unsigned long long value) -> void {
-        std::array<char, 20> digits{};
-        auto length = 0;
-        do {
-            digits[length++] = static_cast<char>('0' + value % 10);
-            value /= 10;
-        } while (value);
-        while (length > 0)
-            put(static_cast<Byte>(digits[--length]));
+        console::OutputFormat<Serial, unsigned long long>::number(value);
     }
 };
 } // namespace aurora::hardware
