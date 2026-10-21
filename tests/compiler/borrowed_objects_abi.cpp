@@ -1,7 +1,6 @@
 // Independent IR producer for handwritten native borrowed-object ABI observations.
 #include "ir_verify.hpp"
 #include "x86.hpp"
-#include <algorithm>
 #include <iostream>
 using namespace aurora;
 using namespace aurora::ir;
@@ -91,7 +90,7 @@ void pairedBoundaries(Module &module) {
         F target;
         target.name = "paired_target_" + std::to_string(arity);
         target.borrowedRootCount = 2;
-        target.mutableBorrowedRootCount = 1;
+        target.firstBorrowedMutable = 1;
         target.parameters = {Type("Receiver"), Type("Receiver")};
         target.parameters.insert(target.parameters.end(), arity, Type::I64);
         target.result = Type::I64;
@@ -131,7 +130,7 @@ void pairedBoundaries(Module &module) {
             F forward;
             forward.name = "paired_forward_" + std::to_string(arity) + "_" + std::to_string(depth);
             forward.borrowedRootCount = target.borrowedRootCount;
-            forward.mutableBorrowedRootCount = target.mutableBorrowedRootCount;
+            forward.firstBorrowedMutable = target.firstBorrowedMutable;
             forward.parameters = target.parameters;
             forward.result = Type::I64;
             cursor = 0;
@@ -164,26 +163,15 @@ void pairedBoundaries(Module &module) {
     }
 }
 void boundedBoundaries(Module &module) {
-    // Literal writes independently observed by the handwritten oracle. These
-    // are class scalar fields, not manufactured owner descriptors.
-    for (int ordinal = 0; ordinal < 2; ++ordinal) {
-        F write;
-        write.name = "dual_write_" + std::to_string(ordinal);
-        write.receiver = Receiver{"Receiver", true, false};
-        write.result = Type::I64;
-        write.code = {
-            Constant{501 + ordinal, Type::I64}, ReceiverStore{2, Type::I64}, ReceiverLoad{2, Type::I64}, Return{}};
-        module.functions.push_back(write);
-    }
     for (int roots = 1; roots <= 3; ++roots)
-        for (int mutableFirst = 0; mutableFirst <= std::min(roots, 2); ++mutableFirst)
+        for (int mutableFirst = 0; mutableFirst <= 1; ++mutableFirst)
             for (int tail = 0; tail <= 6 - roots; ++tail) {
                 const auto suffix =
                     std::to_string(roots) + "_" + std::to_string(mutableFirst) + "_" + std::to_string(tail);
                 F target;
                 target.name = "bounded_target_" + suffix;
                 target.borrowedRootCount = roots;
-                target.mutableBorrowedRootCount = mutableFirst;
+                target.firstBorrowedMutable = mutableFirst;
                 target.parameters.assign(roots, Type("Receiver"));
                 target.parameters.insert(target.parameters.end(), tail, Type::I64);
                 target.result = Type::I64;
@@ -192,8 +180,6 @@ void boundedBoundaries(Module &module) {
                 const int total = slot(target, cursor, Type::I64);
                 add(target, {Constant{0, Type::I64}, Store{total, Type::I64}});
                 for (int ordinal = 0; ordinal < roots; ++ordinal) {
-                    if (mutableFirst == 2 && ordinal < 2)
-                        target.code.push_back(MethodCall{"dual_write_" + std::to_string(ordinal), -ordinal});
                     add(target,
                         {Call{"paired_scalar_clobber"},
                          MethodCall{"paired_read_second", -ordinal},
@@ -215,7 +201,7 @@ void boundedBoundaries(Module &module) {
                     F forward;
                     forward.name = "bounded_forward_" + suffix + "_" + std::to_string(depth);
                     forward.borrowedRootCount = roots;
-                    forward.mutableBorrowedRootCount = mutableFirst;
+                    forward.firstBorrowedMutable = mutableFirst;
                     forward.parameters = target.parameters;
                     forward.result = Type::I64;
                     cursor = 0;
@@ -224,7 +210,8 @@ void boundedBoundaries(Module &module) {
                     const int copied = slot(forward, cursor, Type("Box"));
                     std::vector<BorrowedRootArgument> lanes;
                     for (int ordinal = 0; ordinal < roots; ++ordinal) {
-                        forward.code.push_back(AcquireObjectLoan{ordinal + 1, -ordinal, ordinal < mutableFirst});
+                        forward.code.push_back(
+                            AcquireObjectLoan{ordinal + 1, -ordinal, ordinal == 0 && mutableFirst != 0});
                         lanes.push_back({-ordinal, ordinal + 1});
                     }
                     for (int index = 0; index < depth; ++index)
@@ -275,7 +262,7 @@ int main() {
                 F target;
                 target.name = "borrow_object_target_" + suffix;
                 target.borrowedRootCount = 1;
-                target.mutableBorrowedRootCount = mode == 1;
+                target.firstBorrowedMutable = mode == 1;
                 target.parameters = parameters(n, mask);
                 target.parameters.insert(target.parameters.begin(), Type("Receiver"));
                 target.result = mode == 0 ? Type::I64 : Type("Box");
@@ -299,7 +286,7 @@ int main() {
                         f.name = "borrow_object_forward_" + suffix + "_" + std::to_string(depth) + "_" +
                                  std::to_string(transform);
                         f.borrowedRootCount = 1;
-                        f.mutableBorrowedRootCount = mode == 1;
+                        f.firstBorrowedMutable = mode == 1;
                         f.parameters = target.parameters;
                         f.result = Type::I64;
                         cursor = 0;

@@ -331,11 +331,11 @@ export namespace compiler_lowering {
             put(session, OperandRole::NoReceiver, 0);
         }
         put(session, OperandRole::BorrowedRootCount, borrowed_roots);
-        i64 mutable_roots = 0;
-        while (mutable_roots < borrowed_roots && !parameter_const(session, function, mutable_roots)) {
-            mutable_roots = mutable_roots + 1;
+        i64 first_mutable = 0;
+        if (borrowed_roots > 0 && !parameter_const(session, function, 0)) {
+            first_mutable = 1;
         }
-        put(session, OperandRole::MutableBorrowedRootCount, mutable_roots);
+        put(session, OperandRole::FirstBorrowedMutable, first_mutable);
         if (root.second_label() >= 0) {
             put(session, OperandRole::ReceiverSpanField, root.second_label());
         } else {

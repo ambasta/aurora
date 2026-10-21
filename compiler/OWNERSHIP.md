@@ -645,16 +645,15 @@ classes. No temporary/projected argument, reference local/
 field/result, reference template/overload or ownership transfer is added.
 
 A bounded multi-root form accepts a leading sequence of up to three borrowed
-owning roots. A mutable prefix may contain zero, one or two roots; every
-remaining root is readonly. Thus `(T&, U&)` and `(T&, U&, const V&)` are
-supported, but readonly-then-mutable and three-mutable signatures are not.
+owning roots. The first may be mutable or readonly; every later root is readonly.
+Two mutable concrete owning roots remain unsupported pending a library or product
+consumer; sealed service-capability groups and single mutable typed-buffer borrows
+are separate, unchanged forms.
 Roots and trailing parameters together fit the existing six-parameter limit.
 With two or more roots, trailing parameters and the result are scalar/enum values.
 The single-root copied/span argument and copied-result rules above are unchanged.
 This enables algorithms that update a workspace while reading independent owners,
-including the verifier's instruction and metadata owners. Two mutable roots also
-support independently updating two complete owners; this does not add compiler
-adoption, a new bootstrap stage, nested owners or mixed builtin root signatures.
+including the verifier's instruction and metadata owners.
 
 Every actual root is complete, named and pairwise distinct, even when all borrows
 are readonly or the classes are empty. Different instances of the same class are
@@ -716,11 +715,10 @@ admission checks pairwise root/loan distinctness and nominal receiver binding.
 Native verification checks each admitted lane's live loan, authority and dynamic
 root/lifetime provenance; it does not independently repeat those static checks.
 The existing single-root direct-pointer, two-root sixteen-byte and three-root thirty-two-byte
-tuple reservations are preserved. The existing i64 permission lane records the
-mutable-prefix count (0, 1 or 2, never greater than the root count); source and
-native readers reject invalid counts before granting mutable authority. It is
-not a boolean, and the record layout is not widened. Borrowed entries remain
-private: the trusted host must construct genuinely separate live complete
+tuple reservations are preserved. The existing i64 permission lane is a validated
+0/1 flag for first-root mutability; a callable with no roots requires zero.
+Source and native readers reject invalid flags before granting authority. Borrowed
+entries remain private: the trusted host must construct genuinely separate live complete
 owners and payloads, not pass arbitrary raw tuples or rely on pointer inequality.
 
 Canonical callable metadata stores every explicit formal in source order, with a

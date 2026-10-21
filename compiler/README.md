@@ -242,12 +242,11 @@ adapter generates its record layouts, enum values and bridge symbol targets from
 those facts; this is not a general exported ABI. Initialization and emission use
 one closed entry table in the existing bootstrap adapter for root authority,
 argument-record names, host declarations and the five fixed register transports.
-The facts normalizer also accepts two leading mutable concrete owning roots,
-with an optional readonly third root, without widening any fixed native entry.
-Root authority is checked per ordinal; tuple storage does not imply pointee
-mutability or prove distinct ownership. Aurora forwards and owner lifetime/semantic
-checks remain unchanged. Both stages
-generate their own facts and header. The existing bootstrap test checks current C1/C2 assembly, object,
+The facts normalizer accepts up to three concrete owning roots with only the
+first optionally mutable. Tuple storage does not imply pointee mutability or prove
+distinct ownership. Aurora forwards and owner lifetime/semantic checks remain
+unchanged. Both stages generate their own facts and header. The existing bootstrap
+test checks current C1/C2 assembly, object,
 facts and header convergence, binds B to the frontend actually linked into C2, and compares current
 C1/C2 corpus diagnostics/output. No compiler binary or generated frontend is
 committed. The candidate's independent module graph pass runs in Aurora after all

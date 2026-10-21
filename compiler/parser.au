@@ -3183,7 +3183,6 @@ namespace compiler_parser {
         i64 index = 0;
         i64 first_service = 0;
         bool first_borrowed = false;
-        bool first_mutable = false;
         bool owning_prefix = false;
         while (arena.stack_size() > base) {
             const ParseFrame frame = arena.frame();
@@ -3202,7 +3201,7 @@ namespace compiler_parser {
                     && first_service != 0 && first_service != type.service() && (u64(configuration.groups()) & (1u64
                     << i64(group))) != 0u64;
                 const bool owning_continuation = index > 0 && owning_prefix && type.kind() == AdmissionKind::class_value
-                    && (parameter_node.mutable_binding() == 1 || (index == 1 && first_mutable));
+                    && parameter_node.mutable_binding() == 1;
                 const bool borrowed_values = index == 0 && syntax.kind() == TypeKind::owned_values
                     && parameter_node.mutable_binding() == 0;
                 if (!function || (index != 0 && !continuation && !owning_continuation) || context.end(0) != 0
@@ -3227,7 +3226,6 @@ namespace compiler_parser {
             if (index == 0) {
                 first_service = type.service();
                 first_borrowed = borrowed;
-                first_mutable = parameter_node.mutable_binding() == 0;
             }
             owning_prefix = borrowed && type.kind() == AdmissionKind::class_value && (index == 0 || owning_prefix);
             index = index + 1;

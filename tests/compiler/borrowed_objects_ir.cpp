@@ -4,7 +4,6 @@
 #include "ir_verify.hpp"
 #include "x86.hpp"
 #include "json_fragments.hpp"
-#include <algorithm>
 #include <functional>
 #include <iostream>
 #include <limits>
@@ -88,7 +87,7 @@ F borrowed(bool mutableValue = true) {
     function.result = Type::I64;
     function.parameters = {Type("Buffer")};
     function.borrowedRootCount = 1;
-    function.mutableBorrowedRootCount = mutableValue;
+    function.firstBorrowedMutable = mutableValue;
     function.code = {MethodCall{mutableValue ? "write_buffer" : "read_buffer", 0}, Return{}};
     return function;
 }
@@ -452,9 +451,9 @@ void pairedTests() {
         },
         "borrowed roots require a free-function signature");
     metadata(
-        "pair mutable count must be bounded",
+        "pair first mutability must be canonical",
         [](F &f) {
-            f.mutableBorrowedRootCount = 3;
+            f.firstBorrowedMutable = 2;
         },
         "invalid hosted IR metadata transport");
     metadata(
@@ -532,14 +531,14 @@ void pairedTests() {
 }
 // Compact prefix matrix; no source parser or generated facts manufacture these
 // signatures. Every selector and every independent loan lane is authored here.
-Module bounded(int roots, int mutableCount, int tail = 0) {
+Module bounded(int roots, bool mutableFirst, int tail = 0) {
     auto module = shapes();
     module.enumCases["Mode"] = 2;
     F leaf;
     leaf.name = "bounded_leaf";
     leaf.parameters.assign(roots, Type("Buffer"));
     leaf.borrowedRootCount = roots;
-    leaf.mutableBorrowedRootCount = mutableCount;
+    leaf.firstBorrowedMutable = mutableFirst;
     leaf.result = Type::enumeration("Mode");
     for (int index = 0; index < tail; ++index) {
         const auto type = index % 2 ? Type::enumeration("Mode") : Type::I64;
@@ -549,14 +548,14 @@ Module bounded(int roots, int mutableCount, int tail = 0) {
     }
     leaf.frameBytes = (tail * 8 + 15) & ~15;
     for (int ordinal = 0; ordinal < roots; ++ordinal)
-        leaf.code.push_back(MethodCall{ordinal < mutableCount ? "write_buffer" : "read_buffer", -ordinal});
+        leaf.code.push_back(MethodCall{ordinal == 0 && mutableFirst ? "write_buffer" : "read_buffer", -ordinal});
     leaf.code.insert(leaf.code.end(), {EnumConstant{leaf.result, 1}, Return{}});
     auto forward = leaf;
     forward.name = "bounded_forward";
     forward.code.resize(tail);
     std::vector<BorrowedRootArgument> lanes;
     for (int ordinal = 0; ordinal < roots; ++ordinal) {
-        forward.code.push_back(AcquireObjectLoan{ordinal + 1, -ordinal, ordinal < mutableCount});
+        forward.code.push_back(AcquireObjectLoan{ordinal + 1, -ordinal, ordinal == 0 && mutableFirst});
         lanes.push_back({-ordinal, ordinal + 1});
     }
     for (int index = 0; index < tail; ++index) {
@@ -572,7 +571,7 @@ Module bounded(int roots, int mutableCount, int tail = 0) {
 }
 void boundedTests() {
     for (int roots = 1; roots <= 3; ++roots) {
-        for (int mutableFirst = 0; mutableFirst <= std::min(roots, 2); ++mutableFirst)
+        for (bool mutableFirst : {false, true})
             for (int tail = 0; tail <= 6 - roots; ++tail)
                 accept("bounded roots " + std::to_string(roots) + " first " + std::to_string(mutableFirst) +
                            " scalar enum tail " + std::to_string(tail),
@@ -700,152 +699,21 @@ void boundedTests() {
                 m.functions[0].borrowedRootCount = count;
             },
             "invalid hosted IR metadata transport");
-    for (std::int64_t flag : {-1LL, 3LL, 9223372036854775807LL})
+    for (std::int64_t flag : {-1LL, 2LL, 9223372036854775807LL})
         reject(
-            "raw mutable prefix stays hostile " + std::to_string(flag),
+            "raw first mutability stays hostile " + std::to_string(flag),
             bounded(3, false),
             [=](Module &m) {
-                m.functions[0].mutableBorrowedRootCount = flag;
+                m.functions[0].firstBorrowedMutable = flag;
             },
             "invalid hosted IR metadata transport");
     reject(
         "readonly first cannot escalate while forwarding",
         bounded(3, false),
         [](Module &m) {
-            named(m, "bounded_leaf").mutableBorrowedRootCount = 1;
+            named(m, "bounded_leaf").firstBorrowedMutable = 1;
         },
         "borrowed call root, lifetime, nominal type or authority mismatch");
-}
-
-// Both mutable roots are complete owners, not distinct nominal types. The
-// existing pair fixture binds them separately before any loan is acquired.
-Module dual(bool sameClass = false) {
-    auto module = paired(sameClass);
-    auto &caller = module.functions[0];
-    op<AcquireObjectLoan>(caller, 1).mutableValue = true;
-    auto &target = named(module, "borrow_pair");
-    target.mutableBorrowedRootCount = 2;
-    target.code = {MethodCall{"write_buffer", 0}, MethodCall{"write_second", -1}, Return{}};
-    auto writer = method(true);
-    writer.name = "write_second";
-    writer.receiver->className = sameClass ? "Buffer" : "Other";
-    module.functions.push_back(writer);
-    return module;
-}
-void dualTests() {
-    accept("dual writes different nominal complete owners", dual());
-    accept("dual writes same nominal complete owners", dual(true));
-    for (int roots : {2, 3}) {
-        auto swapped = bounded(roots, 2, 6 - roots);
-        auto &lanes = op<BorrowedCall>(swapped.functions[0]).roots;
-        std::swap(lanes[0], lanes[1]);
-        accept("dual mutable formals swap with max scalar enum tail " + std::to_string(roots), swapped);
-        for (int first = 0; first < roots; ++first)
-            for (int second = first + 1; second < roots; ++second) {
-                const auto suffix = std::to_string(roots) + "/" + std::to_string(first) + "/" + std::to_string(second);
-                reject(
-                    "dual duplicate selector " + suffix,
-                    bounded(roots, 2),
-                    [=](Module &m) {
-                        op<BorrowedCall>(m.functions[0]).roots[second].root = -first;
-                    },
-                    "borrowed call root lanes do not match target");
-                reject(
-                    "dual duplicate loan " + suffix,
-                    bounded(roots, 2),
-                    [=](Module &m) {
-                        op<BorrowedCall>(m.functions[0]).roots[second].loanId = first + 1;
-                    },
-                    "borrowed call root lanes do not match target");
-            }
-        for (int ordinal = 0; ordinal < 2; ++ordinal) {
-            const auto suffix = std::to_string(roots) + "/" + std::to_string(ordinal);
-            reject(
-                "dual shared loan cannot provide mutable authority " + suffix,
-                bounded(roots, 2),
-                [=](Module &m) {
-                    op<AcquireObjectLoan>(m.functions[0], ordinal).mutableValue = false;
-                },
-                "borrowed call root, nominal type or authority mismatch");
-            reject(
-                "dual active formal cannot be reloaned " + suffix,
-                bounded(roots, 2),
-                [=](Module &m) {
-                    before<BorrowedCall>(m.functions[0], {AcquireObjectLoan{9, -ordinal, true}});
-                },
-                "object access conflicts with active synchronous loan");
-            reject(
-                "dual join independently tracks mutable loan " + suffix,
-                bounded(roots, 2),
-                [=](Module &m) {
-                    auto &f = m.functions[0];
-                    remove<AcquireObjectLoan>(f, ordinal);
-                    before<BorrowedCall>(f,
-                                         {Constant{1, Type::Bool},
-                                          BranchFalse{1},
-                                          AcquireObjectLoan{ordinal + 1, -ordinal, true},
-                                          Jump{2},
-                                          Label{1},
-                                          Label{2}});
-                },
-                "incompatible object loans at control-flow join");
-        }
-        for (int shape = 0; shape < 4; ++shape)
-            reject(
-                "dual forbids aggregate span payload " + std::to_string(roots) + "/" + std::to_string(shape),
-                bounded(roots, 2),
-                [=](Module &m) {
-                    auto &call = op<BorrowedCall>(m.functions[0]);
-                    if (shape == 0)
-                        call.objectArguments = {0};
-                    if (shape == 1)
-                        call.spanArguments = {0};
-                    if (shape == 2)
-                        call.objectArguments = {8};
-                    if (shape == 3)
-                        call.spanArguments = {8};
-                },
-                "borrowed call root lanes do not match target");
-    }
-    reject(
-        "mutable count cannot exceed root count",
-        bounded(1, 1),
-        [](Module &m) {
-            m.functions[0].mutableBorrowedRootCount = 2;
-        },
-        "invalid hosted IR metadata transport");
-    reject(
-        "zero roots cannot carry mutable authority",
-        bounded(1, 1),
-        [](Module &m) {
-            m.functions[0].borrowedRootCount = 0;
-        },
-        "invalid hosted IR metadata transport");
-    reject(
-        "dual producer cannot silently weaken consumer",
-        bounded(3, 2),
-        [](Module &m) {
-            named(m, "bounded_leaf").mutableBorrowedRootCount = 1;
-            named(m, "bounded_leaf").code = {EnumConstant{Type::enumeration("Mode"), 1}, Return{}};
-        },
-        "borrowed call root, nominal type or authority mismatch");
-    reject(
-        "readonly second formal cannot forward dual authority",
-        bounded(3, 1),
-        [](Module &m) {
-            named(m, "bounded_leaf").mutableBorrowedRootCount = 2;
-        },
-        "borrowed call root, lifetime, nominal type or authority mismatch");
-    const auto validated = validate(bounded(3, 2));
-    AbiDeclarations declarations;
-    declarations.functions = {{"bounded_leaf", {"fixture::dual", {}}}};
-    X86Emitter emitter;
-    (void)emitter.emit(validated);
-    const auto facts = emitter.abiFactsJson(validated, declarations);
-    require(
-        facts.find("\"ordinal\":1,\"selector\":-1,\"type_name\":\"Buffer\",\"mutable\":true") != std::string::npos &&
-            facts.find("\"ordinal\":2,\"selector\":-2,\"type_name\":\"Buffer\",\"mutable\":false") != std::string::npos,
-        "dual ABI facts distinguish second mutable and third readonly roots");
 }
 
 // Independent builtin-owner lanes: local spill 112, lexical receiver field
@@ -861,7 +729,7 @@ Module valuesLoan(bool field = false, bool receiver = false) {
     helper.result = Type::I64;
     helper.parameters = {Type::ownedValues(Type("Word"))};
     helper.borrowedRootCount = 1;
-    helper.mutableBorrowedRootCount = true;
+    helper.firstBorrowedMutable = true;
     helper.code = {BytesLength{0}, Return{}};
     F caller;
     caller.name = "values_entry";
@@ -1215,7 +1083,7 @@ void loanTests() {
     check(
         "mutable loan cannot call shared target",
         [](Module &m) {
-            named(m, "borrow_buffer").mutableBorrowedRootCount = 0;
+            named(m, "borrow_buffer").firstBorrowedMutable = 0;
             op<MethodCall>(named(m, "borrow_buffer")).callee = "read_buffer";
         },
         "borrowed call root, nominal type or authority mismatch");
@@ -1223,7 +1091,7 @@ void loanTests() {
         "shared loan cannot call mutable target",
         fixture(false),
         [](Module &m) {
-            named(m, "borrow_buffer").mutableBorrowedRootCount = 1;
+            named(m, "borrow_buffer").firstBorrowedMutable = 1;
         },
         "borrowed call root, nominal type or authority mismatch");
     check(
@@ -1882,7 +1750,6 @@ int main() {
         graphTests();
         pairedTests();
         boundedTests();
-        dualTests();
         std::cout << "borrowed object IR: " << accepted << " valid, " << rejected << " rejected\n";
     } catch (const std::exception &error) {
         std::cerr << "FAIL borrowed object IR: " << error.what() << '\n';

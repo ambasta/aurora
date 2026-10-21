@@ -318,15 +318,6 @@ def abi_generation(facts):
         _, row = abi_declaration(facts, "records", "compiler_ir_metadata::" + source)
         field = next(field for field in row["fields"] if field["name"] == member)
         require(field["kind"] == "u64" and field["bytes"] == 8, "metadata flags were narrowed or signed")
-    # The mutable-prefix count reuses the former first-mutable i64 lane.
-    # Its physical layout is independently pinned, not inferred from C++ sizeof.
-    for source, offset in (("CallableOptions", 32), ("CallableRow", 72)):
-        _, row = abi_declaration(facts, "records", "compiler_ir_metadata::" + source)
-        field = next(field for field in row["fields"] if field["name"] == "mutableBorrowedRootCount")
-        require(
-            (field["kind"], field["offset"], field["bytes"]) == ("i64", offset, 8),
-            "mutable borrowed prefix changed the physical transport lane",
-        )
     _, code_row = abi_declaration(facts, "records", "compiler_ir_instructions::CodeRow")
     require(
         [(field["name"], field["kind"], field["offset"], field["bytes"]) for field in code_row["fields"]]
@@ -1099,7 +1090,7 @@ def borrowed_root_generation(facts):
         function.pop("borrowed_root_abi")
         if (
             count > 2
-            or (count == 2 and (not roots[0]["mutable"] or roots[1]["mutable"]))
+            or (count == 2 and not roots[0]["mutable"])
             or any(root["type_name"] not in facts["records"] for root in roots)
         ):
             raise ValueError("function cannot be represented by the paired source predecessor")
@@ -1116,7 +1107,7 @@ def borrowed_root_generation(facts):
         return function
 
     # Preserve every predecessor-representable function, including the original
-    # one/two-root bridges. Three-root, dual-mutable, readonly-pair and builtin-buffer functions
+    # one/two-root bridges. Three-root, readonly-pair and builtin-buffer functions
     # have no legacy encoding; keep their current facts while round-tripping only the
     # compatible projection. Normalization and exact bridge checks both run, so
     # an absent new bridge cannot make the legacy rejection cases pass vacuously.
@@ -1252,34 +1243,40 @@ def borrowed_root_generation(facts):
         ):
             reject(predecessor, source, mutation)
 
-    # Accepting internal two-mutable calls must not grant any fixed native entry
-    # more authority. These facts normalize successfully, then fail the exact
-    # closed signature guard (not a malformed lane or unsupported type).
+    # A second mutable concrete root is unsupported even when the first is
+    # mutable. Reject its lane here, not just at the fixed native-entry guard.
     for source in ("compiler_frontend::graph_run", "compiler_frontend::emitter_run"):
         changed, function = edit_declaration(facts, "functions", source)
         function["borrowed_roots"][1]["mutable"] = True
-        require(normalize_function_abi(changed, function) == function, "valid dual-root facts did not normalize")
         try:
-            frontend_abi_header(changed)
+            normalize_function_abi(changed, function)
         except ValueError as error:
-            require(
-                str(error) == "private bridge signature or root authority changed: " + source,
-                "native authority widening failed the wrong guard",
-            )
+            require(str(error) == "invalid compiler ABI borrowed root lane", "second mutable root failed wrong guard")
         else:
-            raise AssertionError("normalization widened fixed native ingress: " + source)
+            raise AssertionError("second mutable root passed ABI normalization: " + source)
+
+    # Check the generic multi-root tail guard directly. Fixed native signatures
+    # would reject these too and must not hide a weakened normalizer.
+    copied = dict(bytes=row["reserved"], kind="class", type_name=row_symbol)
+    for changes in (
+        dict(parameters=[dict(offset=0, **copied)], parameter_bytes=copied["bytes"]),
+        dict(result=copied),
+        dict(parameters=[dict(offset=8 * i, bytes=8, kind="i64") for i in range(4)], parameter_bytes=32),
+    ):
+        function = deepcopy(run)
+        function.update(changes)
         try:
-            legacy_function(function)
-        except ValueError:
-            pass
+            normalize_function_abi(facts, function)
+        except ValueError as error:
+            require(str(error) == "invalid compiler ABI borrowed root tail", "multi-root tail failed wrong guard")
         else:
-            raise AssertionError("dual mutable roots lost authority in legacy conversion")
+            raise AssertionError("unsupported multi-root tail passed ABI normalization")
 
     # Exercise every supported root-count/authority/scalar-tail combination in
     # addition to the actual three-root emitter checked above.
     _, pair = abi_declaration(facts, "functions", "compiler_frontend::graph_run")
     for count in range(1, 4):
-        for mutable in range(min(count, 2) + 1):
+        for mutable in (False, True):
             for tail in range(7 - count):
                 function = deepcopy(pair)
                 function["borrowed_root_count"] = count
@@ -1288,7 +1285,7 @@ def borrowed_root_generation(facts):
                         ordinal=i,
                         selector=-i,
                         type_name=pair["borrowed_roots"][i % 2]["type_name"],
-                        mutable=i < mutable,
+                        mutable=mutable and i == 0,
                     )
                     for i in range(count)
                 ]

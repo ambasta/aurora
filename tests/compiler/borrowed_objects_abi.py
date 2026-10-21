@@ -163,12 +163,7 @@ def paired_harness(text, selected):
 
 
 def bounded_shapes():
-    return [
-        (roots, mutable, tail)
-        for roots in range(1, 4)
-        for mutable in range(min(roots, 2) + 1)
-        for tail in range(7 - roots)
-    ]
+    return [(roots, mutable, tail) for roots in range(1, 4) for mutable in range(2) for tail in range(7 - roots)]
 
 
 def bounded_value(ordinal):
@@ -180,10 +175,9 @@ def bounded_cases(mode):
     for roots, mutable, tail in bounded_shapes():
         suffix = f"{roots}_{mutable}_{tail}"
         for depth in [0] if mode == "direct" else range(3):
-            values = [501 + index if mutable == 2 and index < 2 else bounded_value(index) for index in range(roots)]
-            answer = sum(values) + sum(range(101, 101 + tail))
+            answer = sum(bounded_value(index) for index in range(roots)) + sum(range(101, 101 + tail))
             if mode != "direct":
-                answer = (42 if mode == "outgoing" else answer) + values[-1] + abi.retained(depth)
+                answer = (42 if mode == "outgoing" else answer) + bounded_value(roots - 1) + abi.retained(depth)
             result.append(
                 {
                     "name": f"bounded {mode} roots {roots} mutable {mutable} tail {tail} depth {depth}",
@@ -193,13 +187,12 @@ def bounded_cases(mode):
                     "probes": int(mode == "outgoing"),
                     "registers": list(range(101, 101 + tail)),
                     "roots": roots,
-                    "mutable": mutable,
                 }
             )
     return result
 
 
-def bounded_target(roots, mutable, tail):
+def bounded_target(roots, tail):
     code = abi.align()
     if roots == 1:
         code += "    cmpq $receiver, %r10\n    jne .Labi_record_fail\n"
@@ -209,9 +202,6 @@ def bounded_target(roots, mutable, tail):
             code += f"    cmpq ${label}, {ordinal * 8}(%r10)\n    jne .Labi_record_fail\n"
     for index, register in enumerate(abi.REGISTERS[:tail]):
         code += f"    cmpq ${101 + index}, {register}\n    jne .Labi_record_fail\n"
-    if mutable == 2:
-        for ordinal in range(2):
-            code += f"    movq {8 * ordinal}(%r10), %rax\n    movq ${501 + ordinal}, 40(%rax)\n"
     return code + "    incq probe_calls(%rip)\n" + abi.clobber(42) + "    ret\n"
 
 
@@ -222,17 +212,6 @@ def bounded_harness(text, selected):
     text = chunks[0]
     for case, chunk in zip(selected, chunks[1:]):
         label = "receiver" if case["roots"] == 1 else f"bounded_record_{case['roots']}"
-        # Reinitialize only scalar observations between cases. Opaque owner
-        # words never change. The handwritten boundary models already separate
-        # live complete owners; it is not hostile arbitrary native ingress.
-        text += "    movq $97, receiver+40(%rip)\n"
-        expected = 501 if case["mutable"] == 2 else 97
-        text += f"    movq ${expected}, literal_receiver+40(%rip)\n"
-        for ordinal in range(1, 3):
-            value = bounded_value(ordinal)
-            expected = 502 if case["mutable"] == 2 and ordinal == 1 else value
-            text += f"    movq ${value}, bounded_receiver_{ordinal}+40(%rip)\n"
-            text += f"    movq ${expected}, literal_bounded_receiver_{ordinal}+48(%rip)\n"
         text += f"    leaq {label}(%rip), %r10\n" + chunk
     marker = "    incq completed(%rip)\n"
     chunks = text.split(marker)
@@ -442,7 +421,7 @@ def main():
     bounded_outgoing = paired_observed
     for roots, mutable, tail in bounded_shapes():
         bounded_outgoing = abi.replace_body(
-            bounded_outgoing, f"bounded_target_{roots}_{mutable}_{tail}", bounded_target(roots, mutable, tail)
+            bounded_outgoing, f"bounded_target_{roots}_{mutable}_{tail}", bounded_target(roots, tail)
         )
     bounded_assembly, bounded_selected = {}, {}
     for mode in ("direct", "generated", "outgoing"):
@@ -472,19 +451,6 @@ def main():
                     93,
                 )
             )
-    # These corrupt actual dual writes, rather than just tuple descriptors.
-    # The expected failure identifies the first generated dual-mutable case.
-    for ordinal in range(2):
-        function = f"dual_write_{ordinal}"
-        changed = abi.mutate_body(bounded_assembly["direct"], function, "    movq %rax, 40(%r10)", "    nop")
-        abi.execute(
-            args.artifacts,
-            f"mutant-dual-write-{ordinal}",
-            changed,
-            bounded_selected["direct"],
-            93,
-            "bounded_target_2_2_0",
-        )
     for name, mode, function, old, new, status in bounded_controls:
         changed = abi.mutate_body(bounded_assembly[mode], function, old, new)
         abi.execute(args.artifacts, "mutant-" + name, changed, bounded_selected[mode], status, function)
@@ -494,7 +460,7 @@ def main():
         + sum(map(len, paired_selected.values()))
         + sum(map(len, bounded_selected.values()))
     )
-    rejected_mutants = len(controls) + 4 + len(paired_controls) + len(bounded_controls)
+    rejected_mutants = len(controls) + 2 + len(paired_controls) + len(bounded_controls)
     summary = f"PASS borrowed object ABI: {native_cases} native cases, {rejected_mutants} exact rejected mutants"
     abi.require(args.ir_tests.read_bytes() == fixture_before, "fixture changed during ABI gate")
     for path, content in bound_inputs.items():
