@@ -357,7 +357,7 @@ def main() -> None:
     parser.add_argument("--qemu", action="store_true", help="Require actual final-sector CPU probes")
     parser.add_argument("--keep-directory", type=Path, help="Retain evidence in a new directory")
     args = parser.parse_args()
-    for tool in ("as", "ld", "nm", "objcopy"):
+    for tool in ("as", "ld", "nm", "objcopy", "readelf"):
         require(shutil.which(tool) is not None, f"Missing dependency: {tool}")
     if args.keep_directory:
         args.keep_directory.mkdir(parents=True, exist_ok=False)
@@ -368,6 +368,18 @@ def main() -> None:
         work = Path(directory)
         obj, binary = work / "boot.o", work / "boot.bin"
         run("as", "--32", str(ROOT / "kernel/boot.S"), "-o", str(obj))
+        notes = [
+            line.split(".note.GNU-stack", 1)[1].split()
+            for line in run("readelf", "-SW", str(obj)).stdout.splitlines()
+            if ".note.GNU-stack" in line
+        ]
+        require(
+            len(notes) == 1
+            and notes[0][0] == "PROGBITS"
+            and int(notes[0][3], 16) == 0
+            and notes[0][5:] == ["0", "0", "1"],
+            "Expected one empty non-executable GNU-stack object note",
+        )
         run(str(ROOT / "scripts/kernel-boot-link.sh"), str(obj), str(binary))
         boot = binary.read_bytes()
         symbols = run("nm", "-a", str(obj)).stdout.splitlines()

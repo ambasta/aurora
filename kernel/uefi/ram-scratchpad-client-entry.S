@@ -56,3 +56,5 @@ __au_runtime_call:
 aurora_call_return_pc:
     ret
 .size __au_runtime_call,.-__au_runtime_call
+
+.section .note.GNU-stack,"",@progbits

@@ -960,6 +960,13 @@ def main():
         )
         admission.RECEIPT.write_text(json.dumps(receipt, sort_keys=True))
         need(admission.checked("program-console") == receipt, "Exact artifact admission")
+        fixture_receipt = dict(receipt, mode="program-file-call-fixture")
+        admission.RECEIPT.write_text(json.dumps(fixture_receipt, sort_keys=True))
+        for alias, selector in (("program-file-call-fault", 65), ("program-file-call-budget", 66)):
+            need(alias not in admission.MODES and alias in admission.GUEST_MODES, "Canonical/guest mode split")
+            need(admission.FIXTURE_MODES[alias] == (fixture_receipt["mode"], selector), "Exact guest selector")
+            need(admission.checked(alias) == fixture_receipt, "Alias must retain canonical fixture receipt")
+        admission.RECEIPT.write_text(json.dumps(receipt, sort_keys=True))
         reject(lambda: admission.checked("program-pending"), "profile mismatch")
         for changed in (
             dict(receipt, schema="changed"),

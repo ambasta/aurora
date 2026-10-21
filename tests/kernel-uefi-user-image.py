@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
-import importlib.util, struct, sys
+import importlib.util, os, shlex, struct, subprocess, sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import kernel_stack as stack
@@ -108,8 +108,34 @@ def multipage_controls():
     return positive, negative
 
 
+def image_policy_controls():
+    # Exercise the actual header, not a source-text check or a copied default.
+    compiler = shlex.split(os.environ.get("CXX", "g++"))
+    source = '#include "kernel/uefi/image-page-policy.hpp"\n'
+    command = compiler + ["-std=c++23", "-Werror", "-fsyntax-only", "-x", "c++", "-I", str(images.ROOT), "-"]
+    policies = {"one_page": (1, 1, 1), "multipage": (3, 3, 3), "call": (2, 1, 1), "owned_text": (3, 1, 1)}
+    for policy in (None, "unknown_image_policy", *policies):
+        flags = [] if policy is None else ["-DAURORA_RUNTIME_IMAGE_POLICY=" + policy]
+        assertions = ""
+        if policy in policies:
+            assertions = "".join(
+                f"static_assert(aurora::uefi::ImagePagePolicy::pages({index}) == {pages});\n"
+                for index, pages in enumerate((*policies[policy], 0))
+            )
+        result = subprocess.run(command + flags, input=source + assertions, text=True, capture_output=True, timeout=30)
+        diagnostic = result.stdout + result.stderr
+        images.need((result.returncode == 0) == (policy in policies), f"Image policy {policy}: {diagnostic}")
+        if policy not in policies:
+            expected = "Select an explicit AURORA_RUNTIME_IMAGE_POLICY" if policy is None else "unknown_image_policy"
+            images.need(expected in diagnostic, f"Wrong image policy rejection: {diagnostic}")
+    return len(policies), 2
+
+
 def main():
     cases, rejected = multipage_controls()
+    positive, negative = image_policy_controls()
+    cases += positive
+    rejected += negative
     for base in (images.BASE, images.BASE + 16384):
         data, blob, symbols = fixture(base)
         images.verify(data, blob, base, symbols)

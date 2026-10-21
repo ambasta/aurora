@@ -24,3 +24,5 @@ __au_runtime_scratchpad_response:
     leave
     ret
 .size __au_runtime_scratchpad_response,.-__au_runtime_scratchpad_response
+
+.section .note.GNU-stack,"",@progbits

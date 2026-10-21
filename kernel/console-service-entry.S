@@ -17,3 +17,5 @@ __au_runtime_console_entry:
 # No other source functions or imported library helpers become public.
 .global aurora_kernel_value
 .global aurora_kernel_terminal_event
+
+.section .note.GNU-stack,"",@progbits

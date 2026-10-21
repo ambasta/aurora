@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 mkdir -p build
-flags=()
+flags=(-DAURORA_RUNTIME_IMAGE_POLICY=one_page)
 if [[ "${SANITIZE:-0}" == 1 ]]; then
     flags+=(-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer)
 fi

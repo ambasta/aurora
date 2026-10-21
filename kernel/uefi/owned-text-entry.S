@@ -14,3 +14,5 @@ aurora_program_return_pc:
     ud2
 
 .include "owned-bytes-stubs.inc"
+
+.section .note.GNU-stack,"",@progbits

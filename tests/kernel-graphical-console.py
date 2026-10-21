@@ -288,6 +288,7 @@ def execute_cases(compiler, work, records):
         shlex.split(os.environ.get("CXX", "g++"))
         + [
             "-std=c++23",
+            "-DAURORA_RUNTIME_IMAGE_POLICY=one_page",
             "-O1",
             "-Wall",
             "-Wextra",

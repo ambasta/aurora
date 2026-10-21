@@ -38,7 +38,7 @@ for part in client service checksum; do
         | awk '$3 ~ /^(aurora_reflect_|__au_reflect_)/ {print $3}' > "$out/$part-reflections.txt"
     objcopy --localize-symbols="$out/$part-reflections.txt" "$out/$part-host.o"
 done
-flags=(-std=c++23 -O1 -g -Wall -Wextra -Wpedantic -Werror -DNDEBUG -fno-exceptions -fno-rtti -no-pie)
+flags=(-DAURORA_RUNTIME_IMAGE_POLICY=one_page -std=c++23 -O1 -g -Wall -Wextra -Wpedantic -Werror -DNDEBUG -fno-exceptions -fno-rtti -no-pie)
 case "${SANITIZE:-0}" in
     0) ;;
     1) flags+=(-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer) ;;

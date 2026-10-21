@@ -9,7 +9,7 @@ python3 -B scripts/meson-native-fixture.py --compiler "$AURORAC" \
     --local-symbols --referenced-reflection-only \
     --bridge kernel/uefi/program-note-entry.S --bridge kernel/uefi/kernel-policy-entry.S \
     --object build/uefi/ipc-language.o --depfile build/uefi/ipc-language.d
-flags=()
+flags=(-DAURORA_RUNTIME_IMAGE_POLICY=one_page)
 if [[ "${SANITIZE:-0}" == 1 ]]; then flags+=(-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer); fi
 "${CXX:-g++}" -std=c++23 -O1 -g -Wall -Wextra -Wpedantic -Werror "${flags[@]}" -no-pie tests/kernel-ipc.cpp build/uefi/ipc-language.o -o build/uefi/kernel-ipc-test
 ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}" build/uefi/kernel-ipc-test

@@ -34,6 +34,13 @@ compilation. Admission validates the actual compiler working directory and origi
 object/sidecar bytes; source and build hash namespaces are distinct. Missing or
 ambiguous source/symbol/object/link associations reject.
 
+UEFI C++ consumers must select an explicit image-page policy; missing or unknown
+policies fail compilation. Native fixtures name their policy too. This closes a
+configuration fallback, not an observed production-image mismatch. Handwritten
+assembly adapters carry empty non-executable GNU-stack notes at unit boundaries;
+notes are not inserted inside included stubs. Host metadata does not establish
+additional guest NX protection.
+
 Graphical C++ stack bounds trust GCC .su frame sizes and .ci call facts, retain
 the complete reported frame through calls and tail transfers, and check compiler
 versus linked direct-edge agreement. Each frame containing checked adjacent

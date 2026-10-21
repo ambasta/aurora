@@ -86,3 +86,5 @@ __au_runtime_stream_update:
     leave
     ret
 .size __au_runtime_stream_update,.-__au_runtime_stream_update
+
+.section .note.GNU-stack,"",@progbits
