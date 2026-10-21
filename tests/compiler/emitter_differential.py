@@ -14,13 +14,15 @@ not exercise emission. Equal rejection is not an emitter-coverage observation.
 Success must replace each output inode; rejection must preserve bytes and file
 metadata. These observations do not prove fault-time or three-file atomicity.
 Historical corpus members compare predecessor/C2; later consumers require
-successful byte-identical C1/C2 emission. Membership does not depend on outcomes.
+successful byte-identical C1/C2 emission and rejection by the old compiler.
+An accepted unlisted input fails until explicitly added to historical coverage.
 """
 
 import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import signal
 import stat
@@ -52,8 +54,8 @@ EXPECTED_REJECTED = {
     "library/std/array.au",
     "library/std/utility.au",
 }
-# Corpus membership is fixed at the first complete predecessor/emitter gate (#196).
-# New consumers exercise C1/C2 without asking an immutable compiler for new syntax.
+# Preserve the initial gate's members and extend this list for every source the
+# historical oracle accepts. Unlisted inputs must prove unsupported, not bypass it.
 HISTORICAL_CORPUS = Path(__file__).with_name("emitter-historical-corpus.txt")
 
 
@@ -143,32 +145,40 @@ def observe(compiler, arguments, invocation, destination, root, timeout):
     return record
 
 
-def compare(case, runs, must_accept, labels=("old", "new")):
+def observation_problems(case, label, run, must_accept):
     problems = []
-    for label, run in zip(labels, runs, strict=True):
-        status = run["returncode"]
-        if status not in (0, 1):
-            problems.append(f"{label}: crash or invocation failure ({status})")
-        if must_accept and status != 0:
-            problems.append(f"{label}: required compiler/library module rejected")
-        if b"AU9001" in (case / label / "stderr.bin").read_bytes():
-            problems.append(f"{label}: internal compiler diagnostic")
-        if run["unexpected_outputs"]:
-            problems.append(f"{label}: unexpected output files {run['unexpected_outputs']}")
-        for name in OUTPUTS:
-            before, after = run["before"][name], run["after"][name]
-            if after["kind"] != "regular":
-                problems.append(f"{label}: missing/nonregular {name}")
-                continue
-            path = case / label / "outputs" / name
-            if status == 1:
-                if before != after or path.read_bytes() != SENTINELS[name]:
-                    problems.append(f"{label}: rejected compilation changed {name}")
-            elif status == 0:
-                if after["bytes"] == 0 or path.read_bytes() == SENTINELS[name]:
-                    problems.append(f"{label}: successful compilation did not produce {name}")
-                if (before["device"], before["inode"]) == (after["device"], after["inode"]):
-                    problems.append(f"{label}: successful compilation did not replace {name}")
+    status = run["returncode"]
+    if status not in (0, 1):
+        problems.append(f"{label}: crash or invocation failure ({status})")
+    if must_accept and status != 0:
+        problems.append(f"{label}: required compiler/library module rejected")
+    if b"AU9001" in (case / label / "stderr.bin").read_bytes():
+        problems.append(f"{label}: internal compiler diagnostic")
+    if run["unexpected_outputs"]:
+        problems.append(f"{label}: unexpected output files {run['unexpected_outputs']}")
+    for name in OUTPUTS:
+        before, after = run["before"][name], run["after"][name]
+        if after["kind"] != "regular":
+            problems.append(f"{label}: missing/nonregular {name}")
+            continue
+        path = case / label / "outputs" / name
+        if status == 1:
+            if before != after or path.read_bytes() != SENTINELS[name]:
+                problems.append(f"{label}: rejected compilation changed {name}")
+        elif status == 0:
+            if after["bytes"] == 0 or path.read_bytes() == SENTINELS[name]:
+                problems.append(f"{label}: successful compilation did not produce {name}")
+            if (before["device"], before["inode"]) == (after["device"], after["inode"]):
+                problems.append(f"{label}: successful compilation did not replace {name}")
+    return problems
+
+
+def compare(case, runs, must_accept, labels=("old", "new")):
+    problems = [
+        problem
+        for label, run in zip(labels, runs, strict=True)
+        for problem in observation_problems(case, label, run, must_accept)
+    ]
     if runs[0]["returncode"] != runs[1]["returncode"]:
         problems.append("exit status differs")
     for name in ("stdout.bin", "stderr.bin"):
@@ -206,8 +216,9 @@ def main():
         require((root / name).is_dir(), f"source root missing: {name}")
         require(not artifacts.is_relative_to(root / name), "artifacts must be outside the enumerated source roots")
     corpus = sources(root)
-    historical = set(HISTORICAL_CORPUS.read_text().splitlines())
+    historical = {line for line in HISTORICAL_CORPUS.read_text().splitlines() if line and not line.startswith("#")}
     require(historical and {root / name for name in historical}.issubset(corpus), "historical corpus inputs missing")
+    require(EXPECTED_REJECTED.issubset(historical), "historical standalone rejection coverage missing")
     new_consumers = {str(path.relative_to(root)) for path in corpus} - historical
     modules = sorted((root / "compiler").glob("*.au"))
     decimal = root / "library/std/decimal_digits.au"
@@ -255,6 +266,7 @@ def main():
                 "compilers": compiler_ids,
                 "flags": flags,
                 "historical_corpus": sorted(historical),
+                "historical_corpus_manifest": identity(HISTORICAL_CORPUS),
                 "new_consumers": sorted(new_consumers),
                 "staged_modules": staged,
                 "harness": identity(Path(__file__)),
@@ -287,6 +299,23 @@ def main():
             timeout = 90 if source == root / "compiler/frontend.au" else 30
             selected = ("old", "new") if str(relative) in historical else ("c1", "new")
             compiler_by_label = dict(zip(labels, compilers, strict=True))
+            if str(relative) in new_consumers:
+                old = observe(compiler_by_label["old"], arguments, invocation, case / "old", root, timeout)
+                problems = observation_problems(case, "old", old, False)
+                if old["returncode"] == 0:
+                    problems.append("oracle accepted unlisted input; extend the historical corpus")
+                # Only located source syntax/type diagnostics establish unsupported
+                # input. Missing modules, invocation failures and internal errors
+                # are not permission to remove independent emitter coverage.
+                if old["returncode"] != 1 or not re.fullmatch(
+                    rb"(?:[^\n]+:[0-9]+:[0-9]+: error AU(?:100[1-3]|200[1-3]|3001): [^\n]+\n)+",
+                    (case / "old/stderr.bin").read_bytes(),
+                ):
+                    problems.append("unlisted input did not produce a source-language rejection")
+                if (case / "old/stdout.bin").read_bytes():
+                    problems.append("unlisted input oracle produced unexpected stdout")
+                write_json(case / "oracle-membership.json", {"source": str(relative), "problems": problems})
+                require(not problems, str(relative) + ": " + "; ".join(problems))
             runs = [
                 observe(compiler_by_label[label], arguments, invocation, case / label, root, timeout)
                 for label in selected

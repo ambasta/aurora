@@ -83,7 +83,7 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
 ## Bootstrap evolution
 
 - Separate language implementation from compiler adoption. New features first
-  land with independent test/library consumers; all predecessor-compiled inputs,
+  land with independent library or product consumers; all predecessor-compiled inputs,
   including compiler-imported library code, stay within its supported subset.
 - Batch predecessor bumps at milestones or when a justified compiler-adoption
   batch is ready, rather than coupling each feature to a bump. Review the pin,

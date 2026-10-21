@@ -80,7 +80,10 @@ def run_console_region(command, log, mode):
 
 
 def validate_console_region(status, text, metadata, mode):
-    """Check observable output and cleanup; native tests own scheduling transitions."""
+    """Check integrated parking, resumption, cancellation and cleanup in guest output.
+
+    Native tests cover policy and frame components, not the integrated ParkedRun path.
+    """
     text = text.replace("\r", "")
     validate_region_metadata(metadata, True)
     need(status == 33 and text.endswith(SUFFIX), "Protected console natural successful exit")

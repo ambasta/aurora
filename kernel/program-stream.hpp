@@ -120,10 +120,9 @@ class Stream final {
     [[nodiscard]] static auto accepted(const Update &result) -> bool {
         return word(result, 272) == 1;
     }
-    [[nodiscard]] auto apply(Operation operation,
-                             std::uint64_t first = 0,
-                             std::uint64_t second = 0,
-                             const StreamBytes &bytes = {}) -> Update {
+    [[nodiscard]] auto
+    apply(Operation operation, std::uint64_t first = 0, std::uint64_t second = 0, const StreamBytes &bytes = {})
+        -> Update {
         const auto result = evaluate(operation, first, second, bytes);
         if (accepted(result))
             std::copy_n(result.begin(), saved_.size(), saved_.begin());

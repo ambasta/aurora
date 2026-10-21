@@ -6,7 +6,7 @@
 namespace aurora::ir {
 class Metadata;
 class Instructions;
-}
+} // namespace aurora::ir
 
 // Trusted single-threaded host machinery only. This is not an Aurora source API,
 // a user-process runtime, a kernel allocator, or a public foreign-call boundary.

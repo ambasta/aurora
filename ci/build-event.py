@@ -24,29 +24,12 @@ PACKAGING_SHA256 = "02df62768b12f1b60ad769fce6080269c859054b4dcd64509122ba09439f
 PACKAGING_TARGET = "pc-bios/meson.build"
 PACKAGING_PREIMAGE = "45378c725d02525d02bb9cc2ca81ba235e6654c91cd66f02e015188106209de2"
 PACKAGING_POSTIMAGE = "122c64d6eb9d27c32ced8257613af3460e0ec3b946015f78b6e3b0580a261966"
-# Imported source-chain identities, not signatures verified by this builder.
-DEBIAN_SNAPSHOT = "https://snapshot.debian.org/archive/debian/20261009T120000Z/"
+# Debian attribution and the source archive verified below; no signature authentication.
 PACKAGING_ORIGIN = {
     "source_package": "qemu",
     "source_version": "1:10.0.13+ds-0+deb13u1",
     "upstream_version": "10.0.13",
-    "authentication": "Imported pinned Debian source-chain provenance; no fresh signature check in this build",
-    "inrelease": {
-        "url": DEBIAN_SNAPSHOT + "dists/trixie/InRelease",
-        "bytes": 140421,
-        "sha256": "0584fba32e13e0ab8285fb16c27adea1ec03a73669c18702821094fd6ca86675",
-    },
-    "sources_index": {
-        "url": DEBIAN_SNAPSHOT + "dists/trixie/main/source/Sources.xz",
-        "bytes": 10540436,
-        "sha256": "6002f81f463a2d976d84b34170367cc16da2d60bd0ba9ab9d868d6e1c1a935d9",
-    },
-    "orig_archive": {"url": SOURCE_URL, "bytes": 40010016, "sha256": SOURCE_SHA256},
-    "packaging_archive": {
-        "url": DEBIAN_SNAPSHOT + "pool/main/q/qemu/qemu_10.0.13+ds-0+deb13u1.debian.tar.xz",
-        "bytes": 156096,
-        "sha256": "da73c092f5684c551b0334d675eb16a3dec91e1edea94759cfb1102fa4a0364e",
-    },
+    "orig_archive": {"url": SOURCE_URL, "sha256": SOURCE_SHA256},
     "patch_member": "debian/patches/skip-unpack-edk2-blobs.patch",
     "copyright_member": "debian/copyright",
 }
