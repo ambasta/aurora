@@ -711,9 +711,11 @@ at byte offset 8*i. The callee saves every root before nested calls; outgoing tu
 storage is aligned to sixteen bytes. Typed IR uses selectors 0 through -5 for
 bound formals and positive exact owner slots for locals. Selectors are bounded
 before negation and never interpreted as ordinary frame offsets. One ordered
-root/loan/field range replaces separate first/second call lanes. Verification checks all
-loan identities, authorities and pairwise distinctness independently. The existing
-single-root direct-pointer, two-root sixteen-byte and three-root thirty-two-byte
+root/loan/field range replaces separate first/second call lanes. Aurora static
+admission checks pairwise root/loan distinctness and nominal receiver binding.
+Native verification checks each admitted lane's live loan, authority and dynamic
+root/lifetime provenance; it does not independently repeat those static checks.
+The existing single-root direct-pointer, two-root sixteen-byte and three-root thirty-two-byte
 tuple reservations are preserved. The existing i64 permission lane records the
 mutable-prefix count (0, 1 or 2, never greater than the root count); source and
 native readers reject invalid counts before granting mutable authority. It is

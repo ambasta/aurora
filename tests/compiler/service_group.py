@@ -443,8 +443,10 @@ __au_runtime_group_entry:
             "call-owned-values": f"auto f({call}, builtin::OwnedValues<u64> v) -> i64 {{ return 0; }}",
             "call-wrong-signed": f"auto f({call}) -> builtin::CallResult {{ return c.call(1); }}",
             "call-wrong-byte": f"auto f({call}) -> builtin::CallResult {{ return c.call(1u8); }}",
-            "call-extra": f"auto f({call}) -> builtin::CallResult {{ return c.call(1u64, 2u64); }}",
-            "call-absent": f"auto f({call}) -> builtin::CallResult {{ return c.call(); }}",
+            "call-extra": f"auto f({call}) -> builtin::CallResult {{ "
+            "const builtin::CallResult r = c.call(1u64, 2u64); return r; }",
+            "call-absent": f"auto f({call}) -> builtin::CallResult {{ "
+            "const builtin::CallResult r = c.call(); return r; }",
             "call-value": "auto f(builtin::CallSession c) -> i64 { return 0; }",
             "call-const": "auto f(const builtin::CallSession& c) -> i64 { return 0; }",
             "call-return-capability": f"auto f({call}) -> builtin::CallSession {{ return c; }}",
@@ -457,6 +459,12 @@ __au_runtime_group_entry:
         source.write_text("module rejected; " + body)
         result = run([compiler, source, "-o", work / "rejected.s"])
         require(result.returncode == 1 and result.stderr, "invalid group source was not cleanly rejected: " + name)
+        if name in ("call-extra", "call-absent"):
+            require(
+                result.stderr.count(b"error AU") == 1
+                and result.stderr.endswith(b"error AU3001: wrong argument count for method\n"),
+                f"{name}: expected method arity diagnostic, got {result.stderr!r}",
+            )
     print(f"PASS distinct service group source/ABI: {len(negative)} negative cases; {work}")
 
 

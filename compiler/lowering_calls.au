@@ -615,7 +615,9 @@ export namespace compiler_lowering {
             }
             const OperandRow parameters = record_slice(session, target, OperandRole::ParameterTypes);
             count = parameters.count();
-            require_arity(session, node, count + 1);
+            if (actual != count) {
+                return fail(session, LoweringError::method_argument_count, reference);
+            }
             const i64 result = record_signed(session, target, OperandRole::ResultTypeId);
             const bool copied = value_kind(session, result) == compiler_resolver::ResolvedTypeKind::class_value;
             if (copied && !binding) {

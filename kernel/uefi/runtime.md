@@ -227,9 +227,10 @@ The profile retains the Call envelope: caller at most two RX pages, service one,
 four private stack pages per domain, and the existing 15,360-byte effective stack
 cap. Both role graphs, copied ABI facts, exact handwritten wrappers/stubs and the
 complete kernel/IRQ/drain paths must pass linked admission. Native image tests do
-not run QEMU; actual guest controls, final GCC 16 full/normal restoration and
-independent exact-source review remain required. Legacy `program-file-call`
-profiles retain their scrubbed-reentry and supervisor-store semantics unchanged.
+not run QEMU. The bounded [#234 qualification](https://github.com/ambasta/aurora/pull/234)
+completed actual guest controls, final GCC 16 full/normal restoration and independent
+exact-source review; subsequent source changes must pass those gates again.
+Legacy `program-file-call` profiles retain their scrubbed-reentry and supervisor-store semantics unchanged.
 
 
 ## Opt-in interactive RAM scratchpad
@@ -281,5 +282,7 @@ Both new compositions use the existing protected Console size-optimization recip
 and retain the two-page caller, one-page service, 15,360-byte stack, 51-exchange,
 128/120+8 budget and 64-command limits. The handwritten native adapter grows the
 bootstrap trusted surface; this is not native-code retirement or a general safety
-proof. Exact linked poll/IRQ/drain graphs, adversarial transcripts, legacy
-regressions, final GCC 16 full/normal boots and independent review remain required.
+proof. The bounded [#235 qualification](https://github.com/ambasta/aurora/pull/235)
+completed exact linked poll/IRQ/drain graphs, adversarial transcripts, legacy
+regressions, final GCC 16 full/normal boots and independent review. Subsequent
+source changes must pass those gates again.

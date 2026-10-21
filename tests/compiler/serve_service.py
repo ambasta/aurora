@@ -292,6 +292,12 @@ __au_runtime_group_entry:
         source.write_text("module rejected;" + code)
         result = run([compiler, "--check", source])
         need(result.returncode == 1 and b"error AU" in result.stderr, f"{label}: {result.stderr!r}")
+        if label in ("missing", "extra"):
+            need(
+                result.stderr.count(b"error AU") == 1
+                and result.stderr.endswith(b"error AU3001: wrong argument count for method\n"),
+                f"{label}: expected method arity diagnostic, got {result.stderr!r}",
+            )
     print(f"PASS Serve: source/IR execution, 12 hostile runtime traps, eight catalogues, {len(invalid)} rejections")
 
 

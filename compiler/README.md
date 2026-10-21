@@ -41,7 +41,7 @@ The optional [language server](lsp/README.md) has its own dependency and suite.
 
 ### Bootstrap evolution policy
 
-New language features land first with independent test or library consumers.
+New language features land first with independent library or product consumers.
 Compiler adoption waits for a reviewed predecessor bump: every input compiled by
 that predecessor, including compiler-imported library helpers, must remain within
 its supported language subset. Batch bumps at milestones or for a justified set
@@ -268,7 +268,7 @@ the C++ x86 backend, so the selected `$P` also remains the external old-backend
 oracle, never a production fallback. Replacing the historical `7811ba8` hop does
 not replace this oracle with the current Aurora emitter. The
 `emitter-differential-default` and `emitter-differential-closed` tests in `slow`
-and `full` compare the frozen historical corpus against it, and later consumers
+and `full` compare the historical corpus against it, and unsupported later consumers
 against current C1/C2, in ordinary and closed profiles; by hand:
 
 ```sh
@@ -289,9 +289,12 @@ byte; rejected inputs must agree and preserve every preexisting output. Any
 mismatch, internal failure or watchdog timeout fails the gate and reports partial
 coverage. Equal rejection is not emission coverage, so the gate also fails if any
 historically supported input outside its fixed list of function-less modules is rejected.
-Historical membership comes from `tests/compiler/emitter-historical-corpus.txt`;
-new consumers use C1/C2 without per-feature exception paths or pinned rejection
-messages. The corpus is every
+Historical membership and its exact oracle commit come from
+`tests/compiler/emitter-historical-corpus.txt`. The gate also runs the oracle on
+unlisted inputs and requires a source-language rejection with preserved outputs;
+an accepted omission fails and must extend historical coverage. Unsupported new
+consumers still require successful C1/C2 emission, without per-feature exception
+paths or pinned rejection messages. The corpus is every
 `.au` file under compiler, examples, kernel, library and tests; embedded generated
 fixtures and machine behavior remain covered by their existing native suites.
 It supplements C1/C2 convergence and the final GCC 16 full,

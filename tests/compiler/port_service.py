@@ -209,50 +209,114 @@ __au_runtime_group_entry:
 
     p = "builtin::PortRange& p"
     invalid = {
-        "value": "auto f(builtin::PortRange p)->i64{return 0;}",
-        "const": "auto f(const builtin::PortRange& p)->i64{return 0;}",
-        "late": f"auto f(u64 n,{p})->i64{{return 0;}}",
-        "mint": "auto f()->i64{builtin::PortRange p;return 0;}",
-        "construct": "auto f()->i64{builtin::PortRange p=builtin::PortRange();return 0;}",
-        "store": "class Holder{builtin::PortRange p;};auto f()->i64{return 0;}",
-        "copy": f"auto f({p})->i64{{builtin::PortRange copy=p;return 0;}}",
-        "move": f"auto f({p})->i64{{builtin::PortRange copy=move(p);return 0;}}",
-        "return": f"auto f({p})->builtin::PortRange{{return p;}}",
-        "reflect": "auto f()->i64{return size_of(builtin::PortRange);}",
-        "reflect-id": "auto f()->u64{return reflect_size(type_id(builtin::PortRange));}",
-        "cast": f"auto f({p})->u64{{return u64(p);}}",
-        "revoke": f"auto f({p})->i64{{p.revoke();return 0;}}",
-        "recursive": f"auto f({p})->i64{{return f(p);}}",
-        "read-missing": f"auto f({p})->u8{{return p.read8();}}",
-        "read-extra": f"auto f({p})->u8{{return p.read8(0u64,1u64);}}",
-        "read-signed": f"auto f({p})->u8{{return p.read8(0);}}",
-        "read-byte": f"auto f({p})->u8{{return p.read8(0u8);}}",
-        "read-return": f"auto f({p})->builtin::PortWriteResult{{return p.read8(0u64);}}",
-        "write-missing": f"auto f({p})->i64{{p.write8(0u64);return 0;}}",
-        "write-extra": f"auto f({p})->i64{{p.write8(0u64,0u8,0u8);return 0;}}",
-        "write-wide": f"auto f({p})->i64{{p.write8(0u64,0u64);return 0;}}",
-        "write-signed": f"auto f({p})->i64{{p.write8(0u64,0);return 0;}}",
-        "write-offset": f"auto f({p})->i64{{p.write8(0u8,0u8);return 0;}}",
-        "write-return": f"auto f({p})->u8{{return p.write8(0u64,0u8);}}",
-        "invented-case": "auto f()->builtin::PortWriteResult{return builtin::PortWriteResult::timeout;}",
-        "suspended": f"auto h({p},u8 b)->u8{{return b;}}auto f({p})->u8{{return h(p,p.read8(0u64));}}",
-        "raw-read": "auto __au_runtime_port_read8()->i64{return 0;}",
-        "raw-write": "auto __au_runtime_port_write8()->i64{return 0;}",
+        "value": (
+            "auto f(builtin::PortRange p)->i64{return 0;}",
+            "AU3001: service functions require one leading exclusive sealed service reference and copied result",
+        ),
+        "const": (
+            "auto f(const builtin::PortRange& p)->i64{return 0;}",
+            "AU3001: service functions require one leading exclusive sealed service reference and copied result",
+        ),
+        "late": (
+            f"auto f(u64 n,{p})->i64{{return 0;}}",
+            "AU2001: borrowed parameters require a supported leading ownership reference signature "
+            "on an ordinary function (found 'p')",
+        ),
+        "mint": ("auto f()->i64{builtin::PortRange p;return 0;}", "AU2001: expected '=' (found ';')"),
+        "construct": (
+            "auto f()->i64{builtin::PortRange p=builtin::PortRange();return 0;}",
+            "AU4001: reserved builtin namespace or identifier: builtin",
+        ),
+        "store": (
+            "class Holder{builtin::PortRange p;};auto f()->i64{return 0;}",
+            "AU2003: unsupported class field type 'builtin::PortRange': class fields require scalar, class, "
+            "private fixed-array or private owned-byte storage",
+        ),
+        "copy": (
+            f"auto f({p})->i64{{builtin::PortRange copy=p;return 0;}}",
+            "AU3001: service capability cannot be stored in a local",
+        ),
+        "move": (
+            f"auto f({p})->i64{{builtin::PortRange copy=move(p);return 0;}}",
+            "AU3001: service capability cannot be stored in a local",
+        ),
+        "return": (
+            f"auto f({p})->builtin::PortRange{{return p;}}",
+            "AU2001: only scalar function results or scalar-field class values are supported (found '{')",
+        ),
+        "reflect": (
+            "auto f()->i64{return size_of(builtin::PortRange);}",
+            "AU3001: resource capabilities are unavailable to reflection",
+        ),
+        "reflect-id": (
+            "auto f()->u64{return reflect_size(type_id(builtin::PortRange));}",
+            "AU3001: resource capabilities are unavailable to reflection",
+        ),
+        "cast": (f"auto f({p})->u64{{return u64(p);}}", "AU3001: service capability is not a value"),
+        "revoke": (f"auto f({p})->i64{{p.revoke();return 0;}}", "AU3001: unknown operation for sealed service kind"),
+        "recursive": (f"auto f({p})->i64{{return f(p);}}", "AU3001: invalid typed IR: recursive receiver call cycle"),
+        "read-missing": (f"auto f({p})->u8{{return p.read8();}}", "AU3001: wrong argument count for method"),
+        "read-extra": (f"auto f({p})->u8{{return p.read8(0u64,1u64);}}", "AU3001: wrong argument count for method"),
+        "read-signed": (f"auto f({p})->u8{{return p.read8(0);}}", "AU3001: expected u64, got i64"),
+        "read-byte": (f"auto f({p})->u8{{return p.read8(0u8);}}", "AU3001: expected u64, got u8"),
+        "read-return": (
+            f"auto f({p})->builtin::PortWriteResult{{return p.read8(0u64);}}",
+            "AU3001: expected builtin::PortWriteResult, got u8",
+        ),
+        "write-missing": (f"auto f({p})->i64{{p.write8(0u64);return 0;}}", "AU3001: wrong argument count for method"),
+        "write-extra": (
+            f"auto f({p})->i64{{p.write8(0u64,0u8,0u8);return 0;}}",
+            "AU3001: wrong argument count for method",
+        ),
+        "write-wide": (f"auto f({p})->i64{{p.write8(0u64,0u64);return 0;}}", "AU3001: expected u8, got u64"),
+        "write-signed": (f"auto f({p})->i64{{p.write8(0u64,0);return 0;}}", "AU3001: expected u8, got i64"),
+        "write-offset": (f"auto f({p})->i64{{p.write8(0u8,0u8);return 0;}}", "AU3001: expected u64, got u8"),
+        "write-return": (
+            f"auto f({p})->u8{{return p.write8(0u64,0u8);}}",
+            "AU3001: expected u8, got builtin::PortWriteResult",
+        ),
+        "invented-case": (
+            "auto f()->builtin::PortWriteResult{return builtin::PortWriteResult::timeout;}",
+            "AU4001: unknown sealed service enum case: builtin::PortWriteResult::timeout",
+        ),
+        "suspended": (
+            f"auto h({p},u8 b)->u8{{return b;}}auto f({p})->u8{{return h(p,p.read8(0u64));}}",
+            "AU3001: service operation requires an active named exclusive service parameter",
+        ),
+        "raw-read": (
+            "auto __au_runtime_port_read8()->i64{return 0;}",
+            "AU2001: reserved compiler identifier prefix: __au_ (found '__au_runtime_port_read8')",
+        ),
+        "raw-write": (
+            "auto __au_runtime_port_write8()->i64{return 0;}",
+            "AU2001: reserved compiler identifier prefix: __au_ (found '__au_runtime_port_write8')",
+        ),
     }
     for width in (16, 32):
         for op in ("read", "write"):
-            invalid[f"{op}{width}"] = f"auto f({p})->i64{{p.{op}{width}(0u64);return 0;}}"
+            invalid[f"{op}{width}"] = (
+                f"auto f({p})->i64{{p.{op}{width}(0u64);return 0;}}",
+                "AU3001: unknown operation for sealed service kind",
+            )
     for kind in ("ConsoleSession", "DisplaySession", "IommuEventSession", "CallSession", "PortRange"):
         for reverse in (False, True):
             pair = [p, f"builtin::{kind}& other"]
             if reverse:
                 pair.reverse()
-            invalid[f"mixed-{kind}-{reverse}"] = f"auto f({','.join(pair)})->i64{{return 0;}}"
-    for name, body in invalid.items():
+            invalid[f"mixed-{kind}-{reverse}"] = (
+                f"auto f({','.join(pair)})->i64{{return 0;}}",
+                "AU2001: borrowed parameters require a supported leading ownership reference signature "
+                f"on an ordinary function (found '{'p' if reverse else 'other'}')",
+            )
+    for name, (body, expected) in invalid.items():
         source = work / (name + ".au")
         source.write_text("module rejected;" + body)
         result = run([compiler, "--check", source])
-        need(result.returncode == 1 and b"error AU" in result.stderr, f"{name}: {result.stderr!r}")
+        diagnostics = re.findall(rb"error (AU[0-9]{4}: [^\n]+)", result.stderr)
+        need(
+            result.returncode == 1 and not result.stdout and diagnostics == [expected.encode()],
+            f"{name}: expected {expected!r}, got {result.returncode}: {result.stderr!r}",
+        )
     print(f"PASS Port: source and independent IR execution, 14 malformed host traps, {len(invalid)} source rejections")
 
 

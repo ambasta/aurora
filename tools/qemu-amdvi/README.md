@@ -171,10 +171,12 @@ unpacking EDK2 blobs stripped from the pinned `10.0.13+ds` source; it does not
 change the model, device configuration, runtime identity or six-artifact inventory.
 The builder verifies the patch and complete `pc-bios/meson.build` pre/post images,
 and installs the attributed patch and separate provenance under
-`share/source/packaging/`. That record includes source/package URLs, sizes and
-hashes, application order and the builder digest. Source-chain provenance is
-imported from the pinned Debian source package, not a fresh signature check by
-the builder. Debian's `debian/copyright` is in the identified packaging archive;
+`share/source/packaging/`. That record includes the verified source archive URL
+and digest, patch and pre/post-image digests, application order, builder digest
+and Debian attribution. Unchecked release/index/packaging-archive identities are
+not copied into the receipt; historical source-chain provenance remains above
+and in Git history. The builder performs no fresh signature check.
+Debian's `debian/copyright` is in the packaging archive identified above;
 QEMU's source license files remain in the installed source archive and `COPYING`
-is also installed separately. Offline diff/recipe checks are not source-to-binary
+is also installed separately. Offline patch checks are not source-to-binary
 attestation or fresh Event guest qualification.
