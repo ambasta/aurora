@@ -18,6 +18,38 @@ PATCHES = {
     "0002-mode1-requester-permissions-v2.patch": "54cbc3e2555f15ad925c8be710284046135997956fee4edd50f2f2d2942d9641",
     "0003-command-stop-v1.patch": "0f3e51a4dea545092114a049a4781a01fe909f759b39cb6580cf9d41ef63c360",
 }
+# Packaging-only Debian correction, independent of the three reviewed model patches.
+PACKAGING_PATCH = "qemu-skip-unpack-edk2-blobs.patch"
+PACKAGING_SHA256 = "02df62768b12f1b60ad769fce6080269c859054b4dcd64509122ba09439fbda2"
+PACKAGING_TARGET = "pc-bios/meson.build"
+PACKAGING_PREIMAGE = "45378c725d02525d02bb9cc2ca81ba235e6654c91cd66f02e015188106209de2"
+PACKAGING_POSTIMAGE = "122c64d6eb9d27c32ced8257613af3460e0ec3b946015f78b6e3b0580a261966"
+# Imported source-chain identities, not signatures verified by this builder.
+DEBIAN_SNAPSHOT = "https://snapshot.debian.org/archive/debian/20261009T120000Z/"
+PACKAGING_ORIGIN = {
+    "source_package": "qemu",
+    "source_version": "1:10.0.13+ds-0+deb13u1",
+    "upstream_version": "10.0.13",
+    "authentication": "Imported pinned Debian source-chain provenance; no fresh signature check in this build",
+    "inrelease": {
+        "url": DEBIAN_SNAPSHOT + "dists/trixie/InRelease",
+        "bytes": 140421,
+        "sha256": "0584fba32e13e0ab8285fb16c27adea1ec03a73669c18702821094fd6ca86675",
+    },
+    "sources_index": {
+        "url": DEBIAN_SNAPSHOT + "dists/trixie/main/source/Sources.xz",
+        "bytes": 10540436,
+        "sha256": "6002f81f463a2d976d84b34170367cc16da2d60bd0ba9ab9d868d6e1c1a935d9",
+    },
+    "orig_archive": {"url": SOURCE_URL, "bytes": 40010016, "sha256": SOURCE_SHA256},
+    "packaging_archive": {
+        "url": DEBIAN_SNAPSHOT + "pool/main/q/qemu/qemu_10.0.13+ds-0+deb13u1.debian.tar.xz",
+        "bytes": 156096,
+        "sha256": "da73c092f5684c551b0334d675eb16a3dec91e1edea94759cfb1102fa4a0364e",
+    },
+    "patch_member": "debian/patches/skip-unpack-edk2-blobs.patch",
+    "copyright_member": "debian/copyright",
+}
 MODELS = {
     "hw/i386/amd_iommu.c": "a506dccf0c112cc791208724651b3aaca300f8b713362dfd07af2308e6f5a2d9",
     "hw/i386/amd_iommu.h": "94d50d0dd0548c533252b4fdff7ec3cf800aed8655ce38db24de837adf1785e4",
@@ -57,6 +89,30 @@ with tempfile.TemporaryDirectory(prefix="aurora-event-build-") as temporary:
         verify(patch, digest)
         install(patch, "share/source/patches/" + name)
         subprocess.run(["patch", "--fuzz=0", "-p1", "-i", str(patch)], cwd=source, check=True)
+    packaging_patch = Path(__file__).with_name(PACKAGING_PATCH)
+    verify(packaging_patch, PACKAGING_SHA256)
+    verify(source / PACKAGING_TARGET, PACKAGING_PREIMAGE)
+    subprocess.run(["patch", "--fuzz=0", "-p1", "-i", str(packaging_patch)], cwd=source, check=True)
+    verify(source / PACKAGING_TARGET, PACKAGING_POSTIMAGE)
+    install(packaging_patch, "share/source/packaging/" + PACKAGING_PATCH)
+    (PREFIX / "share/source/packaging/provenance.json").write_text(
+        json.dumps(
+            {
+                "schema": "aurora-event-packaging-v1",
+                "origin": PACKAGING_ORIGIN,
+                "patch_sha256": PACKAGING_SHA256,
+                "target": PACKAGING_TARGET,
+                "preimage_sha256": PACKAGING_PREIMAGE,
+                "postimage_sha256": PACKAGING_POSTIMAGE,
+                "application_order": list(PATCHES) + [PACKAGING_PATCH],
+                "builder": "share/source/build-event.py",
+                "builder_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+                "scope": "Build-system-only correction for absent Debian +ds EDK2 blobs; no model change",
+            },
+            indent=2,
+        )
+        + "\n"
+    )
     for name, digest in MODELS.items():
         verify(source / name, digest)
         install(source / name, "model/" + name)
