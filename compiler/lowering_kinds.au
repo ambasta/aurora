@@ -257,7 +257,7 @@ export namespace compiler_lowering {
         ClassName,
         BorrowedRoots,
         BorrowedRootCount,
-        MutableBorrowedRootCount
+        FirstBorrowedMutable
     };
     // Origin identity is frozen before a Local is published.
     enum class SpanOriginKind {

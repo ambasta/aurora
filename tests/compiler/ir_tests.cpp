@@ -5345,9 +5345,9 @@ enum class CallableMutation {
     SlotUnusedType,
     NegativeSingleSlot,
     NegativePairedSlot,
-    NegativeMutableRoots,
-    ExcessMutableRoots,
-    MutableRootsWithoutRoots
+    NegativeFirstMutable,
+    NoncanonicalFirstMutable,
+    MutableWithoutRoots
 };
 
 void pendingCallables(detail::MetadataWriter &writer,
@@ -5362,12 +5362,12 @@ void pendingCallables(detail::MetadataWriter &writer,
         callable.slotRange = {writer.slotCount(), 2};
         const bool first = writer.callableCount() == 0;
         if (first) {
-            if (mutation == CallableMutation::NegativeMutableRoots)
-                callable.mutableBorrowedRootCount = -1;
-            else if (mutation == CallableMutation::ExcessMutableRoots)
-                callable.mutableBorrowedRootCount = 3;
-            else if (mutation == CallableMutation::MutableRootsWithoutRoots)
-                callable.mutableBorrowedRootCount = 1;
+            if (mutation == CallableMutation::NegativeFirstMutable)
+                callable.firstBorrowedMutable = -1;
+            else if (mutation == CallableMutation::NoncanonicalFirstMutable)
+                callable.firstBorrowedMutable = 2;
+            else if (mutation == CallableMutation::MutableWithoutRoots)
+                callable.firstBorrowedMutable = 1;
             else if (mutation == CallableMutation::NegativeNameBegin)
                 callable.nameRange.firstByte = -1;
             else if (mutation == CallableMutation::NegativeNameCount)
@@ -5758,9 +5758,9 @@ void metadataIngressTests() {
             true);
     }
     for (const auto &[name, mutation] : std::vector<std::pair<const char *, CallableMutation>>{
-             {"negative mutable borrowed prefix", CallableMutation::NegativeMutableRoots},
-             {"excess mutable borrowed prefix", CallableMutation::ExcessMutableRoots},
-             {"mutable borrowed prefix without roots", CallableMutation::MutableRootsWithoutRoots},
+             {"negative first borrowed mutability", CallableMutation::NegativeFirstMutable},
+             {"noncanonical first borrowed mutability", CallableMutation::NoncanonicalFirstMutable},
+             {"first borrowed mutability without roots", CallableMutation::MutableWithoutRoots},
              {"negative callable name begin", CallableMutation::NegativeNameBegin},
              {"negative callable name count", CallableMutation::NegativeNameCount},
              {"overflowing callable name begin", CallableMutation::NameBeginOverflow},

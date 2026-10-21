@@ -1137,9 +1137,9 @@ export namespace compiler_lowering {
             at = 0;
             while (at < borrowed && session.good()) {
                 const i64 type = parameter_type(session, symbol, at);
-                if (!parameter_borrowed(session, symbol, at) || (!parameter_const(session, symbol, at) && (at > 1 || (at
-                    == 1 && parameter_const(session, symbol, 0)))) || (!borrowed_values && (tk(session, type)
-                    != compiler_resolver::ResolvedTypeKind::class_value || !owning_type(session, type)))) {
+                if (!parameter_borrowed(session, symbol, at) || (at > 0 && !parameter_const(session, symbol, at))
+                    || (!borrowed_values && (tk(session, type) != compiler_resolver::ResolvedTypeKind::class_value
+                    || !owning_type(session, type)))) {
                     return fail(session, LoweringError::borrowed_function_boundary, source);
                 }
                 if (!borrowed_values) {
