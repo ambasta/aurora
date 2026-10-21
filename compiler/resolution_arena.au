@@ -899,6 +899,26 @@ export namespace compiler_resolver {
             }
             return i64(sources.at(index));
         }
+        // Read only an already published symbol cache, even after a semantic or
+        // lowering failure. This path cannot alter the selected diagnostic.
+        auto linkage_chunk(i64 symbol, i64 offset) const -> LinkageChunk {
+            LinkageChunk result = LinkageChunk();
+            const MetaRow value = view_meta(symbol);
+            const MetaRow name = view_meta(value.word(0));
+            if (value.kind() != MetaTag::symbol || name.kind() != MetaTag::source_reference || name.word(0) != -1
+                || name.word(9) != symbol || name.word(1) < 0 || name.word(2) <= name.word(1) || name.word(2)
+                > source_used || !sources.ok() || source_used > sources.size() || offset < 0 || offset > name.word(2)
+                - name.word(1)) {
+                result.invalidate();
+                return result;
+            }
+            i64 at = name.word(1) + offset;
+            while (at < name.word(2) && result.size() < 512) {
+                result.append(sources.at(at));
+                at = at + 1;
+            }
+            return result;
+        }
         auto source_byte(i64 index) -> u8 {
             if (!good() || index < 0 || index >= source_used) {
                 fail_storage(StorageStatus::invalid);
@@ -1374,7 +1394,7 @@ export namespace compiler_resolver {
             }
             return 0;
         }
-        // Decoded literal payload has no new module/source-reference identity.
+        // Literal and linkage payload bytes have no new module identity.
         // Existing graph offsets stay fixed while the same owner grows safely.
         auto append_literal_byte(u8 value) -> i64 {
             if (!good()) {
@@ -1394,6 +1414,65 @@ export namespace compiler_resolver {
             if (!sources.set(result, value)) {
                 return fail_storage(StorageStatus::invalid);
             }
+            source_used = required;
+            return result;
+        }
+        // Linkage fragments use the existing byte owner and checked element
+        // operations, but reserve once. No self-borrow spans survive a resize.
+        // Publish the visible byte count only after the whole copy succeeds.
+        auto append_linkage_text(builtin::span<const u8> text) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            const i64 count = text.size();
+            if (count < 0 || count > 9223372036854775807 - source_used) {
+                return fail_storage(StorageStatus::limit);
+            }
+            const i64 required = source_used + count;
+            if (required > sources.size()) {
+                const i64 capacity = next_capacity(sources.size(), required);
+                if (capacity < required || !sources.try_resize(capacity)) {
+                    return fail_storage(StorageStatus::allocation);
+                }
+            }
+            i64 at = 0;
+            while (at < count) {
+                if (!sources.set(source_used + at, text.at(at))) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                at = at + 1;
+            }
+            const i64 result = source_used;
+            source_used = required;
+            return result;
+        }
+        auto append_linkage_range(i64 begin, i64 end) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            if (begin < 0 || end <= begin || end > source_used || source_used > sources.size()) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            const i64 count = end - begin;
+            if (count > 9223372036854775807 - source_used) {
+                return fail_storage(StorageStatus::limit);
+            }
+            const i64 required = source_used + count;
+            if (required > sources.size()) {
+                const i64 capacity = next_capacity(sources.size(), required);
+                if (capacity < required || !sources.try_resize(capacity)) {
+                    return fail_storage(StorageStatus::allocation);
+                }
+            }
+            i64 at = 0;
+            while (at < count) {
+                const u8 byte = sources.at(begin + at);
+                if (!sources.set(source_used + at, byte)) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                at = at + 1;
+            }
+            const i64 result = source_used;
             source_used = required;
             return result;
         }

@@ -10,7 +10,7 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 | Source loading and file I/O | C++ host | Native runtime and source-loading migration |
 | Formatting | Aurora owns syntax roles, layout and findings; native host retains source transport and token/comment/reparse/idempotence checks | Final-source qualification required |
 | Lexing and parsing | Aurora | Complete final-source predecessor/current convergence |
-| Resolution and typed lowering | Aurora | Validate final integrated behavior |
+| Resolution, immutable linkage spelling and typed lowering | Aurora; native projection reads bounded copied name chunks | Validate final integrated behavior and paired compile-time/output gates |
 | Metadata, callable and frame admission | Aurora owns frame size and disjoint slot domains; C++ transports raw declarations | Retain host conversion, quota arithmetic and transport bounds |
 | Instruction storage and static admission | Aurora owns service argument-vector shape and copied-argument contracts | C++ retains dynamic loans, lifetimes, physical initialization and logical completion |
 | Initialization and synchronous service loans | Aurora workspace | Resource ownership and object provenance remain native |
@@ -19,7 +19,7 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 | Call graph | Aurora | Validate final integrated behavior |
 | x86 emission | Aurora, fixed native transport | Byte-identical to the C++ backend on the whole corpus in both profiles (`emitter-differential-*`); compile time 1.05x the C++ backend |
 | Direct class fields | Aurora source and independent metadata admission share an 8,192-field cap, including empty, nested, resource and array fields | Existing leaf, byte, depth and array-element limits still apply |
-| Private host bridge | One 113-entry table generates Aurora forwarders and host transport declarations; compiler facts supply layouts, symbols and raw enum validation | Preserve fail-closed conversion; native replacement remains incomplete |
+| Private host bridge | One 114-entry table generates Aurora forwarders and host transport declarations; compiler facts supply layouts, symbols and raw enum validation | Preserve fail-closed conversion; native replacement remains incomplete |
 | Bootstrap route | Six source-built predecessors, then current C1/C2; direct skips fail at recorded capability boundaries | Replace stages only after an actual direct build, the [bounded cross-route frontend comparison](README.md#source-bootstrap), complete seed route and final full/convergence gates |
 | Assembly, linking and hosted runtime | External bootstrap tools/C++ | Native replacements remain incomplete |
 

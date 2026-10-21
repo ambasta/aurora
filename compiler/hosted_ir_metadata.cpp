@@ -227,6 +227,15 @@ static_assert(static_cast<std::int64_t>(TypeKind::IommuEventSession) ==
 static_assert(static_cast<std::int64_t>(TypeKind::OwnedValues) ==
               static_cast<std::int64_t>(wire::MetadataTypeKind::OwnedValues));
 
+// resolution_linkage.au spells only these admitted ordinary-overload kinds.
+static_assert(static_cast<std::int64_t>(wire::MetadataTypeKind::I64) == 0);
+static_assert(static_cast<std::int64_t>(wire::MetadataTypeKind::Bool) == 1);
+static_assert(static_cast<std::int64_t>(wire::MetadataTypeKind::Class) == 5);
+static_assert(static_cast<std::int64_t>(wire::MetadataTypeKind::U64) == 7);
+static_assert(static_cast<std::int64_t>(wire::MetadataTypeKind::Enum) == 9);
+static_assert(static_cast<std::int64_t>(wire::MetadataTypeKind::U8) == 10);
+static_assert(static_cast<std::int64_t>(wire::MetadataTypeKind::ByteSpan) == 11);
+
 using Capacities = std::array<std::int64_t, static_cast<std::size_t>(Pool::count)>;
 Capacities capacities(const wire::InputCounts &counts, std::int64_t callableCount, std::int64_t slotCount) {
     const auto &core = counts.coreCounts;

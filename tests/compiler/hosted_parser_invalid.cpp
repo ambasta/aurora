@@ -85,6 +85,7 @@ aurora::hosted::bytes::NativeOwner sessionPayload;
 constexpr std::uint64_t sessionCanary = 0x7265736f6c766564ULL;
 int sessionsCreated = 0, sessionsReleased = 0, transferred = 0, pairsReleased = 0, projectionThrow = 0;
 bool resolverRunning = false, allocationOnIngest = false;
+std::int64_t linkageChunkSize = 1;
 std::int64_t reportedSyntax = 0, reportedMetadata = 0, reportedDecorations = 0, sourceBytes = 0, seedIdentity = 0;
 namespace Lowering = aurora::hosted_abi::compiler_lowering;
 Lowering::LoweringResult loweringResult{};
@@ -1878,7 +1879,7 @@ std::shared_ptr<const aurora::SourceText> resolutionFixture() {
     resolutionSyntax[5].value9 = 0;
     resolutionSyntax[6].declaration_tag = SyntaxKind::declaration;
     resolutionSyntax[7].declaration_tag = SyntaxKind::module_definition;
-    resolutionMetadata.assign(8, resolutionMeta(Resolution::MetaTag::invalid));
+    resolutionMetadata.assign(9, resolutionMeta(Resolution::MetaTag::invalid));
     auto &module = resolutionMetadata[0];
     module.tag = Resolution::MetaTag::module_source;
     module.value0 = 0;
@@ -1913,6 +1914,7 @@ std::shared_ptr<const aurora::SourceText> resolutionFixture() {
     symbol.tag = Resolution::MetaTag::symbol;
     symbol.declaration_tag = Resolution::DeclarationKind::function;
     symbol.native_tag = Resolution::NativeMode::root_entry;
+    symbol.value0 = 8;
     symbol.value1 = 0;
     symbol.value4 = 1;
     symbol.value5 = 5;
@@ -1936,6 +1938,13 @@ std::shared_ptr<const aurora::SourceText> resolutionFixture() {
     reportedMetadata = 8;
     reportedDecorations = 8;
     sourceBytes = static_cast<std::int64_t>(source->text.size());
+    resolutionMetadata[8].tag = Resolution::MetaTag::source_reference;
+    resolutionMetadata[8].value0 = -1;
+    resolutionMetadata[8].value1 = resolutionMetadata[1].value1;
+    resolutionMetadata[8].value2 = resolutionMetadata[1].value2;
+    resolutionMetadata[8].value9 = 5;
+    reportedMetadata = 9;
+    linkageChunkSize = 1;
     seedIdentity = 0;
     loweringResult = {
         Lowering::LoweringStatus::semantic_failure, Lowering::LoweringError::function_parameter_limit, 0, -1};
@@ -2047,6 +2056,19 @@ void resolutionControls() {
     reject("unknown native identity mode", [] {
         resolutionMetadata[5].native_tag = static_cast<Resolution::NativeMode>(99);
     });
+    reject("missing immutable linkage cache", [] {
+        resolutionMetadata[5].value0 = -1;
+    });
+    reject("linkage cache has another owner", [] {
+        resolutionMetadata[8].value9 = 4;
+    });
+    reject("linkage cache escapes source bytes", [] {
+        resolutionMetadata[8].value2 = sourceBytes + 1;
+    });
+    for (const std::int64_t size : {-1, 0, 2, 513})
+        reject("invalid copied linkage chunk extent", [=] {
+            linkageChunkSize = size;
+        });
     reject("symbol defining module outside graph", [] {
         resolutionMetadata[5].value1 = 1;
     });
@@ -2057,7 +2079,7 @@ void resolutionControls() {
         resolutionMetadata[6].tag = Resolution::MetaTag::signature;
     });
     reject("output symbol outside metadata", [] {
-        resolutionMetadata[6].value0 = 8;
+        resolutionMetadata[6].value0 = 9;
     });
     reject("reversed sparse source span", [] {
         resolutionMetadata[1].value2 = resolutionMetadata[1].value1 - 1;
@@ -2082,7 +2104,7 @@ void resolutionControls() {
     });
     reject("diagnostic concrete type outside metadata", [&] {
         typeReport();
-        loweringOperands[1].signedValue = 8;
+        loweringOperands[1].signedValue = 9;
     });
     reject("diagnostic concrete type has unknown kind", [&] {
         typeReport();
@@ -2593,6 +2615,17 @@ extern "C" std::int64_t aurora_hosted_resolver_count(const void *session, std::i
 extern "C" std::int64_t aurora_hosted_resolver_read_source(const void *session, std::int64_t) {
     checkSession(session);
     return -1;
+}
+extern "C" void
+aurora_hosted_resolver_linkage_chunk(const void *session, std::int64_t symbol, std::int64_t offset, void *output) {
+    checkSession(session);
+    Resolution::LinkageChunk chunk{};
+    chunk.byteCount = -1;
+    if (symbol == 5 && offset == 0) {
+        chunk.payload[0] = 'f';
+        chunk.byteCount = linkageChunkSize;
+    }
+    std::memcpy(output, &chunk, sizeof(chunk));
 }
 extern "C" void aurora_hosted_resolver_status(const void *session, void *output) {
     checkSession(session);
