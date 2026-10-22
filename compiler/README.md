@@ -16,6 +16,15 @@ remain C++23. The Aurora-native x86-64 emitter
 consumes the admitted source stores; the host retains artifact I/O.
 GNU assembler/linker and Linux host I/O remain bootstrap dependencies.
 
+The verifier keeps active facts in a flat, sorted owner-backed prefix and restores
+canonical snapshots directly, without rebuilding a search tree. Key comparisons
+observe scalar fields through the active-row receiver rather than returning the
+192-byte fact payload. Each compound storage operation captures its control row
+once and passes validated counts to private helpers; owner extent, liveness,
+first-error and partial-publication checks remain in those helpers. The existing
+owned-values ABI still reads a complete 200-byte active row. This is not a claim
+that all aggregate copies or the measured self-hosting performance gap are gone.
+
 ## Build and check
 
 For a fresh checkout, either complete [source bootstrap](#source-bootstrap) in
