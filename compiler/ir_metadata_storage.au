@@ -1203,22 +1203,18 @@ export namespace compiler_ir_metadata {
             }
             const i64 limit = bytes.size();
             const bool available = bytes.ok();
-            if (left == right && available && left >= 0 && left <= limit && count <= limit - left) {
-                // Equal valid ranges in this immutable owner are identical.
-                // Borrow once to retain checked runtime allocation identity.
-                const builtin::span<const u8> checked = borrow_bytes(bytes);
-                if (checked.size() == limit) {
-                    return 0;
-                }
-            }
             if (available && left >= 0 && left <= limit && count <= limit - left && right >= 0 && right <= limit
                 && count <= limit - right) {
-                // Whole ranges are bounded; each builtin read still checks its
-                // index and runtime owner. Malformed ranges use the sentinel loop.
+                // Validate the immutable owner once, then read the bounded ranges
+                // through a borrow. Span access retains inline bounds checks.
+                const builtin::span<const u8> checked = borrow_bytes(bytes);
+                if (left == right && checked.size() == limit) {
+                    return 0;
+                }
                 i64 compared = 0;
                 while (compared < count) {
-                    const i64 a = i64(bytes.at(left + compared));
-                    const i64 b = i64(bytes.at(right + compared));
+                    const i64 a = i64(checked.at(left + compared));
+                    const i64 b = i64(checked.at(right + compared));
                     if (a < b) {
                         return -1;
                     }

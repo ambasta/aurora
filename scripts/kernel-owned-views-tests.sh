@@ -24,7 +24,7 @@ for mode in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do
 done
 "${CXX:-g++}" "${flags[@]}" "${wrappers[@]}" -DAURORA_OWNED_VIEW_ZERO_LENGTH_CONTROL=1 \
     tests/kernel-uefi-owned-views.cpp kernel/owned-bytes.cpp "$build_dir/language.o" \
-    -Wl,--wrap=__au_runtime_bytes_borrow_length -o "$build_dir/rejected-zero-length"
+    -Wl,--wrap=__au_runtime_bytes_borrow_span -o "$build_dir/rejected-zero-length"
 set +e
 ASAN_OPTIONS="detect_leaks=0:halt_on_error=1:abort_on_error=1" \
 UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1" \

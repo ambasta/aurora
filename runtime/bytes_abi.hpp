@@ -25,6 +25,20 @@ static_assert(sizeof(NativeOwner) == 32 && alignof(NativeOwner) == 8);
 static_assert(offsetof(NativeOwner, region) == 0 && offsetof(NativeOwner, allocation) == 8);
 static_assert(offsetof(NativeOwner, length) == 16 && offsetof(NativeOwner, success) == 24);
 
+// Readonly view, not an owner. Kind 0 names contiguous bytes; kind 1 carries
+// a checked owner snapshot for adapters with fragmented backing. Generated
+// lifetime checks keep the source root alive and immutable for the entire view.
+struct alignas(8) NativeSpan {
+    std::uint64_t kind = 0;
+    std::uint64_t payload[4]{};
+    std::int64_t start = 0;
+    std::int64_t length = 0;
+};
+static_assert(std::is_standard_layout_v<NativeSpan> && std::is_trivially_copyable_v<NativeSpan>);
+static_assert(sizeof(NativeSpan) == 56 && alignof(NativeSpan) == 8);
+static_assert(offsetof(NativeSpan, payload) == 8 && offsetof(NativeSpan, start) == 40 &&
+              offsetof(NativeSpan, length) == 48);
+
 // Compiler-private copied-value stride. The canonical class layout remains the
 // sole producer; this bound merely validates the adapter's trusted ABI inputs.
 inline constexpr std::int64_t maximum_value_stride = 520;
@@ -47,6 +61,7 @@ std::uint64_t
 __au_runtime_values_resize(NativeOwner *owner, std::int64_t count, std::int64_t stride, const void *fill) noexcept;
 void __au_runtime_bytes_allocate(std::uint64_t region, std::int64_t length, NativeOwner *output) noexcept;
 std::int64_t __au_runtime_bytes_borrow_length(const NativeOwner *owner) noexcept;
+void __au_runtime_bytes_borrow_span(const NativeOwner *owner, NativeSpan *output) noexcept;
 std::uint64_t __au_runtime_bytes_at(const NativeOwner *owner, std::int64_t index) noexcept;
 std::uint64_t __au_runtime_bytes_set(NativeOwner *owner, std::int64_t index, std::uint64_t value) noexcept;
 std::uint64_t __au_runtime_bytes_resize(NativeOwner *owner, std::int64_t length) noexcept;

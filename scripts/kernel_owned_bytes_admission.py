@@ -5,9 +5,7 @@ from pathlib import Path
 import importlib.util
 import sys
 
-RUNTIME = frozenset(
-    "__au_runtime_bytes_" + name for name in ("allocate", "at", "set", "drop", "borrow_length", "resize")
-)
+RUNTIME = frozenset("__au_runtime_bytes_" + name for name in ("allocate", "at", "set", "drop", "borrow_span", "resize"))
 ENTRY = "__au_v_m1_18kernel_owned_bytes_n0__d24kernel_owned_bytes_entry"
 CONSUMER = "__au_v_m1_18kernel_owned_bytes_n0__d13consume_bytes"
 TRANSFER = "__au_v_m1_18kernel_owned_bytes_n0__d10pass_bytes"

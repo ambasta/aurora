@@ -276,15 +276,26 @@ void admission() {
     require(region.close() && region.close(), "explicit empty close is idempotent");
 }
 
-void readonly_descriptor_snapshots() {
+std::int64_t checked_span(const NativeOwner *owner) {
+    aurora::hosted::bytes::NativeSpan view{99, {99, 99, 99, 99}, 99, 99};
+    aurora::hosted::bytes::__au_runtime_bytes_borrow_span(owner, &view);
+    require(view.kind == 1 && view.start == 0 && view.length == owner->length,
+            "kernel borrow retains checked fragmented representation");
+    require(view.payload[0] == owner->region && view.payload[1] == owner->allocation &&
+                view.payload[2] == static_cast<std::uint64_t>(owner->length) && view.payload[3] == owner->success,
+            "kernel borrow copies all owner identity words and no backing pointer");
+    return view.length;
+}
+
+void readonly_descriptor_snapshots(std::int64_t (*borrow)(const NativeOwner *)) {
     for (const std::int64_t length : {0, 1, 4095, 4096, 4097, 8193}) {
         Fixture fixture;
         NativeOwner owner;
         __au_runtime_bytes_allocate(fixture.region.id(), length, &owner);
         const NativeOwner snapshot = owner;
         const auto metrics = fixture.region.metrics();
-        require(__au_runtime_bytes_borrow_length(&owner) == length, "borrow returns logical owner length");
-        require(__au_runtime_bytes_borrow_length(&snapshot) == length, "snapshot validates without ownership transfer");
+        require(borrow(&owner) == length, "borrow returns logical owner length");
+        require(borrow(&snapshot) == length, "snapshot validates without ownership transfer");
         require(fixture.region.metrics() == metrics, "borrow preserves every allocation metric");
         if (length) {
             require(__au_runtime_bytes_set(&owner, length - 1, 213) == 1, "seed last logical byte");
@@ -293,14 +304,14 @@ void readonly_descriptor_snapshots() {
         __au_runtime_bytes_drop(&owner);
         require(fixture.region.close(), "snapshot imposes no resource obligation");
     }
-    expect_fault("borrow failed allocation", 2, [] {
+    expect_fault("borrow failed allocation", 2, [borrow] {
         Fixture fixture;
         NativeOwner owner;
         __au_runtime_bytes_allocate(fixture.region.id(), -1, &owner);
-        __au_runtime_bytes_borrow_length(&owner);
+        borrow(&owner);
     });
-    expect_fault("borrow null descriptor", 1, [] {
-        __au_runtime_bytes_borrow_length(nullptr);
+    expect_fault("borrow null descriptor", 1, [borrow] {
+        borrow(nullptr);
     });
     for (int field = 0; field < 4; ++field) {
         expect_fault("borrow forged descriptor word", 1, [=] {
@@ -315,25 +326,25 @@ void readonly_descriptor_snapshots() {
                 owner.length = 2;
             if (field == 3)
                 owner.success = 2;
-            __au_runtime_bytes_borrow_length(&owner);
+            borrow(&owner);
         });
     }
-    expect_fault("borrow stale released snapshot", 1, [] {
+    expect_fault("borrow stale released snapshot", 1, [borrow] {
         Fixture fixture;
         NativeOwner owner;
         __au_runtime_bytes_allocate(fixture.region.id(), 1, &owner);
         const NativeOwner snapshot = owner;
         __au_runtime_bytes_drop(&owner);
-        __au_runtime_bytes_borrow_length(&snapshot);
+        borrow(&snapshot);
     });
-    expect_fault("borrow snapshot from closed grant", 1, [] {
+    expect_fault("borrow snapshot from closed grant", 1, [borrow] {
         Fixture fixture;
         NativeOwner owner;
         __au_runtime_bytes_allocate(fixture.region.id(), 0, &owner);
         const NativeOwner snapshot = owner;
         __au_runtime_bytes_drop(&owner);
         require(fixture.region.close(), "close borrowed snapshot grant");
-        __au_runtime_bytes_borrow_length(&snapshot);
+        borrow(&snapshot);
     });
 }
 
@@ -1093,7 +1104,14 @@ void quiescent_revocation() {
 int main() {
     quiescent_revocation();
     typed_value_pages();
-    readonly_descriptor_snapshots();
+    readonly_descriptor_snapshots(__au_runtime_bytes_borrow_length);
+    readonly_descriptor_snapshots(checked_span);
+    expect_fault("span null result storage", 1, [] {
+        Fixture fixture;
+        NativeOwner owner;
+        __au_runtime_bytes_allocate(fixture.region.id(), 1, &owner);
+        aurora::hosted::bytes::__au_runtime_bytes_borrow_span(&owner, nullptr);
+    });
     admission();
     runtime_lengths_and_pages();
     quota_and_metadata_failure();

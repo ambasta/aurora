@@ -27,6 +27,7 @@ NAMESPACE = "compiler_initialization_probe::"
 # name, mutable workspace, paired metadata root, scalar tail count, return type.
 # This closes the test transport rather than generating arbitrary callable access.
 PROBES = (
+    ("compare_metadata_bytes", False, True, 3, "i64"),
     ("allocated", False, False, 0, "bool"),
     ("status", False, False, 0, "InitializationStatus"),
     ("slot_count", False, False, 0, "i64"),

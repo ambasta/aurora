@@ -9,6 +9,10 @@ import aurora.compiler.ir_metadata_storage;
 // verifier workspace and, when needed, the real source-admitted metadata store.
 // No owner descriptor, stored word or native expected state enters this module.
 export namespace compiler_initialization_probe {
+    auto compare_metadata_bytes(const compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 left, i64 right, i64 count) -> i64 {
+        return metadata.compare_bytes(left, right, count);
+    }
     auto allocated(const compiler_ir_verification::VerificationWorkspace& workspace) -> bool {
         return workspace.allocated();
     }

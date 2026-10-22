@@ -44,6 +44,7 @@ class GeneratorBoundaries(unittest.TestCase):
             "__au_runtime_bytes_set": "T",
             "__au_runtime_bytes_drop": "T",
             "__au_runtime_bytes_borrow_length": "T",
+            "__au_runtime_bytes_borrow_span": "T",
             "__au_runtime_bytes_resize": "T",
             "__au_runtime_bytes_kernel_fault": "T",
             "__au_runtime_values_allocate": "T",

@@ -188,21 +188,12 @@ export namespace compiler_x86 {
             w.memory(owner);
             w.text(", %rdi");
             w.end_line();
-            w.call_runtime("__au_runtime_bytes_borrow_length");
-            w.line_address("movq %rax, ", result - 48, "");
-            w.line_address("movq $1, ", result, "");
-            i64 byte = 0;
-            while (byte < 32) {
-                const i64 word = bytes_owner_address(w, m, offset, field, byte);
-                w.begin_line();
-                w.text("movq ");
-                w.memory(word);
-                w.text(", %rcx");
-                w.end_line();
-                w.line_address("movq %rcx, ", result - 8 - byte, "");
-                byte = byte + 8;
-            }
-            w.line_address("movq $0, ", result - 40, "");
+            w.begin_line();
+            w.text("leaq ");
+            w.address(result);
+            w.text(", %rsi");
+            w.end_line();
+            w.call_runtime("__au_runtime_bytes_borrow_span");
             w.pop("%rax");
             return true;
         }

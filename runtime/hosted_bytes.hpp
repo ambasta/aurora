@@ -96,6 +96,9 @@ private:
 // Host pointers below are trusted valid descriptor storage, not language pointers.
 // Native uniqueness is enforced by source/IR ownership checks; copying a live
 // descriptor in malicious trusted C++ is outside this adapter's guarantee.
+// A readonly contiguous span is valid only while its owner remains live and
+// unchanged. Admitted Aurora source/IR enforces that lifetime; trusted native
+// code must not mutate, resize, move or drop its source behind a live span.
 
 #if defined(AURORA_HOSTED_BYTES_TESTING)
 namespace testing {

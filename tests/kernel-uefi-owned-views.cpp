@@ -289,10 +289,11 @@ int main(int argc, char **argv) {
 }
 #ifdef AURORA_OWNED_VIEW_ZERO_LENGTH_CONTROL
 // Deliberately corrupted host executable only, never admitted to a guest.
-extern "C" std::int64_t __real___au_runtime_bytes_borrow_length(const aurora::hosted::bytes::NativeOwner *) noexcept;
-extern "C" std::int64_t
-__wrap___au_runtime_bytes_borrow_length(const aurora::hosted::bytes::NativeOwner *owner) noexcept {
-    static_cast<void>(__real___au_runtime_bytes_borrow_length(owner));
-    return 0;
+extern "C" void __real___au_runtime_bytes_borrow_span(const aurora::hosted::bytes::NativeOwner *,
+                                                      aurora::hosted::bytes::NativeSpan *) noexcept;
+extern "C" void __wrap___au_runtime_bytes_borrow_span(const aurora::hosted::bytes::NativeOwner *owner,
+                                                      aurora::hosted::bytes::NativeSpan *output) noexcept {
+    __real___au_runtime_bytes_borrow_span(owner, output);
+    output->length = 0;
 }
 #endif

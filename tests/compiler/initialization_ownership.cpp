@@ -71,7 +71,7 @@ void rawVerificationOwnership(bool serviceSignature) {
     } metadata;
     metadata.value.region = metadataRegion.id();
     abi::MetadataInitialize create{};
-    create.counts.coreCounts.bytes = 1;
+    create.counts.coreCounts.bytes = 8;
     create.counts.coreCounts.types = 66 + parameterCount;
     create.counts.mapCounts.indices = 1;
     create.counts.mapCounts.views = 1;
@@ -92,7 +92,10 @@ void rawVerificationOwnership(bool serviceSignature) {
                 "initialization fixture escaped metadata row storage");
     };
     auto names = descriptor(abi::metadataStore_bytesOffset);
-    require(bytes::__au_runtime_bytes_set(&names, 0, 'f') == 1, "initialization function name write failed");
+    const std::array<std::uint8_t, 8> nameBytes{'f', 0x80, 0xff, 'a', 'a', 'b', 'a', 'b'};
+    for (std::size_t at = 0; at < nameBytes.size(); ++at)
+        require(bytes::__au_runtime_bytes_set(&names, at, nameBytes[at]) == 1,
+                "initialization name comparison fixture write failed");
     set(abi::metadataStore_typesOffset, 0, meta::RawTypeRow{});
     if (serviceSignature) {
         meta::RawTypeRow service{};
@@ -163,6 +166,24 @@ void rawVerificationOwnership(bool serviceSignature) {
             const std::array<const void *, 2> roots{workspace, declarations};
             const auto status = aurora_test_initialization_initialize(roots.data(), 0);
             if (status == static_cast<std::int64_t>(wire::InitializationStatus::success)) {
+                // Same real admitted metadata owner; cover ordered high-bit bytes,
+                // overlapping windows and the unchanged malformed-range sentinel.
+                for (const auto &test : std::array<std::array<std::int64_t, 4>, 12>{{{0, 0, 8, 0},
+                                                                                     {1, 2, 1, -1},
+                                                                                     {1, 0, 1, 1},
+                                                                                     {3, 4, 2, -1},
+                                                                                     {4, 3, 2, 1},
+                                                                                     {4, 6, 2, 0},
+                                                                                     {-1, 0, 1, -1},
+                                                                                     {-1, -2, 1, 0},
+                                                                                     {8, 9, 2, 0},
+                                                                                     {7, 5, 2, -1},
+                                                                                     {-1, 100, 0, 0},
+                                                                                     {1, 2, -1, 0}}})
+                    require(aurora_test_initialization_compare_metadata_bytes(
+                                roots.data(), test[0], test[1], test[2]) == test[3],
+                            "metadata byte comparison boundary/sentinel changed");
+
                 require(aurora_test_initialization_word_count(workspace) == 2 &&
                             aurora_test_initialization_payload_bytes(workspace) == (serviceSignature ? 64 : 32) &&
                             aurora_test_initialization_write_scalar(roots.data(), 64) == 0 &&

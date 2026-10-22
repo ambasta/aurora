@@ -208,7 +208,7 @@ def main():
         entries = re.findall(r"^\.type (\w+__d5entry), @function$", text, re.M)
         require(len(entries) == 1 and f".local {entries[0]}\n" in text, "one local resource entry required")
         require(
-            "__au_runtime_bytes_borrow_length" in text and "__au_runtime_bytes_at" in text,
+            "__au_runtime_bytes_borrow_span" in text and "__au_runtime_bytes_at" in text,
             "real validation and backend-neutral copied read imports required",
         )
         linked = directory / "linked.s"

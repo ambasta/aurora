@@ -186,8 +186,13 @@ def instrument(assembly):
 
 def runtime():
     # Literal descriptor validation deliberately does not read production headers.
-    code = "\n.text\n__au_runtime_bytes_borrow_length:\n" + align()
+    code = "\n.text\n__au_runtime_bytes_borrow_span:\n" + align()
+    code += "    movq %rsi, %r10\n"
     code += compare("%rdi", "literal_owner", 32, "borrow_descriptor", "runtime")
+    code += "    movq $1, 0(%r10)\n"
+    for offset in range(0, 32, 8):
+        code += f"    movq {offset}(%rdi), %rax\n    movq %rax, {offset + 8}(%r10)\n"
+    code += "    movq $0, 40(%r10)\n    movq $29, 48(%r10)\n"
     code += "    incq borrow_calls(%rip)\n" + clobber(29) + "    ret\n"
     code += "__au_runtime_bytes_at:\n" + align()
     code += "    cmpq $6, %rsi\n    jne .Labi_runtime_fail\n"
@@ -508,8 +513,8 @@ def main():
             "runtime-alignment",
             "owner",
             "abi_borrow_0",
-            "    subq $8, %rsp\n    call __au_runtime_bytes_borrow_length",
-            "    nop\n    call __au_runtime_bytes_borrow_length",
+            "    subq $8, %rsp\n    call __au_runtime_bytes_borrow_span",
+            "    nop\n    call __au_runtime_bytes_borrow_span",
             92,
         ),
     ]

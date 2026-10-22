@@ -30,6 +30,12 @@ counts to private helpers; owner extent, liveness, first-error and partial-publi
 checks remain. Runtime owner validation still applies to each key access. This is
 not a claim that all aggregate copies or the measured performance gap are gone.
 
+Metadata name comparison borrows its validated byte ranges once. The hosted
+adapter returns a checked contiguous span for inline reads; fragmented kernel
+backings retain checked owner snapshots. Identity, extent, lifecycle and failure
+checks remain mandatory. This does not change runtime owner lookup complexity.
+These access changes add no language features or unchecked views.
+
 ## Build and check
 
 For a fresh checkout, either complete [source bootstrap](#source-bootstrap) in
