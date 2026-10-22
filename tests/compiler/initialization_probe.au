@@ -93,15 +93,49 @@ export namespace compiler_initialization_probe {
                 fact.set_key(2);
                 fact.set_field(at - 3);
             }
+            // Force insertion before existing object rows, including both
+            // signed extremes. Key comparison must not subtract or use zero
+            // as a range sentinel.
+            if (at >= 5) {
+                fact.set_key(-at);
+            }
+            if (at == 5) {
+                fact.set_key(-9223372036854775807 - 1);
+            }
+            if (at == 6) {
+                fact.set_key(9223372036854775807);
+            }
             if (!workspace.fact_set(fact)) {
                 return false;
             }
             at = at + 1;
         }
+        if (count > 5) {
+            const compiler_ir_verification::FactRow first = workspace.fact_at(0);
+            if (workspace.first_fact(compiler_ir_verification::FactKind::object) != 0 || first.key()
+                != -9223372036854775807 - 1) {
+                return false;
+            }
+        }
+        if (count > 6) {
+            const compiler_ir_verification::FactRow last_object = workspace.fact_at(count - 6);
+            if (workspace.fact_lower_bound(compiler_ir_verification::FactKind::object, 9223372036854775807, -1) != count
+                - 6 || last_object.key() != 9223372036854775807) {
+                return false;
+            }
+        }
         if (!workspace.validate_current_facts() || !workspace.retain_state(0)) {
             return false;
         }
         const i64 epoch = workspace.begin_visit_epoch();
+        // A missing ancestor is not marked and does not validate the epoch;
+        // its later semantic lookup remains responsible for rejecting it.
+        if (!workspace.mark_fact_key(compiler_ir_verification::FactKind::object, -1, -1, 0)
+            || workspace.fact_key_marked(compiler_ir_verification::FactKind::object, -1, -1, 0)
+            || !workspace.fact_erase(compiler_ir_verification::FactKind::object, -1, -1) || !workspace.good()
+            || workspace.fact_count() != count) {
+            return false;
+        }
         at = 0;
         while (at < count) {
             if (!workspace.mark_fact(at, epoch) || !workspace.fact_marked(at, epoch)) {
@@ -135,6 +169,8 @@ export namespace compiler_initialization_probe {
         if (!workspace.fact_erase(compiler_ir_verification::FactKind::owned_object, 0, -1) || !workspace.fact_set(extra)
             || workspace.fact_key_marked(compiler_ir_verification::FactKind::object, count + 1, -1, epoch)
             || !workspace.mark_fact_key(compiler_ir_verification::FactKind::object, count + 1, -1, epoch)
+            || workspace.mark_fact_key(compiler_ir_verification::FactKind::object, count + 1, -1, epoch)
+            || !workspace.fact_key_marked(compiler_ir_verification::FactKind::object, count + 1, -1, epoch)
             || !workspace.validate_current_facts()) {
             return false;
         }
@@ -178,18 +214,26 @@ export namespace compiler_initialization_probe {
             at = 0;
             while (at < expected) {
                 const compiler_ir_verification::FactRow row = workspace.fact_at(at);
+                const compiler_ir_verification::FactRow found = workspace.fact_find(row.kind(), row.key(), row.field());
                 i64 next = at + 1;
                 if (next == expected) {
                     next = -1;
                 }
                 if (workspace.fact_marked(at, epoch) || workspace.fact_index(row.kind(), row.key(), row.field()) != at
+                    || workspace.fact_lower_bound(row.kind(), row.key(), row.field()) != at || !found.same(row)
                     || workspace.next_fact(at) != next) {
+                    return false;
+                }
+                if (at == 0 && workspace.first_fact(row.kind()) != 0) {
                     return false;
                 }
                 if (at > 0) {
                     const compiler_ir_verification::FactRow previous = workspace.fact_at(at - 1);
+                    if (previous.kind() != row.kind() && workspace.first_fact(row.kind()) != at) {
+                        return false;
+                    }
                     if (compiler_ir_verification::compare_fact_key(previous.kind(), previous.key(), previous.field(),
-                        row) >= 0) {
+                        row.kind(), row.key(), row.field()) >= 0) {
                         return false;
                     }
                 }

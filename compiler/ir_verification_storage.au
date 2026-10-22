@@ -441,6 +441,15 @@ export namespace compiler_ir_verification {
         auto fact() const -> FactRow {
             return factValue;
         }
+        auto kind() const -> FactKind {
+            return factValue.kind();
+        }
+        auto matches_root(FactKind kind, i64 key) const -> bool {
+            return factValue.kind() == kind && factValue.key() == key;
+        }
+        auto compare_key(FactKind kind, i64 key, i64 field) const -> i64 {
+            return compare_fact_key(kind, key, field, factValue.kind(), factValue.key(), factValue.field());
+        }
         auto set_fact(FactRow value) -> bool {
             factValue = value;
             return true;
@@ -1131,25 +1140,26 @@ export namespace compiler_ir_verification {
         }
         return -1;
     }
-    auto compare_fact_key(FactKind kind, i64 key, i64 field, FactRow other) -> i64 {
+    auto compare_fact_key(FactKind kind, i64 key, i64 field, FactKind other_kind, i64 other_key,
+        i64 other_field) -> i64 {
         const i64 first = fact_kind_order(kind);
-        const i64 second = fact_kind_order(other.kind());
+        const i64 second = fact_kind_order(other_kind);
         if (first < second) {
             return -1;
         }
         if (first > second) {
             return 1;
         }
-        if (key < other.key()) {
+        if (key < other_key) {
             return -1;
         }
-        if (key > other.key()) {
+        if (key > other_key) {
             return 1;
         }
-        if (field < other.field()) {
+        if (field < other_field) {
             return -1;
         }
-        if (field > other.field()) {
+        if (field > other_field) {
             return 1;
         }
         return 0;
@@ -1451,14 +1461,13 @@ export namespace compiler_ir_verification {
             retainedCapacity = next;
             return true;
         }
-        auto reserve_active_facts(i64 required) -> bool {
-            const ControlRow c = control();
-            if (required < 0 || required > c.dynamic_fact_limit()) {
+        auto reserve_active_facts(i64 required, i64 limit) -> bool {
+            if (required < 0 || required > limit) {
                 return fail(first_error(VerificationErrorFirst::internal));
             }
             i64 next = pool_capacity(currentFacts.size(), required, 200);
-            if (next > c.dynamic_fact_limit()) {
-                next = c.dynamic_fact_limit();
+            if (next > limit) {
+                next = limit;
             }
             if (next < 0) {
                 return fail(first_error(VerificationErrorFirst::internal));
@@ -1517,8 +1526,7 @@ export namespace compiler_ir_verification {
                 return ActiveFact(empty_fact());
             }
             const ActiveFact row = currentFacts.at(index);
-            const FactRow fact = row.fact();
-            if (fact.kind() == FactKind::none) {
+            if (row.kind() == FactKind::none) {
                 fail(first_error(VerificationErrorFirst::internal));
                 return ActiveFact(empty_fact());
             }
@@ -1546,7 +1554,7 @@ export namespace compiler_ir_verification {
                 if (!good()) {
                     return -1;
                 }
-                if (compare_fact_key(kind, key, field, row.fact()) > 0) {
+                if (row.compare_key(kind, key, field) > 0) {
                     begin = middle + 1;
                 } else {
                     end = middle;
@@ -1554,21 +1562,20 @@ export namespace compiler_ir_verification {
             }
             return begin;
         }
-        auto find_fact(FactKind kind, i64 key, i64 field) -> i64 {
-            const ControlRow c = control();
-            const i64 at = lower_fact(kind, key, field, c.active_fact_count());
-            if (at < 0 || at == c.active_fact_count()) {
+        auto find_fact(FactKind kind, i64 key, i64 field, i64 count) -> i64 {
+            const i64 at = lower_fact(kind, key, field, count);
+            if (at < 0 || at == count) {
                 return -1;
             }
-            const ActiveFact row = active_fact(at, c.active_fact_count());
-            if (good() && compare_fact_key(kind, key, field, row.fact()) == 0) {
+            const ActiveFact row = active_fact(at, count);
+            if (good() && row.compare_key(kind, key, field) == 0) {
                 return at;
             }
             return -1;
         }
-        auto erase_fact(i64 index) -> bool {
-            ControlRow c = control();
-            const i64 count = c.active_fact_count();
+        // Shift first; the operation publishes its updated control count only
+        // after all owner writes succeed, exactly as before.
+        auto erase_fact(i64 index, i64 count) -> bool {
             const ActiveFact erased = active_fact(index, count);
             if (!good()) {
                 return false;
@@ -1585,8 +1592,56 @@ export namespace compiler_ir_verification {
             if (!set_active_fact(count - 1, count, empty)) {
                 return false;
             }
-            c.set_active_fact_count(count - 1);
-            return update_control(c);
+            return true;
+        }
+        auto read_operand(i64 index, i64 count) -> ValueRow {
+            if (!good() || index < 0 || index >= count || index >= currentOperands.size()) {
+                fail(first_error(VerificationErrorFirst::internal));
+                return empty_value();
+            }
+            return currentOperands.at(index);
+        }
+        auto write_operand(i64 index, i64 count, ValueRow value) -> bool {
+            if (!good() || index < 0 || index >= count || !currentOperands.set(index, value)) {
+                return fail(first_error(VerificationErrorFirst::internal));
+            }
+            return true;
+        }
+        auto read_code_state(i64 position, i64 count) -> CodeStateRow {
+            if (!good() || position < 0 || position >= count || position >= codeStates.size()) {
+                fail(first_error(VerificationErrorFirst::internal));
+                return empty_code_state();
+            }
+            return codeStates.at(position);
+        }
+        auto write_code_state(i64 position, i64 count, CodeStateRow row) -> bool {
+            if (!good() || position < 0 || position >= count || !codeStates.set(position, row)) {
+                return fail(first_error(VerificationErrorFirst::internal));
+            }
+            return true;
+        }
+        auto first_fact_in_count(FactKind kind, i64 count) -> i64 {
+            const i64 minimum = -9223372036854775807 - 1;
+            const i64 at = lower_fact(kind, minimum, minimum, count);
+            if (at < 0 || at == count) {
+                return -1;
+            }
+            const ActiveFact row = active_fact(at, count);
+            if (!good() || row.kind() != kind) {
+                return -1;
+            }
+            return at;
+        }
+        auto next_fact_in_count(i64 index, i64 count) -> i64 {
+            const ActiveFact previous = active_fact(index, count);
+            if (!good() || index + 1 == count) {
+                return -1;
+            }
+            const ActiveFact following = active_fact(index + 1, count);
+            if (!good()) {
+                return -1;
+            }
+            return index + 1;
         }
         auto reverse_queue(i64 initial_begin, i64 initial_end) -> bool {
             i64 begin = initial_begin;
@@ -1693,12 +1748,13 @@ export namespace compiler_ir_verification {
             return true;
         }
         auto fact_find(FactKind kind, i64 key, i64 field) -> FactRow {
-            const i64 at = find_fact(kind, key, field);
+            const ControlRow c = control();
+            const i64 count = c.active_fact_count();
+            const i64 at = find_fact(kind, key, field, count);
             if (at < 0 || !good()) {
                 return empty_fact();
             }
-            const ControlRow c = control();
-            const ActiveFact row = active_fact(at, c.active_fact_count());
+            const ActiveFact row = active_fact(at, count);
             return row.fact();
         }
         auto fact_at(i64 index) -> FactRow {
@@ -1717,43 +1773,25 @@ export namespace compiler_ir_verification {
         // This range start is independent of signed root values, including -5.
         auto first_fact(FactKind kind) -> i64 {
             const ControlRow c = control();
-            const i64 minimum = -9223372036854775807 - 1;
-            const i64 at = lower_fact(kind, minimum, minimum, c.active_fact_count());
-            if (at < 0 || at == c.active_fact_count()) {
-                return -1;
-            }
-            const ActiveFact row = active_fact(at, c.active_fact_count());
-            const FactRow fact = row.fact();
-            if (!good() || fact.kind() != kind) {
-                return -1;
-            }
-            return at;
+            return first_fact_in_count(kind, c.active_fact_count());
         }
         // Global inorder successor. A kind-range caller checks the returned kind.
         auto next_fact(i64 index) -> i64 {
             const ControlRow c = control();
-            const ActiveFact previous = active_fact(index, c.active_fact_count());
-            if (!good() || index + 1 == c.active_fact_count()) {
-                return -1;
-            }
-            const ActiveFact following = active_fact(index + 1, c.active_fact_count());
-            if (!good()) {
-                return -1;
-            }
-            return index + 1;
+            return next_fact_in_count(index, c.active_fact_count());
         }
         auto fact_set(FactRow fact) -> bool {
             if (!good() || controls.size() != 1 || !canonical_fact(fact)) {
                 return fail(first_error(VerificationErrorFirst::internal));
             }
+            ControlRow c = control();
+            const i64 count = c.active_fact_count();
             if (fact.kind() == FactKind::owned_field) {
-                const FactRow root = fact_find(FactKind::owned_object, fact.key(), -1);
-                if (!good() || root.kind() == FactKind::none) {
+                const i64 root = find_fact(FactKind::owned_object, fact.key(), -1, count);
+                if (!good() || root < 0) {
                     return fail(first_error(VerificationErrorFirst::internal));
                 }
             }
-            ControlRow c = control();
-            const i64 count = c.active_fact_count();
             const i64 at = lower_fact(fact.kind(), fact.key(), fact.field(), count);
             if (at < 0) {
                 return false;
@@ -1763,7 +1801,7 @@ export namespace compiler_ir_verification {
                 if (!good()) {
                     return false;
                 }
-                if (compare_fact_key(fact.kind(), fact.key(), fact.field(), existing.fact()) == 0) {
+                if (existing.compare_key(fact.kind(), fact.key(), fact.field()) == 0) {
                     existing.set_fact(fact);
                     return set_active_fact(at, count, existing);
                 }
@@ -1771,7 +1809,7 @@ export namespace compiler_ir_verification {
             if (count == 9223372036854775807) {
                 return fail(first_error(VerificationErrorFirst::internal));
             }
-            if (!reserve_active_facts(count + 1)) {
+            if (!reserve_active_facts(count + 1, c.dynamic_fact_limit())) {
                 return false;
             }
             // Allocation succeeds before publication; later owner-write failure
@@ -1792,38 +1830,49 @@ export namespace compiler_ir_verification {
             return set_active_fact(at, count + 1, fresh);
         }
         auto fact_erase(FactKind kind, i64 key, i64 field) -> bool {
-            const i64 found = find_fact(kind, key, field);
+            ControlRow c = control();
+            i64 count = c.active_fact_count();
+            const i64 found = find_fact(kind, key, field, count);
             if (!good()) {
                 return false;
             }
             if (found < 0) {
                 return true;
             }
-            // Removing an owning root removes its direct resource fields too.
             // Re-search after each erase because compaction changes ordinals.
+            // Publish each completed erase before touching the next child.
             if (kind == FactKind::owned_object) {
                 bool more = true;
                 while (more && good()) {
-                    const i64 child = fact_lower_bound(FactKind::owned_field, key, -1);
-                    if (child < 0) {
+                    const i64 child = lower_fact(FactKind::owned_field, key, -1, count);
+                    if (child < 0 || child == count) {
                         more = false;
                     } else {
-                        const FactRow row = fact_at(child);
-                        if (row.kind() != FactKind::owned_field || row.key() != key) {
+                        const ActiveFact row = active_fact(child, count);
+                        if (!row.matches_root(FactKind::owned_field, key)) {
                             more = false;
                         } else {
-                            if (!erase_fact(child)) {
+                            if (!erase_fact(child, count)) {
+                                return false;
+                            }
+                            count = count - 1;
+                            c.set_active_fact_count(count);
+                            if (!update_control(c)) {
                                 return false;
                             }
                         }
                     }
                 }
             }
-            const i64 node = find_fact(kind, key, field);
+            const i64 node = find_fact(kind, key, field, count);
             if (!good() || node < 0) {
                 return fail(first_error(VerificationErrorFirst::internal));
             }
-            return erase_fact(node);
+            if (!erase_fact(node, count)) {
+                return false;
+            }
+            c.set_active_fact_count(count - 1);
+            return update_control(c);
         }
         auto fact_count() const -> i64 {
             const ControlRow c = control();
@@ -1855,18 +1904,11 @@ export namespace compiler_ir_verification {
         }
         auto operand_at(i64 index) -> ValueRow {
             const ControlRow c = control();
-            if (!good() || index < 0 || index >= c.current_operand_count() || index >= currentOperands.size()) {
-                fail(first_error(VerificationErrorFirst::internal));
-                return empty_value();
-            }
-            return currentOperands.at(index);
+            return read_operand(index, c.current_operand_count());
         }
         auto set_operand(i64 index, ValueRow value) -> bool {
             const ControlRow c = control();
-            if (!good() || index < 0 || index >= c.current_operand_count() || !currentOperands.set(index, value)) {
-                return fail(first_error(VerificationErrorFirst::internal));
-            }
-            return true;
+            return write_operand(index, c.current_operand_count(), value);
         }
         auto push(ValueRow value) -> bool {
             ControlRow c = control();
@@ -1888,7 +1930,7 @@ export namespace compiler_ir_verification {
                 return empty_value();
             }
             const i64 index = c.current_operand_count() - 1;
-            const ValueRow value = operand_at(index);
+            const ValueRow value = read_operand(index, c.current_operand_count());
             if (!good()) {
                 return empty_value();
             }
@@ -1900,43 +1942,36 @@ export namespace compiler_ir_verification {
         }
         auto code_state(i64 position) -> CodeStateRow {
             const ControlRow c = control();
-            if (!good() || position < 0 || position >= c.code_count() || position >= codeStates.size()) {
-                fail(first_error(VerificationErrorFirst::internal));
-                return empty_code_state();
-            }
-            return codeStates.at(position);
+            return read_code_state(position, c.code_count());
         }
         auto set_code_state(i64 position, CodeStateRow row) -> bool {
             const ControlRow c = control();
-            if (!good() || position < 0 || position >= c.code_count() || !codeStates.set(position, row)) {
-                return fail(first_error(VerificationErrorFirst::internal));
-            }
-            return true;
+            return write_code_state(position, c.code_count(), row);
         }
         auto observe_before(i64 position, i64 instruction) -> bool {
-            CodeStateRow row = code_state(position);
+            ControlRow c = control();
+            CodeStateRow row = read_code_state(position, c.code_count());
             if (!good() || instruction < 0) {
                 return fail(first_error(VerificationErrorFirst::internal));
             }
-            ControlRow c = control();
             c.set_current_position(position);
             c.set_instruction_id(instruction);
             row.set_stack_before(c.current_operand_count());
-            return update_control(c) && set_code_state(position, row);
+            return update_control(c) && write_code_state(position, c.code_count(), row);
         }
         auto observe_after(i64 position) -> bool {
-            CodeStateRow row = code_state(position);
+            ControlRow c = control();
+            CodeStateRow row = read_code_state(position, c.code_count());
             if (!good()) {
                 return false;
             }
-            ControlRow c = control();
             row.set_stack_after(c.current_operand_count());
             MetricsRow metrics = c.metrics();
             if (c.current_operand_count() > metrics.peak_operand_depth()) {
                 metrics.set_peak_operand_depth(c.current_operand_count());
             }
             c.set_metrics(metrics);
-            return update_control(c) && set_code_state(position, row);
+            return update_control(c) && write_code_state(position, c.code_count(), row);
         }
         // Called at the original native reset point, after the entry snapshot
         // and first pending entry exist. Preflight failure keeps earlier metrics.
@@ -1952,11 +1987,11 @@ export namespace compiler_ir_verification {
             return update_control(c);
         }
         auto retain_state(i64 position) -> bool {
-            CodeStateRow row = code_state(position);
+            ControlRow c = control();
+            CodeStateRow row = read_code_state(position, c.code_count());
             if (!good() || row.snapshot() != -1) {
                 return fail(first_error(VerificationErrorFirst::internal));
             }
-            ControlRow c = control();
             // Neither rejected budget changes any counter or allocates a snapshot.
             if (c.block_snapshot_count() >= 65536) {
                 return fail(first_error(VerificationErrorFirst::block_entry_state_retention_limit_exceeds_65536));
@@ -2025,11 +2060,11 @@ export namespace compiler_ir_verification {
             if (c.metrics_started()) {
                 c.set_metrics(metrics);
             }
-            return set_code_state(position, row) && update_control(c);
+            return write_code_state(position, c.code_count(), row) && update_control(c);
         }
         auto load_state(i64 position) -> bool {
-            const CodeStateRow row = code_state(position);
             ControlRow c = control();
+            const CodeStateRow row = read_code_state(position, c.code_count());
             if (!good() || row.snapshot() < 0 || row.fact_begin() < 0 || row.fact_count() < 0 || row.fact_begin()
                 > c.retained_fact_count() || row.fact_count() > c.retained_fact_count() - row.fact_begin()
                 || row.operand_begin() < 0 || row.operand_count() < 0 || row.operand_begin()
@@ -2055,7 +2090,7 @@ export namespace compiler_ir_verification {
             while (at < row.fact_count()) {
                 const FactRow fact = retainedFacts.at(row.fact_begin() + at);
                 if (!canonical_fact(fact) || (at != 0 && compare_fact_key(previous_kind, previous_key, previous_field,
-                    fact) >= 0)) {
+                    fact.kind(), fact.key(), fact.field()) >= 0)) {
                     return fail(first_error(VerificationErrorFirst::internal));
                 }
                 if (fact.kind() == FactKind::owned_object) {
@@ -2118,8 +2153,8 @@ export namespace compiler_ir_verification {
             return true;
         }
         auto same_facts(i64 position, FactKind kind) -> bool {
-            const CodeStateRow row = code_state(position);
             const ControlRow c = control();
+            const CodeStateRow row = read_code_state(position, c.code_count());
             if (!good() || row.snapshot() < 0 || row.fact_begin() < 0 || row.fact_count() < 0 || row.fact_begin()
                 > c.retained_fact_count() || row.fact_count() > c.retained_fact_count() - row.fact_begin()) {
                 return fail(first_error(VerificationErrorFirst::internal));
@@ -2136,7 +2171,7 @@ export namespace compiler_ir_verification {
                     end = middle;
                 }
             }
-            i64 node = first_fact(kind);
+            i64 node = first_fact_in_count(kind, c.active_fact_count());
             bool scanning = true;
             while (scanning && begin < limit && good()) {
                 const FactRow retained = retainedFacts.at(begin);
@@ -2146,26 +2181,27 @@ export namespace compiler_ir_verification {
                     if (node < 0) {
                         return false;
                     }
-                    const FactRow incoming = fact_at(node);
+                    const ActiveFact active = active_fact(node, c.active_fact_count());
+                    const FactRow incoming = active.fact();
                     if (!good() || incoming.kind() != kind || !retained.same(incoming)) {
                         return false;
                     }
                     begin = begin + 1;
-                    node = next_fact(node);
+                    node = next_fact_in_count(node, c.active_fact_count());
                 }
             }
             if (!good()) {
                 return false;
             }
             if (node >= 0) {
-                const FactRow incoming = fact_at(node);
-                return good() && incoming.kind() != kind;
+                const ActiveFact active = active_fact(node, c.active_fact_count());
+                return good() && active.kind() != kind;
             }
             return true;
         }
         auto same_operands(i64 position) -> bool {
-            const CodeStateRow row = code_state(position);
             const ControlRow c = control();
+            const CodeStateRow row = read_code_state(position, c.code_count());
             if (!good() || row.snapshot() < 0 || row.operand_begin() < 0 || row.operand_count() < 0
                 || row.operand_begin() > c.retained_operand_count() || row.operand_count() > c.retained_operand_count()
                 - row.operand_begin()) {
@@ -2188,8 +2224,8 @@ export namespace compiler_ir_verification {
         // The solver performs all ordered exact semantic comparisons first.
         // Only then may it weaken current and apply the must/may lattice join.
         auto join_state(i64 position) -> InitializationJoin {
-            CodeStateRow row = code_state(position);
             ControlRow c = control();
+            CodeStateRow row = read_code_state(position, c.code_count());
             if (!good() || row.snapshot() < 0) {
                 fail(first_error(VerificationErrorFirst::internal));
                 return InitializationJoin::error;
@@ -2223,7 +2259,7 @@ export namespace compiler_ir_verification {
                     metrics.set_peak_retained_value_facts(next);
                 }
                 c.set_metrics(metrics);
-                if (!set_code_state(position, row) || !update_control(c)) {
+                if (!write_code_state(position, c.code_count(), row) || !update_control(c)) {
                     return InitializationJoin::error;
                 }
                 return InitializationJoin::changed;
@@ -2352,7 +2388,8 @@ export namespace compiler_ir_verification {
             return set_active_fact(index, c.active_fact_count(), row);
         }
         auto fact_index(FactKind kind, i64 key, i64 field) -> i64 {
-            return find_fact(kind, key, field);
+            const ControlRow c = control();
+            return find_fact(kind, key, field, c.active_fact_count());
         }
         // Source-only invariant checker used by the focused storage consumer.
         // It checks the live prefix, canonical keys, epochs and owning roots.
@@ -2370,11 +2407,12 @@ export namespace compiler_ir_verification {
                 const ActiveFact active = active_fact(at, count);
                 const FactRow fact = active.fact();
                 if (!good() || !canonical_fact(fact) || active.visit_epoch() < 0 || (at != 0
-                    && compare_fact_key(previous_kind, previous_key, previous_field, fact) >= 0)) {
+                    && compare_fact_key(previous_kind, previous_key, previous_field, fact.kind(), fact.key(),
+                    fact.field()) >= 0)) {
                     return fail(first_error(VerificationErrorFirst::internal));
                 }
                 if (fact.kind() == FactKind::owned_field) {
-                    const i64 owner = find_fact(FactKind::owned_object, fact.key(), -1);
+                    const i64 owner = find_fact(FactKind::owned_object, fact.key(), -1, count);
                     if (!good() || owner < 0) {
                         return fail(first_error(VerificationErrorFirst::internal));
                     }
@@ -2402,14 +2440,14 @@ export namespace compiler_ir_verification {
             }
             i64 at = 0;
             while (at < c.current_operand_count()) {
-                ValueRow operand = operand_at(at);
+                ValueRow operand = read_operand(at, c.current_operand_count());
                 const BoundsEvidence operand_guard = operand.guard();
                 if (!good()) {
                     return false;
                 }
                 if (operand_guard.kind() == BoundsKind::class_array && operand_guard.root() == root) {
                     operand.set_guard(empty_bounds());
-                    if (!set_operand(at, operand)) {
+                    if (!write_operand(at, c.current_operand_count(), operand)) {
                         return false;
                     }
                 }
@@ -2421,26 +2459,38 @@ export namespace compiler_ir_verification {
             return begin_traversal();
         }
         auto mark_fact_key(FactKind kind, i64 key, i64 field, i64 epoch) -> bool {
-            const i64 node = find_fact(kind, key, field);
+            const ControlRow c = control();
+            const i64 count = c.active_fact_count();
+            const i64 node = find_fact(kind, key, field, count);
             if (!good()) {
                 return false;
             }
-            // A missing ancestor is rejected by the following semantic lookup,
-            // not mistaken for a duplicate ancestor before that lookup.
+            // Missing ancestors keep their original semantic rejection order.
             if (node < 0) {
                 return true;
             }
-            if (fact_marked(node, epoch)) {
+            ActiveFact row = active_fact(node, count);
+            if (!good() || epoch <= 0) {
+                return fail(first_error(VerificationErrorFirst::internal));
+            }
+            if (row.visit_epoch() == epoch) {
                 return false;
             }
-            return mark_fact(node, epoch);
+            row.set_visit_epoch(epoch);
+            return set_active_fact(node, count, row);
         }
         auto fact_key_marked(FactKind kind, i64 key, i64 field, i64 epoch) -> bool {
-            const i64 node = find_fact(kind, key, field);
+            const ControlRow c = control();
+            const i64 count = c.active_fact_count();
+            const i64 node = find_fact(kind, key, field, count);
             if (!good() || node < 0) {
                 return false;
             }
-            return fact_marked(node, epoch);
+            const ActiveFact row = active_fact(node, count);
+            if (!good() || epoch <= 0) {
+                return fail(first_error(VerificationErrorFirst::internal));
+            }
+            return row.visit_epoch() == epoch;
         }
         auto allocated() const -> bool {
             return currentWords.ok() && retainedWords.ok() && retainedCounts.ok() && serviceLoans.ok()
