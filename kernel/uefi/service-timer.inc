@@ -163,12 +163,12 @@ auto initialize_service_timer() -> void {
     auto control = read_msr(0x1b), pat = read_msr(0x277);
 #if defined(AURORA_BUDGET_FIXTURE)
     if (fixture == Fixture::budget_discovery) {
-    control ^= 0x1000;
+        control ^= 0x1000;
     }
 #endif
 #if defined(AURORA_BUDGET_FIXTURE)
     if (fixture == Fixture::budget_cache) {
-    pat ^= 6ULL << 24;
+        pat ^= 6ULL << 24;
     }
 #endif
     const auto admitted = LocalApicAdmission::authorize(*discovered_topology(),
@@ -190,7 +190,7 @@ auto initialize_service_timer() -> void {
     asm volatile("invlpg (%0)" ::"r"(LocalApicAdmission::virtual_address) : "memory");
 #if defined(AURORA_BUDGET_FIXTURE)
     if (fixture == Fixture::budget_alias) {
-    slot[1] = *slot;
+        slot[1] = *slot;
     }
 #endif
     require(tables.verify(arena, *handoff, &*interrupt_admission), "timer mapping tree");
