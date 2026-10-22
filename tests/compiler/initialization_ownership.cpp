@@ -23,7 +23,7 @@ void require(bool value, const std::string &message) {
 class Allocations {
 public:
     std::size_t allowed = std::numeric_limits<std::size_t>::max(), successful = 0, released = 0, attempted = 0;
-    std::array<void *, 11> initialOwners{}, releasedOwners{};
+    std::array<void *, 12> initialOwners{}, releasedOwners{};
     static void *allocate(void *context, std::size_t bytes) noexcept {
         auto &state = *static_cast<Allocations *>(context);
         ++state.attempted;
@@ -57,9 +57,9 @@ void rawVerificationOwnership(bool serviceSignature) {
     namespace meta = abi::compiler_ir_metadata;
     namespace wire = abi::compiler_ir_verification;
     namespace bytes = aurora::hosted::bytes;
-    context = "eleven-owner verification creation, initialization growth prefixes and exception cleanup";
+    context = "twelve-owner verification creation, initialization growth prefixes and exception cleanup";
     context += serviceSignature ? " with service signature" : " without service signature";
-    static_assert(sizeof(wire::VerificationWorkspace) == 496 && sizeof(abi::VerificationRelease) == 504 &&
+    static_assert(sizeof(wire::VerificationWorkspace) == 520 && sizeof(abi::VerificationRelease) == 528 &&
                   sizeof(wire::VerificationReport) == 72 && sizeof(wire::VerificationError) == 16);
     const std::int64_t parameterCount = serviceSignature ? 1 : 0;
     bytes::Region metadataRegion(1048576);
@@ -122,7 +122,7 @@ void rawVerificationOwnership(bool serviceSignature) {
     require(aurora_test_metadata_run(declarations) == static_cast<std::int64_t>(meta::MetadataStatus::success),
             "initialization fixture metadata did not admit");
 
-    std::size_t successful = 0;
+    std::size_t successful = 0, partialKeyFailures = 0;
     const auto exercise = [&](std::size_t allowed,
                               std::uint64_t quota,
                               int stop,
@@ -155,10 +155,10 @@ void rawVerificationOwnership(bool serviceSignature) {
             // The test-only probe borrows the real generated workspace. It exposes
             // no production initialization entry or host semantic authority.
             if (aurora_test_initialization_allocated(workspace) == 1)
-                require(allocations.successful == 11 && region.metrics().live_allocations == 11,
-                        "verification creation did not retain eleven distinct source owners");
-            if (allowed < 11)
-                require(allocations.attempted == 11 && allocations.successful == allowed,
+                require(allocations.successful == 12 && region.metrics().live_allocations == 12,
+                        "verification creation did not retain twelve distinct source owners");
+            if (allowed < 12)
+                require(allocations.attempted == 12 && allocations.successful == allowed,
                         "failed initial verification owner skipped a declared allocation");
             const std::array<const void *, 2> roots{workspace, declarations};
             const auto status = aurora_test_initialization_initialize(roots.data(), 0);
@@ -194,6 +194,19 @@ void rawVerificationOwnership(bool serviceSignature) {
                                 "invalid retained ordinal did not enter terminal failure");
                     } else if (stop == 2)
                         throw std::runtime_error("injected native exception after retention");
+                }
+            }
+            if (dynamic && !completed) {
+                bytes::NativeOwner facts{}, keys{};
+                std::memcpy(&facts, workspace + initializationCurrentFactsOffset, sizeof(facts));
+                std::memcpy(&keys, workspace + initializationCurrentKeysOffset, sizeof(keys));
+                if (facts.success == 1 && keys.success == 1 &&
+                    facts.length / abi::verificationActiveFactPhysicalBytes >
+                        keys.length / abi::verificationFactKeyPhysicalBytes) {
+                    require(facts.length % abi::verificationActiveFactPhysicalBytes == 0 &&
+                                keys.length % abi::verificationFactKeyPhysicalBytes == 0,
+                            "partial key resize left an invalid physical owner extent");
+                    ++partialKeyFailures;
                 }
             }
             if (!completed || stop == 1) {
@@ -242,7 +255,7 @@ void rawVerificationOwnership(bool serviceSignature) {
             require(completed && caught == (stop == 2), "successful owner did not reach its requested stop");
             successful = allocations.successful;
             if (!dynamic)
-                require(successful == 11 + (serviceSignature ? 2u : 1u) + (serviceSignature ? 3u : 2u) * 9,
+                require(successful == 12 + (serviceSignature ? 2u : 1u) + (serviceSignature ? 3u : 2u) * 9,
                         "retained owners did not grow through capacities 1, 2, 4, ..., 256");
         } else
             require(!completed, "allocation prefix unexpectedly completed");
@@ -253,14 +266,14 @@ void rawVerificationOwnership(bool serviceSignature) {
         require(allocations.successful == allocations.released && metrics.used == 0 && metrics.live_allocations == 0 &&
                     metrics.releases == metrics.successful_allocations && metrics.peak_used <= quota && region.close(),
                 "creation, partial resize, terminal failure or native exception leaked an owner");
-        if (allowed < 11)
+        if (allowed < 12)
             for (std::size_t index = 0; index < allowed; ++index)
                 require(allocations.releasedOwners[index] == allocations.initialOwners[allowed - index - 1],
                         "failed initial verification owner did not release its actual prefix in reverse order");
         ++cases;
     };
     exercise(std::numeric_limits<std::size_t>::max(), 1048576, 0);
-    // This includes all eleven initial pools, current-word/service resizes, every
+    // This includes all twelve initial pools, current-word/service resizes, every
     // retained-word/count/service growth and refusal after earlier pools resize.
     for (std::size_t allowed = 0; allowed < successful; ++allowed)
         exercise(allowed, 1048576, 0);
@@ -275,10 +288,11 @@ void rawVerificationOwnership(bool serviceSignature) {
 
     context += " and dynamic fact restoration";
     exercise(std::numeric_limits<std::size_t>::max(), 1048576, 0, -1, true);
-    // Use the actual successful run to sweep control, code-state, active-fact and
+    // Use the actual successful run to sweep control, code-state, active-fact, compact-key and
     // retained-fact allocations as well as the initialization owners.
     for (std::size_t allowed = 0; allowed < successful; ++allowed)
         exercise(allowed, 1048576, 0, -1, true);
+    require(partialKeyFailures != 0, "allocation sweep did not exercise key refusal after successful fact growth");
     const std::uint64_t initialPayload = serviceSignature ? 64 : 32;
     const auto controlQuota = initialPayload + abi::verificationControlRowPhysicalBytes;
     // One byte short refuses the control row. Exact fit admits it but refuses

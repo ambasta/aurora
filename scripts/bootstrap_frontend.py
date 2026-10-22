@@ -429,6 +429,7 @@ def verification_abi(facts):
                     "enums"
                     if kind
                     in (
+                        "FactKind",
                         "InitializationStatus",
                         "VerificationStatus",
                         "VerificationErrorFirst",
@@ -511,6 +512,7 @@ def verification_abi(facts):
             ("dynamicFactLimit", "i64"),
         ),
     )
+    shape("FactKey", (("kindValue", "FactKind"), ("keyValue", "i64"), ("fieldValue", "i64")))
     shape("ActiveFact", (("factValue", "FactRow"), ("visitEpoch", "i64")))
     pools = {
         "currentWords": "WordPair",
@@ -518,6 +520,7 @@ def verification_abi(facts):
         "retainedCounts": "CountPair",
         "serviceLoans": "ServiceLoan",
         "currentFacts": "ActiveFact",
+        "currentKeys": "FactKey",
         "retainedFacts": "FactRow",
         "currentOperands": "ValueRow",
         "retainedOperands": "ValueRow",
@@ -534,7 +537,6 @@ def verification_abi(facts):
                 for name in (
                     "callableId",
                     "scalarBegin",
-                    "scalarCount",
                     "objectBegin",
                     "objectCount",
                     "receiverBegin",

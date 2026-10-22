@@ -17,13 +17,18 @@ consumes the admitted source stores; the host retains artifact I/O.
 GNU assembler/linker and Linux host I/O remain bootstrap dependencies.
 
 The verifier keeps active facts in a flat, sorted owner-backed prefix and restores
-canonical snapshots directly, without rebuilding a search tree. Key comparisons
-observe scalar fields through the active-row receiver rather than returning the
-192-byte fact payload. Each compound storage operation captures its control row
-once and passes validated counts to private helpers; owner extent, liveness,
-first-error and partial-publication checks remain in those helpers. The existing
-owned-values ABI still reads a complete 200-byte active row. This is not a claim
-that all aggregate copies or the measured self-hosting performance gap are gone.
+canonical snapshots directly, without rebuilding a search tree. Binary searches
+and key-only cursor checks read a parallel 24-byte key pool rather than copying
+the 200-byte active fact and its token, span and loan payloads on every probe.
+The full row is fetched only where its payload or epoch is needed. Every
+key-changing write updates both pools; allocation failure is terminal and closes
+both actual owners, including a partially completed resize. The checked quota
+includes the key pool. The workspace remains within the existing 520-byte class
+bound by deriving its scalar-slot count from the already validated group counts.
+Each compound storage operation captures its control row once and passes validated
+counts to private helpers; owner extent, liveness, first-error and partial-publication
+checks remain. Runtime owner validation still applies to each key access. This is
+not a claim that all aggregate copies or the measured performance gap are gone.
 
 ## Build and check
 
