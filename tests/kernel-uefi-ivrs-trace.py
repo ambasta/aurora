@@ -818,6 +818,7 @@ def self_test():
         for mode in ivrs.HISTORICAL_MODES:
             trace, firmware, serial, payload = fixture_trace(mode)
             validate_trace(trace, firmware, serial, mode, {"self_test": True}, payload)
+            validate_trace(trace, firmware, serial.replace("\n", "\r\n"), mode, {"self_test": True}, payload)
             cases = [
                 trace.rstrip("\n"),
                 trace + prior.RESET + "\n",
@@ -960,7 +961,7 @@ def self_test():
         else:
             raise RuntimeError("Malformed AMD-Vi coverage control accepted")
     print(
-        f"PASS: IVRS trace {len(ivrs.HISTORICAL_MODES)} synthetic positive and "
+        f"PASS: IVRS trace {2 * len(ivrs.HISTORICAL_MODES)} LF/CRLF synthetic positive and "
         f"{failures} adversarial cases; real controls required separately"
     )
 

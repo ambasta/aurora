@@ -153,16 +153,17 @@ def raw_record(line):
 
 def validate(status, serial, mode, payload=None):
     need(mode in HISTORICAL_MODES and status == (33 if mode == "ivrs-read" else 35), "Wrong IVRS mode/process status")
-    marker = "AURORA_FIXTURE_READY\n"
+    # Parse raw UART framing once, including CRLF from provenance artifact replay.
+    lines = bar.protocol_lines(serial)
+    marker = "AURORA_FIXTURE_READY"
     fixture_image = mode in ("ivrs-write", "ivrs-revoked")
-    need(serial.count(marker) == (1 if fixture_image else 0), "Exact IVRS fixture readiness")
+    need(lines.count(marker) == (1 if fixture_image else 0), "Exact IVRS fixture readiness")
     if fixture_image:
         need(
             serial.index("AURORA_ACPI_WINDOW_CLOSED:") < serial.index(marker) < serial.index("AURORA_PCI_APERTURE:"),
             "IVRS fixture admission phase",
         )
-        serial = serial.replace(marker, "", 1)
-    lines = bar.protocol_lines(serial)
+        lines.remove(marker)
     need(len(lines) >= 11, "Truncated IVRS receipt")
     base, length = bar.descriptor_pair(lines[1:3])
     expected = [
@@ -387,10 +388,13 @@ def self_test():
     for mode in HISTORICAL_MODES:
         status, serial, payload = fixture(mode)
         validate(status, serial, mode, payload)
+        validate(status, serial.replace("\n", "\r\n"), mode, payload)
         cases = [
             (0, serial, payload),
             (status, serial.rstrip("\n"), payload),
             (status, serial + "AURORA_UEFI_OK\n", payload),
+            (status, serial.replace("AURORA_UEFI_ENTRY", "AURORA_UEFI_\rENTRY", 1), payload),
+            (status, serial.replace("\n", "\r\r\n", 1), payload),
         ]
         lines = serial.splitlines()
         for line in lines:
@@ -418,8 +422,16 @@ def self_test():
                 _, foreign, foreign_payload = fixture(other)
                 cases.append((status, foreign, foreign_payload))
         if mode in ("ivrs-write", "ivrs-revoked"):
+            marker = "AURORA_FIXTURE_READY\r\n"
+            raw = serial.replace("\n", "\r\n")
+            without = raw.replace(marker, "")
             cases.extend(
                 [
+                    (status, without, payload),
+                    (status, raw.replace(marker, marker * 2), payload),
+                    (status, marker + without, payload),
+                    (status, without + marker, payload),
+                    (status, raw.replace(marker, "AURORA_FIXTURE_READY\r\r\n"), payload),
                     (status, serial, None),
                     (status, serial, dict(payload, fault_offsets={mode: 0x1235})),
                     (status, serial.replace("vector=14", "vector=13"), payload),
@@ -433,7 +445,7 @@ def self_test():
                 failures += 1
             else:
                 raise RuntimeError("Invalid synthetic IVRS serial accepted: " + mode)
-    print(f"PASS: IVRS serial {len(HISTORICAL_MODES)} synthetic positive and {failures} adversarial cases")
+    print(f"PASS: IVRS serial {2 * len(HISTORICAL_MODES)} LF/CRLF synthetic positive and {failures} adversarial cases")
 
 
 if __name__ == "__main__":
