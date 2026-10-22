@@ -1,0 +1,208 @@
+export module aurora.compiler.ir_verification_services;
+import aurora.compiler.ir_verification_values;
+import aurora.compiler.ir_verification_common;
+import aurora.compiler.ir_verification_storage;
+import aurora.compiler.ir_verification_errors;
+import aurora.compiler.ir_verification_initialization;
+import aurora.compiler.ir_instructions;
+import aurora.compiler.ir_instruction_storage;
+import aurora.compiler.ir_metadata;
+import aurora.compiler.ir_metadata_storage;
+
+export namespace compiler_ir_verification {
+    auto transfer_service_result(const compiler_ir_metadata::MetadataStore& m, i64 operation) -> TypeKey {
+        i64 at = 0;
+        while (at < m.enum_count()) {
+            const compiler_ir_metadata::EnumRow row = m.enum_at(at);
+            const compiler_ir_metadata::ByteRange name = row.name();
+            if ((operation == 1 && compiler_ir_metadata::named(m, name, "__au_console_put_result")) || (operation == 2
+                && compiler_ir_metadata::named(m, name, "__au_display_put_result")) || (operation == 4
+                && compiler_ir_metadata::named(m, name, "__au_event_ack_result")) || (operation == 7
+                && compiler_ir_metadata::named(m, name, "__au_port_write_result"))) {
+                return TypeKey(9, at);
+            }
+            at = at + 1;
+        }
+        return TypeKey(-1, -1);
+    }
+    auto transfer_services(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 id) -> bool {
+        const compiler_ir_instructions::RawInstructionRow op = s.instruction_at(id);
+        const i64 form = op.form();
+        if (form == 0) {
+            return true;
+        }
+        if (form == 1) {
+            if (w.acquire_service_loan(transfer_value(s, id, 0), transfer_value(s, id, 1), transfer_value(s, id, 2))
+                != 1) {
+                return w.fail(second_error(
+                    VerificationErrorSecond::service_loan_requires_unsuspended_parameter_authority));
+            }
+            return w.good();
+        }
+        if (form == 2) {
+            if (w.release_service_loan(transfer_value(s, id, 0), transfer_value(s, id, 1)) != 1) {
+                return w.fail(second_error(
+                    VerificationErrorSecond::service_release_requires_exactly_one_completed_helper_call));
+            }
+            return w.good();
+        }
+        if (form == 3) {
+            if (w.service_unsuspended(transfer_value(s, id, 0)) != 1) {
+                return w.fail(second_error(
+                    VerificationErrorSecond::service_operation_requires_active_unsuspended_capability_provenance));
+            }
+            const i64 operation = transfer_value(s, id, 1);
+            if (operation == 2) {
+                i64 arg = 4;
+                while (arg >= 0) {
+                    i64 kind = 10;
+                    if (arg < 2) {
+                        kind = 7;
+                    }
+                    if (!transfer_pop_kind(w, kind,
+                        second_error(VerificationErrorSecond::pixel_argument_type_mismatch))) {
+                        return false;
+                    }
+                    arg = arg - 1;
+                }
+                const TypeKey result_type = transfer_service_result(m, operation);
+                const BoundsEvidence guard = empty_bounds();
+                const ValueRow result_value = ValueRow(result_type, guard);
+                return w.set_current(result_value);
+            }
+            if (operation == 1) {
+                if (!transfer_current_kind(w, 10)) {
+                    return false;
+                }
+                const TypeKey result_type = transfer_service_result(m, operation);
+                const BoundsEvidence guard = empty_bounds();
+                const ValueRow result_value = ValueRow(result_type, guard);
+                return w.set_current(result_value);
+            }
+            if (operation == 6) {
+                if (!transfer_current_kind(w, 7)) {
+                    return false;
+                }
+                return transfer_set_kind(w, 10);
+            }
+            if (operation == 7) {
+                if (!transfer_pop_kind(w, 10,
+                    second_error(VerificationErrorSecond::port_write_byte_argument_type_mismatch))
+                    || !transfer_pop_kind(w, 7,
+                    second_error(VerificationErrorSecond::port_write_offset_argument_type_mismatch))) {
+                    return false;
+                }
+                const TypeKey result_type = transfer_service_result(m, operation);
+                const BoundsEvidence guard = empty_bounds();
+                const ValueRow result_value = ValueRow(result_type, guard);
+                return w.set_current(result_value);
+            }
+            if (operation == 4) {
+                const TypeKey result_type = transfer_service_result(m, operation);
+                const BoundsEvidence guard = empty_bounds();
+                const ValueRow result_value = ValueRow(result_type, guard);
+                return w.set_current(result_value);
+            }
+            if (operation == 0 || operation == 3 || operation == 5 || operation == 8) {
+                if ((operation == 5 || operation == 8) && !transfer_current_kind(w, 7)) {
+                    return false;
+                }
+                const i64 base = transfer_value(s, id, 2);
+                if (!transfer_has(w, FactKind::object, base)) {
+                    return w.fail(second_error(VerificationErrorSecond::service_observation_requires_pristine_sample));
+                }
+                const i64 constructed = compiler_ir_initialization::object_was_constructed(w, m, base);
+                if (constructed < 0 || !w.good()) {
+                    return false;
+                }
+                if (constructed == 1) {
+                    return w.fail(second_error(VerificationErrorSecond::service_observation_requires_pristine_sample));
+                }
+                const i64 pristine = compiler_ir_initialization::object_pristine(w, m, base);
+                if (pristine < 0 || !w.good()) {
+                    return false;
+                }
+                if (pristine == 0) {
+                    return w.fail(second_error(
+                        VerificationErrorSecond::service_observation_cannot_overwrite_initialized_sample_storage));
+                }
+                if (!compiler_ir_initialization::mark_object(w, m, base)) {
+                    return false;
+                }
+                return w.clear_current();
+            }
+            return w.fail(second_error(VerificationErrorSecond::unknown_sealed_service_operation));
+        }
+        if (form == 4) {
+            const compiler_ir_metadata::CallableRow target = m.callable_at(transfer_target(m, s, id));
+            const i64 extra = compiler_ir_instructions::call_count(s, id, 5) / 2;
+            const i64 count = 1 + extra;
+            i64 second = 0;
+            i64 second_kind = 0;
+            if (extra != 0) {
+                second = transfer_lane(s, id, 5, 0);
+                second_kind = transfer_lane(s, id, 5, 1);
+            }
+            const i64 first = transfer_value(s, id, 1);
+            const ServiceCallState loans = w.validate_service_call(first, transfer_value(s, id, 4), second,
+                second_kind);
+            if (loans == ServiceCallState::missing) {
+                return w.fail(second_error(
+                    VerificationErrorSecond::service_helper_requires_distinct_acquired_loans_in_leading_positions));
+            }
+            if (loans == ServiceCallState::provenance) {
+                return w.fail(second_error(
+                    VerificationErrorSecond::service_helper_requires_an_unused_loan_with_exact_provenance));
+            }
+            if (!w.good()) {
+                return false;
+            }
+            i64 reverse = target.value_parameter_count();
+            while (reverse > count) {
+                reverse = reverse - 1;
+                const i64 type_id = target.value_parameter_begin() + reverse;
+                const compiler_ir_metadata::RawTypeRow type = m.type_at(type_id);
+                const i64 base = transfer_lane(s, id, 3, reverse);
+                if (type.kind() == 12) {
+                    if (!active_region(w, transfer_value(s, id, 7))) {
+                        return false;
+                    }
+                } else {
+                    if (type.kind() == 11) {
+                        if (!transfer_has(w, FactKind::span, base)) {
+                            return w.fail(second_error(VerificationErrorSecond::service_span_argument_is_not_active));
+                        }
+                        if (!live_span(w, m, s, base, AccessMode::read)) {
+                            return false;
+                        }
+                    } else {
+                        if (type.kind() == 5) {
+                            if (!live_copied_argument(w, m, transfer_lane(s, id, 6, reverse), ArgumentRole::service)) {
+                                return false;
+                            }
+                        } else {
+                            if (!transfer_pop_type(w, m, type_id, VerificationErrorFirst::none,
+                                VerificationErrorSecond::service_scalar_argument_mismatch)) {
+                                return false;
+                            }
+                        }
+                    }
+                }
+            }
+            const compiler_ir_metadata::IndexRange types = target.types();
+            const compiler_ir_metadata::RawTypeRow result = m.type_at(types.begin());
+            if (result.kind() == 5) {
+                if (!live_copy_target(w, m, transfer_value(s, id, 2)) || !w.clear_current()) {
+                    return false;
+                }
+            } else {
+                if (!transfer_set_type(w, m, types.begin())) {
+                    return false;
+                }
+            }
+            return w.complete_service_call(first, second);
+        }
+        return w.fail(first_error(VerificationErrorFirst::internal));
+    }
+}

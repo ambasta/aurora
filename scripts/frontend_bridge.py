@@ -509,237 +509,33 @@ ROWS = (
         "noexcept",
     ),
     (
-        "initialization_create(builtin::ByteRegion region) -> compiler_ir_initialization::InitializationWorkspace",
-        "move compiler_ir_initialization::create(region)",
-        "InitializationCreate:region",
+        "verification_create(builtin::ByteRegion region) -> compiler_ir_verification::VerificationWorkspace",
+        "move compiler_ir_verification::create(region)",
+        "VerificationCreate:region",
         "noexcept",
     ),
     (
-        "initialization_release(builtin::ByteRegion region, "
-        "compiler_ir_initialization::InitializationWorkspace workspace) -> i64",
-        "direct compiler_ir_initialization::release(region, move(workspace))",
-        "InitializationRelease:region,workspace",
+        "verification_run(compiler_ir_verification::VerificationWorkspace& workspace, const "
+        "compiler_ir_metadata::MetadataStore& metadata, const "
+        "compiler_ir_instructions::InstructionStore& instructions, i64 callable) -> "
+        "compiler_ir_verification::VerificationStatus",
+        "direct compiler_ir_verification::run(workspace, metadata, instructions, callable)",
+        "",
+        "noexcept",
+    ),
+    (
+        "verification_report(const compiler_ir_verification::VerificationWorkspace& workspace) -> "
+        "compiler_ir_verification::VerificationReport",
+        "copy workspace.report()",
+        "",
+        "noexcept",
+    ),
+    (
+        "verification_release(builtin::ByteRegion region, "
+        "compiler_ir_verification::VerificationWorkspace workspace) -> i64",
+        "direct compiler_ir_verification::release(region, move(workspace))",
+        "VerificationRelease:region,workspace",
         "noexcept,discard",
-    ),
-    (
-        "initialization_allocated(const compiler_ir_initialization::InitializationWorkspace& workspace) -> bool",
-        "direct workspace.allocated()",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_status(const compiler_ir_initialization::InitializationWorkspace& workspace) -> "
-        "compiler_ir_initialization::InitializationStatus",
-        "direct workspace.status()",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_slot_count(const compiler_ir_initialization::InitializationWorkspace& workspace) -> i64",
-        "direct workspace.slot_count()",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_word_count(const compiler_ir_initialization::InitializationWorkspace& workspace) -> i64",
-        "direct workspace.word_count()",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_payload_bytes(const compiler_ir_initialization::InitializationWorkspace& workspace) -> i64",
-        "direct workspace.payload_bytes()",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_acquire_service_loan(compiler_ir_initialization::InitializationWorkspace& workspace, "
-        "i64 id, i64 root, i64 kind) -> i64",
-        "direct workspace.acquire_service_loan(id, root, kind)",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_release_service_loan(compiler_ir_initialization::InitializationWorkspace& workspace, "
-        "i64 id, i64 kind) -> i64",
-        "direct workspace.release_service_loan(id, kind)",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_service_unsuspended(const compiler_ir_initialization::InitializationWorkspace& "
-        "workspace, i64 root) -> i64",
-        "direct workspace.service_unsuspended(root)",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_validate_service_call(const compiler_ir_initialization::InitializationWorkspace& "
-        "workspace, i64 first, i64 first_kind, i64 second, i64 second_kind) -> "
-        "compiler_ir_initialization::ServiceCallState",
-        "direct workspace.validate_service_call(first, first_kind, second, second_kind)",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_complete_service_call(compiler_ir_initialization::InitializationWorkspace& workspace, "
-        "i64 first, i64 second) -> bool",
-        "direct workspace.complete_service_call(first, second)",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_service_loans_closed(const compiler_ir_initialization::InitializationWorkspace& "
-        "workspace) -> i64",
-        "direct workspace.service_loans_closed()",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_same_service_loans(const compiler_ir_initialization::InitializationWorkspace& "
-        "workspace, i64 id) -> i64",
-        "direct workspace.same_service_loans(id)",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_retained_count(const compiler_ir_initialization::InitializationWorkspace& workspace) -> i64",
-        "direct workspace.retained_count()",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_current_count(const compiler_ir_initialization::InitializationWorkspace& workspace) -> i64",
-        "direct workspace.current_count()",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_retained_count_at(const compiler_ir_initialization::InitializationWorkspace& "
-        "workspace, i64 id) -> i64",
-        "direct workspace.retained_count_at(id)",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_load(compiler_ir_initialization::InitializationWorkspace& workspace, i64 id) -> bool",
-        "direct workspace.load(id)",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_retain(compiler_ir_initialization::InitializationWorkspace& workspace) -> i64",
-        "direct workspace.retain()",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_join(compiler_ir_initialization::InitializationWorkspace& workspace, i64 id) -> "
-        "compiler_ir_initialization::InitializationJoin",
-        "direct workspace.join(id)",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_initialize(compiler_ir_initialization::InitializationWorkspace& workspace, const "
-        "compiler_ir_metadata::MetadataStore& metadata, i64 callable) -> "
-        "compiler_ir_initialization::InitializationStatus",
-        "direct compiler_ir_initialization::initialize(workspace, metadata, callable)",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_scalar_state(compiler_ir_initialization::InitializationWorkspace& workspace, const "
-        "compiler_ir_metadata::MetadataStore& metadata, i64 offset) -> i64",
-        "direct compiler_ir_initialization::scalar_state(workspace, metadata, offset)",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_write_scalar(compiler_ir_initialization::InitializationWorkspace& workspace, const "
-        "compiler_ir_metadata::MetadataStore& metadata, i64 offset) -> i64",
-        "direct compiler_ir_initialization::write_scalar(workspace, metadata, offset)",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_object_initialized(compiler_ir_initialization::InitializationWorkspace& workspace, "
-        "const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> i64",
-        "direct compiler_ir_initialization::object_initialized(workspace, metadata, base)",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_object_pristine(compiler_ir_initialization::InitializationWorkspace& workspace, const "
-        "compiler_ir_metadata::MetadataStore& metadata, i64 base) -> i64",
-        "direct compiler_ir_initialization::object_pristine(workspace, metadata, base)",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_object_was_constructed(compiler_ir_initialization::InitializationWorkspace& "
-        "workspace, const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> i64",
-        "direct compiler_ir_initialization::object_was_constructed(workspace, metadata, base)",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_object_completion(compiler_ir_initialization::InitializationWorkspace& workspace, "
-        "const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> "
-        "compiler_ir_initialization::ObjectCompletion",
-        "direct compiler_ir_initialization::object_completion(workspace, metadata, base)",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_mark_object(compiler_ir_initialization::InitializationWorkspace& workspace, const "
-        "compiler_ir_metadata::MetadataStore& metadata, i64 base) -> bool",
-        "direct compiler_ir_initialization::mark_object(workspace, metadata, base)",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_clear_object(compiler_ir_initialization::InitializationWorkspace& workspace, const "
-        "compiler_ir_metadata::MetadataStore& metadata, i64 base) -> bool",
-        "direct compiler_ir_initialization::clear_object(workspace, metadata, base)",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_receiver_field_state(compiler_ir_initialization::InitializationWorkspace& workspace, "
-        "const compiler_ir_metadata::MetadataStore& metadata, i64 field) -> i64",
-        "direct compiler_ir_initialization::receiver_field_state(workspace, metadata, field)",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_write_receiver_field(compiler_ir_initialization::InitializationWorkspace& workspace, "
-        "const compiler_ir_metadata::MetadataStore& metadata, i64 field) -> i64",
-        "direct compiler_ir_initialization::write_receiver_field(workspace, metadata, field)",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_receiver_completion(compiler_ir_initialization::InitializationWorkspace& workspace, "
-        "const compiler_ir_metadata::MetadataStore& metadata) -> "
-        "compiler_ir_initialization::ReceiverCompletion",
-        "direct compiler_ir_initialization::receiver_completion(workspace, metadata)",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_array_first_missing(compiler_ir_initialization::InitializationWorkspace& workspace, "
-        "const compiler_ir_metadata::MetadataStore& metadata, i64 offset, i64 length, i64 width) -> i64",
-        "direct compiler_ir_initialization::array_first_missing(workspace, metadata, offset, length, width)",
-        "",
-        "noexcept",
-    ),
-    (
-        "initialization_clear_array(compiler_ir_initialization::InitializationWorkspace& workspace, const "
-        "compiler_ir_metadata::MetadataStore& metadata, i64 offset, i64 length, i64 width) -> bool",
-        "direct compiler_ir_initialization::clear_array(workspace, metadata, offset, length, width)",
-        "",
-        "noexcept",
     ),
 )
 

@@ -1,0 +1,422 @@
+export module aurora.compiler.ir_verification_transfer;
+import aurora.compiler.ir_verification_common;
+import aurora.compiler.ir_verification_values;
+import aurora.compiler.ir_verification_resources;
+import aurora.compiler.ir_verification_services;
+import aurora.compiler.ir_verification_storage;
+import aurora.compiler.ir_verification_errors;
+import aurora.compiler.ir_verification_initialization;
+import aurora.compiler.ir_metadata;
+import aurora.compiler.ir_metadata_storage;
+import aurora.compiler.ir_instructions;
+import aurora.compiler.ir_instruction_storage;
+
+export namespace compiler_ir_verification {
+    auto return_empty(VerificationWorkspace& w, FactKind kind) -> bool {
+        const i64 at = w.first_fact(kind);
+        if (at < 0) {
+            return w.good();
+        }
+        const FactRow fact = w.fact_at(at);
+        return w.good() && fact.kind() != kind;
+    }
+    auto return_bytes_closed(VerificationWorkspace& w) -> bool {
+        const bool closed = return_empty(w, FactKind::bytes);
+        return require(w, closed, second_error(VerificationErrorSecond::return_with_active_owned_byte_lifetime));
+    }
+    auto return_views_closed(VerificationWorkspace& w) -> bool {
+        const bool closed = return_empty(w, FactKind::span) && return_empty(w, FactKind::array_lifetime);
+        return require(w, closed,
+            second_error(VerificationErrorSecond::return_with_active_span_or_byte_array_lifetime));
+    }
+    auto return_scalar(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m) -> bool {
+        const compiler_ir_metadata::CallableRow signature = m.callable_at(w.callable());
+        const compiler_ir_metadata::IndexRange types = signature.types();
+        const compiler_ir_metadata::RawTypeRow result = m.type_at(types.begin());
+        if (!require(w, compiler_ir_metadata::scalar_value(m, result),
+            second_error(VerificationErrorSecond::scalar_return_cannot_return_class_value_or_resource_value))
+            || !transfer_current_type(w, m, types.begin())) {
+            return false;
+        }
+        const bool balanced = w.operand_count() == 0;
+        if (!require(w, balanced, second_error(VerificationErrorSecond::unbalanced_stack_at_return))
+            || !return_bytes_closed(w) || !closed_owned_objects(w) || !return_views_closed(w)) {
+            return false;
+        }
+        if (transfer_receiver(m, w.callable()) && receiver_constructor(m, w.callable())) {
+            const ReceiverCompletion completion = compiler_ir_initialization::receiver_completion(w, m);
+            if (!require(w, completion != ReceiverCompletion::missing_physical,
+                second_error(VerificationErrorSecond::constructor_returns_before_all_fields_initialized)) || !require(w,
+                completion != ReceiverCompletion::missing_logical,
+                second_error(VerificationErrorSecond::constructor_returns_before_all_class_fields_initialized))) {
+                return false;
+            }
+        }
+        const ControlRow control = w.control();
+        if (control.owning_constructor()) {
+            if (!require(w, control.has_region(),
+                second_error(VerificationErrorSecond::owning_constructor_lacks_region))) {
+                return false;
+            }
+            i64 at = w.fact_lower_bound(FactKind::owned_field, 0, -1);
+            while (at >= 0 && fact_key_at(w, at, FactKind::owned_field, 0)) {
+                const FactRow field = w.fact_at(at);
+                const TokenRow token = field.token();
+                bool matches = field.disposition() == ByteDisposition::live && token.kind() != TokenKind::none;
+                if (matches) {
+                    if (!region(w, m, control.region_offset())) {
+                        return false;
+                    }
+                    matches = transfer_same_region(token, control.region_offset(), control.region_site());
+                }
+                if (!require(w, matches,
+                    second_error(
+                    VerificationErrorSecond::constructor_returns_before_all_resource_fields_initialized))) {
+                    return false;
+                }
+                at = w.next_fact(at);
+            }
+        }
+        return w.good();
+    }
+    auto return_object(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m, i64 base) -> bool {
+        const compiler_ir_metadata::CallableRow signature = m.callable_at(w.callable());
+        const compiler_ir_metadata::IndexRange types = signature.types();
+        const compiler_ir_metadata::RawTypeRow result = m.type_at(types.begin());
+        if (!require(w, result.kind() == 5 && !compiler_ir_metadata::owning_type(m, result),
+            second_error(VerificationErrorSecond::object_return_requires_copied_class_result))) {
+            return false;
+        }
+        const i64 slot = exact_slot(m, w.callable(), 11, base);
+        if (!require(w, slot >= 0, second_error(VerificationErrorSecond::object_return_requires_exact_object_slot))) {
+            return false;
+        }
+        const compiler_ir_metadata::ByteRange result_name = result.name();
+        if (!require(w, slot_class(m, slot) == compiler_ir_metadata::find_class(m, result_name),
+            second_error(VerificationErrorSecond::object_return_nominal_class_mismatch))) {
+            return false;
+        }
+        const bool active = has_fact(w, FactKind::object, base, -1);
+        if (!require(w, active, second_error(VerificationErrorSecond::object_return_outside_active_lifetime))) {
+            return false;
+        }
+        const bool initialized = compiler_ir_initialization::object_initialized(w, m, base) == 1;
+        if (!require(w, initialized, second_error(VerificationErrorSecond::returned_object_not_fully_initialized))) {
+            return false;
+        }
+        logical_complete(w, m, base);
+        if (!w.good()) {
+            return false;
+        }
+        const bool balanced = w.operand_count() == 0;
+        return require(w, balanced, second_error(VerificationErrorSecond::unbalanced_stack_at_object_return))
+            && return_bytes_closed(w) && closed_owned_objects(w) && return_views_closed(w);
+    }
+    auto return_owned_object(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 base) -> bool {
+        const compiler_ir_metadata::CallableRow signature = m.callable_at(w.callable());
+        const compiler_ir_metadata::IndexRange types = signature.types();
+        const compiler_ir_metadata::RawTypeRow result = m.type_at(types.begin());
+        const ControlRow control = w.control();
+        const compiler_ir_metadata::ByteRange result_name = result.name();
+        if (!require(w, !control.has_receiver() && compiler_ir_metadata::owning_type(m, result),
+            second_error(VerificationErrorSecond::owning_object_return_requires_ordinary_owning_class_result))
+            || !require(w, control.has_region(),
+            second_error(VerificationErrorSecond::owning_object_return_requires_bound_region)) || !owned_object(w, m, s,
+            base, compiler_ir_metadata::find_class(m, result_name), AccessMode::write)) {
+            return false;
+        }
+        const TokenRow token = owned_object_token(w, base);
+        if (!region(w, m, control.region_offset()) || !require(w, transfer_same_region(token, control.region_offset(),
+            control.region_site()), second_error(VerificationErrorSecond::owning_object_return_has_wrong_region))) {
+            return false;
+        }
+        if (!w.fact_erase(FactKind::owned_object, base, -1) || !w.fact_erase(FactKind::object, base, -1)) {
+            return false;
+        }
+        if (!closed_owned_objects(w) || !return_bytes_closed(w) || !return_views_closed(w)) {
+            return false;
+        }
+        const bool balanced = w.operand_count() == 0;
+        return require(w, balanced, second_error(VerificationErrorSecond::unbalanced_stack_at_owning_object_return));
+    }
+    auto return_bytes(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 base) -> bool {
+        const compiler_ir_metadata::CallableRow signature = m.callable_at(w.callable());
+        const compiler_ir_metadata::IndexRange types = signature.types();
+        const compiler_ir_metadata::RawTypeRow result = m.type_at(types.begin());
+        bool matches = compiler_ir_metadata::owner_kind(result);
+        if (matches) {
+            if (!owner_type(w, m, base)) {
+                return false;
+            }
+            const TypeKey actual = owner_key(m, w.callable(), base, -1);
+            matches = same_type_key(m, actual, types.begin());
+        }
+        if (!require(w, matches, second_error(VerificationErrorSecond::owner_return_nominal_type_mismatch))) {
+            return false;
+        }
+        const ControlRow control = w.control();
+        if (!require(w, control.has_region(),
+            second_error(VerificationErrorSecond::owned_byte_return_requires_bound_region_parameter)) || !bytes(w, m, s,
+            base, AccessMode::write)) {
+            return false;
+        }
+        const FactRow binding = w.fact_find(FactKind::bytes, base, -1);
+        const TokenRow token = binding.token();
+        if (!region(w, m, control.region_offset()) || !require(w, transfer_same_region(token, control.region_offset(),
+            control.region_site()), second_error(VerificationErrorSecond::owned_byte_return_has_wrong_region))
+            || !w.fact_erase(FactKind::bytes, base, -1)) {
+            return false;
+        }
+        if (!return_bytes_closed(w) || !closed_owned_objects(w) || !return_views_closed(w)) {
+            return false;
+        }
+        const bool balanced = w.operand_count() == 0;
+        return require(w, balanced, second_error(VerificationErrorSecond::unbalanced_stack_at_owned_byte_return));
+    }
+    auto returned_span_matches(FactRow fact, i64 ordinal, bool fixed, TokenRow expected) -> bool {
+        const SpanPayload view = fact.span();
+        const TokenRow token = fact.token();
+        if (view.origin() != 0 || view.origin_kind() == SpanOrigin::parameter || view.origin_kind()
+            == SpanOrigin::literal) {
+            return false;
+        }
+        if (fixed) {
+            return view.array_field() == ordinal && token.kind() == TokenKind::none;
+        }
+        return view.array_field() == -1 && view.owned_field() == ordinal && token.same(expected) && expected.kind()
+            == TokenKind::borrowed;
+    }
+    auto return_span(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 base) -> bool {
+        const compiler_ir_metadata::CallableRow signature = m.callable_at(w.callable());
+        const compiler_ir_metadata::IndexRange types = signature.types();
+        const compiler_ir_metadata::RawTypeRow result = m.type_at(types.begin());
+        const ControlRow control = w.control();
+        const i64 ordinal = signature.receiver_span_field();
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
+        const bool valid_summary = compiler_ir_metadata::plain_type(result, 11)
+            && compiler_ir_metadata::callable_flag(signature, masks.callable_span_summary()) && control.has_receiver()
+            && !receiver_constructor(m, w.callable()) && !receiver_mutable(m, w.callable());
+        if (!require(w, valid_summary,
+            second_error(VerificationErrorSecond::span_return_requires_const_owning_receiver_field_summary)) || !span(w,
+            m, s, base, AccessMode::read)) {
+            return false;
+        }
+        const FactRow capability = w.fact_find(FactKind::span, base, -1);
+        const i64 field_index = receiver_shape(w, m, s, ordinal);
+        if (!w.good()) {
+            return false;
+        }
+        const compiler_ir_metadata::FieldRow field = m.field_at(field_index);
+        const bool fixed = field.array_flag() != 0;
+        TokenRow token = no_token();
+        if (!fixed) {
+            if (!access_bytes(w, m, s, 0, ordinal, AccessMode::read)) {
+                return false;
+            }
+            const FactRow binding = w.fact_find(FactKind::owned_field, 0, ordinal);
+            const TokenRow borrowed = binding.token();
+            token.set_kind(borrowed.kind());
+            token.set_site(borrowed.site());
+            token.set_region_root(borrowed.region_root());
+            token.set_region_site(borrowed.region_site());
+            token.set_field_ordinal(borrowed.field_ordinal());
+        }
+        if (!require(w, returned_span_matches(capability, ordinal, fixed, token),
+            second_error(VerificationErrorSecond::span_return_does_not_match_receiver_field_summary_and_token))) {
+            return false;
+        }
+        const bool balanced = w.operand_count() == 0;
+        if (!require(w, balanced, second_error(VerificationErrorSecond::unbalanced_stack_at_span_return))) {
+            return false;
+        }
+        const bool local_closed = return_empty(w, FactKind::bytes) && return_empty(w, FactKind::array_lifetime)
+            && return_empty(w, FactKind::object);
+        if (!require(w, local_closed,
+            second_error(VerificationErrorSecond::span_return_with_unrelated_active_local_lifetime))
+            || !closed_owned_objects(w)) {
+            return false;
+        }
+        const i64 epoch = w.begin_visit_epoch();
+        if (!w.good()) {
+            return false;
+        }
+        i64 ancestor = base;
+        while (ancestor != 0 && w.good()) {
+            const bool newly_marked = w.mark_fact_key(FactKind::span, ancestor, -1, epoch);
+            if (!require(w, newly_marked, second_error(VerificationErrorSecond::cyclic_returned_span_parent_chain))
+                || !span(w, m, s, ancestor, AccessMode::read)) {
+                return false;
+            }
+            const FactRow parent = w.fact_find(FactKind::span, ancestor, -1);
+            const SpanPayload view = parent.span();
+            ancestor = view.parent();
+        }
+        i64 at = w.first_fact(FactKind::span);
+        while (at >= 0 && fact_kind_at(w, at, FactKind::span)) {
+            const FactRow active = w.fact_at(at);
+            if (!span(w, m, s, active.key(), AccessMode::read)) {
+                return false;
+            }
+            const bool retained_match = w.fact_key_marked(FactKind::span, active.key(), -1, epoch)
+                && returned_span_matches(active, ordinal, fixed, token);
+            if (!require(w, retained_match,
+                second_error(VerificationErrorSecond::span_return_with_unrelated_active_span_lifetime))) {
+                return false;
+            }
+            at = w.next_fact(at);
+        }
+        return w.good();
+    }
+    // Source routing inventory, numbered by ir.hpp BasicInstruction variant.
+    // This is source evidence, not executed exhaustiveness or mutation evidence.
+    // 0: BindServiceParameter -> transfer_services (immutable service binding; explicit no-op)
+    // 1: AcquireServiceLoan -> transfer_services
+    // 2: ReleaseServiceLoan -> transfer_services
+    // 3: ServiceOperation -> transfer_services
+    // 4: BasicServiceCall -> transfer_services
+    // 5: Constant -> transfer_scalar
+    // 6: EnumConstant -> transfer_scalar
+    // 7: Load -> transfer_scalar
+    // 8: Store -> transfer_scalar
+    // 9: Push -> transfer_scalar
+    // 10: Pop -> transfer_scalar
+    // 11: UnaryValue -> transfer_scalar
+    // 12: BinaryValue -> transfer_scalar
+    // 13: Convert -> transfer_scalar
+    // 14: Compare -> transfer_scalar
+    // 15: BoundsGuard -> transfer_scalar
+    // 16: IndexLoad -> transfer_scalar
+    // 17: IndexStore -> transfer_scalar
+    // 18: BorrowHandle -> transfer_scalar
+    // 19: Call -> transfer_scalar
+    // 20: BasicAggregateCall -> transfer_aggregate
+    // 21: BeginObject -> transfer_objects
+    // 22: InitializeEmptyObject -> transfer_objects
+    // 23: EndObject -> transfer_objects
+    // 24: CopyObject -> transfer_objects
+    // 25: ObjectFieldCopy -> transfer_objects
+    // 26: AssignObjectField -> transfer_objects
+    // 27: InitializeObjectField -> transfer_objects
+    // 28: BasicInitializeClassArray -> transfer_objects
+    // 29: ClassArrayBoundsGuard -> transfer_objects
+    // 30: ClassArrayCopy -> transfer_objects
+    // 31: ClassArrayAssign -> transfer_objects
+    // 32: ReceiverLoad -> transfer_receivers
+    // 33: ReceiverStore -> transfer_receivers
+    // 34: ReceiverArrayZero -> transfer_receivers
+    // 35: ReceiverBoundsGuard -> transfer_receivers
+    // 36: ReceiverIndexLoad -> transfer_receivers
+    // 37: ReceiverIndexStore -> transfer_receivers
+    // 38: BasicMethodCall -> transfer_method_call
+    // 39: MetadataQuery -> transfer_scalar
+    // 40: Label -> transfer_scalar (CFG-only; explicit no-op)
+    // 41: Jump -> transfer_scalar (CFG-only; explicit no-op)
+    // 42: BranchFalse -> transfer_scalar
+    // 43: Return -> return_scalar
+    // 44: ReturnObject -> return_object
+    // 45: BindParameter -> transfer_scalar
+    // 46: BindObjectParameter -> transfer_objects
+    // 47: BeginArray -> transfer_spans
+    // 48: EndArray -> transfer_spans
+    // 49: BorrowSpan -> transfer_spans
+    // 50: BorrowReceiverArraySpan -> transfer_spans
+    // 51: BasicBorrowLiteralSpan -> transfer_spans
+    // 52: BorrowOwnedSpan -> transfer_spans
+    // 53: ReturnSpan -> return_span
+    // 54: ReborrowSpan -> transfer_spans
+    // 55: Subspan -> transfer_spans
+    // 56: EndSpan -> transfer_spans
+    // 57: SpanLength -> transfer_spans
+    // 58: SpanLoad -> transfer_spans
+    // 59: BindSpanParameter -> transfer_spans
+    // 60: BeginBytes -> transfer_bytes
+    // 61: AllocateBytes -> transfer_bytes
+    // 62: AllocateValues -> transfer_bytes
+    // 63: ValuesLoad -> transfer_bytes
+    // 64: ValuesStore -> transfer_bytes
+    // 65: ValuesResize -> transfer_bytes
+    // 66: MoveBytes -> transfer_bytes
+    // 67: BytesOk -> transfer_bytes
+    // 68: BytesLength -> transfer_bytes
+    // 69: BytesLoad -> transfer_bytes
+    // 70: BytesStore -> transfer_bytes
+    // 71: BytesResize -> transfer_bytes
+    // 72: EndBytes -> transfer_bytes
+    // 73: BindRegionParameter -> immutable region authority already seeded; explicit no-op
+    // 74: BindBytesParameter -> transfer_bytes
+    // 75: BasicResourceCall -> transfer_resource_call
+    // 76: ReturnBytes -> return_bytes
+    // 77: InitializeBytesField -> transfer_owning_objects
+    // 78: MoveObject -> transfer_owning_objects
+    // 79: BindOwnedObjectParameter -> transfer_owning_objects
+    // 80: ReturnOwnedObject -> return_owned_object
+    // 81: AcquireObjectLoan -> transfer_acquire_object_loan
+    // 82: ReleaseObjectLoan -> transfer_release_object_loan
+    // 83: BasicBorrowedCall -> transfer_method_call
+    // Outside 0..83: first_error(VerificationErrorFirst::internal), never success.
+    // Each admitted form has exactly one real route. In particular the immutable
+    // service/region bindings and CFG-only forms are explicit, not a catch-all.
+    auto transfer(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 id) -> bool {
+        const compiler_ir_instructions::RawInstructionRow row = s.instruction_at(id);
+        const i64 form = row.form();
+        if (form >= 0 && form <= 4) {
+            return transfer_services(w, m, s, id);
+        }
+        if ((form >= 5 && form <= 19) || (form >= 39 && form <= 42) || form == 45) {
+            return transfer_scalar(w, m, s, id);
+        }
+        if (form == 20) {
+            return transfer_aggregate(w, m, s, id);
+        }
+        if ((form >= 21 && form <= 31) || form == 46) {
+            return transfer_objects(w, m, s, id);
+        }
+        if (form >= 32 && form <= 37) {
+            return transfer_receivers(w, m, s, id);
+        }
+        if (form == 38 || form == 83) {
+            return transfer_method_call(w, m, s, id);
+        }
+        if (form == 43) {
+            return return_scalar(w, m);
+        }
+        if (form == 44) {
+            return return_object(w, m, transfer_value(s, id, 0));
+        }
+        if ((form >= 47 && form <= 52) || (form >= 54 && form <= 59)) {
+            return transfer_spans(w, m, s, id);
+        }
+        if (form == 53) {
+            return return_span(w, m, s, transfer_value(s, id, 0));
+        }
+        if ((form >= 60 && form <= 72) || form == 74) {
+            return transfer_bytes(w, m, s, id);
+        }
+        if (form == 73) {
+            return w.good();
+        }
+        if (form == 75) {
+            return transfer_resource_call(w, m, s, id);
+        }
+        if (form == 76) {
+            return return_bytes(w, m, s, transfer_value(s, id, 0));
+        }
+        if (form >= 77 && form <= 79) {
+            return transfer_owning_objects(w, m, s, id);
+        }
+        if (form == 80) {
+            return return_owned_object(w, m, s, transfer_value(s, id, 0));
+        }
+        if (form == 81) {
+            return transfer_acquire_object_loan(w, m, s, id);
+        }
+        if (form == 82) {
+            return transfer_release_object_loan(w, transfer_value(s, id, 0));
+        }
+        return w.fail(first_error(VerificationErrorFirst::internal));
+    }
+}

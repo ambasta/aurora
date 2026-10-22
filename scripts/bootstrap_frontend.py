@@ -242,6 +242,7 @@ def frontend_abi_entries(facts):
             or release["parameter_bytes"] != ingest["parameters"][count]["offset"]
         ):
             raise ValueError(f"private resolver owner prefix changed: {source}")
+    verification_abi(facts)
     return entries
 
 
@@ -368,7 +369,205 @@ def instruction_messages(source, facts):
     return owner_messages(source, facts, "compiler_ir_instructions", "InstructionError", "instructionErrorMessage")
 
 
-def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_source=None):
+def verification_messages(source, facts):
+    """Exact split reasons, with no host fallback diagnostic or semantic policy."""
+    namespace = "compiler_ir_verification"
+    lines = []
+    for suffix, count in (("First", 200), ("Second", 117)):
+        enumeration = "VerificationError" + suffix
+        _, reasons = abi_declaration(facts, "enums", namespace + "::" + enumeration)
+        if len(reasons["cases"]) != count or list(reasons["cases"].values()) != list(range(count)):
+            raise ValueError("private verification split reasons changed: " + enumeration)
+        lines += owner_messages(source, facts, namespace, enumeration, "verificationError" + suffix + "Message")
+    lines += [
+        "namespace aurora::hosted_abi::compiler_ir_verification {",
+        "inline constexpr const char *verificationErrorMessage(VerificationError reason) {",
+        "    if (!validRaw(reason.firstValue) || !validRaw(reason.secondValue)) return nullptr;",
+        "    if (reason.firstValue != VerificationErrorFirst::none) {",
+        "        if (reason.secondValue != VerificationErrorSecond::none) return nullptr;",
+        "        return verificationErrorFirstMessage(reason.firstValue);",
+        "    }",
+        "    return verificationErrorSecondMessage(reason.secondValue);",
+        "}",
+        "}",
+    ]
+    return lines
+
+
+def verification_abi(facts):
+    """Check the closed owner and copied-report contract against actual facts.
+
+    Field identities below constrain authority, not physical layouts or symbols.
+    All byte extents, offsets and symbols are obtained from this emitted root.
+    The original initialization owner remains separate for the comparison body.
+    """
+    namespace = "compiler_ir_verification::"
+    records = {}
+    for name in ("InitializationStatus", "VerificationStatus"):
+        _, status = abi_declaration(facts, "enums", namespace + name)
+        if status["cases"] != dict(pending=0, success=1, allocation=2, invalid=3):
+            raise ValueError("private verification status changed: " + name)
+    for suffix, count in (("First", 200), ("Second", 117)):
+        _, errors = abi_declaration(facts, "enums", namespace + "VerificationError" + suffix)
+        prefix = ["none", "internal", "allocation"] if suffix == "First" else ["none"]
+        if (
+            len(errors["cases"]) != count
+            or list(errors["cases"])[: len(prefix)] != prefix
+            or list(errors["cases"].values()) != list(range(count))
+        ):
+            raise ValueError("private verification split reasons changed: " + suffix)
+
+    def shape(name, fields):
+        symbol, row = abi_declaration(facts, "records", namespace + name)
+        if row["alignment"] != 8 or row["reserved"] != row["size"] or len(row["fields"]) != len(fields):
+            raise ValueError("private verification record changed: " + name)
+        end = 0
+        for actual, (field, kind) in zip(row["fields"], fields):
+            expected_kind, expected_type, width = kind, None, 32 if kind == "owner" else 8
+            if kind not in ("i64", "u64", "bool", "owner"):
+                group = (
+                    "enums"
+                    if kind
+                    in (
+                        "InitializationStatus",
+                        "VerificationStatus",
+                        "VerificationErrorFirst",
+                        "VerificationErrorSecond",
+                    )
+                    else "records"
+                )
+                expected_type, nested = abi_declaration(facts, group, namespace + kind)
+                expected_kind = "enum" if group == "enums" else "class"
+                width = 8 if group == "enums" else nested["reserved"]
+            if (
+                actual["name"] != field
+                or actual["kind"] != expected_kind
+                or actual.get("type_name") != expected_type
+                or actual.get("array_length", 0)
+                or actual["offset"] != end
+                or actual["bytes"] != width
+            ):
+                raise ValueError("private verification field changed: " + name + "." + field)
+            end += width
+        if end != row["size"]:
+            raise ValueError("private verification extent changed: " + name)
+        records[name] = (symbol, row)
+
+    shape("VerificationError", (("firstValue", "VerificationErrorFirst"), ("secondValue", "VerificationErrorSecond")))
+    shape(
+        "MetricsRow",
+        tuple(
+            (name, "i64")
+            for name in (
+                "snapshotsValue",
+                "peakOperandDepth",
+                "peakRetainedOperandFacts",
+                "peakRetainedValueFacts",
+                "peakRetainedInitializationPayloadBytes",
+            )
+        ),
+    )
+    shape(
+        "VerificationReport",
+        (
+            ("statusValue", "VerificationStatus"),
+            ("errorValue", "VerificationError"),
+            ("metricsStarted", "bool"),
+            ("metricsValue", "MetricsRow"),
+        ),
+    )
+    shape(
+        "ControlRow",
+        (
+            ("metricsStarted", "bool"),
+            ("codeBegin", "i64"),
+            ("codeCount", "i64"),
+            ("activeFactCount", "i64"),
+            ("retainedFactCount", "i64"),
+            ("currentOperandCount", "i64"),
+            ("retainedOperandCount", "i64"),
+            ("pendingHead", "i64"),
+            ("pendingCount", "i64"),
+            ("pendingTail", "i64"),
+            ("pendingEnqueued", "i64"),
+            ("blockSnapshotCount", "i64"),
+            ("currentPosition", "i64"),
+            ("instructionId", "i64"),
+            ("currentKnown", "bool"),
+            ("currentValue", "ValueRow"),
+            ("regionOffset", "i64"),
+            ("regionSite", "i64"),
+            ("hasRegion", "bool"),
+            ("receiverClass", "i64"),
+            ("hasReceiver", "bool"),
+            ("owningConstructor", "bool"),
+            ("builtinBorrowedOwner", "bool"),
+            ("borrowedRootCount", "i64"),
+            ("metricsValue", "MetricsRow"),
+            ("retainedValueFacts", "i64"),
+            ("retainedInitializationPayload", "i64"),
+            ("initializationPayloadPerSnapshot", "i64"),
+            ("traversalEpoch", "i64"),
+            ("dynamicFactLimit", "i64"),
+        ),
+    )
+    shape("ActiveFact", (("factValue", "FactRow"), ("visitEpoch", "i64")))
+    pools = {
+        "currentWords": "WordPair",
+        "retainedWords": "WordPair",
+        "retainedCounts": "CountPair",
+        "serviceLoans": "ServiceLoan",
+        "currentFacts": "ActiveFact",
+        "retainedFacts": "FactRow",
+        "currentOperands": "ValueRow",
+        "retainedOperands": "ValueRow",
+        "codeStates": "CodeStateRow",
+        "pendingQueue": "IndexRow",
+        "controls": "ControlRow",
+    }
+    shape(
+        "VerificationWorkspace",
+        (
+            *((name, "owner") for name in pools),
+            *(
+                (name, "i64")
+                for name in (
+                    "callableId",
+                    "scalarBegin",
+                    "scalarCount",
+                    "objectBegin",
+                    "objectCount",
+                    "receiverBegin",
+                    "receiverCount",
+                    "serviceCapacity",
+                    "factCount",
+                    "wordCount",
+                    "retainedCount",
+                    "retainedCapacity",
+                    "currentMust",
+                    "currentMay",
+                )
+            ),
+            ("statusValue", "InitializationStatus"),
+            ("verificationStatus", "VerificationStatus"),
+            ("verificationError", "VerificationError"),
+        ),
+    )
+    # Element identity is a closed, source-reviewed association. Facts establish
+    # each actual element's copied shape and stride, never a host payload view.
+    for name in dict.fromkeys(pools.values()):
+        symbol, row = abi_declaration(facts, "records", namespace + name)
+        if abi_record_owning(facts, symbol) or row["alignment"] != 8 or row["size"] != row["reserved"]:
+            raise ValueError("private verification pool row changed: " + name)
+        records[name] = (symbol, row)
+    _, raw_run = abi_declaration(facts, "functions", "compiler_frontend::verification_run")
+    run = normalize_function_abi(facts, raw_run)
+    if run["borrowed_root_count"] != 3 or run["borrowed_root_abi"]["kind"] != "tuple":
+        raise ValueError("private verification root tuple changed")
+    return records, run
+
+
+def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_source=None, verification_source=None):
     """Render compiler-described classes and enums without a second field schema."""
     frontend_abi_entries(facts)
     lines = [
@@ -588,85 +787,48 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
                 f"inline constexpr std::size_t instruction{row_name}PhysicalBytes = {stride};",
                 f"static_assert(sizeof({cpp_name(symbol)}) == instruction{row_name}PhysicalBytes);",
             ]
-    # Mutable initialization pools never expose native payload observations.
-    # Still validate their complete actual owner/control layout against emitted
-    # facts before producing the opaque enclosing create/release record.
-    _, initialization_workspace = abi_declaration(
-        facts, "records", "compiler_ir_initialization::InitializationWorkspace"
-    )
-    initialization_fields = (
-        ("currentWords", "owner"),
-        ("retainedWords", "owner"),
-        ("retainedCounts", "owner"),
-        ("serviceLoans", "owner"),
-        ("callableId", "i64"),
-        ("scalarBegin", "i64"),
-        ("scalarCount", "i64"),
-        ("objectBegin", "i64"),
-        ("objectCount", "i64"),
-        ("receiverBegin", "i64"),
-        ("receiverCount", "i64"),
-        ("serviceCapacity", "i64"),
-        ("factCount", "i64"),
-        ("wordCount", "i64"),
-        ("retainedCount", "i64"),
-        ("retainedCapacity", "i64"),
-        ("currentMust", "i64"),
-        ("currentMay", "i64"),
-        ("statusValue", "enum"),
-    )
-    fields = initialization_workspace["fields"]
-    if (
-        len(fields) != len(initialization_fields)
-        or initialization_workspace["alignment"] != 8
-        or initialization_workspace["reserved"] != initialization_workspace["size"]
-    ):
-        raise ValueError("private initialization owner layout changed")
-    status, _ = abi_declaration(facts, "enums", "compiler_ir_initialization::InitializationStatus")
-    end = 0
-    for field, (name, kind) in zip(fields, initialization_fields):
-        offset, width = number(field["offset"]), number(field["bytes"])
-        if (
-            field["name"] != name
-            or field["kind"] != kind
-            or field.get("array_length", 0)
-            or offset < end
-            or offset % 8 != 0
-            or width != (32 if kind == "owner" else 8)
-            or offset + width > initialization_workspace["size"]
-            or (kind == "enum" and field.get("type_name") != status)
-        ):
-            raise ValueError("private initialization field changed: " + name)
-        end = offset + width
+    verification_records, verification_run = verification_abi(facts)
+    for row_name, (symbol, row) in verification_records.items():
+        size = number(row["reserved"])
+        if not size:
+            raise ValueError("empty private verification row: " + row_name)
+        constant = {
+            "VerificationWorkspace": "verificationWorkspaceBytes",
+            "VerificationReport": "verificationReportBytes",
+            "VerificationError": "verificationErrorBytes",
+        }.get(row_name, "verification" + row_name + "PhysicalBytes")
         lines += [
-            f"inline constexpr std::size_t initializationWorkspace_{name}Offset = {offset};",
-            f"inline constexpr std::size_t initializationWorkspace_{name}Bytes = {width};",
+            f"inline constexpr std::size_t {constant} = {size};",
+            f"static_assert(sizeof({cpp_name(symbol)}) == {constant});",
         ]
-    if end != initialization_workspace["size"]:
-        raise ValueError("private initialization owner extent changed")
-    for row_name, kind, field_names in (
-        ("WordPair", "u64", ("mustBits", "mayBits")),
-        ("CountPair", "i64", ("mustCount", "mayCount")),
-        ("ServiceLoan", "i64", ("loanId", "rootOffset", "serviceKind", "calledValue")),
-    ):
-        symbol, row = abi_declaration(facts, "records", "compiler_ir_initialization::" + row_name)
-        qword_row(symbol)
-        stride = number(row["size"])
-        if (
-            row["alignment"] != 8
-            or stride != row["reserved"]
-            or stride != 8 * len(field_names)
-            or len(row["fields"]) != len(field_names)
-            or any(
-                field["name"] != name or field["kind"] != kind or field["offset"] != index * 8
-                for index, (field, name) in enumerate(zip(row["fields"], field_names))
-            )
-        ):
-            raise ValueError("private initialization row changed: " + row_name)
-        lines += [
-            f"inline constexpr std::size_t initialization{row_name}PhysicalBytes = {stride};",
-            f"static_assert(sizeof({cpp_name(symbol)}) == initialization{row_name}PhysicalBytes);",
-        ]
+        if row_name in ("VerificationWorkspace", "VerificationReport"):
+            name = "verification" + row_name.removeprefix("Verification") + "Alignment"
+            lines.append(f"inline constexpr std::size_t {name} = {number(row['alignment'])};")
+        # Copied report lanes remain integer words, including Aurora bool. Host
+        # validation can reject noncanonical 0/1 without reading a native bool.
+        if row_name in ("VerificationReport", "VerificationError", "MetricsRow"):
+            prefix = "verification" + row_name.removeprefix("Verification")
+            for field in row["fields"]:
+                field_name = identifier(field["name"])
+                lines += [
+                    f"inline constexpr std::size_t {prefix}_{field_name}Offset = {number(field['offset'])};",
+                    f"inline constexpr std::size_t {prefix}_{field_name}Bytes = {number(field['bytes'])};",
+                ]
+    root_abi = verification_run["borrowed_root_abi"]
+    lines += [
+        f"inline constexpr std::size_t verificationRunRootCount = {verification_run['borrowed_root_count']};",
+        f"inline constexpr std::size_t verificationRunTuplePayloadBytes = {root_abi['tuple_payload_bytes']};",
+        f"inline constexpr std::size_t verificationRunTupleReservedBytes = {root_abi['tuple_reserved_bytes']};",
+    ]
+    record(
+        "VerificationRunRoots",
+        root_abi["tuple_reserved_bytes"],
+        8,
+        [
+            (8 * root["ordinal"], 8, "void *" if root["mutable"] else "const void *", name)
+            for root, name in zip(verification_run["borrowed_roots"], ("workspace", "metadata", "instructions"))
+        ],
+    )
     # The only manual physical shape is the trusted contiguous readonly span.
     # Source records and their nesting use the compiler's names and field facts.
     if facts["span_bytes"] != 56:
@@ -718,6 +880,8 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
         lines += metadata_messages(metadata_source, facts)
     if instruction_source is not None:
         lines += instruction_messages(instruction_source, facts)
+    if verification_source is not None:
+        lines += verification_messages(verification_source, facts)
     lines += pass_bridges(facts)[0]
     return "\n".join(lines) + "\n"
 
@@ -810,10 +974,16 @@ def stage_modules(module_root, modules):
         (destination / (parts[-1] + ".au")).write_bytes(content)
 
 
-def write_frontend_header(facts, header, messages, metadata_source, instruction_source, compatible_header=None):
+def write_frontend_header(
+    facts, header, messages, metadata_source, instruction_source, compatible_header=None, *, verification_source=None
+):
     """Render the admitted facts; reject incompatible shared ABI before writing."""
     content = frontend_abi_header(
-        facts, messages.read_text(), metadata_source.read_text(), instruction_source.read_text()
+        facts,
+        messages.read_text(),
+        metadata_source.read_text(),
+        instruction_source.read_text(),
+        verification_source.read_text() if verification_source is not None else None,
     ).encode()
     if compatible_header is not None and compatible_header.read_bytes() != content:
         raise ValueError("stage2 ABI header differs from the header used by shared host objects")
@@ -830,6 +1000,8 @@ def emit(
     metadata_source,
     instruction_source,
     compatible_header=None,
+    *,
+    verification_source,
 ):
     raw = output.with_suffix(".generated.s")
     facts_output = output.with_suffix(".abi.json")
@@ -839,7 +1011,15 @@ def emit(
     subprocess.run([str(compiler.resolve()), *command], check=True)
     facts = json.loads(facts_output.read_text())
     header = output.parent / (output.stem.replace("-", "_") + "_abi.hpp")
-    write_frontend_header(facts, header, messages, metadata_source, instruction_source, compatible_header)
+    write_frontend_header(
+        facts,
+        header,
+        messages,
+        metadata_source,
+        instruction_source,
+        compatible_header,
+        verification_source=verification_source,
+    )
     # Symbol spellings come from this emitted module; only register moves are trusted.
     output.write_bytes(
         b"\n".join(
@@ -871,7 +1051,9 @@ def main():
             "lowering_errors.au",
             "ir_metadata_storage.au",
             "ir_instruction_storage.au",
-            "ir_initialization.au",
+            "ir_verification_errors.au",
+            "ir_verification_storage.au",
+            "ir_verification.au",
         }
         <= set(names)
     ):
@@ -887,6 +1069,7 @@ def main():
         modules[names.index("ir_metadata_storage.au")],
         modules[names.index("ir_instruction_storage.au")],
         headers[0] if headers else None,
+        verification_source=modules[names.index("ir_verification_errors.au")],
     )
 
 

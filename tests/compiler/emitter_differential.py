@@ -167,6 +167,13 @@ EXPECTED_REJECTED = {
 # Preserve the initial gate's members and extend this list for every source the
 # historical oracle accepts. Unlisted inputs must prove unsupported, not bypass it.
 HISTORICAL_CORPUS = Path(__file__).with_name("emitter-historical-corpus.txt")
+# Retired production modules remain byte-exact historical emitter inputs. Stage
+# their imports for this gate only; never reintroduce them into the frontend.
+HISTORICAL_MODULES = {
+    "tests/fixtures/emitter-history/ir_initialization.au": (
+        "fa1da348a72dd84453639baa0b1dd80e1e93bd6828c0aa7dee95db8ea67f281f"
+    ),
+}
 
 
 def require(condition, message):
@@ -372,8 +379,12 @@ def main():
     require(EXPECTED_REJECTED.issubset(historical), "historical standalone rejection coverage missing")
     new_consumers = {str(path.relative_to(root)) for path in corpus} - historical
     modules = sorted((root / "compiler").glob("*.au"))
+    historical_modules = [root / name for name in HISTORICAL_MODULES]
+    for name, expected_digest in HISTORICAL_MODULES.items():
+        require(name in historical, "retired module missing from historical emitter corpus: " + name)
+        require(identity(root / name)["sha256"] == expected_digest, "retired historical module changed: " + name)
     decimal = root / "library/std/decimal_digits.au"
-    required = {root / "compiler/frontend.au", root / "compiler/lexer.au", decimal, *modules}
+    required = {root / "compiler/frontend.au", root / "compiler/lexer.au", decimal, *modules, *historical_modules}
     require(len(corpus) > 1 and required.issubset(corpus), "required compiler/library corpus inputs are missing")
     flags = [
         flag
@@ -400,14 +411,15 @@ def main():
         original_sources = source_identities(root)
         bridge_identity = identity(ROOT / "scripts/frontend_bridge.py")
         module_root = artifacts / "compiler-modules"
-        stage_modules(module_root, [*modules, decimal])
+        staged_inputs = [*modules, *historical_modules, decimal]
+        stage_modules(module_root, staged_inputs)
         staged = {str(path.relative_to(module_root)): identity(path) for path in sorted(module_root.rglob("*.au"))}
         expected = sorted(
             (
                 hashlib.sha256(render(path.read_bytes().decode()).encode()).hexdigest(),
                 len(render(path.read_bytes().decode()).encode()),
             )
-            for path in [*modules, decimal]
+            for path in staged_inputs
         )
         require(sorted((row["sha256"], row["bytes"]) for row in staged.values()) == expected, "module staging differs")
         write_json(
@@ -437,7 +449,13 @@ def main():
             case.mkdir(parents=True)
             invocation = case / "invocation"
             # Kernel programs import kernel/policies; without it they only "reject".
-            roots = [module_root] if source in modules else [root / "library", root / "kernel/policies"]
+            roots = (
+                [module_root]
+                if source in modules
+                or source in historical_modules
+                or source == root / "tests/compiler/initialization_probe.au"
+                else [root / "library", root / "kernel/policies"]
+            )
             arguments = [
                 *flags,
                 *(argument for path in roots for argument in ("--module-root", str(path))),

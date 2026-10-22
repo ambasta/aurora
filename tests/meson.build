@@ -76,11 +76,30 @@ test('scratchpad-source-native', python,
     depends: aurorac, suite: ['full', 'dev', 'core', 'bytes', 'compiler'],
     env: oracle_env, workdir: meson.current_build_dir(), timeout: 180, is_parallel: true)
 
+# Model and ownership checks use one standalone source graph. No production
+# friendship, synthesized workspace descriptor or overlapping frontend graph is linked.
+initialization_probe = custom_target(
+    'initialization-probe',
+    input: files('compiler/initialization_probe.au', '../compiler/ir_verification_errors.au',
+                 '../compiler/ir_verification_storage.au', '../compiler/ir_verification_initialization.au',
+                 '../compiler/ir_metadata_storage.au', '../compiler/ir_metadata.au'),
+    output: ['initialization-probe.s', 'initialization-probe.generated.s',
+             'initialization-probe.abi.json', 'initialization_probe_abi.hpp'],
+    command: bootstrap_guard + [python, '-B', files('compiler/initialization_probe.py'), bootstrap_compiler,
+              '--output', '@OUTPUT0@', '--frontend-facts', frontend_assembly[2], '@INPUT@'],
+    depend_files: bootstrap_depend_files + files('../scripts/bootstrap_frontend.py', '../scripts/frontend_bridge.py'),
+)
+initialization_probe_object = custom_target(
+    'initialization-probe-object', input: initialization_probe[0], output: 'initialization-probe.o',
+    command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '@INPUT@', '-o', '@OUTPUT@'],
+)
 initialization_facts = executable(
     'initialization-facts',
-    'compiler/initialization_facts.cpp',
-    dependencies: hosted_frontend,
-    include_directories: include_directories('../compiler'),
+    ['compiler/initialization_facts.cpp', 'compiler/initialization_workspace.cpp',
+     'compiler/initialization_ownership.cpp', '../runtime/hosted_bytes.cpp',
+     initialization_probe_object, initialization_probe[3]],
+    dependencies: frontend_headers,
+    include_directories: include_directories('.', '../compiler'),
     native: true,
     install: false,
 )
@@ -90,6 +109,17 @@ test(
     suite: ['full', 'dev', 'core', 'compiler'],
     timeout: 120,
 )
+
+
+# Frozen independent oracle rows are expectations, not a final-source receipt.
+verifier_contract = executable('verifier-contract', 'compiler/verifier_contract.cpp',
+    dependencies: hosted_frontend, include_directories: include_directories('../compiler'),
+    native: true, install: false)
+test('verifier-contract', python,
+    args: ['-B', artifact_adapter, python, '-B', files('compiler/verifier_contract.py'),
+           verifier_contract, files('compiler/verifier_contract.expected.jsonl'), '--artifacts', '@ARTIFACTS@'],
+    depends: verifier_contract, suite: ['full', 'dev', 'core', 'compiler'],
+    env: oracle_env, workdir: meson.current_build_dir(), timeout: 120)
 
 class_arrays_ir = executable(
     'class-arrays-ir',
@@ -737,17 +767,25 @@ test('hosted-parser', hosted_parser_test,
                  '../compiler/resolution_ingest.au', '../compiler/ir_graph.au', '../library/console/line.au',
                  '../compiler/ir_metadata_storage.au', '../compiler/ir_metadata.au',
                  '../compiler/ir_instruction_storage.au', '../compiler/ir_instructions.au',
-                 '../compiler/ir_initialization.au',
+                 '../compiler/ir_verification_errors.au',
                  '../compiler/x86_storage.au', '../compiler/x86_helpers.au', '../compiler/x86_scalar.au',
                  '../compiler/x86_objects.au', '../compiler/x86_resources.au', '../compiler/x86_facts.au',
                  '../compiler/x86_module.au', '../library/std/decimal_digits.au', '../compiler/formatter.au',
-                 '../compiler/resolution_linkage.au'),
+                 '../compiler/resolution_linkage.au',
+                 '../compiler/ir_verification_storage.au',
+                 '../compiler/ir_verification_initialization.au',
+                 '../compiler/ir_verification_common.au',
+                 '../compiler/ir_verification_values.au',
+                 '../compiler/ir_verification_resources.au',
+                 '../compiler/ir_verification_services.au',
+                 '../compiler/ir_verification_transfer.au',
+                 '../compiler/ir_verification.au'),
      suite: ['full', 'dev', 'core', 'compiler'], timeout: 120)
 hosted_parser_invalid = executable(
     'hosted-parser-invalid', ['compiler/hosted_parser_invalid.cpp', '../compiler/hosted_parser.cpp',
                               '../compiler/hosted_resolver.cpp', '../compiler/hosted_lowering.cpp',
                               '../compiler/hosted_lowering_diagnostics.cpp', '../compiler/hosted_ir_metadata.cpp',
-                              '../compiler/hosted_ir_instructions.cpp', '../compiler/hosted_ir_initialization.cpp',
+                              '../compiler/hosted_ir_instructions.cpp',
                               '../compiler/ir_verify.cpp',
                               '../runtime/hosted_bytes.cpp', frontend_assembly[3]],
     cpp_args: ['-DAURORA_HOSTED_PARSER'], include_directories: include_directories('../compiler', '..'),
