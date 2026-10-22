@@ -1,0 +1,1094 @@
+export module aurora.compiler.ir_verification_resources;
+import aurora.compiler.ir_verification_values;
+import aurora.compiler.ir_verification_common;
+import aurora.compiler.ir_verification_storage;
+import aurora.compiler.ir_verification_errors;
+import aurora.compiler.ir_verification_initialization;
+import aurora.compiler.ir_instructions;
+import aurora.compiler.ir_instruction_storage;
+import aurora.compiler.ir_metadata;
+import aurora.compiler.ir_metadata_storage;
+
+export namespace compiler_ir_verification {
+    auto transfer_resource_fact(FactKind kind, i64 key, i64 field, i64 site, ByteDisposition disposition,
+        TokenRow token) -> FactRow {
+        const SpanPayload inactive_span = SpanPayload(SpanOrigin::local_array, 0, 0, 0, 0);
+        const TypeKey inactive_type = TypeKey(0, -1);
+        const LoanPayload inactive_loan = LoanPayload(0, 0, inactive_type, false, false, -1);
+        FactRow fact = FactRow(kind, key, field, token, inactive_span, inactive_loan);
+        fact.set_site(site);
+        fact.set_disposition(disposition);
+        return fact;
+    }
+    auto transfer_same_region(TokenRow token, i64 root, i64 site) -> bool {
+        return token.kind() == TokenKind::owned && token.region_root() == root && token.region_site() == site;
+    }
+    auto transfer_binding(VerificationWorkspace& w, i64 root, i64 ordinal) -> FactRow {
+        if (ordinal >= 0) {
+            return w.fact_find(FactKind::owned_field, root, ordinal);
+        }
+        if (root == 0) {
+            return w.fact_find(FactKind::borrowed_owner, 0, -1);
+        }
+        return w.fact_find(FactKind::bytes, root, -1);
+    }
+    auto transfer_resource_call(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 id) -> bool {
+        const i64 target_id = transfer_target(m, s, id);
+        const compiler_ir_metadata::CallableRow target = m.callable_at(target_id);
+        const bool constructor = transfer_receiver(m, target_id);
+        const i64 region_root = transfer_value(s, id, 1);
+        if (!active_region(w, region_root)) {
+            return false;
+        }
+        const ControlRow control = w.control();
+        const i64 region_site = control.region_site();
+        i64 arg = target.value_parameter_count();
+        while (arg > 0) {
+            arg = arg - 1;
+            const i64 type_id = target.value_parameter_begin() + arg;
+            const compiler_ir_metadata::RawTypeRow type = m.type_at(type_id);
+            const i64 base = transfer_lane(s, id, 2, arg);
+            if (compiler_ir_metadata::owner_kind(type) || compiler_ir_metadata::owning_type(m, type)) {
+                if (compiler_ir_metadata::owner_kind(type)) {
+                    if (!live_bytes(w, m, base)) {
+                        return false;
+                    }
+                    const FactRow binding = w.fact_find(FactKind::bytes, base, -1);
+                    const TokenRow origin = binding.token();
+                    if (!owner_writable(w, s, base, -1, AccessMode::write)) {
+                        return false;
+                    }
+                    if (!transfer_same_region(origin, region_root, region_site)) {
+                        return w.fail(first_error(
+                            VerificationErrorFirst::resource_call_owning_argument_has_wrong_region));
+                    }
+                } else {
+                    live_object(w, m, s, base, AccessMode::read);
+                    if (!w.good() || !owned_object_region(w, s, base, AccessMode::write)) {
+                        return false;
+                    }
+                    const TokenRow origin = owned_object_token(w, base);
+                    if (!transfer_same_region(origin, region_root, region_site)) {
+                        return w.fail(first_error(
+                            VerificationErrorFirst::resource_call_owning_argument_has_wrong_region));
+                    }
+                }
+            } else {
+                if (constructor && type.kind() == 5) {
+                    live_object(w, m, s, base, AccessMode::read);
+                    if (!w.good()) {
+                        return false;
+                    }
+                } else {
+                    if (arg > 0 && !transfer_pop_type(w, m, type_id,
+                        VerificationErrorFirst::resource_call_scalar_argument_type_mismatch,
+                        VerificationErrorSecond::none)) {
+                        return false;
+                    }
+                }
+            }
+        }
+        const compiler_ir_metadata::IndexRange types = target.types();
+        const compiler_ir_metadata::RawTypeRow result = m.type_at(types.begin());
+        const i64 result_base = transfer_value(s, id, 3);
+        if (!constructor && compiler_ir_metadata::owner_kind(result)) {
+            if (!pristine_bytes(w, result_base)) {
+                return false;
+            }
+        } else {
+            if (!constructor && result.kind() == 5 && !compiler_ir_metadata::owning_type(m, result)) {
+                if (!transfer_has(w, FactKind::object, result_base)) {
+                    return w.fail(first_error(
+                        VerificationErrorFirst::resource_copied_result_outside_active_object_lifetime));
+                }
+                const i64 constructed = compiler_ir_initialization::object_was_constructed(w, m, result_base);
+                if (constructed < 0 || !w.good()) {
+                    return false;
+                }
+                if (constructed == 1) {
+                    return w.fail(first_error(
+                        VerificationErrorFirst::resource_copied_result_object_already_initialized));
+                }
+                const i64 pristine = compiler_ir_initialization::object_pristine(w, m, result_base);
+                if (pristine < 0 || !w.good()) {
+                    return false;
+                }
+                if (pristine == 0) {
+                    return w.fail(first_error(
+                        VerificationErrorFirst::resource_copied_result_requires_uninitialized_object));
+                }
+            }
+        }
+        arg = 0;
+        while (arg < target.value_parameter_count()) {
+            const compiler_ir_metadata::RawTypeRow type = m.type_at(target.value_parameter_begin() + arg);
+            const i64 base = transfer_lane(s, id, 2, arg);
+            if (compiler_ir_metadata::owning_type(m, type)) {
+                if (!consume_object(w, s, base)) {
+                    return false;
+                }
+            } else {
+                if (compiler_ir_metadata::owner_kind(type)) {
+                    if (!owner_writable(w, s, base, -1, AccessMode::write) || !active_byte_binding(w, base)
+                        || !consume_byte_binding(w, base)) {
+                        return false;
+                    }
+                }
+            }
+            arg = arg + 1;
+        }
+        if (constructor) {
+            if (!mint_live_object(w, m, transfer_value(s, id, 4), region_root, region_site)) {
+                return false;
+            }
+            return transfer_set_type(w, m, types.begin());
+        }
+        if (compiler_ir_metadata::owner_kind(result)) {
+            if (!pristine_bytes(w, result_base) || !mint_byte_binding(w, result_base, region_root, region_site)) {
+                return false;
+            }
+            return w.clear_current();
+        }
+        if (compiler_ir_metadata::owning_type(m, result)) {
+            if (!mint_live_object(w, m, result_base, region_root, region_site)) {
+                return false;
+            }
+            return w.clear_current();
+        }
+        if (result.kind() == 5) {
+            if (!compiler_ir_initialization::mark_object(w, m, result_base)) {
+                return false;
+            }
+            return w.clear_current();
+        }
+        return transfer_set_type(w, m, types.begin());
+    }
+    auto transfer_bytes(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 id) -> bool {
+        const compiler_ir_instructions::RawInstructionRow op = s.instruction_at(id);
+        const i64 form = op.form();
+        const i64 base = transfer_value(s, id, 0);
+        const ControlRow control = w.control();
+        if (form == 60) {
+            if (transfer_slot(m, w.callable(), 16, base) < 0) {
+                return w.fail(first_error(VerificationErrorFirst::owned_byte_lifetime_requires_exact_typed_spill));
+            }
+            if (entry_contains(s, w.callable(), 74, base)) {
+                return w.fail(first_error(VerificationErrorFirst::owned_byte_parameter_lifetime_cannot_restart));
+            }
+            if (transfer_has(w, FactKind::bytes, base)) {
+                return w.fail(first_error(VerificationErrorFirst::owned_byte_lifetime_already_active));
+            }
+            const TokenRow fact_token = no_token();
+            const FactRow new_fact = transfer_resource_fact(FactKind::bytes, base, -1, control.instruction_id(),
+                ByteDisposition::pristine, fact_token);
+            return w.fact_set(new_fact);
+        }
+        if (form == 61 || form == 62) {
+            const i64 result = transfer_value(s, id, 1);
+            if (!owner_type(w, m, result)) {
+                return false;
+            }
+            const TypeKey type = owner_key(m, w.callable(), result, -1);
+            if (form == 61 && type.kind() != 13) {
+                return w.fail(first_error(
+                    VerificationErrorFirst::byte_allocation_cannot_initialize_typed_owned_values));
+            }
+            if (form == 62 && type.kind() != 17) {
+                return w.fail(first_error(VerificationErrorFirst::value_allocation_requires_typed_owner));
+            }
+            if (!transfer_current_kind(w, 0)) {
+                return false;
+            }
+            if (form == 62 && !copied_value(w, m, s, transfer_value(s, id, 2), type.nominal(), result)) {
+                return false;
+            }
+            if (!region(w, m, base) || !mint_bytes(w, m, result, base, control.region_site())) {
+                return false;
+            }
+            return w.clear_current();
+        }
+        if (form == 63 || form == 64 || form == 65) {
+            const i64 ordinal = transfer_value(s, id, 1);
+            AccessMode mode = AccessMode::read;
+            if (form != 63) {
+                mode = AccessMode::write;
+            }
+            if (!access_bytes(w, m, s, base, ordinal, mode) || !accessed_owner_type(w, m, base, ordinal)) {
+                return false;
+            }
+            const TypeKey type = owner_key(m, w.callable(), base, ordinal);
+            if (type.kind() != 17) {
+                if (form == 63) {
+                    return w.fail(first_error(VerificationErrorFirst::value_load_requires_typed_owner));
+                }
+                return w.fail(first_error(VerificationErrorFirst::value_mutation_requires_typed_owner));
+            }
+            if (!transfer_current_kind(w, 0)) {
+                return false;
+            }
+            const i64 other = transfer_value(s, id, 2);
+            if (form == 63) {
+                if (other == base) {
+                    return w.fail(first_error(VerificationErrorFirst::value_load_result_aliases_owner_root));
+                }
+                if (!copy_target(w, m, other, type.nominal())) {
+                    return false;
+                }
+                return w.clear_current();
+            }
+            if (!copied_value(w, m, s, other, type.nominal(), base)) {
+                return false;
+            }
+            return transfer_set_kind(w, 1);
+        }
+        if (form == 66) {
+            const i64 result = transfer_value(s, id, 1);
+            if (base == result) {
+                return w.fail(first_error(VerificationErrorFirst::owned_byte_move_source_aliases_result));
+            }
+            if (!owner_type(w, m, base) || !owner_type(w, m, result)) {
+                return false;
+            }
+            const TypeKey source_type = owner_key(m, w.callable(), base, -1);
+            const TypeKey result_type = owner_key(m, w.callable(), result, -1);
+            if (!source_type.same(result_type)) {
+                return w.fail(first_error(VerificationErrorFirst::owner_move_nominal_type_mismatch));
+            }
+            if (!bytes(w, m, s, base, AccessMode::write)) {
+                return false;
+            }
+            const FactRow source = w.fact_find(FactKind::bytes, base, -1);
+            const TokenRow token = source.token();
+            if (!byte_target(w, m, result)) {
+                return false;
+            }
+            FactRow target = w.fact_find(FactKind::bytes, result, -1);
+            if (!consume_bytes(w, m, s, base)) {
+                return false;
+            }
+            target.set_disposition(ByteDisposition::live);
+            target.set_token(token);
+            return w.fact_set(target);
+        }
+        if (form >= 67 && form <= 71) {
+            const i64 ordinal = transfer_value(s, id, 1);
+            AccessMode mode = AccessMode::read;
+            if (form == 70 || form == 71) {
+                mode = AccessMode::write;
+            }
+            if (!access_bytes(w, m, s, base, ordinal, mode)) {
+                return false;
+            }
+            if (form == 67) {
+                return transfer_set_kind(w, 1);
+            }
+            if (form == 68) {
+                return transfer_set_kind(w, 0);
+            }
+            if (!accessed_owner_type(w, m, base, ordinal)) {
+                return false;
+            }
+            const TypeKey type = owner_key(m, w.callable(), base, ordinal);
+            if (type.kind() != 13) {
+                return w.fail(first_error(
+                    VerificationErrorFirst::byte_payload_operation_cannot_access_typed_owned_values));
+            }
+            if (form == 70) {
+                if (!transfer_current_kind(w, 10) || !transfer_pop_kind(w, 0,
+                    first_error(VerificationErrorFirst::owned_byte_store_index_requires_i64))) {
+                    return false;
+                }
+            } else {
+                if (!transfer_current_kind(w, 0)) {
+                    return false;
+                }
+            }
+            if (form == 69) {
+                return transfer_set_kind(w, 10);
+            }
+            return transfer_set_kind(w, 1);
+        }
+        if (form == 72) {
+            if (!byte_binding(w, m, base) || !owner_writable(w, s, base, -1, AccessMode::write)) {
+                return false;
+            }
+            return w.fact_erase(FactKind::bytes, base, -1);
+        }
+        if (form == 74) {
+            if (!active_region(w, control.region_offset())) {
+                return false;
+            }
+            const TokenRow token = fresh_token(w, control.region_offset(), control.region_site(), -1);
+            if (!w.good()) {
+                return false;
+            }
+            const FactRow new_fact = transfer_resource_fact(FactKind::bytes, transfer_value(s, id, 1), -1,
+                control.instruction_id(), ByteDisposition::live, token);
+            return w.fact_set(new_fact);
+        }
+        return w.fail(first_error(VerificationErrorFirst::internal));
+    }
+    auto transfer_spans(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 id) -> bool {
+        const compiler_ir_instructions::RawInstructionRow op = s.instruction_at(id);
+        const i64 form = op.form();
+        const i64 base = transfer_value(s, id, 0);
+        const ControlRow control = w.control();
+        if (form == 47 || form == 48) {
+            if (form == 47) {
+                if (transfer_has(w, FactKind::array_lifetime, base)) {
+                    return w.fail(first_error(VerificationErrorFirst::array_lifetime_already_active));
+                }
+                const TokenRow fact_token = no_token();
+                const FactRow new_fact = transfer_resource_fact(FactKind::array_lifetime, base, -1,
+                    control.instruction_id(), ByteDisposition::pristine, fact_token);
+                if (!w.fact_set(new_fact)) {
+                    return false;
+                }
+            } else {
+                if (!transfer_has(w, FactKind::array_lifetime, base)) {
+                    return w.fail(first_error(VerificationErrorFirst::array_lifetime_is_not_active));
+                }
+                i64 node = w.first_fact(FactKind::span);
+                while (node >= 0) {
+                    const FactRow fact = w.fact_at(node);
+                    if (fact.kind() != FactKind::span) {
+                        node = -1;
+                    } else {
+                        const SpanPayload span_value = fact.span();
+                        const TokenRow token = fact.token();
+                        if (span_value.origin_kind() != SpanOrigin::literal && token.kind() == TokenKind::none
+                            && span_value.origin_kind() != SpanOrigin::parameter && span_value.origin() == base) {
+                            return w.fail(first_error(
+                                VerificationErrorFirst::array_lifetime_ends_with_live_readonly_span));
+                        }
+                        node = w.next_fact(node);
+                    }
+                }
+                if (!w.fact_erase(FactKind::array_lifetime, base, -1)) {
+                    return false;
+                }
+            }
+            const compiler_ir_metadata::SlotRow slot = m.slot_at(transfer_slot(m, w.callable(), 12, base));
+            return compiler_ir_initialization::clear_array(w, m, base, slot.length(), 1);
+        }
+        if (form == 49) {
+            if (!transfer_has(w, FactKind::array_lifetime, base)) {
+                return w.fail(first_error(VerificationErrorFirst::span_borrow_requires_active_byte_array_origin));
+            }
+            const compiler_ir_metadata::SlotRow slot = m.slot_at(transfer_slot(m, w.callable(), 12, base));
+            if (compiler_ir_initialization::array_first_missing(w, m, base, slot.length(), 1) >= 0) {
+                return w.fail(first_error(VerificationErrorFirst::array_element_not_initialized));
+            }
+            const i64 result = transfer_value(s, id, 1);
+            if (!inactive_span_target(w, result)) {
+                return false;
+            }
+            const FactRow origin = w.fact_find(FactKind::array_lifetime, base, -1);
+            const TokenRow fact_token = no_token();
+            FactRow fact = transfer_resource_fact(FactKind::span, result, -1, control.instruction_id(),
+                ByteDisposition::pristine, fact_token);
+            const SpanPayload payload = SpanPayload(SpanOrigin::local_array, base, origin.site(), 0, 0);
+            fact.set_span(payload);
+            return w.fact_set(fact);
+        }
+        if (form == 50) {
+            return borrow_receiver_array_field(w, m, s, base, transfer_value(s, id, 1));
+        }
+        if (form == 51) {
+            const compiler_ir_instructions::RawOperandRow literal = compiler_ir_instructions::call_operand(s, id, 0);
+            if (literal.count() > 4096) {
+                return w.fail(first_error(VerificationErrorFirst::literal_span_exceeds_byte_string_bound));
+            }
+            const i64 result = transfer_value(s, id, 1);
+            if (!span_target(w, m, s, result)) {
+                return false;
+            }
+            const TokenRow fact_token = no_token();
+            FactRow fact = transfer_resource_fact(FactKind::span, result, -1, control.instruction_id(),
+                ByteDisposition::pristine, fact_token);
+            const SpanPayload payload = SpanPayload(SpanOrigin::literal, result, control.instruction_id(), 0, 0);
+            fact.set_span(payload);
+            return w.fact_set(fact);
+        }
+        if (form == 52) {
+            return borrow_owned(w, m, s, base, transfer_value(s, id, 1), transfer_value(s, id, 2));
+        }
+        if (form == 54 || form == 55) {
+            if (form == 55) {
+                if (!transfer_current_kind(w, 0) || !transfer_pop_kind(w, 0,
+                    first_error(VerificationErrorFirst::subspan_offset_requires_i64)) || !transfer_set_kind(w, 0)) {
+                    return false;
+                }
+            }
+            if (!span(w, m, s, base, AccessMode::read)) {
+                return false;
+            }
+            FactRow capability = w.fact_find(FactKind::span, base, -1);
+            const i64 result = transfer_value(s, id, 1);
+            if (!span_target(w, m, s, result)) {
+                return false;
+            }
+            SpanPayload payload = capability.span();
+            payload.set_parent(base);
+            payload.set_parent_site(capability.site());
+            capability.set_span(payload);
+            capability.set_site(control.instruction_id());
+            capability.set_key(result);
+            return w.fact_set(capability);
+        }
+        if (form == 56) {
+            if (!span(w, m, s, base, AccessMode::read)) {
+                return false;
+            }
+            i64 node = w.first_fact(FactKind::span);
+            while (node >= 0) {
+                const FactRow fact = w.fact_at(node);
+                if (fact.kind() != FactKind::span) {
+                    node = -1;
+                } else {
+                    const SpanPayload payload = fact.span();
+                    if (payload.parent() == base) {
+                        return w.fail(first_error(VerificationErrorFirst::span_lifetime_ends_with_live_child_reborrow));
+                    }
+                    node = w.next_fact(node);
+                }
+            }
+            return w.fact_erase(FactKind::span, base, -1);
+        }
+        if (form == 57 || form == 58) {
+            if (!span(w, m, s, base, AccessMode::read)) {
+                return false;
+            }
+            if (form == 58) {
+                if (!transfer_current_kind(w, 0)) {
+                    return false;
+                }
+                return transfer_set_kind(w, 10);
+            }
+            return transfer_set_kind(w, 0);
+        }
+        if (form == 59) {
+            const TokenRow fact_token = no_token();
+            FactRow fact = transfer_resource_fact(FactKind::span, transfer_value(s, id, 1), -1,
+                control.instruction_id(), ByteDisposition::pristine, fact_token);
+            const SpanPayload payload = SpanPayload(SpanOrigin::parameter, base, control.instruction_id(), 0, 0);
+            fact.set_span(payload);
+            return w.fact_set(fact);
+        }
+        return w.fail(first_error(VerificationErrorFirst::internal));
+    }
+    auto transfer_owning_objects(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 id) -> bool {
+        const compiler_ir_instructions::RawInstructionRow op = s.instruction_at(id);
+        const i64 form = op.form();
+        const i64 base = transfer_value(s, id, 0);
+        const ControlRow control = w.control();
+        if (form == 77) {
+            const i64 ordinal = transfer_value(s, id, 1);
+            const i64 source = transfer_value(s, id, 2);
+            if (base != 0 || !control.owning_constructor()) {
+                return w.fail(first_error(
+                    VerificationErrorFirst::resource_field_initialization_requires_bound_owning_constructor));
+            }
+            const i64 shape_index = receiver_shape(w, m, s, ordinal);
+            if (!w.good()) {
+                return false;
+            }
+            const compiler_ir_metadata::FieldRow shape = m.field_at(shape_index);
+            const compiler_ir_metadata::RawTypeRow shape_type = m.type_at(shape.type());
+            if (!compiler_ir_metadata::owner_kind(shape_type) || shape.array_flag() != 0) {
+                return w.fail(first_error(
+                    VerificationErrorFirst::resource_field_initialization_requires_direct_owner_field));
+            }
+            if (!owner_type(w, m, source)) {
+                return false;
+            }
+            const TypeKey source_type = owner_key(m, w.callable(), source, -1);
+            if (!same_type_key(m, source_type, shape.type())) {
+                return w.fail(first_error(
+                    VerificationErrorFirst::resource_field_initialization_owner_nominal_type_mismatch));
+            }
+            FactRow target = w.fact_find(FactKind::owned_field, 0, ordinal);
+            const TokenRow prior = target.token();
+            if (target.disposition() != ByteDisposition::pristine || prior.kind() != TokenKind::none) {
+                return w.fail(first_error(
+                    VerificationErrorFirst::constructor_resource_field_initialized_more_than_once));
+            }
+            if (!bytes(w, m, s, source, AccessMode::write)) {
+                return false;
+            }
+            const FactRow source_binding = w.fact_find(FactKind::bytes, source, -1);
+            const TokenRow token = source_binding.token();
+            if (!control.has_region()) {
+                return w.fail(first_error(VerificationErrorFirst::constructor_resource_field_has_wrong_region));
+            }
+            if (!region(w, m, control.region_offset())) {
+                return false;
+            }
+            if (!transfer_same_region(token, control.region_offset(), control.region_site())) {
+                return w.fail(first_error(VerificationErrorFirst::constructor_resource_field_has_wrong_region));
+            }
+            if (!consume_bytes(w, m, s, source)) {
+                return false;
+            }
+            target.set_disposition(ByteDisposition::live);
+            target.set_token(token);
+            if (!w.fact_set(target)) {
+                return false;
+            }
+            return w.clear_current();
+        }
+        if (form == 78) {
+            const i64 result = transfer_value(s, id, 1);
+            if (base == result) {
+                return w.fail(first_error(VerificationErrorFirst::owning_object_move_source_aliases_result));
+            }
+            const i64 slot = complete_object(w, m, s, base, AccessMode::read);
+            if (!w.good()) {
+                return false;
+            }
+            const i64 nominal = slot_class(m, slot);
+            if (!owned_object(w, m, s, base, nominal, AccessMode::write) || !copy_target(w, m, result, nominal)) {
+                return false;
+            }
+            // consumeObject has one fallible semantic check before mutation.
+            // Validate it before transferring any field. The flat representation
+            // then moves each token directly, retaining destination lifetime sites.
+            if (!owner_writable(w, s, base, -2, AccessMode::write)) {
+                return false;
+            }
+            FactRow source_root = w.fact_find(FactKind::owned_object, base, -1);
+            source_root.set_disposition(ByteDisposition::consumed);
+            if (!w.fact_set(source_root)) {
+                return false;
+            }
+            FactRow destination = w.fact_find(FactKind::owned_object, result, -1);
+            destination.set_disposition(ByteDisposition::live);
+            if (!w.fact_set(destination)) {
+                return false;
+            }
+            i64 node = w.first_fact(FactKind::owned_field);
+            while (node >= 0) {
+                FactRow source_field = w.fact_at(node);
+                if (source_field.kind() != FactKind::owned_field) {
+                    node = -1;
+                } else {
+                    const i64 next = w.next_fact(node);
+                    if (source_field.key() == base) {
+                        FactRow target = w.fact_find(FactKind::owned_field, result, source_field.field());
+                        target.set_disposition(ByteDisposition::live);
+                        const TokenRow moved_token = source_field.token();
+                        target.set_token(moved_token);
+                        source_field.set_disposition(ByteDisposition::consumed);
+                        const TokenRow cleared_token = no_token();
+                        source_field.set_token(cleared_token);
+                        if (!w.fact_set(source_field) || !w.fact_set(target)) {
+                            return false;
+                        }
+                    }
+                    node = next;
+                }
+            }
+            return w.clear_current();
+        }
+        if (form == 79) {
+            const i64 root = transfer_value(s, id, 1);
+            const TokenRow fact_token = no_token();
+            const FactRow new_fact = transfer_resource_fact(FactKind::object, root, -1, control.instruction_id(),
+                ByteDisposition::pristine, fact_token);
+            if (!w.fact_set(new_fact)) {
+                return false;
+            }
+            const compiler_ir_instructions::RawOperandRow name = compiler_ir_instructions::call_operand(s, id, 2);
+            const compiler_ir_metadata::ByteRange class_name = compiler_ir_metadata::ByteRange(name.begin(),
+                name.count());
+            const i64 nominal = compiler_ir_metadata::find_class(m, class_name);
+            if (!begin_owned_object(w, m, root, nominal) || !initialize_object(w, m, root) || !active_region(w,
+                control.region_offset())) {
+                return false;
+            }
+            return mint_object_fields(w, root, control.region_offset(), control.region_site());
+        }
+        return w.fail(first_error(VerificationErrorFirst::internal));
+    }
+    auto transfer_acquire_object_loan(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 id) -> bool {
+        const i64 loan_id = transfer_value(s, id, 0);
+        const i64 root = transfer_value(s, id, 1);
+        const bool mutable_value = transfer_value(s, id, 2) != 0;
+        const i64 ordinal = transfer_value(s, id, 3);
+        const ControlRow control = w.control();
+        const compiler_ir_metadata::CallableRow signature = m.callable_at(w.callable());
+        if (loan_id <= 0 || transfer_has(w, FactKind::object_loan, loan_id)) {
+            return w.fail(second_error(VerificationErrorSecond::invalid_or_duplicate_object_loan_identity));
+        }
+        if (ordinal < -1) {
+            return w.fail(second_error(VerificationErrorSecond::invalid_object_loan_field_selector));
+        }
+        if (root <= 0 && !has_bound_root(w, root)) {
+            return w.fail(first_error(VerificationErrorFirst::invalid_borrowed_object_root));
+        }
+        AccessMode mode = AccessMode::read;
+        if (mutable_value) {
+            mode = AccessMode::write;
+        }
+        if (!loan_access(w, s, root, mode)) {
+            return false;
+        }
+        const bool builtin_owner = ordinal >= 0 || (root == 0 && control.builtin_borrowed_owner()) || transfer_slot(m,
+            w.callable(), 16, root) >= 0;
+        if (builtin_owner) {
+            if (!mutable_value) {
+                return w.fail(second_error(VerificationErrorSecond::builtin_owner_loan_requires_mutable_authority));
+            }
+            if (ordinal >= 0 && (root != 0 || !transfer_receiver(m, w.callable()) || signature.borrowed_root_count()
+                != 0 || transfer_constructor(m, w.callable()) || !transfer_mutable_receiver(m, w.callable()))) {
+                return w.fail(second_error(
+                    VerificationErrorSecond::builtin_owner_field_loan_requires_mutable_lexical_receiver));
+            }
+            if (!access_bytes(w, m, s, root, ordinal, AccessMode::write) || !accessed_owner_type(w, m, root, ordinal)) {
+                return false;
+            }
+            const FactRow binding = transfer_binding(w, root, ordinal);
+            const TypeKey type = owner_key(m, w.callable(), root, ordinal);
+            if (type.kind() != 17) {
+                return w.fail(second_error(VerificationErrorSecond::builtin_owner_loan_requires_typed_owned_values));
+            }
+            if (!owner_writable(w, s, root, -2, AccessMode::write)) {
+                return false;
+            }
+            i64 site = binding.site();
+            if (ordinal != -1) {
+                const FactRow object = w.fact_find(FactKind::owned_object, root, -1);
+                site = object.site();
+            }
+            const TokenRow fact_token = binding.token();
+            FactRow loan = transfer_resource_fact(FactKind::object_loan, loan_id, -1, 0, ByteDisposition::pristine,
+                fact_token);
+            const LoanPayload payload = LoanPayload(root, site, type, true, false, ordinal);
+            loan.set_loan(payload);
+            return w.fact_set(loan);
+        }
+        i64 nominal = -1;
+        if (root <= 0) {
+            if (signature.borrowed_root_count() == 0 || !control.has_receiver()) {
+                return w.fail(second_error(VerificationErrorSecond::bound_root_loan_requires_named_borrowed_formal));
+            }
+            nominal = bound_root_class(w, m, root);
+            if (!w.good()) {
+                return false;
+            }
+            if (mutable_value && !bound_root_mutable(m, w.callable(), root)) {
+                return w.fail(second_error(VerificationErrorSecond::shared_formal_cannot_supply_mutable_object_loan));
+            }
+        } else {
+            const i64 slot_id = complete_object(w, m, s, root, AccessMode::read);
+            if (!w.good()) {
+                return false;
+            }
+            const compiler_ir_metadata::SlotRow slot = m.slot_at(slot_id);
+            if (mutable_value && slot.mutable_value() == 0) {
+                return w.fail(second_error(VerificationErrorSecond::const_object_cannot_supply_mutable_object_loan));
+            }
+            nominal = slot_class(m, slot_id);
+        }
+        if (!live_owning_root(w, m, s, root, AccessMode::read)) {
+            return false;
+        }
+        const FactRow object = w.fact_find(FactKind::owned_object, root, -1);
+        if (mutable_value && !owner_writable(w, s, root, -2, AccessMode::write)) {
+            return false;
+        }
+        const TokenRow fact_token = no_token();
+        FactRow loan = transfer_resource_fact(FactKind::object_loan, loan_id, -1, 0, ByteDisposition::pristine,
+            fact_token);
+        const TypeKey loan_type = TypeKey(5, nominal);
+        const LoanPayload payload = LoanPayload(root, object.site(), loan_type, mutable_value, false, -1);
+        loan.set_loan(payload);
+        return w.fact_set(loan);
+    }
+    auto transfer_release_object_loan(VerificationWorkspace& w, i64 loan_id) -> bool {
+        if (!transfer_has(w, FactKind::object_loan, loan_id)) {
+            return w.fail(second_error(VerificationErrorSecond::release_requires_active_object_loan));
+        }
+        const FactRow fact = w.fact_find(FactKind::object_loan, loan_id, -1);
+        const LoanPayload loan = fact.loan();
+        if (!loan.called()) {
+            return w.fail(second_error(VerificationErrorSecond::object_loan_release_requires_completed_borrowed_call));
+        }
+        return w.fact_erase(FactKind::object_loan, loan_id, -1);
+    }
+    auto transfer_validate_borrowed_roots(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 id) -> bool {
+        const i64 target_id = transfer_target(m, s, id);
+        const compiler_ir_metadata::CallableRow target = m.callable_at(target_id);
+        const compiler_ir_metadata::CallableRow signature = m.callable_at(w.callable());
+        const ControlRow control = w.control();
+        const i64 count = target.borrowed_root_count();
+        if (count == 0 || compiler_ir_instructions::call_count(s, id, 1) != 3 * count) {
+            return w.fail(second_error(VerificationErrorSecond::borrowed_call_root_count_mismatch));
+        }
+        i64 ordinal = 0;
+        while (ordinal < count) {
+            const i64 root = transfer_lane(s, id, 1, 3 * ordinal);
+            const i64 loan_id = transfer_lane(s, id, 1, 3 * ordinal + 1);
+            const i64 field = transfer_lane(s, id, 1, 3 * ordinal + 2);
+            if (!transfer_has(w, FactKind::object_loan, loan_id)) {
+                return w.fail(second_error(VerificationErrorSecond::borrowed_call_requires_active_loan));
+            }
+            const FactRow loan_fact = w.fact_find(FactKind::object_loan, loan_id, -1);
+            const LoanPayload loan = loan_fact.loan();
+            if (loan.called()) {
+                return w.fail(second_error(VerificationErrorSecond::object_loan_already_used_by_a_call));
+            }
+            const i64 formal_id = target.borrowed_root_type(ordinal);
+            const compiler_ir_metadata::RawTypeRow formal = m.type_at(formal_id);
+            const bool mutable_value = target.borrowed_root_mutable(ordinal);
+            if (loan.field_index() != field) {
+                return w.fail(second_error(VerificationErrorSecond::borrowed_call_field_selector_mismatch));
+            }
+            const TypeKey loan_type = loan.type();
+            if (loan.root() != root || !same_type_key(m, loan_type, formal_id) || loan.mutable_value()
+                != mutable_value) {
+                return w.fail(second_error(
+                    VerificationErrorSecond::borrowed_call_root_nominal_type_or_authority_mismatch));
+            }
+            // No validated AccessMode is used in this entire loop. Every lane
+            // independently proves its exact root, authority, lifetime and token.
+            if (formal.kind() == 17) {
+                const compiler_ir_metadata::IndexRange target_types = target.types();
+                const compiler_ir_metadata::RawTypeRow result = m.type_at(target_types.begin());
+                if (count != 1 || !mutable_value || transfer_receiver(m, target_id)
+                    || !compiler_ir_metadata::scalar_value(m, result)) {
+                    return w.fail(second_error(
+                        VerificationErrorSecond::builtin_borrowed_call_requires_one_mutable_owner_and_scalar_result));
+                }
+                i64 arg = 0;
+                while (arg < target.value_parameter_count()) {
+                    const compiler_ir_metadata::RawTypeRow type = m.type_at(target.value_parameter_begin() + arg);
+                    if (!compiler_ir_metadata::scalar_value(m, type) && (type.kind() != 5
+                        || compiler_ir_metadata::owning_type(m, type))) {
+                        return w.fail(second_error(
+                            VerificationErrorSecond::builtin_borrowed_call_supports_only_scalar_or_copied_tails));
+                    }
+                    arg = arg + 1;
+                }
+                if (!accessed_owner_type(w, m, root, field)) {
+                    return false;
+                }
+                const TypeKey owner = owner_key(m, w.callable(), root, field);
+                if (!same_type_key(m, owner, formal_id)) {
+                    return w.fail(second_error(
+                        VerificationErrorSecond::builtin_borrowed_call_owner_nominal_type_mismatch));
+                }
+                i64 site = 0;
+                if (field == -1) {
+                    if (root == 0) {
+                        if (!control.builtin_borrowed_owner() || !transfer_has(w, FactKind::borrowed_owner, 0)) {
+                            return w.fail(second_error(
+                                VerificationErrorSecond::builtin_borrowed_call_requires_bound_owner_formal));
+                        }
+                    } else {
+                        if (root <= 0 || transfer_slot(m, w.callable(), 16, root) < 0) {
+                            return w.fail(second_error(
+                                VerificationErrorSecond::builtin_borrowed_call_requires_exact_owner_slot));
+                        }
+                        if (!live_bytes(w, m, root)) {
+                            return false;
+                        }
+                    }
+                    const FactRow binding = transfer_binding(w, root, field);
+                    site = binding.site();
+                } else {
+                    if (field < 0 || root != 0 || !transfer_receiver(m, w.callable()) || signature.borrowed_root_count()
+                        != 0 || transfer_constructor(m, w.callable()) || !transfer_mutable_receiver(m, w.callable())) {
+                        return w.fail(second_error(
+                            VerificationErrorSecond::builtin_borrowed_call_requires_mutable_lexical_receiver_field));
+                    }
+                    if (!live_resource_field(w, m, s, root, field, AccessMode::read)) {
+                        return false;
+                    }
+                    const FactRow object = w.fact_find(FactKind::owned_object, root, -1);
+                    site = object.site();
+                }
+                const FactRow binding = transfer_binding(w, root, field);
+                const TokenRow token = binding.token();
+                const TokenRow loan_token = loan_fact.token();
+                if (binding.disposition() != ByteDisposition::live || token.kind() == TokenKind::none
+                    || !loan_token.same(token) || loan.root_site() != site) {
+                    return w.fail(second_error(
+                        VerificationErrorSecond::builtin_borrowed_call_lifetime_or_owner_token_mismatch));
+                }
+            } else {
+                const TokenRow token = loan_fact.token();
+                if (formal.kind() != 5 || field != -1 || token.kind() != TokenKind::none) {
+                    return w.fail(second_error(
+                        VerificationErrorSecond::class_borrowed_call_requires_an_exact_class_root));
+                }
+                if (root <= 0) {
+                    if (signature.borrowed_root_count() == 0) {
+                        return w.fail(second_error(VerificationErrorSecond::borrowed_call_requires_named_bound_formal));
+                    }
+                    if (loan.root_site() != 0) {
+                        return w.fail(second_error(VerificationErrorSecond::borrowed_call_formal_authority_mismatch));
+                    }
+                } else {
+                    initialized_object(w, m, root);
+                    if (!w.good()) {
+                        return false;
+                    }
+                    const FactRow object = w.fact_find(FactKind::object, root, -1);
+                    if (object.site() != loan.root_site()) {
+                        return w.fail(second_error(
+                            VerificationErrorSecond::borrowed_call_object_lifetime_or_authority_mismatch));
+                    }
+                }
+                if (!live_owned_root(w, m, root)) {
+                    return false;
+                }
+                const FactRow object = w.fact_find(FactKind::owned_object, root, -1);
+                if (object.site() != loan.root_site()) {
+                    return w.fail(second_error(VerificationErrorSecond::borrowed_call_root_lifetime_mismatch));
+                }
+            }
+            ordinal = ordinal + 1;
+        }
+        return w.good();
+    }
+    auto transfer_method_call(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 id) -> bool {
+        const compiler_ir_instructions::RawInstructionRow op = s.instruction_at(id);
+        const bool borrowed = op.form() == 83;
+        const i64 target_id = transfer_target(m, s, id);
+        const compiler_ir_metadata::CallableRow target = m.callable_at(target_id);
+        i64 root = 0;
+        i64 field = -1;
+        AccessMode read_access = AccessMode::read;
+        AccessMode write_access = AccessMode::write;
+        if (borrowed) {
+            if (!transfer_validate_borrowed_roots(w, m, s, id)) {
+                return false;
+            }
+            // These local modes cannot survive this instruction. No earlier
+            // instruction or independently unvalidated sibling grants exemption.
+            read_access = AccessMode::validated_read;
+            write_access = AccessMode::validated_write;
+            i64 ordinal = 0;
+            while (ordinal < target.borrowed_root_count()) {
+                AccessMode mode = read_access;
+                if (target.borrowed_root_mutable(ordinal)) {
+                    mode = write_access;
+                }
+                if (!loan_access(w, s, transfer_lane(s, id, 1, 3 * ordinal), mode)) {
+                    return false;
+                }
+                ordinal = ordinal + 1;
+            }
+            root = transfer_lane(s, id, 1, 0);
+        } else {
+            root = transfer_value(s, id, 1);
+            field = transfer_value(s, id, 4);
+            if (!transfer_receiver(m, target_id)) {
+                return w.fail(second_error(VerificationErrorSecond::method_call_requires_class_receiver));
+            }
+            AccessMode mode = read_access;
+            if (transfer_mutable_receiver(m, target_id)) {
+                mode = write_access;
+            }
+            if (!loan_access(w, s, root, mode)) {
+                return false;
+            }
+        }
+        i64 arg = target.value_parameter_count();
+        i64 spans_field = 5;
+        if (borrowed) {
+            spans_field = 4;
+        }
+        while (arg > 0) {
+            arg = arg - 1;
+            const i64 type_id = target.value_parameter_begin() + arg;
+            const compiler_ir_metadata::RawTypeRow type = m.type_at(type_id);
+            if (type.kind() == 11) {
+                if (!live_span(w, m, s, transfer_lane(s, id, spans_field, arg), read_access)) {
+                    return false;
+                }
+            } else {
+                if (compiler_ir_metadata::scalar_value(m, type)) {
+                    if (!transfer_pop_type(w, m, type_id, VerificationErrorFirst::none,
+                        VerificationErrorSecond::method_argument_type_mismatch)) {
+                        return false;
+                    }
+                } else {
+                    live_object(w, m, s, transfer_lane(s, id, 2, arg), read_access);
+                    if (!w.good()) {
+                        return false;
+                    }
+                }
+            }
+        }
+        const compiler_ir_metadata::IndexRange types = target.types();
+        const compiler_ir_metadata::RawTypeRow result = m.type_at(types.begin());
+        const i64 result_base = transfer_value(s, id, 3);
+        if (transfer_receiver(m, target_id)) {
+            const bool mutable_value = transfer_mutable_receiver(m, target_id);
+            if (mutable_value && !owner_writable(w, s, root, -2, write_access)) {
+                return false;
+            }
+            if (field >= 0) {
+                AccessMode mode = read_access;
+                if (mutable_value) {
+                    mode = write_access;
+                }
+                if (!live_class_field(w, m, s, root, field, mode)) {
+                    return false;
+                }
+            } else {
+                if (root > 0) {
+                    if (!transfer_has(w, FactKind::object, root)) {
+                        return w.fail(second_error(
+                            VerificationErrorSecond::method_receiver_outside_active_object_lifetime));
+                    }
+                    if (transfer_constructor(m, target_id)) {
+                        const i64 constructed = compiler_ir_initialization::object_was_constructed(w, m, root);
+                        if (constructed < 0 || !w.good()) {
+                            return false;
+                        }
+                        if (constructed == 1) {
+                            return w.fail(second_error(
+                                VerificationErrorSecond::object_constructor_called_more_than_once));
+                        }
+                        const i64 pristine = compiler_ir_initialization::object_pristine(w, m, root);
+                        if (pristine < 0 || !w.good()) {
+                            return false;
+                        }
+                        if (pristine == 0) {
+                            return w.fail(second_error(
+                                VerificationErrorSecond::constructor_requires_uninitialized_object));
+                        }
+                        if (!compiler_ir_initialization::mark_object(w, m, root)) {
+                            return false;
+                        }
+                    } else {
+                        const i64 initialized = compiler_ir_initialization::object_initialized(w, m, root);
+                        if (initialized < 0 || !w.good()) {
+                            return false;
+                        }
+                        if (initialized == 0) {
+                            return w.fail(second_error(
+                                VerificationErrorSecond::method_receiver_object_not_fully_initialized));
+                        }
+                        logical_complete(w, m, root);
+                        if (!w.good()) {
+                            return false;
+                        }
+                    }
+                }
+            }
+            if (result.kind() == 11) {
+                const i64 summary = target.receiver_span_field();
+                const i64 shape_index = class_field(m, receiver_class(m, target_id), summary);
+                const compiler_ir_metadata::FieldRow shape = m.field_at(shape_index);
+                // Keep the validated loan exemption local to this instruction.
+                // Multi-root borrowed functions permit only scalar/enum tails.
+                if (shape.array_flag() != 0) {
+                    if (!loan_access(w, s, root, read_mode(read_access))) {
+                        return false;
+                    }
+                    i64 origin_site = 0;
+                    if (root == 0) {
+                        if (!initialized_receiver_array(w, m, summary)) {
+                            return false;
+                        }
+                    } else {
+                        live_object(w, m, s, root, read_mode(read_access));
+                        if (!w.good()) {
+                            return false;
+                        }
+                        const FactRow object = w.fact_find(FactKind::object, root, -1);
+                        origin_site = object.site();
+                    }
+                    if (!inactive_span_target(w, result_base) || !publish_array_borrow(w, root, summary, result_base,
+                        origin_site)) {
+                        return false;
+                    }
+                } else {
+                    if (!loan_access(w, s, root, read_mode(read_access))) {
+                        return false;
+                    }
+                    if (root > 0) {
+                        live_object(w, m, s, root, read_mode(read_access));
+                        if (!w.good()) {
+                            return false;
+                        }
+                    }
+                    if (!live_resource_field(w, m, s, root, summary, read_mode(read_access)) || !inactive_span_target(w,
+                        result_base)) {
+                        return false;
+                    }
+                    const FactRow binding = w.fact_find(FactKind::owned_field, root, summary);
+                    if (!publish_owned_borrow(w, root, summary, result_base, binding)) {
+                        return false;
+                    }
+                }
+                if (!w.clear_current()) {
+                    return false;
+                }
+            } else {
+                if (result.kind() == 5) {
+                    if (!transfer_has(w, FactKind::object, result_base)) {
+                        return w.fail(second_error(
+                            VerificationErrorSecond::method_result_outside_active_object_lifetime));
+                    }
+                    const i64 constructed = compiler_ir_initialization::object_was_constructed(w, m, result_base);
+                    if (constructed < 0 || !w.good()) {
+                        return false;
+                    }
+                    if (constructed == 1) {
+                        return w.fail(second_error(VerificationErrorSecond::method_result_object_already_initialized));
+                    }
+                    const i64 pristine = compiler_ir_initialization::object_pristine(w, m, result_base);
+                    if (pristine < 0 || !w.good()) {
+                        return false;
+                    }
+                    if (pristine == 0) {
+                        return w.fail(second_error(
+                            VerificationErrorSecond::method_result_requires_uninitialized_object));
+                    }
+                    if (!compiler_ir_initialization::mark_object(w, m, result_base) || !w.clear_current()) {
+                        return false;
+                    }
+                } else {
+                    if (!transfer_set_type(w, m, types.begin())) {
+                        return false;
+                    }
+                }
+            }
+        } else {
+            if (!compiler_ir_metadata::scalar_value(m, result)) {
+                return w.fail(second_error(
+                    VerificationErrorSecond::builtin_borrowed_call_cannot_return_an_escaping_owner_or_view));
+            }
+            if (!transfer_set_type(w, m, types.begin())) {
+                return false;
+            }
+        }
+        if (borrowed) {
+            i64 ordinal = 0;
+            while (ordinal < target.borrowed_root_count()) {
+                const i64 loan_id = transfer_lane(s, id, 1, 3 * ordinal + 1);
+                FactRow fact = w.fact_find(FactKind::object_loan, loan_id, -1);
+                LoanPayload loan = fact.loan();
+                loan.set_called(true);
+                fact.set_loan(loan);
+                if (!w.fact_set(fact)) {
+                    return false;
+                }
+                ordinal = ordinal + 1;
+            }
+        }
+        return w.good();
+    }
+}

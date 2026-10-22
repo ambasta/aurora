@@ -728,9 +728,6 @@ public:
     }
     bool operator==(const InstructionRange &) const = default;
 };
-namespace verification {
-void verifyFunction(FunctionBody &function, const Metadata &metadata, Metrics *metrics);
-}
 // Production bodies borrow durable source rows. No native executable payload
 // container survives ingress; code positions are separate from immutable IDs.
 class FunctionBody {

@@ -1,5 +1,8 @@
 #include "hosted_ir_instructions.hpp"
+#include "hosted_ir_verification_budget.hpp"
+#include "ir_verify.hpp"
 #include "../runtime/hosted_bytes.hpp"
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <limits>
@@ -11,12 +14,43 @@ namespace {
 namespace wire = hosted_abi::compiler_ir_instructions;
 namespace lowering = hosted_abi::compiler_lowering;
 namespace bytes = hosted::bytes;
+namespace verifier = hosted_abi::compiler_ir_verification;
 using Role = lowering::OperandRole;
 [[noreturn]] void invalidInstructions() {
     throw Error(DiagnosticCode::Internal, "invalid hosted IR instruction transport");
 }
 [[noreturn]] void allocationFailure() {
     throw Error(DiagnosticCode::Internal, "hosted IR instruction allocation failed");
+}
+[[noreturn]] void invalidVerification() {
+    throw Error(DiagnosticCode::Internal, "invalid hosted IR verification workspace");
+}
+// The source release consumes the actual final eleven descriptors, including
+// partial construction/growth. The enclosing Region must outlive this owner.
+class VerificationOwner final {
+    hosted_abi::VerificationRelease release_{};
+
+public:
+    explicit VerificationOwner(std::uint64_t region) {
+        release_.region = region;
+        hosted_abi::VerificationCreate create{};
+        create.region = region;
+        aurora_hosted_verification_create(&create, data());
+        // Arm destruction before admitting any status or copied result.
+    }
+    ~VerificationOwner() {
+        aurora_hosted_verification_release(&release_);
+    }
+    VerificationOwner(const VerificationOwner &) = delete;
+    VerificationOwner &operator=(const VerificationOwner &) = delete;
+    void *data() {
+        return release_.workspace.storage.data();
+    }
+};
+std::uint64_t verificationMetric(std::int64_t value, std::uint64_t maximum) {
+    if (value < 0 || static_cast<std::uint64_t>(value) > maximum)
+        invalidVerification();
+    return static_cast<std::uint64_t>(value);
 }
 std::int64_t checkedCount(std::size_t value) {
     if (value > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
@@ -674,6 +708,92 @@ void Instructions::structure() {
     if (status != static_cast<std::int64_t>(wire::InstructionStatus::structured) ||
         reason != static_cast<std::int64_t>(wire::InstructionError::none))
         invalidInstructions();
+}
+void Instructions::verifySource(const Metadata &metadata,
+                                Metadata::CallableId callable,
+                                verification::Metrics *metrics) {
+    if (!state_ || state_->metadata != &metadata || state_->published || callable >= metadata.callableCount())
+        invalidVerification();
+    // This private path alone borrows structured, unpublished stores. The emitter
+    // still obtains an instruction owner only through the publication guard.
+    const auto code = range(callable);
+    const auto grant = checkedVerificationQuota(metadata, code, callable);
+    const auto valueBound = checkedVerificationRetainedValueFactBound(metadata, code, callable);
+    const auto initializationBound = checkedVerificationRetainedInitializationPayloadBound(metadata, callable);
+    bytes::Region region(grant);
+    VerificationOwner owner(region.id());
+    hosted_abi::VerificationRunRoots roots{};
+    roots.workspace = owner.data();
+    roots.metadata = metadata.sourceOwner();
+    roots.instructions = state_->owner.data();
+    const auto status = aurora_hosted_verification_run(&roots, checkedCount(callable));
+    verifier::VerificationReport report{};
+    aurora_hosted_verification_report(owner.data(), &report);
+
+    using Status = verifier::VerificationStatus;
+    using First = verifier::VerificationErrorFirst;
+    using Second = verifier::VerificationErrorSecond;
+    if (status != static_cast<std::int64_t>(report.statusValue) ||
+        (report.metricsStarted != 0 && report.metricsStarted != 1))
+        invalidVerification();
+    const auto first = report.errorValue.firstValue;
+    const auto second = report.errorValue.secondValue;
+    const char *message = nullptr;
+    DiagnosticCode diagnostic = DiagnosticCode::Unclassified;
+    switch (report.statusValue) {
+    case Status::success:
+        if (first != First::none || second != Second::none || report.metricsStarted != 1)
+            invalidVerification();
+        break;
+    case Status::allocation:
+        if (first != First::allocation || second != Second::none)
+            invalidVerification();
+        diagnostic = DiagnosticCode::Internal;
+        message = verifier::verificationErrorMessage(report.errorValue);
+        if (!message)
+            invalidVerification();
+        break;
+    case Status::invalid:
+        if (first == First::allocation)
+            invalidVerification();
+        message = verifier::verificationErrorMessage(report.errorValue);
+        if (!message)
+            invalidVerification();
+        if (first == First::internal)
+            diagnostic = DiagnosticCode::Internal;
+        break;
+    default:
+        invalidVerification();
+    }
+
+    // Copied result admission is mandatory even when the caller requests no
+    // metrics. Bounds describe storage domains, not duplicated semantic rules.
+    const auto &values = report.metricsValue;
+    const auto snapshots = verificationMetric(values.snapshotsValue, std::min<std::uint64_t>(code.size(), 65536));
+    const auto depth = verificationMetric(values.peakOperandDepth, code.size());
+    const auto operands = verificationMetric(values.peakRetainedOperandFacts, 262144);
+    const auto facts = verificationMetric(values.peakRetainedValueFacts, valueBound);
+    const auto initialization = verificationMetric(values.peakRetainedInitializationPayloadBytes, initializationBound);
+    if (report.metricsStarted == 0) {
+        if (snapshots != 0 || depth != 0 || operands != 0 || facts != 0 || initialization != 0)
+            invalidVerification();
+    } else {
+        if (snapshots == 0 || snapshots > std::numeric_limits<std::size_t>::max() ||
+            depth > std::numeric_limits<std::size_t>::max() || operands > std::numeric_limits<std::size_t>::max())
+            invalidVerification();
+        if (metrics) {
+            metrics->snapshots = static_cast<std::size_t>(snapshots);
+            metrics->peakOperandDepth = static_cast<std::size_t>(depth);
+            metrics->peakRetainedOperandFacts = static_cast<std::size_t>(operands);
+            metrics->peakRetainedValueFacts = facts;
+            metrics->peakRetainedInitializationPayloadBytes = initialization;
+        }
+    }
+    // Preserve last-function/partial-failure metrics before the semantic throw.
+    // Allocator/integrity refusals remain Internal; native allocator exceptions
+    // are not caught or converted into semantic rejection. RAII covers both.
+    if (message)
+        throw Error(diagnostic, message);
 }
 void Instructions::publish() {
     if (!state_ || !state_->metadata || state_->published ||

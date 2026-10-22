@@ -1,0 +1,414 @@
+export module aurora.compiler.ir_verification_initialization;
+import aurora.compiler.ir_verification_errors;
+import aurora.compiler.ir_metadata;
+import aurora.compiler.ir_metadata_storage;
+import aurora.compiler.ir_verification_storage;
+
+// Initialization and service-loan semantics use the common flat verification owner.
+export namespace compiler_ir_initialization {
+    auto initialize(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata,
+        i64 callable) -> compiler_ir_verification::InitializationStatus {
+        if (workspace.status() != compiler_ir_verification::InitializationStatus::pending) {
+            workspace.reject();
+            return workspace.status();
+        }
+        if (!workspace.prepare()) {
+            return workspace.status();
+        }
+        if (metadata.status() != compiler_ir_metadata::MetadataStatus::success || callable < 0 || callable
+            >= metadata.callable_count()) {
+            workspace.reject();
+            return workspace.status();
+        }
+        const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
+        const compiler_ir_metadata::IndexRange slots = compiler_ir_metadata::slot_group(metadata, declaration, 10);
+        const compiler_ir_metadata::IndexRange objects = compiler_ir_metadata::slot_group(metadata, declaration, 11);
+        if (declaration.frame_bytes() < 0 || declaration.frame_bytes() > 65536 || slots.count()
+            > declaration.frame_bytes() || !compiler_ir_metadata::index_range(slots, metadata.slot_count())
+            || objects.count() > declaration.frame_bytes() / 8 || !compiler_ir_metadata::index_range(objects,
+            metadata.slot_count())) {
+            workspace.reject();
+            return workspace.status();
+        }
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
+        i64 receiver_class = -1;
+        bool seeded = false;
+        if (declaration.borrowed_root_count() != 0) {
+            const compiler_ir_metadata::RawTypeRow type = metadata.type_at(declaration.borrowed_root_type(0));
+            if (type.kind() == 5) {
+                receiver_class = compiler_ir_metadata::find_class(metadata, type.name());
+                seeded = true;
+            }
+        } else {
+            if (compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver())) {
+                const compiler_ir_metadata::ReceiverShape receiver = declaration.first_receiver();
+                receiver_class = compiler_ir_metadata::find_class(metadata, receiver.name());
+                seeded = !compiler_ir_metadata::receiver_flag(receiver, masks.receiver_constructor());
+            }
+        }
+        i64 receiver_begin = -1;
+        i64 receiver_count = 0;
+        if (receiver_class >= 0) {
+            const compiler_ir_metadata::ClassResultRow result = metadata.result_at(receiver_class);
+            const compiler_ir_metadata::IndexRange fields = result.fields();
+            receiver_begin = fields.begin();
+            receiver_count = fields.count();
+        }
+        const compiler_ir_metadata::IndexRange fields = compiler_ir_metadata::IndexRange(receiver_begin,
+            receiver_count);
+        i64 services = 0;
+        bool leading = true;
+        while (leading && services < declaration.value_parameter_count()) {
+            const compiler_ir_metadata::RawTypeRow type = metadata.type_at(declaration.value_parameter_begin()
+                + services);
+            if (compiler_ir_metadata::service_type(type)) {
+                services = services + 1;
+            } else {
+                leading = false;
+            }
+        }
+        if (!workspace.configure(callable, slots, objects, fields, services)) {
+            return workspace.status();
+        }
+        if (seeded) {
+            i64 field = 0;
+            while (field < fields.count()) {
+                const compiler_ir_metadata::FieldRow row = metadata.field_at(fields.begin() + field);
+                const compiler_ir_metadata::RawTypeRow type = metadata.type_at(row.type());
+                // Resource fields have no physical/logical initialization facts;
+                // their live region tokens are tracked by the shared verifier facts.
+                if (row.length() > 0 || type.kind() == 5) {
+                    if (workspace.write_index(workspace.receiver_index(field)) < 0) {
+                        return workspace.status();
+                    }
+                }
+                field = field + 1;
+            }
+        }
+        return workspace.status();
+    }
+    auto ready(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata) -> bool {
+        if (workspace.status() != compiler_ir_verification::InitializationStatus::success || metadata.status()
+            != compiler_ir_metadata::MetadataStatus::success || workspace.callable() < 0 || workspace.callable()
+            >= metadata.callable_count()) {
+            return workspace.reject();
+        }
+        return true;
+    }
+    auto scalar_index(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 offset) -> i64 {
+        if (!ready(workspace, metadata)) {
+            return -1;
+        }
+        const compiler_ir_metadata::IndexRange slots = compiler_ir_metadata::IndexRange(workspace.scalar_begin(),
+            workspace.slot_count());
+        const i64 found = compiler_ir_metadata::find_slot(metadata, slots, offset);
+        if (found < 0) {
+            workspace.reject();
+            return -1;
+        }
+        return found - slots.begin();
+    }
+    // A scalar query returns both facts in one crossing: must=1, may=2.
+    auto scalar_state(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 offset) -> i64 {
+        if (!ready(workspace, metadata)) {
+            return -1;
+        }
+        const compiler_ir_metadata::IndexRange slots = compiler_ir_metadata::IndexRange(workspace.scalar_begin(),
+            workspace.slot_count());
+        const i64 found = compiler_ir_metadata::find_slot(metadata, slots, offset);
+        // Membership of an undeclared offset is false, matching the old fact
+        // set's observation contract. Insertion still rejects an unknown slot.
+        if (found < 0) {
+            return 0;
+        }
+        return workspace.index_state(found - slots.begin());
+    }
+    // Return the previous pair while marking both, so immutable-write checks
+    // need one observation. A rejection ends verification; no state is
+    // subsequently retained or published after that diagnostic.
+    auto write_scalar(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 offset) -> i64 {
+        const i64 index = scalar_index(workspace, metadata, offset);
+        if (index < 0) {
+            return -1;
+        }
+        return workspace.write_index(index);
+    }
+    auto object_index(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> i64 {
+        if (!ready(workspace, metadata)) {
+            return -1;
+        }
+        const compiler_ir_metadata::IndexRange objects = compiler_ir_metadata::IndexRange(workspace.object_begin(),
+            workspace.object_count());
+        const i64 found = compiler_ir_metadata::find_slot(metadata, objects, base);
+        if (found < 0) {
+            workspace.reject();
+        }
+        return found;
+    }
+    // Local object completion has one must bit and one may-history bit. Every
+    // complete copy/construction initializes all logical fields together, so no
+    // per-field completion table is needed. Physical scalar writes do not mint it.
+    auto object_was_constructed(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> i64 {
+        const i64 index = object_index(workspace, metadata, base);
+        if (index < 0) {
+            return -1;
+        }
+        const i64 state = workspace.index_state(workspace.slot_count() + index - workspace.object_begin());
+        if (state < 0) {
+            return -1;
+        }
+        if (state >= 2) {
+            return 1;
+        }
+        return 0;
+    }
+    auto object_completion(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> compiler_ir_verification::ObjectCompletion {
+        const i64 index = object_index(workspace, metadata, base);
+        if (index < 0) {
+            return compiler_ir_verification::ObjectCompletion::invalid;
+        }
+        const i64 state = workspace.index_state(workspace.slot_count() + index - workspace.object_begin());
+        if (state < 0) {
+            return compiler_ir_verification::ObjectCompletion::invalid;
+        }
+        if (state == 3) {
+            return compiler_ir_verification::ObjectCompletion::whole;
+        }
+        const compiler_ir_metadata::SlotRow object = metadata.slot_at(index);
+        const compiler_ir_metadata::RawTypeRow type = metadata.type_at(object.type());
+        const i64 class_index = compiler_ir_metadata::find_class(metadata, type.name());
+        const compiler_ir_metadata::ClassResultRow result = metadata.result_at(class_index);
+        const compiler_ir_metadata::IndexRange fields = result.fields();
+        i64 at = 0;
+        while (at < fields.count()) {
+            const compiler_ir_metadata::FieldRow field = metadata.field_at(fields.begin() + at);
+            const compiler_ir_metadata::RawTypeRow element = metadata.type_at(field.type());
+            if (element.kind() == 5) {
+                return compiler_ir_verification::ObjectCompletion::missing_nested;
+            }
+            at = at + 1;
+        }
+        const compiler_ir_metadata::ClassRow declaration = metadata.class_at(class_index);
+        const compiler_ir_metadata::IndexRange leaves = declaration.leaves();
+        if (leaves.count() == 0) {
+            return compiler_ir_verification::ObjectCompletion::missing_empty;
+        }
+        return compiler_ir_verification::ObjectCompletion::physical;
+    }
+    // 0 checks all must bits, 1 checks no may bits, 2 marks both, 3 clears both.
+    // The two queries remain physical-only. Mark/clear also update logical
+    // completion; its separate query preserves diagnostic order and leafless
+    // objects' distinct construction requirement.
+    auto object_action(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 base, i64 action) -> i64 {
+        if (action < 0 || action > 3) {
+            workspace.reject();
+            return -1;
+        }
+        const i64 index = object_index(workspace, metadata, base);
+        if (index < 0) {
+            return -1;
+        }
+        const compiler_ir_metadata::SlotRow object = metadata.slot_at(index);
+        const compiler_ir_metadata::StorageRow storage = compiler_ir_metadata::object_storage(metadata, object);
+        const compiler_ir_metadata::IndexRange leaves = storage.leaf_offsets();
+        i64 at = 0;
+        while (at < leaves.count()) {
+            const compiler_ir_metadata::IndexRow leaf = metadata.index_at(leaves.begin() + at);
+            const i64 scalar = scalar_index(workspace, metadata, base - leaf.value());
+            if (scalar < 0) {
+                return -1;
+            }
+            if (action == 2) {
+                if (workspace.write_index(scalar) < 0) {
+                    return -1;
+                }
+            } else {
+                if (action == 3) {
+                    if (!workspace.clear_index(scalar)) {
+                        return -1;
+                    }
+                } else {
+                    const i64 state = workspace.index_state(scalar);
+                    if (state < 0) {
+                        return -1;
+                    }
+                    if ((action == 0 && (state == 0 || state == 2)) || (action == 1 && state >= 2)) {
+                        return 0;
+                    }
+                }
+            }
+            at = at + 1;
+        }
+        const i64 completion = workspace.slot_count() + index - workspace.object_begin();
+        if (action == 2 && workspace.write_index(completion) < 0) {
+            return -1;
+        }
+        if (action == 3 && !workspace.clear_index(completion)) {
+            return -1;
+        }
+        return 1;
+    }
+    auto object_initialized(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> i64 {
+        return object_action(workspace, metadata, base, 0);
+    }
+    auto object_pristine(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> i64 {
+        return object_action(workspace, metadata, base, 1);
+    }
+    auto mark_object(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> bool {
+        return object_action(workspace, metadata, base, 2) == 1;
+    }
+    auto clear_object(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> bool {
+        return object_action(workspace, metadata, base, 3) == 1;
+    }
+
+    // Every receiver initializer writes a whole direct field. Disjoint admitted
+    // leaf ranges and AND/OR joins preserve that invariant, including class
+    // arrays. One field pair therefore replaces both physical-leaf and logical
+    // class-field sets; zero-leaf class fields still have distinct bits.
+    // Observation bits: physical must=1, physical may=2, logical must=4, logical may=8.
+    auto receiver_action(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 field, bool write) -> i64 {
+        if (!ready(workspace, metadata)) {
+            return -1;
+        }
+        const i64 index = workspace.receiver_index(field);
+        if (index < 0) {
+            workspace.reject();
+            return -1;
+        }
+        const compiler_ir_metadata::FieldRow row = metadata.field_at(workspace.receiver_begin() + field);
+        const compiler_ir_metadata::RawTypeRow type = metadata.type_at(row.type());
+        const bool logical = type.kind() == 5;
+        if (write && row.length() == 0 && !logical) {
+            workspace.reject();
+            return -1;
+        }
+        i64 state = 0;
+        if (write) {
+            state = workspace.write_index(index);
+        } else {
+            state = workspace.index_state(index);
+        }
+        if (state < 0) {
+            return -1;
+        }
+        const bool must = state == 3;
+        const bool may = state >= 2;
+        i64 result = 0;
+        if (row.length() == 0 || must) {
+            result = result + 1;
+        }
+        if (row.length() > 0 && may) {
+            result = result + 2;
+        }
+        if (logical && must) {
+            result = result + 4;
+        }
+        if (logical && may) {
+            result = result + 8;
+        }
+        return result;
+    }
+    auto receiver_field_state(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 field) -> i64 {
+        return receiver_action(workspace, metadata, field, false);
+    }
+    auto write_receiver_field(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 field) -> i64 {
+        return receiver_action(workspace, metadata, field, true);
+    }
+    auto receiver_completion(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata) -> compiler_ir_verification::ReceiverCompletion {
+        if (!ready(workspace, metadata) || workspace.receiver_begin() < 0) {
+            workspace.reject();
+            return compiler_ir_verification::ReceiverCompletion::invalid;
+        }
+        bool missing_logical = false;
+        i64 field = 0;
+        while (field < workspace.receiver_count()) {
+            const i64 state = workspace.index_state(workspace.receiver_index(field));
+            if (state < 0) {
+                return compiler_ir_verification::ReceiverCompletion::invalid;
+            }
+            if (state != 3) {
+                const compiler_ir_metadata::FieldRow row = metadata.field_at(workspace.receiver_begin() + field);
+                if (row.length() > 0) {
+                    return compiler_ir_verification::ReceiverCompletion::missing_physical;
+                }
+                const compiler_ir_metadata::RawTypeRow type = metadata.type_at(row.type());
+                missing_logical = missing_logical || type.kind() == 5;
+            }
+            field = field + 1;
+        }
+        if (missing_logical) {
+            return compiler_ir_verification::ReceiverCompletion::missing_logical;
+        }
+        return compiler_ir_verification::ReceiverCompletion::complete;
+    }
+
+    auto array_range(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 offset, i64 length, i64 width) -> bool {
+        if (!ready(workspace, metadata)) {
+            return false;
+        }
+        const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(workspace.callable());
+        if ((width != 1 && width != 8) || length < 0 || length > 65536 || offset < 0 || offset
+            > declaration.frame_bytes() || (length != 0 && (offset == 0 || length - 1 > (offset - 1) / width))) {
+            return workspace.reject();
+        }
+        return true;
+    }
+    // -2 denotes failure, -1 complete, otherwise the first forward element
+    // ordinal. The caller interleaves its lifetime/loan checks through exactly
+    // that element before reporting missing initialization.
+    auto array_first_missing(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 offset, i64 length, i64 width) -> i64 {
+        if (!array_range(workspace, metadata, offset, length, width)) {
+            return -2;
+        }
+        i64 element = 0;
+        while (element < length) {
+            const i64 scalar = scalar_index(workspace, metadata, offset - element * width);
+            if (scalar < 0) {
+                return -2;
+            }
+            const i64 state = workspace.index_state(scalar);
+            if (state < 0) {
+                return -2;
+            }
+            if (state == 0 || state == 2) {
+                return element;
+            }
+            element = element + 1;
+        }
+        return -1;
+    }
+    auto clear_array(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 offset, i64 length, i64 width) -> bool {
+        if (!array_range(workspace, metadata, offset, length, width)) {
+            return false;
+        }
+        i64 element = 0;
+        while (element < length) {
+            const i64 scalar = scalar_index(workspace, metadata, offset - element * width);
+            if (scalar < 0 || !workspace.clear_index(scalar)) {
+                return false;
+            }
+            element = element + 1;
+        }
+        return true;
+    }
+}

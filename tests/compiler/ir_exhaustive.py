@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Check canonical IR mapping and fail-closed source emission.
+"""Check canonical IR mapping and fail-closed source verification/emission.
 
-Temporary copies inject unknown variants/forms into the verifier and codec,
-then exercise the actual Aurora emitter with hostile observations and a removed
-handler. Source dispatch has runtime rejection, not C++ compile-time exhaustiveness.
+Temporary copies inject unknown variants/forms into the instruction codec,
+then exercise the actual Aurora verifier and emitter with hostile observations
+and removed handlers. Source dispatch has runtime rejection, not C++ compile-time
+exhaustiveness.
 The direct-IR executable also supplies separate native ABI and exact-trap checks.
 """
 
@@ -28,7 +29,6 @@ HEADERS = (
     "services.hpp",
     "ir.hpp",
     "ir_layout.hpp",
-    "hosted_ir_initialization.hpp",
     "ir_verify.hpp",
     "hosted_graph.hpp",
     "hosted_ir_metadata.hpp",
@@ -39,23 +39,6 @@ HEADERS = (
     "byte_literal.hpp",
 )
 GENERATED_HEADERS = ("hosted_frontend_abi.hpp",)
-SOURCES = ("ir_verify.cpp",)
-CONSUMERS = (("ir_verify.cpp", "unhandled typed IR verifier operation"),)
-
-
-def compile_probe(directory, consumer):
-    if consumer.endswith(".cpp"):
-        # Compile the implementation against the copied headers, not its declarations.
-        probe = directory / consumer
-    else:
-        probe = directory / "probe.cpp"
-        probe.write_text(f'#include "{consumer}"\nint main() {{ return 0; }}\n')
-    return subprocess.run(
-        COMPILER + ["-std=c++23", "-Werror=switch", "-fsyntax-only", "-I", str(directory), str(probe)],
-        capture_output=True,
-        text=True,
-        timeout=45,
-    )
 
 
 def compile_codec_probe(directory):
@@ -87,6 +70,179 @@ def compile_codec_probe(directory):
         text=True,
         timeout=45,
     )
+
+
+def source_verifier_probes(directory, args):
+    # Intentional mutation-test interposition, as in the emitter probe below.
+    # Only the verifier entry is wrapped. It borrows the production-admitted
+    # metadata and structured instruction owners, never a copied stream.
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import bootstrap_frontend as bootstrap
+
+    directory.mkdir(parents=True)
+    fixture = directory / "verification-probe.cpp"
+    fixture.write_text(r"""
+#include "hosted_frontend_abi.hpp"
+#include <cstdlib>
+using namespace aurora;
+namespace {
+unsigned entered = 0;
+struct RequireEntry {
+    ~RequireEntry() { if (entered == 0) std::abort(); }
+} requireEntry;
+}
+extern "C" std::int64_t probe_verification_run(const void *, std::int64_t) noexcept;
+extern "C" std::int64_t __wrap_aurora_hosted_verification_run(
+    const void *input, std::int64_t callable) noexcept {
+    const auto &roots = *static_cast<const hosted_abi::VerificationRunRoots *>(input);
+    if (!roots.workspace || !roots.metadata || !roots.instructions ||
+        roots.workspace == roots.metadata || roots.workspace == roots.instructions ||
+        roots.metadata == roots.instructions || callable < 0)
+        std::abort();
+    auto *const workspace = roots.workspace;
+    const auto *const metadata = roots.metadata;
+    const auto *const instructions = roots.instructions;
+    ++entered;
+    const auto result = probe_verification_run(input, callable);
+    if (roots.workspace != workspace || roots.metadata != metadata || roots.instructions != instructions)
+        std::abort();
+    hosted_abi::compiler_ir_verification::VerificationReport report{};
+    aurora_hosted_verification_report(workspace, &report);
+    if (result != static_cast<std::int64_t>(report.statusValue))
+        std::abort();
+    return result;
+}
+""")
+    fixture_object = fixture.with_suffix(".o")
+    command(
+        COMPILER
+        + ["-std=c++23", "-I", ROOT / "compiler", "-I", args.abi_header.parent, "-c", fixture, "-o", fixture_object],
+        timeout=45,
+    )
+    source = directory / "verification-probe.au"
+    source.write_text("""
+export module aurora.compiler.frontend;
+import aurora.compiler.ir_verification;
+import aurora.compiler.ir_verification_errors;
+import aurora.compiler.ir_verification_storage;
+import aurora.compiler.ir_metadata_storage;
+import aurora.compiler.ir_instruction_storage;
+export namespace compiler_frontend {
+    auto verification_run(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata,
+        const compiler_ir_instructions::InstructionStore& instructions,
+        i64 callable) -> compiler_ir_verification::VerificationStatus {
+        return compiler_ir_verification::run(workspace, metadata, instructions, callable);
+    }
+}
+""")
+    modules = directory / "modules"
+    bootstrap.stage_modules(
+        modules, [*sorted((ROOT / "compiler").glob("*.au")), ROOT / "library/std/decimal_digits.au"]
+    )
+    transfer = modules / "aurora/compiler/ir_verification_transfer.au"
+    original_transfer = transfer.read_text()
+    original = json.loads(args.abi_facts.read_text())
+    inputs = []
+    for case, parameters, result, body in (
+        ("constant", "", "i64", "return 42;"),
+        ("branch", "bool b", "i64", "if (b) { return 42; } return 17;"),
+    ):
+        path = directory / (case + ".au")
+        path.write_text(f"module verification_probe_fixture; auto test({parameters})->{result} {{ {body} }}\n")
+        expected = directory / (case + "-expected.s")
+        command([args.compiler, path, "-o", expected], timeout=30)
+        inputs.append((case, path, expected.read_bytes()))
+    for mutation in ("unchanged", "unknown-form", "missing-handler"):
+        changed = original_transfer
+        if mutation == "unknown-form":
+            # Corrupt only the observation inside the real dynamic dispatcher,
+            # after immutable instruction admission and CFG normalization.
+            changed = replace_once(changed, "const i64 form = row.form();", "const i64 form = 999;")
+        elif mutation == "missing-handler":
+            # Remove the actual Constant route while preserving all other routes.
+            changed = replace_once(changed, "(form >= 5 && form <= 19)", "(form >= 6 && form <= 19)")
+        transfer.write_text(changed)
+        assembly = directory / (mutation + ".s")
+        facts_path = directory / (mutation + ".json")
+        command(
+            [
+                args.compiler,
+                "--local-symbols",
+                "--module-root",
+                modules,
+                source,
+                "--abi-facts",
+                facts_path,
+                "-o",
+                assembly,
+            ],
+            timeout=90,
+        )
+        facts = json.loads(facts_path.read_text())
+        # Compare the complete closed verification owner and every copied pool,
+        # report and reason with the graph used by the production native capsule.
+        for group in ("records", "enums"):
+            for entry in original[group].values():
+                name = entry["source_name"]
+                if name.startswith("compiler_ir_verification::"):
+                    if bootstrap.abi_declaration(facts, group, name) != bootstrap.abi_declaration(
+                        original, group, name
+                    ):
+                        raise AssertionError(mutation + ": verification probe ABI differs: " + name)
+        for group, name in (
+            ("records", "compiler_ir_metadata::MetadataStore"),
+            ("records", "compiler_ir_instructions::InstructionStore"),
+            ("functions", "compiler_frontend::verification_run"),
+        ):
+            if bootstrap.abi_declaration(facts, group, name) != bootstrap.abi_declaration(original, group, name):
+                raise AssertionError(mutation + ": verification paired-owner ABI differs: " + name)
+        bootstrap.verification_abi(facts)
+        with mock.patch.object(
+            bootstrap, "PASS_ENTRIES", {"verification_run": bootstrap.PASS_ENTRIES["verification_run"]}
+        ):
+            bridge = "\n".join(bootstrap.pass_bridges(facts)[1]).replace(
+                "aurora_hosted_verification_run", "probe_verification_run"
+            )
+        assembly.write_text(assembly.read_text() + "\n" + bridge + "\n")
+        executable = directory / mutation
+        command(
+            COMPILER
+            + [
+                fixture_object,
+                assembly,
+                args.main_library,
+                args.frontend_library,
+                "-Wl,--wrap=aurora_hosted_verification_run",
+                "-o",
+                executable,
+            ],
+            timeout=45,
+        )
+        for case, path, expected in inputs:
+            for existing in (False, True):
+                output = directory / (mutation + "-" + case + "-" + str(existing) + ".s")
+                if existing:
+                    output.write_bytes(b"preserve this artifact\n")
+                observed = subprocess.run([executable, path, "-o", output], capture_output=True, text=True, timeout=5)
+                if mutation == "unchanged":
+                    if (
+                        observed.returncode != 0
+                        or observed.stdout
+                        or observed.stderr
+                        or output.read_bytes() != expected
+                    ):
+                        raise AssertionError(
+                            f"{mutation}/{case}: positive verification control failed: {observed.stderr}"
+                        )
+                elif (
+                    observed.returncode != 1
+                    or observed.stdout
+                    or observed.stderr != "aurorac: error AU9001: invalid hosted IR verification workspace\n"
+                    or (output.read_bytes() != b"preserve this artifact\n" if existing else output.exists())
+                ):
+                    raise AssertionError(f"{mutation}/{case}: wrong verification rejection: {observed.stderr}")
+            print(f"PASS source verifier {mutation}: {case}")
 
 
 def source_emitter_probes(directory, args):
@@ -280,18 +436,13 @@ args = parser.parse_args()
 
 def dispatch_checks(directory):
     directory.mkdir(parents=True)
-    for name in HEADERS + SOURCES:
+    for name in HEADERS:
         (directory / name).write_text((ROOT / "compiler" / name).read_text())
     # This is the exact predecessor-produced dependency used by host IR targets.
     # Keep its generated bytes separate from the checked-in source set.
     generated_header = directory / GENERATED_HEADERS[0]
     generated_header.write_bytes(args.abi_header.read_bytes())
     enum_original = generated_header.read_text()
-    for consumer, _ in CONSUMERS:
-        result = compile_probe(directory, consumer)
-        if result.returncode:
-            raise AssertionError(f"{consumer}: unchanged positive control did not compile:\n{result.stderr}")
-        print(f"PASS IR exhaustive unchanged {consumer} control")
     result = compile_codec_probe(directory)
     if result.returncode:
         raise AssertionError(f"instruction codec unchanged mapping did not compile:\n{result.stderr}")
@@ -309,12 +460,6 @@ def dispatch_checks(directory):
         original,
     )
     (directory / "ir.hpp").write_text(injected)
-    for consumer, diagnostic in CONSUMERS:
-        result = compile_probe(directory, consumer)
-        expected = re.compile(r"static assertion failed[^\n]*" + re.escape(diagnostic))
-        if result.returncode == 0 or not expected.search(result.stderr):
-            raise AssertionError(f"{consumer}: missing specific exhaustive-dispatch rejection:\n{result.stderr}")
-        print(f"PASS IR exhaustive unknown variant rejected by {consumer}")
     result = compile_codec_probe(directory)
     if result.returncode == 0 or "unhandled typed IR instruction codec operation" not in result.stderr:
         raise AssertionError(f"instruction codec missing specific unknown variant rejection:\n{result.stderr}")
@@ -333,10 +478,11 @@ def dispatch_checks(directory):
         raise AssertionError(f"instruction codec missing unknown form rejection:\n{result.stderr}")
     print("PASS IR exhaustive unknown source form rejected by instruction codec")
     generated_header.write_text(enum_original)
-    print("5 canonical IR dispatch checks passed")
+    print("3 canonical instruction-codec dispatch checks passed")
 
 
 dispatch_checks(args.artifacts / "dispatch")
+source_verifier_probes(args.artifacts / "verification-dispatch", args)
 source_emitter_probes(args.artifacts / "dispatch", args)
 
 

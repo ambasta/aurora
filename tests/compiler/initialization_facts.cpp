@@ -1,6 +1,6 @@
 // The reference sets live only in this fixture. Every observed operation goes
-// through the real per-function Aurora owner and its private generated bridge.
-#include "hosted_ir_initialization.hpp"
+// through the current eleven-pool VerificationWorkspace and test-only generated probes.
+#include "initialization_workspace.hpp"
 #include "ir.hpp"
 #include <algorithm>
 #include <array>
@@ -14,12 +14,14 @@
 
 using aurora::Error;
 using aurora::Type;
-using aurora::ir::InitializationWorkspace;
-using aurora::ir::Metadata;
 using aurora::ir::Module;
+using aurora::testing::InitializationWorkspace;
+using aurora::testing::Metadata;
 using ObjectCompletion = InitializationWorkspace::ObjectCompletion;
 using ReceiverCompletion = InitializationWorkspace::ReceiverCompletion;
 using ReceiverFieldFact = InitializationWorkspace::ReceiverFieldFact;
+
+std::size_t initializationOwnershipChecks();
 
 namespace {
 std::size_t checks = 0;
@@ -102,6 +104,14 @@ void matches(InitializationWorkspace &actual, const Reference &expected, const s
     }
     for (int offset : {-1, 0, 65537})
         check(actual.scalarState(offset) == 0, "absent offset acquired a scalar fact");
+}
+void factRestoreTests() {
+    auto metadata = declarations({});
+    for (std::size_t count :
+         {0u, 1u, 2u, 3u, 4u, 7u, 8u, 9u, 15u, 16u, 17u, 31u, 32u, 33u, 127u, 128u, 129u, 257u, 513u, 1025u}) {
+        InitializationWorkspace workspace(*metadata, 0);
+        check(workspace.restoreFacts(count), "dynamic fact restoration failed at count " + std::to_string(count));
+    }
 }
 void boundaryAndIsolationTests() {
     static_assert(!std::is_copy_constructible_v<InitializationWorkspace> &&
@@ -942,6 +952,8 @@ void objectAndFailureTests() {
 
 int main() {
     try {
+        checks += initializationOwnershipChecks();
+        factRestoreTests();
         boundaryAndIsolationTests();
         differentialJoins();
         randomizedRetainedRows();

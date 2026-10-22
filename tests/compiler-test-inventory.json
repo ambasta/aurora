@@ -648,6 +648,14 @@
     "reason": "Canonical hosted bootstrap runner compares current C1/C2 diagnostics and frontend convergence, including the frontend actually linked into C2.",
     "root_make": true
   },
+  "initialization_probe.py": {
+    "kind": "supplemental-runner",
+    "make": false,
+    "meson": false,
+    "meson_commands": {},
+    "reason": "Build-time generator for the standalone current-source initialization model/ownership probe; linked and executed by initialization-facts, not a directly registered Python test.",
+    "root_make": false
+  },
   "integer_oracle.py": {
     "kind": "runner",
     "make": true,
@@ -2327,6 +2335,34 @@
       }
     },
     "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "verifier_contract.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "meson_commands": {
+      "verifier-contract": {
+        "arguments": [
+          "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
+          "@SOURCE@/tests/compiler/verifier_contract.py",
+          "verifier-contract",
+          "@SOURCE@/tests/compiler/verifier_contract.expected.jsonl",
+          "--artifacts",
+          "@ARTIFACTS@"
+        ],
+        "suites": [
+          "compiler",
+          "core",
+          "dev",
+          "full"
+        ]
+      }
+    },
+    "reason": "Real-ingress single-candidate verifier regression against frozen independent outcomes, diagnostics and partial/null metrics; historical expected rows do not qualify current source.",
     "root_make": true
   },
   "volatile_file.py": {

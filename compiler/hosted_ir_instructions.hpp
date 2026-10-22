@@ -18,6 +18,7 @@ class Instructions final {
     friend class ::aurora::X86Emitter;
     void admit(const Metadata &metadata);
     void structure();
+    void verifySource(const Metadata &metadata, Metadata::CallableId callable, verification::Metrics *metrics);
     void publish();
     InstructionObservation read(InstructionId id, bool checkPayload = false) const;
     std::size_t bodySize(Metadata::CallableId callable) const;

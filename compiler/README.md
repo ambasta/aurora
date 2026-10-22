@@ -10,8 +10,9 @@ resolved type/lifetime analysis through typed IR run in Aurora. The `ir_graph.au
 candidate independently checks normalized module call graphs and
 selects retained functions. Aurora also owns independent metadata/layout, callable
 and frame admission, structural CFG normalization, entry-parameter and static
-call-site admission. Module file loading, mechanical projection, dynamic
-value/provenance verification remain C++23. The Aurora-native x86-64 emitter
+call-site admission and whole-function value, lifetime and provenance verification.
+Module file loading, mechanical projection, quota and report transport checks
+remain C++23. The Aurora-native x86-64 emitter
 consumes the admitted source stores; the host retains artifact I/O.
 GNU assembler/linker and Linux host I/O remain bootstrap dependencies.
 
@@ -31,8 +32,8 @@ make -C compiler test
 ```
 
 Compiler-only testing uses the canonical Meson graph and is not root `full`.
-`ir-exhaustive` retains compile-time verifier/codec inventory checks and runs the
-source emitter against admitted fixtures with unknown observations and a removed
+`ir-exhaustive` retains codec inventory checks and runs the source verifier and
+emitter against admitted fixtures with unknown observations and a removed
 handler in temporary copies. Aurora dispatch rejects these at runtime; it does
 not provide the former C++ visitor's compile-time exhaustiveness guarantee.
 [Development and qualification](../docs/developer-test-contract.md) defines exact
@@ -237,14 +238,14 @@ test checks current C1/C2 assembly, object,
 facts and header convergence, binds B to the frontend actually linked into C2, and compares current
 C1/C2 corpus diagnostics/output. No compiler binary or generated frontend is
 committed. The candidate's independent module graph pass runs in Aurora after all
-native function checks and before import pruning, without a C++ graph fallback.
-Module file loading, mechanical IR projection, instruction value/provenance
-verification remain C++. Aurora now owns complete x86 text emission, including
+source whole-function checks and before import pruning, without a C++ graph fallback.
+Module file loading, mechanical IR projection and quota/report transport checks
+remain C++. Aurora now owns complete x86 text emission, including
 stack facts and ABI JSON; its host adapter lends the two admitted owners and
 copies bounded sealed output, with no native opcode fallback. Aurora owns metadata/layout,
 callable/frame admission, durable instruction storage, structural CFG checks and
 entry-parameter and static call-site admission.
-Native verification and emission consume the same normalized storage; these
+Source verification and emission consume the same normalized storage; these
 migrations still await execution qualification.
 
 ## Emitter migration qualification
@@ -415,8 +416,8 @@ directly to typed IR, without a resolved C++ AST round trip. The
 historical predecessor remains the source-bootstrap starting point; this does not
 establish whole-compiler self-hosting.
 
-CFG joins require exact native lifetime, provenance and operand-stack agreement
+CFG joins require exact source lifetime, provenance and operand-stack agreement
 before weakening the retained current value. An already unknown current stays
 unknown without scheduling another visit; initialization joins independently
 report changes. Current values are excluded from retained-fact metrics, so these
-joins adjust only the initialization count and do not copy the native state.
+joins adjust only the initialization count and do not copy a native state.

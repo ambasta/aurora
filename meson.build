@@ -52,7 +52,11 @@ frontend_inputs = files('compiler/formatter.au', 'compiler/lexer.au', 'compiler/
                         'compiler/ir_graph.au',
                         'compiler/ir_metadata_storage.au', 'compiler/ir_metadata.au',
                         'compiler/ir_instruction_storage.au', 'compiler/ir_instructions.au',
-                        'compiler/ir_initialization.au',
+                        'compiler/ir_verification_errors.au', 'compiler/ir_verification_storage.au',
+                        'compiler/ir_verification_initialization.au', 'compiler/ir_verification_common.au',
+                        'compiler/ir_verification_values.au', 'compiler/ir_verification_resources.au',
+                        'compiler/ir_verification_services.au', 'compiler/ir_verification_transfer.au',
+                        'compiler/ir_verification.au',
                         'compiler/x86_storage.au', 'compiler/x86_helpers.au', 'compiler/x86_scalar.au',
                         'compiler/x86_objects.au', 'compiler/x86_resources.au', 'compiler/x86_facts.au',
                         'compiler/x86_module.au', 'library/std/decimal_digits.au',
@@ -84,7 +88,7 @@ frontend_host_sources = files('compiler/hosted_lexer.cpp', 'compiler/hosted_pars
                               'compiler/hosted_resolver.cpp', 'compiler/hosted_lowering.cpp',
                               'compiler/hosted_lowering_diagnostics.cpp', 'compiler/hosted_graph.cpp',
                               'compiler/hosted_ir_metadata.cpp', 'compiler/hosted_ir_instructions.cpp',
-                              'compiler/hosted_ir_initialization.cpp', 'compiler/hosted_x86.cpp', 'compiler/ir_verify.cpp',
+                              'compiler/hosted_x86.cpp', 'compiler/ir_verify.cpp',
                               'runtime/hosted_bytes.cpp')
 frontend_library = static_library(
   'hosted-frontend', [frontend_host_sources, frontend_object, frontend_assembly[3]],

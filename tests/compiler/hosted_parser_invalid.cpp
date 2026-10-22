@@ -2280,112 +2280,17 @@ extern "C" std::int64_t aurora_hosted_instructions_publish(void *) noexcept {
 extern "C" std::int64_t aurora_hosted_instructions_error(const void *) noexcept {
     unexpectedMetadataEntry();
 }
-// No malformed parser report may reach the separate initialization owner.
-extern "C" void aurora_hosted_initialization_create(const void *, void *) noexcept {
+// No malformed parser report may reach the mandatory source verifier lifecycle.
+extern "C" void aurora_hosted_verification_create(const void *, void *) noexcept {
     unexpectedMetadataEntry();
 }
-extern "C" void aurora_hosted_initialization_release(void *) noexcept {
+extern "C" std::int64_t aurora_hosted_verification_run(const void *, std::int64_t) noexcept {
     unexpectedMetadataEntry();
 }
-extern "C" std::int64_t aurora_hosted_initialization_allocated(const void *) noexcept {
+extern "C" void aurora_hosted_verification_report(const void *, void *) noexcept {
     unexpectedMetadataEntry();
 }
-extern "C" std::int64_t aurora_hosted_initialization_status(const void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_initialize(const void *, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_slot_count(const void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_word_count(const void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_retained_count(const void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_current_count(const void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_retained_count_at(const void *, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_load(void *, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_retain(void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_join(void *, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_scalar_state(const void *, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_write_scalar(const void *, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_object_initialized(const void *, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_object_pristine(const void *, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_object_was_constructed(const void *, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_object_completion(const void *, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_mark_object(const void *, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_clear_object(const void *, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_receiver_field_state(const void *, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_write_receiver_field(const void *, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_receiver_completion(const void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t
-aurora_hosted_initialization_array_first_missing(const void *, std::int64_t, std::int64_t, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t
-aurora_hosted_initialization_clear_array(const void *, std::int64_t, std::int64_t, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_payload_bytes(const void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t
-aurora_hosted_initialization_acquire_service_loan(void *, std::int64_t, std::int64_t, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_release_service_loan(void *, std::int64_t, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_service_unsuspended(const void *, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_validate_service_call(
-    const void *, std::int64_t, std::int64_t, std::int64_t, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t
-aurora_hosted_initialization_complete_service_call(void *, std::int64_t, std::int64_t) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_service_loans_closed(const void *) noexcept {
-    unexpectedMetadataEntry();
-}
-extern "C" std::int64_t aurora_hosted_initialization_same_service_loans(const void *, std::int64_t) noexcept {
+extern "C" void aurora_hosted_verification_release(void *) noexcept {
     unexpectedMetadataEntry();
 }
 extern "C" void aurora_hosted_parser_create(const void *input, void *output) {
