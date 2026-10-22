@@ -17,5 +17,10 @@ Component details: [compiler](../compiler/ARCHITECTURE.md),
 [protected runtime](../kernel/uefi/runtime.md), [allocation](kernel-owned-bytes.md)
 and [storage](storage.md).
 
+Validation cleanup is source-prepared independently of the source-verifier
+migration: [fixture consolidation](kernel-fixture-consolidation.md) leaves 125
+canonical images, not the fewer-than-15 target. Final pinned-toolchain full and
+affected emulator qualification and comparable cost measurements remain pending.
+
 Next dependencies: [roadmap](roadmap.md). Required checks:
 [development and qualification](developer-test-contract.md).

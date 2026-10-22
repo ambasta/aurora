@@ -5,6 +5,16 @@
      defined(AURORA_UEFI_TABLES))
 #error "NVMe preparation requires the standalone BAR profile"
 #endif
+#if defined(AURORA_PCI_FIXTURE) &&                                                                                     \
+    (!defined(AURORA_UEFI_ACPI) || !defined(AURORA_UEFI_PCI) || defined(AURORA_UEFI_RUNTIME) ||                        \
+     defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT))
+#error "PCI fixture requires the standalone ACPI/PCI profile"
+#endif
+#if defined(AURORA_IVRS_FIXTURE) &&                                                                                    \
+    (!defined(AURORA_UEFI_IVRS) || !defined(AURORA_UEFI_PCI) || !defined(AURORA_UEFI_BAR_CAPTURE) ||                   \
+     defined(AURORA_IVRS_DEFAULT) || defined(AURORA_PCI_FIXTURE))
+#error "IVRS fault fixture requires its explicit cold observation profile"
+#endif
 #ifdef AURORA_UEFI_PCI
 #include "pci-policy.hpp"
 #ifdef AURORA_UEFI_IOMMU_EVENT
@@ -31,6 +41,10 @@ namespace aurora::uefi {
 namespace {
 using U64 = std::uint64_t;
 using hardware::Serial;
+#if defined(AURORA_PCI_FIXTURE) || defined(AURORA_IVRS_FIXTURE)
+#include "fixture-selector.inc"
+Fixture pci_fixture{};
+#endif
 class EcamWindow final {
     const Q35Ecam aperture_;
     volatile U64 *slot_;
@@ -91,8 +105,8 @@ public:
         if (!end(*ticket) || first != second)
             return std::nullopt;
         auto result = first;
-#ifdef AURORA_PCI_CYCLE
-        if ((Bytes{result}.get(14, 1) & 127) == 1) {
+#ifdef AURORA_PCI_FIXTURE
+        if (pci_fixture == Fixture::pci_cycle && (Bytes{result}.get(14, 1) & 127) == 1) {
             put(result, 25, (page - Q35Ecam::base) >> 20, 1);
             // Keep the configured subordinate bound: secondary now points at its own parent.
         }
@@ -182,19 +196,26 @@ public:
 #include "ivrs-reader.inc"
 #endif
 #endif
-[[maybe_unused]] auto checksum(std::span<std::byte> table) -> void {
-    table[9] = std::byte{0};
-    unsigned sum = 0;
-    for (auto value : table)
-        sum += std::to_integer<unsigned>(value);
-    table[9] = std::byte(0U - sum);
-}
 } // namespace
 auto discover_pci(U64 arena,
                   const Bytes &handoff,
                   std::span<const std::byte> source,
                   unsigned bits,
                   [[maybe_unused]] memory::PhysicalPages &pool) -> bool {
+#ifdef AURORA_PCI_FIXTURE
+    // ACPI has closed its window before this call. Admit the selector before
+    // parsing or acquiring any PCI mapping; no normal image contains this path.
+    const auto selected = read_fixture(Fixture::pci_checksum, Fixture::pci_revoked);
+    if (!selected)
+        return false;
+    pci_fixture = *selected;
+#endif
+#ifdef AURORA_IVRS_FIXTURE
+    const auto selected = read_fixture(Fixture::ivrs_write, Fixture::ivrs_revoked);
+    if (!selected)
+        return false;
+    pci_fixture = *selected;
+#endif
     // The source is an owned, consistent ACPI snapshot. No firmware pointer escapes.
     std::array<std::byte, 108> storage{};
     if (source.size() < 60 || source.size() > storage.size())
@@ -202,27 +223,9 @@ auto discover_pci(U64 arena,
     for (std::size_t i = 0; i < source.size(); ++i)
         storage[i] = source[i];
     auto table = std::span<std::byte>{storage}.first(source.size());
-#ifdef AURORA_PCI_CHECKSUM
-    table[9] ^= std::byte{1};
-#endif
-#ifdef AURORA_PCI_RESERVED
-    table[36] = std::byte{1};
-    checksum(table);
-#endif
-#ifdef AURORA_PCI_OVERLAP
-    if (table.size() != 60)
-        return false;
-    table = std::span<std::byte>{storage}.first(76);
-    for (unsigned i = 0; i < 16; ++i)
-        table[60 + i] = table[44 + i];
-    put(table, 4, 76, 4);
-    checksum(table);
-#endif
-#ifdef AURORA_PCI_RANGE
-    if (table.size() != 60)
-        return false;
-    put(table, 44, 0);
-    checksum(table);
+#ifdef AURORA_PCI_FIXTURE
+    if (pci_fixture == Fixture::pci_checksum)
+        table[9] ^= std::byte{1};
 #endif
     const auto mcfg = Mcfg::parse(table, bits);
     if (!mcfg)
@@ -249,15 +252,16 @@ auto discover_pci(U64 arena,
     Serial::text(" bytes=");
     Serial::number(Q35Ecam::bytes);
     Serial::text(" segment=0 first=0 last=255\r\n");
-#ifdef AURORA_PCI_WRITE
-    return window.probe_write();
-#endif
-#ifdef AURORA_PCI_REVOKED
-    if (!window.read(Q35Ecam::base) || !window.closed())
+#ifdef AURORA_PCI_FIXTURE
+    if (pci_fixture == Fixture::pci_write)
+        return window.probe_write();
+    if (pci_fixture == Fixture::pci_revoked) {
+        if (!window.read(Q35Ecam::base) || !window.closed())
+            return false;
+        Serial::text("AURORA_PCI_REVOKED_PROBE\r\n");
+        static_cast<void>(*reinterpret_cast<volatile const std::uint32_t *>(PageTables::window_address));
         return false;
-    Serial::text("AURORA_PCI_REVOKED_PROBE\r\n");
-    static_cast<void>(*reinterpret_cast<volatile const std::uint32_t *>(PageTables::window_address));
-    return false;
+    }
 #endif
 #if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
     const auto inventory = scan_ivrs_inventory(*aperture, window);

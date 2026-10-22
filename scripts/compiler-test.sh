@@ -5,12 +5,13 @@ if [[ $# == 1 && ( "$1" == --help || "$1" == -h ) ]]; then
     cat <<'HELP'
 Usage: scripts/compiler-test.sh
 
-Run the complete compiler-only Meson suite with an incremental current-source build.
+Run the normal compiler-only Meson suite with an incremental current-source build.
 Equivalent to make -C compiler test. First configure the pinned predecessor route
 documented in compiler/README.md#source-bootstrap.
 Use environment overrides, for example CXX=g++-16 ./scripts/compiler-test.sh.
 The existing developer-test contract validates compiler and flag selections.
 Use make test for the full native aggregate; QEMU gates remain separate.
+Use make test-exhaustive for the separate whole-space library sweeps.
 HELP
     exit 0
 fi

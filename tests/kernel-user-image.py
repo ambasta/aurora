@@ -106,6 +106,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=ROOT, help="source root (default: repository root)")
     parser.add_argument("--build-dir", type=Path, help="artifact directory (default: ROOT/build)")
+    parser.add_argument("--bios-fixture-family", choices=("ordinary", "schedule"))
     parser.add_argument("--division-fixture", choices=DIVISION_FIXTURES, default="none")
     parser.add_argument("--unsigned-fixture", choices=UNSIGNED_FIXTURES, default="none")
     arguments = parser.parse_args()
@@ -120,6 +121,8 @@ def main() -> None:
     )
     metadata = {"division_fixture": arguments.division_fixture, "unsigned_fixture": arguments.unsigned_fixture}
     bad_count = 0
+    if arguments.bios_fixture_family:
+        metadata["bios_fixture_family"] = arguments.bios_fixture_family
     for index, name in enumerate(NAMES):
         base = BASE + index * 4096
         elf = (build / f"user-{name}.elf").read_bytes()
@@ -127,7 +130,7 @@ def main() -> None:
         symbols = symbols_for(build / f"user-{name}.elf")
         ret, bounds, overflow, division, shift = validate(elf, binary, base, symbols)
         require(
-            arguments.division_fixture == "none" or division != 0,
+            (arguments.division_fixture == "none" and arguments.bios_fixture_family != "ordinary") or division != 0,
             "Division gates require retained compiler division-zero metadata",
         )
         require(

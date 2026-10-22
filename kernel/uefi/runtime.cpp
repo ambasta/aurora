@@ -1,3 +1,49 @@
+#if defined(AURORA_RUNTIME_CONTROL_FIXTURE) &&                                                                         \
+    (!defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_RUNTIME) || defined(AURORA_UEFI_IPC) ||                  \
+     defined(AURORA_UEFI_PINS) || defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_OWNED_TEXT))
+#error "Plain runtime fixture requires the original non-service two-domain composition"
+#endif
+#if defined(AURORA_PIN_FIXTURE) &&                                                                                     \
+    (!defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_RUNTIME) || !defined(AURORA_UEFI_PINS) ||                \
+     !defined(AURORA_PIN_LEDGER_TESTING) || defined(AURORA_UEFI_TABLES) || defined(AURORA_UEFI_IPC) ||                 \
+     defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_OWNED_TEXT))
+#error "Pin fixture requires its isolated ledger testing composition"
+#endif
+#if defined(AURORA_TABLE_FIXTURE) &&                                                                                   \
+    (!defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_RUNTIME) || !defined(AURORA_UEFI_PINS) ||                \
+     !defined(AURORA_UEFI_TABLES) || !defined(AURORA_DORMANT_TABLE_TESTING) || defined(AURORA_PIN_LEDGER_TESTING) ||   \
+     defined(AURORA_UEFI_IPC) || defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_OWNED_TEXT))
+#error "Dormant table fixture must not acquire pin uncertainty testing authority"
+#endif
+#if defined(AURORA_PROGRAM_FIXTURE) &&                                                                                 \
+    (!defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_PROGRAM_CONSOLE) || !defined(AURORA_UEFI_RUNTIME) ||     \
+     !defined(AURORA_UEFI_IPC) || !defined(AURORA_UEFI_SERVICE_BUDGET) || !defined(AURORA_UEFI_USER_BUDGET) ||         \
+     defined(AURORA_BLOCKING_CALL) || defined(AURORA_UEFI_DISPATCH))
+#error "Program fixture requires the original two-domain streaming console"
+#endif
+#if defined(AURORA_SNAPSHOT_FIXTURE) &&                                                                                \
+    (!defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_SNAPSHOT) || !defined(AURORA_UEFI_RUNTIME) ||            \
+     !defined(AURORA_UEFI_IPC) || defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_BLOCKING_CALL) ||              \
+     defined(AURORA_OWNED_TEXT))
+#error "Snapshot fixture requires the original producer and one-page IPC composition"
+#endif
+#if defined(AURORA_USER_FIXTURE) && (!defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_USER_BUDGET) ||          \
+                                     !defined(AURORA_UEFI_DISPATCH) || defined(AURORA_USER_RESUME))
+#error "User fixture requires its original non-resuming three-domain composition"
+#endif
+#if defined(AURORA_DISPATCH_FIXTURE) && (!defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_DISPATCH) ||         \
+                                         !defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_USER_BUDGET))
+#error "Dispatcher fixture requires its original three-domain composition"
+#endif
+#if defined(AURORA_BUDGET_FIXTURE) &&                                                                                  \
+    (!defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_SERVICE_BUDGET) || !defined(AURORA_UEFI_IPC) ||          \
+     defined(AURORA_UEFI_DISPATCH) || defined(AURORA_OWNED_TEXT))
+#error "Budget fixture requires the standalone one-page service-timer composition"
+#endif
+#if defined(AURORA_IPC_FIXTURE) && (!defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_IPC) ||                   \
+                                    defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_SNAPSHOT))
+#error "IPC fixture requires the standalone one-page IPC composition"
+#endif
 #include "runtime.hpp"
 #ifdef AURORA_UEFI_RUNTIME
 #include "runtime-tables.hpp"
@@ -595,11 +641,11 @@ auto execute(unsigned index, ProgramEvent wanted) -> void {
     Serial::text("\r\n");
     asm volatile("mov %0,%%cr3" ::"r"(selected) : "memory");
     require(!retire(index), "active teardown accepted");
-#ifdef AURORA_RUNTIME_KERNEL_TRAP
-    asm volatile("jmp *%0" ::"r"(domain.contract->bounds_pc()) : "memory");
-#endif
-#ifdef AURORA_RUNTIME_ENTRY_STACK
-    put(view(arena + L::gdt_offset + 256, 104), 4, arena + L::rsp0_bottom);
+#ifdef AURORA_RUNTIME_CONTROL_FIXTURE
+    if (fixture == Fixture::runtime_kernel_trap)
+        asm volatile("jmp *%0" ::"r"(domain.contract->bounds_pc()) : "memory");
+    if (fixture == Fixture::runtime_entry_stack)
+        put(view(arena + L::gdt_offset + 256, 104), 4, arena + L::rsp0_bottom);
 #endif
     require(enter(domain.contract->entry(), domain.contract->layout().user_stack_top()) == 1, "trusted continuation");
     const auto current_stack = stack();
@@ -710,10 +756,14 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
     }
 #endif
 #ifdef AURORA_UEFI_SERVICE_BUDGET
-#if defined(AURORA_BUDGET_ROOT) || defined(AURORA_DISPATCH_ROOT) || defined(AURORA_USER_ROOT)
+#if defined(AURORA_BUDGET_FIXTURE) || defined(AURORA_DISPATCH_FIXTURE) || defined(AURORA_USER_FIXTURE)
     if (vector == 64 && !timer_draining
-#ifdef AURORA_USER_ROOT
-        && active == 0
+#ifdef AURORA_BUDGET_FIXTURE
+        && fixture == Fixture::budget_root
+#elif defined(AURORA_DISPATCH_FIXTURE)
+        && fixture == Fixture::dispatch_root
+#elif defined(AURORA_USER_FIXTURE)
+        && fixture == Fixture::user_root && active == 0
 #endif
     ) {
         asm volatile("mov %0,%%cr3" ::"r"(kernel_root) : "memory");
@@ -730,11 +780,13 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
         Serial::text("AURORA_UEFI_RUNTIME_IST_OK\r\n");
         stop("double fault");
     }
-#if defined(AURORA_RUNTIME_ROOT) || defined(AURORA_IPC_ROOT)
-    asm volatile("mov %0,%%cr3" ::"r"(kernel_root) : "memory");
-    Serial::text("AURORA_UEFI_RUNTIME_ROOT_PROBE: root=");
-    Serial::number(root());
-    Serial::text("\r\n");
+#if defined(AURORA_RUNTIME_CONTROL_FIXTURE) || defined(AURORA_IPC_FIXTURE)
+    if (fixture == Fixture::runtime_root || fixture == Fixture::ipc_root) {
+        asm volatile("mov %0,%%cr3" ::"r"(kernel_root) : "memory");
+        Serial::text("AURORA_UEFI_RUNTIME_ROOT_PROBE: root=");
+        Serial::number(root());
+        Serial::text("\r\n");
+    }
 #endif
     require(active < L::domain_count && domains[active].handle && registry.active(*domains[active].handle) &&
                 root() == domains[active].tables->root(),
@@ -782,16 +834,26 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
             std::span<const U64>{reinterpret_cast<const U64 *>(frame), 22}, frame, *domains[active].contract);
         require(timer_armed && integer && integer->terminal_context(*domains[active].contract) && timer_stop(),
                 "timer terminal context");
-#if defined(AURORA_BUDGET_PENDING) || defined(AURORA_DISPATCH_PENDING) || defined(AURORA_USER_PENDING) ||              \
-    defined(AURORA_PROGRAM_PENDING)
-        force_timer_pending();
+#if defined(AURORA_PROGRAM_FIXTURE) || defined(AURORA_BUDGET_FIXTURE) || defined(AURORA_DISPATCH_FIXTURE) ||           \
+    defined(AURORA_USER_FIXTURE)
+#ifdef AURORA_BUDGET_FIXTURE
+        if (fixture == Fixture::budget_pending)
+#elif defined(AURORA_DISPATCH_FIXTURE)
+        if (fixture == Fixture::dispatch_pending)
+#elif defined(AURORA_USER_FIXTURE)
+        if (fixture == Fixture::user_pending)
+#elif defined(AURORA_PROGRAM_FIXTURE)
+        if (fixture == Fixture::program_pending)
+#endif
+            force_timer_pending();
 #elif defined(AURORA_RUNTIME_FIXTURE) && defined(AURORA_BLOCKING_CALL) && !defined(AURORA_FILE_CALL)
         if (fixture == Fixture::call_pending)
             force_timer_pending();
 #endif
-#ifdef AURORA_USER_RETIRE_PENDING
-        if (active == 0 && selected_phase == ipc::Phase::completion && vector == 6)
-            force_timer_pending();
+#if defined(AURORA_USER_FIXTURE)
+        if (fixture == Fixture::user_retire_pending)
+            if (active == 0 && selected_phase == ipc::Phase::completion && vector == 6)
+                force_timer_pending();
 #endif
         saved_flags &= ~0x200ULL;
     }
@@ -877,7 +939,25 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
     if (!frames.initialize(arena + L::stack_frames_offset, 16))
         return false;
     install_architecture();
+#if defined(AURORA_RUNTIME_CONTROL_FIXTURE)
+    select_fixture(Fixture::runtime_root, Fixture::runtime_entry_stack);
+#elif defined(AURORA_PIN_FIXTURE)
+    select_fixture(Fixture::runtime_pin_cancel, Fixture::runtime_pin_exhaust);
+    const bool restart_service = fixture == Fixture::runtime_pin_fault;
+#elif defined(AURORA_TABLE_FIXTURE)
+select_fixture(Fixture::runtime_table_readback, Fixture::runtime_table_quarantine);
+const bool restart_service = fixture == Fixture::runtime_table_quarantine;
+#endif
 #ifdef AURORA_UEFI_SERVICE_BUDGET
+#ifdef AURORA_BUDGET_FIXTURE
+    select_fixture(Fixture::budget_fault, Fixture::budget_epoch);
+#elif defined(AURORA_DISPATCH_FIXTURE)
+    select_fixture(Fixture::dispatch_budget, Fixture::dispatch_root);
+#elif defined(AURORA_USER_FIXTURE)
+    select_fixture(Fixture::user_retire_pending, Fixture::user_stale_grant);
+#elif defined(AURORA_PROGRAM_FIXTURE)
+    select_fixture(Fixture::program_request_fault, Fixture::program_pending);
+#endif
     initialize_service_timer();
 #endif
 #ifdef AURORA_OWNED_TEXT
@@ -951,8 +1031,8 @@ pin_fault_returned();
 #endif
 execute(0, ProgramEvent::returned);
 const auto stale = *domains[0].handle;
-#ifdef AURORA_PIN_FAULT
-const auto old_service = *domains[1].handle;
+#if defined(AURORA_PIN_FIXTURE) || defined(AURORA_TABLE_FIXTURE)
+const auto old_service = restart_service ? *domains[1].handle : user::DomainHandle{};
 #endif
 for (auto &domain : domains)
     for (auto &lease : domain.stacks)
@@ -965,8 +1045,8 @@ require(retire(0) && retire(1)
             !registry.destroy(stale),
         "retire/stale authority");
 const auto reused = create(
-#ifdef AURORA_PIN_FAULT
-    1
+#if defined(AURORA_PIN_FIXTURE) || defined(AURORA_TABLE_FIXTURE)
+    restart_service ? 1 : 0
 #else
     0
 #endif
@@ -977,17 +1057,19 @@ for (const auto &lease : domains[0].stacks)
 Serial::text("AURORA_UEFI_DOMAIN_REUSE_OK: frame=");
 Serial::number(original);
 Serial::text("\r\n");
-#ifdef AURORA_PIN_FAULT
-const auto restarted = create(0);
-require(restarted && *restarted == 1, "same service slot restart");
-execute(1, ProgramEvent::returned);
-pin_reborn(old_service);
-require(retire(1), "restarted service retirement");
+#if defined(AURORA_PIN_FIXTURE) || defined(AURORA_TABLE_FIXTURE)
+if (restart_service) {
+    const auto restarted = create(0);
+    require(restarted && *restarted == 1, "same service slot restart");
+    execute(1, ProgramEvent::returned);
+    pin_reborn(old_service);
+    require(retire(1), "restarted service retirement");
+} else {
+    execute(0, ProgramEvent::returned);
+    pin_reborn(stale);
+}
 #else
 execute(0, ProgramEvent::returned);
-#ifdef AURORA_UEFI_PINS
-pin_reborn(stale);
-#endif
 #endif
 require(retire(0) && frames.used() == pin_retained(), "final retirement");
 std::array<std::optional<memory::PageLease>, 14> reserved{};

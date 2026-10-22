@@ -11,7 +11,19 @@ need = base.need
 WINDOW = 0xFFFF800000000000
 
 
+FIXTURE_MODES = ("acpi-disabled", "acpi-checksum", "acpi-bad-source", "acpi-write", "acpi-revoked")
+MODES = ("acpi", "acpi-two", "acpi-duplicate-root", *FIXTURE_MODES)
+
+
 def validate(status, text, mode):
+    need(mode in MODES, "Unknown ACPI mode")
+    marker = "AURORA_FIXTURE_READY\n"
+    need(text.count(marker) == (1 if mode in FIXTURE_MODES else 0), "Exact ACPI fixture readiness")
+    if mode in FIXTURE_MODES:
+        need(text.index("AURORA_UEFI_PROTECTION_OK:") < text.index(marker), "ACPI selector before payload protection")
+        later = [text.index(value) for value in ("AURORA_ACPI_", "AURORA_UEFI_PAYLOAD_FAIL:") if value in text]
+        need(later and text.index(marker) < min(later), "ACPI fixture admitted after observation")
+        text = text.replace(marker, "", 1)
     if mode == "acpi-duplicate-root":
         need(
             status == 35
@@ -165,7 +177,7 @@ def self_test():
             f"RORA_UEFI_LANGUAGE_OK: value=42\nAURORA_UEFI_OK\n"
         )
         cases[mode] = (33, text)
-    for mode in ("acpi-checksum", "acpi-bad-entry", "acpi-duplicate", "acpi-bad-source", "acpi-changed-header"):
+    for mode in ("acpi-checksum", "acpi-bad-source"):
         cases[mode] = (35, prefix + "AURORA_UEFI_PAYLOAD_FAIL: ACPI discovery\n")
     cases["acpi-duplicate-root"] = (35, "AURORA_UEFI_ENTRY\nAURORA_UEFI_FAIL: duplicate or invalid ACPI roots\n")
     for mode, error, marker in [("acpi-write", 3, "WRITE"), ("acpi-revoked", 0, "REVOKED")]:
@@ -175,6 +187,9 @@ def self_test():
             f"rror={error} rip=16916480 cr2={WINDOW}\nAURORA_UEFI_PAYLOAD_FA"
             f"IL: exception\n",
         )
+    for mode in FIXTURE_MODES:
+        status, text = cases[mode]
+        cases[mode] = (status, text.replace(prefix, prefix + "AURORA_FIXTURE_READY\n", 1))
     failures = 0
     for mode, (status, text) in cases.items():
         validate(status, text, mode)

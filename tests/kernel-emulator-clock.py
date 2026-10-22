@@ -20,7 +20,7 @@ SPEC = importlib.util.spec_from_file_location("kernel_emulator_clock", ROOT / "s
 CLOCK = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(CLOCK)
 FIXED_ARGS = ["-icount", "shift=0,align=off,sleep=off"]
-SELECTED_NAMES_SHA256 = "a5b6f5d5194dc6113bb6864fe3c2e4efa44faf5ab6a6fee42fe8dc9ecd2160ee"
+SELECTED_NAMES_SHA256 = "666b85d9a303eb81859918b2e977c33ec9b93cf77c0ada7627a4147381f522e0"
 WRAPPERS = {
     "bios": (
         "kernel-protection-smoke.sh",
@@ -83,13 +83,13 @@ def shell_plan(*modes, data="", extra_env=None, root=ROOT, plan=True):
 
 
 class ClockContractTests(unittest.TestCase):
-    def test_existing_177_modes_plus_disposal_and_owned_profiles(self):
+    def test_active_wrapper_and_owned_profile_inventory(self):
         inventory = []
         for family, wrappers in WRAPPERS.items():
             for wrapper in wrappers:
                 inventory += [(family, mode) for mode in wrapper_modes(wrapper)]
-        self.assertEqual(len(inventory), 197)
-        self.assertEqual(len(set(inventory)), 197)
+        self.assertEqual(len(inventory), 172)
+        self.assertEqual(len(set(inventory)), 172)
         snapshots = {
             ("uefi", mode)
             for mode in (
@@ -133,7 +133,7 @@ class ClockContractTests(unittest.TestCase):
         self.assertTrue(all(CLOCK.clock_profile(*key) == CLOCK.ORIGINAL for key in snapshots))
         self.assertEqual(CLOCK.clock_profile("uefi", "owned-bytes"), CLOCK.ORIGINAL)
         selected = [mode for (family, mode), profile in CLOCK.MODE_CLOCKS.items() if profile == CLOCK.FIXED0]
-        self.assertEqual(len(selected), 82)
+        self.assertEqual(len(selected), 73)
         self.assertEqual(
             {mode for mode in selected if mode.startswith("user-ram-file")},
             {
@@ -153,7 +153,7 @@ class ClockContractTests(unittest.TestCase):
             },
         )
         self.assertEqual(CLOCK.clock_profile("uefi", "user-resume"), CLOCK.FIXED0)
-        self.assertEqual(sum(p == CLOCK.ORIGINAL for p in CLOCK.MODE_CLOCKS.values()), 143)
+        self.assertEqual(sum(p == CLOCK.ORIGINAL for p in CLOCK.MODE_CLOCKS.values()), 127)
         self.assertEqual(
             hashlib.sha256(
                 (
@@ -220,6 +220,11 @@ class ClockContractTests(unittest.TestCase):
                 flags = common + extra
                 if "-DAURORA_UEFI_SERVICE_BUDGET" in flags:
                     modes = [name for name, (image, _) in profiles.FIXTURE_MODES.items() if image == mode] or [mode]
+                    modes += [
+                        name
+                        for name, image in profiles.UEFI_ALIASES.items()
+                        if image == mode and name not in profiles.FIXTURE_MODES
+                    ]
                     admitted.extend(modes)
                     if "-DAURORA_RAM_SCRATCHPAD_CONSOLE" in flags:
                         scratchpad_modes.update(modes)
@@ -244,7 +249,7 @@ class ClockContractTests(unittest.TestCase):
     def test_every_mode_profile_and_hostile_clock_pairings(self):
         cases = dict(CLOCK.MODE_CLOCKS)
         cases.update(CLOCK.AUXILIARY_CLOCKS)
-        self.assertEqual(len(cases), 230)
+        self.assertEqual(len(cases), 205)
         for (family, mode), profile in cases.items():
             with self.subTest(family=family, mode=mode):
                 original = ["qemu", "-accel", "tcg"]
@@ -280,6 +285,28 @@ class ClockContractTests(unittest.TestCase):
                     with self.assertRaises(ValueError, msg=repr(argv)):
                         CLOCK.validate_clock_options(family, mode, profile, argv)
 
+    def test_hosted_policy_modes_have_no_emulator_clock(self):
+        # These parser/policy negatives now run through hosted tests, not images.
+        retired = {
+            "uefi": """
+                acpi-bad-entry acpi-changed-header acpi-duplicate
+                pci-overlap pci-range pci-reserved
+                budget-policy-counts budget-policy-output budget-policy-wide budget-policy-zero
+                dispatch-policy-cursor dispatch-policy-mask dispatch-policy-output
+                ipc-policy-cancel-input ipc-policy-cancel-output
+                ipc-policy-request-input ipc-policy-request-output
+                user-disposal-input user-disposal-output
+            """.split(),
+            "ivrs": "ivrs-alias ivrs-capability ivrs-pair ivrs-range ivrs-reserved ivrs-scope".split(),
+        }
+        for family, modes in retired.items():
+            for mode in modes:
+                with self.subTest(family=family, mode=mode):
+                    self.assertNotIn((family, mode), CLOCK.MODE_CLOCKS)
+                    self.assertNotIn((family, mode), CLOCK.AUXILIARY_CLOCKS)
+                    with self.assertRaises(ValueError):
+                        CLOCK.clock_profile(family, mode)
+
     def test_unknown_duplicate_and_conflicting_selection(self):
         for family, mode in (
             ("uefi", "budget-future"),
@@ -300,7 +327,7 @@ class ClockContractTests(unittest.TestCase):
 
     def test_real_shell_array_for_all_uefi_build_modes(self):
         modes = sorted(mode for family, mode in CLOCK.MODE_CLOCKS if family != "bios")
-        self.assertEqual(len(modes), 186)
+        self.assertEqual(len(modes), 161)
         for mode in modes:
             for data in ("", "/nonexistent data files"):
                 with self.subTest(mode=mode, data=data):
@@ -335,7 +362,7 @@ class ClockContractTests(unittest.TestCase):
                         self.assertEqual(argv[argv.index("-L") + 1], data)
 
     def test_full_argv_and_friendly_label_cannot_bypass_binding(self):
-        for mode in ("budget", "budget-smp", "dispatch", "user-retire-pending", "normal", "ipc-policy-request-output"):
+        for mode in ("budget", "budget-smp", "dispatch", "user-retire-pending", "normal", "ipc-stale"):
             profile = CLOCK.clock_profile(CLOCK.uefi_family(mode), mode)
             argv = CLOCK.expected_uefi_argv(mode, "qemu", "firmware", "data")
             self.assertEqual(CLOCK.uefi_clock_receipt(mode, profile, argv, "qemu", "firmware", "data")["argv"], argv)
@@ -701,7 +728,7 @@ class ClockContractTests(unittest.TestCase):
         # the independent clock validators and capacity probes.
         smoke = (ROOT / "scripts/kernel-smoke.sh").read_text()
         self.assertIn("./scripts/kernel-build.sh --print-image-dir", smoke)
-        self.assertIn('scripts/qemu_transport.py run --timeout 15 --log "$log"', smoke)
+        self.assertIn('scripts/qemu_transport.py run "${startup_args[@]}" --timeout 15 --log "$log"', smoke)
         self.assertNotIn("\ntrap ", smoke)
         capacity = ast.parse((ROOT / "tests/kernel-boot-capacity.py").read_text())
         smoke = next(node for node in capacity.body if isinstance(node, ast.FunctionDef) and node.name == "smoke")
@@ -740,10 +767,16 @@ class ClockContractTests(unittest.TestCase):
                 cwd=str(out),
                 boot_root=str(out / "esp"),
                 firmware_profile="clean",
+                startup_byte={"ivrs-write": 106, "ivrs-revoked": 107}.get(mode),
                 environment={"LD_LIBRARY_PATH": "/synthetic-libraries"},
                 stdio={"stdout": paths["serial"], "stderr": "stdout"},
             )
             provenance.validate_arguments(receipt, paths)
+            for selector in (-1, 0, 106, 107, 255, True, None):
+                if type(selector) is type(receipt["startup_byte"]) and selector == receipt["startup_byte"]:
+                    continue
+                with self.subTest(mode=mode, selector=selector), self.assertRaises(ValueError):
+                    provenance.validate_arguments(dict(receipt, startup_byte=selector), paths)
             for index in range(len(argv)):
                 with self.subTest(mode=mode, missing=index), self.assertRaises(ValueError):
                     provenance.validate_arguments(dict(receipt, argv=argv[:index] + argv[index + 1 :]), paths)

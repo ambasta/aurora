@@ -39,6 +39,24 @@ SUCCESS = (
 )
 DENIED_IRQ = ("user-role", "user-phase", "user-transaction", "user-epoch", "user-root")
 DISPOSAL_DENIED = ("user-disposal-input", "user-disposal-output")
+FIXTURE_MODES = (
+    "user-retire-pending",
+    "user-request-budget",
+    "user-completion-budget",
+    "user-request-bounds",
+    "user-completion-bounds",
+    "user-request-overflow",
+    "user-completion-overflow",
+    "user-pending",
+    "user-role",
+    "user-phase",
+    "user-transaction",
+    "user-epoch",
+    "user-root",
+    "user-stale-grant",
+)
+# Historical synthetic scenarios include copied-policy failures now covered hosted.
+# Current boot modes are admitted separately by kernel_profiles and emulator_clock.
 MODES = SUCCESS + DENIED_IRQ + ("user-unknown", "user-stale-grant") + DISPOSAL_DENIED
 
 
@@ -838,6 +856,15 @@ def validate_ram_file(status, text, mode, metadata):
 
 
 def validate(status, text, mode, metadata):
+    if mode in MODES:
+        marker = "AURORA_FIXTURE_READY\n"
+        need(text.count(marker) == (1 if mode in FIXTURE_MODES else 0), "Exact user fixture readiness")
+        if mode in FIXTURE_MODES:
+            need(
+                text.index("AURORA_PCI_WINDOW_CLOSED:") < text.index(marker) < text.index("AURORA_UEFI_TIMER_READY:"),
+                "User selector admission phase",
+            )
+            text = text.replace(marker, "", 1)
     if mode.startswith("user-ram-file"):
         return validate_ram_file(status, text, mode, metadata)
     if mode in ("user-call", "user-call-pending", "user-call-owner", "user-call-site"):
@@ -1116,7 +1143,12 @@ def fixtures(client_ticks=True):
                     f" event={run['outcome']} value={run['value']}",
                 )
             )
-        yield mode, 33 if mode in SUCCESS else 35, prefix + "\n".join(rows) + "\n", metadata
+        yield (
+            mode,
+            33 if mode in SUCCESS else 35,
+            prefix + ("AURORA_FIXTURE_READY\n" if mode in FIXTURE_MODES else "") + "\n".join(rows) + "\n",
+            metadata,
+        )
 
 
 def ram_receipt_fixture(meta, prefix, denied=None):
@@ -1217,7 +1249,11 @@ def self_test():
             reject(35 if status == 33 else 33, text, mode, meta, "exit status")
             reject(status, text, "user-unrecognized", meta, "unknown mode")
             lines = text.splitlines()
-            boundary = next(i for i, line in enumerate(lines) if line.startswith("AURORA_UEFI_TIMER_READY:"))
+            boundary = next(
+                i
+                for i, line in enumerate(lines)
+                if line.startswith(("AURORA_FIXTURE_READY", "AURORA_UEFI_TIMER_READY:"))
+            )
             for i in range(boundary, len(lines)):
                 for label, changed in (
                     ("missing", lines[:i] + lines[i + 1 :]),

@@ -7,8 +7,9 @@ The mathematical oracle uses shortest-length integer encodings and possible
 scalar intervals, independently crosschecked against Python's strict decoder.
 Its acceptance depends on scalar validity, never assignment or Unicode age.
 
-Runtime loops cover all 1,112,064 Unicode scalar values, all 256 one-byte and
-65,536 two-byte inputs, and a bounded Cartesian set of longer boundary classes.
+Full uses transition boundaries plus fixed-seed scalar/two-byte samples.
+--profile exhaustive restores all 1,112,064 scalars and 65,536 two-byte inputs.
+Both retain all 256 one-byte and 24,200 longer boundary inputs and all API cases.
 This is finite native execution evidence, not a safety or performance proof.
 No compiler, IR, kernel, signal-injection, or million-line fixture is required.
 Source, assembly, executables, hashes, and receipts remain in --artifacts even
@@ -32,6 +33,7 @@ import hashlib
 import itertools
 import json
 import resource
+import random
 import subprocess
 from pathlib import Path
 import signal
@@ -98,17 +100,25 @@ def scalar(value):
 
 
 def encode(value):
-    """Shortest positional-base encoding, independent of a decoder table."""
-    require(scalar(value), "encoding model needs a Unicode scalar")
-    if value < 128:
-        return bytes((value,))
-    width = next(width for width, limit in ((2, 2048), (3, 65536), (4, 0x110000)) if value < limit)
-    parts = []
-    number = value
-    for _ in range(width - 1):
-        parts.append(128 + number % 64)
-        number //= 64
-    return bytes((256 - 2 ** (8 - width) + number, *reversed(parts)))
+    require(scalar(value), "encoding reference needs a Unicode scalar")
+    return chr(value).encode("utf-8", "strict")
+
+
+SAMPLE_SEED = 220104
+
+
+def sampled_scalars():
+    transitions = (0, 128, 2048, 0xD800, 0xE000, *range(0x10000, 0x110001, 0x10000))
+    boundaries = {value + delta for value in transitions for delta in (-1, 0, 1) if scalar(value + delta)}
+    rng = random.Random(SAMPLE_SEED)
+    # Sample scalar ordinals, skipping the surrogate gap without rejection bias.
+    sample = {value if value < 0xD800 else value + 2048 for value in rng.sample(range(SCALARS), 1024)}
+    return tuple(sorted(boundaries | sample))
+
+
+def sampled_pairs():
+    boundaries = {first * 256 + second for first in (*LEADS, *BOUNDARIES) for second in BOUNDARIES}
+    return tuple(sorted(boundaries | set(random.Random(SAMPLE_SEED).sample(range(65536), 1024))))
 
 
 def decode(data, offset, count, final):
@@ -246,19 +256,18 @@ def self_tests():
     print("PASS UTF-8 harness controls (active under Python -O)", flush=True)
 
 
-def python_exhaustive():
+def python_crosscheck(values=None, pairs=None):
     count = 0
-    for value in range(0x110000):
+    for value in range(0x110000) if values is None else values:
         if scalar(value):
             data = encode(value)
-            require(data == chr(value).encode("utf-8", "strict"), "scalar encoder crosscheck")
             require(data.decode("utf-8", "strict") == chr(value), "scalar strict decoder crosscheck")
             count += 1
-    require(count == SCALARS, "wrong scalar enumeration count")
+    require(count == (SCALARS if values is None else len(values)), "wrong scalar enumeration count")
     for first in range(256):
         crosscheck(bytes((first,)))
-        for second in range(256):
-            crosscheck(bytes((first, second)))
+    for number in range(65536) if pairs is None else pairs:
+        crosscheck(number.to_bytes(2, "big"))
     longer = 0
     for width in (3, 4):
         for lead in LEADS:
@@ -266,7 +275,8 @@ def python_exhaustive():
                 crosscheck(bytes((lead, *tail)))
                 longer += 1
     print(
-        f"PASS Python strict crosscheck: {count} scalars, 256 one-byte, 65536 two-byte, "
+        f"PASS Python strict crosscheck: {count} scalars, 256 one-byte, "
+        f"{65536 if pairs is None else len(pairs)} two-byte, "
         f"{longer} longer boundary inputs",
         flush=True,
     )
@@ -356,8 +366,8 @@ def check_result(name, data, offset, count, final):
     return Case(name, body, PASS)
 
 
-def scalar_loop():
-    return Case(
+def scalar_loop(values=None):
+    case = Case(
         "all 1112064 Unicode scalars in native runtime loop",
         r"""
         builtin::array<u8,4> bytes={255u8,255u8,255u8,255u8};
@@ -398,11 +408,30 @@ def scalar_loop():
         PASS + SCALARS,
     )
 
+    if values is None:
+        return case
+    body = case.body.replace(
+        "u64 value=0u64;u64 visited=0u64;",
+        "const builtin::array<u64,"
+        + str(len(values))
+        + "> selected={"
+        + ",".join(f"{value}u64" for value in values)
+        + "};i64 sample=0;u64 visited=0u64;",
+    )
+    body = body.replace("while(value<1114112u64){", f"while(sample<{len(values)}){{const u64 value=selected[sample];")
+    body = body.replace("value=value+1u64;", "sample=sample+1;")
+    return replace(
+        case,
+        name=f"boundary and seed{SAMPLE_SEED}: {len(values)} Unicode scalars",
+        body=body,
+        expected=PASS + len(values),
+    )
 
-def short_loop(width):
+
+def short_loop(width, values=None):
     limit = 256**width
     assignments = "bytes[0]=u8(number);" if width == 1 else "bytes[0]=u8(number/256);bytes[1]=u8(number%256);"
-    return Case(
+    case = Case(
         f"all {limit} inputs of length {width}, final and chunk",
         f"""
         {array("bytes", bytes(width))}i64 number=0;u64 visited=0u64;
@@ -420,6 +449,25 @@ def short_loop(width):
     """,
         PASS + limit,
         prelude=MODEL,
+    )
+
+    if values is None:
+        return case
+    body = case.body.replace(
+        "i64 number=0;u64 visited=0u64;",
+        "const builtin::array<i64,"
+        + str(len(values))
+        + "> selected={"
+        + ",".join(map(str, values))
+        + "};i64 sample=0;u64 visited=0u64;",
+    )
+    body = body.replace(f"while(number<{limit}){{", f"while(sample<{len(values)}){{const i64 number=selected[sample];")
+    body = body.replace("number=number+1;", "sample=sample+1;")
+    return replace(
+        case,
+        name=f"boundary and seed{SAMPLE_SEED}: {len(values)} inputs of length {width}",
+        body=body,
+        expected=PASS + len(values),
     )
 
 
@@ -754,6 +802,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", nargs="?", type=Path)
     parser.add_argument("--self-test-only", action="store_true")
+    parser.add_argument("--profile", choices=("full", "exhaustive"), default="full")
     parser.add_argument("--artifacts", type=Path)
     parser.add_argument("--timeout", type=int, default=15, help="native wall timeout; CPU stays capped at 10/11s")
     parser.add_argument(
@@ -797,9 +846,11 @@ def main():
     print(json.dumps({**identities, "artifacts": str(directory)}), flush=True)
     suite = None
     try:
-        longer = python_exhaustive()
+        values = None if args.profile == "exhaustive" else sampled_scalars()
+        pairs = None if args.profile == "exhaustive" else sampled_pairs()
+        longer = python_crosscheck(values, pairs)
         suite = Suite(compiler, directory, args.timeout, args.sanitized_compiler)
-        for case in (scalar_loop(), short_loop(1), short_loop(2), boundary_loop(3), boundary_loop(4)):
+        for case in (scalar_loop(values), short_loop(1), short_loop(2, pairs), boundary_loop(3), boundary_loop(4)):
             suite.check([case])
         batch = []
         for case in itertools.chain(ordinary_cases(), replay_cases()):
@@ -821,15 +872,18 @@ def main():
             status="passed",
             native_checks=suite.count,
             native_batches=suite.batches,
-            scalar_values=SCALARS,
+            profile=args.profile,
+            sample_seed=SAMPLE_SEED,
+            scalar_values=SCALARS if values is None else len(values),
             one_byte_inputs=256,
-            two_byte_inputs=65536,
+            two_byte_inputs=65536 if pairs is None else len(pairs),
             longer_boundary_inputs=longer,
             final_modes_per_input=2,
         )
         print(
             f"PASS UTF-8: {suite.count} native checks in {suite.batches} bounded fixtures; "
-            f"all {SCALARS} scalars, 256 one-byte, 65536 two-byte, {longer} longer boundary inputs; "
+            f"{manifest['scalar_values']} scalars, 256 one-byte, {manifest['two_byte_inputs']} two-byte, "
+            f"{longer} longer boundary inputs ({args.profile}); "
             f"artifacts={directory}",
             flush=True,
         )

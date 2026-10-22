@@ -46,6 +46,10 @@ profile_file = configure_file(
 profile_data = import('keyval').load(profile_file)
 kernel_profile_images = {}
 kernel_profile_users = {}
+# Reuse identical user compiler products within this configured graph. Keep local
+# artifact paths and every per-image link/embedding/admission edge below.
+kernel_user_assemblies = {}
+kernel_copy = find_program('cp', native: true)
 admission_recipes = {
   'bios-console': ['kernel_bios_console_admission.py', 'bios-console-admission.json'],
   'program': ['kernel_program_console_admission.py', 'program-console-admission.json'],
@@ -182,17 +186,36 @@ foreach profile_id : profile_data['profiles'].split('|')
           entry_source = []
         endif
       endif
-      user_assembly = custom_target(prefix + '-user-' + name + '-assembly',
-        input: files('../' + profile_data[user_key + '.source']), output: user_outputs,
-        build_subdir: output_subdir, depfile: 'user-' + name + '.d', depend_files: user_dependencies,
-        command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
-                  '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--depfile', '@DEPFILE@'] + user_root_args)
+      entry_flags_text = profile_data[user_key + '.entry_flags']
+      entry_flags = entry_flags_text == '' ? [] : entry_flags_text.split('|')
+      # Same source and ordered module roots imply the same resolved closure;
+      # the canonical producer's depfile tracks every imported source. All
+      # producers also share kernel_image_compiler and kernel_assembly_helper.
+      # Include the complete user recipe, not just its source: private bridge,
+      # sidecars/compiler options, entry flags, fixed linker script and layout.
+      user_recipe = '\n'.join([
+        platform, profile_data[user_key + '.source'], profile_data[user_key + '.roots'],
+        profile_data[user_key + '.entry'], profile_data[user_key + '.combined'], entry_flags_text,
+        profile_data[user_key + '.base'], profile_data.get(user_key + '.max_pages', ''),
+        'kernel/program.ld', '|'.join(user_root_args), '|'.join(user_outputs),
+        owned_text ? 'owned-bytes-stubs' : '',
+      ])
+      if user_recipe in kernel_user_assemblies
+        user_assembly = custom_target(prefix + '-user-' + name + '-assembly',
+          input: kernel_user_assemblies[user_recipe], output: user_outputs, build_subdir: output_subdir,
+          command: [kernel_copy, '--', '@INPUT@', output_dir])
+      else
+        user_assembly = custom_target(prefix + '-user-' + name + '-assembly',
+          input: files('../' + profile_data[user_key + '.source']), output: user_outputs,
+          build_subdir: output_subdir, depfile: 'user-' + name + '.d', depend_files: user_dependencies,
+          command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
+                    '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--depfile', '@DEPFILE@'] + user_root_args)
+        kernel_user_assemblies += {user_recipe: user_assembly}
+      endif
       aurora_facts += [user_assembly[1]]
       if admission == 'program' or call_client or owned_text or ram_file
         aurora_facts += [user_assembly[2]]
       endif
-      entry_flags_text = profile_data[user_key + '.entry_flags']
-      entry_flags = entry_flags_text == '' ? [] : entry_flags_text.split('|')
       byte_stubs = owned_text ? files('../kernel/uefi/owned-bytes-stubs.inc') : []
       user_object = custom_target(prefix + '-user-' + name + '-object',
         input: [user_assembly[0]] + (combined ? entry_source : []), output: 'user-' + name + '.o',
@@ -284,7 +307,7 @@ foreach profile_id : profile_data['profiles'].split('|')
     binary = custom_target(prefix + '-binary', input: elf, output: 'kernel.bin', build_subdir: output_subdir,
       command: [kernel_objcopy, '-O', 'binary', '@INPUT@', '@OUTPUT@'])
     profile_image = custom_target(prefix + '-image',
-      input: [boot, objects['boot'], objects[language_name], elf, binary] + aurora_facts,
+      input: [boot, objects['boot'], objects[language_name], elf, binary, user_metadata[0]] + aurora_facts,
       output: 'aurora.img', build_subdir: output_subdir, build_by_default: mode == 'normal',
       depend_files: files('../examples/kernel-bios.au', '../examples/kernel.au'),
       command: [python, '-B', files('../tests/kernel-image.py'), '--build-dir', output_dir] + image_options)

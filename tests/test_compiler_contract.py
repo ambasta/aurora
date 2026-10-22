@@ -26,6 +26,11 @@ sys.modules[spec.name] = c
 spec.loader.exec_module(c)
 
 
+def owned_snapshot(root):
+    """Observe only the test's configured outputs and synthetic input fixture."""
+    return {str(p.relative_to(root)): p.read_bytes() if p.is_file() else None for p in root.rglob("*")}
+
+
 class Controls(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="aurora-contract-control-")
@@ -291,18 +296,23 @@ class Controls(unittest.TestCase):
             c.reject_pch(inputs)
 
     def test_native_runner_identity_rejections_precede_artifacts(self):
-        output = self.root / "build/forbidden-artifacts"
+        (ROOT / "build").mkdir(exist_ok=True)
+        artifacts = tempfile.TemporaryDirectory(prefix="aurora-contract-outputs-", dir=ROOT / "build")
+        self.addCleanup(artifacts.cleanup)
+        owned = Path(artifacts.name)
+        output = owned / "forbidden-artifacts"
+        env = {**self.env, "TMPDIR": str(owned)}
         specs = [
-            ("tests/compiler/package_identity.py", [str(self.compiler)]),
-            ("tests/compiler/package_manifest.py", [str(self.compiler)]),
-            ("tests/compiler/package_graph.py", [str(self.compiler)]),
-            ("tests/compiler/xfs_geometry.py", [str(self.compiler)]),
+            ("tests/compiler/package_identity.py", [str(self.compiler), "--artifacts", str(output)]),
+            ("tests/compiler/package_manifest.py", [str(self.compiler), "--artifacts", str(output)]),
+            ("tests/compiler/package_graph.py", [str(self.compiler), "--artifacts", str(output)]),
+            ("tests/compiler/xfs_geometry.py", [str(self.compiler), "--artifacts", str(output)]),
             ("tests/compiler/utf8_range.py", ["--compiler", str(self.compiler), "--artifacts", str(output)]),
             ("tests/compiler/utf8_lines.py", ["--compiler", str(self.compiler), "--artifacts", str(output)]),
-            ("tests/kernel-budget-native.py", ["--compiler", str(self.compiler)]),
+            ("tests/kernel-budget-native.py", ["--compiler", str(self.compiler), "--output", str(output)]),
             ("tests/kernel-round-robin-native.py", ["--compiler", str(self.compiler), "--output", str(output)]),
             ("tests/kernel-ipc-transition-native.py", ["--compiler", str(self.compiler), "--output", str(output)]),
-            ("fixtures/xfs-offline/verify_native.py", ["--compiler", str(self.compiler)]),
+            ("fixtures/xfs-offline/verify_native.py", ["--compiler", str(self.compiler), "--receipt", str(output)]),
         ]
         for name in ("tests/compiler/xfs_root.py", "tests/compiler/xfs_root_api.py"):
             specs.append(
@@ -320,12 +330,16 @@ class Controls(unittest.TestCase):
                     ],
                 )
             )
-        before = {str(p) for p in (ROOT / "build").rglob("*")} if (ROOT / "build").exists() else set()
+        # This is an output/fixture contract, not a global filesystem no-write proof.
+        before = (owned_snapshot(owned), owned_snapshot(self.root))
         for name, args in specs:
-            for identity in (
-                [],
-                ["--compiler-sha256", "bad"],
-                ["--compiler-sha256", "0" * 64, "--developer-build-receipt", str(self.receipt)],
+            for identity, diagnostic in (
+                ([], "provide one of --compiler-sha256, --developer-build-receipt, or --meson-selected-compiler"),
+                (["--compiler-sha256", "bad"], "expected compiler SHA256 must be 64 lowercase hexadecimal characters"),
+                (
+                    ["--compiler-sha256", "0" * 64, "--developer-build-receipt", str(self.receipt)],
+                    "argument --developer-build-receipt: not allowed with argument --compiler-sha256",
+                ),
             ):
                 with self.subTest(runner=name, identity=identity):
                     command = (
@@ -334,12 +348,18 @@ class Controls(unittest.TestCase):
                         + [str(ROOT / name), *args, *identity]
                     )
                     result = subprocess.run(
-                        command, cwd=ROOT, env=self.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=10
+                        command, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=10
                     )
                     self.assertNotEqual(result.returncode, 0, result.stdout.decode())
+                    self.assertIn(diagnostic, result.stdout.decode())
                     self.assertFalse(output.exists())
-        after = {str(p) for p in (ROOT / "build").rglob("*")} if (ROOT / "build").exists() else set()
-        self.assertEqual(before, after)
+                    self.assertEqual(before, (owned_snapshot(owned), owned_snapshot(self.root)))
+
+    def test_owned_snapshot_detects_write(self):
+        before = owned_snapshot(self.root)
+        self.receipt.write_text("unexpected write to protected fixture")
+        with self.assertRaises(AssertionError):
+            self.assertEqual(before, owned_snapshot(self.root))
 
     def test_six_integrated_cap_consumers_configuration_only(self):
         # Name all five PR26 consumers and the IPC consumer; never filter missing inputs.
@@ -351,13 +371,19 @@ class Controls(unittest.TestCase):
             ("tests/kernel-round-robin-native.py", "ROUND_ROBIN_TEST", 128),
             ("tests/kernel-ipc-transition-native.py", "IPC_TRANSACTION", 128),
         )
-        before = {str(p) for p in (ROOT / "build").rglob("*")} if (ROOT / "build").exists() else set()
+        (ROOT / "build").mkdir(exist_ok=True)
+        artifacts = tempfile.TemporaryDirectory(prefix="aurora-cap-outputs-", dir=ROOT / "build")
+        self.addCleanup(artifacts.cleanup)
+        owned = Path(artifacts.name)
+        output = owned / "forbidden-artifacts"
+        env = {**self.env, "TMPDIR": str(owned)}
+        before = (owned_snapshot(owned), owned_snapshot(self.root))
         for name, family, focused in consumers:
             self.assertTrue((ROOT / name).is_file(), "missing required integrated cap consumer")
             selected = (
-                ["--compiler", "/nonexistent/compiler"]
+                ["--compiler", "/nonexistent/compiler", "--output", str(output)]
                 if family in ("KERNEL_BUDGET", "ROUND_ROBIN_TEST", "IPC_TRANSACTION")
-                else ["/nonexistent/compiler"]
+                else ["/nonexistent/compiler", "--artifacts", str(output)]
             )
             for cap in (focused, 513, 1024, focused - 1, 1025):
                 command = (
@@ -366,7 +392,7 @@ class Controls(unittest.TestCase):
                     + [str(ROOT / name), *selected, "--check-cap-only", "--candidate-cap-mib", str(cap)]
                 )
                 result = subprocess.run(
-                    command, cwd=ROOT, env=self.env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=10
+                    command, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=10
                 )
                 if cap < focused or cap > 1024:
                     self.assertNotEqual(result.returncode, 0)
@@ -379,8 +405,8 @@ class Controls(unittest.TestCase):
                     self.assertEqual(receipt["candidate_cap_mib"], cap)
                     self.assertEqual(receipt["cap_bytes"], cap << 20)
                     self.assertEqual(receipt["maximum_cap_mib"], 1024)
-        after = {str(p) for p in (ROOT / "build").rglob("*")} if (ROOT / "build").exists() else set()
-        self.assertEqual(before, after)
+                self.assertFalse(output.exists())
+                self.assertEqual(before, (owned_snapshot(owned), owned_snapshot(self.root)))
 
     def test_pr26_xfs_temp_root_control_preserved(self):
         spec = importlib.util.spec_from_file_location(

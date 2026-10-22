@@ -2,6 +2,7 @@
 """Account for every compiler runner without equating registration with acceptance."""
 
 import argparse
+import hashlib
 import json
 import importlib.util
 from pathlib import Path
@@ -10,7 +11,7 @@ import re
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def make_inventory(source):
+def make_inventory(source, root_target="test"):
     """Literal Make recipes and prerequisites for shortcut checks."""
     dependencies, recipes, current = {}, {}, []
     for line in re.sub(r"\\\r?\n", " ", source).splitlines():
@@ -38,7 +39,7 @@ def make_inventory(source):
             )
         )
 
-    reached, pending = set(), ["test"]
+    reached, pending = set(), [root_target]
     while pending:
         target = pending.pop()
         if target not in reached:
@@ -71,13 +72,14 @@ def compiler_meson_inventory(source, manifest):
 
 
 def root_meson_inventory(source, manifest):
-    """The root aggregate is one full-suite forwarding command, without prerequisites."""
-    _, _, reached, recipes = make_inventory(source)
+    """Normal full and exhaustive are separate forwarding commands, without prerequisites."""
     prefix = 'python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite '
-    if [line.strip() for line in recipes.get("test", [])] != [prefix + "full"]:
-        raise ValueError("root Meson forwarding drift")
-    if reached != {"test"}:
-        raise ValueError("root Make test must only forward to Meson")
+    for target, suite in (("test", "full"), ("test-exhaustive", "exhaustive")):
+        _, _, reached, recipes = make_inventory(source, target)
+        if [line.strip() for line in recipes.get(target, [])] != [prefix + suite]:
+            raise ValueError("root Meson forwarding drift: " + target)
+        if reached != {target}:
+            raise ValueError("root Make test selections must only forward to Meson")
     return {
         runner
         for runner, entry in manifest.items()
@@ -95,8 +97,16 @@ def check(manifest, files, make_runners, registered=None, root_runners=None):
             raise ValueError(f"Make routing drift: {name}")
         if root_runners is not None and entry["root_make"] != (name in root_runners):
             raise ValueError(f"root Make coverage drift: {name}")
-        if not entry["reason"] or entry["kind"] not in ("runner", "supplemental-runner", "composed-runner"):
+        if not entry["reason"] or entry["kind"] not in ("runner", "supplemental-runner", "composed-runner", "helper"):
             raise ValueError(f"unclassified runner: {name}")
+        if entry["kind"] == "helper":
+            if any(entry[key] for key in ("make", "root_make", "meson")) or entry.get("meson_commands"):
+                raise ValueError(f"helper classified as standalone runner: {name}")
+            importers = entry.get("imported_by", [])
+            if not importers or any(parent not in manifest or not manifest[parent]["meson"] for parent in importers):
+                raise ValueError(f"helper lacks registered importing runners: {name}")
+            if registered is not None and any(parent not in registered for parent in importers):
+                raise ValueError(f"missing helper importer registration: {name}")
         if entry["kind"] == "composed-runner":
             parent = entry.get("meson_parent")
             if parent not in manifest or not manifest[parent]["meson"]:
@@ -207,6 +217,11 @@ def check_commands(manifest, records, root, build):
         predecessor = next((option["value"] for option in values if option["name"] == "bootstrap_compiler"), None)
         if predecessor is None:
             raise ValueError("Meson build options lack bootstrap_compiler")
+        comparison_base = next(
+            (option["value"] for option in values if option["name"] == "emitter_comparison_base"), None
+        )
+        if not isinstance(comparison_base, str):
+            raise ValueError("Meson build options lack emitter_comparison_base")
         receipt = next((option["value"] for option in values if option["name"] == "bootstrap_receipt"), None)
         if receipt:
             evidence = json.loads(Path(receipt).read_text())
@@ -219,7 +234,11 @@ def check_commands(manifest, records, root, build):
                 receipt: "@BOOTSTRAP_RECEIPT@",
                 oracle["path"]: "@HISTORICAL_CPP_ORACLE@",
                 oracle["sha256"]: "@HISTORICAL_CPP_ORACLE_SHA256@",
+                hashlib.sha256((Path(build) / "bootstrap-selection.json").read_bytes()).hexdigest(): (
+                    "@BOOTSTRAP_SELECTION_SHA256@"
+                ),
             }
+        role_values["--comparison-base=" + comparison_base] = "--comparison-base=@EMITTER_COMPARISON_BASE@"
     arguments = {record["name"]: {Path(arg).resolve() for arg in record["cmd"]} for record in records}
     for runner, entry in manifest.items():
         expected = entry.get("meson_commands", {})
@@ -312,6 +331,31 @@ def self_test():
             continue
         raise ValueError("inventory mutation was not rejected")
 
+    helper = dict(
+        make=False,
+        root_make=False,
+        meson=False,
+        meson_commands={},
+        kind="helper",
+        reason="shared fixture transport",
+        imported_by=["a.py"],
+    )
+    with_helper = dict(sample, **{"helper.py": helper})
+    check(with_helper, set(with_helper), {"a.py"}, {"a.py"}, {"a.py"})
+    for changed in (
+        dict(helper, imported_by=[]),
+        dict(helper, imported_by=["missing.py"]),
+        dict(helper, meson=True),
+        dict(helper, meson_commands={"fake": {}}),
+    ):
+        altered = dict(sample, **{"helper.py": changed})
+        try:
+            check(altered, set(altered), {"a.py"}, {"a.py"}, {"a.py"})
+        except ValueError:
+            pass
+        else:
+            raise ValueError("helper inventory mutation was not rejected")
+
     source = "\n".join(
         target + ':\n\tpython3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" ' + selection
         for target, selection in COMPILER_MESON_ROUTES.items()
@@ -335,11 +379,14 @@ def self_test():
             raise ValueError("compiler Meson forwarding mutation was accepted")
 
     root = 'test:\n\tpython3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite full\n'
+    root += 'test-exhaustive:\n\tpython3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite exhaustive\n'
     if root_meson_inventory(root, compiler_manifest) != {"a.py", "b.py"}:
         raise ValueError("root Meson full selection control failed")
     for changed in (
         root.replace("--suite full", "--suite compiler"),
         root.replace("test:", "test: test-clean"),
+        root.replace("test-exhaustive:", "test-exhaustive: test"),
+        root.replace("--suite exhaustive", "--suite full"),
         root.replace("\tpython3", "\t-python3", 1),
     ):
         try:
@@ -381,12 +428,17 @@ def main():
     native = importlib.util.module_from_spec(native_spec)
     native_spec.loader.exec_module(native)
     native_summary = native.check(ROOT, records)
-    gaps = sorted(name for name, entry in manifest.items() if not entry["meson"] and entry["kind"] != "composed-runner")
+    gaps = sorted(
+        name
+        for name, entry in manifest.items()
+        if not entry["meson"] and entry["kind"] not in ("composed-runner", "helper")
+    )
     composed = sum(entry["kind"] == "composed-runner" for entry in manifest.values())
+    helpers = sum(entry["kind"] == "helper" for entry in manifest.values())
     print(
-        f"PASS compiler inventory: {len(files)} runnable scripts; "
+        f"PASS compiler inventory: {len(files) - helpers} runnable scripts and {helpers} imported helpers; "
         f"{len(make_runners)} Make-routed ({len(root_runners)} root aggregate); "
-        f"{len(files) - len(gaps) - composed} direct Meson memberships and {composed} composed child "
+        f"{len(files) - len(gaps) - composed - helpers} direct Meson memberships and {composed} composed child "
         f"({'verified' if registered is not None else 'declared, not checked in this invocation'}); "
         f"{len(gaps)} separate baseline-dependent gates"
     )

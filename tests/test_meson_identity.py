@@ -2,6 +2,7 @@
 """Compiler-free controls for explicitly observed Meson artifact identity."""
 
 import argparse
+import io
 import json
 from pathlib import Path
 import os
@@ -214,6 +215,115 @@ class MesonToolchainDiagnosticTests(unittest.TestCase):
                     self.assertFalse((root / "build/build.ninja").exists())
 
 
+class MesonJobAdmissionTests(unittest.TestCase):
+    def setUp(self):
+        patcher = patch.object(meson_test, "cgroup_memory_mib", return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_cpu_memory_and_explicit_ceilings(self):
+        with (
+            patch.object(meson_test.os, "sched_getaffinity", return_value=set(range(9))),
+            patch.object(meson_test, "available_memory_mib", return_value=8192),
+            patch.object(sys, "stderr", io.StringIO()) as report,
+        ):
+            self.assertEqual(meson_test.admitted_jobs("build", 64), 3)
+            self.assertEqual(meson_test.admitted_jobs("test", 64), 6)
+            self.assertEqual(meson_test.admitted_jobs("test", 2), 2)
+            self.assertIn("not an aggregate memory cap", report.getvalue())
+        with (
+            patch.object(meson_test.os, "sched_getaffinity", return_value={0, 1}),
+            patch.object(meson_test, "available_memory_mib", return_value=65536),
+        ):
+            self.assertEqual(meson_test.admitted_jobs("test", 64), 2)
+
+    def test_insufficient_memory_refuses_even_one_job(self):
+        for phase, available in (("build", 4095), ("test", 3071), ("test", 0)):
+            with (
+                self.subTest(phase=phase, available=available),
+                patch.object(meson_test, "available_memory_mib", return_value=available),
+                self.assertRaisesRegex(contract.ContractError, "Insufficient observed memory"),
+            ):
+                meson_test.admitted_jobs(phase, 1)
+
+    def test_visible_cgroup_headroom_is_an_additional_ceiling(self):
+        with (
+            patch.object(meson_test.os, "sched_getaffinity", return_value=set(range(9))),
+            patch.object(meson_test, "available_memory_mib", return_value=65536),
+            patch.object(meson_test, "cgroup_memory_mib", return_value=4096),
+        ):
+            self.assertEqual(meson_test.admitted_jobs("build", 64), 1)
+            self.assertEqual(meson_test.admitted_jobs("test", 64), 2)
+        with (
+            patch.object(meson_test, "available_memory_mib", return_value=None),
+            patch.object(meson_test, "cgroup_memory_mib", return_value=0),
+            self.assertRaisesRegex(contract.ContractError, "Insufficient observed memory"),
+        ):
+            meson_test.admitted_jobs("test", 64)
+
+    def test_missing_observations_fall_back_to_one_job(self):
+        with patch.object(meson_test, "available_memory_mib", return_value=None):
+            self.assertEqual(meson_test.admitted_jobs("build", 64), 1)
+        with (
+            patch.object(meson_test.os, "sched_getaffinity", side_effect=OSError("unavailable")),
+            patch.object(meson_test, "available_memory_mib", return_value=65536),
+        ):
+            self.assertEqual(meson_test.admitted_jobs("test", 64), 1)
+
+    def test_memory_parser_is_conservative(self):
+        for text, expected in (
+            ("MemTotal: 999999 kB\nMemAvailable: 8389631 kB\n", 8192),
+            ("MemAvailable: 8389631 MB\n", None),
+            ("MemAvailable: malformed kB\n", None),
+            ("MemAvailable:\n", None),
+            ("MemTotal: 8389631 kB\n", None),
+            ("MemAvailable: -1 kB\n", 0),
+        ):
+            with self.subTest(text=text), patch.object(Path, "read_text", return_value=text):
+                self.assertEqual(meson_test.available_memory_mib(), expected)
+        with patch.object(Path, "read_text", side_effect=OSError("unavailable")):
+            self.assertIsNone(meson_test.available_memory_mib())
+
+
+class MesonCgroupHeadroomTests(unittest.TestCase):
+    def test_current_group_and_ancestor_limits(self):
+        files = {
+            "/proc/self/cgroup": "0::/parent/child\n",
+            "/proc/self/mountinfo": "12 10 0:9 /parent /visible rw - cgroup2 cgroup rw\n",
+            "/visible/child/memory.max": str(8 * 1024**3),
+            "/visible/child/memory.current": str(1024**3),
+            "/visible/memory.max": str(6 * 1024**3),
+            "/visible/memory.current": str(2 * 1024**3),
+        }
+
+        def read(path):
+            if str(path) not in files:
+                raise FileNotFoundError(path)
+            return files[str(path)]
+
+        with patch.object(Path, "read_text", autospec=True, side_effect=read):
+            self.assertEqual(meson_test.cgroup_memory_mib(), 4096)
+            files["/visible/memory.max"] = "max"
+            self.assertEqual(meson_test.cgroup_memory_mib(), 7168)
+            files["/visible/child/memory.current"] = str(9 * 1024**3)
+            self.assertEqual(meson_test.cgroup_memory_mib(), 0)
+            files["/visible/child/memory.current"] = "malformed"
+            self.assertEqual(meson_test.cgroup_memory_mib(), 0)
+            del files["/visible/child/memory.current"]
+            self.assertEqual(meson_test.cgroup_memory_mib(), 0)
+            files["/visible/child/memory.max"] = "max"
+            self.assertIsNone(meson_test.cgroup_memory_mib())
+            files["/proc/self/mountinfo"] = "12 10 0:9 /other /visible rw - cgroup2 cgroup rw\n"
+            self.assertIsNone(meson_test.cgroup_memory_mib())
+            files["/proc/self/mountinfo"] = "12 10 0:9 / /visible rw - tmpfs tmpfs rw\n"
+            self.assertIsNone(meson_test.cgroup_memory_mib())
+            files["/proc/self/cgroup"] = "0::/../outside\n"
+            files["/proc/self/mountinfo"] = "12 10 0:9 / /visible rw - cgroup2 cgroup rw\n"
+            self.assertIsNone(meson_test.cgroup_memory_mib())
+        with patch.object(Path, "read_text", side_effect=OSError("unavailable")):
+            self.assertIsNone(meson_test.cgroup_memory_mib())
+
+
 class MesonEntrypointTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -230,8 +340,13 @@ class MesonEntrypointTests(unittest.TestCase):
         self.bootstrap_sha256 = "1" * 64
         self.bootstrap_receipt = str(self.root / "receipt.json")
         self.verify_predecessor = unittest.mock.Mock()
+        self.check_predecessor = unittest.mock.Mock()
+        self.selection_sha256 = "2" * 64
         self.missing_options = set()
         self.test_names = {"short-circuit", "short-circuit-ir", "short-circuit-ir-native", "console-session"}
+        self.test_dependencies = {name: ["aurorac@exe"] for name in self.test_names}
+        self.target_records = None
+        self.after_graph_refresh = None
         self.preflight = unittest.mock.Mock()
         for patcher in (
             patch.dict(os.environ, {}, clear=True),
@@ -245,6 +360,11 @@ class MesonEntrypointTests(unittest.TestCase):
             patch.object(meson_test.subprocess, "check_output", side_effect=self.introspect),
             patch.object(meson_toolchain, "check", self.preflight),
             patch.object(meson_test.bootstrap, "verify", self.verify_predecessor),
+            patch.object(meson_test.bootstrap_guard, "check", self.check_predecessor),
+            patch.object(meson_test.bootstrap_guard, "configured_selection_sha256", return_value=self.selection_sha256),
+            patch.object(meson_test.os, "sched_getaffinity", return_value=set(range(9))),
+            patch.object(meson_test, "available_memory_mib", return_value=8192),
+            patch.object(meson_test, "cgroup_memory_mib", return_value=None),
         ):
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -263,6 +383,8 @@ class MesonEntrypointTests(unittest.TestCase):
         self.assertEqual(kwargs["env"]["CXX"], "/synthetic/g++")
         if command[1] == self.failure:
             raise subprocess.CalledProcessError(23, command)
+        if command[-1] == "--ninja-args=build.ninja" and self.after_graph_refresh:
+            self.after_graph_refresh()
         if command[1] == "setup":
             selected = dict(argument[2:].split("=", 1) for argument in command if argument.startswith("-D"))
             self.bootstrap_compiler = selected["bootstrap_compiler"]
@@ -275,7 +397,15 @@ class MesonEntrypointTests(unittest.TestCase):
         if command[-1] == "--compilers":
             return json.dumps({"build": {"cpp": {"exelist": [self.configured_compiler]}}}).encode()
         if command[-1] == "--tests":
-            return json.dumps([{"name": name} for name in sorted(self.test_names)]).encode()
+            return json.dumps(
+                [{"name": name, "depends": self.test_dependencies.get(name, [])} for name in sorted(self.test_names)]
+            ).encode()
+        if command[-1] == "--targets":
+            return json.dumps(
+                self.target_records
+                if self.target_records is not None
+                else [{"id": "aurorac@exe", "filename": [str(Path(command[2]) / "aurorac")]}]
+            ).encode()
         self.assertEqual(command[-1], "--buildoptions")
         options = [
             {"name": "cpp_args", "value": self.flags},
@@ -339,10 +469,12 @@ class MesonEntrypointTests(unittest.TestCase):
 
     def test_invalid_receipt_stops_before_compile_and_reconfiguration(self):
         self.configured()
-        self.verify_predecessor.side_effect = ValueError("receipt rejected")
-        with self.assertRaisesRegex(contract.ContractError, "receipt rejected"):
-            meson_test.execute(self.root, "full")
-        self.assertEqual(self.calls, [])
+        for error in (ValueError("receipt rejected"), FileNotFoundError("selection missing"), KeyError("roles")):
+            self.check_predecessor.side_effect = error
+            with self.subTest(error=error), self.assertRaisesRegex(contract.ContractError, "reconfigure Meson"):
+                meson_test.execute(self.root, "full")
+            self.assertEqual(self.calls, [])
+            self.verify_predecessor.assert_not_called()
 
     def test_requested_predecessor_refreshes_only_implicit_default(self):
         build = self.configured()
@@ -359,6 +491,14 @@ class MesonEntrypointTests(unittest.TestCase):
         self.select_predecessor(predecessor)
         meson_test.execute(self.root, "full")
         self.assertEqual([c[1] for c in self.calls], ["setup", "compile", "test"])
+        self.verify_predecessor.assert_called_once_with(str(predecessor), self.bootstrap_sha256, self.bootstrap_receipt)
+        self.check_predecessor.assert_called_once_with(
+            build / "bootstrap-selection.json",
+            str(predecessor),
+            self.bootstrap_sha256,
+            self.bootstrap_receipt,
+            selection_sha256=self.selection_sha256,
+        )
         self.assertEqual(
             self.calls[0][2:],
             [
@@ -373,15 +513,50 @@ class MesonEntrypointTests(unittest.TestCase):
         self.assertEqual(lock.stat().st_ino, inode)
         self.assertEqual(self.flags, ["-O2"])
         self.calls.clear()
+        self.verify_predecessor.reset_mock()
+        self.check_predecessor.reset_mock()
         meson_test.execute(self.root, "full")
         self.assertEqual([c[1] for c in self.calls], ["compile", "test"])
+        self.verify_predecessor.assert_not_called()
+        self.check_predecessor.assert_called_once()
         self.calls.clear()
+        self.check_predecessor.reset_mock()
         self.bootstrap_compiler = str(self.root / "old predecessor")
         os.environ["MESON_BUILD_DIR"] = str(build)
         with self.assertRaisesRegex(contract.ContractError, "differs from BOOTSTRAP_COMPILER; run"):
             meson_test.execute(self.root, "full")
         self.assertEqual(self.calls, [])
+        self.verify_predecessor.assert_not_called()
+        self.check_predecessor.assert_not_called()
         self.assertEqual(sentinel.read_text(), "preserve")
+
+    def test_changed_request_validates_before_setup(self):
+        self.configured()
+        predecessor = self.root / "new predecessor"
+        predecessor.write_text("#!/bin/sh\nexit 0\n")
+        predecessor.chmod(0o755)
+        self.select_predecessor(predecessor)
+        self.verify_predecessor.side_effect = ValueError("invalid requested receipt")
+        with self.assertRaisesRegex(contract.ContractError, "invalid requested receipt"):
+            meson_test.execute(self.root, "full")
+        self.verify_predecessor.assert_called_once()
+        self.check_predecessor.assert_not_called()
+        self.assertEqual(self.calls, [])
+
+    def test_requested_selection_requires_sha_and_receipt_before_setup(self):
+        self.configured()
+        predecessor = self.root / "new predecessor"
+        predecessor.write_text("#!/bin/sh\nexit 0\n")
+        predecessor.chmod(0o755)
+        for name in ("BOOTSTRAP_COMPILER_SHA256", "BOOTSTRAP_RECEIPT"):
+            self.select_predecessor(predecessor)
+            del os.environ[name]
+            with self.subTest(name=name), self.assertRaisesRegex(contract.ContractError, name):
+                meson_test.execute(self.root, "full")
+            self.verify_predecessor.assert_not_called()
+            self.check_predecessor.assert_not_called()
+            self.assertEqual(self.calls, [])
+            self.assertEqual(self.queries, [])
 
     def test_empty_default_predecessor_refreshes_before_path_validation(self):
         build = self.configured()
@@ -436,8 +611,54 @@ class MesonEntrypointTests(unittest.TestCase):
                 self.assertEqual(self.calls[0][2:6], ["-C", str(build), "-j", "3"])
                 self.assertIn("--ninja-args=meson-test-prereq", self.calls[0])
                 self.assertEqual(
-                    self.calls[1][2:9], ["-C", str(build), "--suite", "full", "--no-rebuild", "--num-processes", "4"]
+                    self.calls[1][2:9], ["-C", str(build), "--suite", "full", "--no-rebuild", "--num-processes", "6"]
                 )
+
+    def test_exhaustive_cli_selects_only_the_explicit_tier(self):
+        self.configured()
+        with patch.object(sys, "argv", ["meson_test.py", "--repo-root", str(self.root), "--suite", "exhaustive"]):
+            meson_test.main()
+        self.assertEqual([command[1] for command in self.calls], ["compile", "test"])
+        self.assertEqual(self.calls[1][4:6], ["--suite", "exhaustive"])
+
+    def test_memory_is_observed_again_before_tests(self):
+        self.configured()
+        with patch.object(meson_test, "available_memory_mib", side_effect=[8192, 4096]):
+            meson_test.execute(self.root, "full")
+        self.assertEqual(self.calls[0][5], "3")
+        self.assertEqual(self.calls[1][8], "2")
+
+    def test_auto_and_numeric_job_ceilings_remain_explicit(self):
+        self.configured()
+        for build_jobs, test_jobs, expected in (("auto", "auto", (3, 6)), ("2", "1", (2, 1)), ("64", "64", (3, 6))):
+            self.calls.clear()
+            with patch.dict(os.environ, {"AURORA_BUILD_JOBS": build_jobs, "AURORA_TEST_JOBS": test_jobs}):
+                meson_test.execute(self.root, "full")
+            self.assertEqual((int(self.calls[0][5]), int(self.calls[1][8])), expected)
+
+    def test_invalid_job_ceilings_fail_before_commands(self):
+        self.configured()
+        for name in ("AURORA_BUILD_JOBS", "AURORA_TEST_JOBS"):
+            for value in ("", "0", "-1", "65", "AUTO", "2.5"):
+                with (
+                    self.subTest(name=name, value=value),
+                    patch.dict(os.environ, {name: value}),
+                    self.assertRaises((ValueError, contract.ContractError)),
+                ):
+                    meson_test.execute(self.root, "full")
+                self.assertEqual(self.calls, [])
+
+    def test_low_memory_stops_before_compile_or_test(self):
+        self.configured()
+        for observations, expected in (([4095], []), ([8192, 3071], ["compile"])):
+            self.calls.clear()
+            with (
+                self.subTest(observations=observations),
+                patch.object(meson_test, "available_memory_mib", side_effect=observations),
+                self.assertRaisesRegex(contract.ContractError, "Insufficient observed memory"),
+            ):
+                meson_test.execute(self.root, "full")
+            self.assertEqual([command[1] for command in self.calls], expected)
 
     def test_build_only_selects_one_existing_target_without_tests(self):
         build = self.configured("compiler")
@@ -447,20 +668,82 @@ class MesonEntrypointTests(unittest.TestCase):
             self.assertEqual(self.calls, [["/synthetic/meson", "compile", "-C", str(build), "-j", "3", target]])
 
     def test_named_tests_preserve_all_names_without_compiler_suite_filter(self):
-        self.configured("compiler")
+        build = self.configured("compiler")
         names = ["short-circuit", "short-circuit-ir", "short-circuit-ir-native", "console-session"]
         meson_test.execute(self.root, "compiler", tests=names)
-        self.assertEqual([command[1] for command in self.calls], ["compile", "test"])
-        self.assertEqual(self.calls[1][-len(names) :], names)
-        self.assertNotIn("--suite", self.calls[1])
-        self.assertIn("--no-rebuild", self.calls[1])
+        self.assertEqual([command[1] for command in self.calls], ["compile", "compile", "test"])
+        self.assertEqual(self.calls[0][2:], ["-C", str(build), "-j", "3", "--ninja-args=build.ninja"])
+        self.assertEqual(self.calls[1][2:], ["-C", str(build), "-j", "3", '--ninja-args=["--", "aurorac"]'])
+        self.assertEqual(self.calls[2][-len(names) :], names)
+        self.assertNotIn("--suite", self.calls[2])
+        self.assertIn("--no-rebuild", self.calls[2])
+        self.assertEqual(self.check_predecessor.call_count, 2)
 
-    def test_unknown_or_pattern_test_names_reject_before_compile(self):
+    def test_unknown_or_pattern_test_names_reject_before_fixture_compile(self):
         self.configured("compiler")
         for names in (["absent"], ["short-*"], ["--list"], [""]):
+            self.calls.clear()
             with self.subTest(names=names), self.assertRaises(contract.ContractError):
                 meson_test.execute(self.root, "compiler", tests=names)
-            self.assertEqual(self.calls, [])
+            if names == ["absent"]:
+                self.assertEqual(len(self.calls), 1)
+                self.assertEqual(self.calls[0][-1], "--ninja-args=build.ninja")
+            else:
+                self.assertEqual(self.calls, [])
+
+    def test_named_tests_use_fresh_graph_metadata(self):
+        self.configured("compiler")
+        self.after_graph_refresh = lambda: self.test_names.add("newly-registered")
+        meson_test.execute(self.root, "compiler", tests=["newly-registered"])
+        self.assertEqual([command[1] for command in self.calls], ["compile", "test"])
+        self.assertEqual(self.calls[-1][-1], "newly-registered")
+
+    def test_named_test_configuration_failure_does_not_select_or_run_fixtures(self):
+        self.configured("compiler")
+        self.failure = "compile"
+        with self.assertRaises(subprocess.CalledProcessError):
+            meson_test.execute(self.root, "compiler", tests=["console-session"])
+        self.assertEqual(len(self.calls), 1)
+        self.assertNotIn("--tests", [query[-1] for query in self.queries])
+
+    def test_named_test_without_dependencies_does_not_build_default_target(self):
+        self.configured("compiler")
+        self.test_dependencies["console-session"] = []
+        meson_test.execute(self.root, "compiler", tests=["console-session"])
+        self.assertEqual([command[1] for command in self.calls], ["compile", "test"])
+        self.assertEqual(self.calls[0][-1], "--ninja-args=build.ninja")
+        self.assertNotIn("--targets", [query[-1] for query in self.queries])
+
+    def test_named_test_builds_all_generated_outputs_but_no_unrelated_targets(self):
+        build = self.configured("compiler")
+        self.test_dependencies["console-session"] = ["generated@cus", "generated@cus"]
+        self.target_records = [
+            {"id": "generated@cus", "filename": [str(build / "generated.s"), str(build / "facts with spaces.json")]},
+            {"id": "unrelated@exe", "filename": [str(build / "unrelated")]},
+        ]
+        meson_test.execute(self.root, "compiler", tests=["console-session"])
+        self.assertEqual(
+            json.loads(self.calls[1][-1].split("=", 1)[1]), ["--", "facts with spaces.json", "generated.s"]
+        )
+
+    def test_named_dependency_metadata_rejects_before_fixture_compile(self):
+        build = self.configured("compiler")
+        for dependencies, records in (
+            (None, []),
+            ([42], []),
+            (["missing@exe"], []),
+            (["fixture@exe"], [{"id": "fixture@exe", "filename": []}]),
+            (["fixture@exe"], [{"id": "fixture@exe", "filename": [str(self.root / "outside")]}]),
+            (["fixture@exe"], [{"id": "fixture@exe", "filename": ["relative"]}]),
+            (["fixture@exe"], [{"id": "fixture@exe", "filename": [str(build / "fixture")]}] * 2),
+        ):
+            self.calls.clear()
+            self.test_dependencies["console-session"] = dependencies
+            self.target_records = records
+            with self.subTest(dependencies=dependencies, records=records), self.assertRaises(contract.ContractError):
+                meson_test.execute(self.root, "compiler", tests=["console-session"])
+            self.assertEqual(len(self.calls), 1)
+            self.assertEqual(self.calls[0][-1], "--ninja-args=build.ninja")
 
     def test_invalid_build_target_or_mixed_selection_rejects_before_artifacts(self):
         for targets, scope, tests in (

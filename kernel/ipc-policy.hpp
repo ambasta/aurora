@@ -139,31 +139,8 @@ class Mailbox final {
         const auto original_phase = static_cast<std::uint64_t>(phase);
         const auto original_state = static_cast<std::uint64_t>(state_);
         const std::uint64_t original_scrubbed = scrubbed() ? 1 : 0;
-        auto copied_phase = original_phase;
-        // Fault profiles change only local copied inputs or the actual result.
-        // Decoding always uses the original trusted facts; no live state changes.
-#ifdef AURORA_IPC_POLICY_REQUEST_INPUT
-        if (operation == TransactionOperation::submit)
-            copied_phase = std::numeric_limits<std::uint64_t>::max();
-#endif
-#ifdef AURORA_IPC_POLICY_CANCEL_INPUT
-        if (operation == TransactionOperation::cancel)
-            copied_phase = std::numeric_limits<std::uint64_t>::max();
-#endif
-        auto encoded = language_ipc_transition(
-            static_cast<std::uint64_t>(operation), copied_phase, original_state, original_scrubbed);
-#ifdef AURORA_IPC_POLICY_REQUEST_OUTPUT
-        if (operation == TransactionOperation::submit) {
-            const volatile std::uint64_t reserved_bit = std::uint64_t{1} << 63;
-            encoded |= reserved_bit;
-        }
-#endif
-#ifdef AURORA_IPC_POLICY_CANCEL_OUTPUT
-        if (operation == TransactionOperation::cancel) {
-            const volatile std::uint64_t reserved_bit = std::uint64_t{1} << 63;
-            encoded |= reserved_bit;
-        }
-#endif
+        const auto encoded = language_ipc_transition(
+            static_cast<std::uint64_t>(operation), original_phase, original_state, original_scrubbed);
         return TransactionTransition::decode(
             encoded, static_cast<std::uint64_t>(operation), original_phase, original_state, original_scrubbed);
     }

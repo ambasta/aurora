@@ -83,18 +83,32 @@ setup documented in [the UEFI guide](README.md).
 
 - `scripts/kernel-pci-tests.sh`: hosted parser/range/topology tests and strict
   positive/adversarial transcript validation; `SANITIZE=1` adds ASan/UBSan.
-- `scripts/kernel-pci-all.sh`: all ten actual OVMF gates, restoring the normal
+- `scripts/kernel-pci-all.sh`: all seven actual OVMF scenarios, using two PCI
+  images (ordinary and shared fixture), restoring the normal
   UEFI image after each variant.
 - `scripts/kernel-uefi-smoke.sh pci`: default q35 inventory.
 - `pci-devices`: NVMe controller with no namespace/backing disk, xHCI controller,
   and a disconnected e1000e network function.
 - `pci-bridge`: firmware-configured root port and downstream NVMe controller.
-- `pci-checksum`, `pci-reserved`, `pci-overlap`, `pci-range`: corrupt only the
-  owned MCFG snapshot and require rejection before config mapping.
+- `pci-checksum`: corrupt only the owned MCFG snapshot and retain the real
+  fail-stop witness: ACPI window closure precedes rejection, with no ECAM
+  aperture, inventory or language success published.
+- Reserved-byte and overlapping-allocation rejection are exercised directly by
+  the existing hosted `Mcfg::parse` controls. Zero-base MCFG is parseable but
+  rejected by the hosted `Q35Ecam::authorize` control. These replace the former
+  `pci-reserved`, `pci-overlap` and `pci-range` image variants without changing
+  production parser/admission behavior.
 - `pci-cycle`: corrupt only a copied bridge header to point at its parent;
   require no completed inventory or language execution.
 - `pci-write`: supervisor write protection, page fault 14/error 3 at the window.
 - `pci-revoked`: recently unmapped read, page fault 14/error 0 at the window.
+
+The four remaining PCI fault scenarios share `pci-fixture`, with exact selectors
+97 through 100 from the existing fixture catalog. The existing serial readiness
+transport sends the selector after ACPI window closure and before MCFG parsing
+or PCI mapping. An out-of-family selector fails closed. The ordinary `pci` image
+contains no selector reader or injection state. Existing 30-second guest deadlines
+and original emulator clock selection are unchanged.
 
 All successful inventory gates continue to compiled language result 42. All
 rejections require debug-exit failure and prohibit downstream success markers.

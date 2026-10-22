@@ -161,11 +161,15 @@ auto initialize_service_timer() -> void {
             "timer aperture admission");
     asm volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(0x80000008U), "c"(0));
     auto control = read_msr(0x1b), pat = read_msr(0x277);
-#ifdef AURORA_BUDGET_DISCOVERY
-    control ^= 0x1000;
+#if defined(AURORA_BUDGET_FIXTURE)
+    if (fixture == Fixture::budget_discovery) {
+        control ^= 0x1000;
+    }
 #endif
-#ifdef AURORA_BUDGET_CACHE
-    pat ^= 6ULL << 24;
+#if defined(AURORA_BUDGET_FIXTURE)
+    if (fixture == Fixture::budget_cache) {
+        pat ^= 6ULL << 24;
+    }
 #endif
     const auto admitted = LocalApicAdmission::authorize(*discovered_topology(),
                                                         view(arena + Handoff::map_offset, handoff->get(32)),
@@ -184,8 +188,10 @@ auto initialize_service_timer() -> void {
     require(slot && *slot == 0, "timer empty mapping");
     *slot = LocalApicAdmission::physical_address | LocalApicAdmission::leaf_flags;
     asm volatile("invlpg (%0)" ::"r"(LocalApicAdmission::virtual_address) : "memory");
-#ifdef AURORA_BUDGET_ALIAS
-    slot[1] = *slot;
+#if defined(AURORA_BUDGET_FIXTURE)
+    if (fixture == Fixture::budget_alias) {
+        slot[1] = *slot;
+    }
 #endif
     require(tables.verify(arena, *handoff, &*interrupt_admission), "timer mapping tree");
     require(interrupt_admission->matches_registers(timer_read(0x20), timer_read(0x30)), "timer hardware identity");
@@ -473,23 +479,7 @@ auto service_timer_interrupt(U64 vector, U64 error, U64 pc, U64 cs, U64 frame) -
         context_sample = true;
     }
 #endif
-    U64 policy_initial = timer_initial, policy_remaining = timer_remaining, policy_used = timer_ticks;
-#ifdef AURORA_BUDGET_POLICY_ZERO
-    policy_initial = 0;
-#endif
-#ifdef AURORA_BUDGET_POLICY_COUNTS
-    policy_used = 1; // First accepted frame has remaining==initial and used==0.
-#endif
-#ifdef AURORA_BUDGET_POLICY_WIDE
-    policy_remaining = UINT64_MAX;
-    policy_used = UINT64_MAX;
-#endif
-    auto encoded = language_budget_tick(policy_initial, policy_remaining, policy_used);
-#ifdef AURORA_BUDGET_POLICY_OUTPUT
-    // Test-only owned local input keeps the ordinary decoder branch dynamic.
-    const volatile U64 policy_output_reserved_mask = 1ULL << 63;
-    encoded |= policy_output_reserved_mask;
-#endif
+    const auto encoded = language_budget_tick(timer_initial, timer_remaining, timer_ticks);
     const auto transition = BudgetTransition::decode(encoded, timer_initial, timer_remaining, timer_ticks);
     require(transition.has_value(), "Aurora budget transition");
     timer_remaining = transition->remaining();

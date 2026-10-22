@@ -1610,13 +1610,9 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
 
 
 def main():
-    # The default selection checks stage convergence through the lexer and the
-    # whole frontend, which imports every compiler module. --corpus compares
-    # every other checked-in source across the two stages; slow suites run it.
+    # Keep fast lexer and whole-frontend convergence independent. The default
+    # emitter differential shares C1/C2 observations for the complete corpus.
     arguments = sys.argv[1:]
-    whole_corpus = arguments[-1:] == ["--corpus"]
-    if whole_corpus:
-        arguments = arguments[:-1]
     current1, current2, root, built_a, built_b = (Path(value).resolve() for value in arguments)
     with tempfile.TemporaryDirectory(prefix="hosted-lexer-bootstrap-") as temporary:
         work = Path(temporary)
@@ -1634,7 +1630,7 @@ def main():
             frontend_library_sources.issubset(corpus), "a frontend library module is missing from self-rebuild coverage"
         )
         convergence = {root / "compiler/lexer.au", root / "compiler/frontend.au"}
-        corpus = [source for source in corpus if (source in convergence) != whole_corpus]
+        corpus = [source for source in corpus if source in convergence]
         for source in corpus:
             if source == root / "compiler/frontend.au":
                 # The dedicated path compiles this graph with local bindings and
@@ -1693,7 +1689,7 @@ def main():
             records.append({"source": str(source.relative_to(root)), "status": runs[0].returncode})
         require(len(records) > 1, "source corpus is empty")
         print(
-            ("PASS current C1/C2 corpus" if whole_corpus else "PASS current C1/C2 lexer and frontend")
+            "PASS current C1/C2 lexer and frontend"
             + " diagnostics, assembly and output preservation: "
             + json.dumps(
                 {

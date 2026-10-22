@@ -19,11 +19,11 @@ FIXED0_UEFI_MODES = tuple(
     """
 budget budget-fault budget-context budget-pending budget-noapic budget-smp
 budget-discovery budget-cache budget-alias budget-forged budget-root budget-mmio
-budget-softint budget-fpu budget-epoch budget-policy-zero budget-policy-counts
-budget-policy-wide budget-policy-output dispatch dispatch-budget dispatch-fault
+budget-softint budget-fpu budget-epoch
+dispatch dispatch-budget dispatch-fault
 dispatch-mixed dispatch-pending dispatch-cross-reply dispatch-client-owner
 dispatch-stale dispatch-duplicate dispatch-full dispatch-root dispatch-peer-code
-dispatch-policy-cursor dispatch-policy-mask dispatch-policy-output user-phases
+user-phases
 runtime-console-region runtime-console-region-cancel runtime-console-region-cancel-ready runtime-console-region-input
 runtime-console-region-fault runtime-console-region-output runtime-console-region-budget
 runtime-owned-text runtime-owned-text-site runtime-owned-text-region runtime-owned-text-stale
@@ -34,7 +34,7 @@ user-ram-file-epochs user-ram-file-pending user-ram-file-frame user-ram-file-roo
 user-retire-pending user-request-budget user-completion-budget
 user-request-bounds user-completion-bounds user-request-overflow
 user-completion-overflow user-pending user-role user-phase user-transaction user-epoch
-user-root user-unknown user-stale-grant user-disposal-input user-disposal-output
+user-root user-unknown user-stale-grant
 """.split()
 )
 
@@ -43,16 +43,16 @@ ORIGINAL_UEFI_MODES = tuple(
 runtime-table-readback runtime-table-reject runtime-table-exhaust
 runtime-table-quarantine runtime-pin-cancel runtime-pin-fault runtime-pin-stale
 runtime-pin-exhaust runtime-span runtime-multipage normal owned-bytes stale stale-exhausted bad-handoff bad-map
-bad-table wp nx acpi acpi-two acpi-disabled acpi-checksum acpi-bad-entry acpi-duplicate
-acpi-bad-source acpi-changed-header acpi-duplicate-root acpi-write acpi-revoked pci
-pci-devices pci-bridge pci-checksum pci-reserved pci-overlap pci-range pci-cycle
+bad-table wp nx acpi acpi-two acpi-disabled acpi-checksum
+acpi-bad-source acpi-duplicate-root acpi-write acpi-revoked pci
+pci-devices pci-bridge pci-checksum pci-cycle
 pci-write pci-revoked runtime runtime-code runtime-stack runtime-kernel runtime-window
 runtime-root runtime-kernel-trap runtime-entry-stack runtime-write runtime-nx
 runtime-return runtime-unknown runtime-syscall runtime-sysenter runtime-terminal-input runtime-terminal-output
 ipc ipc-fault ipc-cancel
 ipc-owner ipc-stale ipc-version ipc-phase ipc-transaction ipc-site ipc-unknown ipc-root
-ipc-kernel-trap ipc-duplicate ipc-late ipc-exhausted ipc-policy-request-input
-ipc-policy-request-output ipc-policy-cancel-input ipc-policy-cancel-output
+ipc-kernel-trap ipc-duplicate ipc-late ipc-exhausted
+
 snapshot snapshot-fault snapshot-cancel snapshot-owner snapshot-stale snapshot-revoked
 snapshot-producer-selector snapshot-producer-quota snapshot-producer-pages
 snapshot-reply-reserved snapshot-reply-byte
@@ -81,8 +81,8 @@ bar-state bar-capture bar-inherited bar-read bar-write bar-revoked bar-alias
 
 ORIGINAL_IVRS_MODES = tuple(
     """
-ivrs-default ivrs-read ivrs-write ivrs-revoked ivrs-pair ivrs-alias ivrs-reserved
-ivrs-scope ivrs-capability ivrs-range ivrs-missing
+ivrs-default ivrs-read ivrs-write ivrs-revoked
+ivrs-missing
 """.split()
 )
 

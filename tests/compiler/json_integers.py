@@ -18,12 +18,14 @@ import os
 import pathlib
 import random
 import re
+import struct
 import sys
 import tempfile
 
 sys.dont_write_bytecode = True
 import json_profile as profile
 import json_codecs as codecs
+import json_runtime as runtime
 from compiler_contract import selected_flag_vectors
 from package_profiles import SelectedCompiler, finalize_selected_identity
 
@@ -122,23 +124,6 @@ def observe_encoding():
         f"else{{if(ordinal>={len(INDICES)}){{fallback=165u8;ordinal=ordinal-{len(INDICES)};}}}}"
         "return u64(report.byte_or(encoding_index(ordinal),fallback));"
     )
-
-
-def source_case(case, signed):
-    result = "std::" + integer_type(signed)
-    helper = f"auto input_CASE({SPAN} bytes)->{result}{{"
-    parent = "bytes"
-    for index, (start, count) in enumerate(case.windows):
-        name = f"view{index}"
-        helper += f"const {SPAN} {name}={parent}.subspan({start},{count});"
-        parent = name
-    helper += f"const {result} r=std::{integer_function(signed)}({parent},{case.offset},{case.extent()});return r;}}"
-    body = harness.array(case.data) + f"const builtin::array<u8,{max(1, len(case.data))}> saved=owner;"
-    body += f"const {result} original=input_CASE(borrow_bytes(owner));"
-    body += f"i64 i=0;while(i<len(owner)){{if(owner[i]!=saved[i]){{return {U64_MAX}u64;}}i=i+1;}}owner[0]=0u8;"
-    body += f"const {result} report=original;" + observe_integer(signed)
-    expected = integer_model(case.span(), case.offset, case.extent(), signed)
-    return Test(("i64 " if signed else "u64 ") + case.label, body, expected, helper)
 
 
 def numeric_values(signed):
@@ -274,24 +259,6 @@ def parse_cases():
         yield Case("seeded arbitrary numeric spelling", raw or b"\xff", 0, len(raw))
 
 
-def shape_tests():
-    for signed in (True, False):
-        values = (MIN, -1, 0, 1, MAX) if signed else (0, 1, MAX, MAX + 1, U64_MAX)
-        for status, value, error in itertools.product(range(len(STATUSES)), values, (MIN, -1, 0, 1, MAX)):
-            cls = "std::" + integer_type(signed)
-            body = f"const {cls} original={cls}(std::JsonIntegerStatus::{STATUSES[status]},"
-            body += f"{literal(value, signed)},{error});"
-            # Whole-class assignment is outside the current Aurora surface.
-            # Separate source-owner/payload mutations and expired-scope probes
-            # exercise lifetime independence; these fixtures certify shape.
-            body += f"const {cls} report=original;"
-            yield Test(
-                "forged integer constructor shape and copied report",
-                body + observe_integer(signed),
-                integer_shape(signed, status, value, error),
-            )
-
-
 def stored_array(data):
     require(len(data) == 20, "encoding payload shape")
     return "std::array<u8,20> stored=std::array<u8,20>();" + "".join(
@@ -299,27 +266,169 @@ def stored_array(data):
     )
 
 
-def encoding_tests():
+# Plain host POD fixtures enter an ABI-checked borrowed receiver. Only AU creates
+# owner spans; no host descriptor or copied-record ABI crosses this boundary.
+RUNTIME_SCALARS = (
+    "operation",
+    "length",
+    "offset",
+    "count",
+    "first",
+    "first_size",
+    "second",
+    "second_size",
+    "status",
+    "signed_value",
+    "unsigned_value",
+    "error",
+)
+
+
+def runtime_source():
+    source = "module json_integer_runtime;import std.json;import std.decimal;import std.array;\n"
+    source += (
+        "auto signed_bits(i64 value)->u64{if(value<0){return 18446744073709551615u64-u64(-(value+1));}"
+        "return u64(value);}\n"
+    )
+    source += f"auto encoding_index(i64 ordinal)->i64{{if(ordinal==0){{return {MIN};}}"
+    source += f"if(ordinal==1){{return -1;}}if(ordinal=={len(INDICES) - 1}){{return {MAX};}}return ordinal-2;}}\n"
+    source += "class IntegerInput {"
+    source += "".join(f"builtin::array<u8,512> data{i};" for i in range(8))
+    source += "".join(f"{'u64' if name == 'unsigned_value' else 'i64'} {name};" for name in RUNTIME_SCALARS)
+    source += (
+        "public:IntegerInput():"
+        + ",".join(
+            [
+                *(f"data{i}{{}}" for i in range(8)),
+                *(f"{name}({'0u64' if name == 'unsigned_value' else '0'})" for name in RUNTIME_SCALARS),
+            ]
+        )
+        + "{}"
+    )
+    source += "auto input_byte(i64 index) const -> u8 {"
+    for i in range(7):
+        source += f"if(index<{512 * (i + 1)}){{return data{i}[index-{512 * i}];}}"
+    source += "return data7[index-3584];}"
+    source += "auto selected_status() const -> std::JsonIntegerStatus {"
+    for number, name in enumerate(STATUSES):
+        source += f"if(status=={number}){{return std::JsonIntegerStatus::{name};}}"
+    source += "return std::JsonIntegerStatus::invalid_window;}"
+    for signed in (True, False):
+        suffix, result = ("signed" if signed else "unsigned"), "std::" + integer_type(signed)
+        source += f"auto parse_{suffix}({SPAN} bytes) const -> {result} {{"
+        source += f"const {SPAN} whole=bytes.subspan(0,length);const {SPAN} view=whole.subspan(first,first_size);"
+        source += f"const {SPAN} nested=view.subspan(second,second_size);"
+        source += f"return std::{integer_function(signed)}(nested,offset,count);}}"
+    source += "auto integer_entry(i64 field) const -> u64 {"
+    for signed, operation in ((True, 0), (False, 1)):
+        suffix, result = ("signed" if signed else "unsigned"), "std::" + integer_type(signed)
+        source += f"if(operation=={operation}){{" + harness.array(bytes(4096))
+        source += "i64 at=0;while(at<4096){owner[at]=input_byte(at);at=at+1;}"
+        source += f"const {result} original=parse_{suffix}(borrow_bytes(owner));"
+        source += f"at=0;while(at<4096){{if(owner[at]!=input_byte(at)){{return {U64_MAX}u64;}}at=at+1;}}owner[0]=0u8;"
+        source += f"const {result} report=original;" + observe_integer(signed) + "}"
+    for signed, operation in ((True, 2), (False, 3)):
+        result = "std::" + integer_type(signed)
+        value = "signed_value" if signed else "unsigned_value"
+        source += f"if(operation=={operation}){{const {result} original={result}(selected_status(),{value},error);"
+        source += f"const {result} report=original;" + observe_integer(signed) + "}"
+    for signed, operation in ((True, 4), (False, 5)):
+        typ, value = ("i64", "signed_value") if signed else ("u64", "unsigned_value")
+        source += (
+            f"if(operation=={operation}){{const std::DecimalEncodingResult original=std::format_decimal_{typ}({value});"
+        )
+        source += "const std::DecimalEncodingResult report=original;" + observe_encoding() + "}"
+    source += "std::array<u8,20> stored=std::array<u8,20>();i64 at=0;"
+    source += "while(at<20){stored.set(at,input_byte(at));at=at+1;}"
+    source += "const std::DecimalEncodingResult original=std::DecimalEncodingResult(stored,count);"
+    source += "const std::DecimalEncodingResult report=original;stored.set(0,17u8);stored.set(19,18u8);"
+    source += observe_encoding() + "}};\n"
+    require(len(source.encode()) <= 65536, "integer runtime source byte cap")
+    return source
+
+
+def runtime_record(label, operation, expected, data=b"", **values):
+    require(len(data) <= 4096, "integer runtime owner capacity")
+    values["operation"] = operation
+    packet = data.ljust(4096, b"\0")
+    for name in RUNTIME_SCALARS:
+        packet += struct.pack("<Q" if name == "unsigned_value" else "<q", values.get(name, 0))
+    return label, packet, expected
+
+
+def runtime_cases():
+    for case in parse_cases():
+        require(len(case.windows) <= 2, "integer runtime nested window capacity")
+        length = len(case.data)
+        windows = []
+        for index in range(2):
+            start, count = case.windows[index] if index < len(case.windows) else (0, length)
+            require(0 <= start <= length and 0 <= count <= length - start, "integer subspan fixture admitted")
+            windows.extend((start, count))
+            length = count
+        for signed in (True, False):
+            yield runtime_record(
+                ("i64 " if signed else "u64 ") + case.label,
+                0 if signed else 1,
+                integer_model(case.span(), case.offset, case.extent(), signed),
+                case.data,
+                length=len(case.data),
+                offset=case.offset,
+                count=case.extent(),
+                first=windows[0],
+                first_size=windows[1],
+                second=windows[2],
+                second_size=windows[3],
+            )
+    for signed in (True, False):
+        values = (MIN, -1, 0, 1, MAX) if signed else (0, 1, MAX, MAX + 1, U64_MAX)
+        for status, value, error in itertools.product(range(len(STATUSES)), values, (MIN, -1, 0, 1, MAX)):
+            yield runtime_record(
+                "forged integer constructor shape and copied report",
+                2 if signed else 3,
+                integer_shape(signed, status, value, error),
+                status=status,
+                error=error,
+                **{("signed_value" if signed else "unsigned_value"): value},
+            )
     for signed in (True, False):
         for value in numeric_values(signed):
             raw = str(value).encode("ascii")
-            body = "const std::DecimalEncodingResult original="
-            body += f"std::format_decimal_{'i64' if signed else 'u64'}({literal(value, signed)});"
-            body += "const std::DecimalEncodingResult report=original;"
-            yield Test(
-                "canonical generic decimal " + str(value), body + observe_encoding(), encoding_model(raw, len(raw))
+            yield runtime_record(
+                "canonical generic decimal " + str(value),
+                4 if signed else 5,
+                encoding_model(raw, len(raw)),
+                **{("signed_value" if signed else "unsigned_value"): value},
             )
     for count, data in itertools.product(
         (MIN, -1, 0, *range(1, 22), MAX), (bytes(20), b"0123456789ABCDEFGHIJ", b"\xff" * 20)
     ):
-        body = stored_array(data)
-        body += "const std::DecimalEncodingResult original=std::DecimalEncodingResult(stored," + str(count) + ");"
-        body += "const std::DecimalEncodingResult report=original;stored.set(0,17u8);stored.set(19,18u8);"
-        yield Test(
+        yield runtime_record(
             "forged decimal payload certifies shape only and copies bytes",
-            body + observe_encoding(),
+            6,
             encoding_model(data, count),
+            data,
+            count=count,
         )
+
+
+def runtime_integers(suite):
+    fields = [(f"data{i}", 512 * i, 512, "u8", 512) for i in range(8)]
+    fields += [
+        (name, 4096 + i * 8, 8, "u64" if name == "unsigned_value" else "i64", 0)
+        for i, name in enumerate(RUNTIME_SCALARS)
+    ]
+    runtime.run(
+        suite,
+        "runtime-integers",
+        runtime_source(),
+        "IntegerInput",
+        "integer_entry",
+        fields,
+        runtime_cases(),
+        "u64",
+        compare,
+    )
 
 
 def lifetime_and_roundtrip_tests():
@@ -395,12 +504,7 @@ def eager_fallback_tests():
         yield Test("decimal byte fallback eagerly evaluated once", body, (value, 1), helper)
 
 
-def all_tests():
-    for case in parse_cases():
-        for signed in (True, False):
-            yield source_case(case, signed)
-    yield from shape_tests()
-    yield from encoding_tests()
+def source_tests():
     yield from lifetime_and_roundtrip_tests()
     yield from eager_fallback_tests()
 
@@ -945,13 +1049,17 @@ def main():
     source = (args.repo_root / "library/std/json.au").read_text()
     decimal_source = (args.repo_root / "library/std/decimal.au").read_text()
     if args.describe:
-        groups = [*profile.batches(all_tests()), list(decimal_only_tests())]
+        groups = [*profile.batches(source_tests()), list(decimal_only_tests())]
+        runtime = list(runtime_cases())
         print(
             json.dumps(
                 dict(
-                    cases=sum(map(len, groups)),
-                    batches=len(groups),
-                    full_64bit_observations=sum(len(item.expected) for group in groups for item in group),
+                    cases=len(runtime) + sum(map(len, groups)),
+                    batches=1 + len(groups),
+                    runtime_cases=len(runtime),
+                    source_cases=sum(map(len, groups)),
+                    full_64bit_observations=sum(len(expected) for _, _, expected in runtime)
+                    + sum(len(item.expected) for group in groups for item in group),
                     rejections=len(list(rejections(source, decimal_source))),
                     compiler_free_mutation_controls=controls,
                     independent_grammar_audit=audit,
@@ -995,7 +1103,8 @@ def main():
         ],
     )
     try:
-        for group in profile.batches(all_tests()):
+        runtime_integers(suite)
+        for group in profile.batches(source_tests()):
             suite.batch(group)
         suite.batch(list(decimal_only_tests()), decimal_only=True)
         for item in rejections(source, decimal_source):

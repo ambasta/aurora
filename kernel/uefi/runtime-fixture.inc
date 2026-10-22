@@ -1,19 +1,10 @@
 // Only fixture images accept a boot-time selector; ordinary images omit this code.
-enum class Fixture : unsigned char {
-#define AURORA_FIXTURE(name, mode, image, value) name = value,
-#include "runtime-fixtures.inc"
-#undef AURORA_FIXTURE
-};
+#include "fixture-selector.inc"
 Fixture fixture{};
 auto select_fixture(Fixture first, Fixture last) -> void {
-    Serial::text("AURORA_FIXTURE_READY\r\n");
-    // The existing host smoke deadline bounds a missing selector.
-    while ((hardware::Io::read(0x3fd) & 1) == 0)
-        asm volatile("pause");
-    const auto value = hardware::Io::read(0x3f8);
-    require(value >= static_cast<unsigned char>(first) && value <= static_cast<unsigned char>(last),
-            "fixture selector outside image family");
-    fixture = static_cast<Fixture>(value);
+    const auto selected = read_fixture(first, last);
+    require(selected.has_value(), "fixture selector outside image family");
+    fixture = *selected;
 }
 #if defined(AURORA_OWNED_TEXT) && !defined(AURORA_CONSOLE_REGION)
 auto text_fixture_entry(U64 *words) -> void {

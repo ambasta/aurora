@@ -315,6 +315,8 @@
     "tests/test_compiler_contract.py": {"kind": "direct-registration", "reason": "Direct canonical registration; ordinary/optimized modes are recorded separately.", "tests": ["native-test-compiler-contract", "native-test-compiler-contract-optimized"]},
     "tests/test_framebuffer_capture.py": {"kind": "existing-registration", "reason": "Owned by existing tests/meson.build or optional LSP/compiler coverage; not an omitted root native runner.", "tests": ["test_framebuffer_capture.py"]},
     "tests/test_bootstrap.py": {"kind": "compiler-owned", "reason": "Compiler-free bootstrap identity controls owned by tests/meson.build.", "tests": ["bootstrap-identity-optimized"]},
+    "tests/test_bootstrap_guard.py": {"kind": "compiler-owned", "reason": "Compiler-free configured predecessor and runtime guard controls owned by tests/meson.build.", "tests": ["bootstrap-guard-controls"]},
+    "tests/test_emitter_differential.py": {"kind": "compiler-owned", "reason": "Compiler-free shared corpus observation and comparison controls owned by tests/meson.build.", "tests": ["emitter-differential-controls"]},
     "tests/test_meson_identity.py": {"kind": "compiler-owned", "reason": "Owned by existing tests/meson.build or optional LSP/compiler coverage; not an omitted root native runner.", "tests": ["meson-identity-ordinary", "meson-identity-optimized"]},
     "tests/test_package_profiles.py": {"kind": "existing-registration", "reason": "Compiler-free package semantic selection and authority controls in the canonical graph.", "tests": ["package-profile-controls"]},
     "tests/uefi-firmware.py": {"kind": "direct-registration", "reason": "Direct canonical registration; ordinary/optimized modes are recorded separately.", "tests": ["native-uefi-firmware-optimized"]},
