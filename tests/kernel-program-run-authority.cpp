@@ -1,5 +1,4 @@
 #include "../kernel/uefi/user-run-policy.hpp"
-#include "../kernel/uefi/ram-file-policy.hpp"
 #include <cstdlib>
 #include <iostream>
 using namespace aurora;
@@ -26,7 +25,7 @@ auto contract(unsigned domain) -> user::ProgramContract {
     return user::ProgramContract{*layout, pc, 128, pc + 32, pc + 64, pc + 66, pc + 68, pc + 70};
 }
 auto retained_service_authority() -> void {
-    using R = uefi::RamFileRunAuthority;
+    using R = uefi::ProgramRunAuthority;
     user::DomainRegistry registry, foreign;
     const auto caller = registry.create(), service = registry.create(), outsider = foreign.create();
     check(caller && service && outsider);
@@ -37,18 +36,18 @@ auto retained_service_authority() -> void {
             for (const unsigned budget : {0U, 1U, 8U, 120U, 128U, 129U}) {
                 const bool accepted = ((purpose == 1 || purpose == 3) && transaction == 0 && budget == 8) ||
                                       (purpose == 2 && transaction != 0 && budget == 120);
-                const auto run = R::authorize(registry,
-                                              *service,
-                                              R::Role::service,
-                                              ipc::Phase::service,
-                                              0,
-                                              transaction,
-                                              purpose,
-                                              arena,
-                                              arena + L::table_offset(1),
-                                              image,
-                                              1,
-                                              budget);
+                const auto run = R::authorize_retained_session(registry,
+                                                               *service,
+                                                               R::Role::service,
+                                                               ipc::Phase::service,
+                                                               0,
+                                                               transaction,
+                                                               purpose,
+                                                               arena,
+                                                               arena + L::table_offset(1),
+                                                               image,
+                                                               1,
+                                                               budget);
                 check(run.has_value() == accepted);
                 if (!run)
                     continue;
@@ -116,42 +115,42 @@ auto retained_service_authority() -> void {
                                            changed,
                                            1));
             }
-    check(!R::authorize(registry,
-                        *service,
-                        R::Role::service,
-                        ipc::Phase::service,
-                        0,
-                        0,
-                        1,
-                        arena,
-                        arena + L::table_offset(1),
-                        image,
-                        0,
-                        8));
-    check(!R::authorize(registry,
-                        *service,
-                        R::Role::client,
-                        ipc::Phase::request,
-                        0,
-                        0,
-                        1,
-                        arena,
-                        arena + L::table_offset(1),
-                        image,
-                        1,
-                        128));
-    const auto run = R::authorize(registry,
-                                  *service,
-                                  R::Role::service,
-                                  ipc::Phase::service,
-                                  0,
-                                  0,
-                                  3,
-                                  arena,
-                                  arena + L::table_offset(1),
-                                  image,
-                                  1,
-                                  8);
+    check(!R::authorize_retained_session(registry,
+                                         *service,
+                                         R::Role::service,
+                                         ipc::Phase::service,
+                                         0,
+                                         0,
+                                         1,
+                                         arena,
+                                         arena + L::table_offset(1),
+                                         image,
+                                         0,
+                                         8));
+    check(!R::authorize_retained_session(registry,
+                                         *service,
+                                         R::Role::client,
+                                         ipc::Phase::request,
+                                         0,
+                                         0,
+                                         1,
+                                         arena,
+                                         arena + L::table_offset(1),
+                                         image,
+                                         1,
+                                         128));
+    const auto run = R::authorize_retained_session(registry,
+                                                   *service,
+                                                   R::Role::service,
+                                                   ipc::Phase::service,
+                                                   0,
+                                                   0,
+                                                   3,
+                                                   arena,
+                                                   arena + L::table_offset(1),
+                                                   image,
+                                                   1,
+                                                   8);
     check(run.has_value() && !run->ready_owner(registry, *service, 1));
     // Last two monotonically reserved identities: a caller can consume MAX
     // without preventing the already reserved MAX-1 abort-only activation.
@@ -159,31 +158,31 @@ auto retained_service_authority() -> void {
     const auto caller_epoch = ipc::detail::generation_after(*cleanup_epoch, UINT64_MAX);
     check(cleanup_epoch == UINT64_MAX - 1 && caller_epoch == UINT64_MAX &&
           !ipc::detail::generation_after(*caller_epoch, UINT64_MAX));
-    const auto cleanup_run = R::authorize(registry,
-                                          *service,
-                                          R::Role::service,
-                                          ipc::Phase::service,
-                                          0,
-                                          0,
-                                          3,
-                                          arena,
-                                          arena + L::table_offset(1),
-                                          image,
-                                          *cleanup_epoch,
-                                          8);
+    const auto cleanup_run = R::authorize_retained_session(registry,
+                                                           *service,
+                                                           R::Role::service,
+                                                           ipc::Phase::service,
+                                                           0,
+                                                           0,
+                                                           3,
+                                                           arena,
+                                                           arena + L::table_offset(1),
+                                                           image,
+                                                           *cleanup_epoch,
+                                                           8);
     check(cleanup_run && cleanup_run->epoch() == UINT64_MAX - 1 && cleanup_run->budget() == 8);
-    check(!R::authorize(registry,
-                        *service,
-                        R::Role::service,
-                        ipc::Phase::service,
-                        0,
-                        1,
-                        3,
-                        arena,
-                        arena + L::table_offset(1),
-                        image,
-                        *cleanup_epoch,
-                        120));
+    check(!R::authorize_retained_session(registry,
+                                         *service,
+                                         R::Role::service,
+                                         ipc::Phase::service,
+                                         0,
+                                         1,
+                                         3,
+                                         arena,
+                                         arena + L::table_offset(1),
+                                         image,
+                                         *cleanup_epoch,
+                                         120));
     check(registry.deactivate(*service));
     check(run->ready_owner(registry, *service, 1));
     check(registry.destroy(*service));
@@ -191,32 +190,32 @@ auto retained_service_authority() -> void {
     check(replacement && !run->ready_owner(registry, *replacement, 1));
     check(registry.activate(*caller));
     const auto client_image = contract(0);
-    check(R::authorize(registry,
-                       *caller,
-                       R::Role::client,
-                       ipc::Phase::request,
-                       0,
-                       0,
-                       UINT64_MAX,
-                       arena,
-                       arena + L::table_offset(0),
-                       client_image,
-                       2,
-                       128)
+    check(R::authorize_retained_session(registry,
+                                        *caller,
+                                        R::Role::client,
+                                        ipc::Phase::request,
+                                        0,
+                                        0,
+                                        UINT64_MAX,
+                                        arena,
+                                        arena + L::table_offset(0),
+                                        client_image,
+                                        2,
+                                        128)
               .has_value());
     for (const auto budget : {8U, 120U, 129U})
-        check(!R::authorize(registry,
-                            *caller,
-                            R::Role::client,
-                            ipc::Phase::request,
-                            0,
-                            0,
-                            1,
-                            arena,
-                            arena + L::table_offset(0),
-                            client_image,
-                            2,
-                            budget));
+        check(!R::authorize_retained_session(registry,
+                                             *caller,
+                                             R::Role::client,
+                                             ipc::Phase::request,
+                                             0,
+                                             0,
+                                             1,
+                                             arena,
+                                             arena + L::table_offset(0),
+                                             client_image,
+                                             2,
+                                             budget));
 }
 
 auto main() -> int {

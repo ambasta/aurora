@@ -48,16 +48,10 @@ auto release_call_source() -> void {
 #if defined(AURORA_RUNTIME_FIXTURE) && !defined(AURORA_FILE_CALL)
     call_fixture_entry(reinterpret_cast<U64 *>(frame));
 #endif
-    const auto context = ServiceContext::capture_call(std::span<const U64>{reinterpret_cast<const U64 *>(frame), 22},
-                                                      frame,
-                                                      *domains[0].contract,
-                                                      images::clean_call_pc);
+    const auto context = capture_exchange(0, frame, images::clean_call_pc);
     const auto endpoint = mailbox->endpoint(*domains[0].handle);
-    const auto site = images::clean_call_pc - domains[0].contract->entry();
-    const Bytes code{view(arena + L::image_page(0), domains[0].contract->size())};
     require(context && endpoint && context->words()[8] == endpoint->slot() &&
-                context->words()[9] == endpoint->generation() && site >= 2 && site < domains[0].contract->size() &&
-                code.get(site - 2, 1) == 0xcd && code.get(site - 1, 1) == 0x82 && code.get(site, 1) == 0xc3,
+                context->words()[9] == endpoint->generation(),
             "call exact site and endpoint");
     if (domains[0].call_used
 #ifdef AURORA_FILE_CALL
@@ -275,8 +269,7 @@ auto call_execute(unsigned index, U64 source_phase, U64 first, U64 second) -> vo
     restored[11] = completion->value();
     call_wait.clear();
     activate_parked_run(0);
-    require(current_run_identity(),
-            "call resume original authority");
+    require(current_run_identity(), "call resume original authority");
     Serial::text("AURORA_CALL_RESUME: epoch=");
     Serial::number(timer_epoch);
     Serial::text(" ticks=");

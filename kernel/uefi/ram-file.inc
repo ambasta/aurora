@@ -11,7 +11,7 @@ template <class T> auto ram_clear(std::optional<T> &record) -> void {
     if (!ram_lifetime || !domains[1].handle || !domains[1].contract || !domains[1].tables ||
         registry.index(ram_lifetime->owner) != std::optional<std::size_t>{1} ||
         registry.index(*domains[1].handle) != std::optional<std::size_t>{1} ||
-        !RamFileRunAuthority::same_contract(ram_lifetime->contract, *domains[1].contract) ||
+        !user::same_contract(ram_lifetime->contract, *domains[1].contract) ||
         ram_lifetime->root != domains[1].tables->root() || !verify(domains[1]))
         return false;
     for (unsigned i = 0; i < 4; ++i)
@@ -98,14 +98,8 @@ template <class T> auto ram_clear(std::optional<T> &record) -> void {
                 timer_owner_epoch == timer_epoch && timer_remaining && timer_initial == timer_remaining + timer_ticks &&
                 timer_initial == run_authority->budget(),
             "RAM active exchange authority");
-    const auto context = ServiceContext::capture_call(
-        std::span<const U64>{reinterpret_cast<const U64 *>(frame), 22}, frame, *domains[active].contract, pc);
-    const auto &contract = *domains[active].contract;
-    const auto site = pc - contract.entry();
-    const Bytes code{view(arena + L::image_page(active), contract.size())};
-    require(context && site >= 2 && site < contract.size() && code.get(site - 2, 1) == 0xcd &&
-                code.get(site - 1, 1) == 0x82 && code.get(site, 1) == 0xc3,
-            "RAM exact role selected exchange site");
+    const auto context = capture_exchange(active, frame, pc);
+    require(context.has_value(), "RAM exact role selected exchange site");
     return *context;
 }
 auto ram_trap(U64 frame) -> U64 {

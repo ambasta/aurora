@@ -16,7 +16,6 @@ spec = importlib.util.spec_from_file_location(
 phases = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(phases)
 budget, need, LAYOUT = phases.budget, phases.need, phases.LAYOUT
-EVENT, NAMES, event_line = phases.EVENT, phases.NAMES, phases.event_line
 READY = "AURORA_RAM_SCRATCHPAD_READY: 49-byte session scratchpad; all data is lost on service reset or session exit."
 HELP = (
     "put [text]  Replace the session scratchpad (0..49 printable ASCII bytes)\n"
@@ -86,8 +85,7 @@ def validate(status, text, plan, metadata, *, fixture=False):
     kernel = arena + LAYOUT.kernel_tables_offset
     roots = [arena + LAYOUT.tables_offset, arena + LAYOUT.tables_offset + LAYOUT.table_pages * LAYOUT.page_size]
     records = lines[start:]
-    position = compiled_total = 0
-    mode = "scratchpad"
+    position = 0
 
     def peek():
         return records[position] if position < len(records) else ""
@@ -97,102 +95,7 @@ def validate(status, text, plan, metadata, *, fixture=False):
         need(peek() == wanted, "Scratchpad sequence expected " + repr(wanted) + "; got " + repr(peek()))
         position += 1
 
-    def run(domain, epoch, source, transaction, remaining):
-        role, phase = ("client", "request") if domain == 0 else ("service", "service")
-        take(
-            f"AURORA_UEFI_USER_RUN: epoch={epoch} role={role} phase={phase} client=0 "
-            f"transaction={transaction} source={source} root={roots[domain]}"
-        )
-        take(f"AURORA_UEFI_TIMER_ARM: epoch={epoch} budget={remaining} root={roots[domain]}")
-
-    def segment(
-        domain, epoch, limit, used=0, compiled=0, terminal=130, probe=False, pending=False, refused=False, denied=False
-    ):
-        nonlocal compiled_total
-        image = metadata["images"][NAMES[domain]]
-
-        def interrupts():
-            nonlocal used, compiled, compiled_total
-            while True:
-                event = re.fullmatch(EVENT, peek())
-                if event is None or int(event[1]) != 64 or int(event[4]) != 3:
-                    break
-                pc = int(event[3])
-                need(
-                    used + 1 < limit and image["entry"] <= pc < image["entry"] + image["size"],
-                    "RAM finite hardware interrupt owned image/allowance",
-                )
-                take(event_line(arena, domain, 64, pc))
-                tick = re.fullmatch(
-                    r"AURORA_UEFI_TIMER_TICK: epoch=(\d+) used=(\d+) remaining=(\d+) pc=(\d+) flags=(\d+)", peek()
-                )
-                need(tick is not None, "RAM hardware IRQ has immediate charge")
-                e, n, left, address, flags = map(int, tick.groups())
-                need(
-                    (e, n, left, address) == (epoch, used + 1, limit - used - 1, pc)
-                    and flags & 0x202 == 0x202
-                    and flags & ~LAYOUT.allowed_user_flags == 0,
-                    "RAM exact IRQ identity, flags and debit",
-                )
-                take(tick[0])
-                used += 1
-                hit = image["compiled_begin"] <= pc < image["compiled_end"]
-                compiled += hit
-                compiled_total += hit
-
-        interrupts()
-        pc = (
-            (call_pc if domain == 0 else serve_pc)
-            if terminal == 130
-            else image["bounds_pc" if terminal == 6 else "return_pc"]
-        )
-        take(event_line(arena, domain, terminal, pc))
-        if denied:
-            reason = (
-                "RAM Serve grant and dormant capacity"
-                if mode.endswith("-grant")
-                else "RAM active exchange authority"
-                if mode.endswith("-root")
-                else "RAM exact role selected exchange site"
-            )
-            take("AURORA_UEFI_RUNTIME_FAIL: " + reason)
-            return used, compiled
-        if terminal == 130:
-            if probe:
-                take(f"AURORA_RAM_FILE_BUDGET_PROBE: role={domain} initial={limit}")
-                used = limit - 1  # Explicit conservative withholding, never an IRQ claim.
-            used += 1
-            need(used <= limit, "RAM boundary within original allowance")
-            take(f"AURORA_RAM_FILE_DEBIT: epoch={epoch} used={used} remaining={limit - used}")
-        if refused:
-            interrupts()
-            take(event_line(arena, domain, 129, image["return_pc"]))
-        if pending:
-            take(f"AURORA_UEFI_TIMER_PENDING: epoch={epoch}")
-        drains = 0
-        while re.fullmatch(EVENT, peek()):
-            event = re.fullmatch(EVENT, peek())
-            vector, error, pc, cpl, root, frame, cr2 = map(int, event.groups())
-            need(
-                (vector, error, cpl, root, cr2) == (64, 0, 0, kernel, 0)
-                and arena + LAYOUT.kernel_stack_bottom
-                <= frame
-                <= arena + LAYOUT.kernel_stack_top - LAYOUT.fault_frame_size
-                and frame % 8 == 0
-                and arena + LAYOUT.kernel_payload_offset + metadata["kernel"]["drain_begin"]
-                <= pc
-                <= arena + LAYOUT.kernel_payload_offset + metadata["kernel"]["drain_end"],
-                "RAM exact kernel drain authority",
-            )
-            take(event[0])
-            take(f"AURORA_UEFI_TIMER_DRAIN: epoch={epoch} root={kernel} ss=16")
-            drains += 1
-        need(not pending or drains > 0, "RAM forced pending must drain")
-        take(
-            f"AURORA_UEFI_TIMER_QUIET: epoch={epoch} ticks={used} drains={drains}"
-            f" compiled={compiled} context=0 root={kernel}"
-        )
-        return used, compiled
+    run, segment, _ = phases.ram_run_parser(take, peek, arena, metadata, call_pc, serve_pc, "scratchpad")
 
     take(f"AURORA_UEFI_TIMER_READY: physical=4276092928 virtual={budget.APIC} id=0 root={kernel}")
     if fixture:

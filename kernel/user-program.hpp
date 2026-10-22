@@ -132,6 +132,17 @@ public:
         return decode_terminal_event(encoded, context.vector, matched_sites, stack_top);
     }
 };
+[[nodiscard]] constexpr auto same_layout(const ProgramLayout &a, const ProgramLayout &b) -> bool {
+    return a.code_begin() == b.code_begin() && a.code_end() == b.code_end() &&
+           a.max_image_pages() == b.max_image_pages() && a.user_stack_bottom() == b.user_stack_bottom() &&
+           a.user_stack_top() == b.user_stack_top() && a.entry_stack_bottom() == b.entry_stack_bottom() &&
+           a.entry_stack_top() == b.entry_stack_top();
+}
+[[nodiscard]] constexpr auto same_contract(const ProgramContract &a, const ProgramContract &b) -> bool {
+    return same_layout(a.layout(), b.layout()) && a.entry() == b.entry() && a.size() == b.size() &&
+           a.return_pc() == b.return_pc() && a.bounds_pc() == b.bounds_pc() && a.overflow_pc() == b.overflow_pc() &&
+           a.division_zero_pc() == b.division_zero_pc() && a.shift_count_pc() == b.shift_count_pc();
+}
 class ProgramImage final {
     std::span<const std::byte> bytes_;
     ProgramContract contract_;

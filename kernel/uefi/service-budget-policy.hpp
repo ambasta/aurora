@@ -117,18 +117,6 @@ class ServiceContext final {
                              const user::ProgramContract &contract)
         : words_(words), frame_(frame), contract_(contract) {
     }
-    [[nodiscard]] static constexpr auto same_contract(const user::ProgramContract &left,
-                                                      const user::ProgramContract &right) -> bool {
-        const auto &a = left.layout();
-        const auto &b = right.layout();
-        return left.entry() == right.entry() && left.size() == right.size() && left.return_pc() == right.return_pc() &&
-               left.bounds_pc() == right.bounds_pc() && left.overflow_pc() == right.overflow_pc() &&
-               left.division_zero_pc() == right.division_zero_pc() && left.shift_count_pc() == right.shift_count_pc() &&
-               a.code_begin() == b.code_begin() && a.code_end() == b.code_end() &&
-               a.max_image_pages() == b.max_image_pages() && a.user_stack_bottom() == b.user_stack_bottom() &&
-               a.user_stack_top() == b.user_stack_top() && a.entry_stack_bottom() == b.entry_stack_bottom() &&
-               a.entry_stack_top() == b.entry_stack_top();
-    }
     [[nodiscard]] static constexpr auto origin_valid(std::span<const std::uint64_t> words,
                                                      std::uint64_t frame,
                                                      const user::ProgramContract &contract,
@@ -190,7 +178,7 @@ public:
     }
     [[nodiscard]] constexpr auto call_frame(const user::ProgramContract &contract, std::uint64_t call_pc) const
         -> bool {
-        return call_pc && same_contract(contract_, contract) && origin_valid(words_, frame_, contract_, call_pc);
+        return call_pc && user::same_contract(contract_, contract) && origin_valid(words_, frame_, contract_, call_pc);
     }
     [[nodiscard]] constexpr auto words() const -> const std::array<std::uint64_t, word_count> & {
         return words_;
@@ -199,7 +187,7 @@ public:
         return frame_;
     }
     [[nodiscard]] constexpr auto valid_for(const user::ProgramContract &contract) const -> bool {
-        return same_contract(contract_, contract) && origin_valid(words_, frame_, contract_);
+        return user::same_contract(contract_, contract) && origin_valid(words_, frame_, contract_);
     }
     [[nodiscard]] constexpr auto timer_frame(const user::ProgramContract &contract) const -> bool {
         return valid_for(contract) && words_[15] == LocalApicAdmission::timer_vector;

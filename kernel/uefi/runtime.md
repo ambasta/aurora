@@ -188,6 +188,13 @@ only the distinct Serve site. A stable lifetime handle/grant/root/contract binds
 all four original move-only stack leases. Every service activation revalidates
 allocator ownership and exact mappings, consumes its dormant integer context,
 and mints a new immutable run authority for startup, exchange or abort cleanup.
+`ProgramRunAuthority::authorize_retained_session` reuses the immutable bounded-run
+record with the retained-only 128/120/8 admission rules; ordinary Call admission
+still requires a nonzero service transaction. Only exact contract equality and
+INT82/RET frame/site capture are shared, not Call/Serve lifecycle or settlement.
+The RAM and scratchpad transcript oracles share their run/IRQ/debit/drain grammar
+while retaining independent host-owned scenario/command plans and output checks.
+This deletion-first cleanup awaits exact-source build, native, guest and review gates.
 No pointer or caller-supplied endpoint/ticket/budget crosses the Serve ABI.
 
 Read and Replace rights are fixed at native command admission, not selected by a

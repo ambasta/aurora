@@ -591,42 +591,11 @@ def ram_scenarios(mode):
     }.get(mode, [])
 
 
-def ram_trace(text, mode, metadata, call_pc, serve_pc):
-    """Parse every authority/IRQ/settlement record against the fixture-owned plan."""
-    lines = text.splitlines()
-    start = next(
-        (
-            i
-            for i, row in enumerate(lines)
-            if row.startswith(
-                (
-                    "AURORA_UEFI_TIMER_",
-                    "AURORA_RAM_FILE",
-                    "AURORA_UEFI_USER_",
-                    "AURORA_UEFI_DOMAIN_",
-                    "AURORA_UEFI_RUNTIME_",
-                )
-            )
-        ),
-        None,
-    )
-    need(start is not None, "RAM missing admitted timer")
-    prefix = "\n".join(lines[:start]) + "\n"
-    budget.firmware_prefix(prefix, "budget")
-    arena = int(re.search(r"AURORA_UEFI_OWNERSHIP_OK: arena=(\d+)", prefix)[1])
+def ram_run_parser(take, peek, arena, metadata, call_pc, serve_pc, mode):
+    """Shared run/IRQ/debit/drain grammar; consumers own cursors and expected plans."""
     kernel = arena + LAYOUT.kernel_tables_offset
     roots = [arena + LAYOUT.tables_offset, arena + LAYOUT.tables_offset + LAYOUT.table_pages * LAYOUT.page_size]
-    records = [row for row in lines[start:] if "AURORA" in row]
-    position = 0
     compiled_total = 0
-
-    def peek():
-        return records[position] if position < len(records) else ""
-
-    def take(wanted):
-        nonlocal position
-        need(peek() == wanted, "RAM sequence expected " + wanted + "; got " + peek())
-        position += 1
 
     def run(domain, epoch, source, transaction, remaining):
         role, phase = ("client", "request") if domain == 0 else ("service", "service")
@@ -724,6 +693,47 @@ def ram_trace(text, mode, metadata, call_pc, serve_pc):
             f" compiled={compiled} context=0 root={kernel}"
         )
         return used, compiled
+
+    return run, segment, lambda: compiled_total
+
+
+def ram_trace(text, mode, metadata, call_pc, serve_pc):
+    """Parse every authority/IRQ/settlement record against the fixture-owned plan."""
+    lines = text.splitlines()
+    start = next(
+        (
+            i
+            for i, row in enumerate(lines)
+            if row.startswith(
+                (
+                    "AURORA_UEFI_TIMER_",
+                    "AURORA_RAM_FILE",
+                    "AURORA_UEFI_USER_",
+                    "AURORA_UEFI_DOMAIN_",
+                    "AURORA_UEFI_RUNTIME_",
+                )
+            )
+        ),
+        None,
+    )
+    need(start is not None, "RAM missing admitted timer")
+    prefix = "\n".join(lines[:start]) + "\n"
+    budget.firmware_prefix(prefix, "budget")
+    arena = int(re.search(r"AURORA_UEFI_OWNERSHIP_OK: arena=(\d+)", prefix)[1])
+    kernel = arena + LAYOUT.kernel_tables_offset
+    roots = [arena + LAYOUT.tables_offset, arena + LAYOUT.tables_offset + LAYOUT.table_pages * LAYOUT.page_size]
+    records = [row for row in lines[start:] if "AURORA" in row]
+    position = 0
+
+    def peek():
+        return records[position] if position < len(records) else ""
+
+    def take(wanted):
+        nonlocal position
+        need(peek() == wanted, "RAM sequence expected " + wanted + "; got " + peek())
+        position += 1
+
+    run, segment, compiled_count = ram_run_parser(take, peek, arena, metadata, call_pc, serve_pc, mode)
 
     take(f"AURORA_UEFI_TIMER_READY: physical=4276092928 virtual={budget.APIC} id=0 root={kernel}")
     if mode != "user-ram-file":
@@ -830,7 +840,7 @@ def ram_trace(text, mode, metadata, call_pc, serve_pc):
     take("AURORA_UEFI_OK")
     need(position == len(records), "RAM duplicate or trailing authority evidence")
     if mode != "user-ram-file":
-        need(compiled_total > 0, "RAM fixture requires an actual compiled-PC hardware IRQ")
+        need(compiled_count() > 0, "RAM fixture requires an actual compiled-PC hardware IRQ")
 
 
 def validate_ram_file(status, text, mode, metadata):
