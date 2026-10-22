@@ -27,6 +27,7 @@ NAMESPACE = "compiler_initialization_probe::"
 # name, mutable workspace, paired metadata root, scalar tail count, return type.
 # This closes the test transport rather than generating arbitrary callable access.
 PROBES = (
+    ("compare_metadata_bytes", False, True, 3, "i64"),
     ("allocated", False, False, 0, "bool"),
     ("status", False, False, 0, "InitializationStatus"),
     ("slot_count", False, False, 0, "i64"),
@@ -92,10 +93,10 @@ def compatible_owners(facts, frontend):
             if canonical_shape(facts, declaration) != canonical_shape(frontend, other):
                 raise ValueError("probe/frontend owner ABI mismatch: " + name)
     _, workspace = ABI.abi_declaration(facts, "records", WORKSPACE)
-    if workspace["size"] != 496 or workspace["reserved"] != 496 or workspace["alignment"] != 8:
-        raise ValueError("current verifier workspace is not the reviewed 496-byte owner")
-    if sum(field["kind"] == "owner" for field in workspace["fields"]) != 11:
-        raise ValueError("current verifier workspace must contain eleven real owners")
+    if workspace["size"] != 520 or workspace["reserved"] != 520 or workspace["alignment"] != 8:
+        raise ValueError("current verifier workspace is not the reviewed 520-byte owner")
+    if sum(field["kind"] == "owner" for field in workspace["fields"]) != 12:
+        raise ValueError("current verifier workspace must contain twelve real owners")
 
 
 def bridges(facts):
@@ -106,13 +107,19 @@ def bridges(facts):
     }
     if declared != {row[0] for row in PROBES}:
         raise ValueError("initialization test operation inventory changed")
-    workspace_symbol, _ = ABI.abi_declaration(facts, "records", WORKSPACE)
+    workspace_symbol, workspace = ABI.abi_declaration(facts, "records", WORKSPACE)
     metadata_symbol, _ = ABI.abi_declaration(facts, "records", METADATA)
     header = [
         "// Generated from initialization test probe ABI facts; do not edit.",
         "#pragma once",
         '#include "hosted_frontend_abi.hpp"',
-        "static_assert(aurora::hosted_abi::verificationWorkspaceBytes == 496);",
+        "static_assert(aurora::hosted_abi::verificationWorkspaceBytes == 520);",
+        *(
+            f"inline constexpr std::size_t initialization{field['name'][0].upper() + field['name'][1:]}"
+            f"Offset = {field['offset']};"
+            for field in workspace["fields"]
+            if field["name"] in ("currentFacts", "currentKeys")
+        ),
         'extern "C" {',
     ]
     assembly = [".text"]

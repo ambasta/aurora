@@ -50,3 +50,29 @@ byte_accessor at
 byte_accessor set
 byte_accessor resize,1
 byte_accessor drop,1
+
+// Validate through the existing copied-descriptor syscall. Construct the view
+// entirely in user memory; no kernel backing pointer or new authority crosses.
+.global __au_runtime_bytes_borrow_span
+.type __au_runtime_bytes_borrow_span,@function
+__au_runtime_bytes_borrow_span:
+    push %rdi
+    push %rsi
+    sub $8, %rsp
+    call __au_runtime_bytes_borrow_length
+    add $8, %rsp
+    pop %rsi
+    pop %rdi
+    movq $1, 0(%rsi)
+    mov 0(%rdi), %rcx
+    mov %rcx, 8(%rsi)
+    mov 8(%rdi), %rcx
+    mov %rcx, 16(%rsi)
+    mov 16(%rdi), %rcx
+    mov %rcx, 24(%rsi)
+    mov 24(%rdi), %rcx
+    mov %rcx, 32(%rsi)
+    movq $0, 40(%rsi)
+    mov %rax, 48(%rsi)
+    ret
+.size __au_runtime_bytes_borrow_span,.-__au_runtime_bytes_borrow_span

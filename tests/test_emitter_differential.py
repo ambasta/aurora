@@ -13,6 +13,92 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "compiler"))
 import emitter_differential as differential
 
 
+class BorrowAdapterEquivalenceTests(unittest.TestCase):
+    NEW = b"""    pushq %rax
+    movq -488(%rbp), %r10
+    leaq 224(%r10), %rdi
+    leaq -192(%rbp), %rsi
+    subq $8, %rsp
+    call __au_runtime_bytes_borrow_span
+    addq $8, %rsp
+    popq %rax
+"""
+    OLD = b"""    pushq %rax
+    movq -488(%rbp), %r10
+    leaq 224(%r10), %rdi
+    subq $8, %rsp
+    call __au_runtime_bytes_borrow_length
+    addq $8, %rsp
+    movq %rax, -144(%rbp)
+    movq $1, -192(%rbp)
+    movq -488(%rbp), %r10
+    movq 224(%r10), %rcx
+    movq %rcx, -184(%rbp)
+    movq -488(%rbp), %r10
+    movq 232(%r10), %rcx
+    movq %rcx, -176(%rbp)
+    movq -488(%rbp), %r10
+    movq 240(%r10), %rcx
+    movq %rcx, -168(%rbp)
+    movq -488(%rbp), %r10
+    movq 248(%r10), %rcx
+    movq %rcx, -160(%rbp)
+    movq $0, -152(%rbp)
+    popq %rax
+"""
+
+    def test_exact_receiver_and_standalone_expansions(self):
+        expanded, sites = differential.historical_borrow_expansion(self.NEW)
+        self.assertEqual(expanded, self.OLD)
+        self.assertEqual(sites, [dict(owner_offset=224, result_offset=-192, base="r10")])
+        # Standalone case: no reload, no alignment shim, distinct local slots.
+        new = self.NEW.replace(b"    movq -488(%rbp), %r10\n", b"").replace(b"224(%r10)", b"-64(%rbp)")
+        old = self.OLD.replace(b"    movq -488(%rbp), %r10\n", b"")
+        for old_offset, new_offset in ((224, -64), (232, -56), (240, -48), (248, -40)):
+            old = old.replace(f"{old_offset}(%r10)".encode(), f"{new_offset}(%rbp)".encode())
+        for shim in (b"    subq $8, %rsp\n", b"    addq $8, %rsp\n"):
+            new, old = new.replace(shim, b""), old.replace(shim, b"")
+        self.assertEqual(differential.historical_borrow_expansion(new)[0], old)
+
+    def test_malformed_sequences_never_expand(self):
+        changes = (
+            (b"pushq %rax", b"pushq %rdx"),
+            (b"popq %rax", b"popq %rdx"),
+            (b"    addq $8, %rsp\n", b""),
+            (b"    subq $8, %rsp\n", b""),
+            (b"-192(%rbp), %rsi", b"-193(%rbp), %rsi"),
+            (b"-192(%rbp), %rsi", b"-48(%rbp), %rsi"),
+            (b"224(%r10)", b"225(%r10)"),
+            (b"    movq -488(%rbp), %r10\n", b""),
+            (b"%rsi\n", b"%rdx\n"),
+        )
+        for before, after in changes:
+            with self.subTest(change=(before, after)):
+                self.assertEqual(differential.historical_borrow_expansion(self.NEW.replace(before, after)), (None, []))
+
+    def test_only_historical_edge_and_exact_other_outputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            case = Path(directory)
+            for label, assembly, callee in (("old", self.OLD, "borrow_length"), ("new", self.NEW, "borrow_span")):
+                output = case / label / "outputs"
+                output.mkdir(parents=True)
+                (output / "assembly.s").write_bytes(assembly)
+                (output / "stack.json").write_text('{"__au_runtime_bytes_' + callee + '":160}')
+                (output / "abi.json").write_text("unchanged ABI\n")
+            self.assertTrue(differential.historical_borrow_equivalence(case, ("old", "new")))
+            self.assertFalse(differential.historical_borrow_equivalence(case, ("c1", "new")))
+            output = case / "new/outputs"
+            for name in ("assembly.s", "stack.json", "abi.json"):
+                before = (output / name).read_bytes()
+                (output / name).write_bytes(before + b" ")
+                self.assertFalse(differential.historical_borrow_equivalence(case, ("old", "new")))
+                (output / name).write_bytes(before)
+
+    def test_unrelated_bytes_remain_literal(self):
+        expanded, _ = differential.historical_borrow_expansion(b"unrelated\n" + self.NEW + b"suffix\n")
+        self.assertEqual(expanded, b"unrelated\n" + self.OLD + b"suffix\n")
+
+
 class ClosedProfileSelectionTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory(prefix="emitter-profile-control-")

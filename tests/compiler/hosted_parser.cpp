@@ -5819,6 +5819,7 @@ void resolvedCompilerSources(char **paths) {
          "SpanPayload",
          "LoanPayload",
          "FactRow",
+         "FactKey",
          "ActiveFact",
          "BoundsEvidence",
          "ValueRow",
@@ -6003,7 +6004,7 @@ void resolvedCompilerSources(char **paths) {
         }
     }
     // Source inventory expectations, checked against actual typed declarations below.
-    require(enums == 58 && classes == 107 && fields > 228 && methods > 307 &&
+    require(enums == 58 && classes == 108 && fields > 228 && methods > 307 &&
                 retainedFunctions == module.functions.size() && functions == abi.functions.size() &&
                 sourceFunctionNames == abiFunctionNames,
             "real compiler typed graph omitted or appended an unaccounted declaration");

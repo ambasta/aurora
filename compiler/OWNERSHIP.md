@@ -614,18 +614,31 @@ field; generic span escape and arbitrary reference-returning methods remain abse
 ### Private representation and independent verification
 
 Every span spill and call-record position reserves 56 bytes, aligned to eight:
-kind at byte0 (array0/owner1); array base plus zero padding or complete immutable
+kind at byte0 (contiguous0/fragmented-owner1); array base plus zero padding or complete immutable
 NativeOwner snapshot at bytes8–39; nonnegative logical start40 and length48.
 The snapshot conveys no ownership and cannot be dropped, moved or bound as an
 owner. Array-only complete module graphs retain direct checked loads and acquire
-no owner-runtime imports. Owner reads call the checked adapter, which supports
-both contiguous host payloads and independently leased fragmented kernel pages.
+no owner-runtime imports. Owner borrowing validates the canonical descriptor once through the private
+`__au_runtime_bytes_borrow_span` adapter. The single-threaded hosted adapter
+returns kind0 with the contiguous payload address; kernel adapters retain kind1
+and checked per-read access to independently leased fragmented pages. Protected
+CPL3 stubs assemble kind1 locally after the existing copied-descriptor validation
+syscall; kernel backing addresses never cross that boundary. Both kinds retain
+per-access span bounds checks. Kind0 is an internal representation, not a source
+pointer or ownership transfer.
+
+Admitted source and IR prohibit mutation, resize, move and destruction of the
+source root while the view or any reborrow lives. Trusted native code must obey
+that same lifetime; deliberately invalidating a root behind a live hosted view is
+outside this compiler-private adapter contract. Invalid, forged and stale owner
+descriptors are still rejected before creating the view; the ordinary checked
+owner access entrypoints retain their per-call validation.
 
 `BorrowOwnedSpan{offset,fieldIndex,resultOffset}` names standalone storage when
 fieldIndex=-1, otherwise a direct owning field; offset0 is the implicit receiver.
 The verifier requires an active owner token and region, with exact field and
-binding identity. Native lowering calls `__au_runtime_bytes_borrow_length` before
-copying the snapshot and preserves the current scalar and saved operand stack.
+binding identity. Native lowering calls `__au_runtime_bytes_borrow_span` to fill all seven words
+and preserves the current scalar and saved operand stack.
 Copies transport all seven words. Subspan validates bounds before adjusting
 start/length; index checks precede byte loads or adapter calls.
 

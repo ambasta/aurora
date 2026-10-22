@@ -239,16 +239,29 @@ template <typename Action> void isolated_success(const char *label, Action actio
     std::printf("PASS owned bytes host isolated success: %s\n", label);
 }
 
-void readonly_descriptor_snapshots() {
+std::int64_t checked_span(const NativeOwner *owner) {
+    NativeSpan view{99, {99, 99, 99, 99}, 99, 99};
+    __au_runtime_bytes_borrow_span(owner, &view);
+    require(view.kind == 0 && view.start == 0 && view.length == owner->length,
+            "hosted borrow publishes exact contiguous kind/start/length");
+    require(view.payload[1] == 0 && view.payload[2] == 0 && view.payload[3] == 0,
+            "hosted borrow clears all unused payload words");
+    const auto *data = reinterpret_cast<const unsigned char *>(view.payload[0]);
+    for (std::int64_t index = 0; index < view.length; ++index) {
+        require(data[index] == __au_runtime_bytes_at(owner, index), "direct view matches checked owner bytes");
+    }
+    return view.length;
+}
+
+void readonly_descriptor_snapshots(std::int64_t (*borrow)(const NativeOwner *)) {
     for (const std::int64_t length : {0, 1, 4095, 4096, 4097}) {
         Region region(16384);
         NativeOwner owner;
         __au_runtime_bytes_allocate(region.id(), length, &owner);
         const NativeOwner snapshot = owner;
         const auto metrics = region.metrics();
-        require(__au_runtime_bytes_borrow_length(&owner) == length, "borrow returns complete logical owner length");
-        require(__au_runtime_bytes_borrow_length(&snapshot) == length,
-                "immutable snapshot validates without ownership");
+        require(borrow(&owner) == length, "borrow returns complete logical owner length");
+        require(borrow(&snapshot) == length, "immutable snapshot validates without ownership");
         require(region.metrics() == metrics && same_owner(owner, snapshot),
                 "borrow leaves descriptor and metrics intact");
         if (length) {
@@ -257,18 +270,18 @@ void readonly_descriptor_snapshots() {
         }
         __au_runtime_bytes_drop(&owner);
         invariant("borrow stale snapshot after drop", [=] {
-            __au_runtime_bytes_borrow_length(&snapshot);
+            borrow(&snapshot);
         });
         require(region.close(), "snapshot contributes no release obligation");
     }
-    bounds("borrow failed allocation", [] {
+    bounds("borrow failed allocation", [borrow] {
         Region region(0);
         NativeOwner failed;
         __au_runtime_bytes_allocate(region.id(), 1, &failed);
-        __au_runtime_bytes_borrow_length(&failed);
+        borrow(&failed);
     });
-    invariant("borrow null descriptor", [] {
-        __au_runtime_bytes_borrow_length(nullptr);
+    invariant("borrow null descriptor", [borrow] {
+        borrow(nullptr);
     });
     for (int field = 0; field < 4; ++field) {
         invariant("borrow forged descriptor word", [=] {
@@ -283,25 +296,25 @@ void readonly_descriptor_snapshots() {
                 owner.length = 2;
             if (field == 3)
                 owner.success = 2;
-            __au_runtime_bytes_borrow_length(&owner);
+            borrow(&owner);
         });
     }
-    invariant("borrow snapshot stale after resize", [] {
+    invariant("borrow snapshot stale after resize", [borrow] {
         Region region(8);
         NativeOwner owner;
         __au_runtime_bytes_allocate(region.id(), 1, &owner);
         const NativeOwner snapshot = owner;
         require(__au_runtime_bytes_resize(&owner, 2) == 1, "resize succeeds before stale borrow test");
-        __au_runtime_bytes_borrow_length(&snapshot);
+        borrow(&snapshot);
     });
-    invariant("borrow snapshot after grant closes", [] {
+    invariant("borrow snapshot after grant closes", [borrow] {
         Region region(8);
         NativeOwner owner;
         __au_runtime_bytes_allocate(region.id(), 0, &owner);
         const NativeOwner snapshot = owner;
         __au_runtime_bytes_drop(&owner);
         require(region.close(), "close source grant");
-        __au_runtime_bytes_borrow_length(&snapshot);
+        borrow(&snapshot);
     });
 }
 
@@ -1203,7 +1216,14 @@ void readonly_metadata_observations() {
 
 int main() {
     typed_value_storage();
-    readonly_descriptor_snapshots();
+    readonly_descriptor_snapshots(__au_runtime_bytes_borrow_length);
+    readonly_descriptor_snapshots(checked_span);
+    invariant("span null result storage", [] {
+        Region region(1);
+        NativeOwner owner;
+        __au_runtime_bytes_allocate(region.id(), 1, &owner);
+        __au_runtime_bytes_borrow_span(&owner, nullptr);
+    });
     runtime_lengths_and_initialization();
     failure_atomicity_and_quota_reuse();
     resize_replacement_and_preservation();

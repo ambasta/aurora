@@ -432,6 +432,22 @@ export namespace compiler_ir_verification {
         }
     };
 
+    // Key-only probes must not materialize the fact's token, span and loan payloads.
+    class FactKey {
+        FactKind kindValue;
+        i64 keyValue;
+        i64 fieldValue;
+    public:
+        FactKey(FactKind kind, i64 key, i64 field) : kindValue(kind), keyValue(key), fieldValue(field) {
+        }
+        auto kind() const -> FactKind {
+            return kindValue;
+        }
+        auto compare(FactKind kind, i64 key, i64 field) const -> i64 {
+            return compare_fact_key(kind, key, field, kindValue, keyValue, fieldValue);
+        }
+    };
+
     class ActiveFact {
         FactRow factValue;
         i64 visitEpoch;
@@ -441,14 +457,14 @@ export namespace compiler_ir_verification {
         auto fact() const -> FactRow {
             return factValue;
         }
+        auto key_row() const -> FactKey {
+            return FactKey(factValue.kind(), factValue.key(), factValue.field());
+        }
         auto kind() const -> FactKind {
             return factValue.kind();
         }
         auto matches_root(FactKind kind, i64 key) const -> bool {
             return factValue.kind() == kind && factValue.key() == key;
-        }
-        auto compare_key(FactKind kind, i64 key, i64 field) const -> i64 {
-            return compare_fact_key(kind, key, field, factValue.kind(), factValue.key(), factValue.field());
         }
         auto set_fact(FactRow value) -> bool {
             factValue = value;
@@ -1192,6 +1208,11 @@ export namespace compiler_ir_verification {
         builtin::OwnedValues<ActiveFact> result = region.try_allocate(0, fill);
         return move(result);
     }
+    auto fact_key_pool(builtin::ByteRegion region) -> builtin::OwnedValues<FactKey> {
+        const FactKey fill = FactKey(FactKind::none, 0, -1);
+        builtin::OwnedValues<FactKey> result = region.try_allocate(0, fill);
+        return move(result);
+    }
     auto fact_pool(builtin::ByteRegion region) -> builtin::OwnedValues<FactRow> {
         const FactRow fill = empty_fact();
         builtin::OwnedValues<FactRow> result = region.try_allocate(0, fill);
@@ -1301,6 +1322,7 @@ export namespace compiler_ir_verification {
         builtin::OwnedValues<CountPair> retainedCounts;
         builtin::OwnedValues<ServiceLoan> serviceLoans;
         builtin::OwnedValues<ActiveFact> currentFacts;
+        builtin::OwnedValues<FactKey> currentKeys;
         builtin::OwnedValues<FactRow> retainedFacts;
         builtin::OwnedValues<ValueRow> currentOperands;
         builtin::OwnedValues<ValueRow> retainedOperands;
@@ -1309,7 +1331,6 @@ export namespace compiler_ir_verification {
         builtin::OwnedValues<ControlRow> controls;
         i64 callableId;
         i64 scalarBegin;
-        i64 scalarCount;
         i64 objectBegin;
         i64 objectCount;
         i64 receiverBegin;
@@ -1472,11 +1493,18 @@ export namespace compiler_ir_verification {
             if (next < 0) {
                 return fail(first_error(VerificationErrorFirst::internal));
             }
+            if (currentKeys.size() != currentFacts.size()) {
+                return fail(first_error(VerificationErrorFirst::internal));
+            }
             if (next == currentFacts.size()) {
                 return true;
             }
             const ActiveFact fill = ActiveFact(empty_fact());
             if (!currentFacts.try_resize(next, fill)) {
+                return allocation_failure();
+            }
+            const FactKey empty_key = FactKey(FactKind::none, 0, -1);
+            if (!currentKeys.try_resize(next, empty_key)) {
                 return allocation_failure();
             }
             return true;
@@ -1532,9 +1560,26 @@ export namespace compiler_ir_verification {
             }
             return row;
         }
+        auto active_key(i64 index, i64 count) -> FactKey {
+            if (!good() || controls.size() != 1 || count < 0 || count > currentKeys.size() || currentKeys.size()
+                != currentFacts.size() || index < 0 || index >= count) {
+                fail(first_error(VerificationErrorFirst::internal));
+                return FactKey(FactKind::none, 0, -1);
+            }
+            const FactKey row = currentKeys.at(index);
+            if (row.kind() == FactKind::none) {
+                fail(first_error(VerificationErrorFirst::internal));
+                return FactKey(FactKind::none, 0, -1);
+            }
+            return row;
+        }
         auto set_active_fact(i64 index, i64 count, ActiveFact row) -> bool {
-            if (!good() || controls.size() != 1 || count < 0 || count > currentFacts.size() || index < 0 || index
-                >= count || !currentFacts.set(index, row)) {
+            if (!good() || controls.size() != 1 || count < 0 || count > currentFacts.size() || count
+                > currentKeys.size() || index < 0 || index >= count || !currentFacts.set(index, row)) {
+                return fail(first_error(VerificationErrorFirst::internal));
+            }
+            const FactKey key = row.key_row();
+            if (!currentKeys.set(index, key)) {
                 return fail(first_error(VerificationErrorFirst::internal));
             }
             return true;
@@ -1542,7 +1587,8 @@ export namespace compiler_ir_verification {
         // The caller has validated the control owner. A count is an extent,
         // never a cached alias to an element across owner growth.
         auto lower_fact(FactKind kind, i64 key, i64 field, i64 count) -> i64 {
-            if (!good() || controls.size() != 1 || count < 0 || count > currentFacts.size()) {
+            if (!good() || controls.size() != 1 || count < 0 || count > currentKeys.size() || currentKeys.size()
+                != currentFacts.size()) {
                 fail(first_error(VerificationErrorFirst::internal));
                 return -1;
             }
@@ -1550,11 +1596,11 @@ export namespace compiler_ir_verification {
             i64 end = count;
             while (begin < end) {
                 const i64 middle = begin + (end - begin) / 2;
-                const ActiveFact row = active_fact(middle, count);
+                const FactKey row = active_key(middle, count);
                 if (!good()) {
                     return -1;
                 }
-                if (row.compare_key(kind, key, field) > 0) {
+                if (row.compare(kind, key, field) > 0) {
                     begin = middle + 1;
                 } else {
                     end = middle;
@@ -1567,8 +1613,8 @@ export namespace compiler_ir_verification {
             if (at < 0 || at == count) {
                 return -1;
             }
-            const ActiveFact row = active_fact(at, count);
-            if (good() && row.compare_key(kind, key, field) == 0) {
+            const FactKey row = active_key(at, count);
+            if (good() && row.compare(kind, key, field) == 0) {
                 return at;
             }
             return -1;
@@ -1626,18 +1672,18 @@ export namespace compiler_ir_verification {
             if (at < 0 || at == count) {
                 return -1;
             }
-            const ActiveFact row = active_fact(at, count);
+            const FactKey row = active_key(at, count);
             if (!good() || row.kind() != kind) {
                 return -1;
             }
             return at;
         }
         auto next_fact_in_count(i64 index, i64 count) -> i64 {
-            const ActiveFact previous = active_fact(index, count);
+            const FactKey previous = active_key(index, count);
             if (!good() || index + 1 == count) {
                 return -1;
             }
-            const ActiveFact following = active_fact(index + 1, count);
+            const FactKey following = active_key(index + 1, count);
             if (!good()) {
                 return -1;
             }
@@ -1662,13 +1708,13 @@ export namespace compiler_ir_verification {
     public:
         VerificationWorkspace(builtin::ByteRegion region, VerificationError error) : currentWords(word_pool(region)),
             retainedWords(word_pool(region)), retainedCounts(count_pool(region)), serviceLoans(service_pool(region)),
-            currentFacts(active_fact_pool(region)), retainedFacts(fact_pool(region)),
-            currentOperands(value_pool(region)), retainedOperands(value_pool(region)),
+            currentFacts(active_fact_pool(region)), currentKeys(fact_key_pool(region)),
+            retainedFacts(fact_pool(region)), currentOperands(value_pool(region)), retainedOperands(value_pool(region)),
             codeStates(code_state_pool(region)), pendingQueue(index_pool(region)), controls(control_pool(region)),
-            callableId(-1), scalarBegin(0), scalarCount(0), objectBegin(0), objectCount(0), receiverBegin(-1),
-            receiverCount(0), serviceCapacity(0), factCount(0), wordCount(0), retainedCount(0), retainedCapacity(0),
-            currentMust(0), currentMay(0), statusValue(InitializationStatus::pending),
-            verificationStatus(VerificationStatus::pending), verificationError(error) {
+            callableId(-1), scalarBegin(0), objectBegin(0), objectCount(0), receiverBegin(-1), receiverCount(0),
+            serviceCapacity(0), factCount(0), wordCount(0), retainedCount(0), retainedCapacity(0), currentMust(0),
+            currentMay(0), statusValue(InitializationStatus::pending), verificationStatus(VerificationStatus::pending),
+            verificationError(error) {
         }
         auto good() const -> bool {
             return verificationStatus == VerificationStatus::pending || verificationStatus
@@ -1797,11 +1843,15 @@ export namespace compiler_ir_verification {
                 return false;
             }
             if (at < count) {
-                ActiveFact existing = active_fact(at, count);
+                const FactKey existing_key = active_key(at, count);
                 if (!good()) {
                     return false;
                 }
-                if (existing.compare_key(fact.kind(), fact.key(), fact.field()) == 0) {
+                if (existing_key.compare(fact.kind(), fact.key(), fact.field()) == 0) {
+                    ActiveFact existing = active_fact(at, count);
+                    if (!good()) {
+                        return false;
+                    }
                     existing.set_fact(fact);
                     return set_active_fact(at, count, existing);
                 }
@@ -2078,7 +2128,8 @@ export namespace compiler_ir_verification {
             // Every retained fact previously occupied this same active pool.
             // prepare_verification is single-use and reserve_active_facts never shrinks
             // its capacity, so loading a snapshot needs no active allocation.
-            if (row.fact_count() > currentFacts.size() || row.fact_count() > c.dynamic_fact_limit()) {
+            if (row.fact_count() > currentFacts.size() || row.fact_count() > currentKeys.size() || row.fact_count()
+                > c.dynamic_fact_limit()) {
                 return fail(first_error(VerificationErrorFirst::internal));
             }
             i64 at = 0;
@@ -2396,7 +2447,8 @@ export namespace compiler_ir_verification {
         auto validate_current_facts() -> bool {
             const ControlRow c = control();
             const i64 count = c.active_fact_count();
-            if (!good() || controls.size() != 1 || count < 0 || count > currentFacts.size()) {
+            if (!good() || controls.size() != 1 || count < 0 || count > currentFacts.size() || currentKeys.size()
+                != currentFacts.size()) {
                 return fail(first_error(VerificationErrorFirst::internal));
             }
             FactKind previous_kind = FactKind::none;
@@ -2406,9 +2458,10 @@ export namespace compiler_ir_verification {
             while (at < count) {
                 const ActiveFact active = active_fact(at, count);
                 const FactRow fact = active.fact();
-                if (!good() || !canonical_fact(fact) || active.visit_epoch() < 0 || (at != 0
-                    && compare_fact_key(previous_kind, previous_key, previous_field, fact.kind(), fact.key(),
-                    fact.field()) >= 0)) {
+                const FactKey key = active_key(at, count);
+                if (!good() || key.compare(fact.kind(), fact.key(), fact.field()) != 0 || !canonical_fact(fact)
+                    || active.visit_epoch() < 0 || (at != 0 && compare_fact_key(previous_kind, previous_key,
+                    previous_field, fact.kind(), fact.key(), fact.field()) >= 0)) {
                     return fail(first_error(VerificationErrorFirst::internal));
                 }
                 if (fact.kind() == FactKind::owned_field) {
@@ -2494,8 +2547,8 @@ export namespace compiler_ir_verification {
         }
         auto allocated() const -> bool {
             return currentWords.ok() && retainedWords.ok() && retainedCounts.ok() && serviceLoans.ok()
-                && currentFacts.ok() && retainedFacts.ok() && currentOperands.ok() && retainedOperands.ok()
-                && codeStates.ok() && pendingQueue.ok() && controls.ok();
+                && currentFacts.ok() && currentKeys.ok() && retainedFacts.ok() && currentOperands.ok()
+                && retainedOperands.ok() && codeStates.ok() && pendingQueue.ok() && controls.ok();
         }
         auto status() const -> InitializationStatus {
             return statusValue;
@@ -2558,7 +2611,6 @@ export namespace compiler_ir_verification {
             }
             callableId = callable;
             scalarBegin = first;
-            scalarCount = count;
             objectBegin = object_first;
             objectCount = object_count;
             receiverBegin = receiver.begin();
@@ -2598,7 +2650,7 @@ export namespace compiler_ir_verification {
             if (statusValue != InitializationStatus::success) {
                 return -1;
             }
-            return scalarCount;
+            return factCount - objectCount - receiverCount;
         }
         auto word_count() const -> i64 {
             if (statusValue != InitializationStatus::success) {

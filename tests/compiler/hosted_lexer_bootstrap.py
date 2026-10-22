@@ -217,7 +217,7 @@ def abi_generation(facts):
         ("compiler_ir_instructions::BodyRow", 32),
         ("compiler_ir_instructions::InstructionCounts", 32),
         ("compiler_ir_instructions::InstructionStore", 176),
-        ("compiler_ir_verification::VerificationWorkspace", 496),
+        ("compiler_ir_verification::VerificationWorkspace", 520),
         ("compiler_ir_verification::VerificationReport", 72),
         ("compiler_ir_verification::VerificationError", 16),
         ("compiler_ir_verification::ControlRow", 352),
@@ -620,6 +620,7 @@ def verification_generation(facts):
         "retainedCounts",
         "serviceLoans",
         "currentFacts",
+        "currentKeys",
         "retainedFacts",
         "currentOperands",
         "retainedOperands",
@@ -628,13 +629,13 @@ def verification_generation(facts):
         "controls",
     )
     require(
-        [(field["name"], field["kind"], field["offset"], field["bytes"]) for field in owner["fields"][:11]]
+        [(field["name"], field["kind"], field["offset"], field["bytes"]) for field in owner["fields"][:12]]
         == [(name, "owner", 32 * index, 32) for index, name in enumerate(pools)]
-        and all(field["kind"] != "owner" for field in owner["fields"][11:]),
-        "verification workspace lost its exact eleven direct owners",
+        and all(field["kind"] != "owner" for field in owner["fields"][12:]),
+        "verification workspace lost its exact twelve direct owners",
     )
     for source, extent in (
-        ("VerificationWorkspace", 496),
+        ("VerificationWorkspace", 520),
         ("VerificationReport", 72),
         ("VerificationError", 16),
         ("ControlRow", 352),
@@ -647,6 +648,7 @@ def verification_generation(facts):
         ("LoanPayload", 56),
         ("FactRow", 192),
         ("ActiveFact", 200),
+        ("FactKey", 24),
         ("BoundsEvidence", 72),
         ("ValueRow", 88),
         ("CodeStateRow", 152),
@@ -659,16 +661,17 @@ def verification_generation(facts):
             "verification source layout changed: " + source,
         )
     for text in (
-        "verificationWorkspaceBytes = 496;",
+        "verificationWorkspaceBytes = 520;",
         "verificationReportBytes = 72;",
         "verificationErrorBytes = 16;",
         "verificationControlRowPhysicalBytes = 352;",
         "verificationActiveFactPhysicalBytes = 200;",
+        "verificationFactKeyPhysicalBytes = 24;",
         "verificationRunRootCount = 3;",
         "verificationRunTuplePayloadBytes = 24;",
         "verificationRunTupleReservedBytes = 32;",
         "static_assert(sizeof(VerificationRunRoots) == 32 && alignof(VerificationRunRoots) == 8);",
-        "static_assert(sizeof(VerificationRelease) == 504 && alignof(VerificationRelease) == 8);",
+        "static_assert(sizeof(VerificationRelease) == 528 && alignof(VerificationRelease) == 8);",
         "void * workspace{};",
         "const void * metadata{};",
         "const void * instructions{};",
@@ -742,7 +745,14 @@ def verification_generation(facts):
         "mutable-report-root",
         lambda f: f["borrowed_roots"][0].__setitem__("mutable", True),
     )
-    for row_name in ("VerificationWorkspace", "VerificationReport", "VerificationError", "ControlRow", "ActiveFact"):
+    for row_name in (
+        "VerificationWorkspace",
+        "VerificationReport",
+        "VerificationError",
+        "ControlRow",
+        "ActiveFact",
+        "FactKey",
+    ):
         _, row = abi_declaration(facts, "records", namespace + row_name)
         for index, field in enumerate(row["fields"]):
             reject(
@@ -759,7 +769,7 @@ def verification_generation(facts):
             lambda f, index=index: f["parameters"][index].__setitem__("offset", f["parameters"][index]["offset"] + 8),
         )
     require(json.dumps(facts, sort_keys=True) == pristine, "a verification mutation leaked into the shared facts")
-    print("PASS source verifier eleven-owner layout, copied report and exact three-root lifecycle rejection")
+    print("PASS source verifier twelve-owner layout, copied report and exact three-root lifecycle rejection")
 
 
 def emitter_generation(facts):

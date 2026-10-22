@@ -217,7 +217,7 @@ def owned_text_stack(prefix, entry, console_region=False, fixture=False):
     code, _ = stack.disassemble(user.path)
     facts = json.loads(prefix.with_suffix(".stack.json").read_text())["functions"]
     operations = ("allocate", "borrow_length", "at", "set", "resize", "drop")
-    stubs = {"__au_runtime_bytes_" + name for name in operations}
+    stubs = {"__au_runtime_bytes_" + name for name in operations} | {"__au_runtime_bytes_borrow_span"}
     if console_region:
         stubs |= {"__au_runtime_console_next", "__au_runtime_console_put"}
     need(set(user.functions) == set(facts) | stubs, "Exact owned text function inventory")
@@ -251,6 +251,37 @@ def owned_text_stack(prefix, entry, console_region=False, fixture=False):
         need([(row.op, row.args) for row in rows] == expected, "Exact register-only byte stub: " + operation)
         functions[name] = dict(local_peak=8, calls=[], returns=1)
         result["bytes_" + operation + "_pc"] = site
+    # The borrow adapter adds no syscall site. Verify every local instruction
+    # and compose its one call into the existing descriptor-validation stub.
+    name = "__au_runtime_bytes_borrow_span"
+    symbol = user.functions[name]
+    rows = [row for address, row in sorted(code.items()) if symbol.address <= address < symbol.address + symbol.size]
+    expected = [
+        ("push", "%rdi"),
+        ("push", "%rsi"),
+        ("sub", "$0x8,%rsp"),
+        ("call", "__au_runtime_bytes_borrow_length"),
+        ("add", "$0x8,%rsp"),
+        ("pop", "%rsi"),
+        ("pop", "%rdi"),
+        ("movq", "$0x1,(%rsi)"),
+    ]
+    for source, destination in (("", "0x8"), ("0x8", "0x10"), ("0x10", "0x18"), ("0x18", "0x20")):
+        expected += [("mov", source + "(%rdi),%rcx"), ("mov", "%rcx," + destination + "(%rsi)")]
+    expected += [("movq", "$0x0,0x28(%rsi)"), ("mov", "%rax,0x30(%rsi)"), ("ret", "")]
+    actual = [
+        (
+            row.op,
+            "__au_runtime_bytes_borrow_length"
+            if row.op == "call" and stack.target_of(row) == symbols["__au_runtime_bytes_borrow_length"]
+            else row.args,
+        )
+        for row in rows
+    ]
+    need(actual == expected, "Exact protected borrowed-span adapter")
+    functions[name] = dict(
+        local_peak=32, calls=[dict(target="__au_runtime_bytes_borrow_length", live_bytes=32)], returns=1
+    )
     if console_region:
         for operation in ("next", "put"):
             name = "__au_runtime_console_" + operation

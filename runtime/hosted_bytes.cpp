@@ -161,6 +161,21 @@ public:
         return record->length;
     }
 
+    static void borrow_span(const NativeOwner *owner, NativeSpan *output) noexcept {
+        Region *target = nullptr;
+        const auto *record = allocation(owner, target);
+        if (record == nullptr) {
+            bounds_trap();
+        }
+        if (output == nullptr) {
+            invariant_trap();
+        }
+        // This trusted adapter is single-threaded. Admitted source/IR forbids
+        // resize, mutation, move or destruction of the root while a view lives.
+        // No pointer is exposed to Aurora source or to protected processes.
+        *output = NativeSpan{0, {reinterpret_cast<std::uintptr_t>(record->payload), 0, 0, 0}, 0, record->length};
+    }
+
     static std::uint64_t at(const NativeOwner *owner, std::int64_t index) noexcept {
         Region *target = nullptr;
         const auto *record = allocation(owner, target);
@@ -413,6 +428,10 @@ extern "C" void __au_runtime_bytes_allocate(std::uint64_t region, std::int64_t l
 
 extern "C" std::int64_t __au_runtime_bytes_borrow_length(const NativeOwner *owner) noexcept {
     return RuntimeAccess::borrow_length(owner);
+}
+
+extern "C" void __au_runtime_bytes_borrow_span(const NativeOwner *owner, NativeSpan *output) noexcept {
+    RuntimeAccess::borrow_span(owner, output);
 }
 
 extern "C" std::uint64_t __au_runtime_bytes_at(const NativeOwner *owner, std::int64_t index) noexcept {

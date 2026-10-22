@@ -87,12 +87,12 @@ inline std::uint64_t ownerFields(const Metadata &metadata, Metadata::ClassId nom
 static_assert(
     hosted_abi::verificationWordPairPhysicalBytes == 16 && hosted_abi::verificationCountPairPhysicalBytes == 16 &&
     hosted_abi::verificationServiceLoanPhysicalBytes == 32 && hosted_abi::verificationActiveFactPhysicalBytes == 200 &&
-    hosted_abi::verificationFactRowPhysicalBytes == 192 && hosted_abi::verificationValueRowPhysicalBytes == 88 &&
-    hosted_abi::verificationCodeStateRowPhysicalBytes == 152 && hosted_abi::verificationIndexRowPhysicalBytes == 8 &&
-    hosted_abi::verificationControlRowPhysicalBytes == 352);
+    hosted_abi::verificationFactKeyPhysicalBytes == 24 && hosted_abi::verificationFactRowPhysicalBytes == 192 &&
+    hosted_abi::verificationValueRowPhysicalBytes == 88 && hosted_abi::verificationCodeStateRowPhysicalBytes == 152 &&
+    hosted_abi::verificationIndexRowPhysicalBytes == 8 && hosted_abi::verificationControlRowPhysicalBytes == 352);
 
 // Keep the original fixed-two-service initialization ceiling, independently of
-// actual service capacity and independently of the seven added dynamic pools.
+// actual service capacity and independently of the eight added dynamic pools.
 constexpr std::uint64_t initializationCap(std::uint64_t wordCount) {
     const auto snapshot = sum(product(wordCount, hosted_abi::verificationWordPairPhysicalBytes),
                               product(2, hosted_abi::verificationServiceLoanPhysicalBytes));
@@ -232,6 +232,9 @@ checkedVerificationQuota(const Metadata &metadata, const InstructionRange &code,
     // Current facts and the FIFO explicitly clamp geometric growth to their
     // derived caps. Other dynamic pools retain pool_capacity's geometric slack.
     total = sum(total, product(d, hosted_abi::verificationActiveFactPhysicalBytes));
+    // The compact key owner grows with current facts; both allocations count
+    // even when the second resize fails and leaves a terminal partial state.
+    total = sum(total, product(d, hosted_abi::verificationFactKeyPhysicalBytes));
     // retain_state appends once per new block, after B/R checks. Exact joins
     // only weaken inline current and replace initialization bits in place;
     // they NEVER append another fact/operand slice for an existing block.

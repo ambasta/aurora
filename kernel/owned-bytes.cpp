@@ -631,6 +631,16 @@ extern "C" std::int64_t __au_runtime_bytes_borrow_length(const NativeOwner *owne
     return kernel::bytes::RuntimeAccess::borrow_length(owner);
 }
 
+extern "C" void __au_runtime_bytes_borrow_span(const NativeOwner *owner, NativeSpan *output) noexcept {
+    const auto length = kernel::bytes::RuntimeAccess::borrow_length(owner);
+    if (output == nullptr) {
+        __au_runtime_bytes_kernel_fault(1);
+    }
+    // Kernel pages may be fragmented. Retain the checked descriptor path.
+    *output = NativeSpan{
+        1, {owner->region, owner->allocation, static_cast<std::uint64_t>(owner->length), owner->success}, 0, length};
+}
+
 extern "C" std::uint64_t __au_runtime_bytes_at(const NativeOwner *owner, std::int64_t index) noexcept {
     return kernel::bytes::RuntimeAccess::at(owner, index);
 }

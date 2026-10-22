@@ -161,6 +161,7 @@ def owned_bytes_symbols(symbols):
         "__au_runtime_bytes_set",
         "__au_runtime_bytes_drop",
         "__au_runtime_bytes_borrow_length",
+        "__au_runtime_bytes_borrow_span",
         "__au_runtime_bytes_resize",
         "__au_runtime_bytes_kernel_fault",
     )
@@ -341,7 +342,7 @@ def snapshot_runtime_symbols(names):
         {name for name in names if name.startswith("__au_runtime_")}
         == {
             "__au_runtime_bytes_" + name
-            for name in ("allocate", "at", "set", "drop", "borrow_length", "resize", "kernel_fault")
+            for name in ("allocate", "at", "set", "drop", "borrow_length", "borrow_span", "resize", "kernel_fault")
         }
         | {"__au_runtime_values_" + name for name in ("allocate", "at", "set", "resize")}
         | {"__au_runtime_snapshot_produce"},
