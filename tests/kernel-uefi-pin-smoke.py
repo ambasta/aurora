@@ -50,7 +50,7 @@ def validate(status, text, mode, metadata):
     need(mode in MODES, "Unknown pin mode")
     runtime.validate(
         status,
-        text,
+        runtime.checked_fixture_projection(text),
         "runtime",
         metadata,
         retained=2 if mode == "runtime-pin-fault" else 0,
@@ -162,6 +162,8 @@ def self_test():
                     "PIN_STATE: event=service-reborn"
                 ),
             )
+        marker = "AURORA_FIXTURE_READY\n"
+        text = text.replace("AURORA_UEFI_DOMAIN_ENTER:", marker + "AURORA_UEFI_DOMAIN_ENTER:", 1)
         validate(33, text, mode, metadata)
         positive += 1
         bad = [
@@ -170,6 +172,19 @@ def self_test():
             (33, text + "AURORA_PIN_OK\n", metadata),
             (33, text.replace("AURORA_PIN_OK\n", ""), metadata),
         ]
+        bad.extend(
+            (33, value, metadata)
+            for value in (
+                text.replace(marker, ""),
+                text.replace(marker, marker * 2),
+                marker + text.replace(marker, ""),
+                text.replace(marker, "") + marker,
+                text.replace(marker, "prefix " + marker),
+                text.replace(marker, "AURORA_FIXTURE_READY extra\n"),
+                text.replace(marker, "AURORA_FIXTURE_UNKNOWN\n"),
+            )
+        )
+
         for match in list(re.finditer(PATTERN, text)):
             line = match[0] + "\n"
             bad.extend(

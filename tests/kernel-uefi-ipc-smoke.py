@@ -9,6 +9,8 @@ pci = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(pci)
 need = pci.need
 BASE = 0x10000000000
+# Historical synthetic scenarios include copied-policy failures now covered hosted.
+# Current boot modes are admitted separately by kernel_profiles and emulator_clock.
 MODES = (
     "ipc",
     "ipc-fault",
@@ -195,7 +197,36 @@ def expected(mode, metadata, arena):
     return rows
 
 
+FIXTURE_MODES = (
+    "ipc-fault",
+    "ipc-cancel",
+    "ipc-stale",
+    "ipc-root",
+    "ipc-kernel-trap",
+    "ipc-duplicate",
+    "ipc-late",
+    "ipc-exhausted",
+)
+
+
 def validate(status, text, mode, metadata):
+    marker = "AURORA_FIXTURE_READY\n"
+    need(text.count(marker) == (1 if mode in FIXTURE_MODES else 0), "Exact IPC fixture readiness")
+    if mode in FIXTURE_MODES:
+        need(
+            text.index("AURORA_PCI_WINDOW_CLOSED:") < text.index(marker) < text.index("AURORA_UEFI_IPC_ENTER:"),
+            "IPC selector admission phase",
+        )
+        text = text.replace(marker, "", 1)
+    return validate_protocol_projection(status, text, mode, metadata)
+
+
+def validate_protocol_projection(status, text, mode, metadata):
+    """Ordered IPC protocol only; not proof of this family's selector admission.
+
+    The budget oracle projects its independently admitted timer run here.
+    Real IPC receipts always enter through validate() above.
+    """
     need(mode in MODES, "Unknown IPC mode")
     metadata_valid(metadata, mode)
     need(status == (33 if mode in SUCCESS else 35), "Wrong IPC exit status")
@@ -263,7 +294,8 @@ def self_test():
                 probe_offset=0,
             )
         rows = [row.replace(r"(\d+)", str(arena + 0x47C00)) for row in expected(mode, metadata, arena)]
-        text = prefix + "\n".join(rows) + "\n"
+        case_prefix = prefix + ("AURORA_FIXTURE_READY\n" if mode in FIXTURE_MODES else "")
+        text = case_prefix + "\n".join(rows) + "\n"
         status = 33 if mode in SUCCESS else 35
         validate(status, text, mode, metadata)
         failures = [
@@ -282,7 +314,7 @@ def self_test():
             if i + 1 < len(rows):
                 swapped = rows.copy()
                 swapped[i], swapped[i + 1] = swapped[i + 1], swapped[i]
-                failures.append((status, prefix + "\n".join(swapped) + "\n"))
+                failures.append((status, case_prefix + "\n".join(swapped) + "\n"))
         if mode not in SUCCESS:
             failures.append((status, text + SUFFIX))
         for field, value in [

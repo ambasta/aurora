@@ -7,9 +7,48 @@ Meson/Ninja owns the complete incremental native graph. `make test` selects
 `scripts/compiler-test.sh` select compiler-only coverage. Configure one stable
 build directory per toolchain and flags, with matching real GCC/G++ on PATH.
 See [build commands and suite selection](meson-bootstrap.md).
+Explicit wrapper `--tests` selections refresh configuration, then build only
+those tests' declared Meson dependency outputs with the admitted job bound.
+Generated multi-output dependencies remain complete; dependency-free controls
+do not trigger a default build. Whole-suite selections retain the complete
+test prerequisite aggregate.
 
-The whole-source bootstrap corpus runs first in an exclusive test slot to avoid
-compiler-workload contention; other tests remain parallel and all limits stay unchanged.
+Normal `full` includes documented UTF-8 boundary families and fixed-seed samples,
+not its whole scalar/two-byte combinatorial spaces. Those unchanged whole sweeps
+are separately registered in `exhaustive`: use `make test-exhaustive` or
+`meson test -C BUILD --suite exhaustive`. Select the relevant whole sweeps when
+changing their library behavior, oracle or sampling contract. Sector-window,
+XFS, package and typed-IR regression families remain complete in normal full.
+Neither tier substitutes for the other; unfiltered Meson runs both.
+
+Library byte fixtures use bounded runtime POD transports where their ABI is
+checked, retaining full-width results, per-case semantic assertions and genuine
+compiler-negative/lifetime cases. JSON families share `json_runtime.py`; sector,
+XFS and package gates retain their existing family-specific transports. This is
+not a claim that every library has one common driver or that all generated
+compiler fixtures have disappeared.
+
+Use CPython JSON/Unicode and fixed goldens only where semantics match. Custom
+checks remain for Aurora JSON duplicate-key ordering, numeric width, offsets and
+bounded windows, and for UTF-8 offset/`need_more` results. CRC32C uses the Castagnoli
+polynomial, not the IEEE CRC32 exposed by `zlib.crc32`; the independent CRC32C
+reference and known vectors in `storage_binary.py` remain. Substituting that
+stdlib function would change the oracle, not simplify an equivalent check.
+
+The default emitter corpus runs first in an exclusive test slot to avoid
+compiler-workload contention. One old/C1/C2 observation per input supplies both
+historical emitter comparison and complete current C1/C2 convergence, including
+diagnostics, assembly, both sidecars and rejection preservation. The separate
+fast lexer/whole-frontend convergence and real closed-emission profile remain.
+Other tests stay parallel and existing per-input watchdogs are unchanged.
+An explicit Meson `-Demitter_comparison_base=<comparison commit>` allows the
+closed test to report SKIP only for known documentation/native-kernel-only
+changes. The invocation checks the actual commit and live tracked, dirty and
+untracked inputs; compiler, ABI, library, generators, options, harness changes
+and unknown inputs retain both profiles. Missing/invalid/ambiguous bases and
+unsupported Git/source layouts also retain both. No base is inferred, no output
+equivalence is used, and no decision is cached. Empty (the default) always runs
+both; use the actual PR target, never an incidental previous commit.
 
 Duplicate Python runner registrations execute one complete case set under `-O`.
 The IOMMU mock checks use explicit failures, and unittest checks remain active.
@@ -22,7 +61,8 @@ into child execution: Meson identity, compiler-contract controls and the UEFI BA
 runner. Native-cap and storage-traceability runners already exercise both child
 modes internally and run once at the outer level. Cross-suite developer/native
 controls retain the union of suite memberships and the stricter existing timeout.
-No compiler batches, source caps, watchdogs or guest gates are reduced.
+No first-N source caps, weaker result oracles or shortened watchdogs are introduced
+by the explicit library tier split.
 
 Every merge/release still requires final integrated GCC 16 `full`, independent
 review, normal BIOS and UEFI image builds and actual smokes, and the applicable
@@ -57,9 +97,19 @@ or reuse a retained artifact under the
 before using Meson or ordinary Make shortcuts. The checked-in six-source manifest
 pins commit/tree and build options, independently naming the final predecessor
 and historical C++ oracle. Setup requires `bootstrap_compiler`, its mandatory
-`bootstrap_compiler_sha256` and `bootstrap_receipt`. The same receipt/digest checks
-run before predecessor generation, historical-oracle execution and Make
-reconfiguration; Ninja still tracks the executable and receipt as inputs.
+`bootstrap_compiler_sha256` and `bootstrap_receipt`. Configuration performs the
+complete historical source/config/tool, artifact, input and log validation once.
+Its depfile makes that evidence a Meson configuration dependency; historical
+evidence must live outside the active build directory so Meson can track it.
+Before and after predecessor generation or historical-oracle execution, a small
+guard checks the selected compiler, receipt, route, driver and guard bytes and
+freshly resolves compiler/Python shared-library identities. Ordinary Make
+preflight uses the same current-selection checks without rescanning historical
+inputs. A different requested predecessor still receives full validation before
+reconfiguration. Existing build directories need reconfiguration to create this
+selection metadata. It is ordinary build configuration, not a new receipt,
+persistent corpus cache or attestation; historical dependencies use normal Meson
+invalidation, while the current selected artifacts and runtime are checked by digest.
 The reconstruction driver reuses a cached artifact only after source/config/tool,
 recorded inputs/logs and executable checks. Its local receipt records provenance,
 not a signed attestation or independent qualification.

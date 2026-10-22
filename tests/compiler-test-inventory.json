@@ -383,8 +383,20 @@
       "emitter-differential-closed": {
         "arguments": [
           "-B",
-          "@SOURCE@/scripts/bootstrap.py",
+          "@SOURCE@/tests/compiler/emitter_differential.py",
+          "--select-closed-profile",
+          "--source-root",
+          "@SOURCE@",
+          "--comparison-base=@EMITTER_COMPARISON_BASE@",
+          "--",
+          "@PYTHON@",
+          "-B",
+          "@SOURCE@/scripts/bootstrap_guard.py",
           "run",
+          "--selection",
+          "@BUILD@/bootstrap-selection.json",
+          "--selection-sha256",
+          "@BOOTSTRAP_SELECTION_SHA256@",
           "--compiler",
           "@HISTORICAL_CPP_ORACLE@",
           "--sha256",
@@ -422,8 +434,12 @@
       "emitter-differential-default": {
         "arguments": [
           "-B",
-          "@SOURCE@/scripts/bootstrap.py",
+          "@SOURCE@/scripts/bootstrap_guard.py",
           "run",
+          "--selection",
+          "@BUILD@/bootstrap-selection.json",
+          "--selection-sha256",
+          "@BOOTSTRAP_SELECTION_SHA256@",
           "--compiler",
           "@HISTORICAL_CPP_ORACLE@",
           "--sha256",
@@ -457,7 +473,7 @@
         ]
       }
     },
-    "reason": "Byte-exact predecessor comparison over every historical corpus input in both profiles; exactly two new Call consumers require exact predecessor rejection and C1/C2 emission convergence.",
+    "reason": "Byte-exact historical comparison and current C1/C2 convergence; closed profile remains real and is selected from an explicit target plus live source changes, conservatively running on uncertainty.",
     "root_make": true
   },
   "enum_composition.py": {
@@ -627,28 +643,18 @@
           "dev",
           "full"
         ]
-      },
-      "hosted-lexer-bootstrap-corpus": {
-        "arguments": [
-          "-B",
-          "-O",
-          "@SOURCE@/tests/compiler/hosted_lexer_bootstrap.py",
-          "@BUILD@/aurorac",
-          "@BUILD@/aurorac-stage2",
-          "@SOURCE@",
-          "@BUILD@/hosted-frontend.s",
-          "@BUILD@/hosted-frontend-stage2.s",
-          "--corpus"
-        ],
-        "suites": [
-          "compiler",
-          "full",
-          "slow"
-        ]
       }
     },
     "reason": "Canonical hosted bootstrap runner compares current C1/C2 diagnostics and frontend convergence, including the frontend actually linked into C2.",
     "root_make": true
+  },
+  "initialization_probe.py": {
+    "kind": "supplemental-runner",
+    "make": false,
+    "meson": false,
+    "meson_commands": {},
+    "reason": "Build-time generator for the standalone current-source initialization model/ownership probe; linked and executed by initialization-facts, not a directly registered Python test.",
+    "root_make": false
   },
   "integer_oracle.py": {
     "kind": "runner",
@@ -931,6 +937,20 @@
     },
     "reason": "Complete executable runner; also imported as a helper where applicable.",
     "root_make": true
+  },
+  "json_runtime.py": {
+    "imported_by": [
+      "json_codecs.py",
+      "json_integers.py",
+      "json_lookup.py",
+      "json_profile.py"
+    ],
+    "kind": "helper",
+    "make": false,
+    "meson": false,
+    "meson_commands": {},
+    "reason": "Imported JSON-only POD fixture transport; executes through the registered JSON gates, not as a standalone runner.",
+    "root_make": false
   },
   "json_string_read.py": {
     "kind": "runner",
@@ -2134,16 +2154,36 @@
           "@SOURCE@/tests/compiler/utf8.py",
           "@BUILD@/aurorac",
           "--artifacts",
-          "@ARTIFACTS@"
+          "@ARTIFACTS@",
+          "--profile",
+          "full"
         ],
         "suites": [
           "compiler",
           "full",
           "slow"
         ]
+      },
+      "utf8-exhaustive": {
+        "arguments": [
+          "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
+          "-O",
+          "@SOURCE@/tests/compiler/utf8.py",
+          "@BUILD@/aurorac",
+          "--artifacts",
+          "@ARTIFACTS@",
+          "--profile",
+          "exhaustive"
+        ],
+        "suites": [
+          "exhaustive"
+        ]
       }
     },
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "reason": "Normal full retains boundary and fixed-seed scalar/byte samples plus all regression families; explicit exhaustive retains the whole combinatorial spaces.",
     "root_make": true
   },
   "utf8_encoding.py": {
@@ -2161,16 +2201,36 @@
           "@SOURCE@/tests/compiler/utf8_encoding.py",
           "@BUILD@/aurorac",
           "--artifacts",
-          "@ARTIFACTS@"
+          "@ARTIFACTS@",
+          "--profile",
+          "full"
         ],
         "suites": [
           "compiler",
           "full",
           "slow"
         ]
+      },
+      "utf8-encoding-exhaustive": {
+        "arguments": [
+          "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
+          "-O",
+          "@SOURCE@/tests/compiler/utf8_encoding.py",
+          "@BUILD@/aurorac",
+          "--artifacts",
+          "@ARTIFACTS@",
+          "--profile",
+          "exhaustive"
+        ],
+        "suites": [
+          "exhaustive"
+        ]
       }
     },
-    "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "reason": "Normal full retains boundary and fixed-seed scalar/byte samples plus all regression families; explicit exhaustive retains the whole combinatorial spaces.",
     "root_make": true
   },
   "utf8_lines.py": {
@@ -2275,6 +2335,34 @@
       }
     },
     "reason": "Complete executable runner; also imported as a helper where applicable.",
+    "root_make": true
+  },
+  "verifier_contract.py": {
+    "kind": "runner",
+    "make": true,
+    "meson": true,
+    "meson_commands": {
+      "verifier-contract": {
+        "arguments": [
+          "-B",
+          "@SOURCE@/tests/meson_artifacts.py",
+          "@PYTHON@",
+          "-B",
+          "@SOURCE@/tests/compiler/verifier_contract.py",
+          "verifier-contract",
+          "@SOURCE@/tests/compiler/verifier_contract.expected.jsonl",
+          "--artifacts",
+          "@ARTIFACTS@"
+        ],
+        "suites": [
+          "compiler",
+          "core",
+          "dev",
+          "full"
+        ]
+      }
+    },
+    "reason": "Real-ingress single-candidate verifier regression against frozen independent outcomes, diagnostics and partial/null metrics; historical expected rows do not qualify current source.",
     "root_make": true
   },
   "volatile_file.py": {

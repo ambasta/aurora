@@ -1,6 +1,7 @@
 #pragma once
 #include "program-layout.hpp"
 #include "terminal-event-transport.hpp"
+#include "bios-fixture.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -113,10 +114,20 @@ public:
 #ifdef AURORA_TERMINAL_EVENT_INPUT
         policy_vector = ~std::uint64_t{0};
 #endif
+#ifdef AURORA_BIOS_FAULT_FIXTURE
+        if (bios::selected(bios::Fixture::bios_program_terminal_input))
+            policy_vector = ~std::uint64_t{0};
+#endif
         auto encoded = language_terminal_event(policy_vector, matched_sites, stack_top);
 #ifdef AURORA_TERMINAL_EVENT_OUTPUT
         const volatile std::uint64_t reserved_bit = std::uint64_t{1} << 63;
         encoded |= reserved_bit;
+#endif
+#ifdef AURORA_BIOS_FAULT_FIXTURE
+        if (bios::selected(bios::Fixture::bios_program_terminal_output)) {
+            const volatile std::uint64_t reserved_bit = std::uint64_t{1} << 63;
+            encoded |= reserved_bit;
+        }
 #endif
         return decode_terminal_event(encoded, context.vector, matched_sites, stack_top);
     }

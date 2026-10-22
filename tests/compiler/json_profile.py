@@ -9,9 +9,11 @@ This gate is focused evidence, not full native or sanitizer qualification.
 from __future__ import annotations
 import argparse, dataclasses, hashlib, itertools, os, pathlib, random, re, sys
 import json
+import struct
 
 sys.dont_write_bytecode = True
 import utf8_range as harness
+import json_runtime as runtime
 from compiler_contract import selected_flag_vectors
 from package_profiles import SelectedCompiler, finalize_selected_identity
 
@@ -312,24 +314,6 @@ def observe(document=False):
     return body + "return -779;"
 
 
-def source_case(case, document):
-    result = "std::JsonResult" if document else "std::JsonTokenResult"
-    function = "validate_json" if document else "next_json_token"
-    expected = (document_model if document else token_model)(case.span(), case.offset, case.extent())
-    helper = f"auto input_CASE({SPAN} bytes)->{result}{{"
-    parent = "bytes"
-    for i, (start, size) in enumerate(case.windows):
-        name = f"view{i}"
-        helper += f"const {SPAN} {name}={parent}.subspan({start},{size});"
-        parent = name
-    helper += f"const {result} r=std::{function}({parent},{case.offset},{case.extent()});return r;}}"
-    body = harness.array(case.data) + f"const builtin::array<u8,{max(1, len(case.data))}> saved=owner;"
-    body += f"const {result} original=input_CASE(borrow_bytes(owner));"
-    body += "i64 i=0;while(i<len(owner)){if(owner[i]!=saved[i]){return -780;}i=i+1;}owner[0]=0u8;"
-    body += f"const {result} report=original;" + observe(document)
-    return Test(("document " if document else "token ") + case.label, body, expected, helper)
-
-
 def cases():
     valid = (
         b"null",
@@ -541,7 +525,7 @@ def document_report_model(status, error, tokens, depth):
     return (status, error, tokens, depth)
 
 
-def public_reports():
+def public_report_rows():
     for document in (False, True):
         seeds = (
             ((0, 0, 1, 0), (0, 0, 1024, 32), (S["invalid_string"], 7, 5, 2))
@@ -561,23 +545,10 @@ def public_reports():
                 for kind in range(len(KINDS)):
                     rows.add((status, kind, 0, 1, 1, 0))
         for row in sorted(rows):
-            result = "std::JsonResult" if document else "std::JsonTokenResult"
-            values = [f"std::JsonStatus::{STATUSES[row[0]]}"]
-            if document:
-                values += list(map(str, row[1:]))
-            else:
-                values += [f"std::JsonTokenKind::{KINDS[row[1]]}"] + list(map(str, row[2:]))
-            body = (
-                f"const {result} original={result}("
-                + ",".join(values)
-                + f");const {result} report=original;"
-                + observe(document)
-            )
-            expected = (document_report_model if document else token_report_model)(*row)
-            yield Test("public copied shape is not source certification", body, expected)
+            yield document, row
 
 
-def lexical_sequences():
+def lexical_cases():
     # Every successful token is requested from a new suffix, including terminal
     # trivia. Coordinates remain relative to the original supplied span.
     for raw in (b' {"a": [0,-1.5e+2,true,false,null,"\\ud834\\udd1e"]} \n', b"[]{}:,"):
@@ -586,7 +557,7 @@ def lexical_sequences():
         end = len(data) - 1
         while True:
             case = Case("repeated lexical suffix coordinates", data, used, end - used)
-            yield source_case(case, False)
+            yield case
             r = token_model(data, used, end - used)
             if r[0] == 1:
                 break
@@ -594,13 +565,141 @@ def lexical_sequences():
             used += r[4]
 
 
-def all_tests():
+# Host fixtures are plain byte/scalar records. Borrowed receiver methods create
+# all spans and nested windows inside AU, then return only copied observations.
+RUNTIME_SCALARS = (
+    "operation",
+    "length",
+    "offset",
+    "count",
+    "first",
+    "first_size",
+    "second",
+    "second_size",
+    "status",
+    "kind",
+    "start",
+    "used",
+    "error",
+    "tokens",
+    "depth",
+)
+
+
+def runtime_source():
+    source = "module json_profile_runtime;import std.json;class ProfileInput {"
+    source += "".join(f"builtin::array<u8,512> data{i};" for i in range(8))
+    source += "".join(f"i64 {name};" for name in RUNTIME_SCALARS)
+    source += (
+        "public:ProfileInput():"
+        + ",".join([*(f"data{i}{{}}" for i in range(8)), *(f"{name}(0)" for name in RUNTIME_SCALARS)])
+        + "{}"
+    )
+    source += "auto input_byte(i64 index) const -> u8 {"
+    for i in range(7):
+        source += f"if(index<{512 * (i + 1)}){{return data{i}[index-{512 * i}];}}"
+    source += "return data7[index-3584];}"
+    for field, enum, names in (("status", "JsonStatus", STATUSES), ("kind", "JsonTokenKind", KINDS)):
+        source += f"auto selected_{field}() const -> std::{enum} {{"
+        for number, name in enumerate(names):
+            source += f"if({field}=={number}){{return std::{enum}::{name};}}"
+        source += f"return std::{enum}::{names[0]};}}"
+    for document in (False, True):
+        suffix, result, function = (
+            ("document", "std::JsonResult", "validate_json")
+            if document
+            else ("token", "std::JsonTokenResult", "next_json_token")
+        )
+        source += f"auto parse_{suffix}({SPAN} bytes) const -> {result} {{"
+        source += f"const {SPAN} whole=bytes.subspan(0,length);const {SPAN} view=whole.subspan(first,first_size);"
+        source += f"const {SPAN} nested=view.subspan(second,second_size);return std::{function}(nested,offset,count);}}"
+    source += "auto profile_entry(i64 field) const -> i64 {"
+    for document in (False, True):
+        suffix, result = ("document", "std::JsonResult") if document else ("token", "std::JsonTokenResult")
+        source += f"if(operation=={int(document)}){{" + harness.array(bytes(4096))
+        source += "i64 at=0;while(at<4096){owner[at]=input_byte(at);at=at+1;}"
+        source += f"const {result} original=parse_{suffix}(borrow_bytes(owner));"
+        source += "at=0;while(at<4096){if(owner[at]!=input_byte(at)){return -780;}at=at+1;}owner[0]=0u8;"
+        source += f"const {result} report=original;" + observe(document) + "}"
+    source += "if(operation==2){const std::JsonTokenResult original="
+    source += "std::JsonTokenResult(selected_status(),selected_kind(),start,count,used,error);"
+    source += "const std::JsonTokenResult report=original;" + observe(False) + "}"
+    source += "const std::JsonResult original=std::JsonResult(selected_status(),error,tokens,depth);"
+    source += "const std::JsonResult report=original;" + observe(True) + "}};\n"
+    return source
+
+
+def runtime_record(label, expected, data=b"", **values):
+    require(len(data) <= 4096, "profile runtime owner capacity")
+    return (
+        label,
+        data.ljust(4096, b"\0")
+        + struct.pack("<" + "q" * len(RUNTIME_SCALARS), *(values.get(name, 0) for name in RUNTIME_SCALARS)),
+        expected,
+    )
+
+
+def runtime_case(case, document):
+    require(len(case.windows) <= 2, "profile runtime nested window capacity")
+    length, windows = len(case.data), []
+    for index in range(2):
+        start, count = case.windows[index] if index < len(case.windows) else (0, length)
+        require(0 <= start <= length and 0 <= count <= length - start, "profile subspan fixture admitted")
+        windows.extend((start, count))
+        length = count
+    return runtime_record(
+        ("document " if document else "token ") + case.label,
+        (document_model if document else token_model)(case.span(), case.offset, case.extent()),
+        case.data,
+        operation=int(document),
+        length=len(case.data),
+        offset=case.offset,
+        count=case.extent(),
+        first=windows[0],
+        first_size=windows[1],
+        second=windows[2],
+        second_size=windows[3],
+    )
+
+
+def runtime_cases():
     for case in cases():
-        yield source_case(case, False)
-        yield source_case(case, True)
-    yield from expired_tests()
-    yield from public_reports()
-    yield from lexical_sequences()
+        yield runtime_case(case, False)
+        yield runtime_case(case, True)
+    for document, row in public_report_rows():
+        fields = (
+            ("status", "error", "tokens", "depth")
+            if document
+            else ("status", "kind", "start", "count", "used", "error")
+        )
+        yield runtime_record(
+            "public copied shape is not source certification",
+            (document_report_model if document else token_report_model)(*row),
+            operation=3 if document else 2,
+            **dict(zip(fields, row)),
+        )
+    for case in lexical_cases():
+        yield runtime_case(case, False)
+
+
+def compare(observed, expected):
+    require(list(observed) == list(expected), "JSON profile complete native observations differ")
+
+
+def runtime_profile(suite):
+    fields = [(f"data{i}", 512 * i, 512, "u8", 512) for i in range(8)]
+    fields += [(name, 4096 + i * 8, 8, "i64", 0) for i, name in enumerate(RUNTIME_SCALARS)]
+    runtime.run(
+        suite,
+        "runtime-profile",
+        runtime_source(),
+        "ProfileInput",
+        "profile_entry",
+        fields,
+        runtime_cases(),
+        "i64",
+        compare,
+    )
 
 
 def batches(items):
@@ -627,6 +726,7 @@ class Suite(harness.Suite):
         self.observations = 0
         for name in (
             "tests/compiler/json_profile.py",
+            "tests/compiler/json_runtime.py",
             "tests/compiler/utf8_range.py",
             "scripts/compiler_contract.py",
             "scripts/package_profiles.py",
@@ -819,7 +919,7 @@ def self_test():
         mutant[field] += 1
         detected = False
         try:
-            require(tuple(mutant) == good, "deliberate observation mutation")
+            compare(mutant, good)
         except AssertionError:
             detected = True
         require(detected, "oracle comparison mutation escaped")
@@ -897,15 +997,22 @@ def main():
         print("PASS JSON independent grammar/Unicode and comparator controls")
         return
     if args.describe:
-        groups = list(batches(all_tests()))
+        groups = list(batches(expired_tests()))
+        rows = list(runtime_cases())
         print(
             json.dumps(
                 dict(
-                    cases=sum(map(len, groups)),
-                    batches=len(groups),
-                    complete_i64_observations=sum(len(i.expected) for g in groups for i in g),
+                    cases=len(rows) + sum(map(len, groups)),
+                    batches=1 + len(groups),
+                    runtime_cases=len(rows),
+                    source_cases=sum(map(len, groups)),
+                    complete_i64_observations=sum(len(expected) for _, _, expected in rows)
+                    + sum(len(i.expected) for g in groups for i in g),
                     largest_batch_source_estimate=max(
-                        sum(len(i.body) + len(i.helper) + 120 for i in g) for g in groups
+                        [
+                            len(runtime_source().encode()),
+                            *(sum(len(i.body) + len(i.helper) + 120 for i in g) for g in groups),
+                        ]
                     ),
                     budget_mib=args.budget_mib,
                 ),
@@ -940,7 +1047,8 @@ def main():
         independent_decoder_audit=audit,
     )
     try:
-        for group in batches(all_tests()):
+        runtime_profile(suite)
+        for group in batches(expired_tests()):
             suite.batch(group)
         for item in rejections((args.repo_root / "library/std/json.au").read_text()):
             suite.reject(*item)

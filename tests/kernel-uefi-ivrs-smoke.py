@@ -23,7 +23,9 @@ def module(name, filename):
 bar = module("ivrs_bar", "kernel-uefi-bar-smoke.py")
 need = bar.need
 DEC = bar.DEC
-MODES = (
+# Historical scenario/synthetic oracle coverage, not the current launch catalog.
+# Shared write/revoked artifacts still require current selectors and both fault sites.
+HISTORICAL_MODES = (
     "ivrs-default",
     "ivrs-read",
     "ivrs-write",
@@ -150,8 +152,18 @@ def raw_record(line):
 
 
 def validate(status, serial, mode, payload=None):
-    need(mode in MODES and status == (33 if mode == "ivrs-read" else 35), "Wrong IVRS mode/process status")
+    need(mode in HISTORICAL_MODES and status == (33 if mode == "ivrs-read" else 35), "Wrong IVRS mode/process status")
+    # Parse raw UART framing once, including CRLF from provenance artifact replay.
     lines = bar.protocol_lines(serial)
+    marker = "AURORA_FIXTURE_READY"
+    fixture_image = mode in ("ivrs-write", "ivrs-revoked")
+    need(lines.count(marker) == (1 if fixture_image else 0), "Exact IVRS fixture readiness")
+    if fixture_image:
+        need(
+            serial.index("AURORA_ACPI_WINDOW_CLOSED:") < serial.index(marker) < serial.index("AURORA_PCI_APERTURE:"),
+            "IVRS fixture admission phase",
+        )
+        lines.remove(marker)
     need(len(lines) >= 11, "Truncated IVRS receipt")
     base, length = bar.descriptor_pair(lines[1:3])
     expected = [
@@ -272,7 +284,9 @@ def validate(status, serial, mode, payload=None):
             and 0 < extent <= 0x20000
             and type(probe) is int
             and 0 < probe < extent
-            and set(faults) == {mode},
+            and set(faults) == {"ivrs-write", "ivrs-revoked"}
+            and all(type(value) is int and 0 < value < extent for value in faults.values())
+            and len(set(faults.values())) == 2,
             "Invalid linked IVRS probe metadata",
         )
         write = mode == "ivrs-write"
@@ -357,22 +371,30 @@ def fixture(mode):
                     tail += [
                         "AURORA_IVRS_" + ("WRITE" if mode == "ivrs-write" else "REVOKED") + "_PROBE",
                         f"AURORA_UEFI_EXCEPTION: vector=14 error="
-                        f"{3 if mode == 'ivrs-write' else 0} rip={0x1000000 + 0x22000 + 0x1234}"
+                        f"{3 if mode == 'ivrs-write' else 0}"
+                        f" rip={0x1000000 + 0x22000 + (0x1234 if mode == 'ivrs-write' else 0x1244)}"
                         f" cr2={WINDOW + 0x18}",
                         "AURORA_UEFI_PAYLOAD_FAIL: exception",
                     ]
+    if mode in ("ivrs-write", "ivrs-revoked"):
+        at = next(index for index, line in enumerate(tail) if line.startswith("AURORA_ACPI_WINDOW_CLOSED:"))
+        tail.insert(at + 1, "AURORA_FIXTURE_READY")
+        payload["fault_offsets"] = {"ivrs-write": 0x1234, "ivrs-revoked": 0x1244}
     return 33 if mode == "ivrs-read" else 35, "\n".join(before + tail) + "\n", payload
 
 
 def self_test():
     failures = 0
-    for mode in MODES:
+    for mode in HISTORICAL_MODES:
         status, serial, payload = fixture(mode)
         validate(status, serial, mode, payload)
+        validate(status, serial.replace("\n", "\r\n"), mode, payload)
         cases = [
             (0, serial, payload),
             (status, serial.rstrip("\n"), payload),
             (status, serial + "AURORA_UEFI_OK\n", payload),
+            (status, serial.replace("AURORA_UEFI_ENTRY", "AURORA_UEFI_\rENTRY", 1), payload),
+            (status, serial.replace("\n", "\r\r\n", 1), payload),
         ]
         lines = serial.splitlines()
         for line in lines:
@@ -395,13 +417,21 @@ def self_test():
                     if position > line.index("header=") + 6 and value in "0123456789abcdef":
                         changed = line[:position] + ("1" if value == "0" else "0") + line[position + 1 :]
                         cases.append((status, serial.replace(line, changed), payload))
-        for other in MODES:
+        for other in HISTORICAL_MODES:
             if other != mode:
                 _, foreign, foreign_payload = fixture(other)
                 cases.append((status, foreign, foreign_payload))
         if mode in ("ivrs-write", "ivrs-revoked"):
+            marker = "AURORA_FIXTURE_READY\r\n"
+            raw = serial.replace("\n", "\r\n")
+            without = raw.replace(marker, "")
             cases.extend(
                 [
+                    (status, without, payload),
+                    (status, raw.replace(marker, marker * 2), payload),
+                    (status, marker + without, payload),
+                    (status, without + marker, payload),
+                    (status, raw.replace(marker, "AURORA_FIXTURE_READY\r\r\n"), payload),
                     (status, serial, None),
                     (status, serial, dict(payload, fault_offsets={mode: 0x1235})),
                     (status, serial.replace("vector=14", "vector=13"), payload),
@@ -415,7 +445,7 @@ def self_test():
                 failures += 1
             else:
                 raise RuntimeError("Invalid synthetic IVRS serial accepted: " + mode)
-    print(f"PASS: IVRS serial {len(MODES)} synthetic positive and {failures} adversarial cases")
+    print(f"PASS: IVRS serial {2 * len(HISTORICAL_MODES)} LF/CRLF synthetic positive and {failures} adversarial cases")
 
 
 if __name__ == "__main__":

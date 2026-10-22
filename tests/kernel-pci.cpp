@@ -136,6 +136,8 @@ auto main() -> int {
     const auto independent = Mcfg::parse(copied_table, 40);
     copied_table.assign(copied_table.size(), std::byte{});
     check(independent && independent->address(0, 0, 0, 0) == Q35Ecam::base);
+    // Nonzero MCFG reserved bytes are rejected before any ECAM authority exists.
+    // This includes the former pci-reserved guest mutation at byte 36.
     for (auto field : {8U, 36U, 37U, 38U, 39U, 40U, 41U, 42U, 43U, 56U, 57U, 58U, 59U}) {
         auto invalid = bytes;
         put(invalid, field, 2, 1);
@@ -160,6 +162,8 @@ auto main() -> int {
     check(!Mcfg::parse(invalid, 40));
     for (std::size_t length = 0; length < 60; ++length)
         check(!Mcfg::parse(std::span{bytes}.first(length), 40));
+    // Duplicate allocations (formerly pci-overlap) violate these same bus and
+    // physical overlap checks; exercise both predicates independently.
     check(!Mcfg::parse(mcfg({{0x80000000, 0, 0, 127}, {0x90000000, 0, 127, 255}}), 40)); // Segment/bus overlap.
     check(!Mcfg::parse(mcfg({{0x80000000, 0, 0, 127}, {0x80000000, 1, 127, 255}}),
                        40)); // Physical overlap across segments.
@@ -194,7 +198,10 @@ auto main() -> int {
     check(!aperture->address(0, 0, 0, 8));
     check(aperture->address(0, 255, 31, 7) == Q35Ecam::end - 4096);
     check(!Q35Ecam::authorize(*partial, map, 40, 0x400000));
-    for (const auto candidate : {EcamAllocation{0xa0000000, 0, 0, 255},
+    // A zero MCFG base is parseable, but never authorizes q35 ECAM. This is
+    // the former pci-range guest decision, not an MCFG syntax rejection.
+    for (const auto candidate : {EcamAllocation{0, 0, 0, 255},
+                                 EcamAllocation{0xa0000000, 0, 0, 255},
                                  EcamAllocation{0xb0000000, 0, 0, 255},
                                  EcamAllocation{Q35Ecam::base, 1, 0, 255},
                                  EcamAllocation{Q35Ecam::base, 0, 1, 255},

@@ -24,6 +24,9 @@ def fixture(mode, note=False, value="A", missing=False, file_command=None):
         f"AURORA_UEFI_TIMER_READY: physical=4276092928 virtual=18446620928407240704 id=0 root={kernel_root}",
         "AURORA_PROGRAM_CONSOLE_READY: UEFI CPL3 upper",
     ]
+    if mode in module.FIXTURE_MODES and module.FIXTURE_MODES[mode][0] == "program-fixture":
+        lines[1:1] = ["AURORA_PCI_WINDOW_CLOSED: reads=39", "AURORA_FIXTURE_READY"]
+
     epoch = 0
     expected = []
     failure = mode not in ("program-console", "program-pending")
@@ -100,7 +103,7 @@ def fixture(mode, note=False, value="A", missing=False, file_command=None):
 
 
 checks = 0
-for mode in module.admission.MODES:
+for mode in module.admission.GUEST_MODES:
     if mode.startswith("program-file-call") or mode in (
         "program-owner",
         "program-ordinal",
@@ -140,6 +143,14 @@ for mode in module.admission.MODES:
             text.replace("AURORA_UEFI_TIMER_DRAIN: epoch=3", "AURORA_UEFI_TIMER_DRAIN: epoch=4"),
             text.replace(f"pc={arena + 0x22000 + 102}", f"pc={arena + 0x22000 + 105}"),
             text.replace(f"cpl=0 root={kernel_root}", f"cpl=0 root={kernel_root + 4096}"),
+        ]
+    if mode in module.FIXTURE_MODES and module.FIXTURE_MODES[mode][0] == "program-fixture":
+        changes += [
+            text.replace("AURORA_FIXTURE_READY\r\n", ""),
+            text.replace("AURORA_FIXTURE_READY", "AURORA_FIXTURE_READY\r\nAURORA_FIXTURE_READY"),
+            "AURORA_FIXTURE_READY\r\n" + text.replace("AURORA_FIXTURE_READY\r\n", ""),
+            text.replace("AURORA_FIXTURE_READY\r\n", "") + "AURORA_FIXTURE_READY\r\n",
+            text.replace("AURORA_FIXTURE_READY", "AURORA_FIXTURE_READY extra"),
         ]
     for invalid in changes:
         if invalid == text:
@@ -480,6 +491,8 @@ for mode, reply in [
     ("program-file-call-budget", 18433),
 ]:
     text, results, replies = file_call_fixture(mode, reply)
+    if mode in module.FIXTURE_MODES:
+        text = text.replace("AURORA_FILE_CALL_READY:", "AURORA_FIXTURE_READY\r\nAURORA_FILE_CALL_READY:", 1)
     module.validate_file_call(text, mode, results, replies, images, timer)
     checks += 1
     mutations = [

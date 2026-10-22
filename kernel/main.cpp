@@ -12,6 +12,7 @@
 auto user_program(std::uint64_t entry) -> std::uint64_t asm("aurora_user_program");
 #include "console.hpp"
 #include "scheduler.hpp"
+#include "bios-fixture.hpp"
 #ifdef AURORA_INTERACTIVE_CONSOLE
 #include "interactive-console.hpp"
 #endif
@@ -20,7 +21,7 @@ namespace {
 constinit aurora::memory::PhysicalPages pages;
 constinit aurora::memory::PhysicalPages foreign_pages;
 constinit std::array<std::optional<aurora::memory::PageLease>, aurora::memory::PhysicalPages::capacity> leases{};
-#ifdef AURORA_TEST_NX
+#ifdef AURORA_BIOS_FAULT_FIXTURE
 alignas(4096) constinit std::array<std::uint8_t, 4096> nx_probe{};
 #endif
 constinit aurora::user::ProgramRun program_run;
@@ -132,14 +133,18 @@ auto execute_program(std::size_t index, aurora::user::ProgramEvent expected) -> 
     Serial::text("AURORA_PROGRAM_ENTER: image=");
     Serial::number(index);
     Serial::text("\r\n");
-#ifdef AURORA_TEST_PROGRAM_KERNEL_TRAP
-    asm volatile("jmp *%0" : : "r"(contract->bounds_pc()) : "memory");
-    fail("Kernel UD2 unexpectedly returned");
+#ifdef AURORA_BIOS_FAULT_FIXTURE
+    if (aurora::bios::selected(aurora::bios::Fixture::bios_program_kernel_trap)) {
+        asm volatile("jmp *%0" : : "r"(contract->bounds_pc()) : "memory");
+        fail("Kernel UD2 unexpectedly returned");
+    }
 #endif
-#ifdef AURORA_TEST_DIVISION_KERNEL_TRAP
-    require(contract->division_zero_pc() != 0, "Missing division trap authority");
-    asm volatile("jmp *%0" : : "r"(contract->division_zero_pc()) : "memory");
-    fail("Kernel division UD2 unexpectedly returned");
+#ifdef AURORA_BIOS_FAULT_FIXTURE
+    if (aurora::bios::selected(aurora::bios::Fixture::bios_division_kernel_trap)) {
+        require(contract->division_zero_pc() != 0, "Missing division trap authority");
+        asm volatile("jmp *%0" : : "r"(contract->division_zero_pc()) : "memory");
+        fail("Kernel division UD2 unexpectedly returned");
+    }
 #endif
 #ifdef AURORA_TEST_UNSIGNED_KERNEL_TRAP
     require(contract->shift_count_pc() != 0, "Missing shift-count trap authority");
@@ -174,6 +179,10 @@ auto execute_program(std::size_t index, aurora::user::ProgramEvent expected) -> 
     using aurora::hardware::Serial;
     using aurora::user::AddressSpaces;
     using aurora::user::ProgramEvent;
+#ifdef AURORA_BIOS_FAULT_FIXTURE
+    if (aurora::bios::selected(aurora::bios::Fixture::bios_division_kernel_trap))
+        Serial::text("AURORA_DIVISION_FIXTURE: kernel-trap\r\n");
+#endif
 #ifdef AURORA_DIVISION_FIXTURE
     Serial::text("AURORA_DIVISION_FIXTURE: ");
     Serial::text(AURORA_DIVISION_FIXTURE);
@@ -312,11 +321,13 @@ auto exception_dispatch(std::uint64_t vector,
     const auto scheduled = aurora::user::Scheduler::interrupt(vector, code, instruction, frame);
     if (scheduled >= 0)
         return static_cast<std::uint64_t>(scheduled);
-#ifdef AURORA_TEST_DOMAIN_ROOT_MISMATCH
-    if (program_run.running() && code == 0x1b) {
-        const auto root = Protection::kernel_root();
-        asm volatile("mov %0, %%cr3" : : "r"(root) : "memory");
-        Serial::text("AURORA_DOMAIN_ROOT_MISMATCH_INJECTED\r\n");
+#ifdef AURORA_BIOS_FAULT_FIXTURE
+    if (aurora::bios::selected(aurora::bios::Fixture::bios_domain_root_mismatch)) {
+        if (program_run.running() && code == 0x1b) {
+            const auto root = Protection::kernel_root();
+            asm volatile("mov %0, %%cr3" : : "r"(root) : "memory");
+            Serial::text("AURORA_DOMAIN_ROOT_MISMATCH_INJECTED\r\n");
+        }
     }
 #endif
     if (program_run.running() && program_index < domains.size() &&
@@ -406,35 +417,66 @@ auto kernel_main() -> void {
     require(breakpoint_count == 1 && registers_preserved == 1, "Breakpoint dispatch did not resume correctly");
     Serial::text("AURORA_EXCEPTION_OK: breakpoint, 15 GPRs, direction flag\r\n");
     page_self_test();
-#ifdef AURORA_TEST_DIVIDE_ERROR
-    asm volatile("xor %%edx, %%edx; mov $1, %%eax; xor %%ecx, %%ecx; div %%rcx" : : : "rax", "rdx", "rcx", "memory");
-    fail("Divide exception failed to dispatch");
+#ifdef AURORA_BIOS_FIXTURE
+#ifdef AURORA_TEST_SCHEDULE
+    const auto selected = aurora::bios::read_fixture(aurora::bios::Fixture::bios_schedule_forged,
+                                                     aurora::bios::Fixture::bios_schedule_root);
+#else
+    const auto selected = aurora::bios::read_fixture(aurora::bios::Fixture::bios_division_kernel_trap,
+                                                     aurora::bios::Fixture::bios_domain_root_mismatch);
 #endif
-#ifdef AURORA_TEST_PAGE_FAULT
-    static_cast<void>(*reinterpret_cast<volatile const std::uint8_t *>(0x400000));
-    fail("Page fault failed to dispatch");
+    require(selected.has_value(), "fixture selector outside BIOS image family");
+    aurora::bios::fixture = *selected;
 #endif
-#ifdef AURORA_TEST_WP
-    *reinterpret_cast<volatile std::uint8_t *>(0x10000) = 0;
-    fail("Supervisor write protection failed");
+#ifdef AURORA_BIOS_FAULT_FIXTURE
+    if (aurora::bios::selected(aurora::bios::Fixture::bios_fault)) {
+        asm volatile("xor %%edx, %%edx; mov $1, %%eax; xor %%ecx, %%ecx; div %%rcx"
+                     :
+                     :
+                     : "rax", "rdx", "rcx", "memory");
+        fail("Divide exception failed to dispatch");
+    }
 #endif
-#ifdef AURORA_TEST_NX
-    nx_probe[0] = 0xc3;
-    Serial::text("AURORA_FAULT_TARGET: ");
-    Serial::number(reinterpret_cast<std::uint64_t>(nx_probe.data()));
-    Serial::text("\r\n");
-    reinterpret_cast<void (*)()>(nx_probe.data())();
-    fail("Data execution was permitted");
+#ifdef AURORA_BIOS_FAULT_FIXTURE
+    if (aurora::bios::selected(aurora::bios::Fixture::bios_page_fault)) {
+        static_cast<void>(*reinterpret_cast<volatile const std::uint8_t *>(0x400000));
+        fail("Page fault failed to dispatch");
+    }
 #endif
-#ifdef AURORA_TEST_STACK
-    asm volatile("mov $0x88000, %%rsp; pushq $0" : : : "memory");
-    fail("Stack guard failed");
+#ifdef AURORA_BIOS_FAULT_FIXTURE
+    if (aurora::bios::selected(aurora::bios::Fixture::bios_wp)) {
+        *reinterpret_cast<volatile std::uint8_t *>(0x10000) = 0;
+        fail("Supervisor write protection failed");
+    }
+#endif
+#ifdef AURORA_BIOS_FAULT_FIXTURE
+    if (aurora::bios::selected(aurora::bios::Fixture::bios_nx)) {
+        nx_probe[0] = 0xc3;
+        Serial::text("AURORA_FAULT_TARGET: ");
+        Serial::number(reinterpret_cast<std::uint64_t>(nx_probe.data()));
+        Serial::text("\r\n");
+        reinterpret_cast<void (*)()>(nx_probe.data())();
+        fail("Data execution was permitted");
+    }
+#endif
+#ifdef AURORA_BIOS_FAULT_FIXTURE
+    if (aurora::bios::selected(aurora::bios::Fixture::bios_stack)) {
+        asm volatile("mov $0x88000, %%rsp; pushq $0" : : : "memory");
+        fail("Stack guard failed");
+    }
 #endif
     user_expected = true;
     Serial::text("AURORA_USER_ENTER: ");
-    Serial::number(AURORA_USER_PROBE_MODE);
+    auto probe_mode = static_cast<unsigned>(AURORA_USER_PROBE_MODE);
+#ifdef AURORA_BIOS_FAULT_FIXTURE
+    const auto fixture = static_cast<unsigned>(aurora::bios::fixture);
+    if (fixture >= static_cast<unsigned>(aurora::bios::Fixture::bios_user_read) &&
+        fixture <= static_cast<unsigned>(aurora::bios::Fixture::bios_user_io))
+        probe_mode = fixture - static_cast<unsigned>(aurora::bios::Fixture::bios_user_read) + 1;
+#endif
+    Serial::number(probe_mode);
     Serial::text("\r\n");
-    const auto user_result = user_probe(AURORA_USER_PROBE_MODE);
+    const auto user_result = user_probe(probe_mode);
     user_expected = false;
     require(user_result == 1 && user_returns == 1 && Protection::verify(),
             "Controlled user boundary did not return intact");

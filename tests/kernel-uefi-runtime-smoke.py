@@ -470,11 +470,32 @@ def validate_owned_text(status, text, metadata, mode):
     print("PASS: protected Utf8Text returns, quota rollback, fault/budget and quiescent reclamation")
 
 
+PLAIN_FIXTURE_MODES = ("runtime-root", "runtime-kernel-trap", "runtime-entry-stack")
+
+
+def checked_fixture_projection(text):
+    """Remove only the exact, phase-checked selector receipt for the base oracle."""
+    text = text.replace("\r", "")
+    ready = list(re.finditer(r"^AURORA_FIXTURE_READY$", text, re.M))
+    closed = list(re.finditer(r"^AURORA_PCI_WINDOW_CLOSED: reads=\d+$", text, re.M))
+    first_enter = text.find("AURORA_UEFI_DOMAIN_ENTER:")
+    need(len(ready) == 1 and text.count("AURORA_FIXTURE") == 1, "Exact fixture READY line/count")
+    need(
+        len(closed) == 1 and closed[0].end() < ready[0].start() < first_enter,
+        "Fixture selection after PCI closure and before domain authority",
+    )
+    return text[: ready[0].start()] + text[ready[0].end() + 1 :]
+
+
 def validate(status, text, mode, metadata, *, retained=0, final_slot=0):
     if mode.startswith("runtime-console-region"):
         return validate_console_region(status, text, metadata, mode)
     if mode.startswith("runtime-owned-text"):
         return validate_owned_text(status, text, metadata, mode)
+    if mode in PLAIN_FIXTURE_MODES:
+        text = checked_fixture_projection(text)
+    else:
+        need("AURORA_FIXTURE" not in text, "Ordinary runtime must not read a fixture selector")
     need(type(retained) is int and retained in (0, 2), "Invalid retained pin count")
     need(type(final_slot) is int and final_slot in (0, 1) and (final_slot == 0 or retained == 2), "Invalid final slot")
     need(mode in MODES, "Unknown runtime mode")
@@ -1047,6 +1068,8 @@ def self_test():
                 image["size"] = 10000
                 image["bounds_pc"] = image["entry"] + 9000
         text = prefix
+        if mode in PLAIN_FIXTURE_MODES:
+            text += "AURORA_FIXTURE_READY\n"
         if mode == "runtime-multipage":
             text += "AURORA_UEFI_MULTIPAGE_ROLLBACK_OK: prefixes=3\n"
         for i in range(4 if mode in SUCCESS_MODES else 1):
@@ -1153,6 +1176,23 @@ def self_test():
             (status, text + "AURORA_UEFI_DOMAIN_CLEANUP_OK: used=1\n"),
             (status, text + "AURORA_UEFI_RUNTIME_FAIL: forged\n"),
         ]
+        marker = "AURORA_FIXTURE_READY\n"
+        if mode in PLAIN_FIXTURE_MODES:
+            invalid.extend(
+                (status, value)
+                for value in (
+                    text.replace(marker, ""),
+                    text.replace(marker, marker * 2),
+                    marker + text.replace(marker, ""),
+                    text.replace(marker, "") + marker,
+                    text.replace(marker, "prefix " + marker),
+                    text.replace(marker, "AURORA_FIXTURE_READY extra\n"),
+                    text.replace(marker, "AURORA_FIXTURE_UNKNOWN\n"),
+                )
+            )
+        else:
+            invalid.append((status, marker + text))
+
         if mode != "runtime-root":
             invalid.append((status, text + f"AURORA_UEFI_RUNTIME_ROOT_PROBE: root={kernel}\n"))
         if mode != "runtime-entry-stack":

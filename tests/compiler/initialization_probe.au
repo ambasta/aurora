@@ -1,0 +1,401 @@
+export module aurora.tests.initialization_probe;
+import aurora.compiler.ir_verification_errors;
+import aurora.compiler.ir_verification_storage;
+import aurora.compiler.ir_verification_initialization;
+import aurora.compiler.ir_metadata;
+import aurora.compiler.ir_metadata_storage;
+
+// Test-only observation roots. All operations borrow the current eleven-owner
+// verifier workspace and, when needed, the real source-admitted metadata store.
+// No owner descriptor, stored word or native expected state enters this module.
+export namespace compiler_initialization_probe {
+    auto allocated(const compiler_ir_verification::VerificationWorkspace& workspace) -> bool {
+        return workspace.allocated();
+    }
+    auto status(const compiler_ir_verification::VerificationWorkspace& workspace) ->
+        compiler_ir_verification::InitializationStatus {
+        return workspace.status();
+    }
+    auto slot_count(const compiler_ir_verification::VerificationWorkspace& workspace) -> i64 {
+        return workspace.slot_count();
+    }
+    auto word_count(const compiler_ir_verification::VerificationWorkspace& workspace) -> i64 {
+        return workspace.word_count();
+    }
+    auto payload_bytes(const compiler_ir_verification::VerificationWorkspace& workspace) -> i64 {
+        return workspace.payload_bytes();
+    }
+    auto acquire_service_loan(compiler_ir_verification::VerificationWorkspace& workspace, i64 id, i64 root,
+        i64 kind) -> i64 {
+        return workspace.acquire_service_loan(id, root, kind);
+    }
+    auto release_service_loan(compiler_ir_verification::VerificationWorkspace& workspace, i64 id, i64 kind) -> i64 {
+        return workspace.release_service_loan(id, kind);
+    }
+    auto service_unsuspended(const compiler_ir_verification::VerificationWorkspace& workspace, i64 root) -> i64 {
+        return workspace.service_unsuspended(root);
+    }
+    auto validate_service_call(const compiler_ir_verification::VerificationWorkspace& workspace, i64 first,
+        i64 first_kind, i64 second, i64 second_kind) -> compiler_ir_verification::ServiceCallState {
+        return workspace.validate_service_call(first, first_kind, second, second_kind);
+    }
+    auto complete_service_call(compiler_ir_verification::VerificationWorkspace& workspace, i64 first,
+        i64 second) -> bool {
+        return workspace.complete_service_call(first, second);
+    }
+    auto service_loans_closed(const compiler_ir_verification::VerificationWorkspace& workspace) -> i64 {
+        return workspace.service_loans_closed();
+    }
+    auto same_service_loans(const compiler_ir_verification::VerificationWorkspace& workspace, i64 id) -> i64 {
+        return workspace.same_service_loans(id);
+    }
+    auto retained_count(const compiler_ir_verification::VerificationWorkspace& workspace) -> i64 {
+        return workspace.retained_count();
+    }
+    auto current_count(const compiler_ir_verification::VerificationWorkspace& workspace) -> i64 {
+        return workspace.current_count();
+    }
+    auto retained_count_at(const compiler_ir_verification::VerificationWorkspace& workspace, i64 id) -> i64 {
+        return workspace.retained_count_at(id);
+    }
+    auto load(compiler_ir_verification::VerificationWorkspace& workspace, i64 id) -> bool {
+        return workspace.load(id);
+    }
+    auto retain(compiler_ir_verification::VerificationWorkspace& workspace) -> i64 {
+        return workspace.retain();
+    }
+    auto join(compiler_ir_verification::VerificationWorkspace& workspace,
+        i64 id) -> compiler_ir_verification::InitializationJoin {
+        return workspace.join(id);
+    }
+    auto restore_facts(compiler_ir_verification::VerificationWorkspace& workspace, i64 count) -> bool {
+        if (count < 0 || count == 9223372036854775807 || !workspace.prepare_verification(0, 2, count + 1)) {
+            return false;
+        }
+        i64 at = 0;
+        while (at < count) {
+            compiler_ir_verification::FactRow fact = compiler_ir_verification::empty_fact();
+            fact.set_kind(compiler_ir_verification::FactKind::object);
+            fact.set_key(at);
+            if (at == 0) {
+                fact.set_kind(compiler_ir_verification::FactKind::owned_object);
+            }
+            if (at == 1) {
+                fact.set_kind(compiler_ir_verification::FactKind::owned_field);
+                fact.set_key(0);
+                fact.set_field(0);
+            }
+            if (at == 2) {
+                fact.set_kind(compiler_ir_verification::FactKind::owned_object);
+            }
+            if (at == 3 || at == 4) {
+                fact.set_kind(compiler_ir_verification::FactKind::owned_field);
+                fact.set_key(2);
+                fact.set_field(at - 3);
+            }
+            // Force insertion before existing object rows, including both
+            // signed extremes. Key comparison must not subtract or use zero
+            // as a range sentinel.
+            if (at >= 5) {
+                fact.set_key(-at);
+            }
+            if (at == 5) {
+                fact.set_key(-9223372036854775807 - 1);
+            }
+            if (at == 6) {
+                fact.set_key(9223372036854775807);
+            }
+            if (!workspace.fact_set(fact)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        if (count > 5) {
+            const compiler_ir_verification::FactRow first = workspace.fact_at(0);
+            if (workspace.first_fact(compiler_ir_verification::FactKind::object) != 0 || first.key()
+                != -9223372036854775807 - 1) {
+                return false;
+            }
+        }
+        if (count > 6) {
+            const compiler_ir_verification::FactRow last_object = workspace.fact_at(count - 6);
+            if (workspace.fact_lower_bound(compiler_ir_verification::FactKind::object, 9223372036854775807, -1) != count
+                - 6 || last_object.key() != 9223372036854775807) {
+                return false;
+            }
+        }
+        if (!workspace.validate_current_facts() || !workspace.retain_state(0)) {
+            return false;
+        }
+        const i64 epoch = workspace.begin_visit_epoch();
+        // A missing ancestor is not marked and does not validate the epoch;
+        // its later semantic lookup remains responsible for rejecting it.
+        if (!workspace.mark_fact_key(compiler_ir_verification::FactKind::object, -1, -1, 0)
+            || workspace.fact_key_marked(compiler_ir_verification::FactKind::object, -1, -1, 0)
+            || !workspace.fact_erase(compiler_ir_verification::FactKind::object, -1, -1) || !workspace.good()
+            || workspace.fact_count() != count) {
+            return false;
+        }
+        at = 0;
+        while (at < count) {
+            if (!workspace.mark_fact(at, epoch) || !workspace.fact_marked(at, epoch)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        // Same-key replacement changes payload without changing its position,
+        // count or traversal mark; restoring it must leave the retained row alone.
+        if (count > 0) {
+            const i64 middle = count / 2;
+            const compiler_ir_verification::FactRow original = workspace.fact_at(middle);
+            compiler_ir_verification::FactRow replacement = original;
+            replacement.set_site(1);
+            if (!workspace.fact_set(replacement)) {
+                return false;
+            }
+            const compiler_ir_verification::FactRow observed = workspace.fact_at(middle);
+            if (workspace.fact_count() != count || workspace.fact_index(original.kind(), original.key(),
+                original.field()) != middle || !observed.same(replacement) || !workspace.fact_marked(middle, epoch)
+                || !workspace.fact_set(original) || !workspace.fact_marked(middle, epoch)
+                || !workspace.validate_current_facts()) {
+                return false;
+            }
+        }
+        // Erasing the owner also removes its field. Surviving marks must follow
+        // their facts while both ranges close before the second snapshot.
+        compiler_ir_verification::FactRow extra = compiler_ir_verification::empty_fact();
+        extra.set_kind(compiler_ir_verification::FactKind::object);
+        extra.set_key(count + 1);
+        if (!workspace.fact_erase(compiler_ir_verification::FactKind::owned_object, 0, -1) || !workspace.fact_set(extra)
+            || workspace.fact_key_marked(compiler_ir_verification::FactKind::object, count + 1, -1, epoch)
+            || !workspace.mark_fact_key(compiler_ir_verification::FactKind::object, count + 1, -1, epoch)
+            || workspace.mark_fact_key(compiler_ir_verification::FactKind::object, count + 1, -1, epoch)
+            || !workspace.fact_key_marked(compiler_ir_verification::FactKind::object, count + 1, -1, epoch)
+            || !workspace.validate_current_facts()) {
+            return false;
+        }
+        i64 changed_count = count + 1;
+        if (count > 0) {
+            changed_count = changed_count - 1;
+        }
+        if (count > 1) {
+            changed_count = changed_count - 1;
+        }
+        if (workspace.fact_count() != changed_count) {
+            return false;
+        }
+        at = 0;
+        while (at < changed_count) {
+            if (!workspace.fact_marked(at, epoch)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        if (!workspace.retain_state(1)) {
+            return false;
+        }
+        i64 pass = 0;
+        while (pass < 3) {
+            i64 snapshot = 0;
+            i64 expected = count;
+            if (pass == 2) {
+                snapshot = 1;
+                expected = changed_count;
+            }
+            if (!workspace.load_state(snapshot) || !workspace.validate_current_facts()
+                || !workspace.same_facts(snapshot, compiler_ir_verification::FactKind::object)
+                || !workspace.same_facts(snapshot, compiler_ir_verification::FactKind::owned_object)
+                || !workspace.same_facts(snapshot, compiler_ir_verification::FactKind::owned_field)) {
+                return false;
+            }
+            if (workspace.fact_count() != expected) {
+                return false;
+            }
+            at = 0;
+            while (at < expected) {
+                const compiler_ir_verification::FactRow row = workspace.fact_at(at);
+                const compiler_ir_verification::FactRow found = workspace.fact_find(row.kind(), row.key(), row.field());
+                i64 next = at + 1;
+                if (next == expected) {
+                    next = -1;
+                }
+                if (workspace.fact_marked(at, epoch) || workspace.fact_index(row.kind(), row.key(), row.field()) != at
+                    || workspace.fact_lower_bound(row.kind(), row.key(), row.field()) != at || !found.same(row)
+                    || workspace.next_fact(at) != next) {
+                    return false;
+                }
+                if (at == 0 && workspace.first_fact(row.kind()) != 0) {
+                    return false;
+                }
+                if (at > 0) {
+                    const compiler_ir_verification::FactRow previous = workspace.fact_at(at - 1);
+                    if (previous.kind() != row.kind() && workspace.first_fact(row.kind()) != at) {
+                        return false;
+                    }
+                    if (compiler_ir_verification::compare_fact_key(previous.kind(), previous.key(), previous.field(),
+                        row.kind(), row.key(), row.field()) >= 0) {
+                        return false;
+                    }
+                }
+                at = at + 1;
+            }
+            // Erase and reinsert the front, midpoint and end of a freshly
+            // restored prefix. Moves preserve surviving marks; reinsertion does
+            // not revive the erased row's mark, including owner-field cascades.
+            i64 shift = 0;
+            while (pass == 0 && count > 0 && shift < 3) {
+                if (!workspace.load_state(0)) {
+                    return false;
+                }
+                i64 selected = 0;
+                if (shift == 1) {
+                    selected = count / 2;
+                }
+                if (shift == 2) {
+                    selected = count - 1;
+                }
+                const compiler_ir_verification::FactRow removed = workspace.fact_at(selected);
+                i64 erased = 1;
+                at = 0;
+                while (at < count) {
+                    const compiler_ir_verification::FactRow row = workspace.fact_at(at);
+                    if (removed.kind() == compiler_ir_verification::FactKind::owned_object && row.kind()
+                        == compiler_ir_verification::FactKind::owned_field && row.key() == removed.key()) {
+                        erased = erased + 1;
+                    }
+                    if (!workspace.mark_fact(at, epoch)) {
+                        return false;
+                    }
+                    at = at + 1;
+                }
+                if (!workspace.fact_erase(removed.kind(), removed.key(), removed.field()) || workspace.fact_count()
+                    != count - erased || workspace.fact_index(removed.kind(), removed.key(), removed.field()) != -1
+                    || !workspace.validate_current_facts()) {
+                    return false;
+                }
+                at = 0;
+                while (at < count - erased) {
+                    if (!workspace.fact_marked(at, epoch)) {
+                        return false;
+                    }
+                    at = at + 1;
+                }
+                if (!workspace.fact_set(removed) || workspace.fact_count() != count - erased + 1
+                    || !workspace.validate_current_facts() || workspace.fact_key_marked(removed.kind(), removed.key(),
+                    removed.field(), epoch)) {
+                    return false;
+                }
+                at = 0;
+                while (at < count - erased + 1) {
+                    const compiler_ir_verification::FactRow row = workspace.fact_at(at);
+                    if (!row.same(removed) && !workspace.fact_marked(at, epoch)) {
+                        return false;
+                    }
+                    at = at + 1;
+                }
+                shift = shift + 1;
+            }
+            pass = pass + 1;
+        }
+        return workspace.good();
+    }
+    auto initialize(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata,
+        i64 callable) -> compiler_ir_verification::InitializationStatus {
+        return compiler_ir_initialization::initialize(workspace, metadata, callable);
+    }
+    auto scalar_state(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 offset) -> i64 {
+        return compiler_ir_initialization::scalar_state(workspace, metadata, offset);
+    }
+    auto write_scalar(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 offset) -> i64 {
+        return compiler_ir_initialization::write_scalar(workspace, metadata, offset);
+    }
+    auto object_initialized(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> i64 {
+        return compiler_ir_initialization::object_initialized(workspace, metadata, base);
+    }
+    auto object_pristine(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> i64 {
+        return compiler_ir_initialization::object_pristine(workspace, metadata, base);
+    }
+    auto object_was_constructed(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> i64 {
+        return compiler_ir_initialization::object_was_constructed(workspace, metadata, base);
+    }
+    auto object_completion(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> compiler_ir_verification::ObjectCompletion {
+        return compiler_ir_initialization::object_completion(workspace, metadata, base);
+    }
+    auto mark_object(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> bool {
+        return compiler_ir_initialization::mark_object(workspace, metadata, base);
+    }
+    auto clear_object(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 base) -> bool {
+        return compiler_ir_initialization::clear_object(workspace, metadata, base);
+    }
+    auto receiver_field_state(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 field) -> i64 {
+        return compiler_ir_initialization::receiver_field_state(workspace, metadata, field);
+    }
+    auto write_receiver_field(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 field) -> i64 {
+        return compiler_ir_initialization::write_receiver_field(workspace, metadata, field);
+    }
+    auto receiver_completion(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata) -> compiler_ir_verification::ReceiverCompletion {
+        return compiler_ir_initialization::receiver_completion(workspace, metadata);
+    }
+    auto array_first_missing(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 offset, i64 length, i64 width) -> i64 {
+        return compiler_ir_initialization::array_first_missing(workspace, metadata, offset, length, width);
+    }
+    auto clear_array(compiler_ir_verification::VerificationWorkspace& workspace,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 offset, i64 length, i64 width) -> bool {
+        return compiler_ir_initialization::clear_array(workspace, metadata, offset, length, width);
+    }
+}
+
+// Test-only lifecycle and metadata admission transport. This complete narrow
+// graph links without the production frontend graph or private native Metadata.
+export namespace compiler_initialization_fixture {
+    auto metadata_flag_masks() -> compiler_ir_metadata::FlagMasks {
+        const compiler_ir_metadata::FlagMasks result = compiler_ir_metadata::flag_masks();
+        return result;
+    }
+    auto metadata_create(builtin::ByteRegion region) -> compiler_ir_metadata::MetadataStore {
+        compiler_ir_metadata::MetadataStore result = compiler_ir_metadata::create(region);
+        return move(result);
+    }
+    auto metadata_initialize(compiler_ir_metadata::MetadataStore& store, compiler_ir_metadata::InputCounts counts,
+        i64 callableCount, i64 slotCount, i64 instructionBegin) -> bool {
+        return store.initialize(counts, callableCount, slotCount, instructionBegin);
+    }
+    auto metadata_release(builtin::ByteRegion region, compiler_ir_metadata::MetadataStore store) -> i64 {
+        return compiler_ir_metadata::release(region, move(store));
+    }
+    auto metadata_allocated(const compiler_ir_metadata::MetadataStore& store) -> bool {
+        return store.allocated();
+    }
+    auto metadata_run(compiler_ir_metadata::MetadataStore& store) -> compiler_ir_metadata::MetadataStatus {
+        return compiler_ir_metadata::run(store);
+    }
+    auto metadata_error(const compiler_ir_metadata::MetadataStore& store) -> compiler_ir_metadata::MetadataError {
+        return store.error();
+    }
+    auto verification_create(builtin::ByteRegion region) -> compiler_ir_verification::VerificationWorkspace {
+        compiler_ir_verification::VerificationWorkspace result = compiler_ir_verification::create(region);
+        return move(result);
+    }
+    auto verification_report(const compiler_ir_verification::VerificationWorkspace& workspace) ->
+        compiler_ir_verification::VerificationReport {
+        const compiler_ir_verification::VerificationReport result = workspace.report();
+        return result;
+    }
+    auto verification_release(builtin::ByteRegion region,
+        compiler_ir_verification::VerificationWorkspace workspace) -> i64 {
+        return compiler_ir_verification::release(region, move(workspace));
+    }
+}

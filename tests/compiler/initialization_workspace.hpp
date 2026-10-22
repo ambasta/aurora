@@ -1,21 +1,41 @@
 #pragma once
 
-#include "hosted_ir_metadata.hpp"
+#include "ir.hpp"
 #include "services.hpp"
 #include <cstddef>
 #include <memory>
 #include <optional>
 
-namespace aurora::ir {
+namespace aurora::testing {
 
-// One per-function owning capsule. Metadata outlives this immovable workspace;
-// every semantic operation borrows that same admitted source owner. The four
-// source pools may grow, so no native descriptor, word or payload view is kept.
+// Test-only fixture importer. Raw prefixes come from the unchanged test Module
+// builders, into real source-created owners, and must pass full source metadata
+// admission. It never borrows or opens a production Metadata capsule.
+class Metadata final {
+public:
+    static std::unique_ptr<Metadata> import(const ir::Module &module);
+    ~Metadata();
+    Metadata(const Metadata &) = delete;
+    Metadata &operator=(const Metadata &) = delete;
+    std::size_t callableCount() const noexcept;
+    std::uint64_t domainFacts(std::size_t callable) const;
+
+private:
+    class State;
+    std::unique_ptr<State> state_;
+    explicit Metadata(const ir::Module &module);
+    const void *sourceOwner() const;
+    friend class InitializationWorkspace;
+};
+
+// Test-only convenience API over the current source VerificationWorkspace. No
+// native lattice or service semantics exist here. Metadata outlives the owner;
+// the source owns all eleven pools, even when only initialization is exercised.
 class InitializationWorkspace final {
 public:
     using Id = std::size_t;
 
-    InitializationWorkspace(const Metadata &metadata, Metadata::CallableId callable);
+    InitializationWorkspace(const Metadata &metadata, std::size_t callable);
     ~InitializationWorkspace();
     InitializationWorkspace(const InitializationWorkspace &) = delete;
     InitializationWorkspace &operator=(const InitializationWorkspace &) = delete;
@@ -25,6 +45,7 @@ public:
     void load(Id id);
     Id retain();
     bool join(Id id);
+    bool restoreFacts(std::size_t count);
     std::size_t currentCount() const;
     std::size_t retainedCountAt(Id id) const;
     std::size_t retainedCount() const;
@@ -89,4 +110,4 @@ private:
     std::unique_ptr<Capsule> capsule_;
 };
 
-} // namespace aurora::ir
+} // namespace aurora::testing

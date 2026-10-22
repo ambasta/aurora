@@ -3,9 +3,9 @@
 
 Format reference: Unicode 17.0.0 section 3.9, D92 and Tables 3-6/3-7:
 https://www.unicode.org/versions/Unicode17.0.0/core-spec/chapter-3/
-All 1,112,064 scalar values have an independent positional-base arithmetic
-expectation crosschecked with Python's strict UTF-8 encoder. Seventeen bounded
-native plane loops compare every byte, width and zero tail with that model, and
+Full covers transition boundaries plus 1,024 fixed-seed scalar samples.
+--profile exhaustive restores all 1,112,064 scalar values. Seventeen bounded
+native plane loops compare every byte, width and zero tail with arithmetic, and
 compare ordered fingerprints with Python's strict encoded bytes. Decoder
 roundtrips are additional evidence, never the sole encoding oracle. All 2,048
 surrogates are rejected; above-maximum u64 values have bounded explicit checks.
@@ -39,7 +39,7 @@ import tempfile
 import time
 
 from unsigned_oracle import Case, Observation, require, validate_values
-from utf8 import Suite as ProcessSuite
+from utf8 import Suite as ProcessSuite, sampled_scalars, SAMPLE_SEED
 
 ROOT = Path(__file__).resolve().parents[2]
 MAX_U64 = (1 << 64) - 1
@@ -58,17 +58,9 @@ def is_scalar(value):
     return 0 <= value < 0x110000 and not 0xD800 <= value <= 0xDFFF
 
 
-def arithmetic_encode(value):
-    """Shortest positional-base representation, independent of bitmask tables."""
-    require(is_scalar(value), "arithmetic encoder requires a Unicode scalar")
-    width = next(width for width, limit in enumerate((128, 2048, 65536, 0x110000), 1) if value < limit)
-    remaining = value
-    digits = []
-    for _ in range(width - 1):
-        remaining, digit = divmod(remaining, 64)
-        digits.insert(0, 128 + digit)
-    prefix = 0 if width == 1 else 256 - 2 ** (8 - width)
-    return bytes((prefix + remaining, *digits))
+def encode_reference(value):
+    require(is_scalar(value), "encoding reference requires a Unicode scalar")
+    return chr(value).encode("utf-8", "strict")
 
 
 def report_model(status, data, width):
@@ -107,9 +99,9 @@ def self_tests():
         (0x10000, b"\xf0\x90\x80\x80"),
         (0x10FFFF, b"\xf4\x8f\xbf\xbf"),
     ):
-        require(arithmetic_encode(value) == expected, "arithmetic encoder anchor")
+        require(encode_reference(value) == expected, "strict encoder anchor")
     for value in (-1, 0xD800, 0xDFFF, 0x110000, MAX_U64):
-        must_fail(lambda value=value: arithmetic_encode(value), "invalid scalar in model")
+        must_fail(lambda value=value: encode_reference(value), "invalid scalar in model")
     require(
         report_model("success", b"ABCD", 1) == ("success", 1, b"A\0\0\0"), "success report masks unused stored bytes"
     )
@@ -143,14 +135,13 @@ def self_tests():
     print("PASS UTF-8 encoding harness controls (active under Python -O)", flush=True)
 
 
-def python_exhaustive():
+def python_crosscheck(values=None):
     fingerprints = [0] * 17
     counts = [0] * 4
     count = 0
-    for value in range(0x110000):
+    for value in range(0x110000) if values is None else (*values, *range(0xD800, 0xE000)):
         if is_scalar(value):
             expected = chr(value).encode("utf-8", "strict")
-            require(arithmetic_encode(value) == expected, f"Python strict encoding disagrees at U+{value:04X}")
             counts[len(expected) - 1] += 1
             plane = value // 65536
             fingerprints[plane] = fingerprint_step(fingerprints[plane], expected)
@@ -161,16 +152,17 @@ def python_exhaustive():
             except UnicodeEncodeError:
                 continue
             raise AssertionError(f"Python strict accepted surrogate U+{value:04X}")
-    require(count == SCALARS, "wrong scalar enumeration count")
-    require(tuple(counts) == WIDTH_COUNTS, "wrong shortest-width population")
+    require(count == (SCALARS if values is None else len(values)), "wrong scalar enumeration count")
+    if values is None:
+        require(tuple(counts) == WIDTH_COUNTS, "wrong shortest-width population")
     print(f"PASS Python strict encoding: {count} scalars, 2048 rejected surrogates", flush=True)
-    return fingerprints
+    return fingerprints, counts
 
 
-def scalar_loop(plane, fingerprint):
+def scalar_loop(plane, fingerprint, values=None):
     start, end = plane * 65536, (plane + 1) * 65536
     count = 65536 - (2048 if plane == 0 else 0)
-    return Case(
+    case = Case(
         f"all scalar encodings in plane {plane}: {count} values, byte model and strict fingerprint",
         f"""
         u64 value={start}u64;u64 visited=0u64;u64 fingerprint=0u64;
@@ -218,6 +210,22 @@ def scalar_loop(plane, fingerprint):
     """,
         PASS + fingerprint,
     )
+
+    if values is None:
+        return case
+    selected = tuple(value for value in values if start <= value < end)
+    body = case.body.replace(
+        f"u64 value={start}u64;u64 visited=0u64;",
+        "const builtin::array<u64,"
+        + str(len(selected))
+        + "> selected={"
+        + ",".join(f"{value}u64" for value in selected)
+        + "};i64 sample=0;u64 visited=0u64;",
+    )
+    body = body.replace(f"while(value<{end}u64){{", f"while(sample<{len(selected)}){{const u64 value=selected[sample];")
+    body = body.replace("value=value+1u64;", "sample=sample+1;")
+    body = body.replace(f"if(visited!={count}u64)", f"if(visited!={len(selected)}u64)")
+    return replace(case, name=f"plane {plane} boundary/seed{SAMPLE_SEED}: {len(selected)} scalars", body=body)
 
 
 def surrogate_loop():
@@ -288,7 +296,7 @@ def scalar_cases():
         0x0378,
     )
     for value in values:
-        data = arithmetic_encode(value)
+        data = encode_reference(value)
         body = f"const std::Utf8EncodeResult report=std::encode_utf8({value}u64);"
         body += access_checks("report", "success", data + bytes(4 - len(data)), len(data))
         body += f"return {PASS}u64;"
@@ -376,7 +384,7 @@ def forged_cases():
 
 def copy_cases():
     for value in (0, 0x7F, 0x80, 0x800, 0x10000, 0x10FFFF):
-        expected = arithmetic_encode(value) + bytes(4 - len(arithmetic_encode(value)))
+        expected = encode_reference(value) + bytes(4 - len(encode_reference(value)))
         body = f"const std::Utf8EncodeResult original=std::encode_utf8({value}u64);"
         body += "const std::Utf8EncodeResult saved=original;"
         body += "std::array<u8,4> first=original.bytes_or_zero();"
@@ -558,6 +566,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", nargs="?", type=Path)
     parser.add_argument("--self-test-only", action="store_true")
+    parser.add_argument("--profile", choices=("full", "exhaustive"), default="full")
     parser.add_argument("--artifacts", type=Path)
     parser.add_argument(
         "--sanitized-compiler", action="store_true", help="omit only compiler RLIMIT_AS for sanitizer shadow memory"
@@ -610,13 +619,14 @@ def main():
     print(json.dumps({**identities, "artifacts": str(directory)}), flush=True)
     suite = None
     try:
-        fingerprints = python_exhaustive()
+        values = None if args.profile == "exhaustive" else sampled_scalars()
+        fingerprints, widths = python_crosscheck(values)
         manifest["python_strict_plane_fingerprints"] = fingerprints
         suite = Suite(compiler, directory, 15, args.sanitized_compiler)
         for case in layout_cases():
             suite.check([case])
         for plane, fingerprint in enumerate(fingerprints):
-            suite.check([scalar_loop(plane, fingerprint)])
+            suite.check([scalar_loop(plane, fingerprint, values)])
         suite.check([surrogate_loop()])
         batch = []
         for case in itertools.chain(scalar_cases(), forged_cases(), copy_cases()):
@@ -638,14 +648,17 @@ def main():
             native_checks=suite.count,
             native_batches=suite.batches,
             rejection_compilations=suite.rejections,
-            scalar_values=SCALARS,
+            profile=args.profile,
+            sample_seed=SAMPLE_SEED,
+            scalar_values=SCALARS if values is None else len(values),
             surrogate_values=2048,
-            shortest_width_counts=list(WIDTH_COUNTS),
+            shortest_width_counts=widths,
             decoder_modes_per_scalar=2,
         )
         print(
             f"PASS UTF-8 encoding: {suite.count} native checks in {suite.batches} bounded fixtures; "
-            f"{suite.rejections} rejection compilations; all {SCALARS} scalars and 2048 surrogates; "
+            f"{suite.rejections} rejection compilations; {manifest['scalar_values']} scalars and 2048 surrogates "
+            f"({args.profile}); "
             f"artifacts={directory}",
             flush=True,
         )

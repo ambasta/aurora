@@ -12,14 +12,14 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 | Lexing and parsing | Aurora | Complete final-source predecessor/current convergence |
 | Resolution, immutable linkage spelling and typed lowering | Aurora; native projection reads bounded copied name chunks | Validate final integrated behavior and paired compile-time/output gates |
 | Metadata, callable and frame admission | Aurora owns frame size and disjoint slot domains; C++ transports raw declarations | Retain host conversion, quota arithmetic and transport bounds |
-| Instruction storage and static admission | Aurora owns service argument-vector shape and copied-argument contracts | C++ retains dynamic loans, lifetimes, physical initialization and logical completion |
-| Initialization and synchronous service loans | Aurora workspace | Resource ownership and object provenance remain native |
-| Current values, operand stacks, bounds evidence | C++ verifier | Migration frozen; unmerged draft is not current functionality |
-| Ownership, provenance and worklist | C++ verifier; Aurora owns entry-binding uniqueness | Continue deletion-first migration; retain dynamic checks |
+| Instruction storage and static admission | Aurora owns service argument-vector shape and copied-argument contracts | Preserve admission before whole-function verification |
+| Initialization and synchronous service loans | Aurora verification workspace | Final integrated allocation, cleanup and semantic qualification |
+| Current values, operand stacks, bounds evidence | Aurora whole-function verifier | Final-source qualification; no native fallback |
+| Ownership, provenance and worklist | Aurora whole-function verifier over the original paired source stores | Preserve diagnostic priority, declaration order, bounded FIFO work and nominal type identity |
 | Call graph | Aurora | Validate final integrated behavior |
 | x86 emission | Aurora, fixed native transport | Byte-identical to the C++ backend on the whole corpus in both profiles (`emitter-differential-*`); compile time 1.05x the C++ backend |
 | Direct class fields | Aurora source and independent metadata admission share an 8,192-field cap, including empty, nested, resource and array fields | Existing leaf, byte, depth and array-element limits still apply |
-| Private host bridge | One 114-entry table generates Aurora forwarders and host transport declarations; compiler facts supply layouts, symbols and raw enum validation | Preserve fail-closed conversion; native replacement remains incomplete |
+| Private host bridge | One 84-entry table generates Aurora forwarders and host transport declarations; compiler facts supply layouts, symbols and raw enum validation | Preserve fail-closed conversion; native replacement remains incomplete |
 | Bootstrap route | Six source-built predecessors, then current C1/C2; direct skips fail at recorded capability boundaries | Replace stages only after an actual direct build, the [bounded cross-route frontend comparison](README.md#source-bootstrap), complete seed route and final full/convergence gates |
 | Assembly, linking and hosted runtime | External bootstrap tools/C++ | Native replacements remain incomplete |
 
@@ -40,15 +40,31 @@ Metadata and instruction-flow masks share the source-owned `FlagMasks` table.
 Its existing generated ABI bridge supplies native readers; structural passes
 read the needed `u64` masks once per pass and keep the 32-byte code row unchanged.
 
-Native adapters still bind storage, convert records and enforce transport bounds.
-Those checks do not justify duplicated semantic policy. Static source admission
-and dynamic native lifetime/provenance checks have different inputs; remove a
-native check only after establishing which authority replaces it.
+Native adapters bind storage, convert records and enforce transport bounds. The
+whole-function Aurora verifier borrows the original metadata and instruction
+owners after admission and structural checks. It owns values, stack facts,
+lifetimes, provenance, region identity, bounds evidence and the FIFO worklist.
+There is no copied instruction stream, native semantic fallback or per-value
+native bridge. All declarations, including unused functions, are checked before
+the existing call-graph pass and publication.
 
-Aurora admits the unique entry-binding prefix and immutable service roots/kinds.
-Native code derives region identity once per function, checks region operands
-against that binding, and retains object lifetime and ownership provenance checks.
-Neither immutable authority occupies CFG snapshots.
+Current facts occupy a dense, key-sorted prefix of owned storage. Lookup uses
+binary search; insertion and erasure shift the affected suffix. Retained snapshots
+preserve the same canonical order. Restoration validates that order and owning-root
+relationships, then fills the prefix directly without tree insertion or rotations.
+There are no parent/child links, heights or free-list records. Existing owner access,
+active-fact checks, initialization epochs and allocation limits remain. These logical
+operation counts do not imply constant-cost indexed access through the runtime owner.
+
+The private host bridge admits the complete source report, including when no
+metrics pointer was requested. It checks transport/status/error/metric bounds,
+not the semantic truth of a successful report. A started report publishes partial
+metrics before rejection; a not-started failure preserves the caller's metrics.
+RAII releases the actual eleven source owners before destroying their region.
+Allocation and integrity failures remain Internal; semantic errors retain their
+exact typed-IR diagnostic text. The source allocation label is now
+`hosted IR verification allocation failed`, rather than the retired initializer's
+`hosted IR initialization allocation failed`.
 
 The Aurora workspace owns synchronous service-loan acquisition, suspension,
 helper-use validation, consumption, release and closure. Up to two ID-sorted records
@@ -59,13 +75,13 @@ follows them. Non-service functions allocate no loan rows. Fact metrics count ac
 loans, while the initialization-payload metric includes actual service-row capacity,
 excluding unused retained capacity and current rows.
 
-The existing Aurora initialization workspace also owns local-object logical
+The Aurora verification workspace also owns local-object logical
 completion and construction history. One must/may pair per admitted object slot
 replaces native whole-object and nested-field completion sets; complete copies
 and construction mark them together. Physical scalar initialization stays a
 separate observation, so empty/nested values and typed-owner snapshots retain
-their stricter completion requirements. Native code retains lifetime, resource
-token and object-loan checks. Retained-fact metrics count the compressed object pair;
+their stricter completion requirements. The same source verifier owns lifetime,
+resource-token and object-loan checks. Retained-fact metrics count the compressed object pair;
 payload metrics include the local scalar, object and receiver-field bit domains.
 
 Receiver initialization uses one must/may pair per canonical direct field. Scalar,
@@ -74,15 +90,16 @@ ranges and joins preserve this invariant. Metadata derives physical and logical
 observations separately, including vacuously initialized empty payloads. Constructors
 start empty; ordinary receivers and the first borrowed formal's derived observation
 start complete without granting new receiver authority. Resource-only fields remain
-outside these facts. Native code retains their tokens, region and loan checks.
+outside these facts. Source resource facts retain their tokens, region and loan checks.
 Receiver fact counts are compressed field counts, not the old per-leaf cardinality;
 all classes admit at most 8,192 direct fields, including private and zero-leaf
 fields. A class-array field counts once; each nested class is admitted separately.
 The shared cap preserves the existing 8,192-scalar flat-local boundary and bounds
 receiver storage to 128 word pairs (2,048 bytes per snapshot), independently of
 physical payload. Existing depth-four and array-element limits remain in force.
-Each workspace's region grants at most 1,209,026,560 logical payload bytes across
-its current and retained pools. Growth refusal uses terminal allocation failure
+The four initialization pools retain the independent 1,209,026,560-byte logical
+payload cap across current and retained storage, within a separately checked
+region grant for all eleven owner pools. Growth refusal uses terminal allocation failure
 and owner cleanup. Allocation headers, metadata and other workspaces are outside
 this budget; resize briefly holds old and replacement storage together, so this
 is not a transient-memory or whole-process RSS ceiling. The field cap does not
@@ -144,14 +161,22 @@ final-source GCC 16 full suite plus normal BIOS/UEFI and affected profiles.
 
 ## Compile speed
 
-The native verifier implementation lives in `ir_verify.cpp`, compiled into the
-existing hosted frontend library. `ir_verify.hpp` exposes its metrics and retained
-block-entry budget interface; body-only edits do not require rebuilding IR test
-translation units or the resolver. Stage2 reuses the same host object, while the
-parser-invalid fixture compiles the implementation with its existing adapter stubs.
-Verifier checks borrow diagnostic text during the call and allocate the complete
-owned error only on failure. Literal and temporary composed messages retain the
-same diagnostic text and rejection order.
+The nine `ir_verification*.au` modules implement whole-function verification.
+`ir_verify.cpp` retains only the native orchestration of source admission,
+verification, graph checks and publication; `ir_verify.hpp` exposes metrics.
+The obsolete native dynamic verifier and production initialization adapter are
+removed. The byte-exact old initialization source remains solely as a historical
+emitter-corpus fixture, not as a production fallback or current-verifier proof.
+Test-only source probes exercise the current workspace without a production
+friend, accessor or widened publication boundary. Final-source generation,
+regressions and performance comparison remain required after this migration.
+Control state observes the effective receiver of a named borrowed root, while
+lexical receiver authority and implicit root seeding remain separately guarded.
+Four isolated bound-root contracts matched independently observed native outcomes,
+diagnostics and partial metrics byte-for-byte for the reviewed correction. They
+now join the 59 preserved contracts; the final 63-case run and integrated
+qualification remain pending. The existing borrowed object suite already covers
+forwarding; these contracts add exact comparison scope.
 
 The formerly timing-out XFS input compiled in 12.7 seconds after metadata-name
 sharing and lookup simplification, versus 32.8 seconds before them, with identical

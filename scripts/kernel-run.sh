@@ -25,7 +25,7 @@ case "$profile" in
     bar|ivrs)
         [[ $# == 1 || ( $# == 2 && "$2" == --smoke ) ]] || { usage >&2; exit 2; }
         exec "$(dirname "$0")/kernel-uefi-$profile-all.sh" ;;
-    bar-state|bar-capture|bar-inherited|bar-read|bar-prepare|bar-write|bar-revoked|bar-alias|ivrs-default|ivrs-read|ivrs-write|ivrs-revoked|ivrs-pair|ivrs-alias|ivrs-reserved|ivrs-scope|ivrs-capability|ivrs-range|ivrs-missing)
+    bar-state|bar-capture|bar-inherited|bar-read|bar-prepare|bar-write|bar-revoked|bar-alias|ivrs-default|ivrs-read|ivrs-write|ivrs-revoked|ivrs-missing)
         shift
         if [[ ${1-} == --smoke ]]; then shift; fi
         [[ ${1-} != --console ]] || { usage >&2; exit 2; }

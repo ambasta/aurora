@@ -19,22 +19,18 @@ BUILD = ROOT / "build/uefi"
 RECEIPT = BUILD / "program-console-admission.json"
 MODES = (
     "program-console",
+    "program-fixture",
     "program-file-call",
     "program-file-call-fixture",
-    "program-request-fault",
-    "program-service-fault",
-    "program-completion-fault",
-    "program-request-budget",
-    "program-service-budget",
-    "program-completion-budget",
-    "program-pending",
     "program-owner",
     "program-ordinal",
     "program-unknown",
     "program-transaction",
 )
 # Guest selectors name a canonical image without changing its receipt identity.
-GUEST_MODES = MODES + tuple(mode for mode, (image, _) in FIXTURE_MODES.items() if image in MODES)
+GUEST_MODES = tuple(mode for mode in MODES if mode != "program-fixture") + tuple(
+    mode for mode, (image, _) in FIXTURE_MODES.items() if image in MODES
+)
 PROGRAM_INPUT_BRIDGE = "__au_runtime_program_input"
 PROGRAM_RESPONSE_BRIDGE = "__au_runtime_program_response"
 SCRATCHPAD_INPUT_BRIDGE = "__au_runtime_scratchpad_input"
@@ -1246,7 +1242,7 @@ def main():
     parser = argparse.ArgumentParser()
     path_arguments(parser)
     parser.add_argument("action", choices=("emit", "checked", "diagnose"))
-    parser.add_argument("--mode", required=True, choices=GUEST_MODES)
+    parser.add_argument("--mode", required=True, choices=MODES + GUEST_MODES)
     args = parser.parse_args()
     configure_paths(args.build_dir or args.source_root / "build/uefi", args.source_root)
     if args.action == "emit":

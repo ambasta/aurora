@@ -13,10 +13,26 @@ bootstrap_compiler_path = get_option('bootstrap_compiler')
 bootstrap_sha256 = get_option('bootstrap_compiler_sha256')
 bootstrap_receipt = get_option('bootstrap_receipt')
 bootstrap_driver = files('scripts/bootstrap.py')
+bootstrap_guard_driver = files('scripts/bootstrap_guard.py')
 bootstrap_pin = files('compiler/bootstrap-route.json')
 bootstrap_verify_args = ['--compiler', bootstrap_compiler_path, '--sha256', bootstrap_sha256,
                          '--receipt', bootstrap_receipt]
-bootstrap_check = run_command(python, '-B', bootstrap_driver, 'verify', bootstrap_verify_args, check: false)
+bootstrap_selection = configure_file(
+  output: 'bootstrap-selection.json', depfile: 'bootstrap-selection.d',
+  command: [python, '-B', bootstrap_guard_driver, 'configure'] + bootstrap_verify_args +
+           ['--output', '@OUTPUT@', '--depfile', '@DEPFILE@'],
+)
+# Bind ordinary configuration bytes in the generated commands. This is not a
+# reconstruction receipt and cannot replace configure-time historical validation.
+bootstrap_selection_sha256 = run_command(
+  python, '-B', '-c',
+  'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())',
+  bootstrap_selection, check: true,
+).stdout().strip()
+bootstrap_selection_args = ['--selection', bootstrap_selection,
+                            '--selection-sha256', bootstrap_selection_sha256]
+bootstrap_check = run_command(python, '-B', bootstrap_guard_driver, 'check',
+                              bootstrap_verify_args, bootstrap_selection_args, check: false)
 if bootstrap_check.returncode() != 0
   error(bootstrap_check.stderr().strip())
 endif
@@ -24,8 +40,9 @@ bootstrap_compiler = find_program(bootstrap_compiler_path, native: true)
 # Roles remain independent even while the same historical binary supplies both.
 historical_cpp_oracle = bootstrap_check.stdout().strip().split('\n')[0]
 historical_cpp_oracle_sha256 = bootstrap_check.stdout().strip().split('\n')[1]
-bootstrap_guard = [python, '-B', bootstrap_driver, 'run'] + bootstrap_verify_args + ['--']
+bootstrap_guard = [python, '-B', bootstrap_guard_driver, 'run'] + bootstrap_verify_args + bootstrap_selection_args + ['--']
 bootstrap_depend_files = files(bootstrap_compiler_path, bootstrap_receipt) + bootstrap_driver + bootstrap_pin
+bootstrap_depend_files += bootstrap_guard_driver + [bootstrap_selection]
 fs = import('fs')
 frontend_inputs = files('compiler/formatter.au', 'compiler/lexer.au', 'compiler/syntax_arena.au', 'compiler/parser.au',
                         'compiler/resolution_kinds.au', 'compiler/lowering_errors.au', 'compiler/lowering_kinds.au',
@@ -35,7 +52,11 @@ frontend_inputs = files('compiler/formatter.au', 'compiler/lexer.au', 'compiler/
                         'compiler/ir_graph.au',
                         'compiler/ir_metadata_storage.au', 'compiler/ir_metadata.au',
                         'compiler/ir_instruction_storage.au', 'compiler/ir_instructions.au',
-                        'compiler/ir_initialization.au',
+                        'compiler/ir_verification_errors.au', 'compiler/ir_verification_storage.au',
+                        'compiler/ir_verification_initialization.au', 'compiler/ir_verification_common.au',
+                        'compiler/ir_verification_values.au', 'compiler/ir_verification_resources.au',
+                        'compiler/ir_verification_services.au', 'compiler/ir_verification_transfer.au',
+                        'compiler/ir_verification.au',
                         'compiler/x86_storage.au', 'compiler/x86_helpers.au', 'compiler/x86_scalar.au',
                         'compiler/x86_objects.au', 'compiler/x86_resources.au', 'compiler/x86_facts.au',
                         'compiler/x86_module.au', 'library/std/decimal_digits.au',
@@ -67,7 +88,7 @@ frontend_host_sources = files('compiler/hosted_lexer.cpp', 'compiler/hosted_pars
                               'compiler/hosted_resolver.cpp', 'compiler/hosted_lowering.cpp',
                               'compiler/hosted_lowering_diagnostics.cpp', 'compiler/hosted_graph.cpp',
                               'compiler/hosted_ir_metadata.cpp', 'compiler/hosted_ir_instructions.cpp',
-                              'compiler/hosted_ir_initialization.cpp', 'compiler/hosted_x86.cpp', 'compiler/ir_verify.cpp',
+                              'compiler/hosted_x86.cpp', 'compiler/ir_verify.cpp',
                               'runtime/hosted_bytes.cpp')
 frontend_library = static_library(
   'hosted-frontend', [frontend_host_sources, frontend_object, frontend_assembly[3]],

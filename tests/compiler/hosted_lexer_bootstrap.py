@@ -48,45 +48,11 @@ EMITTER_OPERATIONS = (
 )
 
 
-INITIALIZATION_SERVICE_OPERATIONS = (
-    "payload_bytes",
-    "acquire_service_loan",
-    "release_service_loan",
-    "service_unsuspended",
-    "validate_service_call",
-    "complete_service_call",
-    "service_loans_closed",
-    "same_service_loans",
-)
+VERIFICATION_OPERATIONS = ("create", "run", "report", "release")
 
-INITIALIZATION_OPERATIONS = (
-    "create",
-    "release",
-    "allocated",
-    "status",
-    "initialize",
-    "slot_count",
-    "word_count",
-    "retained_count",
-    "current_count",
-    "retained_count_at",
-    "load",
-    "retain",
-    "join",
-    "scalar_state",
-    "write_scalar",
-    "object_initialized",
-    "object_pristine",
-    "object_was_constructed",
-    "object_completion",
-    "receiver_field_state",
-    "write_receiver_field",
-    "receiver_completion",
-    "mark_object",
-    "clear_object",
-    "array_first_missing",
-    "clear_array",
-) + INITIALIZATION_SERVICE_OPERATIONS
+# Source prediction after retiring 34 initialization shims from the 118-entry
+# candidate. Actual newly built objects must establish this count below.
+EXPECTED_HOST_ENTRIES = 84
 
 
 def require(value, message):
@@ -251,8 +217,11 @@ def abi_generation(facts):
         ("compiler_ir_instructions::BodyRow", 32),
         ("compiler_ir_instructions::InstructionCounts", 32),
         ("compiler_ir_instructions::InstructionStore", 176),
-        ("compiler_ir_initialization::InitializationWorkspace", 248),
-        ("compiler_ir_initialization::ServiceLoan", 32),
+        ("compiler_ir_verification::VerificationWorkspace", 496),
+        ("compiler_ir_verification::VerificationReport", 72),
+        ("compiler_ir_verification::VerificationError", 16),
+        ("compiler_ir_verification::ControlRow", 352),
+        ("compiler_ir_verification::ServiceLoan", 32),
     ):
         _, entry = abi_declaration(facts, "records", source)
         require(entry["reserved"] == extent and entry["alignment"] == 8, f"frontend layout changed: {source}")
@@ -396,113 +365,6 @@ def abi_generation(facts):
         raise AssertionError(f"unsafe graph paired bridge accepted: {field}={value}")
     metadata_store, _ = abi_declaration(facts, "records", "compiler_ir_metadata::MetadataStore")
     instruction_store, _ = abi_declaration(facts, "records", "compiler_ir_instructions::InstructionStore")
-    initialization, _ = abi_declaration(facts, "records", "compiler_ir_initialization::InitializationWorkspace")
-    require(
-        all(f"struct alignas(8) {name} {{" in generated for name in ("InitializationCreate", "InitializationRelease"))
-        and all(
-            f"initializationWorkspace_{pool}Bytes = 32;" in generated
-            for pool in ("currentWords", "retainedWords", "retainedCounts", "serviceLoans")
-        )
-        and "initializationWordPairPhysicalBytes = 16;" in generated
-        and "initializationCountPairPhysicalBytes = 16;" in generated
-        and "initializationServiceLoanPhysicalBytes = 32;" in generated,
-        "initialization owner transfer or physical pool facts were omitted",
-    )
-    for operation in INITIALIZATION_OPERATIONS:
-        for mutation in ("receiver", "result", "parameters", "root"):
-            changed, entry = edit_declaration(facts, "functions", "compiler_frontend::initialization_" + operation)
-            if mutation == "receiver":
-                entry["receiver"] = initialization if entry["receiver"] is None else None
-            elif mutation == "result":
-                entry["result"]["bytes"] += 8
-            elif mutation == "parameters":
-                if entry["parameters"]:
-                    entry["parameters"][0]["bytes"] += 8
-                else:
-                    entry["parameter_bytes"] += 8
-            else:
-                entry["source_name"] = "fixture::removed_initialization_" + operation
-            try:
-                frontend_abi_header(changed)
-            except ValueError:
-                continue
-            raise AssertionError(f"unsafe initialization bridge accepted: {operation}/{mutation}")
-    # All entries use the same production root validator. Sample both authority
-    # directions here; the complete signature and export checks still cover all.
-    for operation in ("acquire_service_loan", "validate_service_call"):
-        for mutation in ("authority", "pair"):
-            changed, entry = edit_declaration(facts, "functions", "compiler_frontend::initialization_" + operation)
-            if mutation == "authority":
-                entry["borrowed_roots"][0]["mutable"] = not entry["borrowed_roots"][0]["mutable"]
-            else:
-                _, pair = abi_declaration(facts, "functions", "compiler_frontend::initialization_initialize")
-                for field in ("borrowed_roots", "borrowed_root_count", "borrowed_root_abi"):
-                    entry[field] = deepcopy(pair[field])
-            try:
-                frontend_abi_header(changed)
-            except ValueError:
-                continue
-            raise AssertionError(f"unsafe initialization service root accepted: {operation}/{mutation}")
-    for operation in (
-        "initialize",
-        "scalar_state",
-        "write_scalar",
-        "object_initialized",
-        "object_pristine",
-        "object_was_constructed",
-        "object_completion",
-        "receiver_field_state",
-        "write_receiver_field",
-        "receiver_completion",
-        "mark_object",
-        "clear_object",
-        "array_first_missing",
-        "clear_array",
-    ):
-        for field, value in (
-            ("receiver_mutable", False),
-            ("borrowed_parameter", False),
-            ("second_receiver", None),
-            ("second_receiver", {"type_name": initialization, "mutable": False}),
-            ("second_receiver", {"type_name": metadata_store, "mutable": True}),
-            ("root_count", 1),
-            ("root_order", ["second_receiver", "receiver"]),
-            ("root_tuple_bytes", 8),
-            ("result", {"kind": "class", "type_name": initialization, "bytes": 8}),
-        ):
-            changed, entry = edit_declaration(facts, "functions", "compiler_frontend::initialization_" + operation)
-            entry[field] = value
-            try:
-                frontend_abi_header(changed)
-            except ValueError:
-                continue
-            raise AssertionError(f"unsafe initialization paired bridge accepted: {operation}/{field}={value}")
-    for source, field in (
-        ("InitializationWorkspace", "currentWords"),
-        ("InitializationWorkspace", "retainedWords"),
-        ("InitializationWorkspace", "retainedCounts"),
-        ("InitializationWorkspace", "serviceLoans"),
-        ("InitializationWorkspace", "retainedCount"),
-        ("InitializationWorkspace", "objectBegin"),
-        ("InitializationWorkspace", "objectCount"),
-        ("InitializationWorkspace", "receiverBegin"),
-        ("InitializationWorkspace", "receiverCount"),
-        ("InitializationWorkspace", "serviceCapacity"),
-        ("InitializationWorkspace", "factCount"),
-        ("WordPair", "mustBits"),
-        ("CountPair", "mayCount"),
-        ("ServiceLoan", "loanId"),
-        ("ServiceLoan", "rootOffset"),
-        ("ServiceLoan", "serviceKind"),
-        ("ServiceLoan", "calledValue"),
-    ):
-        changed, entry = edit_declaration(facts, "records", "compiler_ir_initialization::" + source)
-        next(member for member in entry["fields"] if member["name"] == field)["bytes"] += 8
-        try:
-            frontend_abi_header(changed)
-        except ValueError:
-            continue
-        raise AssertionError(f"unsafe initialization owner/row binding accepted: {source}/{field}")
     for operation in ("create", "release", "allocated", "admit", "structure", "publish", "error"):
         for mutation in ("receiver", "result", "parameters", "root"):
             changed, entry = edit_declaration(facts, "functions", "compiler_frontend::instructions_" + operation)
@@ -734,8 +596,170 @@ def abi_generation(facts):
     require(json.dumps(facts, sort_keys=True) == pristine, "an ABI mutation leaked into the shared facts")
     print(
         "PASS generic source-spelled ABI records/enums, nested layout and exact "
-        "lowering/metadata/instruction/initialization bridge rejection"
+        "lowering/metadata/instruction bridge rejection"
     )
+
+
+def verification_generation(facts):
+    """Check fresh facts against the source-only verifier transport prediction."""
+    from bootstrap_frontend import abi_declaration, frontend_abi_header, normalize_function_abi
+
+    pristine = json.dumps(facts, sort_keys=True)
+    generated = frontend_abi_header(facts)
+    require(
+        "aurora_hosted_initialization_" not in generated and "InitializationWorkspace" not in generated,
+        "retired production initialization authority reappeared in the frontend ABI",
+    )
+    namespace = "compiler_ir_verification::"
+    workspace, owner = abi_declaration(facts, "records", namespace + "VerificationWorkspace")
+    metadata, _ = abi_declaration(facts, "records", "compiler_ir_metadata::MetadataStore")
+    instructions, _ = abi_declaration(facts, "records", "compiler_ir_instructions::InstructionStore")
+    pools = (
+        "currentWords",
+        "retainedWords",
+        "retainedCounts",
+        "serviceLoans",
+        "currentFacts",
+        "retainedFacts",
+        "currentOperands",
+        "retainedOperands",
+        "codeStates",
+        "pendingQueue",
+        "controls",
+    )
+    require(
+        [(field["name"], field["kind"], field["offset"], field["bytes"]) for field in owner["fields"][:11]]
+        == [(name, "owner", 32 * index, 32) for index, name in enumerate(pools)]
+        and all(field["kind"] != "owner" for field in owner["fields"][11:]),
+        "verification workspace lost its exact eleven direct owners",
+    )
+    for source, extent in (
+        ("VerificationWorkspace", 496),
+        ("VerificationReport", 72),
+        ("VerificationError", 16),
+        ("ControlRow", 352),
+        ("WordPair", 16),
+        ("CountPair", 16),
+        ("ServiceLoan", 32),
+        ("TypeKey", 16),
+        ("TokenRow", 40),
+        ("SpanPayload", 56),
+        ("LoanPayload", 56),
+        ("FactRow", 192),
+        ("ActiveFact", 200),
+        ("BoundsEvidence", 72),
+        ("ValueRow", 88),
+        ("CodeStateRow", 152),
+        ("IndexRow", 8),
+        ("MetricsRow", 40),
+    ):
+        _, row = abi_declaration(facts, "records", namespace + source)
+        require(
+            (row["size"], row["reserved"], row["alignment"]) == (extent, extent, 8),
+            "verification source layout changed: " + source,
+        )
+    for text in (
+        "verificationWorkspaceBytes = 496;",
+        "verificationReportBytes = 72;",
+        "verificationErrorBytes = 16;",
+        "verificationControlRowPhysicalBytes = 352;",
+        "verificationActiveFactPhysicalBytes = 200;",
+        "verificationRunRootCount = 3;",
+        "verificationRunTuplePayloadBytes = 24;",
+        "verificationRunTupleReservedBytes = 32;",
+        "static_assert(sizeof(VerificationRunRoots) == 32 && alignof(VerificationRunRoots) == 8);",
+        "static_assert(sizeof(VerificationRelease) == 504 && alignof(VerificationRelease) == 8);",
+        "void * workspace{};",
+        "const void * metadata{};",
+        "const void * instructions{};",
+    ):
+        require(text in generated, "verification generated layout binding omitted: " + text)
+    _, raw_run = abi_declaration(facts, "functions", "compiler_frontend::verification_run")
+    run = normalize_function_abi(facts, raw_run)
+    require(
+        run["borrowed_root_count"] == 3
+        and run["borrowed_roots"]
+        == [
+            dict(ordinal=index, selector=-index, type_name=symbol, mutable=index == 0)
+            for index, symbol in enumerate((workspace, metadata, instructions))
+        ]
+        and run["borrowed_root_abi"]
+        == dict(
+            kind="tuple", register="r10", tuple_payload_bytes=24, tuple_reserved_bytes=32, saved_root_reserved_bytes=32
+        )
+        and run["parameters"] == [dict(kind="i64", bytes=8, offset=0)]
+        and run["parameter_bytes"] == 8,
+        "verification run lost its exact ordered mutable/readonly three-root ABI",
+    )
+
+    def reject(group, source, label, mutation):
+        changed, entry = edit_declaration(facts, group, source)
+        mutation(entry)
+        try:
+            frontend_abi_header(changed)
+        except ValueError:
+            return
+        raise AssertionError("unsafe verification ABI accepted: " + label)
+
+    for operation in VERIFICATION_OPERATIONS:
+        source = "compiler_frontend::verification_" + operation
+        for label, mutation in (
+            ("receiver", lambda f: f.__setitem__("receiver", workspace)),
+            ("result", lambda f: f["result"].__setitem__("bytes", f["result"]["bytes"] + 8)),
+            ("parameters", lambda f: f.__setitem__("parameter_bytes", f["parameter_bytes"] + 8)),
+            ("entry", lambda f: f.__setitem__("source_name", "fixture::removed_verification_entry")),
+        ):
+            reject("functions", source, operation + "/" + label, mutation)
+    source = "compiler_frontend::verification_run"
+    for lane in range(3):
+        for field, value in (
+            ("ordinal", (lane + 1) % 3),
+            ("selector", -6),
+            ("type_name", "missing-root"),
+            ("mutable", lane != 0),
+        ):
+            reject(
+                "functions",
+                source,
+                f"root-{lane}/{field}",
+                lambda f, lane=lane, field=field, value=value: f["borrowed_roots"][lane].__setitem__(field, value),
+            )
+    for label, mutation in (
+        ("root-order", lambda f: f["borrowed_roots"].reverse()),
+        ("missing-root", lambda f: f["borrowed_roots"].pop()),
+        ("root-count", lambda f: f.__setitem__("borrowed_root_count", 2)),
+        ("payload", lambda f: f["borrowed_root_abi"].__setitem__("tuple_payload_bytes", 16)),
+        ("reserved", lambda f: f["borrowed_root_abi"].__setitem__("tuple_reserved_bytes", 24)),
+        ("saved-root", lambda f: f["borrowed_root_abi"].__setitem__("saved_root_reserved_bytes", 16)),
+        ("register", lambda f: f["borrowed_root_abi"].__setitem__("register", "r11")),
+        ("callable-kind", lambda f: f["parameters"][0].__setitem__("kind", "u64")),
+        ("callable-offset", lambda f: f["parameters"][0].__setitem__("offset", 8)),
+    ):
+        reject("functions", source, label, mutation)
+    reject(
+        "functions",
+        "compiler_frontend::verification_report",
+        "mutable-report-root",
+        lambda f: f["borrowed_roots"][0].__setitem__("mutable", True),
+    )
+    for row_name in ("VerificationWorkspace", "VerificationReport", "VerificationError", "ControlRow", "ActiveFact"):
+        _, row = abi_declaration(facts, "records", namespace + row_name)
+        for index, field in enumerate(row["fields"]):
+            reject(
+                "records",
+                namespace + row_name,
+                row_name + "/" + field["name"],
+                lambda r, index=index: r["fields"][index].__setitem__("bytes", r["fields"][index]["bytes"] + 8),
+            )
+    for operation, index in (("create", 0), ("release", 0), ("release", 1)):
+        reject(
+            "functions",
+            "compiler_frontend::verification_" + operation,
+            operation + "/owner-prefix",
+            lambda f, index=index: f["parameters"][index].__setitem__("offset", f["parameters"][index]["offset"] + 8),
+        )
+    require(json.dumps(facts, sort_keys=True) == pristine, "a verification mutation leaked into the shared facts")
+    print("PASS source verifier eleven-owner layout, copied report and exact three-root lifecycle rejection")
 
 
 def emitter_generation(facts):
@@ -886,7 +910,7 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 facts = {"version": 2, "functions": {"fixture_symbol": {"source_name": "fixture::entry"}}}
 assert module.abi_function_symbol(facts, "fixture::entry") == "fixture_symbol"
-assert len(module.PASS_ENTRIES) == 114
+assert len(module.PASS_ENTRIES) == 84
 """
     with tempfile.TemporaryDirectory(prefix="bridge-import-") as temporary:
         subprocess.run(
@@ -899,15 +923,16 @@ assert len(module.PASS_ENTRIES) == 114
 
     assembly, header = frontend_bridge(None, facts), frontend_abi_header(facts)
     operations = ["emitter_" + name for name in EMITTER_OPERATIONS]
-    operations += ["initialization_" + name for name in INITIALIZATION_OPERATIONS]
-    require(assembly.count(".globl ") == 114, "private bridge inventory drift")
+    operations += ["verification_" + name for name in VERIFICATION_OPERATIONS]
+    require(assembly.count(".globl ") == EXPECTED_HOST_ENTRIES, "private bridge inventory drift")
     for alias in operations:
         require(f".globl aurora_hosted_{alias}\n" in assembly, "missing private host entry: " + alias)
         require(f" aurora_hosted_{alias}(" in header, "missing private host declaration: " + alias)
-    # Independent examples of all five transports, including the longest tail.
+    # Independent examples of all five transports, including copied results and
+    # the verifier's complete three-root tuple with its scalar callable tail.
     for alias, moves, signature in (
         ("emitter_create", [("rdi", "r11"), ("rsi", "r10")], "void *(const void *, void *)"),
-        ("initialization_release", [("rdi", "r11")], "void *(void *)"),
+        ("verification_release", [("rdi", "r11")], "void *(void *)"),
         (
             "emitter_run",
             [("rdi", "r10"), ("rsi", "rdi"), ("rdx", "rsi")],
@@ -920,9 +945,14 @@ assert len(module.PASS_ENTRIES) == 114
             "void *(const void *, std::int64_t, std::int64_t, void *)",
         ),
         (
-            "initialization_validate_service_call",
-            [("rdi", "r10"), ("rsi", "rdi"), ("rdx", "rsi"), ("rcx", "rdx"), ("r8", "rcx")],
-            "std::int64_t *(const void *, std::int64_t, std::int64_t, std::int64_t, std::int64_t)",
+            "verification_run",
+            [("rdi", "r10"), ("rsi", "rdi")],
+            "std::int64_t *(const void *, std::int64_t)",
+        ),
+        (
+            "verification_report",
+            [("rdi", "r10"), ("rsi", "r11")],
+            "void *(const void *, void *)",
         ),
     ):
         host = "aurora_hosted_" + alias
@@ -972,10 +1002,9 @@ assert len(module.PASS_ENTRIES) == 114
             "std::int64_t aurora_hosted_instructions_admit(const void *) noexcept;",
         ),
         (
-            "initialization_release_service_loan",
-            [("%rdi", "%r10"), ("%rsi", "%rdi"), ("%rdx", "%rsi")],
-            "std::int64_t aurora_hosted_initialization_release_service_loan("
-            "void *, std::int64_t, std::int64_t) noexcept;",
+            "verification_create",
+            [("%rdi", "%r11"), ("%rsi", "%r10")],
+            "void aurora_hosted_verification_create(const void *, void *) noexcept;",
         ),
     ):
         host = "aurora_hosted_" + alias
@@ -999,7 +1028,7 @@ assert len(module.PASS_ENTRIES) == 114
             except ValueError:
                 continue
         raise AssertionError("unsafe private bridge policy accepted: " + repr(changed))
-    print("PASS all 114 host entries, transport exemplars and malformed bridge policies")
+    print("PASS all 84 host entries, transport exemplars and malformed bridge policies")
 
 
 def borrowed_root_generation(facts):
@@ -1197,7 +1226,6 @@ def borrowed_root_generation(facts):
         "graph_run",
         "instructions_admit",
         "instructions_structure",
-        "initialization_initialize",
         "emitter_facts",
     )
     for alias in pair_sources:
@@ -1423,6 +1451,7 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
         return stdout.getvalue(), diagnostic
 
     abi_generation(json.loads(built_b.with_suffix(".abi.json").read_text()))
+    verification_generation(json.loads(built_b.with_suffix(".abi.json").read_text()))
     emitter_generation(json.loads(built_b.with_suffix(".abi.json").read_text()))
     pass_bridge_generation(json.loads(built_b.with_suffix(".abi.json").read_text()))
     borrowed_root_generation(json.loads(built_b.with_suffix(".abi.json").read_text()))
@@ -1513,8 +1542,9 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
         "aurora_hosted_instructions_" + operation
         for operation in ("create", "release", "allocated", "admit", "structure", "publish", "error")
     )
-    entries.update("aurora_hosted_initialization_" + operation for operation in INITIALIZATION_OPERATIONS)
+    entries.update("aurora_hosted_verification_" + operation for operation in VERIFICATION_OPERATIONS)
     entries.update("aurora_hosted_emitter_" + operation for operation in EMITTER_OPERATIONS)
+    require(len(entries) == EXPECTED_HOST_ENTRIES, "expected private export inventory drift")
     # A is predecessor-generated and need not equal B. Both actual build
     # objects must expose exactly the private host shim contract.
     for unit in (built_a, built_b):
@@ -1582,7 +1612,13 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
         root / "compiler/ir_metadata_storage.au",
         root / "compiler/ir_instruction_storage.au",
     )
-    write_frontend_header(emitted_facts, generated_header, *message_sources, header(built_b))
+    write_frontend_header(
+        emitted_facts,
+        generated_header,
+        *message_sources,
+        header(built_b),
+        verification_source=root / "compiler/ir_verification_errors.au",
+    )
     require(
         generated_header.read_bytes() == expected and generated_header.stat().st_mtime_ns == old_mtime,
         "unchanged compiler ABI header was rewritten",
@@ -1594,7 +1630,13 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
     rejected_header.write_bytes(sentinel)
     os.utime(rejected_header, ns=(old_mtime, old_mtime))
     try:
-        write_frontend_header(emitted_facts, rejected_header, *message_sources, incompatible)
+        write_frontend_header(
+            emitted_facts,
+            rejected_header,
+            *message_sources,
+            incompatible,
+            verification_source=root / "compiler/ir_verification_errors.au",
+        )
     except ValueError as error:
         require("stage2 ABI header differs" in str(error), "wrong shared-header compatibility rejection")
     else:
@@ -1610,13 +1652,9 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
 
 
 def main():
-    # The default selection checks stage convergence through the lexer and the
-    # whole frontend, which imports every compiler module. --corpus compares
-    # every other checked-in source across the two stages; slow suites run it.
+    # Keep fast lexer and whole-frontend convergence independent. The default
+    # emitter differential shares C1/C2 observations for the complete corpus.
     arguments = sys.argv[1:]
-    whole_corpus = arguments[-1:] == ["--corpus"]
-    if whole_corpus:
-        arguments = arguments[:-1]
     current1, current2, root, built_a, built_b = (Path(value).resolve() for value in arguments)
     with tempfile.TemporaryDirectory(prefix="hosted-lexer-bootstrap-") as temporary:
         work = Path(temporary)
@@ -1628,13 +1666,17 @@ def main():
         require(root / "compiler/lexer.au" in corpus, "lexer self-rebuild input is missing")
         require(root / "compiler/frontend.au" in corpus, "whole frontend self-rebuild input is missing")
         compiler_sources = {root / "compiler" / name for name in COMPILER_MODULES}
+        compiler_dependency_fixtures = {
+            root / "tests/fixtures/emitter-history/ir_initialization.au",
+            root / "tests/compiler/initialization_probe.au",
+        }
         require(compiler_sources.issubset(corpus), "a real compiler module is missing from self-rebuild coverage")
         frontend_library_sources = {root / "library" / name for name in FRONTEND_LIBRARY_MODULES}
         require(
             frontend_library_sources.issubset(corpus), "a frontend library module is missing from self-rebuild coverage"
         )
         convergence = {root / "compiler/lexer.au", root / "compiler/frontend.au"}
-        corpus = [source for source in corpus if (source in convergence) != whole_corpus]
+        corpus = [source for source in corpus if source in convergence]
         for source in corpus:
             if source == root / "compiler/frontend.au":
                 # The dedicated path compiles this graph with local bindings and
@@ -1650,7 +1692,11 @@ def main():
                         [
                             str(compiler),
                             "--module-root",
-                            str(module_root if source in compiler_sources else root / "library"),
+                            str(
+                                module_root
+                                if source in compiler_sources | compiler_dependency_fixtures
+                                else root / "library"
+                            ),
                             str(source),
                             "-o",
                             str(output),
@@ -1693,7 +1739,7 @@ def main():
             records.append({"source": str(source.relative_to(root)), "status": runs[0].returncode})
         require(len(records) > 1, "source corpus is empty")
         print(
-            ("PASS current C1/C2 corpus" if whole_corpus else "PASS current C1/C2 lexer and frontend")
+            "PASS current C1/C2 lexer and frontend"
             + " diagnostics, assembly and output preservation: "
             + json.dumps(
                 {

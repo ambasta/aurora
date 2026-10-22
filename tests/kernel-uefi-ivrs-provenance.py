@@ -34,6 +34,12 @@ absolute = prior.absolute
 
 
 def validate_arguments(receipt, paths):
+    expected_selector = {"ivrs-write": 106, "ivrs-revoked": 107}.get(receipt.get("mode"))
+    actual_selector = receipt.get("startup_byte")
+    need(
+        actual_selector == expected_selector and (expected_selector is None or type(actual_selector) is int),
+        "Wrong IVRS fixture selector receipt",
+    )
     argv = receipt.get("argv")
     need(isinstance(argv, list) and all(isinstance(value, str) for value in argv), "Missing IVRS invocation argv")
     candidate = dict(receipt)
@@ -115,7 +121,7 @@ def validate_payload(loader, binary, elf, metadata, mode):
     }
     expected = {}
     for candidate, (name, opcode) in sites.items():
-        if candidate == mode:
+        if mode in sites:
             at = symbols.get(name)
             need(
                 type(at) is int
@@ -136,7 +142,7 @@ def validate_receipt(receipt, contents, fixture_prefix=None):
     need(
         isinstance(receipt, dict)
         and receipt.get("schema") == "aurora-ivrs-run-v1"
-        and receipt.get("mode") in ivrs.MODES,
+        and receipt.get("mode") in ivrs.HISTORICAL_MODES,
         "Wrong IVRS receipt schema/mode",
     )
     mode = receipt["mode"]
@@ -255,7 +261,7 @@ def self_test():
         "-drive",
         "if=pflash,format=raw,file=" + paths["vars_after"],
     ]
-    for mode in ivrs.MODES:
+    for mode in ivrs.HISTORICAL_MODES:
         argv = common + ([] if mode == "ivrs-missing" else ["-device", IOMMU])
         receipt = dict(
             cwd="/tmp/synthetic-ivrs",
@@ -263,15 +269,21 @@ def self_test():
             environment={"LD_LIBRARY_PATH": "/tmp/synthetic-libraries"},
             firmware_profile="clean",
             mode=mode,
+            startup_byte={"ivrs-write": 106, "ivrs-revoked": 107}.get(mode),
             argv=argv,
         )
         validate_arguments(receipt, paths)
         cases = [
+            dict(receipt, startup_byte=0),
+            dict(receipt, startup_byte=107 if mode == "ivrs-write" else 106),
             dict(receipt, argv=argv + ["-device", IOMMU]),
             dict(receipt, firmware_profile="stock"),
             dict(receipt, argv=argv + ["-device", "nvme-ns,drive=unsafe"]),
             dict(receipt, environment={"LD_LIBRARY_PATH": "/lib", "LD_PRELOAD": "unsafe"}),
         ]
+        if mode in ("ivrs-write", "ivrs-revoked"):
+            cases.append({key: value for key, value in receipt.items() if key != "startup_byte"})
+            cases.append(dict(receipt, startup_byte=float(receipt["startup_byte"])))
         for index in range(len(argv)):
             cases.append(dict(receipt, argv=argv[:index] + argv[index + 1 :]))
         if mode != "ivrs-missing":
@@ -286,7 +298,7 @@ def self_test():
             else:
                 raise RuntimeError("Invalid IVRS invocation accepted: " + mode)
     print(
-        f"PASS: IVRS provenance {len(ivrs.MODES)} synthetic launch profi"
+        f"PASS: IVRS provenance {len(ivrs.HISTORICAL_MODES)} synthetic launch profi"
         f"les and {failures} adversarial cases; real artifacts required "
         f"separately"
     )

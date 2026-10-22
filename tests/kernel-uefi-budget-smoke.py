@@ -10,6 +10,8 @@ spec.loader.exec_module(ipc)
 need = ipc.need
 BASE = ipc.BASE
 APIC = 0xFFFF900000000000
+# Historical synthetic scenarios include copied-policy failures now covered hosted.
+# Current boot modes are admitted separately by kernel_profiles and emulator_clock.
 MODES = (
     "budget",
     "budget-fault",
@@ -25,6 +27,16 @@ MODES = (
     "budget-mmio",
     "budget-softint",
     "budget-fpu",
+    "budget-epoch",
+)
+FIXTURE_MODES = (
+    "budget-fault",
+    "budget-discovery",
+    "budget-cache",
+    "budget-alias",
+    "budget-pending",
+    "budget-forged",
+    "budget-root",
     "budget-epoch",
 )
 POLICY_MODES = ("budget-policy-zero", "budget-policy-counts", "budget-policy-wide", "budget-policy-output")
@@ -82,7 +94,7 @@ def metadata_valid(meta, mode):
         "Drain range outside owned RX",
     )
     need(
-        (2 <= kernel["forged_pc"] < kernel["text_end"]) if mode == "budget-forged" else kernel["forged_pc"] == 0,
+        (2 <= kernel["forged_pc"] < kernel["text_end"]) if mode in FIXTURE_MODES else kernel["forged_pc"] == 0,
         "Forged site authority",
     )
     return base_images
@@ -98,6 +110,13 @@ def firmware_prefix(prefix, mode):
 
 
 def validate(status, text, mode, meta):
+    marker = "AURORA_FIXTURE_READY\n"
+    need(text.count(marker) == (1 if mode in FIXTURE_MODES else 0), "Exact budget fixture readiness")
+    if mode in FIXTURE_MODES:
+        need(text.index("AURORA_PCI_WINDOW_CLOSED:") < text.index(marker), "Budget selector before firmware completion")
+        boundary = [text.index(item) for item in ("AURORA_UEFI_TIMER_", "AURORA_UEFI_RUNTIME_FAIL:") if item in text]
+        need(boundary and text.index(marker) < min(boundary), "Budget selector after timer admission")
+        text = text.replace(marker, "", 1)
     need(mode in MODES, "Unknown budget mode")
     base_images = metadata_valid(meta, mode)
     need(status == (33 if mode in SUCCESS else 35), "Wrong budget exit")
@@ -383,7 +402,7 @@ def validate(status, text, mode, meta):
     need(not pending_context, "Missing final context receipt")
     if mode in SUCCESS:
         need(success_marker and not armed, "Missing budget completion")
-        ipc.validate(status, prefix + "\n".join(projected) + "\n", "ipc-fault", base_images)
+        ipc.validate_protocol_projection(status, prefix + "\n".join(projected) + "\n", "ipc-fault", base_images)
     else:
         need(not success_marker and service_runs == 1 and armed, "Unexpected failure lifecycle")
         wanted = ipc.expected("ipc-fault", base_images, arena)
@@ -472,7 +491,7 @@ def self_test():
             images=images,
             kernel=None
             if mode == "budget-noapic"
-            else dict(drain_begin=100, drain_end=104, text_end=4096, forged_pc=200 if mode == "budget-forged" else 0),
+            else dict(drain_begin=100, drain_end=104, text_end=4096, forged_pc=200 if mode in FIXTURE_MODES else 0),
         )
         simple = {
             name: {
@@ -598,6 +617,7 @@ def self_test():
                 "AURORA_ACPI_TOPOLOGY: records=1 enabled=1",
                 "AURORA_ACPI_CPU: id=1 uid=1 enabled=1 capable=0 x2=0\nAURORA_ACPI_TOPOLOGY: records=2 enabled=2",
             )
+        prefix_case += "AURORA_FIXTURE_READY\n" if mode in FIXTURE_MODES else ""
         text = prefix_case + "\n".join(rows) + "\n"
         status = 33 if mode in SUCCESS else 35
         validate(status, text, mode, meta)

@@ -15,9 +15,106 @@ import tempfile
 
 import meson_toolchain
 import bootstrap
+import bootstrap_guard
 import kernel_profiles
 
 import compiler_contract as contract
+
+
+HOST_RESERVE_MIB = 2048
+# Sizing allowances, not limits: measured compiler peaks approach 1.7 GiB;
+# native-test child peaks approach 0.5 GiB and their compilers run sequentially.
+JOB_MEMORY_MIB = {"build": 2048, "test": 1024}
+
+
+def available_memory_mib():
+    try:
+        for line in Path("/proc/meminfo").read_text().splitlines():
+            fields = line.split()
+            if fields[:1] == ["MemAvailable:"] and fields[2:] == ["kB"]:
+                return max(0, int(fields[1]) // 1024)
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def cgroup_memory_mib():
+    """Read visible cgroup-v2 headroom, including bounded ancestors; set no limits."""
+    try:
+        membership = Path("/proc/self/cgroup").read_text().splitlines()
+        mounts = Path("/proc/self/mountinfo").read_text().splitlines()
+    except OSError:
+        return None
+    group = next((Path(line[3:]) for line in membership if line.startswith("0::/")), None)
+    if group is None:
+        return None
+    for line in mounts:
+        fields, separator, filesystem = line.partition(" - ")
+        fields = fields.split()
+        if not separator or filesystem.split()[:1] != ["cgroup2"] or len(fields) < 5:
+            continue
+        root, mount = (Path(re.sub(r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), p)) for p in fields[3:5])
+        try:
+            relative = group.relative_to(root)
+        except ValueError:
+            continue
+        if not mount.is_absolute() or ".." in relative.parts:
+            continue
+        current = mount / relative
+        limits = []
+        while True:
+            try:
+                maximum = (current / "memory.max").read_text().strip()
+            except FileNotFoundError:
+                maximum = "max"
+            except OSError:
+                return 0  # A visible but unreadable controller is not free headroom.
+            if maximum != "max":
+                try:
+                    limit = int(maximum)
+                    used = int((current / "memory.current").read_text())
+                    if min(limit, used) < 0:
+                        return 0
+                    limits.append(max(0, limit - used) // (1024 * 1024))
+                except (OSError, ValueError):
+                    return 0
+            if current == mount:
+                return min(limits, default=None)
+            current = current.parent
+    return None
+
+
+def admitted_jobs(phase, ceiling):
+    try:
+        cpus = max(1, len(os.sched_getaffinity(0)))
+    except (AttributeError, OSError):
+        cpus = 1
+    available = available_memory_mib()
+    cgroup = cgroup_memory_mib()
+    allowance = JOB_MEMORY_MIB[phase]
+    headroom = min((value for value in (available, cgroup) if value is not None), default=None)
+    if headroom is None:
+        jobs = 1
+        observation = "MemAvailable unavailable; serial fallback"
+    else:
+        usable = headroom - HOST_RESERVE_MIB
+        contract.require(
+            usable >= allowance,
+            f"Insufficient observed memory for {phase}: {headroom} MiB headroom; "
+            f"need {HOST_RESERVE_MIB} MiB host reserve plus {allowance} MiB per job",
+        )
+        jobs = min(ceiling, cpus, usable // allowance)
+        observation = f"MemAvailable={available} MiB, reserve={HOST_RESERVE_MIB} MiB, estimate={allowance} MiB/job"
+        if available is None:
+            jobs = 1
+            observation += "; host observation unavailable, serial fallback"
+    observation += f", cgroup-v2 headroom={cgroup} MiB" if cgroup is not None else ", no visible finite cgroup-v2 bound"
+    print(
+        f"Aurora {phase}: {jobs} jobs (CPU affinity={cpus}, ceiling={ceiling}; {observation}). "
+        "Sizing only, not an aggregate memory cap.",
+        file=sys.stderr,
+    )
+    return jobs
 
 
 def execute(root, scope, targets=(), output=None, *, build_only=False, tests=()):
@@ -115,10 +212,14 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
     requested_sha256 = env.get("BOOTSTRAP_COMPILER_SHA256")
     requested_receipt = env.get("BOOTSTRAP_RECEIPT")
     if requested_bootstrap is not None:
-        try:
-            bootstrap.verify(requested_bootstrap, requested_sha256, requested_receipt)
-        except ValueError as error:
-            raise contract.ContractError(str(error)) from error
+        contract.require(
+            re.fullmatch(r"[0-9a-f]{64}", requested_sha256 or ""),
+            "BOOTSTRAP_COMPILER_SHA256 must supply the predecessor SHA256",
+        )
+        contract.require(
+            requested_receipt and Path(requested_receipt).is_absolute(),
+            "BOOTSTRAP_RECEIPT must supply the absolute reconstruction receipt",
+        )
     else:
         contract.require(
             requested_sha256 is None and requested_receipt is None,
@@ -152,11 +253,13 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
         "kernel_compiler": str(selected_compiler or ""),
         "uefi_ld": env.get("UEFI_LD", ""),
     }
-    build_jobs = int(env.get("AURORA_BUILD_JOBS", "3"))
-    test_jobs = int(env.get("AURORA_TEST_JOBS", "4"))
+    build_selection = env.get("AURORA_BUILD_JOBS", "auto")
+    test_selection = env.get("AURORA_TEST_JOBS", "auto")
+    build_jobs = 64 if build_selection == "auto" else int(build_selection)
+    test_jobs = 64 if test_selection == "auto" else int(test_selection)
     contract.require(
         1 <= build_jobs <= 64 and 1 <= test_jobs <= 64,
-        "AURORA_BUILD_JOBS and AURORA_TEST_JOBS must be between 1 and 64",
+        "AURORA_BUILD_JOBS and AURORA_TEST_JOBS must be auto or between 1 and 64",
     )
     for name in contract.MAKE_CONTROL:
         env.pop(name, None)
@@ -236,6 +339,10 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
                 + shlex.join([meson, *setup])
                 + " or select a matching MESON_BUILD_DIR",
             )
+            try:
+                bootstrap.verify(requested_bootstrap, requested_sha256, requested_receipt)
+            except ValueError as error:
+                raise contract.ContractError(str(error)) from error
             run(*setup)
             options = {item["name"]: item["value"] for item in introspect("--buildoptions")}
             contract.require(
@@ -247,14 +354,40 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
             "Configured bootstrap_compiler must select an absolute predecessor; "
             "see compiler/README.md#source-bootstrap",
         )
-        try:
-            bootstrap.verify(
-                options["bootstrap_compiler"], options["bootstrap_compiler_sha256"], options["bootstrap_receipt"]
-            )
-        except ValueError as error:
-            raise contract.ContractError(str(error)) from error
+
+        def check_predecessor():
+            try:
+                bootstrap_guard.check(
+                    build / "bootstrap-selection.json",
+                    options["bootstrap_compiler"],
+                    options["bootstrap_compiler_sha256"],
+                    options["bootstrap_receipt"],
+                    selection_sha256=bootstrap_guard.configured_selection_sha256(build),
+                )
+            except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+                raise contract.ContractError(f"Configured bootstrap guard: {error}; reconfigure Meson") from error
+
+        check_predecessor()
         if tests:
-            registered = {item["name"] for item in introspect("--tests")}
+            # Refresh configuration before selecting dependencies, as Meson's
+            # own test runner does. This target does not build test fixtures.
+            run(
+                "compile",
+                "-C",
+                build,
+                "-j",
+                admitted_jobs("build", build_jobs),
+                "--ninja-args=build.ninja",
+                stdout=output,
+            )
+            check_predecessor()
+            registered_tests = introspect("--tests")
+            contract.require(
+                isinstance(registered_tests, list)
+                and all(isinstance(item, dict) and isinstance(item.get("name"), str) for item in registered_tests),
+                "Malformed Meson test introspection",
+            )
+            registered = {item["name"] for item in registered_tests}
             unknown = sorted(set(tests) - registered)
             contract.require(
                 not unknown,
@@ -264,10 +397,55 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
                 + shlex.quote(str(build))
                 + " --list",
             )
-        # Meson's generated aggregate covers declared test dependencies, including
-        # non-default fixtures. Build it with our explicit jobs bound before tests.
-        build_targets = list(targets) if scope is None or build_only else ["--ninja-args=meson-test-prereq"]
-        run("compile", "-C", build, "-j", build_jobs, *build_targets, stdout=output)
+            dependencies = set()
+            for test in registered_tests:
+                if test["name"] in tests:
+                    declared = test.get("depends")
+                    contract.require(
+                        isinstance(declared, list) and all(isinstance(d, str) and d for d in declared),
+                        "Malformed Meson dependencies for test: " + test["name"],
+                    )
+                    dependencies.update(declared)
+            # Mirror Meson's selected-test rebuild mapping, preserving every
+            # output of custom targets as well as ordinary executable targets.
+            target_records = introspect("--targets") if dependencies else []
+            contract.require(
+                isinstance(target_records, list) and all(isinstance(target, dict) for target in target_records),
+                "Malformed Meson target introspection",
+            )
+            filenames = set()
+            for dependency in sorted(dependencies):
+                matches = [target for target in target_records if target.get("id") == dependency]
+                contract.require(len(matches) == 1, "Unknown or ambiguous Meson test dependency: " + dependency)
+                outputs = matches[0].get("filename")
+                contract.require(
+                    isinstance(outputs, list)
+                    and outputs
+                    and all(isinstance(name, str) and name and "\0" not in name for name in outputs),
+                    "Malformed Meson test dependency outputs: " + dependency,
+                )
+                for name in outputs:
+                    path = Path(name).resolve()
+                    contract.require(
+                        Path(name).is_absolute() and path != build and path.is_relative_to(build),
+                        "Meson test dependency output outside build directory: " + name,
+                    )
+                    filenames.add(str(path.relative_to(build)))
+            # An empty Ninja target list would build 'all', not no prerequisites.
+            if filenames:
+                run(
+                    "compile",
+                    "-C",
+                    build,
+                    "-j",
+                    admitted_jobs("build", build_jobs),
+                    "--ninja-args=" + json.dumps(["--", *sorted(filenames)]),
+                    stdout=output,
+                )
+        else:
+            # Complete suite selections retain their complete prerequisite target.
+            build_targets = list(targets) if scope is None or build_only else ["--ninja-args=meson-test-prereq"]
+            run("compile", "-C", build, "-j", admitted_jobs("build", build_jobs), *build_targets, stdout=output)
         if scope is None or build_only:
             return build
         run(
@@ -277,7 +455,7 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
             *([] if tests else ["--suite", scope]),
             "--no-rebuild",
             "--num-processes",
-            test_jobs,
+            admitted_jobs("test", test_jobs),
             "--print-errorlogs",
             *tests,
         )
@@ -345,7 +523,7 @@ def main():
     )
     selection.add_argument(
         "--suite",
-        choices=["full", "compiler", "dev", "slow", "integration", "boot"],
+        choices=["full", "compiler", "dev", "slow", "integration", "boot", "exhaustive"],
     )
     selection.add_argument("--build-only", nargs="+", choices=["aurorac", "aurora-fmt"])
     selection.add_argument("--tests", nargs="+", help="Run exact registered names in the hosted-only build")

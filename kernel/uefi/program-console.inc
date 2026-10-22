@@ -248,38 +248,28 @@ auto program_console_envelope(const Bytes &captured, U64 result) -> void {
                                                                          : 2);
     if (console_probe_used || ordinal != 1)
         return normal;
-#ifdef AURORA_PROGRAM_REQUEST_FAULT
-    if (phase == ipc::Phase::request) {
+#ifdef AURORA_PROGRAM_FIXTURE
+    if (fixture == Fixture::program_request_fault && phase == ipc::Phase::request) {
         console_probe_used = true;
         return 8;
     }
-#endif
-#ifdef AURORA_PROGRAM_SERVICE_FAULT
-    if (phase == ipc::Phase::service) {
+    if (fixture == Fixture::program_service_fault && phase == ipc::Phase::service) {
         console_probe_used = true;
         return 4;
     }
-#endif
-#ifdef AURORA_PROGRAM_COMPLETION_FAULT
-    if (phase == ipc::Phase::completion) {
+    if (fixture == Fixture::program_completion_fault && phase == ipc::Phase::completion) {
         console_probe_used = true;
         return 10;
     }
-#endif
-#ifdef AURORA_PROGRAM_REQUEST_BUDGET
-    if (phase == ipc::Phase::request) {
+    if (fixture == Fixture::program_request_budget && phase == ipc::Phase::request) {
         console_probe_used = true;
         return 6;
     }
-#endif
-#ifdef AURORA_PROGRAM_SERVICE_BUDGET
-    if (phase == ipc::Phase::service) {
+    if (fixture == Fixture::program_service_budget && phase == ipc::Phase::service) {
         console_probe_used = true;
         return 5;
     }
-#endif
-#ifdef AURORA_PROGRAM_COMPLETION_BUDGET
-    if (phase == ipc::Phase::completion) {
+    if (fixture == Fixture::program_completion_budget && phase == ipc::Phase::completion) {
         console_probe_used = true;
         return 7;
     }

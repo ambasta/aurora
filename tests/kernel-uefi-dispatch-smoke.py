@@ -10,6 +10,8 @@ spec.loader.exec_module(budget)
 need = budget.need
 BASE = budget.BASE
 EVENT = budget.EVENT
+# Historical synthetic scenarios include copied-policy failures now covered hosted.
+# Current boot modes are admitted separately by kernel_profiles and emulator_clock.
 MODES = (
     "dispatch",
     "dispatch-budget",
@@ -28,6 +30,7 @@ MODES = (
     "dispatch-policy-output",
 )
 SUCCESS = MODES[:5]
+FIXTURE_MODES = MODES[1:11]
 
 
 def metadata_valid(meta, mode):
@@ -228,6 +231,14 @@ def expected(mode, images, arena):
 
 
 def validate(status, text, mode, meta):
+    marker = "AURORA_FIXTURE_READY\n"
+    need(text.count(marker) == (1 if mode in FIXTURE_MODES else 0), "Exact dispatcher fixture readiness")
+    if mode in FIXTURE_MODES:
+        need(
+            text.index("AURORA_PCI_WINDOW_CLOSED:") < text.index(marker) < text.index("AURORA_UEFI_TIMER_READY:"),
+            "Dispatcher selector admission phase",
+        )
+        text = text.replace(marker, "", 1)
     need(mode in MODES, "Unknown dispatcher mode")
     metadata_valid(meta, mode)
     need(status == (33 if mode in SUCCESS else 35), "Wrong dispatcher exit")
@@ -564,7 +575,12 @@ def fixtures():
             rows.append(line)
             if mode == "dispatch-pending" and domain == 1 and line.startswith("AURORA_UEFI_DOMAIN_EVENT: vector=129 "):
                 rows.append(f"AURORA_UEFI_TIMER_PENDING: epoch={epoch}")
-        yield mode, 33 if mode in SUCCESS else 35, prefix + "\n".join(rows) + "\n", meta
+        yield (
+            mode,
+            33 if mode in SUCCESS else 35,
+            prefix + ("AURORA_FIXTURE_READY\n" if mode in FIXTURE_MODES else "") + "\n".join(rows) + "\n",
+            meta,
+        )
 
 
 def self_test():
@@ -573,7 +589,9 @@ def self_test():
         validate(status, text, mode, meta)
         lines = text.splitlines()
         failures = [(0, text), (35 if status == 33 else 33, text)]
-        boundary = next(i for i, line in enumerate(lines) if line.startswith("AURORA_UEFI_TIMER_READY"))
+        boundary = next(
+            i for i, line in enumerate(lines) if line.startswith(("AURORA_FIXTURE_READY", "AURORA_UEFI_TIMER_READY"))
+        )
         for i in range(boundary, len(lines)):
             failures.append((status, "\n".join(lines[:i] + lines[i + 1 :]) + "\n"))
             failures.append((status, "\n".join(lines[:i] + [lines[i]] + lines[i:]) + "\n"))

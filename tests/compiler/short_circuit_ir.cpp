@@ -888,42 +888,9 @@ void verifyResource(IRFunction &f, verification::Metrics *metrics) {
     static_cast<void>(validate(std::move(module), metrics));
 }
 void resourceTests() {
-    using Budget = verification::BlockRetentionBudget;
-    Budget exact;
-    exact.retain(Budget::maximumOperands);
-    check(exact.states() == 1 && exact.operands() == Budget::maximumOperands, "exact operand budget accounting");
-    rejection(
-        "budget one operand over",
-        [&] {
-            exact.retain(1);
-        },
-        "operand retention limit");
-    check(exact.states() == 1 && exact.operands() == Budget::maximumOperands, "operand rejection mutated counters");
-    rejection(
-        "budget SIZE_MAX input",
-        [&] {
-            exact.retain(std::numeric_limits<std::size_t>::max());
-        },
-        "operand retention limit");
-    check(exact.states() == 1 && exact.operands() == Budget::maximumOperands, "SIZE_MAX rejection mutated counters");
-    Budget fresh;
-    rejection(
-        "fresh budget SIZE_MAX input",
-        [&] {
-            fresh.retain(std::numeric_limits<std::size_t>::max());
-        },
-        "operand retention limit");
-    check(fresh.states() == 0 && fresh.operands() == 0, "fresh overflow mutated counters");
-    for (std::size_t index = 0; index < Budget::maximumStates; ++index)
-        fresh.retain(0);
-    rejection(
-        "budget one state over",
-        [&] {
-            fresh.retain(0);
-        },
-        "state retention limit");
-    check(fresh.states() == Budget::maximumStates && fresh.operands() == 0, "state rejection mutated counters");
-    ++accepted;
+    // Exercise the production source budget through admitted IR, not a separate
+    // native accounting helper. The exact and one-over fixtures below cover both
+    // rejection counters and the null-metrics path at the actual retain boundary.
     for (int labels : {16, 64, 256, 4096}) {
         auto f = resourceFunction(64, labels);
         verification::Metrics metrics;
@@ -945,7 +912,9 @@ void resourceTests() {
             },
             "operand retention limit");
         if (withMetrics)
-            check(metrics.snapshots == 4097 && metrics.peakRetainedOperandFacts == 262144,
+            check(metrics.snapshots == 4097 && metrics.peakOperandDepth == 64 &&
+                      metrics.peakRetainedOperandFacts == 262144 && metrics.peakRetainedValueFacts == 262144 &&
+                      metrics.peakRetainedInitializationPayloadBytes == 0,
                   "rejected operand snapshot was retained");
     }
     {
@@ -967,7 +936,10 @@ void resourceTests() {
             },
             "state retention limit");
         if (withMetrics)
-            check(metrics.snapshots == 65536, "rejected block snapshot was retained");
+            check(metrics.snapshots == 65536 && metrics.peakOperandDepth == 0 &&
+                      metrics.peakRetainedOperandFacts == 0 && metrics.peakRetainedValueFacts == 0 &&
+                      metrics.peakRetainedInitializationPayloadBytes == 0,
+                  "rejected block snapshot changed retained counters");
     }
     {
         auto f = resourceFunction(4096, 0);

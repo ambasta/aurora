@@ -10,10 +10,20 @@ resolved type/lifetime analysis through typed IR run in Aurora. The `ir_graph.au
 candidate independently checks normalized module call graphs and
 selects retained functions. Aurora also owns independent metadata/layout, callable
 and frame admission, structural CFG normalization, entry-parameter and static
-call-site admission. Module file loading, mechanical projection, dynamic
-value/provenance verification remain C++23. The Aurora-native x86-64 emitter
+call-site admission and whole-function value, lifetime and provenance verification.
+Module file loading, mechanical projection, quota and report transport checks
+remain C++23. The Aurora-native x86-64 emitter
 consumes the admitted source stores; the host retains artifact I/O.
 GNU assembler/linker and Linux host I/O remain bootstrap dependencies.
+
+The verifier keeps active facts in a flat, sorted owner-backed prefix and restores
+canonical snapshots directly, without rebuilding a search tree. Key comparisons
+observe scalar fields through the active-row receiver rather than returning the
+192-byte fact payload. Each compound storage operation captures its control row
+once and passes validated counts to private helpers; owner extent, liveness,
+first-error and partial-publication checks remain in those helpers. The existing
+owned-values ABI still reads a complete 200-byte active row. This is not a claim
+that all aggregate copies or the measured self-hosting performance gap are gone.
 
 ## Build and check
 
@@ -31,8 +41,8 @@ make -C compiler test
 ```
 
 Compiler-only testing uses the canonical Meson graph and is not root `full`.
-`ir-exhaustive` retains compile-time verifier/codec inventory checks and runs the
-source emitter against admitted fixtures with unknown observations and a removed
+`ir-exhaustive` retains codec inventory checks and runs the source verifier and
+emitter against admitted fixtures with unknown observations and a removed
 handler in temporary copies. Aurora dispatch rejects these at runtime; it does
 not provide the former C++ visitor's compile-time exhaustiveness guarantee.
 [Development and qualification](../docs/developer-test-contract.md) defines exact
@@ -77,8 +87,9 @@ The checked-in [route manifest](bootstrap-route.json) pins every source commit a
 tree, the fixed build options, the final predecessor and the separately named
 historical C++ oracle. The [reconstruction driver](../scripts/bootstrap.py) records
 local source, command, tool/runtime, header-input and artifact identities. Current
-setup and predecessor execution require both the recorded executable digest and
-that complete receipt. These local records are not signed attestations or a trust
+setup requires both the recorded executable digest and that complete receipt.
+Invocation guards retain those bindings without replaying historical evidence
+checks on every use. These local records are not signed attestations or a trust
 anchor against someone who can forge the records and binaries together.
 
 ### Source bootstrap
@@ -199,8 +210,13 @@ requirements are unchanged.
 A retained compiler may be reused only with its exact source/build/tool provenance
 and qualification receipt, not by filename or digest alone. Current setup verifies
 the selected executable against the mandatory recorded digest and reconstruction
-receipt. The generation and historical-oracle commands repeat those checks before
-using the predecessor; ordinary Make also checks before build or reconfiguration.
+receipt. Meson tracks that historical evidence as configuration dependencies.
+The generation and historical-oracle commands check the selected compiler,
+receipt, route, driver and freshly resolved runtime identities before and after
+use. The configured selection is digest-bound in the generated commands, not a
+new reconstruction receipt. Ordinary Make uses these current-selection checks;
+changing the predecessor still requires full validation and reconfiguration.
+See the [configuration/invocation split](../docs/developer-test-contract.md#predecessor-backed-frontend-and-historical-receipts).
 
 Both ordinary default directories are now configured: `make`/`make test` use the
 image-enabled graph, while `make -C compiler test` uses the hosted-only graph.
@@ -231,14 +247,14 @@ test checks current C1/C2 assembly, object,
 facts and header convergence, binds B to the frontend actually linked into C2, and compares current
 C1/C2 corpus diagnostics/output. No compiler binary or generated frontend is
 committed. The candidate's independent module graph pass runs in Aurora after all
-native function checks and before import pruning, without a C++ graph fallback.
-Module file loading, mechanical IR projection, instruction value/provenance
-verification remain C++. Aurora now owns complete x86 text emission, including
+source whole-function checks and before import pruning, without a C++ graph fallback.
+Module file loading, mechanical IR projection and quota/report transport checks
+remain C++. Aurora now owns complete x86 text emission, including
 stack facts and ABI JSON; its host adapter lends the two admitted owners and
 copies bounded sealed output, with no native opcode fallback. Aurora owns metadata/layout,
 callable/frame admission, durable instruction storage, structural CFG checks and
 entry-parameter and static call-site admission.
-Native verification and emission consume the same normalized storage; these
+Source verification and emission consume the same normalized storage; these
 migrations still await execution qualification.
 
 ## Emitter migration qualification
@@ -258,6 +274,16 @@ AURORA_MESON_KEEP_ARTIFACTS=1 meson test -C build/meson-compiler \
   emitter-differential-default emitter-differential-closed
 ```
 
+Both profiles run by default. To select from an explicit comparison target, set
+`meson configure <build> -Demitter_comparison_base=<target commit>`. Immediately
+before the closed test, the existing driver resolves that commit and inspects
+current tracked/staged/unstaged/untracked changes. Only known documentation or
+native-kernel-only changes may produce an explicit Meson SKIP. Compiler/ABI,
+library, generator, option, harness or unknown changes retain the real closed
+comparison, as do missing/invalid/ambiguous bases or unsupported source layouts.
+This is dependency selection, not output-equivalence proof or a cached receipt.
+Use the actual PR target; reset the option to empty to require both unconditionally.
+
 Each new evidence directory retains all input/compiler hashes, exact commands,
 diagnostics and assembly/stack/ABI artifacts. Accepted inputs must match byte for
 byte; rejected inputs must agree and preserve every preexisting output. Any
@@ -272,7 +298,13 @@ consumers still require successful C1/C2 emission, without per-feature exception
 paths or pinned rejection messages. The corpus is every
 `.au` file under compiler, examples, kernel, library and tests; embedded generated
 fixtures and machine behavior remain covered by their existing native suites.
-It supplements C1/C2 convergence and the final GCC 16 full,
+The default profile also compares C1/C2 for every historical input, sharing the
+same real observations rather than compiling the source again in a separate
+bootstrap-corpus runner. Each default input runs old, C1 and C2 exactly once; no
+cross-run corpus cache or synthesized observation is used. The fast lexer and
+whole-frontend convergence gate remains independent. Closed symbols and
+referenced-only reflection change emission, so that profile still runs separately.
+These comparisons supplement the final GCC 16 full,
 BIOS/UEFI and affected-profile gates; it does not replace them. Record before/after
 `scripts/compiler-speed.py` time and peak-memory observations before further
 migration work, with every timeout named rather than silently extending limits.
@@ -393,8 +425,8 @@ directly to typed IR, without a resolved C++ AST round trip. The
 historical predecessor remains the source-bootstrap starting point; this does not
 establish whole-compiler self-hosting.
 
-CFG joins require exact native lifetime, provenance and operand-stack agreement
+CFG joins require exact source lifetime, provenance and operand-stack agreement
 before weakening the retained current value. An already unknown current stays
 unknown without scheduling another visit; initialization joins independently
 report changes. Current values are excluded from retained-fact metrics, so these
-joins adjust only the initialization count and do not copy the native state.
+joins adjust only the initialization count and do not copy a native state.

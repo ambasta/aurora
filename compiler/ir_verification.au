@@ -1,0 +1,348 @@
+export module aurora.compiler.ir_verification;
+import aurora.compiler.ir_verification_errors;
+import aurora.compiler.ir_verification_storage;
+import aurora.compiler.ir_verification_transfer;
+import aurora.compiler.ir_verification_initialization;
+import aurora.compiler.ir_verification_common;
+import aurora.compiler.ir_metadata;
+import aurora.compiler.ir_metadata_storage;
+import aurora.compiler.ir_instructions;
+import aurora.compiler.ir_instruction_storage;
+
+// The sole per-function dynamic acceptance authority. All input rows borrow
+// the paired admitted metadata and structured instruction owners unchanged.
+export namespace compiler_ir_verification {
+    auto resource_field_count(const compiler_ir_metadata::MetadataStore& m, i64 nominal) -> i64 {
+        const compiler_ir_metadata::ClassResultRow layout = m.result_at(nominal);
+        const compiler_ir_metadata::IndexRange fields = layout.fields();
+        i64 count = 0;
+        i64 at = 0;
+        while (at < fields.count()) {
+            const compiler_ir_metadata::FieldRow field = m.field_at(fields.begin() + at);
+            const compiler_ir_metadata::RawTypeRow type = m.type_at(field.type());
+            if (compiler_ir_metadata::owner_kind(type)) {
+                count = compiler_ir_metadata::count_sum(count, 1);
+            }
+            at = at + 1;
+        }
+        return count;
+    }
+    auto dynamic_fact_limit(const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 callable) -> i64 {
+        const compiler_ir_metadata::CallableRow declaration = m.callable_at(callable);
+        const compiler_ir_metadata::IndexRange objects = compiler_ir_metadata::slot_group(m, declaration, 11);
+        const compiler_ir_metadata::IndexRange arrays = compiler_ir_metadata::slot_group(m, declaration, 12);
+        const compiler_ir_metadata::IndexRange spans = compiler_ir_metadata::slot_group(m, declaration, 13);
+        const compiler_ir_metadata::IndexRange bytes = compiler_ir_metadata::slot_group(m, declaration, 16);
+        i64 count = compiler_ir_metadata::count_sum(objects.count(), arrays.count());
+        count = compiler_ir_metadata::count_sum(count, spans.count());
+        count = compiler_ir_metadata::count_sum(count, bytes.count());
+        i64 at = 0;
+        while (at < objects.count()) {
+            const compiler_ir_metadata::SlotRow slot = m.slot_at(objects.begin() + at);
+            const compiler_ir_metadata::RawTypeRow type = m.type_at(slot.type());
+            if (compiler_ir_metadata::owning_type(m, type)) {
+                const i64 nominal = compiler_ir_metadata::find_class(m, type.name());
+                count = compiler_ir_metadata::count_sum(count, 1);
+                count = compiler_ir_metadata::count_sum(count, resource_field_count(m, nominal));
+            }
+            at = at + 1;
+        }
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
+        if (declaration.borrowed_root_count() == 0) {
+            if (compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver())) {
+                const compiler_ir_metadata::ReceiverShape receiver = declaration.first_receiver();
+                const i64 nominal = compiler_ir_metadata::find_class(m, receiver.name());
+                if (compiler_ir_metadata::owning_class(m, nominal)) {
+                    count = compiler_ir_metadata::count_sum(count, 1);
+                    count = compiler_ir_metadata::count_sum(count, resource_field_count(m, nominal));
+                }
+            }
+        } else {
+            at = 0;
+            while (at < declaration.borrowed_root_count()) {
+                const compiler_ir_metadata::RawTypeRow type = m.type_at(declaration.borrowed_root_type(at));
+                count = compiler_ir_metadata::count_sum(count, 1);
+                if (type.kind() == 5) {
+                    count = compiler_ir_metadata::count_sum(count, resource_field_count(m,
+                        compiler_ir_metadata::find_class(m, type.name())));
+                }
+                at = at + 1;
+            }
+        }
+        const compiler_ir_instructions::BodyRow body = s.body_at(callable);
+        at = 0;
+        while (at < body.count()) {
+            const compiler_ir_instructions::CodeRow code = s.code_at(body.begin() + at);
+            const compiler_ir_instructions::RawInstructionRow row = s.instruction_at(code.id());
+            // Occurrences bound active loans. IDs remain instruction-time data,
+            // never allocation extents or new preflight rejection conditions.
+            if (row.form() == 81) {
+                count = compiler_ir_metadata::count_sum(count, 1);
+            }
+            at = at + 1;
+        }
+        return count;
+    }
+    auto seed_root(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m, i64 root, i64 nominal,
+        bool pristine) -> bool {
+        ByteDisposition disposition = ByteDisposition::live;
+        if (pristine) {
+            disposition = ByteDisposition::pristine;
+        }
+        if (!w.fact_set(owned_object_fact(root, 0, disposition))) {
+            return false;
+        }
+        const compiler_ir_metadata::ClassResultRow layout = m.result_at(nominal);
+        const compiler_ir_metadata::IndexRange fields = layout.fields();
+        i64 at = 0;
+        while (at < fields.count()) {
+            const compiler_ir_metadata::FieldRow field = m.field_at(fields.begin() + at);
+            const compiler_ir_metadata::RawTypeRow type = m.type_at(field.type());
+            if (compiler_ir_metadata::owner_kind(type)) {
+                TokenKind token_kind = TokenKind::none;
+                i64 token_root = 0;
+                i64 token_field = -1;
+                if (!pristine) {
+                    token_kind = TokenKind::borrowed;
+                    token_root = root;
+                    token_field = at;
+                }
+                const TokenRow token = TokenRow(token_kind, 0, token_root, 0, token_field);
+                if (!w.fact_set(owned_field_fact(root, at, 0, disposition, token))) {
+                    return false;
+                }
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto enqueue(VerificationWorkspace& w, const compiler_ir_instructions::InstructionStore& s, i64 position) -> bool {
+        const ControlRow before = w.control();
+        const compiler_ir_instructions::CodeRow code = s.code_at(before.code_begin() + position);
+        if (!code.has_flow(1u64)) {
+            return w.fail(first_error(VerificationErrorFirst::worklist_target_is_not_a_basic_block_entry));
+        }
+        CodeStateRow existing = w.code_state(position);
+        if (existing.snapshot() < 0) {
+            return w.retain_state(position) && w.queue_push(position);
+        }
+        // Exact native ordering is observable when several facts disagree.
+        if (!w.same_facts(position, FactKind::object)) {
+            return w.fail(first_error(
+                VerificationErrorFirst::incompatible_active_object_lifetimes_at_control_flow_join));
+        }
+        if (!w.same_facts(position, FactKind::array_lifetime)) {
+            return w.fail(first_error(
+                VerificationErrorFirst::incompatible_active_array_lifetimes_at_control_flow_join));
+        }
+        if (!w.same_facts(position, FactKind::span)) {
+            return w.fail(first_error(
+                VerificationErrorFirst::incompatible_active_span_capabilities_at_control_flow_join));
+        }
+        if (w.same_service_loans(existing.snapshot()) != 1) {
+            return w.fail(first_error(
+                VerificationErrorFirst::incompatible_service_provenance_or_loans_at_control_flow_join));
+        }
+        if (!w.same_facts(position, FactKind::bytes)) {
+            return w.fail(first_error(
+                VerificationErrorFirst::incompatible_owned_byte_lifetimes_or_ownership_at_control_flow_join));
+        }
+        if (!w.same_facts(position, FactKind::borrowed_owner)) {
+            return w.fail(first_error(
+                VerificationErrorFirst::incompatible_borrowed_owner_descriptor_at_control_flow_join));
+        }
+        if (!w.same_facts(position, FactKind::owned_object) || !w.same_facts(position, FactKind::owned_field)) {
+            return w.fail(first_error(
+                VerificationErrorFirst::incompatible_owning_object_lifetimes_or_field_ownership_at_control_flow_join));
+        }
+        if (!w.same_facts(position, FactKind::object_loan)) {
+            return w.fail(first_error(VerificationErrorFirst::incompatible_object_loans_at_control_flow_join));
+        }
+        if (!w.same_operands(position)) {
+            return w.fail(first_error(VerificationErrorFirst::incompatible_value_guard_stacks_at_control_flow_join));
+        }
+        const InitializationJoin joined = w.join_state(position);
+        if (joined == InitializationJoin::error) {
+            return false;
+        }
+        if (joined == InitializationJoin::changed) {
+            return w.queue_push(position);
+        }
+        return w.good();
+    }
+    auto run(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 callable) -> VerificationStatus {
+        if (w.verification_status() != VerificationStatus::pending || m.status()
+            != compiler_ir_metadata::MetadataStatus::success || s.status()
+            != compiler_ir_instructions::InstructionStatus::structured || callable < 0 || callable >= m.callable_count()
+            || callable >= s.body_count()) {
+            w.fail(first_error(VerificationErrorFirst::internal));
+            return w.verification_status();
+        }
+        const compiler_ir_metadata::CallableRow declaration = m.callable_at(callable);
+        const compiler_ir_instructions::BodyRow body = s.body_at(callable);
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
+        const compiler_ir_metadata::ReceiverShape receiver = declaration.first_receiver();
+        const bool has_receiver = compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver());
+        const i64 roots = declaration.borrowed_root_count();
+        bool builtin_owner = false;
+        if (roots != 0) {
+            const compiler_ir_metadata::RawTypeRow first = m.type_at(declaration.borrowed_root_type(0));
+            builtin_owner = first.kind() == 17;
+        }
+        i64 region_offset = 0;
+        i64 region_site = 0;
+        bool has_region = false;
+        i64 at = 0;
+        while (at < declaration.value_parameter_count()) {
+            const compiler_ir_instructions::CodeRow code = s.code_at(body.begin() + at);
+            const compiler_ir_instructions::RawInstructionRow row = s.instruction_at(code.id());
+            if (row.form() == 73) {
+                region_offset = compiler_ir_instructions::entry_value(s, row, 1);
+                region_site = code.id();
+                has_region = true;
+            }
+            at = at + 1;
+        }
+        if (builtin_owner) {
+            const compiler_ir_metadata::IndexRange types = declaration.types();
+            const compiler_ir_metadata::RawTypeRow result = m.type_at(types.begin());
+            if (roots != 1 || !declaration.borrowed_root_mutable(0) || has_receiver
+                || !compiler_ir_metadata::scalar_value(m, result) || has_region) {
+                w.fail(first_error(VerificationErrorFirst::builtin_owner_borrow_invalid_signature));
+                return w.verification_status();
+            }
+            at = 0;
+            while (at < declaration.value_parameter_count()) {
+                const compiler_ir_metadata::RawTypeRow type = m.type_at(declaration.value_parameter_begin() + at);
+                if (!compiler_ir_metadata::scalar_value(m, type) && !(type.kind() == 5
+                    && !compiler_ir_metadata::owning_type(m, type))) {
+                    w.fail(first_error(
+                        VerificationErrorFirst::builtin_owner_borrow_supports_only_scalar_or_copied_tails));
+                    return w.verification_status();
+                }
+                at = at + 1;
+            }
+        }
+        if (compiler_ir_initialization::initialize(w, m, callable) != InitializationStatus::success) {
+            w.fail(first_error(VerificationErrorFirst::internal));
+            return w.verification_status();
+        }
+        const compiler_ir_metadata::IndexRange spans = compiler_ir_metadata::slot_group(m, declaration, 13);
+        at = 0;
+        while (at < body.count()) {
+            const compiler_ir_instructions::CodeRow code = s.code_at(body.begin() + at);
+            const compiler_ir_instructions::RawInstructionRow row = s.instruction_at(code.id());
+            if (row.form() == 51) {
+                if (compiler_ir_instructions::call_count(s, code.id(), 0) > 4096) {
+                    w.fail(first_error(VerificationErrorFirst::literal_span_exceeds_byte_string_bound));
+                    return w.verification_status();
+                }
+                if (compiler_ir_metadata::find_slot(m, spans, compiler_ir_instructions::call_value(s, code.id(), 1))
+                    < 0) {
+                    w.fail(first_error(VerificationErrorFirst::literal_span_requires_exact_typed_spill));
+                    return w.verification_status();
+                }
+            }
+            at = at + 1;
+        }
+        const i64 fact_limit = dynamic_fact_limit(m, s, callable);
+        if (!w.prepare_verification(body.begin(), body.count(), fact_limit)) {
+            return w.verification_status();
+        }
+        ControlRow control = w.control();
+        control.set_region_offset(region_offset);
+        control.set_region_site(region_site);
+        control.set_has_region(has_region);
+        // Control observes the effective receiver, including named borrowed root 0.
+        // The lexical receiver flag above still gates authority and implicit seeding.
+        const i64 effective_receiver = compiler_ir_verification::receiver_class(m, callable);
+        control.set_receiver_class(effective_receiver);
+        control.set_has_receiver(effective_receiver >= 0);
+        control.set_borrowed_root_count(roots);
+        control.set_builtin_borrowed_owner(builtin_owner);
+        control.set_owning_constructor(compiler_ir_metadata::owning_constructor(m, declaration));
+        if (!w.update_control(control)) {
+            return w.verification_status();
+        }
+        if (roots == 0 && has_receiver && compiler_ir_metadata::owning_class(m, control.receiver_class())) {
+            if (!seed_root(w, m, 0, control.receiver_class(), compiler_ir_metadata::receiver_flag(receiver,
+                masks.receiver_constructor()))) {
+                return w.verification_status();
+            }
+        }
+        if (builtin_owner) {
+            const TokenRow token = TokenRow(TokenKind::borrowed, 0, 0, 0, -1);
+            if (!w.fact_set(borrowed_owner_fact(0, ByteDisposition::live, token))) {
+                return w.verification_status();
+            }
+        }
+        at = 0;
+        while (at < roots && !builtin_owner) {
+            const compiler_ir_metadata::RawTypeRow type = m.type_at(declaration.borrowed_root_type(at));
+            if (type.kind() != 5) {
+                w.fail(first_error(VerificationErrorFirst::borrowed_object_root_requires_a_class_type));
+                return w.verification_status();
+            }
+            if (!seed_root(w, m, -at, compiler_ir_metadata::find_class(m, type.name()), false)) {
+                return w.verification_status();
+            }
+            at = at + 1;
+        }
+        if (!w.retain_state(0) || !w.queue_push(0) || !w.start_metrics()) {
+            return w.verification_status();
+        }
+        while (w.pending_count() != 0 && w.good()) {
+            i64 position = w.queue_pop();
+            if (position < 0 || !w.load_state(position)) {
+                w.fail(first_error(VerificationErrorFirst::internal));
+                return w.verification_status();
+            }
+            bool running = true;
+            while (running && w.good()) {
+                const compiler_ir_instructions::CodeRow code = s.code_at(body.begin() + position);
+                if (!w.observe_before(position, code.id()) || !transfer(w, m, s, code.id())
+                    || !w.observe_after(position)) {
+                    return w.verification_status();
+                }
+                if (code.target() >= 0 && !enqueue(w, s, code.target())) {
+                    return w.verification_status();
+                }
+                if (!code.has_flow(2u64)) {
+                    running = false;
+                } else {
+                    position = position + 1;
+                    if (position >= body.count()) {
+                        w.fail(second_error(VerificationErrorSecond::reachable_fallthrough_without_return));
+                        return w.verification_status();
+                    }
+                    const compiler_ir_instructions::CodeRow next = s.code_at(body.begin() + position);
+                    if (next.has_flow(1u64)) {
+                        if (!enqueue(w, s, position)) {
+                            return w.verification_status();
+                        }
+                        running = false;
+                    }
+                }
+            }
+        }
+        i64 emitted_depth = 0;
+        at = 0;
+        while (at < body.count()) {
+            const CodeStateRow depth = w.code_state(at);
+            if (depth.stack_before() != emitted_depth) {
+                w.fail(second_error(VerificationErrorSecond::operand_stack_depth_differs_from_linear_emission_order));
+                return w.verification_status();
+            }
+            emitted_depth = depth.stack_after();
+            if (body.unreachable_after() == at + 1) {
+                w.fail(second_error(VerificationErrorSecond::unreachable_semantic_instruction));
+                return w.verification_status();
+            }
+            at = at + 1;
+        }
+        w.complete_verification();
+        return w.verification_status();
+    }
+}

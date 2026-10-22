@@ -19,6 +19,7 @@ from pathlib import Path
 import random
 import re
 import shutil
+import struct
 import sys
 import tempfile
 import time
@@ -35,7 +36,7 @@ from package_profiles import (
     select_cases,
     validate_identity_selection,
 )
-from package_native_runner import PackageRunner, finalize_report
+from package_native_runner import PackageRunner, finalize_report, safe_receipt
 
 CAP, MAX_CAP, FLOOR = 256 << 20, 1024 << 20, 1 << 30
 SOURCE_CAP, BATCH = 64 << 10, 128
@@ -197,6 +198,7 @@ class Case:
     expected: tuple
     helpers: str = ""
     arguments: tuple = (0, 0)
+    runtime: tuple | None = None
 
 
 def array(name, data):
@@ -235,7 +237,13 @@ def parse_case(label, data, offset=0, count=None, index=0, mutation=None):
         f"i64 i=0;while(i<{len(owner)}){{owner[i]=0u8;i=i+1;}}"
         "return observe_dependency(r,slot-31);"
     )
-    return Case(label, body, model.values() + model.query(index), arguments=arguments)
+    return Case(
+        label,
+        body,
+        model.values() + model.query(index),
+        arguments=arguments,
+        runtime=(model_data.hex(), offset, count, index),
+    )
 
 
 def shared():
@@ -869,6 +877,106 @@ def freeze_corpus(directory):
     print(json.dumps(report, indent=2))
 
 
+def runtime_source():
+    code = PREFIX + shared() + "class ManifestInput{"
+    code += "".join(f"array<u8,512> bytes{i};" for i in range(8))
+    code += "i64 owner_length;i64 offset;i64 count;i64 dependency_index;public:ManifestInput():"
+    code += ",".join(f"bytes{i}{{}}" for i in range(8))
+    code += ",owner_length(0),offset(0),count(0),dependency_index(0){}"
+    code += "auto source_at(i64 index)const->u8{"
+    for i in range(7):
+        code += f"if(index<{(i + 1) * 512}){{return bytes{i}[index-{i * 512}];}}"
+    code += "return bytes7[index-3584];}"
+    for method, result, call in (
+        ("parse_view", "ManifestResult", "parse_manifest"),
+        ("dependency_view", "DependencyResult", "manifest_dependency"),
+    ):
+        arguments = ",dependency_index" if method == "dependency_view" else ""
+        code += f"auto {method}(builtin::span<const u8> source)const->package::{result}{{"
+        code += "const builtin::span<const u8> view=source.subspan(0,owner_length);"
+        code += f"const package::{result} result=package::{call}(view,offset,count{arguments});return result;}}"
+    code += "auto parse_entry(i64 slot)const->u64{"
+    code += array("owner", bytes(4096))
+    code += "i64 index=0;while(index<owner_length){owner[index]=source_at(index);index=index+1;}"
+    view = "borrow_bytes(owner)"
+    code += "if(slot<31){const package::ManifestResult parsed=parse_view(" + view + ");"
+    code += "const package::ManifestResult r=parsed;"
+    code += "i64 i=0;while(i<owner_length){owner[i]=255u8;i=i+1;}return observe_manifest(r,slot);}"
+    code += "const package::DependencyResult parsed=dependency_view(" + view + ");"
+    code += "const package::DependencyResult r=parsed;"
+    code += "i64 i=0;while(i<owner_length){owner[i]=0u8;i=i+1;}return observe_dependency(r,slot-31);}};"
+    return code
+
+
+def runtime_entry(symbol):
+    # Existing freestanding Linux transport, now reading fixed POD records.
+    # The receiver is plain host-owned storage; spans are constructed in Aurora.
+    return f"""
+.text
+.globl _start
+_start:
+    cmpq $2,(%rsp)
+    jne .Lfailed
+    movq 16(%rsp),%rdi
+    xorq %rsi,%rsi
+    xorq %rdx,%rdx
+    movq $2,%rax
+    syscall
+    testq %rax,%rax
+    js .Lfailed
+    movq %rax,input_fd(%rip)
+.Lrecord:
+    xorq %rax,%rax
+    movq input_fd(%rip),%rdi
+    leaq input(%rip),%rsi
+    movq $4128,%rdx
+    syscall
+    testq %rax,%rax
+    je .Ldone
+    cmpq $4128,%rax
+    jne .Lfailed
+    movq $0,slot(%rip)
+.Lslot:
+    leaq input(%rip),%r10
+    movq slot(%rip),%rdi
+    call {symbol}
+    movq slot(%rip),%rcx
+    leaq observations(%rip),%rdx
+    movq %rax,(%rdx,%rcx,8)
+    incq %rcx
+    movq %rcx,slot(%rip)
+    cmpq $92,%rcx
+    jne .Lslot
+    movq $1,%rax
+    movq $1,%rdi
+    leaq observations(%rip),%rsi
+    movq $736,%rdx
+    syscall
+    cmpq $736,%rax
+    jne .Lfailed
+    jmp .Lrecord
+.Ldone:
+    movq $3,%rax
+    movq input_fd(%rip),%rdi
+    syscall
+    testq %rax,%rax
+    jne .Lfailed
+    movq $60,%rax
+    xorq %rdi,%rdi
+    syscall
+.Lfailed:
+    movq $60,%rax
+    movq $91,%rdi
+    syscall
+.bss
+.align 8
+input: .zero 4128
+input_fd: .zero 8
+slot: .zero 8
+observations: .zero 736
+"""
+
+
 class Runner(PackageRunner):
     def __init__(self, compiler, artifacts, cap=CAP):
         super().__init__(
@@ -883,19 +991,143 @@ class Runner(PackageRunner):
             sentinel=b"keep existing manifest output\n\x00\xff",
         )
 
+    def prepare_runtime(self):
+        directory = self.artifacts / "parse-driver"
+        directory.mkdir()
+        source = runtime_source()
+        require(len(source.encode()) <= SOURCE_CAP, "64 KiB runtime source bound")
+        (directory / "input.au").write_text(source)
+        self.command(
+            [
+                self.compiler,
+                "--module-root",
+                ROOT / "library",
+                directory / "input.au",
+                "-o",
+                directory / "compiled.s",
+                "--abi-facts",
+                directory / "abi.json",
+            ],
+            directory,
+            "compiler",
+            compiler=True,
+            batch=True,
+        )
+        require((directory / "input.au").read_text() == source, "compiler must preserve source")
+        facts = json.loads((directory / "abi.json").read_text())
+        records = [(name, row) for name, row in facts["records"].items() if row["source_name"] == "ManifestInput"]
+        require(len(records) == 1, "manifest runtime input ABI")
+        receiver, record = records[0]
+        fields = [(f"bytes{i}", i * 512, 512, "u8", 512) for i in range(8)]
+        fields += [
+            (name, 4096 + i * 8, 8, "i64", 0)
+            for i, name in enumerate(("owner_length", "offset", "count", "dependency_index"))
+        ]
+        require(
+            record["size"] == record["reserved"] == 4128
+            and record["alignment"] == 8
+            and [(f["name"], f["offset"], f["bytes"], f["kind"], f.get("array_length", 0)) for f in record["fields"]]
+            == fields,
+            "manifest runtime receiver layout",
+        )
+        entries = [(name, row) for name, row in facts["functions"].items() if row["source_name"] == "parse_entry"]
+        require(len(entries) == 1, "manifest runtime entry ABI")
+        symbol, row = entries[0]
+        require(
+            row["receiver"] == receiver
+            and not row["receiver_mutable"]
+            and row["borrowed_root_count"] == 0
+            and row["parameter_bytes"] == 8
+            and row["parameters"] == [{"offset": 0, "bytes": 8, "kind": "i64"}]
+            and row["result"] == {"bytes": 8, "kind": "u64"},
+            "manifest runtime call ABI",
+        )
+        (directory / "program.s").write_text((directory / "compiled.s").read_text() + runtime_entry(symbol))
+        self.command(["as", "--64", directory / "program.s", "-o", directory / "program.o"], directory, "assemble")
+        self.command(["ld", "-o", directory / "program", directory / "program.o"], directory, "link")
+        _, undefined, _ = self.command(["nm", "-u", directory / "program"], directory, "undefined-symbols")
+        require(not undefined.strip(), "freestanding binary must have no unresolved symbols")
+        _, elf, _ = self.command(["readelf", "-l", "-d", directory / "program"], directory, "elf-linkage")
+        require(b"INTERP" not in elf and b"NEEDED" not in elf, "no ELF interpreter or runtime library dependencies")
+        self.runtime_directory = directory
+
+    def batch(self, number, cases):
+        if cases[0].runtime is None:
+            return super().batch(number, cases)
+        require(
+            1 <= len(cases) <= BATCH and all(case.runtime is not None and not case.helpers for case in cases),
+            "runtime batch case bound",
+        )
+        if not hasattr(self, "runtime_directory"):
+            self.prepare_runtime()
+        self.budget(24 << 20)
+        directory = self.artifacts / f"batch-{number:03d}"
+        directory.mkdir()
+        packets = []
+        for case in cases:
+            data, offset, count, index = case.runtime
+            owner = bytes.fromhex(data)
+            require(1 <= len(owner) <= 4096 and len(case.expected) == 92, "runtime case transport bounds")
+            packets.append(owner.ljust(4096, b"\0") + struct.pack("<qqqq", len(owner), offset, count, index))
+        (directory / "cases.bin").write_bytes(b"".join(packets))
+        receipt = dict(
+            status="running",
+            cases=len(cases),
+            driver="parse-driver",
+            executable_sha256=sha(self.runtime_directory / "program"),
+        )
+        try:
+            expected = tuple(value for case in cases for value in case.expected)
+            code, output, _ = self.command(
+                [self.runtime_directory / "program", directory / "cases.bin"], directory, "native", batch=True
+            )
+            observed = validate(output, expected, code)
+            receipt.update(
+                status="passed",
+                complete_u64_observations=len(expected),
+                native_output_sha256=sha(directory / "native.stdout"),
+                observations=[
+                    dict(
+                        label=case.label,
+                        arguments=case.arguments,
+                        expected=case.expected,
+                        observed=observed[i * 92 : (i + 1) * 92],
+                    )
+                    for i, case in enumerate(cases)
+                ],
+            )
+        except BaseException as error:
+            receipt.update(status="failed", error=str(error))
+            raise
+        finally:
+            safe_receipt(directory / "receipt.json", receipt)
+        self.compact(directory)
+
+    def finish_runtime(self):
+        if hasattr(self, "runtime_directory"):
+            self.compact(self.runtime_directory)
+
 
 def batches(cases):
     current = []
     bodies = set()
     size = len(PREFIX + shared())
     for case in cases:
-        extra = (len(case.body) + 180 if case.body not in bodies else 0) + len(case.helpers)
-        if current and (len(current) >= BATCH or size + extra > SOURCE_CAP - 1024):
+        extra = (
+            0
+            if case.runtime is not None
+            else (len(case.body) + 180 if case.body not in bodies else 0) + len(case.helpers)
+        )
+        if current and (
+            len(current) >= BATCH
+            or size + extra > SOURCE_CAP - 1024
+            or (current[0].runtime is None) != (case.runtime is None)
+        ):
             yield current
             current = []
             bodies = set()
             size = len(PREFIX + shared())
-            extra = len(case.body) + 180 + len(case.helpers)
+            extra = 0 if case.runtime is not None else len(case.body) + 180 + len(case.helpers)
         current.append(case)
         bodies.add(case.body)
         size += extra
@@ -1123,6 +1355,7 @@ def main():
             runner.batch(number, batch)
             done += len(batch)
             print(f"PASS package manifest {done}/{len(cases)} native cases", flush=True)
+        runner.finish_runtime()
         for number, (label, source, message) in enumerate(negative_cases()):
             runner.reject(number, label, source, message)
         identity.verify()

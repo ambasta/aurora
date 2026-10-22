@@ -55,11 +55,14 @@ make run                     # actual normal BIOS boot
 make run-uefi                 # actual normal UEFI boot
 make capture-framebuffer     # output-only PNG preview, not qualification
 ./scripts/compiler-test.sh   # compiler-only Meson suite
-make test                    # complete native Meson full; does not start QEMU
+make test                    # normal native Meson full; does not start QEMU
+make test-exhaustive         # separate whole-space library enumeration
 ```
 
 Use `MESON_BUILD_DIR=build/gcc16` to select a stable configuration.
-`AURORA_BUILD_JOBS` and `AURORA_TEST_JOBS` separately control compilation and tests.
+`AURORA_BUILD_JOBS` and `AURORA_TEST_JOBS` separately cap compilation and test
+concurrency. The wrapper also sizes jobs from observed CPU/memory headroom;
+see the [sizing policy and its containment limits](meson-bootstrap.md).
 The [Meson guide](meson-bootstrap.md) specifies native targets, setup options,
 profile selection, dependency tracking and full-suite coverage.
 
@@ -284,6 +287,8 @@ open-file guarantees.
 
 - `make test`: final native `full`; `make -C compiler test`
   and `scripts/compiler-test.sh` select the same compiler-only Meson suite.
+- `make test-exhaustive`: the separate whole-space UTF-8 library sweeps; see
+  [normal and exhaustive scope](meson-bootstrap.md#coverage-and-limits).
 - Use `meson test -C BUILD --suite compiler` for compiler-only selection, or
   `--suite dev`, `--suite core`, `--suite bytes`, `--suite packages` or exact test
   names for focused feedback.
