@@ -36,17 +36,25 @@ auto dispatch_execute(unsigned client,unsigned index,ipc::Phase phase,U64 source
     require(client<2 && index<L::domain_count && root()==kernel_root && active==L::domain_count && irq_off(),"dispatch launch boundary");
     auto& domain=domains[index]; require(domain.handle && verify(domain),"dispatch launch domain");
     auto endpoint=dispatcher->endpoint(client,*domain.handle); require(endpoint.has_value(),"dispatch launch grant");
-#ifdef AURORA_DISPATCH_CLIENT_OWNER
+#if defined(AURORA_DISPATCH_FIXTURE)
+    if (fixture == Fixture::dispatch_client_owner) {
     if (client==1 && phase==ipc::Phase::request) endpoint=dispatcher->endpoint(0,*domains[0].handle);
+    }
 #endif
-#ifdef AURORA_DISPATCH_CROSS_REPLY
+#if defined(AURORA_DISPATCH_FIXTURE)
+    if (fixture == Fixture::dispatch_cross_reply) {
     if (phase==ipc::Phase::service) endpoint=dispatcher->endpoint(1-client,*domains[1].handle);
+    }
 #endif
-#ifdef AURORA_DISPATCH_STALE
+#if defined(AURORA_DISPATCH_FIXTURE)
+    if (fixture == Fixture::dispatch_stale) {
     if (phase==ipc::Phase::service && stale_service_endpoint) endpoint=stale_service_endpoint;
+    }
 #endif
-#ifdef AURORA_USER_STALE_GRANT
+#if defined(AURORA_USER_FIXTURE)
+    if (fixture == Fixture::user_stale_grant) {
     if (client==0 && phase==ipc::Phase::request && stale_client_endpoint) endpoint=stale_client_endpoint;
+    }
 #endif
     selected_client=client; selected_phase=phase;
     transaction=phase==ipc::Phase::request ? 0 : phase==ipc::Phase::completion ? completed_transaction : dispatcher->transaction(client).value_or(0);
@@ -65,17 +73,25 @@ auto dispatch_execute(unsigned client,unsigned index,ipc::Phase phase,U64 source
 #ifdef AURORA_UEFI_USER_BUDGET
     timer_begin(index);
     if (index==0) {
-#ifdef AURORA_USER_ROLE
+#if defined(AURORA_USER_FIXTURE)
+    if (fixture == Fixture::user_role) {
         selected_role=RunAuthority::Role::service;
+    }
 #endif
-#ifdef AURORA_USER_PHASE
+#if defined(AURORA_USER_FIXTURE)
+    if (fixture == Fixture::user_phase) {
         selected_phase=ipc::Phase::completion;
+    }
 #endif
-#ifdef AURORA_USER_TRANSACTION
+#if defined(AURORA_USER_FIXTURE)
+    if (fixture == Fixture::user_transaction) {
         ++transaction;
+    }
 #endif
-#ifdef AURORA_USER_EPOCH
+#if defined(AURORA_USER_FIXTURE)
+    if (fixture == Fixture::user_epoch) {
         --timer_owner_epoch;
+    }
 #endif
     }
 #else
@@ -178,23 +194,27 @@ auto dispatch_bind() -> void {
         Serial::text(" frame="); Serial::number(*frames.address(*domains[index].stacks[0])); Serial::text("\r\n");
     }
     dispatch_bind(); dispatch_request(0);
-#ifdef AURORA_DISPATCH_DUPLICATE
+#if defined(AURORA_DISPATCH_FIXTURE)
+    if (fixture == Fixture::dispatch_duplicate) {
     dispatch_request(0);
+    }
 #endif
     dispatch_request(1);
-#ifdef AURORA_DISPATCH_FULL
+#if defined(AURORA_DISPATCH_FIXTURE)
+    if (fixture == Fixture::dispatch_full) {
     dispatch_request(0);
+    }
 #endif
-#if defined(AURORA_DISPATCH_BUDGET) || defined(AURORA_DISPATCH_FAULT) || defined(AURORA_DISPATCH_MIXED) || defined(AURORA_DISPATCH_STALE)
+#if defined(AURORA_DISPATCH_FIXTURE)
+    if (fixture == Fixture::dispatch_budget || fixture == Fixture::dispatch_fault ||
+        fixture == Fixture::dispatch_mixed || fixture == Fixture::dispatch_stale) {
     const auto old_service=*domains[1].handle; const auto old_endpoint=dispatcher->endpoint(0,old_service);
-#ifdef AURORA_DISPATCH_MIXED
-    dispatch_service(0); dispatch_service(1,5);
-    constexpr bool first_replied=true;
-#elif defined(AURORA_DISPATCH_FAULT)
-    dispatch_service(0,4); constexpr bool first_replied=false;
-#else
-    dispatch_service(0,5); constexpr bool first_replied=false;
-#endif
+    const bool first_replied = fixture == Fixture::dispatch_mixed;
+    if (first_replied) {
+        dispatch_service(0); dispatch_service(1,5);
+    } else {
+        dispatch_service(0,fixture == Fixture::dispatch_fault ? 4 : 5);
+    }
     const auto cancelled=dispatcher->cancel_pending(ipc::Phase::inactive);
     require(cancelled==(first_replied ? 1U : 2U),"dispatch incarnation cancellation");
     dispatch_record("CANCEL",2,0,cancelled,first_replied ? 1 : 0); dispatch_finish();
@@ -204,12 +224,10 @@ auto dispatch_bind() -> void {
         && create(1)==1 && *frames.address(*domains[1].stacks[0])==reused,"dispatch service rebirth");
     for (const auto& lease:domains[1].stacks) require(zero(*frames.address(*lease)),"dispatch rebirth scrub");
     dispatch_record("RESTART",2,0,reused,frames.used()); dispatch_bind();
-#ifdef AURORA_DISPATCH_STALE
-    stale_service_endpoint=old_endpoint;
-#else
-    static_cast<void>(old_endpoint);
-#endif
+    if (fixture == Fixture::dispatch_stale)
+        stale_service_endpoint=old_endpoint;
     dispatch_request(0); dispatch_request(1);
+    }
 #endif
     dispatch_service(0); dispatch_complete(0,false);
     require(dispatcher->recycle(ipc::Phase::inactive,0),"dispatch client recycle");

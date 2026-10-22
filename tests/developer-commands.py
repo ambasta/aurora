@@ -490,6 +490,26 @@ class DeveloperCommands(unittest.TestCase):
                     self.assertFalse((self.repo / "build").exists())
                     self.record.unlink()
 
+    def test_root_full_and_exhaustive_routes_are_separate(self):
+        self.tool("python3", 'printf "%s\\n" "$*" >> "$CALLS"\nexit "${FAKE_STATUS:-0}"\n')
+        for goal, suite in (("test", "full"), ("test-exhaustive", "exhaustive")):
+            for status in (0, 19):
+                with self.subTest(goal=goal, status=status):
+                    result = subprocess.run(
+                        [MAKE, goal],
+                        cwd=self.repo,
+                        env=self.env | {"FAKE_STATUS": str(status)},
+                        capture_output=True,
+                        text=True,
+                        timeout=5,
+                    )
+                    self.assertEqual(result.returncode == 0, status == 0, result.stdout + result.stderr)
+                    self.assertEqual(
+                        self.calls(), [f"-B scripts/meson_test.py --repo-root {self.repo} --suite {suite}"]
+                    )
+                    self.assertFalse((self.repo / "build").exists())
+                    self.record.unlink()
+
     def test_removed_compiler_aliases_do_not_dispatch(self):
         for directory, goals in (
             (self.repo, ("test-compiler", "test-formatter", "test-lint")),

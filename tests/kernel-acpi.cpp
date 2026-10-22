@@ -155,6 +155,7 @@ auto main() -> int {
     checksum(invalid);
     check(!Acpi::xsdt(invalid, 0x101000));
     invalid = xsdt;
+    // Former acpi-changed-header: repaired checksum cannot authorize a changed header.
     invalid[10] ^= std::byte{1};
     checksum(invalid);
     check(!Acpi::same_header(invalid, std::span{xsdt}.first(36)));
@@ -182,6 +183,7 @@ auto main() -> int {
     check(topology->processors()[0].enabled && !topology->processors()[1].enabled &&
           topology->processors()[1].online_capable);
     check(topology->processors()[1].extended && topology->processors()[1].id == 256);
+    // Includes former acpi-bad-entry (first record length zero).
     for (auto at : {45U, 53U, 69U, 81U}) {
         for (auto length : {0U, 1U, 255U}) {
             invalid = madt;
@@ -190,6 +192,7 @@ auto main() -> int {
             check(!Topology::parse(invalid, 40));
         }
     }
+    // Former acpi-duplicate: reject either duplicate APIC ID or duplicate UID.
     for (auto field : {56U, 64U}) {
         invalid = madt;
         put(invalid, field, 0, 4);

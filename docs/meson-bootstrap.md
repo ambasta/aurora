@@ -91,7 +91,27 @@ meson test -C build/meson-compiler --list
 ```
 
 `make clean` still preserves configuration.
-`AURORA_BUILD_JOBS=3` and `AURORA_TEST_JOBS=4` are independent.
+The convenience wrapper sizes jobs separately before compilation and tests from
+CPU affinity and observed host `MemAvailable`, clamped by visible cgroup-v2
+`memory.max - memory.current` headroom for the current group and mounted ancestors,
+reserving 2 GiB. It does not configure cgroups or establish containment.
+It estimates 2 GiB per build job and 1 GiB per test job; these exceed retained
+single-child peaks of roughly 1.7 GiB and 0.5 GiB respectively. Missing host-memory
+or CPU observations fall back to one job; observed memory below one job plus
+reserve, or unreadable visible cgroup limits, refuses launch.
+`AURORA_BUILD_JOBS` and `AURORA_TEST_JOBS` accept `auto` (the default, with a
+ceiling of 64) or independent numeric ceilings (1–64), never requests to exceed
+that admission calculation. To explicitly replace inherited fixed settings after
+sourcing the tool environment once, use
+`AURORA_BUILD_JOBS=auto AURORA_TEST_JOBS=auto make test`.
+Numeric settings remain real ceilings. The selected counts and sizing inputs are
+printed before each phase.
+This is conservative sizing, not memory containment or a reservation against
+other processes. Host observations may not expose a container's memory or CPU
+quota; use lower explicit ceilings where necessary. No cgroup is created, and a
+child's address-space limit is not an aggregate process-tree memory cap. Existing
+exclusive tests and watchdogs are unchanged. Direct Meson commands retain their
+own explicit job selection.
 The container wrapper forwards these two controls and `MESON_BUILD_DIR` when set;
 use checkout-relative build paths, since the checkout is mounted at `/workspace`.
 `SANITIZE` and nondefault `CPPFLAGS`/`LDFLAGS` are not silently accepted by the
@@ -201,6 +221,26 @@ Use `meson test -C BUILD --list` or Meson introspection for the current registra
 `boot` are additional named selections; native `boot` checks/builds images but
 never starts QEMU. Keep development quick with `dev` or exact test names; full
 package profiles are slow. `packages` selects both partial and full profiles.
+
+`make test` selects normal `full`. `make test-exhaustive` selects the separate
+`exhaustive` suite through the same incremental wrapper and resource policy;
+direct Meson selection is `meson test -C BUILD --suite exhaustive`.
+Normal `utf8` and `utf8-encoding` registrations use `--profile full`, with
+documented boundary cases and fixed-seed scalar/two-byte samples. The separate
+`utf8-exhaustive` and `utf8-encoding-exhaustive` registrations use
+`--profile exhaustive` and preserve the whole scalar/byte spaces. They keep the
+same per-test timeouts, native result oracles and rejection families.
+The normal scalar set has 1,084 values per runner; decoding has 1,277 two-byte
+inputs. Seed 220104 supplements explicit transition boundaries. All 256
+single-byte inputs and 24,200 longer decoder boundary inputs remain in normal
+full, and encoding retains all 2,048 surrogate rejections. Exhaustive covers
+1,112,064 scalar values and all 65,536 decoder two-byte inputs. This changes
+enumeration scope, not a claim of fewer compilations or measured full-suite time.
+Sector-window and XFS coverage remains complete in normal full after batching;
+IR safety, package and other complete regression families are not demoted.
+Run relevant whole sweeps when changing their algorithms, oracles or sampling
+contract. An exhaustive-only pass is not a full pass. Unfiltered Meson runs both
+tiers, so select a suite explicitly for normal development.
 
 Compiler Python runners selected by root Make's Meson forwarding and the fixed lexer/IR/ABI and
 module C++ fixtures are registered in the canonical graph. The offline XFS

@@ -87,8 +87,11 @@ command -v "$qemu" >/dev/null || { echo 'BLOCKED: QEMU missing; image is built b
 mapfile -d '' -t qemu_argv < <(python3 -B scripts/qemu_transport.py argv --platform bios \
     --mode="$mode" --image "$image_dir/aurora.img" --qemu "$qemu" --data "${QEMU_DATA:-}" "${snapshot[@]}")
 (( ${#qemu_argv[@]} )) || { echo 'FAIL: empty QEMU command' >&2; exit 2; }
+startup_byte="$(python3 -B scripts/kernel_profiles.py --bios-fixture-byte "${mode#--}")"
+startup_args=()
+if [[ -n "$startup_byte" ]]; then startup_args+=(--startup-byte "$startup_byte"); fi
 set +e
-python3 -B scripts/qemu_transport.py run --timeout 15 --log "$log" -- "${qemu_argv[@]}"
+python3 -B scripts/qemu_transport.py run "${startup_args[@]}" --timeout 15 --log "$log" -- "${qemu_argv[@]}"
 status=$?
 set -e
 cat "$log"

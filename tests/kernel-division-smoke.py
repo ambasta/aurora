@@ -19,7 +19,15 @@ COMPILED_ZERO = "AURORA_COMPILED_USER_OK: arrays, loop, division_zero, overflow,
 
 def validate_metadata(metadata: dict, fixture: str) -> None:
     require(
-        isinstance(metadata, dict) and metadata.get("division_fixture") == fixture,
+        isinstance(metadata, dict)
+        and (
+            metadata.get("division_fixture") == fixture
+            or (
+                fixture == "kernel-trap"
+                and metadata.get("division_fixture") == "none"
+                and metadata.get("bios_fixture_family") == "ordinary"
+            )
+        ),
         "Division fixture does not match the linked-image receipt",
     )
     for index in range(3):
@@ -224,6 +232,19 @@ def self_test() -> None:
                 mode,
                 metadata,
             )
+    metadata = fixture_metadata("kernel-trap")
+    status, good = fixture_transcript("kernel-trap", metadata)
+    metadata["division_fixture"] = "none"
+    metadata["bios_fixture_family"] = "ordinary"
+    validate_mode(status, good, "--division-kernel-trap", metadata)
+    passed += 1
+    for family in (None, "schedule", "unknown"):
+        bad = deepcopy(metadata)
+        bad["bios_fixture_family"] = family
+        deny(status, good, "--division-kernel-trap", bad)
+    bad = deepcopy(metadata)
+    bad["0"]["division_zero"] = 0
+    deny(status, good, "--division-kernel-trap", bad)
     print(f"PASS: division smoke validators, {passed} positive and {rejected} negative cases")
 
 

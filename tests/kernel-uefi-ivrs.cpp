@@ -239,6 +239,7 @@ auto check_admission(const Ivrs &ivrs) -> void {
         check(!admitted->finish(authority, *snapshot, 0, 0x29d3, 1ULL << bit));
     }
     check(!admitted->finish(authority, *changed, 0, 0x29d3, 0));
+    // Includes former ivrs-range: type7, four pages at the aperture, WB flag8.
     for (unsigned type = 0; type <= 15; ++type)
         for (auto flags :
              {0ULL, 1ULL, 0x4000ULL, 0x20000ULL, 0x24001ULL, 2ULL, 4ULL, 8ULL, 0x1000ULL, 0x8000ULL, 1ULL << 63}) {
@@ -415,6 +416,7 @@ auto main() -> int {
     }
     // Common identity mismatches, including a different physical unit with the
     // same SELECT claims, must not produce two independently usable units.
+    // Former ivrs-pair: companion physical-unit identity differs.
     for (unsigned field = 104; field < 118; ++field) {
         changed = bytes;
         changed[field] ^= std::byte{1};
@@ -437,6 +439,7 @@ auto main() -> int {
             checksum(changed);
             check(!parse(changed));
         }
+    // Includes former ivrs-alias (entry type0x42).
     for (unsigned offset : {72U, 140U})
         for (unsigned index = 0; index < 7; ++index) {
             for (unsigned type = 0; type < 256; ++type) {
@@ -481,6 +484,7 @@ auto main() -> int {
         repair(changed);
         check(!parse(changed));
     }
+    // Former ivrs-reserved: these block kinds fail before range contents matter.
     // Correctly sized IVMD forms are unsupported; no memory-exclusion promise
     // is silently discarded. Unknown trailing blocks likewise fail closed.
     for (unsigned type : {0U, 0x20U, 0x21U, 0x22U, 0xffU}) {
@@ -501,6 +505,15 @@ auto main() -> int {
     check(parse(sized(1)).has_value());
     check(parse(sized(256)).has_value());
     check(!parse(sized(257)));
+    // Former ivrs-scope: both descriptors agree on a different requester set.
+    // Structural validity must not imply coverage of the actual PCI inventory.
+    changed = bytes;
+    put(changed, 81, 17, 2);
+    put(changed, 149, 17, 2);
+    checksum(changed);
+    const auto foreign_scope = parse(changed);
+    check(foreign_scope.has_value());
+    check(!foreign_scope->matches_inventory(pci, 0, 0, 2, 0));
     // Removing the unit's own SELECT scope does not establish full coverage.
     changed = bytes;
     put(changed, 85, 25, 2);

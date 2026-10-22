@@ -37,7 +37,12 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
 3. Add positive, negative, regression and adversarial tests. Check metadata against
    actual generated layout/behavior. Fail closed for unsupported syntax/semantics.
 4. Run dependency-selected focused checks while developing. Keep `dev` fast;
-   complete `slow`, `integration` and native `boot` coverage belongs to `full`.
+   normal `slow`, `integration` and native `boot` coverage belongs to `full`.
+   Explicit combinatorial library sweeps belong to `exhaustive`, outside normal
+   `full`; normal cases retain their documented boundary families and fixed-seed
+   samples. Select the whole sweeps when changing their library behavior, oracles
+   or sampling contract, and record which tier actually ran. Do not silently
+   replace complete regression families with first-N limits.
    Before every merge or release, run complete `full` with GCC 16 on the final
    integrated source, including after conflict resolution. `make test` selects
    the same Meson graph; do not run a second duplicate Make aggregate for credit.
@@ -74,6 +79,10 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
 5. Review changes independently before considering a milestone verified. Record
    reproduced defects and fixes, commands, source revision, tool versions and limits.
 6. Update implementation docs and the completeness matrix in the same change.
+   Each PR must report comparable executed build steps, configured target and
+   distinct kernel-image counts, and full-suite wall time, with a reason for any
+   growth. Record workload/configuration and actual concurrency; label estimates
+   and unavailable measurements rather than substituting historical results.
 7. Keep changes reviewable. Use a clean, independently reviewed squash merge so
    work-in-progress checkpoints do not enter main. Do not rewrite existing history.
    Verified functional checkpoints may use ready-for-review pull requests;
@@ -107,9 +116,11 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
 - meson test -C build/meson --suite packages --num-processes 4: partial and full package profiles
 - meson test -C build/meson --suite dev --num-processes 2: quick cross-component feedback
 - meson test -C build/meson --suite slow --num-processes 2: longer integration/ABI sweeps
-- meson test -C build/meson --suite full --num-processes 2: all registered non-LSP tests (see Meson introspection)
-- make test: incremental compile then the complete Meson `full` suite;
+- meson test -C build/meson --suite full --num-processes 2: normal full non-LSP regression coverage
+- meson test -C build/meson --suite exhaustive --num-processes 2: complete combinatorial library sweeps, not a replacement for full
+- make test: incremental compile then the complete normal Meson `full` suite;
   `MESON_BUILD_DIR`, `AURORA_BUILD_JOBS` and `AURORA_TEST_JOBS` are configurable
+- make test-exhaustive: incremental prerequisites then the separate `exhaustive` suite
 - make -C compiler test: complete compiler-only scope, not the root full aggregate
 - make smoke: real QEMU normal boot
 - make smoke-fault: real fail-stop exception injection (see scripts for modes)

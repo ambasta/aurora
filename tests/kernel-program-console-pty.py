@@ -596,6 +596,21 @@ def validate_file_call(text, mode, expected, service_results, images, timer):
 def validate(
     text, mode, expected_outputs, commands, images, timer, expected_reads=None, expected_saves=None, expected_files=None
 ):
+    selected = mode in FIXTURE_MODES and FIXTURE_MODES[mode][0] == "program-fixture"
+    need(
+        text.count("AURORA_FIXTURE_READY") == int(selected)
+        and text.splitlines().count("AURORA_FIXTURE_READY") == int(selected),
+        "Program fixture selector readiness",
+    )
+    if selected:
+        need(
+            "AURORA_PCI_WINDOW_CLOSED:" in text
+            and "AURORA_UEFI_TIMER_READY:" in text
+            and text.index("AURORA_PCI_WINDOW_CLOSED:")
+            < text.index("AURORA_FIXTURE_READY")
+            < text.index("AURORA_UEFI_TIMER_READY:"),
+            "Program selector admission phase",
+        )
     expected_reads = {} if expected_reads is None else expected_reads
     expected_saves = {} if expected_saves is None else expected_saves
     expected_files = {} if expected_files is None else expected_files

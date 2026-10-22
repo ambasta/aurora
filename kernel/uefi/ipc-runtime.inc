@@ -3,6 +3,11 @@ auto ipc_record(std::string_view operation,U64 first,U64 second) -> void {
     Serial::text("AURORA_UEFI_IPC_"); Serial::text(operation); Serial::text(": transaction="); Serial::number(transaction);
     Serial::text(" first="); Serial::number(first); Serial::text(" second="); Serial::number(second); Serial::text("\r\n");
 }
+#ifdef AURORA_BUDGET_FIXTURE
+// This family contains one exact named forged-interrupt instruction. Do not
+// clone its assembler label into multiple inlined service call sites.
+[[gnu::noinline]]
+#endif
 auto ipc_execute(unsigned index,ipc::Phase phase,U64 source_phase,U64 first,U64 second,ProgramEvent expected_event,
 #ifdef AURORA_UEFI_SNAPSHOT
                  std::optional<U64> expected_value,
@@ -41,18 +46,24 @@ auto ipc_execute(unsigned index,ipc::Phase phase,U64 source_phase,U64 first,U64 
     Serial::text(" root="); Serial::number(domain.tables->root()); Serial::text(" grant="); Serial::number(endpoint->generation());
     Serial::text(" transaction="); Serial::number(launch[4]); Serial::text("\r\n");
     const auto selected=domain.tables->root(); asm volatile("mov %0,%%cr3"::"r"(selected):"memory");
-#ifdef AURORA_IPC_KERNEL_TRAP
+#if defined(AURORA_IPC_FIXTURE)
+    if (fixture == Fixture::ipc_kernel_trap) {
     asm volatile("jmp *%0"::"r"(domain.contract->bounds_pc()):"memory");
+    }
 #endif
 #ifdef AURORA_UEFI_SERVICE_BUDGET
     if (phase==ipc::Phase::service) {
         timer_begin(index);
-#ifdef AURORA_BUDGET_EPOCH
+#if defined(AURORA_BUDGET_FIXTURE)
+    if (fixture == Fixture::budget_epoch) {
         --timer_owner_epoch;
+    }
 #endif
-#ifdef AURORA_BUDGET_FORGED
+#if defined(AURORA_BUDGET_FIXTURE)
+    if (fixture == Fixture::budget_forged) {
         require(timer_stop() && timer_quiet(0x100,false),"forged probe quiet");
         asm volatile("int $64\n.global uefi_service_forged_pc\nuefi_service_forged_pc:":::"memory");
+    }
 #endif
     }
 #endif
@@ -89,16 +100,20 @@ auto ipc_deliver(bool fault) -> void {
     ipc_record("DELIVER",request->first(),request->second());
 #ifdef AURORA_UEFI_SERVICE_BUDGET
     const bool exhaust=fault;
-#ifdef AURORA_BUDGET_FAULT
-    const auto source_phase=exhaust ? 4 : 1;
-    const auto wanted=exhaust ? ProgramEvent::bounds : ProgramEvent::returned;
+#ifdef AURORA_BUDGET_FIXTURE
+    const bool fault_case = fixture == Fixture::budget_fault;
+    const auto source_phase = exhaust ? (fault_case ? 4 : 5) : 1;
+    const auto wanted = exhaust ? (fault_case ? ProgramEvent::bounds : ProgramEvent::rejected) : ProgramEvent::returned;
 #else
     const auto source_phase=exhaust ? 5 : 1;
     const auto wanted=exhaust ? ProgramEvent::rejected : ProgramEvent::returned;
 #endif
     ipc_execute(1,ipc::Phase::service,source_phase,request->first(),request->second(),wanted,exhaust ? 0 : 42);
-#ifdef AURORA_BUDGET_FAULT
-    require(!timer_exhausted && (exhaust || timer_compiled_hits>0),"service fault outcome");
+#ifdef AURORA_BUDGET_FIXTURE
+    if (fault_case)
+        require(!timer_exhausted && (exhaust || timer_compiled_hits>0),"service fault outcome");
+    else
+        require(timer_exhausted==exhaust && timer_compiled_hits>0 && (!exhaust || (timer_ticks==3 && timer_resumes==2)),"service budget outcome");
 #else
     require(timer_exhausted==exhaust && timer_compiled_hits>0 && (!exhaust || (timer_ticks==3 && timer_resumes==2)),"service budget outcome");
 #endif
@@ -118,22 +133,35 @@ auto ipc_deliver(bool fault) -> void {
     ipc_complete(true);
 }
 auto run_ipc() -> void {
-#ifdef AURORA_IPC_EXHAUSTED
-    mailbox.emplace(registry,1);
+#ifdef AURORA_IPC_FIXTURE
+    select_fixture(Fixture::ipc_fault, Fixture::ipc_exhausted);
+#endif
+#ifdef AURORA_IPC_FIXTURE
+    if (fixture == Fixture::ipc_exhausted)
+        mailbox.emplace(registry,1);
+    else
+        mailbox.emplace(registry);
 #else
     mailbox.emplace(registry);
 #endif
     require(create(0)==0 && create(1)==1 && mailbox->bind(*domains[0].handle,*domains[1].handle),"IPC participants");
     [[maybe_unused]] const auto first_service=*domains[1].handle;
     const auto old_endpoint=mailbox->endpoint(*domains[0].handle); require(old_endpoint.has_value(),"IPC initial endpoint");
-#ifdef AURORA_IPC_STALE
-    require(mailbox->revoke(ipc::Phase::inactive) && mailbox->bind(*domains[0].handle,*domains[1].handle),"IPC grant rebind");
-    ipc_execute(0,ipc::Phase::request,0,0,2,ProgramEvent::returned,40,old_endpoint);
+#ifdef AURORA_IPC_FIXTURE
+    if (fixture == Fixture::ipc_stale) {
+        require(mailbox->revoke(ipc::Phase::inactive) && mailbox->bind(*domains[0].handle,*domains[1].handle),"IPC grant rebind");
+        ipc_execute(0,ipc::Phase::request,0,0,2,ProgramEvent::returned,40,old_endpoint);
+    } else {
+        ipc_execute(0,ipc::Phase::request,0,0,2,ProgramEvent::returned,40);
+    }
 #else
     ipc_execute(0,ipc::Phase::request,0,0,2,ProgramEvent::returned,40);
 #endif
-#if defined(AURORA_IPC_FAULT) || defined(AURORA_UEFI_SERVICE_BUDGET) \
-    || defined(AURORA_IPC_POLICY_CANCEL_INPUT) || defined(AURORA_IPC_POLICY_CANCEL_OUTPUT)
+#if (((defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_IPC_POLICY_CANCEL_INPUT)) \
+    || defined(AURORA_IPC_POLICY_CANCEL_OUTPUT)) || defined(AURORA_IPC_FIXTURE))
+#ifdef AURORA_IPC_FIXTURE
+    if (fixture == Fixture::ipc_fault) {
+#endif
     ipc_deliver(true); ipc_cancel();
     const auto frame=*frames.address(*domains[1].stacks[0]);
     require(mailbox->revoke(ipc::Phase::inactive) && retire(1) && !registry.index(first_service),"IPC service retirement");
@@ -142,19 +170,23 @@ auto run_ipc() -> void {
     for (const auto& lease:domains[1].stacks) require(zero(*frames.address(*lease)),"IPC restart scrub");
     Serial::text("AURORA_UEFI_IPC_RESTART: frame="); Serial::number(frame); Serial::text("\r\n");
     ipc_execute(0,ipc::Phase::request,0,0,2,ProgramEvent::returned,40);
-#elif defined(AURORA_IPC_CANCEL) || defined(AURORA_IPC_LATE)
-    ipc_cancel();
-#ifdef AURORA_IPC_LATE
-    ipc_execute(1,ipc::Phase::service,1,40,2,ProgramEvent::returned,42);
+#ifdef AURORA_IPC_FIXTURE
+    } else if (fixture == Fixture::ipc_cancel || fixture == Fixture::ipc_late) {
+        ipc_cancel();
+        if (fixture == Fixture::ipc_late)
+            ipc_execute(1,ipc::Phase::service,1,40,2,ProgramEvent::returned,42);
+        require(mailbox->recycle(ipc::Phase::inactive),"IPC cancelled recycle");
+        ipc_execute(0,ipc::Phase::request,0,0,2,ProgramEvent::returned,40);
+    }
 #endif
-    require(mailbox->recycle(ipc::Phase::inactive),"IPC cancelled recycle");
-    ipc_execute(0,ipc::Phase::request,0,0,2,ProgramEvent::returned,40);
 #else
     static_cast<void>(first_service);
 #endif
     ipc_deliver(false);
-#ifdef AURORA_IPC_DUPLICATE
+#if defined(AURORA_IPC_FIXTURE)
+    if (fixture == Fixture::ipc_duplicate) {
     ipc_execute(1,ipc::Phase::service,1,40,2,ProgramEvent::returned,42);
+    }
 #endif
     require(!mailbox->cancel(ipc::Phase::inactive),"IPC replied cancellation");
     ipc_complete(false);

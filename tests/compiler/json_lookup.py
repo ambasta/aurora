@@ -19,12 +19,14 @@ import os
 import pathlib
 import random
 import re
+import struct
 import sys
 import tempfile
 
 sys.dont_write_bytecode = True
 import json_profile as profile
 import json_codecs as codecs
+import json_runtime as runtime
 from compiler_contract import selected_flag_vectors
 from package_profiles import SelectedCompiler, finalize_selected_identity
 
@@ -259,48 +261,11 @@ def observe(report="report", field="field"):
     return body + "return -779;"
 
 
-def sliced(case, parameter, prefix):
-    parent, source = parameter, ""
-    windows = case.windows if case.data else ((0, 0), *case.windows)
-    for index, (start, count) in enumerate(windows):
-        name = prefix + str(index)
-        source += f"const {SPAN} {name}={parent}.subspan({start},{count});"
-        parent = name
-    return parent, source
-
-
 def invocation(query, data="bytes", key="key"):
     args = f"{data},{query.document.offset},{query.document.extent()}"
     if query.key is None:
         return f"std::lookup_json_element({args},{query.index})"
     return f"std::lookup_json_member({args},{key},{query.key.offset},{query.key.extent()})"
-
-
-def source_case(query):
-    helper = f"auto input_CASE({SPAN} bytes"
-    if query.key is not None:
-        helper += f",{SPAN} key"
-    helper += f")->{RESULT}{{"
-    data, source = sliced(query.document, "bytes", "view")
-    helper += source
-    key = "key"
-    if query.key is not None:
-        key, source = sliced(query.key, "key", "keyview")
-        helper += source
-    helper += f"const {RESULT} result={invocation(query, data, key)};return result;}}"
-    body = harness.array(query.document.data)
-    body += f"const builtin::array<u8,{max(1, len(query.document.data))}> saved=owner;"
-    args = "borrow_bytes(owner)"
-    if query.key is not None:
-        body += harness.array(query.key.data).replace("owner", "keyowner")
-        body += f"const builtin::array<u8,{max(1, len(query.key.data))}> savedkey=keyowner;"
-        args += ",borrow_bytes(keyowner)"
-    body += f"const {RESULT} original=input_CASE({args});"
-    body += "i64 i=0;while(i<len(owner)){if(owner[i]!=saved[i]){return -780;}i=i+1;}owner[0]=255u8;"
-    if query.key is not None:
-        body += "i=0;while(i<len(keyowner)){if(keyowner[i]!=savedkey[i]){return -781;}i=i+1;}keyowner[0]=255u8;"
-    body += f"const {RESULT} report=original;" + observe()
-    return Test(query.label, body, query.expected(), helper)
 
 
 def query_cases():
@@ -515,7 +480,7 @@ def shape_model(status, kind, start, count, error):
     return (status, 0, 0, 0, error)
 
 
-def shape_tests():
+def shape_rows():
     rows = set()
     edges = (MIN, -1, 0, 1, 2, 3, 4, 5, 6, 127, 128, 129, 4095, 4096, 4097, MAX)
     for kind, count in itertools.product(range(len(KINDS)), edges):
@@ -541,13 +506,141 @@ def shape_tests():
                 row = [status, 0, 0, 0, MAX]
                 row[field] = edge
                 rows.add(tuple(row))
-    for row in sorted(rows):
-        status, kind, start, count, error = row
-        body = f"const {RESULT} original={RESULT}(std::JsonLookupStatus::{STATUSES[status]},"
-        body += f"std::JsonValueKind::{KINDS[kind]},{start},{count},{error});const {RESULT} report=original;"
-        yield Test(
-            "public copied constructor validates shape without source authority", body + observe(), shape_model(*row)
+    return sorted(rows)
+
+
+# Runtime inputs contain only plain bytes and signed scalar coordinates. The AU
+# method constructs all spans, including both nested subspans, inside its frame.
+# Private 64-word chunks avoid the scalar-layout limit without exporting
+# an owner descriptor or a host-created span.
+RUNTIME_SCALARS = (
+    "operation",
+    "document_length",
+    "key_length",
+    "document_offset",
+    "document_count",
+    "key_offset",
+    "key_count",
+    "index",
+    "document_first",
+    "document_size",
+    "document_second",
+    "document_last",
+    "key_first",
+    "key_size",
+    "key_second",
+    "key_last",
+    "shape_status",
+    "shape_kind",
+    "shape_start",
+    "shape_count",
+    "shape_error",
+)
+
+
+def runtime_source():
+    fields = "".join(f"builtin::array<u64,64> {owner}{i};\n" for owner in ("document", "key") for i in range(8))
+    fields += "".join(f"i64 {name};\n" for name in RUNTIME_SCALARS)
+    initializers = [f"{owner}{i}{{}}" for owner in ("document", "key") for i in range(8)]
+    initializers += [f"{name}(0)" for name in RUNTIME_SCALARS]
+    source = "module json_lookup_runtime;import std.json;\nclass LookupInput {\n" + fields + "public:\n"
+    source += "LookupInput():" + ",".join(initializers) + "{}\n"
+    for owner in ("document", "key"):
+        source += f"auto {owner}_at(i64 index) const -> u8 {{"
+        for i in range(7):
+            source += (
+                f"if(index<{512 * (i + 1)}){{return u8(({owner}{i}[(index-{512 * i})/8] >> ((index%8)*8)) & 255u64);}}"
+            )
+        source += f"return u8(({owner}7[(index-3584)/8] >> ((index%8)*8)) & 255u64);}}\n"
+    for field, enum, names in (("status", "JsonLookupStatus", STATUSES), ("kind", "JsonValueKind", KINDS)):
+        source += f"auto selected_{field}() const -> std::{enum} {{"
+        for index, name in enumerate(names):
+            source += f"if(shape_{field}=={index}){{return std::{enum}::{name};}}"
+        source += f"return std::{enum}::{names[0]};}}\n"
+    source += f"auto select({SPAN} bytes,{SPAN} keys) const -> {RESULT} {{"
+    for owner, parameter in (("document", "bytes"), ("key", "keys")):
+        source += f"const {SPAN} {owner}_owner={parameter}.subspan(0,{owner}_length);"
+        source += f"const {SPAN} {owner}_view={owner}_owner.subspan({owner}_first,{owner}_size);"
+        source += f"const {SPAN} {owner}_nested={owner}_view.subspan({owner}_second,{owner}_last);"
+    source += "if(operation==0){return std::lookup_json_element(document_nested,document_offset,document_count,index);}"
+    source += "return std::lookup_json_member(document_nested,document_offset,document_count,"
+    source += "key_nested,key_offset,key_count);}\n"
+    source += "auto lookup_entry(i64 field) const -> i64 {if(operation==2){"
+    source += (
+        f"const {RESULT} original={RESULT}(selected_status(),selected_kind(),shape_start,shape_count,shape_error);"
+    )
+    source += f"const {RESULT} report=original;" + observe() + "}"
+    source += harness.array(bytes(4096)).replace("owner", "bytes")
+    source += harness.array(bytes(4096)).replace("owner", "keys")
+    source += "i64 at=0;while(at<4096){bytes[at]=document_at(at);keys[at]=key_at(at);at=at+1;}"
+    source += f"const {RESULT} original=select(borrow_bytes(bytes),borrow_bytes(keys));"
+    source += "at=0;while(at<4096){if(bytes[at]!=document_at(at)){return -780;}"
+    source += "if(keys[at]!=key_at(at)){return -781;}at=at+1;}bytes[0]=255u8;keys[0]=255u8;"
+    source += f"const {RESULT} report=original;" + observe() + "}\n};\n"
+    return source
+
+
+def runtime_windows(case):
+    require(len(case.data) <= 4096 and len(case.windows) <= 2, "lookup runtime owner/window capacity")
+    length = len(case.data)
+    result = []
+    for index in range(2):
+        start, count = case.windows[index] if index < len(case.windows) else (0, length)
+        require(0 <= start <= length and 0 <= count <= length - start, "lookup subspan fixture is admitted")
+        result.extend((start, count))
+        length = count
+    return result
+
+
+def runtime_queries():
+    for query in query_cases():
+        document, key = query.document, query.key or Case("unused key", b"")
+        values = [
+            int(query.key is not None),
+            len(document.data),
+            len(key.data),
+            document.offset,
+            document.extent(),
+            key.offset,
+            key.extent(),
+            query.index,
+            *runtime_windows(document),
+            *runtime_windows(key),
+            0,
+            0,
+            0,
+            0,
+            0,
+        ]
+        packet = document.data.ljust(4096, b"\0") + key.data.ljust(4096, b"\0")
+        yield query.label, packet + struct.pack("<" + "q" * len(values), *values), query.expected()
+    for row in shape_rows():
+        values = [2, *([0] * 15), *row]
+        yield (
+            "public copied constructor validates shape without source authority",
+            bytes(8192) + struct.pack("<" + "q" * len(values), *values),
+            shape_model(*row),
         )
+
+
+def runtime_lookup(suite):
+    fields = [
+        (f"{owner}{i}", offset + 512 * i, 512, "u64", 64)
+        for owner, offset in (("document", 0), ("key", 4096))
+        for i in range(8)
+    ]
+    fields += [(name, 8192 + i * 8, 8, "i64", 0) for i, name in enumerate(RUNTIME_SCALARS)]
+    runtime.run(
+        suite,
+        "runtime-lookup",
+        runtime_source(),
+        "LookupInput",
+        "lookup_entry",
+        fields,
+        runtime_queries(),
+        "i64",
+        compare,
+    )
 
 
 def lifetime_tests():
@@ -605,9 +698,7 @@ def validator_tests():
         )
 
 
-def all_tests():
-    yield from map(source_case, query_cases())
-    yield from shape_tests()
+def source_tests():
     yield from lifetime_tests()
     yield from alias_tests()
     yield from validator_tests()
@@ -1081,13 +1172,17 @@ def main():
         return
     source = (args.repo_root / "library/std/json.au").read_text()
     if args.describe:
-        groups = list(profile.batches(all_tests()))
+        groups = list(profile.batches(source_tests()))
+        runtime = list(runtime_queries())
         print(
             json.dumps(
                 dict(
-                    cases=sum(map(len, groups)),
-                    batches=len(groups),
-                    full_64bit_observations=sum(len(item.expected) for group in groups for item in group),
+                    cases=len(runtime) + sum(map(len, groups)),
+                    batches=1 + len(groups),
+                    runtime_cases=len(runtime),
+                    source_cases=sum(map(len, groups)),
+                    full_64bit_observations=sum(len(expected) for _, _, expected in runtime)
+                    + sum(len(item.expected) for group in groups for item in group),
                     rejections=len(list(rejections(source))),
                     compiler_free_mutation_controls=controls,
                     independent_oracle_audit=audit,
@@ -1131,7 +1226,8 @@ def main():
         ],
     )
     try:
-        for group in profile.batches(all_tests()):
+        runtime_lookup(suite)
+        for group in profile.batches(source_tests()):
             suite.batch(group)
         for item in rejections(source):
             suite.reject(*item)

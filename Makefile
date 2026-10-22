@@ -8,7 +8,7 @@ export EVENT_TOOL_PREFIX EVENT_BUILD_RECEIPT EVENT_CODE EVENT_VARS EVENT_DATA EV
 export AURORA_BAR_FIRMWARE AURORA_BAR_COVERAGE AURORA_BAR_RECEIPTS AURORA_NVME_RECEIPTS
 export CLEAN_PATHS
 
-.PHONY: all compiler kernel kernel-uefi test
+.PHONY: all compiler kernel kernel-uefi test test-exhaustive
 all:
 	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --kernel bios --publish-compiler
 
@@ -23,6 +23,9 @@ kernel-uefi:
 
 test:
 	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite full
+
+test-exhaustive:
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite exhaustive
 
 .PHONY: help
 help:
@@ -41,7 +44,8 @@ help:
 	  'make smoke-graphical-console  Build/check graphical guests, capture pixels and restore normal UEFI' \
 	  'make smoke-console    Build and verify BIOS console PTY acceptance' \
 	  'make smoke-console-uefi  Build and verify UEFI console PTY acceptance' \
-	  'make test             Configure/build and run the complete Meson native graph' \
+	  'make test             Build and run the normal full Meson native suite' \
+	  'make test-exhaustive  Run the separate complete combinatorial library sweeps' \
 	  'make smoke-all        Run the full emulator suite, including both consoles' \
 	  'make test-developer-commands  Check shortcuts with fake tools only' \
 	  'make clean-dry-run    Show Meson product cleanup commands; MESON_BUILD_DIR selects one build' \

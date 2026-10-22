@@ -77,8 +77,9 @@ The checked-in [route manifest](bootstrap-route.json) pins every source commit a
 tree, the fixed build options, the final predecessor and the separately named
 historical C++ oracle. The [reconstruction driver](../scripts/bootstrap.py) records
 local source, command, tool/runtime, header-input and artifact identities. Current
-setup and predecessor execution require both the recorded executable digest and
-that complete receipt. These local records are not signed attestations or a trust
+setup requires both the recorded executable digest and that complete receipt.
+Invocation guards retain those bindings without replaying historical evidence
+checks on every use. These local records are not signed attestations or a trust
 anchor against someone who can forge the records and binaries together.
 
 ### Source bootstrap
@@ -199,8 +200,13 @@ requirements are unchanged.
 A retained compiler may be reused only with its exact source/build/tool provenance
 and qualification receipt, not by filename or digest alone. Current setup verifies
 the selected executable against the mandatory recorded digest and reconstruction
-receipt. The generation and historical-oracle commands repeat those checks before
-using the predecessor; ordinary Make also checks before build or reconfiguration.
+receipt. Meson tracks that historical evidence as configuration dependencies.
+The generation and historical-oracle commands check the selected compiler,
+receipt, route, driver and freshly resolved runtime identities before and after
+use. The configured selection is digest-bound in the generated commands, not a
+new reconstruction receipt. Ordinary Make uses these current-selection checks;
+changing the predecessor still requires full validation and reconfiguration.
+See the [configuration/invocation split](../docs/developer-test-contract.md#predecessor-backed-frontend-and-historical-receipts).
 
 Both ordinary default directories are now configured: `make`/`make test` use the
 image-enabled graph, while `make -C compiler test` uses the hosted-only graph.
@@ -258,6 +264,16 @@ AURORA_MESON_KEEP_ARTIFACTS=1 meson test -C build/meson-compiler \
   emitter-differential-default emitter-differential-closed
 ```
 
+Both profiles run by default. To select from an explicit comparison target, set
+`meson configure <build> -Demitter_comparison_base=<target commit>`. Immediately
+before the closed test, the existing driver resolves that commit and inspects
+current tracked/staged/unstaged/untracked changes. Only known documentation or
+native-kernel-only changes may produce an explicit Meson SKIP. Compiler/ABI,
+library, generator, option, harness or unknown changes retain the real closed
+comparison, as do missing/invalid/ambiguous bases or unsupported source layouts.
+This is dependency selection, not output-equivalence proof or a cached receipt.
+Use the actual PR target; reset the option to empty to require both unconditionally.
+
 Each new evidence directory retains all input/compiler hashes, exact commands,
 diagnostics and assembly/stack/ABI artifacts. Accepted inputs must match byte for
 byte; rejected inputs must agree and preserve every preexisting output. Any
@@ -272,7 +288,13 @@ consumers still require successful C1/C2 emission, without per-feature exception
 paths or pinned rejection messages. The corpus is every
 `.au` file under compiler, examples, kernel, library and tests; embedded generated
 fixtures and machine behavior remain covered by their existing native suites.
-It supplements C1/C2 convergence and the final GCC 16 full,
+The default profile also compares C1/C2 for every historical input, sharing the
+same real observations rather than compiling the source again in a separate
+bootstrap-corpus runner. Each default input runs old, C1 and C2 exactly once; no
+cross-run corpus cache or synthesized observation is used. The fast lexer and
+whole-frontend convergence gate remains independent. Closed symbols and
+referenced-only reflection change emission, so that profile still runs separately.
+These comparisons supplement the final GCC 16 full,
 BIOS/UEFI and affected-profile gates; it does not replace them. Record before/after
 `scripts/compiler-speed.py` time and peak-memory observations before further
 migration work, with every timeout named rather than silently extending limits.

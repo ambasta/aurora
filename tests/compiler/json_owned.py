@@ -290,6 +290,7 @@ def main():
     for name in (
         "tests/compiler/json_owned.py",
         "tests/compiler/json_profile.py",
+        "tests/compiler/json_runtime.py",
         "tests/compiler/owned_bytes.py",
         "runtime/hosted_bytes.cpp",
         "runtime/hosted_bytes.hpp",

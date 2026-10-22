@@ -73,7 +73,7 @@ no secondary table graph or AML method is followed.
 
 A header read precedes the full copy. The full requested range is admitted, then
 the copied header must equal the earlier header byte-for-byte. Lengths and the
-full checksum are validated on the final owned snapshot. The changed-header
+full checksum are validated on the final owned snapshot. The hosted changed-header
 fault fixture recomputes a valid checksum, so a checksum check alone cannot make
 that negative test pass. Checksums detect corruption; they do not authenticate
 hostile firmware, make DMA atomic, or provide a cryptographic snapshot guarantee.
@@ -94,19 +94,22 @@ bytes. The source window never points into these buffers.
 
 ## Evidence gates and limits
 
-The 11 new emulator modes are acpi, acpi-two, acpi-disabled, acpi-checksum,
-acpi-bad-entry, acpi-duplicate, acpi-bad-source, acpi-changed-header,
-acpi-duplicate-root, acpi-write and acpi-revoked. Normal discovery currently reads
-real OVMF RSDP/XSDT/MADT data and reports the configured CPU count and LAPIC
-address. The disabled-record fixture proves that a cleared enabled bit does not
-become processor authority. Invalid input emits no successful topology record.
+Eight emulator scenarios now use three ACPI images: ordinary `acpi` (including
+`acpi-two`), loader-time `acpi-duplicate-root`, and payload `acpi-fixture`.
+Selectors101–105 preserve disabled-record success, checksum failure propagation,
+bad-source rejection and real write/revoked page faults. Payload selector
+admission happens before any firmware window acquisition. The loader rejection
+still happens before ExitBootServices and never reads a payload selector.
+Ordinary images contain no selector or injection authority.
 
-Hosted tests include every starting offset within a 4 KiB page for a crossing copy,
-range/cache/NV rejection, stale/foreign/lifetime tickets, table checksums/header
-consistency, descriptor reserved fields, duplicate IDs, disabled x2APIC records,
-LAPIC override and 128-entry/256-processor resource boundaries. Transcript checks
-have 11 positive and 217 negative cases, including missing/duplicated phase
-markers, incorrect CPU state and wrong hardware fault addresses.
+Pure mutations moved to existing hosted assertions: bad-entry uses the MADT
+record-length zero loop; changed-header uses the same repaired byte10 mutation;
+duplicate CPU records use independent duplicate APIC ID and UID rejection.
+Hosted tests also retain page-crossing copies, cache/NV rejection,
+stale/foreign/lifetime tickets, table checksums, disabled x2APIC records,
+LAPIC override and128-entry/256-processor boundaries. Transcript controls still
+reject missing/duplicated phases, incorrect CPU state and wrong fault addresses.
+The original30-second guest deadline is unchanged.
 
 Firmware is trusted to provide physical RAM and stable platform configuration.
 DMA/device quiescence, IOMMU, NMI/SMI transitions, runtime services, ACPI power

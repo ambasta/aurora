@@ -12,12 +12,24 @@ spec.loader.exec_module(acpi)
 need = acpi.need
 WINDOW = acpi.WINDOW
 SUCCESS = ("pci", "pci-devices", "pci-bridge")
-MODES = SUCCESS + ("pci-checksum", "pci-reserved", "pci-overlap", "pci-range", "pci-cycle", "pci-write", "pci-revoked")
+MODES = SUCCESS + ("pci-checksum", "pci-cycle", "pci-write", "pci-revoked")
 SUFFIX = "AURORA_UEFI_LANGUAGE_OK: value=42\nAURORA_UEFI_OK\n"
 
 
 def validate(status, text, mode):
     need(mode in MODES, "Unknown PCI mode")
+    marker = "AURORA_FIXTURE_READY\n"
+    fixture = mode not in SUCCESS
+    need(text.count(marker) == (1 if fixture else 0), "Exact PCI fixture selector readiness")
+    if fixture:
+        need(
+            text.index("AURORA_ACPI_WINDOW_CLOSED:") < text.index(marker) < text.index("AURORA_UEFI_PAYLOAD_FAIL:"),
+            "Selector admission phase",
+        )
+        if "AURORA_PCI_APERTURE:" in text:
+            need(text.index(marker) < text.index("AURORA_PCI_APERTURE:"), "PCI mapping preceded selector")
+        text = text.replace(marker, "", 1)
+
     if mode in SUCCESS:
         acpi.validate(status, text, "acpi")
     else:
@@ -37,7 +49,7 @@ def validate(status, text, mode):
         acpi.validate(33, before + SUFFIX, "acpi")
     closed = "AURORA_ACPI_WINDOW_CLOSED:"
     aperture = re.findall(r"AURORA_PCI_APERTURE: base=(\d+) bytes=(\d+) segment=(\d+) first=(\d+) last=(\d+)", text)
-    early = mode in ("pci-checksum", "pci-reserved", "pci-overlap", "pci-range")
+    early = mode == "pci-checksum"
     need(
         len(aperture) == (0 if early else 1) and text.count("AURORA_PCI_APERTURE:") == len(aperture),
         "Missing/duplicate/unexpected aperture",
@@ -219,6 +231,10 @@ def self_test():
                 35,
                 prefix + (aperture if mode == "pci-cycle" else "") + "AURORA_UEFI_PAYLOAD_FAIL: ACPI discovery\n",
             )
+    for mode in cases:
+        if mode not in SUCCESS:
+            status, text = cases[mode]
+            cases[mode] = (status, text.replace(prefix, prefix + "AURORA_FIXTURE_READY\n", 1))
     failed = 0
     for mode, (status, text) in cases.items():
         validate(status, text, mode)

@@ -815,7 +815,7 @@ def self_test():
     validate_coverage = lambda value: {} if value == {"self_test": True} else actual(value)
     failures = 0
     try:
-        for mode in ivrs.MODES:
+        for mode in ivrs.HISTORICAL_MODES:
             trace, firmware, serial, payload = fixture_trace(mode)
             validate_trace(trace, firmware, serial, mode, {"self_test": True}, payload)
             cases = [
@@ -960,7 +960,7 @@ def self_test():
         else:
             raise RuntimeError("Malformed AMD-Vi coverage control accepted")
     print(
-        f"PASS: IVRS trace {len(ivrs.MODES)} synthetic positive and "
+        f"PASS: IVRS trace {len(ivrs.HISTORICAL_MODES)} synthetic positive and "
         f"{failures} adversarial cases; real controls required separately"
     )
 

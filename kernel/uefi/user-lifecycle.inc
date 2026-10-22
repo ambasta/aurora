@@ -32,43 +32,56 @@
     Serial::text("AURORA_UEFI_USER_REBIND: client=0 old="); Serial::number(old_endpoint->generation());
     Serial::text(" fresh="); Serial::number(fresh->generation()); Serial::text(" peer="); Serial::number(still_peer->generation());
     Serial::text(" transaction="); Serial::number(*peer_transaction); Serial::text(" frame="); Serial::number(old_frame); Serial::text("\r\n");
-#ifdef AURORA_USER_STALE_GRANT
+#if defined(AURORA_USER_FIXTURE)
+    if (fixture == Fixture::user_stale_grant) {
     stale_client_endpoint=old_endpoint;
+    }
 #endif
 }
 auto run_user_lifecycle() -> void {
-#if defined(AURORA_USER_PHASES) || defined(AURORA_USER_CONTEXT) || defined(AURORA_USER_PENDING) || defined(AURORA_USER_UNKNOWN)
+#ifdef AURORA_USER_FIXTURE
+    if (fixture == Fixture::user_pending) {
+        run_dispatcher();
+        Serial::text("AURORA_UEFI_USER_PHASES_OK\r\n");
+        return;
+    }
+#endif
+#if defined(AURORA_USER_PHASES) || defined(AURORA_USER_CONTEXT) || defined(AURORA_USER_UNKNOWN)
     run_dispatcher();
 #else
     dispatcher.emplace(registry);
     require(create(0)==0 && create(1)==1 && create(2)==2 && frames.used()==12,"user three owned domains");
     dispatch_bind(); dispatch_request(1);
-#if defined(AURORA_USER_COMPLETION_BUDGET) || defined(AURORA_USER_COMPLETION_BOUNDS) || defined(AURORA_USER_COMPLETION_OVERFLOW) || defined(AURORA_USER_RETIRE_PENDING)
-    dispatch_request(0); dispatch_service(0);
-    const auto actor=*domains[0].handle; const auto endpoint=dispatcher->endpoint(0,actor); const auto ticket=dispatcher->transaction(0);
-    require(endpoint && ticket,"user completion ticket");
-    const auto completion=dispatcher->consume(actor,ipc::Phase::completion,*endpoint,*ticket);
-    require(completion && completion->outcome()==ipc::Outcome::replied && completion->value()==42,"user committed reply copy");
-    dispatch_record("CONSUME",0,*ticket,42,0);
-#if defined(AURORA_USER_COMPLETION_BOUNDS) || defined(AURORA_USER_RETIRE_PENDING)
-    dispatch_execute(0,0,ipc::Phase::completion,10,42,0,ProgramEvent::bounds,0,*ticket);
-#elif defined(AURORA_USER_COMPLETION_OVERFLOW)
-    dispatch_execute(0,0,ipc::Phase::completion,11,42,0,ProgramEvent::overflow,0,*ticket);
-#else
-    dispatch_execute(0,0,ipc::Phase::completion,7,42,0,ProgramEvent::rejected,0,*ticket);
-#endif
-    constexpr bool replied=true;
-#else
-#ifdef AURORA_USER_REQUEST_BOUNDS
-    dispatch_execute(0,0,ipc::Phase::request,8,0,2,ProgramEvent::bounds,0);
-#elif defined(AURORA_USER_REQUEST_OVERFLOW)
-    dispatch_execute(0,0,ipc::Phase::request,9,0,2,ProgramEvent::overflow,0);
+#ifdef AURORA_USER_FIXTURE
+    const bool replied = fixture == Fixture::user_completion_budget || fixture == Fixture::user_completion_bounds ||
+                         fixture == Fixture::user_completion_overflow || fixture == Fixture::user_retire_pending;
+    if (replied) {
+        dispatch_request(0); dispatch_service(0);
+        const auto actor=*domains[0].handle; const auto endpoint=dispatcher->endpoint(0,actor); const auto ticket=dispatcher->transaction(0);
+        require(endpoint && ticket,"user completion ticket");
+        const auto completion=dispatcher->consume(actor,ipc::Phase::completion,*endpoint,*ticket);
+        require(completion && completion->outcome()==ipc::Outcome::replied && completion->value()==42,"user committed reply copy");
+        dispatch_record("CONSUME",0,*ticket,42,0);
+        if (fixture == Fixture::user_completion_bounds || fixture == Fixture::user_retire_pending)
+            dispatch_execute(0,0,ipc::Phase::completion,10,42,0,ProgramEvent::bounds,0,*ticket);
+        else if (fixture == Fixture::user_completion_overflow)
+            dispatch_execute(0,0,ipc::Phase::completion,11,42,0,ProgramEvent::overflow,0,*ticket);
+        else
+            dispatch_execute(0,0,ipc::Phase::completion,7,42,0,ProgramEvent::rejected,0,*ticket);
+    } else {
+        if (fixture == Fixture::user_request_bounds)
+            dispatch_execute(0,0,ipc::Phase::request,8,0,2,ProgramEvent::bounds,0);
+        else if (fixture == Fixture::user_request_overflow)
+            dispatch_execute(0,0,ipc::Phase::request,9,0,2,ProgramEvent::overflow,0);
+        else
+            dispatch_execute(0,0,ipc::Phase::request,6,0,2,ProgramEvent::rejected,0);
+    }
 #else
     dispatch_execute(0,0,ipc::Phase::request,6,0,2,ProgramEvent::rejected,0);
-#endif
     constexpr bool replied=false;
 #endif
-#if defined(AURORA_USER_REQUEST_BUDGET) || defined(AURORA_USER_COMPLETION_BUDGET) || defined(AURORA_USER_STALE_GRANT)
+#if defined(AURORA_USER_FIXTURE)
+    if (fixture == Fixture::user_request_budget || fixture == Fixture::user_completion_budget || fixture == Fixture::user_stale_grant)
     require(timer_exhausted && timer_ticks==3 && timer_resumes==2 && timer_compiled_hits>0,"user compiled client budget");
 #endif
     user_dispose_and_rebind(replied);

@@ -13,6 +13,7 @@ def need(okay, reason):
 
 
 def clean(text):
+    text = re.sub(r"\\\r?\n", "", text)
     return re.sub(r"//[^\n]*|/\*.*?\*/", "", text, flags=re.S)
 
 
@@ -30,7 +31,7 @@ def verify(runtime, program, timer):
         r"hardware::Serial::number\(value\);\s*\}\s*\};\s*"
         r"using Serial\s*=\s*SnapshotDiagnostics;\s*"
         r"#elif defined\(AURORA_UEFI_PROGRAM_CONSOLE\)(?: \|\| defined\(AURORA_CONSOLE_REGION\))?"
-        r"(?: \|\| defined\(AURORA_RAM_SCRATCHPAD_CONSOLE\))?)\s*"
+        r"(?:\s+\|\| defined\(AURORA_RAM_SCRATCHPAD_CONSOLE\))?)\s*"
         r"(?:using Serial\s*=\s*console::Uart<hardware::Io,\s*console::FifoTrigger::fourteen>;|"
         r"class ProgramSerialAdapter final\s*\{\s*"
         r"using Uart\s*=\s*console::Uart<hardware::Io,\s*console::FifoTrigger::fourteen>;\s*public:\s*"
@@ -74,8 +75,8 @@ def verify_scratchpad_route(runtime, scratchpad):
     )
     need(
         re.search(
-            r"#elif defined\(AURORA_UEFI_PROGRAM_CONSOLE\) \|\| defined\(AURORA_CONSOLE_REGION\)"
-            r" \|\| defined\(AURORA_RAM_SCRATCHPAD_CONSOLE\)",
+            r"#elif defined\(AURORA_UEFI_PROGRAM_CONSOLE\)\s+\|\| defined\(AURORA_CONSOLE_REGION\)"
+            r"\s+\|\| defined\(AURORA_RAM_SCRATCHPAD_CONSOLE\)",
             runtime,
         ),
         "Scratchpad profile must select the shared runtime UART adapter",

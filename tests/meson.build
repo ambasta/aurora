@@ -9,9 +9,9 @@ oracle_env.set('PYTHONDONTWRITEBYTECODE', '1')
 oracle_env.set('CXX', oracle_cxx)
 artifact_adapter = files('meson_artifacts.py')
 
-# Keep complete existing runners: no first-N sampling or weaker result/trap oracle.
-# dev is quick feedback; slow contains exhaustive integration/ABI sweeps.
-# full and unfiltered tests preserve all runners; core/bytes retain their coverage.
+# Keep regression families and result/trap oracles; never substitute first-N caps.
+# dev is quick feedback; slow contains normal integration/ABI coverage.
+# Explicit library enumeration is separate in exhaustive; unfiltered runs both tiers.
 foreach entry : [
     ['frontend', 'compiler/run.py', 'core'],
     ['classes', 'compiler/classes.py', 'core'],
@@ -460,7 +460,7 @@ test('graphical-smoke-controls-optimized', python,
      args: ['-B', '-O', files('kernel-graphical-smoke.py')],
      suite: ['full', 'dev'], env: oracle_env, timeout: 120)
 
-# Previously Make-only complete source oracles. Keep exhaustive sweeps in slow.
+# Previously Make-only source oracles. Library whole-space enumeration is explicit.
 foreach runner : [
   'templates', 'function_templates', 'function_overloads', 'fixed_containers',
   'composed_values', 'nested_values', 'decimal_values', 'enum_composition',
@@ -470,6 +470,11 @@ foreach runner : [
   runner_args = ['-B', '-O', files('compiler/' + runner + '.py'), aurorac]
   if runner in ['utf8', 'utf8_encoding']
     runner_args = ['-B', artifact_adapter, python] + runner_args + ['--artifacts', '@ARTIFACTS@']
+    test(runner.replace('_', '-') + '-exhaustive', python,
+         args: runner_args + ['--profile', 'exhaustive'],
+         depends: aurorac, suite: ['exhaustive'], env: oracle_env,
+         workdir: meson.current_build_dir(), timeout: 900, is_parallel: true)
+    runner_args += ['--profile', 'full']
   endif
   test(runner.replace('_', '-'), python,
        args: runner_args,
@@ -622,6 +627,9 @@ endforeach
 test('bootstrap-identity-optimized', python,
      args: ['-B', '-O', files('test_bootstrap.py')],
      suite: ['full', 'dev'], env: oracle_env, timeout: 60)
+test('bootstrap-guard-controls', python,
+     args: ['-B', '-O', files('test_bootstrap_guard.py')],
+     suite: ['full', 'dev'], env: oracle_env, timeout: 30)
 
 test('clean-controls', python,
      args: ['-B', files('test_clean.py')],
@@ -658,25 +666,31 @@ bootstrap_args = ['-B', '-O', files('compiler/hosted_lexer_bootstrap.py'), auror
 test('hosted-lexer-bootstrap', python, args: bootstrap_args,
      depends: [aurorac, aurorac_stage2], suite: ['full', 'dev', 'core', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180, is_parallel: false)
-# Whole compiler graphs run exclusively; each runner compiles its inputs sequentially.
-# Comparing every other source across both stages compiles the whole corpus twice.
-# Run this heavy comparison alone and first; retain its existing watchdogs.
-test('hosted-lexer-bootstrap-corpus', python, args: bootstrap_args + ['--corpus'],
-     depends: [aurorac, aurorac_stage2], suite: ['full', 'slow', 'compiler'],
-     env: oracle_env, workdir: meson.current_build_dir(), timeout: 600,
-     is_parallel: false, priority: 1)
 # Independently select and verify the historical C++ emitter role from the receipt.
-# Its accepted corpus compares with C2; later-only consumers also compare C1/C2.
+# Default C1/C2 convergence and historical comparisons share real observations.
+# Closed emission remains a real profile; an explicit base can exclude it only
+# after the invocation-time selector checks the current (including dirty) source.
+test('emitter-differential-controls', python, args: ['-B', files('test_emitter_differential.py')],
+     suite: ['full', 'dev', 'compiler'], timeout: 30)
 foreach profile : [['default', []], ['closed', ['--local-symbols', '--referenced-reflection-only']]]
+  profile_prefix = []
+  if profile[0] == 'closed'
+    profile_prefix = ['-B', files('compiler/emitter_differential.py'), '--select-closed-profile',
+                      '--source-root', meson.project_source_root(),
+                      '--comparison-base=' + get_option('emitter_comparison_base'), '--', python]
+  endif
   test('emitter-differential-' + profile[0], python,
-       args: ['-B', bootstrap_driver, 'run', '--compiler', historical_cpp_oracle,
+       args: profile_prefix + ['-B', bootstrap_guard_driver, 'run', '--selection', bootstrap_selection,
+              '--selection-sha256', bootstrap_selection_sha256,
+              '--compiler', historical_cpp_oracle,
               '--sha256', historical_cpp_oracle_sha256, '--receipt', bootstrap_receipt,
               '--role', 'historical_cpp_oracle', '--', python,
               '-B', artifact_adapter, python, '-B', files('compiler/emitter_differential.py'),
               '--old-compiler', historical_cpp_oracle, '--new-compiler', aurorac_stage2, '--stage1-compiler', aurorac,
               '--source-root', meson.project_source_root()] + profile[1] + ['--artifacts', '@ARTIFACTS@'],
        depends: [aurorac, aurorac_stage2], suite: ['full', 'slow', 'compiler'], env: oracle_env,
-       workdir: meson.current_build_dir(), timeout: 900, is_parallel: false)
+       workdir: meson.current_build_dir(), timeout: 900, is_parallel: false,
+       priority: profile[0] == 'default' ? 1 : 0)
 endforeach
 
 format_fixture = executable('format-fixture', 'compiler/format.cpp', dependencies: hosted_frontend,

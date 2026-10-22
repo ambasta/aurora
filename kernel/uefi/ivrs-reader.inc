@@ -9,9 +9,6 @@
     const auto location=aperture.address(0,0,3,0); if (!location) return false;
     const auto header=ecam.read(*location); auto capability=ecam.iommu_capability(*location);
     if (!header || !capability) return false;
-#ifdef AURORA_IVRS_CAPABILITY
-    (*capability)[4]^=std::byte{2}; // Copied metadata corruption, no PCI write.
-#endif
     Serial::text("AURORA_IVRS_PCI_RAW: header=");
     constexpr std::string_view hex="0123456789abcdef";
     for (auto value:*header) {const auto byte=std::to_integer<unsigned>(value);Serial::put(hex[byte>>4]);Serial::put(hex[byte&15]);}
@@ -51,11 +48,6 @@
     WindowAuthority authority; const auto ticket=authority.acquire(); if (!ticket) return false;
     auto map=std::span<const std::byte>{reinterpret_cast<const std::byte*>(arena+Handoff::map_offset),static_cast<std::size_t>(handoff.get(32))};
     auto stride=static_cast<std::size_t>(handoff.get(40));
-#ifdef AURORA_IVRS_RANGE
-    std::array<std::byte,48> conflicting{}; put(conflicting,0,7,4);put(conflicting,8,0xfed80000);put(conflicting,24,4);put(conflicting,32,8);
-    map=conflicting;stride=48;
-    Serial::text("AURORA_IVRS_RANGE_PROBE: type=7 base=4275568640 pages=4 attributes=8\r\n");
-#endif
 #ifdef AURORA_IVRS_DEFAULT
     const auto grant=Q35IommuReadPolicy::authorize(*facts,*copied,*copied,map,stride,arena,0xfee00000,std::span{reservations}.first(count+1),authority,*ticket);
 #else
@@ -92,20 +84,24 @@
     const auto after_nvme=ecam.read(*nvme_address);
     if (!after || !after_nvme || *after_nvme!=*nvme || !grant->finish(authority,*after,control,efr,status)) return false;
     Serial::text("AURORA_IVRS_REGISTERS: control=");Serial::number(control);Serial::text(" efr=");Serial::number(efr);Serial::text(" status=");Serial::number(status);Serial::text("\r\n");
-#ifdef AURORA_IVRS_WRITE
-    const auto page=grant->page(authority,0);if (!page || *slot) return false;
-    *slot=*page|flags;asm volatile("invlpg (%0)"::"r"(window):"memory");
-    Serial::text("AURORA_IVRS_WRITE_PROBE\r\n");
-    asm volatile(".global uefi_ivrs_write_probe\nuefi_ivrs_write_probe: movq $0,(%%rax)"::"a"(window+0x18):"memory");
-    return false;
+#ifdef AURORA_IVRS_FIXTURE
+    if (pci_fixture == Fixture::ivrs_write) {
+        const auto page=grant->page(authority,0);if (!page || *slot) return false;
+        *slot=*page|flags;asm volatile("invlpg (%0)"::"r"(window):"memory");
+        Serial::text("AURORA_IVRS_WRITE_PROBE\r\n");
+        asm volatile(".global uefi_ivrs_write_probe\nuefi_ivrs_write_probe: movq $0,(%%rax)"::"a"(window+0x18):"memory");
+        return false;
+    }
 #endif
     if (!authority.revoke(*ticket) || grant->page(authority,0) || grant->read_address(authority,*after,0x18,8)
         || *slot || !ecam.closed() || !tables.verify(arena,handoff)) return false;
     Serial::text("AURORA_IVRS_WINDOW_CLOSED: reads=3 pages=2 revoked=1\r\n");
-#ifdef AURORA_IVRS_REVOKED
-    Serial::text("AURORA_IVRS_REVOKED_PROBE\r\n");
-    U64 ignored;asm volatile(".global uefi_ivrs_revoked_probe\nuefi_ivrs_revoked_probe: movq (%%rax),%%rax":"=a"(ignored):"0"(window+0x18):"memory");
-    static_cast<void>(ignored);return false;
+#ifdef AURORA_IVRS_FIXTURE
+    if (pci_fixture == Fixture::ivrs_revoked) {
+        Serial::text("AURORA_IVRS_REVOKED_PROBE\r\n");
+        U64 ignored;asm volatile(".global uefi_ivrs_revoked_probe\nuefi_ivrs_revoked_probe: movq (%%rax),%%rax":"=a"(ignored):"0"(window+0x18):"memory");
+        static_cast<void>(ignored);return false;
+    }
 #endif
     Serial::text("AURORA_IVRS_READ_ONLY_OK\r\n");return true;
 }

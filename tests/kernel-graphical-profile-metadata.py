@@ -83,8 +83,8 @@ class ProfileMetadata(unittest.TestCase):
         )
         for mode in ram_modes:
             self.assertEqual(clock.clock_profile("uefi", mode), clock.FIXED0)
-        self.assertEqual(len(clock.MODE_CLOCKS), 212 + 13)
-        self.assertEqual(sum(value == clock.FIXED0 for value in clock.MODE_CLOCKS.values()), 69 + 13)
+        self.assertEqual(len(clock.MODE_CLOCKS), 200)
+        self.assertEqual(sum(value == clock.FIXED0 for value in clock.MODE_CLOCKS.values()), 73)
         self.assertEqual(clock.clock_profile("uefi", "user-resume"), clock.FIXED0)
         selected = sorted(
             mode
@@ -113,7 +113,7 @@ class ProfileMetadata(unittest.TestCase):
         )
         self.assertEqual(
             hashlib.sha256(("\n".join(selected) + "\n").encode()).hexdigest(),
-            "a5b6f5d5194dc6113bb6864fe3c2e4efa44faf5ab6a6fee42fe8dc9ecd2160ee",
+            "666b85d9a303eb81859918b2e977c33ec9b93cf77c0ada7627a4147381f522e0",
         )
         for mode in ("graphical-console", "graphical-console-capture", "graphical-console-future"):
             with self.assertRaises(ValueError):

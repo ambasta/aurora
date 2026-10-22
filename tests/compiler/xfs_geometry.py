@@ -27,6 +27,8 @@ from pathlib import Path
 import random
 import shutil
 import signal
+import shlex
+import struct
 import sys
 import tempfile
 import time
@@ -44,7 +46,7 @@ from compiler_contract import add_identity_arguments, resolve_identity, validate
 U64 = (1 << 64) - 1
 U32 = (1 << 32) - 1
 MAX_SOURCE = 65536
-MAX_BATCH = 4
+MAX_HEADERS = 768
 SEED = 19019
 SPAN = "builtin::span<const u8>"
 PREFIX = "module xfs_geometry_test;import fs.xfs_geometry;import fs.xfs_probe;import std.binary;\n"
@@ -655,16 +657,33 @@ def shared_renderer():
     return code
 
 
-def render_case(case, function):
-    expected = case.expected
-    code = f"auto {function}(i64 slot)->u64{{" + array("bytes", case.data)
-    code += f"const array<u8,{len(case.data)}> original=bytes;const {SPAN} view=borrow_bytes(bytes);"
+def header_driver(cases):
+    selectors = [
+        sorted({getattr(case.expected, name) for case in cases}) for name in ("status", "issue", "probe_status")
+    ]
+    code = PREFIX + shared_renderer()
+    code += "class HeaderInput{array<u8,512> first;array<u8,512> second;"
+    code += "i64 length;i64 status;i64 issue;i64 probe_status;public:"
+    code += "HeaderInput():first{},second{},length(0),status(0),issue(0),probe_status(0){}"
+    code += "auto source_at(i64 index)const->u8{if(index<512){return first[index];}return second[index-512];}"
+    code += "auto geometry_case(i64 slot)const->u64{" + array("staging", bytes(1024), const=False)
+    code += "i64 index=0;while(index<length){staging[index]=source_at(index);index=index+1;}"
+    code += f"const array<u8,1024> bytes=staging;const {SPAN} owner=borrow_bytes(bytes);"
+    code += f"const {SPAN} view=owner.subspan(0,length);"
     code += "const fs::XfsGeometryReport r=fs::inspect_xfs_v5_512_geometry(view);"
-    code += "i64 i=0;while(i<view.size()){if(bytes[i]!=original[i]){return 170u64;}i=i+1;}"
-    code += f"if(slot==0){{if(r.status()==fs::XfsGeometryStatus::{expected.status}){{return 1u64;}}return 0u64;}}"
-    code += f"if(slot==1){{if(r.issue()==fs::XfsGeometryIssue::{expected.issue}){{return 1u64;}}return 0u64;}}"
+    code += "i64 i=0;while(i<view.size()){if(bytes[i]!=source_at(i)){return 170u64;}i=i+1;}"
     code += "const fs::XfsProbeResult p=r.probe();"
-    code += f"if(slot==2){{if(p.status()==fs::XfsProbeStatus::{expected.probe_status}){{return 1u64;}}return 0u64;}}"
+    for slot, (field, expression, typename) in enumerate(
+        (
+            ("status", "r.status()", "XfsGeometryStatus"),
+            ("issue", "r.issue()", "XfsGeometryIssue"),
+            ("probe_status", "p.status()", "XfsProbeStatus"),
+        )
+    ):
+        code += f"if(slot=={slot}){{"
+        for value, name in enumerate(selectors[slot]):
+            code += f"if({field}=={value} && {expression}==fs::{typename}::{name}){{return 1u64;}}"
+        code += "return 0u64;}"
     code += "if(slot==42){const fs::XfsGeometryReport repeated=fs::inspect_xfs_v5_512_geometry(view);"
     code += "if(r.status()!=repeated.status()){return 171u64;}if(r.issue()!=repeated.issue()){return 172u64;}"
     code += (
@@ -674,9 +693,37 @@ def render_case(case, function):
     for name in MASKS:
         code += f"if(p.features_{name}()!=direct.features_{name}()){{return 175u64;}}"
     code += "i64 s=3;while(s<42){if(geometry_scalar(r,s)!=geometry_scalar(repeated,s)){return 176u64;}s=s+1;}"
-    code += "i64 j=0;while(j<view.size()){if(bytes[j]!=original[j]){return 177u64;}j=j+1;}return 1u64;}"
+    code += "i64 j=0;while(j<view.size()){if(bytes[j]!=source_at(j)){return 177u64;}j=j+1;}return 1u64;}"
     code += "return geometry_scalar(r,slot);}\n"
-    return code
+    return code + "};\n", selectors
+
+
+# Plain byte storage is borrowed as a receiver; Aurora constructs all spans.
+HEADER_HOST = r"""
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
+struct Input {
+    std::uint8_t bytes[1024];
+    std::int64_t length, status, issue, probe_status;
+};
+static_assert(sizeof(Input) == 1056 && offsetof(Input, length) == 1024);
+extern "C" std::uint64_t header_invoke(const Input *, std::int64_t);
+int main(int argc, char **argv) {
+    if (argc != 2) return 1;
+    auto *file = std::fopen(argv[1], "rb");
+    if (!file) return 2;
+    Input input{};
+    while (const auto size = std::fread(&input, 1, sizeof(input), file)) {
+        if (size != sizeof(input)) return 3;
+        for (std::int64_t slot = 0; slot < 43; ++slot) {
+            const auto value = header_invoke(&input, slot);
+            if (std::fwrite(&value, sizeof(value), 1, stdout) != 1) return 4;
+        }
+    }
+    return std::ferror(file) || std::fclose(file) ? 5 : 0;
+}
+"""
 
 
 class Suite(BoundedSuite):
@@ -686,38 +733,80 @@ class Suite(BoundedSuite):
         self.families = Counter()
         self.scalar_count = 0
 
-    def execute_slots(self, directory, functions, slots=43):
-        assembly = [".text", ".globl _start", "_start:"]
-        for function in functions:
-            for slot in range(slots):
-                assembly += [
-                    f"movq ${slot},%rdi",
-                    f"call {function}",
-                    "pushq %rax",
-                    "movq $1,%rax",
-                    "movq $1,%rdi",
-                    "movq %rsp,%rsi",
-                    "movq $8,%rdx",
-                    "syscall",
-                    "addq $8,%rsp",
-                ]
-        assembly += ["movq $60,%rax", "xorq %rdi,%rdi", "syscall", '.section .note.GNU-stack,"",@progbits']
-        (directory / "entry.s").write_text("\n".join(assembly) + "\n")
-        self.command(["as", "--64", directory / "compiled.s", "-o", directory / "program.o"], directory, "assemble")
-        self.command(["as", "--64", directory / "entry.s", "-o", directory / "entry.o"], directory, "entry")
-        self.command(
-            ["ld", "-o", directory / "program", directory / "entry.o", directory / "program.o"], directory, "link"
+    def execute_headers(self, directory, cases, selectors):
+        abi = json.loads((directory / "abi.json").read_text())
+        records = [(name, record) for name, record in abi["records"].items() if record["source_name"] == "HeaderInput"]
+        require(len(records) == 1, "header input ABI")
+        record_symbol, record = records[0]
+        fields = [("first", 0, 512, "u8", 512), ("second", 512, 512, "u8", 512)]
+        fields += [
+            (name, 1024 + i * 8, 8, "i64", 0) for i, name in enumerate(("length", "status", "issue", "probe_status"))
+        ]
+        require(
+            record["size"] == record["reserved"] == 1056
+            and record["alignment"] == 8
+            and [
+                (field["name"], field["offset"], field["bytes"], field["kind"], field.get("array_length", 0))
+                for field in record["fields"]
+            ]
+            == fields,
+            "header receiver layout",
         )
-        return Observation(self.command([directory / "program"], directory, "native", native=True), exit_code=0)
+        entries = [(name, row) for name, row in abi["functions"].items() if row["source_name"] == "geometry_case"]
+        require(len(entries) == 1, "header entry ABI")
+        symbol, row = entries[0]
+        require(
+            row["receiver"] == record_symbol
+            and not row["receiver_mutable"]
+            and row["borrowed_root_count"] == 0
+            and row["parameter_bytes"] == 8
+            and row["parameters"] == [{"offset": 0, "bytes": 8, "kind": "i64"}]
+            and row["result"] == {"bytes": 8, "kind": "u64"},
+            "header call ABI",
+        )
+        with (directory / "compiled.s").open("a") as stream:
+            stream.write(
+                f"\n.text\n.globl header_invoke\nheader_invoke:\nmovq %rdi,%r10\nmovq %rsi,%rdi\njmp {symbol}\n"
+            )
+        host = directory / "driver.cpp"
+        host.write_text(HEADER_HOST)
+        self.command(
+            [
+                *shlex.split(os.environ.get("CXX", "g++")),
+                "-std=c++23",
+                "-O2",
+                "-Wall",
+                "-Wextra",
+                "-Werror",
+                host,
+                directory / "compiled.s",
+                "-o",
+                directory / "program",
+            ],
+            directory,
+            "link",
+        )
+        data = directory / "cases.bin"
+        data.write_bytes(
+            b"".join(
+                case.data.ljust(1024, b"\0")
+                + struct.pack(
+                    "<qqqq",
+                    len(case.data),
+                    *(
+                        values.index(getattr(case.expected, field))
+                        for values, field in zip(selectors, ("status", "issue", "probe_status"))
+                    ),
+                )
+                for case in cases
+            )
+        )
+        return Observation(self.command([directory / "program", data], directory, "native", native=True), exit_code=0)
 
     def check_headers(self, cases):
-        require(1 <= len(cases) <= MAX_BATCH, "case batch bound")
-        functions = [f"geometry_case_{i}" for i in range(len(cases))]
-        source = (
-            PREFIX
-            + shared_renderer()
-            + "".join(render_case(case, function) for case, function in zip(cases, functions))
-        )
+        require(1 <= len(cases) <= MAX_HEADERS, "header corpus bound")
+        require(all(1 <= len(case.data) <= 1024 for case in cases), "header input bound")
+        source, selectors = header_driver(cases)
         expected = [
             Case(case.name + " / " + leaf, "", value)
             for case in cases
@@ -729,8 +818,8 @@ class Suite(BoundedSuite):
             directory,
             source,
             expected,
-            functions,
-            slots=True,
+            [],
+            headers=(cases, selectors),
             details={
                 "headers": [
                     {
@@ -751,7 +840,7 @@ class Suite(BoundedSuite):
             flush=True,
         )
 
-    def run_source(self, directory, source, expected, functions, slots=False, details=None):
+    def run_source(self, directory, source, expected, functions, details=None, headers=None):
         directory.mkdir(parents=True, exist_ok=False)
         path = directory / "input.au"
         path.write_text(source)
@@ -766,13 +855,17 @@ class Suite(BoundedSuite):
         try:
             require(len(source.encode()) <= MAX_SOURCE, "source byte budget")
             self.command(
-                [self.compiler, "--module-root", self.module_root, path, "-o", directory / "compiled.s"],
+                [self.compiler, "--module-root", self.module_root, path, "-o", directory / "compiled.s"]
+                + (["--abi-facts", directory / "abi.json"] if headers is not None else []),
                 directory,
                 "compiler",
                 compiler=True,
             )
             require(path.read_text() == source, "compiler changed fixture")
-            observed = self.execute_slots(directory, functions) if slots else self.execute(directory, functions)
+            if headers is not None:
+                observed = self.execute_headers(directory, *headers)
+            else:
+                observed = self.execute(directory, functions)
             validate_values(observed, expected)
             receipt["observations"] = [
                 {
@@ -1456,7 +1549,7 @@ def main():
             "compiler_address_space_bytes": None if args.sanitized_compiler else 512 << 20,
             "other_address_space_bytes": 128 << 20,
             "source_bytes": MAX_SOURCE,
-            "headers_per_batch": MAX_BATCH,
+            "headers_per_driver": MAX_HEADERS,
             "maximum_headers": 768,
         },
         "scope": (
@@ -1475,8 +1568,7 @@ def main():
             cases = [case for case in cases if args.case_filter in case.name]
         require(cases, "empty selected corpus")
         if not args.mutations_only:
-            for start in range(0, len(cases), MAX_BATCH):
-                suite.check_headers(cases[start : start + MAX_BATCH])
+            suite.check_headers(cases)
         semantics = (
             semantic_cases(suite, real)
             if not args.case_filter and not args.mutations_only

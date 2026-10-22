@@ -172,20 +172,7 @@ public:
             if (grants[client])
                 eligible_mask |= std::uint64_t{1} << client;
         }
-        // Fault modes alter local copied inputs/output only, after the existing
-        // launch/registry checks. No live cursor, mailbox or grant is corrupted.
-        std::uint64_t policy_cursor = next_client_, policy_mask = eligible_mask;
-#ifdef AURORA_DISPATCH_POLICY_CURSOR
-        policy_cursor = std::numeric_limits<std::uint64_t>::max();
-#endif
-#ifdef AURORA_DISPATCH_POLICY_MASK
-        policy_mask = std::numeric_limits<std::uint64_t>::max();
-#endif
-        auto encoded = language_round_robin_next(policy_cursor, policy_mask);
-#ifdef AURORA_DISPATCH_POLICY_OUTPUT
-        const volatile std::uint64_t reserved_bit = std::uint64_t{1} << 63;
-        encoded |= reserved_bit;
-#endif
+        const auto encoded = language_round_robin_next(next_client_, eligible_mask);
         const auto selection = RoundRobinSelection::decode(encoded, next_client_, eligible_mask);
         if (!selection || !selection->selected())
             return std::nullopt;
@@ -259,15 +246,7 @@ public:
         const auto prior_state = mailbox.state();
         const auto original_phase = static_cast<std::uint64_t>(phase);
         const auto original_state = static_cast<std::uint64_t>(prior_state);
-        auto policy_phase = original_phase;
-#ifdef AURORA_USER_DISPOSAL_INPUT
-        policy_phase = std::numeric_limits<std::uint64_t>::max();
-#endif
-        auto encoded = language_client_disposal(policy_phase, original_state);
-#ifdef AURORA_USER_DISPOSAL_OUTPUT
-        const volatile std::uint64_t reserved_bit = std::uint64_t{1} << 63;
-        encoded |= reserved_bit;
-#endif
+        const auto encoded = language_client_disposal(original_phase, original_state);
         const auto plan = DisposalTransition::decode(encoded, original_phase, original_state);
         if (!plan.accepted())
             return std::nullopt;

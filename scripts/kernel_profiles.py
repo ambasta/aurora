@@ -14,7 +14,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from kernel_layout import IMAGE_POLICIES, LAYOUT, metadata as layout_metadata, read_table
 
 FIXTURES = read_table(Path(__file__).resolve().parents[1] / "kernel/uefi/runtime-fixtures.inc")
-FIXTURE_MODES = {mode: (image, value) for mode, image, value in FIXTURES.values()}
+FIXTURE_MODES = {
+    mode: (image, value) for name, (mode, image, value) in FIXTURES.items() if not name.startswith("bios_")
+}
+BIOS_FIXTURE_MODES = {
+    mode: (image, value) for name, (mode, image, value) in FIXTURES.items() if name.startswith("bios_")
+}
 
 # Base flags plus bounded variants mirror the existing admitted profiles.
 UEFI_FAMILIES = [
@@ -101,14 +106,8 @@ UEFI_FAMILIES = [
         ],
         {
             "snapshot": [],
-            "snapshot-fault": ["-DAURORA_SNAPSHOT_FAULT"],
-            "snapshot-cancel": ["-DAURORA_SNAPSHOT_CANCEL"],
+            "snapshot-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_SNAPSHOT_FIXTURE"],
             "snapshot-owner": ["-DAURORA_SNAPSHOT_OWNER"],
-            "snapshot-stale": ["-DAURORA_SNAPSHOT_STALE"],
-            "snapshot-revoked": ["-DAURORA_SNAPSHOT_REVOKED"],
-            "snapshot-producer-selector": ["-DAURORA_SNAPSHOT_PRODUCER_SELECTOR"],
-            "snapshot-producer-quota": ["-DAURORA_SNAPSHOT_PRODUCER_QUOTA"],
-            "snapshot-producer-pages": ["-DAURORA_SNAPSHOT_PRODUCER_PAGES"],
             "snapshot-reply-reserved": ["-DAURORA_SNAPSHOT_REPLY_RESERVED"],
             "snapshot-reply-byte": ["-DAURORA_SNAPSHOT_REPLY_BYTE"],
         },
@@ -135,15 +134,9 @@ UEFI_FAMILIES = [
         ],
         {
             "program-console": [],
+            "program-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_PROGRAM_FIXTURE"],
             "program-file-call": ["-DAURORA_BLOCKING_CALL", "-DAURORA_FILE_CALL"],
             "program-file-call-fixture": ["-DAURORA_BLOCKING_CALL", "-DAURORA_FILE_CALL", "-DAURORA_RUNTIME_FIXTURE"],
-            "program-request-fault": ["-DAURORA_PROGRAM_REQUEST_FAULT"],
-            "program-service-fault": ["-DAURORA_PROGRAM_SERVICE_FAULT"],
-            "program-completion-fault": ["-DAURORA_PROGRAM_COMPLETION_FAULT"],
-            "program-request-budget": ["-DAURORA_PROGRAM_REQUEST_BUDGET"],
-            "program-service-budget": ["-DAURORA_PROGRAM_SERVICE_BUDGET"],
-            "program-completion-budget": ["-DAURORA_PROGRAM_COMPLETION_BUDGET"],
-            "program-pending": ["-DAURORA_PROGRAM_PENDING"],
             "program-owner": ["-DAURORA_PROGRAM_OWNER"],
             "program-ordinal": ["-DAURORA_PROGRAM_ORDINAL"],
             "program-unknown": ["-DAURORA_PROGRAM_UNKNOWN"],
@@ -160,16 +153,8 @@ UEFI_FAMILIES = [
         ],
         {
             "ivrs-default": ["-DAURORA_IVRS_DEFAULT"],
+            "ivrs-fixture": ["-DAURORA_IVRS_FIXTURE"],
             "ivrs-read": ["-DAURORA_IVRS_READ"],
-            "ivrs-write": ["-DAURORA_IVRS_WRITE"],
-            "ivrs-revoked": ["-DAURORA_IVRS_REVOKED"],
-            "ivrs-pair": ["-DAURORA_IVRS_PAIR"],
-            "ivrs-alias": ["-DAURORA_IVRS_ALIAS"],
-            "ivrs-reserved": ["-DAURORA_IVRS_RESERVED"],
-            "ivrs-scope": ["-DAURORA_IVRS_SCOPE"],
-            "ivrs-capability": ["-DAURORA_IVRS_CAPABILITY"],
-            "ivrs-range": ["-DAURORA_IVRS_RANGE"],
-            "ivrs-missing": ["-DAURORA_IVRS_MISSING"],
         },
     ),
     (
@@ -208,26 +193,11 @@ UEFI_FAMILIES = [
             "-DAURORA_UEFI_USER_BUDGET",
         ],
         {
-            "user-disposal-input": ["-DAURORA_USER_REQUEST_BOUNDS", "-DAURORA_USER_DISPOSAL_INPUT"],
-            "user-disposal-output": ["-DAURORA_USER_REQUEST_BOUNDS", "-DAURORA_USER_DISPOSAL_OUTPUT"],
             "user-resume": ["-DAURORA_USER_RESUME"],
+            "user-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_USER_FIXTURE"],
             "user-phases": ["-DAURORA_USER_PHASES"],
             "user-context": ["-DAURORA_USER_CONTEXT"],
-            "user-retire-pending": ["-DAURORA_USER_RETIRE_PENDING"],
-            "user-request-budget": ["-DAURORA_USER_REQUEST_BUDGET"],
-            "user-completion-budget": ["-DAURORA_USER_COMPLETION_BUDGET"],
-            "user-request-bounds": ["-DAURORA_USER_REQUEST_BOUNDS"],
-            "user-completion-bounds": ["-DAURORA_USER_COMPLETION_BOUNDS"],
-            "user-request-overflow": ["-DAURORA_USER_REQUEST_OVERFLOW"],
-            "user-completion-overflow": ["-DAURORA_USER_COMPLETION_OVERFLOW"],
-            "user-pending": ["-DAURORA_USER_PENDING"],
-            "user-role": ["-DAURORA_USER_ROLE"],
-            "user-phase": ["-DAURORA_USER_PHASE"],
-            "user-transaction": ["-DAURORA_USER_TRANSACTION"],
-            "user-epoch": ["-DAURORA_USER_EPOCH"],
-            "user-root": ["-DAURORA_USER_ROOT"],
             "user-unknown": ["-DAURORA_USER_UNKNOWN"],
-            "user-stale-grant": ["-DAURORA_USER_STALE_GRANT"],
         },
     ),
     (
@@ -241,20 +211,8 @@ UEFI_FAMILIES = [
         ],
         {
             "dispatch": [],
-            "dispatch-budget": ["-DAURORA_DISPATCH_BUDGET"],
-            "dispatch-fault": ["-DAURORA_DISPATCH_FAULT"],
-            "dispatch-mixed": ["-DAURORA_DISPATCH_MIXED"],
-            "dispatch-pending": ["-DAURORA_DISPATCH_PENDING"],
-            "dispatch-cross-reply": ["-DAURORA_DISPATCH_CROSS_REPLY"],
-            "dispatch-client-owner": ["-DAURORA_DISPATCH_CLIENT_OWNER"],
-            "dispatch-stale": ["-DAURORA_DISPATCH_STALE"],
-            "dispatch-duplicate": ["-DAURORA_DISPATCH_DUPLICATE"],
-            "dispatch-full": ["-DAURORA_DISPATCH_FULL"],
-            "dispatch-root": ["-DAURORA_DISPATCH_ROOT"],
+            "dispatch-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_DISPATCH_FIXTURE"],
             "dispatch-peer-code": ["-DAURORA_DISPATCH_PEER_CODE"],
-            "dispatch-policy-cursor": ["-DAURORA_DISPATCH_POLICY_CURSOR"],
-            "dispatch-policy-mask": ["-DAURORA_DISPATCH_POLICY_MASK"],
-            "dispatch-policy-output": ["-DAURORA_DISPATCH_POLICY_OUTPUT"],
         },
     ),
     (
@@ -267,48 +225,25 @@ UEFI_FAMILIES = [
         ],
         {
             "budget": [],
-            "budget-fault": ["-DAURORA_BUDGET_FAULT"],
+            "budget-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_BUDGET_FIXTURE"],
             "budget-noapic": ["-DAURORA_BUDGET_NOAPIC"],
-            "budget-smp": ["-DAURORA_BUDGET_SMP"],
-            "budget-discovery": ["-DAURORA_BUDGET_DISCOVERY"],
-            "budget-cache": ["-DAURORA_BUDGET_CACHE"],
-            "budget-alias": ["-DAURORA_BUDGET_ALIAS"],
-            "budget-pending": ["-DAURORA_BUDGET_PENDING"],
-            "budget-forged": ["-DAURORA_BUDGET_FORGED"],
-            "budget-root": ["-DAURORA_BUDGET_ROOT"],
             "budget-mmio": ["-DAURORA_BUDGET_MMIO"],
             "budget-softint": ["-DAURORA_BUDGET_SOFTINT"],
             "budget-fpu": ["-DAURORA_BUDGET_FPU"],
             "budget-context": ["-DAURORA_BUDGET_CONTEXT"],
-            "budget-epoch": ["-DAURORA_BUDGET_EPOCH"],
-            "budget-policy-zero": ["-DAURORA_BUDGET_POLICY_ZERO"],
-            "budget-policy-counts": ["-DAURORA_BUDGET_POLICY_COUNTS"],
-            "budget-policy-wide": ["-DAURORA_BUDGET_POLICY_WIDE"],
-            "budget-policy-output": ["-DAURORA_BUDGET_POLICY_OUTPUT"],
         },
     ),
     (
         ["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI", "-DAURORA_UEFI_RUNTIME", "-DAURORA_UEFI_IPC"],
         {
             "ipc": [],
-            "ipc-fault": ["-DAURORA_IPC_FAULT"],
-            "ipc-cancel": ["-DAURORA_IPC_CANCEL"],
+            "ipc-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_IPC_FIXTURE"],
             "ipc-owner": ["-DAURORA_IPC_OWNER"],
-            "ipc-stale": ["-DAURORA_IPC_STALE"],
             "ipc-version": ["-DAURORA_IPC_VERSION"],
             "ipc-phase": ["-DAURORA_IPC_PHASE"],
             "ipc-transaction": ["-DAURORA_IPC_TRANSACTION"],
             "ipc-site": ["-DAURORA_IPC_SITE"],
             "ipc-unknown": ["-DAURORA_IPC_UNKNOWN"],
-            "ipc-root": ["-DAURORA_IPC_ROOT"],
-            "ipc-kernel-trap": ["-DAURORA_IPC_KERNEL_TRAP"],
-            "ipc-duplicate": ["-DAURORA_IPC_DUPLICATE"],
-            "ipc-late": ["-DAURORA_IPC_LATE"],
-            "ipc-exhausted": ["-DAURORA_IPC_EXHAUSTED"],
-            "ipc-policy-request-input": ["-DAURORA_IPC_POLICY_REQUEST_INPUT"],
-            "ipc-policy-request-output": ["-DAURORA_IPC_POLICY_REQUEST_OUTPUT"],
-            "ipc-policy-cancel-input": ["-DAURORA_IPC_POLICY_CANCEL_INPUT"],
-            "ipc-policy-cancel-output": ["-DAURORA_IPC_POLICY_CANCEL_OUTPUT"],
         },
     ),
     (
@@ -328,19 +263,17 @@ UEFI_FAMILIES = [
             "-DAURORA_DORMANT_TABLE_TESTING=1",
         ],
         {
-            "runtime-table-readback": ["-DAURORA_TABLE_READBACK"],
-            "runtime-table-reject": ["-DAURORA_TABLE_REJECT"],
-            "runtime-table-exhaust": ["-DAURORA_TABLE_EXHAUST"],
-            "runtime-table-quarantine": ["-DAURORA_TABLE_QUARANTINE", "-DAURORA_PIN_FAULT"],
+            "runtime-table-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_TABLE_FIXTURE"],
         },
     ),
     (
         ["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI", "-DAURORA_UEFI_RUNTIME", "-DAURORA_UEFI_PINS"],
         {
-            "runtime-pin-cancel": ["-DAURORA_PIN_CANCEL"],
-            "runtime-pin-fault": ["-DAURORA_PIN_FAULT", "-DAURORA_PIN_LEDGER_TESTING=1"],
-            "runtime-pin-stale": ["-DAURORA_PIN_STALE"],
-            "runtime-pin-exhaust": ["-DAURORA_PIN_EXHAUST"],
+            "runtime-pin-fixture": [
+                "-DAURORA_RUNTIME_FIXTURE",
+                "-DAURORA_PIN_FIXTURE",
+                "-DAURORA_PIN_LEDGER_TESTING=1",
+            ],
         },
     ),
     (
@@ -353,9 +286,7 @@ UEFI_FAMILIES = [
             "runtime-stack": ["-DAURORA_RUNTIME_STACK"],
             "runtime-kernel": ["-DAURORA_RUNTIME_KERNEL"],
             "runtime-window": ["-DAURORA_RUNTIME_WINDOW"],
-            "runtime-root": ["-DAURORA_RUNTIME_ROOT"],
-            "runtime-kernel-trap": ["-DAURORA_RUNTIME_KERNEL_TRAP"],
-            "runtime-entry-stack": ["-DAURORA_RUNTIME_ENTRY_STACK"],
+            "runtime-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_RUNTIME_CONTROL_FIXTURE"],
             "runtime-write": ["-DAURORA_RUNTIME_WRITE"],
             "runtime-nx": ["-DAURORA_RUNTIME_NX"],
             "runtime-return": ["-DAURORA_RUNTIME_RETURN"],
@@ -368,28 +299,15 @@ UEFI_FAMILIES = [
     (
         ["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI"],
         {
-            "pci-checksum": ["-DAURORA_PCI_CHECKSUM"],
-            "pci-reserved": ["-DAURORA_PCI_RESERVED"],
-            "pci-overlap": ["-DAURORA_PCI_OVERLAP"],
-            "pci-range": ["-DAURORA_PCI_RANGE"],
-            "pci-write": ["-DAURORA_PCI_WRITE"],
-            "pci-revoked": ["-DAURORA_PCI_REVOKED"],
-            "pci-cycle": ["-DAURORA_PCI_CYCLE"],
+            "pci-fixture": ["-DAURORA_PCI_FIXTURE"],
         },
     ),
     (["-DAURORA_UEFI_ACPI"], {"acpi": [], "acpi-two": []}),
     (
         ["-DAURORA_UEFI_ACPI"],
         {
+            "acpi-fixture": ["-DAURORA_ACPI_FIXTURE"],
             "acpi-duplicate-root": ["-DAURORA_ACPI_DUPLICATE_ROOT"],
-            "acpi-changed-header": ["-DAURORA_ACPI_CHANGED_HEADER"],
-            "acpi-checksum": ["-DAURORA_ACPI_CHECKSUM"],
-            "acpi-bad-entry": ["-DAURORA_ACPI_BAD_ENTRY"],
-            "acpi-duplicate": ["-DAURORA_ACPI_DUPLICATE"],
-            "acpi-disabled": ["-DAURORA_ACPI_DISABLED"],
-            "acpi-bad-source": ["-DAURORA_ACPI_BAD_SOURCE"],
-            "acpi-write": ["-DAURORA_ACPI_WRITE"],
-            "acpi-revoked": ["-DAURORA_ACPI_REVOKED"],
         },
     ),
     (["-DAURORA_UEFI_EXHAUSTED"], {"stale-exhausted": []}),
@@ -402,6 +320,8 @@ UEFI_FAMILIES = [
 ]
 
 BIOS_CONTROLS = {
+    "bios-fixture": {"KERNEL_TEST_BIOS_FIXTURE": "1"},
+    "bios-schedule-fixture": {"KERNEL_TEST_BIOS_FIXTURE": "1", "KERNEL_TEST_SCHEDULE": "1"},
     "normal": {},
     "division-zero": {"KERNEL_TEST_DIVISION": "zero"},
     "division-remainder-zero": {"KERNEL_TEST_DIVISION": "remainder-zero"},
@@ -545,6 +465,11 @@ def bios_profile(mode, controls):
     schedule = controls.get("KERNEL_TEST_SCHEDULE") == "1"
     console = controls.get("KERNEL_CONSOLE") == "1"
     flags = ["-DAURORA_INTERACTIVE_CONSOLE"] if console else []
+    fixture = controls.get("KERNEL_TEST_BIOS_FIXTURE") == "1"
+    if fixture and controls != BIOS_CONTROLS["bios-schedule-fixture" if schedule else "bios-fixture"]:
+        raise ValueError("BIOS fixture rejects incompatible payload or entry controls")
+    if fixture:
+        flags += ["-DAURORA_BIOS_FIXTURE", "-DAURORA_BIOS_" + ("SCHEDULE" if schedule else "FAULT") + "_FIXTURE"]
     if division != "none":
         flags.append('-DAURORA_DIVISION_FIXTURE="' + division + '"')
     if division in ("zero", "remainder-zero"):
@@ -637,7 +562,8 @@ def bios_profile(mode, controls):
         user_kind="bios",
         user_mode="",
         user_options=[],
-        user_metadata_options=["--division-fixture", division, "--unsigned-fixture", unsigned],
+        user_metadata_options=["--division-fixture", division, "--unsigned-fixture", unsigned]
+        + (["--bios-fixture-family", "schedule" if schedule else "ordinary"] if fixture else []),
         link=[
             "kernel-apic",
             "kernel-scheduler",
@@ -654,7 +580,9 @@ def bios_profile(mode, controls):
             "kernel-language",
         ]
         + (["serial-input", "kernel-interactive-console", "kernel-uart"] if console else []),
-        image_options=["--console"] if console else [],
+        image_options=["--console"]
+        if console
+        else (["--bios-fixture-family", "schedule" if schedule else "ordinary"] if fixture else []),
         admission="bios-console" if console else "",
         checks=[],
     )
@@ -911,9 +839,17 @@ def uefi_profile(mode, flags):
     )
 
 
-UEFI_ALIASES = {"bar-inherited": "bar-read", "pci-devices": "pci", "pci-bridge": "pci", "acpi-two": "acpi"}
+UEFI_ALIASES = {
+    "budget-smp": "budget",
+    "ivrs-missing": "ivrs-read",
+    "bar-inherited": "bar-read",
+    "pci-devices": "pci",
+    "pci-bridge": "pci",
+    "acpi-two": "acpi",
+}
 UEFI_ALIASES.update({mode: image for mode, (image, _) in FIXTURE_MODES.items()})
 BIOS_ALIASES = {"schedule-smp": "schedule", "schedule-no-apic": "schedule", "no-nx": "normal"}
+BIOS_ALIASES.update({mode: image for mode, (image, _) in BIOS_FIXTURE_MODES.items()})
 
 
 def canonical_profile(platform, mode):
@@ -998,8 +934,11 @@ if __name__ == "__main__":
     action.add_argument("--meson-output", type=Path)
     action.add_argument("--select", choices=("bios", "uefi"))
     action.add_argument("--fixture-byte")
+    action.add_argument("--bios-fixture-byte")
     args = parser.parse_args()
-    if args.fixture_byte:
+    if args.bios_fixture_byte:
+        print(BIOS_FIXTURE_MODES.get(args.bios_fixture_byte, ("", ""))[1])
+    elif args.fixture_byte:
         print(FIXTURE_MODES.get(args.fixture_byte, ("", ""))[1])
     elif args.select:
         try:

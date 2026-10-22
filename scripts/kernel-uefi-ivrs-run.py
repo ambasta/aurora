@@ -4,6 +4,7 @@
 import argparse, hashlib, importlib.util, json, os, shutil, signal, subprocess, sys
 import qemu_transport as transport
 import kernel_trace_controls as controls
+import kernel_profiles as profiles
 from meson_test import selected_kernel_compiler
 from pathlib import Path
 
@@ -13,12 +14,6 @@ MODES = (
     "ivrs-read",
     "ivrs-write",
     "ivrs-revoked",
-    "ivrs-pair",
-    "ivrs-alias",
-    "ivrs-reserved",
-    "ivrs-scope",
-    "ivrs-capability",
-    "ivrs-range",
     "ivrs-missing",
 )
 
@@ -120,7 +115,7 @@ def run(mode, out, paths, build=None):
             build.is_absolute()
             and build.is_dir()
             and build.resolve(strict=True) == build
-            and build.parts[-3:] == ("kernel-images", "uefi", mode),
+            and build.parts[-3:] == ("kernel-images", "uefi", profiles.canonical_profile("uefi", mode)),
             "Wrong prebuilt IVRS profile",
         )
     transport.need(not out.is_symlink() and not out.exists(), "Output directory must be fresh and absent")
@@ -162,7 +157,10 @@ def run(mode, out, paths, build=None):
             selected == str(build) + "\n" and selected.count("\n") == 1 and build.is_absolute(),
             "Invalid native image directory handoff",
         )
-        transport.need(build.parts[-3:] == ("kernel-images", "uefi", mode), "Wrong native image profile")
+        transport.need(
+            build.parts[-3:] == ("kernel-images", "uefi", profiles.canonical_profile("uefi", mode)),
+            "Wrong native image profile",
+        )
     execute(mode, out, paths, build, env)
 
 
@@ -216,8 +214,13 @@ def execute(mode, out, paths, build, env):
         invocation["firmware_package"] = controls.FIRMWARE_VERSION
     invocation["iommu_profile"] = "architectural" if mode == "ivrs-default" else "qemu-10.0.13-cold"
     invocation["firmware_source_revision"] = "fbe0805b2091393406952e84724188f8c1941837"
+    startup = profiles.FIXTURE_MODES.get(mode)
+    if startup:
+        invocation["startup_byte"] = startup[1]
     (out / "invocation-start.json").write_text(json.dumps(invocation, indent=2) + "\n")
-    status = transport.run_logged(argv, out / "serial.log", cwd=ROOT, env=env, timeout=60)
+    status = transport.run_logged(
+        argv, out / "serial.log", cwd=ROOT, env=env, timeout=60, startup_byte=startup[1] if startup else None
+    )
     (out / "status").write_text(str(status) + "\n")
     invocation["status"] = status
     for key, name in [("serial", "serial.log"), ("trace", "trace.log"), ("firmware_log", "firmware.log")]:

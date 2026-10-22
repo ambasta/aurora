@@ -21,6 +21,7 @@ MODES = SUCCESS + (
     "snapshot-reply-reserved",
     "snapshot-reply-byte",
 )
+FIXTURE_MODES = ("snapshot-fault", "snapshot-cancel", "snapshot-stale", "snapshot-revoked") + PRODUCER_FAILURES
 DONE = (1 << 64) - 1
 STACK = r"(\d+)"
 SUFFIX = ipc.SUFFIX
@@ -106,6 +107,24 @@ def expected(mode, metadata, arena):
 
 def validate(status, text, mode, metadata):
     need(mode in MODES, "Unknown snapshot mode")
+    selected = mode in FIXTURE_MODES
+    need(
+        text.count("AURORA_FIXTURE_READY") == int(selected)
+        and text.splitlines().count("AURORA_FIXTURE_READY") == int(selected),
+        "Snapshot fixture selector readiness",
+    )
+    if selected:
+        need(
+            "AURORA_PCI_WINDOW_CLOSED:" in text
+            and text.index("AURORA_PCI_WINDOW_CLOSED:") < text.index("AURORA_FIXTURE_READY"),
+            "Snapshot selector precedes hardware closure",
+        )
+        first = min(
+            (text.find(marker) for marker in ("AURORA_UEFI_SNAPSHOT_", "AURORA_UEFI_IPC_") if text.find(marker) >= 0),
+            default=-1,
+        )
+        need(first > text.index("AURORA_FIXTURE_READY"), "Snapshot selector follows publication")
+        text = text.replace("AURORA_FIXTURE_READY\r\n", "").replace("AURORA_FIXTURE_READY\n", "")
     ipc.metadata_valid(metadata, "ipc")
     need(status == (33 if mode in SUCCESS else 35), "Wrong snapshot exit status")
     lines = text.splitlines()
@@ -173,7 +192,8 @@ def self_test():
     fixtures = {}
     for mode in MODES:
         rows = [row.replace(STACK, str(arena + 0x47C00)) for row in expected(mode, metadata, arena)]
-        text = prefix + "\n".join(rows) + "\n"
+        case_prefix = prefix + ("AURORA_FIXTURE_READY\n" if mode in FIXTURE_MODES else "")
+        text = case_prefix + "\n".join(rows) + "\n"
         status = 33 if mode in SUCCESS else 35
         validate(status, text, mode, metadata)
         counts = {
@@ -185,6 +205,12 @@ def self_test():
         }
         need(len(rows) == counts.get(mode, 3 if mode in PRODUCER_FAILURES else 4), "Self-test boundary length")
         fixtures[mode] = (status, text)
+        if mode in FIXTURE_MODES:
+            reject(status, text.replace("AURORA_FIXTURE_READY\n", ""), mode)
+            reject(status, text.replace("AURORA_FIXTURE_READY", "AURORA_FIXTURE_READY\nAURORA_FIXTURE_READY"), mode)
+            reject(status, "AURORA_FIXTURE_READY\n" + text.replace("AURORA_FIXTURE_READY\n", ""), mode)
+            reject(status, text.replace("AURORA_FIXTURE_READY\n", "") + "AURORA_FIXTURE_READY\n", mode)
+            reject(status, text.replace("AURORA_FIXTURE_READY", "AURORA_FIXTURE_READY extra"), mode)
         # A bounded set of controls for every mode, rather than multiplying
         # thousands of identical per-byte field mutations over the long traces.
         reject(35 if status == 33 else 33, text, mode)
@@ -194,11 +220,11 @@ def self_test():
         reject(status, text.replace("AURORA_PCI_WINDOW_CLOSED: reads=39\n", ""), mode)
         reject(status, rows[0] + "\n" + text, mode)
         reject(status, "noise " + rows[0] + "\n" + text, mode)
-        reject(status, prefix + "\n".join(rows[1:]) + "\n", mode)
+        reject(status, case_prefix + "\n".join(rows[1:]) + "\n", mode)
         reject(status, text + rows[-1] + "\n", mode)
         reordered = rows.copy()
         reordered[-1], reordered[-2] = reordered[-2], reordered[-1]
-        reject(status, prefix + "\n".join(reordered) + "\n", mode)
+        reject(status, case_prefix + "\n".join(reordered) + "\n", mode)
         if mode not in SUCCESS:
             reject(33, text.rsplit("AURORA_UEFI_RUNTIME_FAIL:", 1)[0] + SUFFIX, mode)
         if mode in PRODUCER_FAILURES:
@@ -242,7 +268,7 @@ def self_test():
                 need(line in rows, "Self-test byte/EOF/range oracle")
                 reject(status, text.replace(line + "\n", "", 1), mode)
                 reject(status, text.replace(line, line.replace(f"first={reply}", f"first={reply ^ 256}"), 1), mode)
-            reject(status, prefix + rows[-3] + "\n" + SUFFIX, mode)
+            reject(status, case_prefix + rows[-3] + "\n" + SUFFIX, mode)
             completion = f"AURORA_UEFI_IPC_COMPLETE: transaction={normal_start} first=1 second=0"
             reject(status, text.replace(completion, completion.replace("first=1", "first=2"), 1), mode)
             # Remove and reorder complete middle transactions while preserving
@@ -257,8 +283,8 @@ def self_test():
             )
             missing = rows[:middle] + rows[middle + 17 :]
             swapped = rows[:middle] + rows[middle + 17 : middle + 34] + rows[middle : middle + 17] + rows[middle + 34 :]
-            reject(status, prefix + "\n".join(missing) + "\n", mode)
-            reject(status, prefix + "\n".join(swapped) + "\n", mode)
+            reject(status, case_prefix + "\n".join(missing) + "\n", mode)
+            reject(status, case_prefix + "\n".join(swapped) + "\n", mode)
             for old, new in (("second=64", "second=65"), ("phase=6", "phase=0"), ("phase=7", "phase=2")):
                 reject(status, text.replace(old, new, 1), mode)
             if mode != "snapshot":

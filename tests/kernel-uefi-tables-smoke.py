@@ -69,7 +69,12 @@ def validate(status, text, mode, metadata):
     text = text.replace("\r", "")
     quarantine = mode.endswith("quarantine")
     runtime.validate(
-        status, text, "runtime", metadata, retained=2 if quarantine else 0, final_slot=1 if quarantine else 0
+        status,
+        runtime.checked_fixture_projection(text),
+        "runtime",
+        metadata,
+        retained=2 if quarantine else 0,
+        final_slot=1 if quarantine else 0,
     )
     need(
         not any(prefix in text for prefix in ("AURORA_PIN", "AURORA_DMA", "AURORA_IOMMU")),
@@ -141,6 +146,8 @@ def self_test():
                 .replace(f"stack={runtime.STACK + 0x4000}", f"stack={runtime.STACK + 0x204000}")
             )
             text = head + tail
+        marker = "AURORA_FIXTURE_READY\n"
+        text = text.replace("AURORA_UEFI_DOMAIN_ENTER:", marker + "AURORA_UEFI_DOMAIN_ENTER:", 1)
         validate(33, text, mode, metadata)
         positive += 1
         bad = [
@@ -148,6 +155,19 @@ def self_test():
             (33, text + "AURORA_TABLE_FAIL\n", metadata),
             (33, text + "AURORA_DMA_OK\n", metadata),
         ]
+        bad.extend(
+            (33, value, metadata)
+            for value in (
+                text.replace(marker, ""),
+                text.replace(marker, marker * 2),
+                marker + text.replace(marker, ""),
+                text.replace(marker, "") + marker,
+                text.replace(marker, "prefix " + marker),
+                text.replace(marker, "AURORA_FIXTURE_READY extra\n"),
+                text.replace(marker, "AURORA_FIXTURE_UNKNOWN\n"),
+            )
+        )
+
         for _, line in expected:
             full = line + "\n"
             bad.extend(

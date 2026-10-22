@@ -3,6 +3,7 @@
 #include "address-spaces.hpp"
 #include "apic.hpp"
 #include "console.hpp"
+#include "bios-fixture.hpp"
 #include <array>
 auto resume_integer(const std::uint64_t *words) -> std::uint64_t asm("aurora_resume_integer");
 namespace aurora::user {
@@ -46,20 +47,24 @@ auto Scheduler::interrupt(std::uint64_t vector, std::uint64_t code, std::uint64_
     if (contract == nullptr || code != 0x1b || frame < Protection::entry_stack_bottom ||
         frame > Protection::entry_stack_top - 176 || frame % 8 != 0 || !AddressSpaces::active(task.domain))
         return -1;
-#ifdef AURORA_TEST_SCHEDULE_ROOT
-    if (vector == Apic::vector) {
-        const auto root = Protection::kernel_root();
-        asm volatile("mov %0, %%cr3" : : "r"(root) : "memory");
-        return -1;
+#ifdef AURORA_BIOS_SCHEDULE_FIXTURE
+    if (bios::selected(bios::Fixture::bios_schedule_root)) {
+        if (vector == Apic::vector) {
+            const auto root = Protection::kernel_root();
+            asm volatile("mov %0, %%cr3" : : "r"(root) : "memory");
+            return -1;
+        }
     }
 #endif
     IntegerContext captured;
     const auto *words = reinterpret_cast<const volatile std::uint64_t *>(frame);
     for (std::size_t i = 0; i < 22; ++i)
         captured.words()[i] = words[i];
-#ifdef AURORA_TEST_SCHEDULE_CONTEXT
-    if (vector == Apic::vector)
-        captured.words()[18] = 8;
+#ifdef AURORA_BIOS_SCHEDULE_FIXTURE
+    if (bios::selected(bios::Fixture::bios_schedule_context)) {
+        if (vector == Apic::vector)
+            captured.words()[18] = 8;
+    }
 #endif
     if (!captured.valid(*contract) || captured.words()[15] != vector || captured.words()[16] != 0)
         return -1;
@@ -155,8 +160,10 @@ auto Scheduler::run(memory::PhysicalPages &pages) -> bool {
                 log("ENTER", i);
                 if (!Apic::arm())
                     return false;
-#ifdef AURORA_TEST_SCHEDULE_FORGED
-                asm volatile("int $64" : : : "memory");
+#ifdef AURORA_BIOS_SCHEDULE_FIXTURE
+                if (bios::selected(bios::Fixture::bios_schedule_forged)) {
+                    asm volatile("int $64" : : : "memory");
+                }
 #endif
                 if (resume_integer(task.context.words().data()) != 1 || !AddressSpaces::active(task.domain))
                     return false;

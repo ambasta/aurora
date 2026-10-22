@@ -18,11 +18,13 @@ import pathlib
 import random
 import re
 import shlex
+import struct
 import sys
 import tempfile
 
 sys.dont_write_bytecode = True
 import json_profile as profile
+import json_runtime as runtime
 import owned_bytes
 from compiler_contract import selected_flag_vectors
 from package_profiles import SelectedCompiler, finalize_selected_identity
@@ -146,22 +148,6 @@ def observe_escape():
     return body + f"return {U64_MAX - 2}u64;"
 
 
-def decode_test(case):
-    helper = f"auto input_CASE({SPAN} bytes)->std::JsonScalarResult{{"
-    parent = "bytes"
-    for i, (start, size) in enumerate(case.windows):
-        name = f"view{i}"
-        helper += f"const {SPAN} {name}={parent}.subspan({start},{size});"
-        parent = name
-    helper += f"const std::JsonScalarResult r=std::decode_json_string_scalar({parent},{case.offset},{case.extent()});"
-    helper += "return r;}"
-    body = harness.array(case.data) + f"const builtin::array<u8,{max(1, len(case.data))}> saved=owner;"
-    body += "const std::JsonScalarResult original=input_CASE(borrow_bytes(owner));"
-    body += f"i64 i=0;while(i<len(owner)){{if(owner[i]!=saved[i]){{return {U64_MAX - 3}u64;}}i=i+1;}}"
-    body += "owner[0]=0u8;const std::JsonScalarResult report=original;" + observe_scalar()
-    return Test(case.label, body, decode_model(case.span(), case.offset, case.extent()), helper)
-
-
 def decode_cases():
     for byte in range(256):
         yield Case("every initial byte", bytes([byte]))
@@ -267,7 +253,7 @@ def scalar_shape_model(status, scalar, width, error):
     return scalar_failure("invalid_window")
 
 
-def scalar_shapes():
+def scalar_shape_rows():
     seeds = ((0, 0, 1, 0), (0, 0x10FFFF, 12, 0), (1, 0, 0, 0), (S["invalid_string"], 0, 0, 9))
     rows = set(seeds)
     for seed in seeds:
@@ -281,14 +267,7 @@ def scalar_shapes():
                 row = list(seed)
                 row[field] = value
                 rows.add(tuple(row))
-    for status, scalar, width, error in sorted(rows):
-        body = f"const std::JsonScalarResult original=std::JsonScalarResult(std::JsonStatus::{STATUSES[status]},"
-        body += f"{scalar}u64,{width},{error});const std::JsonScalarResult report=original;" + observe_scalar()
-        yield Test(
-            "forged scalar report normalizes shape and masks payload",
-            body,
-            scalar_shape_model(status, scalar, width, error),
-        )
+    return sorted(rows)
 
 
 def stored_array(data):
@@ -297,7 +276,7 @@ def stored_array(data):
     )
 
 
-def escape_tests():
+def escape_values():
     rng = random.Random(71829)
     values = set(range(160)) | {
         0x7FE,
@@ -321,27 +300,146 @@ def escape_tests():
         U64_MAX,
     }
     values.update(rng.randrange(0x110000) for _ in range(100))
-    for value in sorted(values):
+    return sorted(values)
+
+
+# Plain POD fixtures enter a borrowed receiver; the decode helper forms its own
+# AU spans and returns a copied report before the source-owner mutation.
+RUNTIME_SCALARS = (
+    "operation",
+    "length",
+    "offset",
+    "count",
+    "first",
+    "first_size",
+    "second",
+    "second_size",
+    "status",
+    "scalar",
+    "width",
+    "error",
+)
+
+
+def runtime_source():
+    source = "module json_codecs_runtime;import std.json;import std.array;class CodecInput {"
+    source += "".join(f"builtin::array<u8,512> data{i};" for i in range(8))
+    source += "".join(f"{'u64' if name == 'scalar' else 'i64'} {name};" for name in RUNTIME_SCALARS)
+    source += (
+        "public:CodecInput():"
+        + ",".join(
+            [
+                *(f"data{i}{{}}" for i in range(8)),
+                *(f"{name}({'0u64' if name == 'scalar' else '0'})" for name in RUNTIME_SCALARS),
+            ]
+        )
+        + "{}"
+    )
+    source += "auto input_byte(i64 index) const -> u8 {"
+    for i in range(7):
+        source += f"if(index<{512 * (i + 1)}){{return data{i}[index-{512 * i}];}}"
+    source += "return data7[index-3584];}"
+    source += "auto selected_status() const -> std::JsonStatus {"
+    for number, name in enumerate(STATUSES):
+        source += f"if(status=={number}){{return std::JsonStatus::{name};}}"
+    source += "return std::JsonStatus::invalid_window;}"
+    source += "auto escape_status() const -> std::JsonEscapeStatus {"
+    source += "if(status==0){return std::JsonEscapeStatus::success;}return std::JsonEscapeStatus::invalid_scalar;}"
+    source += f"auto decode({SPAN} bytes) const -> std::JsonScalarResult {{"
+    source += f"const {SPAN} whole=bytes.subspan(0,length);const {SPAN} view=whole.subspan(first,first_size);"
+    source += f"const {SPAN} nested=view.subspan(second,second_size);"
+    source += "return std::decode_json_string_scalar(nested,offset,count);}"
+    source += "auto codec_entry(i64 field) const -> u64 {if(operation==0){" + harness.array(bytes(4096))
+    source += "i64 at=0;while(at<4096){owner[at]=input_byte(at);at=at+1;}"
+    source += "const std::JsonScalarResult original=decode(borrow_bytes(owner));"
+    source += f"at=0;while(at<4096){{if(owner[at]!=input_byte(at)){{return {U64_MAX - 3}u64;}}at=at+1;}}"
+    source += "owner[0]=0u8;const std::JsonScalarResult report=original;" + observe_scalar() + "}"
+    source += "if(operation==1){const std::JsonScalarResult original="
+    source += "std::JsonScalarResult(selected_status(),scalar,width,error);"
+    source += "const std::JsonScalarResult report=original;" + observe_scalar() + "}"
+    source += "if(operation==2){const std::JsonEscapeResult original=std::escape_json_scalar(scalar);"
+    source += "const std::JsonEscapeResult report=original;" + observe_escape() + "}"
+    source += "std::array<u8,6> stored=std::array<u8,6>();i64 at=0;"
+    source += "while(at<6){stored.set(at,input_byte(at));at=at+1;}"
+    source += "const std::JsonEscapeResult original=std::JsonEscapeResult(escape_status(),stored,width);"
+    source += "const std::JsonEscapeResult report=original;stored.set(0,17u8);stored.set(5,18u8);"
+    source += observe_escape() + "}};\n"
+    return source
+
+
+def runtime_record(label, expected, data=b"", **values):
+    require(len(data) <= 4096, "codec runtime owner capacity")
+    packet = data.ljust(4096, b"\0")
+    for name in RUNTIME_SCALARS:
+        packet += struct.pack("<Q" if name == "scalar" else "<q", values.get(name, 0))
+    return label, packet, expected
+
+
+def runtime_cases():
+    for case in decode_cases():
+        require(len(case.windows) <= 2, "codec runtime nested window capacity")
+        length, windows = len(case.data), []
+        for index in range(2):
+            start, count = case.windows[index] if index < len(case.windows) else (0, length)
+            require(0 <= start <= length and 0 <= count <= length - start, "codec subspan fixture admitted")
+            windows.extend((start, count))
+            length = count
+        yield runtime_record(
+            case.label,
+            decode_model(case.span(), case.offset, case.extent()),
+            case.data,
+            operation=0,
+            length=len(case.data),
+            offset=case.offset,
+            count=case.extent(),
+            first=windows[0],
+            first_size=windows[1],
+            second=windows[2],
+            second_size=windows[3],
+        )
+    for status, scalar, width, error in scalar_shape_rows():
+        yield runtime_record(
+            "forged scalar report normalizes shape and masks payload",
+            scalar_shape_model(status, scalar, width, error),
+            operation=1,
+            status=status,
+            scalar=scalar,
+            width=width,
+            error=error,
+        )
+    for value in escape_values():
         data = escape_bytes(value)
-        body = f"const std::JsonEscapeResult original=std::escape_json_scalar({value}u64);"
-        body += "const std::JsonEscapeResult report=original;" + observe_escape()
-        yield Test(
+        yield runtime_record(
             "canonical escape and exact byte fallbacks",
-            body,
             escape_model(1 if data is None else 0, data or b"", len(data or b"")),
+            operation=2,
+            scalar=value,
         )
     for status, width, data in itertools.product(
         (0, 1), (MIN, -1, 0, 1, 2, 3, 4, 5, 6, 7, MAX), (bytes(6), b"ABCDEF", b"\xff" * 6, b"\xc0\x80\xed\xa0\x80\x00")
     ):
-        body = stored_array(data)
-        body += "const std::JsonEscapeResult original=std::JsonEscapeResult(std::JsonEscapeStatus::"
-        body += f"{'success' if status == 0 else 'invalid_scalar'},stored,{width});"
-        body += "const std::JsonEscapeResult report=original;stored.set(0,17u8);stored.set(5,18u8);"
-        yield Test(
+        yield runtime_record(
             "copied escape reports validate shape without certifying forged bytes",
-            body + observe_escape(),
             escape_model(status, data, width),
+            data,
+            operation=3,
+            status=status,
+            width=width,
         )
+
+
+def compare(observed, expected):
+    require(list(observed) == list(expected), "JSON codec complete native observations differ")
+
+
+def runtime_codecs(suite):
+    fields = [(f"data{i}", 512 * i, 512, "u8", 512) for i in range(8)]
+    fields += [
+        (name, 4096 + i * 8, 8, "u64" if name == "scalar" else "i64", 0) for i, name in enumerate(RUNTIME_SCALARS)
+    ]
+    runtime.run(
+        suite, "runtime-codecs", runtime_source(), "CodecInput", "codec_entry", fields, runtime_cases(), "u64", compare
+    )
 
 
 def lifetime_tests():
@@ -406,10 +504,7 @@ def roundtrip_tests():
         )
 
 
-def all_tests():
-    yield from map(decode_test, decode_cases())
-    yield from scalar_shapes()
-    yield from escape_tests()
+def source_tests():
     yield from lifetime_tests()
     yield from roundtrip_tests()
 
@@ -847,13 +942,17 @@ def main():
         print("PASS JSON scalar codec independent Unicode/JSON and comparator controls")
         return
     if args.describe:
-        groups = list(profile.batches(all_tests()))
+        groups = list(profile.batches(source_tests()))
+        rows = list(runtime_cases())
         print(
             json.dumps(
                 dict(
-                    cases=sum(map(len, groups)),
-                    batches=len(groups),
-                    complete_64bit_observations=sum(len(i.expected) for g in groups for i in g),
+                    cases=len(rows) + sum(map(len, groups)),
+                    batches=1 + len(groups),
+                    runtime_cases=len(rows),
+                    source_cases=sum(map(len, groups)),
+                    complete_64bit_observations=sum(len(expected) for _, _, expected in rows)
+                    + sum(len(i.expected) for g in groups for i in g),
                     rejections=len(list(rejections((args.repo_root / "library/std/json.au").read_text()))),
                     independent_prefix_audit=audit,
                     budget_mib=args.budget_mib,
@@ -892,7 +991,8 @@ def main():
         ],
     )
     try:
-        for group in profile.batches(all_tests()):
+        runtime_codecs(suite)
+        for group in profile.batches(source_tests()):
             suite.batch(group)
         for item in rejections((args.repo_root / "library/std/json.au").read_text()):
             suite.reject(*item)

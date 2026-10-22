@@ -3,6 +3,7 @@
 
 from pathlib import Path
 import argparse
+import json
 import subprocess
 
 PAYLOAD_SECTORS = 127
@@ -219,6 +220,7 @@ def main() -> None:
     )
     parser.add_argument("--build-dir", type=Path, help="artifact directory (default: ROOT/build)")
     parser.add_argument("--check-only", action="store_true", help="validate existing aurora.img without writing")
+    parser.add_argument("--bios-fixture-family", choices=("ordinary", "schedule"))
     parser.add_argument("--console", action="store_true", help="require the sealed BIOS console session")
     arguments = parser.parse_args()
     root = arguments.root.resolve()
@@ -237,6 +239,14 @@ def main() -> None:
     boot = (build / "boot.bin").read_bytes()
     kernel = (build / "kernel.bin").read_bytes()
     elf = (build / "kernel.elf").read_bytes()
+    require(not (arguments.console and arguments.bios_fixture_family), "Console cannot admit BIOS fixture authority")
+    fixture_present = b"AURORA_FIXTURE_READY" in kernel
+    require(fixture_present == bool(arguments.bios_fixture_family), "BIOS fixture reader differs from selected image")
+    user_metadata = json.loads((build / "user-metadata.json").read_text())
+    require(
+        user_metadata.get("bios_fixture_family") == arguments.bios_fixture_family,
+        "BIOS fixture metadata differs from selected image",
+    )
     boot_symbols = subprocess.check_output(["nm", "-a", str(build / "boot.o")], text=True)
     packets = [int(line.split()[0], 16) for line in boot_symbols.splitlines() if line.split()[-1] == "packet"]
     require(len(packets) == 1, "Missing unique assembler disk-packet symbol")
