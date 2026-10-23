@@ -30,140 +30,81 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
 - Keep the trusted computing base small and explicit. Never equate a set of tests
   with a proof of Rust-equivalent memory safety or production security.
 
+## Cost budget
+
+Build and test cost must be proportional to the project's size, judged against
+Linux and GCC. A Linux defconfig compiles a few million lines in roughly 80-120 s
+on 8 cores; this repository compiles about 25x less. On the 8-vCPU development
+instance:
+
+- a fresh build must finish in 60 s or less, and an incremental rebuild after a
+  one-file change in seconds;
+- the merge suite (`meson test --suite merge`) must finish in 60 s or less;
+- the release suite (`--suite release`) is opt-in and runs before releases and
+  compiler bumps, not on every merge.
+
+Every change that touches the build or tests reports fresh-build and merge-suite
+wall time next to the previous main, measured at full concurrency. Growth needs a
+stated reason; over-budget changes do not merge without the user's approval.
+Use every core: build and test at `nproc` jobs, bounded by a MemAvailable
+watchdog rather than a low fixed job count.
+
+## How tests are written
+
+Match how Linux, GCC and LLVM test themselves. Anything beyond that needs a
+stated safety reason; more checking is not a reason by itself.
+
+- One compiled driver per component. Cases are data: small input files with
+  their expected output beside them (golden files, LLVM lit style), fed to one
+  driver that is compiled once and run over all cases in parallel. Never
+  generate and compile a program per case or per batch of cases.
+- Expected values come from a standard-library reference or a reviewed golden
+  file. Do not reimplement the code under test in another language as its oracle.
+- No tests of tests: no inventories that pin other tests' command lines, no
+  self-tests or negative controls for oracles, no controls for controls, no
+  fake-tool routing tests for developer scripts.
+- Properties such as stack bounds, page permissions, W^X and entry/exit integrity
+  are proved by compiler facts emitted with the code and by the kernel's own
+  load-time checks, inside the build (like objtool/modpost). Do not pin exact
+  instruction sequences, addresses or digests that legitimate code generation
+  or layout changes must then re-pin.
+- One production kernel configuration per supported target. Fault and hostile
+  cases are boot-selected fixtures in a few test images, not separate builds.
+- Fixtures and hosted test drivers are not performance-critical: build them
+  unoptimized unless a test needs optimized code.
+- Python is for orchestration and small generators only. Checks that cost real
+  time belong in C++ or Aurora.
+- A check may move (separate image to fixture, script to compiler facts or
+  load-time verification) when the change names where the property is now
+  enforced and a test still covers it. Deleting duplicated or meta checking
+  needs no replacement.
+
 ## Workflow
 
-1. State the next dependency and observable acceptance gate before adding a feature.
+1. State the next dependency and its observable acceptance before adding a feature.
 2. Implement running mechanisms, not unused scaffolding presented as functionality.
-3. Add positive, negative, regression and adversarial tests. Check metadata against
-   actual generated layout/behavior. Fail closed for unsupported syntax/semantics.
-4. Run dependency-selected focused checks while developing. Keep `dev` fast;
-   normal `slow`, `integration` and native `boot` coverage belongs to `full`.
-   Explicit combinatorial library sweeps belong to `exhaustive`, outside normal
-   `full`; normal cases retain their documented boundary families and fixed-seed
-   samples. Select the whole sweeps when changing their library behavior, oracles
-   or sampling contract, and record which tier actually ran. Do not silently
-   replace complete regression families with first-N limits.
-   Before every merge or release, run complete `full` with GCC 16 on the final
-   integrated source, including after conflict resolution. `make test` selects
-   the same Meson graph; do not run a second duplicate Make aggregate for credit.
-   GCC 14 is optional targeted compatibility evidence, not a routine merge or
-   release gate. Preserve historical results with their original source/tool scope.
-   Use stable, separate build directories per toolchain/configuration. Ninja
-   tracks source/header dependencies; never share a build across changed
-   toolchain identities. Use a fresh directory for clean/bootstrap checks and
-   whenever toolchain identity or dependency tracking is in doubt. Select matching
-   real `gcc`/`g++` tools on PATH as well as `CXX`. Record final source identity,
-   compiler/binutils/runtime identities, actual commands and Meson test logs.
-   Keep raw Meson logs, failed/interrupted scratch and explicitly kept artifacts.
-   The Meson artifact adapter removes only its own new scratch after success;
-   use `AURORA_MESON_KEEP_ARTIFACTS=1` when successful scratch is needed for review.
-   Whole-directory cleanup uses explicit reviewed CLEAN_PATHS and may remove
-   their logs/evidence; stop builds/tests/guests first and use .keep to protect
-   retained directories. Never sweep unrelated output automatically.
-   A selected-compiler digest is artifact stability, not a fresh-build receipt.
-   With GCC 16, also build and smoke normal BIOS and UEFI images. Run
-   existing image/admission and emulator gates for each affected kernel profile,
-   including applicable fault/recovery cases and a normal restoration boot.
-   The native `boot` suite does not run QEMU. Missing tools, skipped gates and
-   prior-source results leave the current candidate unqualified. Record the actual
-   GCC 16 distribution/version; Debian GCC 16.2.0-3 is not Gentoo 16.2.1 evidence.
-   Build predecessors must have the source-bootstrap provenance specified in
-   compiler/README.md. Ordinary development may reuse a digest-verified retained
-   artifact with matching source/build/tool identities and qualification evidence.
-   This artifact route is not a fresh source bootstrap and does not qualify changed
-   current source. Fresh seed-route qualification remains required for predecessor
-   bumps and fresh source-bootstrap claims; retain the reconstructable route.
-   Historical raw-seed/prebuilt receipts retain their original validation meaning;
-   legacy execution entrypoints are removed; new execution uses only the native
-   Meson graph without reinterpreting those records.
-5. Review changes independently before considering a milestone verified. Record
-   reproduced defects and fixes, commands, source revision, tool versions and limits.
-6. Update implementation docs and the completeness matrix in the same change.
-   Each PR must report comparable executed build steps, configured target and
-   distinct kernel-image counts, and full-suite wall time, with a reason for any
-   growth. Record workload/configuration and actual concurrency; label estimates
-   and unavailable measurements rather than substituting historical results.
-7. Keep changes reviewable. Use a clean, independently reviewed squash merge so
-   work-in-progress checkpoints do not enter main. Do not rewrite existing history.
-   Verified functional checkpoints may use ready-for-review pull requests;
-   unfinished milestones remain draft, per the user's latest approval.
-   Never force-push, merge, or publish a release without the applicable authorization.
+3. Add positive, negative and regression tests in the style above. Fail closed for
+   unsupported syntax/semantics.
+4. Develop with incremental builds and focused tests. Before a merge, run the
+   merge suite with GCC 16 in the pinned container on the final source, the guest
+   families the change affects, and the normal BIOS and UEFI smokes. Release suite
+   and every guest family run before releases and compiler bumps.
+5. The pinned container (`scripts/container.sh`: Debian GCC 16, pinned QEMU, OVMF
+   and test tooling under /opt) is the reference for merge evidence. Native host
+   builds are fine for fast development feedback in their own build directory;
+   never share a build directory across toolchains.
+6. Bootstrap: one verified checkpoint compiler builds C1, C1 builds C2, and C1/C2
+   convergence is the self-check, like GCC's stage compare. New compiler features
+   are adopted at scheduled bumps; the historical-oracle corpus differential runs
+   at bumps, not on every merge. See compiler/README.md.
+7. Review changes independently before merge. Record commands, tool versions,
+   timings and limits in the commit or PR, not in new per-feature report files.
+8. Update implementation docs and the completeness matrix in the same change.
+   Keep docs short; history lives in Git.
+9. Use clean squash merges so work-in-progress checkpoints do not enter main.
+   Do not rewrite existing history and never force-push.
 
-## Bootstrap evolution
-
-- Separate language implementation from compiler adoption. New features first
-  land with independent library or product consumers; all predecessor-compiled inputs,
-  including compiler-imported library code, stay within its supported subset.
-- Batch predecessor bumps at milestones or when a justified compiler-adoption
-  batch is ready, rather than coupling each feature to a bump. Review the pin,
-  complete seed route, supported corpus and adoption together. Retain durable
-  immutable checkpoint references and original receipts; changing the active
-  route must not rewrite their meaning or remove reconstructable source history.
-- Keep the build predecessor and historical C++ emitter oracle independently
-  identified. A newer bootstrap compiler must not silently replace the independent
-  old-backend comparison. Do not demote historical corpus coverage to hide a
-  rejection or regression.
-- Cached predecessors are provenance-checked conveniences, not trust anchors or
-  evidence of chain shortening. Shorter source routes require the direct-build
-  and cross-route gates in compiler/README.md. Final-source full, image/emulator
-  qualification and independent review requirements above remain unchanged.
-
-## Proportionality
-
-- Match the mechanisms of Linux, GCC and Rust/LLVM. Anything beyond them needs a
-  stated safety reason in the change; more checking is not a reason by itself.
-- Never weaken a check to simplify. A check may move (build time to load time,
-  script to compiler facts, separate image to boot-selected fixture) only if the
-  change names where the same property is now enforced and a test still covers it.
-- Ship one production kernel configuration per supported target. Fault and hostile
-  cases are boot-selected fixtures in a few test images, not separate kernel builds.
-- Admission checks prove properties (stack bounds, page permissions, W^X,
-  entry/exit integrity) from compiler facts and the kernel's own load-time checks.
-  Do not pin exact instruction sequences, addresses or digests that legitimate
-  code-generation or layout changes must then re-pin.
-- Use standard-library references or reviewed golden outputs as test oracles;
-  reimplement only where none exists. Feed generated cases to one compiled driver
-  as data rather than compiling a program per batch.
-- Prefer reseeding the bootstrap route from a verified checkpoint, under the gates
-  in compiler/README.md, over adding stages. C1/C2 convergence is the self-check.
-- Every PR reports image count, build CPU and `full` duration next to the previous
-  main; growth needs a justification. Compiler-speed changes report paired
-  measurements against the retained baseline.
-- Python is for bootstrap, emulator orchestration and small generators. Move heavy
-  checks to C++ (or Aurora, once it has host file and process services) when they
-  become a bottleneck.
-
-## Validation
-
-- meson test -C build/meson --suite core --num-processes 2: focused frontend,
-  class/value, integer, module/depth and initialization checks, incrementally built
-- meson test -C build/meson --suite bytes --num-processes 2: complete byte/storage runners
-- meson test -C build/meson --suite packages --num-processes 4: partial and full package profiles
-- meson test -C build/meson --suite dev --num-processes 2: quick cross-component feedback
-- meson test -C build/meson --suite slow --num-processes 2: longer integration/ABI sweeps
-- meson test -C build/meson --suite full --num-processes 2: normal full non-LSP regression coverage
-- meson test -C build/meson --suite exhaustive --num-processes 2: complete combinatorial library sweeps, not a replacement for full
-- make test: incremental compile then the complete normal Meson `full` suite;
-  `MESON_BUILD_DIR`, `AURORA_BUILD_JOBS` and `AURORA_TEST_JOBS` are configurable
-- make test-exhaustive: incremental prerequisites then the separate `exhaustive` suite
-- make -C compiler test: complete compiler-only scope, not the root full aggregate
-- make smoke: real QEMU normal boot
-- make smoke-fault: real fail-stop exception injection (see scripts for modes)
-- SANITIZE=1 ./scripts/kernel-tests.sh: hosted allocator sanitizers/model tests
-
-Read [development and qualification](docs/developer-test-contract.md) before
-changing test routing. Normal development uses the incremental Meson graph;
-historical receipts remain readable while new execution uses Meson. Full aggregates
-and acceptance reject coverage-reducing overrides. Focused and compiler-free
-checks do not establish root native acceptance. There is no established pinned
-CI replacement for this policy; retain these gates until that mechanism is real.
-
-For ordinary feature changes, aim for roughly 2x verification/review effort
-relative to implementation effort, excluding compiler/IR safety work. This is a
-planning budget, never permission to skip safety or final merge gates. Explain a
-justified overrun before expanding scope. Reuse existing test and component docs;
-keep the completeness matrix a status table, with historical results in Git/PRs
-and retained run/CI evidence rather than new per-feature reports.
+## Limits
 
 Missing tools or blocked tests must be reported as such, never silently passed.
 Do not install this experimental kernel on physical hardware or modify a host
@@ -173,6 +114,5 @@ out of the repository. No licenses or legal commitments should be invented.
 ## Scope and status
 
 The user accepts a long-term project and wants tested milestone updates, material
-decisions and blockers. Preserve work in the repository and leave a precise next
-step. Do not call the full language, distribution or AMD support complete until
-the relevant acceptance gates have actually passed.
+decisions and blockers. Do not call the full language, distribution or AMD support
+complete until the relevant acceptance gates have actually passed.
