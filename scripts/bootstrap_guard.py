@@ -182,9 +182,10 @@ def run(selection, compiler, sha256, receipt, command, *, selection_sha256, role
     bootstrap.require(command, "missing guarded command")
     check(selection, compiler, sha256, receipt, selection_sha256=selection_sha256, role=role)
     try:
-        subprocess.run(command, check=True)
+        result = subprocess.run(command)
     finally:
         check(selection, compiler, sha256, receipt, selection_sha256=selection_sha256, role=role)
+    return result.returncode
 
 
 def main():
@@ -220,7 +221,7 @@ def main():
         print(oracle["path"] + "\n" + oracle["sha256"])
     else:
         command = args.command[1:] if args.command[:1] == ["--"] else args.command
-        run(
+        status = run(
             args.selection,
             args.compiler,
             args.sha256,
@@ -229,10 +230,16 @@ def main():
             selection_sha256=args.selection_sha256,
             role=args.role,
         )
+        if status:
+            # The guarded command reported its own failure; the predecessor passed both checks.
+            sys.exit(bootstrap.child_status(status))
 
 
 if __name__ == "__main__":
     try:
         main()
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
-        sys.exit("bootstrap guard: " + str(error) + "; reconfigure Meson with the verified predecessor selection")
+        reason = str(error)
+        if "To fix:" not in reason:
+            reason += "; reconfigure Meson with the verified predecessor selection"
+        sys.exit("bootstrap guard: " + reason)

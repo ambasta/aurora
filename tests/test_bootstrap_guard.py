@@ -233,6 +233,20 @@ class ConfiguredGuardTests(unittest.TestCase):
                     selection_sha256=self.selection_sha256,
                 )
 
+    def test_child_failure_returns_its_status_after_both_checks(self):
+        result = subprocess.CompletedProcess(["unused"], 5)
+        with patch.object(guard.subprocess, "run", return_value=result) as child:
+            status = guard.run(
+                self.selection,
+                str(self.compiler),
+                self.sha256,
+                str(self.receipt),
+                ["unused"],
+                selection_sha256=self.selection_sha256,
+            )
+        self.assertEqual(status, 5)
+        self.assertEqual(child.call_args.kwargs, {})
+
     def test_runtime_discovery_uses_current_resolved_libraries(self):
         # Exercise the real resolver separately from the synthetic check fixture.
         result = subprocess.CompletedProcess([], 0, "libfixture.so => " + str(self.library) + " (0x1234)\n", "")

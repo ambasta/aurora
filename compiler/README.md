@@ -162,8 +162,12 @@ meson test -C build/meson-compiler --no-rebuild --num-processes 1 \
 
 A later invocation reuses only a complete receipt with matching pinned sources,
 configuration and tool/environment identity, after checking the executable,
-recorded inputs, source bytes and logs. Missing/mismatched data fails closed with
-a rebuild command; it is never blessed by hashing an arbitrary executable. Add
+recorded inputs, source bytes and logs. Missing/mismatched predecessor data fails
+closed and names the cached `build --container` plus Meson reconfiguration; it is
+never blessed by hashing an arbitrary executable. A failing guarded command keeps
+its own exit status and is not reported as a predecessor problem. Editing the
+driver itself does not invalidate receipts or the cache. A missing pinned commit
+names the `git fetch origin` command. Add
 `--fresh` to reconstruct all six stages in new directories, keeping old successful
 and failed evidence. A fresh route is required for predecessor-bump qualification;
 a cache hit is explicitly not a fresh source bootstrap. Receipts are local to

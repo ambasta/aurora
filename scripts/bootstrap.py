@@ -15,7 +15,6 @@ import platform
 import re
 import resource
 import shlex
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -86,9 +85,16 @@ def route():
 
 
 def rebuild_command():
-    if shutil.which("git") is None:
-        return "python3 scripts/bootstrap.py build --container --fresh (from the host checkout)"
-    return shlex.join([sys.executable, str(ROOT / "scripts/bootstrap.py"), "build", "--fresh"])
+    # The supported route reuses a verified cache and prints the Meson options.
+    return (
+        "run `python3 scripts/bootstrap.py build --container` from the host checkout, "
+        "then reconfigure Meson with the three printed -D options"
+    )
+
+
+def child_status(returncode):
+    """Exit status for a failed child; signals keep the shell's 128+N convention."""
+    return 128 - returncode if returncode < 0 else returncode
 
 
 def source_identity(source, stage):
@@ -149,8 +155,16 @@ def prepare_sources(cache, pin, fresh=False):
         source = directory / "source"
         require(not source.is_symlink() and source.resolve().is_relative_to(ROOT), "source path escapes checkout")
         if not source.exists():
+            present = subprocess.run(
+                ["git", "-C", str(ROOT), "cat-file", "-e", stage["commit"] + "^{commit}"], capture_output=True
+            )
+            require(
+                present.returncode == 0,
+                f"pinned {stage['name']} commit is missing; run: git fetch origin {stage['commit']}",
+            )
+            # -f re-adds a worktree whose directory was deleted but is still registered.
             record_command(
-                ["git", "-C", str(ROOT), "worktree", "add", "--detach", str(source), stage["commit"]],
+                ["git", "-C", str(ROOT), "worktree", "add", "-f", "--detach", str(source), stage["commit"]],
                 directory,
                 "worktree",
             )
@@ -307,7 +321,6 @@ def verify_receipt(receipt, pin, *, tools=None, check_sources=False):
     value = json.loads(Path(receipt).read_text())
     require(value["schema"] == 1 and value["route"] == pin, "receipt source pin/configuration mismatch")
     require(value["origin"] == "six-source-reconstruction", "not a source reconstruction receipt")
-    require(value["driver_sha256"] == digest(__file__), "reconstruction driver identity changed")
     if tools is not None:
         require(value["tools"] == tools, "cache tool/environment identity mismatch")
     for record in value["tools"]["files"]:
@@ -363,9 +376,7 @@ def verify(compiler, sha256, receipt, *, role="build_predecessor"):
         require(selected == file_identity(compiler), "selected artifact does not match pinned " + role)
         return value
     except (OSError, ValueError, KeyError, TypeError, StopIteration) as error:
-        raise ValueError(
-            f"Bootstrap predecessor rejected: {error}. Rebuild predecessor: {rebuild_command()}"
-        ) from error
+        raise ValueError(f"Bootstrap predecessor rejected: {error}. To fix: {rebuild_command()}") from error
 
 
 def record_command(argv, directory, ordinal):
@@ -397,9 +408,7 @@ def build_inputs(build):
 
 def build(cache, fresh=False, prepared=None):
     pin, tools = route(), tool_identity()
-    key = hashlib.sha256(
-        json.dumps({"route": pin, "tools": tools, "driver": digest(__file__)}, sort_keys=True).encode()
-    ).hexdigest()
+    key = hashlib.sha256(json.dumps({"route": pin, "tools": tools}, sort_keys=True).encode()).hexdigest()
     cache = Path(cache).resolve()
     require(cache.is_relative_to(ROOT), "bootstrap cache must remain under the checkout for the container mount")
     cache.mkdir(parents=True, exist_ok=True)
@@ -420,7 +429,6 @@ def build(cache, fresh=False, prepared=None):
             "origin": "six-source-reconstruction",
             "route": pin,
             "tools": tools,
-            "driver_sha256": digest(__file__),
             "stages": [],
             "scope": "Historical-stage convergence only; current C1/C2, emitter, full and guest gates remain required.",
         }
@@ -503,7 +511,9 @@ def main():
             ]
             if args.fresh:
                 command.append("--fresh")
-            subprocess.run(command, check=True)
+            result = subprocess.run(command)
+            if result.returncode:
+                sys.exit(child_status(result.returncode))
             return
         receipt, value = build(args.cache, args.fresh, args.prepared)
         artifact = value["stages"][-1]["artifact"]
@@ -529,15 +539,18 @@ def main():
     if args.action == "run":
         command = args.command[1:] if args.command[:1] == ["--"] else args.command
         require(command, "missing guarded command")
-        subprocess.run(command, check=True)
+        result = subprocess.run(command)
         verify(args.compiler, args.sha256, args.receipt, role=args.role)
+        if result.returncode:
+            # The child reported its own failure; it is not a predecessor problem.
+            sys.exit(child_status(result.returncode))
 
 
 if __name__ == "__main__":
     try:
         main()
+    except BlockingIOError:
+        sys.exit("bootstrap: another bootstrap build holds the cache lock; wait for it to finish")
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
-        reason = str(error)
-        if "Rebuild predecessor:" not in reason:
-            reason += "\nRebuild predecessor: " + rebuild_command()
-        sys.exit("bootstrap: " + reason)
+        # Only predecessor verification adds selection advice; build failures name their log.
+        sys.exit("bootstrap: " + str(error))

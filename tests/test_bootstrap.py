@@ -91,6 +91,8 @@ elif args[0] == 'rev-parse':
     print(('1' if args[1] == 'HEAD' else '2') * 40)
 elif args[0] == 'symbolic-ref':
     sys.exit(1)
+elif args[0] == 'cat-file':
+    sys.exit(0 if args[2] == '1' * 40 + '^{commit}' else 1)
 elif args[0] == 'ls-tree':
     oid = hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
     sys.stdout.buffer.write(('100644 blob ' + oid + '\theader.hpp\0').encode())
@@ -228,10 +230,46 @@ elif args[0] == 'compile':
         with patch.object(sys, "argv", argv), self.assertRaisesRegex(ValueError, "SHA256 mismatch"):
             bootstrap.main()
 
+    def test_guarded_command_failure_keeps_its_status_without_predecessor_advice(self):
+        argv = [
+            "bootstrap.py",
+            "run",
+            "--compiler",
+            self.compiler,
+            "--sha256",
+            self.sha256,
+            "--receipt",
+            str(self.receipt),
+            "--",
+            sys.executable,
+            "-c",
+            "raise SystemExit(7)",
+        ]
+        with patch.object(sys, "argv", argv), self.assertRaises(SystemExit) as caught:
+            bootstrap.main()
+        self.assertEqual(caught.exception.code, 7)
+        self.assertEqual(bootstrap.child_status(-9), 137)
+
+    def test_missing_commit_names_fetch_and_deleted_worktree_is_readded(self):
+        self.pin["stages"][0]["commit"] = "3" * 40
+        with self.assertRaisesRegex(ValueError, "git fetch origin " + "3" * 40):
+            bootstrap.prepare_sources(self.cache, self.pin, fresh=True)
+        self.pin["stages"][0]["commit"] = "1" * 40
+        source = Path(self.value["stages"][0]["source_dir"])
+        shutil.rmtree(source)
+        calls = []
+        real = bootstrap.record_command
+        with patch.object(
+            bootstrap, "record_command", side_effect=lambda argv, *rest: calls.append(argv) or real(argv, *rest)
+        ):
+            bootstrap.prepare_sources(self.cache, self.pin)
+        self.assertEqual(calls[0][3:6], ["worktree", "add", "-f"])
+
     def test_changed_binary_and_wrong_or_missing_digest_rejected(self):
         for value in (None, "", "0" * 64):
-            with self.subTest(value=value), self.assertRaisesRegex(ValueError, "Rebuild predecessor: .* build --fresh"):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, "To fix: .*build --container") as caught:
                 bootstrap.verify(self.compiler, value, str(self.receipt))
+            self.assertNotIn("--fresh", str(caught.exception))
         Path(self.compiler).write_text("#!/bin/sh\necho changed compiler\n")
         with self.assertRaisesRegex(ValueError, "SHA256 mismatch"):
             self.verify()
@@ -253,7 +291,7 @@ elif args[0] == 'compile':
             with self.subTest(field=field), self.assertRaisesRegex(ValueError, "reconstruction command"):
                 self.verify()
         self.receipt.unlink()
-        with self.assertRaisesRegex(ValueError, "Rebuild predecessor"):
+        with self.assertRaisesRegex(ValueError, "To fix: .*reconfigure Meson"):
             self.verify()
 
     def test_source_configuration_and_tool_mismatches_rejected(self):
@@ -271,13 +309,17 @@ elif args[0] == 'compile':
         with self.assertRaisesRegex(ValueError, "file digest changed"):
             self.verify()
 
-    def test_changed_driver_and_new_runtime_resolution_rejected(self):
-        value = deepcopy(self.value)
-        value["driver_sha256"] = "0" * 64
-        bootstrap.write_json(self.receipt, value)
-        with self.assertRaisesRegex(ValueError, "driver identity changed"):
-            self.verify()
-        bootstrap.write_json(self.receipt, self.value)
+    def test_driver_edits_keep_receipts_and_cache_but_new_runtime_is_rejected(self):
+        # Driver bytes are not artifact provenance; editing them must not force six rebuilds.
+        with patch.object(
+            bootstrap,
+            "digest",
+            side_effect=lambda path: bootstrap.hashlib.sha256(
+                Path(path).read_bytes() + (b"edited" if Path(path) == Path(bootstrap.__file__) else b"")
+            ).hexdigest(),
+        ):
+            self.assertEqual(bootstrap.build(self.cache)[0], self.receipt)
+        self.assertNotIn("driver_sha256", self.value)
         shadow = self.root / "newly-selected-runtime"
         shadow.write_text("new library in an unchanged search directory")
         self.tools["files"].append(bootstrap.file_identity(shadow))
@@ -302,7 +344,7 @@ elif args[0] == 'compile':
             bootstrap.build(self.cache)
         header.write_text("fixture header\n")
         Path(self.value["stages"][2]["commands"][2]["log"]["path"]).unlink()
-        with self.assertRaisesRegex(ValueError, "Rebuild predecessor"):
+        with self.assertRaisesRegex(ValueError, "To fix:"):
             self.verify()
 
     def test_failed_fresh_build_keeps_logs_and_old_cache(self):
