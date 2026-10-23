@@ -250,8 +250,10 @@ Standalone overload qualification, semantic lint and owner-backed JSON codec
 windows run in `full`; the display-service runner already executes service-group
 behavior as a child, without a duplicate registration.
 
-The emitter migration additionally requires the byte-exact whole-source-corpus
-old/new assembly and sidecar gate documented in
+The emitter additionally requires the whole-source-corpus gate documented in
+[compiler qualification](../compiler/README.md#emitter-migration-qualification):
+exact old/new status, diagnostics and ABI facts, and byte-exact C1/C2 outputs.
+Assembly and stack facts may differ from the historical oracle. See also
 [compiler qualification](../compiler/README.md#emitter-migration-qualification).
 It is explicitly selected because its old compiler must have independent pinned
 source/build provenance; ordinary test runs cannot silently choose that oracle.

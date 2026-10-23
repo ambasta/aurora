@@ -2,8 +2,10 @@
 """Compare an external old emitter with a candidate over the complete source corpus.
 
 The explicitly supplied compilers receive identical paths/options, including all
-three outputs. Compare bytes, except the explicitly proved private borrow-adapter
-replacement against the historical predecessor; C1/C2 remain byte-exact. One run
+three outputs. Compare bytes, never parsed/normalized JSON or assembly. Against the
+historical predecessor, exit status, diagnostics and ABI facts must match exactly;
+its assembly and stack facts are recorded but may differ, because code generation
+is allowed to improve. C1/C2 convergence stays byte-exact for every output. One run
 covers one selected flag profile; default, local symbols and referenced reflection
 are not interchangeable receipts. All evidence is retained in a new directory.
 
@@ -149,6 +151,7 @@ def selected_closed_profile(arguments):
 
 
 OUTPUTS = ("assembly.s", "stack.json", "abi.json")
+HISTORICAL_EXACT = ("abi.json",)
 SENTINELS = {name: ("preserve previous " + name + " on rejection\n").encode() for name in OUTPUTS}
 # These exported vocabulary-only modules have no concrete free function when
 # compiled alone. Their declarations are exercised through the complete frontend.
@@ -232,73 +235,6 @@ def bytes_equal(left, right):
                 return True
 
 
-def historical_borrow_expansion(assembly):
-    """Reconstruct only the old checked-owner borrow instruction sequence.
-
-    The replacement adapter's kernel implementation has exactly this tag1 result;
-    the hosted tag0 result is covered by real adapter/ABI tests and the static
-    borrowed-root lifetime contract. This is not general assembly normalization:
-    all unrelated bytes, stack offsets, register saves and call parity stay exact.
-    """
-    pattern = re.compile(
-        rb"    pushq %rax\n"
-        rb"(?P<reload>    movq -[0-9]+\(%rbp\), %r10\n)?"
-        rb"    leaq (?P<owner>-?[0-9]+)\(%(?P<base>rbp|r10)\), %rdi\n"
-        rb"    leaq (?P<result>-[0-9]+)\(%rbp\), %rsi\n"
-        rb"(?P<align>    subq \$8, %rsp\n)?"
-        rb"    call __au_runtime_bytes_borrow_span\n"
-        rb"(?P<unalign>    addq \$8, %rsp\n)?"
-        rb"    popq %rax\n"
-    )
-    sites = []
-
-    def expand(match):
-        owner, result = int(match["owner"]), int(match["result"])
-        reload = match["reload"] or b""
-        if bool(match["align"]) != bool(match["unalign"]) or bool(reload) != (match["base"] == b"r10"):
-            return match[0]
-        if owner % 8 or result % 8 or result > -56:
-            return match[0]
-        if match["base"] == b"rbp" and (owner > -32 or not (owner + 32 <= result or result + 56 <= owner)):
-            return match[0]
-        text = b"    pushq %rax\n" + reload
-        text += b"    leaq " + match["owner"] + b"(%" + match["base"] + b"), %rdi\n"
-        text += (match["align"] or b"") + b"    call __au_runtime_bytes_borrow_length\n" + (match["unalign"] or b"")
-        text += f"    movq %rax, {result + 48}(%rbp)\n    movq $1, {result}(%rbp)\n".encode()
-        for byte in range(0, 32, 8):
-            text += reload + f"    movq {owner + byte}(%{match['base'].decode()}), %rcx\n".encode()
-            text += f"    movq %rcx, {result + 8 + byte}(%rbp)\n".encode()
-        text += f"    movq $0, {result + 40}(%rbp)\n    popq %rax\n".encode()
-        sites.append({"owner_offset": owner, "result_offset": result, "base": match["base"].decode()})
-        return text
-
-    expanded = pattern.sub(expand, assembly)
-    if b"call __au_runtime_bytes_borrow_span" in expanded:
-        return None, []
-    return expanded, sites
-
-
-def historical_borrow_equivalence(case, labels):
-    if labels != ("old", "new"):
-        return False
-    before, after = (case / label / "outputs" for label in labels)
-    if not all((directory / name).is_file() for directory in (before, after) for name in OUTPUTS):
-        return False
-    old, new = (directory.joinpath("assembly.s").read_bytes() for directory in (before, after))
-    expanded, sites = historical_borrow_expansion(new)
-    if not sites or expanded != old:
-        return False
-    # Same graph and exact live stack bytes; only the private runtime callee name
-    # changes. Do not parse/reorder JSON or permit other frame/ABI differences.
-    old_stack, new_stack = (directory.joinpath("stack.json").read_bytes() for directory in (before, after))
-    if new_stack.replace(b'"__au_runtime_bytes_borrow_span":', b'"__au_runtime_bytes_borrow_length":') != old_stack:
-        return False
-    if not bytes_equal(before / "abi.json", after / "abi.json"):
-        return False
-    write_json(case / "historical-borrow-equivalence.json", {"sites": sites, "scope": "borrow adapter only"})
-    return True
-
-
 def observe(compiler, arguments, invocation, destination, root, timeout):
     destination.mkdir(parents=True)
     invocation.mkdir()
@@ -369,14 +305,16 @@ def compare(case, runs, must_accept, labels=("old", "new")):
     for name in ("stdout.bin", "stderr.bin"):
         if not bytes_equal(case / labels[0] / name, case / labels[1] / name):
             problems.append(f"{name} differs byte-for-byte")
-    borrowed_adapter = (
-        historical_borrow_equivalence(case, labels) if all(run["returncode"] == 0 for run in runs) else False
-    )
+    # The predecessor fixes language behavior and the ABI contract, not code
+    # quality; current C1/C2 must still agree on every byte of every output.
+    exact = HISTORICAL_EXACT if labels == ("old", "new") else OUTPUTS
     for name in OUTPUTS:
         if all(run["after"][name]["kind"] == "regular" for run in runs):
             if not bytes_equal(case / labels[0] / "outputs" / name, case / labels[1] / "outputs" / name):
-                if not borrowed_adapter:
+                if name in exact:
                     problems.append(f"{name} differs byte-for-byte")
+                else:
+                    write_json(case / f"historical-{name}-differs.json", {"compilers": list(labels)})
     return problems
 
 

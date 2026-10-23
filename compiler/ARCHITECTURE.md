@@ -1,8 +1,10 @@
 # Compiler status and ownership
 
 Source-bootstrap builds are restored. x86 text emission runs in Aurora, with one
-source authority and no native fallback; `emitter-differential-*` in `slow` and
-`full` hold it byte-identical to the predecessor's C++ backend. Each final source
+source authority and no native fallback. `emitter-differential-*` in `slow` and
+`full` hold its acceptance, diagnostics and ABI facts identical to the predecessor's
+C++ backend and its C1/C2 outputs byte-identical; assembly and stack facts may now
+differ from the predecessor so code generation can improve. Each final source
 still needs its own full, convergence and BIOS/UEFI qualification.
 
 | Component | Current source authority | Remaining work |
@@ -17,7 +19,7 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 | Current values, operand stacks, bounds evidence | Aurora whole-function verifier | Final-source qualification; no native fallback |
 | Ownership, provenance and worklist | Aurora whole-function verifier over the original paired source stores | Preserve diagnostic priority, declaration order, bounded FIFO work and nominal type identity |
 | Call graph | Aurora | Validate final integrated behavior |
-| x86 emission | Aurora, fixed native transport | Byte-identical to the C++ backend on the whole corpus in both profiles (`emitter-differential-*`); compile time 1.05x the C++ backend |
+| x86 emission | Aurora, fixed native transport | Same acceptance, diagnostics and ABI facts as the C++ backend on the whole corpus, byte-identical C1/C2 (`emitter-differential-*`); no inlining or register allocation yet |
 | Direct class fields | Aurora source and independent metadata admission share an 8,192-field cap, including empty, nested, resource and array fields | Existing leaf, byte, depth and array-element limits still apply |
 | Private host bridge | One 84-entry table generates Aurora forwarders and host transport declarations; compiler facts supply layouts, symbols and raw enum validation | Preserve fail-closed conversion; native replacement remains incomplete |
 | Bootstrap route | Six source-built predecessors, then current C1/C2; direct skips fail at recorded capability boundaries | Replace stages only after an actual direct build, the [bounded cross-route frontend comparison](README.md#source-bootstrap), complete seed route and final full/convergence gates |

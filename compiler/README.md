@@ -306,8 +306,12 @@ This is dependency selection, not output-equivalence proof or a cached receipt.
 Use the actual PR target; reset the option to empty to require both unconditionally.
 
 Each new evidence directory retains all input/compiler hashes, exact commands,
-diagnostics and assembly/stack/ABI artifacts. Accepted inputs must match byte for
-byte; rejected inputs must agree and preserve every preexisting output. Any
+diagnostics and assembly/stack/ABI artifacts. Against the historical oracle,
+accepted inputs must match exit status, diagnostics and ABI facts byte for byte;
+assembly and stack facts may differ (a `historical-*-differs.json` marker records
+it), because a frozen emitter must not forbid better code. C1/C2 must match every
+output byte for byte, and machine behavior is checked by the execution suites.
+Rejected inputs must agree and preserve every preexisting output. Any
 mismatch, internal failure or watchdog timeout fails the gate and reports partial
 coverage. Equal rejection is not emission coverage, so the gate also fails if any
 historically supported input outside its fixed list of function-less modules is rejected.
