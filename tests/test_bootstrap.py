@@ -16,49 +16,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import bootstrap
 
 
-class LinkInputTests(unittest.TestCase):
-    def test_implicit_startup_archive_and_script_inputs_are_bound(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            linked = root / "absolute-script-member.so"
-            linked.write_bytes(b"\x7fELFfixture runtime")
-
-            def lookup(argv):
-                name = argv[-1].split("=", 1)[1]
-                if name == "specs":
-                    return "specs"
-                path = root / name
-                if not path.exists():
-                    path.write_bytes(
-                        ("GROUP ( " + str(linked) + " )\n").encode()
-                        if name == "libc.so"
-                        else b"\x7fELFfixture link input"
-                    )
-                return str(path)
-
-            with patch.object(bootstrap, "output", side_effect=lookup):
-                files = bootstrap.link_inputs("fixture-g++")
-                for path in (root / "Scrt1.o", root / "libgcc.a", linked):
-                    with self.subTest(path=path.name):
-                        self.assertIn(str(path), files)
-                        identity = bootstrap.file_identity(path)
-                        original = path.read_bytes()
-                        path.write_bytes(original + b"changed")
-                        with self.assertRaisesRegex(ValueError, "file digest changed"):
-                            bootstrap.check_file(identity)
-                        path.write_bytes(original)
-            with patch.object(bootstrap, "output", return_value="Scrt1.o"):
-                with self.assertRaisesRegex(ValueError, "unresolved implicit linker input"):
-                    bootstrap.link_inputs("fixture-g++")
-            with patch.object(
-                bootstrap,
-                "output",
-                side_effect=lambda argv: str(root / "specs") if argv[-1] == "-print-file-name=specs" else lookup(argv),
-            ):
-                with self.assertRaisesRegex(ValueError, "unsupported external GCC specs"):
-                    bootstrap.link_inputs("fixture-g++")
-
-
 class BootstrapTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -200,54 +157,24 @@ elif args[0] == 'compile':
             target.unlink()
             backup.rename(target)
 
-    def test_guard_does_not_launch_changed_predecessor(self):
-        original = Path(self.compiler).read_text()
-        marker = self.root / "launched"
-        argv = [
-            "bootstrap.py",
-            "run",
-            "--compiler",
-            self.compiler,
-            "--sha256",
-            self.sha256,
-            "--receipt",
-            str(self.receipt),
-            "--",
-            sys.executable,
-            "-c",
-            "from pathlib import Path; Path(" + repr(str(marker)) + ").touch()",
-        ]
-        with patch.object(sys, "argv", argv):
-            bootstrap.main()
-        self.assertTrue(marker.exists())
-        marker.unlink()
-        Path(self.compiler).write_text("changed executable bytes")
-        with patch.object(sys, "argv", argv), self.assertRaisesRegex(ValueError, "SHA256 mismatch"):
-            bootstrap.main()
-        self.assertFalse(marker.exists())
-        Path(self.compiler).write_text(original)
-        argv[-1] = "from pathlib import Path; Path(" + repr(self.compiler) + ").write_text('changed during use')"
-        with patch.object(sys, "argv", argv), self.assertRaisesRegex(ValueError, "SHA256 mismatch"):
-            bootstrap.main()
+    def test_one_receipt_selects_both_roles_and_cross_checks_are_optional(self):
+        value, roles = bootstrap.select(str(self.receipt))
+        self.assertEqual(roles["build_predecessor"]["path"], self.compiler)
+        self.assertEqual(roles["build_predecessor"]["sha256"], self.sha256)
+        self.assertEqual(roles["historical_cpp_oracle"], value["stages"][-1]["artifact"])
+        self.assertEqual(bootstrap.select(str(self.receipt), self.compiler, self.sha256)[1], roles)
+        with self.assertRaisesRegex(ValueError, "not the receipt's predecessor"):
+            bootstrap.select(str(self.receipt), str(self.root / "other-aurorac"))
+        with self.assertRaisesRegex(ValueError, "differs from the receipt"):
+            bootstrap.select(str(self.receipt), self.compiler, "0" * 64)
+        with self.assertRaisesRegex(ValueError, "To fix: .*build --container"):
+            bootstrap.select("relative/receipt.json")
 
-    def test_guarded_command_failure_keeps_its_status_without_predecessor_advice(self):
-        argv = [
-            "bootstrap.py",
-            "run",
-            "--compiler",
-            self.compiler,
-            "--sha256",
-            self.sha256,
-            "--receipt",
-            str(self.receipt),
-            "--",
-            sys.executable,
-            "-c",
-            "raise SystemExit(7)",
-        ]
-        with patch.object(sys, "argv", argv), self.assertRaises(SystemExit) as caught:
-            bootstrap.main()
-        self.assertEqual(caught.exception.code, 7)
+    def test_generators_refuse_an_executable_changed_after_configure(self):
+        bootstrap.require_digest(self.compiler, self.sha256)
+        Path(self.compiler).write_text("changed executable bytes")
+        with self.assertRaisesRegex(ValueError, "changed since Meson verified it; reconfigure Meson"):
+            bootstrap.require_digest(self.compiler, self.sha256)
         self.assertEqual(bootstrap.child_status(-9), 137)
 
     def test_missing_commit_names_fetch_and_deleted_worktree_is_readded(self):
@@ -265,13 +192,9 @@ elif args[0] == 'compile':
             bootstrap.prepare_sources(self.cache, self.pin)
         self.assertEqual(calls[0][3:6], ["worktree", "add", "-f"])
 
-    def test_changed_binary_and_wrong_or_missing_digest_rejected(self):
-        for value in (None, "", "0" * 64):
-            with self.subTest(value=value), self.assertRaisesRegex(ValueError, "To fix: .*build --container") as caught:
-                bootstrap.verify(self.compiler, value, str(self.receipt))
-            self.assertNotIn("--fresh", str(caught.exception))
+    def test_changed_binary_is_rejected(self):
         Path(self.compiler).write_text("#!/bin/sh\necho changed compiler\n")
-        with self.assertRaisesRegex(ValueError, "SHA256 mismatch"):
+        with self.assertRaisesRegex(ValueError, "file digest changed"):
             self.verify()
         with self.assertRaisesRegex(ValueError, "file digest changed"):
             bootstrap.build(self.cache)
@@ -323,7 +246,7 @@ elif args[0] == 'compile':
         shadow = self.root / "newly-selected-runtime"
         shadow.write_text("new library in an unchanged search directory")
         self.tools["files"].append(bootstrap.file_identity(shadow))
-        with self.assertRaisesRegex(ValueError, "current tool/runtime identity mismatch"):
+        with self.assertRaisesRegex(ValueError, "current tool identity differs from the receipt"):
             self.verify()
 
     def test_environment_invalidates_cache_and_preserves_previous_run(self):

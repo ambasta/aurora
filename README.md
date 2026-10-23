@@ -33,7 +33,7 @@ Podman installed, start from the repository root.
 Reconstruct the pinned predecessor from the host checkout with
 `python3 scripts/bootstrap.py build --container`. Then enter the pinned shell
 with `./scripts/container.sh bash` and configure the two current Meson graphs
-using the three options printed by the driver, as shown in the
+using the `-Dbootstrap_receipt` option printed by the driver, as shown in the
 [source-bootstrap recipe](compiler/README.md#source-bootstrap). It checks the
 local receipt and executable digest rather than trusting a compiler path alone.
 Then run:
@@ -144,7 +144,6 @@ Use the checks appropriate to the change:
 
 ```sh
 meson setup build/gcc16 \
-  "-Dbootstrap_compiler=$P" "-Dbootstrap_compiler_sha256=$SHA" \
   "-Dbootstrap_receipt=$RECEIPT"
 meson compile -C build/gcc16 -j 4 --ninja-args=meson-test-prereq
 meson test -C build/gcc16 --suite dev --no-rebuild --num-processes 4

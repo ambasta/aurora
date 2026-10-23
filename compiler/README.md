@@ -145,21 +145,16 @@ and Git on PATH, then omit `--container`.
 The driver uses the existing Meson setup, compiler targets and
 `hosted-lexer-bootstrap` convergence at every historical stage, with at most two
 workers. It records exact commands, output/log hashes, clean source commit/tree
-and byte inventories, tool/subprogram/shared-runtime hashes and versions, implicit
-startup objects/linker scripts/archives, actual Ninja header inputs, elapsed time
-and child peak RSS. The pinned native GCC route requires built-in specs; external
-specs are rejected because they can introduce additional implicit inputs.
-It prints the three required
-current Meson setup options. Inside the same container/native path layout, copy
-those printed values into both current configurations:
+and byte inventories, and the pinned tools' paths, versions and executable digests.
+That identifies the toolchain; it is not a proof of its full runtime closure.
+It prints one Meson option, `-Dbootstrap_receipt`. Inside the same container/native
+path layout, use it for both current configurations:
 
 ```sh
-# P, SHA and RECEIPT are the values printed by the completed reconstruction.
+# RECEIPT is the receipt path printed by the completed reconstruction.
 meson setup build/meson . \
-  "-Dbootstrap_compiler=$P" "-Dbootstrap_compiler_sha256=$SHA" \
   "-Dbootstrap_receipt=$RECEIPT" "-Duefi_ld=$UEFI_LD"
 meson setup build/meson-compiler . -Dkernel_images=false \
-  "-Dbootstrap_compiler=$P" "-Dbootstrap_compiler_sha256=$SHA" \
   "-Dbootstrap_receipt=$RECEIPT"
 meson compile -C build/meson-compiler -j 2 aurorac aurorac-stage2
 meson test -C build/meson-compiler --no-rebuild --num-processes 1 \
@@ -170,10 +165,13 @@ A later invocation reuses only a complete receipt with matching pinned sources,
 configuration and tool/environment identity, after checking the executable,
 recorded inputs, source bytes and logs. Missing/mismatched predecessor data fails
 closed and names the cached `build --container` plus Meson reconfiguration; it is
-never blessed by hashing an arbitrary executable. A failing guarded command keeps
-its own exit status and is not reported as a predecessor problem. Editing the
-driver itself does not invalidate receipts or the cache. A missing pinned commit
-names the `git fetch origin` command. Add
+never blessed by hashing an arbitrary executable. Meson derives the predecessor
+and the historical C++ oracle from the receipt at configure time, and changes to
+the receipt or pin reconfigure. The frontend generator, initialization probe and
+emitter differential each check their executable's digest just before running it.
+The older `bootstrap_compiler` and `bootstrap_compiler_sha256` options remain as
+optional cross-checks. Editing the driver itself does not invalidate receipts or
+the cache. A missing pinned commit names the `git fetch origin` command. Add
 `--fresh` to reconstruct all six stages in new directories, keeping old successful
 and failed evidence. A fresh route is required for predecessor-bump qualification;
 a cache hit is explicitly not a fresh source bootstrap. Receipts are local to
@@ -241,13 +239,15 @@ See the [configuration/invocation split](../docs/developer-test-contract.md#pred
 
 Both ordinary default directories are now configured: `make`/`make test` use the
 image-enabled graph, while `make -C compiler test` uses the hosted-only graph.
-For other configurations, repeat setup with all three predecessor options and use
+For other configurations, repeat setup with the receipt option and use
 `MESON_BUILD_DIR`. Keep using the same host/container path layout so configured
 absolute executable paths remain valid. An unconfigured directory needs explicit
 setup; the wrapper does not guess a predecessor.
 
-`BOOTSTRAP_COMPILER`, `BOOTSTRAP_COMPILER_SHA256` and `BOOTSTRAP_RECEIPT`
-together request a different verified predecessor for `make test`. The wrapper reconfigures an implicit default build in place, preserving
+`BOOTSTRAP_RECEIPT` requests a different verified predecessor for `make test`;
+`BOOTSTRAP_COMPILER` and `BOOTSTRAP_COMPILER_SHA256` are optional cross-checks.
+A build directory configured before the receipt option existed must be recreated
+with `meson setup --wipe`, which the wrapper prints. The wrapper reconfigures an implicit default build in place, preserving
 its other options and files. An explicit `MESON_BUILD_DIR` with a different
 selection is rejected with the exact reconfigure command. Without this variable,
 the wrapper reuses the configured predecessor. The container launcher forwards

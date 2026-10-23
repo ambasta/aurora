@@ -85,7 +85,8 @@ initialization_probe = custom_target(
                  '../compiler/ir_metadata_storage.au', '../compiler/ir_metadata.au'),
     output: ['initialization-probe.s', 'initialization-probe.generated.s',
              'initialization-probe.abi.json', 'initialization_probe_abi.hpp'],
-    command: bootstrap_guard + [python, '-B', files('compiler/initialization_probe.py'), bootstrap_compiler,
+    command: [python, '-B', files('compiler/initialization_probe.py'), bootstrap_compiler,
+              '--compiler-sha256', bootstrap_sha256,
               '--output', '@OUTPUT0@', '--frontend-facts', frontend_assembly[2], '@INPUT@'],
     depend_files: bootstrap_depend_files + files('../scripts/bootstrap_frontend.py', '../scripts/frontend_bridge.py'),
 )
@@ -657,9 +658,6 @@ endforeach
 test('bootstrap-identity-optimized', python,
      args: ['-B', '-O', files('test_bootstrap.py')],
      suite: ['full', 'dev'], env: oracle_env, timeout: 60)
-test('bootstrap-guard-controls', python,
-     args: ['-B', '-O', files('test_bootstrap_guard.py')],
-     suite: ['full', 'dev'], env: oracle_env, timeout: 30)
 
 test('clean-controls', python,
      args: ['-B', files('test_clean.py')],
@@ -710,13 +708,9 @@ foreach profile : [['default', []], ['closed', ['--local-symbols', '--referenced
                       '--comparison-base=' + get_option('emitter_comparison_base'), '--', python]
   endif
   test('emitter-differential-' + profile[0], python,
-       args: profile_prefix + ['-B', bootstrap_guard_driver, 'run', '--selection', bootstrap_selection,
-              '--selection-sha256', bootstrap_selection_sha256,
-              '--compiler', historical_cpp_oracle,
-              '--sha256', historical_cpp_oracle_sha256, '--receipt', bootstrap_receipt,
-              '--role', 'historical_cpp_oracle', '--', python,
-              '-B', artifact_adapter, python, '-B', files('compiler/emitter_differential.py'),
-              '--old-compiler', historical_cpp_oracle, '--new-compiler', aurorac_stage2, '--stage1-compiler', aurorac,
+       args: profile_prefix + ['-B', artifact_adapter, python, '-B', files('compiler/emitter_differential.py'),
+              '--old-compiler', historical_cpp_oracle, '--old-compiler-sha256', historical_cpp_oracle_sha256,
+              '--new-compiler', aurorac_stage2, '--stage1-compiler', aurorac,
               '--source-root', meson.project_source_root()] + profile[1] + ['--artifacts', '@ARTIFACTS@'],
        depends: [aurorac, aurorac_stage2], suite: ['full', 'slow', 'compiler'], env: oracle_env,
        workdir: meson.current_build_dir(), timeout: 900, is_parallel: false,

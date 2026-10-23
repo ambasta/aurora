@@ -13,7 +13,7 @@ With Docker or Podman installed, start from the repository root.
 
 Run `python3 scripts/bootstrap.py build --container` from the host checkout first.
 Then open the pinned shell with `./scripts/container.sh bash` and configure both
-current Meson graphs with the three printed options, following the
+current Meson graphs with the printed `-Dbootstrap_receipt` option, following the
 [source-bootstrap recipe](../compiler/README.md#source-bootstrap). Then run:
 
 ```sh

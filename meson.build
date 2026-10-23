@@ -8,42 +8,29 @@ project(
 # The compiler runs on the build machine, even when a future target is cross-built.
 native_cpp = meson.get_compiler('cpp', native: true)
 python = find_program('python3', native: true)
-# Check the selected bytes AND their source/config/tool-bound reconstruction.
-bootstrap_compiler_path = get_option('bootstrap_compiler')
-bootstrap_sha256 = get_option('bootstrap_compiler_sha256')
+fs = import('fs')
+# One reconstruction receipt selects the build predecessor and the historical C++
+# oracle. Reading the receipt and pin makes any change to them reconfigure; the
+# generators check each executable's digest just before running it.
 bootstrap_receipt = get_option('bootstrap_receipt')
 bootstrap_driver = files('scripts/bootstrap.py')
-bootstrap_guard_driver = files('scripts/bootstrap_guard.py')
 bootstrap_pin = files('compiler/bootstrap-route.json')
-bootstrap_verify_args = ['--compiler', bootstrap_compiler_path, '--sha256', bootstrap_sha256,
-                         '--receipt', bootstrap_receipt]
-bootstrap_selection = configure_file(
-  output: 'bootstrap-selection.json', depfile: 'bootstrap-selection.d',
-  command: [python, '-B', bootstrap_guard_driver, 'configure'] + bootstrap_verify_args +
-           ['--output', '@OUTPUT@', '--depfile', '@DEPFILE@'],
-)
-# Bind ordinary configuration bytes in the generated commands. This is not a
-# reconstruction receipt and cannot replace configure-time historical validation.
-bootstrap_selection_sha256 = run_command(
-  python, '-B', '-c',
-  'import hashlib, pathlib, sys; print(hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())',
-  bootstrap_selection, check: true,
-).stdout().strip()
-bootstrap_selection_args = ['--selection', bootstrap_selection,
-                            '--selection-sha256', bootstrap_selection_sha256]
-bootstrap_check = run_command(python, '-B', bootstrap_guard_driver, 'check',
-                              bootstrap_verify_args, bootstrap_selection_args, check: false)
-if bootstrap_check.returncode() != 0
-  error(bootstrap_check.stderr().strip())
+bootstrap_select = run_command(python, '-B', bootstrap_driver, 'select', '--receipt', bootstrap_receipt,
+                               '--compiler', get_option('bootstrap_compiler'),
+                               '--sha256', get_option('bootstrap_compiler_sha256'), check: false)
+if bootstrap_select.returncode() != 0
+  error(bootstrap_select.stderr().strip())
 endif
-bootstrap_compiler = find_program(bootstrap_compiler_path, native: true)
+bootstrap_selected = bootstrap_select.stdout().strip().split('\n')
+fs.read(bootstrap_receipt)
+fs.read(bootstrap_pin)
+bootstrap_compiler_path = bootstrap_selected[0]
+bootstrap_sha256 = bootstrap_selected[1]
 # Roles remain independent even while the same historical binary supplies both.
-historical_cpp_oracle = bootstrap_check.stdout().strip().split('\n')[0]
-historical_cpp_oracle_sha256 = bootstrap_check.stdout().strip().split('\n')[1]
-bootstrap_guard = [python, '-B', bootstrap_guard_driver, 'run'] + bootstrap_verify_args + bootstrap_selection_args + ['--']
-bootstrap_depend_files = files(bootstrap_compiler_path, bootstrap_receipt) + bootstrap_driver + bootstrap_pin
-bootstrap_depend_files += bootstrap_guard_driver + [bootstrap_selection]
-fs = import('fs')
+historical_cpp_oracle = bootstrap_selected[2]
+historical_cpp_oracle_sha256 = bootstrap_selected[3]
+bootstrap_compiler = find_program(bootstrap_compiler_path, native: true)
+bootstrap_depend_files = files(bootstrap_compiler_path) + bootstrap_driver + bootstrap_pin
 frontend_inputs = files('compiler/formatter.au', 'compiler/lexer.au', 'compiler/syntax_arena.au', 'compiler/parser.au',
                         'compiler/resolution_kinds.au', 'compiler/lowering_errors.au', 'compiler/lowering_kinds.au',
                         'compiler/lowering_storage.au', 'compiler/resolution_rows.au', 'compiler/resolution_arena.au',
@@ -75,8 +62,8 @@ bridge_table = files('scripts/frontend_bridge.py')
 frontend_assembly = custom_target(
   'hosted-frontend-assembly', input: frontend_inputs,
   output: ['hosted-frontend.s', 'hosted-frontend.generated.s', 'hosted-frontend.abi.json', 'hosted_frontend_abi.hpp'],
-  command: bootstrap_guard + [python, '-B', files('scripts/bootstrap_frontend.py'), bootstrap_compiler, '--output', '@OUTPUT0@',
-            '@INPUT@'],
+  command: [python, '-B', files('scripts/bootstrap_frontend.py'), bootstrap_compiler, '--compiler-sha256', bootstrap_sha256,
+            '--output', '@OUTPUT0@', '@INPUT@'],
   depend_files: bootstrap_depend_files + bridge_table,
 )
 frontend_object = custom_target(

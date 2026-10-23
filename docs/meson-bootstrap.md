@@ -14,10 +14,9 @@ Select matching real `gcc` and `g++` on PATH: a stack-guard
 runner invokes bare `gcc`. Keep one stable build directory per toolchain/configuration:
 
 ```sh
-# Complete source bootstrap first; P, SHA and RECEIPT are its printed values.
+# Complete source bootstrap first; RECEIPT is its printed receipt path.
 # PATH must already select the matching GCC 16 pair.
 CXX=g++ meson setup build/gcc16 --backend=ninja -Dlsp=false \
-  "-Dbootstrap_compiler=$P" "-Dbootstrap_compiler_sha256=$SHA" \
   "-Dbootstrap_receipt=$RECEIPT"
 meson compile -C build/gcc16 -j 3
 # Optional quick feedback while developing; full below includes these tests.
@@ -35,7 +34,7 @@ compiler, binutils, Meson and Ninja versions before setup or build work, with a
 short blocked reason and the container command when tools are unsupported.
 Direct Meson setup checks the same tool versions.
 Missing or unsupported tools are blocked. Predecessor admission also verifies
-the recorded tool/runtime bytes before setup, guarded use and ordinary Make builds;
+the recorded tool versions and digests at configure time;
 after replacing tools in place, reconstruct the predecessor and configure a fresh
 build directory. Unset `CPATH`, `CPLUS_INCLUDE_PATH`, `C_INCLUDE_PATH` and
 `LIBRARY_PATH`, including empty definitions; use explicit Meson include/link flags
@@ -75,7 +74,7 @@ First configure these directories with the predecessor path, mandatory digest an
 predecessor selections reject with that recipe rather than creating a raw seed.
 The shortcuts stop on build/test failure and reject mismatched compiler/flag
 selections or missing project options. Reconfigure an older chosen build
-explicitly with all three predecessor options, or configure a fresh matching directory.
+explicitly with the `-Dbootstrap_receipt` option, or configure a fresh matching directory.
 The wrapper does not invent a predecessor or automatically migrate configurations.
 
 Focused checks use exact Meson test names rather than compiler-consuming Make
@@ -270,8 +269,8 @@ BIOS/UEFI smoke, affected fault/recovery profiles, sanitizers and physical hardw
 remain separate gates. Retained receipts/logs remain readable; generated products
 can be losslessly archived with exact mapping after review.
 
-An optional `BOOTSTRAP_COMPILER` together with `BOOTSTRAP_COMPILER_SHA256` and
-`BOOTSTRAP_RECEIPT` requests a verified predecessor for Make shortcuts. A different selection refreshes only the implicit default build
+An optional `BOOTSTRAP_RECEIPT`, with optional `BOOTSTRAP_COMPILER` and
+`BOOTSTRAP_COMPILER_SHA256` cross-checks, requests a verified predecessor for Make shortcuts. A different selection refreshes only the implicit default build
 under its existing lock; explicit custom build directories require the printed
 reconfigure command. With no request, the configured predecessor is reused.
 `container.sh` forwards the path literally, so select a container-visible path.

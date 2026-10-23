@@ -99,20 +99,15 @@ or reuse a retained artifact under the
 [bootstrap evolution policy](../compiler/README.md#bootstrap-evolution-policy),
 before using Meson or ordinary Make shortcuts. The checked-in six-source manifest
 pins commit/tree and build options, independently naming the final predecessor
-and historical C++ oracle. Setup requires `bootstrap_compiler`, its mandatory
-`bootstrap_compiler_sha256` and `bootstrap_receipt`. Configuration performs the
-complete historical source/config/tool, artifact, input and log validation once.
-Its depfile makes that evidence a Meson configuration dependency; historical
-evidence must live outside the active build directory so Meson can track it.
-Before and after predecessor generation or historical-oracle execution, a small
-guard checks the selected compiler, receipt, route, driver and guard bytes and
-freshly resolves compiler/Python shared-library identities. Ordinary Make
-preflight uses the same current-selection checks without rescanning historical
-inputs. A different requested predecessor still receives full validation before
-reconfiguration. Existing build directories need reconfiguration to create this
-selection metadata. It is ordinary build configuration, not a new receipt,
-persistent corpus cache or attestation; historical dependencies use normal Meson
-invalidation, while the current selected artifacts and runtime are checked by digest.
+and historical C++ oracle. Setup requires one option, `bootstrap_receipt`; the
+predecessor and oracle paths and digests come from that receipt, and
+`bootstrap_compiler`/`bootstrap_compiler_sha256` are optional cross-checks.
+Configuration validates the historical sources, configuration, tool versions and
+digests, artifacts and logs once, and reading the receipt and pin makes them Meson
+configuration dependencies. The frontend generator, initialization probe and
+emitter differential check their executable's digest immediately before running it.
+A build directory configured before the receipt option existed must be recreated
+with `meson setup --wipe`.
 The reconstruction driver reuses a cached artifact only after source/config/tool,
 recorded inputs/logs and executable checks. Its local receipt records provenance,
 not a signed attestation or independent qualification.

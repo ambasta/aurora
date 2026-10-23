@@ -13,12 +13,10 @@ import os
 from pathlib import Path
 import platform
 import re
-import resource
 import shlex
 import subprocess
 import sys
 import tempfile
-import time
 
 import meson_toolchain
 
@@ -88,7 +86,7 @@ def rebuild_command():
     # The supported route reuses a verified cache and prints the Meson options.
     return (
         "run `python3 scripts/bootstrap.py build --container` from the host checkout, "
-        "then reconfigure Meson with the three printed -D options"
+        "then reconfigure Meson with the printed -Dbootstrap_receipt option"
     )
 
 
@@ -185,53 +183,9 @@ def prepared_sources(manifest, pin):
     return value["stages"]
 
 
-def link_inputs(cxx):
-    """Pinned native GCC's PIE/non-PIE startup and implicit link input superset."""
-    files = set()
-    for name in (
-        "crt1.o",
-        "Scrt1.o",
-        "crti.o",
-        "crtn.o",
-        "crtbegin.o",
-        "crtend.o",
-        "crtbeginS.o",
-        "crtendS.o",
-        "libstdc++.so",
-        "libgcc_s.so",
-        "libgcc_s.so.1",
-        "libgcc.a",
-        "libgcc_eh.a",
-        "libc.so",
-        "libc.so.6",
-        "libc_nonshared.a",
-        "libm.so",
-        "libm.so.6",
-        "libmvec.so.1",
-        "libatomic_asneeded.so",
-        "libatomic.so",
-        "liblto_plugin.so",
-    ):
-        path = Path(output([cxx, "-print-file-name=" + name]))
-        require(path.is_absolute() and path.is_file(), "unresolved implicit linker input: " + name)
-        files.add(str(path.resolve()))
-        data = path.read_bytes()
-        if data.startswith(b"\x7fELF") or data.startswith(b"!<arch>\n"):
-            continue
-        # The pinned glibc scripts use absolute GROUP/INPUT members, which can
-        # differ from GCC's search result. Relative/-l members are listed above.
-        script = re.sub(r"/\*.*?\*/", "", data.decode(), flags=re.DOTALL)
-        for member in re.findall(r"/[^\s()]+", script):
-            require(Path(member).is_file(), "missing linker script input: " + member)
-            files.add(str(Path(member).resolve()))
-    # Built-in specs are covered by the driver digest. Custom specs can introduce
-    # additional inputs outside this supported pinned-route closure.
-    require(output([cxx, "-print-file-name=specs"]) == "specs", "unsupported external GCC specs")
-    return files
-
-
 def tool_identity(*, current_flags=False):
-    """Hash selected drivers, subprograms, shared runtimes and Meson's Python code."""
+    """Pinned tool paths, versions and executable digests. This identifies the
+    toolchain the receipt was built with; it is not a runtime-closure proof."""
     meson_toolchain.explicit_search()
     for name in (
         "CFLAGS",
@@ -248,43 +202,12 @@ def tool_identity(*, current_flags=False):
     cxx = meson_toolchain.selected_tool(os.environ.get("CXX", "g++"))
     meson_toolchain.check([cxx])
     selected = {
-        name: meson_toolchain.selected_tool(name)
-        for name in (
-            "gcc",
-            "g++",
-            "as",
-            "ld",
-            "ar",
-            "nm",
-            "objcopy",
-            "objdump",
-            "readelf",
-            "meson",
-            "ninja",
-            "python3",
-        )
+        name: meson_toolchain.selected_tool(name) for name in ("gcc", "g++", "as", "ld", "meson", "ninja", "python3")
     }
     selected["cxx"] = cxx
     files = set(selected.values()) | {str(Path(sys.executable).resolve())}
-    meson_script = Path(selected["meson"]).read_text().splitlines()[0]
-    require(meson_script.startswith("#!"), "expected pinned Meson Python entrypoint")
-    meson_interpreter = shlex.split(meson_script[2:])
-    files.add(meson_toolchain.selected_tool(meson_interpreter[0]))
-    for name in ("cc1plus", "collect2", "as", "ld", "lto-wrapper"):
+    for name in ("cc1plus", "collect2"):
         files.add(meson_toolchain.selected_tool(output([cxx, "-print-prog-name=" + name])))
-    files.update(link_inputs(cxx))
-    # ldd inspects only the selected trusted development tools, never user artifacts.
-    for path in sorted(files):
-        header = Path(path).read_bytes()[:18]
-        if header[:4] == b"\x7fELF" and header[16:18] in (b"\x02\x00", b"\x03\x00"):
-            result = subprocess.run(["ldd", path], capture_output=True, text=True)
-            require(result.returncode == 0, "cannot inspect tool runtime: " + path)
-            require("not found" not in result.stdout, "missing tool runtime: " + path)
-            files.update(re.findall(r"(?:=>\s+|^\s*)(/[^\s]+)", result.stdout, re.MULTILINE))
-    # The pinned image puts its style venv first on PATH, but Debian Meson uses
-    # system Python. Inspect that interpreter, not this driver's import path.
-    meson_module = Path(output([*meson_interpreter, "-c", "import mesonbuild; print(mesonbuild.__file__)"]))
-    files.update(str(path) for path in meson_module.parent.rglob("*.py"))
     return {
         "selected": selected,
         "files": [file_identity(path) for path in sorted(files)],
@@ -346,64 +269,66 @@ def verify_receipt(receipt, pin, *, tools=None, check_sources=False):
                 "unsuccessful or altered reconstruction command",
             )
             check_file(record["log"])
-        for record in stage["inputs"]:
-            check_file(record)
-        require(stage["inputs"], "missing compiler header/build input identities")
         previous = stage["artifact"]
     return value
 
 
-def verify(compiler, sha256, receipt, *, role="build_predecessor"):
-    """Mandatory external digest plus a source/config/tool-bound local receipt."""
+def select(receipt, compiler="", sha256=""):
+    """Derive the predecessor and the historical C++ oracle from one receipt.
+
+    compiler and sha256 are optional cross-checks for build directories that
+    still pass them; when given they must name the receipt's predecessor."""
     try:
         require(
-            isinstance(sha256, str) and re.fullmatch(r"[0-9a-f]{64}", sha256), "mandatory SHA256 is missing or invalid"
+            receipt and Path(receipt).is_absolute(), "absolute reconstruction receipt required (-Dbootstrap_receipt)"
         )
-        require(compiler and Path(compiler).is_absolute(), "absolute predecessor path required")
-        require(receipt and Path(receipt).is_absolute(), "absolute reconstruction receipt required")
-        require(digest(compiler) == sha256, "selected predecessor SHA256 mismatch")
         pin = route()
         value = verify_receipt(receipt, pin)
         active_tools = tool_identity(current_flags=True)
         for field in ("selected", "files", "versions", "host"):
-            require(active_tools[field] == value["tools"][field], "current tool/runtime identity mismatch: " + field)
+            require(
+                active_tools[field] == value["tools"][field], "current tool identity differs from the receipt: " + field
+            )
         for name in ("LD_LIBRARY_PATH", "LD_PRELOAD", "LD_AUDIT"):
             require(
                 os.environ.get(name) == value["tools"]["environment"].get(name),
                 "predecessor runtime environment mismatch: " + name,
             )
-        selected = next(stage["artifact"] for stage in value["stages"] if stage["source"]["name"] == pin[role])
-        require(selected == file_identity(compiler), "selected artifact does not match pinned " + role)
-        return value
+        roles = {
+            role: next(stage["artifact"] for stage in value["stages"] if stage["source"]["name"] == pin[role])
+            for role in ("build_predecessor", "historical_cpp_oracle")
+        }
+        predecessor = roles["build_predecessor"]
+        require(
+            not compiler or os.path.abspath(compiler) == predecessor["path"],
+            "bootstrap_compiler is not the receipt's predecessor",
+        )
+        require(not sha256 or sha256 == predecessor["sha256"], "bootstrap_compiler_sha256 differs from the receipt")
+        return value, roles
     except (OSError, ValueError, KeyError, TypeError, StopIteration) as error:
         raise ValueError(f"Bootstrap predecessor rejected: {error}. To fix: {rebuild_command()}") from error
 
 
+def verify(compiler, sha256, receipt, *, role="build_predecessor"):
+    value, roles = select(receipt, compiler, sha256 if role == "build_predecessor" else "")
+    if role != "build_predecessor":
+        require(roles[role] == file_identity(compiler) and roles[role]["sha256"] == sha256, "not the pinned " + role)
+    return value
+
+
+def require_digest(path, sha256):
+    """The single check before running a selected predecessor or oracle."""
+    require(digest(path) == sha256, f"{path} changed since Meson verified it; reconfigure Meson")
+
+
 def record_command(argv, directory, ordinal):
     log = directory / f"{ordinal}.log"
-    started = time.monotonic()
     with log.open("w") as stream:
         result = subprocess.run(argv, stdout=stream, stderr=subprocess.STDOUT)
-    record = {
-        "argv": argv,
-        "cwd": str(Path.cwd()),
-        "returncode": result.returncode,
-        "log": file_identity(log),
-        "seconds": time.monotonic() - started,
-        "max_child_rss_kib": resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss,
-    }
+    record = {"argv": argv, "returncode": result.returncode, "log": file_identity(log)}
     write_json(directory / f"{ordinal}.json", record)
     require(result.returncode == 0, f"command failed ({result.returncode}); retained log: {log}")
     return record
-
-
-def build_inputs(build):
-    """Keep the actual Ninja header dependency closure, not just driver hashes."""
-    paths = {build / "build.ninja", build / "meson-info/intro-buildoptions.json", build / "compile_commands.json"}
-    for line in output(["ninja", "-C", build, "-t", "deps"]).splitlines():
-        if line.startswith("    "):
-            paths.add(build / line.strip())
-    return [file_identity(path) for path in sorted(paths)]
 
 
 def build(cache, fresh=False, prepared=None):
@@ -457,7 +382,6 @@ def build(cache, fresh=False, prepared=None):
                     "predecessor": previous,
                     "artifact": artifact,
                     "commands": records,
-                    "inputs": build_inputs(build_dir),
                 }
             )
             write_json(run / "progress.json", value)
@@ -481,14 +405,10 @@ def main():
     builder.add_argument(
         "--fresh", action="store_true", help="rebuild all six stages; retain old runs and failed evidence"
     )
-    for action in ("verify", "run"):
-        sub = subparsers.add_parser(action)
-        sub.add_argument("--compiler", required=True)
-        sub.add_argument("--sha256", required=True)
-        sub.add_argument("--receipt", required=True)
-        sub.add_argument("--role", choices=("build_predecessor", "historical_cpp_oracle"), default="build_predecessor")
-        if action == "run":
-            sub.add_argument("command", nargs=argparse.REMAINDER)
+    selector = subparsers.add_parser("select", help="print the receipt's predecessor and oracle for Meson")
+    selector.add_argument("--receipt", required=True)
+    selector.add_argument("--compiler", default="", help="optional cross-check against the receipt")
+    selector.add_argument("--sha256", default="", help="optional cross-check against the receipt")
     args = parser.parse_args()
     if args.action == "build":
         if args.container:
@@ -515,35 +435,12 @@ def main():
             if result.returncode:
                 sys.exit(child_status(result.returncode))
             return
-        receipt, value = build(args.cache, args.fresh, args.prepared)
-        artifact = value["stages"][-1]["artifact"]
-        print(
-            "Use these mandatory Meson setup options:\n"
-            + shlex.join(
-                [
-                    "-Dbootstrap_compiler=" + artifact["path"],
-                    "-Dbootstrap_compiler_sha256=" + artifact["sha256"],
-                    "-Dbootstrap_receipt=" + str(receipt),
-                ]
-            )
-        )
+        receipt, _ = build(args.cache, args.fresh, args.prepared)
+        print("Configure Meson with: " + shlex.join(["-Dbootstrap_receipt=" + str(receipt)]))
         return
-    value = verify(args.compiler, args.sha256, args.receipt, role=args.role)
-    if args.action == "verify":
-        oracle = next(
-            stage["artifact"]
-            for stage in value["stages"]
-            if stage["source"]["name"] == value["route"]["historical_cpp_oracle"]
-        )
-        print(oracle["path"] + "\n" + oracle["sha256"])
-    if args.action == "run":
-        command = args.command[1:] if args.command[:1] == ["--"] else args.command
-        require(command, "missing guarded command")
-        result = subprocess.run(command)
-        verify(args.compiler, args.sha256, args.receipt, role=args.role)
-        if result.returncode:
-            # The child reported its own failure; it is not a predecessor problem.
-            sys.exit(child_status(result.returncode))
+    _, roles = select(args.receipt, args.compiler, args.sha256)
+    for role in ("build_predecessor", "historical_cpp_oracle"):
+        print(roles[role]["path"] + "\n" + roles[role]["sha256"])
 
 
 if __name__ == "__main__":

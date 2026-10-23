@@ -8,6 +8,7 @@ bindings remain local; only trusted register bridges expose host entries.
 from pathlib import Path
 import re
 import importlib.util
+import hashlib
 import json
 import subprocess
 import sys
@@ -1034,12 +1035,18 @@ def emit(
 
 
 def main():
-    # COMPILER --output OUTPUT INPUT...: .au inputs are the compiler modules,
-    # and an optional .hpp is the header that stage-2 output must reproduce.
+    # COMPILER [--compiler-sha256 SHA] --output OUTPUT INPUT...: .au inputs are the
+    # compiler modules, and an optional .hpp is the header stage-2 output must reproduce.
     arguments = sys.argv[1:]
+    expected_sha256 = None
+    if len(arguments) > 2 and arguments[1] == "--compiler-sha256":
+        expected_sha256 = arguments[2]
+        del arguments[1:3]
     if len(arguments) < 4 or arguments[1] != "--output":
-        raise ValueError("expected COMPILER --output OUTPUT INPUT...")
+        raise ValueError("expected COMPILER [--compiler-sha256 SHA] --output OUTPUT INPUT...")
     compiler, output = Path(arguments[0]), Path(arguments[2])
+    if expected_sha256 is not None and hashlib.sha256(compiler.read_bytes()).hexdigest() != expected_sha256:
+        raise ValueError(f"{compiler} changed since Meson verified it; reconfigure Meson")
     inputs = [Path(argument) for argument in arguments[3:]]
     modules = [path for path in inputs if path.suffix == ".au"]
     headers = [path for path in inputs if path.suffix == ".hpp"]

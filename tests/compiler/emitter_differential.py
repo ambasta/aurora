@@ -362,6 +362,7 @@ def observe_case(
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--old-compiler", type=Path, required=True, help="explicit external old-backend executable")
+    parser.add_argument("--old-compiler-sha256", help="digest Meson verified for the old compiler")
     parser.add_argument("--new-compiler", type=Path, required=True, help="explicit candidate executable")
     parser.add_argument(
         "--stage1-compiler", type=Path, required=True, help="current C1 for corpus convergence and later consumers"
@@ -380,6 +381,10 @@ def main():
         require(path.is_file() and os.access(path, os.X_OK), f"compiler is not executable: {path}")
     compiler_ids = {label: {"path": str(path), **identity(path)} for label, path in zip(labels, compilers, strict=True)}
     require(compiler_ids["old"]["sha256"] != compiler_ids["new"]["sha256"], "old and new compiler bytes are identical")
+    require(
+        args.old_compiler_sha256 in (None, compiler_ids["old"]["sha256"]),
+        "old compiler changed since Meson verified it; reconfigure Meson",
+    )
     for name in SOURCE_ROOTS:
         require((root / name).is_dir(), f"source root missing: {name}")
         require(not artifacts.is_relative_to(root / name), "artifacts must be outside the enumerated source roots")

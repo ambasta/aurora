@@ -15,7 +15,6 @@ import tempfile
 
 import meson_toolchain
 import bootstrap
-import bootstrap_guard
 import kernel_profiles
 
 import compiler_contract as contract
@@ -199,31 +198,20 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
             reason + "\nUse ./scripts/container.sh make test for the supported pinned environment; "
             "see docs/local-development.md."
         ) from error
-    # Bootstrap setup explicitly configures the predecessor path.
-    # Reuse that selection; this convenience wrapper cannot invent a predecessor.
-    requested_bootstrap = env.get("BOOTSTRAP_COMPILER")
-    if requested_bootstrap is not None:
-        selected = Path(requested_bootstrap)
-        contract.require(
-            selected.is_absolute() and selected.is_file() and os.access(selected, os.X_OK),
-            "BOOTSTRAP_COMPILER must name an absolute executable predecessor; see compiler/README.md#source-bootstrap",
-        )
-        requested_bootstrap = str(selected.resolve())
-    requested_sha256 = env.get("BOOTSTRAP_COMPILER_SHA256")
+    # One reconstruction receipt selects the predecessor; BOOTSTRAP_COMPILER and
+    # BOOTSTRAP_COMPILER_SHA256 are optional cross-checks against it.
     requested_receipt = env.get("BOOTSTRAP_RECEIPT")
-    if requested_bootstrap is not None:
+    requested_bootstrap = env.get("BOOTSTRAP_COMPILER")
+    requested_sha256 = env.get("BOOTSTRAP_COMPILER_SHA256")
+    if requested_receipt is not None:
         contract.require(
-            re.fullmatch(r"[0-9a-f]{64}", requested_sha256 or ""),
-            "BOOTSTRAP_COMPILER_SHA256 must supply the predecessor SHA256",
-        )
-        contract.require(
-            requested_receipt and Path(requested_receipt).is_absolute(),
-            "BOOTSTRAP_RECEIPT must supply the absolute reconstruction receipt",
+            Path(requested_receipt).is_absolute(),
+            "BOOTSTRAP_RECEIPT must name the absolute reconstruction receipt; see compiler/README.md#source-bootstrap",
         )
     else:
         contract.require(
-            requested_sha256 is None and requested_receipt is None,
-            "BOOTSTRAP_COMPILER is required with BOOTSTRAP_COMPILER_SHA256/BOOTSTRAP_RECEIPT",
+            requested_bootstrap is None and requested_sha256 is None,
+            "BOOTSTRAP_RECEIPT is required with BOOTSTRAP_COMPILER/BOOTSTRAP_COMPILER_SHA256",
         )
     supplied = env.get("MESON_BUILD_DIR")
     default = "meson" if kernel_images else "meson-compiler"
@@ -239,8 +227,6 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
                 "setup",
                 str(build),
                 str(root),
-                "-Dbootstrap_compiler=" + (requested_bootstrap or "/absolute/path/to/aurorac"),
-                "-Dbootstrap_compiler_sha256=" + (requested_sha256 or "<receipt-sha256>"),
                 "-Dbootstrap_receipt=" + (requested_receipt or "/absolute/path/to/receipt.json"),
             ]
         )
@@ -288,15 +274,23 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
         except OSError as error:
             raise contract.ContractError(f"Cannot lock {build}: {error}. Check directory/lock permissions.") from error
         options = {item["name"]: item["value"] for item in introspect("--buildoptions")}
-        missing = {
-            "kernel_compiler",
-            "kernel_images",
-            "uefi_ld",
-            "cpp_args",
-            "bootstrap_compiler",
-            "bootstrap_compiler_sha256",
-            "bootstrap_receipt",
-        } - options.keys()
+        # Meson rejects an unknown -D on reconfigure, so a directory configured
+        # before the receipt option existed must be wiped, not reconfigured.
+        contract.require(
+            "bootstrap_receipt" in options,
+            f"{build} predates -Dbootstrap_receipt; run "
+            + shlex.join(
+                [
+                    meson,
+                    "setup",
+                    "--wipe",
+                    str(build),
+                    str(root),
+                    "-Dbootstrap_receipt=" + (requested_receipt or "/absolute/path/to/receipt.json"),
+                ]
+            ),
+        )
+        missing = {"kernel_compiler", "kernel_images", "uefi_ld", "cpp_args"} - options.keys()
         contract.require(
             not missing,
             "Missing Meson build options: "
@@ -320,54 +314,34 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
                 f"Configured {name} differs from request ({options.get(name)!r} != {expected!r}); "
                 "select a matching MESON_BUILD_DIR",
             )
-        if requested_bootstrap is not None and (
-            str(Path(options["bootstrap_compiler"]).resolve()) != requested_bootstrap
-            or options["bootstrap_compiler_sha256"] != requested_sha256
-            or options["bootstrap_receipt"] != requested_receipt
+        cross_checks = {"bootstrap_compiler": requested_bootstrap, "bootstrap_compiler_sha256": requested_sha256}
+        if requested_receipt is not None and (
+            options["bootstrap_receipt"] != requested_receipt
+            or any(value is not None and options.get(name) != value for name, value in cross_checks.items())
         ):
-            setup = [
-                "setup",
-                "--reconfigure",
-                str(build),
-                "-Dbootstrap_compiler=" + requested_bootstrap,
-                "-Dbootstrap_compiler_sha256=" + requested_sha256,
-                "-Dbootstrap_receipt=" + requested_receipt,
-            ]
+            setup = ["setup", "--reconfigure", str(build), "-Dbootstrap_receipt=" + requested_receipt]
+            setup += [f"-D{name}={value}" for name, value in cross_checks.items() if value is not None]
             contract.require(
                 not supplied,
-                "Configured bootstrap_compiler differs from BOOTSTRAP_COMPILER; run "
+                "Configured bootstrap_receipt differs from BOOTSTRAP_RECEIPT; run "
                 + shlex.join([meson, *setup])
                 + " or select a matching MESON_BUILD_DIR",
             )
             try:
-                bootstrap.verify(requested_bootstrap, requested_sha256, requested_receipt)
+                bootstrap.select(requested_receipt, requested_bootstrap or "", requested_sha256 or "")
             except ValueError as error:
                 raise contract.ContractError(str(error)) from error
             run(*setup)
             options = {item["name"]: item["value"] for item in introspect("--buildoptions")}
             contract.require(
-                options.get("bootstrap_compiler") == requested_bootstrap,
-                "Meson did not apply the requested bootstrap_compiler",
+                options.get("bootstrap_receipt") == requested_receipt,
+                "Meson did not apply the requested bootstrap_receipt",
             )
         contract.require(
-            isinstance(options["bootstrap_compiler"], str) and Path(options["bootstrap_compiler"]).is_absolute(),
-            "Configured bootstrap_compiler must select an absolute predecessor; "
+            isinstance(options["bootstrap_receipt"], str) and Path(options["bootstrap_receipt"]).is_absolute(),
+            "Configured bootstrap_receipt must name an absolute reconstruction receipt; "
             "see compiler/README.md#source-bootstrap",
         )
-
-        def check_predecessor():
-            try:
-                bootstrap_guard.check(
-                    build / "bootstrap-selection.json",
-                    options["bootstrap_compiler"],
-                    options["bootstrap_compiler_sha256"],
-                    options["bootstrap_receipt"],
-                    selection_sha256=bootstrap_guard.configured_selection_sha256(build),
-                )
-            except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
-                raise contract.ContractError(f"Configured bootstrap guard: {error}; reconfigure Meson") from error
-
-        check_predecessor()
         if tests:
             # Refresh configuration before selecting dependencies, as Meson's
             # own test runner does. This target does not build test fixtures.
@@ -380,7 +354,6 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
                 "--ninja-args=build.ninja",
                 stdout=output,
             )
-            check_predecessor()
             registered_tests = introspect("--tests")
             contract.require(
                 isinstance(registered_tests, list)

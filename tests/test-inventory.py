@@ -2,7 +2,6 @@
 """Account for every compiler runner without equating registration with acceptance."""
 
 import argparse
-import hashlib
 import json
 import importlib.util
 from pathlib import Path
@@ -234,9 +233,6 @@ def check_commands(manifest, records, root, build):
                 receipt: "@BOOTSTRAP_RECEIPT@",
                 oracle["path"]: "@HISTORICAL_CPP_ORACLE@",
                 oracle["sha256"]: "@HISTORICAL_CPP_ORACLE_SHA256@",
-                hashlib.sha256((Path(build) / "bootstrap-selection.json").read_bytes()).hexdigest(): (
-                    "@BOOTSTRAP_SELECTION_SHA256@"
-                ),
             }
         role_values["--comparison-base=" + comparison_base] = "--comparison-base=@EMITTER_COMPARISON_BASE@"
     arguments = {record["name"]: {Path(arg).resolve() for arg in record["cmd"]} for record in records}
