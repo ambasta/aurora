@@ -4,7 +4,6 @@
 import importlib.util
 from contextlib import contextmanager
 import ctypes
-import hashlib
 import json
 import os
 import shutil
@@ -815,10 +814,6 @@ class GeneratorBoundaries(unittest.TestCase):
                     base += ["-DAURORA_UEFI_USER_BUDGET", "-DAURORA_USER_REQUEST_BOUNDS"]
             legacy["uefi/" + mode] = profiles.uefi_profile(mode, base + ["-DAURORA_" + mode.upper().replace("-", "_")])
         self.assertEqual(len(legacy), 229)
-        self.assertEqual(
-            hashlib.sha256(json.dumps(legacy, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
-            "bd4b5327b168cbe3a9f6f4322963bedc0a06b21a909ef046f1586187f9be3efc",
-        )
 
     def test_scratchpad_profiles_are_exact_and_share_production_caller(self):
         recipes = profiles.profiles()

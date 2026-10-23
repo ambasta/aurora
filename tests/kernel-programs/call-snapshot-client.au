@@ -1,0 +1,22 @@
+module call_snapshot_client;
+import console.file_calls;
+// Ordinary user-call client: one read (phase 0), cancellation (1) and a budget
+// stall after the reply (8). Boot-selected fixture phases live in call-client-fixture.
+auto aurora_user_main(builtin::CallSession& session, u64 phase, u64 seed, u64 ordinal) -> u64 {
+    const builtin::CallResult reply = console::read_once(session, seed, ordinal);
+    if (phase == 1u64) {
+        if (reply.status != builtin::CallStatus::cancelled || reply.value != 0u64) {
+            return 2u64;
+        }
+        return 40u64;
+    }
+    if (reply.status != builtin::CallStatus::replied || (reply.value & 255u64) != 1u64 || (reply.value >> 8)
+        != 1210602228u64) {
+        return 3u64;
+    }
+    if (phase == 8u64) {
+        while (true) {
+        }
+    }
+    return 40u64 + (reply.value >> 8);
+}

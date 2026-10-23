@@ -412,7 +412,8 @@ def user_images(
             if snapshot:
                 source = "snapshot-client" if index == 0 else "snapshot-service"
             if blocking_call:
-                source = "call-client-fixture" if index == 0 else "call-snapshot-service"
+                client = "call-client-fixture" if mode == "user-call-fixture" else "call-snapshot-client"
+                source = client if index == 0 else "call-snapshot-service"
             if file_call:
                 source = "call-client" if index == 0 else "file-call-service"
             if ram_file:
