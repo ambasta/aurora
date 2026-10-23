@@ -243,14 +243,7 @@ auto ram_launch(unsigned index, U64 phase, U64 epoch) -> void {
     const auto generation = index == 0 ? ram_command->caller_endpoint.generation() : ram_lifetime->generation;
     launch = {phase, 0, grant, generation, 0, 0, 0x202};
     ram_run_epoch = epoch;
-    require(program.begin(*domains[index].contract) && registry.activate(*domains[index].handle), "RAM launch owner");
-    active = index;
-    const auto selected = domains[index].tables->root();
-    asm volatile("mov %0,%%cr3" ::"r"(selected) : "memory");
-    timer_begin(index);
-    require(
-        enter(domains[index].contract->entry(), domains[index].contract->layout().user_stack_top(), launch.data()) == 1,
-        "RAM launch continuation");
+    require(launch_domain(index, *domains[index].handle), "RAM launch continuation");
     ram_finish_execution(index);
 }
 // Service activation always mints a new active identity; the dormant frame never

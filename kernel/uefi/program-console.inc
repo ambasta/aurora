@@ -219,13 +219,7 @@ auto program_console_envelope(const Bytes &captured, U64 result) -> void {
                                ipc::Request{byte, ordinal}),
             "note fixed copied record");
     }
-    require(program.begin(*domain.contract) && registry.activate(*domain.handle), "program launch state");
-    active = index;
-    const auto selected = domain.tables->root();
-    asm volatile("mov %0,%%cr3" ::"r"(selected) : "memory");
-    timer_begin(index);
-    require(enter(domain.contract->entry(), domain.contract->layout().user_stack_top(), launch.data()) == 1,
-            "program continuation");
+    require(launch_domain(index, *domain.handle), "program continuation");
     timer_finish();
     require(root() == kernel_root && saved_rsp == 0 && active == L::domain_count && !program.running(),
             "program restored authority");

@@ -90,14 +90,7 @@ auto run_owned_text(memory::PhysicalPages &pool) -> void {
                 "text private quota region");
         text_owner = *domain.handle;
         launch = {text_region.id(), scalar, 0, 0, 0, 0, 0x202};
-        require(verify(domain) && program.begin(*domain.contract) && registry.activate(*domain.handle),
-                "text entry authority");
-        active = 0;
-        const auto selected = domain.tables->root();
-        asm volatile("mov %0,%%cr3" ::"r"(selected) : "memory");
-        timer_begin(0);
-        require(enter(domain.contract->entry(), domain.contract->layout().user_stack_top(), launch.data()) == 1,
-                "text trusted continuation");
+        require(verify(domain) && launch_domain(0, *domain.handle), "text trusted continuation");
         timer_finish();
         const auto kernel_stack = stack();
         require(kernel_stack >= arena + Handoff::stack_bottom && kernel_stack < arena + Handoff::stack_top &&

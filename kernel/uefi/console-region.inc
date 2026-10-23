@@ -192,14 +192,7 @@ auto console_result(U64 *words, console::RawSample sample) -> void {
     console_grant = ProtectedConsole::open();
     console_setup = false;
     launch = console_launch(console_grant.generation, text_region.id());
-    require(verify(domain) && program.begin(*domain.contract) && registry.activate(*text_owner),
-            "console application entry");
-    active = 0;
-    const auto selected = domain.tables->root();
-    asm volatile("mov %0,%%cr3" ::"r"(selected) : "memory");
-    timer_begin(0);
-    require(enter(domain.contract->entry(), domain.contract->layout().user_stack_top(), launch.data()) == 1,
-            "console entry continuation");
+    require(verify(domain) && launch_domain(0, *text_owner), "console entry continuation");
     timer_finish();
     while (console_read.context) {
         require(console_parked(), "console parked authority");

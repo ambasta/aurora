@@ -327,6 +327,19 @@ auto timer_begin(unsigned index) -> void {
     Serial::number(root());
     Serial::text("\r\n");
 }
+// Shared protected launch: activate the owner, switch to its root, start its
+// allowance and run from its entry until it traps back. Callers keep their own
+// authority checks before this and their own completion checks after it.
+[[nodiscard]] auto launch_domain(unsigned index, const user::DomainHandle &owner) -> bool {
+    auto &domain = domains[index];
+    if (!program.begin(*domain.contract) || !registry.activate(owner))
+        return false;
+    active = index;
+    const auto selected = domain.tables->root();
+    asm volatile("mov %0,%%cr3" ::"r"(selected) : "memory");
+    timer_begin(index);
+    return enter(domain.contract->entry(), domain.contract->layout().user_stack_top(), launch.data()) == 1;
+}
 #ifdef AURORA_FILE_CALL
 // Conservatively charge the discarded partial timer interval before publication.
 // Hardware IRQs and boundary charges share the same checked 128-unit allowance.

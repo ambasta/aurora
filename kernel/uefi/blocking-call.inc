@@ -194,13 +194,7 @@ auto call_execute(unsigned index, U64 source_phase, U64 first, U64 second) -> vo
                            ipc::Request{first, second}),
                 "call snapshot copied record");
     }
-    require(program.begin(*domain.contract) && registry.activate(*domain.handle), "call launch activation");
-    active = index;
-    const auto selected = domain.tables->root();
-    asm volatile("mov %0,%%cr3" ::"r"(selected) : "memory");
-    timer_begin(index);
-    require(enter(domain.contract->entry(), domain.contract->layout().user_stack_top(), launch.data()) == 1,
-            "call launch continuation");
+    require(launch_domain(index, *domain.handle), "call launch continuation");
     // The old kernel entry stack has unwound before any service can execute.
     timer_finish();
 #ifdef AURORA_FILE_CALL
