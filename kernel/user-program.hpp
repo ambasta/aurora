@@ -8,6 +8,11 @@
 #include <optional>
 
 namespace aurora::user {
+#ifdef AURORA_RUNTIME_CONTROL_FIXTURE
+// Test-only copied-policy mutation selected at boot by the UEFI runtime fixture:
+// 1 forges the policy input vector, 2 sets a reserved output bit.
+inline unsigned terminal_mutation{};
+#endif
 class ProgramContext final {
     friend class ProgramContract;
     std::uint64_t vector, error, instruction, code, stack_selector, stack, flags, kernel_frame;
@@ -111,17 +116,20 @@ public:
             (shift_count_ != 0 && context.instruction == shift_count_ ? 16ULL : 0ULL);
         const std::uint64_t stack_top = context.stack == layout_.user_stack_top() ? 1 : 0;
         auto policy_vector = context.vector;
-#ifdef AURORA_TERMINAL_EVENT_INPUT
-        policy_vector = ~std::uint64_t{0};
+#ifdef AURORA_RUNTIME_CONTROL_FIXTURE
+        if (terminal_mutation == 1)
+            policy_vector = ~std::uint64_t{0};
 #endif
 #ifdef AURORA_BIOS_FAULT_FIXTURE
         if (bios::selected(bios::Fixture::bios_program_terminal_input))
             policy_vector = ~std::uint64_t{0};
 #endif
         auto encoded = language_terminal_event(policy_vector, matched_sites, stack_top);
-#ifdef AURORA_TERMINAL_EVENT_OUTPUT
-        const volatile std::uint64_t reserved_bit = std::uint64_t{1} << 63;
-        encoded |= reserved_bit;
+#ifdef AURORA_RUNTIME_CONTROL_FIXTURE
+        if (terminal_mutation == 2) {
+            const volatile std::uint64_t reserved_bit = std::uint64_t{1} << 63;
+            encoded |= reserved_bit;
+        }
 #endif
 #ifdef AURORA_BIOS_FAULT_FIXTURE
         if (bios::selected(bios::Fixture::bios_program_terminal_output)) {

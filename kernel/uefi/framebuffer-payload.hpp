@@ -12,7 +12,9 @@ class FramebufferPayload final {
     }
 
 public:
-    [[nodiscard]] static auto restore_fixture(U64 arena) -> std::optional<FramebufferAdmission> {
+    // corrupt_record is the capture fixture's controlled record negative.
+    [[nodiscard]] static auto restore_fixture(U64 arena, [[maybe_unused]] bool corrupt_record = false)
+        -> std::optional<FramebufferAdmission> {
         if (!RuntimeLayout::valid(arena))
             return std::nullopt;
         U64 root, cr0, cr4, flags, stack;
@@ -52,11 +54,10 @@ public:
         const auto source = view(arena + Handoff::framebuffer_record_offset, record.size());
         for (std::size_t index = 0; index < record.size(); ++index)
             record[index] = source[index];
-#ifdef AURORA_FRAMEBUFFER_RECORD
         // Controlled negative after the capture gate. Corrupt only the local
         // copied record; the owned RO page and CR0.WP remain unchanged.
-        record[56] = std::byte{1};
-#endif
+        if (corrupt_record)
+            record[56] = std::byte{1};
         const auto copied = FramebufferRecord::parse(record, physical_bits);
         if (!copied)
             return std::nullopt;

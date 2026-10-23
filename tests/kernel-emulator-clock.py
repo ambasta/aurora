@@ -767,12 +767,12 @@ class ClockContractTests(unittest.TestCase):
                 cwd=str(out),
                 boot_root=str(out / "esp"),
                 firmware_profile="clean",
-                startup_byte={"ivrs-write": 106, "ivrs-revoked": 107}.get(mode),
+                startup_byte=provenance.SELECTORS.get(mode),
                 environment={"LD_LIBRARY_PATH": "/synthetic-libraries"},
                 stdio={"stdout": paths["serial"], "stderr": "stdout"},
             )
             provenance.validate_arguments(receipt, paths)
-            for selector in (-1, 0, 106, 107, 255, True, None):
+            for selector in (-1, 0, *provenance.SELECTORS.values(), 255, True, None):
                 if type(selector) is type(receipt["startup_byte"]) and selector == receipt["startup_byte"]:
                     continue
                 with self.subTest(mode=mode, selector=selector), self.assertRaises(ValueError):

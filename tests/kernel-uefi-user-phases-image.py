@@ -37,18 +37,23 @@ def main():
         else:
             raise RuntimeError("Invalid user-phase image accepted: " + label)
 
+    # Free fixture bytes after the trap helpers for each selectable probe.
+    probe_at = {"mmio": 64, "softint": 66, "fpu": 68, "peer_code": 70, "unknown": 74}
     for mode in ("user-phases", "user-context", "user-unknown"):
+        hostile_mode = mode in smoke.FIXTURE_MODES
         metadata = dict(images={}, kernel=dict(drain_begin=100, drain_end=104, text_end=4096, forged_pc=0))
         for domain, name in enumerate(smoke.NAMES):
             base = builder.BASE + domain * 16384
             data, blob, symbols = fixture.fixture(base)
             symbols["aurora_user_main"] = base + 20
-            if domain == 0 and mode == "user-context":
+            hostile = domain == 0 and hostile_mode
+            if hostile:
                 blob[2:8] = bytes.fromhex("48ff0c2475fa")
                 symbols.update(aurora_budget_context_begin=base + 2, aurora_budget_context_end=base + 8)
-            if domain == 0 and mode == "user-unknown":
-                blob[10:12] = bytes.fromhex("0f0b")
-                symbols["aurora_probe_pc"] = base + 10
+                for kind, at in probe_at.items():
+                    opcode = builder.PROBE_OPCODES[kind]
+                    blob[at : at + len(opcode)] = opcode
+                    symbols[f"aurora_probe_{kind}_pc"] = base + at
             data[4096:] = blob
 
             def verify(elf, installed, names):
@@ -80,35 +85,39 @@ def main():
             changed = blob.copy()
             changed[0] ^= 1
             reject(lambda: verify(data, changed, symbols), "installed bytes differ from linked RX")
-            if domain == 0 and mode == "user-context":
+            if hostile:
                 for offset in range(2, 8):
                     changed = blob.copy()
                     changed[offset] ^= 1
                     elf = data.copy()
                     elf[4096:] = changed
                     reject(lambda: verify(elf, changed, symbols), "context loop byte")
-            if domain == 0 and mode == "user-unknown":
-                forged = dict(symbols, aurora_probe_pc=symbols[".Laurora_bounds_trap"])
-                reject(lambda: verify(data, blob, forged), "unknown UD2 aliases retained bounds")
-                changed = blob.copy()
-                changed[10] = 0x90
-                elf = data.copy()
-                elf[4096:] = changed
-                reject(lambda: verify(elf, changed, symbols), "unknown UD2 exact opcode")
+                for kind, at in probe_at.items():
+                    forged = dict(symbols, **{f"aurora_probe_{kind}_pc": symbols[".Laurora_bounds_trap"]})
+                    reject(lambda: verify(data, blob, forged), kind + " probe aliases retained bounds")
+                    changed = blob.copy()
+                    changed[at] = 0x90
+                    elf = data.copy()
+                    elf[4096:] = changed
+                    reject(lambda: verify(elf, changed, symbols), kind + " probe exact opcode")
+                    forged = dict(symbols)
+                    del forged[f"aurora_probe_{kind}_pc"]
+                    reject(lambda: verify(data, blob, forged), kind + " probe missing from the set")
+                forged = dict(symbols, aurora_probe_pc=base + 74)
+                reject(lambda: verify(data, blob, forged), "single probe beside the set")
         smoke.metadata_valid(metadata, mode)
         positives += 1
         for source, target in (("clean", "bounds"), ("bounds", "peer"), ("peer", "clean")):
             changed = copy.deepcopy(metadata)
             changed["images"][target] = changed["images"][source]
             reject(lambda: smoke.metadata_valid(changed, mode), "cross-domain metadata authority")
-        if mode == "user-context":
+        if hostile_mode:
             changed = copy.deepcopy(metadata)
             changed["images"]["clean"]["context_begin"] = changed["images"]["clean"]["context_end"] = 0
             reject(lambda: smoke.metadata_valid(changed, mode), "lost client register probe")
-        if mode == "user-unknown":
             changed = copy.deepcopy(metadata)
-            changed["images"]["clean"]["probe_pc"] = 0
-            reject(lambda: smoke.metadata_valid(changed, mode), "lost unknown-site probe")
+            del changed["images"]["clean"]["probes"]
+            reject(lambda: smoke.metadata_valid(changed, mode), "lost client probe set")
     # Dedicated call authority is admitted only in the first two-domain image.
     builder.validate_composition("normal", True, False, True, False, False, True)
     for options in (

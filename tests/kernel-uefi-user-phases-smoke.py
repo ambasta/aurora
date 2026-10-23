@@ -39,22 +39,11 @@ SUCCESS = (
 )
 DENIED_IRQ = ("user-role", "user-phase", "user-transaction", "user-epoch", "user-root")
 DISPOSAL_DENIED = ("user-disposal-input", "user-disposal-output")
-FIXTURE_MODES = (
-    "user-retire-pending",
-    "user-request-budget",
-    "user-completion-budget",
-    "user-request-bounds",
-    "user-completion-bounds",
-    "user-request-overflow",
-    "user-completion-overflow",
-    "user-pending",
-    "user-role",
-    "user-phase",
-    "user-transaction",
-    "user-epoch",
-    "user-root",
-    "user-stale-grant",
-)
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import kernel_profiles  # noqa: E402
+
+# Modes that boot user-fixture, whose clean client carries the probe set.
+FIXTURE_MODES = tuple(mode for mode, (image, _) in kernel_profiles.FIXTURE_MODES.items() if image == "user-fixture")
 # Historical synthetic scenarios include copied-policy failures now covered hosted.
 # Current boot modes are admitted separately by kernel_profiles and emulator_clock.
 MODES = SUCCESS + DENIED_IRQ + ("user-unknown", "user-stale-grant") + DISPOSAL_DENIED
@@ -80,7 +69,8 @@ def metadata_valid(meta, mode):
         "context_end",
     }
     for index, name in enumerate(NAMES):
-        image = images[name]
+        image = dict(images[name]) if type(images[name]) is dict else images[name]
+        probes = image.pop("probes", None) if type(image) is dict else None
         need(
             type(image) is dict
             and set(image) == keys
@@ -103,15 +93,28 @@ def metadata_valid(meta, mode):
             "Compiled interval outside owned function",
         )
         begin, end = image["context_begin"], image["context_end"]
-        if mode == "user-context" and index == 0:
+        hostile = mode in FIXTURE_MODES and index == 0
+        if hostile:
             need(base <= begin < end <= image["return_pc"] and end - begin == 6, "Exact clean-client context interval")
         else:
             need(begin == end == 0, "Unexpected context authority")
-        probe = image["probe_pc"]
-        if mode == "user-unknown" and index == 0:
-            need(base <= probe <= image["return_pc"] - 2 and probe not in sites, "Exact non-retained clean probe")
+        need(image["probe_pc"] == 0, "Unexpected single hostile probe")
+        if hostile:
+            # Wrapper code only: inside the image, distinct, never a retained
+            # site, the context loop or compiled code.
+            need(type(probes) is dict and set(probes) == budget.PROBE_NAMES, "Exact clean-client probe set")
+            pcs = [
+                pc
+                for pc in probes.values()
+                if type(pc) is int
+                and base <= pc <= base + image["size"] - 2
+                and pc not in sites
+                and pc not in (begin, end)
+                and not image["compiled_begin"] <= pc < image["compiled_end"]
+            ]
+            need(len(set(pcs)) == len(budget.PROBE_NAMES), "Clean-client probe outside wrapper or aliased")
         else:
-            need(probe == 0, "Unexpected hostile probe")
+            need(probes is None, "Unexpected hostile probe")
     kernel = meta["kernel"]
     need(
         type(kernel) is dict
@@ -976,11 +979,12 @@ def validate(status, text, mode, metadata):
             need(used == 3 and compiled > 0, "Client budget lacks three charged hardware interrupts")
         else:
             need(used < limit, "Finite run reached exhausted budget")
-            site = "probe_pc" if run["failure"] == "unknown" else run["outcome"] + "_pc"
+            site = run["outcome"] + "_pc"
             if site == "returned_pc":
                 site = "return_pc"
             vector = 129 if run["outcome"] == "returned" and run["failure"] != "unknown" else 6
-            take(event_line(arena, d, vector, image[site]))
+            pc = image["probes"]["unknown"] if run["failure"] == "unknown" else image[site]
+            take(event_line(arena, d, vector, pc))
             if needs_pending(mode, run):
                 take(f"AURORA_UEFI_TIMER_PENDING: epoch={epoch}")
             if run["failure"] == "unknown":
@@ -1071,12 +1075,14 @@ def fixtures(client_ticks=True):
                 division_zero_pc=base + 404,
                 shift_count_pc=base + 406,
                 probe_offset=0,
-                probe_pc=base + 50 if d == 0 and mode == "user-unknown" else 0,
+                probe_pc=0,
                 compiled_begin=base + 80,
                 compiled_end=base + 300,
-                context_begin=base + 20 if d == 0 and mode == "user-context" else 0,
-                context_end=base + 26 if d == 0 and mode == "user-context" else 0,
+                context_begin=base + 20 if d == 0 and mode in FIXTURE_MODES else 0,
+                context_end=base + 26 if d == 0 and mode in FIXTURE_MODES else 0,
             )
+            if d == 0 and mode in FIXTURE_MODES:
+                images[name]["probes"] = {kind: base + 30 + 4 * i for i, kind in enumerate(sorted(budget.PROBE_NAMES))}
         metadata = dict(images=images, kernel=dict(drain_begin=100, drain_end=104, text_end=4096, forged_pc=0))
         rows = [f"AURORA_UEFI_TIMER_READY: physical=4276092928 virtual={budget.APIC} id=0 root={kernel}"]
         epoch = 0
@@ -1119,14 +1125,11 @@ def fixtures(client_ticks=True):
                 if context:
                     rows.append(f"AURORA_UEFI_TIMER_CONTEXT: epoch={epoch} tick={tick} registers=15 df=1")
             if run["outcome"] != "budget":
-                site = (
-                    "probe_pc"
-                    if run["failure"] == "unknown"
-                    else "return_pc"
-                    if run["outcome"] == "returned"
-                    else run["outcome"] + "_pc"
-                )
-                rows.append(event_line(arena, d, 129 if site == "return_pc" else 6, image[site]))
+                site = "return_pc" if run["outcome"] == "returned" else run["outcome"] + "_pc"
+                if run["failure"] == "unknown":
+                    rows.append(event_line(arena, d, 6, image["probes"]["unknown"]))
+                else:
+                    rows.append(event_line(arena, d, 129 if site == "return_pc" else 6, image[site]))
                 if needs_pending(mode, run):
                     rows.append(f"AURORA_UEFI_TIMER_PENDING: epoch={epoch}")
                 if run["failure"] == "unknown":
@@ -1315,6 +1318,21 @@ def self_test():
             changed = copy.deepcopy(meta)
             changed["images"]["extra"] = changed["images"]["clean"]
             reject(status, text, mode, changed, "fourth image")
+            # Only user-fixture's clean client carries the probe set.
+            for name in NAMES:
+                changed = copy.deepcopy(meta)
+                if name == "clean" and mode in FIXTURE_MODES:
+                    changed["images"]["clean"]["probes"].pop("unknown")
+                else:
+                    changed["images"][name]["probes"] = {
+                        kind: changed["images"][name]["entry"] + 30 + 4 * i
+                        for i, kind in enumerate(sorted(budget.PROBE_NAMES))
+                    }
+                reject(status, text, mode, changed, f"probe set {name}")
+            if mode in FIXTURE_MODES:
+                changed = copy.deepcopy(meta)
+                changed["images"]["clean"]["probes"]["unknown"] = changed["images"]["clean"]["return_pc"]
+                reject(status, text, mode, changed, "probe aliases return site")
             reject(status, text + "AURORA_UEFI_USER_PHASES_OK\n", mode, meta, "downstream success")
             reject(status, text + " AURORA_UEFI_TIMER_QUIET: epoch=1\n", mode, meta, "malformed Aurora-looking receipt")
             # These rewrite all matching claims, not just one side of a pair.

@@ -20,6 +20,10 @@ bool ready{}, waiting{};
 std::optional<LocalApicAdmission> admission;
 extern const std::byte wait_begin asm("uefi_console_poll_begin");
 extern const std::byte wait_end asm("uefi_console_poll_end");
+#ifdef AURORA_CONSOLE_SERVICE_FIXTURE
+#include "fixture-selector.inc"
+Fixture fixture{};
+#endif
 
 [[nodiscard]] auto root() -> U64 {
     U64 value;
@@ -80,17 +84,19 @@ public:
         return Serial::next();
     }
     static auto try_put(std::uint8_t byte) -> console::PutResult {
-#ifdef AURORA_CONSOLE_SERVICE_TIMEOUT
+#ifdef AURORA_CONSOLE_SERVICE_FIXTURE
         static unsigned emitted = 0;
-        if (emitted == 17) {
-            return console::PutResult::timeout;
+        if (fixture == Fixture::console_service_timeout) {
+            if (emitted == 17) {
+                return console::PutResult::timeout;
+            }
+            ++emitted;
         }
-        ++emitted;
 #endif
         return Serial::try_put(byte);
     }
 };
-#ifdef AURORA_CONSOLE_SERVICE_REENTRY
+#ifdef AURORA_CONSOLE_SERVICE_FIXTURE
 console::ServiceArgument reentry_argument{};
 #endif
 class ServicePlatform final {
@@ -105,8 +111,9 @@ public:
 };
 using Service = console::Session<ServiceTransport, ServicePlatform>;
 auto ServicePlatform::wait() -> void {
-#ifdef AURORA_CONSOLE_SERVICE_REENTRY
-    static_cast<void>(Service::put(reentry_argument.grant, reentry_argument.generation, 'x'));
+#ifdef AURORA_CONSOLE_SERVICE_FIXTURE
+    if (fixture == Fixture::console_service_reentry)
+        static_cast<void>(Service::put(reentry_argument.grant, reentry_argument.generation, 'x'));
 #endif
     wait_for_sample();
 }
@@ -150,8 +157,9 @@ auto service_next(const void *, U64, console::RawSample *) -> void asm("__au_run
     __attribute__((visibility("hidden")));
 auto service_next(const void *grant, U64 generation, console::RawSample *output) -> void {
     *output = Service::next(grant, generation);
-#ifdef AURORA_CONSOLE_SERVICE_REPORT
-    output->damaged = 2; // Must trap in generated code before the editor sees it.
+#ifdef AURORA_CONSOLE_SERVICE_FIXTURE
+    if (fixture == Fixture::console_service_report)
+        output->damaged = 2; // Must trap in generated code before the editor sees it.
 #endif
 }
 auto service_put(const void *, U64, U64) -> U64 asm("__au_runtime_console_put") __attribute__((visibility("hidden")));
@@ -187,6 +195,12 @@ auto interrupt_dispatch(U64 frame) -> void {
     require(!ready && !waiting && !admission && handoff.get(8, 4) == 2 && handoff.get(120) == 0 &&
                 RuntimeLayout::valid(arena) && root() == handoff.get(88) && Timer::irq_off(),
             "entry authority");
+#ifdef AURORA_CONSOLE_SERVICE_FIXTURE
+    // Select before any timer, IDT or UART input state exists.
+    const auto selected = read_fixture(Fixture::console_service_stale, Fixture::console_service_report);
+    require(selected.has_value(), "fixture selector outside image family");
+    fixture = *selected;
+#endif
     owned_arena = arena;
     kernel_root = handoff.get(88);
     U64 stack, flags, cr0, cr4;
@@ -225,13 +239,13 @@ auto interrupt_dispatch(U64 frame) -> void {
     Serial::initialize_input();
     Serial::text("AURORA_UEFI_CONSOLE_TIMER_READY: polling_count=1250000 uart_irq=0\r\n");
     auto argument = Service::open();
-#ifdef AURORA_CONSOLE_SERVICE_STALE
-    const auto prior = argument;
-    static_cast<void>(Service::close(argument, 0));
-    argument = Service::open();
-    argument = prior; // Captured generation must not refresh when grant storage is reused.
-#endif
-#ifdef AURORA_CONSOLE_SERVICE_REENTRY
+#ifdef AURORA_CONSOLE_SERVICE_FIXTURE
+    if (fixture == Fixture::console_service_stale) {
+        const auto prior = argument;
+        static_cast<void>(Service::close(argument, 0));
+        argument = Service::open();
+        argument = prior; // Captured generation must not refresh when grant storage is reused.
+    }
     reentry_argument = argument;
 #endif
     const auto completion = Service::close(argument, service_entry(&argument));

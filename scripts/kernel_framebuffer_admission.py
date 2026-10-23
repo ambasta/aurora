@@ -11,7 +11,8 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "build/uefi"
-MODES = ("framebuffer", "framebuffer-record", "framebuffer-permissions", "framebuffer-stale")
+# One capture image; its three faults are selected by the capture release byte.
+MODES = ("framebuffer",)
 ENTRY = "__au_v_m1_22kernel_display_service_n0__d15display_service"
 BRIDGE = "__au_runtime_display_entry"
 VALUE_BRIDGE = "__au_runtime_display_value"

@@ -31,10 +31,14 @@ IOMMU = "amd-iommu,pt=off,intremap=off,device-iotlb=off,xtsup=off"
 FILES = prior.FILES | prior.CLEAN_FILES
 sha256 = prior.sha256
 absolute = prior.absolute
+# Each selected ivrs-fixture case and its table selector; ivrs-missing has none.
+SELECTORS = {
+    mode: value for mode, (image, value) in ivrs.kernel_profiles.FIXTURE_MODES.items() if image == "ivrs-fixture"
+}
 
 
 def validate_arguments(receipt, paths):
-    expected_selector = {"ivrs-write": 106, "ivrs-revoked": 107}.get(receipt.get("mode"))
+    expected_selector = SELECTORS.get(receipt.get("mode"))
     actual_selector = receipt.get("startup_byte")
     need(
         actual_selector == expected_selector and (expected_selector is None or type(actual_selector) is int),
@@ -119,20 +123,18 @@ def validate_payload(loader, binary, elf, metadata, mode):
         "ivrs-write": ("uefi_ivrs_write_probe", bytes.fromhex("48c70000000000")),
         "ivrs-revoked": ("uefi_ivrs_revoked_probe", bytes.fromhex("488b00")),
     }
+    # Every IVRS case boots ivrs-fixture, which links both exact fault sites.
     expected = {}
     for candidate, (name, opcode) in sites.items():
-        if mode in sites:
-            at = symbols.get(name)
-            need(
-                type(at) is int
-                and 0 < at
-                and at + len(opcode) <= metadata["bytes"]
-                and binary[at : at + len(opcode)] == opcode,
-                "Fault site is not exact linked IOMMU probe instruction",
-            )
-            expected[candidate] = at
-        else:
-            need(name not in symbols, "Foreign IVRS fault probe present")
+        at = symbols.get(name)
+        need(
+            type(at) is int
+            and 0 < at
+            and at + len(opcode) <= metadata["bytes"]
+            and binary[at : at + len(opcode)] == opcode,
+            "Fault site is not exact linked IOMMU probe instruction",
+        )
+        expected[candidate] = at
     need(metadata["fault_offsets"] == expected, "Fault metadata does not match linked symbols")
     return metadata
 
@@ -269,19 +271,19 @@ def self_test():
             environment={"LD_LIBRARY_PATH": "/tmp/synthetic-libraries"},
             firmware_profile="clean",
             mode=mode,
-            startup_byte={"ivrs-write": 106, "ivrs-revoked": 107}.get(mode),
+            startup_byte=SELECTORS.get(mode),
             argv=argv,
         )
         validate_arguments(receipt, paths)
         cases = [
             dict(receipt, startup_byte=0),
-            dict(receipt, startup_byte=107 if mode == "ivrs-write" else 106),
+            dict(receipt, startup_byte=SELECTORS["ivrs-revoked" if mode == "ivrs-write" else "ivrs-write"]),
             dict(receipt, argv=argv + ["-device", IOMMU]),
             dict(receipt, firmware_profile="stock"),
             dict(receipt, argv=argv + ["-device", "nvme-ns,drive=unsafe"]),
             dict(receipt, environment={"LD_LIBRARY_PATH": "/lib", "LD_PRELOAD": "unsafe"}),
         ]
-        if mode in ("ivrs-write", "ivrs-revoked"):
+        if mode in SELECTORS:
             cases.append({key: value for key, value in receipt.items() if key != "startup_byte"})
             cases.append(dict(receipt, startup_byte=float(receipt["startup_byte"])))
         for index in range(len(argv)):

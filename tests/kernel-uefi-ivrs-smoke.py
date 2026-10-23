@@ -38,6 +38,11 @@ HISTORICAL_MODES = (
     "ivrs-range",
     "ivrs-missing",
 )
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import kernel_profiles  # noqa: E402
+
+# Current cases that boot ivrs-fixture and read its selector.
+FIXTURE_MODES = tuple(mode for mode, (image, _) in kernel_profiles.FIXTURE_MODES.items() if image == "ivrs-fixture")
 EARLY = ("ivrs-pair", "ivrs-alias", "ivrs-reserved", "ivrs-missing")
 READ_MODES = ("ivrs-read", "ivrs-write", "ivrs-revoked")
 BASE, LENGTH, WINDOW = 0xFED80000, 0x4000, 0xFFFF800000002000
@@ -156,7 +161,8 @@ def validate(status, serial, mode, payload=None):
     # Parse raw UART framing once, including CRLF from provenance artifact replay.
     lines = bar.protocol_lines(serial)
     marker = "AURORA_FIXTURE_READY"
-    fixture_image = mode in ("ivrs-write", "ivrs-revoked")
+    # Every selected IVRS case reads the selector; ivrs-missing rejects first.
+    fixture_image = mode in FIXTURE_MODES
     need(lines.count(marker) == (1 if fixture_image else 0), "Exact IVRS fixture readiness")
     if fixture_image:
         need(
@@ -326,6 +332,7 @@ def fixture(mode):
     lines = serial.splitlines()
     raw = changed_table(mode) if mode in EARLY + ("ivrs-scope",) else TABLE
     before = lines[:9]
+    aperture = next(line for line in lines if line.startswith("AURORA_PCI_APERTURE:"))
     payload = {
         "offset": 0x22000,
         "bytes": 0x10000,
@@ -338,7 +345,7 @@ def fixture(mode):
         if mode in EARLY:
             tail += ["AURORA_IVRS_REJECTED: reason=table-profile", bar.FAIL]
         else:
-            tail += [SUMMARY, "AURORA_ACPI_WINDOW_CLOSED: copies=17", lines[10]] + fixture_rows()
+            tail += [SUMMARY, "AURORA_ACPI_WINDOW_CLOSED: copies=17", aperture] + fixture_rows()
             tail += ["AURORA_PCI_INVENTORY: functions=7 buses=1", "AURORA_PCI_WINDOW_CLOSED: reads=39"]
             if mode == "ivrs-scope":
                 return (
@@ -376,9 +383,10 @@ def fixture(mode):
                         f" cr2={WINDOW + 0x18}",
                         "AURORA_UEFI_PAYLOAD_FAIL: exception",
                     ]
-    if mode in ("ivrs-write", "ivrs-revoked"):
+    if mode in FIXTURE_MODES:
         at = next(index for index, line in enumerate(tail) if line.startswith("AURORA_ACPI_WINDOW_CLOSED:"))
         tail.insert(at + 1, "AURORA_FIXTURE_READY")
+    if mode in ("ivrs-write", "ivrs-revoked"):
         payload["fault_offsets"] = {"ivrs-write": 0x1234, "ivrs-revoked": 0x1244}
     return 33 if mode == "ivrs-read" else 35, "\n".join(before + tail) + "\n", payload
 

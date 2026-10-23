@@ -4,6 +4,7 @@ import importlib.util, json, re, sys, copy
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from kernel_layout import LAYOUT
+from kernel_profiles import FIXTURE_MODES
 
 spec = importlib.util.spec_from_file_location("pci", Path(__file__).with_name("kernel-pci-smoke.py"))
 pci = importlib.util.module_from_spec(spec)
@@ -38,7 +39,6 @@ def run_console_region(command, log, mode):
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
     import qemu_transport as transport
-    from kernel_profiles import FIXTURE_MODES
 
     startup_byte = FIXTURE_MODES.get(mode, ("", None))[1]
     startup_sent = startup_byte is None
@@ -470,7 +470,10 @@ def validate_owned_text(status, text, metadata, mode):
     print("PASS: protected Utf8Text returns, quota rollback, fault/budget and quiescent reclamation")
 
 
-PLAIN_FIXTURE_MODES = ("runtime-root", "runtime-kernel-trap", "runtime-entry-stack")
+# Modes that boot the shared runtime-fixture image, from the one fixture table.
+PLAIN_FIXTURE_MODES = tuple(mode for mode, (image, _) in FIXTURE_MODES.items() if image == "runtime-fixture")
+# Hostile user probes that runtime-fixture's clean image selects at entry.
+PROBE_NAMES = {"stack", "kernel", "window", "write", "return", "unknown", "syscall", "sysenter"}
 
 
 def checked_fixture_projection(text):
@@ -511,13 +514,19 @@ def validate(status, text, mode, metadata, *, retained=0, final_slot=0):
         "probe_pc",
     }
     need(type(metadata) is dict and set(metadata) == {"clean", "bounds"}, "Malformed metadata set")
+    fixture = mode in PLAIN_FIXTURE_MODES
     for index, name in enumerate(("clean", "bounds")):
-        image = metadata[name]
+        image = dict(metadata[name])
+        probes = image.pop("probes", None) if type(image) is dict else None
         need(
             type(image) is dict
             and set(image) == keys
             and all(type(v) is int and 0 <= v < 1 << 64 for v in image.values()),
             "Malformed metadata values",
+        )
+        need(
+            (type(probes) is dict and set(probes) == PROBE_NAMES) if fixture and index == 0 else probes is None,
+            "Unexpected hostile probe set",
         )
         base = BASE + index * LAYOUT.code_stride
         size = image["size"]
@@ -539,7 +548,6 @@ def validate(status, text, mode, metadata, *, retained=0, final_slot=0):
         )
         probe = image["probe_pc"]
         offset = image["probe_offset"]
-        need(probe == 0 or base <= probe <= base + size - 2 and probe not in sites, "Metadata probe outside image")
         need(
             offset == 0
             or size >= 8
@@ -547,18 +555,16 @@ def validate(status, text, mode, metadata, *, retained=0, final_slot=0):
             and all(not (base + offset < pc + 2 and pc < base + offset + 8) for pc in sites if pc),
             "Metadata probe literal outside image",
         )
-        expected_probe = index == 0 and mode in (
-            "runtime-stack",
-            "runtime-kernel",
-            "runtime-window",
-            "runtime-write",
-            "runtime-return",
-            "runtime-unknown",
-            "runtime-syscall",
-            "runtime-sysenter",
+        # Only the fixture's clean image carries the selectable hostile probes, and
+        # their one patched kernel-address literal; no image has a single probe.
+        hostile = list(probes.values()) if fixture and index == 0 else []
+        need(
+            all(type(pc) is int and base <= pc <= base + size - 2 and pc not in sites for pc in hostile)
+            and len(set(hostile)) == len(hostile),
+            "Hostile probe outside image or aliased",
         )
         need(
-            bool(probe) == expected_probe and bool(offset) == (index == 0 and mode == "runtime-kernel"),
+            probe == 0 and bool(offset) == bool(hostile),
             "Unexpected metadata probe authority",
         )
 
@@ -674,6 +680,8 @@ def validate(status, text, mode, metadata, *, retained=0, final_slot=0):
                 "Continuation order",
             )
         else:
+            # The hostile probe this mode selected in the fixture's clean image.
+            hostile = image.get("probes", {}).get(mode.removeprefix("runtime-"), 0)
             if mode in (
                 "runtime-code",
                 "runtime-stack",
@@ -698,7 +706,7 @@ def validate(status, text, mode, metadata, *, retained=0, final_slot=0):
                     "runtime-write": 7,
                     "runtime-nx": 21,
                 }[mode]
-                target = address if mode in ("runtime-code", "runtime-nx") else image["probe_pc"]
+                target = address if mode in ("runtime-code", "runtime-nx") else hostile
                 need((vector, error, rip, cr2) == (14, err, target, address), "Wrong protection fault/site")
             elif mode in ("runtime-root", "runtime-terminal-input", "runtime-terminal-output"):
                 need((vector, error, rip) == (129, 0, image["return_pc"]), "Wrong return-root probe")
@@ -711,17 +719,17 @@ def validate(status, text, mode, metadata, *, retained=0, final_slot=0):
                 )
             elif mode == "runtime-return":
                 need(
-                    (vector, error, rip) == (129, 0, image["probe_pc"]) and rip != image["return_pc"],
+                    (vector, error, rip) == (129, 0, hostile) and rip != image["return_pc"],
                     "Wrong forged return site",
                 )
             elif mode in ("runtime-syscall", "runtime-sysenter"):
                 need(
-                    (vector, error, rip) == (6 if mode == "runtime-syscall" else 13, 0, image["probe_pc"]),
+                    (vector, error, rip) == (6 if mode == "runtime-syscall" else 13, 0, hostile),
                     "Inherited alternate privilege entry",
                 )
             elif mode == "runtime-unknown":
                 need(
-                    (vector, error, rip) == (6, 0, image["probe_pc"])
+                    (vector, error, rip) == (6, 0, hostile)
                     and rip
                     not in [image[k] for k in ("bounds_pc", "overflow_pc", "division_zero_pc", "shift_count_pc")],
                     "Unknown UD2 accepted as known",
@@ -1055,9 +1063,10 @@ def self_test():
             overflow_pc=base + 68,
             division_zero_pc=base + 72,
             shift_count_pc=base + 76,
-            probe_pc=base + 52,
+            probe_pc=0,
             probe_offset=0,
         )
+    probes = {name: BASE + 20 + 4 * i for i, name in enumerate(sorted(PROBE_NAMES))}
     cases = {}
     original_metadata = copy.deepcopy(metadata)
     owned_text_controls(prefix, original_metadata)
@@ -1077,6 +1086,7 @@ def self_test():
             root = arena + LAYOUT.tables_offset + slot * LAYOUT.table_pages * LAYOUT.page_size
             sp = LAYOUT.user_stack_top + slot * LAYOUT.user_stack_stride
             image = metadata["bounds" if slot else "clean"]
+            hostile = probes.get(mode.removeprefix("runtime-"), 0)
             if i == 3:
                 text += f"AURORA_UEFI_DOMAIN_REUSE_OK: frame={arena + LAYOUT.stack_frames_offset}\n"
             text += f"AURORA_UEFI_DOMAIN_ENTER: slot={slot} root={root} entry={image['entry']} stack={sp}\n"
@@ -1111,7 +1121,7 @@ def self_test():
                     "runtime-write": BASE,
                     "runtime-nx": LAYOUT.user_stack_top - 8,
                 }[mode]
-                pc = cr2 if mode in ("runtime-code", "runtime-nx") else image["probe_pc"]
+                pc = cr2 if mode in ("runtime-code", "runtime-nx") else hostile
             elif mode == "runtime-kernel-trap":
                 vector = 6
                 pc = image["bounds_pc"]
@@ -1123,13 +1133,13 @@ def self_test():
                 cr2 = arena + LAYOUT.rsp0_bottom - 8
                 frame = arena + LAYOUT.ist_top - LAYOUT.fault_frame_size
             elif mode == "runtime-return":
-                pc = image["probe_pc"]
+                pc = hostile
             elif mode == "runtime-unknown":
                 vector = 6
-                pc = image["probe_pc"]
+                pc = hostile
             elif mode in ("runtime-syscall", "runtime-sysenter"):
                 vector = 6 if mode == "runtime-syscall" else 13
-                pc = image["probe_pc"]
+                pc = hostile
             text += (
                 f"AURORA_UEFI_DOMAIN_EVENT: vector={vector} error={error} pc={pc}"
                 f" cpl={cpl} root={root} frame={frame} cr2={cr2}\n"
@@ -1154,19 +1164,8 @@ def self_test():
                 reason = "exception origin/stack"
             text += f"AURORA_UEFI_RUNTIME_FAIL: {reason}\n"
         case_metadata = copy.deepcopy(metadata)
-        case_metadata["bounds"]["probe_pc"] = 0
-        if mode not in (
-            "runtime-stack",
-            "runtime-kernel",
-            "runtime-window",
-            "runtime-write",
-            "runtime-return",
-            "runtime-unknown",
-            "runtime-syscall",
-            "runtime-sysenter",
-        ):
-            case_metadata["clean"]["probe_pc"] = 0
-        case_metadata["clean"]["probe_offset"] = 88 if mode == "runtime-kernel" else 0
+        if mode in PLAIN_FIXTURE_MODES:
+            case_metadata["clean"].update(probes=dict(probes), probe_offset=88)
         cases[mode] = (33 if mode in SUCCESS_MODES else 35, text, case_metadata)
     rejected = 0
     for mode, (status, text, metadata) in cases.items():
@@ -1230,6 +1229,40 @@ def self_test():
                 rejected += 1
             else:
                 raise RuntimeError(f"Invalid runtime metadata accepted: {mode} {field}")
+        # The hostile probe set exists only on the fixture's clean image, complete,
+        # in range and unaliased, alongside its one kernel-address literal.
+        clean = metadata["clean"]
+        hostile_cases = []
+        if mode in PLAIN_FIXTURE_MODES:
+            name = sorted(PROBE_NAMES)[0]
+            for change in (
+                lambda image: image.pop("probes"),
+                lambda image: image["probes"].pop(name),
+                lambda image: image["probes"].update(extra=BASE + 100),
+                lambda image: image["probes"].update({name: image["return_pc"]}),
+                lambda image: image["probes"].update({name: image["entry"] + image["size"]}),
+                lambda image: image["probes"].update({name: next(iter(set(probes.values()) - {probes[name]}))}),
+                lambda image: image.update(probe_offset=0),
+                lambda image: image.update(probe_pc=BASE + 52),
+            ):
+                altered = copy.deepcopy(metadata)
+                change(altered["clean"])
+                hostile_cases.append(altered)
+            altered = copy.deepcopy(metadata)
+            altered["bounds"]["probes"] = dict(clean["probes"])
+            hostile_cases.append(altered)
+        else:
+            for name in ("clean", "bounds"):
+                altered = copy.deepcopy(metadata)
+                altered[name]["probes"] = dict(probes)
+                hostile_cases.append(altered)
+        for altered in hostile_cases:
+            try:
+                validate(status, text, mode, altered)
+            except ValueError:
+                rejected += 1
+            else:
+                raise RuntimeError(f"Hostile probe authority widened: {mode}")
         if mode == "runtime-multipage":
             for name in ("clean", "bounds"):
                 for field, value in (("size", 4096), ("size", 12289), ("bounds_pc", metadata[name]["entry"] + 64)):

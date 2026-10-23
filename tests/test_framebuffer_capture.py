@@ -182,6 +182,15 @@ class CaptureControls(unittest.TestCase):
             self.assertEqual(receipt["status"], "failed")
             self.assertTrue((pathlib.Path(d) / "case/receipt.json").is_file())
 
+    def test_release_bytes_select_one_case_each(self):
+        # 'G' releases the normal frame; each fault has its own table selector.
+        releases = {mode: runner.release_byte(mode) for mode in oracle.MODES}
+        self.assertEqual(releases["framebuffer"], 0x47)
+        self.assertEqual(len(set(releases.values())), len(oracle.MODES))
+        for mode in ("framebuffer-unknown", "runtime-code"):
+            with self.assertRaises((ValueError, KeyError)):
+                runner.release_byte(mode)
+
     def test_timeout_and_interrupt_reap_guest_and_close_pipes(self):
         for error in (ValueError("QMP response timeout"), KeyboardInterrupt("interrupted")):
             with tempfile.TemporaryDirectory() as d:

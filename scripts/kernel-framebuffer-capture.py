@@ -13,6 +13,16 @@ import tty
 import qemu_transport as transport
 
 from framebuffer_capture_oracle import BASE, SIZE, GATE, need, validate_serial, validate_capture
+from kernel_profiles import FIXTURE_MODES
+
+
+def release_byte(mode):
+    """'G' releases the normal frame; each fault mode sends its table selector."""
+    if mode == "framebuffer":
+        return 0x47
+    image, value = FIXTURE_MODES[mode]
+    need(image == "framebuffer" and value != 0x47, "unknown framebuffer release")
+    return value
 
 ROOT = Path(__file__).resolve().parents[1]
 MAX_IO = 1024 * 1024
@@ -115,9 +125,10 @@ def run_case(mode, manifest, pins, roots, env, directory, *, firmware_args=None)
             channel.drain_serial()
             validate_serial(channel.serial_bytes, mode, gate_only=True)
             baseline, baseline_ppm = channel.capture("baseline")
-            # Only the exact reviewed byte is sent, once, while paused.
-            need(os.write(master, b"G") == 1, "serial release write failed")
-            receipt["release_hex"] = "47"
+            # Only the exact reviewed byte for this case is sent, once, while paused.
+            release = release_byte(mode)
+            need(os.write(master, bytes([release])) == 1, "serial release write failed")
+            receipt["release_hex"] = format(release, "02x")
             channel.command("cont")
             channel.wait_marker(terminal=True)
             channel.stop()

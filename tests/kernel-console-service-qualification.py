@@ -24,6 +24,7 @@ import tty
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import kernel_console_service_admission as admission
+from kernel_profiles import FIXTURE_MODES, canonical_profile
 import kernel_uefi_console_clock as clock
 import qemu_transport as transport
 
@@ -39,8 +40,22 @@ def run_bounded(argv, timeout, env=None):
     return subprocess.CompletedProcess(argv, status, stdout.getvalue(), stderr.getvalue())
 
 
+# Service faults are boot-selected console-fixture cases, each with its own oracle.
+FAULT_MODES = tuple(mode for mode, (image, _) in FIXTURE_MODES.items() if image == "console-fixture")
+SELECTOR = b"AURORA_FIXTURE_READY\n"
+
+
 def validate_fault(transcript, status, mode, sent):
+    need(mode in FAULT_MODES, "Unknown console service fault")
     text = transcript.replace(b"\r", b"")
+    # The selector is read once, after the trusted bootstrap and before any timer,
+    # IDT or UART input state; nothing else may precede it in the service.
+    bootstrap = b"AURORA_UEFI_LANGUAGE_OK: value=42\nAURORA_UEFI_OK\n"
+    need(
+        text.count(SELECTOR) == 1 and bootstrap + SELECTOR + b"AURORA_UEFI_CONSOLE_TIMER_READY:" in text,
+        "Missing, repeated or misplaced fixture selector",
+    )
+    text = text.replace(SELECTOR, b"", 1)
     need(status == 35, "Fault did not exit fail-closed through the QEMU device")
     need(b"AURORA_UEFI_LANGUAGE_OK: value=42\nAURORA_UEFI_OK\n" in text, "Fault preceded successful trusted bootstrap")
     need(
@@ -98,6 +113,7 @@ def fault_guest(mode, work):
     transcript = bytearray()
     process = None
     sent = False
+    selected = False
     started = time.monotonic()
     try:
         with (work / "guest.stderr").open("wb") as stderr:
@@ -118,6 +134,10 @@ def fault_guest(mode, work):
                         break
                     transcript.extend(data)
                     need(len(transcript) < 65536, "Fault transcript exceeded bound")
+                    if not selected and SELECTOR in transcript.replace(b"\r", b""):
+                        tty.setraw(master)
+                        os.write(master, bytes([FIXTURE_MODES[mode][1]]))
+                        selected = True
                     if mode == "console-service-report" and not sent and b"aurora> " in transcript:
                         tty.setraw(master)
                         os.write(master, b"x")
@@ -209,15 +229,16 @@ def restore_normal(work, env, result=None, normal_build=None):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=admission.MODES, default="console")
+    parser.add_argument("--mode", choices=("console",) + FAULT_MODES, default="console")
     parser.add_argument("--build-dir", type=Path, required=True)
     parser.add_argument(
         "--normal-build-dir", type=Path, help="prebuilt normal profile for private run-only restoration"
     )
     args = parser.parse_args()
     admission.configure_paths(args.build_dir, ROOT)
+    profile = canonical_profile("uefi", args.mode)
     need(
-        admission.BUILD.parts[-3:] == ("kernel-images", "uefi", args.mode),
+        admission.BUILD.parts[-3:] == ("kernel-images", "uefi", profile),
         "Expected the selected native console profile directory",
     )
     need(
@@ -225,7 +246,7 @@ def main():
         "Unset inherited test/profile controls",
     )
     # Failed preflight must neither start a guest nor modify/restage its image.
-    receipt = admission.checked(args.mode)
+    receipt = admission.checked(profile)
     need(shutil.which(os.environ.get("QEMU", "qemu-system-x86_64")), "QEMU unavailable")
     evidence_root = ROOT / "build"
     evidence_root.mkdir(parents=True, exist_ok=True)
@@ -274,7 +295,7 @@ def main():
             result["guest"] = fault_guest(args.mode, work)
             result["guest"]["transcript_sha256"] = admission.digest(work / "guest.log")
         need(
-            admission.checked(args.mode) == receipt
+            admission.checked(profile) == receipt
             and admission.digest(admission.RECEIPT) == result["admission_sha256"],
             "Admitted image or report changed during guest execution",
         )

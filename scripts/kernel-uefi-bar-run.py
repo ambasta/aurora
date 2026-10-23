@@ -15,7 +15,7 @@ import sys
 import qemu_transport as transport
 import kernel_trace_controls as controls
 from meson_test import selected_kernel_compiler
-from kernel_profiles import canonical_profile
+from kernel_profiles import FIXTURE_MODES, canonical_profile
 from qemu_transport import MissingPrerequisite, input_path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -225,8 +225,14 @@ def execute(mode, config, env, build):
         invocation["firmware_package"] = controls.FIRMWARE_VERSION
     if clean:
         invocation["firmware_source_revision"] = module("bar-provenance").REVISION
+    # bar-fixture cases read one selector byte after ACPI closure.
+    startup = FIXTURE_MODES.get(mode)
+    if startup:
+        invocation["startup_byte"] = startup[1]
     (out / "invocation-start.json").write_text(json.dumps(invocation, indent=2) + "\n")
-    status = transport.run_logged(argv, out / "serial.log", cwd=ROOT, env=env, timeout=60)
+    status = transport.run_logged(
+        argv, out / "serial.log", cwd=ROOT, env=env, timeout=60, startup_byte=startup[1] if startup else None
+    )
     (out / "status").write_text(str(status) + "\n")
     invocation["status"] = status
     for key, name in (("serial", "serial.log"), ("trace", "trace.log"), ("firmware_log", "firmware.log")):

@@ -177,10 +177,9 @@ class Admission(unittest.TestCase):
 
     def test_fault_transcripts_reject_forbidden_earlier_effects(self):
         qualification = service.load("service_guest_oracles", ROOT / "tests/kernel-console-service-qualification.py")
-        prefix = (
-            b"AURORA_UEFI_LANGUAGE_OK: value=42\nAURORA_UEFI_OK\n"
-            b"AURORA_UEFI_CONSOLE_TIMER_READY: polling_count=1250000 uart_irq=0\n"
-        )
+        bootstrap = b"AURORA_UEFI_LANGUAGE_OK: value=42\nAURORA_UEFI_OK\n"
+        timer = b"AURORA_UEFI_CONSOLE_TIMER_READY: polling_count=1250000 uart_irq=0\n"
+        prefix = bootstrap + qualification.SELECTOR + timer
         ready = b"AURORA_CONSOLE_READY: UEFI, ASCII, 64-byte lines\naurora> "
         rejected = b"AURORA_UEFI_CONSOLE_FAIL: console service authority\n"
         tails = {
@@ -198,6 +197,17 @@ class Admission(unittest.TestCase):
                     qualification.validate_fault(prefix + changed, 35, mode, kind == "report")
             with self.assertRaises(ValueError):
                 qualification.validate_fault(prefix + tail, 33, mode, kind == "report")
+            # The selector must appear once, between the bootstrap and the timer.
+            for changed in (
+                bootstrap + timer + tail,
+                bootstrap + qualification.SELECTOR * 2 + timer + tail,
+                qualification.SELECTOR + bootstrap + timer + tail,
+                bootstrap + timer + qualification.SELECTOR + tail,
+            ):
+                with self.assertRaises(ValueError):
+                    qualification.validate_fault(changed, 35, mode, kind == "report")
+        with self.assertRaises(ValueError):
+            qualification.validate_fault(prefix + rejected, 35, "console", False)
 
     def test_checked_admission_binds_exact_artifacts(self):
         with tempfile.TemporaryDirectory(prefix="service-admission-") as directory:
@@ -224,7 +234,7 @@ class Admission(unittest.TestCase):
             ):
                 self.assertEqual(service.checked("console"), data)
                 with self.assertRaises(ValueError):
-                    service.checked("console-service-stale")
+                    service.checked("console-fixture")
                 output.write_bytes(b"changed image")
                 with self.assertRaises(ValueError):
                     service.checked("console")

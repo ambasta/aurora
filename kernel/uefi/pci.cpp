@@ -10,10 +10,17 @@
      defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT))
 #error "PCI fixture requires the standalone ACPI/PCI profile"
 #endif
-#if defined(AURORA_IVRS_FIXTURE) &&                                                                                    \
-    (!defined(AURORA_UEFI_IVRS) || !defined(AURORA_UEFI_PCI) || !defined(AURORA_UEFI_BAR_CAPTURE) ||                   \
-     defined(AURORA_IVRS_DEFAULT) || defined(AURORA_PCI_FIXTURE))
+#if defined(AURORA_IVRS_FIXTURE) && (!defined(AURORA_UEFI_IVRS) || !defined(AURORA_UEFI_PCI) ||                        \
+                                     !defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_PCI_FIXTURE))
 #error "IVRS fault fixture requires its explicit cold observation profile"
+#endif
+#if defined(AURORA_BAR_FIXTURE) &&                                                                                     \
+    (!defined(AURORA_UEFI_BAR_CAPTURE) || !defined(AURORA_UEFI_BAR_EDK2) || defined(AURORA_UEFI_IVRS) ||               \
+     defined(AURORA_UEFI_NVME_PREPARE) || defined(AURORA_PCI_FIXTURE))
+#error "BAR fixture requires the standalone read-only BAR profile"
+#endif
+#if defined(AURORA_UEFI_IVRS) && !defined(AURORA_IVRS_FIXTURE)
+#error "IVRS read profiles are boot-selected cases of the IVRS fixture image"
 #endif
 #ifdef AURORA_UEFI_PCI
 #include "pci-policy.hpp"
@@ -41,7 +48,7 @@ namespace aurora::uefi {
 namespace {
 using U64 = std::uint64_t;
 using hardware::Serial;
-#if defined(AURORA_PCI_FIXTURE) || defined(AURORA_IVRS_FIXTURE)
+#if defined(AURORA_PCI_FIXTURE) || defined(AURORA_IVRS_FIXTURE) || defined(AURORA_BAR_FIXTURE)
 #include "fixture-selector.inc"
 Fixture pci_fixture{};
 #endif
@@ -211,7 +218,13 @@ auto discover_pci(U64 arena,
     pci_fixture = *selected;
 #endif
 #ifdef AURORA_IVRS_FIXTURE
-    const auto selected = read_fixture(Fixture::ivrs_write, Fixture::ivrs_revoked);
+    const auto selected = read_fixture(Fixture::ivrs_write, Fixture::ivrs_read);
+    if (!selected)
+        return false;
+    pci_fixture = *selected;
+#endif
+#ifdef AURORA_BAR_FIXTURE
+    const auto selected = read_fixture(Fixture::bar_read, Fixture::bar_alias);
     if (!selected)
         return false;
     pci_fixture = *selected;

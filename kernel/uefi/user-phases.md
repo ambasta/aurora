@@ -102,6 +102,14 @@ adapter operations, not a user-language unsafe or destruction interface.
   recovery or safe continuation after an unknown origin is claimed.
 - user-stale-grant: a retired client's old grant fails under the fresh incarnation.
 
+Every mode except user-phases and user-resume boots the one `user-fixture` image
+and picks its case from the serial selector. user-context and user-unknown used to
+be separate images whose first client always ran its register loop or unknown UD2.
+The fixture's first client now carries the shared selectable probe set (see
+[service-budget.md](service-budget.md)); the launcher selects the register loop
+for its request phase, or the UD2 just before its exit, only when the mode asks.
+Both modes keep the user-phases run order through the fixture kernel.
+
 Run scripts/kernel-uefi-user-phases-tests.sh (SANITIZE=1 for fatal ASan/UBSan) and
 scripts/kernel-uefi-user-phases-all.sh. Exact source manifests, all prior122 modes,
 independent review and final receipt validation remain necessary for acceptance.

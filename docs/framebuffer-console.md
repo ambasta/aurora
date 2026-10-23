@@ -31,9 +31,13 @@ The framebuffer image stays in its isolated native profile directory; normal
 images coexist. Do not mutate an image profile while it is in use.
 
 The result says `qualified: false`. Ordinary preview runs one positive guest.
-For all four admitted native profiles, run the same entrypoint with
-`scripts/kernel-framebuffer-preview.sh --full-smoke`. It checks the success scene
-and all three no-write cases with the existing independent pixel/serial oracles,
+For all four capture cases, run the same entrypoint with
+`scripts/kernel-framebuffer-preview.sh --full-smoke`. The cases boot the one
+admitted image: the paused capture gate's release byte is `G` for the success
+scene, or one of the three framebuffer fault selectors in the fixture table
+(record, permissions, stale), each of which used to be its own image. It checks
+the success scene and all three no-write cases with the existing independent
+pixel/serial oracles,
 then invokes the normal UEFI smoke entrypoint for an actual restoration boot,
 even after a guest failure. An unreaped guest blocks restoration. Each attempt
 retains its captures, admissions, normal boot log and summary in a fresh directory.

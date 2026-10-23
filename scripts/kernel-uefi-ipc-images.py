@@ -20,6 +20,15 @@ _base = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_base)
 
 
+PROBE_OPCODES = {
+    "mmio": b"\x8b\x00",
+    "softint": b"\xcd\x40",
+    "fpu": b"\xd9\xd0",
+    "peer_code": b"\x49\x8b\x02",
+    "unknown": b"\x0f\x0b",
+}
+
+
 def verify(
     data,
     blob,
@@ -50,6 +59,15 @@ def verify(
         serve_entry=serve_entry,
     )
     need(result["probe_offset"] == 0, "IPC has no address literal authority")
+    # A fixture wrapper carries one exact instruction per selectable probe.
+    probes = result.get("probes", {})
+    need(not probes or set(probes) == set(PROBE_OPCODES), "IPC exact selectable probe set")
+    for kind, pc in probes.items():
+        opcode = PROBE_OPCODES.get(kind)
+        need(
+            opcode is not None and blob[pc - base : pc - base + len(opcode)] == opcode,
+            "IPC exact selectable hostile probe",
+        )
     probe = result["probe_pc"]
     if probe:
         need(
@@ -93,9 +111,13 @@ def verify(
         )
         need(
             all(
-                not (serve_stub < result[k] + 2 and result[k] < serve_pc + 1)
-                for k in ("return_pc", "bounds_pc", "overflow_pc", "division_zero_pc", "shift_count_pc", "probe_pc")
-                if result[k]
+                not (serve_stub < pc + 2 and pc < serve_pc + 1)
+                for pc in [
+                    result[k]
+                    for k in ("return_pc", "bounds_pc", "overflow_pc", "division_zero_pc", "shift_count_pc", "probe_pc")
+                ]
+                + list(result.get("probes", {}).values())
+                if pc
             ),
             "Serve stub aliases terminal or hostile site",
         )
@@ -141,6 +163,7 @@ def validate_composition(
     ram_scratchpad_console=False,
     ram_scratchpad_fixture=False,
 ):
+    need(mode in ("normal", "resume", "probes"), "Unsupported IPC image mode")
     need(
         not ram_scratchpad_fixture or ram_scratchpad_console,
         "Scratchpad fixture requires its exact copied console composition",
@@ -172,14 +195,14 @@ def validate_composition(
         "Snapshot requires its exclusive IPC composition",
     )
     need(mode != "resume" or (user_budget and dispatcher and not program_console), "Resume requires client dispatcher")
-    need(not snapshot or mode in ("normal", "owner", "reply-reserved", "reply-byte"), "Unsupported snapshot mode")
-    need(mode not in ("reply-reserved", "reply-byte") or snapshot, "Snapshot reply probe requires snapshot")
+    need(not snapshot or mode == "normal", "Unsupported snapshot mode")
+    need(mode != "probes" or service_budget and not snapshot, "Selectable probes require a timer fixture")
     need(
         not program_console or service_budget and user_budget and not dispatcher,
         "Protected console requires its exact two-domain timer composition",
     )
     need(
-        not program_console or mode in ("normal", "owner", "ordinal", "unknown", "transaction"),
+        not program_console or mode == "normal",
         "Unsupported protected console mode",
     )
     need(
@@ -317,9 +340,7 @@ def emit_metadata(
             if len(line.split()) == 3
         }
         blob = binary.read_bytes()
-        opcode = {"mmio": b"\x8b\x00", "softint": b"\xcd\x40", "fpu": b"\xd9\xd0", "peer-code": b"\x49\x8b\x02"}.get(
-            mode, b"\x0f\x0b"
-        )
+        opcode = b"\x0f\x0b"
         compiled = (
             "__au_v_m1_16snapshot_service_n0__d16aurora_user_main"
             if blocking_call and not file_call and index == 1
@@ -383,7 +404,8 @@ def emit_metadata(
             + ",".join(f"std::byte{{{value}}}" for value in blob)
             + "};"
         )
-        for key, value in meta.items():
+        # The kernel loads only scalar facts; the probe set is guest-oracle evidence.
+        for key, value in ((key, value) for key, value in meta.items() if key != "probes"):
             header.append(f"inline constexpr unsigned long long {name}_{key}={value}ULL;")
     header.append("}")
     (out / "uefi-user-images.hpp").write_text("\n".join(header) + "\n")
@@ -784,25 +806,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--mode",
         default="normal",
-        choices=[
-            "normal",
-            "resume",
-            "owner",
-            "stale",
-            "version",
-            "phase",
-            "transaction",
-            "site",
-            "unknown",
-            "mmio",
-            "softint",
-            "fpu",
-            "context",
-            "peer-code",
-            "ordinal",
-            "reply-reserved",
-            "reply-byte",
-        ],
+        choices=["normal", "resume", "probes"],
     )
     parser.add_argument("--service-budget", action="store_true")
     parser.add_argument("--dispatcher", action="store_true")

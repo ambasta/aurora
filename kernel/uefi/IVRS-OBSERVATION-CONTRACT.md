@@ -90,6 +90,14 @@ encountered in the normal fixture. Historical147 modes retain their own firmware
 and acceptance profiles. Final receipts must include exact source/tool/firmware
 hashes, argv, complete raw traces, linked fault metadata and copied input bytes.
 
+The five live modes boot one `ivrs-fixture` image. Default, read, write and
+revoked read the serial selector after ACPI closure; default selects the
+architectural profile there and every other case the explicit QEMU cold
+profile, never as a fallback. Missing IVRS rejects in ACPI discovery before
+the selector. Default and read used to be separate images; the fixture now
+links both exact fault instructions for every case, and each mode keeps its
+own serial, trace and provenance oracles.
+
 Primary implementation references are the pinned QEMU
 [IVRS producer](https://github.com/qemu/qemu/blob/98f88efe8f07067667b8d9b1a5ce9551d34036c1/hw/i386/acpi-build.c)
 and [AMD-Vi device model](https://github.com/qemu/qemu/blob/98f88efe8f07067667b8d9b1a5ce9551d34036c1/hw/i386/amd_iommu.c).

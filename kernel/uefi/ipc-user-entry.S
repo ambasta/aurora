@@ -17,6 +17,19 @@
 .global aurora_program_entry
 .global aurora_program_return_pc
 aurora_program_entry:
+.ifdef IPC_PROBES
+    # The fixture launcher's one extra word selects at most one probe in %rax;
+    # every other unused register is still checked zero.
+    cmp $6,%rax
+    ja bad_entry
+    or %rbp,%rbx
+    or %r10,%rbx
+    or %r11,%rbx
+    or %r12,%rbx
+    or %r13,%rbx
+    or %r14,%rbx
+    or %r15,%rbx
+.else
     or %rbx,%rax
     or %rbp,%rax
     or %r10,%rax
@@ -25,6 +38,7 @@ aurora_program_entry:
     or %r13,%rax
     or %r14,%rax
     or %r15,%rax
+.endif
     jnz bad_entry
     cmpq $0,-8(%rsp)
     jne bad_entry
@@ -41,34 +55,19 @@ aurora_program_entry:
     push %r9
     sub $8,%rsp
     mov %r9,%rdx
-.ifdef IPC_PEER_CODE
-    movabs $0x10000000000,%r10
-.global aurora_probe_pc
-aurora_probe_pc:
-    mov (%r10),%rax
-.endif
-.ifdef IPC_MMIO
-    movabs $0xffff900000000000,%rax
-.global aurora_probe_pc
-aurora_probe_pc:
-    mov (%rax),%eax
-.endif
-.ifdef IPC_SOFTINT
-.global aurora_probe_pc
-aurora_probe_pc:
-    int $64
-.endif
-.ifdef IPC_FPU
-.global aurora_probe_pc
-aurora_probe_pc:
-    fnop
-.endif
-.ifdef IPC_CONTEXT
-.ifdef IPC_CLIENT_CONTEXT
-    cmp $0,%rdi
-.else
-    cmp $1,%rdi
-.endif
+.ifdef IPC_PROBES
+    # mmio 1, softint 2, fpu 3, register loop 4, peer code 5, unknown exit 6.
+    # The selector stays in the alignment slot for the exit-time probe.
+    mov %rax,(%rsp)
+    cmp $1,%rax
+    je mmio_probe
+    cmp $2,%rax
+    je softint_probe
+    cmp $3,%rax
+    je fpu_probe
+    cmp $5,%rax
+    je peer_code_probe
+    cmp $4,%rax
     jne skip_context_probe
     push %rdi
     push %rsi
@@ -175,6 +174,10 @@ skip_context_probe:
 .endif
  .endif
  .endif
+.ifdef IPC_PROBES
+    cmpq $6,(%rsp)
+    je unknown_probe
+.endif
     add $8,%rsp
     pop %r9
     pop %r8
@@ -183,49 +186,42 @@ skip_context_probe:
     pop %rdi
 .ifdef COPIED_SERVICE
     add $112,%rsp
-.ifdef SNAPSHOT_REPLY_RESERVED
-    movabs $0x8000000000000000,%r10
-    or %r10,%rax
-.endif
-.ifdef SNAPSHOT_REPLY_BYTE
-    xor $0x100,%rax
-.endif
 .endif
     mov $1,%esi
-.ifdef IPC_OWNER
-    xor $1,%edx
-.endif
-.ifdef IPC_STALE
-    inc %rcx
-.endif
-.ifdef IPC_VERSION
-    mov $2,%esi
-.endif
-.ifdef IPC_ORDINAL
-    inc %r9
-.endif
-.ifdef IPC_TRANSACTION
-    inc %r8
-.endif
-.ifdef IPC_PHASE
-    mov $1,%edi
-.endif
-.ifdef IPC_SITE
-    int $0x81
-.global aurora_probe_pc
-aurora_probe_pc:
-    ud2
-.endif
-.ifdef IPC_UNKNOWN
-.global aurora_probe_pc
-aurora_probe_pc:
-    ud2
-.endif
     int $0x81
 aurora_program_return_pc:
     ud2
 bad_entry:
     ud2
+.ifdef IPC_PROBES
+    # Faulting probes; none returns, and each still ends in a fatal UD2.
+mmio_probe:
+    movabs $0xffff900000000000,%rax
+.global aurora_probe_mmio_pc
+aurora_probe_mmio_pc:
+    mov (%rax),%eax
+    ud2
+softint_probe:
+.global aurora_probe_softint_pc
+aurora_probe_softint_pc:
+    int $64
+    ud2
+fpu_probe:
+.global aurora_probe_fpu_pc
+aurora_probe_fpu_pc:
+    fnop
+    ud2
+peer_code_probe:
+    movabs $0x10000000000,%r10
+.global aurora_probe_peer_code_pc
+aurora_probe_peer_code_pc:
+    mov (%r10),%rax
+    ud2
+unknown_probe:
+.global aurora_probe_unknown_pc
+aurora_probe_unknown_pc:
+    ud2
+.endif
 .ifdef CALL_CLIENT
 .global __au_runtime_call
 .type __au_runtime_call,@function

@@ -30,7 +30,13 @@ MODES = (
     "dispatch-policy-output",
 )
 SUCCESS = MODES[:5]
-FIXTURE_MODES = MODES[1:11]
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import kernel_profiles  # noqa: E402
+
+# Modes that boot dispatch-fixture, whose peer wrapper carries the probe set.
+FIXTURE_MODES = tuple(
+    mode for mode, (image, _) in kernel_profiles.FIXTURE_MODES.items() if image == "dispatch-fixture"
+)
 
 
 def metadata_valid(meta, mode):
@@ -40,7 +46,8 @@ def metadata_valid(meta, mode):
     base = copy.deepcopy(meta)
     base["images"] = {name: base["images"][name] for name in ("clean", "bounds")}
     budget.metadata_valid(base, "budget")
-    image = images["peer"]
+    image = dict(images["peer"]) if type(images["peer"]) is dict else images["peer"]
+    probes = image.pop("probes", None) if type(image) is dict else None
     need(
         type(image) is dict
         and set(image) == set(images["clean"])
@@ -50,12 +57,15 @@ def metadata_valid(meta, mode):
     shifted = {
         key: (value - 32768 if key not in ("size", "probe_offset") and value else value) for key, value in image.items()
     }
-    probe = shifted["probe_pc"]
-    shifted["probe_pc"] = 0
+    if probes is not None:
+        shifted["probes"] = (
+            {key: value - 32768 if type(value) is int else value for key, value in probes.items()}
+            if type(probes) is dict
+            else probes
+        )
     base["images"]["clean"] = shifted
-    budget.metadata_valid(base, "budget")
+    budget.metadata_valid(base, "budget", "clean" if mode in FIXTURE_MODES else None)
     need(image["entry"] == BASE + 32768 and image["probe_offset"] == 0, "Peer layout authority")
-    need((BASE <= probe < shifted["return_pc"]) if mode == "dispatch-peer-code" else probe == 0, "Peer probe scope")
 
 
 def expected(mode, images, arena):
@@ -120,7 +130,7 @@ def expected(mode, images, arena):
         grant = grants[0] if owner else grants[c]
         enter(c, index, 0, 0, grant)
         if peer:
-            event(index, 14, 4, images["peer"]["probe_pc"], BASE)
+            event(index, 14, 4, images["peer"]["probes"]["peer_code"], BASE)
             add("AURORA_UEFI_RUNTIME_FAIL: exception site authority")
             return
         event(index)
@@ -517,12 +527,14 @@ def fixtures():
                 division_zero_pc=base + 408,
                 shift_count_pc=base + 412,
                 probe_offset=0,
-                probe_pc=base + 20 if index == 2 and mode == "dispatch-peer-code" else 0,
+                probe_pc=0,
                 compiled_begin=base + 80,
                 compiled_end=base + 300,
-                context_begin=0,
-                context_end=0,
+                context_begin=base + 20 if index == 2 and mode in FIXTURE_MODES else 0,
+                context_end=base + 26 if index == 2 and mode in FIXTURE_MODES else 0,
             )
+            if index == 2 and mode in FIXTURE_MODES:
+                images[name]["probes"] = {kind: base + 30 + 4 * i for i, kind in enumerate(sorted(budget.PROBE_NAMES))}
         meta = dict(images=images, kernel=dict(drain_begin=100, drain_end=104, text_end=4096, forged_pc=0))
         rows = [f"AURORA_UEFI_TIMER_READY: physical=4276092928 virtual={budget.APIC} id=0 root={kernel}"]
         epoch = 0
@@ -629,6 +641,29 @@ def self_test():
                     rejected += 1
                 else:
                     raise RuntimeError("Invalid dispatcher metadata accepted " + name + " " + key)
+        # Only dispatch-fixture's peer carries the probe set and context loop.
+        probe_cases = []
+        for name in ("clean", "bounds", "peer"):
+            altered = copy.deepcopy(meta)
+            if name == "peer" and mode in FIXTURE_MODES:
+                altered["images"]["peer"]["probes"].pop("peer_code")
+            else:
+                altered["images"][name]["probes"] = {
+                    kind: BASE + 16384 * ("clean", "bounds", "peer").index(name) + 30 + 4 * i
+                    for i, kind in enumerate(sorted(budget.PROBE_NAMES))
+                }
+            probe_cases.append(altered)
+        if mode in FIXTURE_MODES:
+            altered = copy.deepcopy(meta)
+            altered["images"]["peer"].update(context_begin=0, context_end=0)
+            probe_cases.append(altered)
+        for altered in probe_cases:
+            try:
+                validate(status, text, mode, altered)
+            except (ValueError, TypeError, KeyError):
+                rejected += 1
+            else:
+                raise RuntimeError("Dispatcher probe authority widened: " + mode)
         for code, bad in failures:
             try:
                 validate(code, bad, mode, meta)

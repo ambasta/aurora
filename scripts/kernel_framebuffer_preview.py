@@ -14,7 +14,7 @@ import tty
 import zlib
 
 import kernel_framebuffer_admission as admission
-from framebuffer_capture_oracle import HEIGHT, WIDTH, need, parse_ppm
+from framebuffer_capture_oracle import HEIGHT, MODES, WIDTH, need, parse_ppm
 from qemu_transport import firmware_args as firmware_options
 import qemu_transport as transport
 
@@ -64,12 +64,13 @@ def run(qemu, firmware, code, variables, data, *, build_dir, full_smoke=False):
             build_dir.is_absolute() and build_dir.parts[-3:] == ("kernel-images", "uefi", "framebuffer"),
             "full smoke requires the native framebuffer profile directory",
         )
-    modes = admission.MODES if full_smoke else ("framebuffer",)
-    profiles = {mode: build_dir.parent / mode for mode in modes} if full_smoke else {"framebuffer": build_dir}
+    # Every case boots the one admitted capture image; its release byte selects it.
+    modes = MODES if full_smoke else ("framebuffer",)
+    profiles = {mode: build_dir for mode in modes}
     admitted = {}
     for mode in modes:
         admission.configure_paths(profiles[mode], ROOT)
-        admitted[mode] = admission.checked(mode)
+        admitted[mode] = admission.checked("framebuffer")
     firmware_args = firmware_options(firmware, code, variables)
     parent = ROOT / "build/framebuffer-preview"
     parent.mkdir(exist_ok=True)
@@ -82,7 +83,9 @@ def run(qemu, firmware, code, variables, data, *, build_dir, full_smoke=False):
         for mode in modes:
             admission.configure_paths(profiles[mode], ROOT)
             if full_smoke:
-                need(admission.checked(mode) == admitted[mode], "admitted framebuffer image changed before capture")
+                need(
+                    admission.checked("framebuffer") == admitted[mode], "admitted framebuffer image changed before capture"
+                )
             destination = directory / (mode if full_smoke else "capture")
             result = capture.run_case(
                 mode,
@@ -96,7 +99,7 @@ def run(qemu, firmware, code, variables, data, *, build_dir, full_smoke=False):
             receipt["cases"].append(result)
             unsettled = bool(result.get("unsettled"))
             need(result["status"] == "passed", result.get("error", "capture cleanup failed"))
-            need(admission.checked(mode) == admitted[mode], "admitted framebuffer image changed after capture")
+            need(admission.checked("framebuffer") == admitted[mode], "admitted framebuffer image changed after capture")
             if mode == "framebuffer":
                 image = directory / "framebuffer.png"
                 image.write_bytes(png((destination / "after.ppm").read_bytes()))

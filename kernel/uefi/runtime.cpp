@@ -108,7 +108,7 @@
 #endif
 namespace aurora::uefi {
 extern std::uint64_t saved_rsp asm("uefi_runtime_saved_rsp") __attribute__((visibility("hidden")));
-#if defined(AURORA_UEFI_IPC) || defined(AURORA_OWNED_TEXT)
+#if defined(AURORA_UEFI_IPC) || defined(AURORA_OWNED_TEXT) || defined(AURORA_RUNTIME_CONTROL_FIXTURE)
 auto enter(std::uint64_t, std::uint64_t, const std::uint64_t *) -> std::uint64_t asm("uefi_runtime_enter")
     __attribute__((visibility("hidden")));
 #else
@@ -180,6 +180,13 @@ using hardware::Serial;
 #endif
 using user::ProgramEvent;
 using L = RuntimeLayout;
+#if defined(AURORA_BUDGET_FIXTURE) || defined(AURORA_DISPATCH_FIXTURE) || defined(AURORA_USER_FIXTURE)
+#define AURORA_IPC_PROBES
+// The fixture launcher appends one hostile-probe selector word, loaded into %rax.
+constexpr std::size_t launch_words = 8;
+#else
+constexpr std::size_t launch_words = 7;
+#endif
 #if defined(AURORA_USER_RESUME) || defined(AURORA_BLOCKING_CALL) || defined(AURORA_RAM_FILE) ||                        \
     defined(AURORA_CONSOLE_REGION)
 // Saved transport state is shared; each caller retains its distinct authority checks.
@@ -199,7 +206,7 @@ public:
     unsigned initial{};
 #endif
 #ifndef AURORA_CONSOLE_REGION
-    std::array<U64, 7> launch{};
+    std::array<U64, launch_words> launch{};
 #endif
     unsigned remaining{}, ticks{}, resumes{}, compiled{}, contexts{};
 #ifdef AURORA_CONSOLE_REGION
@@ -265,7 +272,7 @@ std::optional<SelectedRunAuthority> run_authority;
 SelectedRunAuthority::Role selected_role = SelectedRunAuthority::Role::client;
 #endif
 #ifdef AURORA_UEFI_SERVICE_BUDGET
-std::array<U64, 7> launch{};
+std::array<U64, launch_words> launch{};
 std::optional<LocalApicAdmission> interrupt_admission;
 #else
 std::array<U64, 6> launch{};
@@ -641,7 +648,14 @@ auto execute(unsigned index, ProgramEvent wanted) -> void {
     if (fixture == Fixture::runtime_entry_stack)
         put(view(arena + L::gdt_offset + 256, 104), 4, arena + L::rsp0_bottom);
 #endif
+#ifdef AURORA_RUNTIME_CONTROL_FIXTURE
+    // The clean image's entry runs the selected hostile probe; 0 runs the program.
+    const std::array<U64, 6> probe{index == 0 ? runtime_probe() : 0, 0, 0, 0, 0, 0};
+    require(enter(domain.contract->entry(), domain.contract->layout().user_stack_top(), probe.data()) == 1,
+            "trusted continuation");
+#else
     require(enter(domain.contract->entry(), domain.contract->layout().user_stack_top()) == 1, "trusted continuation");
+#endif
     const auto current_stack = stack();
     require(root() == kernel_root && active == L::domain_count && saved_rsp == 0 && !program.running() &&
                 current_stack >= arena + Handoff::stack_bottom && current_stack < arena + Handoff::stack_top,
@@ -735,6 +749,10 @@ extern "C" [[noreturn]] void __au_runtime_bytes_kernel_fault(U64) noexcept {
 auto dispatch(U64, U64, U64, U64, U64, U64) -> U64 asm("aurora_exception_dispatch")
     __attribute__((visibility("hidden")));
 auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U64 {
+#if defined(AURORA_IPC_FIXTURE) || defined(AURORA_SNAPSHOT_FIXTURE) || defined(AURORA_PROGRAM_FIXTURE)
+    if (hostile_exit_fixture(vector, pc, frame, result))
+        return 0;
+#endif
 #if defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_CONSOLE_REGION) || defined(AURORA_RAM_SCRATCHPAD_CONSOLE)
     if (program_console_interrupt(vector, error, pc, cs, frame))
         return 0;
@@ -948,7 +966,10 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
         return false;
     install_architecture();
 #if defined(AURORA_RUNTIME_CONTROL_FIXTURE)
-    select_fixture(Fixture::runtime_root, Fixture::runtime_entry_stack);
+    select_fixture(Fixture::runtime_root, Fixture::runtime_terminal_output);
+    user::terminal_mutation = fixture == Fixture::runtime_terminal_input    ? 1
+                              : fixture == Fixture::runtime_terminal_output ? 2
+                                                                            : 0;
 #elif defined(AURORA_PIN_FIXTURE)
     select_fixture(Fixture::runtime_pin_cancel, Fixture::runtime_pin_exhaust);
     const bool restart_service = fixture == Fixture::runtime_pin_fault;
@@ -958,13 +979,13 @@ const bool restart_service = fixture == Fixture::runtime_table_quarantine;
 #endif
 #ifdef AURORA_UEFI_SERVICE_BUDGET
 #ifdef AURORA_BUDGET_FIXTURE
-    select_fixture(Fixture::budget_fault, Fixture::budget_epoch);
+    select_fixture(Fixture::budget_fault, Fixture::budget_context);
 #elif defined(AURORA_DISPATCH_FIXTURE)
-    select_fixture(Fixture::dispatch_budget, Fixture::dispatch_root);
+    select_fixture(Fixture::dispatch_budget, Fixture::dispatch_peer_code);
 #elif defined(AURORA_USER_FIXTURE)
-    select_fixture(Fixture::user_retire_pending, Fixture::user_stale_grant);
+    select_fixture(Fixture::user_retire_pending, Fixture::user_unknown);
 #elif defined(AURORA_PROGRAM_FIXTURE)
-    select_fixture(Fixture::program_request_fault, Fixture::program_pending);
+    select_fixture(Fixture::program_request_fault, Fixture::program_unknown);
 #endif
     initialize_service_timer();
 #endif

@@ -74,9 +74,6 @@ UEFI_FAMILIES = [
         ["-DAURORA_UEFI_FRAMEBUFFER", "-DAURORA_UEFI_FRAMEBUFFER_FIXTURE", "-DAURORA_UEFI_FRAMEBUFFER_CAPTURE"],
         {
             "framebuffer": [],
-            "framebuffer-record": ["-DAURORA_FRAMEBUFFER_RECORD"],
-            "framebuffer-permissions": ["-DAURORA_FRAMEBUFFER_PERMISSIONS"],
-            "framebuffer-stale": ["-DAURORA_FRAMEBUFFER_STALE"],
         },
     ),
     (["-DAURORA_UEFI_FRAMEBUFFER", "-DAURORA_UEFI_FRAMEBUFFER_PROBE"], {"framebuffer-probe": []}),
@@ -107,19 +104,13 @@ UEFI_FAMILIES = [
         {
             "snapshot": [],
             "snapshot-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_SNAPSHOT_FIXTURE"],
-            "snapshot-owner": ["-DAURORA_SNAPSHOT_OWNER"],
-            "snapshot-reply-reserved": ["-DAURORA_SNAPSHOT_REPLY_RESERVED"],
-            "snapshot-reply-byte": ["-DAURORA_SNAPSHOT_REPLY_BYTE"],
         },
     ),
     (
         ["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_CONSOLE"],
         {
             "console": [],
-            "console-service-stale": ["-DAURORA_CONSOLE_SERVICE_STALE"],
-            "console-service-reentry": ["-DAURORA_CONSOLE_SERVICE_REENTRY"],
-            "console-service-timeout": ["-DAURORA_CONSOLE_SERVICE_TIMEOUT"],
-            "console-service-report": ["-DAURORA_CONSOLE_SERVICE_REPORT"],
+            "console-fixture": ["-DAURORA_CONSOLE_SERVICE_FIXTURE"],
         },
     ),
     (
@@ -137,10 +128,6 @@ UEFI_FAMILIES = [
             "program-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_PROGRAM_FIXTURE"],
             "program-file-call": ["-DAURORA_BLOCKING_CALL", "-DAURORA_FILE_CALL"],
             "program-file-call-fixture": ["-DAURORA_BLOCKING_CALL", "-DAURORA_FILE_CALL", "-DAURORA_RUNTIME_FIXTURE"],
-            "program-owner": ["-DAURORA_PROGRAM_OWNER"],
-            "program-ordinal": ["-DAURORA_PROGRAM_ORDINAL"],
-            "program-unknown": ["-DAURORA_PROGRAM_UNKNOWN"],
-            "program-transaction": ["-DAURORA_PROGRAM_TRANSACTION"],
         },
     ),
     (
@@ -152,9 +139,7 @@ UEFI_FAMILIES = [
             "-DAURORA_UEFI_IVRS",
         ],
         {
-            "ivrs-default": ["-DAURORA_IVRS_DEFAULT"],
             "ivrs-fixture": ["-DAURORA_IVRS_FIXTURE"],
-            "ivrs-read": ["-DAURORA_IVRS_READ"],
         },
     ),
     (
@@ -170,11 +155,7 @@ UEFI_FAMILIES = [
     (
         ["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI", "-DAURORA_UEFI_BAR_CAPTURE", "-DAURORA_UEFI_BAR_EDK2"],
         {
-            "bar-read": [],
-            "bar-inherited": [],
-            "bar-write": ["-DAURORA_BAR_WRITE"],
-            "bar-revoked": ["-DAURORA_BAR_REVOKED"],
-            "bar-alias": ["-DAURORA_BAR_ALIAS"],
+            "bar-fixture": ["-DAURORA_BAR_FIXTURE"],
         },
     ),
     (
@@ -196,8 +177,6 @@ UEFI_FAMILIES = [
             "user-resume": ["-DAURORA_USER_RESUME"],
             "user-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_USER_FIXTURE"],
             "user-phases": ["-DAURORA_USER_PHASES"],
-            "user-context": ["-DAURORA_USER_CONTEXT"],
-            "user-unknown": ["-DAURORA_USER_UNKNOWN"],
         },
     ),
     (
@@ -212,7 +191,6 @@ UEFI_FAMILIES = [
         {
             "dispatch": [],
             "dispatch-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_DISPATCH_FIXTURE"],
-            "dispatch-peer-code": ["-DAURORA_DISPATCH_PEER_CODE"],
         },
     ),
     (
@@ -226,11 +204,6 @@ UEFI_FAMILIES = [
         {
             "budget": [],
             "budget-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_BUDGET_FIXTURE"],
-            "budget-noapic": ["-DAURORA_BUDGET_NOAPIC"],
-            "budget-mmio": ["-DAURORA_BUDGET_MMIO"],
-            "budget-softint": ["-DAURORA_BUDGET_SOFTINT"],
-            "budget-fpu": ["-DAURORA_BUDGET_FPU"],
-            "budget-context": ["-DAURORA_BUDGET_CONTEXT"],
         },
     ),
     (
@@ -238,19 +211,6 @@ UEFI_FAMILIES = [
         {
             "ipc": [],
             "ipc-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_IPC_FIXTURE"],
-            "ipc-owner": ["-DAURORA_IPC_OWNER"],
-            "ipc-version": ["-DAURORA_IPC_VERSION"],
-            "ipc-phase": ["-DAURORA_IPC_PHASE"],
-            "ipc-transaction": ["-DAURORA_IPC_TRANSACTION"],
-            "ipc-site": ["-DAURORA_IPC_SITE"],
-            "ipc-unknown": ["-DAURORA_IPC_UNKNOWN"],
-        },
-    ),
-    (
-        ["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI", "-DAURORA_UEFI_RUNTIME"],
-        {
-            "runtime-terminal-input": ["-DAURORA_TERMINAL_EVENT_INPUT"],
-            "runtime-terminal-output": ["-DAURORA_TERMINAL_EVENT_OUTPUT"],
         },
     ),
     (
@@ -282,17 +242,7 @@ UEFI_FAMILIES = [
             "runtime": [],
             "runtime-span": [],
             "runtime-multipage": ["-DAURORA_RUNTIME_MULTIPAGE"],
-            "runtime-code": ["-DAURORA_RUNTIME_CODE"],
-            "runtime-stack": ["-DAURORA_RUNTIME_STACK"],
-            "runtime-kernel": ["-DAURORA_RUNTIME_KERNEL"],
-            "runtime-window": ["-DAURORA_RUNTIME_WINDOW"],
             "runtime-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_RUNTIME_CONTROL_FIXTURE"],
-            "runtime-write": ["-DAURORA_RUNTIME_WRITE"],
-            "runtime-nx": ["-DAURORA_RUNTIME_NX"],
-            "runtime-return": ["-DAURORA_RUNTIME_RETURN"],
-            "runtime-unknown": ["-DAURORA_RUNTIME_UNKNOWN"],
-            "runtime-syscall": ["-DAURORA_RUNTIME_SYSCALL"],
-            "runtime-sysenter": ["-DAURORA_RUNTIME_SYSENTER"],
         },
     ),
     (["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI"], {"pci": [], "pci-devices": [], "pci-bridge": []}),
@@ -388,15 +338,11 @@ def user_images(
                 "multipage" if mode == "multipage" else "span-clean" if name == "clean" and mode == "span" else name
             )
             entry = "kernel/uefi/user-image-entry.S"
-            defines = (
-                ["UEFI_USER_" + mode.upper() + "=1"]
-                if index == 0
-                and mode
-                in ("code", "stack", "window", "kernel", "write", "nx", "return", "unknown", "syscall", "sysenter")
-                else []
-            )
+            defines = []
             if mode == "multipage" and index == 1:
                 defines.append("UEFI_USER_MULTIPAGE_FAULT=1")
+            if mode == "fixture" and index == 0:
+                defines.append("UEFI_USER_PROBES=1")
         else:
             source = "budget-service" if budget and index == 1 else "ipc-client" if index == 0 else "ipc-service"
             if program:
@@ -423,16 +369,11 @@ def user_images(
                 if scratchpad and index == 0
                 else "kernel/uefi/ipc-user-entry.S"
             )
-            hostile = (index == 0 and mode in ("owner", "stale", "version", "phase", "site", "unknown", "ordinal")) or (
-                index == 1 and mode in ("transaction", "mmio", "softint", "fpu", "context")
-            )
-            if dispatcher and index == 2 and mode == "peer-code":
-                hostile = True
-            if user_budget and mode == "context":
-                hostile = index == 0
-            defines = ["IPC_" + mode.upper().replace("-", "_") + "=1"] if hostile else []
-            if user_budget and mode == "context" and index == 0:
-                defines.append("IPC_CLIENT_CONTEXT=1")
+            # Fixture kernels select hostile probes in the one domain whose former
+            # image carried them: the user client, the dispatcher's peer, or the
+            # budget service.
+            probe_index = 0 if user_budget else 2 if dispatcher else 1
+            defines = ["IPC_PROBES=1"] if mode == "probes" and index == probe_index else []
             if (blocking_call or ram_file) and not scratchpad and index == 0:
                 defines.append("CALL_CLIENT=1")
             if ram_file and index == 1:
@@ -441,8 +382,6 @@ def user_images(
                 defines.append(
                     "SNAPSHOT_SERVICE=1" if snapshot or (blocking_call and not file_call) else "PROGRAM_NOTE_SERVICE=1"
                 )
-                if mode in ("reply-reserved", "reply-byte"):
-                    defines.append("SNAPSHOT_" + mode.upper().replace("-", "_") + "=1")
         result[name] = dict(
             source=(
                 "examples/kernel-ram-scratchpad-client.au"
@@ -604,26 +543,12 @@ def uefi_profile(mode, flags):
     user_budget = scratchpad or mode.startswith(("user-", "program-"))
     program = mode.startswith("program-")
     snapshot = mode.startswith("snapshot")
-    console = mode == "console" or mode.startswith("console-service-")
+    console = mode in ("console", "console-fixture")
     graphical = mode in ("graphical-console", "graphical-console-capture")
-    framebuffer = mode in ("framebuffer", "framebuffer-record", "framebuffer-permissions", "framebuffer-stale")
+    framebuffer = mode == "framebuffer"
     event = mode.startswith("iommu-event-")
     user_mode = "normal"
-    if mode.startswith("runtime-") and mode[8:] in (
-        "span",
-        "multipage",
-        "owned-text",
-        "code",
-        "stack",
-        "kernel",
-        "window",
-        "write",
-        "nx",
-        "return",
-        "unknown",
-        "syscall",
-        "sysenter",
-    ):
+    if mode.startswith("runtime-") and mode[8:] in ("span", "multipage", "owned-text", "fixture"):
         user_mode = mode[8:]
     if owned_text:
         user_mode = (
@@ -633,18 +558,10 @@ def uefi_profile(mode, flags):
             if console_region
             else "owned-text"
         )
-    if snapshot and mode in ("snapshot-owner", "snapshot-reply-reserved", "snapshot-reply-byte"):
-        user_mode = mode[9:]
-    if program and mode in ("program-owner", "program-ordinal", "program-unknown", "program-transaction"):
-        user_mode = mode[8:]
-    if mode in ("user-unknown", "user-context", "user-resume"):
-        user_mode = mode[5:]
-    if mode == "dispatch-peer-code":
-        user_mode = "peer-code"
-    if mode.startswith("budget-") and mode[7:] in ("mmio", "softint", "fpu", "context"):
-        user_mode = mode[7:]
-    if mode.startswith("ipc-") and mode[4:] in ("owner", "version", "phase", "transaction", "site", "unknown"):
-        user_mode = mode[4:]
+    if mode == "user-resume":
+        user_mode = "resume"
+    if mode in ("budget-fixture", "dispatch-fixture", "user-fixture"):
+        user_mode = "probes"
     user_options = [
         option
         for enabled, option in (
@@ -726,6 +643,10 @@ def uefi_profile(mode, flags):
             runtime_flags += ["--defsym", "AURORA_USER_RESUME=1"]
         if blocking_call or ram_file:
             runtime_flags += ["--defsym", "AURORA_BLOCKING_CALL=1"]
+        if mode == "runtime-fixture":
+            runtime_flags += ["--defsym", "AURORA_RUNTIME_PROBES=1"]
+        if mode in ("budget-fixture", "dispatch-fixture", "user-fixture"):
+            runtime_flags += ["--defsym", "AURORA_IPC_PROBES=1"]
         assembly["runtime-entry"] = dict(source="kernel/uefi/runtime-entry.S", flags=["--64"] + runtime_flags)
         assembly["runtime-exceptions"] = dict(
             source="kernel/exceptions.S",
@@ -774,8 +695,6 @@ def uefi_profile(mode, flags):
         image_options += ["--owned-text"]
     if console_region:
         image_options += ["--console-region"]
-    if mode == "budget-noapic":
-        image_options += ["--budget-noapic"]
     if snapshot or (blocking_call and not file_call):
         image_options += ["--snapshot"] + (["--call-snapshot"] if blocking_call else [])
     if mode == "owned-bytes":
@@ -842,8 +761,8 @@ def uefi_profile(mode, flags):
 
 UEFI_ALIASES = {
     "budget-smp": "budget",
-    "ivrs-missing": "ivrs-read",
-    "bar-inherited": "bar-read",
+    # Rejected in ACPI discovery, before the fixture selector is read.
+    "ivrs-missing": "ivrs-fixture",
     "pci-devices": "pci",
     "pci-bridge": "pci",
     "acpi-two": "acpi",

@@ -21,7 +21,13 @@ MODES = SUCCESS + (
     "snapshot-reply-reserved",
     "snapshot-reply-byte",
 )
-FIXTURE_MODES = ("snapshot-fault", "snapshot-cancel", "snapshot-stale", "snapshot-revoked") + PRODUCER_FAILURES
+# Modes that boot the shared snapshot-fixture image, from the one fixture table.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import kernel_profiles  # noqa: E402
+
+FIXTURE_MODES = tuple(
+    mode for mode, (image, _) in kernel_profiles.FIXTURE_MODES.items() if image == "snapshot-fixture"
+)
 DONE = (1 << 64) - 1
 STACK = r"(\d+)"
 SUFFIX = ipc.SUFFIX

@@ -194,10 +194,11 @@ class BarRunner(unittest.TestCase):
                         stock_check.assert_called_once_with("synthetic stock trace\n")
                         stock_check.reset_mock()
                     else:
-                        with self.assertRaisesRegex(ValueError, "Missing/duplicate/malformed descriptor"):
+                        # The early-refusal serial has neither the selector nor descriptors.
+                        with self.assertRaisesRegex(ValueError, "Exact BAR fixture readiness"):
                             controls.generate(family, root, self.qemu, self.data, self.stock, self.env)
                         stock_check.assert_not_called()
-                    native.assert_called_once_with("bar-read", root / "stock", self.env)
+                    native.assert_called_once_with("bar-inherited", root / "stock", self.env)
                     msix.assert_not_called()
 
     def test_supported_firmware_prefix_checks_marker_patch_and_image_shapes(self):
@@ -325,7 +326,7 @@ class BarRunner(unittest.TestCase):
         )
         ivrs = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(ivrs)
-        build = self.build.parent / "ivrs-read"
+        build = self.build.parent / "ivrs-fixture"
         build.mkdir(parents=True)
         paths = dict(QEMU=self.qemu, QEMU_DATA=self.data, AURORA_IVRS_COVERAGE=self.coverage_path)
         with (
@@ -455,7 +456,7 @@ class BarRunner(unittest.TestCase):
         self.assertEqual(self.calls.read_text().splitlines(), ["bar-prepare"])
 
     def test_hardware_alias_uses_canonical_image_and_original_guest_mode(self):
-        build = self.build.parent / "bar-read"
+        build = self.build.parent / "bar-fixture"
         self.builder.write_text("print(" + repr(str(build)) + ")\n")
         with patch.object(runner, "execute") as execute, redirect_stdout(io.StringIO()):
             runner.run("bar-inherited", self.out)

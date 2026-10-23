@@ -106,7 +106,7 @@ and shared exception object relocations; absolute relocations are rejected.
   rollback and final cleanup.
 - `runtime-code`, `runtime-stack`: cross-domain fetch/read denial.
 - `runtime-kernel`, `runtime-window`: supervisor arena and absent ECAM-window
-  read denial. The kernel-read fixture contains a narrowly validated test-only
+  read denial. The fixture client contains a narrowly validated test-only
   address literal patched to the actual arena before its image becomes RX.
 - `runtime-root`: an otherwise valid return under the wrong actual root fails.
 - `runtime-kernel-trap`: a known emitted UD2 reached at CPL0 remains fatal.
@@ -116,6 +116,15 @@ and shared exception object relocations; absolute relocations are rejected.
 - `runtime-return`, `runtime-unknown`: forged return and unrecognized UD2 denial.
 - `runtime-syscall`, `runtime-sysenter`: alternate inherited entry mechanisms
   cannot transfer user execution to firmware/kernel targets.
+
+All runtime fault modes boot the one `runtime-fixture` image and pick their case
+from the serial selector. The ten user-fault cases used to be separate images,
+each with a client built for one probe. The fixture's clean client now carries
+every probe and the trusted launcher passes the selected one in its first entry
+argument (`runtime_probe()`); the bounds client, page tables and every kernel
+check that rejects a probe are unchanged. The image generator still admits each
+probe address (inside the image, not aliasing a registered site) and records it
+as `probes` metadata, and each mode keeps its own guest run and exact transcript.
 
 The 66 earlier modes remain acceptance gates. These tests establish this
 bounded emulator mechanism, not arbitrary firmware correctness, DMA quiescence,

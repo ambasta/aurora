@@ -153,8 +153,9 @@ auto initialize_service_timer() -> void {
     std::uint32_t a, b, c, d;
     asm volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(1), "c"(0));
     const auto leaf_ebx = b;
-#ifdef AURORA_BUDGET_NOAPIC
-    d &= ~(1U << 9);
+#if defined(AURORA_BUDGET_FIXTURE)
+    if (fixture == Fixture::budget_noapic)
+        d &= ~(1U << 9);
 #endif
     const auto leaf_edx = d;
     require((leaf_edx & ((1U << 5) | (1U << 9) | (1U << 16))) == ((1U << 5) | (1U << 9) | (1U << 16)),
@@ -476,9 +477,9 @@ auto service_timer_interrupt(U64 vector, U64 error, U64 pc, U64 cs, U64 frame) -
     if (pc >= images::bounds_compiled_begin && pc < images::bounds_compiled_end)
         ++timer_compiled_hits;
 #endif
-#ifdef AURORA_USER_CONTEXT
-    if (active == 0 && images::clean_context_begin && pc >= images::clean_context_begin &&
-        pc <= images::clean_context_end) {
+#if defined(AURORA_USER_FIXTURE)
+    if (fixture == Fixture::user_context && active == 0 && images::clean_context_begin &&
+        pc >= images::clean_context_begin && pc <= images::clean_context_end) {
         constexpr std::array<U64, 15> sentinels{255, 238, 221, 204, 187, 170, 153, 136, 119, 102, 85, 68, 51, 34, 17};
         for (unsigned index = 0; index < 15; ++index)
             require(context->words()[index] == sentinels[index], "user timer GPR preservation");
@@ -487,8 +488,8 @@ auto service_timer_interrupt(U64 vector, U64 error, U64 pc, U64 cs, U64 frame) -
         context_sample = true;
     }
 #endif
-#ifdef AURORA_BUDGET_CONTEXT
-    if (pc >= images::bounds_context_begin && pc <= images::bounds_context_end) {
+#if defined(AURORA_BUDGET_FIXTURE)
+    if (fixture == Fixture::budget_context && pc >= images::bounds_context_begin && pc <= images::bounds_context_end) {
         constexpr std::array<U64, 15> sentinels{255, 238, 221, 204, 187, 170, 153, 136, 119, 102, 85, 68, 51, 34, 17};
         for (unsigned index = 0; index < 15; ++index)
             require(context->words()[index] == sentinels[index], "timer GPR preservation");

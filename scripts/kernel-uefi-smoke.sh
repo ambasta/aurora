@@ -90,11 +90,7 @@ from pathlib import Path
 import json,sys
 root=Path(sys.argv[2])
 timer=root/'service-timer-metadata.json'
-if sys.argv[1]=='budget-noapic':
-    if timer.exists(): raise ValueError('Early budget rejection has timer metadata')
-    kernel=None
-else:
-    kernel=json.loads(timer.read_text())
+kernel=json.loads(timer.read_text())
 (Path(sys.argv[3])/(sys.argv[1]+'.metadata.json')).write_text(json.dumps(dict(images=json.loads((root/'user-images.json').read_text()),kernel=kernel),indent=2)+'\n')
 PYMETA
     if [[ "$mode" == user-* ]]; then

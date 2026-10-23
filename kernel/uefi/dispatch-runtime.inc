@@ -125,6 +125,9 @@ auto dispatch_execute(unsigned client,
     selected_role = index == 1 ? RunAuthority::Role::service : RunAuthority::Role::client;
     launch[6] = 0x202;
 #endif
+#ifdef AURORA_IPC_PROBES
+    launch[7] = ipc_probe(index, source_phase);
+#endif
     for (const auto &lease : domain.stacks) {
         const auto address = frames.address(*lease);
         require(address.has_value(), "dispatch stack lease");
@@ -179,8 +182,8 @@ auto dispatch_execute(unsigned client,
             "dispatch continuation");
 #ifdef AURORA_UEFI_USER_BUDGET
     timer_finish();
-#ifdef AURORA_USER_CONTEXT
-    if (index == 0 && phase == ipc::Phase::request)
+#if defined(AURORA_USER_FIXTURE)
+    if (fixture == Fixture::user_context && index == 0 && phase == ipc::Phase::request)
         require(timer_context_hits > 0, "user register probe interrupt");
 #endif
 #else

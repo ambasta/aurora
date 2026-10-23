@@ -482,6 +482,10 @@ if get_option('kernel_images')
       depends: kernel_profile_images['uefi/' + mode], suite: ['full', 'slow', 'integration', 'boot'],
       env: native_test_env, workdir: native_root, timeout: 900)
   endforeach
+  test('native-kernel-profile-images', python,
+      args: ['-B', files('../../tests/kernel-profile-images.py'), meson.project_build_root() / 'kernel-images'],
+      depends: kernel_images_all, suite: ['full', 'slow', 'integration', 'boot'],
+      env: native_test_env, workdir: native_root, timeout: 900)
   test('native-bios-image', python,
       args: ['-B', files('../../tests/kernel-image.py'), '--build-dir', bios_image_dir, '--check-only'],
       depends: bios_image, suite: ['full', 'slow', 'integration', 'boot'],

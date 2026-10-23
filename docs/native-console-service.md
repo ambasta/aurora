@@ -273,9 +273,13 @@ No externally supplied reviewer digest is required. Independent source/image
 review and the final-source gates above remain requirements for changed code;
 a generated report or successful guest does not replace them.
 
-The four fault images exercise stale generation after close/reopen, operation
+The four fault modes exercise stale generation after close/reopen, operation
 reentry from a wait hook, transmit failure after exactly 17 output bytes and a
-noncanonical copied damage boolean. The timeout is a transport-result injection,
+noncanonical copied damage boolean. They boot one `console-fixture` image, which
+reads its serial selector before any timer, IDT or UART input state exists; the
+driver maps each mode to that image (`--build-dir` names `console-fixture`) and
+keeps the four exact fault oracles. They used to be four separately compiled
+images whose only difference was the selected injection. The timeout is a transport-result injection,
 not actual UART hardware fault induction. Hostile source/IR and fake-port UART
 controls remain separate. Historical passes cover only their recorded source,
 toolchain and emulator; they do not qualify a later image or prove OS readiness.

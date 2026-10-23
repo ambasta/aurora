@@ -67,13 +67,13 @@
 }
 auto run_user_lifecycle() -> void {
 #ifdef AURORA_USER_FIXTURE
-    if (fixture == Fixture::user_pending) {
+    if (fixture == Fixture::user_pending || fixture == Fixture::user_context || fixture == Fixture::user_unknown) {
         run_dispatcher();
         Serial::text("AURORA_UEFI_USER_PHASES_OK\r\n");
         return;
     }
 #endif
-#if defined(AURORA_USER_PHASES) || defined(AURORA_USER_CONTEXT) || defined(AURORA_USER_UNKNOWN)
+#ifdef AURORA_USER_PHASES
     run_dispatcher();
 #else
     dispatcher.emplace(registry);

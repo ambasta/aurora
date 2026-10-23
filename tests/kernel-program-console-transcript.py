@@ -340,7 +340,9 @@ for mode, command, value, missing in (
 for mode, reason in module.FAILSTOP_REASONS.items():
     image = images["bounds" if mode == "program-transaction" else "clean"]
     vector = 6 if mode == "program-unknown" else 129
-    pc = image["probe_pc"] if vector == 6 else image["return_pc"]
+    # program-unknown: the fixture resumes the client at its wrapper's bad_entry
+    # ud2, just after the return site, which is no registered site.
+    pc = image["return_pc"] + (2 if mode == "program-unknown" else 0)
     text = (
         "AURORA_PROGRAM_COMMAND_BEGIN: grant=1 length=1 domains=2 kind=upper\r\n"
         f"AURORA_UEFI_DOMAIN_EVENT: vector={vector} error=0 pc={pc} cpl=3 root=42\r\n"

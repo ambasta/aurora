@@ -4,6 +4,9 @@
 .ifdef AURORA_OWNED_TEXT
 .set AURORA_REGISTER_LAUNCH,1
 .endif
+.ifdef AURORA_RUNTIME_PROBES
+.set AURORA_REGISTER_LAUNCH,1
+.endif
 .ifdef AURORA_BLOCKING_CALL
 .set AURORA_REGISTER_TRAP,1
 .endif
@@ -92,6 +95,10 @@ uefi_runtime_enter:
     mov 24(%r11),%rcx
     mov 32(%r11),%r8
     mov 40(%r11),%r9
+.ifdef AURORA_IPC_PROBES
+    # Fixture-only hostile-probe selector; the wrapper checks it is at most 6.
+    mov 56(%r11),%rax
+.endif
     xor %r11d,%r11d
 .endif
     iretq

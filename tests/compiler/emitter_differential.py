@@ -24,6 +24,7 @@ An accepted unlisted input fails until explicitly added to historical coverage.
 """
 
 import argparse
+import concurrent.futures
 import hashlib
 import json
 import os
@@ -359,6 +360,33 @@ def observe_case(
     return runs, comparisons, problems
 
 
+def case_workers():
+    """One worker per available CPU, bounded so concurrent compilers fit in memory."""
+    cpus = len(os.sched_getaffinity(0))
+    with open("/proc/meminfo") as meminfo:
+        available = next(int(line.split()[1]) for line in meminfo if line.startswith("MemAvailable:"))
+    # The whole-frontend input peaks near 1.75 GiB; allow 2 GiB per worker.
+    return max(1, min(cpus, available // (2 * 1024 * 1024)))
+
+
+def run_case(job):
+    case, compilers, arguments, root, timeout, historical, must_accept, current_convergence, relative = job
+    case.mkdir(parents=True)
+    runs, comparisons, problems = observe_case(
+        case,
+        compilers,
+        arguments,
+        root,
+        timeout,
+        historical=historical,
+        must_accept=must_accept,
+        current_convergence=current_convergence,
+        source=relative,
+    )
+    write_json(case / "comparison.json", {"source": relative, "comparisons": comparisons, "problems": problems})
+    return relative, runs, problems
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--old-compiler", type=Path, required=True, help="explicit external old-backend executable")
@@ -458,11 +486,10 @@ def main():
                 "limits": "Artifact identity is not compiler build provenance; no machine execution or I/O injection",
             },
         )
+        compiler_by_label = dict(zip(labels, compilers, strict=True))
+        jobs = []
         for source in corpus:
             relative = source.relative_to(root)
-            case = artifacts / "cases" / relative
-            case.mkdir(parents=True)
-            invocation = case / "invocation"
             # Kernel programs import kernel/policies; without it they only "reject".
             roots = (
                 [module_root]
@@ -476,43 +503,44 @@ def main():
                 *(argument for path in roots for argument in ("--module-root", str(path))),
                 str(module_root / "aurora/compiler/frontend.au" if source == root / "compiler/frontend.au" else source),
                 "-o",
-                str(invocation / "assembly.s"),
+                str(artifacts / "cases" / relative / "invocation" / "assembly.s"),
                 "--stack-facts",
-                str(invocation / "stack.json"),
+                str(artifacts / "cases" / relative / "invocation" / "stack.json"),
                 "--abi-facts",
-                str(invocation / "abi.json"),
+                str(artifacts / "cases" / relative / "invocation" / "abi.json"),
             ]
             # Match the existing corpus watchdog and whole-frontend exception.
             timeout = 90 if source == root / "compiler/frontend.au" else 30
-            compiler_by_label = dict(zip(labels, compilers, strict=True))
-            must_accept = str(relative) not in EXPECTED_REJECTED
-            runs, comparisons, problems = observe_case(
-                case,
-                compiler_by_label,
-                arguments,
-                root,
-                timeout,
-                historical=str(relative) in historical,
-                must_accept=must_accept,
-                current_convergence=current_convergence,
-                source=str(relative),
+            jobs.append(
+                (
+                    artifacts / "cases" / relative,
+                    compiler_by_label,
+                    arguments,
+                    root,
+                    timeout,
+                    str(relative) in historical,
+                    str(relative) not in EXPECTED_REJECTED,
+                    current_convergence,
+                    str(relative),
+                )
             )
-            write_json(
-                case / "comparison.json", {"source": str(relative), "comparisons": comparisons, "problems": problems}
-            )
-            report["completed_inputs"] += 1
-            if not problems:
-                if "c1" in runs:
-                    report["current_convergence_inputs"].append(str(relative))
-                if str(relative) in new_consumers:
-                    report["new_consumers_converged"].append(str(relative))
-                elif runs["old"]["returncode"] == 0:
-                    report["accepted"] += 1
-                else:
-                    report["rejected"] += 1
-                    rejected.append(str(relative))
-            write_json(artifacts / "summary.json", report)
-            require(not problems, str(relative) + ": " + "; ".join(problems))
+        # Cases are independent compiler runs: observe them concurrently, then
+        # account for and fail on them in corpus order, exactly as before.
+        with concurrent.futures.ProcessPoolExecutor(max_workers=case_workers()) as pool:
+            for relative, runs, problems in pool.map(run_case, jobs):
+                report["completed_inputs"] += 1
+                if not problems:
+                    if "c1" in runs:
+                        report["current_convergence_inputs"].append(relative)
+                    if relative in new_consumers:
+                        report["new_consumers_converged"].append(relative)
+                    elif runs["old"]["returncode"] == 0:
+                        report["accepted"] += 1
+                    else:
+                        report["rejected"] += 1
+                        rejected.append(relative)
+                write_json(artifacts / "summary.json", report)
+                require(not problems, relative + ": " + "; ".join(problems))
         report["rejected_sources"] = rejected
         require(set(report["new_consumers_converged"]) == new_consumers, "New consumer convergence coverage changed")
         require(

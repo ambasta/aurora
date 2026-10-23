@@ -382,7 +382,9 @@ vector or the real returned word. The invalid vector is UINT64_MAX; the output
 control uses a volatile high reserved bit after the genuine call. Decoding uses
 original facts. The normal authenticated clean return must fail at the existing
 site-authority/fatal boundary with no accepted event or supervisor continuation.
-Both new UEFI modes retain the original runtime clock, not timed-service clocks.
+Both new UEFI modes retain the original runtime clock, not timed-service clocks. They are selected cases
+of the `runtime-fixture` image, as the BIOS pair are of the BIOS fault fixture;
+the UEFI pair used to be two separate builds.
 
 No compiler semantics, authority widening, source-language foreign ABI,
 performance parity, complete native aggregate, physical-hardware support or

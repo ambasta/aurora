@@ -36,6 +36,14 @@ lifetime ticket, and rechecks the closed page-table tree. The stale window is
 actually faulted in an emulator gate. Another gate verifies a write faults before
 any device write. No writable or differently cached alias is admitted.
 
+The read, inherited, write, revoked and alias gates boot one `bar-fixture` image
+that reads the serial selector after ACPI closure, before PCI discovery; state,
+capture and NVMe preparation remain distinct compositions. Write, revoked and
+alias used to be separate images. The fixture links both exact fault
+instructions for every case and each gate keeps its own serial, trace and
+provenance oracles; the stock-firmware trace control boots the same image as
+the inherited case.
+
 ## Explicit firmware fixture
 
 Original packaged OVMF leaves this controller active: command=7, CC=0x460001,

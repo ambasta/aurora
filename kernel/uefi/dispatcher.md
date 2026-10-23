@@ -77,6 +77,12 @@ revocation; no orphan-discard or general process lifecycle is claimed.
 - dispatch-peer-code: the third client actually faults reading another client's
   absent user code mapping, at the exact controlled probe site.
 
+Every mode except `dispatch` boots the one `dispatch-fixture` image and picks its
+case from the serial selector. dispatch-peer-code used to have its own image whose
+third client always ran the read. The fixture's third client now carries the
+shared selectable probe set (see [service-budget.md](service-budget.md)), and the
+launcher selects the peer-code probe for that client only when the mode asks.
+
 Run scripts/kernel-uefi-dispatch-tests.sh for layout, policy, image and transcript
 checks (SANITIZE=1 enables fatal ASan/UBSan), and
 scripts/kernel-uefi-dispatch-all.sh for the twelve actual OVMF modes. Existing

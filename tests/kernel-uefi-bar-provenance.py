@@ -24,6 +24,22 @@ def module(name, filename):
 
 image = module("bar_image", "kernel-uefi-image.py")
 trace = module("bar_trace", "kernel-uefi-bar-trace.py")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import kernel_profiles  # noqa: E402
+
+# Each bar-fixture case and its table selector; state, capture and prepare have none.
+SELECTORS = {
+    mode: value for mode, (profile, value) in kernel_profiles.FIXTURE_MODES.items() if profile == "bar-fixture"
+}
+
+
+def validate_selector(receipt):
+    expected, actual = SELECTORS.get(receipt.get("mode")), receipt.get("startup_byte")
+    need(
+        actual == expected and (expected is None or type(actual) is int)
+        and (expected is not None or "startup_byte" not in receipt),
+        "Wrong BAR fixture selector receipt",
+    )
 bar = trace.bar
 need = bar.need
 PINS = {
@@ -304,8 +320,9 @@ def validate_payload(loader, binary, elf, metadata, mode):
         "bar-write": ("uefi_bar_write_probe", bytes.fromhex("c70000000000")),
         "bar-revoked": ("uefi_bar_revoked_probe", bytes.fromhex("8b00")),
     }
+    # The bar-fixture image links both exact fault sites for every case.
     for candidate, (name, opcode) in sites.items():
-        if candidate == mode:
+        if mode in SELECTORS:
             at = symbols.get(name)
             need(
                 type(at) is int
@@ -399,6 +416,7 @@ def validate_receipt(receipt, contents, fixture_prefix=None):
             "firmware_source_revision" not in receipt and "firmware_package" not in receipt,
             "Stock firmware mislabeled with clean source identity",
         )
+    validate_selector(receipt)
     boot_root = validate_arguments(receipt, paths)
     return paths, boot_root
 
@@ -544,6 +562,18 @@ def self_test():
                 failures += 1
             else:
                 raise RuntimeError("Invalid launch provenance accepted")
+    for mode in ("bar-read", "bar-alias", "bar-state", "bar-prepare"):
+        good = dict(mode=mode) | ({"startup_byte": SELECTORS[mode]} if mode in SELECTORS else {})
+        validate_selector(good)
+        bad = [dict(good, startup_byte=0), dict(good, startup_byte=float(SELECTORS.get(mode, 1)))]
+        bad.append({key: value for key, value in good.items() if key != "startup_byte"} if mode in SELECTORS else dict(good, startup_byte=None))
+        for candidate in bad:
+            try:
+                validate_selector(candidate)
+            except ValueError:
+                failures += 1
+            else:
+                raise RuntimeError("Invalid BAR selector receipt accepted: " + mode)
     print(
         f"PASS: BAR provenance 4 synthetic launch profiles and {failures}"
         f" adversarial cases; real artifact checks required separately"

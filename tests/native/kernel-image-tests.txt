@@ -9,3 +9,4 @@ native-uefi-user-ram-file-fixture-image
 native-uefi-ram-file-linked-image
 native-uefi-ram-scratchpad-console-linked-image
 native-uefi-ram-scratchpad-console-fixture-linked-image
+native-kernel-profile-images

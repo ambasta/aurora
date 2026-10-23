@@ -609,10 +609,9 @@ class ConsoleFaultTransport(unittest.TestCase):
     def test_shared_fault_transport_retains_four_independent_fault_oracles(self):
         qualification = self.load()
         start = qualification.transport.start
-        prefix = (
-            b"AURORA_UEFI_LANGUAGE_OK: value=42\nAURORA_UEFI_OK\n"
-            b"AURORA_UEFI_CONSOLE_TIMER_READY: polling_count=1250000 uart_irq=0\n"
-        )
+        bootstrap = b"AURORA_UEFI_LANGUAGE_OK: value=42\nAURORA_UEFI_OK\n"
+        prefix = bootstrap + b"AURORA_FIXTURE_READY\n"
+        timer = b"AURORA_UEFI_CONSOLE_TIMER_READY: polling_count=1250000 uart_irq=0\n"
         ready = b"AURORA_CONSOLE_READY: UEFI, ASCII, 64-byte lines\naurora> "
         rejected = b"AURORA_UEFI_CONSOLE_FAIL: console service authority\n"
         tails = {"stale": rejected, "reentry": ready + rejected, "timeout": ready[:17], "report": ready}
@@ -621,7 +620,11 @@ class ConsoleFaultTransport(unittest.TestCase):
             for mode, tail in tails.items():
                 work = root / mode
                 work.mkdir()
-                body = "import os; os.write(1, " + repr(prefix + tail) + ")\n"
+                # The fake guest waits for its exact selector before the service.
+                selector = qualification.FIXTURE_MODES["console-service-" + mode][1]
+                body = "import os; os.write(1, " + repr(prefix) + ")\n"
+                body += "if os.read(0, 1) != bytes([" + str(selector) + "]): raise SystemExit(8)\n"
+                body += "os.write(1, " + repr(timer + tail) + ")\n"
                 if mode == "report":
                     body += "if os.read(0, 1) != b'x': raise SystemExit(9)\n"
                     report = b"AURORA_UEFI_EXCEPTION: vector=255 fault\nAURORA_UEFI_PAYLOAD_FAIL: exception\n"

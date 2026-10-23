@@ -16,13 +16,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "build/uefi"
 RECEIPT = BUILD / "console-service-admission.json"
-MODES = (
-    "console",
-    "console-service-stale",
-    "console-service-reentry",
-    "console-service-timeout",
-    "console-service-report",
-)
+# Image profiles; the four service faults are boot-selected console-fixture cases.
+MODES = ("console", "console-fixture")
 ENTRY = "__au_v_m1_22kernel_console_service_n0__d15console_service"
 BRIDGE = "__au_runtime_console_entry"
 VALUE_BRIDGE = "__au_runtime_console_value"

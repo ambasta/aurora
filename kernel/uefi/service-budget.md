@@ -111,6 +111,22 @@ continue to use the copied-message rights/generation/scrubbing rules in [ipc.md]
 - `budget-mmio`, `budget-softint`, `budget-fpu`: actual supervisor-MMIO read,
   forbidden interrupt instruction and unsupported extended-state instruction fail.
 
+Every mode except `budget` and `budget-smp` boots the one `budget-fixture` image
+and picks its case from the serial selector. The context, mmio, softint and fpu
+cases used to be separate images, each with a service that always ran its probe.
+In the fixture service the wrapper keeps every probe, and the launcher's one
+extra launch word, loaded into `%rax`, selects one (the wrapper rejects any
+value above 6 and still requires every other unused register to be zero). The
+dispatch and user fixtures use the same wrapper for their peer-code, client
+register-loop and unknown-UD2 cases, each in the one domain its former image
+used. The image generator still checks each probe's exact opcode and the
+context loop's exact bytes, and each oracle accepts the probe set only on that
+one fixture image. `budget-noapic` clears the CPUID APIC bit at runtime instead of at
+compile time. Its separate admission check (no runtime launch or timer symbols
+left after the folded-away rejection) was a property of that degenerate build.
+The guest oracle still requires the rejection to be the only record after
+firmware discovery, with no timer, IPC or domain record before or after it.
+
 Transcript validation first binds every tick or drain to its immediately preceding
 hardware frame and checks epoch, budget, origin, mapping, flags and terminal order.
 Only then does it project validated timer recovery into the separately checked IPC

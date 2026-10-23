@@ -42,7 +42,8 @@ auto inspect_bar(U64 arena, const Bytes &handoff, const Q35Ecam &aperture, EcamW
     const auto probe=NvmeBarProbe::authorize(*copied,*current,*bar,*resources,0,map,handoff.get(40),arena,0xfee00000,authority,*ticket);
     if (!probe) { static_cast<void>(authority.revoke(*ticket)); Serial::text("AURORA_BAR_REJECTED: reason=resource-admission\r\n"); return false; }
     const auto page=probe->page(authority); if (!page) return false;
-#ifdef AURORA_BAR_ALIAS
+#ifdef AURORA_BAR_FIXTURE
+    if (pci_fixture==Fixture::bar_alias) {
     slot[1]=*page|3|8|16|PageTables::nx;
     const bool rejected_alias=!tables.verify(arena,handoff);
     slot[1]=0;
@@ -51,6 +52,7 @@ auto inspect_bar(U64 arena, const Bytes &handoff, const Q35Ecam &aperture, EcamW
         Serial::text("AURORA_BAR_REJECTED: reason=mapping-alias\r\n"); return false;
     }
     return false;
+    }
 #endif
     *slot=*page|flags;
     asm volatile("invlpg (%0)"::"r"(window):"memory");
@@ -76,8 +78,8 @@ auto inspect_bar(U64 arena, const Bytes &handoff, const Q35Ecam &aperture, EcamW
         Serial::text(" cc="); Serial::number(*cc); Serial::text(" csts="); Serial::number(*csts);
         Serial::text(" aqa="); Serial::number(*aqa); Serial::text(" asq="); Serial::number(*asq); Serial::text(" acq="); Serial::number(*acq); Serial::text("\r\n");
     }
-#ifdef AURORA_BAR_WRITE
-    if (grant) {
+#ifdef AURORA_BAR_FIXTURE
+    if (grant && pci_fixture==Fixture::bar_write) {
         Serial::text("AURORA_BAR_WRITE_PROBE\r\n");
         asm volatile(".global uefi_bar_write_probe\nuefi_bar_write_probe: movl $0,(%%rax)"::"a"(window+8):"memory");
     }
@@ -95,11 +97,13 @@ auto inspect_bar(U64 arena, const Bytes &handoff, const Q35Ecam &aperture, EcamW
 #ifdef AURORA_UEFI_NVME_PREPARE
     if (!preparation_ok) return false;
 #endif
-#ifdef AURORA_BAR_REVOKED
+#ifdef AURORA_BAR_FIXTURE
+    if (pci_fixture==Fixture::bar_revoked) {
     Serial::text("AURORA_BAR_REVOKED_PROBE\r\n");
     U64 ignored; asm volatile(".global uefi_bar_revoked_probe\nuefi_bar_revoked_probe: movl (%%rax),%%eax":"=a"(ignored):"0"(window+8):"memory");
     static_cast<void>(ignored);
     return false;
+    }
 #endif
     Serial::text("AURORA_BAR_READ_ONLY_OK\r\n");
     return true;

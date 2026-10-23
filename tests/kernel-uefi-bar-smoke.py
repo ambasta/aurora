@@ -26,6 +26,11 @@ MODES = (
     "bar-alias",
 )
 CLEAN = ("bar-read", "bar-prepare", "bar-write", "bar-revoked", "bar-alias")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import kernel_profiles  # noqa: E402
+
+# Cases that boot bar-fixture and read its selector; state/capture/prepare do not.
+FIXTURE_MODES = tuple(mode for mode, (image, _) in kernel_profiles.FIXTURE_MODES.items() if image == "bar-fixture")
 READS = ((0, 8), (8, 4), (0x14, 4), (0x1C, 4), (0x24, 4), (0x28, 8), (0x30, 8))
 WINDOW = 0xFFFF800000001000
 CAP = 18023332293183487
@@ -143,6 +148,17 @@ def validate(status, serial, mode, payload=None):
     need(mode in MODES, "Unknown BAR mode")
     need(status == (33 if mode in ("bar-read", "bar-prepare") else 35), "Wrong emulator exit status")
     lines = protocol_lines(serial)
+    # bar-fixture cases read their selector after ACPI closure, before PCI.
+    marker = "AURORA_FIXTURE_READY"
+    need(lines.count(marker) == (1 if mode in FIXTURE_MODES else 0), "Exact BAR fixture readiness")
+    if mode in FIXTURE_MODES:
+        at = lines.index(marker)
+        need(
+            at > 0 and lines[at - 1].startswith("AURORA_ACPI_WINDOW_CLOSED:")
+            and at + 1 < len(lines) and lines[at + 1].startswith("AURORA_PCI_APERTURE:"),
+            "BAR fixture admission phase",
+        )
+        lines.remove(marker)
     command = 2 if mode in CLEAN else 7
     descriptor_count = 0 if mode == "bar-state" else 2
     need(
@@ -268,7 +284,10 @@ def validate(status, serial, mode, payload=None):
             and type(extent) is int
             and 0 < extent <= 0x20000
             and type(probe) is int
-            and 0 <= probe < extent,
+            and 0 <= probe < extent
+            # The shared bar-fixture image links both fault sites, distinctly.
+            and set(faults) == {"bar-write", "bar-revoked"}
+            and len(set(faults.values())) == 2,
             "Missing/invalid exact linked probe metadata",
         )
         marker = "AURORA_BAR_WRITE_PROBE" if mode == "bar-write" else "AURORA_BAR_REVOKED_PROBE"
@@ -305,8 +324,9 @@ def fixture(mode):
         "AURORA_ACPI_CPU: id=0 uid=0 enabled=1 capable=0 x2=0",
         "AURORA_ACPI_TOPOLOGY: records=1 enabled=1 capable=0 lapic=4276092928",
         "AURORA_ACPI_WINDOW_CLOSED: copies=14",
-        "AURORA_PCI_APERTURE: base=3758096384 bytes=268435456 segment=0 first=0 last=255",
     ]
+    lines += ["AURORA_FIXTURE_READY"] if mode in FIXTURE_MODES else []
+    lines += ["AURORA_PCI_APERTURE: base=3758096384 bytes=268435456 segment=0 first=0 last=255"]
     command = 2 if mode in CLEAN else 7
     lines += fixture_rows(command) + ["AURORA_PCI_INVENTORY: functions=6 buses=1", "AURORA_PCI_WINDOW_CLOSED: reads=39"]
     payload = {"offset": 0x22000, "bytes": 0x8000, "fault_offsets": {"bar-write": 0x1234, "bar-revoked": 0x1250}}

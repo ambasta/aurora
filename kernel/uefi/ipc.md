@@ -121,6 +121,14 @@ or sites remain fatal. A client fault is not given the service cancellation path
 - `ipc-transaction`, `ipc-duplicate`, `ipc-late`: wrong reply generation, a second
   actual user reply, or an actual user reply after cancelled completion.
 - `ipc-site`, `ipc-unknown`: forged return site or unknown user UD2.
+
+All IPC fault modes boot the one `ipc-fixture` image and pick their case from the
+serial selector. The owner, version, phase, transaction, site and unknown cases
+used to be separate images with a hostile client binary each; the fixture kernel
+now applies the same corruption to the trapped exit before validating it (claimed
+slot, version, phase, reply transaction, a trapped return PC off the registered
+site, or resuming the client at its wrapper's unregistered `bad_entry` `ud2`). The kernel checks that reject
+them are unchanged, and each mode keeps its own guest run and transcript oracle.
 - `ipc-root`, `ipc-kernel-trap`: otherwise plausible return under the wrong actual
   root, or exact known compiler trap reached at CPL0.
 - `ipc-exhausted`: a restrictive generation ceiling permits binding but denies

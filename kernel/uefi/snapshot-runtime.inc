@@ -79,7 +79,7 @@ auto snapshot_round_trip(U64 offset, bool unknown = false) -> U64 {
 auto run_snapshot(memory::PhysicalPages &producer_pool) -> void {
     auto scenario = SnapshotProducerCase::normal;
 #ifdef AURORA_SNAPSHOT_FIXTURE
-    select_fixture(Fixture::snapshot_fault, Fixture::snapshot_producer_pages);
+    select_fixture(Fixture::snapshot_fault, Fixture::snapshot_reply_reserved);
     if (fixture == Fixture::snapshot_producer_selector)
         scenario = SnapshotProducerCase::invalid_selector;
     else if (fixture == Fixture::snapshot_producer_quota)

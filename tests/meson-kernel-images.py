@@ -3,6 +3,7 @@
 
 import importlib.util
 from contextlib import contextmanager
+import copy
 import ctypes
 import json
 import os
@@ -284,9 +285,9 @@ class GeneratorBoundaries(unittest.TestCase):
         self.assertEqual(len([key for key in recipes if key.startswith("bios/")]), 20)
         self.assertEqual(len(profiles.BIOS_FIXTURE_MODES), 19)
         self.assertFalse(set(profiles.BIOS_FIXTURE_MODES) & set(profiles.FIXTURE_MODES))
-        for image, baseline, count, first, family in (
-            ("bios-fixture", "normal", 16, 148, "FAULT"),
-            ("bios-schedule-fixture", "schedule", 3, 164, "SCHEDULE"),
+        for image, baseline, count, family in (
+            ("bios-fixture", "normal", 16, "FAULT"),
+            ("bios-schedule-fixture", "schedule", 3, "SCHEDULE"),
         ):
             fixture = recipes["bios/" + image]
             normal = recipes["bios/" + baseline]
@@ -299,6 +300,7 @@ class GeneratorBoundaries(unittest.TestCase):
             self.assertIn("-DAURORA_BIOS_" + family + "_FIXTURE", fixture["flags"])
             self.assertNotIn("-DAURORA_BIOS_FIXTURE", normal["flags"])
             modes = {mode: value for mode, (target, value) in profiles.BIOS_FIXTURE_MODES.items() if target == image}
+            first = min(modes.values())
             self.assertEqual(sorted(modes.values()), list(range(first, first + count)))
             for mode in modes:
                 self.assertEqual(profiles.canonical_profile("bios", mode), image)
@@ -309,14 +311,15 @@ class GeneratorBoundaries(unittest.TestCase):
 
     def test_plain_pin_table_selectors_keep_distinct_authority(self):
         recipes = profiles.profiles()
-        for image, count, first in (
-            ("runtime-fixture", 3, 181),
-            ("runtime-pin-fixture", 4, 184),
-            ("runtime-table-fixture", 4, 188),
-        ):
-            recipe = recipes["uefi/" + image]
-            self.assertEqual(recipe["users"], recipes["uefi/runtime"]["users"])
+        for image, count in (("runtime-fixture", 15), ("runtime-pin-fixture", 4), ("runtime-table-fixture", 4)):
+            users = copy.deepcopy(recipes["uefi/" + image]["users"])
+            if image == "runtime-fixture":
+                # Only its clean client adds the selectable hostile probes.
+                self.assertEqual(users["clean"]["entry_flags"], ["--defsym", "UEFI_USER_PROBES=1"])
+                users["clean"]["entry_flags"] = []
+            self.assertEqual(users, recipes["uefi/runtime"]["users"])
             cases = {mode: value for mode, (target, value) in profiles.FIXTURE_MODES.items() if target == image}
+            first = min(cases.values())
             self.assertEqual(sorted(cases.values()), list(range(first, first + count)))
             for mode in cases:
                 self.assertNotIn("uefi/" + mode, recipes)
@@ -332,7 +335,9 @@ class GeneratorBoundaries(unittest.TestCase):
 
     def test_program_snapshot_fixtures_preserve_original_payloads(self):
         recipes = profiles.profiles()
-        for family, baseline, first in (("program", "program-console", 167), ("snapshot", "snapshot", 174)):
+        # Each family's selectors stay one contiguous range: seven original modes
+        # plus the hostile-client cases folded in from their own images.
+        for family, baseline, count in (("program", "program-console", 11), ("snapshot", "snapshot", 10)):
             fixture = recipes["uefi/" + family + "-fixture"]
             normal = recipes["uefi/" + baseline]
             for field in ("users", "language", "roots", "bridge", "cpp", "assembly", "link", "image_options"):
@@ -345,7 +350,8 @@ class GeneratorBoundaries(unittest.TestCase):
             cases = {
                 mode: value for mode, (image, value) in profiles.FIXTURE_MODES.items() if image == family + "-fixture"
             }
-            self.assertEqual(sorted(cases.values()), list(range(first, first + 7)))
+            first = min(cases.values())
+            self.assertEqual(sorted(cases.values()), list(range(first, first + count)))
             for mode in cases:
                 self.assertNotIn("uefi/" + mode, recipes)
                 self.assertEqual(profiles.canonical_profile("uefi", mode), family + "-fixture")
@@ -472,11 +478,13 @@ class GeneratorBoundaries(unittest.TestCase):
             self.assertNotIn("uefi/" + mode, recipes)
             self.assertNotIn(mode, profiles.UEFI_ALIASES)
             self.assertNotIn(mode, clock.ORIGINAL_IVRS_MODES)
-        self.assertEqual(profiles.canonical_profile("uefi", "ivrs-missing"), "ivrs-read")
-        for mode, value in (("ivrs-write", 106), ("ivrs-revoked", 107)):
-            self.assertEqual(profiles.FIXTURE_MODES[mode], ("ivrs-fixture", value))
-        for mode in ("ivrs-read", "ivrs-default"):
-            self.assertNotIn("-DAURORA_IVRS_FIXTURE", recipes["uefi/" + mode]["flags"])
+        # Every live IVRS case boots ivrs-fixture; ivrs-missing rejects before its selector.
+        self.assertEqual(profiles.canonical_profile("uefi", "ivrs-missing"), "ivrs-fixture")
+        self.assertNotIn("ivrs-missing", profiles.FIXTURE_MODES)
+        cases = {mode: value for mode, (image, value) in profiles.FIXTURE_MODES.items() if image == "ivrs-fixture"}
+        self.assertEqual(set(cases), {"ivrs-write", "ivrs-revoked", "ivrs-default", "ivrs-read"})
+        self.assertEqual(sorted(cases.values()), list(range(min(cases.values()), min(cases.values()) + 4)))
+        self.assertEqual([name for name in recipes if "-DAURORA_UEFI_IVRS" in recipes[name]["flags"]], ["uefi/ivrs-fixture"])
 
     def test_copied_policy_negatives_are_hosted_not_boot_profiles(self):
         recipes = profiles.profiles()
@@ -499,13 +507,19 @@ class GeneratorBoundaries(unittest.TestCase):
             self.assertNotIn(mode, profiles.UEFI_ALIASES)
             self.assertNotIn(mode, profiles.FIXTURE_MODES)
             self.assertNotIn(mode, clock.ORIGINAL_UEFI_MODES)
-        self.assertIn("uefi/budget-noapic", recipes)
+        # The early no-APIC rejection is a budget-fixture case, not its own image.
+        self.assertNotIn("uefi/budget-noapic", recipes)
+        self.assertEqual(profiles.canonical_profile("uefi", "budget-noapic"), "budget-fixture")
 
     def test_ipc_same_payload_fixtures_keep_normal_image_selector_free(self):
         recipes = profiles.profiles()
         names = ("fault", "cancel", "stale", "root", "kernel-trap", "duplicate", "late", "exhausted")
-        for index, name in enumerate(names):
-            self.assertEqual(profiles.FIXTURE_MODES["ipc-" + name], ("ipc-fixture", 108 + index))
+        names += ("owner", "version", "phase", "transaction", "site", "unknown")
+        values = [profiles.FIXTURE_MODES["ipc-" + name] for name in names]
+        self.assertTrue(all(image == "ipc-fixture" for image, _ in values))
+        self.assertEqual(sorted(v for _, v in values), list(range(values[0][1], values[0][1] + len(names))))
+        for name in names[8:]:
+            self.assertNotIn("uefi/ipc-" + name, recipes)
         self.assertEqual(recipes["uefi/ipc-fixture"]["users"], recipes["uefi/ipc"]["users"])
         self.assertNotIn("-DAURORA_RUNTIME_FIXTURE", recipes["uefi/ipc"]["flags"])
         self.assertNotIn("-DAURORA_IPC_FIXTURE", recipes["uefi/ipc"]["flags"])
@@ -513,18 +527,28 @@ class GeneratorBoundaries(unittest.TestCase):
     def test_budget_family_preserves_payload_and_page_contract(self):
         recipes = profiles.profiles()
         names = ("fault", "discovery", "cache", "alias", "pending", "forged", "root", "epoch")
-        for index, name in enumerate(names):
-            self.assertEqual(profiles.FIXTURE_MODES["budget-" + name], ("budget-fixture", 116 + index))
-        self.assertEqual(recipes["uefi/budget-fixture"]["users"], recipes["uefi/budget"]["users"])
+        names += ("noapic", "mmio", "softint", "fpu", "context")
+        values = [profiles.FIXTURE_MODES["budget-" + name] for name in names]
+        self.assertTrue(all(image == "budget-fixture" for image, _ in values))
+        self.assertEqual(sorted(v for _, v in values), list(range(values[0][1], values[0][1] + len(names))))
+        for name in names:
+            self.assertNotIn("uefi/budget-" + name, recipes)
+        users = copy.deepcopy(recipes["uefi/budget-fixture"]["users"])
+        # Only the fixture service adds the selectable probes, and only the
+        # fixture launcher loads their selector word.
+        self.assertEqual(users["bounds"]["entry_flags"], ["--defsym", "IPC_PROBES=1"])
+        users["bounds"]["entry_flags"] = []
+        self.assertEqual(users, recipes["uefi/budget"]["users"])
+        entry = {name: recipes["uefi/" + name]["assembly"]["runtime-entry"]["flags"] for name in ("budget", "budget-fixture")}
+        self.assertEqual(entry["budget-fixture"], entry["budget"] + ["--defsym", "AURORA_IPC_PROBES=1"])
         self.assertNotIn("-DAURORA_RUNTIME_FIXTURE", recipes["uefi/budget"]["flags"])
         self.assertEqual(profiles.canonical_profile("uefi", "budget-smp"), "budget")
 
-    def test_ram_file_roles_are_exact_and_legacy_profiles_unchanged(self):
+    def test_ram_file_roles_are_exact(self):
         recipes = profiles.profiles()
         ram_profiles = {"uefi/user-ram-file", "uefi/user-ram-file-fixture"}
         scratchpad_profiles = {"uefi/ram-scratchpad-console", "uefi/ram-scratchpad-console-fixture"}
         self.assertEqual({name for name in recipes if "user-ram-file" in name}, ram_profiles)
-        self.assertEqual(len(recipes), 125)
         for name, recipe in recipes.items():
             ram_file = name in ram_profiles | scratchpad_profiles
             self.assertEqual("-DAURORA_RAM_FILE" in recipe["flags"], ram_file)
@@ -550,270 +574,6 @@ class GeneratorBoundaries(unittest.TestCase):
                 self.assertEqual(user["source"], "tests/kernel-programs/" + source + ".au")
                 self.assertEqual(user["entry"], "kernel/uefi/ipc-user-entry.S")
                 self.assertTrue(user["combined"])
-        # Complete canonical records from base 6d12fecd, excluding the two RAM-file
-        # profiles checked above and the two separately checked scratchpad additions.
-        legacy = {name: recipe for name, recipe in recipes.items() if name not in ram_profiles | scratchpad_profiles}
-        self.assertEqual(len(legacy), 121)
-        del legacy["bios/bios-fixture"]
-        del legacy["bios/bios-schedule-fixture"]
-        for mode in profiles.BIOS_FIXTURE_MODES:
-            legacy["bios/" + mode] = profiles.bios_profile(mode, profiles.BIOS_CONTROLS[mode])
-        # Frozen recipe data shares only identical flag prefixes. Keep the
-        # historical whole-record digest below, not a newly computed baseline.
-        runtime_flags = ["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI", "-DAURORA_UEFI_RUNTIME"]
-        for family, base, cases in (
-            (
-                "runtime",
-                runtime_flags,
-                (
-                    ("root", ["RUNTIME_ROOT"]),
-                    ("kernel-trap", ["RUNTIME_KERNEL_TRAP"]),
-                    ("entry-stack", ["RUNTIME_ENTRY_STACK"]),
-                ),
-            ),
-            (
-                "runtime-pin",
-                runtime_flags + ["-DAURORA_UEFI_PINS"],
-                (
-                    ("cancel", ["PIN_CANCEL"]),
-                    ("fault", ["PIN_FAULT", "PIN_LEDGER_TESTING=1"]),
-                    ("stale", ["PIN_STALE"]),
-                    ("exhaust", ["PIN_EXHAUST"]),
-                ),
-            ),
-            (
-                "runtime-table",
-                runtime_flags + ["-DAURORA_UEFI_PINS", "-DAURORA_UEFI_TABLES", "-DAURORA_DORMANT_TABLE_TESTING=1"],
-                (
-                    ("readback", ["TABLE_READBACK"]),
-                    ("reject", ["TABLE_REJECT"]),
-                    ("exhaust", ["TABLE_EXHAUST"]),
-                    ("quarantine", ["TABLE_QUARANTINE", "PIN_FAULT"]),
-                ),
-            ),
-            (
-                "program",
-                runtime_flags
-                + [
-                    "-DAURORA_UEFI_IPC",
-                    "-DAURORA_UEFI_SERVICE_BUDGET",
-                    "-DAURORA_UEFI_USER_BUDGET",
-                    "-DAURORA_UEFI_PROGRAM_CONSOLE",
-                ],
-                (
-                    ("request-fault", ["PROGRAM_REQUEST_FAULT"]),
-                    ("service-fault", ["PROGRAM_SERVICE_FAULT"]),
-                    ("completion-fault", ["PROGRAM_COMPLETION_FAULT"]),
-                    ("request-budget", ["PROGRAM_REQUEST_BUDGET"]),
-                    ("service-budget", ["PROGRAM_SERVICE_BUDGET"]),
-                    ("completion-budget", ["PROGRAM_COMPLETION_BUDGET"]),
-                    ("pending", ["PROGRAM_PENDING"]),
-                ),
-            ),
-            (
-                "snapshot",
-                ["-DAURORA_UEFI_SNAPSHOT"] + runtime_flags + ["-DAURORA_UEFI_IPC"],
-                (
-                    ("fault", ["SNAPSHOT_FAULT"]),
-                    ("cancel", ["SNAPSHOT_CANCEL"]),
-                    ("stale", ["SNAPSHOT_STALE"]),
-                    ("revoked", ["SNAPSHOT_REVOKED"]),
-                    ("producer-selector", ["SNAPSHOT_PRODUCER_SELECTOR"]),
-                    ("producer-quota", ["SNAPSHOT_PRODUCER_QUOTA"]),
-                    ("producer-pages", ["SNAPSHOT_PRODUCER_PAGES"]),
-                ),
-            ),
-        ):
-            del legacy["uefi/" + family + "-fixture"]
-            for suffix, defines in cases:
-                mode = family + "-" + suffix
-                legacy["uefi/" + mode] = profiles.uefi_profile(mode, base + ["-DAURORA_" + name for name in defines])
-        del legacy["uefi/pci-fixture"]
-        del legacy["uefi/acpi-fixture"]
-        del legacy["uefi/ivrs-fixture"]
-        del legacy["uefi/ipc-fixture"]
-        del legacy["uefi/budget-fixture"]
-        del legacy["uefi/dispatch-fixture"]
-        del legacy["uefi/user-fixture"]
-        # Preserve the historical whole-record digest rather than rebasing it.
-        # Restore only the replaced recipes for this comparison;
-        # the separate routing test above requires they are NOT current images.
-        for mode, define in (
-            ("pci-reserved", "AURORA_PCI_RESERVED"),
-            ("pci-overlap", "AURORA_PCI_OVERLAP"),
-            ("pci-range", "AURORA_PCI_RANGE"),
-            ("pci-checksum", "AURORA_PCI_CHECKSUM"),
-            ("pci-cycle", "AURORA_PCI_CYCLE"),
-            ("pci-write", "AURORA_PCI_WRITE"),
-            ("pci-revoked", "AURORA_PCI_REVOKED"),
-            ("acpi-changed-header", "AURORA_ACPI_CHANGED_HEADER"),
-            ("acpi-bad-entry", "AURORA_ACPI_BAD_ENTRY"),
-            ("acpi-duplicate", "AURORA_ACPI_DUPLICATE"),
-            ("acpi-disabled", "AURORA_ACPI_DISABLED"),
-            ("acpi-checksum", "AURORA_ACPI_CHECKSUM"),
-            ("acpi-bad-source", "AURORA_ACPI_BAD_SOURCE"),
-            ("acpi-write", "AURORA_ACPI_WRITE"),
-            ("acpi-revoked", "AURORA_ACPI_REVOKED"),
-        ):
-            legacy["uefi/" + mode] = profiles.uefi_profile(
-                mode,
-                ["-DAURORA_UEFI_ACPI"] + (["-DAURORA_UEFI_PCI"] if mode.startswith("pci-") else []) + ["-D" + define],
-            )
-        for mode in (
-            "ivrs-pair",
-            "ivrs-alias",
-            "ivrs-reserved",
-            "ivrs-scope",
-            "ivrs-capability",
-            "ivrs-range",
-            "ivrs-write",
-            "ivrs-revoked",
-            "ivrs-missing",
-        ):
-            legacy["uefi/" + mode] = profiles.uefi_profile(
-                mode,
-                [
-                    "-DAURORA_UEFI_ACPI",
-                    "-DAURORA_UEFI_PCI",
-                    "-DAURORA_UEFI_BAR_CAPTURE",
-                    "-DAURORA_UEFI_BAR_EDK2",
-                    "-DAURORA_UEFI_IVRS",
-                    "-DAURORA_" + mode.upper().replace("-", "_"),
-                ],
-            )
-        for mode in (
-            "ipc-fault",
-            "ipc-cancel",
-            "ipc-stale",
-            "ipc-root",
-            "ipc-kernel-trap",
-            "ipc-duplicate",
-            "ipc-late",
-            "ipc-exhausted",
-        ):
-            legacy["uefi/" + mode] = profiles.uefi_profile(
-                mode,
-                [
-                    "-DAURORA_UEFI_ACPI",
-                    "-DAURORA_UEFI_PCI",
-                    "-DAURORA_UEFI_RUNTIME",
-                    "-DAURORA_UEFI_IPC",
-                    "-DAURORA_" + mode.upper().replace("-", "_"),
-                ],
-            )
-        for mode in (
-            "budget-fault",
-            "budget-discovery",
-            "budget-cache",
-            "budget-alias",
-            "budget-pending",
-            "budget-forged",
-            "budget-root",
-            "budget-epoch",
-            "budget-smp",
-        ):
-            legacy["uefi/" + mode] = profiles.uefi_profile(
-                mode,
-                [
-                    "-DAURORA_UEFI_ACPI",
-                    "-DAURORA_UEFI_PCI",
-                    "-DAURORA_UEFI_RUNTIME",
-                    "-DAURORA_UEFI_IPC",
-                    "-DAURORA_UEFI_SERVICE_BUDGET",
-                    "-DAURORA_" + mode.upper().replace("-", "_"),
-                ],
-            )
-        for mode in (
-            "dispatch-budget",
-            "dispatch-fault",
-            "dispatch-mixed",
-            "dispatch-pending",
-            "dispatch-cross-reply",
-            "dispatch-client-owner",
-            "dispatch-stale",
-            "dispatch-duplicate",
-            "dispatch-full",
-            "dispatch-root",
-        ):
-            legacy["uefi/" + mode] = profiles.uefi_profile(
-                mode,
-                [
-                    "-DAURORA_UEFI_ACPI",
-                    "-DAURORA_UEFI_PCI",
-                    "-DAURORA_UEFI_RUNTIME",
-                    "-DAURORA_UEFI_IPC",
-                    "-DAURORA_UEFI_SERVICE_BUDGET",
-                    "-DAURORA_UEFI_DISPATCH",
-                    "-DAURORA_" + mode.upper().replace("-", "_"),
-                ],
-            )
-        for mode in (
-            "user-retire-pending",
-            "user-request-budget",
-            "user-completion-budget",
-            "user-request-bounds",
-            "user-completion-bounds",
-            "user-request-overflow",
-            "user-completion-overflow",
-            "user-pending",
-            "user-role",
-            "user-phase",
-            "user-transaction",
-            "user-epoch",
-            "user-root",
-            "user-stale-grant",
-        ):
-            legacy["uefi/" + mode] = profiles.uefi_profile(
-                mode,
-                [
-                    "-DAURORA_UEFI_ACPI",
-                    "-DAURORA_UEFI_PCI",
-                    "-DAURORA_UEFI_RUNTIME",
-                    "-DAURORA_UEFI_IPC",
-                    "-DAURORA_UEFI_SERVICE_BUDGET",
-                    "-DAURORA_UEFI_DISPATCH",
-                    "-DAURORA_UEFI_USER_BUDGET",
-                    "-DAURORA_" + mode.upper().replace("-", "_"),
-                ],
-            )
-        for mode in (
-            "ipc-policy-request-input",
-            "ipc-policy-request-output",
-            "ipc-policy-cancel-input",
-            "ipc-policy-cancel-output",
-            "budget-policy-zero",
-            "budget-policy-counts",
-            "budget-policy-wide",
-            "budget-policy-output",
-            "dispatch-policy-cursor",
-            "dispatch-policy-mask",
-            "dispatch-policy-output",
-            "user-disposal-input",
-            "user-disposal-output",
-        ):
-            if mode.startswith("ipc-"):
-                base = ["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI", "-DAURORA_UEFI_RUNTIME", "-DAURORA_UEFI_IPC"]
-            elif mode.startswith("budget-"):
-                base = [
-                    "-DAURORA_UEFI_ACPI",
-                    "-DAURORA_UEFI_PCI",
-                    "-DAURORA_UEFI_RUNTIME",
-                    "-DAURORA_UEFI_IPC",
-                    "-DAURORA_UEFI_SERVICE_BUDGET",
-                ]
-            else:
-                base = [
-                    "-DAURORA_UEFI_ACPI",
-                    "-DAURORA_UEFI_PCI",
-                    "-DAURORA_UEFI_RUNTIME",
-                    "-DAURORA_UEFI_IPC",
-                    "-DAURORA_UEFI_SERVICE_BUDGET",
-                    "-DAURORA_UEFI_DISPATCH",
-                ]
-                if mode.startswith("user-"):
-                    base += ["-DAURORA_UEFI_USER_BUDGET", "-DAURORA_USER_REQUEST_BOUNDS"]
-            legacy["uefi/" + mode] = profiles.uefi_profile(mode, base + ["-DAURORA_" + mode.upper().replace("-", "_")])
-        self.assertEqual(len(legacy), 229)
 
     def test_scratchpad_profiles_are_exact_and_share_production_caller(self):
         recipes = profiles.profiles()
@@ -887,8 +647,8 @@ class GeneratorBoundaries(unittest.TestCase):
     def test_scratchpad_linked_controls_retain_full_boot_and_disabled_gates(self):
         recipe = (ROOT / "tests/native/meson.build").read_text()
         inventory = (ROOT / "tests/native/kernel-image-tests.txt").read_text().splitlines()
-        self.assertEqual(len(inventory), 11)
-        self.assertEqual(len(set(inventory)), 11)
+        self.assertEqual(len(inventory), 12)
+        self.assertEqual(len(set(inventory)), 12)
         for mode in ("ram-scratchpad-console", "ram-scratchpad-console-fixture"):
             self.assertIn("native-uefi-" + mode + "-linked-image", inventory)
         begin = recipe.index("  foreach mode : ['ram-scratchpad-console', 'ram-scratchpad-console-fixture']")
@@ -906,28 +666,6 @@ class GeneratorBoundaries(unittest.TestCase):
         self.assertIn("test(image_name, python,", disabled)
         self.assertIn('raise SystemExit("Kernel images disabled:', disabled)
         self.assertIn("suite: ['full', 'slow', 'integration', 'boot']", disabled)
-
-    def test_noapic_rejection_is_exact_and_cannot_retain_runtime_authority(self):
-        recipes = profiles.profiles()
-        for name, recipe in recipes.items():
-            self.assertEqual("--budget-noapic" in recipe["image_options"], name == "uefi/budget-noapic")
-        self.assertEqual(recipes["uefi/budget-noapic"]["image_options"], ["--ipc-policy", "--budget-noapic"])
-        self.assertTrue(image.image_options(["--ipc-policy", "--budget-noapic"])["require_budget_noapic"])
-        for options in (["--budget-noapic"], ["--ipc-policy", "--budget-noapic", "--snapshot"]):
-            with self.assertRaises(ValueError):
-                image.image_options(options)
-        runtime = "                 U aurora_kernel_terminal_event\n"
-        payload = "0000000000001000 T uefi_runtime_enter\n"
-        image.budget_noapic_policy(runtime, payload)
-        for name in ("uefi_runtime_enter", "aurora_kernel_ipc_transition", "aurora_kernel_budget_tick"):
-            for kind in ("U", "T", "w"):
-                with self.subTest(symbol=name, kind=kind), self.assertRaises(ValueError):
-                    image.budget_noapic_policy(runtime + "0000000000000010 " + kind + " " + name + "\n", payload)
-        for name in ("uefi_service_drain_begin", "uefi_service_drain_end", "uefi_service_forged_pc"):
-            with self.subTest(symbol=name), self.assertRaises(ValueError):
-                image.budget_noapic_policy(runtime, payload + "0000000000002000 T " + name + "\n")
-        with self.assertRaises(ValueError):
-            image.budget_noapic_policy(runtime, "")
 
     def test_depfile_escaping(self):
         self.assertEqual(assembly.escaped("a b#c$d:e\\f"), "a\\ b\\#c$$d\\:e\\\\f")
@@ -1349,19 +1087,6 @@ class SmokeRunOnlyRouting(SmokeRunOnlyFixture):
             self.assertEqual(
                 self.invoke(platform, "--run-only", image, "--output-dir", output, mode, success=False), []
             )
-
-    def test_only_budget_noapic_requires_absent_timer_metadata(self):
-        image = self.native("uefi", "budget-noapic")
-        calls = self.invoke(
-            "uefi", "--run-only", image, "--output-dir", self.root / "bad-timer", "budget-noapic", success=False
-        )
-        self.assertEqual([call[0] for call in calls], ["qemu"])
-        self.calls.unlink()
-        (image / "service-timer-metadata.json").unlink()
-        output = self.root / "no-timer"
-        calls = self.invoke("uefi", "--run-only", image, "--output-dir", output, "budget-noapic")
-        self.assertEqual([call[0] for call in calls], ["qemu", "oracle"])
-        self.assertIsNone(json.loads((output / "budget-noapic.metadata.json").read_text())["kernel"])
 
     def test_missing_boot_input_cannot_report_success(self):
         for platform in ("bios", "uefi"):

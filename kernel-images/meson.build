@@ -464,6 +464,16 @@ foreach profile_id : profile_data['profiles'].split('|')
   endif
 endforeach
 
+# One stamp over every canonical profile and its checks, so that full builds all
+# images rather than only those a guest smoke happens to select.
+kernel_images_all_inputs = []
+foreach profile_id, targets : kernel_profile_images
+  kernel_images_all_inputs += targets
+endforeach
+kernel_images_all = custom_target('kernel-images-all', input: kernel_images_all_inputs,
+  output: 'kernel-images-all.stamp',
+  command: [python, '-B', '-c', 'import pathlib, sys; pathlib.Path(sys.argv[1]).write_text("built\\n")', '@OUTPUT@'])
+
 # Guest-machine aliases share identical image bytes and native compilation.
 foreach alias : profile_data['aliases'].split('|')
   canonical = profile_data['aliases.' + alias]

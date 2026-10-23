@@ -42,6 +42,9 @@ auto ipc_execute(unsigned index,
 #ifdef AURORA_UEFI_SERVICE_BUDGET
     launch[6] = phase == ipc::Phase::service ? 0x202 : 2;
 #endif
+#ifdef AURORA_IPC_PROBES
+    launch[7] = ipc_probe(index, source_phase);
+#endif
     for (const auto &lease : domain.stacks) {
         const auto address = frames.address(*lease);
         require(address.has_value(), "IPC stack lease");
@@ -184,8 +187,8 @@ auto ipc_deliver(bool fault) -> void {
                 (!exhaust || (timer_ticks == 3 && timer_resumes == 2)),
             "service budget outcome");
 #endif
-#ifdef AURORA_BUDGET_CONTEXT
-    if (!exhaust)
+#if defined(AURORA_BUDGET_FIXTURE)
+    if (fixture == Fixture::budget_context && !exhaust)
         require(timer_context_hits > 0, "timer register probe delivery");
 #endif
 #else
@@ -212,7 +215,7 @@ auto ipc_deliver(bool fault) -> void {
 }
 auto run_ipc() -> void {
 #ifdef AURORA_IPC_FIXTURE
-    select_fixture(Fixture::ipc_fault, Fixture::ipc_exhausted);
+    select_fixture(Fixture::ipc_fault, Fixture::ipc_unknown);
 #endif
 #ifdef AURORA_IPC_FIXTURE
     if (fixture == Fixture::ipc_exhausted)

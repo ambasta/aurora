@@ -29,16 +29,17 @@ MODES = (
     "budget-fpu",
     "budget-epoch",
 )
-FIXTURE_MODES = (
-    "budget-fault",
-    "budget-discovery",
-    "budget-cache",
-    "budget-alias",
-    "budget-pending",
-    "budget-forged",
-    "budget-root",
-    "budget-epoch",
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import kernel_profiles  # noqa: E402
+
+# Modes that boot the shared budget-fixture image, from the one fixture table.
+FIXTURE_MODES = tuple(
+    mode for mode, (image, _) in kernel_profiles.FIXTURE_MODES.items() if image == "budget-fixture"
 )
+# Instruction probes the fixture service selects from its launch word.
+PROBE_FAULTS = {"mmio": (14, 5), "softint": (13, 514), "fpu": (7, 0)}
+# Every fixture wrapper carries the complete selectable set (see ipc-user-entry.S).
+PROBE_NAMES = set(PROBE_FAULTS) | {"peer_code", "unknown"}
 POLICY_MODES = ("budget-policy-zero", "budget-policy-counts", "budget-policy-wide", "budget-policy-output")
 MODES += POLICY_MODES
 SUCCESS = MODES[:4]
@@ -46,14 +47,20 @@ EARLY = MODES[4:9]
 EVENT = r"AURORA_UEFI_DOMAIN_EVENT: vector=(\d+) error=(\d+) pc=(\d+) cpl=(\d+) root=(\d+) frame=(\d+) cr2=(\d+)"
 
 
-def metadata_valid(meta, mode):
+def metadata_valid(meta, mode, probe_image=None):
+    """probe_image names the one image whose wrapper carries the fixture probes."""
     need(type(meta) is dict and set(meta) == {"images", "kernel"}, "Malformed budget metadata")
     images = meta["images"]
     need(type(images) is dict and set(images) == {"clean", "bounds"}, "Budget image set")
     extra = {"compiled_begin", "compiled_end", "context_begin", "context_end"}
     base_images = {}
+    # Only one fixture image carries the probe set and context loop: the budget
+    # service here, or the image a dispatcher/user caller names.
+    if probe_image is None and mode in FIXTURE_MODES:
+        probe_image = "bounds"
     for index, name in enumerate(("clean", "bounds")):
-        image = images[name]
+        image = dict(images[name]) if type(images[name]) is dict else images[name]
+        probes = image.pop("probes", None) if type(image) is dict else None
         need(type(image) is dict and extra <= set(image), "Missing compiled ranges")
         need(all(type(value) is int and 0 <= value < 1 << 64 for value in image.values()), "Invalid range scalar")
         base_images[name] = {key: value for key, value in image.items() if key not in extra}
@@ -65,22 +72,34 @@ def metadata_valid(meta, mode):
         need(end <= image["bounds_pc"], "Compiled function includes trap helpers")
         begin = image["context_begin"]
         finish = image["context_end"]
-        if mode == "budget-context" and index == 1:
+        hostile = name == probe_image
+        if hostile:
             need(base <= begin < finish <= image["return_pc"] and finish - begin == 6, "Exact context interval")
         else:
             need(begin == finish == 0, "Unexpected context authority")
-        probe = image["probe_pc"]
-        want = index == 1 and mode in ("budget-mmio", "budget-softint", "budget-fpu")
-        need(bool(probe) == want and (not probe or base <= probe < image["return_pc"]), "Unexpected privileged probe")
-        base_images[name]["probe_pc"] = 0
+        need(image["probe_pc"] == 0, "Unexpected single privileged probe")
+        if hostile:
+            need(type(probes) is dict and set(probes) == PROBE_NAMES, "Exact privileged probe set")
+            sites = [
+                probe for probe in probes.values() if type(probe) is int and base <= probe < base + image["size"]
+            ]
+            # Wrapper code only: never a registered exit/trap site or compiled code.
+            sites = [
+                probe
+                for probe in sites
+                if probe not in [image[k] for k in ("return_pc", "bounds_pc")] and not start <= probe < end
+            ]
+            need(
+                len(set(sites)) == len(PROBE_NAMES) and not set(sites) & {begin, finish},
+                "Privileged probe outside wrapper or aliased",
+            )
+        else:
+            need(probes is None, "Unexpected privileged probe")
     ipc.metadata_valid(
         base_images,
         mode if mode in ("user-call", "user-call-pending", "user-call-owner", "user-call-site") else "ipc-fault",
     )
     kernel = meta["kernel"]
-    if mode == "budget-noapic":
-        need(kernel is None, "No-APIC rejection must not claim timer sites")
-        return base_images
     need(
         type(kernel) is dict
         and set(kernel) == {"drain_begin", "drain_end", "text_end", "forged_pc"}
@@ -432,13 +451,14 @@ def validate(status, text, mode, meta):
             else:
                 need(tail == ["AURORA_UEFI_RUNTIME_FAIL: timer active origin"], "Wrong active interrupt rejection")
         else:
-            need(mode in ("budget-mmio", "budget-softint", "budget-fpu") and len(tail) == 2, "Unexpected timer failure")
+            kind = mode.removeprefix("budget-")
+            need(kind in PROBE_FAULTS and len(tail) == 2, "Unexpected timer failure")
             fault = re.fullmatch(EVENT, tail[0])
             need(fault is not None, "Missing exact denied user event")
             v, e, pc, cpl, r, f, cr2 = map(int, fault.groups())
             need(
-                (v, e) == {"budget-mmio": (14, 5), "budget-softint": (13, 514), "budget-fpu": (7, 0)}[mode]
-                and pc == meta["images"]["bounds"]["probe_pc"]
+                (v, e) == PROBE_FAULTS[kind]
+                and pc == meta["images"]["bounds"]["probes"][kind]
                 and cpl == 3
                 and r == service
                 and f == arena + 0x88000 - 176
@@ -481,23 +501,23 @@ def self_test():
                 division_zero_pc=base + 408,
                 shift_count_pc=base + 412,
                 probe_offset=0,
-                probe_pc=base + 50 if index == 1 and mode in ("budget-mmio", "budget-softint", "budget-fpu") else 0,
+                probe_pc=0,
                 compiled_begin=base + 80,
                 compiled_end=base + 300,
-                context_begin=base + 20 if index == 1 and mode == "budget-context" else 0,
-                context_end=base + 26 if index == 1 and mode == "budget-context" else 0,
+                context_begin=base + 20 if index == 1 and mode in FIXTURE_MODES else 0,
+                context_end=base + 26 if index == 1 and mode in FIXTURE_MODES else 0,
             )
+            if index == 1 and mode in FIXTURE_MODES:
+                images[name]["probes"] = {kind: base + 30 + 4 * i for i, kind in enumerate(sorted(PROBE_NAMES))}
         meta = dict(
             images=images,
-            kernel=None
-            if mode == "budget-noapic"
-            else dict(drain_begin=100, drain_end=104, text_end=4096, forged_pc=200 if mode in FIXTURE_MODES else 0),
+            kernel=dict(drain_begin=100, drain_end=104, text_end=4096, forged_pc=200 if mode in FIXTURE_MODES else 0),
         )
         simple = {
             name: {
                 key: value
                 for key, value in image.items()
-                if key not in ("compiled_begin", "compiled_end", "context_begin", "context_end")
+                if key not in ("compiled_begin", "compiled_end", "context_begin", "context_end", "probes")
             }
             for name, image in images.items()
         }
@@ -562,10 +582,11 @@ def self_test():
                             )
                         else:
                             tick(images["bounds"]["entry"], 1, 3)
-                            v, e = {"budget-mmio": (14, 5), "budget-softint": (13, 514), "budget-fpu": (7, 0)}[mode]
+                            kind = mode.removeprefix("budget-")
+                            v, e = PROBE_FAULTS[kind]
                             rows.append(
                                 event(
-                                    v, images["bounds"]["probe_pc"], error=e, cr2=APIC if mode == "budget-mmio" else 0
+                                    v, images["bounds"]["probes"][kind], error=e, cr2=APIC if kind == "mmio" else 0
                                 )
                             )
                             rows.append("AURORA_UEFI_RUNTIME_FAIL: timer terminal context")
@@ -622,9 +643,7 @@ def self_test():
         status = 33 if mode in SUCCESS else 35
         validate(status, text, mode, meta)
         wrong_sites = copy.deepcopy(meta)
-        wrong_sites["kernel"] = (
-            dict(drain_begin=100, drain_end=104, text_end=4096, forged_pc=0) if mode == "budget-noapic" else None
-        )
+        wrong_sites["kernel"] = None
         try:
             validate(status, text, mode, wrong_sites)
         except ValueError:
@@ -652,6 +671,7 @@ def self_test():
             ("bounds", "size", 8192),
             ("bounds", "context_begin", BASE),
             ("clean", "entry", True),
+            ("clean", "probe_pc", BASE + 50),
         ]:
             altered = copy.deepcopy(meta)
             altered["images"][path][key] = value
@@ -661,6 +681,33 @@ def self_test():
                 rejected += 1
             else:
                 raise RuntimeError(f"Bad budget metadata accepted: {mode} {key}")
+        probe_cases = []
+        if mode in FIXTURE_MODES:
+            for change in (
+                lambda images: images["bounds"].pop("probes"),
+                lambda images: images["bounds"]["probes"].pop("fpu"),
+                lambda images: images["bounds"]["probes"].update(extra=BASE + 16384 + 70),
+                lambda images: images["bounds"]["probes"].update(fpu=images["bounds"]["probes"]["mmio"]),
+                lambda images: images["bounds"]["probes"].update(fpu=images["bounds"]["return_pc"]),
+                lambda images: images["bounds"]["probes"].update(fpu=images["bounds"]["context_begin"]),
+                lambda images: images["bounds"]["probes"].update(fpu=images["bounds"]["compiled_begin"]),
+                lambda images: images["clean"].update(probes=dict(images["bounds"]["probes"])),
+                lambda images: images["bounds"].update(context_begin=0, context_end=0),
+            ):
+                altered = copy.deepcopy(meta)
+                change(altered["images"])
+                probe_cases.append(altered)
+        else:
+            altered = copy.deepcopy(meta)
+            altered["images"]["bounds"]["probes"] = {kind: BASE + 16384 + 30 + 4 * i for i, kind in enumerate(PROBE_NAMES)}
+            probe_cases.append(altered)
+        for altered in probe_cases:
+            try:
+                validate(status, text, mode, altered)
+            except ValueError:
+                rejected += 1
+            else:
+                raise RuntimeError(f"Bad budget probe authority accepted: {mode}")
         if mode == "budget-pending":
             for selector in (0, 8, 24, 35):
                 failures.append((status, text.replace(" ss=16", " ss=" + str(selector))))

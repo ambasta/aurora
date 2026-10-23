@@ -70,9 +70,10 @@ def metadata_valid(metadata, mode):
             all(base <= pc <= base + size - 2 for pc in present) and image["return_pc"] >= base + 2,
             "IPC site outside image",
         )
+        # Hostile exits are now injected by the fixture kernel, so no IPC image
+        # carries a probe address of its own.
         probe = image["probe_pc"]
-        wanted = index == 0 and mode in ("ipc-site", "ipc-unknown")
-        need(image["probe_offset"] == 0 and bool(probe) == wanted, "Unexpected IPC probe authority")
+        need(image["probe_offset"] == 0 and not probe, "Unexpected IPC probe authority")
         need(not probe or base <= probe <= base + size - 2 and probe not in present, "IPC probe out of range/aliased")
 
 
@@ -94,13 +95,21 @@ def expected(mode, metadata, arena):
         ticket = 0 if phase == 0 else tx
         row(f"AURORA_UEFI_IPC_ENTER: slot={slot} phase={phase} root={root} grant={grant} transaction={ticket}")
         vector = 6 if kind == "bounds" or failure in ("ipc-unknown", "ipc-kernel-trap") else 129
+        # ipc-site: the fixture moves the trapped exit off the registered return
+        # site. ipc-unknown: the client resumes at the wrapper's bad_entry ud2,
+        # just after the return site, and raises #UD from an unregistered address.
         pc = (
             image["bounds_pc"]
             if kind == "bounds" or failure == "ipc-kernel-trap"
-            else image["probe_pc"]
-            if failure in ("ipc-site", "ipc-unknown")
+            else image["return_pc"] + 1
+            if failure == "ipc-site"
+            else image["return_pc"] + 2
+            if failure == "ipc-unknown"
             else image["return_pc"]
         )
+        if failure == "ipc-unknown":
+            sites = ("return_pc", "bounds_pc", "overflow_pc", "division_zero_pc", "shift_count_pc")
+            need(pc not in [image[k] for k in sites], "Unknown UD2 aliases a registered site")
         cpl = 0 if failure == "ipc-kernel-trap" else 3
         frame = r"(\d+)" if cpl == 0 else str(arena + 0x88000 - 176)
         row(f"AURORA_UEFI_DOMAIN_EVENT: vector={vector} error=0 pc={pc} cpl={cpl} root={root} frame={frame} cr2=0")
@@ -197,16 +206,11 @@ def expected(mode, metadata, arena):
     return rows
 
 
-FIXTURE_MODES = (
-    "ipc-fault",
-    "ipc-cancel",
-    "ipc-stale",
-    "ipc-root",
-    "ipc-kernel-trap",
-    "ipc-duplicate",
-    "ipc-late",
-    "ipc-exhausted",
-)
+# Modes that boot the shared ipc-fixture image, from the one fixture table.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import kernel_profiles  # noqa: E402
+
+FIXTURE_MODES = tuple(mode for mode, (image, _) in kernel_profiles.FIXTURE_MODES.items() if image == "ipc-fixture")
 
 
 def validate(status, text, mode, metadata):
@@ -290,7 +294,7 @@ def self_test():
                 overflow_pc=base + 68,
                 division_zero_pc=base + 72,
                 shift_count_pc=base + 76,
-                probe_pc=base + 52 if index == 0 and mode in ("ipc-site", "ipc-unknown") else 0,
+                probe_pc=0,
                 probe_offset=0,
             )
         rows = [row.replace(r"(\d+)", str(arena + 0x47C00)) for row in expected(mode, metadata, arena)]

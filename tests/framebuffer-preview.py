@@ -72,7 +72,7 @@ class Routing(unittest.TestCase):
         self.assertNotIn("receipt", calls[2])
         self.assertNotIn("manifest", calls[2])
 
-    def test_full_smoke_builds_four_native_profiles_on_existing_entrypoint(self):
+    def test_full_smoke_builds_one_native_profile_on_existing_entrypoint(self):
         self.fixture.script(
             self.fixture.scripts / "kernel-uefi-build.sh",
             'printf "build|%s\\n" "$UEFI_MODE" >> "$CALLS"\n'
@@ -80,10 +80,11 @@ class Routing(unittest.TestCase):
         )
         self.run_script("--full-smoke")
         calls = self.fixture.calls()
-        self.assertEqual(calls[1:5], ["build|" + mode for mode in preview.admission.MODES])
-        self.assertIn("--full-smoke --build-dir ", calls[5])
-        self.assertIn("/kernel-images/uefi/framebuffer ", calls[5])
-        self.assertEqual(len(calls), 6)
+        # All four capture cases boot the one image; only it is built.
+        self.assertEqual(calls[1:2], ["build|framebuffer"])
+        self.assertIn("--full-smoke --build-dir ", calls[2])
+        self.assertIn("/kernel-images/uefi/framebuffer ", calls[2])
+        self.assertEqual(len(calls), 3)
 
     def test_help_needs_no_prerequisites(self):
         (self.fixture.bin / "qemu-system-x86_64").unlink()
@@ -285,7 +286,7 @@ class PreviewControls(unittest.TestCase):
                             preview.run("qemu", "firmware", "", "", "", build_dir=build, full_smoke=True)
                     else:
                         preview.run("qemu", "firmware", "", "", "", build_dir=build, full_smoke=True)
-                self.assertEqual(modes, list(preview.admission.MODES[:2] if failure else preview.admission.MODES))
+                self.assertEqual(modes, list(preview.MODES[:2] if failure else preview.MODES))
                 self.assertEqual(normal.call_count, 0 if unsettled else 1)
                 record = json.loads(next(root.glob("build/framebuffer-preview/*/preview.json")).read_text())
                 self.assertEqual(record["status"], "failed" if failure or restore_status else "passed")

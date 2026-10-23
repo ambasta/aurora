@@ -95,37 +95,37 @@
     auto map = std::span<const std::byte>{reinterpret_cast<const std::byte *>(arena + Handoff::map_offset),
                                           static_cast<std::size_t>(handoff.get(32))};
     auto stride = static_cast<std::size_t>(handoff.get(40));
-#ifdef AURORA_IVRS_DEFAULT
-    const auto grant = Q35IommuReadPolicy::authorize(*facts,
-                                                     *copied,
-                                                     *copied,
-                                                     map,
-                                                     stride,
-                                                     arena,
-                                                     0xfee00000,
-                                                     std::span{reservations}.first(count + 1),
-                                                     authority,
-                                                     *ticket);
-#else
-    const auto grant = Q35IommuReadPolicy::authorize_qemu_10_0_13_cold(*facts,
-                                                                       *copied,
-                                                                       *copied,
-                                                                       map,
-                                                                       stride,
-                                                                       arena,
-                                                                       0xfee00000,
-                                                                       std::span{reservations}.first(count + 1),
-                                                                       authority,
-                                                                       *ticket);
-#endif
+    // ivrs-default selects the architectural profile; every other case uses the
+    // emulator-only QEMU 10.0.13 cold profile, as its former image did.
+    const bool architectural = pci_fixture == Fixture::ivrs_default;
+    const auto grant = architectural
+                           ? Q35IommuReadPolicy::authorize(*facts,
+                                                           *copied,
+                                                           *copied,
+                                                           map,
+                                                           stride,
+                                                           arena,
+                                                           0xfee00000,
+                                                           std::span{reservations}.first(count + 1),
+                                                           authority,
+                                                           *ticket)
+                           : Q35IommuReadPolicy::authorize_qemu_10_0_13_cold(*facts,
+                                                                             *copied,
+                                                                             *copied,
+                                                                             map,
+                                                                             stride,
+                                                                             arena,
+                                                                             0xfee00000,
+                                                                             std::span{reservations}.first(count + 1),
+                                                                             authority,
+                                                                             *ticket);
     if (!grant) {
         if (!authority.revoke(*ticket) || !tables.verify(arena, handoff))
             return false;
-#ifdef AURORA_IVRS_DEFAULT
-        Serial::text("AURORA_IVRS_REJECTED: reason=mmio-disabled\r\n");
-#else
-        Serial::text("AURORA_IVRS_REJECTED: reason=resource-admission\r\n");
-#endif
+        if (architectural)
+            Serial::text("AURORA_IVRS_REJECTED: reason=mmio-disabled\r\n");
+        else
+            Serial::text("AURORA_IVRS_REJECTED: reason=resource-admission\r\n");
         return false;
     }
     Serial::text("AURORA_IVRS_READ_POLICY: profile=qemu-10.0.13-cold base=4275568640 bytes=16384\r\n");

@@ -183,19 +183,13 @@ if [[ "$mode" == graphical-console ]]; then
     exit 0
 elif [[ "$mode" == framebuffer ]]; then
     python3 -B scripts/kernel_framebuffer_preview.py --preflight
-    modes=(framebuffer); options=(); image_dir=; profile_root=
-    if [[ "$action" == --smoke ]]; then modes+=(framebuffer-record framebuffer-permissions framebuffer-stale); options=(--full-smoke); fi
-    for selected_mode in "${modes[@]}"; do
-        if selected="$(build_profile "$selected_mode")"; then :; else
-            status=$?; echo "FAIL: framebuffer $selected_mode image build/admission exited $status" >&2; exit "$status"
-        fi
-        if [[ ${#options[@]} != 0 ]]; then
-            [[ ${selected##*/} == "$selected_mode" ]] || profile_fail 'unexpected native framebuffer profile'
-            [[ -z "$profile_root" || ${selected%/*} == "$profile_root" ]] || profile_fail 'profiles selected different native builds'
-            profile_root=${selected%/*}
-        fi
-        if [[ "$selected_mode" == framebuffer ]]; then image_dir=$selected; fi
-    done
+    # The four capture cases share one image; --smoke selects each by release byte.
+    options=()
+    if [[ "$action" == --smoke ]]; then options=(--full-smoke); fi
+    if image_dir="$(build_profile framebuffer)"; then :; else
+        status=$?; echo "FAIL: framebuffer image build/admission exited $status" >&2; exit "$status"
+    fi
+    if [[ ${#options[@]} != 0 && ${image_dir##*/} != framebuffer ]]; then profile_fail 'unexpected native framebuffer profile'; fi
     exec python3 -B scripts/kernel_framebuffer_preview.py "${options[@]}" --build-dir "$image_dir" "$qemu" "$UEFI_FIRMWARE_COMBINED" \
         "$UEFI_FIRMWARE_CODE" "$UEFI_FIRMWARE_VARS" "${QEMU_DATA:-}"
 fi

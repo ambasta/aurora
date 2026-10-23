@@ -11,6 +11,11 @@ using U64 = std::uint64_t;
 using aurora::hardware::Serial;
 std::optional<FramebufferAdmission> admission;
 U64 owned_arena{}, kernel_root{}, table_count{}, stores{};
+#ifdef AURORA_UEFI_FRAMEBUFFER_CAPTURE
+#include "fixture-selector.inc"
+// Released by 'G' for the normal frame, or by one framebuffer fault selector.
+std::optional<Fixture> fixture;
+#endif
 bool ready{};
 [[noreturn]] auto fail() -> void {
     FramebufferMmio::complete();
@@ -41,7 +46,12 @@ auto capture_gate() -> void {
         const auto status = aurora::hardware::Io::read(0x3fd);
         require((status & 0x1e) == 0);
         if (status & 1) {
-            require(aurora::hardware::Io::read(0x3f8) == 0x47);
+            const auto release = aurora::hardware::Io::read(0x3f8);
+            if (release != 0x47) {
+                require(release >= static_cast<unsigned char>(Fixture::framebuffer_record) &&
+                        release <= static_cast<unsigned char>(Fixture::framebuffer_stale));
+                fixture = static_cast<Fixture>(release);
+            }
             Serial::text("AURORA_DISPLAY_CAPTURE_RELEASED\r\n");
             return;
         }
@@ -104,7 +114,11 @@ __au_runtime_display_pixel(const void *grant, U64 generation, U64 x, U64 y, U64 
     // the complete empty framebuffer tree before calling this profile.
     capture_gate();
 #endif
+#ifdef AURORA_UEFI_FRAMEBUFFER_CAPTURE
+    admission = FramebufferPayload::restore_fixture(arena, fixture == Fixture::framebuffer_record);
+#else
     admission = FramebufferPayload::restore_fixture(arena);
+#endif
     require(admission.has_value());
     const Bytes handoff{{reinterpret_cast<const std::byte *>(arena), Handoff::header}};
     kernel_root = handoff.get(88);
@@ -114,16 +128,18 @@ __au_runtime_display_pixel(const void *grant, U64 generation, U64 x, U64 y, U64 
     // No inherited globals/PCID exist. Flush cached non-present translations
     // before use, without altering PAT/MTRRs or creating an identity alias.
     asm volatile("mov %0,%%cr3" : : "r"(kernel_root) : "memory");
-#ifdef AURORA_FRAMEBUFFER_PERMISSIONS
-    // Controlled negative only: remove NX from the first framebuffer leaf.
-    auto current = kernel_root;
-    for (unsigned shift : {39U, 30U, 21U}) {
-        current = reinterpret_cast<U64 *>(current)[(FramebufferAdmission::virtual_address >> shift) & 511] &
-                  0x000ffffffffff000ULL;
-        require(current >= kernel_root && current < kernel_root + table_count * 4096);
+#ifdef AURORA_UEFI_FRAMEBUFFER_CAPTURE
+    if (fixture == Fixture::framebuffer_permissions) {
+        // Controlled negative only: remove NX from the first framebuffer leaf.
+        auto current = kernel_root;
+        for (unsigned shift : {39U, 30U, 21U}) {
+            current = reinterpret_cast<U64 *>(current)[(FramebufferAdmission::virtual_address >> shift) & 511] &
+                      0x000ffffffffff000ULL;
+            require(current >= kernel_root && current < kernel_root + table_count * 4096);
+        }
+        reinterpret_cast<U64 *>(current)[(FramebufferAdmission::virtual_address >> 12) & 511] =
+            admission->geometry().base() + 0x1b;
     }
-    reinterpret_cast<U64 *>(current)[(FramebufferAdmission::virtual_address >> 12) & 511] =
-        admission->geometry().base() + 0x1b;
 #endif
     require(tables.verify(arena, handoff, nullptr, &*admission));
     ready = true;
@@ -133,8 +149,9 @@ __au_runtime_display_pixel(const void *grant, U64 generation, U64 x, U64 y, U64 
     Serial::text(" height=");
     Serial::number(argument.height);
     Serial::text("\r\n");
-#ifdef AURORA_FRAMEBUFFER_STALE
-    ++argument.generation;
+#ifdef AURORA_UEFI_FRAMEBUFFER_CAPTURE
+    if (fixture == Fixture::framebuffer_stale)
+        ++argument.generation;
 #endif
     const auto result = __au_runtime_display_entry(&argument);
     require(Session::close(argument, result) == aurora::display::Completion::rendered);

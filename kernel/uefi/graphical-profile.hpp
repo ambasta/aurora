@@ -8,11 +8,8 @@
 #endif
 #if defined(AURORA_IVRS_FIXTURE) || defined(AURORA_IPC_FIXTURE) || defined(AURORA_BUDGET_FIXTURE) ||                   \
     defined(AURORA_DISPATCH_FIXTURE) || defined(AURORA_USER_FIXTURE) || defined(AURORA_ACPI_FIXTURE) ||                \
-    defined(AURORA_ACPI_DUPLICATE_ROOT) || defined(AURORA_CONSOLE_SERVICE_REENTRY) ||                                  \
-    defined(AURORA_CONSOLE_SERVICE_REPORT) || defined(AURORA_CONSOLE_SERVICE_STALE) ||                                 \
-    defined(AURORA_CONSOLE_SERVICE_TIMEOUT) || defined(AURORA_DORMANT_TABLE_TESTING) ||                                \
-    defined(AURORA_FRAMEBUFFER_PERMISSIONS) || defined(AURORA_FRAMEBUFFER_RECORD) ||                                   \
-    defined(AURORA_FRAMEBUFFER_STALE) || defined(AURORA_KERNEL_BYTES_TESTING) ||                                       \
+    defined(AURORA_ACPI_DUPLICATE_ROOT) || defined(AURORA_CONSOLE_SERVICE_FIXTURE) ||                                  \
+    defined(AURORA_DORMANT_TABLE_TESTING) || defined(AURORA_KERNEL_BYTES_TESTING) ||                                   \
     defined(AURORA_NVME_QUEUE_GENERATION_LIMIT) || defined(AURORA_NVME_QUEUE_TESTING) ||                               \
     defined(AURORA_PCI_FIXTURE) || defined(AURORA_RUNTIME_CONTROL_FIXTURE) || defined(AURORA_PIN_FIXTURE) ||           \
     defined(AURORA_TABLE_FIXTURE) || defined(AURORA_PROGRAM_FIXTURE) || defined(AURORA_SNAPSHOT_FIXTURE) ||            \

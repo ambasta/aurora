@@ -16,6 +16,7 @@ import subprocess
 import sys
 import time
 
+import kernel_profiles as profiles
 import qemu_transport as transport
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -92,7 +93,7 @@ def native_image(profile, root, env):
         selected == str(build) + "\n"
         and selected.count("\n") == 1
         and build.is_absolute()
-        and build.parts[-3:] == ("kernel-images", "uefi", profile),
+        and build.parts[-3:] == ("kernel-images", "uefi", profiles.canonical_profile("uefi", profile)),
         "Invalid native control image handoff",
     )
     return build
@@ -342,9 +343,9 @@ def generate(family, root, qemu, data, stock, env):
     stock_run = root / "stock"
     stock_run.mkdir()
     # bar-state refuses BME before MMIO; the inherited profile measures seven
-    # read-only registers, then rejects the active controller. Its native image
-    # is shared with bar-read, while the semantic oracle remains bar-inherited.
-    build = native_image("bar-read", stock_run, env)
+    # read-only registers, then rejects the active controller. It boots the
+    # bar-fixture image with its own selector; the oracle remains bar-inherited.
+    build = native_image("bar-inherited", stock_run, env)
     shutil.copytree(build / "esp", stock_run / "esp")
     argv = transport.command(
         qemu,
@@ -354,7 +355,15 @@ def generate(family, root, qemu, data, stock, env):
         peripherals=["-device", "nvme,serial=AURORA_READ_ONLY,bus=pcie.0,addr=02.0"],
         diagnostics=["-trace", f"events={events},file={root}/stock.trace"],
     )
-    transport.run_logged(argv, stock_run / "serial.log", cwd=ROOT, env=env, timeout=60, expected=35)
+    transport.run_logged(
+        argv,
+        stock_run / "serial.log",
+        cwd=ROOT,
+        env=env,
+        timeout=60,
+        expected=35,
+        startup_byte=profiles.FIXTURE_MODES["bar-inherited"][1],
+    )
     metadata = json.loads((build / "bar-metadata.json").read_text())
     module("bar-smoke").validate(35, (stock_run / "serial.log").read_text(), "bar-inherited", metadata)
     bar.validate_stock_control((root / "stock.trace").read_text())

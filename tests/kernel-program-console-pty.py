@@ -854,7 +854,14 @@ def validate_failstop(part, mode, status, images):
     need(part.count("AURORA_PROGRAM_COMMAND_BEGIN:") == 1, "Malformed command restarted")
     image = images["bounds" if mode == "program-transaction" else "clean"]
     vector = 6 if mode == "program-unknown" else 129
-    pc = image["probe_pc"] if mode == "program-unknown" else image["return_pc"]
+    # program-unknown: the fixture resumes the client at its wrapper's bad_entry
+    # ud2, just after the return site, which is no registered site.
+    pc = image["return_pc"] + (2 if mode == "program-unknown" else 0)
+    need(
+        mode != "program-unknown"
+        or pc not in [image.get(k) for k in ("return_pc", "bounds_pc", "overflow_pc", "division_zero_pc", "shift_count_pc")],
+        "Unknown UD2 aliases a registered site",
+    )
     need(
         pc != 0 and f"AURORA_UEFI_DOMAIN_EVENT: vector={vector} error=0 pc={pc} cpl=3 " in part,
         "Malformed image did not reach its admitted CPL3 envelope/probe",

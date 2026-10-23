@@ -133,7 +133,7 @@ def verify(
         need(
             all(not (patch < pc + 2 and pc < patch + 8) for pc in present), "Test literal aliases instruction authority"
         )
-    return dict(
+    result = dict(
         entry=base,
         size=len(blob),
         return_pc=sites[0],
@@ -144,6 +144,20 @@ def verify(
         probe_offset=patch - base if patch else 0,
         probe_pc=symbols.get("aurora_probe_pc", 0),
     )
+    # runtime-fixture's clean image carries one named probe per hostile case.
+    probes = {
+        name[len("aurora_probe_") : -len("_pc")]: pc
+        for name, pc in symbols.items()
+        if name.startswith("aurora_probe_") and name.endswith("_pc") and name != "aurora_probe_pc"
+    }
+    if probes:
+        need(not result["probe_pc"], "Single probe and probe set are exclusive")
+        need(
+            all(base <= pc <= base + len(blob) - 2 and pc not in present for pc in probes.values()),
+            "Probe outside image or aliasing a registered site",
+        )
+        result["probes"] = dict(sorted(probes.items()))
+    return result
 
 
 def multipage_wrapper(code, symbols, base, fault):
@@ -384,7 +398,8 @@ def emit_metadata(out, mode):
             + ",".join(f"std::byte{{{value}}}" for value in blob)
             + "};"
         )
-        for key, value in meta.items():
+        # The kernel loads only scalar facts; the probe set is guest-oracle evidence.
+        for key, value in ((key, value) for key, value in meta.items() if key != "probes"):
             header.append(f"inline constexpr unsigned long long {name}_{key}={value}ULL;")
     header.append("}")
     (out / "uefi-user-images.hpp").write_text("\n".join(header) + "\n")
@@ -405,16 +420,7 @@ if __name__ == "__main__":
             "owned-text",
             "console-region",
             "console-region-fixture",
-            "code",
-            "stack",
-            "window",
-            "kernel",
-            "write",
-            "nx",
-            "return",
-            "unknown",
-            "syscall",
-            "sysenter",
+            "fixture",
         ],
     )
     args = parser.parse_args()
