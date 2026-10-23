@@ -48,7 +48,10 @@ untracked inputs; compiler, ABI, library, generators, options, harness changes
 and unknown inputs retain both profiles. Missing/invalid/ambiguous bases and
 unsupported Git/source layouts also retain both. No base is inferred, no output
 equivalence is used, and no decision is cached. Empty (the default) always runs
-both; use the actual PR target, never an incidental previous commit.
+both; use the actual PR target, never an incidental previous commit. The selector's
+own controls need a real Git repository. The pinned image has no Git, so there
+`emitter-differential-controls` runs its Git-free checks and then reports SKIP;
+a run with SKIP is not complete qualification.
 
 Duplicate Python runner registrations execute one complete case set under `-O`.
 The IOMMU mock checks use explicit failures, and unittest checks remain active.

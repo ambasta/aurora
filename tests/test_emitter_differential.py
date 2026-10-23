@@ -3,6 +3,7 @@
 
 from pathlib import Path
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -428,4 +429,15 @@ class SharedObservationTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    if shutil.which("git") is not None:
+        unittest.main()
+    # The selector itself fails closed without Git and always runs the closed
+    # profile; its controls need a real repository. Run the rest, then report SKIP.
+    suite = unittest.TestSuite(
+        unittest.defaultTestLoader.loadTestsFromTestCase(case)
+        for case in (BorrowAdapterEquivalenceTests, SharedObservationTests)
+    )
+    if not unittest.TextTestRunner().run(suite).wasSuccessful():
+        sys.exit(1)
+    print("SKIP: git is unavailable; closed-profile selector controls were not run")
+    sys.exit(77)
