@@ -108,6 +108,31 @@ compatibility layer. Read README.md and docs/completeness-matrix.md first.
   and cross-route gates in compiler/README.md. Final-source full, image/emulator
   qualification and independent review requirements above remain unchanged.
 
+## Proportionality
+
+- Match the mechanisms of Linux, GCC and Rust/LLVM. Anything beyond them needs a
+  stated safety reason in the change; more checking is not a reason by itself.
+- Never weaken a check to simplify. A check may move (build time to load time,
+  script to compiler facts, separate image to boot-selected fixture) only if the
+  change names where the same property is now enforced and a test still covers it.
+- Ship one production kernel configuration per supported target. Fault and hostile
+  cases are boot-selected fixtures in a few test images, not separate kernel builds.
+- Admission checks prove properties (stack bounds, page permissions, W^X,
+  entry/exit integrity) from compiler facts and the kernel's own load-time checks.
+  Do not pin exact instruction sequences, addresses or digests that legitimate
+  code-generation or layout changes must then re-pin.
+- Use standard-library references or reviewed golden outputs as test oracles;
+  reimplement only where none exists. Feed generated cases to one compiled driver
+  as data rather than compiling a program per batch.
+- Prefer reseeding the bootstrap route from a verified checkpoint, under the gates
+  in compiler/README.md, over adding stages. C1/C2 convergence is the self-check.
+- Every PR reports image count, build CPU and `full` duration next to the previous
+  main; growth needs a justification. Compiler-speed changes report paired
+  measurements against the retained baseline.
+- Python is for bootstrap, emulator orchestration and small generators. Move heavy
+  checks to C++ (or Aurora, once it has host file and process services) when they
+  become a bottleneck.
+
 ## Validation
 
 - meson test -C build/meson --suite core --num-processes 2: focused frontend,
