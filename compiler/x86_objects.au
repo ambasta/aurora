@@ -300,6 +300,31 @@ export namespace compiler_x86 {
         }
         return workspace.ok();
     }
+    // A getter whose whole body is one receiver field load and its return costs a
+    // frame, a receiver spill and a call per use. Return that load so the call
+    // site can emit it directly; any other body shape keeps the real call.
+    auto inline_getter_load(const compiler_ir_metadata::MetadataStore& metadata,
+        const compiler_ir_instructions::InstructionStore& store, i64 target) -> i64 {
+        if (!has_receiver(metadata, target) || parameter_count(metadata, target) != 0) {
+            return -1;
+        }
+        const compiler_ir_metadata::CallableRow callable = metadata.callable_at(target);
+        const compiler_ir_instructions::BodyRow body = store.body_at(target);
+        if (callable.borrowed_root_count() != 0 || body.count() != 2) {
+            return -1;
+        }
+        const compiler_ir_instructions::CodeRow first = store.code_at(body.begin());
+        const compiler_ir_instructions::CodeRow second = store.code_at(body.begin() + 1);
+        if (first.id() <= 0 || second.id() <= 0) {
+            return -1;
+        }
+        const compiler_ir_instructions::RawInstructionRow load = store.instruction_at(first.id());
+        const compiler_ir_instructions::RawInstructionRow done = store.instruction_at(second.id());
+        if (load.form() != 32 || done.form() != 43) {
+            return -1;
+        }
+        return first.id();
+    }
     auto emit_object_calls(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
         const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> bool {
         const compiler_ir_instructions::RawInstructionRow row = store.instruction_at(instruction);
@@ -413,7 +438,20 @@ export namespace compiler_x86 {
                 workspace.line_address("leaq ", result, ", %r11");
             }
         }
-        call_target(workspace, metadata, target);
+        i64 getter = -1;
+        if (form == 38 && count == 0 && !aggregate && root_bytes == 0 && result_kind != 5 && result_kind != 11) {
+            getter = inline_getter_load(metadata, store, target);
+        }
+        if (getter > 0) {
+            // The receiver is already in %r10, exactly where the getter reloads it.
+            const i64 field = operand_value(store, getter, 0);
+            const i64 type = operand_value(store, getter, 1);
+            const i64 offset = class_field_offset(metadata, receiver_class(metadata, target), field);
+            const i64 address = workspace.pack_address(2, offset);
+            load_value(workspace, metadata, type, address);
+        } else {
+            call_target(workspace, metadata, target);
+        }
         if (root_bytes != 0) {
             workspace.release_stack(root_bytes);
         }

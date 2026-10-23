@@ -44,6 +44,8 @@ def check(
     trap=False,
     existing_output=None,
     calls_in_order=None,
+    inlined=(),
+    called=(),
 ):
     global COUNT
     with tempfile.TemporaryDirectory(prefix="aurora-modules-") as directory:
@@ -81,6 +83,11 @@ def check(
                 require(assembly.read_text() == existing_output, name + ": existing output changed on rejection")
             require(error.encode() in compiled.stderr, name + ": " + repr(compiled.stderr))
         else:
+            calls = [line for line in assembly.read_text().splitlines() if line.startswith("    call ")]
+            for method in inlined:
+                require(not any(line.endswith(method) for line in calls), name + ": getter was not inlined")
+            for method in called:
+                require(any(line.endswith(method) for line in calls), name + ": non-getter body was inlined")
             if calls_in_order:
                 code = assembly.read_text()
                 positions = [code.index("call " + name) for name in calls_in_order]
@@ -138,6 +145,37 @@ def program(body, definition=COUNTER, helpers=""):
 check("constructor and private mutation", program("Counter c = Counter(40); return c.add(2);"))
 check("const accessor", program("const Counter c = Counter(42); return c.get();"))
 check("argument before exclusive call", program("Counter c = Counter(21); return c.add(c.get());"))
+# Single-field getters become a load at the call site; any other body stays a call.
+check("inlined getter", program("const Counter c = Counter(42); return c.get();"), inlined=("_d3get",))
+check(
+    "inlined narrow and nested getters",
+    program(
+        "const Counter c = Counter(2); const Outer o = Outer(c); return i64(o.small()) * 2 + o.value();",
+        definition=COUNTER
+        + """class Outer {
+    u8 tag;
+    Counter inner;
+public:
+    Outer(Counter initial) : tag(20u8), inner(initial) {}
+    auto small() const -> u8 { return tag; }
+    auto value() const -> i64 { return inner.get(); }
+};""",
+    ),
+    inlined=("_d5small", "_d3get"),
+)
+check(
+    "two-statement getter stays a call",
+    program(
+        "const Twice t = Twice(21); return t.twice();",
+        definition="""class Twice {
+    i64 value;
+public:
+    Twice(i64 initial) : value(initial) {}
+    auto twice() const -> i64 { const i64 copy = value; return copy + copy; }
+};""",
+    ),
+    called=("_d5twice",),
+)
 check("readonly sibling reborrow", program("const Counter c = Counter(21); return c.doubled();"))
 check(
     "complete private copies independent",
