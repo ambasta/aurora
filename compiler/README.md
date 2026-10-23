@@ -33,8 +33,14 @@ not a claim that all aggregate copies or the measured performance gap are gone.
 Metadata name comparison borrows its validated byte ranges once. The hosted
 adapter returns a checked contiguous span for inline reads; fragmented kernel
 backings retain checked owner snapshots. Identity, extent, lifecycle and failure
-checks remain mandatory. This does not change runtime owner lookup complexity.
-These access changes add no language features or unchecked views.
+checks remain mandatory. These access changes add no language features or unchecked views.
+
+Hosted owner lookup uses a 64-slot direct-mapped cache per region, keyed by the
+never-reused allocation ID, plus the last region found. Every unlink clears its
+slot first, so a hit is the record the registry walk would find; the walk no
+longer reorders the list. Region, success, ID and length checks are unchanged.
+On the 46-module frontend workload this cut user instructions by 6.1% and user
+cycles by about 4.5% (six alternating pairs, identical outputs).
 
 ## Build and check
 

@@ -1214,7 +1214,87 @@ void readonly_metadata_observations() {
 
 } // namespace
 
+// The owner lookup cache is direct-mapped by allocation ID. Colliding, dropped,
+// replaced and foreign-region owners must behave exactly like the registry walk.
+// Freed records keep their bytes, so a stale cache entry would still match its ID.
+struct Quarantine {
+    std::array<void *, 256> retired{};
+    std::size_t count = 0;
+    static void *allocate(void *, std::size_t size) noexcept {
+        return std::malloc(size);
+    }
+    static void deallocate(void *context, void *address) noexcept {
+        auto &self = *static_cast<Quarantine *>(context);
+        require(self.count < self.retired.size(), "quarantine capacity");
+        self.retired[self.count++] = address;
+    }
+    ~Quarantine() {
+        for (std::size_t index = 0; index < count; ++index) {
+            std::free(retired[index]);
+        }
+    }
+};
+
+void owner_lookup_cache_identity() {
+    constexpr std::size_t count = 130; // more than two full cache rounds
+    Quarantine quarantine;
+    Region region(4096, Allocator{&quarantine, Quarantine::allocate, Quarantine::deallocate});
+    std::array<NativeOwner, count> owners{};
+    for (std::size_t index = 0; index < count; ++index) {
+        __au_runtime_bytes_allocate(region.id(), 2, &owners[index]);
+        require_live(owners[index], region, 2);
+        require(__au_runtime_bytes_set(&owners[index], 1, index & 0xff) == 1, "write colliding owner");
+    }
+    require(owners[64].allocation == owners[0].allocation + 64, "fixture owners collide in one cache slot");
+    for (int pass = 0; pass < 3; ++pass) {
+        for (std::size_t step = 0; step < count; ++step) {
+            const std::size_t index = pass == 1 ? count - 1 - step : (step * 67) % count;
+            require(__au_runtime_bytes_at(&owners[index], 1) == (index & 0xff), "colliding owner reads its own bytes");
+        }
+    }
+    const NativeOwner dropped = owners[3];
+    require(__au_runtime_bytes_at(&owners[3], 1) == 3, "cache the owner about to be dropped");
+    __au_runtime_bytes_drop(&owners[3]);
+    invariant("cached dropped owner", [dropped] {
+        __au_runtime_bytes_at(&dropped, 1);
+    });
+    require(__au_runtime_bytes_at(&owners[67], 1) == 67, "same-slot owner survives a drop");
+    const NativeOwner replaced = owners[5];
+    require(__au_runtime_bytes_at(&owners[5], 1) == 5, "cache the owner about to be replaced");
+    require(__au_runtime_bytes_resize(&owners[5], 3) == 1, "resize cached owner");
+    require(owners[5].allocation != replaced.allocation && __au_runtime_bytes_at(&owners[5], 1) == 5,
+            "replacement keeps bytes under a fresh identity");
+    invariant("cached replaced owner", [replaced] {
+        __au_runtime_bytes_at(&replaced, 1);
+    });
+    {
+        Region other(64, Allocator{&quarantine, Quarantine::allocate, Quarantine::deallocate});
+        NativeOwner foreign;
+        __au_runtime_bytes_allocate(other.id(), 1, &foreign);
+        for (int round = 0; round < 4; ++round) {
+            require(__au_runtime_bytes_at(&owners[7], 1) == 7, "alternate regions: first");
+            require(__au_runtime_bytes_at(&foreign, 0) == 0, "alternate regions: second");
+        }
+        const NativeOwner relabeled{region.id(), foreign.allocation, foreign.length, 1};
+        invariant("other region's cached ID under this region", [relabeled] {
+            __au_runtime_bytes_at(&relabeled, 0);
+        });
+        const NativeOwner stale = foreign;
+        __au_runtime_bytes_drop(&foreign);
+        require(other.close(), "close the cached region after its last owner");
+        invariant("owner of a closed cached region", [stale] {
+            __au_runtime_bytes_at(&stale, 0);
+        });
+    }
+    for (auto &owner : owners) {
+        __au_runtime_bytes_drop(&owner);
+    }
+    require(region.close(), "close after every cached owner is dropped");
+    std::puts("PASS owned bytes host: owner lookup cache matches registry identity");
+}
+
 int main() {
+    owner_lookup_cache_identity();
     typed_value_storage();
     readonly_descriptor_snapshots(__au_runtime_bytes_borrow_length);
     readonly_descriptor_snapshots(checked_span);

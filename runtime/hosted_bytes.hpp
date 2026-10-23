@@ -87,6 +87,9 @@ private:
     Allocator allocator_;
     Metrics metrics_;
     Allocation *allocations_;
+    // Direct-mapped by allocation ID. Holds only live records of this region:
+    // every unlink clears its slot first, and IDs are never reused.
+    Allocation *recent_[64]{};
     Region *next_;
 };
 

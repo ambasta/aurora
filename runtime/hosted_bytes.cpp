@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 #include <limits>
 #include <new>
 
@@ -11,6 +12,7 @@ namespace aurora::hosted::bytes {
 namespace {
 
 Region *first_region = nullptr;
+Region *last_region = nullptr; // open and linked whenever non-null
 std::uint64_t next_region_id = 1;
 std::uint64_t next_allocation_id = 1;
 bool region_ids_exhausted = false;
@@ -62,12 +64,28 @@ struct Region::Allocation {
 class RuntimeAccess {
 public:
     static Region &region(std::uint64_t id) noexcept {
+        if (last_region != nullptr && last_region->id_ == id) {
+            return *last_region;
+        }
         for (Region *current = first_region; current != nullptr; current = current->next_) {
             if (current->id_ == id) {
+                last_region = current;
                 return *current;
             }
         }
         invariant_trap();
+    }
+
+    static Region::Allocation *&recent(Region &region, std::uint64_t id) noexcept {
+        return region.recent_[id % std::size(region.recent_)];
+    }
+
+    // Call before a record leaves the registry, so the cache never names freed memory.
+    static void forget(Region &region, const Region::Allocation *record) noexcept {
+        auto *&slot = recent(region, record->id);
+        if (slot == record) {
+            slot = nullptr;
+        }
     }
 
     static Region::Allocation *allocation(const NativeOwner *owner, Region *&found_region) noexcept {
@@ -84,21 +102,24 @@ public:
         if (owner->success != 1 || owner->allocation == 0 || owner->length < 0) {
             invariant_trap();
         }
-        for (auto **link = &found_region->allocations_; *link != nullptr; link = &(*link)->next) {
-            auto *current = *link;
-            if (current->id == owner->allocation) {
-                if (current->length != owner->length) {
-                    invariant_trap();
-                }
-                // Move the match to the front. A few hot owners serve most accesses;
-                // membership and every check above are unchanged.
-                *link = current->next;
-                current->next = found_region->allocations_;
-                found_region->allocations_ = current;
-                return current;
+        // IDs are unique and the cache holds only live records of this region, so
+        // a matching cached record is exactly the one the registry walk would find.
+        auto *&slot = recent(*found_region, owner->allocation);
+        auto *record = slot;
+        if (record == nullptr || record->id != owner->allocation) {
+            record = found_region->allocations_;
+            while (record != nullptr && record->id != owner->allocation) {
+                record = record->next;
             }
+            if (record == nullptr) {
+                invariant_trap();
+            }
+            slot = record;
         }
-        invariant_trap();
+        if (record->length != owner->length) {
+            invariant_trap();
+        }
+        return record;
     }
 
     static void allocate(std::uint64_t id,
@@ -246,6 +267,7 @@ public:
         // one nonthrowing operation, then retire the old block exactly once.
         // Old+new storage coexist transiently; payload quota is not a bound on
         // instantaneous host storage. Live-owner counts do not include staging.
+        forget(*target, record);
         *link = replacement;
         target->metrics_.used = other_used + count;
         ++target->metrics_.successful_allocations;
@@ -327,6 +349,7 @@ public:
         while (*link != record) {
             link = &(*link)->next;
         }
+        forget(*target, record);
         *link = record->next;
         target->metrics_.used -= static_cast<std::uint64_t>(record->length);
         --target->metrics_.live_allocations;
@@ -402,6 +425,9 @@ bool Region::close() noexcept {
     *link = next_;
     next_ = nullptr;
     open_ = false;
+    if (last_region == this) {
+        last_region = nullptr;
+    }
     return true;
 }
 
