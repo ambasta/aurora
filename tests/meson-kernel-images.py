@@ -484,7 +484,9 @@ class GeneratorBoundaries(unittest.TestCase):
         cases = {mode: value for mode, (image, value) in profiles.FIXTURE_MODES.items() if image == "ivrs-fixture"}
         self.assertEqual(set(cases), {"ivrs-write", "ivrs-revoked", "ivrs-default", "ivrs-read"})
         self.assertEqual(sorted(cases.values()), list(range(min(cases.values()), min(cases.values()) + 4)))
-        self.assertEqual([name for name in recipes if "-DAURORA_UEFI_IVRS" in recipes[name]["flags"]], ["uefi/ivrs-fixture"])
+        self.assertEqual(
+            [name for name in recipes if "-DAURORA_UEFI_IVRS" in recipes[name]["flags"]], ["uefi/ivrs-fixture"]
+        )
 
     def test_copied_policy_negatives_are_hosted_not_boot_profiles(self):
         recipes = profiles.profiles()
@@ -539,7 +541,9 @@ class GeneratorBoundaries(unittest.TestCase):
         self.assertEqual(users["bounds"]["entry_flags"], ["--defsym", "IPC_PROBES=1"])
         users["bounds"]["entry_flags"] = []
         self.assertEqual(users, recipes["uefi/budget"]["users"])
-        entry = {name: recipes["uefi/" + name]["assembly"]["runtime-entry"]["flags"] for name in ("budget", "budget-fixture")}
+        entry = {
+            name: recipes["uefi/" + name]["assembly"]["runtime-entry"]["flags"] for name in ("budget", "budget-fixture")
+        }
         self.assertEqual(entry["budget-fixture"], entry["budget"] + ["--defsym", "AURORA_IPC_PROBES=1"])
         self.assertNotIn("-DAURORA_RUNTIME_FIXTURE", recipes["uefi/budget"]["flags"])
         self.assertEqual(profiles.canonical_profile("uefi", "budget-smp"), "budget")

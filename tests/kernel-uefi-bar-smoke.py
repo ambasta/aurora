@@ -154,8 +154,10 @@ def validate(status, serial, mode, payload=None):
     if mode in FIXTURE_MODES:
         at = lines.index(marker)
         need(
-            at > 0 and lines[at - 1].startswith("AURORA_ACPI_WINDOW_CLOSED:")
-            and at + 1 < len(lines) and lines[at + 1].startswith("AURORA_PCI_APERTURE:"),
+            at > 0
+            and lines[at - 1].startswith("AURORA_ACPI_WINDOW_CLOSED:")
+            and at + 1 < len(lines)
+            and lines[at + 1].startswith("AURORA_PCI_APERTURE:"),
             "BAR fixture admission phase",
         )
         lines.remove(marker)

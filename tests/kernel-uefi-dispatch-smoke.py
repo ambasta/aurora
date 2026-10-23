@@ -34,9 +34,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import kernel_profiles  # noqa: E402
 
 # Modes that boot dispatch-fixture, whose peer wrapper carries the probe set.
-FIXTURE_MODES = tuple(
-    mode for mode, (image, _) in kernel_profiles.FIXTURE_MODES.items() if image == "dispatch-fixture"
-)
+FIXTURE_MODES = tuple(mode for mode, (image, _) in kernel_profiles.FIXTURE_MODES.items() if image == "dispatch-fixture")
 
 
 def metadata_valid(meta, mode):

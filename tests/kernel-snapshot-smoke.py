@@ -25,9 +25,7 @@ MODES = SUCCESS + (
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import kernel_profiles  # noqa: E402
 
-FIXTURE_MODES = tuple(
-    mode for mode, (image, _) in kernel_profiles.FIXTURE_MODES.items() if image == "snapshot-fixture"
-)
+FIXTURE_MODES = tuple(mode for mode, (image, _) in kernel_profiles.FIXTURE_MODES.items() if image == "snapshot-fixture")
 DONE = (1 << 64) - 1
 STACK = r"(\d+)"
 SUFFIX = ipc.SUFFIX

@@ -36,10 +36,13 @@ SELECTORS = {
 def validate_selector(receipt):
     expected, actual = SELECTORS.get(receipt.get("mode")), receipt.get("startup_byte")
     need(
-        actual == expected and (expected is None or type(actual) is int)
+        actual == expected
+        and (expected is None or type(actual) is int)
         and (expected is not None or "startup_byte" not in receipt),
         "Wrong BAR fixture selector receipt",
     )
+
+
 bar = trace.bar
 need = bar.need
 PINS = {
@@ -566,7 +569,11 @@ def self_test():
         good = dict(mode=mode) | ({"startup_byte": SELECTORS[mode]} if mode in SELECTORS else {})
         validate_selector(good)
         bad = [dict(good, startup_byte=0), dict(good, startup_byte=float(SELECTORS.get(mode, 1)))]
-        bad.append({key: value for key, value in good.items() if key != "startup_byte"} if mode in SELECTORS else dict(good, startup_byte=None))
+        bad.append(
+            {key: value for key, value in good.items() if key != "startup_byte"}
+            if mode in SELECTORS
+            else dict(good, startup_byte=None)
+        )
         for candidate in bad:
             try:
                 validate_selector(candidate)

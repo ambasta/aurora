@@ -33,9 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import kernel_profiles  # noqa: E402
 
 # Modes that boot the shared budget-fixture image, from the one fixture table.
-FIXTURE_MODES = tuple(
-    mode for mode, (image, _) in kernel_profiles.FIXTURE_MODES.items() if image == "budget-fixture"
-)
+FIXTURE_MODES = tuple(mode for mode, (image, _) in kernel_profiles.FIXTURE_MODES.items() if image == "budget-fixture")
 # Instruction probes the fixture service selects from its launch word.
 PROBE_FAULTS = {"mmio": (14, 5), "softint": (13, 514), "fpu": (7, 0)}
 # Every fixture wrapper carries the complete selectable set (see ipc-user-entry.S).
@@ -80,9 +78,7 @@ def metadata_valid(meta, mode, probe_image=None):
         need(image["probe_pc"] == 0, "Unexpected single privileged probe")
         if hostile:
             need(type(probes) is dict and set(probes) == PROBE_NAMES, "Exact privileged probe set")
-            sites = [
-                probe for probe in probes.values() if type(probe) is int and base <= probe < base + image["size"]
-            ]
+            sites = [probe for probe in probes.values() if type(probe) is int and base <= probe < base + image["size"]]
             # Wrapper code only: never a registered exit/trap site or compiled code.
             sites = [
                 probe
@@ -585,9 +581,7 @@ def self_test():
                             kind = mode.removeprefix("budget-")
                             v, e = PROBE_FAULTS[kind]
                             rows.append(
-                                event(
-                                    v, images["bounds"]["probes"][kind], error=e, cr2=APIC if kind == "mmio" else 0
-                                )
+                                event(v, images["bounds"]["probes"][kind], error=e, cr2=APIC if kind == "mmio" else 0)
                             )
                             rows.append("AURORA_UEFI_RUNTIME_FAIL: timer terminal context")
                         break
@@ -699,7 +693,9 @@ def self_test():
                 probe_cases.append(altered)
         else:
             altered = copy.deepcopy(meta)
-            altered["images"]["bounds"]["probes"] = {kind: BASE + 16384 + 30 + 4 * i for i, kind in enumerate(PROBE_NAMES)}
+            altered["images"]["bounds"]["probes"] = {
+                kind: BASE + 16384 + 30 + 4 * i for i, kind in enumerate(PROBE_NAMES)
+            }
             probe_cases.append(altered)
         for altered in probe_cases:
             try:

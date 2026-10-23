@@ -24,6 +24,7 @@ def release_byte(mode):
     need(image == "framebuffer" and value != 0x47, "unknown framebuffer release")
     return value
 
+
 ROOT = Path(__file__).resolve().parents[1]
 MAX_IO = 1024 * 1024
 

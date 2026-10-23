@@ -859,7 +859,8 @@ def validate_failstop(part, mode, status, images):
     pc = image["return_pc"] + (2 if mode == "program-unknown" else 0)
     need(
         mode != "program-unknown"
-        or pc not in [image.get(k) for k in ("return_pc", "bounds_pc", "overflow_pc", "division_zero_pc", "shift_count_pc")],
+        or pc
+        not in [image.get(k) for k in ("return_pc", "bounds_pc", "overflow_pc", "division_zero_pc", "shift_count_pc")],
         "Unknown UD2 aliases a registered site",
     )
     need(

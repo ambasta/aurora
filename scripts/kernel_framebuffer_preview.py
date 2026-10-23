@@ -84,7 +84,8 @@ def run(qemu, firmware, code, variables, data, *, build_dir, full_smoke=False):
             admission.configure_paths(profiles[mode], ROOT)
             if full_smoke:
                 need(
-                    admission.checked("framebuffer") == admitted[mode], "admitted framebuffer image changed before capture"
+                    admission.checked("framebuffer") == admitted[mode],
+                    "admitted framebuffer image changed before capture",
                 )
             destination = directory / (mode if full_smoke else "capture")
             result = capture.run_case(

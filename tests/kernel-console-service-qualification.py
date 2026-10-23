@@ -295,8 +295,7 @@ def main():
             result["guest"] = fault_guest(args.mode, work)
             result["guest"]["transcript_sha256"] = admission.digest(work / "guest.log")
         need(
-            admission.checked(profile) == receipt
-            and admission.digest(admission.RECEIPT) == result["admission_sha256"],
+            admission.checked(profile) == receipt and admission.digest(admission.RECEIPT) == result["admission_sha256"],
             "Admitted image or report changed during guest execution",
         )
     except BaseException as error:
