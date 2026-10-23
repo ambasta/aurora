@@ -212,9 +212,21 @@ def generated_producer(body, linked, local_bytes, prefix, constructor):
         )
         result_accesses.add(returned)
     require(all(left[1] <= right[0] for left, right in zip(sorted(slots), sorted(slots)[1:])), "Copied results overlap")
+    # %r10 carries either the saved output address or, for inlined getters, the
+    # address of a local object. Only the six result copies may use the output.
+    output_uses, other_uses, holds_output = 0, [], False
+    for line in body:
+        if "(%r10)" in line:
+            if holds_output:
+                output_uses += 1
+            else:
+                other_uses.append(line)
+        if line.endswith(", %r10"):
+            holds_output = line == f"movq {output_save}, %r10"
     require(
         {index for index, line in enumerate(body) if output_save in line} == result_accesses
-        and sum("(%r10)" in line for line in body) == 6
+        and output_uses == 6
+        and all(re.fullmatch(r"mov(?:q|zbq) -?[0-9]+\(%r10\), %rax", line) for line in other_uses)
         and sum(line.startswith("jmp .Lreturn") for line in body) == 6,
         "Copied output address escaped or gained an unaccounted access/return",
     )
