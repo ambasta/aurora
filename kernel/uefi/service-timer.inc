@@ -330,7 +330,7 @@ auto timer_begin(unsigned index) -> void {
 // Shared protected launch: activate the owner, switch to its root, start its
 // allowance and run from its entry until it traps back. Callers keep their own
 // authority checks before this and their own completion checks after it.
-[[nodiscard]] auto launch_domain(unsigned index, const user::DomainHandle &owner) -> bool {
+[[nodiscard, maybe_unused]] auto launch_domain(unsigned index, const user::DomainHandle &owner) -> bool {
     auto &domain = domains[index];
     if (!program.begin(*domain.contract) || !registry.activate(owner))
         return false;
