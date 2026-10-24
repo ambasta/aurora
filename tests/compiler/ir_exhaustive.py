@@ -286,7 +286,7 @@ extern "C" std::int64_t __wrap_aurora_hosted_emitter_run(
     for case, parameters, result, expression, expected in (
         ("constant", "", "i64", "42", "movabsq $42, %rax"),
         ("unary", "i64 x", "i64", "-x", "negq %rax"),
-        ("binary", "i64 x, i64 y", "i64", "x+y", "addq %rcx, %rax"),
+        ("binary", "i64 x, i64 y", "i64", "x+y", "addq "),
         ("comparison", "i64 x, i64 y", "bool", "x==y", "sete %al"),
     ):
         path = directory / (case + ".au")

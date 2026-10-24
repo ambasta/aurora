@@ -125,36 +125,50 @@ export namespace compiler_x86 {
             const i64 following = module_instruction(s, callable, at + 2);
             const i64 form = module_form(s, current);
             const i64 next_form = module_form(s, next);
-            if (following > 0 && form == 9 && module_plain_load(next_form) && module_popped_binary(module_form(s,
-                following))) {
-                // The intervening accumulator load touches neither RCX nor the
-                // operand stack; preserve the old adjacency-only peephole.
-                w.line("movq %rax, %rcx");
-                module_emit_instruction(w, m, s, next);
-                w.set_left_in_rcx(true);
-                module_emit_instruction(w, m, s, following);
-                w.set_left_in_rcx(false);
+            i64 last = current;
+            if (following > 0 && form == 9 && fusable_binary(m, s, next, following)) {
+                // The left value stays in %rax and the right is an operand.
+                emit_fused_binary(w, m, s, next, following);
+                last = following;
                 at = at + 3;
             } else {
-                if (form == 63 && next_form == 44 && operand_value(s, next, 0) == operand_value(s, current, 2)) {
-                    const i64 result = result_type(m, callable);
-                    const i64 source = operand_value(s, current, 0);
-                    const i64 field = operand_value(s, current, 1);
-                    if (class_size(m, type_class(m, result)) != owner_element_stride(m, callable, source, field)) {
-                        return w.fail();
-                    }
-                    w.set_direct_result(true);
-                    module_emit_instruction(w, m, s, current);
-                    w.set_direct_result(false);
-                    w.line("xorq %rax, %rax");
-                    w.text("    jmp ");
-                    w.return_label();
-                    w.end_line();
-                    at = at + 2;
+                if (following > 0 && form == 9 && module_plain_load(next_form) && module_popped_binary(module_form(s,
+                    following))) {
+                    // The intervening accumulator load touches neither RCX nor the
+                    // operand stack; preserve the old adjacency-only peephole.
+                    w.line("movq %rax, %rcx");
+                    module_emit_instruction(w, m, s, next);
+                    w.set_left_in_rcx(true);
+                    module_emit_instruction(w, m, s, following);
+                    w.set_left_in_rcx(false);
+                    last = following;
+                    at = at + 3;
                 } else {
-                    module_emit_instruction(w, m, s, current);
-                    at = at + 1;
+                    if (form == 63 && next_form == 44 && operand_value(s, next, 0) == operand_value(s, current, 2)) {
+                        const i64 result = result_type(m, callable);
+                        const i64 source = operand_value(s, current, 0);
+                        const i64 field = operand_value(s, current, 1);
+                        if (class_size(m, type_class(m, result)) != owner_element_stride(m, callable, source, field)) {
+                            return w.fail();
+                        }
+                        w.set_direct_result(true);
+                        module_emit_instruction(w, m, s, current);
+                        w.set_direct_result(false);
+                        w.line("xorq %rax, %rax");
+                        w.text("    jmp ");
+                        w.return_label();
+                        w.end_line();
+                        at = at + 2;
+                    } else {
+                        module_emit_instruction(w, m, s, current);
+                        at = at + 1;
+                    }
                 }
+            }
+            const i64 branch = module_instruction(s, callable, at);
+            if (module_form(s, last) == 14 && module_form(s, branch) == 42) {
+                fused_branch(w, m, s, last, branch);
+                at = at + 1;
             }
         }
         return w.ok();

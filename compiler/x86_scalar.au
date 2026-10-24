@@ -92,6 +92,170 @@ export namespace compiler_x86 {
         }
         return workspace.ok();
     }
+    // The condition code of a Compare, or of its negation.
+    auto comparison_condition(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
+        const compiler_ir_instructions::InstructionStore& store, i64 instruction, bool inverse) -> bool {
+        const compiler_ir_instructions::RawInstructionRow row = store.instruction_at(instruction);
+        const i64 kind = type_kind(metadata, operand_value(store, instruction, 0));
+        const bool unsigned_value = kind == 7 || kind == 10;
+        i64 operation = row.comparison_operation();
+        if (operation < 0 || operation > 5) {
+            return workspace.fail();
+        }
+        if (inverse) {
+            // Operations 0..5 are == != < > <= >=; == and !=, < and >=, > and <= negate.
+            if (operation == 0 || operation == 1) {
+                operation = 1 - operation;
+            } else {
+                operation = 7 - operation;
+            }
+        }
+        if (operation == 0) {
+            return workspace.text("e");
+        }
+        if (operation == 1) {
+            return workspace.text("ne");
+        }
+        if (operation == 2) {
+            if (unsigned_value) {
+                return workspace.text("b");
+            }
+            return workspace.text("l");
+        }
+        if (operation == 3) {
+            if (unsigned_value) {
+                return workspace.text("a");
+            }
+            return workspace.text("g");
+        }
+        if (operation == 4) {
+            if (unsigned_value) {
+                return workspace.text("be");
+            }
+            return workspace.text("le");
+        }
+        if (unsigned_value) {
+            return workspace.text("ae");
+        }
+        return workspace.text("ge");
+    }
+    // The flags of a just-emitted left - right comparison become a 0/1 value.
+    auto comparison_result(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
+        const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> bool {
+        workspace.text("    set");
+        comparison_condition(workspace, metadata, store, instruction, false);
+        workspace.text(" %al\n");
+        return workspace.line("movzbq %al, %rax");
+    }
+    // BranchFalse right after a Compare: setcc and movzbq keep the flags, so the
+    // branch tests them directly. The 0/1 value stays in %rax for the target.
+    auto fused_branch(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
+        const compiler_ir_instructions::InstructionStore& store, i64 compare, i64 branch) -> bool {
+        workspace.text("    j");
+        comparison_condition(workspace, metadata, store, compare, true);
+        workspace.text(" ");
+        workspace.label(operand_value(store, branch, 0));
+        return workspace.end_line();
+    }
+    // A right operand that x86 can take as an immediate or a frame operand: an
+    // imm32 Constant, an EnumConstant, or a 64-bit frame Load. -1 otherwise.
+    auto direct_operand_kind(const compiler_ir_metadata::MetadataStore& metadata,
+        const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> i64 {
+        const compiler_ir_instructions::RawInstructionRow row = store.instruction_at(instruction);
+        const i64 form = row.form();
+        if (form == 5) {
+            const compiler_ir_instructions::RawOperandRow value = store.operand_at(row.operand_begin());
+            if (value.role() == 11) {
+                if (value.unsigned_value() <= 2147483647u64) {
+                    return 0;
+                }
+                return -1;
+            }
+            if (value.signed_value() >= -2147483648 && value.signed_value() <= 2147483647) {
+                return 0;
+            }
+            return -1;
+        }
+        if (form == 6) {
+            return 1;
+        }
+        if (form == 7 && type_kind(metadata, operand_value(store, instruction, 1)) != 10) {
+            return 2;
+        }
+        return -1;
+    }
+    auto direct_operand(EmitWorkspace& workspace, const compiler_ir_instructions::InstructionStore& store,
+        i64 instruction, i64 kind) -> bool {
+        if (kind == 0) {
+            const compiler_ir_instructions::RawInstructionRow row = store.instruction_at(instruction);
+            const compiler_ir_instructions::RawOperandRow value = store.operand_at(row.operand_begin());
+            workspace.text("$");
+            if (value.role() == 11) {
+                return workspace.unsigned_number(value.unsigned_value());
+            }
+            return workspace.number(value.signed_value());
+        }
+        if (kind == 1) {
+            workspace.text("$");
+            return workspace.number(operand_value(store, instruction, 1));
+        }
+        return workspace.address(operand_value(store, instruction, 0));
+    }
+    // Push, a direct right operand, then Compare or add/sub/and/or/xor: operate
+    // on the left value in %rax directly. Flags and results match the stack form.
+    auto fusable_binary(const compiler_ir_metadata::MetadataStore& metadata,
+        const compiler_ir_instructions::InstructionStore& store, i64 load, i64 binary) -> bool {
+        if (direct_operand_kind(metadata, store, load) < 0) {
+            return false;
+        }
+        const compiler_ir_instructions::RawInstructionRow row = store.instruction_at(binary);
+        if (row.form() == 14) {
+            return true;
+        }
+        if (row.form() != 12) {
+            return false;
+        }
+        const i64 operation = row.binary_operation();
+        return operation == 0 || operation == 1 || operation == 5 || operation == 6 || operation == 7;
+    }
+    auto emit_fused_binary(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
+        const compiler_ir_instructions::InstructionStore& store, i64 load, i64 binary) -> bool {
+        const compiler_ir_instructions::RawInstructionRow row = store.instruction_at(binary);
+        const i64 kind = direct_operand_kind(metadata, store, load);
+        if (row.form() == 14) {
+            workspace.text("    cmpq ");
+            direct_operand(workspace, store, load, kind);
+            workspace.text(", %rax\n");
+            return comparison_result(workspace, metadata, store, binary);
+        }
+        const i64 type = type_kind(metadata, operand_value(store, binary, 0));
+        const bool byte_value = type == 10;
+        const bool unsigned_value = type == 7 || byte_value;
+        const i64 operation = row.binary_operation();
+        if (operation == 0) {
+            workspace.text("    addq ");
+        } else {
+            if (operation == 1) {
+                workspace.text("    subq ");
+            } else {
+                if (operation == 5) {
+                    workspace.text("    andq ");
+                } else {
+                    if (operation == 6) {
+                        workspace.text("    orq ");
+                    } else {
+                        workspace.text("    xorq ");
+                    }
+                }
+            }
+        }
+        direct_operand(workspace, store, load, kind);
+        workspace.text(", %rax\n");
+        if (operation == 0 || operation == 1) {
+            return overflow_check(workspace, unsigned_value, byte_value);
+        }
+        return workspace.ok();
+    }
     auto emit_scalar(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
         const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> bool {
         const compiler_ir_instructions::RawInstructionRow row = store.instruction_at(instruction);
@@ -227,54 +391,7 @@ export namespace compiler_x86 {
                 workspace.pop("%rcx");
             }
             workspace.line("cmpq %rax, %rcx");
-            const i64 kind = type_kind(metadata, operand_value(store, instruction, 0));
-            const bool unsigned_value = kind == 7 || kind == 10;
-            const i64 operation = row.comparison_operation();
-            workspace.text("    set");
-            if (operation == 0) {
-                workspace.text("e");
-            } else {
-                if (operation == 1) {
-                    workspace.text("ne");
-                } else {
-                    if (operation == 2) {
-                        if (unsigned_value) {
-                            workspace.text("b");
-                        } else {
-                            workspace.text("l");
-                        }
-                    } else {
-                        if (operation == 3) {
-                            if (unsigned_value) {
-                                workspace.text("a");
-                            } else {
-                                workspace.text("g");
-                            }
-                        } else {
-                            if (operation == 4) {
-                                if (unsigned_value) {
-                                    workspace.text("be");
-                                } else {
-                                    workspace.text("le");
-                                }
-                            } else {
-                                if (operation == 5) {
-                                    if (unsigned_value) {
-                                        workspace.text("ae");
-                                    } else {
-                                        workspace.text("ge");
-                                    }
-                                } else {
-                                    workspace.fail();
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            workspace.text(" %al\n");
-            workspace.line("movzbq %al, %rax");
-            return true;
+            return comparison_result(workspace, metadata, store, instruction);
         }
         if (form == 15) {
             workspace.line_number("cmpq $", operand_value(store, instruction, 1), ", %rax");

@@ -903,11 +903,8 @@ class OwnedBytesCases(Suite):
             call = held.index("    call __au_runtime_values_at")
             require(held[call - 1].startswith("    leaq -"), "held element return lost its local copy")
             # The receiver's kind is compared with the enum case without a stack round trip.
-            compare = score.index("    cmpq %rax, %rcx")
-            require(
-                score[compare - 2] == "    movq %rax, %rcx" and "    pushq %rax" not in score[compare - 3 : compare],
-                "constant comparison still spills its left operand",
-            )
+            compare = next(index for index, line in enumerate(score) if line.startswith("    cmpq "))
+            require("    pushq %rax" not in score[:compare], "constant comparison still spills its left operand")
 
         returned = self.compile(
             "typed-returned-element",
