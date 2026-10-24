@@ -1,103 +1,27 @@
 #!/usr/bin/env python3
-"""Execute bounded Scalar class templates and reject unsafe instantiations."""
+"""Bounded Scalar class templates: execution and unsafe-instantiation rejections (native_runner.py)."""
 
 from itertools import combinations, product
 from pathlib import Path
-import resource
-import signal
-import subprocess
 import sys
-import tempfile
+
+from native_runner import Suite, Trap
+
+SUITE = Suite(Path(sys.argv[1]), "templates", ignore_case=True)
 
 
-COMPILER = Path(sys.argv[1]).resolve()
-LIBRARY = Path(__file__).resolve().parents[2] / "library"
-COUNT = 0
-
-
-def require(value, message):
-    if not value:
-        raise AssertionError(message)
-
-
-def run(command, good=True):
-    result = subprocess.run(
-        [str(x) for x in command],
-        capture_output=True,
-        timeout=5,
-        preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)),
+def check(
+    name, source, modules=None, expected=42, error=None, library=False, trap=False, existing_output=None, alone=False
+):
+    SUITE.check(
+        name,
+        source,
+        Trap.OVERFLOW if trap else expected,
+        error,
+        modules=modules,
+        existing_output=existing_output.encode() if existing_output else None,
+        standalone=alone,
     )
-    if good:
-        require(result.returncode == 0, f"{command}: {result.returncode}: {result.stderr!r}")
-    return result
-
-
-def check(name, source, modules=None, expected=42, error=None, library=False, trap=False, existing_output=None):
-    global COUNT
-    with tempfile.TemporaryDirectory(prefix="aurora-templates-") as directory:
-        base = Path(directory)
-        root = base / "modules"
-        root.mkdir()
-        for module, contents in (modules or {}).items():
-            path = root / (module.replace(".", "/") + ".au")
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(contents)
-        source_path = base / "input.au"
-        source_path.write_text(source)
-        assembly = base / "program.s"
-        if existing_output is not None:
-            assembly.write_text(existing_output)
-        command = [COMPILER, source_path, "-o", assembly, "--module-root", root]
-        if library:
-            command.extend(["--module-root", LIBRARY])
-        compiled = run(command, good=error is None)
-        require(source_path.read_text() == source, name + ": source changed")
-        if error is not None:
-            require(
-                compiled.returncode == 1,
-                f"{name}: expected normal compiler rejection, got {compiled.returncode}: {compiled.stderr!r}",
-            )
-            if existing_output is None:
-                require(not assembly.exists(), name + ": artifact on rejection")
-            else:
-                require(assembly.read_text() == existing_output, name + ": existing output changed on rejection")
-            fragments = (error,) if isinstance(error, str) else error
-            require(
-                any(fragment.lower().encode() in compiled.stderr.lower() for fragment in fragments),
-                name + ": " + repr(compiled.stderr),
-            )
-        else:
-            bridge = base / "entry.s"
-            bridge.write_text(""".text
-.globl _start
-_start:
-    call test
-    pushq %rax
-    movq $1, %rax
-    movq $1, %rdi
-    movq %rsp, %rsi
-    movq $8, %rdx
-    syscall
-    movq $60, %rax
-    xorq %rdi, %rdi
-    syscall
-.section .note.GNU-stack,"",@progbits
-""")
-            run(["as", "--64", assembly, "-o", base / "program.o"])
-            run(["as", "--64", bridge, "-o", base / "entry.o"])
-            run(["ld", "-o", base / "program", base / "entry.o", base / "program.o"])
-            executed = run([base / "program"], good=not trap)
-            if trap:
-                require(
-                    executed.returncode == -signal.SIGILL and not executed.stdout,
-                    name + ": expected exact SIGILL without a result",
-                )
-            else:
-                require(len(executed.stdout) == 8, name + ": missing 64-bit result")
-                actual = int.from_bytes(executed.stdout, "little", signed=False)
-                require(actual == expected % (1 << 64), f"{name}: expected {expected}, got {actual}")
-        COUNT += 1
-        print("PASS templates", name, flush=True)
 
 
 PAIR = """template <Scalar T, Scalar U> class Pair {
@@ -639,6 +563,7 @@ for count in (64, 65):
             template_definitions(0, count),
         ),
         error=None if count == 64 else ("64", "template limit"),
+        alone=True,  # uses the whole graph's template budget
     )
     split = count // 2
     check(
@@ -649,6 +574,7 @@ for count in (64, 65):
             "right": "export module right;" + template_definitions(split, count - split, True),
         },
         error=None if count == 64 else ("64", "template limit"),
+        alone=True,  # uses the whole graph's template budget
     )
 
 # Twenty-nine templates provide 261 distinct tuples; instantiate exactly the
@@ -660,6 +586,7 @@ for count in (256, 257):
         f"concrete class boundary {count}",
         program(body, template_definitions(0, 29)),
         error=None if count == 256 else ("256", "class limit", "classes"),
+        alone=True,  # uses the whole graph's instantiation budget
     )
     check(
         f"concrete graph class boundary {count}",
@@ -669,6 +596,7 @@ for count in (256, 257):
             "right": "export module right;" + template_definitions(14, 15, True),
         },
         error=None if count == 256 else ("256", "class limit", "classes"),
+        alone=True,  # uses the whole graph's instantiation budget
     )
 
 check(
@@ -711,4 +639,4 @@ check(
     ),
 )
 
-print(f"{COUNT} scalar template checks passed")
+SUITE.finish()

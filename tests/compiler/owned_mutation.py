@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """Direct owned class-field replacement and synchronous nested receivers.
 
-Reuses the full-width native observer, exact trap-site oracle and rejection
-artifact checks. No unchecked pointer, escaping reference or new test controller.
+Cases are data for the shared native runner (native_runner.py). No unchecked
+pointer, escaping reference or new test controller.
 """
 
 import argparse
-import hashlib
 from pathlib import Path
-import tempfile
 
 from composed_values import Suite, Trap, program
 from packed_values import byte_storage
@@ -342,8 +340,7 @@ def rejection_cases(suite):
             variant = variant.replace("    Leaf item;", "private:Leaf item;public:")
         if name == "same-layout nominal replacement rejected":
             variant += "class Other{ i64 value;public:Other(i64 n):value(n){} };"
-        for existing in (None, b"prior-output-must-survive"):
-            suite.check(name, program(body, variant), error=diagnostic, existing_output=existing)
+        suite.check(name, program(body, variant), error=diagnostic)
     for action in ("input.item=value;", "input.item.set(42);"):
         suite.check(
             "readonly function parameter cannot supply mutable field",
@@ -400,13 +397,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", type=Path)
     args = parser.parse_args()
-    compiler = args.compiler.resolve()
-    print(f"compiler_sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}", flush=True)
-    with tempfile.TemporaryDirectory(prefix="aurora-owned-mutation-") as temporary:
-        suite = Suite(Path(temporary), compiler)
-        positive_cases(suite)
-        rejection_cases(suite)
-        print(f"PASS owned mutation: {suite.count} cases, {suite.rejections} rejections, {suite.traps} exact traps")
+    suite = Suite(args.compiler, "owned mutation")
+    positive_cases(suite)
+    rejection_cases(suite)
+    suite.finish()
 
 
 if __name__ == "__main__":

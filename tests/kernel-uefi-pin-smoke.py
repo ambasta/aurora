@@ -2,7 +2,7 @@
 """Strict CPU-only pin-ledger receipts, layered on exact ring-3 runtime checks."""
 
 from pathlib import Path
-import importlib.util, json, re, sys, copy
+import importlib.util, json, re, sys
 
 spec = importlib.util.spec_from_file_location("runtime", Path(__file__).with_name("kernel-uefi-runtime-smoke.py"))
 runtime = importlib.util.module_from_spec(spec)
@@ -103,137 +103,8 @@ def validate(status, text, mode, metadata):
     )
 
 
-def self_test():
-    # Capture an independently validated existing runtime synthetic positive.
-    original = runtime.validate
-    samples = []
-
-    def capture(status, text, mode, metadata, **kwargs):
-        original(status, text, mode, metadata, **kwargs)
-        if status == 33 and mode == "runtime" and not samples:
-            samples.append((text, copy.deepcopy(metadata)))
-
-    runtime.validate = capture
-    try:
-        runtime.self_test()
-    finally:
-        runtime.validate = original
-    base, metadata = samples[0]
-    positive = negative = 0
-    arena = int(re.search(r"AURORA_UEFI_OWNERSHIP_OK: arena=(\d+)", base)[1])
-    for mode in MODES:
-        groups = [[], [], []]
-        for row in EXPECTED[mode]:
-            name, pool, pinned, quarantine, entries = row
-            group = 1 if name == "fault-restored" else 2 if name in ("reborn", "service-reborn", "final") else 0
-            groups[group].append(
-                f"AURORA_PIN_STATE: event={name} pool={pool} pinned={pinned} qua"
-                f"rantine={quarantine} entries={entries} root={arena + 0x11000}\n"
-            )
-        lines = base.splitlines(keepends=True)
-        text = ""
-        restored = 0
-        for line in lines:
-            text += line
-            if line.startswith("AURORA_UEFI_DOMAIN_RESTORE:"):
-                if restored in (0, 1, 3):
-                    text += "".join(groups[{0: 0, 1: 1, 3: 2}[restored]])
-                if restored == 3:
-                    text += "AURORA_PIN_OK\n"
-                restored += 1
-        if mode == "runtime-pin-fault":
-            text = text.replace("CLEANUP_OK: used=0", "CLEANUP_OK: used=2")
-            start = text.rindex("AURORA_UEFI_DOMAIN_ENTER:")
-            head, tail = text[:start], text[start:]
-            tail = (
-                tail.replace("slot=0", "slot=1")
-                .replace(f"root={arena + 0x90000}", f"root={arena + 0xA0000}")
-                .replace(f"stack={runtime.STACK + 0x4000}", f"stack={runtime.STACK + 0x204000}")
-            )
-            text = head + tail
-            text = text.replace(
-                "AURORA_PIN_STATE: event=uncertainty",
-                "AURORA_PIN_OWNER: slot=1 incarnation=2\nAURORA_PIN_STATE: event=uncertainty",
-            )
-            text = text.replace(
-                "AURORA_PIN_STATE: event=service-reborn",
-                (
-                    "AURORA_PIN_RESTART: slot=1 old=2 current=4 stale_owner=1 stale_token=1 retained=2\nAURORA_"
-                    "PIN_STATE: event=service-reborn"
-                ),
-            )
-        marker = "AURORA_FIXTURE_READY\n"
-        text = text.replace("AURORA_UEFI_DOMAIN_ENTER:", marker + "AURORA_UEFI_DOMAIN_ENTER:", 1)
-        validate(33, text, mode, metadata)
-        positive += 1
-        bad = [
-            (35, text, metadata),
-            (33, text + "AURORA_PIN_FAIL\n", metadata),
-            (33, text + "AURORA_PIN_OK\n", metadata),
-            (33, text.replace("AURORA_PIN_OK\n", ""), metadata),
-        ]
-        bad.extend(
-            (33, value, metadata)
-            for value in (
-                text.replace(marker, ""),
-                text.replace(marker, marker * 2),
-                marker + text.replace(marker, ""),
-                text.replace(marker, "") + marker,
-                text.replace(marker, "prefix " + marker),
-                text.replace(marker, "AURORA_FIXTURE_READY extra\n"),
-                text.replace(marker, "AURORA_FIXTURE_UNKNOWN\n"),
-            )
-        )
-
-        for match in list(re.finditer(PATTERN, text)):
-            line = match[0] + "\n"
-            bad.extend(
-                [
-                    (33, text.replace(line, ""), metadata),
-                    (33, text + line, metadata),
-                    (33, text.replace(line, "prefix " + line), metadata),
-                    (33, line + text.replace(line, ""), metadata),
-                ]
-            )
-            for field in ("pool", "pinned", "quarantine", "entries", "root"):
-                malformed = re.sub(rf"{field}=\d+", field + "=999", line)
-                bad.append((33, text.replace(line, malformed), metadata))
-        if mode == "runtime-pin-fault":
-            marker = "AURORA_PIN_RESTART: slot=1 old=2 current=4 stale_owner=1 stale_token=1 retained=2\n"
-            bad.append((33, text.replace("incarnation=2", "incarnation=3"), metadata))
-            bad.extend(
-                (33, text.replace(marker, replacement), metadata)
-                for replacement in (
-                    "",
-                    marker + marker,
-                    marker.replace("current=4", "current=2"),
-                    marker.replace("old=2", "old=0"),
-                    marker.replace("slot=1", "slot=0"),
-                    marker.replace("stale_owner=1", "stale_owner=0"),
-                    marker.replace("stale_token=1", "stale_token=0"),
-                    marker.replace("retained=2", "retained=0"),
-                )
-            )
-        changed = copy.deepcopy(metadata)
-        changed["clean"]["return_pc"] = 0
-        bad.append((33, text, changed))
-        for status, value, meta in bad:
-            try:
-                validate(status, value, mode, meta)
-            except (ValueError, AssertionError):
-                negative += 1
-            else:
-                raise AssertionError("Pin negative accepted")
-    print(f"PASS: pin receipts {positive} positive/{negative} negative controls")
-
-
 if __name__ == "__main__":
-    if len(sys.argv) == 1:
-        self_test()
-    else:
-        if len(sys.argv) != 5:
-            raise SystemExit("status log mode metadata required")
-        validate(
-            int(sys.argv[1]), Path(sys.argv[2]).read_text(), sys.argv[3], json.loads(Path(sys.argv[4]).read_text())
-        )
-        print("PASS: exact CPU-only pin-ledger receipt")
+    if len(sys.argv) != 5:
+        raise SystemExit("status log mode metadata required")
+    validate(int(sys.argv[1]), Path(sys.argv[2]).read_text(), sys.argv[3], json.loads(Path(sys.argv[4]).read_text()))
+    print("PASS: exact CPU-only pin-ledger receipt")

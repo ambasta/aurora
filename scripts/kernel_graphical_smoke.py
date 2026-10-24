@@ -2,6 +2,7 @@
 """Fresh graphical-console smoke/captures; no historical approval or guest claim."""
 
 import argparse
+import importlib.util
 from contextlib import contextmanager
 import json
 import os
@@ -16,15 +17,19 @@ import sys
 import time
 import tty
 
-import kernel_graphical_console_admission as admission
 import kernel_uefi_oracle as normal
 import qemu_transport as transport
 import smoke_outputs
 from framebuffer_capture_oracle import BASE, SIZE, VISIBLE, WIDTH, HEIGHT, PITCH, need, parse_ppm
-from kernel_emulator_clock import ORIGINAL, validate_clock_options
 
 ROOT = Path(__file__).resolve().parents[1]
-capture = admission.load("graphical_smoke_capture", ROOT / "scripts/kernel-framebuffer-capture.py")
+MODES = ("graphical-console", "graphical-console-capture")
+_spec = importlib.util.spec_from_file_location(
+    "graphical_smoke_capture", ROOT / "scripts/kernel-framebuffer-capture.py"
+)
+capture = importlib.util.module_from_spec(_spec)
+sys.modules[_spec.name] = capture
+_spec.loader.exec_module(capture)
 sys.path.insert(0, str(ROOT / "tests"))
 from kernel_graphical_oracle import reference, byte_samples
 from kernel_display_oracle import ppm_rgb
@@ -233,7 +238,6 @@ def guest(args, mode, directory, record):
             qmp=True,
             firmware_args=args.firmware,
         )
-        validate_clock_options("uefi", "normal", ORIGINAL, argv)
         record["argv"] = argv
         with open(directory / "qemu.stderr", "xb") as stderr:
             proc = transport.start(
@@ -362,7 +366,6 @@ def restoration(args, directory, record):
     argv = capture.command(
         {"qemu": args.qemu}, {"data": args.data}, str(args.images / "normal/esp"), "stdio", firmware_args=args.firmware
     )
-    validate_clock_options("uefi", "normal", ORIGINAL, argv)
     record["argv"] = argv
     status = transport.run_logged(
         argv,
@@ -413,37 +416,19 @@ def window(args):
 
 
 def stage(mode, destination, build):
-    admission.configure_paths(build, ROOT)
-    checked = admission.checked(mode) if mode != "normal" else None
+    """Copy the built boot tree; the image and stack checks ran when it was built."""
+    build = Path(build).resolve(strict=True)
     target = destination / mode
-    build = admission.BUILD
-    files = admission.build_files(mode)
-    admitted = list(files)
-    if mode == "normal":
-        admission.common.verify_object_exports(files)
-    if mode != "normal":
-        files += [admission.RECEIPT]
+    files = [build / "payload.elf", build / "payload.bin", *(p for p in (build / "esp").rglob("*") if p.is_file())]
     for path in files:
-        need(
-            path.is_file()
-            and not path.is_symlink()
-            and not any(parent.is_symlink() for parent in path.parents if parent.is_relative_to(build)),
-            "missing artifact or symlink in image build: " + str(path),
-        )
-    expected = admission.common.hashes(files)
-    if checked:
-        for path in admitted:
-            key = "build:" + path.relative_to(build).as_posix()
-            need(expected[key] == checked["sha256"][key], "Admitted image changed before staging")
+        need(path.is_file() and not path.is_symlink(), "missing artifact or symlink in image build: " + str(path))
+    expected = {path: capture.digest(path) for path in files}
     target.mkdir(parents=True)
     for path in files:
         copied = target / path.relative_to(build)
         copied.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(path, copied)
-        need(
-            capture.digest(copied) == expected["build:" + path.relative_to(build).as_posix()],
-            "Image changed during staging",
-        )
+        need(capture.digest(copied) == expected[path], "Image changed during staging")
     record = dict(
         mode=mode,
         files={str(p.relative_to(target)): capture.digest(p) for p in target.rglob("*") if p.is_file()},
@@ -452,7 +437,7 @@ def stage(mode, destination, build):
 
 
 def verify_images(args, mode=None):
-    for mode in (mode,) if mode else ("normal", *admission.MODES):
+    for mode in (mode,) if mode else ("normal", *MODES):
         folder = args.images / mode
         need(not any(p.is_symlink() for p in folder.rglob("*")), "symlink in staged images")
         record = json.loads((folder / "smoke-image.json").read_text())
@@ -510,7 +495,7 @@ def finish_run(directory, status):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--stage", choices=("normal", *admission.MODES))
+    parser.add_argument("--stage", choices=("normal", *MODES))
     parser.add_argument("--images", type=Path)
     lifecycle = parser.add_mutually_exclusive_group()
     lifecycle.add_argument("--start-run", type=Path)

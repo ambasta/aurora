@@ -2,15 +2,13 @@
 """Bounded independent disposal-policy, decoder and real-dispatcher gates.
 
 The literal expected relation is not derived from the production implementation.
-A selected compiler identity is mandatory; this focused run is not full native or
-kernel qualification. Hosted sanitizers do not instrument generated Aurora code.
+This focused run is not full native or kernel qualification. Hosted sanitizers do
+not instrument generated Aurora code.
 """
 
 from pathlib import Path
 import argparse
-import hashlib
 import itertools
-import json
 import os
 import random
 import struct
@@ -20,9 +18,6 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.dont_write_bytecode = True
-sys.path.insert(0, str(ROOT / "scripts"))
-from compiler_contract import add_identity_arguments, resolve_identity, validate_identity_selection
-from owned_outputs import allocated_bytes, free_bytes, temporary_environment, write_checked_receipt
 
 MAX = (1 << 64) - 1
 # Independent literal phase -> mailbox-state relation, with no production enum,
@@ -62,31 +57,6 @@ EDGES = (
 def need(condition, reason):
     if not condition:
         raise RuntimeError(reason)
-
-
-def candidate_cap(mib):
-    need(type(mib) is int and 128 <= mib <= 1024, "Candidate output cap must be an integer from 128 through 1024 MiB")
-    return mib << 20
-
-
-def cap_self_test():
-    for value in (128, 512, 1024):
-        need(candidate_cap(value) == value << 20, "Candidate cap boundary conversion")
-    for value in (-1, 0, 127, 1025, True, 128.0, "128", None):
-        try:
-            candidate_cap(value)
-        except RuntimeError:
-            continue
-        raise RuntimeError("Invalid candidate cap accepted")
-
-
-def sha(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def guard(out, cap, reserve=0):
-    need(allocated_bytes(out) + reserve < candidate_cap(cap), "Owned-output cap reached, including reserve")
-    need(free_bytes(out) - reserve >= 1024**3, "One GiB free-space floor reached, including reserve")
 
 
 def contexts():
@@ -163,37 +133,33 @@ def decoder_vectors():
 
 
 def environment(out):
-    return temporary_environment(
-        out,
+    """Keep child-process temporary files inside the output directory; fatal sanitizers."""
+    temporary = out / "tmp"
+    temporary.mkdir(exist_ok=True)
+    return dict(
+        os.environ,
         ASAN_OPTIONS="detect_leaks=0:halt_on_error=1:abort_on_error=1",
         UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1",
+        TMPDIR=str(temporary),
+        TMP=str(temporary),
+        TEMP=str(temporary),
     )
 
 
-def run(command, out, label, cap, timeout=120, expect=0):
-    guard(out, cap, 24 << 20)
-    started = time.time()
+def run(command, out, label, timeout=120, expect=0):
     try:
         result = subprocess.run(command, cwd=ROOT, timeout=timeout, capture_output=True, env=environment(out))
     except subprocess.TimeoutExpired as error:
         (out / (label + ".stdout")).write_bytes(error.stdout or b"")
         (out / (label + ".stderr")).write_bytes(error.stderr or b"")
-        (out / (label + ".json")).write_text(
-            json.dumps(dict(command=command, timeout=True, elapsed_seconds=time.time() - started), indent=2) + "\n"
-        )
         raise
     (out / (label + ".stdout")).write_bytes(result.stdout)
     (out / (label + ".stderr")).write_bytes(result.stderr)
-    (out / (label + ".json")).write_text(
-        json.dumps(dict(command=command, returncode=result.returncode, elapsed_seconds=time.time() - started), indent=2)
-        + "\n"
-    )
     need(result.returncode == expect, label + " failed; original evidence retained")
-    guard(out, cap)
     return result
 
 
-def vector_gate(binary, out, label, vectors, model, cap, decode=False):
+def vector_gate(binary, out, label, vectors, model, decode=False):
     inputs, expected, observed = (
         out / (label + suffix) for suffix in (".inputs.bin", ".expected.bin", ".observed.bin")
     )
@@ -204,38 +170,17 @@ def vector_gate(binary, out, label, vectors, model, cap, decode=False):
             result = model(*values)
             want.write(struct.pack("<QQ", *result) if decode else struct.pack("<Q", result))
             count += 1
-            if count % 16384 == 0:
-                guard(out, cap)
     command = [str(binary)] + (["decode"] if decode else [])
-    started = time.time()
     with inputs.open("rb") as source, observed.open("wb") as actual, (out / (label + ".stderr")).open("wb") as errors:
-        try:
-            result = subprocess.run(
-                command, stdin=source, stdout=actual, stderr=errors, cwd=ROOT, timeout=120, env=environment(out)
-            )
-        except subprocess.TimeoutExpired:
-            (out / (label + ".json")).write_text(
-                json.dumps(
-                    dict(command=command, cases=count, timeout=True, elapsed_seconds=time.time() - started), indent=2
-                )
-                + "\n"
-            )
-            raise
-    receipt = dict(
-        command=command,
-        cases=count,
-        returncode=result.returncode,
-        elapsed_seconds=time.time() - started,
-        files={path.name: dict(bytes=path.stat().st_size, sha256=sha(path)) for path in (inputs, expected, observed)},
-    )
-    (out / (label + ".json")).write_text(json.dumps(receipt, indent=2) + "\n")
+        result = subprocess.run(
+            command, stdin=source, stdout=actual, stderr=errors, cwd=ROOT, timeout=120, env=environment(out)
+        )
     need(result.returncode == 0, label + " execution failed")
     need(observed.read_bytes() == expected.read_bytes(), label + " differs from independent literal oracle")
-    guard(out, cap)
     return count
 
 
-def rejection_gate(compiler, out, cap):
+def rejection_gate(compiler, out):
     decision = "const kernel::DisposalDecision d = kernel::client_disposal(0u64, 1u64); "
     bodies = {
         "private_action": (
@@ -330,7 +275,7 @@ def rejection_gate(compiler, out, cap):
             "expected kernel::DisposalDecision",
         ),
     }
-    receipts = []
+    count = 0
     for name, (body, diagnostic) in bodies.items():
         source = out / (name + ".au")
         source.write_text("module probe;\nimport kernel.client_disposal;\n" + body + "\n")
@@ -341,20 +286,11 @@ def rejection_gate(compiler, out, cap):
             if existing:
                 output.write_bytes(sentinel)
             command = [str(compiler), "--module-root", str(ROOT / "kernel/policies"), str(source), "-o", str(output)]
-            result = run(command, out, label, cap, timeout=30, expect=1)
-            receipts.append(
-                dict(
-                    command=command,
-                    returncode=result.returncode,
-                    expected_diagnostic=diagnostic,
-                    source_sha256=sha(source),
-                    output_exists=output.exists(),
-                )
-            )
-            (out / "rejections.json").write_text(json.dumps(receipts, indent=2) + "\n")
+            result = run(command, out, label, timeout=30, expect=1)
+            count += 1
             need(diagnostic.encode() in result.stderr, label + " wrong rejection")
             need(output.read_bytes() == sentinel if existing else not output.exists(), label + " changed prior output")
-    return len(receipts)
+    return count
 
 
 def symbol_map(data):
@@ -364,64 +300,23 @@ def symbol_map(data):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--compiler", default=str(ROOT / "build/aurorac"))
-    add_identity_arguments(parser)
     parser.add_argument("--output")
-    parser.add_argument("--candidate-cap-mib", type=int, default=128)
-    parser.add_argument(
-        "--check-cap-only", action="store_true", help="Compiler-free configuration test, not acceptance"
-    )
     parser.add_argument("--sanitize", action="store_true", default=os.environ.get("SANITIZE") == "1")
     args = parser.parse_args()
-    validate_identity_selection(args, preflight=args.check_cap_only)
-    cap_bytes = candidate_cap(args.candidate_cap_mib)
-    cap_self_test()
-    if args.check_cap_only:
-        print(json.dumps(dict(status="configuration-only", native_executed=False, cap_bytes=cap_bytes), sort_keys=True))
-        return
     compiler = Path(args.compiler).resolve(strict=True)
-    identity = resolve_identity(args, compiler, ROOT)
     out = (
         Path(args.output).absolute()
         if args.output
         else ROOT / "build/kernel-client-disposal-native" / str(time.time_ns())
     )
-    need(out.is_relative_to(ROOT), "Output must remain inside the bounded candidate")
     need(not any(path.is_symlink() for path in (out, *out.parents)), "Output symlink denied")
     need(".." not in out.parts, "Output path traversal denied")
     need(not out.exists(), "Use a fresh output directory; never overwrite failed evidence")
-    cap = args.candidate_cap_mib
-    guard(out, cap, 65536)
     out.mkdir(parents=True)
-    members = (
-        "scripts/compiler_contract.py",
-        "scripts/owned_outputs.py",
-        "examples/kernel.au",
-        "kernel/client-disposal-transport.hpp",
-        "kernel/ipc-transition-transport.hpp",
-        "kernel/round-robin-transport.hpp",
-        "kernel/ipc-policy.hpp",
-        "kernel/dispatch-policy.hpp",
-        "kernel/domain-policy.hpp",
-        "tests/kernel-client-disposal-native.cpp",
-        "tests/kernel-client-disposal-native.py",
-        "tests/kernel-client-disposal-adapter.cpp",
-        "tests/kernel-client-disposal.cpp",
-        "tests/kernel-client-disposal-copy.cpp",
-        "tests/kernel-programs/client-disposal-copy.au",
-    )
-    members = sorted(set(members) | {str(path.relative_to(ROOT)) for path in (ROOT / "kernel/policies").rglob("*.au")})
-    pins = {name: sha(ROOT / name) for name in members}
     finite = [oracle(*values) for values in contexts()]
     need(
         len(finite) == 24 and finite.count(1) == 18 and sum(word > 1 for word in finite) == 6,
         "Literal table cardinality",
-    )
-    (out / "inputs.json").write_text(
-        json.dumps(
-            dict(compiler_identity=identity.record(), source_pins=pins, sanitize=args.sanitize, candidate_cap_mib=cap),
-            indent=2,
-        )
-        + "\n"
     )
     assembly, obj, binary = out / "language.s", out / "language.o", out / "observe"
     flags = [
@@ -440,19 +335,18 @@ def main():
         [str(compiler), "--module-root", "kernel/policies", "examples/kernel.au", "-o", str(assembly)],
         out,
         "compile",
-        cap,
     )
-    run(["g++", "-c", str(assembly), "-o", str(obj)], out, "assemble", cap)
-    run(flags + ["tests/kernel-client-disposal-native.cpp", str(obj), "-o", str(binary)], out, "observer-link", cap)
+    run(["g++", "-c", str(assembly), "-o", str(obj)], out, "assemble")
+    run(flags + ["tests/kernel-client-disposal-native.cpp", str(obj), "-o", str(binary)], out, "observer-link")
     counts = dict(
         finite_contexts=24,
         finite_accepted=6,
         finite_refused=18,
         decoder_compact=768,
-        policy=vector_gate(binary, out, "policy", policy_vectors(), oracle, cap),
-        decoder=vector_gate(binary, out, "decoder", decoder_vectors(), decoder_oracle, cap, True),
+        policy=vector_gate(binary, out, "policy", policy_vectors(), oracle),
+        decoder=vector_gate(binary, out, "decoder", decoder_vectors(), decoder_oracle, True),
     )
-    counts["rejections"] = rejection_gate(compiler, out, cap)
+    counts["rejections"] = rejection_gate(compiler, out)
     copy_assembly, copy_binary = out / "copy.s", out / "copy"
     run(
         [
@@ -465,20 +359,18 @@ def main():
         ],
         out,
         "copy-compile",
-        cap,
     )
     run(
         flags + ["tests/kernel-client-disposal-copy.cpp", str(copy_assembly), "-o", str(copy_binary)],
         out,
         "copy-link",
-        cap,
     )
-    run([str(copy_binary)], out, "copy-observe", cap)
+    run([str(copy_binary)], out, "copy-observe")
     counts["copy_repetitions"] = 4096
     # Rename exactly one producer, preserving real IPC and round-robin behavior.
     substituted, adapter = out / "adapter-language.o", out / "adapter"
     old, new = "aurora_kernel_client_disposal", "aurora_kernel_client_disposal_real"
-    before = symbol_map(run(["nm", "--defined-only", "--format=posix", str(obj)], out, "root-symbols", cap).stdout)
+    before = symbol_map(run(["nm", "--defined-only", "--format=posix", str(obj)], out, "root-symbols").stdout)
     need(
         old in before
         and new not in before
@@ -486,10 +378,8 @@ def main():
         and "aurora_kernel_round_robin_next" in before,
         "Expected genuine policy producers missing",
     )
-    run(["objcopy", "--redefine-sym", old + "=" + new, str(obj), str(substituted)], out, "rename-only-disposal", cap)
-    after = symbol_map(
-        run(["nm", "--defined-only", "--format=posix", str(substituted)], out, "adapter-symbols", cap).stdout
-    )
+    run(["objcopy", "--redefine-sym", old + "=" + new, str(obj), str(substituted)], out, "rename-only-disposal")
+    after = symbol_map(run(["nm", "--defined-only", "--format=posix", str(substituted)], out, "adapter-symbols").stdout)
     renamed = dict(before)
     renamed[new] = renamed.pop(old)
     need(after == renamed, "Only disposal symbol may be renamed")
@@ -497,11 +387,10 @@ def main():
         flags + ["tests/kernel-client-disposal-adapter.cpp", str(substituted), "-o", str(adapter)],
         out,
         "adapter-link",
-        cap,
     )
-    run([str(adapter)], out, "adapter-observe", cap)
+    run([str(adapter)], out, "adapter-observe")
     regression = out / "original-regression"
-    # Preserve this regression's historical kernel-uefi-user-phases-tests.sh -O1 recipe.
+    # Hosted -O1 recipe for this regression.
     # The first focused attempt used -O2 and failed GCC 14 -Werror=array-bounds
     # in unchanged Fixture::refresh; retain build/disposal-native-001 and the
     # parent evidence/disposal-native-001 records. New tests retain their normal
@@ -511,36 +400,16 @@ def main():
         regression_flags + ["tests/kernel-client-disposal.cpp", str(obj), "-o", str(regression)],
         out,
         "regression-link",
-        cap,
     )
-    run([str(regression)], out, "original-regression", cap)
+    run([str(regression)], out, "original-regression")
     for label, executable in (("observer", binary), ("adapter", adapter), ("copy", copy_binary)):
-        run(["objdump", "-drwC", str(executable)], out, label + "-disassembly", cap)
-        run(["readelf", "-sW", str(executable)], out, label + "-elf-symbols", cap)
-    need(pins == {name: sha(ROOT / name) for name in pins}, "Tested source changed during run")
-    identity.verify()
-    guard(out, cap)
-    summary = dict(
-        status="passed",
-        compiler_identity=identity.record(),
-        compiler_sha256=sha(compiler),
-        source_pins=pins,
-        cases=counts,
-        sanitize=args.sanitize,
-        candidate_cap_mib=cap,
-        cap_bytes=cap_bytes,
-        owned_output_allocated_bytes=allocated_bytes(out),
-        free_bytes=free_bytes(out),
-        output_root=str(out),
-        accounting_scope="invocation outputs including tmp",
-        limits=(
-            "Hosted focused observations only; no QEMU, full-native acceptance or whole-kernel claim. "
-            "Generated Aurora assembly is uninstrumented. Fatal hosted ASan/UBSan disables LeakSanitizer; "
-            "no leak-clean claim. Unselected delivered state is unreachable through public Dispatcher APIs."
-        ),
+        run(["objdump", "-drwC", str(executable)], out, label + "-disassembly")
+        run(["readelf", "-sW", str(executable)], out, label + "-elf-symbols")
+    print(
+        "kernel client disposal native: passed "
+        + ", ".join(f"{k}={v}" for k, v in counts.items())
+        + f" sanitize={args.sanitize} (output {out})"
     )
-    write_checked_receipt(out / "summary.json", summary, lambda: guard(out, cap))
-    print(json.dumps(summary, indent=2))
 
 
 if __name__ == "__main__":

@@ -110,7 +110,7 @@ The fixture's first client now carries the shared selectable probe set (see
 for its request phase, or the UD2 just before its exit, only when the mode asks.
 Both modes keep the user-phases run order through the fixture kernel.
 
-Run scripts/kernel-uefi-user-phases-tests.sh (SANITIZE=1 for fatal ASan/UBSan) and
-scripts/kernel-uefi-user-phases-all.sh. Exact source manifests, all prior122 modes,
+Run `meson test -C build/meson --suite full` (SANITIZE=1 for fatal ASan/UBSan) and
+`meson test -C build/meson --suite guest-user-phases`. Exact source manifests, all prior122 modes,
 independent review and final receipt validation remain necessary for acceptance.
 No device DMA, storage activation or physical-hardware qualification is added.

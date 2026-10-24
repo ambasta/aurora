@@ -184,3 +184,11 @@ is not a second RAM transport loop or an adapter between duplicate storage
 values. Full length and address preflight precede it. The source remains
 unchanged, and report/sector copies survive owner mutation and destruction.
 All failures return a zero-initialized owned sector. No view escapes the call.
+
+## Tests
+
+`tests/compiler/storage` holds one Aurora driver per library family (byte values,
+binary readers and CRC32C, block I/O, XFS geometry, root and file). Each driver is
+compiled once and run over every case as a data record; its results are compared
+with the reviewed `.golden` file beside it. After an intended behavior change,
+rerun the family with `--update-golden` and review the diff.

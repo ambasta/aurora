@@ -83,9 +83,9 @@ third client always ran the read. The fixture's third client now carries the
 shared selectable probe set (see [service-budget.md](service-budget.md)), and the
 launcher selects the peer-code probe for that client only when the mode asks.
 
-Run scripts/kernel-uefi-dispatch-tests.sh for layout, policy, image and transcript
+Run `meson test -C build/meson --suite full` for layout, policy, image and transcript
 checks (SANITIZE=1 enables fatal ASan/UBSan), and
-scripts/kernel-uefi-dispatch-all.sh for the twelve actual OVMF modes. Existing
+`meson test -C build/meson --suite guest-dispatch` for the twelve actual OVMF modes. Existing
 kernel-uefi-smoke.sh restores a normal image after every non-normal mode.
 
 The strict transcript gate checks the complete ordered transaction trace against

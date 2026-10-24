@@ -106,9 +106,9 @@ or sites remain fatal. A client fault is not given the service cancellation path
 
 ## Gates
 
-- `scripts/kernel-uefi-ipc-tests.sh`: pure policy/model, image authority and strict
+- `meson test -C build/meson --suite full`: pure policy/model, image authority and strict
   ordered transcript tests. `SANITIZE=1` enables ASan/UBSan.
-- `scripts/kernel-uefi-ipc-all.sh`: fifteen real OVMF modes; each restores a normal
+- `meson test -C build/meson --suite guest-ipc`: fifteen real OVMF modes; each restores a normal
   UEFI image afterward. Use the existing QEMU/OVMF dependency environment.
 - `ipc`: request/delivery/reply/client verification and zero final records/leases.
 - `ipc-fault`: actual service bounds fault, cancellation, client error handling,

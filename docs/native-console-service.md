@@ -24,8 +24,7 @@ make console                 # BIOS interactive prompt
 make console-uefi            # simple UEFI interactive prompt
 make smoke-console          # BIOS PTY acceptance
 make smoke-console-uefi     # simple UEFI PTY acceptance
-./scripts/kernel-console-tests.sh
-SANITIZE=1 ./scripts/kernel-console-tests.sh
+meson test -C build/meson --suite full
 ```
 
 `make run` and `make run-uefi` remain automatic boot self-tests. Console smokes

@@ -3,12 +3,9 @@
 
 from pathlib import Path
 import argparse
-import hashlib
 import itertools
-import json
 import os
 import random
-import shutil
 import struct
 import subprocess
 import sys
@@ -16,9 +13,6 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.dont_write_bytecode = True
-sys.path.insert(0, str(ROOT / "scripts"))
-from owned_outputs import allocated_bytes, free_bytes, temporary_environment, write_checked_receipt
-from compiler_contract import add_identity_arguments, resolve_identity, validate_identity_selection
 
 MAX = (1 << 64) - 1
 
@@ -28,37 +22,11 @@ def need(condition, reason):
         raise RuntimeError(reason)
 
 
-def candidate_cap(mib):
-    need(
-        type(mib) is int and 128 <= mib <= 1024,
-        "candidate cap must be an integer between 128 and 1024 MiB; increases require explicit aggregate admission",
-    )
-    return mib << 20
-
-
-def cap_self_test():
-    for mib in (128, 512, 513, 1023, 1024):
-        need(candidate_cap(mib) == mib << 20, "candidate cap boundary conversion")
-    for mib in (-1, 0, 127, 1025, 1 << 30, True, 512.0, "1024", None):
-        try:
-            candidate_cap(mib)
-        except RuntimeError:
-            continue
-        raise RuntimeError("invalid candidate cap accepted")
-
-
-def sha(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def allocated(output):
-    return allocated_bytes(output)
-
-
-def guard(output, cap, reserve=0):
-    cap_bytes = candidate_cap(cap)
-    need(allocated(output) + reserve < cap_bytes, "Owned-output allocation cap reached, including reserve")
-    need(free_bytes(output) - reserve >= 1024**3, "One GiB free-space floor reached, including reserve")
+def scratch_env(output):
+    """Keep child-process temporary files inside the output directory."""
+    temporary = output / "tmp"
+    temporary.mkdir(exist_ok=True)
+    return dict(os.environ, TMPDIR=str(temporary), TMP=str(temporary), TEMP=str(temporary))
 
 
 def oracle(initial, remaining, used):
@@ -86,26 +54,15 @@ def decoder_oracle(encoded, initial, remaining, used):
     return encoded
 
 
-def run(command, folder, name, cap):
-    guard(folder, cap, 24 << 20)
-    started = time.time()
-    result = subprocess.run(command, cwd=ROOT, timeout=120, capture_output=True, env=temporary_environment(folder))
+def run(command, folder, name):
+    result = subprocess.run(command, cwd=ROOT, timeout=120, capture_output=True, env=scratch_env(folder))
     (folder / (name + ".stdout")).write_bytes(result.stdout)
     (folder / (name + ".stderr")).write_bytes(result.stderr)
-    (folder / (name + ".json")).write_text(
-        json.dumps(
-            dict(command=list(map(str, command)), returncode=result.returncode, elapsed_seconds=time.time() - started),
-            indent=2,
-        )
-        + "\n"
-    )
     need(result.returncode == 0, name + " failed; original outputs retained")
-    guard(folder, cap)
     return result
 
 
-def vector_gate(binary, out, name, vectors, model, cap, decode=False):
-    guard(out, cap)
+def vector_gate(binary, out, name, vectors, model, decode=False):
     inputs = out / (name + ".inputs.bin")
     expected = out / (name + ".expected.bin")
     width = 4 if decode else 3
@@ -115,27 +72,14 @@ def vector_gate(binary, out, name, vectors, model, cap, decode=False):
             source.write(struct.pack("<" + "Q" * width, *values))
             want.write(struct.pack("<Q", model(*values)))
             count += 1
-            if count % 16384 == 0:
-                guard(out, cap)
-    guard(out, cap)
     observed = out / (name + ".observed.bin")
     command = [str(binary)] + (["decode"] if decode else [])
-    started = time.time()
     with inputs.open("rb") as source, observed.open("wb") as actual, (out / (name + ".stderr")).open("wb") as errors:
         result = subprocess.run(
-            command, stdin=source, stdout=actual, stderr=errors, timeout=120, cwd=ROOT, env=temporary_environment(out)
+            command, stdin=source, stdout=actual, stderr=errors, timeout=120, cwd=ROOT, env=scratch_env(out)
         )
-    receipt = dict(
-        command=command,
-        returncode=result.returncode,
-        cases=count,
-        elapsed_seconds=time.time() - started,
-        files={p.name: dict(bytes=p.stat().st_size, sha256=sha(p)) for p in (inputs, expected, observed)},
-    )
-    (out / (name + ".json")).write_text(json.dumps(receipt, indent=2) + "\n")
     need(result.returncode == 0, name + " did not exit normally")
     need(observed.read_bytes() == expected.read_bytes(), name + " native observations differ")
-    guard(out, cap)
     return count
 
 
@@ -180,7 +124,7 @@ def decoder_vectors():
         yield oracle(3, 3, 0), value, 3, 0
 
 
-def rejection_gate(compiler, out, cap):
+def rejection_gate(compiler, out):
     bodies = {
         "private_field": (
             "import kernel.interrupt_budget;\nauto answer() -> u64 { "
@@ -208,7 +152,7 @@ def rejection_gate(compiler, out, cap):
             "assignment requires a mutable scalar local",
         ),
     }
-    receipts = []
+    count = 0
     for name, (body, diagnostic) in bodies.items():
         source = out / (name + ".au")
         source.write_text("module probe;\n" + body + "\n")
@@ -219,86 +163,31 @@ def rejection_gate(compiler, out, cap):
             if existing:
                 output.write_bytes(sentinel)
             command = [str(compiler), "--module-root", str(ROOT / "kernel/policies"), str(source), "-o", str(output)]
-            guard(out, cap, 24 << 20)
-            result = subprocess.run(command, cwd=ROOT, timeout=30, capture_output=True, env=temporary_environment(out))
+            result = subprocess.run(command, cwd=ROOT, timeout=30, capture_output=True, env=scratch_env(out))
             (out / (label + ".stdout")).write_bytes(result.stdout)
             (out / (label + ".stderr")).write_bytes(result.stderr)
-            receipt = dict(
-                command=command,
-                returncode=result.returncode,
-                expected_diagnostic=diagnostic,
-                source_sha256=sha(source),
-                output_exists=output.exists(),
-            )
-            receipts.append(receipt)
-            (out / "rejections.json").write_text(json.dumps(receipts, indent=2) + "\n")
-            guard(out, cap)
+            count += 1
             need(result.returncode == 1 and diagnostic.encode() in result.stderr, label + " wrong rejection")
             need(output.read_bytes() == sentinel if existing else not output.exists(), label + " output changed")
-    return len(receipts)
+    return count
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--compiler", default=str(ROOT / "build/aurorac"))
-    add_identity_arguments(parser)
     parser.add_argument("--output")
-    parser.add_argument(
-        "--candidate-cap-mib",
-        type=int,
-        default=128,
-        help="per-invocation owned-output cap 128..1024 MiB; increases require explicit aggregate admission",
-    )
-    parser.add_argument(
-        "--check-cap-only",
-        action="store_true",
-        help="configuration-only cap checks; no compiler, native test or acceptance receipt",
-    )
     args = parser.parse_args()
-    validate_identity_selection(args, preflight=args.check_cap_only)
-    cap_bytes = candidate_cap(args.candidate_cap_mib)
-    if args.check_cap_only:
-        cap_self_test()
-        print(
-            json.dumps(
-                dict(
-                    status="configuration-only",
-                    native_executed=False,
-                    candidate_cap_mib=args.candidate_cap_mib,
-                    cap_bytes=cap_bytes,
-                    focused_default_mib=128,
-                    maximum_cap_mib=1024,
-                ),
-                sort_keys=True,
-            )
-        )
-        return
-    cap_self_test()
     compiler = Path(args.compiler).resolve(strict=True)
-    identity = resolve_identity(args, compiler, ROOT)
     out = Path(args.output).absolute() if args.output else ROOT / "build/kernel-budget-native" / str(time.time_ns())
     need(not any(path.is_symlink() for path in (out, *out.parents)), "Output symlink denied")
     need(".." not in out.parts, "Output path traversal denied")
     need(not out.exists(), "Use a fresh output directory; never overwrite failed evidence")
-    guard(out, args.candidate_cap_mib, 65536)
     out.mkdir(parents=True)
-    pins = {
-        str(p.relative_to(ROOT)): sha(p)
-        for p in (
-            ROOT / "kernel/policies/kernel/interrupt_budget.au",
-            ROOT / "examples/kernel.au",
-            ROOT / "kernel/uefi/budget-transport.hpp",
-            Path(__file__),
-            ROOT / "tests/kernel-budget-native.cpp",
-            ROOT / "scripts/owned_outputs.py",
-        )
-    }
     assembly, binary = out / "language.s", out / "observe"
     run(
         [str(compiler), "--module-root", "kernel/policies", "examples/kernel.au", "-o", str(assembly)],
         out,
         "compile",
-        args.candidate_cap_mib,
     )
     run(
         [
@@ -317,37 +206,17 @@ def main():
         ],
         out,
         "link",
-        args.candidate_cap_mib,
     )
     counts = dict(
-        policy=vector_gate(binary, out, "policy", policy_vectors(), oracle, args.candidate_cap_mib),
-        decoder=vector_gate(binary, out, "decoder", decoder_vectors(), decoder_oracle, args.candidate_cap_mib, True),
+        policy=vector_gate(binary, out, "policy", policy_vectors(), oracle),
+        decoder=vector_gate(binary, out, "decoder", decoder_vectors(), decoder_oracle, True),
     )
-    counts["rejections"] = rejection_gate(compiler, out, args.candidate_cap_mib)
+    counts["rejections"] = rejection_gate(compiler, out)
     successful_words = {oracle(initial, initial - used, used) for initial in range(1, 129) for used in range(initial)}
     need(0 not in successful_words and len(successful_words) == 8256, "Nonunique successful encoding")
-    run(["objdump", "-drwC", str(binary)], out, "disassembly", args.candidate_cap_mib)
-    run(["readelf", "-sW", str(binary)], out, "symbols", args.candidate_cap_mib)
-    need(sha(compiler) == identity.sha256, "Compiler changed during test")
-    need(pins == {name: sha(ROOT / name) for name in pins}, "Source changed during test")
-    guard(out, args.candidate_cap_mib)
-    identity.verify()
-    summary = dict(
-        status="passed",
-        compiler_identity=identity.record(),
-        compiler_sha256=sha(compiler),
-        source_pins=pins,
-        cases=counts,
-        candidate_cap_mib=args.candidate_cap_mib,
-        cap_bytes=cap_bytes,
-        owned_output_allocated_bytes=allocated(out),
-        free_bytes=free_bytes(out),
-        output_root=str(out),
-        accounting_scope="invocation outputs including tmp",
-        limits="Hosted observation only; not a QEMU, source-safety proof, or kernel acceptance result.",
-    )
-    write_checked_receipt(out / "summary.json", summary, lambda: guard(out, args.candidate_cap_mib))
-    print(json.dumps(summary, indent=2))
+    run(["objdump", "-drwC", str(binary)], out, "disassembly")
+    run(["readelf", "-sW", str(binary)], out, "symbols")
+    print("kernel budget native: passed " + ", ".join(f"{k}={v}" for k, v in counts.items()) + f" (output {out})")
 
 
 if __name__ == "__main__":

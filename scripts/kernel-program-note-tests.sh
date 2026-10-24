@@ -51,7 +51,6 @@ for part in client service; do
         "${extra[@]}" "$out/$part.o" -o "$out/$part.elf"
     objcopy -O binary "$out/$part.elf" "$out/$part.bin"
 done
-python3 -B tests/kernel-snapshot-abi.py "$out" --note
 python3 -B scripts/meson_aurora_assembly.py --render-bridge "$out/supervisor.abi.json" kernel/uefi/program-note-entry.S "$out/supervisor-entry.s"
 as --64 -L "$out/supervisor.s" "$out/supervisor-entry.s" kernel/uefi/kernel-policy-entry.S -o "$out/supervisor-host.o"
 as --64 -L "$out/service.s" tests/kernel-program-note-entry.S -o "$out/service-host.o"

@@ -81,9 +81,9 @@ sizing policy.
 Use the same `QEMU`, `QEMU_DATA`, `LD_LIBRARY_PATH`, `OVMF` and pinned `AURORAC`
 setup documented in [the UEFI guide](README.md).
 
-- `scripts/kernel-pci-tests.sh`: hosted parser/range/topology tests and strict
+- `meson test -C build/meson --suite full`: hosted parser/range/topology tests and strict
   positive/adversarial transcript validation; `SANITIZE=1` adds ASan/UBSan.
-- `scripts/kernel-pci-all.sh`: all seven actual OVMF scenarios, using two PCI
+- `meson test -C build/meson --suite guest-pci`: all seven actual OVMF scenarios, using two PCI
   images (ordinary and shared fixture), restoring the normal
   UEFI image after each variant.
 - `scripts/kernel-uefi-smoke.sh pci`: default q35 inventory.

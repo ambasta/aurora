@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Ordinary enum, copied method-result, and std.decimal execution/type checks.
 
-The decimal reference uses unbounded Python integers. Native results are read as
-all eight bytes, including values above the signed range. This suite does not
-use fault injection, signal observers, kernel tests, or implementation IR.
+The decimal reference uses unbounded Python integers. Cases are data for the
+shared native runner (native_runner.py), which compares all eight result bytes,
+including values above the signed range.
 
 Run: python3 tests/compiler/decimal_values.py build/aurorac
 Optional reproducible sequence: --seed 10011 --steps 96
@@ -15,8 +15,8 @@ import argparse
 from dataclasses import dataclass
 from pathlib import Path
 import random
-import subprocess
-import tempfile
+
+from native_runner import Suite
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -26,82 +26,8 @@ STATUS = "std::DecimalStatus::"
 ENUM = "enum class State { ready, done, failed };"
 
 
-def require(condition, message):
-    if not condition:
-        raise AssertionError(message)
-
-
 def program(body, definitions="", helpers="", imports="", result="i64"):
     return "module app;" + imports + definitions + helpers + f"auto test()->{result}{{{body}}}"
-
-
-class Suite:
-    def __init__(self, compiler):
-        self.compiler = compiler
-        self.count = 0
-        self.executions = 0
-        self.rejections = 0
-        self.modeled_steps = 0
-
-    def check(self, name, source, expected=42, reject=False, modules=None):
-        with tempfile.TemporaryDirectory(prefix="aurora-decimal-") as temporary:
-            directory = Path(temporary)
-            input_path = directory / "input.au"
-            assembly = directory / "program.s"
-            input_path.write_text(source)
-            command = [self.compiler, input_path, "-o", assembly, "--module-root", ROOT / "library"]
-            if modules:
-                module_root = directory / "modules"
-                module_root.mkdir()
-                for module, content in modules.items():
-                    path = module_root / (module.replace(".", "/") + ".au")
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    path.write_text(content)
-                command.extend(["--module-root", module_root])
-            try:
-                compiled = subprocess.run([str(x) for x in command], capture_output=True, timeout=5)
-                if reject:
-                    require(
-                        compiled.returncode == 1,
-                        f"expected rejection exit 1, got {compiled.returncode}: {compiled.stderr!r}",
-                    )
-                    require(bool(compiled.stderr.strip()), "missing type/syntax diagnostic")
-                    self.rejections += 1
-                else:
-                    require(compiled.returncode == 0, f"compiler exit {compiled.returncode}: {compiled.stderr!r}")
-                    entry = directory / "entry.s"
-                    entry.write_text(""".text
-.globl _start
-_start:
-    call test
-    pushq %rax
-    movq $1, %rax
-    movq $1, %rdi
-    movq %rsp, %rsi
-    movq $8, %rdx
-    syscall
-    movq $60, %rax
-    xorq %rdi, %rdi
-    syscall
-.section .note.GNU-stack,"",@progbits
-""")
-                    for build_command in (
-                        ["as", "--64", assembly, "-o", directory / "program.o"],
-                        ["as", "--64", entry, "-o", directory / "entry.o"],
-                        ["ld", "-o", directory / "program", directory / "entry.o", directory / "program.o"],
-                    ):
-                        built = subprocess.run([str(x) for x in build_command], capture_output=True, timeout=5)
-                        require(built.returncode == 0, f"{build_command[0]} failed: {built.stderr!r}")
-                    observed = subprocess.run([str(directory / "program")], capture_output=True, timeout=5)
-                    require(observed.returncode == 0, f"native exit {observed.returncode}: {observed.stderr!r}")
-                    require(len(observed.stdout) == 8, f"expected eight result bytes, got {observed.stdout!r}")
-                    actual = int.from_bytes(observed.stdout, "little", signed=False)
-                    require(actual == expected % (1 << 64), f"expected {expected % (1 << 64)}, got {actual}")
-                    self.executions += 1
-                self.count += 1
-                print("PASS decimal values", name, flush=True)
-            except (AssertionError, subprocess.TimeoutExpired) as failure:
-                raise AssertionError(f"{name}: {failure}\nSource:\n{source}") from failure
 
 
 def enum_cases(suite):
@@ -284,14 +210,14 @@ def enum_cases(suite):
         invalid_bodies.append(("enum unary " + operator, f"State s={operator}State::ready;return 42;"))
     extras = "enum class Other{ready,done};template<Scalar T>class Pair{public:T value;Pair(T n):value(n){}};"
     for name, body in invalid_bodies:
-        suite.check(name, program(body, ENUM + extras), reject=True)
+        suite.check(name, program(body, ENUM + extras), error=True)
     for name, definition in [
         ("duplicate enum case", "enum class State{ready,ready};"),
         ("explicit enum numeric value", "enum class State{ready=0,done};"),
         ("enum underlying numeric type", "enum class State:u64{ready,done};"),
         ("unscoped enum syntax", "enum State{ready,done};"),
     ]:
-        suite.check(name, program("return 42;", definition), reject=True)
+        suite.check(name, program("return 42;", definition), error=True)
     for name, helper, body in [
         ("wrong enum function argument", "auto take(State s)->i64{return 42;}", "return take(Other::ready);"),
         ("wrong enum function return", "auto make()->State{return Other::ready;}", "const State s=make();return 42;"),
@@ -302,16 +228,16 @@ def enum_cases(suite):
             "return take(State::ready);",
         ),
     ]:
-        suite.check(name, program(body, ENUM + extras, helper), reject=True)
+        suite.check(name, program(body, ENUM + extras, helper), error=True)
     suite.check(
         "wrong enum class field",
         program("Flag f=Flag{.state=Other::ready};return 42;", ENUM + extras + "class Flag{public:State state;};"),
-        reject=True,
+        error=True,
     )
     suite.check(
         "same named enums in modules are distinct",
         program("a::State state=b::State::ready;return 42;", imports="import one;import two;"),
-        reject=True,
+        error=True,
         modules={
             "one": "export module one;export namespace a{enum class State{ready};}",
             "two": "export module two;export namespace b{enum class State{ready};}",
@@ -322,16 +248,16 @@ def enum_cases(suite):
         "Flag(State initial):state(initial){}"
         "auto set(State next)->State{state=next;return state;}};"
     )
-    suite.check("wrong enum constructor argument", program("Flag f=Flag(Other::ready);return 42;", flag), reject=True)
+    suite.check("wrong enum constructor argument", program("Flag f=Flag(Other::ready);return 42;", flag), error=True)
     suite.check(
         "wrong enum method argument",
         program("Flag f=Flag(State::ready);f.set(Other::ready);return 42;", flag),
-        reject=True,
+        error=True,
     )
     suite.check(
         "false enum equality static assertion",
         program("static_assert(State::ready==State::done);return 42;", ENUM),
-        reject=True,
+        error=True,
     )
 
 
@@ -564,7 +490,7 @@ def method_result_cases(suite):
         ),
     ]:
         helpers = "auto consume(Report r)->i64{return 42;}"
-        suite.check(name, program(body, REPORT + "class Other{public:u64 value;};", helpers), reject=True)
+        suite.check(name, program(body, REPORT + "class Other{public:u64 value;};", helpers), error=True)
     suite.check(
         "direct copied method return preserves payload",
         program(
@@ -662,7 +588,6 @@ def modeled_sequence(suite, name, actions, fallback=MAX_U64):
     body += "const std::DecimalResult final=accumulator.finish();"
     body += f"return final.value_or({fallback}u64);"
     suite.check(name, program(body, imports="import std.decimal;", result="u64"), expected)
-    suite.modeled_steps += len(actions)
 
 
 def decimal_cases(suite, seed, steps):
@@ -830,7 +755,7 @@ def decimal_cases(suite, seed, steps):
             "std::DecimalAccumulator a=std::DecimalAccumulator();a.finish();return 42;",
         ),
     ]:
-        suite.check(name, program(body, ENUM, imports="import std.decimal;"), reject=True)
+        suite.check(name, program(body, ENUM, imports="import std.decimal;"), error=True)
 
 
 def decimal_projection_cases(suite):
@@ -861,16 +786,12 @@ def main():
     arguments = parser.parse_args()
     if not 1 <= arguments.steps <= 256:
         parser.error("--steps must be between 1 and 256")
-    suite = Suite(arguments.compiler.resolve())
+    suite = Suite(arguments.compiler, "decimal values")
     enum_cases(suite)
     method_result_cases(suite)
     decimal_cases(suite, arguments.seed, arguments.steps)
     decimal_projection_cases(suite)
-    print(
-        f"{suite.count} decimal value checks passed: {suite.executions} native executions, "
-        f"{suite.rejections} ordinary type/syntax rejections, "
-        f"{suite.modeled_steps} independently modeled decimal steps; seed {arguments.seed}"
-    )
+    suite.finish()
 
 
 if __name__ == "__main__":

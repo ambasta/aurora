@@ -1,7 +1,8 @@
 # Canonical incremental native tests
 
-Meson/Ninja is the canonical complete native graph. Every merge or release
-requires its complete `full` suite on the final integrated source with GCC 16,
+Meson/Ninja is the canonical complete native graph. Every merge requires the
+`merge` suite, and every release or compiler bump the `release` suite, on the
+final integrated source with GCC 16 (`full` is their union),
 plus the separate applicable image and actual guest gates. GCC 14 is optional
 targeted compatibility evidence. Previous snapshots do not qualify a new tree.
 
@@ -19,9 +20,10 @@ runner invokes bare `gcc`. Keep one stable build directory per toolchain/configu
 CXX=g++ meson setup build/gcc16 --backend=ninja -Dlsp=false \
   "-Dbootstrap_receipt=$RECEIPT"
 meson compile -C build/gcc16 -j 3
-# Optional quick feedback while developing; full below includes these tests.
+# Optional quick feedback while developing; merge below includes these tests.
 meson test -C build/gcc16 --suite dev --no-rebuild --num-processes 4 --print-errorlogs
-meson test -C build/gcc16 --suite full --num-processes 4 --print-errorlogs
+meson test -C build/gcc16 --suite merge --num-processes 4 --print-errorlogs
+meson test -C build/gcc16 --suite release --num-processes 4 --print-errorlogs  # opt-in
 ```
 
 Three compile jobs and four test workers are initial configurable choices, not a
@@ -65,7 +67,7 @@ build products while keeping configuration/logs. Retire whole directories only
 through the [explicit per-directory cleanup steps](local-development.md#reclaiming-old-local-output-explicitly);
 never sweep historical, failed, kept or user-owned review output automatically.
 
-`make test` invokes the same `full` graph. `make -C compiler test` and
+`make test` invokes the same `merge` selection; `make test-release` selects `release`. `make -C compiler test` and
 `scripts/compiler-test.sh` select `compiler`. Set `MESON_BUILD_DIR` to a
 matching predecessor-configured directory, or omit it for `build/meson` (normal
 image-enabled work) or `build/meson-compiler` (hosted-only compiler work).
@@ -221,7 +223,7 @@ Use `meson test -C BUILD --list` or Meson introspection for the current registra
 never starts QEMU. Keep development quick with `dev` or exact test names; full
 package profiles are slow. `packages` selects both partial and full profiles.
 
-`make test` selects normal `full`. `make test-exhaustive` selects the separate
+`make test` selects `merge`. `make test-exhaustive` selects the separate
 `exhaustive` suite through the same incremental wrapper and resource policy;
 direct Meson selection is `meson test -C BUILD --suite exhaustive`.
 Normal `utf8` and `utf8-encoding` registrations use `--profile full`, with
@@ -251,8 +253,7 @@ Full package Identity/Manifest/Graph retain respectively 5,503/20, 20,022/29 and
 Both retain output-preservation and native negative controls. Full profiles use
 fresh build-local artifacts and the existing 1,024 MiB candidate caps. Native Meson registrations preserve
 ordinary/optimized Python controls, fault/capacity checks and complex negative
-compilation sweeps. See `tests/native/inventory.json` for exact mappings and the
-few byte-identical repeated commands deduplicated within a full invocation.
+compilation sweeps.
 
 Canonical Meson uses its checked-libstdc++ configuration (`_GLIBCXX_ASSERTIONS`
 and large-file definitions); historical Make compiler bytes need not match.
@@ -260,8 +261,6 @@ Special native `-O1`, debug, no-PIE, exception/RTTI and testing macros remain wh
 required; the existing `-O2` framebuffer variants remain distinct. Existing
 compiler Python runners use explicit optimized checks rather than Python assert;
 ordinary/optimized harness controls remain separate where they test mode behavior.
-`tests/test-inventory.py` checks runner/source membership, exact profiles/arguments,
-suites, fixtures and native registration contracts. New unaccounted runners fail.
 
 Observed Meson compiler identity never claims an external pin or fresh bootstrap
 build. Full native execution still needs independent final-source review; normal

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Prebuilt native console PTY gate, followed by actual normal restoration.
 
-The selected console image must pass automatic artifact admission before a guest
-starts. The normal restoration uses the same configured native build.
+The image and stack checks ran when the console profile was built. The normal
+restoration uses the same configured native build.
 """
 
 from pathlib import Path
@@ -23,10 +23,10 @@ import tty
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-import kernel_console_service_admission as admission
 from kernel_profiles import FIXTURE_MODES, canonical_profile
-import kernel_uefi_console_clock as clock
 import qemu_transport as transport
+
+BUILD = None
 
 
 def need(value, message):
@@ -101,13 +101,8 @@ def fault_guest(mode, work):
         qemu,
         os.environ.get("QEMU_DATA", ""),
         firmware=transport.firmware_args(combined, code, variables),
-        boot=transport.fat_boot(admission.BUILD / "esp"),
+        boot=transport.fat_boot(BUILD / "esp"),
     )
-    recipe = clock.receipt(
-        argv, qemu, combined, code, variables, os.environ.get("QEMU_DATA", ""), esp=str(admission.BUILD / "esp")
-    )
-    recipe.update(timeout_argv=None, test_supervision="private PTY, 30-second deadline")
-    (work / "clock.json").write_text(json.dumps(recipe, indent=2) + "\n")
     master, slave = pty.openpty()
     tty.setraw(slave)
     transcript = bytearray()
@@ -189,7 +184,7 @@ def restore_normal(work, env, result=None, normal_build=None):
         and directory.parts[-3:] == ("kernel-images", "uefi", "normal"),
         "Unexpected native normal image directory",
     )
-    names = ("normal.log", "normal.clock.json")
+    names = ("normal.log",)
     outputs = work / "normal-restoration" if normal_build is not None else directory
     before = {}
     for name in names:
@@ -207,7 +202,6 @@ def restore_normal(work, env, result=None, normal_build=None):
     restoration = dict(
         exit_status=restored.returncode,
         image_directory=str(directory),
-        output_sha256=admission.digest(work / "restoration.stdout"),
     )
     if result is not None:
         result["restoration"] = restoration
@@ -235,33 +229,22 @@ def main():
         "--normal-build-dir", type=Path, help="prebuilt normal profile for private run-only restoration"
     )
     args = parser.parse_args()
-    admission.configure_paths(args.build_dir, ROOT)
+    global BUILD
+    BUILD = args.build_dir.resolve(strict=True)
     profile = canonical_profile("uefi", args.mode)
     need(
-        admission.BUILD.parts[-3:] == ("kernel-images", "uefi", profile),
+        BUILD.parts[-3:] == ("kernel-images", "uefi", profile),
         "Expected the selected native console profile directory",
     )
     need(
         not os.environ.get("AURORA_TEST_CONTEXT") and not os.environ.get("UEFI_MODE"),
         "Unset inherited test/profile controls",
     )
-    # Failed preflight must neither start a guest nor modify/restage its image.
-    receipt = admission.checked(profile)
     need(shutil.which(os.environ.get("QEMU", "qemu-system-x86_64")), "QEMU unavailable")
     evidence_root = ROOT / "build"
     evidence_root.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix=args.mode + "-qualified-", dir=evidence_root))
-    shutil.copy2(admission.RECEIPT, work / "admission.json")
-    for path in admission.build_files():
-        target = work / "image" / path.relative_to(admission.BUILD)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(path, target)
-    result = dict(
-        schema="aurora-native-console-qualification-v1",
-        mode=args.mode,
-        status="failed",
-        admission_sha256=admission.digest(admission.RECEIPT),
-    )
+    result = dict(mode=args.mode, status="failed")
     primary_error = None
     try:
         if args.mode == "console":
@@ -273,7 +256,7 @@ def main():
                     ROOT / "tests/kernel-console-pty.py",
                     "--uefi",
                     "--build-dir",
-                    admission.BUILD,
+                    BUILD,
                     "--output-dir",
                     pty_output,
                 ],
@@ -285,7 +268,6 @@ def main():
                 "kernel-console-pty.log",
                 "kernel-console-pty.metrics.json",
                 "kernel-console-pty.stderr",
-                "console-pty.clock.json",
             ):
                 if (pty_output / name).exists():
                     shutil.copy2(pty_output / name, work / name)
@@ -293,18 +275,13 @@ def main():
             result["guest"] = json.loads((work / "kernel-console-pty.metrics.json").read_text())
         else:
             result["guest"] = fault_guest(args.mode, work)
-            result["guest"]["transcript_sha256"] = admission.digest(work / "guest.log")
-        need(
-            admission.checked(profile) == receipt and admission.digest(admission.RECEIPT) == result["admission_sha256"],
-            "Admitted image or report changed during guest execution",
-        )
     except BaseException as error:
         primary_error = error
         result["guest_error"] = str(error)
     finally:
         # A qualified attempt owns restoration even when its PTY gate failed.
         # This normal-profile command includes an actual validated QEMU boot.
-        env = dict(os.environ, MESON_BUILD_DIR=str(admission.BUILD.parents[2]))
+        env = dict(os.environ, MESON_BUILD_DIR=str(BUILD.parents[2]))
         try:
             if isinstance(primary_error, transport.ChildNotReaped):
                 raise primary_error
@@ -318,7 +295,7 @@ def main():
         (work / "qualification.json").write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
     if primary_error is not None:
         raise primary_error
-    print("PASS admitted prebuilt " + args.mode + " PTY and actual normal restoration: " + str(work))
+    print("PASS prebuilt " + args.mode + " PTY and actual normal restoration: " + str(work))
 
 
 def terminate(_number, _frame):

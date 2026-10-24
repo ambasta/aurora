@@ -77,6 +77,3 @@ for missing in ACPI PCI BAR_CAPTURE BAR_EDK2; do
     grep -q 'NVMe preparation requires the standalone BAR profile' "build/uefi/nvme-queues-missing-$missing.log"
 done
 echo 'PASS: production queue API and invalid configuration/profile controls'
-python3 tests/kernel-uefi-nvme-stack.py --self-test
-python3 -O tests/kernel-uefi-nvme-stack.py --self-test
-python3 -B tests/kernel-uefi-nvme-stack.py --emission-test

@@ -65,14 +65,6 @@ def main():
             code=code,
             variables=variables,
         )
-        sys.path.insert(0, str(ROOT / "scripts"))
-        import kernel_uefi_console_clock
-
-        receipt = kernel_uefi_console_clock.receipt(
-            command, qemu, firmware, code, variables, os.environ.get("QEMU_DATA", ""), esp=str(build / "esp")
-        )
-        receipt.update(timeout_argv=None, test_supervision="private PTY, 30-second deadline")
-        (output / "console-pty.clock.json").write_text(json.dumps(receipt, indent=2) + "\n")
     else:
         command = transport.profile_command(
             "bios", "console", qemu, build / "aurora.img", os.environ.get("QEMU_DATA", ""), snapshot=True

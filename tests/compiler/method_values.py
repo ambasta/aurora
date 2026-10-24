@@ -1,40 +1,22 @@
 #!/usr/bin/env python3
-"""Executable copied ordinary-method parameter contract (M022).
+"""Copied ordinary-method parameters (M022): native results, traps and rejections.
+
+Cases are data on one native_runner.Suite: complete 64-bit results, exact trap
+sites and diagnostic fragments (matched case-insensitively). Model expectations
+use independent Python lists, not compiler output.
 
 Run: python3 -O tests/compiler/method_values.py build/aurorac
-     python3 -O tests/compiler/method_values.py --plan-only
-
-Native results preserve all 64 bits. Traps require kernel SIGILL at the exact
-named UD2 instruction. Every rejection preserves absent and byte-exact existing
-output, and all source/module/library inputs. Explicit require() checks survive
--O. Successful temporary artifacts are deleted; failures retain reproduction
-source, modules, command, diagnostics and native artifacts under this checkout's
-evidence/. Model expectations use independent Python lists, not compiler output.
-These are finite regression/model checks, not a safety or performance proof.
-No kernel images or historical artifacts are created or removed.
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
-import json
 from pathlib import Path
 import random
-import re
-import resource
-import shutil
-import subprocess
 import tempfile
-import time
 
-from composed_values import Trap, observer_self_test, program, require, signed_bits
-from integer_oracle import NativeRunner, validate_trap, validate_values
+from native_runner import LIBRARY, ROOT, Suite, Trap, require, run
 
-ROOT = Path(__file__).resolve().parents[2]
-# Host compilation watchdog, separate from the five-second native execution guard.
-COMPILER_TIMEOUT = 45
-PRESERVED = b"previous verified assembly\x00\xff\n"
 SCALARS = ("i64", "u64", "u8", "bool")
 ENUMS = "enum class Status{ready,failed};enum class Other{ready,failed};"
 EMPTY = "class Empty{public:Empty(){}auto answer()const->i64{return 42;}};"
@@ -54,7 +36,7 @@ public:
 
 
 def p(body, definitions="", helpers="", imports="", result="i64"):
-    return program(body, definitions, helpers, imports, result)
+    return "module app;" + imports + definitions + helpers + f"auto test()->{result}{{{body}}}"
 
 
 def lit(scalar, value):
@@ -63,151 +45,21 @@ def lit(scalar, value):
     return str(value) + (scalar if scalar in ("u64", "u8") else "")
 
 
-class Suite:
-    def __init__(self, directory, compiler, keep_going=False, fixture="", plan_only=False):
-        self.directory, self.compiler = directory, compiler
-        self.keep_going, self.fixture, self.plan_only = keep_going, fixture, plan_only
-        self.runner = None if plan_only else NativeRunner(directory, compiler, 5)
-        self.library_inputs = (
-            {} if plan_only else {path: path.read_bytes() for path in (ROOT / "library").rglob("*.au")}
-        )
-        self.count = self.traps = self.rejections = self.negative_fixtures = 0
-        self.attempts = self.selected_fixtures = 0
-        self.failures, self.names = [], set()
+class MethodSuite(Suite):
+    """`equivalent_source` must compile to the same assembly as the checked source."""
 
-    def check(
-        self,
-        name,
-        source,
-        expected=42,
-        error=None,
-        modules=None,
-        existing_output=None,
-        _selected=False,
-        equivalent_source=None,
-    ):
-        if not _selected:
-            require(name not in self.names, "duplicate fixture name: " + name)
-            self.names.add(name)
-            if self.fixture and self.fixture.lower() not in name.lower():
-                return
-            self.selected_fixtures += 1
-        self.attempts += 1
-        if self.plan_only:
-            self.count += 1
-            self.rejections += int(error is not None)
-            self.traps += int(isinstance(expected, Trap) and error is None)
-            print("PLAN method values", name, flush=True)
-            return
-        slug = re.sub(r"[^a-zA-Z0-9]+", "-", name)[:75].strip("-")
-        directory = Path(tempfile.mkdtemp(prefix=slug + "-", dir=self.directory))
-        source_path, output = directory / "input.au", directory / "compiled.s"
-        source_path.write_text(source)
-        inputs = dict(self.library_inputs)
-        inputs[source_path] = source.encode()
-        roots = [ROOT / "library"]
-        if modules:
-            root = directory / "modules"
-            root.mkdir()
-            roots.insert(0, root)
-            for module, content in modules.items():
-                path = root / (module.replace(".", "/") + ".au")
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(content)
-                inputs[path] = content.encode()
-        if existing_output is not None:
-            output.write_bytes(existing_output)
-        command = [str(self.compiler), str(source_path), "-o", str(output)]
-        for root in roots:
-            command.extend(["--module-root", str(root)])
-        (directory / "command.json").write_text(json.dumps(command, indent=2) + "\n")
-        original_runner_directory = self.runner.directory
-        try:
-            compiled = subprocess.run(
-                command,
-                capture_output=True,
-                timeout=COMPILER_TIMEOUT,
-                preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)),
-            )
-            (directory / "stdout.bin").write_bytes(compiled.stdout)
-            (directory / "stderr.bin").write_bytes(compiled.stderr)
-            for path, before in inputs.items():
-                require(path.read_bytes() == before, name + ": input changed: " + str(path))
-            if error is not None:
-                require(
-                    compiled.returncode == 1,
-                    f"{name}: expected compiler exit 1, got {compiled.returncode}: {compiled.stderr!r}",
-                )
-                require(bool(compiled.stderr), name + ": missing rejection diagnostic")
-                if existing_output is None:
-                    require(not output.exists(), name + ": artifact created on rejection")
-                else:
-                    require(output.read_bytes() == existing_output, name + ": previous output changed on rejection")
-                if error is not True:
-                    fragments = (error,) if isinstance(error, str) else error
-                    require(
-                        any(x.lower().encode() in compiled.stderr.lower() for x in fragments),
-                        name + ": unexpected diagnostic: " + repr(compiled.stderr),
-                    )
-                self.rejections += 1
-            else:
-                require(compiled.returncode == 0, f"{name}: compiler exit {compiled.returncode}: {compiled.stderr!r}")
-                if equivalent_source is not None:
-                    named_input, named_output = directory / "named.au", directory / "named.s"
-                    named_input.write_text(equivalent_source)
-                    named_command = [str(self.compiler), str(named_input), "-o", str(named_output)]
-                    for root in roots:
-                        named_command.extend(["--module-root", str(root)])
-                    (directory / "named-command.json").write_text(json.dumps(named_command, indent=2) + "\n")
-                    named = subprocess.run(
-                        named_command,
-                        capture_output=True,
-                        timeout=COMPILER_TIMEOUT,
-                        preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)),
-                    )
-                    (directory / "named-stderr.bin").write_bytes(named.stderr)
-                    require(named.returncode == 0, name + ": named-local comparison failed: " + repr(named.stderr))
-                    require(named_input.read_text() == equivalent_source, name + ": named input changed")
-                    for path, before in inputs.items():
-                        require(path.read_bytes() == before, name + ": input changed: " + str(path))
-                    require(
-                        output.read_bytes() == named_output.read_bytes(),
-                        name + ": direct return differs from named-local assembly",
-                    )
-                self.runner.directory = directory
-                observed, symbols = self.runner.assemble(output.read_text(), ["test"])
-                if isinstance(expected, Trap):
-                    validate_trap(observed, expected, symbols, name)
-                    self.traps += 1
-                else:
-                    validate_values(observed, [signed_bits(expected)], [name])
-            self.count += 1
-            print("PASS method values", name, flush=True)
-        except (AssertionError, OSError, subprocess.TimeoutExpired) as failure:
-            details = f"{name}: {failure}\nPreserved reproduction: {directory}"
-            (directory / "failure.txt").write_text(details + "\n")
-            self.failures.append(details)
-            print("FAIL method values", details, flush=True)
-            if not self.keep_going:
-                raise AssertionError(details) from failure
-        else:
-            shutil.rmtree(directory)
-        finally:
-            self.runner.directory = original_runner_directory
+    def check(self, name, source, expected=42, error=None, *, equivalent_source=None, **options):
+        if equivalent_source is not None:
+            options["inspect"] = lambda text: self.same_assembly(name, text, equivalent_source)
+        super().check(name, source, expected, error, **options)
 
-    def reject(self, name, source, error=True, modules=None):
-        require(name not in self.names, "duplicate fixture name: " + name)
-        self.names.add(name)
-        if self.fixture and self.fixture.lower() not in name.lower():
-            return
-        self.selected_fixtures += 1
-        before = self.rejections
-        for suffix, previous in (("absent output", None), ("saved output", PRESERVED)):
-            self.check(
-                name + ": " + suffix, source, error=error, modules=modules, existing_output=previous, _selected=True
-            )
-        if self.rejections == before + 2:
-            self.negative_fixtures += 1
+    def same_assembly(self, name, text, equivalent):
+        with tempfile.TemporaryDirectory(prefix="named-") as directory:
+            source, output = Path(directory) / "named.au", Path(directory) / "named.s"
+            source.write_text(equivalent)
+            named = run([self.compiler, "--module-root", LIBRARY, source, "-o", output], 45)
+            require(named.returncode == 0, name + ": named-local comparison failed: " + repr(named.stderr))
+            require(output.read_text() == text, name + ": direct return differs from named-local assembly")
 
 
 def native_cases(suite):
@@ -516,6 +368,8 @@ def native_cases(suite):
             "auto get(i64 index)const->T{return elements[index];}"
             "auto copy(std::array source)const->std::array{const std::array result=source;return result;}};}",
         ),
+        # Its own root-level std namespace; a pack would nest it and import std.array beside it.
+        standalone=True,
     )
     suite.check(
         "Value substitution method argument and result use exact nested type",
@@ -1482,86 +1336,16 @@ def main():
     parser.add_argument("compiler", type=Path, nargs="?", default=ROOT / "build/aurorac")
     parser.add_argument("--seed", type=int, default=22022)
     parser.add_argument("--steps", type=int, default=12)
-    parser.add_argument(
-        "--section", choices=("all", "native", "models", "boundaries", "rejections", "modules", "traps"), default="all"
-    )
-    parser.add_argument("--fixture", default="")
-    parser.add_argument("--self-test-only", action="store_true")
-    parser.add_argument("--plan-only", action="store_true")
-    parser.add_argument("--keep-going", action="store_true")
     args = parser.parse_args()
     require(1 <= args.steps <= 48, "steps must be between 1 and 48")
-    require(not (args.plan_only and args.self_test_only), "plan-only and self-test-only are exclusive")
-    compiler = args.compiler.resolve()
-    started = time.monotonic()
-    if not args.plan_only and not args.self_test_only:
-        require(compiler.is_file(), f"compiler unavailable: {compiler}")
-        print(
-            f"INFO method values compiler={compiler} sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}",
-            flush=True,
-        )
-        for relative in ("tests/compiler/method_values.py", "library/std/array.au"):
-            print(
-                f"INFO method values {relative} sha256={hashlib.sha256((ROOT / relative).read_bytes()).hexdigest()}",
-                flush=True,
-            )
-    # Only this run's successful artifacts are deleted. Historical evidence is untouched.
-    evidence = Path(tempfile.gettempdir())
-    evidence.mkdir(exist_ok=True)
-    directory = Path(tempfile.mkdtemp(prefix="method-values-", dir=evidence))
-    clean = False
-    try:
-        suite = Suite(directory, compiler, args.keep_going, args.fixture, args.plan_only)
-        if not args.plan_only:
-            observer_self_test(suite)
-        if args.self_test_only:
-            print("PASS method values observer self-tests; no compiler acceptance claimed", flush=True)
-            clean = True
-            return
-        sections = {
-            "native": lambda: native_cases(suite),
-            "models": lambda: model_cases(suite, args.seed, args.steps),
-            "boundaries": lambda: boundary_cases(suite),
-            "rejections": lambda: rejection_cases(suite),
-            "modules": lambda: module_cases(suite),
-            "traps": lambda: trap_cases(suite),
-        }
-        for name, run in sections.items():
-            if args.section in ("all", name):
-                before = (suite.count, suite.traps, suite.rejections, suite.selected_fixtures)
-                run()
-                print(
-                    f"INFO method values section={name} fixtures="
-                    f"{suite.selected_fixtures - before[3]} executions="
-                    f"{suite.count - before[0]} "
-                    f"traps={suite.traps - before[1]} rejection-runs={suite.rejections - before[2]}",
-                    flush=True,
-                )
-        require(suite.selected_fixtures > 0, "no fixtures selected")
-        native = suite.count - suite.traps - suite.rejections
-        label = "planned" if args.plan_only else "passed"
-        print(
-            f"INFO method values: {suite.selected_fixtures} selected fixtures; {suite.count} {label} executions; "
-            f"{native} native returns; {suite.traps} exact-site traps; {suite.negative_fixtures} rejection fixtures / "
-            f"{suite.rejections} rejection runs; {len(suite.failures)} failed executions; section={args.section}; "
-            f"seed={args.seed}; steps={args.steps}; elapsed={time.monotonic() - started:.2f}s",
-            flush=True,
-        )
-        require(suite.count + len(suite.failures) == suite.attempts, "execution accounting mismatch")
-        require(
-            suite.rejections == 2 * suite.negative_fixtures or bool(suite.failures), "rejection accounting mismatch"
-        )
-        require(not suite.failures, f"{len(suite.failures)} failed executions; artifacts: {directory}")
-        print(
-            "PLAN method values complete (not executed)" if args.plan_only else "PASS method values complete",
-            flush=True,
-        )
-        clean = True
-    finally:
-        if clean:
-            shutil.rmtree(directory)
-        else:
-            print("INFO method values retained artifacts:", directory, flush=True)
+    suite = MethodSuite(args.compiler, "method values", ignore_case=True, pack_templates=32)
+    native_cases(suite)
+    model_cases(suite, args.seed, args.steps)
+    boundary_cases(suite)
+    rejection_cases(suite)
+    module_cases(suite)
+    trap_cases(suite)
+    suite.finish()
 
 
 if __name__ == "__main__":

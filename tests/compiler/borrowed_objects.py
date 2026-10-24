@@ -8,23 +8,20 @@ checker, fail-stop unwinder, kernel gate or proof of memory safety. All assertio
 use require(), including under Python -O. Failed artifacts are always retained.
 
 The default full profile runs every fixture. --smoke selects two real native
-programs and seven named safety rejections for developer feedback; its receipts
-explicitly mark partial coverage, and it cannot establish the full suite gate.
+programs and seven named safety rejections for developer feedback. All selected
+programs share one packed native binary (owned_bytes.Suite, deferred).
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
-import shutil
 import tempfile
 
-import byte_buffer
-from byte_buffer import BufferSuite, CREATE, ROOT, check_state, program
+from byte_buffer import BufferSuite, CREATE, check_state, program
+from native_runner import require
 import owned_bytes
-from unsigned_oracle import require
 
 SPAN = "builtin::span<const u8>"
 PRESERVED = b"previous verified assembly\x00\xff\n"
@@ -91,7 +88,31 @@ auto consume(builtin::ByteRegion region, std::ByteBuffer input) -> i64 {{ return
 """
 
 
+class BorrowCases(BufferSuite):
+    """The --smoke profile keeps only the named programs and rejections."""
+
+    def __init__(self, compiler, directory, smoke=False):
+        super().__init__(compiler, directory, deferred=True)
+        self.smoke = smoke
+
+    def select_program(self, name):
+        return not self.smoke or name in SMOKE_PROGRAMS
+
+    def compile(self, name, source, entry_name=None, **options):
+        return super().compile(name, source, entry_name, **options) if self.select_program(name) else None
+
+    def run(self, executable, *arguments, **options):
+        if executable is not None:
+            super().run(executable, *arguments, **options)
+
+    def reject(self, name, source, diagnostic=None):
+        if not self.smoke or name in SMOKE_REJECTIONS:
+            super().reject(name, source, diagnostic or True)
+
+
 class BorrowSuite(BufferSuite):
+    """Immediate-mode suite with selection receipts, kept for json_string_write.py until it migrates."""
+
     def __init__(self, compiler, directory, compile_only, smoke=False):
         super().__init__(compiler, directory, compile_only)
         self.profile = "smoke" if smoke else "full"
@@ -1120,61 +1141,13 @@ auto plain_json() -> i64 {
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", type=Path)
-    parser.add_argument("--compile-only", action="store_true")
     parser.add_argument(
         "--smoke", action="store_true", help="partial developer profile: two native programs and seven rejections"
     )
     parser.add_argument("--artifacts", type=Path, help="retain this run in a new directory")
     args = parser.parse_args()
-    compiler = args.compiler.resolve(strict=True)
-    before = hashlib.sha256(compiler.read_bytes()).hexdigest()
-    directory = args.artifacts
-    if directory is None:
-        directory = Path(tempfile.mkdtemp(prefix="aurora-borrowed-objects-"))
-    else:
-        directory.mkdir(parents=True, exist_ok=False)
-    inputs = {path: path.read_bytes() for path in (ROOT / "library").rglob("*.au")}
-    for path in (
-        Path(__file__).resolve(),
-        ROOT / "tests/compiler/byte_buffer.py",
-        ROOT / "tests/compiler/owned_bytes.py",
-        ROOT / "tests/compiler/unsigned_oracle.py",
-        ROOT / "runtime/hosted_bytes.cpp",
-        ROOT / "runtime/hosted_bytes.hpp",
-    ):
-        inputs[path] = path.read_bytes()
-    commands = []
-    original_command = owned_bytes.command
-
-    def recorded_command(argv, **kwargs):
-        record = {"argv": [str(part) for part in argv], "kwargs": kwargs}
-        commands.append(record)
-        (directory / "commands.json").write_text(json.dumps(commands, indent=2) + "\n")
-        result = original_command(argv, **kwargs)
-        record.update(returncode=result.returncode, stdout_hex=result.stdout.hex(), stderr_hex=result.stderr.hex())
-        (directory / "commands.json").write_text(json.dumps(commands, indent=2) + "\n")
-        return result
-
-    owned_bytes.command = recorded_command
-    byte_buffer.command = recorded_command
-    passed = False
-    try:
-        suite = BorrowSuite(compiler, directory, args.compile_only, args.smoke)
-        (directory / "inputs.json").write_text(
-            json.dumps(
-                {
-                    "compiler_sha256": before,
-                    "profile": suite.profile,
-                    "partial_coverage": args.smoke,
-                    "compile_only": args.compile_only,
-                    "requested_programs": list(SMOKE_PROGRAMS) if args.smoke else "all",
-                    "requested_rejections": list(SMOKE_REJECTIONS) if args.smoke else "all",
-                    "inputs": {str(path): hashlib.sha256(content).hexdigest() for path, content in inputs.items()},
-                },
-                indent=2,
-            )
-            + "\n"
-        )
+    with tempfile.TemporaryDirectory(prefix="aurora-borrowed-objects-") as temporary:
+        suite = BorrowCases(args.compiler.resolve(strict=True), args.artifacts or Path(temporary), args.smoke)
         borrowing_cases(suite)
         paired_borrowing_cases(suite)
         bounded_borrowing_cases(suite)
@@ -1183,47 +1156,9 @@ def main():
         json_cases(suite)
         rejection_cases(suite)
         independent_json_import(suite)
-        suite.check_selection()
-        require(hashlib.sha256(compiler.read_bytes()).hexdigest() == before, "compiler changed during gate")
-        for path, content in inputs.items():
-            require(path.read_bytes() == content, f"bound input changed: {path}")
-        (directory / "summary.json").write_text(
-            json.dumps(
-                {
-                    "compiler_sha256": before,
-                    "profile": suite.profile,
-                    "partial_coverage": args.smoke,
-                    "full_borrowed_objects_gate": not args.smoke and not args.compile_only,
-                    "selected_programs": suite.selected_programs,
-                    "selected_rejections": suite.selected_rejections,
-                    "omitted_programs": suite.omitted_programs,
-                    "omitted_rejections": suite.omitted_rejections,
-                    "programs": suite.programs,
-                    "native_cases": suite.native,
-                    "rejection_fixtures": suite.rejections,
-                    "rejection_executions": 2 * suite.rejections,
-                    "skipped_native_cases": suite.skipped_native,
-                    "compile_only": args.compile_only,
-                    "passed": True,
-                },
-                indent=2,
-            )
-            + "\n"
-        )
-        print(
-            f"PASS borrowed objects [profile={suite.profile}, compile_only={args.compile_only}]: "
-            f"{suite.programs} programs, {suite.native} native cases, "
-            f"{suite.rejections} rejections, {suite.skipped_native} native cases skipped"
-        )
-        print(f"compiler_sha256={before}")
-        passed = True
-    finally:
-        owned_bytes.command = original_command
-        byte_buffer.command = original_command
-        if passed and args.artifacts is None:
-            shutil.rmtree(directory)
-        else:
-            print(f"artifacts={directory}")
+        suite.finish()
+        profile = "smoke" if args.smoke else "full"
+        print(f"PASS borrowed objects [profile={profile}]: {suite.native} native runs")
 
 
 if __name__ == "__main__":

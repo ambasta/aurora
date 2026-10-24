@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
-"""Readonly subspan source/native oracle; durable inputs and exact named traps.
+"""Readonly subspan source/native oracle with exact named traps (native_runner.py).
 
 Expected bytes come from Python slice arithmetic, never emitted IR/layout. Existing
-whole-span and single-span APIs are exercised without edits. Failures retain their
-source/assembly in the required caller-selected fresh artifact directory.
+whole-span and single-span APIs are exercised without edits.
 """
 
 import argparse
-import hashlib
 from pathlib import Path
 import random
-import time
-from readonly_spans import Suite, Trap, SPAN, array, view, checksum, require, self_tests, MIN_I64, MAX_I64, HIGH_BIT
+
+from readonly_spans import Suite, Trap, SPAN, array, view, checksum, MIN_I64, MAX_I64, HIGH_BIT
 
 
 def window(name="part", parent="view", start=0, count=0):
@@ -307,28 +305,16 @@ def lifetimes(suite):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", type=Path)
-    parser.add_argument("--artifacts", required=True, type=Path)
+    parser.add_argument("--artifacts", type=Path, help="scratch directory for the generated programs")
     parser.add_argument("--seed", type=int, default=23023)
     args = parser.parse_args()
-    compiler = args.compiler.resolve()
-    directory = args.artifacts.resolve()
-    directory.mkdir(parents=True, exist_ok=False)
-    pin = hashlib.sha256(compiler.read_bytes()).hexdigest()
-    print("compiler_sha256=" + pin, flush=True)
-    (directory / "compiler.sha256").write_text(pin + "\n")
-    suite = Suite(directory, compiler, 15, False)
-    started = time.monotonic()
-    self_tests(suite)
+    suite = Suite(args.compiler, 15, label="readonly windows")
+    if args.artifacts:
+        suite.runner.directory = args.artifacts.resolve()
     model(suite, args.seed)
     calls(suite)
     lifetimes(suite)
-    require(hashlib.sha256(compiler.read_bytes()).hexdigest() == pin, "compiler changed during gate")
-    summary = (
-        f"PASS readonly windows: {suite.count} native cases, {suite.traps} exact traps, "
-        f"{suite.rejections} source rejections; seed={args.seed}; {time.monotonic() - started:.2f}s"
-    )
-    (directory / "summary.txt").write_text(summary + "\n")
-    print(summary, flush=True)
+    suite.finish()
 
 
 if __name__ == "__main__":

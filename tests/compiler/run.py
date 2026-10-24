@@ -1,79 +1,22 @@
 #!/usr/bin/env python3
-"""Compile source, assemble/link directly, run native assembly, check diagnostics."""
+"""Frontend acceptance, diagnostics, checked traps and native results (native_runner.py)."""
 
 from pathlib import Path
 import random
-import resource
-import signal
-import subprocess
 import sys
-import tempfile
+
+from native_runner import Suite, Trap
 
 COMPILER = Path(sys.argv[1] if len(sys.argv) > 1 else "build/aurorac").resolve()
-PASS = 0
+SUITE = Suite(COMPILER, "frontend")
+TRAPS = {"overflow": Trap.OVERFLOW, "bounds": Trap.BOUNDS}
 
 
-def require(condition, message):
-    if not condition:
-        raise AssertionError(message)
-
-
-def command(args, good=True):
-    result = subprocess.run(
-        [str(x) for x in args],
-        capture_output=True,
-        text=True,
-        timeout=5,
-        preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)),
+def check(name, body, expected=42, error=None, trap=None, options=(), modules=None, standalone=False):
+    source = body if body.startswith("module ") else "module test; auto test() -> i64 { " + body + " }"
+    SUITE.check(
+        name, source, TRAPS[trap] if trap else expected, error, options=options, modules=modules, standalone=standalone
     )
-    if good and result.returncode:
-        raise AssertionError(f"{args}: exit {result.returncode}\n{result.stdout}{result.stderr}")
-    return result
-
-
-def check(name, body, expected=42, error=None, trap=None, options=(), modules=None):
-    global PASS
-    with tempfile.TemporaryDirectory(prefix="aurora-test-") as directory:
-        root = Path(directory)
-        source = root / "input.au"
-        source.write_text(body if body.startswith("module ") else "module test; auto test() -> i64 { " + body + " }")
-        for module_name, content in (modules or {}).items():
-            (root / (module_name + ".au")).write_text(content)
-        assembly = root / "program.s"
-        module_options = ["--module-root", root] if modules else []
-        result = command([COMPILER, *options, *module_options, source, "-o", assembly], good=error is None)
-        if error is not None:
-            require(result.returncode != 0, f"{name}: accepted invalid program")
-            require(error in result.stderr, f"{name}: expected {error!r}: {result.stderr}")
-            require(not assembly.exists(), f"{name}: emitted output on rejection")
-        else:
-            # This bridge is assembly, not a C/C++ runtime. Nonzero exit means mismatch.
-            bridge = root / "entry.s"
-            bridge.write_text(f""".text
-.globl _start
-_start:
-    call test
-    movabsq ${expected}, %rcx
-    cmpq %rcx, %rax
-    setne %dil
-    movzbq %dil, %rdi
-    movq $60, %rax
-    syscall
-.section .note.GNU-stack,"",@progbits
-""")
-            command(["as", "--64", assembly, "-o", root / "program.o"])
-            command(["as", "--64", bridge, "-o", root / "entry.o"])
-            command(["ld", "-o", root / "program", root / "entry.o", root / "program.o"])
-            run = command([root / "program"], good=trap is None)
-            if trap is not None:
-                require(run.returncode == -signal.SIGILL, f"{name}: expected SIGILL, got {run.returncode}")
-                code = assembly.read_text()
-                require(f".Laurora_{trap}_trap:" in code, f"{name}: missing defined trap target")
-                jump = "jae" if trap == "bounds" else "jo"
-                require(f"{jump} .Laurora_{trap}_trap" in code, f"{name}: missing {trap} guard")
-                require("ud2" in command(["objdump", "-d", root / "program"]).stdout, f"{name}: no assembled UD2 trap")
-    PASS += 1
-    print(f"PASS {name}")
 
 
 check("leading zero decimal", "return 010 + 032;")
@@ -141,7 +84,8 @@ check(
     ),
 )
 check("reflection bool", "return reflect_size(type_id(bool));", 1)
-check("reflection unknown", "return reflect_size(999);", 0)
+# Class type IDs are numbered from 100 per graph: a fixed "unknown" ID needs its own graph.
+check("reflection unknown", "return reflect_size(999);", 0, standalone=True)
 check("reflection negative", "return reflect_size(-1);", 0)
 check(
     "closed reflection preserves nonzero public fields and unknown IDs",
@@ -150,6 +94,7 @@ check(
     "if(reflect_size(type_id(Box))!=16){return 2;}"
     "if(reflect_field_count(-1)!=0){return 3;}if(reflect_size(999999)!=0){return 4;}return 42;}",
     options=("--referenced-reflection-only",),
+    standalone=True,
 )
 check(
     "closed scoped reflection preserves defining-module private visibility",
@@ -742,4 +687,4 @@ random.seed(42)
 for i in range(12):
     a, b, c, d = (random.randrange(-1000, 1000) for _ in range(4))
     check(f"arithmetic differential {i}", f"return ({a} + {b}) * ({c} - {d});", (a + b) * (c - d))
-print(f"{PASS} compiler tests passed")
+SUITE.finish()

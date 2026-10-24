@@ -1,28 +1,22 @@
 #!/usr/bin/env python3
 """Execute the bounded nested concrete-template value contract.
 
-The native observer, full-width result validation, exact UD2 attribution, and
-source/module/library immutability checks are shared with composed_values.py.
-Every negative fixture runs twice: with no output and a byte-exact saved output.
-Assertions use require(), including under python3 -O. Counts are measured, never
-inferred from a generator's intended coverage. All temporary files are placed in
-this checkout's tmp directory. This is bounded evidence, not a safety proof.
+Cases are data for the shared native runner (native_runner.py): complete 64-bit
+results, exact-site UD2 traps and artifact-preserving rejections. This is bounded
+evidence, not a safety proof.
 
 Run: python3 -O tests/compiler/nested_values.py build/aurorac
-Optional: --seed 18018 --steps 64 --keep-going --section native
+Optional: --seed 18018 --steps 64 --section native
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 from itertools import product
 from pathlib import Path
 import random
-import tempfile
-import time
 
-from composed_values import Suite as CompositionSuite, Trap, observer_self_test, program, require
+from composed_values import Suite, Trap, program, require
 
 ROOT = Path(__file__).resolve().parents[2]
 IMPORTS = "import std.utility;import std.array;"
@@ -41,20 +35,6 @@ BOX = (
 )
 TAG = "template<Value T>class Tag{public:Tag(){} };"
 PAIR = "template<Value T,Value U>class Pair{public:T first;U second;Pair(T a,U b):first(a),second(b){} };"
-PRESERVED = b"previous verified assembly\x00\xff\n"
-
-
-class Suite(CompositionSuite):
-    def __init__(self, directory, compiler, keep_going):
-        super().__init__(directory, compiler, keep_going)
-        self.negative_fixtures = 0
-
-    def reject(self, name, source, error=True, modules=None):
-        before = self.rejections
-        for suffix, previous in (("absent output", None), ("saved output", PRESERVED)):
-            self.check(name + ": " + suffix, source, error=error, modules=modules, existing_output=previous)
-        if self.rejections == before + 2:
-            self.negative_fixtures += 1
 
 
 def p(body, definitions="", helpers="", imports=IMPORTS, result="i64"):
@@ -63,9 +43,7 @@ def p(body, definitions="", helpers="", imports=IMPORTS, result="i64"):
 
 def native_cases(suite, seed, steps):
     example = ROOT / "examples/nested_token_values.au"
-    original = example.read_bytes()
-    suite.check("real bounded token and source-range example", original.decode())
-    require(example.read_bytes() == original, "token example changed during execution")
+    suite.check("real bounded token and source-range example", example.read_text())
 
     # Every ordered scalar tuple participates in an inner specialization. Copy
     # it through an outer specialization, a function result, and two projections.
@@ -301,7 +279,7 @@ def boundary_cases(suite):
         body = "Tag0<Tag1<u8>> value=Tag0<Tag1<u8>>();return 42;"
         source = p(body, definitions, imports="")
         if count == 64:
-            suite.check("exactly 64 template definitions with nested request", source)
+            suite.check("exactly 64 template definitions with nested request", source, standalone=True)  # Whole budget.
         else:
             suite.reject("65 template definitions with nested request", source, error=("64", "template"))
         midpoint = count // 2
@@ -324,7 +302,8 @@ def boundary_cases(suite):
     types = [f"std::array<{scalar},{capacity}>" for scalar in ("u8", "i64") for capacity in range(1, 65)]
     requests = [f"static_assert(size_of(Tag<{inner}>)==8);" for inner in types]
     source = p("".join(requests) + "return 42;", TAG)
-    suite.check("256 specializations includes all 128 inner requests", source)
+    # The two budget cases below exhaust the per-graph specialization limit by themselves.
+    suite.check("256 specializations includes all 128 inner requests", source, standalone=True)
     suite.reject(
         "257 specializations rejects one further distinct outer request",
         p("".join(requests) + "static_assert(size_of(Tag<u8>)==8);return 42;", TAG),
@@ -334,6 +313,7 @@ def boundary_cases(suite):
     suite.check(
         "canonical 03 and 3 repeated nested requests preserve exact 256 budget",
         p("".join(requests) + dedup + "return 42;", TAG),
+        standalone=True,
     )
     modules = {
         "tags": "export module tags;export " + TAG,
@@ -694,61 +674,20 @@ def main():
     parser.add_argument(
         "--section", choices=("all", "native", "boundaries", "rejections", "modules", "traps"), default="all"
     )
-    parser.add_argument("--self-test-only", action="store_true")
-    parser.add_argument("--keep-going", action="store_true")
     args = parser.parse_args()
     require(1 <= args.steps <= 128, "steps must be between 1 and 128")
-    compiler = args.compiler.resolve()
-    started = time.monotonic()
-    if not args.self_test_only:
-        print(
-            f"INFO nested values compiler={compiler} sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}",
-            flush=True,
-        )
-        for relative in (
-            "tests/compiler/nested_values.py",
-            "examples/nested_token_values.au",
-            "library/std/utility.au",
-            "library/std/array.au",
-        ):
-            print(
-                f"INFO nested values {relative} sha256={hashlib.sha256((ROOT / relative).read_bytes()).hexdigest()}",
-                flush=True,
-            )
-    temporary_root = Path(tempfile.gettempdir())
-    temporary_root.mkdir(exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="nested-values-", dir=temporary_root) as temporary:
-        suite = Suite(Path(temporary), compiler, args.keep_going)
-        observer_self_test(suite)
-        if args.self_test_only:
-            print("PASS nested values harness self-tests (no compiler acceptance claimed)", flush=True)
-            return
-        sections = {
-            "native": lambda: native_cases(suite, args.seed, args.steps),
-            "boundaries": lambda: boundary_cases(suite),
-            "rejections": lambda: rejection_cases(suite),
-            "modules": lambda: module_cases(suite),
-            "traps": lambda: trap_and_shift_cases(suite),
-        }
-        for name, run in sections.items():
-            if args.section in ("all", name):
-                before = (suite.count, suite.traps, suite.rejections)
-                run()
-                print(
-                    f"INFO nested values section={name} passed={suite.count - before[0]} "
-                    f"traps={suite.traps - before[1]} rejection-runs={suite.rejections - before[2]}",
-                    flush=True,
-                )
-        native = suite.count - suite.traps - suite.rejections
-        print(
-            f"INFO nested values: {suite.count} passed; {native} native returns; {suite.traps} exact-site traps; "
-            f"{suite.negative_fixtures} rejection fixtures / {suite.rejections} rejection runs; "
-            f"{len(suite.failures)} failures; section={args.section}; seed={args.seed}; steps={args.steps}; "
-            f"elapsed={time.monotonic() - started:.2f}s",
-            flush=True,
-        )
-        require(not suite.failures, f"{len(suite.failures)} nested-value checks failed")
-        print("PASS nested values complete", flush=True)
+    suite = Suite(args.compiler, "nested values")
+    sections = {
+        "native": lambda: native_cases(suite, args.seed, args.steps),
+        "boundaries": lambda: boundary_cases(suite),
+        "rejections": lambda: rejection_cases(suite),
+        "modules": lambda: module_cases(suite),
+        "traps": lambda: trap_and_shift_cases(suite),
+    }
+    for name, register in sections.items():
+        if args.section in ("all", name):
+            register()
+    suite.finish()
 
 
 if __name__ == "__main__":

@@ -150,6 +150,12 @@ library/storage/sector_window.au
 tests/compiler/initialization_probe.au
 tests/compiler/iommu_event_service.au
 tests/compiler/service_group.au
+tests/compiler/storage/block_io.au
+tests/compiler/storage/byte_storage.au
+tests/compiler/storage/storage_binary.au
+tests/compiler/storage/xfs_file.au
+tests/compiler/storage/xfs_geometry.au
+tests/compiler/storage/xfs_root.au
 tests/fixtures/emitter-history/ir_initialization.au
 tests/kernel-programs/bounds.au
 tests/kernel-programs/budget-service.au

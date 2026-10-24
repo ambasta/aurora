@@ -2,6 +2,7 @@
 """Native framebuffer preview or four-case smoke using shared PTY/QMP capture."""
 
 import argparse
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -13,13 +14,21 @@ import tempfile
 import tty
 import zlib
 
-import kernel_framebuffer_admission as admission
 from framebuffer_capture_oracle import HEIGHT, MODES, WIDTH, need, parse_ppm
 from qemu_transport import firmware_args as firmware_options
 import qemu_transport as transport
 
 ROOT = Path(__file__).resolve().parents[1]
-capture = admission.load("framebuffer_preview_capture", ROOT / "scripts/kernel-framebuffer-capture.py")
+_spec = importlib.util.spec_from_file_location(
+    "framebuffer_preview_capture", ROOT / "scripts/kernel-framebuffer-capture.py"
+)
+capture = importlib.util.module_from_spec(_spec)
+sys.modules[_spec.name] = capture
+_spec.loader.exec_module(capture)
+
+
+class Blocked(Exception):
+    pass
 
 
 def preflight():
@@ -33,7 +42,7 @@ def preflight():
         master, slave = os.openpty()
         tty.setraw(slave)
     except OSError as error:
-        raise admission.common.Blocked("local PTY unavailable: " + str(error)) from error
+        raise Blocked("local PTY unavailable: " + str(error)) from error
     finally:
         for fd in (master, slave):
             if fd is not None:
@@ -57,7 +66,6 @@ def png(ppm):
 
 
 def run(qemu, firmware, code, variables, data, *, build_dir, full_smoke=False):
-    admission.configure_paths(build_dir, ROOT)
     preflight()
     if full_smoke:
         need(
@@ -67,26 +75,15 @@ def run(qemu, firmware, code, variables, data, *, build_dir, full_smoke=False):
     # Every case boots the one admitted capture image; its release byte selects it.
     modes = MODES if full_smoke else ("framebuffer",)
     profiles = {mode: build_dir for mode in modes}
-    admitted = {}
-    for mode in modes:
-        admission.configure_paths(profiles[mode], ROOT)
-        admitted[mode] = admission.checked("framebuffer")
     firmware_args = firmware_options(firmware, code, variables)
     parent = ROOT / "build/framebuffer-preview"
     parent.mkdir(exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix="run-", dir=parent))
-    (directory / "admission.json").write_text(json.dumps(admitted, indent=2) + "\n")
     manifest = {"cases": {mode: {"esp": str(profiles[mode] / "esp")} for mode in modes}}
     receipt = dict(schema="aurora-framebuffer-preview-v1", qualified=False, status="failed", cases=[])
     primary, unsettled = None, False
     try:
         for mode in modes:
-            admission.configure_paths(profiles[mode], ROOT)
-            if full_smoke:
-                need(
-                    admission.checked("framebuffer") == admitted[mode],
-                    "admitted framebuffer image changed before capture",
-                )
             destination = directory / (mode if full_smoke else "capture")
             result = capture.run_case(
                 mode,
@@ -100,7 +97,6 @@ def run(qemu, firmware, code, variables, data, *, build_dir, full_smoke=False):
             receipt["cases"].append(result)
             unsettled = bool(result.get("unsettled"))
             need(result["status"] == "passed", result.get("error", "capture cleanup failed"))
-            need(admission.checked("framebuffer") == admitted[mode], "admitted framebuffer image changed after capture")
             if mode == "framebuffer":
                 image = directory / "framebuffer.png"
                 image.write_bytes(png((destination / "after.ppm").read_bytes()))
@@ -171,7 +167,7 @@ def main():
 if __name__ == "__main__":
     try:
         main()
-    except admission.common.Blocked as error:
+    except Blocked as error:
         print("BLOCKED: framebuffer preview: " + str(error), file=sys.stderr)
         raise SystemExit(2) from error
     except (Exception, KeyboardInterrupt) as error:

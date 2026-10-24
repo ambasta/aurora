@@ -10,8 +10,8 @@ Aurora-generated code after firmware services have ended.
 
 ```
 ./scripts/kernel-uefi-build.sh
-SANITIZE=1 ./scripts/kernel-uefi-tests.sh
-./scripts/kernel-uefi-all.sh
+meson test -C build/meson --suite full
+meson test -C build/meson --suite guest-uefi
 ```
 
 The build uses the existing g++, GNU as/ld/objcopy/nm/readelf, Python3 and Bash.
@@ -142,7 +142,7 @@ The [ACPI read-window gate](acpi.md) extends this handoff with a version2 RSDP
 reference and bounded source-copy buffers. It discovers real OVMF processor/APIC
 metadata after ExitBootServices, with read-only/NX mapping revocation and hostile
 input/hardware-fault gates. The default version1 consumer remains available.
-Run `scripts/kernel-acpi-all.sh`; this does not enable AML, interrupt routing or
+Run `meson test -C build/meson --suite guest-acpi`; this does not enable AML, interrupt routing or
 a physical device driver.
 
 The next read-only discovery slice is [MCFG/PCI ECAM inventory](pci.md), using

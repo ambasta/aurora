@@ -4,15 +4,12 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import nullcontext
-import hashlib
 import signal
 from pathlib import Path
 import tempfile
 
 from byte_buffer import BufferSuite
-from owned_bytes import command
-from unsigned_oracle import require
+from native_runner import require
 
 SPAN = "builtin::span<const u8>"
 OWNER = "builtin::OwnedBytes"
@@ -30,26 +27,16 @@ def program(body, helpers="", imports=""):
 
 
 class Suite(BufferSuite):
-    runtime_traps = 0
-
     def failed_borrow(self, executable):
-        if self.compile_only:
-            self.skipped_native += 1
-            return
-        result = command([executable, 0, 0, 0])
-        require(
-            result.returncode == -signal.SIGABRT
-            and result.stdout == b""
-            and result.stderr == b"aurora owned bytes: bounds\n",
-            f"failed borrow: wrong adapter trap {result.returncode}: {result.stderr!r}",
-        )
-        self.runtime_traps += 1
+        def check(result):
+            require(
+                result.returncode == -signal.SIGABRT
+                and result.stdout == b""
+                and result.stderr == b"aurora owned bytes: bounds\n",
+                f"failed borrow: wrong adapter trap {result.returncode}: {result.stderr!r}",
+            )
 
-    def trap(self, *args, **kwargs):
-        if self.compile_only:
-            self.skipped_native += 1
-        else:
-            super().trap(*args, **kwargs)
+        self._invoke(executable, [0, 0, 0], check)
 
 
 def native_cases(s):
@@ -246,22 +233,15 @@ def rejection_cases(s):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("compiler", type=Path)
-    p.add_argument("--artifacts", type=Path)
-    p.add_argument("--compile-only", action="store_true")
+    p.add_argument("--artifacts", type=Path, help="retain this run in a new directory")
     a = p.parse_args()
-    if a.artifacts:
-        a.artifacts.mkdir(parents=True, exist_ok=False)
-    with nullcontext(a.artifacts) if a.artifacts else tempfile.TemporaryDirectory(prefix="aurora-owned-spans-") as d:
-        s = Suite(a.compiler.resolve(), Path(d), a.compile_only)
+    with tempfile.TemporaryDirectory(prefix="aurora-owned-spans-") as d:
+        s = Suite(a.compiler.resolve(strict=True), a.artifacts or Path(d), deferred=True)
         native_cases(s)
         receiver_cases(s)
         rejection_cases(s)
-        print(
-            f"PASS owned spans: {s.programs} programs, {s.native} native cases, "
-            f"{s.traps} exact bounds traps, {s.runtime_traps} exact adapter traps, "
-            f"{s.rejections} rejections, {s.skipped_native} skipped"
-        )
-        print("compiler_sha256=" + hashlib.sha256(a.compiler.read_bytes()).hexdigest())
+        s.finish()
+        print(f"PASS owned spans: {s.native} native runs, {s.traps} exact bounds traps")
 
 
 if __name__ == "__main__":

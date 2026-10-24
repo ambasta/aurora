@@ -1,0 +1,799 @@
+preserved real header	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+probe length 1	probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 ok
+probe length 4	probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 ok
+probe length 511	probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 ok
+probe length 513	probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 ok
+probe length 1024	probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 ok
+endian magic	probe_rejected none unrecognized masks=0 raw=0 unsupported=0 unknown=0 facts=0 ok
+zero magic	probe_rejected none unrecognized masks=0 raw=0 unsupported=0 unknown=0 facts=0 ok
+v4	probe_rejected none unsupported_profile masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+sector4096	probe_rejected none unsupported_profile masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+sectorlog12	probe_rejected none unsupported_profile masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+unrepaired byte 4	probe_rejected none checksum_mismatch masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+unrepaired byte 224	probe_rejected none checksum_mismatch masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+unrepaired byte 227	probe_rejected none checksum_mismatch masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+unrepaired byte 511	probe_rejected none checksum_mismatch masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+repaired uninterpreted byte 32	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+repaired uninterpreted byte 64	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+repaired uninterpreted byte 72	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+repaired uninterpreted byte 232	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+repaired uninterpreted byte 511	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+extra version bit 1	probe_rejected none unsupported_profile masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+extra version bit 3	probe_rejected none unsupported_profile masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+extra version bit 4	unsupported_feature_profile legacy_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46261,394,394 unsupported=0 unknown=0 facts=0 ok
+required version bit 5	inconsistent_header legacy_required_bits header_integrity_valid masks=0,15,43,0 raw=46213,394,394 unsupported=0 unknown=0 facts=0 ok
+extra version bit 6	unsupported_feature_profile legacy_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46309,394,394 unsupported=0 unknown=0 facts=0 ok
+required version bit 7	inconsistent_header legacy_required_bits header_integrity_valid masks=0,15,43,0 raw=46117,394,394 unsupported=0 unknown=0 facts=0 ok
+extra version bit 8	unsupported_feature_profile legacy_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46501,394,394 unsupported=0 unknown=0 facts=0 ok
+extra version bit 9	unsupported_feature_profile legacy_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46757,394,394 unsupported=0 unknown=0 facts=0 ok
+required version bit 10	inconsistent_header legacy_required_bits header_integrity_valid masks=0,15,43,0 raw=45221,394,394 unsupported=0 unknown=0 facts=0 ok
+required version bit 12	inconsistent_header legacy_required_bits header_integrity_valid masks=0,15,43,0 raw=42149,394,394 unsupported=0 unknown=0 facts=0 ok
+required version bit 13	inconsistent_header legacy_required_bits header_integrity_valid masks=0,15,43,0 raw=38053,394,394 unsupported=0 unknown=0 facts=0 ok
+extra version bit 14	unsupported_feature_profile legacy_excluded_bits header_integrity_valid masks=0,15,43,0 raw=62629,394,394 unsupported=0 unknown=0 facts=0 ok
+required version bit 15	inconsistent_header legacy_required_bits header_integrity_valid masks=0,15,43,0 raw=13477,394,394 unsupported=0 unknown=0 facts=0 ok
+features2 bit 0	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,395,395 unsupported=0 unknown=0 facts=0 ok
+features2 bit 1	inconsistent_header features2_required_bits header_integrity_valid masks=0,15,43,0 raw=46245,392,392 unsupported=0 unknown=0 facts=0 ok
+features2 bit 2	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,398,398 unsupported=0 unknown=0 facts=0 ok
+features2 bit 3	inconsistent_header features2_required_bits header_integrity_valid masks=0,15,43,0 raw=46245,386,386 unsupported=0 unknown=0 facts=0 ok
+features2 bit 4	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,410,410 unsupported=0 unknown=0 facts=0 ok
+features2 bit 5	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,426,426 unsupported=0 unknown=0 facts=0 ok
+features2 bit 6	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,458,458 unsupported=0 unknown=0 facts=0 ok
+features2 bit 7	inconsistent_header features2_required_bits header_integrity_valid masks=0,15,43,0 raw=46245,266,266 unsupported=0 unknown=0 facts=0 ok
+features2 bit 8	inconsistent_header features2_required_bits header_integrity_valid masks=0,15,43,0 raw=46245,138,138 unsupported=0 unknown=0 facts=0 ok
+features2 bit 9	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,906,906 unsupported=0 unknown=0 facts=0 ok
+features2 bit 10	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,1418,1418 unsupported=0 unknown=0 facts=0 ok
+features2 bit 11	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,2442,2442 unsupported=0 unknown=0 facts=0 ok
+features2 bit 12	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,4490,4490 unsupported=0 unknown=0 facts=0 ok
+features2 bit 13	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,8586,8586 unsupported=0 unknown=0 facts=0 ok
+features2 bit 14	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,16778,16778 unsupported=0 unknown=0 facts=0 ok
+features2 bit 15	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,33162,33162 unsupported=0 unknown=0 facts=0 ok
+features2 bit 16	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,65930,65930 unsupported=0 unknown=0 facts=0 ok
+features2 bit 17	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,131466,131466 unsupported=0 unknown=0 facts=0 ok
+features2 bit 18	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,262538,262538 unsupported=0 unknown=0 facts=0 ok
+features2 bit 19	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,524682,524682 unsupported=0 unknown=0 facts=0 ok
+features2 bit 20	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,1048970,1048970 unsupported=0 unknown=0 facts=0 ok
+features2 bit 21	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,2097546,2097546 unsupported=0 unknown=0 facts=0 ok
+features2 bit 22	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,4194698,4194698 unsupported=0 unknown=0 facts=0 ok
+features2 bit 23	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,8389002,8389002 unsupported=0 unknown=0 facts=0 ok
+features2 bit 24	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,16777610,16777610 unsupported=0 unknown=0 facts=0 ok
+features2 bit 25	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,33554826,33554826 unsupported=0 unknown=0 facts=0 ok
+features2 bit 26	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,67109258,67109258 unsupported=0 unknown=0 facts=0 ok
+features2 bit 27	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,134218122,134218122 unsupported=0 unknown=0 facts=0 ok
+features2 bit 28	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,268435850,268435850 unsupported=0 unknown=0 facts=0 ok
+features2 bit 29	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,536871306,536871306 unsupported=0 unknown=0 facts=0 ok
+features2 bit 30	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,1073742218,1073742218 unsupported=0 unknown=0 facts=0 ok
+features2 bit 31	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,2147484042,2147484042 unsupported=0 unknown=0 facts=0 ok
+compat single bit 0	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=1,15,43,0 raw=46245,394,394 unsupported=1,0,0,0 unknown=1,0,0,0 facts=0 ok
+compat single bit 1	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=2,15,43,0 raw=46245,394,394 unsupported=2,0,0,0 unknown=2,0,0,0 facts=0 ok
+compat single bit 2	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=4,15,43,0 raw=46245,394,394 unsupported=4,0,0,0 unknown=4,0,0,0 facts=0 ok
+compat single bit 3	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=8,15,43,0 raw=46245,394,394 unsupported=8,0,0,0 unknown=8,0,0,0 facts=0 ok
+compat single bit 4	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=16,15,43,0 raw=46245,394,394 unsupported=16,0,0,0 unknown=16,0,0,0 facts=0 ok
+compat single bit 5	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=32,15,43,0 raw=46245,394,394 unsupported=32,0,0,0 unknown=32,0,0,0 facts=0 ok
+compat single bit 6	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=64,15,43,0 raw=46245,394,394 unsupported=64,0,0,0 unknown=64,0,0,0 facts=0 ok
+compat single bit 7	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=128,15,43,0 raw=46245,394,394 unsupported=128,0,0,0 unknown=128,0,0,0 facts=0 ok
+compat single bit 8	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=256,15,43,0 raw=46245,394,394 unsupported=256,0,0,0 unknown=256,0,0,0 facts=0 ok
+compat single bit 9	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=512,15,43,0 raw=46245,394,394 unsupported=512,0,0,0 unknown=512,0,0,0 facts=0 ok
+compat single bit 10	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=1024,15,43,0 raw=46245,394,394 unsupported=1024,0,0,0 unknown=1024,0,0,0 facts=0 ok
+compat single bit 11	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=2048,15,43,0 raw=46245,394,394 unsupported=2048,0,0,0 unknown=2048,0,0,0 facts=0 ok
+compat single bit 12	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=4096,15,43,0 raw=46245,394,394 unsupported=4096,0,0,0 unknown=4096,0,0,0 facts=0 ok
+compat single bit 13	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=8192,15,43,0 raw=46245,394,394 unsupported=8192,0,0,0 unknown=8192,0,0,0 facts=0 ok
+compat single bit 14	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=16384,15,43,0 raw=46245,394,394 unsupported=16384,0,0,0 unknown=16384,0,0,0 facts=0 ok
+compat single bit 15	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=32768,15,43,0 raw=46245,394,394 unsupported=32768,0,0,0 unknown=32768,0,0,0 facts=0 ok
+compat single bit 16	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=65536,15,43,0 raw=46245,394,394 unsupported=65536,0,0,0 unknown=65536,0,0,0 facts=0 ok
+compat single bit 17	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=131072,15,43,0 raw=46245,394,394 unsupported=131072,0,0,0 unknown=131072,0,0,0 facts=0 ok
+compat single bit 18	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=262144,15,43,0 raw=46245,394,394 unsupported=262144,0,0,0 unknown=262144,0,0,0 facts=0 ok
+compat single bit 19	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=524288,15,43,0 raw=46245,394,394 unsupported=524288,0,0,0 unknown=524288,0,0,0 facts=0 ok
+compat single bit 20	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=1048576,15,43,0 raw=46245,394,394 unsupported=1048576,0,0,0 unknown=1048576,0,0,0 facts=0 ok
+compat single bit 21	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=2097152,15,43,0 raw=46245,394,394 unsupported=2097152,0,0,0 unknown=2097152,0,0,0 facts=0 ok
+compat single bit 22	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=4194304,15,43,0 raw=46245,394,394 unsupported=4194304,0,0,0 unknown=4194304,0,0,0 facts=0 ok
+compat single bit 23	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=8388608,15,43,0 raw=46245,394,394 unsupported=8388608,0,0,0 unknown=8388608,0,0,0 facts=0 ok
+compat single bit 24	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=16777216,15,43,0 raw=46245,394,394 unsupported=16777216,0,0,0 unknown=16777216,0,0,0 facts=0 ok
+compat single bit 25	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=33554432,15,43,0 raw=46245,394,394 unsupported=33554432,0,0,0 unknown=33554432,0,0,0 facts=0 ok
+compat single bit 26	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=67108864,15,43,0 raw=46245,394,394 unsupported=67108864,0,0,0 unknown=67108864,0,0,0 facts=0 ok
+compat single bit 27	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=134217728,15,43,0 raw=46245,394,394 unsupported=134217728,0,0,0 unknown=134217728,0,0,0 facts=0 ok
+compat single bit 28	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=268435456,15,43,0 raw=46245,394,394 unsupported=268435456,0,0,0 unknown=268435456,0,0,0 facts=0 ok
+compat single bit 29	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=536870912,15,43,0 raw=46245,394,394 unsupported=536870912,0,0,0 unknown=536870912,0,0,0 facts=0 ok
+compat single bit 30	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=1073741824,15,43,0 raw=46245,394,394 unsupported=1073741824,0,0,0 unknown=1073741824,0,0,0 facts=0 ok
+compat single bit 31	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=2147483648,15,43,0 raw=46245,394,394 unsupported=2147483648,0,0,0 unknown=2147483648,0,0,0 facts=0 ok
+ro_compat single bit 0	header_geometry_consistent none header_integrity_valid masks=0,1,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+ro_compat single bit 1	header_geometry_consistent none header_integrity_valid masks=0,2,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+ro_compat single bit 2	header_geometry_consistent none header_integrity_valid masks=0,4,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+ro_compat single bit 3	header_geometry_consistent none header_integrity_valid masks=0,8,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+ro_compat single bit 4	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,16,43,0 raw=46245,394,394 unsupported=0,16,0,0 unknown=0,16,0,0 facts=0 ok
+ro_compat single bit 5	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,32,43,0 raw=46245,394,394 unsupported=0,32,0,0 unknown=0,32,0,0 facts=0 ok
+ro_compat single bit 6	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,64,43,0 raw=46245,394,394 unsupported=0,64,0,0 unknown=0,64,0,0 facts=0 ok
+ro_compat single bit 7	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,128,43,0 raw=46245,394,394 unsupported=0,128,0,0 unknown=0,128,0,0 facts=0 ok
+ro_compat single bit 8	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,256,43,0 raw=46245,394,394 unsupported=0,256,0,0 unknown=0,256,0,0 facts=0 ok
+ro_compat single bit 9	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,512,43,0 raw=46245,394,394 unsupported=0,512,0,0 unknown=0,512,0,0 facts=0 ok
+ro_compat single bit 10	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,1024,43,0 raw=46245,394,394 unsupported=0,1024,0,0 unknown=0,1024,0,0 facts=0 ok
+ro_compat single bit 11	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,2048,43,0 raw=46245,394,394 unsupported=0,2048,0,0 unknown=0,2048,0,0 facts=0 ok
+ro_compat single bit 12	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,4096,43,0 raw=46245,394,394 unsupported=0,4096,0,0 unknown=0,4096,0,0 facts=0 ok
+ro_compat single bit 13	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,8192,43,0 raw=46245,394,394 unsupported=0,8192,0,0 unknown=0,8192,0,0 facts=0 ok
+ro_compat single bit 14	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,16384,43,0 raw=46245,394,394 unsupported=0,16384,0,0 unknown=0,16384,0,0 facts=0 ok
+ro_compat single bit 15	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,32768,43,0 raw=46245,394,394 unsupported=0,32768,0,0 unknown=0,32768,0,0 facts=0 ok
+ro_compat single bit 16	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,65536,43,0 raw=46245,394,394 unsupported=0,65536,0,0 unknown=0,65536,0,0 facts=0 ok
+ro_compat single bit 17	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,131072,43,0 raw=46245,394,394 unsupported=0,131072,0,0 unknown=0,131072,0,0 facts=0 ok
+ro_compat single bit 18	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,262144,43,0 raw=46245,394,394 unsupported=0,262144,0,0 unknown=0,262144,0,0 facts=0 ok
+ro_compat single bit 19	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,524288,43,0 raw=46245,394,394 unsupported=0,524288,0,0 unknown=0,524288,0,0 facts=0 ok
+ro_compat single bit 20	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,1048576,43,0 raw=46245,394,394 unsupported=0,1048576,0,0 unknown=0,1048576,0,0 facts=0 ok
+ro_compat single bit 21	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,2097152,43,0 raw=46245,394,394 unsupported=0,2097152,0,0 unknown=0,2097152,0,0 facts=0 ok
+ro_compat single bit 22	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,4194304,43,0 raw=46245,394,394 unsupported=0,4194304,0,0 unknown=0,4194304,0,0 facts=0 ok
+ro_compat single bit 23	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,8388608,43,0 raw=46245,394,394 unsupported=0,8388608,0,0 unknown=0,8388608,0,0 facts=0 ok
+ro_compat single bit 24	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,16777216,43,0 raw=46245,394,394 unsupported=0,16777216,0,0 unknown=0,16777216,0,0 facts=0 ok
+ro_compat single bit 25	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,33554432,43,0 raw=46245,394,394 unsupported=0,33554432,0,0 unknown=0,33554432,0,0 facts=0 ok
+ro_compat single bit 26	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,67108864,43,0 raw=46245,394,394 unsupported=0,67108864,0,0 unknown=0,67108864,0,0 facts=0 ok
+ro_compat single bit 27	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,134217728,43,0 raw=46245,394,394 unsupported=0,134217728,0,0 unknown=0,134217728,0,0 facts=0 ok
+ro_compat single bit 28	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,268435456,43,0 raw=46245,394,394 unsupported=0,268435456,0,0 unknown=0,268435456,0,0 facts=0 ok
+ro_compat single bit 29	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,536870912,43,0 raw=46245,394,394 unsupported=0,536870912,0,0 unknown=0,536870912,0,0 facts=0 ok
+ro_compat single bit 30	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,1073741824,43,0 raw=46245,394,394 unsupported=0,1073741824,0,0 unknown=0,1073741824,0,0 facts=0 ok
+ro_compat single bit 31	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,2147483648,43,0 raw=46245,394,394 unsupported=0,2147483648,0,0 unknown=0,2147483648,0,0 facts=0 ok
+incompat single bit 0	inconsistent_header inode_alignment header_integrity_valid masks=0,15,1,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+incompat single bit 1	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,2,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+incompat single bit 2	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,4,0 raw=46245,394,394 unsupported=0,0,4,0 unknown=0 facts=0 ok
+incompat single bit 3	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,8,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+incompat single bit 4	offline_state_indicated needs_repair header_integrity_valid masks=0,15,16,0 raw=46245,394,394 unsupported=0,0,16,0 unknown=0 facts=0 ok
+incompat single bit 5	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,32,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+incompat single bit 6	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,64,0 raw=46245,394,394 unsupported=0,0,64,0 unknown=0 facts=0 ok
+incompat single bit 7	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,128,0 raw=46245,394,394 unsupported=0,0,128,0 unknown=0 facts=0 ok
+incompat single bit 8	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,256,0 raw=46245,394,394 unsupported=0,0,256,0 unknown=0 facts=0 ok
+incompat single bit 9	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,512,0 raw=46245,394,394 unsupported=0,0,512,0 unknown=0 facts=0 ok
+incompat single bit 10	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,1024,0 raw=46245,394,394 unsupported=0,0,1024,0 unknown=0 facts=0 ok
+incompat single bit 11	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,2048,0 raw=46245,394,394 unsupported=0,0,2048,0 unknown=0,0,2048,0 facts=0 ok
+incompat single bit 12	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,4096,0 raw=46245,394,394 unsupported=0,0,4096,0 unknown=0,0,4096,0 facts=0 ok
+incompat single bit 13	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,8192,0 raw=46245,394,394 unsupported=0,0,8192,0 unknown=0,0,8192,0 facts=0 ok
+incompat single bit 14	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,16384,0 raw=46245,394,394 unsupported=0,0,16384,0 unknown=0,0,16384,0 facts=0 ok
+incompat single bit 15	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,32768,0 raw=46245,394,394 unsupported=0,0,32768,0 unknown=0,0,32768,0 facts=0 ok
+incompat single bit 16	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,65536,0 raw=46245,394,394 unsupported=0,0,65536,0 unknown=0,0,65536,0 facts=0 ok
+incompat single bit 17	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,131072,0 raw=46245,394,394 unsupported=0,0,131072,0 unknown=0,0,131072,0 facts=0 ok
+incompat single bit 18	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,262144,0 raw=46245,394,394 unsupported=0,0,262144,0 unknown=0,0,262144,0 facts=0 ok
+incompat single bit 19	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,524288,0 raw=46245,394,394 unsupported=0,0,524288,0 unknown=0,0,524288,0 facts=0 ok
+incompat single bit 20	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,1048576,0 raw=46245,394,394 unsupported=0,0,1048576,0 unknown=0,0,1048576,0 facts=0 ok
+incompat single bit 21	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,2097152,0 raw=46245,394,394 unsupported=0,0,2097152,0 unknown=0,0,2097152,0 facts=0 ok
+incompat single bit 22	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,4194304,0 raw=46245,394,394 unsupported=0,0,4194304,0 unknown=0,0,4194304,0 facts=0 ok
+incompat single bit 23	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,8388608,0 raw=46245,394,394 unsupported=0,0,8388608,0 unknown=0,0,8388608,0 facts=0 ok
+incompat single bit 24	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,16777216,0 raw=46245,394,394 unsupported=0,0,16777216,0 unknown=0,0,16777216,0 facts=0 ok
+incompat single bit 25	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,33554432,0 raw=46245,394,394 unsupported=0,0,33554432,0 unknown=0,0,33554432,0 facts=0 ok
+incompat single bit 26	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,67108864,0 raw=46245,394,394 unsupported=0,0,67108864,0 unknown=0,0,67108864,0 facts=0 ok
+incompat single bit 27	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,134217728,0 raw=46245,394,394 unsupported=0,0,134217728,0 unknown=0,0,134217728,0 facts=0 ok
+incompat single bit 28	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,268435456,0 raw=46245,394,394 unsupported=0,0,268435456,0 unknown=0,0,268435456,0 facts=0 ok
+incompat single bit 29	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,536870912,0 raw=46245,394,394 unsupported=0,0,536870912,0 unknown=0,0,536870912,0 facts=0 ok
+incompat single bit 30	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,1073741824,0 raw=46245,394,394 unsupported=0,0,1073741824,0 unknown=0,0,1073741824,0 facts=0 ok
+incompat single bit 31	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,2147483648,0 raw=46245,394,394 unsupported=0,0,2147483648,0 unknown=0,0,2147483648,0 facts=0 ok
+log_incompat single bit 0	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,1 raw=46245,394,394 unsupported=0,0,0,1 unknown=0 facts=0 ok
+log_incompat single bit 1	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,2 raw=46245,394,394 unsupported=0,0,0,2 unknown=0,0,0,2 facts=0 ok
+log_incompat single bit 2	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,4 raw=46245,394,394 unsupported=0,0,0,4 unknown=0,0,0,4 facts=0 ok
+log_incompat single bit 3	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,8 raw=46245,394,394 unsupported=0,0,0,8 unknown=0,0,0,8 facts=0 ok
+log_incompat single bit 4	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,16 raw=46245,394,394 unsupported=0,0,0,16 unknown=0,0,0,16 facts=0 ok
+log_incompat single bit 5	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,32 raw=46245,394,394 unsupported=0,0,0,32 unknown=0,0,0,32 facts=0 ok
+log_incompat single bit 6	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,64 raw=46245,394,394 unsupported=0,0,0,64 unknown=0,0,0,64 facts=0 ok
+log_incompat single bit 7	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,128 raw=46245,394,394 unsupported=0,0,0,128 unknown=0,0,0,128 facts=0 ok
+log_incompat single bit 8	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,256 raw=46245,394,394 unsupported=0,0,0,256 unknown=0,0,0,256 facts=0 ok
+log_incompat single bit 9	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,512 raw=46245,394,394 unsupported=0,0,0,512 unknown=0,0,0,512 facts=0 ok
+log_incompat single bit 10	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,1024 raw=46245,394,394 unsupported=0,0,0,1024 unknown=0,0,0,1024 facts=0 ok
+log_incompat single bit 11	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,2048 raw=46245,394,394 unsupported=0,0,0,2048 unknown=0,0,0,2048 facts=0 ok
+log_incompat single bit 12	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,4096 raw=46245,394,394 unsupported=0,0,0,4096 unknown=0,0,0,4096 facts=0 ok
+log_incompat single bit 13	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,8192 raw=46245,394,394 unsupported=0,0,0,8192 unknown=0,0,0,8192 facts=0 ok
+log_incompat single bit 14	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,16384 raw=46245,394,394 unsupported=0,0,0,16384 unknown=0,0,0,16384 facts=0 ok
+log_incompat single bit 15	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,32768 raw=46245,394,394 unsupported=0,0,0,32768 unknown=0,0,0,32768 facts=0 ok
+log_incompat single bit 16	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,65536 raw=46245,394,394 unsupported=0,0,0,65536 unknown=0,0,0,65536 facts=0 ok
+log_incompat single bit 17	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,131072 raw=46245,394,394 unsupported=0,0,0,131072 unknown=0,0,0,131072 facts=0 ok
+log_incompat single bit 18	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,262144 raw=46245,394,394 unsupported=0,0,0,262144 unknown=0,0,0,262144 facts=0 ok
+log_incompat single bit 19	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,524288 raw=46245,394,394 unsupported=0,0,0,524288 unknown=0,0,0,524288 facts=0 ok
+log_incompat single bit 20	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,1048576 raw=46245,394,394 unsupported=0,0,0,1048576 unknown=0,0,0,1048576 facts=0 ok
+log_incompat single bit 21	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,2097152 raw=46245,394,394 unsupported=0,0,0,2097152 unknown=0,0,0,2097152 facts=0 ok
+log_incompat single bit 22	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,4194304 raw=46245,394,394 unsupported=0,0,0,4194304 unknown=0,0,0,4194304 facts=0 ok
+log_incompat single bit 23	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,8388608 raw=46245,394,394 unsupported=0,0,0,8388608 unknown=0,0,0,8388608 facts=0 ok
+log_incompat single bit 24	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,16777216 raw=46245,394,394 unsupported=0,0,0,16777216 unknown=0,0,0,16777216 facts=0 ok
+log_incompat single bit 25	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,33554432 raw=46245,394,394 unsupported=0,0,0,33554432 unknown=0,0,0,33554432 facts=0 ok
+log_incompat single bit 26	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,67108864 raw=46245,394,394 unsupported=0,0,0,67108864 unknown=0,0,0,67108864 facts=0 ok
+log_incompat single bit 27	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,134217728 raw=46245,394,394 unsupported=0,0,0,134217728 unknown=0,0,0,134217728 facts=0 ok
+log_incompat single bit 28	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,268435456 raw=46245,394,394 unsupported=0,0,0,268435456 unknown=0,0,0,268435456 facts=0 ok
+log_incompat single bit 29	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,536870912 raw=46245,394,394 unsupported=0,0,0,536870912 unknown=0,0,0,536870912 facts=0 ok
+log_incompat single bit 30	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,1073741824 raw=46245,394,394 unsupported=0,0,0,1073741824 unknown=0,0,0,1073741824 facts=0 ok
+log_incompat single bit 31	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,2147483648 raw=46245,394,394 unsupported=0,0,0,2147483648 unknown=0,0,0,2147483648 facts=0 ok
+missing FTYPE	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,42,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+mirror mismatch	unsupported_layout features2_mirror header_integrity_valid masks=0,15,43,0 raw=46245,394,906 unsupported=0 unknown=0 facts=0 ok
+valid block/inode logs 10/9	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=1024,512,10,9,1024,512,512,2,9,1,131072,134217728,262144,15,32768,4,33554432,32768,100663296,65543,2,7,67116032,65536 ok
+directory max blocklog 10 inode 9	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=1024,512,10,9,65536,512,512,2,9,1,131072,134217728,262144,15,32768,4,33554432,32768,100663296,65543,2,7,67116032,65536 ok
+valid block/inode logs 10/10	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=1024,512,10,9,1024,512,1024,1,10,0,131072,134217728,262144,15,32768,4,33554432,32768,100663296,65543,2,7,67116032,65536 ok
+directory max blocklog 10 inode 10	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=1024,512,10,9,65536,512,1024,1,10,0,131072,134217728,262144,15,32768,4,33554432,32768,100663296,65543,2,7,67116032,65536 ok
+valid block/inode logs 11/9	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=2048,512,11,9,2048,512,512,4,9,2,131072,268435456,524288,15,32768,4,67108864,32768,201326592,65543,2,7,134232064,131072 ok
+directory max blocklog 11 inode 9	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=2048,512,11,9,65536,512,512,4,9,2,131072,268435456,524288,15,32768,4,67108864,32768,201326592,65543,2,7,134232064,131072 ok
+valid block/inode logs 11/10	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=2048,512,11,9,2048,512,1024,2,10,1,131072,268435456,524288,15,32768,4,67108864,32768,201326592,65543,2,7,134232064,131072 ok
+directory max blocklog 11 inode 10	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=2048,512,11,9,65536,512,1024,2,10,1,131072,268435456,524288,15,32768,4,67108864,32768,201326592,65543,2,7,134232064,131072 ok
+valid block/inode logs 11/11	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=2048,512,11,9,2048,512,2048,1,11,0,131072,268435456,524288,15,32768,4,67108864,32768,201326592,65543,2,7,134232064,131072 ok
+directory max blocklog 11 inode 11	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=2048,512,11,9,65536,512,2048,1,11,0,131072,268435456,524288,15,32768,4,67108864,32768,201326592,65543,2,7,134232064,131072 ok
+valid block/inode logs 12/9	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,262144 ok
+directory max blocklog 12 inode 9	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,65536,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,262144 ok
+valid block/inode logs 12/10	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,1024,4,10,2,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,262144 ok
+directory max blocklog 12 inode 10	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,65536,512,1024,4,10,2,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,262144 ok
+valid block/inode logs 12/11	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,2048,2,11,1,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,262144 ok
+directory max blocklog 12 inode 11	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,65536,512,2048,2,11,1,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,262144 ok
+valid block/inode logs 13/9	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=8192,512,13,9,8192,512,512,16,9,4,131072,1073741824,2097152,15,32768,4,268435456,32768,805306368,65543,2,7,536928256,524288 ok
+directory max blocklog 13 inode 9	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=8192,512,13,9,65536,512,512,16,9,4,131072,1073741824,2097152,15,32768,4,268435456,32768,805306368,65543,2,7,536928256,524288 ok
+valid block/inode logs 13/10	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=8192,512,13,9,8192,512,1024,8,10,3,131072,1073741824,2097152,15,32768,4,268435456,32768,805306368,65543,2,7,536928256,524288 ok
+directory max blocklog 13 inode 10	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=8192,512,13,9,65536,512,1024,8,10,3,131072,1073741824,2097152,15,32768,4,268435456,32768,805306368,65543,2,7,536928256,524288 ok
+valid block/inode logs 13/11	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=8192,512,13,9,8192,512,2048,4,11,2,131072,1073741824,2097152,15,32768,4,268435456,32768,805306368,65543,2,7,536928256,524288 ok
+directory max blocklog 13 inode 11	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=8192,512,13,9,65536,512,2048,4,11,2,131072,1073741824,2097152,15,32768,4,268435456,32768,805306368,65543,2,7,536928256,524288 ok
+valid block/inode logs 14/9	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=16384,512,14,9,16384,512,512,32,9,5,131072,2147483648,4194304,15,32768,4,536870912,32768,1610612736,65543,2,7,1073856512,1048576 ok
+directory max blocklog 14 inode 9	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=16384,512,14,9,65536,512,512,32,9,5,131072,2147483648,4194304,15,32768,4,536870912,32768,1610612736,65543,2,7,1073856512,1048576 ok
+valid block/inode logs 14/10	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=16384,512,14,9,16384,512,1024,16,10,4,131072,2147483648,4194304,15,32768,4,536870912,32768,1610612736,65543,2,7,1073856512,1048576 ok
+directory max blocklog 14 inode 10	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=16384,512,14,9,65536,512,1024,16,10,4,131072,2147483648,4194304,15,32768,4,536870912,32768,1610612736,65543,2,7,1073856512,1048576 ok
+valid block/inode logs 14/11	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=16384,512,14,9,16384,512,2048,8,11,3,131072,2147483648,4194304,15,32768,4,536870912,32768,1610612736,65543,2,7,1073856512,1048576 ok
+directory max blocklog 14 inode 11	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=16384,512,14,9,65536,512,2048,8,11,3,131072,2147483648,4194304,15,32768,4,536870912,32768,1610612736,65543,2,7,1073856512,1048576 ok
+valid block/inode logs 15/9	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=32768,512,15,9,32768,512,512,64,9,6,131072,4294967296,8388608,15,32768,4,1073741824,32768,3221225472,65543,2,7,2147713024,2097152 ok
+directory max blocklog 15 inode 9	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=32768,512,15,9,65536,512,512,64,9,6,131072,4294967296,8388608,15,32768,4,1073741824,32768,3221225472,65543,2,7,2147713024,2097152 ok
+valid block/inode logs 15/10	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=32768,512,15,9,32768,512,1024,32,10,5,131072,4294967296,8388608,15,32768,4,1073741824,32768,3221225472,65543,2,7,2147713024,2097152 ok
+directory max blocklog 15 inode 10	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=32768,512,15,9,65536,512,1024,32,10,5,131072,4294967296,8388608,15,32768,4,1073741824,32768,3221225472,65543,2,7,2147713024,2097152 ok
+valid block/inode logs 15/11	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=32768,512,15,9,32768,512,2048,16,11,4,131072,4294967296,8388608,15,32768,4,1073741824,32768,3221225472,65543,2,7,2147713024,2097152 ok
+directory max blocklog 15 inode 11	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=32768,512,15,9,65536,512,2048,16,11,4,131072,4294967296,8388608,15,32768,4,1073741824,32768,3221225472,65543,2,7,2147713024,2097152 ok
+valid block/inode logs 16/9	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=65536,512,16,9,65536,512,512,128,9,7,131072,8589934592,16777216,15,32768,4,2147483648,32768,6442450944,65543,2,7,4295426048,4194304 ok
+directory max blocklog 16 inode 9	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=65536,512,16,9,65536,512,512,128,9,7,131072,8589934592,16777216,15,32768,4,2147483648,32768,6442450944,65543,2,7,4295426048,4194304 ok
+valid block/inode logs 16/10	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=65536,512,16,9,65536,512,1024,64,10,6,131072,8589934592,16777216,15,32768,4,2147483648,32768,6442450944,65543,2,7,4295426048,4194304 ok
+directory max blocklog 16 inode 10	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=65536,512,16,9,65536,512,1024,64,10,6,131072,8589934592,16777216,15,32768,4,2147483648,32768,6442450944,65543,2,7,4295426048,4194304 ok
+valid block/inode logs 16/11	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=65536,512,16,9,65536,512,2048,32,11,5,131072,8589934592,16777216,15,32768,4,2147483648,32768,6442450944,65543,2,7,4295426048,4194304 ok
+directory max blocklog 16 inode 11	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=65536,512,16,9,65536,512,2048,32,11,5,131072,8589934592,16777216,15,32768,4,2147483648,32768,6442450944,65543,2,7,4295426048,4194304 ok
+non-power-of-two AG encoded AG2 block7	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,120000,491520000,960000,15,30000,4,122880000,30000,368640000,65543,2,7,245788672,67108864 ok
+last AG blocks 1	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+last AG blocks 63	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+last AG blocks 64	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,98368,402915328,786944,15,32768,4,134217728,64,402653184,65543,2,7,268464128,67108864 ok
+last AG blocks 32767	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131071,536866816,1048568,15,32768,4,134217728,32767,402653184,65543,2,7,268464128,67108864 ok
+last AG blocks 32768	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+count boundary 32768 delta -1	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+count boundary 98304 delta -1	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+count boundary 131072 delta -1	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131071,536866816,1048568,15,32768,4,134217728,32767,402653184,65543,2,7,268464128,67108864 ok
+count boundary 32768 delta 0	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+count boundary 98304 delta 0	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+count boundary 131072 delta 0	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+count boundary 32768 delta 1	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+count boundary 98304 delta 1	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+count boundary 131072 delta 1	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+positive {'versionnum': 48293, 'logsectsize': 512, 'logsectlog': 9}	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=48293,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+positive {'logsunit': 0}	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+positive {'imax_pct': 0}	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+positive {'imax_pct': 100}	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+positive {'spino_align': 0}	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+positive {'spino_align': 1}	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+positive {'spino_align': 8}	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+positive {'incompat': 41, 'spino_align': 0}	header_geometry_consistent none header_integrity_valid masks=0,15,41,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+declared log sector 0/0	unsupported_layout log_geometry header_integrity_valid masks=0,15,43,0 raw=48293,394,394 unsupported=0 unknown=0 facts=0 ok
+declared log sector 512/0	unsupported_layout log_geometry header_integrity_valid masks=0,15,43,0 raw=48293,394,394 unsupported=0 unknown=0 facts=0 ok
+declared log sector 0/9	unsupported_layout log_geometry header_integrity_valid masks=0,15,43,0 raw=48293,394,394 unsupported=0 unknown=0 facts=0 ok
+declared log sector 4096/12	unsupported_layout log_geometry header_integrity_valid masks=0,15,43,0 raw=48293,394,394 unsupported=0 unknown=0 facts=0 ok
+declared log sector 65535/255	unsupported_layout log_geometry header_integrity_valid masks=0,15,43,0 raw=48293,394,394 unsupported=0 unknown=0 facts=0 ok
+declared log sector 512/255	unsupported_layout log_geometry header_integrity_valid masks=0,15,43,0 raw=48293,394,394 unsupported=0 unknown=0 facts=0 ok
+blocksize=0	inconsistent_header block_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+blocksize=1	inconsistent_header block_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+blocksize=512	inconsistent_header block_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+blocksize=4095	inconsistent_header block_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+blocksize=4294967295	inconsistent_header block_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+blocklog=0	inconsistent_header block_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+blocklog=9	inconsistent_header block_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+blocklog=17	inconsistent_header block_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+blocklog=63	inconsistent_header block_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+blocklog=64	inconsistent_header block_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+blocklog=255	inconsistent_header block_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inodesize=0	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inodesize=1	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inodesize=256	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inodesize=511	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inodesize=2049	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inodesize=65535	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inodelog=0	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inodelog=8	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inodelog=12	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inodelog=63	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inodelog=64	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inodelog=255	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inopblock=0	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inopblock=1	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inopblock=7	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inopblock=9	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inopblock=65535	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inopblog=0	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inopblog=2	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inopblog=4	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inopblog=63	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inopblog=64	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inopblog=255	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+dirblklog=5	inconsistent_header directory_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+dirblklog=63	inconsistent_header directory_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+dirblklog=64	inconsistent_header directory_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+dirblklog=255	inconsistent_header directory_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+agblocks=0	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+agblocks=1	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+agblocks=4095	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+agblocks=4096	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+agblocks=268435456	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+agblocks=268435457	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+agblocks=4294967295	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+agcount=0	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+agcount=1	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+agcount=4294967295	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+dblocks=0	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+dblocks=1	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+dblocks=63	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+dblocks=64	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+dblocks=4294967295	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+dblocks=18446744073709551615	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+agblklog=0	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+agblklog=14	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+agblklog=16	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+agblklog=31	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+agblklog=32	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+agblklog=63	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+agblklog=64	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+agblklog=255	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+rblocks=1	unsupported_layout realtime header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+rblocks=18446744073709551615	unsupported_layout realtime header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+rextents=1	inconsistent_header realtime_zero_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+rextents=18446744073709551615	inconsistent_header realtime_zero_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+rbmblocks=1	inconsistent_header realtime_zero_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+rbmblocks=4294967295	inconsistent_header realtime_zero_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+rextslog=1	inconsistent_header realtime_zero_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+rextslog=255	inconsistent_header realtime_zero_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+frextents=1	inconsistent_header realtime_zero_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+frextents=18446744073709551615	inconsistent_header realtime_zero_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+rextsize=0	inconsistent_header realtime_zero_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+rextsize=262144	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+rextsize=262145	inconsistent_header realtime_zero_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+rextsize=4294967295	inconsistent_header realtime_zero_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inoalignmt=0	inconsistent_header inode_alignment header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inoalignmt=1	inconsistent_header inode_alignment header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inoalignmt=7	inconsistent_header inode_alignment header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inoalignmt=9	inconsistent_header inode_alignment header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inoalignmt=4294967295	inconsistent_header inode_alignment header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+spino_align=3	inconsistent_header inode_alignment header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+spino_align=9	inconsistent_header inode_alignment header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+spino_align=4294967295	inconsistent_header inode_alignment header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+logstart=0	unsupported_layout external_log header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+logstart=1	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,1,0,1,4096,67108864 ok
+logstart=131072	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+logstart=18446744073709551615	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+logblocks=0	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+logblocks=1	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,4096 ok
+logblocks=32761	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,134189056 ok
+logblocks=32762	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+logblocks=1048576	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+logblocks=1048577	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+logblocks=4294967295	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+logsectsize=1	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+logsectsize=512	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+logsectsize=4096	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+logsectsize=65535	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+logsectlog=1	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+logsectlog=9	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+logsectlog=12	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+logsectlog=63	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+logsectlog=64	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+logsectlog=255	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+logsunit=2	unsupported_layout striping header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+logsunit=4294967295	unsupported_layout striping header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+unit=1	unsupported_layout striping header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+unit=4294967295	unsupported_layout striping header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+width=1	unsupported_layout striping header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+width=4294967295	unsupported_layout striping header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+qflags=1	unsupported_layout quota_or_misc_flags header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+qflags=65535	unsupported_layout quota_or_misc_flags header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+flags=1	unsupported_layout quota_or_misc_flags header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+flags=255	unsupported_layout quota_or_misc_flags header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inprogress=1	offline_state_indicated offline_operation header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inprogress=255	offline_state_indicated offline_operation header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+shared_vn=1	inconsistent_header misc_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+shared_vn=255	inconsistent_header misc_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+imax_pct=101	inconsistent_header misc_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+imax_pct=255	inconsistent_header misc_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint magic=0	probe_rejected none unrecognized masks=0 raw=0 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint magic=4294967295	probe_rejected none unrecognized masks=0 raw=0 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint blocksize=0	inconsistent_header block_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint blocksize=4294967295	inconsistent_header block_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint dblocks=0	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint dblocks=18446744073709551615	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint rblocks=0	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+schema field endpoint rblocks=18446744073709551615	unsupported_layout realtime header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint rextents=0	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+schema field endpoint rextents=18446744073709551615	inconsistent_header realtime_zero_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint logstart=0	unsupported_layout external_log header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint logstart=18446744073709551615	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint rbmino=0	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+schema field endpoint rbmino=18446744073709551615	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+schema field endpoint rsumino=0	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+schema field endpoint rsumino=18446744073709551615	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+schema field endpoint rextsize=0	inconsistent_header realtime_zero_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint rextsize=4294967295	inconsistent_header realtime_zero_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint agblocks=0	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint agblocks=4294967295	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint agcount=0	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint agcount=4294967295	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint rbmblocks=0	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+schema field endpoint rbmblocks=4294967295	inconsistent_header realtime_zero_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint logblocks=0	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint logblocks=4294967295	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint versionnum=0	probe_rejected none unsupported_profile masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint versionnum=65535	probe_rejected none unsupported_profile masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint sectsize=0	probe_rejected none unsupported_profile masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint sectsize=65535	probe_rejected none unsupported_profile masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint inodesize=0	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint inodesize=65535	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint inopblock=0	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint inopblock=65535	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint blocklog=0	inconsistent_header block_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint blocklog=255	inconsistent_header block_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint sectlog=0	probe_rejected none unsupported_profile masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint sectlog=255	probe_rejected none unsupported_profile masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint inodelog=0	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint inodelog=255	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint inopblog=0	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint inopblog=255	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint agblklog=0	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint agblklog=255	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint rextslog=0	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+schema field endpoint rextslog=255	inconsistent_header realtime_zero_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint inprogress=0	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+schema field endpoint inprogress=255	offline_state_indicated offline_operation header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint imax_pct=0	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+schema field endpoint imax_pct=255	inconsistent_header misc_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint frextents=0	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+schema field endpoint frextents=18446744073709551615	inconsistent_header realtime_zero_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint qflags=0	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+schema field endpoint qflags=65535	unsupported_layout quota_or_misc_flags header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint flags=0	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+schema field endpoint flags=255	unsupported_layout quota_or_misc_flags header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint shared_vn=0	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+schema field endpoint shared_vn=255	inconsistent_header misc_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint inoalignmt=0	inconsistent_header inode_alignment header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint inoalignmt=4294967295	inconsistent_header inode_alignment header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint unit=0	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+schema field endpoint unit=4294967295	unsupported_layout striping header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint width=0	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+schema field endpoint width=4294967295	unsupported_layout striping header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint dirblklog=0	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+schema field endpoint dirblklog=255	inconsistent_header directory_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint logsectlog=0	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+schema field endpoint logsectlog=255	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint logsectsize=0	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+schema field endpoint logsectsize=65535	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint logsunit=0	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+schema field endpoint logsunit=4294967295	unsupported_layout striping header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint features2=0	inconsistent_header features2_required_bits header_integrity_valid masks=0,15,43,0 raw=46245,0,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint features2=4294967295	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,4294967295,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint bad_features2=0	unsupported_layout features2_mirror header_integrity_valid masks=0,15,43,0 raw=46245,394,0 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint bad_features2=4294967295	unsupported_layout features2_mirror header_integrity_valid masks=0,15,43,0 raw=46245,394,4294967295 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint compat=0	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+schema field endpoint compat=4294967295	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=4294967295,15,43,0 raw=46245,394,394 unsupported=4294967295,0,0,0 unknown=4294967295,0,0,0 facts=0 ok
+schema field endpoint ro_compat=0	header_geometry_consistent none header_integrity_valid masks=0,0,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+schema field endpoint ro_compat=4294967295	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,4294967295,43,0 raw=46245,394,394 unsupported=0,4294967280,0,0 unknown=0,4294967280,0,0 facts=0 ok
+schema field endpoint incompat=0	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,0,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+schema field endpoint incompat=4294967295	offline_state_indicated needs_repair header_integrity_valid masks=0,15,4294967295,0 raw=46245,394,394 unsupported=0,0,4294967252,0 unknown=0,0,4294965248,0 facts=0 ok
+schema field endpoint log_incompat=0	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+schema field endpoint log_incompat=4294967295	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,4294967295 raw=46245,394,394 unsupported=0,0,0,4294967295 unknown=0,0,0,4294967294 facts=0 ok
+schema field endpoint spino_align=0	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+schema field endpoint spino_align=4294967295	inconsistent_header inode_alignment header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+coherent256inode	unsupported_layout inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+inode larger than block	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+q exceeds u32	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+q u32 with remainder	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+q truncation	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+consistent data byte overflow	size_unrepresentable data_byte_size header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+data overflow outranks misc	size_unrepresentable data_byte_size header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+data representability edge 4503599627370495	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,4503599627370495,18446744073709547520,36028797018963960,28,268435456,16777216,1099511627776,268435455,18446742974197923840,65543,0,65543,268464128,67108864 ok
+data representability edge 4503599627370496	size_unrepresentable data_byte_size header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+nominal AG bound 4096	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,16384,67108864,131072,12,4096,4,16777216,4096,50331648,8199,2,7,33583104,262144 ok
+nominal AG bound 268435456	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,1073741824,4398046511104,8589934592,28,268435456,4,1099511627776,268435456,3298534883328,536870919,2,7,2199023284224,262144 ok
+maximum admitted AG exponent30	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=1024,512,10,9,1024,512,512,2,9,1,4294967296,4398046511104,8589934592,30,1073741824,4,1099511627776,1073741824,3298534883328,2147483655,2,7,2199023262720,65536 ok
+log range g4 a7 len1	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+log range g0 a0 len1	unsupported_layout external_log header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+log range g0 a1 len1	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,1,0,1,4096,4096 ok
+log range g3 a32767 len1	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,131071,3,32767,536866816,4096 ok
+log range g3 a32767 len2	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+log range g3 a32768 len1	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+log range g2 a7 len32762	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+nonpower encoded gap 29999	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,120000,491520000,960000,15,30000,4,122880000,30000,368640000,62767,1,29999,245755904,4096 ok
+nonpower encoded gap 30000	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+nonpower encoded gap 32767	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+short tail log 63+1	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,98368,402915328,786944,15,32768,4,134217728,64,402653184,98367,3,63,402911232,4096 ok
+short tail log 63+2	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+short tail log 64+1	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+short tail log 1+63	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,98368,402915328,786944,15,32768,4,134217728,64,402653184,98305,3,1,402657280,258048 ok
+short tail log 1+64	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+log byte/count edge B1024 L1048576	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=1024,512,10,9,1024,512,512,2,9,1,67108864,68719476736,134217728,24,16777216,4,17179869184,16777216,51539607552,33554439,2,7,34359745536,1073741824 ok
+log byte/count edge B1024 L1048577	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+log byte/count edge B4096 L521728	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,67108864,274877906944,536870912,24,16777216,4,68719476736,16777216,206158430208,33554439,2,7,137438982144,2136997888 ok
+log byte/count edge B4096 L521729	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+log byte/count edge B65536 L32608	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=65536,512,16,9,65536,512,512,128,9,7,67108864,4398046511104,8589934592,24,16777216,4,1099511627776,16777216,3298534883328,33554439,2,7,2199023714304,2136997888 ok
+log byte/count edge B65536 L32609	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+precedence {'versionnum': 46213, 'features2': 0, 'incompat': 4294967295}	inconsistent_header legacy_required_bits header_integrity_valid masks=0,15,4294967295,0 raw=46213,0,394 unsupported=0,0,4294967252,0 unknown=0,0,4294965248,0 facts=0 ok
+precedence {'versionnum': 46501, 'features2': 0}	inconsistent_header features2_required_bits header_integrity_valid masks=0,15,43,0 raw=46501,0,394 unsupported=0 unknown=0 facts=0 ok
+precedence {'versionnum': 46501, 'features2': 906}	unsupported_feature_profile legacy_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46501,906,394 unsupported=0 unknown=0 facts=0 ok
+precedence {'features2': 906, 'incompat': 16}	unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,16,0 raw=46245,906,394 unsupported=0,0,16,0 unknown=0 facts=0 ok
+precedence {'incompat': 2147483664, 'bad_features2': 0}	offline_state_indicated needs_repair header_integrity_valid masks=0,15,2147483664,0 raw=46245,394,0 unsupported=0,0,2147483664,0 unknown=0,0,2147483648,0 facts=0 ok
+precedence {'incompat': 2147483649, 'inprogress': 1}	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,2147483649,0 raw=46245,394,394 unsupported=0,0,2147483648,0 unknown=0,0,2147483648,0 facts=0 ok
+precedence {'bad_features2': 0, 'inprogress': 1}	unsupported_layout features2_mirror header_integrity_valid masks=0,15,43,0 raw=46245,394,0 unsupported=0 unknown=0 facts=0 ok
+precedence {'inprogress': 1, 'rblocks': 1}	offline_state_indicated offline_operation header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+precedence {'rblocks': 1, 'logstart': 0}	unsupported_layout realtime header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+precedence {'logstart': 0, 'unit': 1}	unsupported_layout external_log header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+precedence {'logsunit': 2, 'qflags': 1}	unsupported_layout striping header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+precedence {'qflags': 1, 'blocklog': 255}	unsupported_layout quota_or_misc_flags header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+precedence {'blocklog': 255, 'inodelog': 255}	inconsistent_header block_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+precedence {'inodelog': 255, 'dirblklog': 255}	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+precedence {'dirblklog': 255, 'agblocks': 0}	inconsistent_header directory_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+precedence {'agblocks': 0, 'rextents': 1}	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+precedence {'rextents': 1, 'inoalignmt': 0}	inconsistent_header realtime_zero_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+precedence {'inoalignmt': 0, 'logblocks': 0}	inconsistent_header inode_alignment header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+precedence {'logblocks': 0, 'imax_pct': 255}	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+precedence {'shared_vn': 1, 'logsectlog': 255}	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+seed 19019 random repaired bytes 0	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+seed 19019 field 1 compat	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=2869444077,15,43,0 raw=46245,394,394 unsupported=2869444077,0,0,0 unknown=2869444077,0,0,0 facts=0 ok
+seed 19019 valid geometry 2	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,837502,3430408192,6700016,16,64563,13,264450048,62746,3173400576,426878,6,33662,1724579840,66211840 ok
+seed 19019 random repaired bytes 3	inconsistent_header legacy_required_bits header_integrity_valid masks=0,15,43,0 raw=33445,394,394 unsupported=0 unknown=0 facts=0 ok
+seed 19019 field 4 agcount	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+seed 19019 valid geometry 5	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,335603,1374629888,2684824,15,18250,19,74752000,7103,1345536000,502409,15,10889,1165881344,14082048 ok
+seed 19019 random repaired bytes 6	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+seed 19019 field 7 logsectlog	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+seed 19019 valid geometry 8	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,331364,1357266944,2650912,16,36918,9,151216128,36020,1209729024,66992,1,1456,157179904,44965888 ok
+seed 19019 random repaired bytes 9	inconsistent_header block_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+seed 19019 field 10 inprogress	offline_state_indicated offline_operation header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+seed 19019 valid geometry 11	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,212213,869224448,1697704,15,21223,10,86929408,21206,782364672,3609,0,3609,14782464,20680704 ok
+seed 19019 random repaired bytes 12	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+seed 19019 field 13 log_incompat	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,15,43,452886962 raw=46245,394,394 unsupported=0,0,0,452886962 unknown=0,0,0,452886962 facts=0 ok
+seed 19019 valid geometry 14	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,234094,958849024,1872752,15,28898,9,118366208,2910,946929664,24943,0,24943,102166528,6905856 ok
+seed 19019 random repaired bytes 15	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+seed 19019 field 16 ro_compat	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=0,2094203842,43,0 raw=46245,394,394 unsupported=0,2094203840,0,0 unknown=0,2094203840,0,0 facts=0 ok
+seed 19019 valid geometry 17	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,524713,2149224448,4197704,16,32965,16,135024640,30238,2025369600,853498,13,1530,1761587200,17469440 ok
+seed 19019 random repaired bytes 18	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+seed 19019 field 19 rbmino	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+seed 19019 valid geometry 20	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,279889,1146425344,2239112,15,20142,14,82501632,18043,1072521216,273546,8,11402,706715648,27095040 ok
+seed 19019 random repaired bytes 21	unsupported_feature_profile extended_feature_masks header_integrity_valid masks=4980736,15,43,0 raw=46245,394,394 unsupported=4980736,0,0,0 unknown=4980736,0,0,0 facts=0 ok
+seed 19019 field 22 rbmino	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+seed 19019 valid geometry 23	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,525578,2152767488,4204624,15,30439,18,124678144,8115,2119528448,136758,4,5686,522002432,13787136 ok
+seed 19019 random repaired bytes 24	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+seed 19019 field 25 logsunit	unsupported_layout striping header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+seed 19019 valid geometry 26	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,285145,1167953920,2281160,15,18531,16,75902976,7180,1138544640,466575,14,7823,1094684672,8105984 ok
+seed 19019 random repaired bytes 27	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+seed 19019 field 28 inodelog	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+seed 19019 valid geometry 29	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,168708,691027968,1349664,16,35509,5,145444864,26672,581779456,222842,3,26234,543789056,34078720 ok
+seed 19019 random repaired bytes 30	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+seed 19019 field 31 bad_features2	unsupported_layout features2_mirror header_integrity_valid masks=0,15,43,0 raw=46245,394,1385628578 unsupported=0 unknown=0 facts=0 ok
+seed 19019 valid geometry 32	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,334128,1368588288,2673024,15,29549,12,121032704,9089,1331359744,352686,10,25006,1312751616,17039360 ok
+seed 19019 random repaired bytes 33	unsupported_layout realtime header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+seed 19019 field 34 rextslog	inconsistent_header realtime_zero_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+seed 19019 valid geometry 35	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,449596,1841545216,3596768,15,24430,19,100065280,9856,1801175040,565074,17,8018,1733951488,63303680 ok
+seed 19019 random repaired bytes 36	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+seed 19019 field 37 inodelog	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+seed 19019 valid geometry 38	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,1622,6643712,12976,16,63002,1,258056192,1622,0,150,0,150,614400,3424256 ok
+seed 19019 random repaired bytes 39	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+seed 19019 field 40 rextslog	inconsistent_header realtime_zero_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+seed 19019 valid geometry 41	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,146152,598638592,1169216,14,14691,10,60174336,13933,541569024,84623,5,2703,311943168,8548352 ok
+seed 19019 random repaired bytes 42	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+seed 19019 field 43 shared_vn	inconsistent_header misc_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+seed 19019 valid geometry 44	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,33904,138870784,271232,15,22717,2,93048832,11187,93048832,37993,1,5225,114450432,17199104 ok
+seed 19019 random repaired bytes 45	inconsistent_header realtime_zero_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+seed 19019 field 46 agcount	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+seed 19019 valid geometry 47	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,825609,3381694464,6604872,16,45638,19,186933248,4125,3364798464,694619,10,39259,2030137344,966656 ok
+paired unrepaired blocklog	probe_rejected none checksum_mismatch masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+paired unrepaired inodelog	probe_rejected none checksum_mismatch masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+paired unrepaired agblocks	probe_rejected none checksum_mismatch masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+paired unrepaired agblklog	probe_rejected none checksum_mismatch masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+paired unrepaired dblocks	probe_rejected none checksum_mismatch masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+paired unrepaired logstart	probe_rejected none checksum_mismatch masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+paired unrepaired logblocks	probe_rejected none checksum_mismatch masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+paired unrepaired incompat	probe_rejected none checksum_mismatch masks=0,15,4294967295,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+paired unrepaired features2	probe_rejected none checksum_mismatch masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+paired unrepaired versionnum	probe_rejected none checksum_mismatch masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+paired unrepaired rextsize	probe_rejected none checksum_mismatch masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+paired unrepaired spino_align	probe_rejected none checksum_mismatch masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+paired unrepaired inprogress	probe_rejected none checksum_mismatch masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+paired unrepaired shared_vn	probe_rejected none checksum_mismatch masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 ok
+guard witness coherent512block	inconsistent_header block_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+guard witness coherent1byteinode	inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+guard witness coherent256inodealigned	unsupported_layout inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+guard witness coherent8MiB AG	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+guard witness coherent over1TiB AG	inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+guard witness internal log at AG2 header block	inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+guard witness nonzero sparse with zero chunk	inconsistent_header inode_alignment header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+guard witness wrong chunk without secondary divisor fault	inconsistent_header inode_alignment header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 ok
+guard witness zero sparse divisor	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 ok
+fabricated probe_rejected copied and masked all24 facts	probe_rejected none checksum_mismatch masks=1,2,3,4 raw=5,6,7 unsupported=8,9,10,11 unknown=12,13,14,15 facts=0
+fabricated unsupported_feature_profile copied and masked all24 facts	unsupported_feature_profile none checksum_mismatch masks=1,2,3,4 raw=5,6,7 unsupported=8,9,10,11 unknown=12,13,14,15 facts=0
+fabricated unsupported_layout copied and masked all24 facts	unsupported_layout none checksum_mismatch masks=1,2,3,4 raw=5,6,7 unsupported=8,9,10,11 unknown=12,13,14,15 facts=0
+fabricated offline_state_indicated copied and masked all24 facts	offline_state_indicated none checksum_mismatch masks=1,2,3,4 raw=5,6,7 unsupported=8,9,10,11 unknown=12,13,14,15 facts=0
+fabricated inconsistent_header copied and masked all24 facts	inconsistent_header none checksum_mismatch masks=1,2,3,4 raw=5,6,7 unsupported=8,9,10,11 unknown=12,13,14,15 facts=0
+fabricated size_unrepresentable copied and masked all24 facts	size_unrepresentable none checksum_mismatch masks=1,2,3,4 raw=5,6,7 unsupported=8,9,10,11 unknown=12,13,14,15 facts=0
+fabricated header_geometry_consistent copied and masked all24 facts	header_geometry_consistent none checksum_mismatch masks=1,2,3,4 raw=5,6,7 unsupported=8,9,10,11 unknown=12,13,14,15 facts=9223372036854775825,9223372036854841362,9223372036854906899,9223372036854972436,9223372036855037973,9223372036855103510,9223372036855169047,9223372036855234584,9223372036855300121,9223372036855365658,9223372036855431195,9223372036855496732,9223372036855562269,9223372036855627806,9223372036855693343,9223372036855758880,9223372036855824417,9223372036855889954,9223372036855955491,9223372036856021028,9223372036856086565,9223372036856152102,9223372036856217639,9223372036856283176
+layout and runtime metadata of every report type	XfsBlockFacts=48,48,0,0 XfsInodeFacts=32,32,0,0 XfsDataFacts=24,24,0,0 XfsAgFacts=48,48,0,0 XfsLogFacts=40,40,0,0 XfsGeometryFacts=192,192,0,0 XfsHeaderObservations=24,24,0,0 XfsFeatureMasks=32,32,0,0 XfsFeatureDiagnostics=64,64,0,0 XfsGeometryReport=336,336,0,0
+copied report outlives owner mutation and function return	header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 other_ag_blocks=30000 retained_ag_blocks=32768
+probe complete nonzero 512-byte sector	header_integrity_valid masks=2147483649,4275878552,16909060,4294967295
+probe changed raw mask at 208 without new checksum	checksum_mismatch masks=3735928559,4275878552,16909060,4294967295
+probe changed raw mask at 208 with valid checksum is only header integrity	header_integrity_valid masks=3735928559,4275878552,16909060,4294967295
+probe changed raw mask at 212 without new checksum	checksum_mismatch masks=2147483649,3735928559,16909060,4294967295
+probe changed raw mask at 212 with valid checksum is only header integrity	header_integrity_valid masks=2147483649,3735928559,16909060,4294967295
+probe changed raw mask at 216 without new checksum	checksum_mismatch masks=2147483649,4275878552,3735928559,4294967295
+probe changed raw mask at 216 with valid checksum is only header integrity	header_integrity_valid masks=2147483649,4275878552,3735928559,4294967295
+probe changed raw mask at 220 without new checksum	checksum_mismatch masks=2147483649,4275878552,16909060,3735928559
+probe changed raw mask at 220 with valid checksum is only header integrity	header_integrity_valid masks=2147483649,4275878552,16909060,3735928559
+probe wrong length 1	wrong_length masks=0
+probe wrong length 224	wrong_length masks=0
+probe wrong length 264	wrong_length masks=0
+probe wrong length 511	wrong_length masks=0
+probe wrong length 513	wrong_length masks=0
+probe wrong length 4096	wrong_length masks=0
+probe magic mismatch byte 0 precedes checksum	unrecognized masks=0
+probe magic mismatch byte 1 precedes checksum	unrecognized masks=0
+probe magic mismatch byte 2 precedes checksum	unrecognized masks=0
+probe magic mismatch byte 3 precedes checksum	unrecognized masks=0
+probe unsupported version 0x0 precedes checksum	unsupported_profile masks=2147483649,4275878552,16909060,4294967295
+probe unsupported version 0x4 precedes checksum	unsupported_profile masks=2147483649,4275878552,16909060,4294967295
+probe unsupported version 0x6 precedes checksum	unsupported_profile masks=2147483649,4275878552,16909060,4294967295
+probe unsupported version 0xf precedes checksum	unsupported_profile masks=2147483649,4275878552,16909060,4294967295
+probe unsupported version 0xfff4 precedes checksum	unsupported_profile masks=2147483649,4275878552,16909060,4294967295
+probe version low-nibble mask 0x15	header_integrity_valid masks=2147483649,4275878552,16909060,4294967295
+probe version low-nibble mask 0xa005	header_integrity_valid masks=2147483649,4275878552,16909060,4294967295
+probe version low-nibble mask 0xfff5	header_integrity_valid masks=2147483649,4275878552,16909060,4294967295
+probe unsupported declared sector size 0	unsupported_profile masks=2147483649,4275878552,16909060,4294967295
+probe unsupported declared sector size 256	unsupported_profile masks=2147483649,4275878552,16909060,4294967295
+probe unsupported declared sector size 1024	unsupported_profile masks=2147483649,4275878552,16909060,4294967295
+probe unsupported declared sector size 4096	unsupported_profile masks=2147483649,4275878552,16909060,4294967295
+probe unsupported sector log 0	unsupported_profile masks=2147483649,4275878552,16909060,4294967295
+probe unsupported sector log 0 despite valid checksum	unsupported_profile masks=2147483649,4275878552,16909060,4294967295
+probe unsupported sector log 8	unsupported_profile masks=2147483649,4275878552,16909060,4294967295
+probe unsupported sector log 8 despite valid checksum	unsupported_profile masks=2147483649,4275878552,16909060,4294967295
+probe unsupported sector log 10	unsupported_profile masks=2147483649,4275878552,16909060,4294967295
+probe unsupported sector log 10 despite valid checksum	unsupported_profile masks=2147483649,4275878552,16909060,4294967295
+probe unsupported sector log 255	unsupported_profile masks=2147483649,4275878552,16909060,4294967295
+probe unsupported sector log 255 despite valid checksum	unsupported_profile masks=2147483649,4275878552,16909060,4294967295
+probe corruption at sector byte 128	checksum_mismatch masks=2147483649,4275878552,16909060,4294967295
+probe corruption at sector byte 223	checksum_mismatch masks=2147483649,4275878552,16909060,4294967294
+probe corruption at sector byte 224	checksum_mismatch masks=2147483649,4275878552,16909060,4294967295
+probe corruption at sector byte 225	checksum_mismatch masks=2147483649,4275878552,16909060,4294967295
+probe corruption at sector byte 226	checksum_mismatch masks=2147483649,4275878552,16909060,4294967295
+probe corruption at sector byte 227	checksum_mismatch masks=2147483649,4275878552,16909060,4294967295
+probe corruption at sector byte 228	checksum_mismatch masks=2147483649,4275878552,16909060,4294967295
+probe corruption at sector byte 300	checksum_mismatch masks=2147483649,4275878552,16909060,4294967295
+probe corruption at sector byte 511	checksum_mismatch masks=2147483649,4275878552,16909060,4294967295
+probe wrong stored CRC endianness	checksum_mismatch masks=2147483649,4275878552,16909060,4294967295
+probe omitted CRC bytes differ from zero substitution	checksum_mismatch masks=2147483649,4275878552,16909060,4294967295
+probe zero stored CRC is still checked	checksum_mismatch masks=2147483649,4275878552,16909060,4294967295
+probe changed final byte with recalculated CRC	header_integrity_valid masks=2147483649,4275878552,16909060,4294967295
+actual one-sector backend, writable=False	source_too_small success header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 admitted=0
+constructed source capacity 0, writable=False	source_too_small success header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 admitted=0
+constructed source capacity 1, writable=False	source_too_small success header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 admitted=0
+constructed source capacity 1048575, writable=False	source_too_small success header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 admitted=0
+constructed source capacity 1048576, writable=False	header_fits_source success header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 admitted=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864
+constructed source capacity 1048577, writable=False	header_fits_source success header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 admitted=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864
+constructed source capacity 9223372036854775808, writable=False	header_fits_source success header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 admitted=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864
+constructed source capacity 18446744073709551615, writable=False	header_fits_source success header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 admitted=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864
+actual one-sector backend, writable=True	source_too_small success header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 admitted=0
+constructed source capacity 0, writable=True	source_too_small success header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 admitted=0
+constructed source capacity 1, writable=True	source_too_small success header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 admitted=0
+constructed source capacity 1048575, writable=True	source_too_small success header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 admitted=0
+constructed source capacity 1048576, writable=True	header_fits_source success header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 admitted=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864
+constructed source capacity 1048577, writable=True	header_fits_source success header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 admitted=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864
+constructed source capacity 9223372036854775808, writable=True	header_fits_source success header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 admitted=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864
+constructed source capacity 18446744073709551615, writable=True	header_fits_source success header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 admitted=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864
+read failure before parsing/capacity out_of_range/0	read_failed out_of_range probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
+read failure before parsing/capacity out_of_range/1048576	read_failed out_of_range probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
+read failure before parsing/capacity out_of_range/18446744073709551615	read_failed out_of_range probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
+read failure before parsing/capacity read_only/0	read_failed read_only probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
+read failure before parsing/capacity read_only/1048576	read_failed read_only probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
+read failure before parsing/capacity read_only/18446744073709551615	read_failed read_only probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
+read failure before parsing/capacity invalid_source/0	read_failed invalid_source probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
+read failure before parsing/capacity invalid_source/1048576	read_failed invalid_source probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
+read failure before parsing/capacity invalid_source/18446744073709551615	read_failed invalid_source probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: preserved real header	source_too_small success header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 admitted=0
+metadata gate: endian magic	geometry_rejected success probe_rejected none unrecognized masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: endian magic	geometry_rejected success probe_rejected none unrecognized masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: v4	geometry_rejected success probe_rejected none unsupported_profile masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: v4	geometry_rejected success probe_rejected none unsupported_profile masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: unrepaired byte 4	geometry_rejected success probe_rejected none checksum_mismatch masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: unrepaired byte 4	geometry_rejected success probe_rejected none checksum_mismatch masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: extra version bit 4	geometry_rejected success unsupported_feature_profile legacy_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46261,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: extra version bit 4	geometry_rejected success unsupported_feature_profile legacy_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46261,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: required version bit 5	geometry_rejected success inconsistent_header legacy_required_bits header_integrity_valid masks=0,15,43,0 raw=46213,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: required version bit 5	geometry_rejected success inconsistent_header legacy_required_bits header_integrity_valid masks=0,15,43,0 raw=46213,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: features2 bit 0	geometry_rejected success unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,395,395 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: features2 bit 0	geometry_rejected success unsupported_feature_profile features2_excluded_bits header_integrity_valid masks=0,15,43,0 raw=46245,395,395 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: features2 bit 1	geometry_rejected success inconsistent_header features2_required_bits header_integrity_valid masks=0,15,43,0 raw=46245,392,392 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: features2 bit 1	geometry_rejected success inconsistent_header features2_required_bits header_integrity_valid masks=0,15,43,0 raw=46245,392,392 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: compat single bit 0	geometry_rejected success unsupported_feature_profile extended_feature_masks header_integrity_valid masks=1,15,43,0 raw=46245,394,394 unsupported=1,0,0,0 unknown=1,0,0,0 facts=0 admitted=0
+metadata before large capacity: compat single bit 0	geometry_rejected success unsupported_feature_profile extended_feature_masks header_integrity_valid masks=1,15,43,0 raw=46245,394,394 unsupported=1,0,0,0 unknown=1,0,0,0 facts=0 admitted=0
+metadata gate: incompat single bit 0	geometry_rejected success inconsistent_header inode_alignment header_integrity_valid masks=0,15,1,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: incompat single bit 0	geometry_rejected success inconsistent_header inode_alignment header_integrity_valid masks=0,15,1,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: incompat single bit 4	geometry_rejected success offline_state_indicated needs_repair header_integrity_valid masks=0,15,16,0 raw=46245,394,394 unsupported=0,0,16,0 unknown=0 facts=0 admitted=0
+metadata before large capacity: incompat single bit 4	geometry_rejected success offline_state_indicated needs_repair header_integrity_valid masks=0,15,16,0 raw=46245,394,394 unsupported=0,0,16,0 unknown=0 facts=0 admitted=0
+metadata gate: mirror mismatch	geometry_rejected success unsupported_layout features2_mirror header_integrity_valid masks=0,15,43,0 raw=46245,394,906 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: mirror mismatch	geometry_rejected success unsupported_layout features2_mirror header_integrity_valid masks=0,15,43,0 raw=46245,394,906 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: last AG blocks 1	geometry_rejected success inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: last AG blocks 1	geometry_rejected success inconsistent_header ag_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: declared log sector 0/0	geometry_rejected success unsupported_layout log_geometry header_integrity_valid masks=0,15,43,0 raw=48293,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: declared log sector 0/0	geometry_rejected success unsupported_layout log_geometry header_integrity_valid masks=0,15,43,0 raw=48293,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: blocksize=0	geometry_rejected success inconsistent_header block_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: blocksize=0	geometry_rejected success inconsistent_header block_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: inodesize=0	geometry_rejected success inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: inodesize=0	geometry_rejected success inconsistent_header inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: dirblklog=5	geometry_rejected success inconsistent_header directory_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: dirblklog=5	geometry_rejected success inconsistent_header directory_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: rblocks=1	geometry_rejected success unsupported_layout realtime header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: rblocks=1	geometry_rejected success unsupported_layout realtime header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: rextents=1	geometry_rejected success inconsistent_header realtime_zero_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: rextents=1	geometry_rejected success inconsistent_header realtime_zero_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: logstart=0	geometry_rejected success unsupported_layout external_log header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: logstart=0	geometry_rejected success unsupported_layout external_log header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: logstart=131072	geometry_rejected success inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: logstart=131072	geometry_rejected success inconsistent_header log_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: logsunit=2	geometry_rejected success unsupported_layout striping header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: logsunit=2	geometry_rejected success unsupported_layout striping header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: qflags=1	geometry_rejected success unsupported_layout quota_or_misc_flags header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: qflags=1	geometry_rejected success unsupported_layout quota_or_misc_flags header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: inprogress=1	geometry_rejected success offline_state_indicated offline_operation header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: inprogress=1	geometry_rejected success offline_state_indicated offline_operation header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: shared_vn=1	geometry_rejected success inconsistent_header misc_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: shared_vn=1	geometry_rejected success inconsistent_header misc_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: coherent256inode	geometry_rejected success unsupported_layout inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: coherent256inode	geometry_rejected success unsupported_layout inode_geometry header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata gate: consistent data byte overflow	geometry_rejected success size_unrepresentable data_byte_size header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+metadata before large capacity: consistent data byte overflow	geometry_rejected success size_unrepresentable data_byte_size header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=0 admitted=0
+large synthetic header capacity 36028797018963959	source_too_small success header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,4503599627370495,18446744073709547520,36028797018963960,28,268435456,16777216,1099511627776,268435455,18446742974197923840,65543,0,65543,268464128,67108864 admitted=0
+large synthetic header capacity 36028797018963960	header_fits_source success header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,4503599627370495,18446744073709547520,36028797018963960,28,268435456,16777216,1099511627776,268435455,18446742974197923840,65543,0,65543,268464128,67108864 admitted=4096,512,12,9,4096,512,512,8,9,3,4503599627370495,18446744073709547520,36028797018963960,28,268435456,16777216,1099511627776,268435455,18446742974197923840,65543,0,65543,268464128,67108864
+large synthetic header capacity 36028797018963961	header_fits_source success header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,4503599627370495,18446744073709547520,36028797018963960,28,268435456,16777216,1099511627776,268435455,18446742974197923840,65543,0,65543,268464128,67108864 admitted=4096,512,12,9,4096,512,512,8,9,3,4503599627370495,18446744073709547520,36028797018963960,28,268435456,16777216,1099511627776,268435455,18446742974197923840,65543,0,65543,268464128,67108864
+unrepaired full-sector byte 0	geometry_rejected success probe_rejected none unrecognized masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
+unrepaired full-sector byte 224	geometry_rejected success probe_rejected none checksum_mismatch masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
+unrepaired full-sector byte 227	geometry_rejected success probe_rejected none checksum_mismatch masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
+unrepaired full-sector byte 511	geometry_rejected success probe_rejected none checksum_mismatch masks=0,15,43,0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
+actual backend read error -9223372036854775808	read_failed out_of_range probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
+actual backend read error -1	read_failed out_of_range probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
+actual backend read error 1	read_failed out_of_range probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
+actual backend read error 9223372036854775807	read_failed out_of_range probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0
+public report masking/layout valid header/read_failed/success	read_failed success probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout valid header/read_failed/out_of_range	read_failed out_of_range probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout valid header/read_failed/read_only	read_failed read_only probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout valid header/read_failed/invalid_source	read_failed invalid_source probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout valid header/geometry_rejected/success	geometry_rejected success header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 admitted=0 layout=352,8,0
+public report masking/layout valid header/geometry_rejected/out_of_range	geometry_rejected out_of_range probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout valid header/geometry_rejected/read_only	geometry_rejected read_only probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout valid header/geometry_rejected/invalid_source	geometry_rejected invalid_source probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout valid header/source_too_small/success	source_too_small success header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 admitted=0 layout=352,8,0
+public report masking/layout valid header/source_too_small/out_of_range	source_too_small out_of_range probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout valid header/source_too_small/read_only	source_too_small read_only probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout valid header/source_too_small/invalid_source	source_too_small invalid_source probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout valid header/header_fits_source/success	header_fits_source success header_geometry_consistent none header_integrity_valid masks=0,15,43,0 raw=46245,394,394 unsupported=0 unknown=0 facts=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 admitted=4096,512,12,9,4096,512,512,8,9,3,131072,536870912,1048576,15,32768,4,134217728,32768,402653184,65543,2,7,268464128,67108864 layout=352,8,0
+public report masking/layout valid header/header_fits_source/out_of_range	header_fits_source out_of_range probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout valid header/header_fits_source/read_only	header_fits_source read_only probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout valid header/header_fits_source/invalid_source	header_fits_source invalid_source probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout nonzero diagnostic masks/read_failed/success	read_failed success probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout nonzero diagnostic masks/read_failed/out_of_range	read_failed out_of_range probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout nonzero diagnostic masks/read_failed/read_only	read_failed read_only probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout nonzero diagnostic masks/read_failed/invalid_source	read_failed invalid_source probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout nonzero diagnostic masks/geometry_rejected/success	geometry_rejected success unsupported_feature_profile extended_feature_masks header_integrity_valid masks=1,15,43,0 raw=46245,394,394 unsupported=1,0,0,0 unknown=1,0,0,0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout nonzero diagnostic masks/geometry_rejected/out_of_range	geometry_rejected out_of_range probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout nonzero diagnostic masks/geometry_rejected/read_only	geometry_rejected read_only probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout nonzero diagnostic masks/geometry_rejected/invalid_source	geometry_rejected invalid_source probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout nonzero diagnostic masks/source_too_small/success	source_too_small success unsupported_feature_profile extended_feature_masks header_integrity_valid masks=1,15,43,0 raw=46245,394,394 unsupported=1,0,0,0 unknown=1,0,0,0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout nonzero diagnostic masks/source_too_small/out_of_range	source_too_small out_of_range probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout nonzero diagnostic masks/source_too_small/read_only	source_too_small read_only probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout nonzero diagnostic masks/source_too_small/invalid_source	source_too_small invalid_source probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout nonzero diagnostic masks/header_fits_source/success	header_fits_source success unsupported_feature_profile extended_feature_masks header_integrity_valid masks=1,15,43,0 raw=46245,394,394 unsupported=1,0,0,0 unknown=1,0,0,0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout nonzero diagnostic masks/header_fits_source/out_of_range	header_fits_source out_of_range probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout nonzero diagnostic masks/header_fits_source/read_only	header_fits_source read_only probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+public report masking/layout nonzero diagnostic masks/header_fits_source/invalid_source	header_fits_source invalid_source probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
+reject XfsBlockFacts privacy	2:102: error AU3001: private class field is inaccessible
+reject XfsInodeFacts privacy	2:92: error AU3001: private class field is inaccessible
+reject XfsDataFacts privacy	2:85: error AU3001: private class field is inaccessible
+reject XfsAgFacts privacy	2:96: error AU3001: private class field is inaccessible
+reject XfsLogFacts privacy	2:93: error AU3001: private class field is inaccessible
+reject facts group privacy	2:1351: error AU3001: private class field is inaccessible
+reject raw observation privacy	2:1325: error AU3001: private class field is inaccessible
+reject feature mask privacy	2:1333: error AU3001: private class field is inaccessible
+reject diagnostic group privacy	2:1353: error AU3001: private class field is inaccessible
+reject report private status	2:2258: error AU3001: private class field is inaccessible
+reject report private facts	2:2280: error AU3001: private class field is inaccessible
+reject status has no numeric conversion	2:2256: error AU3001: expected distinct i64, u64 or u8 conversion types
+reject issue has no numeric conversion	2:2256: error AU3001: expected distinct i64, u64 or u8 conversion types
+reject copied facts not a span	2:2286: error AU3001: expected builtin::span<const u8>, got fs::XfsGeometryFacts
+reject nominal group types	2:2277: error AU3001: expected fs::XfsBlockFacts, got fs::XfsHeaderObservations
+reject private helper inaccessible	aurorac: error AU4001: private function is not imported: fs::xfs_geometry_read32
+reject span return excluded by callable type surface	2:39: error AU2001: only scalar function results or scalar-field class values are supported (found '{')
+reject XFS sector exact-type/privacy 0	1:539: error AU3001: expected storage::SectorReadResult, got storage::Sector512
+reject XFS sector exact-type/privacy 1	1:531: error AU3001: class argument requires a complete local name
+reject XFS sector exact-type/privacy 2	1:593: error AU3001: private class field is inaccessible
+reject XFS sector exact-type/privacy 3	1:467: error AU3001: expected distinct i64, u64 or u8 conversion types
+reject XFS sector exact-type/privacy 4	aurorac: error AU4001: private function is not imported: fs::xs_empty_geometry

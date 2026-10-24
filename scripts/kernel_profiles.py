@@ -520,11 +520,7 @@ def bios_profile(mode, controls):
             "kernel-language",
         ]
         + (["serial-input", "kernel-interactive-console", "kernel-uart"] if console else []),
-        image_options=["--console"]
-        if console
-        else (["--bios-fixture-family", "schedule" if schedule else "ordinary"] if fixture else []),
-        admission="bios-console" if console else "",
-        checks=[],
+        closed=False,
     )
 
 
@@ -688,50 +684,6 @@ def uefi_profile(mode, flags):
     ):
         if enabled:
             entry, bridge = "examples/kernel-" + source + ".au", "kernel/uefi/" + adapter + "-entry.S"
-    image_options = ["--ipc-policy"] if ipc else []
-    if mode == "runtime-multipage":
-        image_options += ["--multipage"]
-    if owned_text:
-        image_options += ["--owned-text"]
-    if console_region:
-        image_options += ["--console-region"]
-    if snapshot or (blocking_call and not file_call):
-        image_options += ["--snapshot"] + (["--call-snapshot"] if blocking_call else [])
-    if mode == "owned-bytes":
-        image_options += ["--owned-bytes"]
-    if graphical:
-        image_options += ["--graphical-console"]
-    if event:
-        image_options += ["--iommu-event-observe" if mode == "iommu-event-observe" else "--iommu-event"]
-    if mode.startswith(("user-request-", "user-completion-", "user-disposal-")) or mode in (
-        "user-retire-pending",
-        "user-resume",
-        "user-stale-grant",
-    ):
-        image_options += ["--disposal-policy"]
-    admission = (
-        "program"
-        if program
-        else "console"
-        if console
-        else "graphical"
-        if graphical
-        else "framebuffer"
-        if framebuffer
-        else "event"
-        if event
-        else ""
-    )
-    checks = (
-        (["owned-bytes"] if mode == "owned-bytes" else [])
-        + (["snapshot"] if snapshot else [])
-        + (["note"] if program else [])
-        + (["call"] if blocking_call and not file_call else [])
-        + (["ram-scratchpad"] if scratchpad else ["ram-file"] if ram_file else [])
-        + (["tables"] if mode.startswith("runtime-table-") else [])
-        + (["ivrs"] if mode.startswith("ivrs-") else [])
-        + (["nvme"] if mode == "bar-prepare" else [])
-    )
     return dict(
         platform="uefi",
         mode=mode,
@@ -753,10 +705,34 @@ def uefi_profile(mode, flags):
         + owned_objects
         + (["framebuffer"] if framebuffer else [])
         + (["event-intake"] if event and mode != "iommu-event-observe" else []),
-        image_options=image_options,
-        admission=admission,
-        checks=checks,
+        closed=program,
     )
+
+
+# UEFI guest families booted by scripts/kernel-uefi-smoke.sh; Meson registers each
+# mode as a test in the suites guest and guest-<family>.
+GUEST_FAMILIES = {
+    "uefi": "normal stale stale-exhausted bad-handoff bad-map bad-table wp nx",
+    "acpi": "acpi acpi-two acpi-disabled acpi-checksum acpi-bad-source acpi-duplicate-root acpi-write acpi-revoked",
+    "pci": "pci pci-devices pci-bridge pci-checksum pci-cycle pci-write pci-revoked",
+    "runtime": "runtime runtime-multipage runtime-terminal-input runtime-terminal-output runtime-code runtime-stack "
+    "runtime-kernel runtime-window runtime-root runtime-kernel-trap runtime-entry-stack runtime-write runtime-nx "
+    "runtime-return runtime-unknown runtime-syscall runtime-sysenter runtime-span",
+    "ipc": "ipc ipc-fault ipc-cancel ipc-owner ipc-stale ipc-version ipc-phase ipc-transaction ipc-site ipc-unknown "
+    "ipc-root ipc-kernel-trap ipc-duplicate ipc-late ipc-exhausted",
+    "budget": "budget budget-fault budget-context budget-pending budget-noapic budget-smp budget-discovery "
+    "budget-cache budget-alias budget-forged budget-root budget-mmio budget-softint budget-fpu budget-epoch",
+    "dispatch": "dispatch dispatch-budget dispatch-fault dispatch-mixed dispatch-pending dispatch-cross-reply "
+    "dispatch-client-owner dispatch-stale dispatch-duplicate dispatch-full dispatch-root dispatch-peer-code",
+    "user-phases": "user-phases user-context user-retire-pending user-request-budget user-completion-budget "
+    "user-request-bounds user-completion-bounds user-request-overflow user-completion-overflow user-pending "
+    "user-role user-phase user-transaction user-epoch user-root user-unknown user-stale-grant user-ram-file "
+    "user-ram-file-service-fault user-ram-file-grant user-ram-file-site user-ram-file-settlement "
+    "user-ram-file-commit-fault user-ram-file-caller-budget user-ram-file-service-budget user-ram-file-abort-budget "
+    "user-ram-file-epochs user-ram-file-pending user-ram-file-frame user-ram-file-root",
+    "tables": "runtime-table-readback runtime-table-reject runtime-table-exhaust runtime-table-quarantine",
+    "pins": "runtime-pin-cancel runtime-pin-fault runtime-pin-stale runtime-pin-exhaust",
+}
 
 
 UEFI_ALIASES = {
@@ -868,6 +844,7 @@ if __name__ == "__main__":
     else:
         rows = list(keyval_rows("profiles", profiles()))
         rows += keyval_rows("layout", layout_metadata())
+        rows += keyval_rows("guests", {name: modes.split() for name, modes in GUEST_FAMILIES.items()})
         rows += keyval_rows("image_policies", {name: list(values) for name, values in IMAGE_POLICIES.items()})
         rows += keyval_rows(
             "aliases",

@@ -88,9 +88,9 @@ continue to use the copied-message rights/generation/scrubbing rules in [ipc.md]
 
 ## Acceptance gates
 
-- `SANITIZE=1 scripts/kernel-uefi-budget-tests.sh`: admission, immutable context,
+- `meson test -C build/meson --suite full`: admission, immutable context,
   real kernel/private mapping policy, exact image intervals and strict transcripts.
-- `scripts/kernel-uefi-budget-all.sh`: nineteen actual OVMF modes, restoring the
+- `meson test -C build/meson --suite guest-budget`: nineteen actual OVMF modes, restoring the
   normal image after each. The prior 95 modes remain acceptance gates.
 - `budget`: compiled non-yielding service exhausts three interrupts, then a fresh
   finite service is preempted and completes the copied request.

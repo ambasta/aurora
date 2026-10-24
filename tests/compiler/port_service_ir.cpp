@@ -1,7 +1,5 @@
 // Independent Port IR mutations reuse the established service fixture machinery.
-#define main console_service_regression
-#include "console_service_ir.cpp"
-#undef main
+#include "service_ir_common.hpp"
 #include <fstream>
 namespace {
 Module portOperation(bool write = false) {

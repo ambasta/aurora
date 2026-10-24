@@ -98,9 +98,9 @@ and shared exception object relocations; absolute relocations are rejected.
 
 ## Gates and honest limits
 
-- `scripts/kernel-uefi-runtime-tests.sh`: hosted immutable-layout/table checks,
+- `meson test -C build/meson --suite full`: hosted immutable-layout/table checks,
   image metadata and strict transcript controls. Set `SANITIZE=1` for ASan/UBSan.
-- `scripts/kernel-uefi-runtime-all.sh`: fourteen actual OVMF modes using the
+- `meson test -C build/meson --suite guest-runtime`: fourteen actual OVMF modes using the
   dependency setup from [the UEFI guide](README.md), restoring normal afterward.
 - `runtime`: clean42, contained bounds fault, clean42, scrub/retire/reuse, clean42,
   rollback and final cleanup.

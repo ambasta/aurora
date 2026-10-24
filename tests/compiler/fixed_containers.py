@@ -3,10 +3,8 @@
 
 The sequence oracle stores ordinary Python lists and predicts every observed
 element without consulting compiler IR, assembly, or metadata. Native results
-retain all 64 bits. Traps reuse integer_oracle's freestanding signal observer
-and must be kernel-generated SIGILL at the exact named UD2 instruction.
-Compiler/native commands retain the existing five-second limit; rejection must
-be a normal exit 1 and must not create or replace an assembly artifact.
+retain all 64 bits and traps must reach the exact named UD2 (native_runner.py);
+rejection must be a normal exit 1 and must not create or replace an artifact.
 
 Run: python3 tests/compiler/fixed_containers.py build/aurorac
 Optional deterministic stress: --seed 10010 --steps 128
@@ -15,17 +13,10 @@ Optional deterministic stress: --seed 10010 --steps 128
 from __future__ import annotations
 
 import argparse
-from enum import Enum
-import hashlib
 from pathlib import Path
 import random
-import resource
-import signal
-import subprocess
-import tempfile
-import time
 
-from integer_oracle import NativeRunner, Observation, UD2, rejected, require, validate_trap, validate_values
+from native_runner import Suite, Trap, require
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -35,21 +26,10 @@ VALUES = {"i64": -(1 << 63), "u64": (1 << 64) - 1, "bool": True}
 OTHERS = {"i64": (1 << 63) - 1, "u64": 1 << 63, "bool": False}
 
 
-class Trap(Enum):
-    BOUNDS = ".Laurora_bounds_trap"
-    OVERFLOW = ".Laurora_overflow_trap"
-    ZERO = ".Laurora_division_zero_trap"
-
-
 def literal(scalar, value):
     if scalar == "bool":
         return "true" if value else "false"
     return str(value) + ("u64" if scalar == "u64" else "")
-
-
-def signed_bits(value):
-    bits = int(value) % (1 << 64)
-    return bits if bits < (1 << 63) else bits - (1 << 64)
 
 
 def program(body, definitions="", helpers="", library=True, result="i64"):
@@ -70,116 +50,6 @@ public:
     auto set(i64 index,T value)->T{elements[index]=value;return elements[index];}
     auto size()const->i64{return N;}
 };"""
-
-
-class Suite:
-    def __init__(self, directory, compiler):
-        self.directory = directory
-        self.compiler = compiler
-        self.runner = NativeRunner(directory, compiler, 5)
-        self.count = 0
-        self.traps = 0
-        self.rejections = 0
-
-    def check(self, name, source, expected=42, error=None, modules=None, existing_output=None):
-        with tempfile.TemporaryDirectory(prefix="case-", dir=self.directory) as temporary:
-            directory = Path(temporary)
-            source_path = directory / "input.au"
-            output = directory / "compiled.s"
-            source_path.write_text(source)
-            roots = [ROOT / "library"]
-            if modules:
-                root = directory / "modules"
-                root.mkdir()
-                roots.insert(0, root)
-                for module, content in modules.items():
-                    path = root / (module.replace(".", "/") + ".au")
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    path.write_text(content)
-            if existing_output is not None:
-                output.write_text(existing_output)
-            command = [str(self.compiler), str(source_path), "-o", str(output)]
-            for root in roots:
-                command.extend(["--module-root", str(root)])
-            try:
-                result = subprocess.run(
-                    command,
-                    capture_output=True,
-                    timeout=5,
-                    preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)),
-                )
-                require(source_path.read_text() == source, name + ": source changed")
-                if error is not None:
-                    require(
-                        result.returncode == 1,
-                        f"{name}: expected compiler exit 1, got {result.returncode}: {result.stderr!r}",
-                    )
-                    require(bool(result.stderr), name + ": rejection lacks a diagnostic")
-                    if existing_output is None:
-                        require(not output.exists(), name + ": artifact created on rejection")
-                    else:
-                        require(output.read_text() == existing_output, name + ": prior output replaced on rejection")
-                    fragments = (error,) if isinstance(error, str) else error
-                    require(
-                        any(fragment.lower().encode() in result.stderr.lower() for fragment in fragments),
-                        name + ": " + repr(result.stderr),
-                    )
-                    self.rejections += 1
-                else:
-                    require(result.returncode == 0, f"{name}: compiler exit {result.returncode}: {result.stderr!r}")
-                    observed, symbols = self.runner.assemble(output.read_text(), ["test"])
-                    if isinstance(expected, Trap):
-                        validate_trap(observed, expected, symbols, name)
-                        self.traps += 1
-                    else:
-                        validate_values(observed, [signed_bits(expected)], [name])
-                self.count += 1
-                print("PASS fixed containers", name, flush=True)
-            except (AssertionError, subprocess.TimeoutExpired) as failure:
-                raise AssertionError(f"{name}: {failure}\nReproduction source:\n{source}") from failure
-
-
-def observer_self_test(suite):
-    symbols = {Trap.BOUNDS.value: 4096, Trap.OVERFLOW.value: 8192}
-    good = Observation(
-        b"", terminal_signal=signal.SIGILL, delivery_signal=signal.SIGILL, pc=4096, instruction=UD2, signal_code=2
-    )
-    validate_trap(good, Trap.BOUNDS, symbols, "synthetic bounds site")
-    rejected(lambda: validate_trap(good, Trap.OVERFLOW, symbols, "wrong site"), "wrong site")
-    for observed in (
-        Observation(b"", exit_code=1),
-        Observation(
-            b"", terminal_signal=signal.SIGSEGV, delivery_signal=signal.SIGSEGV, pc=4096, instruction=UD2, signal_code=2
-        ),
-        Observation(
-            b"", terminal_signal=signal.SIGILL, delivery_signal=signal.SIGILL, pc=4096, instruction=UD2, signal_code=0
-        ),
-        Observation(
-            b"",
-            terminal_signal=signal.SIGILL,
-            delivery_signal=signal.SIGILL,
-            pc=4096,
-            instruction=0x9090,
-            signal_code=2,
-        ),
-        Observation(
-            b"12345678",
-            terminal_signal=signal.SIGILL,
-            delivery_signal=signal.SIGILL,
-            pc=4096,
-            instruction=UD2,
-            signal_code=2,
-        ),
-    ):
-        rejected(lambda: validate_trap(observed, Trap.BOUNDS, symbols, "bad observation"), "bad bounds observation")
-    assembly = (
-        ".text\n.globl test\ntest:\n.Laurora_bounds_trap:\nud2\n"
-        '.Laurora_overflow_trap:\nud2\n.section .note.GNU-stack,"",@progbits\n'
-    )
-    observed, symbols = suite.runner.assemble(assembly, ["test"])
-    validate_trap(observed, Trap.BOUNDS, symbols, "native bounds observer")
-    rejected(lambda: validate_trap(observed, Trap.OVERFLOW, symbols, "wrong native site"), "wrong native site")
-    print("PASS fixed containers observer: exact bounds UD2, wrong-site/signal/output rejection", flush=True)
 
 
 def native_cases(suite):
@@ -427,6 +297,7 @@ def native_cases(suite):
             "return copied[0]+wrapped.at(1);}}",
             library=False,
         ),
+        standalone=True,  # Defines the root namespace std; nesting it would change the rule under test.
     )
     suite.check(
         "builtin alias retains original large local capacity",
@@ -740,7 +611,7 @@ def rejection_cases(suite):
         "malformed container preserves existing output",
         program("std::array<i64,65> a=std::array<i64,65>();return 42;"),
         error=errors,
-        existing_output="previous known-good assembly\n",
+        existing_output=b"previous known-good assembly\n",
     )
 
 
@@ -775,6 +646,7 @@ def module_and_budget_cases(suite):
             f"constant-parameter template definition budget {count}",
             program("Buffer0<i64,1> a=Buffer0<i64,1>();return a.set(0,42);", definitions, library=False),
             error=None if count == 64 else ("64", "template limit"),
+            standalone=True,  # Exhausts the per-graph template budget by itself.
         )
     for count in (256, 257):
         types = [
@@ -791,6 +663,7 @@ def module_and_budget_cases(suite):
             f"scalar-and-capacity specialization budget {count}",
             program(assertions + "return 42;", definitions, library=False),
             error=None if count == 256 else ("256", "limit", "classes", "specialization"),
+            standalone=True,  # Exhausts the per-graph specialization budget by itself.
         )
     suite.check(
         "canonical repeated capacities do not consume specialization budget",
@@ -849,40 +722,21 @@ def main():
     parser.add_argument("compiler", type=Path, nargs="?", default=ROOT / "build/aurorac")
     parser.add_argument("--seed", type=int, default=10010)
     parser.add_argument("--steps", type=int, default=64)
-    parser.add_argument("--self-test-only", action="store_true")
     args = parser.parse_args()
     require(1 <= args.steps <= 256, "steps must be between 1 and 256")
-    started = time.monotonic()
-    compiler = args.compiler.resolve()
-    if not args.self_test_only:
-        print(
-            f"INFO fixed containers compiler={compiler} sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}",
-            flush=True,
-        )
-        module = ROOT / "library/std/array.au"
-        print(f"INFO fixed containers std.array sha256={hashlib.sha256(module.read_bytes()).hexdigest()}", flush=True)
-    with tempfile.TemporaryDirectory(prefix="aurora-fixed-containers-") as temporary:
-        suite = Suite(Path(temporary), compiler)
-        observer_self_test(suite)
-        if args.self_test_only:
-            return
-        native_cases(suite)
-        trap_cases(suite)
-        rejection_cases(suite)
-        module_and_budget_cases(suite)
-        for type_index, scalar in enumerate(SCALARS):
-            for capacity in CAPACITIES:
-                seed = args.seed + type_index * 1000 + capacity
-                suite.check(
-                    f"independent sequence model {scalar} {capacity}, seed={seed}, steps={args.steps}",
-                    model_case(scalar, capacity, seed, args.steps),
-                )
-        print(
-            f"PASS fixed containers: {suite.count} cases, {suite.traps} exact-site traps, "
-            f"{suite.rejections} normal rejections; seed={args.seed}, steps={args.steps}; "
-            f"elapsed={time.monotonic() - started:.2f}s",
-            flush=True,
-        )
+    suite = Suite(args.compiler, "fixed containers", ignore_case=True)
+    native_cases(suite)
+    trap_cases(suite)
+    rejection_cases(suite)
+    module_and_budget_cases(suite)
+    for type_index, scalar in enumerate(SCALARS):
+        for capacity in CAPACITIES:
+            seed = args.seed + type_index * 1000 + capacity
+            suite.check(
+                f"independent sequence model {scalar} {capacity}, seed={seed}, steps={args.steps}",
+                model_case(scalar, capacity, seed, args.steps),
+            )
+    suite.finish()
 
 
 if __name__ == "__main__":

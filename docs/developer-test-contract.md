@@ -6,6 +6,9 @@ no tests of tests. This page says how to run things today.
 
 ## Commands
 
+`make test` runs the merge suite and `make test-release` the release suite.
+`full` remains the union of the two for older scripts.
+
 ```sh
 ./scripts/container.sh bash           # pinned GCC 16 / QEMU / OVMF environment
 meson setup build/meson -Dbootstrap_receipt=... -Duefi_ld=...
@@ -16,7 +19,35 @@ meson test -C build/meson --suite release --num-processes "$(nproc)"   # opt-in
 
 Guest smokes run QEMU through `scripts/kernel-uefi-smoke.sh MODE`,
 `scripts/kernel-smoke.sh` (BIOS) and `scripts/kernel-run.sh`; the fixture modes are
-the rows of `kernel/uefi/runtime-fixtures.inc`.
+the rows of `kernel/uefi/runtime-fixtures.inc`. The UEFI guest families are Meson
+tests outside `full`: `meson test --suite guest` runs all of them and
+`--suite guest-<family>` one family (`uefi`, `acpi`, `pci`, `runtime`, `ipc`,
+`budget`, `dispatch`, `user-phases`, `tables`, `pins`; listed in
+`scripts/kernel_profiles.py`). `scripts/kernel-run.sh bar|ivrs` boots the BAR and
+IVRS device families.
+
+## Kernel image checks
+
+Every kernel profile build runs two checks, like objtool and modpost, and fails
+the build on a violation:
+
+- `scripts/kernel_stack_check.py` builds one call graph per linked image from the
+  stack facts the compilers emit (GCC `.su`/`.ci`, Aurora `.stack.json`); only
+  handwritten assembly is decoded instruction by instruction. It rejects call
+  cycles, undeclared indirect calls and compiled transfers without a compiler
+  edge, and bounds the entry path plus the worst interrupt, every interrupt
+  window (functions with STI) and every user trap entry by one limit per image
+  (`stack_cap`, 15360 bytes, in `kernel/bootstrap-layout-values.inc`).
+- `scripts/kernel_image_check.py` checks PE32+ and ELF format and W^X, entry in
+  an executable section, no imports, DIR64-only PE relocations, PC-relative
+  payload objects and no undefined symbols.
+
+Both read `kernel-images/image-policy.py`, the declarative per-profile table of
+the runtime symbols each Aurora object may import, the policy entry points the
+supervisor must call, forbidden symbols, reviewed callbacks and user-mode trap
+vectors. Page permissions, relocation application, payload bounds and user
+image trap sites are verified again by the kernel itself at load time
+(`kernel/uefi/loader.cpp`, `payload.cpp`, `runtime.cpp`, `user-program.cpp`).
 
 ## Gates
 
@@ -33,7 +64,18 @@ previous main. Missing tools or skipped gates are reported, never passed.
 
 The test tree still predates these rules: most of `full` is per-batch generated
 programs, Python reimplementation oracles, admission scripts and meta-tests, and
-it takes about 14 minutes. Until the merge suite exists, `full` remains the merge
-gate. The rewrite replaces it with data-driven drivers, deletes the meta-tests,
-admission pins and provenance pins, and moves the corpus differential to the
-release suite.
+it takes about 14 minutes. The release suite now holds the corpus emitter
+differential, IR mutation testing (`ir-exhaustive`), XFS mutation controls and
+the complete copies of subset tests (`borrowed-objects`, `json-string-write`,
+`package-*-full`); everything else is in merge until the rewrite replaces it
+with data-driven drivers. The test inventories, Meson-identity, developer-contract,
+artifact-budget, clean and emitter-selector meta-tests are deleted.
+
+Compiler-semantics runners in `tests/compiler` register cases as data on
+`native_runner.Suite`: accepted cases are packed into one compiled program per
+test (more only past the 1 MiB source limit, a per-graph compiler budget, or a
+differing import/module set), value cases run in one exec, each trap is one
+exec of the same binary selected by argv, and each rejection is one compile.
+Hosted owner programs use the same packing through `owned_bytes.Suite`
+(`deferred=True`). The library-behaviour runners still use the per-program
+compatibility entry points until they migrate.

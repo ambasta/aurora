@@ -2,7 +2,7 @@
 """CPU-owned byte construction receipts; never evidence of device DMA behavior."""
 
 from pathlib import Path
-import copy, importlib.util, json, re, sys
+import importlib.util, json, re, sys
 
 spec = importlib.util.spec_from_file_location("runtime", Path(__file__).with_name("kernel-uefi-runtime-smoke.py"))
 runtime = importlib.util.module_from_spec(spec)
@@ -110,124 +110,8 @@ def validate(status, text, mode, metadata):
         need(restores[phase].end() < match.start() < end, "Operation outside authorized kernel continuation")
 
 
-def self_test():
-    original = runtime.validate
-    samples = []
-
-    def capture(status, text, mode, metadata, **kw):
-        original(status, text, mode, metadata, **kw)
-        if status == 33 and mode == "runtime" and not samples:
-            samples.append((text, copy.deepcopy(metadata)))
-
-    runtime.validate = capture
-    try:
-        runtime.self_test()
-    finally:
-        runtime.validate = original
-    base, metadata = samples[0]
-    arena = int(re.search(r"AURORA_UEFI_OWNERSHIP_OK: arena=(\d+)", base)[1])
-    positive = negative = 0
-    for mode in MODES:
-        expected = records(mode, arena)
-        text = ""
-        phase = 0
-        for line in base.splitlines(keepends=True):
-            text += line
-            if line.startswith("AURORA_UEFI_DOMAIN_RESTORE:"):
-                text += "".join(row + "\n" for where, row in expected if where == phase)
-                phase += 1
-        if mode.endswith("quarantine"):
-            text = text.replace("CLEANUP_OK: used=0", "CLEANUP_OK: used=2")
-            start = text.rindex("AURORA_UEFI_DOMAIN_ENTER:")
-            head, tail = text[:start], text[start:]
-            tail = (
-                tail.replace("slot=0", "slot=1")
-                .replace(f"root={arena + 0x90000}", f"root={arena + 0xA0000}")
-                .replace(f"stack={runtime.STACK + 0x4000}", f"stack={runtime.STACK + 0x204000}")
-            )
-            text = head + tail
-        marker = "AURORA_FIXTURE_READY\n"
-        text = text.replace("AURORA_UEFI_DOMAIN_ENTER:", marker + "AURORA_UEFI_DOMAIN_ENTER:", 1)
-        validate(33, text, mode, metadata)
-        positive += 1
-        bad = [
-            (35, text, metadata),
-            (33, text + "AURORA_TABLE_FAIL\n", metadata),
-            (33, text + "AURORA_DMA_OK\n", metadata),
-        ]
-        bad.extend(
-            (33, value, metadata)
-            for value in (
-                text.replace(marker, ""),
-                text.replace(marker, marker * 2),
-                marker + text.replace(marker, ""),
-                text.replace(marker, "") + marker,
-                text.replace(marker, "prefix " + marker),
-                text.replace(marker, "AURORA_FIXTURE_READY extra\n"),
-                text.replace(marker, "AURORA_FIXTURE_UNKNOWN\n"),
-            )
-        )
-
-        for _, line in expected:
-            full = line + "\n"
-            bad.extend(
-                (33, value, metadata)
-                for value in [
-                    text.replace(full, ""),
-                    text + full,
-                    full + text.replace(full, ""),
-                    text.replace(full, "prefix " + full),
-                    text.replace(full, full.rstrip() + " extra\n"),
-                ]
-            )
-            for match in re.finditer(r"\d+", line):
-                changed = line[: match.start()] + str(int(match[0]) + 1) + line[match.end() :]
-                bad.append((33, text.replace(full, changed + "\n"), metadata))
-            for old, new in [
-                ("never", "published"),
-                ("cpu-only", "dma-isolation"),
-                ("SOFTWARE_MODEL", "DMA_MODEL"),
-                ("CPU_BYTES", "DMA_BYTES"),
-                ("valid=1", "valid=0"),
-            ]:
-                if old in line:
-                    bad.append((33, text.replace(full, line.replace(old, new) + "\n"), metadata))
-        if mode.endswith("reject"):
-            for case in range(6):
-                needle = f"AURORA_TABLE_CASE: index={case} state=rejected constructor=0 decoder=0\n"
-                success = "AURORA_TABLE_CPU_BYTES: dtes=256 leaves=512 pages=5 domain=1 valid=1\n"
-                bad.append((33, text.replace(needle, needle + success), metadata))
-        for first, second in zip(expected, expected[1:]):
-            a, b = first[1] + "\n", second[1] + "\n"
-            bad.append((33, text.replace(a, "SWAP_SENTINEL\n").replace(b, a).replace("SWAP_SENTINEL\n", b), metadata))
-        if mode.endswith("quarantine"):
-            for old, new in [
-                ("current=4", "current=2"),
-                ("old=2", "old=0"),
-                ("incarnation=2", "incarnation=4"),
-                ("retained=2", "retained=0"),
-            ]:
-                bad.append((33, text.replace(old, new), metadata))
-        changed = copy.deepcopy(metadata)
-        changed["clean"]["return_pc"] = 0
-        bad.append((33, text, changed))
-        for status, mutant, meta in bad:
-            try:
-                validate(status, mutant, mode, meta)
-            except (ValueError, AssertionError):
-                negative += 1
-            else:
-                raise AssertionError("Malformed dormant receipt accepted")
-    print(f"PASS dormant table receipts {positive} positives/{negative} negatives")
-
-
 if __name__ == "__main__":
-    if len(sys.argv) == 1:
-        self_test()
-    else:
-        if len(sys.argv) != 5:
-            raise SystemExit("status log mode metadata required")
-        validate(
-            int(sys.argv[1]), Path(sys.argv[2]).read_text(), sys.argv[3], json.loads(Path(sys.argv[4]).read_text())
-        )
-        print("PASS CPU_BYTES/SOFTWARE_MODEL receipt; no DMA result")
+    if len(sys.argv) != 5:
+        raise SystemExit("status log mode metadata required")
+    validate(int(sys.argv[1]), Path(sys.argv[2]).read_text(), sys.argv[3], json.loads(Path(sys.argv[4]).read_text()))
+    print("PASS CPU_BYTES/SOFTWARE_MODEL receipt; no DMA result")

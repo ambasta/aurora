@@ -2,11 +2,8 @@
 """Native acceptance and fail-closed tests for bounded inline class composition.
 
 The expected results are source-level values, never compiler metadata or assembly.
-Native results preserve all 64 bits, and traps require kernel-generated SIGILL at
-the exact named UD2 site through integer_oracle's freestanding observer. Every
-rejection must exit normally with code 1, leave all source inputs unchanged, and
-leave an absent or pre-existing output artifact untouched. Explicit require calls
-keep every acceptance check active under python3 -O.
+Cases are data for the shared native runner (native_runner.py): complete 64-bit
+results, exact-site UD2 traps, and rejections that leave inputs and artifacts alone.
 
 Run: python3 tests/compiler/composed_values.py build/aurorac
 Optional deterministic stress: --seed 11011 --steps 64
@@ -15,18 +12,11 @@ Optional deterministic stress: --seed 11011 --steps 64
 from __future__ import annotations
 
 import argparse
-from enum import Enum
-import hashlib
 from itertools import product
 from pathlib import Path
 import random
-import resource
-import signal
-import subprocess
-import tempfile
-import time
 
-from integer_oracle import NativeRunner, Observation, UD2, rejected, require, validate_trap, validate_values
+from native_runner import Suite as NativeSuite, Trap, require
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -38,21 +28,10 @@ EDGES = {
 }
 
 
-class Trap(Enum):
-    BOUNDS = ".Laurora_bounds_trap"
-    OVERFLOW = ".Laurora_overflow_trap"
-    ZERO = ".Laurora_division_zero_trap"
-
-
 def literal(scalar, value):
     if scalar == "bool":
         return "true" if value else "false"
     return str(value) + ("u64" if scalar == "u64" else "")
-
-
-def signed_bits(value):
-    bits = int(value) % (1 << 64)
-    return bits if bits < (1 << 63) else bits - (1 << 64)
 
 
 def program(body, definitions="", helpers="", imports="", result="i64"):
@@ -82,134 +61,9 @@ public:
 };"""
 
 
-class Suite:
-    def __init__(self, directory, compiler, keep_going=False):
-        self.directory = directory
-        self.compiler = compiler
-        self.runner = NativeRunner(directory, compiler, 5)
-        self.keep_going = keep_going
-        self.count = 0
-        self.traps = 0
-        self.rejections = 0
-        self.failures = []
-        self.library_inputs = {path: path.read_bytes() for path in (ROOT / "library").rglob("*.au")}
-
-    def check(self, name, source, expected=42, error=None, modules=None, existing_output=None):
-        with tempfile.TemporaryDirectory(prefix="case-", dir=self.directory) as temporary:
-            directory = Path(temporary)
-            source_path = directory / "input.au"
-            output = directory / "compiled.s"
-            source_path.write_text(source)
-            inputs = dict(self.library_inputs)
-            inputs[source_path] = source.encode()
-            roots = [ROOT / "library"]
-            if modules:
-                root = directory / "modules"
-                root.mkdir()
-                roots.insert(0, root)
-                for module, content in modules.items():
-                    path = root / (module.replace(".", "/") + ".au")
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    path.write_text(content)
-                    inputs[path] = content.encode()
-            if existing_output is not None:
-                output.write_bytes(existing_output)
-            command = [str(self.compiler), str(source_path), "-o", str(output)]
-            for root in roots:
-                command.extend(["--module-root", str(root)])
-            try:
-                compiled = subprocess.run(
-                    command,
-                    capture_output=True,
-                    timeout=5,
-                    preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)),
-                )
-                for path, before in inputs.items():
-                    require(path.read_bytes() == before, name + ": input changed: " + str(path))
-                if error is not None:
-                    require(
-                        compiled.returncode == 1,
-                        f"{name}: expected compiler exit 1, got {compiled.returncode}: {compiled.stderr!r}",
-                    )
-                    require(bool(compiled.stderr), name + ": rejection lacks a diagnostic")
-                    if existing_output is None:
-                        require(not output.exists(), name + ": artifact created on rejection")
-                    else:
-                        require(output.read_bytes() == existing_output, name + ": prior output replaced on rejection")
-                    if error is not True:
-                        fragments = (error,) if isinstance(error, str) else error
-                        require(
-                            any(fragment.lower().encode() in compiled.stderr.lower() for fragment in fragments),
-                            name + ": " + repr(compiled.stderr),
-                        )
-                    self.rejections += 1
-                else:
-                    require(
-                        compiled.returncode == 0, f"{name}: compiler exit {compiled.returncode}: {compiled.stderr!r}"
-                    )
-                    observed, symbols = self.runner.assemble(output.read_text(), ["test"])
-                    if isinstance(expected, Trap):
-                        validate_trap(observed, expected, symbols, name)
-                        self.traps += 1
-                    else:
-                        validate_values(observed, [signed_bits(expected)], [name])
-                self.count += 1
-                print("PASS composed values", name, flush=True)
-            except (AssertionError, subprocess.TimeoutExpired) as failure:
-                details = f"{name}: {failure}\nReproduction source:\n{source}"
-                if modules:
-                    details += "\nReproduction modules:\n" + repr(modules)
-                if not self.keep_going:
-                    raise AssertionError(details) from failure
-                self.failures.append(details)
-                print("FAIL composed values", details, flush=True)
-
-
-def observer_self_test(suite):
-    symbols = {Trap.BOUNDS.value: 4096, Trap.OVERFLOW.value: 8192}
-    good = Observation(
-        b"", terminal_signal=signal.SIGILL, delivery_signal=signal.SIGILL, pc=4096, instruction=UD2, signal_code=2
-    )
-    validate_trap(good, Trap.BOUNDS, symbols, "synthetic exact site")
-    rejected(lambda: validate_trap(good, Trap.OVERFLOW, symbols, "wrong site"), "wrong site")
-    for observed in (
-        Observation(b"", exit_code=1),
-        Observation(
-            b"", terminal_signal=signal.SIGSEGV, delivery_signal=signal.SIGSEGV, pc=4096, instruction=UD2, signal_code=2
-        ),
-        Observation(
-            b"", terminal_signal=signal.SIGILL, delivery_signal=signal.SIGILL, pc=4096, instruction=UD2, signal_code=0
-        ),
-        Observation(
-            b"",
-            terminal_signal=signal.SIGILL,
-            delivery_signal=signal.SIGILL,
-            pc=4096,
-            instruction=0x9090,
-            signal_code=2,
-        ),
-        Observation(
-            b"12345678",
-            terminal_signal=signal.SIGILL,
-            delivery_signal=signal.SIGILL,
-            pc=4096,
-            instruction=UD2,
-            signal_code=2,
-        ),
-    ):
-        rejected(lambda: validate_trap(observed, Trap.BOUNDS, symbols, "bad observation"), "bad exact-site observation")
-    rejected(lambda: require(False, "checks must survive optimization"), "disabled require")
-    rejected(
-        lambda: validate_values(Observation(b"\x00" * 8, exit_code=0), [42], ["wrong value"]), "incorrect native result"
-    )
-    assembly = (
-        ".text\n.globl test\ntest:\n.Laurora_bounds_trap:\nud2\n"
-        '.Laurora_overflow_trap:\nud2\n.section .note.GNU-stack,"",@progbits\n'
-    )
-    observed, native_symbols = suite.runner.assemble(assembly, ["test"])
-    validate_trap(observed, Trap.BOUNDS, native_symbols, "native observer")
-    rejected(lambda: validate_trap(observed, Trap.OVERFLOW, native_symbols, "wrong native site"), "wrong native site")
-    print("PASS composed values observer: exact native UD2 and invalid-result rejection", flush=True)
+def Suite(compiler, label="composed values"):
+    """Composed-value suites match diagnostic fragments case-insensitively."""
+    return NativeSuite(compiler, label, ignore_case=True)
 
 
 def scalar_and_library_cases(suite):
@@ -1224,42 +1078,20 @@ def main():
     parser.add_argument("compiler", type=Path, nargs="?", default=ROOT / "build/aurorac")
     parser.add_argument("--seed", type=int, default=11011)
     parser.add_argument("--steps", type=int, default=24)
-    parser.add_argument("--self-test-only", action="store_true")
-    parser.add_argument("--keep-going", action="store_true")
     args = parser.parse_args()
     require(1 <= args.steps <= 128, "steps must be between 1 and 128")
-    started = time.monotonic()
-    compiler = args.compiler.resolve()
-    if not args.self_test_only:
-        print(
-            f"INFO composed values compiler={compiler} sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}",
-            flush=True,
-        )
-        module = ROOT / "library/std/utility.au"
-        print(f"INFO composed values std.utility sha256={hashlib.sha256(module.read_bytes()).hexdigest()}", flush=True)
-    with tempfile.TemporaryDirectory(prefix="aurora-composed-values-") as temporary:
-        suite = Suite(Path(temporary), compiler, args.keep_going)
-        observer_self_test(suite)
-        if args.self_test_only:
-            return
-        scalar_and_library_cases(suite)
-        native_copy_cases(suite)
-        field_count_cases(suite)
-        empty_class_cases(suite)
-        snapshot_cases(suite)
-        array_and_model_cases(suite, args.seed, args.steps)
-        trap_cases(suite)
-        depth_and_leaf_cases(suite)
-        rejection_cases(suite)
-        module_cases(suite)
-        print(
-            f"INFO composed values: {suite.count} passed, {suite.traps} exact-site traps, "
-            f"{suite.rejections} normal rejections, {len(suite.failures)} failures; "
-            f"seed={args.seed}, steps={args.steps}; elapsed={time.monotonic() - started:.2f}s",
-            flush=True,
-        )
-        require(not suite.failures, f"{len(suite.failures)} composed-value checks failed")
-        print("PASS composed values complete", flush=True)
+    suite = Suite(args.compiler)
+    scalar_and_library_cases(suite)
+    native_copy_cases(suite)
+    field_count_cases(suite)
+    empty_class_cases(suite)
+    snapshot_cases(suite)
+    array_and_model_cases(suite, args.seed, args.steps)
+    trap_cases(suite)
+    depth_and_leaf_cases(suite)
+    rejection_cases(suite)
+    module_cases(suite)
+    suite.finish()
 
 
 if __name__ == "__main__":

@@ -2,41 +2,22 @@
 """Native source acceptance for compact bytes and mixed-width value boundaries.
 
 Python lists and explicit source values determine expected results independently
-of compiler layout helpers, IR, and assembly. Every normal observation retains
-all eight result bytes. Bounds faults must terminate with kernel-generated
-SIGILL at the exact named UD2 instruction; failures and timeouts do not pass.
-Each rejection must exit normally with status 1 and preserve both an absent
-output and an existing byte-exact output. Checks remain active under python -O.
+of compiler layout helpers, IR, and assembly. Results are complete 64-bit values;
+bounds faults must reach the exact named UD2 (native_runner.py). Rejections leave
+no artifact and must not change an existing one.
 
 This is bounded layout/copy evidence, not a safety or performance proof.
 Run: python3 tests/compiler/packed_values.py build/aurorac
-Harness only: python3 tests/compiler/packed_values.py --self-test-only
 """
 
 from __future__ import annotations
 
 import argparse
-from dataclasses import replace
 from enum import Enum
-import hashlib
 from pathlib import Path
 import random
-import signal
-import tempfile
-import time
 
-from unsigned_oracle import (
-    Case,
-    NativeRunner,
-    Observation,
-    Rejection,
-    UD2,
-    command,
-    rejected,
-    require,
-    validate_trap,
-    validate_values,
-)
+from native_runner import DIAGNOSTIC, Suite as Runner, require
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -79,90 +60,19 @@ def byte_storage(name, capacity):
 
 
 class Suite:
-    def __init__(self, directory, compiler, timeout, keep_going):
-        self.runner = NativeRunner(directory, compiler, timeout)
-        self.keep_going = keep_going
-        self.count = self.traps = self.rejections = 0
-        self.failures = []
+    """packed-module cases on one shared runner: `check`/`reject`, then `finish`."""
 
-    def check(self, name, body, expected=42, definitions="", helpers="", result="u64", imports=()):
-        program = source(body, definitions, helpers, result, imports)
-        runner = self.runner
-        path = runner.directory / "input.au"
-        output = runner.directory / "compiled.s"
-        path.write_text(program)
-        output.unlink(missing_ok=True)
-        try:
-            command([runner.compiler, "--module-root", ROOT / "library", path, "-o", output], timeout=runner.timeout)
-            require(path.read_text() == program, name + ": source changed")
-            observed, symbols = runner.assemble(output.read_text(), ["test"])
-            if isinstance(expected, Trap):
-                validate_trap(observed, expected, symbols, name)
-                self.traps += 1
-            else:
-                validate_values(observed, [Case(name, body, expected, result)])
-            self.count += 1
-            print("PASS packed values", name, flush=True)
-        except AssertionError as failure:
-            details = f"{name}: {failure}\nReproduction source:\n{program}"
-            if not self.keep_going:
-                raise AssertionError(details) from failure
-            self.failures.append(details)
-            print("FAIL packed values", details, flush=True)
+    def __init__(self, compiler, timeout=10, label="packed values"):
+        self.runner = Runner(compiler, label, timeout=timeout, pattern=DIAGNOSTIC)
+
+    def check(self, name, body, expected=42, definitions="", helpers="", result="u64", imports=(), inspect=None):
+        self.runner.check(name, source(body, definitions, helpers, result, imports), expected, inspect=inspect)
 
     def reject(self, name, body, definitions="", helpers="", imports=()):
-        program = source(body, definitions, helpers, imports=imports)
-        try:
-            self.runner.rejection(Rejection(name, program))
-            self.rejections += 1
-            print("PASS packed rejection", name, flush=True)
-        except AssertionError as failure:
-            if not self.keep_going:
-                raise
-            self.failures.append(str(failure))
-            print("FAIL packed rejection", name, str(failure), flush=True)
+        self.runner.reject(name, source(body, definitions, helpers, imports=imports))
 
-
-def self_tests(suite):
-    full = Observation(MAX_U64.to_bytes(8, "little"), exit_code=0)
-    validate_values(full, [Case("all 64 result bits", "", MAX_U64)])
-    rejected(lambda: validate_values(full, [Case("low-byte-only result", "", 255)]), "truncated result")
-    for observed in (
-        replace(full, output=full.output[:-1]),
-        replace(full, output=full.output + b"x"),
-        replace(full, exit_code=1),
-        replace(full, terminal_signal=signal.SIGILL),
-    ):
-        rejected(
-            lambda observed=observed: validate_values(observed, [Case("invalid native result", "", MAX_U64)]),
-            "invalid result",
-        )
-    symbols = {Trap.BOUNDS.value: 4096, Trap.OVERFLOW.value: 8192}
-    good = Observation(
-        b"", terminal_signal=signal.SIGILL, delivery_signal=signal.SIGILL, pc=4096, instruction=UD2, signal_code=2
-    )
-    validate_trap(good, Trap.BOUNDS, symbols, "bounds observer")
-    for observed in (
-        replace(good, pc=8192),
-        replace(good, instruction=0x9090),
-        replace(good, signal_code=0),
-        replace(good, output=bytes(8)),
-        replace(good, terminal_signal=signal.SIGSEGV),
-        replace(good, delivery_signal=signal.SIGFPE),
-    ):
-        rejected(
-            lambda observed=observed: validate_trap(observed, Trap.BOUNDS, symbols, "invalid bounds fault"),
-            "invalid fault",
-        )
-    assembly = (
-        ".text\n.globl test\ntest:\n.Laurora_bounds_trap:\nud2\n"
-        ".Laurora_overflow_trap:\nud2\n"
-        '.section .note.GNU-stack,"",@progbits\n'
-    )
-    observed, actual_symbols = suite.runner.assemble(assembly, ["test"])
-    validate_trap(observed, Trap.BOUNDS, actual_symbols, "native exact bounds UD2")
-    rejected(lambda: validate_trap(observed, Trap.OVERFLOW, actual_symbols, "wrong site"), "wrong native site")
-    print("PASS packed harness: full-width results and exact bounds trap attribution", flush=True)
+    def finish(self):
+        return self.runner.finish()
 
 
 def array_cases(suite):
@@ -362,8 +272,11 @@ def byte_run_cases(suite):
         "if(replaced_data.at(i)!=u8(i+128)){return 7u64;}i=i+1;}return 42u64;",
         definitions=definitions,
         helpers=helpers,
+        inspect=compact_copy,
     )
-    assembly = (suite.runner.directory / "compiled.s").read_text()
+
+
+def compact_copy(assembly):
     require("movq $67, %rcx\n    cld\n    rep movsb" in assembly, "compact run stopped at representation padding")
     require("movq $80, %rcx\n    cld\n    rep movsb" not in assembly, "compact copy included representation padding")
 
@@ -754,41 +667,22 @@ def rejection_cases(suite):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", nargs="?", type=Path, default=ROOT / "build/aurorac")
-    parser.add_argument("--self-test-only", action="store_true")
-    parser.add_argument("--keep-going", action="store_true")
     parser.add_argument("--seed", type=int, default=13013)
     parser.add_argument("--steps", type=int, default=24)
     parser.add_argument("--timeout", type=float, default=10)
     args = parser.parse_args()
     require(args.timeout > 0 and 1 <= args.steps <= 128, "invalid timeout or steps")
-    compiler = args.compiler.resolve()
-    started = time.monotonic()
-    if not args.self_test_only:
-        print(
-            f"INFO packed values compiler={compiler} sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}",
-            flush=True,
-        )
-    with tempfile.TemporaryDirectory(prefix="aurora-packed-values-") as temporary:
-        suite = Suite(Path(temporary), compiler, args.timeout, args.keep_going)
-        self_tests(suite)
-        if args.self_test_only:
-            return
-        array_cases(suite)
-        byte_run_cases(suite)
-        scalar_and_layout_cases(suite)
-        small_call_cases(suite)
-        maximum_leaf_cases(suite)
-        empty_cases(suite)
-        model_cases(suite, args.seed, args.steps)
-        bounds_cases(suite)
-        rejection_cases(suite)
-        require(not suite.failures, f"{len(suite.failures)} packed-value cases failed")
-        print(
-            f"PASS packed values: {suite.count} native cases including {suite.traps} exact traps; "
-            f"{suite.rejections} rejection cases, each with absent and existing output; "
-            f"{time.monotonic() - started:.2f}s",
-            flush=True,
-        )
+    suite = Suite(args.compiler, args.timeout)
+    array_cases(suite)
+    byte_run_cases(suite)
+    scalar_and_layout_cases(suite)
+    small_call_cases(suite)
+    maximum_leaf_cases(suite)
+    empty_cases(suite)
+    model_cases(suite, args.seed, args.steps)
+    bounds_cases(suite)
+    rejection_cases(suite)
+    suite.finish()
 
 
 if __name__ == "__main__":

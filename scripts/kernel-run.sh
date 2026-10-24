@@ -14,23 +14,19 @@ usage() {
         'Specialized profiles: iommu-event, graphical-console, framebuffer, bar, ivrs, bar-*, ivrs-*.' \
         'Event/graphical: --smoke (default) or --build-only; their existing oracles own restoration.' \
         'Framebuffer defaults to one PNG preview: Not qualified evidence. --smoke/--full-smoke runs all cases.' \
-        'BAR/IVRS profiles require --output DIR, optionally --run-only IMAGE; families use existing receipt selectors.'
+        'BAR/IVRS: bar or ivrs runs the family; one mode takes --output DIR and --run-only IMAGE.'
 }
 profile_fail() { echo "FAIL: $label: $*" >&2; exit 1; }
 profile_blocked() { echo "BLOCKED: $label: $*" >&2; exit 2; }
 if [[ $# == 1 && ( "$1" == --help || "$1" == -h ) ]]; then usage; exit 0; fi
 profile="${1:-bios}"; label='protected console'
-# These adapters own their prerequisites, clocks, traces and success policy.
 case "$profile" in
-    bar|ivrs)
-        [[ $# == 1 || ( $# == 2 && "$2" == --smoke ) ]] || { usage >&2; exit 2; }
-        exec "$(dirname "$0")/kernel-uefi-$profile-all.sh" ;;
-    bar-state|bar-capture|bar-inherited|bar-read|bar-prepare|bar-write|bar-revoked|bar-alias|ivrs-default|ivrs-read|ivrs-write|ivrs-revoked|ivrs-missing)
+    bar|ivrs|bar-state|bar-capture|bar-inherited|bar-read|bar-prepare|bar-write|bar-revoked|bar-alias|ivrs-default|ivrs-read|ivrs-write|ivrs-revoked|ivrs-missing)
         shift
         if [[ ${1-} == --smoke ]]; then shift; fi
         [[ ${1-} != --console ]] || { usage >&2; exit 2; }
         cd "$(dirname "$0")/.."
-        exec python3 "scripts/kernel-uefi-${profile%%-*}-run.py" "$profile" "$@" ;;
+        exec python3 -B scripts/kernel-uefi-device-run.py "$profile" "$@" ;;
 esac
 if (( $# > 2 )) || [[ $# == 2 && -z "$2" ]]; then usage >&2; exit 2; fi
 action="${2:-}"; protected=false; strict=false; scratchpad=false
@@ -219,11 +215,6 @@ if [[ "$action" == --smoke ]]; then
     fi
     exit 0
 fi
-if [[ "$protected" == true ]]; then
-    python3 -B scripts/kernel_program_console_admission.py checked --mode "$mode" --build-dir "$image_dir"
-elif [[ "$scratchpad" == true ]]; then
-    python3 -B scripts/kernel-uefi-ipc-images.py --output "$image_dir" --ram-scratchpad-stack
-fi
 if [[ "$platform" == bios ]]; then
     options=(--image "$image_dir/aurora.img" --snapshot)
 else
@@ -234,14 +225,6 @@ mapfile -d '' -t qemu_argv < <(python3 -B scripts/qemu_transport.py argv --platf
 if (( ${#qemu_argv[@]} == 0 )); then
     if [[ "$protected" == true ]]; then profile_fail 'empty QEMU command'; fi
     echo 'FAIL: empty QEMU command' >&2; exit 2
-fi
-if [[ "$platform" == uefi ]]; then
-    clock=console; python_flags=()
-    if [[ "$protected" == true ]]; then clock=program-console-interactive; python_flags=(-B); fi
-    if [[ "$scratchpad" == true ]]; then clock=ram-scratchpad-console-interactive; python_flags=(-B); fi
-    python3 "${python_flags[@]}" scripts/kernel_uefi_console_clock.py "$qemu" "$UEFI_FIRMWARE_COMBINED" \
-        "$UEFI_FIRMWARE_CODE" "$UEFI_FIRMWARE_VARS" "${QEMU_DATA:-}" --esp "$image_dir/esp" -- "${qemu_argv[@]}" \
-        >"$image_dir/$clock.clock.json"
 fi
 if [[ "$scratchpad" == true ]]; then
     echo 'RAM scratchpad: put [text], get, help, status, exit; 49 printable ASCII bytes, 64 commands.'

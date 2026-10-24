@@ -78,8 +78,8 @@ DMA isolation. IOMMU activation and controller teardown require separate designs
 
 ## Gates
 
-`kernel-uefi-bar-tests.sh` runs profile/range/lifetime/reservation policy and strict
-serial/trace controls. `kernel-uefi-bar-all.sh` runs seven actual modes:
+`meson test -C build/meson --suite full` runs profile/range/lifetime/reservation policy and strict
+serial/trace controls. `scripts/kernel-run.sh bar` runs seven actual modes:
 stock state refusal, strict-profile refusal, inherited-controller refusal,
 clean read success, write fault, revoked-read fault and alias rejection.
 `AURORA_BAR_RECEIPTS` must name a fresh output directory. Set `AURORA_BAR_FIRMWARE`

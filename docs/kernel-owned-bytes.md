@@ -81,10 +81,7 @@ normal drop and failure-safe replacement resize. Replacement resize is specified
 From the repository root, with the usual GNU toolchain dependencies:
 
 ```sh
-./scripts/kernel-owned-bytes-tests.sh
-SANITIZE=1 ./scripts/kernel-owned-bytes-tests.sh
-python3 -B tests/kernel-uefi-owned-bytes-admission.py --self-test
-python3 -B tests/kernel-uefi-owned-bytes-stack.py --self-test
+meson test -C build/meson --suite full
 UEFI_MODE=owned-bytes ./scripts/kernel-uefi-build.sh
 ./scripts/kernel-uefi-smoke.sh owned-bytes
 ./scripts/kernel-uefi-smoke.sh normal

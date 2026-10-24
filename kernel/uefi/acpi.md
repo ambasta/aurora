@@ -6,8 +6,8 @@ source mapping, and then completes the ordinary protected payload. It neither
 programs APIC hardware nor evaluates AML, routes interrupts, starts processors,
 or provides a Framework device driver.
 
-Run `scripts/kernel-acpi-all.sh` with the same QEMU/OVMF variables documented in
-[the UEFI gate](README.md). `SANITIZE=1 scripts/kernel-acpi-tests.sh` runs hosted
+Run `meson test -C build/meson --suite guest-acpi` with the same QEMU/OVMF variables documented in
+[the UEFI gate](README.md). `meson test -C build/meson --suite full` runs hosted
 range/parser/window-policy tests. The existing 8 UEFI and 28 BIOS gates remain
 separate baseline checks. The two-CPU emulator profile discovers both firmware
 records; only the bootstrap processor executes our payload.

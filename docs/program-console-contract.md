@@ -369,18 +369,15 @@ python3 -B tests/kernel-program-console-pty.py --mode program-console --build-di
 ```
 
 Profile-local outputs leave the normal image untouched; the final normal command
-above verifies an actual restoration boot. Each PTY attempt retains the admitted
-report, clock command, raw transcript, stderr and metrics under
+above verifies an actual restoration boot. Each PTY attempt retains the raw
+transcript, stderr and metrics under
 `build/program-console-evidence`. Its result does not replace independent review,
 final-source `full` or affected guest gates. Missing tools/firmware are `BLOCKED`;
 invalid controls, build/admission errors, wrong exits and failed oracles are `FAIL`.
 Neither is a successful or skipped guest test.
 
-Compiler-free controls in `tests/kernel-program-admission.py` and
-`tests/kernel-program-console-entrypoints.py` cover artifact changes, profile
-selection, stale-report rejection and public build/check/PTY routing. The
-`diagnose` action produces stack diagnostics without issuing an admission report.
-These controls do not establish compiler, guest or physical hardware qualification.
+The image and stack checks run when the profile is built (see
+[development and qualification](developer-test-contract.md#kernel-image-checks)).
 
 ## Recovery and hostile-profile checks
 

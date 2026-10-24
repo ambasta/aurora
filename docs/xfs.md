@@ -285,10 +285,9 @@ report; any signal, compiler crash or timeout fails the test gate. Finite tests
 are not exhaustive enumeration of all 4096-bit headers or a total compiler proof.
 
 Some explicit product bounds are mathematically redundant after u32 fields or
-prior data-size bounds. Such guards are source-audited obligations, not falsely
-reported as killed single-guard mutations. Executable controls target observable
-nonredundant guards or clearly named guard families; surviving redundant
-mutations do not become claimed test coverage.
+prior data-size bounds; no test claims to observe them. Every observable guard
+has a header case in `tests/compiler/storage/xfs_geometry.py` whose complete
+report is pinned in the golden file beside it.
 
 ### Meaning of an admitted header
 

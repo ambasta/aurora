@@ -1,0 +1,2441 @@
+size, exact representation and zero initialization	zero bytes=ok
+u8 offset -9223372036854775808 value 0	out_of_range bytes=ok
+u8 offset -9223372036854775808 value 42	out_of_range bytes=ok
+u8 offset -9223372036854775808 value 255	out_of_range bytes=ok
+u8 offset -1 value 0	out_of_range bytes=ok
+u8 offset -1 value 42	out_of_range bytes=ok
+u8 offset -1 value 255	out_of_range bytes=ok
+u8 offset 0 value 0	success bytes=ok
+u8 offset 0 value 42	success bytes=ok
+u8 offset 0 value 255	success bytes=ok
+u8 offset 63 value 0	success bytes=ok
+u8 offset 63 value 42	success bytes=ok
+u8 offset 63 value 255	success bytes=ok
+u8 offset 64 value 0	out_of_range bytes=ok
+u8 offset 64 value 42	out_of_range bytes=ok
+u8 offset 64 value 255	out_of_range bytes=ok
+u8 offset 9223372036854775807 value 0	out_of_range bytes=ok
+u8 offset 9223372036854775807 value 42	out_of_range bytes=ok
+u8 offset 9223372036854775807 value 255	out_of_range bytes=ok
+ordinary copied argument and return remain independent	0x2a
+readonly reader interoperation le16	0xcdef
+readonly reader interoperation be16	0xcdef
+readonly reader interoperation le32	0x89abcdef
+readonly reader interoperation be32	0x89abcdef
+readonly reader interoperation le64	0x123456789abcdef
+readonly reader interoperation be64	0x123456789abcdef
+le16 value 0 offset 0	success bytes=ok
+le16 value 0 offset 1	success bytes=ok
+le16 value 0 offset 7	success bytes=ok
+le16 value 0 offset 62	success bytes=ok
+le16 value 1 offset 0	success bytes=ok
+le16 value 1 offset 1	success bytes=ok
+le16 value 1 offset 7	success bytes=ok
+le16 value 1 offset 62	success bytes=ok
+le16 value 32768 offset 0	success bytes=ok
+le16 value 32768 offset 1	success bytes=ok
+le16 value 32768 offset 7	success bytes=ok
+le16 value 32768 offset 62	success bytes=ok
+le16 value 65535 offset 0	success bytes=ok
+le16 value 65535 offset 1	success bytes=ok
+le16 value 65535 offset 7	success bytes=ok
+le16 value 65535 offset 62	success bytes=ok
+le16 value 52719 offset 0	success bytes=ok
+le16 value 52719 offset 1	success bytes=ok
+le16 value 52719 offset 7	success bytes=ok
+le16 value 52719 offset 62	success bytes=ok
+le16 value 11150 offset 0	success bytes=ok
+le16 value 11150 offset 1	success bytes=ok
+le16 value 11150 offset 7	success bytes=ok
+le16 value 11150 offset 62	success bytes=ok
+le16 value 48880 offset 0	success bytes=ok
+le16 value 48880 offset 1	success bytes=ok
+le16 value 48880 offset 7	success bytes=ok
+le16 value 48880 offset 62	success bytes=ok
+unchanged le16 offset -9223372036854775808 value 65535	out_of_range bytes=ok
+unchanged le16 offset -1 value 65535	out_of_range bytes=ok
+unchanged le16 offset 63 value 65535	out_of_range bytes=ok
+unchanged le16 offset 63 value 65535	out_of_range bytes=ok
+unchanged le16 offset 64 value 65535	out_of_range bytes=ok
+unchanged le16 offset 9223372036854775807 value 65535	out_of_range bytes=ok
+unchanged le16 offset -1 value 65536	out_of_range bytes=ok
+unchanged le16 offset -1 value 18446744073709551615	out_of_range bytes=ok
+unchanged le16 offset 0 value 65536	value_out_of_range bytes=ok
+unchanged le16 offset 0 value 18446744073709551615	value_out_of_range bytes=ok
+unchanged le16 offset 62 value 65536	value_out_of_range bytes=ok
+unchanged le16 offset 62 value 18446744073709551615	value_out_of_range bytes=ok
+unchanged le16 offset 64 value 65536	out_of_range bytes=ok
+unchanged le16 offset 64 value 18446744073709551615	out_of_range bytes=ok
+unchanged le16 offset 9223372036854775807 value 65536	out_of_range bytes=ok
+unchanged le16 offset 9223372036854775807 value 18446744073709551615	out_of_range bytes=ok
+be16 value 0 offset 0	success bytes=ok
+be16 value 0 offset 1	success bytes=ok
+be16 value 0 offset 7	success bytes=ok
+be16 value 0 offset 62	success bytes=ok
+be16 value 1 offset 0	success bytes=ok
+be16 value 1 offset 1	success bytes=ok
+be16 value 1 offset 7	success bytes=ok
+be16 value 1 offset 62	success bytes=ok
+be16 value 32768 offset 0	success bytes=ok
+be16 value 32768 offset 1	success bytes=ok
+be16 value 32768 offset 7	success bytes=ok
+be16 value 32768 offset 62	success bytes=ok
+be16 value 65535 offset 0	success bytes=ok
+be16 value 65535 offset 1	success bytes=ok
+be16 value 65535 offset 7	success bytes=ok
+be16 value 65535 offset 62	success bytes=ok
+be16 value 52719 offset 0	success bytes=ok
+be16 value 52719 offset 1	success bytes=ok
+be16 value 52719 offset 7	success bytes=ok
+be16 value 52719 offset 62	success bytes=ok
+be16 value 11150 offset 0	success bytes=ok
+be16 value 11150 offset 1	success bytes=ok
+be16 value 11150 offset 7	success bytes=ok
+be16 value 11150 offset 62	success bytes=ok
+be16 value 48880 offset 0	success bytes=ok
+be16 value 48880 offset 1	success bytes=ok
+be16 value 48880 offset 7	success bytes=ok
+be16 value 48880 offset 62	success bytes=ok
+unchanged be16 offset -9223372036854775808 value 65535	out_of_range bytes=ok
+unchanged be16 offset -1 value 65535	out_of_range bytes=ok
+unchanged be16 offset 63 value 65535	out_of_range bytes=ok
+unchanged be16 offset 63 value 65535	out_of_range bytes=ok
+unchanged be16 offset 64 value 65535	out_of_range bytes=ok
+unchanged be16 offset 9223372036854775807 value 65535	out_of_range bytes=ok
+unchanged be16 offset -1 value 65536	out_of_range bytes=ok
+unchanged be16 offset -1 value 18446744073709551615	out_of_range bytes=ok
+unchanged be16 offset 0 value 65536	value_out_of_range bytes=ok
+unchanged be16 offset 0 value 18446744073709551615	value_out_of_range bytes=ok
+unchanged be16 offset 62 value 65536	value_out_of_range bytes=ok
+unchanged be16 offset 62 value 18446744073709551615	value_out_of_range bytes=ok
+unchanged be16 offset 64 value 65536	out_of_range bytes=ok
+unchanged be16 offset 64 value 18446744073709551615	out_of_range bytes=ok
+unchanged be16 offset 9223372036854775807 value 65536	out_of_range bytes=ok
+unchanged be16 offset 9223372036854775807 value 18446744073709551615	out_of_range bytes=ok
+le32 value 0 offset 0	success bytes=ok
+le32 value 0 offset 1	success bytes=ok
+le32 value 0 offset 7	success bytes=ok
+le32 value 0 offset 60	success bytes=ok
+le32 value 1 offset 0	success bytes=ok
+le32 value 1 offset 1	success bytes=ok
+le32 value 1 offset 7	success bytes=ok
+le32 value 1 offset 60	success bytes=ok
+le32 value 2147483648 offset 0	success bytes=ok
+le32 value 2147483648 offset 1	success bytes=ok
+le32 value 2147483648 offset 7	success bytes=ok
+le32 value 2147483648 offset 60	success bytes=ok
+le32 value 4294967295 offset 0	success bytes=ok
+le32 value 4294967295 offset 1	success bytes=ok
+le32 value 4294967295 offset 7	success bytes=ok
+le32 value 4294967295 offset 60	success bytes=ok
+le32 value 2309737967 offset 0	success bytes=ok
+le32 value 2309737967 offset 1	success bytes=ok
+le32 value 2309737967 offset 7	success bytes=ok
+le32 value 2309737967 offset 60	success bytes=ok
+le32 value 326952633 offset 0	success bytes=ok
+le32 value 326952633 offset 1	success bytes=ok
+le32 value 326952633 offset 7	success bytes=ok
+le32 value 326952633 offset 60	success bytes=ok
+le32 value 2085780909 offset 0	success bytes=ok
+le32 value 2085780909 offset 1	success bytes=ok
+le32 value 2085780909 offset 7	success bytes=ok
+le32 value 2085780909 offset 60	success bytes=ok
+unchanged le32 offset -9223372036854775808 value 4294967295	out_of_range bytes=ok
+unchanged le32 offset -1 value 4294967295	out_of_range bytes=ok
+unchanged le32 offset 61 value 4294967295	out_of_range bytes=ok
+unchanged le32 offset 63 value 4294967295	out_of_range bytes=ok
+unchanged le32 offset 64 value 4294967295	out_of_range bytes=ok
+unchanged le32 offset 9223372036854775807 value 4294967295	out_of_range bytes=ok
+unchanged le32 offset -1 value 4294967296	out_of_range bytes=ok
+unchanged le32 offset -1 value 18446744073709551615	out_of_range bytes=ok
+unchanged le32 offset 0 value 4294967296	value_out_of_range bytes=ok
+unchanged le32 offset 0 value 18446744073709551615	value_out_of_range bytes=ok
+unchanged le32 offset 60 value 4294967296	value_out_of_range bytes=ok
+unchanged le32 offset 60 value 18446744073709551615	value_out_of_range bytes=ok
+unchanged le32 offset 64 value 4294967296	out_of_range bytes=ok
+unchanged le32 offset 64 value 18446744073709551615	out_of_range bytes=ok
+unchanged le32 offset 9223372036854775807 value 4294967296	out_of_range bytes=ok
+unchanged le32 offset 9223372036854775807 value 18446744073709551615	out_of_range bytes=ok
+be32 value 0 offset 0	success bytes=ok
+be32 value 0 offset 1	success bytes=ok
+be32 value 0 offset 7	success bytes=ok
+be32 value 0 offset 60	success bytes=ok
+be32 value 1 offset 0	success bytes=ok
+be32 value 1 offset 1	success bytes=ok
+be32 value 1 offset 7	success bytes=ok
+be32 value 1 offset 60	success bytes=ok
+be32 value 2147483648 offset 0	success bytes=ok
+be32 value 2147483648 offset 1	success bytes=ok
+be32 value 2147483648 offset 7	success bytes=ok
+be32 value 2147483648 offset 60	success bytes=ok
+be32 value 4294967295 offset 0	success bytes=ok
+be32 value 4294967295 offset 1	success bytes=ok
+be32 value 4294967295 offset 7	success bytes=ok
+be32 value 4294967295 offset 60	success bytes=ok
+be32 value 2309737967 offset 0	success bytes=ok
+be32 value 2309737967 offset 1	success bytes=ok
+be32 value 2309737967 offset 7	success bytes=ok
+be32 value 2309737967 offset 60	success bytes=ok
+be32 value 326952633 offset 0	success bytes=ok
+be32 value 326952633 offset 1	success bytes=ok
+be32 value 326952633 offset 7	success bytes=ok
+be32 value 326952633 offset 60	success bytes=ok
+be32 value 2085780909 offset 0	success bytes=ok
+be32 value 2085780909 offset 1	success bytes=ok
+be32 value 2085780909 offset 7	success bytes=ok
+be32 value 2085780909 offset 60	success bytes=ok
+unchanged be32 offset -9223372036854775808 value 4294967295	out_of_range bytes=ok
+unchanged be32 offset -1 value 4294967295	out_of_range bytes=ok
+unchanged be32 offset 61 value 4294967295	out_of_range bytes=ok
+unchanged be32 offset 63 value 4294967295	out_of_range bytes=ok
+unchanged be32 offset 64 value 4294967295	out_of_range bytes=ok
+unchanged be32 offset 9223372036854775807 value 4294967295	out_of_range bytes=ok
+unchanged be32 offset -1 value 4294967296	out_of_range bytes=ok
+unchanged be32 offset -1 value 18446744073709551615	out_of_range bytes=ok
+unchanged be32 offset 0 value 4294967296	value_out_of_range bytes=ok
+unchanged be32 offset 0 value 18446744073709551615	value_out_of_range bytes=ok
+unchanged be32 offset 60 value 4294967296	value_out_of_range bytes=ok
+unchanged be32 offset 60 value 18446744073709551615	value_out_of_range bytes=ok
+unchanged be32 offset 64 value 4294967296	out_of_range bytes=ok
+unchanged be32 offset 64 value 18446744073709551615	out_of_range bytes=ok
+unchanged be32 offset 9223372036854775807 value 4294967296	out_of_range bytes=ok
+unchanged be32 offset 9223372036854775807 value 18446744073709551615	out_of_range bytes=ok
+le64 value 0 offset 0	success bytes=ok
+le64 value 0 offset 1	success bytes=ok
+le64 value 0 offset 7	success bytes=ok
+le64 value 0 offset 56	success bytes=ok
+le64 value 1 offset 0	success bytes=ok
+le64 value 1 offset 1	success bytes=ok
+le64 value 1 offset 7	success bytes=ok
+le64 value 1 offset 56	success bytes=ok
+le64 value 9223372036854775808 offset 0	success bytes=ok
+le64 value 9223372036854775808 offset 1	success bytes=ok
+le64 value 9223372036854775808 offset 7	success bytes=ok
+le64 value 9223372036854775808 offset 56	success bytes=ok
+le64 value 18446744073709551615 offset 0	success bytes=ok
+le64 value 18446744073709551615 offset 1	success bytes=ok
+le64 value 18446744073709551615 offset 7	success bytes=ok
+le64 value 18446744073709551615 offset 56	success bytes=ok
+le64 value 81985529216486895 offset 0	success bytes=ok
+le64 value 81985529216486895 offset 1	success bytes=ok
+le64 value 81985529216486895 offset 7	success bytes=ok
+le64 value 81985529216486895 offset 56	success bytes=ok
+le64 value 17210176676333031116 offset 0	success bytes=ok
+le64 value 17210176676333031116 offset 1	success bytes=ok
+le64 value 17210176676333031116 offset 7	success bytes=ok
+le64 value 17210176676333031116 offset 56	success bytes=ok
+le64 value 2925110250427462627 offset 0	success bytes=ok
+le64 value 2925110250427462627 offset 1	success bytes=ok
+le64 value 2925110250427462627 offset 7	success bytes=ok
+le64 value 2925110250427462627 offset 56	success bytes=ok
+unchanged le64 offset -9223372036854775808 value 18446744073709551615	out_of_range bytes=ok
+unchanged le64 offset -1 value 18446744073709551615	out_of_range bytes=ok
+unchanged le64 offset 57 value 18446744073709551615	out_of_range bytes=ok
+unchanged le64 offset 63 value 18446744073709551615	out_of_range bytes=ok
+unchanged le64 offset 64 value 18446744073709551615	out_of_range bytes=ok
+unchanged le64 offset 9223372036854775807 value 18446744073709551615	out_of_range bytes=ok
+be64 value 0 offset 0	success bytes=ok
+be64 value 0 offset 1	success bytes=ok
+be64 value 0 offset 7	success bytes=ok
+be64 value 0 offset 56	success bytes=ok
+be64 value 1 offset 0	success bytes=ok
+be64 value 1 offset 1	success bytes=ok
+be64 value 1 offset 7	success bytes=ok
+be64 value 1 offset 56	success bytes=ok
+be64 value 9223372036854775808 offset 0	success bytes=ok
+be64 value 9223372036854775808 offset 1	success bytes=ok
+be64 value 9223372036854775808 offset 7	success bytes=ok
+be64 value 9223372036854775808 offset 56	success bytes=ok
+be64 value 18446744073709551615 offset 0	success bytes=ok
+be64 value 18446744073709551615 offset 1	success bytes=ok
+be64 value 18446744073709551615 offset 7	success bytes=ok
+be64 value 18446744073709551615 offset 56	success bytes=ok
+be64 value 81985529216486895 offset 0	success bytes=ok
+be64 value 81985529216486895 offset 1	success bytes=ok
+be64 value 81985529216486895 offset 7	success bytes=ok
+be64 value 81985529216486895 offset 56	success bytes=ok
+be64 value 17210176676333031116 offset 0	success bytes=ok
+be64 value 17210176676333031116 offset 1	success bytes=ok
+be64 value 17210176676333031116 offset 7	success bytes=ok
+be64 value 17210176676333031116 offset 56	success bytes=ok
+be64 value 2925110250427462627 offset 0	success bytes=ok
+be64 value 2925110250427462627 offset 1	success bytes=ok
+be64 value 2925110250427462627 offset 7	success bytes=ok
+be64 value 2925110250427462627 offset 56	success bytes=ok
+unchanged be64 offset -9223372036854775808 value 18446744073709551615	out_of_range bytes=ok
+unchanged be64 offset -1 value 18446744073709551615	out_of_range bytes=ok
+unchanged be64 offset 57 value 18446744073709551615	out_of_range bytes=ok
+unchanged be64 offset 63 value 18446744073709551615	out_of_range bytes=ok
+unchanged be64 offset 64 value 18446744073709551615	out_of_range bytes=ok
+unchanged be64 offset 9223372036854775807 value 18446744073709551615	out_of_range bytes=ok
+overlapping sequence 0	success out_of_range success out_of_range value_out_of_range success out_of_range success out_of_range out_of_range success out_of_range out_of_range success success out_of_range out_of_range out_of_range success out_of_range bytes=ok
+overlapping sequence 1	success out_of_range out_of_range success out_of_range success success success out_of_range value_out_of_range success success out_of_range value_out_of_range out_of_range success out_of_range success success out_of_range bytes=ok
+overlapping sequence 2	success success success success success out_of_range success out_of_range out_of_range success out_of_range out_of_range success success success success success out_of_range out_of_range out_of_range bytes=ok
+overlapping sequence 3	success out_of_range success value_out_of_range success value_out_of_range out_of_range success out_of_range success out_of_range out_of_range success success success success success success out_of_range success bytes=ok
+overlapping sequence 4	out_of_range success value_out_of_range success value_out_of_range value_out_of_range success success success out_of_range out_of_range success out_of_range success value_out_of_range success success out_of_range success success bytes=ok
+overlapping sequence 5	success out_of_range out_of_range success success out_of_range out_of_range out_of_range out_of_range success success success success out_of_range success success success out_of_range success success bytes=ok
+overlapping sequence 6	value_out_of_range value_out_of_range success success out_of_range success out_of_range success success success success success success out_of_range success value_out_of_range success out_of_range success value_out_of_range bytes=ok
+overlapping sequence 7	success out_of_range success value_out_of_range success value_out_of_range out_of_range out_of_range success out_of_range success success success success success out_of_range value_out_of_range out_of_range success out_of_range bytes=ok
+independent byte 0 value 0	success bytes=ok
+independent byte 0 value 1	success bytes=ok
+independent byte 0 value 128	success bytes=ok
+independent byte 0 value 255	success bytes=ok
+independent byte 1 value 0	success bytes=ok
+independent byte 1 value 1	success bytes=ok
+independent byte 1 value 128	success bytes=ok
+independent byte 1 value 255	success bytes=ok
+independent byte 2 value 0	success bytes=ok
+independent byte 2 value 1	success bytes=ok
+independent byte 2 value 128	success bytes=ok
+independent byte 2 value 255	success bytes=ok
+independent byte 3 value 0	success bytes=ok
+independent byte 3 value 1	success bytes=ok
+independent byte 3 value 128	success bytes=ok
+independent byte 3 value 255	success bytes=ok
+independent byte 4 value 0	success bytes=ok
+independent byte 4 value 1	success bytes=ok
+independent byte 4 value 128	success bytes=ok
+independent byte 4 value 255	success bytes=ok
+independent byte 5 value 0	success bytes=ok
+independent byte 5 value 1	success bytes=ok
+independent byte 5 value 128	success bytes=ok
+independent byte 5 value 255	success bytes=ok
+independent byte 6 value 0	success bytes=ok
+independent byte 6 value 1	success bytes=ok
+independent byte 6 value 128	success bytes=ok
+independent byte 6 value 255	success bytes=ok
+independent byte 7 value 0	success bytes=ok
+independent byte 7 value 1	success bytes=ok
+independent byte 7 value 128	success bytes=ok
+independent byte 7 value 255	success bytes=ok
+independent byte 8 value 0	success bytes=ok
+independent byte 8 value 1	success bytes=ok
+independent byte 8 value 128	success bytes=ok
+independent byte 8 value 255	success bytes=ok
+independent byte 9 value 0	success bytes=ok
+independent byte 9 value 1	success bytes=ok
+independent byte 9 value 128	success bytes=ok
+independent byte 9 value 255	success bytes=ok
+independent byte 10 value 0	success bytes=ok
+independent byte 10 value 1	success bytes=ok
+independent byte 10 value 128	success bytes=ok
+independent byte 10 value 255	success bytes=ok
+independent byte 11 value 0	success bytes=ok
+independent byte 11 value 1	success bytes=ok
+independent byte 11 value 128	success bytes=ok
+independent byte 11 value 255	success bytes=ok
+independent byte 12 value 0	success bytes=ok
+independent byte 12 value 1	success bytes=ok
+independent byte 12 value 128	success bytes=ok
+independent byte 12 value 255	success bytes=ok
+independent byte 13 value 0	success bytes=ok
+independent byte 13 value 1	success bytes=ok
+independent byte 13 value 128	success bytes=ok
+independent byte 13 value 255	success bytes=ok
+independent byte 14 value 0	success bytes=ok
+independent byte 14 value 1	success bytes=ok
+independent byte 14 value 128	success bytes=ok
+independent byte 14 value 255	success bytes=ok
+independent byte 15 value 0	success bytes=ok
+independent byte 15 value 1	success bytes=ok
+independent byte 15 value 128	success bytes=ok
+independent byte 15 value 255	success bytes=ok
+independent byte 16 value 0	success bytes=ok
+independent byte 16 value 1	success bytes=ok
+independent byte 16 value 128	success bytes=ok
+independent byte 16 value 255	success bytes=ok
+independent byte 17 value 0	success bytes=ok
+independent byte 17 value 1	success bytes=ok
+independent byte 17 value 128	success bytes=ok
+independent byte 17 value 255	success bytes=ok
+independent byte 18 value 0	success bytes=ok
+independent byte 18 value 1	success bytes=ok
+independent byte 18 value 128	success bytes=ok
+independent byte 18 value 255	success bytes=ok
+independent byte 19 value 0	success bytes=ok
+independent byte 19 value 1	success bytes=ok
+independent byte 19 value 128	success bytes=ok
+independent byte 19 value 255	success bytes=ok
+independent byte 20 value 0	success bytes=ok
+independent byte 20 value 1	success bytes=ok
+independent byte 20 value 128	success bytes=ok
+independent byte 20 value 255	success bytes=ok
+independent byte 21 value 0	success bytes=ok
+independent byte 21 value 1	success bytes=ok
+independent byte 21 value 128	success bytes=ok
+independent byte 21 value 255	success bytes=ok
+independent byte 22 value 0	success bytes=ok
+independent byte 22 value 1	success bytes=ok
+independent byte 22 value 128	success bytes=ok
+independent byte 22 value 255	success bytes=ok
+independent byte 23 value 0	success bytes=ok
+independent byte 23 value 1	success bytes=ok
+independent byte 23 value 128	success bytes=ok
+independent byte 23 value 255	success bytes=ok
+independent byte 24 value 0	success bytes=ok
+independent byte 24 value 1	success bytes=ok
+independent byte 24 value 128	success bytes=ok
+independent byte 24 value 255	success bytes=ok
+independent byte 25 value 0	success bytes=ok
+independent byte 25 value 1	success bytes=ok
+independent byte 25 value 128	success bytes=ok
+independent byte 25 value 255	success bytes=ok
+independent byte 26 value 0	success bytes=ok
+independent byte 26 value 1	success bytes=ok
+independent byte 26 value 128	success bytes=ok
+independent byte 26 value 255	success bytes=ok
+independent byte 27 value 0	success bytes=ok
+independent byte 27 value 1	success bytes=ok
+independent byte 27 value 128	success bytes=ok
+independent byte 27 value 255	success bytes=ok
+independent byte 28 value 0	success bytes=ok
+independent byte 28 value 1	success bytes=ok
+independent byte 28 value 128	success bytes=ok
+independent byte 28 value 255	success bytes=ok
+independent byte 29 value 0	success bytes=ok
+independent byte 29 value 1	success bytes=ok
+independent byte 29 value 128	success bytes=ok
+independent byte 29 value 255	success bytes=ok
+independent byte 30 value 0	success bytes=ok
+independent byte 30 value 1	success bytes=ok
+independent byte 30 value 128	success bytes=ok
+independent byte 30 value 255	success bytes=ok
+independent byte 31 value 0	success bytes=ok
+independent byte 31 value 1	success bytes=ok
+independent byte 31 value 128	success bytes=ok
+independent byte 31 value 255	success bytes=ok
+independent byte 32 value 0	success bytes=ok
+independent byte 32 value 1	success bytes=ok
+independent byte 32 value 128	success bytes=ok
+independent byte 32 value 255	success bytes=ok
+independent byte 33 value 0	success bytes=ok
+independent byte 33 value 1	success bytes=ok
+independent byte 33 value 128	success bytes=ok
+independent byte 33 value 255	success bytes=ok
+independent byte 34 value 0	success bytes=ok
+independent byte 34 value 1	success bytes=ok
+independent byte 34 value 128	success bytes=ok
+independent byte 34 value 255	success bytes=ok
+independent byte 35 value 0	success bytes=ok
+independent byte 35 value 1	success bytes=ok
+independent byte 35 value 128	success bytes=ok
+independent byte 35 value 255	success bytes=ok
+independent byte 36 value 0	success bytes=ok
+independent byte 36 value 1	success bytes=ok
+independent byte 36 value 128	success bytes=ok
+independent byte 36 value 255	success bytes=ok
+independent byte 37 value 0	success bytes=ok
+independent byte 37 value 1	success bytes=ok
+independent byte 37 value 128	success bytes=ok
+independent byte 37 value 255	success bytes=ok
+independent byte 38 value 0	success bytes=ok
+independent byte 38 value 1	success bytes=ok
+independent byte 38 value 128	success bytes=ok
+independent byte 38 value 255	success bytes=ok
+independent byte 39 value 0	success bytes=ok
+independent byte 39 value 1	success bytes=ok
+independent byte 39 value 128	success bytes=ok
+independent byte 39 value 255	success bytes=ok
+independent byte 40 value 0	success bytes=ok
+independent byte 40 value 1	success bytes=ok
+independent byte 40 value 128	success bytes=ok
+independent byte 40 value 255	success bytes=ok
+independent byte 41 value 0	success bytes=ok
+independent byte 41 value 1	success bytes=ok
+independent byte 41 value 128	success bytes=ok
+independent byte 41 value 255	success bytes=ok
+independent byte 42 value 0	success bytes=ok
+independent byte 42 value 1	success bytes=ok
+independent byte 42 value 128	success bytes=ok
+independent byte 42 value 255	success bytes=ok
+independent byte 43 value 0	success bytes=ok
+independent byte 43 value 1	success bytes=ok
+independent byte 43 value 128	success bytes=ok
+independent byte 43 value 255	success bytes=ok
+independent byte 44 value 0	success bytes=ok
+independent byte 44 value 1	success bytes=ok
+independent byte 44 value 128	success bytes=ok
+independent byte 44 value 255	success bytes=ok
+independent byte 45 value 0	success bytes=ok
+independent byte 45 value 1	success bytes=ok
+independent byte 45 value 128	success bytes=ok
+independent byte 45 value 255	success bytes=ok
+independent byte 46 value 0	success bytes=ok
+independent byte 46 value 1	success bytes=ok
+independent byte 46 value 128	success bytes=ok
+independent byte 46 value 255	success bytes=ok
+independent byte 47 value 0	success bytes=ok
+independent byte 47 value 1	success bytes=ok
+independent byte 47 value 128	success bytes=ok
+independent byte 47 value 255	success bytes=ok
+independent byte 48 value 0	success bytes=ok
+independent byte 48 value 1	success bytes=ok
+independent byte 48 value 128	success bytes=ok
+independent byte 48 value 255	success bytes=ok
+independent byte 49 value 0	success bytes=ok
+independent byte 49 value 1	success bytes=ok
+independent byte 49 value 128	success bytes=ok
+independent byte 49 value 255	success bytes=ok
+independent byte 50 value 0	success bytes=ok
+independent byte 50 value 1	success bytes=ok
+independent byte 50 value 128	success bytes=ok
+independent byte 50 value 255	success bytes=ok
+independent byte 51 value 0	success bytes=ok
+independent byte 51 value 1	success bytes=ok
+independent byte 51 value 128	success bytes=ok
+independent byte 51 value 255	success bytes=ok
+independent byte 52 value 0	success bytes=ok
+independent byte 52 value 1	success bytes=ok
+independent byte 52 value 128	success bytes=ok
+independent byte 52 value 255	success bytes=ok
+independent byte 53 value 0	success bytes=ok
+independent byte 53 value 1	success bytes=ok
+independent byte 53 value 128	success bytes=ok
+independent byte 53 value 255	success bytes=ok
+independent byte 54 value 0	success bytes=ok
+independent byte 54 value 1	success bytes=ok
+independent byte 54 value 128	success bytes=ok
+independent byte 54 value 255	success bytes=ok
+independent byte 55 value 0	success bytes=ok
+independent byte 55 value 1	success bytes=ok
+independent byte 55 value 128	success bytes=ok
+independent byte 55 value 255	success bytes=ok
+independent byte 56 value 0	success bytes=ok
+independent byte 56 value 1	success bytes=ok
+independent byte 56 value 128	success bytes=ok
+independent byte 56 value 255	success bytes=ok
+independent byte 57 value 0	success bytes=ok
+independent byte 57 value 1	success bytes=ok
+independent byte 57 value 128	success bytes=ok
+independent byte 57 value 255	success bytes=ok
+independent byte 58 value 0	success bytes=ok
+independent byte 58 value 1	success bytes=ok
+independent byte 58 value 128	success bytes=ok
+independent byte 58 value 255	success bytes=ok
+independent byte 59 value 0	success bytes=ok
+independent byte 59 value 1	success bytes=ok
+independent byte 59 value 128	success bytes=ok
+independent byte 59 value 255	success bytes=ok
+independent byte 60 value 0	success bytes=ok
+independent byte 60 value 1	success bytes=ok
+independent byte 60 value 128	success bytes=ok
+independent byte 60 value 255	success bytes=ok
+independent byte 61 value 0	success bytes=ok
+independent byte 61 value 1	success bytes=ok
+independent byte 61 value 128	success bytes=ok
+independent byte 61 value 255	success bytes=ok
+independent byte 62 value 0	success bytes=ok
+independent byte 62 value 1	success bytes=ok
+independent byte 62 value 128	success bytes=ok
+independent byte 62 value 255	success bytes=ok
+independent byte 63 value 0	success bytes=ok
+independent byte 63 value 1	success bytes=ok
+independent byte 63 value 128	success bytes=ok
+independent byte 63 value 255	success bytes=ok
+signed read/write boundary -9223372036854775808 preserves all bytes	out_of_range out_of_range:42:0xffffffffffffffff bytes=ok
+signed read/write boundary -1 preserves all bytes	out_of_range out_of_range:42:0xffffffffffffffff bytes=ok
+signed read/write boundary 64 preserves all bytes	out_of_range out_of_range:42:0xffffffffffffffff bytes=ok
+signed read/write boundary 9223372036854775807 preserves all bytes	out_of_range out_of_range:42:0xffffffffffffffff bytes=ok
+failed byte reports mask nonzero u64 payloads	0xffffffffffffffff
+copied byte report survives source mutation	0x2a
+copied values and function boundaries preserve all bytes	0x2a
+copied record codecs preserve independent wire bytes	0x2a
+zero initialization and exact sector layout	zero bytes=ok
+byte 0 is independently writable	success bytes=ok
+byte 1 is independently writable	success bytes=ok
+byte 2 is independently writable	success bytes=ok
+byte 3 is independently writable	success bytes=ok
+byte 4 is independently writable	success bytes=ok
+byte 5 is independently writable	success bytes=ok
+byte 6 is independently writable	success bytes=ok
+byte 7 is independently writable	success bytes=ok
+byte 8 is independently writable	success bytes=ok
+byte 9 is independently writable	success bytes=ok
+byte 10 is independently writable	success bytes=ok
+byte 11 is independently writable	success bytes=ok
+byte 12 is independently writable	success bytes=ok
+byte 13 is independently writable	success bytes=ok
+byte 14 is independently writable	success bytes=ok
+byte 15 is independently writable	success bytes=ok
+byte 16 is independently writable	success bytes=ok
+byte 17 is independently writable	success bytes=ok
+byte 18 is independently writable	success bytes=ok
+byte 19 is independently writable	success bytes=ok
+byte 20 is independently writable	success bytes=ok
+byte 21 is independently writable	success bytes=ok
+byte 22 is independently writable	success bytes=ok
+byte 23 is independently writable	success bytes=ok
+byte 24 is independently writable	success bytes=ok
+byte 25 is independently writable	success bytes=ok
+byte 26 is independently writable	success bytes=ok
+byte 27 is independently writable	success bytes=ok
+byte 28 is independently writable	success bytes=ok
+byte 29 is independently writable	success bytes=ok
+byte 30 is independently writable	success bytes=ok
+byte 31 is independently writable	success bytes=ok
+byte 32 is independently writable	success bytes=ok
+byte 33 is independently writable	success bytes=ok
+byte 34 is independently writable	success bytes=ok
+byte 35 is independently writable	success bytes=ok
+byte 36 is independently writable	success bytes=ok
+byte 37 is independently writable	success bytes=ok
+byte 38 is independently writable	success bytes=ok
+byte 39 is independently writable	success bytes=ok
+byte 40 is independently writable	success bytes=ok
+byte 41 is independently writable	success bytes=ok
+byte 42 is independently writable	success bytes=ok
+byte 43 is independently writable	success bytes=ok
+byte 44 is independently writable	success bytes=ok
+byte 45 is independently writable	success bytes=ok
+byte 46 is independently writable	success bytes=ok
+byte 47 is independently writable	success bytes=ok
+byte 48 is independently writable	success bytes=ok
+byte 49 is independently writable	success bytes=ok
+byte 50 is independently writable	success bytes=ok
+byte 51 is independently writable	success bytes=ok
+byte 52 is independently writable	success bytes=ok
+byte 53 is independently writable	success bytes=ok
+byte 54 is independently writable	success bytes=ok
+byte 55 is independently writable	success bytes=ok
+byte 56 is independently writable	success bytes=ok
+byte 57 is independently writable	success bytes=ok
+byte 58 is independently writable	success bytes=ok
+byte 59 is independently writable	success bytes=ok
+byte 60 is independently writable	success bytes=ok
+byte 61 is independently writable	success bytes=ok
+byte 62 is independently writable	success bytes=ok
+byte 63 is independently writable	success bytes=ok
+byte 64 is independently writable	success bytes=ok
+byte 65 is independently writable	success bytes=ok
+byte 66 is independently writable	success bytes=ok
+byte 67 is independently writable	success bytes=ok
+byte 68 is independently writable	success bytes=ok
+byte 69 is independently writable	success bytes=ok
+byte 70 is independently writable	success bytes=ok
+byte 71 is independently writable	success bytes=ok
+byte 72 is independently writable	success bytes=ok
+byte 73 is independently writable	success bytes=ok
+byte 74 is independently writable	success bytes=ok
+byte 75 is independently writable	success bytes=ok
+byte 76 is independently writable	success bytes=ok
+byte 77 is independently writable	success bytes=ok
+byte 78 is independently writable	success bytes=ok
+byte 79 is independently writable	success bytes=ok
+byte 80 is independently writable	success bytes=ok
+byte 81 is independently writable	success bytes=ok
+byte 82 is independently writable	success bytes=ok
+byte 83 is independently writable	success bytes=ok
+byte 84 is independently writable	success bytes=ok
+byte 85 is independently writable	success bytes=ok
+byte 86 is independently writable	success bytes=ok
+byte 87 is independently writable	success bytes=ok
+byte 88 is independently writable	success bytes=ok
+byte 89 is independently writable	success bytes=ok
+byte 90 is independently writable	success bytes=ok
+byte 91 is independently writable	success bytes=ok
+byte 92 is independently writable	success bytes=ok
+byte 93 is independently writable	success bytes=ok
+byte 94 is independently writable	success bytes=ok
+byte 95 is independently writable	success bytes=ok
+byte 96 is independently writable	success bytes=ok
+byte 97 is independently writable	success bytes=ok
+byte 98 is independently writable	success bytes=ok
+byte 99 is independently writable	success bytes=ok
+byte 100 is independently writable	success bytes=ok
+byte 101 is independently writable	success bytes=ok
+byte 102 is independently writable	success bytes=ok
+byte 103 is independently writable	success bytes=ok
+byte 104 is independently writable	success bytes=ok
+byte 105 is independently writable	success bytes=ok
+byte 106 is independently writable	success bytes=ok
+byte 107 is independently writable	success bytes=ok
+byte 108 is independently writable	success bytes=ok
+byte 109 is independently writable	success bytes=ok
+byte 110 is independently writable	success bytes=ok
+byte 111 is independently writable	success bytes=ok
+byte 112 is independently writable	success bytes=ok
+byte 113 is independently writable	success bytes=ok
+byte 114 is independently writable	success bytes=ok
+byte 115 is independently writable	success bytes=ok
+byte 116 is independently writable	success bytes=ok
+byte 117 is independently writable	success bytes=ok
+byte 118 is independently writable	success bytes=ok
+byte 119 is independently writable	success bytes=ok
+byte 120 is independently writable	success bytes=ok
+byte 121 is independently writable	success bytes=ok
+byte 122 is independently writable	success bytes=ok
+byte 123 is independently writable	success bytes=ok
+byte 124 is independently writable	success bytes=ok
+byte 125 is independently writable	success bytes=ok
+byte 126 is independently writable	success bytes=ok
+byte 127 is independently writable	success bytes=ok
+byte 128 is independently writable	success bytes=ok
+byte 129 is independently writable	success bytes=ok
+byte 130 is independently writable	success bytes=ok
+byte 131 is independently writable	success bytes=ok
+byte 132 is independently writable	success bytes=ok
+byte 133 is independently writable	success bytes=ok
+byte 134 is independently writable	success bytes=ok
+byte 135 is independently writable	success bytes=ok
+byte 136 is independently writable	success bytes=ok
+byte 137 is independently writable	success bytes=ok
+byte 138 is independently writable	success bytes=ok
+byte 139 is independently writable	success bytes=ok
+byte 140 is independently writable	success bytes=ok
+byte 141 is independently writable	success bytes=ok
+byte 142 is independently writable	success bytes=ok
+byte 143 is independently writable	success bytes=ok
+byte 144 is independently writable	success bytes=ok
+byte 145 is independently writable	success bytes=ok
+byte 146 is independently writable	success bytes=ok
+byte 147 is independently writable	success bytes=ok
+byte 148 is independently writable	success bytes=ok
+byte 149 is independently writable	success bytes=ok
+byte 150 is independently writable	success bytes=ok
+byte 151 is independently writable	success bytes=ok
+byte 152 is independently writable	success bytes=ok
+byte 153 is independently writable	success bytes=ok
+byte 154 is independently writable	success bytes=ok
+byte 155 is independently writable	success bytes=ok
+byte 156 is independently writable	success bytes=ok
+byte 157 is independently writable	success bytes=ok
+byte 158 is independently writable	success bytes=ok
+byte 159 is independently writable	success bytes=ok
+byte 160 is independently writable	success bytes=ok
+byte 161 is independently writable	success bytes=ok
+byte 162 is independently writable	success bytes=ok
+byte 163 is independently writable	success bytes=ok
+byte 164 is independently writable	success bytes=ok
+byte 165 is independently writable	success bytes=ok
+byte 166 is independently writable	success bytes=ok
+byte 167 is independently writable	success bytes=ok
+byte 168 is independently writable	success bytes=ok
+byte 169 is independently writable	success bytes=ok
+byte 170 is independently writable	success bytes=ok
+byte 171 is independently writable	success bytes=ok
+byte 172 is independently writable	success bytes=ok
+byte 173 is independently writable	success bytes=ok
+byte 174 is independently writable	success bytes=ok
+byte 175 is independently writable	success bytes=ok
+byte 176 is independently writable	success bytes=ok
+byte 177 is independently writable	success bytes=ok
+byte 178 is independently writable	success bytes=ok
+byte 179 is independently writable	success bytes=ok
+byte 180 is independently writable	success bytes=ok
+byte 181 is independently writable	success bytes=ok
+byte 182 is independently writable	success bytes=ok
+byte 183 is independently writable	success bytes=ok
+byte 184 is independently writable	success bytes=ok
+byte 185 is independently writable	success bytes=ok
+byte 186 is independently writable	success bytes=ok
+byte 187 is independently writable	success bytes=ok
+byte 188 is independently writable	success bytes=ok
+byte 189 is independently writable	success bytes=ok
+byte 190 is independently writable	success bytes=ok
+byte 191 is independently writable	success bytes=ok
+byte 192 is independently writable	success bytes=ok
+byte 193 is independently writable	success bytes=ok
+byte 194 is independently writable	success bytes=ok
+byte 195 is independently writable	success bytes=ok
+byte 196 is independently writable	success bytes=ok
+byte 197 is independently writable	success bytes=ok
+byte 198 is independently writable	success bytes=ok
+byte 199 is independently writable	success bytes=ok
+byte 200 is independently writable	success bytes=ok
+byte 201 is independently writable	success bytes=ok
+byte 202 is independently writable	success bytes=ok
+byte 203 is independently writable	success bytes=ok
+byte 204 is independently writable	success bytes=ok
+byte 205 is independently writable	success bytes=ok
+byte 206 is independently writable	success bytes=ok
+byte 207 is independently writable	success bytes=ok
+byte 208 is independently writable	success bytes=ok
+byte 209 is independently writable	success bytes=ok
+byte 210 is independently writable	success bytes=ok
+byte 211 is independently writable	success bytes=ok
+byte 212 is independently writable	success bytes=ok
+byte 213 is independently writable	success bytes=ok
+byte 214 is independently writable	success bytes=ok
+byte 215 is independently writable	success bytes=ok
+byte 216 is independently writable	success bytes=ok
+byte 217 is independently writable	success bytes=ok
+byte 218 is independently writable	success bytes=ok
+byte 219 is independently writable	success bytes=ok
+byte 220 is independently writable	success bytes=ok
+byte 221 is independently writable	success bytes=ok
+byte 222 is independently writable	success bytes=ok
+byte 223 is independently writable	success bytes=ok
+byte 224 is independently writable	success bytes=ok
+byte 225 is independently writable	success bytes=ok
+byte 226 is independently writable	success bytes=ok
+byte 227 is independently writable	success bytes=ok
+byte 228 is independently writable	success bytes=ok
+byte 229 is independently writable	success bytes=ok
+byte 230 is independently writable	success bytes=ok
+byte 231 is independently writable	success bytes=ok
+byte 232 is independently writable	success bytes=ok
+byte 233 is independently writable	success bytes=ok
+byte 234 is independently writable	success bytes=ok
+byte 235 is independently writable	success bytes=ok
+byte 236 is independently writable	success bytes=ok
+byte 237 is independently writable	success bytes=ok
+byte 238 is independently writable	success bytes=ok
+byte 239 is independently writable	success bytes=ok
+byte 240 is independently writable	success bytes=ok
+byte 241 is independently writable	success bytes=ok
+byte 242 is independently writable	success bytes=ok
+byte 243 is independently writable	success bytes=ok
+byte 244 is independently writable	success bytes=ok
+byte 245 is independently writable	success bytes=ok
+byte 246 is independently writable	success bytes=ok
+byte 247 is independently writable	success bytes=ok
+byte 248 is independently writable	success bytes=ok
+byte 249 is independently writable	success bytes=ok
+byte 250 is independently writable	success bytes=ok
+byte 251 is independently writable	success bytes=ok
+byte 252 is independently writable	success bytes=ok
+byte 253 is independently writable	success bytes=ok
+byte 254 is independently writable	success bytes=ok
+byte 255 is independently writable	success bytes=ok
+byte 256 is independently writable	success bytes=ok
+byte 257 is independently writable	success bytes=ok
+byte 258 is independently writable	success bytes=ok
+byte 259 is independently writable	success bytes=ok
+byte 260 is independently writable	success bytes=ok
+byte 261 is independently writable	success bytes=ok
+byte 262 is independently writable	success bytes=ok
+byte 263 is independently writable	success bytes=ok
+byte 264 is independently writable	success bytes=ok
+byte 265 is independently writable	success bytes=ok
+byte 266 is independently writable	success bytes=ok
+byte 267 is independently writable	success bytes=ok
+byte 268 is independently writable	success bytes=ok
+byte 269 is independently writable	success bytes=ok
+byte 270 is independently writable	success bytes=ok
+byte 271 is independently writable	success bytes=ok
+byte 272 is independently writable	success bytes=ok
+byte 273 is independently writable	success bytes=ok
+byte 274 is independently writable	success bytes=ok
+byte 275 is independently writable	success bytes=ok
+byte 276 is independently writable	success bytes=ok
+byte 277 is independently writable	success bytes=ok
+byte 278 is independently writable	success bytes=ok
+byte 279 is independently writable	success bytes=ok
+byte 280 is independently writable	success bytes=ok
+byte 281 is independently writable	success bytes=ok
+byte 282 is independently writable	success bytes=ok
+byte 283 is independently writable	success bytes=ok
+byte 284 is independently writable	success bytes=ok
+byte 285 is independently writable	success bytes=ok
+byte 286 is independently writable	success bytes=ok
+byte 287 is independently writable	success bytes=ok
+byte 288 is independently writable	success bytes=ok
+byte 289 is independently writable	success bytes=ok
+byte 290 is independently writable	success bytes=ok
+byte 291 is independently writable	success bytes=ok
+byte 292 is independently writable	success bytes=ok
+byte 293 is independently writable	success bytes=ok
+byte 294 is independently writable	success bytes=ok
+byte 295 is independently writable	success bytes=ok
+byte 296 is independently writable	success bytes=ok
+byte 297 is independently writable	success bytes=ok
+byte 298 is independently writable	success bytes=ok
+byte 299 is independently writable	success bytes=ok
+byte 300 is independently writable	success bytes=ok
+byte 301 is independently writable	success bytes=ok
+byte 302 is independently writable	success bytes=ok
+byte 303 is independently writable	success bytes=ok
+byte 304 is independently writable	success bytes=ok
+byte 305 is independently writable	success bytes=ok
+byte 306 is independently writable	success bytes=ok
+byte 307 is independently writable	success bytes=ok
+byte 308 is independently writable	success bytes=ok
+byte 309 is independently writable	success bytes=ok
+byte 310 is independently writable	success bytes=ok
+byte 311 is independently writable	success bytes=ok
+byte 312 is independently writable	success bytes=ok
+byte 313 is independently writable	success bytes=ok
+byte 314 is independently writable	success bytes=ok
+byte 315 is independently writable	success bytes=ok
+byte 316 is independently writable	success bytes=ok
+byte 317 is independently writable	success bytes=ok
+byte 318 is independently writable	success bytes=ok
+byte 319 is independently writable	success bytes=ok
+byte 320 is independently writable	success bytes=ok
+byte 321 is independently writable	success bytes=ok
+byte 322 is independently writable	success bytes=ok
+byte 323 is independently writable	success bytes=ok
+byte 324 is independently writable	success bytes=ok
+byte 325 is independently writable	success bytes=ok
+byte 326 is independently writable	success bytes=ok
+byte 327 is independently writable	success bytes=ok
+byte 328 is independently writable	success bytes=ok
+byte 329 is independently writable	success bytes=ok
+byte 330 is independently writable	success bytes=ok
+byte 331 is independently writable	success bytes=ok
+byte 332 is independently writable	success bytes=ok
+byte 333 is independently writable	success bytes=ok
+byte 334 is independently writable	success bytes=ok
+byte 335 is independently writable	success bytes=ok
+byte 336 is independently writable	success bytes=ok
+byte 337 is independently writable	success bytes=ok
+byte 338 is independently writable	success bytes=ok
+byte 339 is independently writable	success bytes=ok
+byte 340 is independently writable	success bytes=ok
+byte 341 is independently writable	success bytes=ok
+byte 342 is independently writable	success bytes=ok
+byte 343 is independently writable	success bytes=ok
+byte 344 is independently writable	success bytes=ok
+byte 345 is independently writable	success bytes=ok
+byte 346 is independently writable	success bytes=ok
+byte 347 is independently writable	success bytes=ok
+byte 348 is independently writable	success bytes=ok
+byte 349 is independently writable	success bytes=ok
+byte 350 is independently writable	success bytes=ok
+byte 351 is independently writable	success bytes=ok
+byte 352 is independently writable	success bytes=ok
+byte 353 is independently writable	success bytes=ok
+byte 354 is independently writable	success bytes=ok
+byte 355 is independently writable	success bytes=ok
+byte 356 is independently writable	success bytes=ok
+byte 357 is independently writable	success bytes=ok
+byte 358 is independently writable	success bytes=ok
+byte 359 is independently writable	success bytes=ok
+byte 360 is independently writable	success bytes=ok
+byte 361 is independently writable	success bytes=ok
+byte 362 is independently writable	success bytes=ok
+byte 363 is independently writable	success bytes=ok
+byte 364 is independently writable	success bytes=ok
+byte 365 is independently writable	success bytes=ok
+byte 366 is independently writable	success bytes=ok
+byte 367 is independently writable	success bytes=ok
+byte 368 is independently writable	success bytes=ok
+byte 369 is independently writable	success bytes=ok
+byte 370 is independently writable	success bytes=ok
+byte 371 is independently writable	success bytes=ok
+byte 372 is independently writable	success bytes=ok
+byte 373 is independently writable	success bytes=ok
+byte 374 is independently writable	success bytes=ok
+byte 375 is independently writable	success bytes=ok
+byte 376 is independently writable	success bytes=ok
+byte 377 is independently writable	success bytes=ok
+byte 378 is independently writable	success bytes=ok
+byte 379 is independently writable	success bytes=ok
+byte 380 is independently writable	success bytes=ok
+byte 381 is independently writable	success bytes=ok
+byte 382 is independently writable	success bytes=ok
+byte 383 is independently writable	success bytes=ok
+byte 384 is independently writable	success bytes=ok
+byte 385 is independently writable	success bytes=ok
+byte 386 is independently writable	success bytes=ok
+byte 387 is independently writable	success bytes=ok
+byte 388 is independently writable	success bytes=ok
+byte 389 is independently writable	success bytes=ok
+byte 390 is independently writable	success bytes=ok
+byte 391 is independently writable	success bytes=ok
+byte 392 is independently writable	success bytes=ok
+byte 393 is independently writable	success bytes=ok
+byte 394 is independently writable	success bytes=ok
+byte 395 is independently writable	success bytes=ok
+byte 396 is independently writable	success bytes=ok
+byte 397 is independently writable	success bytes=ok
+byte 398 is independently writable	success bytes=ok
+byte 399 is independently writable	success bytes=ok
+byte 400 is independently writable	success bytes=ok
+byte 401 is independently writable	success bytes=ok
+byte 402 is independently writable	success bytes=ok
+byte 403 is independently writable	success bytes=ok
+byte 404 is independently writable	success bytes=ok
+byte 405 is independently writable	success bytes=ok
+byte 406 is independently writable	success bytes=ok
+byte 407 is independently writable	success bytes=ok
+byte 408 is independently writable	success bytes=ok
+byte 409 is independently writable	success bytes=ok
+byte 410 is independently writable	success bytes=ok
+byte 411 is independently writable	success bytes=ok
+byte 412 is independently writable	success bytes=ok
+byte 413 is independently writable	success bytes=ok
+byte 414 is independently writable	success bytes=ok
+byte 415 is independently writable	success bytes=ok
+byte 416 is independently writable	success bytes=ok
+byte 417 is independently writable	success bytes=ok
+byte 418 is independently writable	success bytes=ok
+byte 419 is independently writable	success bytes=ok
+byte 420 is independently writable	success bytes=ok
+byte 421 is independently writable	success bytes=ok
+byte 422 is independently writable	success bytes=ok
+byte 423 is independently writable	success bytes=ok
+byte 424 is independently writable	success bytes=ok
+byte 425 is independently writable	success bytes=ok
+byte 426 is independently writable	success bytes=ok
+byte 427 is independently writable	success bytes=ok
+byte 428 is independently writable	success bytes=ok
+byte 429 is independently writable	success bytes=ok
+byte 430 is independently writable	success bytes=ok
+byte 431 is independently writable	success bytes=ok
+byte 432 is independently writable	success bytes=ok
+byte 433 is independently writable	success bytes=ok
+byte 434 is independently writable	success bytes=ok
+byte 435 is independently writable	success bytes=ok
+byte 436 is independently writable	success bytes=ok
+byte 437 is independently writable	success bytes=ok
+byte 438 is independently writable	success bytes=ok
+byte 439 is independently writable	success bytes=ok
+byte 440 is independently writable	success bytes=ok
+byte 441 is independently writable	success bytes=ok
+byte 442 is independently writable	success bytes=ok
+byte 443 is independently writable	success bytes=ok
+byte 444 is independently writable	success bytes=ok
+byte 445 is independently writable	success bytes=ok
+byte 446 is independently writable	success bytes=ok
+byte 447 is independently writable	success bytes=ok
+byte 448 is independently writable	success bytes=ok
+byte 449 is independently writable	success bytes=ok
+byte 450 is independently writable	success bytes=ok
+byte 451 is independently writable	success bytes=ok
+byte 452 is independently writable	success bytes=ok
+byte 453 is independently writable	success bytes=ok
+byte 454 is independently writable	success bytes=ok
+byte 455 is independently writable	success bytes=ok
+byte 456 is independently writable	success bytes=ok
+byte 457 is independently writable	success bytes=ok
+byte 458 is independently writable	success bytes=ok
+byte 459 is independently writable	success bytes=ok
+byte 460 is independently writable	success bytes=ok
+byte 461 is independently writable	success bytes=ok
+byte 462 is independently writable	success bytes=ok
+byte 463 is independently writable	success bytes=ok
+byte 464 is independently writable	success bytes=ok
+byte 465 is independently writable	success bytes=ok
+byte 466 is independently writable	success bytes=ok
+byte 467 is independently writable	success bytes=ok
+byte 468 is independently writable	success bytes=ok
+byte 469 is independently writable	success bytes=ok
+byte 470 is independently writable	success bytes=ok
+byte 471 is independently writable	success bytes=ok
+byte 472 is independently writable	success bytes=ok
+byte 473 is independently writable	success bytes=ok
+byte 474 is independently writable	success bytes=ok
+byte 475 is independently writable	success bytes=ok
+byte 476 is independently writable	success bytes=ok
+byte 477 is independently writable	success bytes=ok
+byte 478 is independently writable	success bytes=ok
+byte 479 is independently writable	success bytes=ok
+byte 480 is independently writable	success bytes=ok
+byte 481 is independently writable	success bytes=ok
+byte 482 is independently writable	success bytes=ok
+byte 483 is independently writable	success bytes=ok
+byte 484 is independently writable	success bytes=ok
+byte 485 is independently writable	success bytes=ok
+byte 486 is independently writable	success bytes=ok
+byte 487 is independently writable	success bytes=ok
+byte 488 is independently writable	success bytes=ok
+byte 489 is independently writable	success bytes=ok
+byte 490 is independently writable	success bytes=ok
+byte 491 is independently writable	success bytes=ok
+byte 492 is independently writable	success bytes=ok
+byte 493 is independently writable	success bytes=ok
+byte 494 is independently writable	success bytes=ok
+byte 495 is independently writable	success bytes=ok
+byte 496 is independently writable	success bytes=ok
+byte 497 is independently writable	success bytes=ok
+byte 498 is independently writable	success bytes=ok
+byte 499 is independently writable	success bytes=ok
+byte 500 is independently writable	success bytes=ok
+byte 501 is independently writable	success bytes=ok
+byte 502 is independently writable	success bytes=ok
+byte 503 is independently writable	success bytes=ok
+byte 504 is independently writable	success bytes=ok
+byte 505 is independently writable	success bytes=ok
+byte 506 is independently writable	success bytes=ok
+byte 507 is independently writable	success bytes=ok
+byte 508 is independently writable	success bytes=ok
+byte 509 is independently writable	success bytes=ok
+byte 510 is independently writable	success bytes=ok
+byte 511 is independently writable	success bytes=ok
+invalid byte -9223372036854775808 is recoverable and unchanged	out_of_range out_of_range:42:0xffffffffffffffff bytes=ok
+invalid byte -1 is recoverable and unchanged	out_of_range out_of_range:42:0xffffffffffffffff bytes=ok
+invalid byte 512 is recoverable and unchanged	out_of_range out_of_range:42:0xffffffffffffffff bytes=ok
+invalid byte 9223372036854775807 is recoverable and unchanged	out_of_range out_of_range:42:0xffffffffffffffff bytes=ok
+whole-sector argument and return copies	0x2a
+retained byte result survives overwrite	0xf9
+valid window 0 reads all 64 bytes	success bytes=ok
+valid window 1 reads all 64 bytes	success bytes=ok
+valid window 2 reads all 64 bytes	success bytes=ok
+valid window 3 reads all 64 bytes	success bytes=ok
+valid window 4 reads all 64 bytes	success bytes=ok
+valid window 5 reads all 64 bytes	success bytes=ok
+valid window 6 reads all 64 bytes	success bytes=ok
+valid window 7 reads all 64 bytes	success bytes=ok
+valid window 8 reads all 64 bytes	success bytes=ok
+valid window 9 reads all 64 bytes	success bytes=ok
+valid window 10 reads all 64 bytes	success bytes=ok
+valid window 11 reads all 64 bytes	success bytes=ok
+valid window 12 reads all 64 bytes	success bytes=ok
+valid window 13 reads all 64 bytes	success bytes=ok
+valid window 14 reads all 64 bytes	success bytes=ok
+valid window 15 reads all 64 bytes	success bytes=ok
+valid window 16 reads all 64 bytes	success bytes=ok
+valid window 17 reads all 64 bytes	success bytes=ok
+valid window 18 reads all 64 bytes	success bytes=ok
+valid window 19 reads all 64 bytes	success bytes=ok
+valid window 20 reads all 64 bytes	success bytes=ok
+valid window 21 reads all 64 bytes	success bytes=ok
+valid window 22 reads all 64 bytes	success bytes=ok
+valid window 23 reads all 64 bytes	success bytes=ok
+valid window 24 reads all 64 bytes	success bytes=ok
+valid window 25 reads all 64 bytes	success bytes=ok
+valid window 26 reads all 64 bytes	success bytes=ok
+valid window 27 reads all 64 bytes	success bytes=ok
+valid window 28 reads all 64 bytes	success bytes=ok
+valid window 29 reads all 64 bytes	success bytes=ok
+valid window 30 reads all 64 bytes	success bytes=ok
+valid window 31 reads all 64 bytes	success bytes=ok
+valid window 32 reads all 64 bytes	success bytes=ok
+valid window 33 reads all 64 bytes	success bytes=ok
+valid window 34 reads all 64 bytes	success bytes=ok
+valid window 35 reads all 64 bytes	success bytes=ok
+valid window 36 reads all 64 bytes	success bytes=ok
+valid window 37 reads all 64 bytes	success bytes=ok
+valid window 38 reads all 64 bytes	success bytes=ok
+valid window 39 reads all 64 bytes	success bytes=ok
+valid window 40 reads all 64 bytes	success bytes=ok
+valid window 41 reads all 64 bytes	success bytes=ok
+valid window 42 reads all 64 bytes	success bytes=ok
+valid window 43 reads all 64 bytes	success bytes=ok
+valid window 44 reads all 64 bytes	success bytes=ok
+valid window 45 reads all 64 bytes	success bytes=ok
+valid window 46 reads all 64 bytes	success bytes=ok
+valid window 47 reads all 64 bytes	success bytes=ok
+valid window 48 reads all 64 bytes	success bytes=ok
+valid window 49 reads all 64 bytes	success bytes=ok
+valid window 50 reads all 64 bytes	success bytes=ok
+valid window 51 reads all 64 bytes	success bytes=ok
+valid window 52 reads all 64 bytes	success bytes=ok
+valid window 53 reads all 64 bytes	success bytes=ok
+valid window 54 reads all 64 bytes	success bytes=ok
+valid window 55 reads all 64 bytes	success bytes=ok
+valid window 56 reads all 64 bytes	success bytes=ok
+valid window 57 reads all 64 bytes	success bytes=ok
+valid window 58 reads all 64 bytes	success bytes=ok
+valid window 59 reads all 64 bytes	success bytes=ok
+valid window 60 reads all 64 bytes	success bytes=ok
+valid window 61 reads all 64 bytes	success bytes=ok
+valid window 62 reads all 64 bytes	success bytes=ok
+valid window 63 reads all 64 bytes	success bytes=ok
+valid window 64 reads all 64 bytes	success bytes=ok
+valid window 65 reads all 64 bytes	success bytes=ok
+valid window 66 reads all 64 bytes	success bytes=ok
+valid window 67 reads all 64 bytes	success bytes=ok
+valid window 68 reads all 64 bytes	success bytes=ok
+valid window 69 reads all 64 bytes	success bytes=ok
+valid window 70 reads all 64 bytes	success bytes=ok
+valid window 71 reads all 64 bytes	success bytes=ok
+valid window 72 reads all 64 bytes	success bytes=ok
+valid window 73 reads all 64 bytes	success bytes=ok
+valid window 74 reads all 64 bytes	success bytes=ok
+valid window 75 reads all 64 bytes	success bytes=ok
+valid window 76 reads all 64 bytes	success bytes=ok
+valid window 77 reads all 64 bytes	success bytes=ok
+valid window 78 reads all 64 bytes	success bytes=ok
+valid window 79 reads all 64 bytes	success bytes=ok
+valid window 80 reads all 64 bytes	success bytes=ok
+valid window 81 reads all 64 bytes	success bytes=ok
+valid window 82 reads all 64 bytes	success bytes=ok
+valid window 83 reads all 64 bytes	success bytes=ok
+valid window 84 reads all 64 bytes	success bytes=ok
+valid window 85 reads all 64 bytes	success bytes=ok
+valid window 86 reads all 64 bytes	success bytes=ok
+valid window 87 reads all 64 bytes	success bytes=ok
+valid window 88 reads all 64 bytes	success bytes=ok
+valid window 89 reads all 64 bytes	success bytes=ok
+valid window 90 reads all 64 bytes	success bytes=ok
+valid window 91 reads all 64 bytes	success bytes=ok
+valid window 92 reads all 64 bytes	success bytes=ok
+valid window 93 reads all 64 bytes	success bytes=ok
+valid window 94 reads all 64 bytes	success bytes=ok
+valid window 95 reads all 64 bytes	success bytes=ok
+valid window 96 reads all 64 bytes	success bytes=ok
+valid window 97 reads all 64 bytes	success bytes=ok
+valid window 98 reads all 64 bytes	success bytes=ok
+valid window 99 reads all 64 bytes	success bytes=ok
+valid window 100 reads all 64 bytes	success bytes=ok
+valid window 101 reads all 64 bytes	success bytes=ok
+valid window 102 reads all 64 bytes	success bytes=ok
+valid window 103 reads all 64 bytes	success bytes=ok
+valid window 104 reads all 64 bytes	success bytes=ok
+valid window 105 reads all 64 bytes	success bytes=ok
+valid window 106 reads all 64 bytes	success bytes=ok
+valid window 107 reads all 64 bytes	success bytes=ok
+valid window 108 reads all 64 bytes	success bytes=ok
+valid window 109 reads all 64 bytes	success bytes=ok
+valid window 110 reads all 64 bytes	success bytes=ok
+valid window 111 reads all 64 bytes	success bytes=ok
+valid window 112 reads all 64 bytes	success bytes=ok
+valid window 113 reads all 64 bytes	success bytes=ok
+valid window 114 reads all 64 bytes	success bytes=ok
+valid window 115 reads all 64 bytes	success bytes=ok
+valid window 116 reads all 64 bytes	success bytes=ok
+valid window 117 reads all 64 bytes	success bytes=ok
+valid window 118 reads all 64 bytes	success bytes=ok
+valid window 119 reads all 64 bytes	success bytes=ok
+valid window 120 reads all 64 bytes	success bytes=ok
+valid window 121 reads all 64 bytes	success bytes=ok
+valid window 122 reads all 64 bytes	success bytes=ok
+valid window 123 reads all 64 bytes	success bytes=ok
+valid window 124 reads all 64 bytes	success bytes=ok
+valid window 125 reads all 64 bytes	success bytes=ok
+valid window 126 reads all 64 bytes	success bytes=ok
+valid window 127 reads all 64 bytes	success bytes=ok
+valid window 128 reads all 64 bytes	success bytes=ok
+valid window 129 reads all 64 bytes	success bytes=ok
+valid window 130 reads all 64 bytes	success bytes=ok
+valid window 131 reads all 64 bytes	success bytes=ok
+valid window 132 reads all 64 bytes	success bytes=ok
+valid window 133 reads all 64 bytes	success bytes=ok
+valid window 134 reads all 64 bytes	success bytes=ok
+valid window 135 reads all 64 bytes	success bytes=ok
+valid window 136 reads all 64 bytes	success bytes=ok
+valid window 137 reads all 64 bytes	success bytes=ok
+valid window 138 reads all 64 bytes	success bytes=ok
+valid window 139 reads all 64 bytes	success bytes=ok
+valid window 140 reads all 64 bytes	success bytes=ok
+valid window 141 reads all 64 bytes	success bytes=ok
+valid window 142 reads all 64 bytes	success bytes=ok
+valid window 143 reads all 64 bytes	success bytes=ok
+valid window 144 reads all 64 bytes	success bytes=ok
+valid window 145 reads all 64 bytes	success bytes=ok
+valid window 146 reads all 64 bytes	success bytes=ok
+valid window 147 reads all 64 bytes	success bytes=ok
+valid window 148 reads all 64 bytes	success bytes=ok
+valid window 149 reads all 64 bytes	success bytes=ok
+valid window 150 reads all 64 bytes	success bytes=ok
+valid window 151 reads all 64 bytes	success bytes=ok
+valid window 152 reads all 64 bytes	success bytes=ok
+valid window 153 reads all 64 bytes	success bytes=ok
+valid window 154 reads all 64 bytes	success bytes=ok
+valid window 155 reads all 64 bytes	success bytes=ok
+valid window 156 reads all 64 bytes	success bytes=ok
+valid window 157 reads all 64 bytes	success bytes=ok
+valid window 158 reads all 64 bytes	success bytes=ok
+valid window 159 reads all 64 bytes	success bytes=ok
+valid window 160 reads all 64 bytes	success bytes=ok
+valid window 161 reads all 64 bytes	success bytes=ok
+valid window 162 reads all 64 bytes	success bytes=ok
+valid window 163 reads all 64 bytes	success bytes=ok
+valid window 164 reads all 64 bytes	success bytes=ok
+valid window 165 reads all 64 bytes	success bytes=ok
+valid window 166 reads all 64 bytes	success bytes=ok
+valid window 167 reads all 64 bytes	success bytes=ok
+valid window 168 reads all 64 bytes	success bytes=ok
+valid window 169 reads all 64 bytes	success bytes=ok
+valid window 170 reads all 64 bytes	success bytes=ok
+valid window 171 reads all 64 bytes	success bytes=ok
+valid window 172 reads all 64 bytes	success bytes=ok
+valid window 173 reads all 64 bytes	success bytes=ok
+valid window 174 reads all 64 bytes	success bytes=ok
+valid window 175 reads all 64 bytes	success bytes=ok
+valid window 176 reads all 64 bytes	success bytes=ok
+valid window 177 reads all 64 bytes	success bytes=ok
+valid window 178 reads all 64 bytes	success bytes=ok
+valid window 179 reads all 64 bytes	success bytes=ok
+valid window 180 reads all 64 bytes	success bytes=ok
+valid window 181 reads all 64 bytes	success bytes=ok
+valid window 182 reads all 64 bytes	success bytes=ok
+valid window 183 reads all 64 bytes	success bytes=ok
+valid window 184 reads all 64 bytes	success bytes=ok
+valid window 185 reads all 64 bytes	success bytes=ok
+valid window 186 reads all 64 bytes	success bytes=ok
+valid window 187 reads all 64 bytes	success bytes=ok
+valid window 188 reads all 64 bytes	success bytes=ok
+valid window 189 reads all 64 bytes	success bytes=ok
+valid window 190 reads all 64 bytes	success bytes=ok
+valid window 191 reads all 64 bytes	success bytes=ok
+valid window 192 reads all 64 bytes	success bytes=ok
+valid window 193 reads all 64 bytes	success bytes=ok
+valid window 194 reads all 64 bytes	success bytes=ok
+valid window 195 reads all 64 bytes	success bytes=ok
+valid window 196 reads all 64 bytes	success bytes=ok
+valid window 197 reads all 64 bytes	success bytes=ok
+valid window 198 reads all 64 bytes	success bytes=ok
+valid window 199 reads all 64 bytes	success bytes=ok
+valid window 200 reads all 64 bytes	success bytes=ok
+valid window 201 reads all 64 bytes	success bytes=ok
+valid window 202 reads all 64 bytes	success bytes=ok
+valid window 203 reads all 64 bytes	success bytes=ok
+valid window 204 reads all 64 bytes	success bytes=ok
+valid window 205 reads all 64 bytes	success bytes=ok
+valid window 206 reads all 64 bytes	success bytes=ok
+valid window 207 reads all 64 bytes	success bytes=ok
+valid window 208 reads all 64 bytes	success bytes=ok
+valid window 209 reads all 64 bytes	success bytes=ok
+valid window 210 reads all 64 bytes	success bytes=ok
+valid window 211 reads all 64 bytes	success bytes=ok
+valid window 212 reads all 64 bytes	success bytes=ok
+valid window 213 reads all 64 bytes	success bytes=ok
+valid window 214 reads all 64 bytes	success bytes=ok
+valid window 215 reads all 64 bytes	success bytes=ok
+valid window 216 reads all 64 bytes	success bytes=ok
+valid window 217 reads all 64 bytes	success bytes=ok
+valid window 218 reads all 64 bytes	success bytes=ok
+valid window 219 reads all 64 bytes	success bytes=ok
+valid window 220 reads all 64 bytes	success bytes=ok
+valid window 221 reads all 64 bytes	success bytes=ok
+valid window 222 reads all 64 bytes	success bytes=ok
+valid window 223 reads all 64 bytes	success bytes=ok
+valid window 224 reads all 64 bytes	success bytes=ok
+valid window 225 reads all 64 bytes	success bytes=ok
+valid window 226 reads all 64 bytes	success bytes=ok
+valid window 227 reads all 64 bytes	success bytes=ok
+valid window 228 reads all 64 bytes	success bytes=ok
+valid window 229 reads all 64 bytes	success bytes=ok
+valid window 230 reads all 64 bytes	success bytes=ok
+valid window 231 reads all 64 bytes	success bytes=ok
+valid window 232 reads all 64 bytes	success bytes=ok
+valid window 233 reads all 64 bytes	success bytes=ok
+valid window 234 reads all 64 bytes	success bytes=ok
+valid window 235 reads all 64 bytes	success bytes=ok
+valid window 236 reads all 64 bytes	success bytes=ok
+valid window 237 reads all 64 bytes	success bytes=ok
+valid window 238 reads all 64 bytes	success bytes=ok
+valid window 239 reads all 64 bytes	success bytes=ok
+valid window 240 reads all 64 bytes	success bytes=ok
+valid window 241 reads all 64 bytes	success bytes=ok
+valid window 242 reads all 64 bytes	success bytes=ok
+valid window 243 reads all 64 bytes	success bytes=ok
+valid window 244 reads all 64 bytes	success bytes=ok
+valid window 245 reads all 64 bytes	success bytes=ok
+valid window 246 reads all 64 bytes	success bytes=ok
+valid window 247 reads all 64 bytes	success bytes=ok
+valid window 248 reads all 64 bytes	success bytes=ok
+valid window 249 reads all 64 bytes	success bytes=ok
+valid window 250 reads all 64 bytes	success bytes=ok
+valid window 251 reads all 64 bytes	success bytes=ok
+valid window 252 reads all 64 bytes	success bytes=ok
+valid window 253 reads all 64 bytes	success bytes=ok
+valid window 254 reads all 64 bytes	success bytes=ok
+valid window 255 reads all 64 bytes	success bytes=ok
+valid window 256 reads all 64 bytes	success bytes=ok
+valid window 257 reads all 64 bytes	success bytes=ok
+valid window 258 reads all 64 bytes	success bytes=ok
+valid window 259 reads all 64 bytes	success bytes=ok
+valid window 260 reads all 64 bytes	success bytes=ok
+valid window 261 reads all 64 bytes	success bytes=ok
+valid window 262 reads all 64 bytes	success bytes=ok
+valid window 263 reads all 64 bytes	success bytes=ok
+valid window 264 reads all 64 bytes	success bytes=ok
+valid window 265 reads all 64 bytes	success bytes=ok
+valid window 266 reads all 64 bytes	success bytes=ok
+valid window 267 reads all 64 bytes	success bytes=ok
+valid window 268 reads all 64 bytes	success bytes=ok
+valid window 269 reads all 64 bytes	success bytes=ok
+valid window 270 reads all 64 bytes	success bytes=ok
+valid window 271 reads all 64 bytes	success bytes=ok
+valid window 272 reads all 64 bytes	success bytes=ok
+valid window 273 reads all 64 bytes	success bytes=ok
+valid window 274 reads all 64 bytes	success bytes=ok
+valid window 275 reads all 64 bytes	success bytes=ok
+valid window 276 reads all 64 bytes	success bytes=ok
+valid window 277 reads all 64 bytes	success bytes=ok
+valid window 278 reads all 64 bytes	success bytes=ok
+valid window 279 reads all 64 bytes	success bytes=ok
+valid window 280 reads all 64 bytes	success bytes=ok
+valid window 281 reads all 64 bytes	success bytes=ok
+valid window 282 reads all 64 bytes	success bytes=ok
+valid window 283 reads all 64 bytes	success bytes=ok
+valid window 284 reads all 64 bytes	success bytes=ok
+valid window 285 reads all 64 bytes	success bytes=ok
+valid window 286 reads all 64 bytes	success bytes=ok
+valid window 287 reads all 64 bytes	success bytes=ok
+valid window 288 reads all 64 bytes	success bytes=ok
+valid window 289 reads all 64 bytes	success bytes=ok
+valid window 290 reads all 64 bytes	success bytes=ok
+valid window 291 reads all 64 bytes	success bytes=ok
+valid window 292 reads all 64 bytes	success bytes=ok
+valid window 293 reads all 64 bytes	success bytes=ok
+valid window 294 reads all 64 bytes	success bytes=ok
+valid window 295 reads all 64 bytes	success bytes=ok
+valid window 296 reads all 64 bytes	success bytes=ok
+valid window 297 reads all 64 bytes	success bytes=ok
+valid window 298 reads all 64 bytes	success bytes=ok
+valid window 299 reads all 64 bytes	success bytes=ok
+valid window 300 reads all 64 bytes	success bytes=ok
+valid window 301 reads all 64 bytes	success bytes=ok
+valid window 302 reads all 64 bytes	success bytes=ok
+valid window 303 reads all 64 bytes	success bytes=ok
+valid window 304 reads all 64 bytes	success bytes=ok
+valid window 305 reads all 64 bytes	success bytes=ok
+valid window 306 reads all 64 bytes	success bytes=ok
+valid window 307 reads all 64 bytes	success bytes=ok
+valid window 308 reads all 64 bytes	success bytes=ok
+valid window 309 reads all 64 bytes	success bytes=ok
+valid window 310 reads all 64 bytes	success bytes=ok
+valid window 311 reads all 64 bytes	success bytes=ok
+valid window 312 reads all 64 bytes	success bytes=ok
+valid window 313 reads all 64 bytes	success bytes=ok
+valid window 314 reads all 64 bytes	success bytes=ok
+valid window 315 reads all 64 bytes	success bytes=ok
+valid window 316 reads all 64 bytes	success bytes=ok
+valid window 317 reads all 64 bytes	success bytes=ok
+valid window 318 reads all 64 bytes	success bytes=ok
+valid window 319 reads all 64 bytes	success bytes=ok
+valid window 320 reads all 64 bytes	success bytes=ok
+valid window 321 reads all 64 bytes	success bytes=ok
+valid window 322 reads all 64 bytes	success bytes=ok
+valid window 323 reads all 64 bytes	success bytes=ok
+valid window 324 reads all 64 bytes	success bytes=ok
+valid window 325 reads all 64 bytes	success bytes=ok
+valid window 326 reads all 64 bytes	success bytes=ok
+valid window 327 reads all 64 bytes	success bytes=ok
+valid window 328 reads all 64 bytes	success bytes=ok
+valid window 329 reads all 64 bytes	success bytes=ok
+valid window 330 reads all 64 bytes	success bytes=ok
+valid window 331 reads all 64 bytes	success bytes=ok
+valid window 332 reads all 64 bytes	success bytes=ok
+valid window 333 reads all 64 bytes	success bytes=ok
+valid window 334 reads all 64 bytes	success bytes=ok
+valid window 335 reads all 64 bytes	success bytes=ok
+valid window 336 reads all 64 bytes	success bytes=ok
+valid window 337 reads all 64 bytes	success bytes=ok
+valid window 338 reads all 64 bytes	success bytes=ok
+valid window 339 reads all 64 bytes	success bytes=ok
+valid window 340 reads all 64 bytes	success bytes=ok
+valid window 341 reads all 64 bytes	success bytes=ok
+valid window 342 reads all 64 bytes	success bytes=ok
+valid window 343 reads all 64 bytes	success bytes=ok
+valid window 344 reads all 64 bytes	success bytes=ok
+valid window 345 reads all 64 bytes	success bytes=ok
+valid window 346 reads all 64 bytes	success bytes=ok
+valid window 347 reads all 64 bytes	success bytes=ok
+valid window 348 reads all 64 bytes	success bytes=ok
+valid window 349 reads all 64 bytes	success bytes=ok
+valid window 350 reads all 64 bytes	success bytes=ok
+valid window 351 reads all 64 bytes	success bytes=ok
+valid window 352 reads all 64 bytes	success bytes=ok
+valid window 353 reads all 64 bytes	success bytes=ok
+valid window 354 reads all 64 bytes	success bytes=ok
+valid window 355 reads all 64 bytes	success bytes=ok
+valid window 356 reads all 64 bytes	success bytes=ok
+valid window 357 reads all 64 bytes	success bytes=ok
+valid window 358 reads all 64 bytes	success bytes=ok
+valid window 359 reads all 64 bytes	success bytes=ok
+valid window 360 reads all 64 bytes	success bytes=ok
+valid window 361 reads all 64 bytes	success bytes=ok
+valid window 362 reads all 64 bytes	success bytes=ok
+valid window 363 reads all 64 bytes	success bytes=ok
+valid window 364 reads all 64 bytes	success bytes=ok
+valid window 365 reads all 64 bytes	success bytes=ok
+valid window 366 reads all 64 bytes	success bytes=ok
+valid window 367 reads all 64 bytes	success bytes=ok
+valid window 368 reads all 64 bytes	success bytes=ok
+valid window 369 reads all 64 bytes	success bytes=ok
+valid window 370 reads all 64 bytes	success bytes=ok
+valid window 371 reads all 64 bytes	success bytes=ok
+valid window 372 reads all 64 bytes	success bytes=ok
+valid window 373 reads all 64 bytes	success bytes=ok
+valid window 374 reads all 64 bytes	success bytes=ok
+valid window 375 reads all 64 bytes	success bytes=ok
+valid window 376 reads all 64 bytes	success bytes=ok
+valid window 377 reads all 64 bytes	success bytes=ok
+valid window 378 reads all 64 bytes	success bytes=ok
+valid window 379 reads all 64 bytes	success bytes=ok
+valid window 380 reads all 64 bytes	success bytes=ok
+valid window 381 reads all 64 bytes	success bytes=ok
+valid window 382 reads all 64 bytes	success bytes=ok
+valid window 383 reads all 64 bytes	success bytes=ok
+valid window 384 reads all 64 bytes	success bytes=ok
+valid window 385 reads all 64 bytes	success bytes=ok
+valid window 386 reads all 64 bytes	success bytes=ok
+valid window 387 reads all 64 bytes	success bytes=ok
+valid window 388 reads all 64 bytes	success bytes=ok
+valid window 389 reads all 64 bytes	success bytes=ok
+valid window 390 reads all 64 bytes	success bytes=ok
+valid window 391 reads all 64 bytes	success bytes=ok
+valid window 392 reads all 64 bytes	success bytes=ok
+valid window 393 reads all 64 bytes	success bytes=ok
+valid window 394 reads all 64 bytes	success bytes=ok
+valid window 395 reads all 64 bytes	success bytes=ok
+valid window 396 reads all 64 bytes	success bytes=ok
+valid window 397 reads all 64 bytes	success bytes=ok
+valid window 398 reads all 64 bytes	success bytes=ok
+valid window 399 reads all 64 bytes	success bytes=ok
+valid window 400 reads all 64 bytes	success bytes=ok
+valid window 401 reads all 64 bytes	success bytes=ok
+valid window 402 reads all 64 bytes	success bytes=ok
+valid window 403 reads all 64 bytes	success bytes=ok
+valid window 404 reads all 64 bytes	success bytes=ok
+valid window 405 reads all 64 bytes	success bytes=ok
+valid window 406 reads all 64 bytes	success bytes=ok
+valid window 407 reads all 64 bytes	success bytes=ok
+valid window 408 reads all 64 bytes	success bytes=ok
+valid window 409 reads all 64 bytes	success bytes=ok
+valid window 410 reads all 64 bytes	success bytes=ok
+valid window 411 reads all 64 bytes	success bytes=ok
+valid window 412 reads all 64 bytes	success bytes=ok
+valid window 413 reads all 64 bytes	success bytes=ok
+valid window 414 reads all 64 bytes	success bytes=ok
+valid window 415 reads all 64 bytes	success bytes=ok
+valid window 416 reads all 64 bytes	success bytes=ok
+valid window 417 reads all 64 bytes	success bytes=ok
+valid window 418 reads all 64 bytes	success bytes=ok
+valid window 419 reads all 64 bytes	success bytes=ok
+valid window 420 reads all 64 bytes	success bytes=ok
+valid window 421 reads all 64 bytes	success bytes=ok
+valid window 422 reads all 64 bytes	success bytes=ok
+valid window 423 reads all 64 bytes	success bytes=ok
+valid window 424 reads all 64 bytes	success bytes=ok
+valid window 425 reads all 64 bytes	success bytes=ok
+valid window 426 reads all 64 bytes	success bytes=ok
+valid window 427 reads all 64 bytes	success bytes=ok
+valid window 428 reads all 64 bytes	success bytes=ok
+valid window 429 reads all 64 bytes	success bytes=ok
+valid window 430 reads all 64 bytes	success bytes=ok
+valid window 431 reads all 64 bytes	success bytes=ok
+valid window 432 reads all 64 bytes	success bytes=ok
+valid window 433 reads all 64 bytes	success bytes=ok
+valid window 434 reads all 64 bytes	success bytes=ok
+valid window 435 reads all 64 bytes	success bytes=ok
+valid window 436 reads all 64 bytes	success bytes=ok
+valid window 437 reads all 64 bytes	success bytes=ok
+valid window 438 reads all 64 bytes	success bytes=ok
+valid window 439 reads all 64 bytes	success bytes=ok
+valid window 440 reads all 64 bytes	success bytes=ok
+valid window 441 reads all 64 bytes	success bytes=ok
+valid window 442 reads all 64 bytes	success bytes=ok
+valid window 443 reads all 64 bytes	success bytes=ok
+valid window 444 reads all 64 bytes	success bytes=ok
+valid window 445 reads all 64 bytes	success bytes=ok
+valid window 446 reads all 64 bytes	success bytes=ok
+valid window 447 reads all 64 bytes	success bytes=ok
+valid window 448 reads all 64 bytes	success bytes=ok
+valid window 0 write preserves neighbors	success bytes=ok
+valid window 1 write preserves neighbors	success bytes=ok
+valid window 2 write preserves neighbors	success bytes=ok
+valid window 3 write preserves neighbors	success bytes=ok
+valid window 4 write preserves neighbors	success bytes=ok
+valid window 5 write preserves neighbors	success bytes=ok
+valid window 6 write preserves neighbors	success bytes=ok
+valid window 7 write preserves neighbors	success bytes=ok
+valid window 8 write preserves neighbors	success bytes=ok
+valid window 9 write preserves neighbors	success bytes=ok
+valid window 10 write preserves neighbors	success bytes=ok
+valid window 11 write preserves neighbors	success bytes=ok
+valid window 12 write preserves neighbors	success bytes=ok
+valid window 13 write preserves neighbors	success bytes=ok
+valid window 14 write preserves neighbors	success bytes=ok
+valid window 15 write preserves neighbors	success bytes=ok
+valid window 16 write preserves neighbors	success bytes=ok
+valid window 17 write preserves neighbors	success bytes=ok
+valid window 18 write preserves neighbors	success bytes=ok
+valid window 19 write preserves neighbors	success bytes=ok
+valid window 20 write preserves neighbors	success bytes=ok
+valid window 21 write preserves neighbors	success bytes=ok
+valid window 22 write preserves neighbors	success bytes=ok
+valid window 23 write preserves neighbors	success bytes=ok
+valid window 24 write preserves neighbors	success bytes=ok
+valid window 25 write preserves neighbors	success bytes=ok
+valid window 26 write preserves neighbors	success bytes=ok
+valid window 27 write preserves neighbors	success bytes=ok
+valid window 28 write preserves neighbors	success bytes=ok
+valid window 29 write preserves neighbors	success bytes=ok
+valid window 30 write preserves neighbors	success bytes=ok
+valid window 31 write preserves neighbors	success bytes=ok
+valid window 32 write preserves neighbors	success bytes=ok
+valid window 33 write preserves neighbors	success bytes=ok
+valid window 34 write preserves neighbors	success bytes=ok
+valid window 35 write preserves neighbors	success bytes=ok
+valid window 36 write preserves neighbors	success bytes=ok
+valid window 37 write preserves neighbors	success bytes=ok
+valid window 38 write preserves neighbors	success bytes=ok
+valid window 39 write preserves neighbors	success bytes=ok
+valid window 40 write preserves neighbors	success bytes=ok
+valid window 41 write preserves neighbors	success bytes=ok
+valid window 42 write preserves neighbors	success bytes=ok
+valid window 43 write preserves neighbors	success bytes=ok
+valid window 44 write preserves neighbors	success bytes=ok
+valid window 45 write preserves neighbors	success bytes=ok
+valid window 46 write preserves neighbors	success bytes=ok
+valid window 47 write preserves neighbors	success bytes=ok
+valid window 48 write preserves neighbors	success bytes=ok
+valid window 49 write preserves neighbors	success bytes=ok
+valid window 50 write preserves neighbors	success bytes=ok
+valid window 51 write preserves neighbors	success bytes=ok
+valid window 52 write preserves neighbors	success bytes=ok
+valid window 53 write preserves neighbors	success bytes=ok
+valid window 54 write preserves neighbors	success bytes=ok
+valid window 55 write preserves neighbors	success bytes=ok
+valid window 56 write preserves neighbors	success bytes=ok
+valid window 57 write preserves neighbors	success bytes=ok
+valid window 58 write preserves neighbors	success bytes=ok
+valid window 59 write preserves neighbors	success bytes=ok
+valid window 60 write preserves neighbors	success bytes=ok
+valid window 61 write preserves neighbors	success bytes=ok
+valid window 62 write preserves neighbors	success bytes=ok
+valid window 63 write preserves neighbors	success bytes=ok
+valid window 64 write preserves neighbors	success bytes=ok
+valid window 65 write preserves neighbors	success bytes=ok
+valid window 66 write preserves neighbors	success bytes=ok
+valid window 67 write preserves neighbors	success bytes=ok
+valid window 68 write preserves neighbors	success bytes=ok
+valid window 69 write preserves neighbors	success bytes=ok
+valid window 70 write preserves neighbors	success bytes=ok
+valid window 71 write preserves neighbors	success bytes=ok
+valid window 72 write preserves neighbors	success bytes=ok
+valid window 73 write preserves neighbors	success bytes=ok
+valid window 74 write preserves neighbors	success bytes=ok
+valid window 75 write preserves neighbors	success bytes=ok
+valid window 76 write preserves neighbors	success bytes=ok
+valid window 77 write preserves neighbors	success bytes=ok
+valid window 78 write preserves neighbors	success bytes=ok
+valid window 79 write preserves neighbors	success bytes=ok
+valid window 80 write preserves neighbors	success bytes=ok
+valid window 81 write preserves neighbors	success bytes=ok
+valid window 82 write preserves neighbors	success bytes=ok
+valid window 83 write preserves neighbors	success bytes=ok
+valid window 84 write preserves neighbors	success bytes=ok
+valid window 85 write preserves neighbors	success bytes=ok
+valid window 86 write preserves neighbors	success bytes=ok
+valid window 87 write preserves neighbors	success bytes=ok
+valid window 88 write preserves neighbors	success bytes=ok
+valid window 89 write preserves neighbors	success bytes=ok
+valid window 90 write preserves neighbors	success bytes=ok
+valid window 91 write preserves neighbors	success bytes=ok
+valid window 92 write preserves neighbors	success bytes=ok
+valid window 93 write preserves neighbors	success bytes=ok
+valid window 94 write preserves neighbors	success bytes=ok
+valid window 95 write preserves neighbors	success bytes=ok
+valid window 96 write preserves neighbors	success bytes=ok
+valid window 97 write preserves neighbors	success bytes=ok
+valid window 98 write preserves neighbors	success bytes=ok
+valid window 99 write preserves neighbors	success bytes=ok
+valid window 100 write preserves neighbors	success bytes=ok
+valid window 101 write preserves neighbors	success bytes=ok
+valid window 102 write preserves neighbors	success bytes=ok
+valid window 103 write preserves neighbors	success bytes=ok
+valid window 104 write preserves neighbors	success bytes=ok
+valid window 105 write preserves neighbors	success bytes=ok
+valid window 106 write preserves neighbors	success bytes=ok
+valid window 107 write preserves neighbors	success bytes=ok
+valid window 108 write preserves neighbors	success bytes=ok
+valid window 109 write preserves neighbors	success bytes=ok
+valid window 110 write preserves neighbors	success bytes=ok
+valid window 111 write preserves neighbors	success bytes=ok
+valid window 112 write preserves neighbors	success bytes=ok
+valid window 113 write preserves neighbors	success bytes=ok
+valid window 114 write preserves neighbors	success bytes=ok
+valid window 115 write preserves neighbors	success bytes=ok
+valid window 116 write preserves neighbors	success bytes=ok
+valid window 117 write preserves neighbors	success bytes=ok
+valid window 118 write preserves neighbors	success bytes=ok
+valid window 119 write preserves neighbors	success bytes=ok
+valid window 120 write preserves neighbors	success bytes=ok
+valid window 121 write preserves neighbors	success bytes=ok
+valid window 122 write preserves neighbors	success bytes=ok
+valid window 123 write preserves neighbors	success bytes=ok
+valid window 124 write preserves neighbors	success bytes=ok
+valid window 125 write preserves neighbors	success bytes=ok
+valid window 126 write preserves neighbors	success bytes=ok
+valid window 127 write preserves neighbors	success bytes=ok
+valid window 128 write preserves neighbors	success bytes=ok
+valid window 129 write preserves neighbors	success bytes=ok
+valid window 130 write preserves neighbors	success bytes=ok
+valid window 131 write preserves neighbors	success bytes=ok
+valid window 132 write preserves neighbors	success bytes=ok
+valid window 133 write preserves neighbors	success bytes=ok
+valid window 134 write preserves neighbors	success bytes=ok
+valid window 135 write preserves neighbors	success bytes=ok
+valid window 136 write preserves neighbors	success bytes=ok
+valid window 137 write preserves neighbors	success bytes=ok
+valid window 138 write preserves neighbors	success bytes=ok
+valid window 139 write preserves neighbors	success bytes=ok
+valid window 140 write preserves neighbors	success bytes=ok
+valid window 141 write preserves neighbors	success bytes=ok
+valid window 142 write preserves neighbors	success bytes=ok
+valid window 143 write preserves neighbors	success bytes=ok
+valid window 144 write preserves neighbors	success bytes=ok
+valid window 145 write preserves neighbors	success bytes=ok
+valid window 146 write preserves neighbors	success bytes=ok
+valid window 147 write preserves neighbors	success bytes=ok
+valid window 148 write preserves neighbors	success bytes=ok
+valid window 149 write preserves neighbors	success bytes=ok
+valid window 150 write preserves neighbors	success bytes=ok
+valid window 151 write preserves neighbors	success bytes=ok
+valid window 152 write preserves neighbors	success bytes=ok
+valid window 153 write preserves neighbors	success bytes=ok
+valid window 154 write preserves neighbors	success bytes=ok
+valid window 155 write preserves neighbors	success bytes=ok
+valid window 156 write preserves neighbors	success bytes=ok
+valid window 157 write preserves neighbors	success bytes=ok
+valid window 158 write preserves neighbors	success bytes=ok
+valid window 159 write preserves neighbors	success bytes=ok
+valid window 160 write preserves neighbors	success bytes=ok
+valid window 161 write preserves neighbors	success bytes=ok
+valid window 162 write preserves neighbors	success bytes=ok
+valid window 163 write preserves neighbors	success bytes=ok
+valid window 164 write preserves neighbors	success bytes=ok
+valid window 165 write preserves neighbors	success bytes=ok
+valid window 166 write preserves neighbors	success bytes=ok
+valid window 167 write preserves neighbors	success bytes=ok
+valid window 168 write preserves neighbors	success bytes=ok
+valid window 169 write preserves neighbors	success bytes=ok
+valid window 170 write preserves neighbors	success bytes=ok
+valid window 171 write preserves neighbors	success bytes=ok
+valid window 172 write preserves neighbors	success bytes=ok
+valid window 173 write preserves neighbors	success bytes=ok
+valid window 174 write preserves neighbors	success bytes=ok
+valid window 175 write preserves neighbors	success bytes=ok
+valid window 176 write preserves neighbors	success bytes=ok
+valid window 177 write preserves neighbors	success bytes=ok
+valid window 178 write preserves neighbors	success bytes=ok
+valid window 179 write preserves neighbors	success bytes=ok
+valid window 180 write preserves neighbors	success bytes=ok
+valid window 181 write preserves neighbors	success bytes=ok
+valid window 182 write preserves neighbors	success bytes=ok
+valid window 183 write preserves neighbors	success bytes=ok
+valid window 184 write preserves neighbors	success bytes=ok
+valid window 185 write preserves neighbors	success bytes=ok
+valid window 186 write preserves neighbors	success bytes=ok
+valid window 187 write preserves neighbors	success bytes=ok
+valid window 188 write preserves neighbors	success bytes=ok
+valid window 189 write preserves neighbors	success bytes=ok
+valid window 190 write preserves neighbors	success bytes=ok
+valid window 191 write preserves neighbors	success bytes=ok
+valid window 192 write preserves neighbors	success bytes=ok
+valid window 193 write preserves neighbors	success bytes=ok
+valid window 194 write preserves neighbors	success bytes=ok
+valid window 195 write preserves neighbors	success bytes=ok
+valid window 196 write preserves neighbors	success bytes=ok
+valid window 197 write preserves neighbors	success bytes=ok
+valid window 198 write preserves neighbors	success bytes=ok
+valid window 199 write preserves neighbors	success bytes=ok
+valid window 200 write preserves neighbors	success bytes=ok
+valid window 201 write preserves neighbors	success bytes=ok
+valid window 202 write preserves neighbors	success bytes=ok
+valid window 203 write preserves neighbors	success bytes=ok
+valid window 204 write preserves neighbors	success bytes=ok
+valid window 205 write preserves neighbors	success bytes=ok
+valid window 206 write preserves neighbors	success bytes=ok
+valid window 207 write preserves neighbors	success bytes=ok
+valid window 208 write preserves neighbors	success bytes=ok
+valid window 209 write preserves neighbors	success bytes=ok
+valid window 210 write preserves neighbors	success bytes=ok
+valid window 211 write preserves neighbors	success bytes=ok
+valid window 212 write preserves neighbors	success bytes=ok
+valid window 213 write preserves neighbors	success bytes=ok
+valid window 214 write preserves neighbors	success bytes=ok
+valid window 215 write preserves neighbors	success bytes=ok
+valid window 216 write preserves neighbors	success bytes=ok
+valid window 217 write preserves neighbors	success bytes=ok
+valid window 218 write preserves neighbors	success bytes=ok
+valid window 219 write preserves neighbors	success bytes=ok
+valid window 220 write preserves neighbors	success bytes=ok
+valid window 221 write preserves neighbors	success bytes=ok
+valid window 222 write preserves neighbors	success bytes=ok
+valid window 223 write preserves neighbors	success bytes=ok
+valid window 224 write preserves neighbors	success bytes=ok
+valid window 225 write preserves neighbors	success bytes=ok
+valid window 226 write preserves neighbors	success bytes=ok
+valid window 227 write preserves neighbors	success bytes=ok
+valid window 228 write preserves neighbors	success bytes=ok
+valid window 229 write preserves neighbors	success bytes=ok
+valid window 230 write preserves neighbors	success bytes=ok
+valid window 231 write preserves neighbors	success bytes=ok
+valid window 232 write preserves neighbors	success bytes=ok
+valid window 233 write preserves neighbors	success bytes=ok
+valid window 234 write preserves neighbors	success bytes=ok
+valid window 235 write preserves neighbors	success bytes=ok
+valid window 236 write preserves neighbors	success bytes=ok
+valid window 237 write preserves neighbors	success bytes=ok
+valid window 238 write preserves neighbors	success bytes=ok
+valid window 239 write preserves neighbors	success bytes=ok
+valid window 240 write preserves neighbors	success bytes=ok
+valid window 241 write preserves neighbors	success bytes=ok
+valid window 242 write preserves neighbors	success bytes=ok
+valid window 243 write preserves neighbors	success bytes=ok
+valid window 244 write preserves neighbors	success bytes=ok
+valid window 245 write preserves neighbors	success bytes=ok
+valid window 246 write preserves neighbors	success bytes=ok
+valid window 247 write preserves neighbors	success bytes=ok
+valid window 248 write preserves neighbors	success bytes=ok
+valid window 249 write preserves neighbors	success bytes=ok
+valid window 250 write preserves neighbors	success bytes=ok
+valid window 251 write preserves neighbors	success bytes=ok
+valid window 252 write preserves neighbors	success bytes=ok
+valid window 253 write preserves neighbors	success bytes=ok
+valid window 254 write preserves neighbors	success bytes=ok
+valid window 255 write preserves neighbors	success bytes=ok
+valid window 256 write preserves neighbors	success bytes=ok
+valid window 257 write preserves neighbors	success bytes=ok
+valid window 258 write preserves neighbors	success bytes=ok
+valid window 259 write preserves neighbors	success bytes=ok
+valid window 260 write preserves neighbors	success bytes=ok
+valid window 261 write preserves neighbors	success bytes=ok
+valid window 262 write preserves neighbors	success bytes=ok
+valid window 263 write preserves neighbors	success bytes=ok
+valid window 264 write preserves neighbors	success bytes=ok
+valid window 265 write preserves neighbors	success bytes=ok
+valid window 266 write preserves neighbors	success bytes=ok
+valid window 267 write preserves neighbors	success bytes=ok
+valid window 268 write preserves neighbors	success bytes=ok
+valid window 269 write preserves neighbors	success bytes=ok
+valid window 270 write preserves neighbors	success bytes=ok
+valid window 271 write preserves neighbors	success bytes=ok
+valid window 272 write preserves neighbors	success bytes=ok
+valid window 273 write preserves neighbors	success bytes=ok
+valid window 274 write preserves neighbors	success bytes=ok
+valid window 275 write preserves neighbors	success bytes=ok
+valid window 276 write preserves neighbors	success bytes=ok
+valid window 277 write preserves neighbors	success bytes=ok
+valid window 278 write preserves neighbors	success bytes=ok
+valid window 279 write preserves neighbors	success bytes=ok
+valid window 280 write preserves neighbors	success bytes=ok
+valid window 281 write preserves neighbors	success bytes=ok
+valid window 282 write preserves neighbors	success bytes=ok
+valid window 283 write preserves neighbors	success bytes=ok
+valid window 284 write preserves neighbors	success bytes=ok
+valid window 285 write preserves neighbors	success bytes=ok
+valid window 286 write preserves neighbors	success bytes=ok
+valid window 287 write preserves neighbors	success bytes=ok
+valid window 288 write preserves neighbors	success bytes=ok
+valid window 289 write preserves neighbors	success bytes=ok
+valid window 290 write preserves neighbors	success bytes=ok
+valid window 291 write preserves neighbors	success bytes=ok
+valid window 292 write preserves neighbors	success bytes=ok
+valid window 293 write preserves neighbors	success bytes=ok
+valid window 294 write preserves neighbors	success bytes=ok
+valid window 295 write preserves neighbors	success bytes=ok
+valid window 296 write preserves neighbors	success bytes=ok
+valid window 297 write preserves neighbors	success bytes=ok
+valid window 298 write preserves neighbors	success bytes=ok
+valid window 299 write preserves neighbors	success bytes=ok
+valid window 300 write preserves neighbors	success bytes=ok
+valid window 301 write preserves neighbors	success bytes=ok
+valid window 302 write preserves neighbors	success bytes=ok
+valid window 303 write preserves neighbors	success bytes=ok
+valid window 304 write preserves neighbors	success bytes=ok
+valid window 305 write preserves neighbors	success bytes=ok
+valid window 306 write preserves neighbors	success bytes=ok
+valid window 307 write preserves neighbors	success bytes=ok
+valid window 308 write preserves neighbors	success bytes=ok
+valid window 309 write preserves neighbors	success bytes=ok
+valid window 310 write preserves neighbors	success bytes=ok
+valid window 311 write preserves neighbors	success bytes=ok
+valid window 312 write preserves neighbors	success bytes=ok
+valid window 313 write preserves neighbors	success bytes=ok
+valid window 314 write preserves neighbors	success bytes=ok
+valid window 315 write preserves neighbors	success bytes=ok
+valid window 316 write preserves neighbors	success bytes=ok
+valid window 317 write preserves neighbors	success bytes=ok
+valid window 318 write preserves neighbors	success bytes=ok
+valid window 319 write preserves neighbors	success bytes=ok
+valid window 320 write preserves neighbors	success bytes=ok
+valid window 321 write preserves neighbors	success bytes=ok
+valid window 322 write preserves neighbors	success bytes=ok
+valid window 323 write preserves neighbors	success bytes=ok
+valid window 324 write preserves neighbors	success bytes=ok
+valid window 325 write preserves neighbors	success bytes=ok
+valid window 326 write preserves neighbors	success bytes=ok
+valid window 327 write preserves neighbors	success bytes=ok
+valid window 328 write preserves neighbors	success bytes=ok
+valid window 329 write preserves neighbors	success bytes=ok
+valid window 330 write preserves neighbors	success bytes=ok
+valid window 331 write preserves neighbors	success bytes=ok
+valid window 332 write preserves neighbors	success bytes=ok
+valid window 333 write preserves neighbors	success bytes=ok
+valid window 334 write preserves neighbors	success bytes=ok
+valid window 335 write preserves neighbors	success bytes=ok
+valid window 336 write preserves neighbors	success bytes=ok
+valid window 337 write preserves neighbors	success bytes=ok
+valid window 338 write preserves neighbors	success bytes=ok
+valid window 339 write preserves neighbors	success bytes=ok
+valid window 340 write preserves neighbors	success bytes=ok
+valid window 341 write preserves neighbors	success bytes=ok
+valid window 342 write preserves neighbors	success bytes=ok
+valid window 343 write preserves neighbors	success bytes=ok
+valid window 344 write preserves neighbors	success bytes=ok
+valid window 345 write preserves neighbors	success bytes=ok
+valid window 346 write preserves neighbors	success bytes=ok
+valid window 347 write preserves neighbors	success bytes=ok
+valid window 348 write preserves neighbors	success bytes=ok
+valid window 349 write preserves neighbors	success bytes=ok
+valid window 350 write preserves neighbors	success bytes=ok
+valid window 351 write preserves neighbors	success bytes=ok
+valid window 352 write preserves neighbors	success bytes=ok
+valid window 353 write preserves neighbors	success bytes=ok
+valid window 354 write preserves neighbors	success bytes=ok
+valid window 355 write preserves neighbors	success bytes=ok
+valid window 356 write preserves neighbors	success bytes=ok
+valid window 357 write preserves neighbors	success bytes=ok
+valid window 358 write preserves neighbors	success bytes=ok
+valid window 359 write preserves neighbors	success bytes=ok
+valid window 360 write preserves neighbors	success bytes=ok
+valid window 361 write preserves neighbors	success bytes=ok
+valid window 362 write preserves neighbors	success bytes=ok
+valid window 363 write preserves neighbors	success bytes=ok
+valid window 364 write preserves neighbors	success bytes=ok
+valid window 365 write preserves neighbors	success bytes=ok
+valid window 366 write preserves neighbors	success bytes=ok
+valid window 367 write preserves neighbors	success bytes=ok
+valid window 368 write preserves neighbors	success bytes=ok
+valid window 369 write preserves neighbors	success bytes=ok
+valid window 370 write preserves neighbors	success bytes=ok
+valid window 371 write preserves neighbors	success bytes=ok
+valid window 372 write preserves neighbors	success bytes=ok
+valid window 373 write preserves neighbors	success bytes=ok
+valid window 374 write preserves neighbors	success bytes=ok
+valid window 375 write preserves neighbors	success bytes=ok
+valid window 376 write preserves neighbors	success bytes=ok
+valid window 377 write preserves neighbors	success bytes=ok
+valid window 378 write preserves neighbors	success bytes=ok
+valid window 379 write preserves neighbors	success bytes=ok
+valid window 380 write preserves neighbors	success bytes=ok
+valid window 381 write preserves neighbors	success bytes=ok
+valid window 382 write preserves neighbors	success bytes=ok
+valid window 383 write preserves neighbors	success bytes=ok
+valid window 384 write preserves neighbors	success bytes=ok
+valid window 385 write preserves neighbors	success bytes=ok
+valid window 386 write preserves neighbors	success bytes=ok
+valid window 387 write preserves neighbors	success bytes=ok
+valid window 388 write preserves neighbors	success bytes=ok
+valid window 389 write preserves neighbors	success bytes=ok
+valid window 390 write preserves neighbors	success bytes=ok
+valid window 391 write preserves neighbors	success bytes=ok
+valid window 392 write preserves neighbors	success bytes=ok
+valid window 393 write preserves neighbors	success bytes=ok
+valid window 394 write preserves neighbors	success bytes=ok
+valid window 395 write preserves neighbors	success bytes=ok
+valid window 396 write preserves neighbors	success bytes=ok
+valid window 397 write preserves neighbors	success bytes=ok
+valid window 398 write preserves neighbors	success bytes=ok
+valid window 399 write preserves neighbors	success bytes=ok
+valid window 400 write preserves neighbors	success bytes=ok
+valid window 401 write preserves neighbors	success bytes=ok
+valid window 402 write preserves neighbors	success bytes=ok
+valid window 403 write preserves neighbors	success bytes=ok
+valid window 404 write preserves neighbors	success bytes=ok
+valid window 405 write preserves neighbors	success bytes=ok
+valid window 406 write preserves neighbors	success bytes=ok
+valid window 407 write preserves neighbors	success bytes=ok
+valid window 408 write preserves neighbors	success bytes=ok
+valid window 409 write preserves neighbors	success bytes=ok
+valid window 410 write preserves neighbors	success bytes=ok
+valid window 411 write preserves neighbors	success bytes=ok
+valid window 412 write preserves neighbors	success bytes=ok
+valid window 413 write preserves neighbors	success bytes=ok
+valid window 414 write preserves neighbors	success bytes=ok
+valid window 415 write preserves neighbors	success bytes=ok
+valid window 416 write preserves neighbors	success bytes=ok
+valid window 417 write preserves neighbors	success bytes=ok
+valid window 418 write preserves neighbors	success bytes=ok
+valid window 419 write preserves neighbors	success bytes=ok
+valid window 420 write preserves neighbors	success bytes=ok
+valid window 421 write preserves neighbors	success bytes=ok
+valid window 422 write preserves neighbors	success bytes=ok
+valid window 423 write preserves neighbors	success bytes=ok
+valid window 424 write preserves neighbors	success bytes=ok
+valid window 425 write preserves neighbors	success bytes=ok
+valid window 426 write preserves neighbors	success bytes=ok
+valid window 427 write preserves neighbors	success bytes=ok
+valid window 428 write preserves neighbors	success bytes=ok
+valid window 429 write preserves neighbors	success bytes=ok
+valid window 430 write preserves neighbors	success bytes=ok
+valid window 431 write preserves neighbors	success bytes=ok
+valid window 432 write preserves neighbors	success bytes=ok
+valid window 433 write preserves neighbors	success bytes=ok
+valid window 434 write preserves neighbors	success bytes=ok
+valid window 435 write preserves neighbors	success bytes=ok
+valid window 436 write preserves neighbors	success bytes=ok
+valid window 437 write preserves neighbors	success bytes=ok
+valid window 438 write preserves neighbors	success bytes=ok
+valid window 439 write preserves neighbors	success bytes=ok
+valid window 440 write preserves neighbors	success bytes=ok
+valid window 441 write preserves neighbors	success bytes=ok
+valid window 442 write preserves neighbors	success bytes=ok
+valid window 443 write preserves neighbors	success bytes=ok
+valid window 444 write preserves neighbors	success bytes=ok
+valid window 445 write preserves neighbors	success bytes=ok
+valid window 446 write preserves neighbors	success bytes=ok
+valid window 447 write preserves neighbors	success bytes=ok
+valid window 448 write preserves neighbors	success bytes=ok
+invalid window -9223372036854775808 masks the read and preserves all sector bytes	out_of_range out_of_range bytes=ok
+invalid window -1 masks the read and preserves all sector bytes	out_of_range out_of_range bytes=ok
+invalid window 449 masks the read and preserves all sector bytes	out_of_range out_of_range bytes=ok
+invalid window 511 masks the read and preserves all sector bytes	out_of_range out_of_range bytes=ok
+invalid window 512 masks the read and preserves all sector bytes	out_of_range out_of_range bytes=ok
+invalid window 9223372036854775807 masks the read and preserves all sector bytes	out_of_range out_of_range bytes=ok
+window 0 report and extracted copies survive sector mutation	0x2a
+window 1 report and extracted copies survive sector mutation	0x2a
+window 255 report and extracted copies survive sector mutation	0x2a
+window 448 report and extracted copies survive sector mutation	0x2a
+write takes a complete copied block	0x2a
+le16 codec at window 0 with independent wire bytes	0x4567 sector=ok
+le16 codec at window 1 with independent wire bytes	0x4567 sector=ok
+le16 codec at window 448 with independent wire bytes	0x4567 sector=ok
+be16 codec at window 0 with independent wire bytes	0x4567 sector=ok
+be16 codec at window 1 with independent wire bytes	0x4567 sector=ok
+be16 codec at window 448 with independent wire bytes	0x4567 sector=ok
+le32 codec at window 0 with independent wire bytes	0x1234567 sector=ok
+le32 codec at window 1 with independent wire bytes	0x1234567 sector=ok
+le32 codec at window 448 with independent wire bytes	0x1234567 sector=ok
+be32 codec at window 0 with independent wire bytes	0x1234567 sector=ok
+be32 codec at window 1 with independent wire bytes	0x1234567 sector=ok
+be32 codec at window 448 with independent wire bytes	0x1234567 sector=ok
+le64 codec at window 0 with independent wire bytes	0x89abcdef01234567 sector=ok
+le64 codec at window 1 with independent wire bytes	0x89abcdef01234567 sector=ok
+le64 codec at window 448 with independent wire bytes	0x89abcdef01234567 sector=ok
+be64 codec at window 0 with independent wire bytes	0x89abcdef01234567 sector=ok
+be64 codec at window 1 with independent wire bytes	0x89abcdef01234567 sector=ok
+be64 codec at window 448 with independent wire bytes	0x89abcdef01234567 sector=ok
+mixed overlapping writes sequence 0	success success success out_of_range success success success out_of_range success success success success bytes=ok
+mixed overlapping writes sequence 1	success success success success success success success success out_of_range success success out_of_range bytes=ok
+mixed overlapping writes sequence 2	success out_of_range success success success success success success success success success success bytes=ok
+mixed overlapping writes sequence 3	success success success success out_of_range success success success out_of_range success out_of_range success bytes=ok
+record report layout, copying and masking success	size=72 success record=ok
+record report layout, copying and masking out_of_range	size=72 out_of_range record=ok
+four records share one sector without changing other records or unused bytes	success success success success success success bytes=ok
+window length=512, base=19, request=19, offset=0, const=False	success window@0+512
+window length=1024, base=19, request=19, offset=0, const=True	success window@0+512
+window length=1024, base=19, request=20, offset=0, const=True	success window@512+512
+window length=1536, base=19, request=19, offset=0, const=False	success window@0+512
+window length=1536, base=19, request=20, offset=0, const=False	success window@512+512
+window length=1536, base=19, request=21, offset=0, const=False	success window@1024+512
+window length=2048, base=19, request=19, offset=0, const=True	success window@0+512
+window length=2048, base=19, request=20, offset=0, const=True	success window@512+512
+window length=2048, base=19, request=21, offset=0, const=True	success window@1024+512
+window length=2048, base=19, request=22, offset=0, const=True	success window@1536+512
+window length=2560, base=19, request=19, offset=0, const=False	success window@0+512
+window length=2560, base=19, request=20, offset=0, const=False	success window@512+512
+window length=2560, base=19, request=21, offset=0, const=False	success window@1024+512
+window length=2560, base=19, request=22, offset=0, const=False	success window@1536+512
+window length=2560, base=19, request=23, offset=0, const=False	success window@2048+512
+window length=3072, base=19, request=19, offset=0, const=True	success window@0+512
+window length=3072, base=19, request=20, offset=0, const=True	success window@512+512
+window length=3072, base=19, request=21, offset=0, const=True	success window@1024+512
+window length=3072, base=19, request=22, offset=0, const=True	success window@1536+512
+window length=3072, base=19, request=23, offset=0, const=True	success window@2048+512
+window length=3072, base=19, request=24, offset=0, const=True	success window@2560+512
+window length=3584, base=19, request=19, offset=0, const=False	success window@0+512
+window length=3584, base=19, request=20, offset=0, const=False	success window@512+512
+window length=3584, base=19, request=21, offset=0, const=False	success window@1024+512
+window length=3584, base=19, request=22, offset=0, const=False	success window@1536+512
+window length=3584, base=19, request=23, offset=0, const=False	success window@2048+512
+window length=3584, base=19, request=24, offset=0, const=False	success window@2560+512
+window length=3584, base=19, request=25, offset=0, const=False	success window@3072+512
+window length=4096, base=19, request=19, offset=0, const=True	success window@0+512
+window length=4096, base=19, request=20, offset=0, const=True	success window@512+512
+window length=4096, base=19, request=21, offset=0, const=True	success window@1024+512
+window length=4096, base=19, request=22, offset=0, const=True	success window@1536+512
+window length=4096, base=19, request=23, offset=0, const=True	success window@2048+512
+window length=4096, base=19, request=24, offset=0, const=True	success window@2560+512
+window length=4096, base=19, request=25, offset=0, const=True	success window@3072+512
+window length=4096, base=19, request=26, offset=0, const=True	success window@3584+512
+window length=0, base=0, request=0, offset=0, const=False	invalid_source zero
+window length=0, base=18446744073709551615, request=-9223372036854775808, offset=0, const=False	invalid_source zero
+window length=0, base=18446744073709551615, request=9223372036854775807, offset=0, const=False	invalid_source zero
+window length=1, base=0, request=0, offset=0, const=False	invalid_source zero
+window length=1, base=18446744073709551615, request=-9223372036854775808, offset=0, const=False	invalid_source zero
+window length=1, base=18446744073709551615, request=9223372036854775807, offset=0, const=False	invalid_source zero
+window length=511, base=0, request=0, offset=0, const=False	invalid_source zero
+window length=511, base=18446744073709551615, request=-9223372036854775808, offset=0, const=False	invalid_source zero
+window length=511, base=18446744073709551615, request=9223372036854775807, offset=0, const=False	invalid_source zero
+window length=513, base=0, request=0, offset=0, const=False	invalid_source zero
+window length=513, base=18446744073709551615, request=-9223372036854775808, offset=0, const=False	invalid_source zero
+window length=513, base=18446744073709551615, request=9223372036854775807, offset=0, const=False	invalid_source zero
+window length=1023, base=0, request=0, offset=0, const=False	invalid_source zero
+window length=1023, base=18446744073709551615, request=-9223372036854775808, offset=0, const=False	invalid_source zero
+window length=1023, base=18446744073709551615, request=9223372036854775807, offset=0, const=False	invalid_source zero
+window length=1025, base=0, request=0, offset=0, const=False	invalid_source zero
+window length=1025, base=18446744073709551615, request=-9223372036854775808, offset=0, const=False	invalid_source zero
+window length=1025, base=18446744073709551615, request=9223372036854775807, offset=0, const=False	invalid_source zero
+window length=4095, base=0, request=0, offset=0, const=False	invalid_source zero
+window length=4095, base=18446744073709551615, request=-9223372036854775808, offset=0, const=False	invalid_source zero
+window length=4095, base=18446744073709551615, request=9223372036854775807, offset=0, const=False	invalid_source zero
+window length=0, base=18446744073709551615, request=-9223372036854775808, offset=4096, const=False	invalid_source zero
+window length=512, base=7, request=7, offset=1, const=False	success window@0+512
+window length=1024, base=7, request=8, offset=17, const=False	success window@512+512
+window length=512, base=7, request=7, offset=511, const=False	success window@0+512
+window length=3584, base=7, request=13, offset=1, const=False	success window@3072+512
+window length=4096, base=0, request=-9223372036854775808, offset=0, const=False	out_of_range zero
+window length=4096, base=0, request=-1, offset=0, const=False	out_of_range zero
+window length=4096, base=0, request=0, offset=0, const=False	success window@0+512
+window length=4096, base=0, request=7, offset=0, const=False	success window@3584+512
+window length=4096, base=0, request=8, offset=0, const=False	out_of_range zero
+window length=4096, base=0, request=9223372036854775807, offset=0, const=False	out_of_range zero
+window length=4096, base=1, request=-9223372036854775808, offset=0, const=False	out_of_range zero
+window length=4096, base=1, request=-1, offset=0, const=False	out_of_range zero
+window length=4096, base=1, request=0, offset=0, const=False	out_of_range zero
+window length=4096, base=1, request=1, offset=0, const=False	success window@0+512
+window length=4096, base=1, request=8, offset=0, const=False	success window@3584+512
+window length=4096, base=1, request=9, offset=0, const=False	out_of_range zero
+window length=4096, base=1, request=9223372036854775807, offset=0, const=False	out_of_range zero
+window length=4096, base=4294967296, request=-9223372036854775808, offset=0, const=False	out_of_range zero
+window length=4096, base=4294967296, request=-1, offset=0, const=False	out_of_range zero
+window length=4096, base=4294967296, request=0, offset=0, const=False	out_of_range zero
+window length=4096, base=4294967296, request=4294967295, offset=0, const=False	out_of_range zero
+window length=4096, base=4294967296, request=4294967296, offset=0, const=False	success window@0+512
+window length=4096, base=4294967296, request=4294967303, offset=0, const=False	success window@3584+512
+window length=4096, base=4294967296, request=4294967304, offset=0, const=False	out_of_range zero
+window length=4096, base=4294967296, request=9223372036854775807, offset=0, const=False	out_of_range zero
+window length=4096, base=9223372036854775800, request=-9223372036854775808, offset=0, const=False	out_of_range zero
+window length=4096, base=9223372036854775800, request=-1, offset=0, const=False	out_of_range zero
+window length=4096, base=9223372036854775800, request=0, offset=0, const=False	out_of_range zero
+window length=4096, base=9223372036854775800, request=9223372036854775799, offset=0, const=False	out_of_range zero
+window length=4096, base=9223372036854775800, request=9223372036854775800, offset=0, const=False	success window@0+512
+window length=4096, base=9223372036854775800, request=9223372036854775807, offset=0, const=False	success window@3584+512
+window length=4096, base=9223372036854775807, request=-9223372036854775808, offset=0, const=False	out_of_range zero
+window length=4096, base=9223372036854775807, request=-1, offset=0, const=False	out_of_range zero
+window length=4096, base=9223372036854775807, request=0, offset=0, const=False	out_of_range zero
+window length=4096, base=9223372036854775807, request=9223372036854775806, offset=0, const=False	out_of_range zero
+window length=4096, base=9223372036854775807, request=9223372036854775807, offset=0, const=False	success window@0+512
+window length=4096, base=9223372036854775808, request=-9223372036854775808, offset=0, const=False	out_of_range zero
+window length=4096, base=9223372036854775808, request=-1, offset=0, const=False	out_of_range zero
+window length=4096, base=9223372036854775808, request=0, offset=0, const=False	out_of_range zero
+window length=4096, base=9223372036854775808, request=9223372036854775807, offset=0, const=False	out_of_range zero
+window length=4096, base=18446744073709551608, request=-9223372036854775808, offset=0, const=False	out_of_range zero
+window length=4096, base=18446744073709551608, request=-1, offset=0, const=False	out_of_range zero
+window length=4096, base=18446744073709551608, request=0, offset=0, const=False	out_of_range zero
+window length=4096, base=18446744073709551608, request=9223372036854775807, offset=0, const=False	out_of_range zero
+window length=4096, base=18446744073709551615, request=-9223372036854775808, offset=0, const=False	out_of_range zero
+window length=4096, base=18446744073709551615, request=-1, offset=0, const=False	out_of_range zero
+window length=4096, base=18446744073709551615, request=0, offset=0, const=False	out_of_range zero
+window length=4096, base=18446744073709551615, request=9223372036854775807, offset=0, const=False	out_of_range zero
+window length=512, base=0, request=1, offset=0, const=False	out_of_range zero
+window length=512, base=9223372036854775807, request=9223372036854775807, offset=0, const=False	success window@0+512
+retained window report and copies survive complete owner replacement	0x2a
+owned window report outlives local source array	0x2a
+le32 encode 0	success bytes=0x0 same=0x0 opposite=0x0
+be32 encode 0	success bytes=0x0 same=0x0 opposite=0x0
+le32 encode 1	success bytes=0x1 same=0x1 opposite=0x1000000
+be32 encode 1	success bytes=0x1000000 same=0x1 opposite=0x1000000
+le32 encode 42	success bytes=0x2a same=0x2a opposite=0x2a000000
+be32 encode 42	success bytes=0x2a000000 same=0x2a opposite=0x2a000000
+le32 encode 127	success bytes=0x7f same=0x7f opposite=0x7f000000
+be32 encode 127	success bytes=0x7f000000 same=0x7f opposite=0x7f000000
+le32 encode 128	success bytes=0x80 same=0x80 opposite=0x80000000
+be32 encode 128	success bytes=0x80000000 same=0x80 opposite=0x80000000
+le32 encode 255	success bytes=0xff same=0xff opposite=0xff000000
+be32 encode 255	success bytes=0xff000000 same=0xff opposite=0xff000000
+le32 encode 256	success bytes=0x100 same=0x100 opposite=0x10000
+be32 encode 256	success bytes=0x10000 same=0x100 opposite=0x10000
+le32 encode 65535	success bytes=0xffff same=0xffff opposite=0xffff0000
+be32 encode 65535	success bytes=0xffff0000 same=0xffff opposite=0xffff0000
+le32 encode 65536	success bytes=0x10000 same=0x10000 opposite=0x100
+be32 encode 65536	success bytes=0x100 same=0x10000 opposite=0x100
+le32 encode 305419896	success bytes=0x12345678 same=0x12345678 opposite=0x78563412
+be32 encode 305419896	success bytes=0x78563412 same=0x12345678 opposite=0x78563412
+le32 encode 2147483648	success bytes=0x80000000 same=0x80000000 opposite=0x80
+be32 encode 2147483648	success bytes=0x80 same=0x80000000 opposite=0x80
+le32 encode 4294967295	success bytes=0xffffffff same=0xffffffff opposite=0xffffffff
+be32 encode 4294967295	success bytes=0xffffffff same=0xffffffff opposite=0xffffffff
+le32 encode 4294967296	out_of_range bytes=0x0 same=0x0 opposite=0x0
+be32 encode 4294967296	out_of_range bytes=0x0 same=0x0 opposite=0x0
+le32 encode 18446744073709551615	out_of_range bytes=0x0 same=0x0 opposite=0x0
+be32 encode 18446744073709551615	out_of_range bytes=0x0 same=0x0 opposite=0x0
+le32 encode 3837848389	success bytes=0xe4c0eb45 same=0xe4c0eb45 opposite=0x45ebc0e4
+be32 encode 3837848389	success bytes=0x45ebc0e4 same=0xe4c0eb45 opposite=0x45ebc0e4
+le32 encode 3123827605	success bytes=0xba31d395 same=0xba31d395 opposite=0x95d331ba
+be32 encode 3123827605	success bytes=0x95d331ba same=0xba31d395 opposite=0x95d331ba
+le32 encode 4001190923	success bytes=0xee7d540b same=0xee7d540b opposite=0xb547dee
+be32 encode 4001190923	success bytes=0xb547dee same=0xee7d540b opposite=0xb547dee
+le32 encode 2653892862	success bytes=0x9e2f30fe same=0x9e2f30fe opposite=0xfe302f9e
+be32 encode 2653892862	success bytes=0xfe302f9e same=0x9e2f30fe opposite=0xfe302f9e
+le32 encode 2620299705	success bytes=0x9c2e99b9 same=0x9c2e99b9 opposite=0xb9992e9c
+be32 encode 2620299705	success bytes=0xb9992e9c same=0x9c2e99b9 opposite=0xb9992e9c
+le32 encode 496109653	success bytes=0x1d920855 same=0x1d920855 opposite=0x5508921d
+be32 encode 496109653	success bytes=0x5508921d same=0x1d920855 opposite=0x5508921d
+le32 encode 3491923583	success bytes=0xd022867f same=0xd022867f opposite=0x7f8622d0
+be32 encode 3491923583	success bytes=0x7f8622d0 same=0xd022867f opposite=0x7f8622d0
+le32 encode 2806505862	success bytes=0xa747e186 same=0xa747e186 opposite=0x86e147a7
+be32 encode 2806505862	success bytes=0x86e147a7 same=0xa747e186 opposite=0x86e147a7
+le32 encode 3164243584	success bytes=0xbc9a8680 same=0xbc9a8680 opposite=0x80869abc
+be32 encode 3164243584	success bytes=0x80869abc same=0xbc9a8680 opposite=0x80869abc
+le32 encode 2484980887	success bytes=0x941dcc97 same=0x941dcc97 opposite=0x97cc1d94
+be32 encode 2484980887	success bytes=0x97cc1d94 same=0x941dcc97 opposite=0x97cc1d94
+le32 encode 1054941141	success bytes=0x3ee11fd5 same=0x3ee11fd5 opposite=0xd51fe13e
+be32 encode 1054941141	success bytes=0xd51fe13e same=0x3ee11fd5 opposite=0xd51fe13e
+le32 encode 2167362635	success bytes=0x812f544b same=0x812f544b opposite=0x4b542f81
+be32 encode 2167362635	success bytes=0x4b542f81 same=0x812f544b opposite=0x4b542f81
+le32 encode 869563994	success bytes=0x33d47e5a same=0x33d47e5a opposite=0x5a7ed433
+be32 encode 869563994	success bytes=0x5a7ed433 same=0x33d47e5a opposite=0x5a7ed433
+le32 encode 242045439	success bytes=0xe6d51ff same=0xe6d51ff opposite=0xff516d0e
+be32 encode 242045439	success bytes=0xff516d0e same=0xe6d51ff opposite=0xff516d0e
+le32 encode 2588604743	success bytes=0x9a4af947 same=0x9a4af947 opposite=0x47f94a9a
+be32 encode 2588604743	success bytes=0x47f94a9a same=0x9a4af947 opposite=0x47f94a9a
+le32 encode 3235642196	success bytes=0xc0dbfb54 same=0xc0dbfb54 opposite=0x54fbdbc0
+be32 encode 3235642196	success bytes=0x54fbdbc0 same=0xc0dbfb54 opposite=0x54fbdbc0
+32-bit failure masks a deliberately nonzero public report	0x0
+32-bit success report and output copies are independent	0x2a
+all byte values remain valid data	0xffffffff
+le16 encode 0	success bytes=0x0 same=0x0 opposite=0x0
+be16 encode 0	success bytes=0x0 same=0x0 opposite=0x0
+le16 encode 1	success bytes=0x1 same=0x1 opposite=0x100
+be16 encode 1	success bytes=0x100 same=0x1 opposite=0x100
+le16 encode 42	success bytes=0x2a same=0x2a opposite=0x2a00
+be16 encode 42	success bytes=0x2a00 same=0x2a opposite=0x2a00
+le16 encode 127	success bytes=0x7f same=0x7f opposite=0x7f00
+be16 encode 127	success bytes=0x7f00 same=0x7f opposite=0x7f00
+le16 encode 128	success bytes=0x80 same=0x80 opposite=0x8000
+be16 encode 128	success bytes=0x8000 same=0x80 opposite=0x8000
+le16 encode 255	success bytes=0xff same=0xff opposite=0xff00
+be16 encode 255	success bytes=0xff00 same=0xff opposite=0xff00
+le16 encode 256	success bytes=0x100 same=0x100 opposite=0x1
+be16 encode 256	success bytes=0x1 same=0x100 opposite=0x1
+le16 encode 4660	success bytes=0x1234 same=0x1234 opposite=0x3412
+be16 encode 4660	success bytes=0x3412 same=0x1234 opposite=0x3412
+le16 encode 32768	success bytes=0x8000 same=0x8000 opposite=0x80
+be16 encode 32768	success bytes=0x80 same=0x8000 opposite=0x80
+le16 encode 65535	success bytes=0xffff same=0xffff opposite=0xffff
+be16 encode 65535	success bytes=0xffff same=0xffff opposite=0xffff
+le16 encode 65536	out_of_range bytes=0x0 same=0x0 opposite=0x0
+be16 encode 65536	out_of_range bytes=0x0 same=0x0 opposite=0x0
+le16 encode 4294967296	out_of_range bytes=0x0 same=0x0 opposite=0x0
+be16 encode 4294967296	out_of_range bytes=0x0 same=0x0 opposite=0x0
+le16 encode 18446744073709551615	out_of_range bytes=0x0 same=0x0 opposite=0x0
+be16 encode 18446744073709551615	out_of_range bytes=0x0 same=0x0 opposite=0x0
+le16 encode 11929	success bytes=0x2e99 same=0x2e99 opposite=0x992e
+be16 encode 11929	success bytes=0x992e same=0x2e99 opposite=0x992e
+le16 encode 44769	success bytes=0xaee1 same=0xaee1 opposite=0xe1ae
+be16 encode 44769	success bytes=0xe1ae same=0xaee1 opposite=0xe1ae
+le16 encode 18987	success bytes=0x4a2b same=0x4a2b opposite=0x2b4a
+be16 encode 18987	success bytes=0x2b4a same=0x4a2b opposite=0x2b4a
+le16 encode 26323	success bytes=0x66d3 same=0x66d3 opposite=0xd366
+be16 encode 26323	success bytes=0xd366 same=0x66d3 opposite=0xd366
+le16 encode 6346	success bytes=0x18ca same=0x18ca opposite=0xca18
+be16 encode 6346	success bytes=0xca18 same=0x18ca opposite=0xca18
+le16 encode 15140	success bytes=0x3b24 same=0x3b24 opposite=0x243b
+be16 encode 15140	success bytes=0x243b same=0x3b24 opposite=0x243b
+le16 encode 51989	success bytes=0xcb15 same=0xcb15 opposite=0x15cb
+be16 encode 51989	success bytes=0x15cb same=0xcb15 opposite=0x15cb
+le16 encode 56206	success bytes=0xdb8e same=0xdb8e opposite=0x8edb
+be16 encode 56206	success bytes=0x8edb same=0xdb8e opposite=0x8edb
+le16 encode 6384	success bytes=0x18f0 same=0x18f0 opposite=0xf018
+be16 encode 6384	success bytes=0xf018 same=0x18f0 opposite=0xf018
+le16 encode 8183	success bytes=0x1ff7 same=0x1ff7 opposite=0xf71f
+be16 encode 8183	success bytes=0xf71f same=0x1ff7 opposite=0xf71f
+le16 encode 41028	success bytes=0xa044 same=0xa044 opposite=0x44a0
+be16 encode 41028	success bytes=0x44a0 same=0xa044 opposite=0x44a0
+le16 encode 32194	success bytes=0x7dc2 same=0x7dc2 opposite=0xc27d
+be16 encode 32194	success bytes=0xc27d same=0x7dc2 opposite=0xc27d
+le16 encode 50183	success bytes=0xc407 same=0xc407 opposite=0x7c4
+be16 encode 50183	success bytes=0x7c4 same=0xc407 opposite=0x7c4
+le16 encode 52734	success bytes=0xcdfe same=0xcdfe opposite=0xfecd
+be16 encode 52734	success bytes=0xfecd same=0xcdfe opposite=0xfecd
+le16 encode 9436	success bytes=0x24dc same=0x24dc opposite=0xdc24
+be16 encode 9436	success bytes=0xdc24 same=0x24dc opposite=0xdc24
+le16 encode 26536	success bytes=0x67a8 same=0x67a8 opposite=0xa867
+be16 encode 26536	success bytes=0xa867 same=0x67a8 opposite=0xa867
+le16 independent input 0	decoded=0x0
+be16 independent input 0	decoded=0x0
+le16 independent input 1	decoded=0xffff
+be16 independent input 1	decoded=0xffff
+le16 independent input 2	decoded=0x80
+be16 independent input 2	decoded=0x8000
+le16 independent input 3	decoded=0x8000
+be16 independent input 3	decoded=0x80
+le16 independent input 4	decoded=0x201
+be16 independent input 4	decoded=0x102
+le16 independent input 5	decoded=0x1c6e
+be16 independent input 5	decoded=0x6e1c
+le16 independent input 6	decoded=0xa70f
+be16 independent input 6	decoded=0xfa7
+le16 independent input 7	decoded=0xfaa2
+be16 independent input 7	decoded=0xa2fa
+le16 independent input 8	decoded=0xe92e
+be16 independent input 8	decoded=0x2ee9
+le16 independent input 9	decoded=0xc44b
+be16 independent input 9	decoded=0x4bc4
+le16 independent input 10	decoded=0x7d5e
+be16 independent input 10	decoded=0x5e7d
+le16 independent input 11	decoded=0x7b01
+be16 independent input 11	decoded=0x17b
+le16 independent input 12	decoded=0x23e7
+be16 independent input 12	decoded=0xe723
+le16 independent input 13	decoded=0x7843
+be16 independent input 13	decoded=0x4378
+le16 independent input 14	decoded=0xe55a
+be16 independent input 14	decoded=0x5ae5
+le16 independent input 15	decoded=0x5e16
+be16 independent input 15	decoded=0x165e
+le16 independent input 16	decoded=0xa4d8
+be16 independent input 16	decoded=0xd8a4
+le16 independent input 17	decoded=0xc898
+be16 independent input 17	decoded=0x98c8
+le16 independent input 18	decoded=0xd1d
+be16 independent input 18	decoded=0x1d0d
+le16 independent input 19	decoded=0x5f5d
+be16 independent input 19	decoded=0x5d5f
+le16 independent input 20	decoded=0x33a8
+be16 independent input 20	decoded=0xa833
+le16 owned encoding to readonly reader	0x1234
+be16 owned encoding to readonly reader	0x1234
+le64 encode 0	unchecked bytes=0x0 same=0x0 opposite=0x0
+be64 encode 0	unchecked bytes=0x0 same=0x0 opposite=0x0
+le64 encode 1	unchecked bytes=0x1 same=0x1 opposite=0x100000000000000
+be64 encode 1	unchecked bytes=0x100000000000000 same=0x1 opposite=0x100000000000000
+le64 encode 42	unchecked bytes=0x2a same=0x2a opposite=0x2a00000000000000
+be64 encode 42	unchecked bytes=0x2a00000000000000 same=0x2a opposite=0x2a00000000000000
+le64 encode 127	unchecked bytes=0x7f same=0x7f opposite=0x7f00000000000000
+be64 encode 127	unchecked bytes=0x7f00000000000000 same=0x7f opposite=0x7f00000000000000
+le64 encode 128	unchecked bytes=0x80 same=0x80 opposite=0x8000000000000000
+be64 encode 128	unchecked bytes=0x8000000000000000 same=0x80 opposite=0x8000000000000000
+le64 encode 255	unchecked bytes=0xff same=0xff opposite=0xff00000000000000
+be64 encode 255	unchecked bytes=0xff00000000000000 same=0xff opposite=0xff00000000000000
+le64 encode 256	unchecked bytes=0x100 same=0x100 opposite=0x1000000000000
+be64 encode 256	unchecked bytes=0x1000000000000 same=0x100 opposite=0x1000000000000
+le64 encode 4660	unchecked bytes=0x1234 same=0x1234 opposite=0x3412000000000000
+be64 encode 4660	unchecked bytes=0x3412000000000000 same=0x1234 opposite=0x3412000000000000
+le64 encode 32768	unchecked bytes=0x8000 same=0x8000 opposite=0x80000000000000
+be64 encode 32768	unchecked bytes=0x80000000000000 same=0x8000 opposite=0x80000000000000
+le64 encode 65535	unchecked bytes=0xffff same=0xffff opposite=0xffff000000000000
+be64 encode 65535	unchecked bytes=0xffff000000000000 same=0xffff opposite=0xffff000000000000
+le64 encode 4294967296	unchecked bytes=0x100000000 same=0x100000000 opposite=0x1000000
+be64 encode 4294967296	unchecked bytes=0x1000000 same=0x100000000 opposite=0x1000000
+le64 encode 9223372036854775808	unchecked bytes=0x8000000000000000 same=0x8000000000000000 opposite=0x80
+be64 encode 9223372036854775808	unchecked bytes=0x80 same=0x8000000000000000 opposite=0x80
+le64 encode 81985529216486895	unchecked bytes=0x123456789abcdef same=0x123456789abcdef opposite=0xefcdab8967452301
+be64 encode 81985529216486895	unchecked bytes=0xefcdab8967452301 same=0x123456789abcdef opposite=0xefcdab8967452301
+le64 encode 18446744073709551615	unchecked bytes=0xffffffffffffffff same=0xffffffffffffffff opposite=0xffffffffffffffff
+be64 encode 18446744073709551615	unchecked bytes=0xffffffffffffffff same=0xffffffffffffffff opposite=0xffffffffffffffff
+le64 encode 2543242408054279511	unchecked bytes=0x234b697ed5c8cd57 same=0x234b697ed5c8cd57 opposite=0x57cdc8d57e694b23
+be64 encode 2543242408054279511	unchecked bytes=0x57cdc8d57e694b23 same=0x234b697ed5c8cd57 opposite=0x57cdc8d57e694b23
+le64 encode 6023287424468612375	unchecked bytes=0x539703fff3877517 same=0x539703fff3877517 opposite=0x177587f3ff039753
+be64 encode 6023287424468612375	unchecked bytes=0x177587f3ff039753 same=0x539703fff3877517 opposite=0x177587f3ff039753
+le64 encode 1630593414320133610	unchecked bytes=0x16a1081231a495ea same=0x16a1081231a495ea opposite=0xea95a4311208a116
+be64 encode 1630593414320133610	unchecked bytes=0xea95a4311208a116 same=0x16a1081231a495ea opposite=0xea95a4311208a116
+le64 encode 8221544442459581928	unchecked bytes=0x7218cb1c5de3ede8 same=0x7218cb1c5de3ede8 opposite=0xe8ede35d1ccb1872
+be64 encode 8221544442459581928	unchecked bytes=0xe8ede35d1ccb1872 same=0x7218cb1c5de3ede8 opposite=0xe8ede35d1ccb1872
+le64 encode 4294019430519493387	unchecked bytes=0x3b976bebdebd530b same=0x3b976bebdebd530b opposite=0xb53bddeeb6b973b
+be64 encode 4294019430519493387	unchecked bytes=0xb53bddeeb6b973b same=0x3b976bebdebd530b opposite=0xb53bddeeb6b973b
+le64 encode 1582955198409191423	unchecked bytes=0x15f7c95db889afff same=0x15f7c95db889afff opposite=0xffaf89b85dc9f715
+be64 encode 1582955198409191423	unchecked bytes=0xffaf89b85dc9f715 same=0x15f7c95db889afff opposite=0xffaf89b85dc9f715
+le64 encode 10751446398404381129	unchecked bytes=0x9534cf89268bc9c9 same=0x9534cf89268bc9c9 opposite=0xc9c98b2689cf3495
+be64 encode 10751446398404381129	unchecked bytes=0xc9c98b2689cf3495 same=0x9534cf89268bc9c9 opposite=0xc9c98b2689cf3495
+le64 encode 15565405450657785437	unchecked bytes=0xd8036dc9cf62e65d same=0xd8036dc9cf62e65d opposite=0x5de662cfc96d03d8
+be64 encode 15565405450657785437	unchecked bytes=0x5de662cfc96d03d8 same=0xd8036dc9cf62e65d opposite=0x5de662cfc96d03d8
+le64 encode 3079941586563571269	unchecked bytes=0x2abe268e04131e45 same=0x2abe268e04131e45 opposite=0x451e13048e26be2a
+be64 encode 3079941586563571269	unchecked bytes=0x451e13048e26be2a same=0x2abe268e04131e45 opposite=0x451e13048e26be2a
+le64 encode 3113379042068218368	unchecked bytes=0x2b34f1be4d9f4200 same=0x2b34f1be4d9f4200 opposite=0x429f4dbef1342b
+be64 encode 3113379042068218368	unchecked bytes=0x429f4dbef1342b same=0x2b34f1be4d9f4200 opposite=0x429f4dbef1342b
+le64 encode 4162468740598636870	unchecked bytes=0x39c40f44100ca146 same=0x39c40f44100ca146 opposite=0x46a10c10440fc439
+be64 encode 4162468740598636870	unchecked bytes=0x46a10c10440fc439 same=0x39c40f44100ca146 opposite=0x46a10c10440fc439
+le64 encode 10251322847461113074	unchecked bytes=0x8e4403d0e0c3fcf2 same=0x8e4403d0e0c3fcf2 opposite=0xf2fcc3e0d003448e
+be64 encode 10251322847461113074	unchecked bytes=0xf2fcc3e0d003448e same=0x8e4403d0e0c3fcf2 opposite=0xf2fcc3e0d003448e
+le64 encode 9056697032806506563	unchecked bytes=0x7dafd9f786c42043 same=0x7dafd9f786c42043 opposite=0x4320c486f7d9af7d
+be64 encode 9056697032806506563	unchecked bytes=0x4320c486f7d9af7d same=0x7dafd9f786c42043 opposite=0x4320c486f7d9af7d
+le64 encode 6835543324970596476	unchecked bytes=0x5edcba7013aa387c same=0x5edcba7013aa387c opposite=0x7c38aa1370badc5e
+be64 encode 6835543324970596476	unchecked bytes=0x7c38aa1370badc5e same=0x5edcba7013aa387c opposite=0x7c38aa1370badc5e
+le64 encode 1195370305469605590	unchecked bytes=0x1096cef5a090e6d6 same=0x1096cef5a090e6d6 opposite=0xd6e690a0f5ce9610
+be64 encode 1195370305469605590	unchecked bytes=0xd6e690a0f5ce9610 same=0x1096cef5a090e6d6 opposite=0xd6e690a0f5ce9610
+le64 encode 12121869242835613526	unchecked bytes=0xa83987da18f33756 same=0xa83987da18f33756 opposite=0x5637f318da8739a8
+be64 encode 12121869242835613526	unchecked bytes=0x5637f318da8739a8 same=0xa83987da18f33756 opposite=0x5637f318da8739a8
+le64 independent input 0	decoded=0x0
+be64 independent input 0	decoded=0x0
+le64 independent input 1	decoded=0xffffffffffffffff
+be64 independent input 1	decoded=0xffffffffffffffff
+le64 independent input 2	decoded=0x80
+be64 independent input 2	decoded=0x8000000000000000
+le64 independent input 3	decoded=0x8000000000000000
+be64 independent input 3	decoded=0x80
+le64 independent input 4	decoded=0x807060504030201
+be64 independent input 4	decoded=0x102030405060708
+le64 independent input 5	decoded=0x2a2cf42d809bcb63
+be64 independent input 5	decoded=0x63cb9b802df42c2a
+le64 independent input 6	decoded=0xe0116721c1090ff8
+be64 independent input 6	decoded=0xf80f09c1216711e0
+le64 independent input 7	decoded=0x15269642597cff2b
+be64 independent input 7	decoded=0x2bff7c5942962615
+le64 independent input 8	decoded=0xdfd7ef4d4fb8ac61
+be64 independent input 8	decoded=0x61acb84f4defd7df
+le64 independent input 9	decoded=0xeb43076868cc56eb
+be64 independent input 9	decoded=0xeb56cc68680743eb
+le64 independent input 10	decoded=0x9893d5d02ec1822d
+be64 independent input 10	decoded=0x2d82c12ed0d59398
+le64 independent input 11	decoded=0x5951c96b8234ad44
+be64 independent input 11	decoded=0x44ad34826bc95159
+le64 independent input 12	decoded=0x1b07f4af61180878
+be64 independent input 12	decoded=0x78081861aff4071b
+le64 independent input 13	decoded=0xd86127380c30bfef
+be64 independent input 13	decoded=0xefbf300c382761d8
+le64 independent input 14	decoded=0x27cf4402d8c4d1cd
+be64 independent input 14	decoded=0xcdd1c4d80244cf27
+le64 independent input 15	decoded=0x332dddece775fd80
+be64 independent input 15	decoded=0x80fd75e7ecdd2d33
+le64 independent input 16	decoded=0xa441919bed3243a4
+be64 independent input 16	decoded=0xa44332ed9b9141a4
+le64 independent input 17	decoded=0x708e2d43bf66b1a6
+be64 independent input 17	decoded=0xa6b166bf432d8e70
+le64 independent input 18	decoded=0x57111ccfc4f0080d
+be64 independent input 18	decoded=0xd08f0c4cf1c1157
+le64 independent input 19	decoded=0xe346fff95f2a4417
+be64 independent input 19	decoded=0x17442a5ff9ff46e3
+le64 independent input 20	decoded=0x1289f6acf9941ef3
+be64 independent input 20	decoded=0xf31e94f9acf68912
+le64 owned encoding to readonly reader	0x123456789abcdef
+be64 owned encoding to readonly reader	0x123456789abcdef
+16-bit failure masks all nonzero public payload bytes	0x0
+16-bit report constructor and accessors copy independently	0x802a
+64-bit encoded results and copies are independent	0x2a
+Bytes2 and Bytes8 zero initialization	0x0
+Bytes2 copied function value and result	0x2a
+Bytes8 copied function value and result	0x2a
+layout and runtime metadata	0x1 0x3 0x4 0x7 0x8 0x9 0x40 0x2 0x4 0x8 0x40 0x200 0x48 0x208 0x40 0x200
+compact wrapper capacity 1	0xff
+compact wrapper capacity 3	0xff
+compact wrapper capacity 4	0xff
+compact wrapper capacity 7	0xff
+compact wrapper capacity 8	0xff
+compact wrapper capacity 9	0xff
+compact wrapper capacity 64	0xff
+natural mixed widths nested empty and copied results	0x2a
+buffer read bounds -1	bounds-trap
+buffer read bounds 64	bounds-trap
+buffer read bounds 9223372036854775807	bounds-trap
+example binary_buffer.au	returned 42
+example storage_codec.au	returned 42
+reject 0 buffer	1:227: error AU3001: indexing requires an array local or implicit private receiver field
+reject 1 buffer	1:216: error AU3001: indexing requires an array local or implicit private receiver field
+reject 2 buffer	1:259: error AU3001: mutable method requires a mutable receiver
+reject 3 buffer	1:259: error AU3001: mutable method requires a mutable receiver
+reject 4 buffer	1:228: error AU3001: expected u8, got u64
+reject 5 buffer	1:230: error AU3001: expected u64, got i64
+reject 6 buffer	1:227: error AU3001: expected i64, got u64
+reject 7 buffer	1:224: error AU3001: borrow_bytes requires a named local byte array or owned bytes
+reject 8 buffer	1:257: error AU3001: expected i64, got u64
+reject 9 buffer	1:282: error AU3001: expected u64, got u8
+reject 10 sector	1:169: error AU3001: indexing requires an array local or implicit private receiver field
+reject 11 sector	1:158: error AU3001: indexing requires an array local or implicit private receiver field
+reject 12 sector	1:203: error AU3001: expected i64, got u64
+reject 13 sector	1:172: error AU3001: expected u8, got u64
+reject 14 sector	1:211: error AU3001: expected i64, got u64
+reject 15 sector	1:174: error AU3001: expected std::BinaryBuffer64, got storage::Sector512
+reject 16 sector	1:200: error AU3001: mutable method requires a mutable receiver
+reject 17 sector	1:256: error AU3001: mutable method requires a mutable receiver
+reject 18 sector	1:190: error AU3001: borrow_bytes requires a named local byte array or owned bytes
+reject 19 window array needs an explicit borrow	2:70: error AU3001: span initializer requires borrow_bytes, a live span or its subspan
+reject 20 window base must be u64	2:91: error AU3001: expected u64, got i64
+reject 21 window request must be i64	2:97: error AU3001: expected i64, got u64
+reject 22 window bool is not a base	2:91: error AU3001: expected u64, got bool
+reject 23 window bool is not a request	2:97: error AU3001: expected i64, got bool
+reject 24 window owned sector does not expose a borrowed array	2:93: error AU3001: borrow_bytes requires a named local byte array or owned bytes
+reject 25 window report payload stays private	2:141: error AU3001: private class field is inaccessible
+reject 26 window source array cannot exceed 4096	1:57: error AU2001: array length requires a decimal integer literal between 1 and 4096 (found '>')
+reject 27 window result is an owned report, not a span	2:40: error AU3001: span initializer requires borrow_bytes, a live span or its subspan
+reject 28 codec	1:118: error AU3001: private class field is inaccessible
+reject 29 codec	1:118: error AU3001: unknown class method
+reject 30 codec	1:158: error AU3001: indexing requires an array local or implicit private receiver field
+reject 31 codec	1:157: error AU3001: mutable method requires a mutable receiver
+reject 32 codec	1:111: error AU3001: class-returning call requires a typed local initializer
+reject 33 codec	1:148: error AU3001: expected u8, got u64
+reject 34 codec	1:128: error AU3001: constructor-bearing class rejects designated initialization
+reject 35 storage codec	1:135: error AU3001: private class field is inaccessible
+reject 36 storage codec	1:97: error AU3001: expected u64, got i64
+reject 37 storage codec	1:88: error AU3001: expected u64, got i64
+reject 38 storage codec	1:109: error AU3001: expected std::Bytes2, got std::Bytes4
+reject 39 storage codec	1:109: error AU3001: expected std::Bytes8, got std::Bytes4
+reject 40 storage codec	1:124: error AU3001: unknown class method
+reject 41 storage codec	1:96: error AU3001: indexing requires an array local or implicit private receiver field
+reject 42 storage codec	1:91: error AU3001: mutable method requires a mutable receiver
+reject 43 storage codec	1:91: error AU3001: expected u8, got u64
+reject 44 storage codec	1:96: error AU3001: indexing requires an array local or implicit private receiver field
+reject 45 storage codec	1:91: error AU3001: mutable method requires a mutable receiver
+reject 46 storage codec	1:91: error AU3001: expected u8, got u64

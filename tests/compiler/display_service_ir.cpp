@@ -1,51 +1,6 @@
-// Independently authored IR extensions plus the complete Console regression gate.
-#define main console_service_regression
-#include "console_service_ir.cpp"
-#undef main
-namespace {
-Module displayPixel() {
-    Module m;
-    canonicalTypes(m);
-    m.enumCases[std::string(service::displayPutResultName)] = 2;
-    m.enumCases[std::string(service::displayCompletionName)] = 2;
-    auto f = entry("pixel_entry");
-    f.parameters = {Type::DisplaySession};
-    f.result = service::displayPutResultType();
-    f.code = {BindServiceParameter{0, 16, service::Kind::Display},
-              Constant{7, Type::U64},
-              Push{},
-              Constant{9, Type::U64},
-              Push{},
-              Constant{11, Type::U8},
-              Push{},
-              Constant{13, Type::U8},
-              Push{},
-              Constant{17, Type::U8},
-              Push{},
-              ServiceOperation{16, service::Operation::Pixel, 0, service::Kind::Display},
-              Return{}};
-    m.functions.push_back(f);
-    return m;
-}
-Module displayForwarded() {
-    auto m = displayPixel();
-    auto caller = entry("display_caller");
-    caller.parameters = {Type::DisplaySession};
-    caller.result = service::displayPutResultType();
-    caller.code = {BindServiceParameter{0, 16, service::Kind::Display},
-                   AcquireServiceLoan{1, 16, service::Kind::Display},
-                   ServiceCall{"pixel_entry", 1, 0, {0}, service::Kind::Display},
-                   ReleaseServiceLoan{1, service::Kind::Display},
-                   Return{}};
-    m.functions.push_back(caller);
-    return m;
-}
-} // namespace
-#ifndef DISPLAY_SERVICE_IR_MAIN
-#define DISPLAY_SERVICE_IR_MAIN main
-#endif
-int DISPLAY_SERVICE_IR_MAIN() {
-    console_service_regression();
+// Independently authored Display service IR cases; run by display-service-ir.
+#include "service_ir_common.hpp"
+void aurora::test::service_ir::displayServiceCases() {
     good(displayPixel());
     good(displayForwarded());
     bad(displayPixel(), [](auto &m) {
@@ -163,6 +118,4 @@ int DISPLAY_SERVICE_IR_MAIN() {
             m.functions[0].code.insert(m.functions[0].code.begin() + 1, Call{name});
         });
     }
-    std::cout << "PASS display service IR and Console regression: " << checks << " checks\n";
-    return 0;
 }

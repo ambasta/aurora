@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-clock_plan=false
-if [[ "${1-}" == --clock-plan ]]; then clock_plan=true; shift; fi
 # Compatibility alias: normal restoration now boots the isolated native image.
 shared_normal=false
 if [[ "${1-}" == --shared-normal ]]; then shared_normal=true; shift; fi
 run_only= output_dir=
 if [[ "${1-}" == --run-only ]]; then
-    if (( $# < 4 )) || [[ -z "$2" || "$3" != --output-dir || -z "$4" || "$clock_plan" == true ]]; then
-        echo 'Expected --run-only <absolute native profile directory> --output-dir <fresh directory>, without --clock-plan' >&2; exit 2
+    if (( $# < 4 )) || [[ -z "$2" || "$3" != --output-dir || -z "$4" ]]; then
+        echo 'Expected --run-only <absolute native profile directory> --output-dir <fresh directory>' >&2; exit 2
     fi
     run_only="$2"; output_dir="$4"; shift 4
 fi
@@ -44,33 +42,17 @@ output.mkdir()
 PYPATH
 fi
 source ./scripts/uefi-firmware.sh
-if [[ "$clock_plan" == true ]]; then
-    uefi_firmware_select --plan
-else
-    uefi_firmware_select
-fi
-image_dir=build/uefi
+uefi_firmware_select
 qemu="${QEMU:-qemu-system-x86_64}"
-if [[ "$clock_plan" == false ]]; then
-    command -v "$qemu" >/dev/null || { echo 'BLOCKED: QEMU missing' >&2; exit 2; }
-    if [[ -n "$run_only" ]]; then image_dir="$run_only"
-    else image_dir="$(UEFI_MODE="$mode" ./scripts/kernel-uefi-build.sh --print-image-dir)"; fi
-fi
+command -v "$qemu" >/dev/null || { echo 'BLOCKED: QEMU missing' >&2; exit 2; }
+if [[ -n "$run_only" ]]; then image_dir="$run_only"
+else image_dir="$(UEFI_MODE="$mode" ./scripts/kernel-uefi-build.sh --print-image-dir)"; fi
 output_dir="${output_dir:-$image_dir}"
 mapfile -d '' -t qemu_argv < <(python3 -B scripts/qemu_transport.py argv --platform uefi \
     --mode="$mode" --image "$image_dir/esp" --qemu "$qemu" --data "${QEMU_DATA:-}" \
     --firmware "$UEFI_FIRMWARE_COMBINED" --code "$UEFI_FIRMWARE_CODE" --vars "$UEFI_FIRMWARE_VARS" \
     --clock "$clock_profile")
 (( ${#qemu_argv[@]} )) || { echo 'FAIL: empty QEMU command' >&2; exit 2; }
-clock_check=(python3 scripts/kernel_emulator_clock.py verify "$mode" "$clock_profile"
-    "$qemu" "$UEFI_FIRMWARE_COMBINED" "$UEFI_FIRMWARE_CODE" "$UEFI_FIRMWARE_VARS"
-    "${QEMU_DATA:-}" --esp "$image_dir/esp" -- "${qemu_argv[@]}")
-if [[ "$clock_plan" == true ]]; then
-    "${clock_check[@]}"
-    exit 0
-fi
-# Fail closed before QEMU; this records a command, never a successful execution.
-"${clock_check[@]}" >"$output_dir/$mode.clock.json"
 log="$output_dir/$mode.log"
 startup_byte="$(python3 -B scripts/kernel_profiles.py --fixture-byte "$mode")"
 startup_args=()

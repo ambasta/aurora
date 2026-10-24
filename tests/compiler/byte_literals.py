@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
 """Exact-u8 character spelling, native boundaries, diagnostics and numeric equivalence."""
 
-import hashlib
 import json
 from pathlib import Path
-import subprocess
+import re
 import sys
 import tempfile
 
-from unsigned_oracle import Case, NativeRunner, Rejection, Trap, command, require
+from native_runner import DIAGNOSTIC, Suite, Trap, command, require, run
 
 
 def app(body, result="u8"):
@@ -36,14 +35,12 @@ def byte_string_length_diagnostics(compiler, root):
             f"got {actual} decoded bytes"
         )
         output.write_bytes(b"preserved\n")
-        result = subprocess.run([compiler, source, "-o", output], capture_output=True, text=True, timeout=10)
+        result = run([compiler, source, "-o", output], timeout=10)
         require(
-            result.returncode == 1 and message in result.stderr and output.read_bytes() == b"preserved\n",
+            result.returncode == 1 and message in result.stderr.decode() and output.read_bytes() == b"preserved\n",
             f"string length diagnostic or failed output preservation: {spelling!r}: {result.stderr}",
         )
-        result = subprocess.run(
-            [compiler, "--check", "--diagnostics=json", source], capture_output=True, text=True, timeout=10
-        )
+        result = run([compiler, "--check", "--diagnostics=json", source], timeout=10)
         require(result.returncode == 1, f"string length mismatch passed check: {spelling!r}")
         diagnostics = json.loads(result.stdout)["diagnostics"]
         require(len(diagnostics) == 1, f"string length diagnostic count: {diagnostics}")
@@ -58,7 +55,7 @@ def byte_string_length_diagnostics(compiler, root):
     print("PASS byte-string length diagnostics: 8 decoded byte counts, spans and preserved outputs")
 
 
-def byte_strings(compiler, root, runner):
+def byte_strings(compiler, root, suite):
     # Strings reuse named array storage and the existing native value/trap oracle.
     spellings = [
         ('"IOMMU "', b"IOMMU "),
@@ -68,7 +65,6 @@ def byte_strings(compiler, root, runner):
         (r'"\x4142\01"', b"A42\x001"),  # Exactly two hex digits; zero is not octal.
         ('"' + "a" * 4096 + '"', b"a" * 4096),
     ]
-    cases = []
     source, output = root / "string.au", root / "string.s"
     for spelling, expected in spellings:
         if len(expected) <= 256:
@@ -76,7 +72,8 @@ def byte_strings(compiler, root, runner):
             body += "const builtin::span<const u8> view=borrow_bytes(b);"
             body += f"if(view.size()!={len(expected)}){{return 1u64;}}"
             body += "".join(f"if(view.at({i})!={value}u8){{return 2u64;}}" for i, value in enumerate(expected))
-            cases.append(Case("byte-string contents and exact borrowed extent", body + "return 0u64;", 0))
+            name = f"byte-string contents and exact borrowed extent {spelling[:16]}"
+            suite.value(name, body + "return 0u64;", 0, "u64")
 
         # No hidden terminator, alternate storage, lifetime or backend operation.
         def assembly(initializer):
@@ -88,19 +85,15 @@ def byte_strings(compiler, root, runner):
             assembly(spelling) == assembly("{" + ",".join(f"{value}u8" for value in expected) + "}"),
             "string initializer changed assembly relative to explicit byte array",
         )
-    runner.cases(cases)
     # The capacity boundary is compiled and executed without inflating source depth.
-    runner.cases(
-        [
-            Case(
-                "maximum string array",
-                'array<u8,4096> b="' + "a" * 4096 + '";'
-                "b[4095]='z';const array<u8,4096> copy=b;"
-                "const builtin::span<const u8> view=borrow_bytes(copy);"
-                "return u64(view.at(4095))+u64(view.size());",
-                4218,
-            )
-        ]
+    suite.value(
+        "maximum string array",
+        'array<u8,4096> b="' + "a" * 4096 + '";'
+        "b[4095]='z';const array<u8,4096> copy=b;"
+        "const builtin::span<const u8> view=borrow_bytes(copy);"
+        "return u64(view.at(4095))+u64(view.size());",
+        4218,
+        "u64",
     )
     byte_string_length_diagnostics(compiler, root)
     malformed = [
@@ -135,21 +128,10 @@ def byte_strings(compiler, root, runner):
         ]
     ]
     prefix = b"module test;\r\n\tauto test()->u8{const array<u8,1> b="
+    column = len(prefix.split(b"\n")[-1]) + 1
+    lexical = re.compile(rf"[^\n]*:2:{column}: error AU1003: [^\n]+\n")
     for spelling in malformed:
-        source.write_bytes(prefix + spelling + b";return b[0];}")
-        output.write_bytes(b"preserved\n")
-        result = subprocess.run([compiler, source, "-o", output], capture_output=True, timeout=10)
-        require(
-            result.returncode == 1 and output.read_bytes() == b"preserved\n",
-            f"malformed string changed output: {spelling!r}",
-        )
-        result = subprocess.run([compiler, "--check", "--diagnostics=json", source], capture_output=True, timeout=10)
-        require(result.returncode == 1, f"malformed string passed check: {spelling!r}")
-        diagnostic = json.loads(result.stdout)["diagnostics"][0]
-        require(
-            diagnostic["code"] == "AU1003" and diagnostic["range"]["start"]["offset"] == len(prefix),
-            f"string diagnostic or source span: {diagnostic}",
-        )
+        suite.reject(f"malformed byte string {spelling!r}", prefix + spelling + b";return b[0];}", pattern=lexical)
     rejected = [
         'const array<u8,1> b="";return 0u8;',
         'const array<u8,2> b="a";return 0u8;',
@@ -169,81 +151,73 @@ def byte_strings(compiler, root, runner):
         'const array<u8,4097> b="a";return 0u8;',
     ]
     for body in rejected:
-        source.write_text(app(body))
-        result = subprocess.run([compiler, "--check", source], capture_output=True, timeout=10)
-        require(result.returncode == 1, f"string type/length/lifetime restriction accepted: {body}")
-    source.write_text(
+        suite.reject(f"string type/length/lifetime restriction {body}", app(body))
+    suite.reject(
+        "string-backed local array escaped through returned view",
         "module test;class Box{builtin::OwnedBytes payload;public:"
         "Box(builtin::ByteRegion region,builtin::OwnedBytes initial):payload(move(initial)){}"
         "auto view()const->builtin::span<const u8>{"
-        'const array<u8,1> b="a";return borrow_bytes(b);}};auto test()->u8{return 0u8;}'
-    )
-    result = subprocess.run([compiler, "--check", source], capture_output=True, timeout=10)
-    require(
-        result.returncode == 1 and b"returned span must derive directly" in result.stderr,
-        "string-backed local array escaped through returned view",
+        'const array<u8,1> b="a";return borrow_bytes(b);}};auto test()->u8{return 0u8;}',
+        "returned span must derive directly",
     )
     for program, diagnostic in [
         (
             'module test;auto take(u8 value)->u8{return value;}auto test()->u8{return take("a");}',
-            b"byte-string literals require a typed local u8 array initializer",
+            "byte-string literals require a typed local u8 array initializer",
         ),
         (
             'module test;class Box{array<u8,1> data;public:Box():data("a"){} };auto test()->u8{return 0u8;}',
-            b"array fields require explicit empty-brace zero initialization",
+            "array fields require explicit empty-brace zero initialization",
         ),
     ]:
-        source.write_text(program)
-        result = subprocess.run([compiler, "--check", source], capture_output=True, timeout=10)
-        require(result.returncode == 1 and diagnostic in result.stderr, "string escaped its local initializer context")
-    print(
-        f"PASS byte-string arrays: 6 native values, {len(malformed)} lexical and "
-        f"{len(rejected) + 3} length/type/lifetime rejections, 6 exact assembly comparisons"
-    )
+        suite.reject("string escaped its local initializer context", program, diagnostic)
+    print("PASS byte-string arrays: 6 exact assembly comparisons", flush=True)
 
 
-def literal_span_calls(compiler, root, runner):
+def literal_span_calls(compiler, root, suite):
     helper = "auto length(builtin::span<const u8> bytes)->u64{return u64(bytes.size());}"
     cases = [
-        Case("literal empty span", 'return length("");', 0, prelude=helper),
-        Case("literal UTF-8 extent", 'return length("é😀");', 6, prelude=helper),
-        Case("literal exact maximum", 'return length("' + "x" * 4096 + '");', 4096, prelude=helper),
-        Case(
+        ("literal empty span", 'return length("");', 0, helper, ()),
+        ("literal UTF-8 extent", 'return length("é😀");', 6, helper, ()),
+        ("literal exact maximum", 'return length("' + "x" * 4096 + '");', 4096, helper, ()),
+        (
             "literal subspan and binary forwarding",
             r'return forward("x\0\xffz");',
             255,
-            prelude=(
-                "auto at(builtin::span<const u8> bytes)->u64{return u64(bytes.at(1));}"
-                "auto forward(builtin::span<const u8> bytes)->u64{return at(bytes.subspan(1,2));}"
-            ),
+            "auto at(builtin::span<const u8> bytes)->u64{return u64(bytes.at(1));}"
+            "auto forward(builtin::span<const u8> bytes)->u64{return at(bytes.subspan(1,2));}",
+            (),
         ),
-        Case(
+        (
             "literal selects exact span overload",
             'return pick("ab");',
             2,
-            prelude=helper + "auto pick(i64 value)->u64{return 99u64;}"
+            helper + "auto pick(i64 value)->u64{return 99u64;}"
             "auto pick(builtin::span<const u8> bytes)->u64{return length(bytes);}",
+            (),
         ),
-        Case(
+        (
             "multiple literal arguments and repeated loop cleanup",
             r'if(!std::equal("\0\xff", "\0\xff") || !std::equal("", "")'
             r' || !std::starts_with("write x y", "write ") || std::equal("a", "ab")) {return 0u64;}'
             'i64 index=0;while(index<32){if(!std::starts_with("abc", "a")){return 0u64;}'
             "index=index+1;}return 42u64;",
             42,
-            imports=("std.bytes",),
+            "",
+            ("std.bytes",),
         ),
-        Case(
+        (
             "mutable receiver accepts literal readonly parameter",
             r"std::BinaryBuffer64 buffer=std::BinaryBuffer64();"
             r'if(!buffer.starts_with(2, "\0\0") || buffer.starts_with(2, "x")){return 0u64;}'
             "buffer.write_u8(0,'x');if(!buffer.starts_with(2, \"x\")){return 0u64;}return 42u64;",
             42,
-            imports=("std.binary_buffer", "std.binary"),
+            "",
+            ("std.binary_buffer", "std.binary"),
         ),
     ]
-    for case in cases:
-        runner.cases([case])
+    for name, body, expected, prelude, imports in cases:
+        suite.value(name, body, expected, "u64", prelude, imports)
     rejected = [
         app('return "x";'),
         app('const builtin::span<const u8> bytes="x";return 0u8;'),
@@ -258,15 +232,8 @@ def literal_span_calls(compiler, root, runner):
         "module test;" + helper + 'auto test()->u64{return length("' + "x" * 4097 + '");}',
     ]
     for index, program in enumerate(rejected[:-1]):
-        runner.rejection(Rejection(f"literal nonescaping boundary {index}", program))
-    oversized, preserved = root / "literal-oversized.au", root / "literal-oversized.s"
-    oversized.write_text(rejected[-1])
-    preserved.write_bytes(b"preserved output\n")
-    result = subprocess.run([compiler, oversized, "-o", preserved], capture_output=True, timeout=10)
-    require(
-        result.returncode == 1 and b"AU1003" in result.stderr and preserved.read_bytes() == b"preserved output\n",
-        "oversized literal argument escaped the existing lexer bound or damaged output",
-    )
+        suite.reject(f"literal nonescaping boundary {index}", program, pattern=DIAGNOSTIC)
+    suite.reject("oversized literal argument escaped the existing lexer bound", rejected[-1], "AU1003")
     # Inspect the real object section independently of source/IR length metadata.
     source, assembly, obj, payload = (root / ("literal-data" + suffix) for suffix in (".au", ".s", ".o", ".bin"))
     source.write_text("module test;" + helper + r'auto test()->u64{return length("a\0\xff");}')
@@ -277,12 +244,10 @@ def literal_span_calls(compiler, root, runner):
     section = next(line for line in command(["readelf", "-SW", obj]).stdout.decode().splitlines() if ".rodata " in line)
     flags = section.split("PROGBITS", 1)[1].split()[4]
     require(flags == "A", f"literal section is not readonly allocated data: {section}")
-    print(
-        f"PASS literal span calls: {len(cases)} native cases, {len(rejected)} rejections, exact readonly object bytes"
-    )
+    print("PASS literal span calls: exact readonly object bytes", flush=True)
 
 
-def fixed_array_views(compiler, root, runner):
+def fixed_array_views(compiler, root, suite):
     span = "builtin::span<const u8>"
     box = (
         (
@@ -298,40 +263,41 @@ def fixed_array_views(compiler, root, runner):
         .replace("'\\\\0'", "'\\0'")
         .replace("'\\\\xff'", "'\\xff'")
     )
-    cases = [
-        Case(
-            "fixed field exact layout and lifetime",
-            "ViewBox box=ViewBox();box.initialize();"
-            f"{{const {span} view=box.bytes(0,3);const {span} child=view.subspan(1,2);"
-            "if(view.size()!=3 || view.at(0)!='a' || child.at(0)!='\\0' || child.at(1)!='\\xff'){return 0u64;}"
-            "const ViewBox copy=box;if(copy.first()!='a'){return 1u64;}}"
-            "box.set('z');return u64(box.first());",
-            122,
-            prelude=box,
-        ),
-        Case(
-            "fixed field independent copied root",
-            "ViewBox box=ViewBox();box.initialize();ViewBox copy=box;"
-            f"const {span} view=box.bytes(0,1);copy.set('z');return u64(view.at(0));",
-            97,
-            prelude=box,
-        ),
-        Case(
-            "fixed empty endpoint window",
-            f"ViewBox box=ViewBox();box.initialize();const {span} view=box.bytes(3,0);return u64(view.size());",
-            0,
-            prelude=box,
-        ),
-        Case(
-            "fixed temporary argument and release",
-            "ViewBox box=ViewBox();box.initialize();"
-            "if(!std::equal(box.bytes(0,1),\"a\")){return 0u64;}box.set('b');return u64(box.first());",
-            98,
-            prelude=box,
-            imports=("std.bytes",),
-        ),
-    ]
-    traps = []
+    suite.value(
+        "fixed field exact layout and lifetime",
+        "ViewBox box=ViewBox();box.initialize();"
+        f"{{const {span} view=box.bytes(0,3);const {span} child=view.subspan(1,2);"
+        "if(view.size()!=3 || view.at(0)!='a' || child.at(0)!='\\0' || child.at(1)!='\\xff'){return 0u64;}"
+        "const ViewBox copy=box;if(copy.first()!='a'){return 1u64;}}"
+        "box.set('z');return u64(box.first());",
+        122,
+        "u64",
+        box,
+    )
+    suite.value(
+        "fixed field independent copied root",
+        "ViewBox box=ViewBox();box.initialize();ViewBox copy=box;"
+        f"const {span} view=box.bytes(0,1);copy.set('z');return u64(view.at(0));",
+        97,
+        "u64",
+        box,
+    )
+    suite.value(
+        "fixed empty endpoint window",
+        f"ViewBox box=ViewBox();box.initialize();const {span} view=box.bytes(3,0);return u64(view.size());",
+        0,
+        "u64",
+        box,
+    )
+    suite.value(
+        "fixed temporary argument and release",
+        "ViewBox box=ViewBox();box.initialize();"
+        "if(!std::equal(box.bytes(0,1),\"a\")){return 0u64;}box.set('b');return u64(box.first());",
+        98,
+        "u64",
+        box,
+        ("std.bytes",),
+    )
     for offset, count in [
         (-1, 0),
         (0, -1),
@@ -342,34 +308,21 @@ def fixed_array_views(compiler, root, runner):
         ((1 << 63) - 1, 0),
         (0, (1 << 63) - 1),
     ]:
-        traps.append(
-            Case(
-                "fixed field checked window bounds",
-                "ViewBox box=ViewBox();box.initialize();"
-                f"const {span} view=box.bytes({offset},{count});return u64(view.size());",
-                0,
-                prelude=box,
-            )
+        suite.value(
+            f"fixed field checked window bounds {offset} {count}",
+            "ViewBox box=ViewBox();box.initialize();"
+            f"const {span} view=box.bytes({offset},{count});return u64(view.size());",
+            Trap.BOUNDS,
+            "u64",
+            box,
         )
-    traps.append(
-        Case(
-            "fixed empty view cannot load",
-            f"ViewBox box=ViewBox();box.initialize();const {span} view=box.bytes(3,0);return u64(view.at(0));",
-            0,
-            prelude=box,
-        )
+    suite.value(
+        "fixed empty view cannot load",
+        f"ViewBox box=ViewBox();box.initialize();const {span} view=box.bytes(3,0);return u64(view.at(0));",
+        Trap.BOUNDS,
+        "u64",
+        box,
     )
-    for case in cases:
-        runner.cases([case])
-    from types import SimpleNamespace
-    from unsigned_oracle import validate_trap
-
-    for case in traps:
-        source, output = root / "fixed-trap.au", root / "fixed-trap.s"
-        source.write_text("module test;" + case.prelude + "auto test()->u64{" + case.body + "}")
-        command([compiler, source, "-o", output])
-        observed, symbols = runner.assemble(output.read_text(), ["test"])
-        validate_trap(observed, SimpleNamespace(value=".Laurora_bounds_trap"), symbols, case.name)
     bad = {
         "named root mutation": "ViewBox box=ViewBox();box.initialize();"
         + f"const {span} view=box.bytes(0,0);box.set('x');return 0u64;",
@@ -397,13 +350,11 @@ def fixed_array_views(compiler, root, runner):
         "same-class projection": "borrow_bytes fields require",
     }
     helpers = box + f"auto inspect({span} bytes,i64 unused)->u64{{return u64(bytes.size());}}"
-    source, output = root / "fixed-invalid.au", root / "fixed-invalid.s"
     for label, body in bad.items():
-        source.write_text("module bad;" + helpers + "auto test()->u64{" + body + "}")
-        result = subprocess.run([compiler, source, "-o", output], capture_output=True, text=True, timeout=10)
-        require(
-            result.returncode == 1 and diagnostics[label] in result.stderr,
-            "fixed array view rejection mismatch " + label + ": " + result.stderr,
+        suite.reject(
+            "fixed array view rejection " + label,
+            "module bad;" + helpers + "auto test()->u64{" + body + "}",
+            diagnostics[label],
         )
     for label, methods in {
         "mutable return": f"auto bytes()->{span}{{return borrow_bytes(data);}}",
@@ -415,24 +366,17 @@ def fixed_array_views(compiler, root, runner):
         "same-class projection": f"auto inspect(ViewBox copy)const->i64{{"
         f"const {span} view=borrow_bytes(copy.data);return view.size();}}",
     }.items():
-        source.write_text(
+        suite.reject(
+            "fixed array view rejection " + label,
             "module bad;class ViewBox{array<u8,3> data;array<u8,2> other;public:"
-            "ViewBox():data{},other{}{}" + methods + "};auto test()->u64{return 0u64;}"
+            "ViewBox():data{},other{}{}" + methods + "};auto test()->u64{return 0u64;}",
+            diagnostics[label],
         )
-        result = subprocess.run([compiler, source, "-o", output], capture_output=True, text=True, timeout=10)
-        require(
-            result.returncode == 1 and diagnostics[label] in result.stderr,
-            "fixed array view rejection mismatch " + label + ": " + result.stderr,
-        )
-    print(
-        f"PASS fixed array views: {len(cases) + len(traps)} native cases and "
-        f"{len(bad) + 5} non-escape/mutation rejections"
-    )
 
 
 def main():
     compiler = Path(sys.argv[1]).resolve(strict=True)
-    print(f"compiler_sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}", flush=True)
+    suite = Suite(compiler, "byte literals", timeout=10)
     spellings = [(f"'\\x{value:02X}'", value) for value in range(256)]
     spellings += [("'" + chr(value) + "'", value) for value in range(32, 127) if value not in (39, 92)]
     spellings += [
@@ -451,23 +395,29 @@ def main():
         ]
     ]
     spellings += [("'\\xff'", 255), ("'\\xAb'", 171)]
-    cases = [
-        Case(f"byte spelling {spelling}", f"static_assert({spelling}=={value}u8);return u64({spelling});", value)
-        for spelling, value in spellings
-    ]
-    cases += [
-        Case("byte operations", r"return u64((~'\0' & '\x0f') + '\x01');", 16),
-        Case("signed widening", "return i64('[');", 91, result_type="i64"),
-        Case("literal shift", r"return u64('\x01' << 7);", 128),
-        Case("literal array", r"const array<u8,3> b={'[','\0','\xff'};return u64(b[2]);", 255),
-        Case(
-            "literal parameter and direct copied return",
-            "const Box b=make('[');return u64(b.get());",
-            91,
-            prelude="class Box{u8 value;public:Box(u8 v):value(v){}auto get()const->u8{return value;}};"
-            "auto make(u8 value)->Box{return Box(value);}",
-        ),
-    ]
+    for spelling, value in spellings:
+        suite.value(
+            f"byte spelling {spelling}", f"static_assert({spelling}=={value}u8);return u64({spelling});", value, "u64"
+        )
+    suite.value("byte operations", r"return u64((~'\0' & '\x0f') + '\x01');", 16, "u64")
+    suite.value("signed widening", "return i64('[');", 91, "i64")
+    suite.value("literal shift", r"return u64('\x01' << 7);", 128, "u64")
+    suite.value("literal array", r"const array<u8,3> b={'[','\0','\xff'};return u64(b[2]);", 255, "u64")
+    suite.value(
+        "literal parameter and direct copied return",
+        "const Box b=make('[');return u64(b.get());",
+        91,
+        "u64",
+        "class Box{u8 value;public:Box(u8 v):value(v){}auto get()const->u8{return value;}};"
+        "auto make(u8 value)->Box{return Box(value);}",
+    )
+    for body, trap in [
+        (r"return u64('\xff'+ '\x01');", Trap.OVERFLOW),
+        (r"return u64('\0' - '\x01');", Trap.OVERFLOW),
+        (r"return u64('a' / '\0');", Trap.ZERO),
+        (r"return u64('a' << 8);", Trap.COUNT),
+    ]:
+        suite.value("character preserves checked trap " + body, body, trap, "u64")
     invalid = [
         "''",
         "'ab'",
@@ -503,50 +453,24 @@ def main():
     invalid_bytes = [x.encode() for x in invalid] + [b"'" + bytes([n]) + b"'" for n in range(128, 256)]
     with tempfile.TemporaryDirectory(prefix="aurora-byte-literals-") as temporary:
         root = Path(temporary)
-        runner = NativeRunner(root, compiler, 10)
-        byte_strings(compiler, root, runner)
-        literal_span_calls(compiler, root, runner)
-        fixed_array_views(compiler, root, runner)
-        for offset in range(0, len(cases) - 1, 32):
-            runner.cases(cases[offset : min(offset + 32, len(cases) - 1)])
-        runner.cases([cases[-1]])
-        for body, trap in [
-            (r"return u64('\xff'+ '\x01');", Trap.OVERFLOW),
-            (r"return u64('\0' - '\x01');", Trap.OVERFLOW),
-            (r"return u64('a' / '\0');", Trap.ZERO),
-            (r"return u64('a' << 8);", Trap.COUNT),
-        ]:
-            runner.cases([Case("character preserves checked trap", body, trap)])
-        path = root / "invalid.au"
-        output = root / "preserved.s"
+        byte_strings(compiler, root, suite)
+        literal_span_calls(compiler, root, suite)
+        fixed_array_views(compiler, root, suite)
         prefix = b"module test;\r\n\tauto test()->u8{return "
+        lexical = re.compile(r"[^\n]*:2:25: error AU1002: invalid byte literal\n")
         for spelling in invalid_bytes:
-            original = prefix + spelling + b";}"
-            path.write_bytes(original)
-            result = subprocess.run([compiler, "--check", "--diagnostics=json", path], capture_output=True, timeout=10)
-            require(result.returncode == 1 and not result.stderr, f"expected lexical rejection: {spelling!r}")
-            diagnostic = json.loads(result.stdout)["diagnostics"][0]
-            require(diagnostic["code"] == "AU1002", f"byte diagnostic: {diagnostic}")
-            start = diagnostic["range"]["start"]
-            require(start == {"offset": len(prefix), "line": 2, "column": 25}, f"byte location: {diagnostic}")
-            output.unlink(missing_ok=True)
-            missing = subprocess.run([compiler, path, "-o", output], capture_output=True, timeout=10)
-            require(missing.returncode == 1 and not output.exists(), "invalid literal created assembly")
-            expected_error = f"{path}:2:25: error AU1002: invalid byte literal\n".encode()
-            require(
-                not missing.stdout and missing.stderr == expected_error,
-                "text and structured byte-literal diagnostics disagree",
-            )
-            output.write_bytes(b"preserve existing output\n")
-            result = subprocess.run([compiler, path, "-o", output], capture_output=True, timeout=10)
-            require(
-                result.returncode == 1 and output.read_bytes() == b"preserve existing output\n",
-                "invalid literal changed existing assembly",
-            )
-            require(
-                not result.stdout and result.stderr == expected_error, "existing-output rejection diagnostic differs"
-            )
-            require(path.read_bytes() == original, "compiler modified invalid source")
+            suite.reject(f"invalid byte literal {spelling!r}", prefix + spelling + b";}", pattern=lexical)
+        # Structured and text diagnostics report the same code and location.
+        path, output = root / "invalid.au", root / "preserved.s"
+        path.write_bytes(prefix + invalid_bytes[0] + b";}")
+        result = run([compiler, "--check", "--diagnostics=json", path], timeout=10)
+        require(result.returncode == 1 and not result.stderr, "expected lexical rejection")
+        diagnostic = json.loads(result.stdout)["diagnostics"][0]
+        require(
+            diagnostic["code"] == "AU1002"
+            and diagnostic["range"]["start"] == {"offset": len(prefix), "line": 2, "column": 25},
+            f"byte diagnostic: {diagnostic}",
+        )
         for body, result_type in [
             ("return 'a';", "i64"),
             ("return 'a';", "u64"),
@@ -558,24 +482,14 @@ def main():
             ("static_assert('a'==97);return 'a';", "u8"),
             ("i64 n='a';return 'a';", "u8"),
         ]:
-            path.write_text(app(body, result_type))
-            result = subprocess.run([compiler, "--check", "--diagnostics=json", path], capture_output=True, timeout=10)
-            require(
-                result.returncode == 1 and json.loads(result.stdout)["diagnostics"][0]["code"] == "AU3001",
-                f"implicit widening/type error accepted: {body}",
-            )
-        dependency = root / "dependency.au"
-        dependency.write_text("export module dependency;export auto invalid()->u8{return 'ab';}")
-        path.write_text("module test;import dependency;auto test()->u8{return dependency::invalid();}")
-        result = subprocess.run(
-            [compiler, "--check", "--diagnostics=json", "--module-root", root, path], capture_output=True, timeout=10
+            suite.reject(f"implicit widening/type error {body} {result_type}", app(body, result_type), " AU3001: ")
+        suite.reject(
+            "imported malformed literal keeps its source provenance",
+            "module test;import dependency;auto test()->u8{return dependency::invalid();}",
+            re.compile(r"/dependency\.au:[0-9]+:[0-9]+: error AU1002: "),
+            modules={"dependency": "export module dependency;export auto invalid()->u8{return 'ab';}"},
         )
-        require(result.returncode == 1, "imported malformed literal accepted")
-        diagnostic = json.loads(result.stdout)["diagnostics"][0]
-        require(
-            diagnostic["code"] == "AU1002" and Path(diagnostic["path"]) == dependency,
-            "imported byte literal lost source provenance",
-        )
+        suite.finish()
         # Exact generated assembly for every accepted spelling, under identical names.
         source = root / "equivalent.au"
 
@@ -591,10 +505,7 @@ def main():
             assembly([s for s, _ in spellings]) == assembly([f"{v}u8" for _, v in spellings]),
             "byte literals changed assembly relative to decimal u8",
         )
-    print(
-        f"PASS byte literals: {len(cases)} native values, 4 checked traps, {len(invalid_bytes)} lexical and "
-        f"9 exact-type rejections; {len(spellings)} assembly-equivalent spellings"
-    )
+    print(f"PASS byte literal assembly: {len(spellings)} assembly-equivalent spellings")
 
 
 if __name__ == "__main__":

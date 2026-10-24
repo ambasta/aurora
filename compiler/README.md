@@ -58,7 +58,7 @@ make -C compiler test
 ```
 
 Compiler-only testing uses the canonical Meson graph and is not root `full`.
-`ir-exhaustive` retains codec inventory checks and runs the source verifier and
+`ir-exhaustive` (release suite only) retains codec inventory checks and runs the source verifier and
 emitter against admitted fixtures with unknown observations and a removed
 handler in temporary copies. Aurora dispatch rejects these at runtime; it does
 not provide the former C++ visitor's compile-time exhaustiveness guarantee.
@@ -158,7 +158,7 @@ meson setup build/meson-compiler . -Dkernel_images=false \
   "-Dbootstrap_receipt=$RECEIPT"
 meson compile -C build/meson-compiler -j 2 aurorac aurorac-stage2
 meson test -C build/meson-compiler --no-rebuild --num-processes 1 \
-  hosted-lexer-bootstrap compiler-test-inventory
+  hosted-lexer-bootstrap
 ```
 
 A later invocation reuses only a complete receipt with matching pinned sources,
@@ -284,8 +284,8 @@ The source-built replacement sixth checkpoint `672821f70f37b185c46690791bd00d74d
 the C++ x86 backend. The manifest independently selects it as the historical oracle
 as well as the build predecessor, never a production fallback. Replacing the historical `7811ba8` hop does
 not replace this oracle with the current Aurora emitter. The
-`emitter-differential-default` and `emitter-differential-closed` tests in `slow`
-and `full` compare the historical corpus against it, and unsupported later consumers
+`emitter-differential-default` and `emitter-differential-closed` tests in the
+`release` suite (run at compiler bumps and releases, not on every merge) compare the historical corpus against it, and unsupported later consumers
 against current C1/C2, in ordinary and closed profiles. To run these guarded tests
 directly while retaining successful artifacts:
 
@@ -295,17 +295,7 @@ AURORA_MESON_KEEP_ARTIFACTS=1 meson test -C build/meson-compiler \
   emitter-differential-default emitter-differential-closed
 ```
 
-Both profiles run by default. To select from an explicit comparison target, set
-`meson configure <build> -Demitter_comparison_base=<target commit>`. Immediately
-before the closed test, the existing driver resolves that commit and inspects
-current tracked/staged/unstaged/untracked changes. Only known documentation or
-native-kernel-only changes may produce an explicit Meson SKIP. Compiler/ABI,
-library, generator, option, harness or unknown changes retain the real closed
-comparison, as do missing/invalid/ambiguous bases or unsupported source layouts.
-This is dependency selection, not output-equivalence proof or a cached receipt.
-Use the actual PR target; reset the option to empty to require both unconditionally.
-
-Each new evidence directory retains all input/compiler hashes, exact commands,
+Each evidence directory retains compiler hashes, flags, exact commands,
 diagnostics and assembly/stack/ABI artifacts. Against the historical oracle,
 accepted inputs must match exit status, diagnostics and ABI facts byte for byte;
 assembly and stack facts may differ (a `historical-*-differs.json` marker records

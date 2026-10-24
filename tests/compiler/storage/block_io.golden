@@ -1,0 +1,90 @@
+exact geometry, zero initialization and canonical layouts	result=42 allocations=1 releases=1 peak=1 order=permutation
+geometry retains full-width count 0	result=0 allocations=0 releases=0 peak=0 order=permutation
+geometry retains full-width count 1	result=1 allocations=0 releases=0 peak=0 order=permutation
+geometry retains full-width count 9223372036854775808	result=9223372036854775808 allocations=0 releases=0 peak=0 order=permutation
+geometry retains full-width count 18446744073709551615	result=18446744073709551615 allocations=0 releases=0 peak=0 order=permutation
+sector seeding copies all bytes, readonly=False	result=42 allocations=1 releases=1 peak=1 order=permutation
+sector seeding copies all bytes, readonly=True	result=42 allocations=1 releases=1 peak=1 order=permutation
+complete sector write pattern 0	result=42 allocations=1 releases=1 peak=1 order=permutation
+complete sector write pattern 1	result=42 allocations=1 releases=1 peak=1 order=permutation
+complete sector write pattern 2	result=42 allocations=1 releases=1 peak=1 order=permutation
+complete sector write pattern 3	result=42 allocations=1 releases=1 peak=1 order=permutation
+complete sector write pattern 4	result=42 allocations=1 releases=1 peak=1 order=permutation
+complete sector write pattern 5	result=42 allocations=1 releases=1 peak=1 order=permutation
+every single byte position survives full-sector transport	result=42 allocations=1 releases=1 peak=1 order=permutation
+read report and extracted copy survive overwrite	result=42 allocations=1 releases=1 peak=1 order=permutation
+explicit device transfers preserve bytes and readonly False	result=42 allocations=1 releases=1 peak=1 order=permutation
+explicit device transfers preserve bytes and readonly True	result=42 allocations=1 releases=1 peak=1 order=permutation
+range error -9223372036854775808 precedes readonly False and preserves every byte	result=42 allocations=1 releases=1 peak=1 order=permutation
+range error -1 precedes readonly False and preserves every byte	result=42 allocations=1 releases=1 peak=1 order=permutation
+range error 1 precedes readonly False and preserves every byte	result=42 allocations=1 releases=1 peak=1 order=permutation
+range error 2 precedes readonly False and preserves every byte	result=42 allocations=1 releases=1 peak=1 order=permutation
+range error 512 precedes readonly False and preserves every byte	result=42 allocations=1 releases=1 peak=1 order=permutation
+range error 9223372036854775807 precedes readonly False and preserves every byte	result=42 allocations=1 releases=1 peak=1 order=permutation
+range error -9223372036854775808 precedes readonly True and preserves every byte	result=42 allocations=1 releases=1 peak=1 order=permutation
+range error -1 precedes readonly True and preserves every byte	result=42 allocations=1 releases=1 peak=1 order=permutation
+range error 1 precedes readonly True and preserves every byte	result=42 allocations=1 releases=1 peak=1 order=permutation
+range error 2 precedes readonly True and preserves every byte	result=42 allocations=1 releases=1 peak=1 order=permutation
+range error 512 precedes readonly True and preserves every byte	result=42 allocations=1 releases=1 peak=1 order=permutation
+range error 9223372036854775807 precedes readonly True and preserves every byte	result=42 allocations=1 releases=1 peak=1 order=permutation
+readonly is one-way, idempotent and preserves data and prior geometry	result=42 allocations=1 releases=1 peak=1 order=permutation
+public out_of_range report masks every nonzero payload byte	result=42 allocations=0 releases=0 peak=0 order=permutation
+public read_only report masks every nonzero payload byte	result=42 allocations=0 releases=0 peak=0 order=permutation
+public invalid_source report masks every nonzero payload byte	result=42 allocations=0 releases=0 peak=0 order=permutation
+visibility and rejected durable flush preserve every byte readonly=False	result=42 allocations=1 releases=1 peak=1 order=permutation
+visibility and rejected durable flush preserve every byte readonly=True	result=42 allocations=1 releases=1 peak=1 order=permutation
+modeled mixed write, flush and readonly sequence 0	result=42 allocations=1 releases=1 peak=1 order=permutation
+modeled mixed write, flush and readonly sequence 1	result=42 allocations=1 releases=1 peak=1 order=permutation
+modeled mixed write, flush and readonly sequence 2	result=42 allocations=1 releases=1 peak=1 order=permutation
+modeled mixed write, flush and readonly sequence 3	result=42 allocations=1 releases=1 peak=1 order=permutation
+runtime 1-sector full-byte oracle, last-sector snapshot and overflow ordering	result=42 allocations=1 releases=1 peak=1 order=permutation
+runtime 2-sector full-byte oracle, last-sector snapshot and overflow ordering	result=42 allocations=1 releases=1 peak=1 order=permutation
+runtime 3-sector full-byte oracle, last-sector snapshot and overflow ordering	result=42 allocations=1 releases=1 peak=1 order=permutation
+runtime 17-sector full-byte oracle, last-sector snapshot and overflow ordering	result=42 allocations=1 releases=1 peak=1 order=permutation
+runtime 129-sector full-byte oracle, last-sector snapshot and overflow ordering	result=42 allocations=1 releases=1 peak=1 order=permutation
+linear backing establishes physical sector mapping for 3 sectors	result=42 allocations=1 releases=1 peak=1 order=permutation
+linear backing establishes physical sector mapping for 129 sectors	result=42 allocations=1 releases=1 peak=1 order=permutation
+two runtime allocations remain independent after device transfer	result=42 allocations=2 releases=2 peak=2 order=permutation
+successful empty owner is a valid zero-sector device	result=42 allocations=1 releases=1 peak=1 order=permutation
+unaligned allocation 1 is invalid source without rounding	result=42 allocations=1 releases=1 peak=1 order=permutation
+unaligned allocation 511 is invalid source without rounding	result=42 allocations=1 releases=1 peak=1 order=permutation
+unaligned allocation 513 is invalid source without rounding	result=42 allocations=1 releases=1 peak=1 order=permutation
+unaligned allocation 1023 is invalid source without rounding	result=42 allocations=1 releases=1 peak=1 order=permutation
+negative allocation propagates invalid source	result=42 allocations=0 releases=0 peak=0 order=permutation
+quota exhaustion propagates invalid source	result=42 allocations=0 releases=0 peak=0 order=permutation
+maximum signed allocation propagates invalid source	result=42 allocations=0 releases=0 peak=0 order=permutation
+injected allocator failure propagates invalid source	result=42 allocations=0 releases=0 peak=0 order=permutation
+failed empty metadata allocation propagates invalid source	result=42 allocations=0 releases=0 peak=0 order=permutation
+resource-produced record survives device cleanup and quota reuse 1	result=42 allocations=3 releases=3 peak=2 order=2,1,3
+resource-produced record survives device cleanup and quota reuse 3	result=42 allocations=3 releases=3 peak=2 order=2,1,3
+resource-produced zero failure record: quota exhausted after guard	result=42 allocations=1 releases=1 peak=1 order=1
+resource-produced zero failure record: allocator rejects first allocation	result=42 allocations=0 releases=0 peak=0 order=
+resource-produced zero failure record: allocator rejects device backing	result=42 allocations=1 releases=1 peak=1 order=1
+ram_sector_record example quota=512 sectors=1	result=42 allocations=1 releases=1 peak=1 order=permutation
+ram_sector_record example quota=1536 sectors=3	result=42 allocations=1 releases=1 peak=1 order=permutation
+ram_sector_record example quota=8704 sectors=17	result=42 allocations=1 releases=1 peak=1 order=permutation
+ram_sector_record example quota=511 sectors=1	result=14 allocations=0 releases=0 peak=0 order=permutation
+ram_sector_record example quota=0 sectors=0	result=13 allocations=0 releases=0 peak=0 order=permutation
+ram_sector_record example quota=0 sectors=9223372036854775807	result=13 allocations=0 releases=0 peak=0 order=permutation
+copied record after region close fail_after=-1 sectors=1	passed
+copied record after region close fail_after=-1 sectors=3	passed
+copied record after region close fail_after=0 sectors=1	passed
+copied record after region close fail_after=1 sectors=1	passed
+reject 0	1:465: error AU3001: owned bytes require region.try_allocate, move or an owned-result function call
+reject 1	aurorac: error AU3001: private class field is inaccessible
+reject 2	1:483: error AU3001: expected i64, got u64
+reject 3	1:504: error AU3001: expected storage::Sector512, got std::BinaryBuffer64
+reject 4	1:499: error AU3001: expected i64, got u64
+reject 5	1:436: error AU3001: expected storage::SectorFlushMode, got bool
+reject 6	1:436: error AU3001: expected storage::SectorFlushMode, got storage::SectorFlushStatus
+reject 7	1:539: error AU3001: mutable method requires a mutable receiver
+reject 8	1:484: error AU3001: mutable method requires a mutable receiver
+reject 9	1:527: error AU3001: private class field is inaccessible
+reject 10	aurorac: error AU3001: private class field is inaccessible
+reject 11	1:462: error AU3001: borrow_bytes requires a named local byte array or owned bytes
+reject 12	1:430: error AU3001: expected distinct i64, u64 or u8 conversion types
+reject 13	1:455: error AU3001: owning class cannot be copied; use move(named_local)
+reject 14	1:470: error AU3001: use after move of 'device'
+reject 15	1:509: error AU3001: use after move of 'device'
+reject 16	1:470: error AU3001: assignment requires a mutable scalar local
+reject 17	1:470: error AU3001: ownership operation requires a local name

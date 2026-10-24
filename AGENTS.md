@@ -70,8 +70,9 @@ stated safety reason; more checking is not a reason by itself.
   or layout changes must then re-pin.
 - One production kernel configuration per supported target. Fault and hostile
   cases are boot-selected fixtures in a few test images, not separate builds.
-- Fixtures and hosted test drivers are not performance-critical: build them
-  unoptimized unless a test needs optimized code.
+- Fixtures and hosted test drivers are not performance-critical: build them at
+  the cheapest optimization level that measurably compiles fastest (-O1 for the
+  GCC 16 C++ fixtures today; -O0 inflates their objects and is not faster).
 - Python is for orchestration and small generators only. Checks that cost real
   time belong in C++ or Aurora.
 - A check may move (separate image to fixture, script to compiler facts or

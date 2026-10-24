@@ -6,12 +6,12 @@ Handwritten assembly replaces only probe bodies and metadata helper bodies. It
 checks actual entry RSP modulo 16, record payloads, receiver authority, span
 bounds/data and class-result storage. Each executed probe counts an effect;
 method probes additionally mutate a real receiver field. Full 64-bit results
-are read through integer_oracle's freestanding signal/syscall bridge.
+are read through the shared freestanding signal/syscall bridge.
 
-Harness controls deliberately violate alignment and arguments and require the
-exact named UD2 site with actual SIGILL termination. Explicit require() checks
-remain active under python -O. These are bounded bootstrap ABI observations,
-not a public Aurora ABI or a safety/performance proof.
+A probe that sees a wrong alignment or argument stops at its own named UD2.
+Every wrapper is linked into one binary: one run checks all value/effect cases
+and each required-RHS trap runs once from argv (native_runner.py). These are
+bounded bootstrap ABI observations, not a public Aurora ABI or a safety proof.
 """
 
 from __future__ import annotations
@@ -21,8 +21,10 @@ from enum import Enum
 import itertools
 from pathlib import Path
 import re
+import tempfile
 
-from integer_oracle import NativeRunner, command, require, validate_trap, validate_values
+from native_runner import Freestanding, check_trap, check_words, command, freestanding_glue, observe, require, run
+from native_runner import symbols_of
 
 
 class ProbeTrap(Enum):
@@ -222,86 +224,49 @@ def cases():
     return tests
 
 
-def required_traps(runner, assembly):
-    count = 0
+def required_traps():
     for trap, shape, depth in itertools.product(("bounds", "overflow", "zero", "shift"), ("and", "or"), (1, 2)):
-        target = f"sc_trap_{trap}_{shape}_{depth}"
-        execute = int(shape == "and")
-        code = wrapper("sc_required_trap", target, (execute, 0, 0))
-        observed, symbols = runner.assemble(assembly + code, ["sc_required_trap"])
-        validate_trap(observed, ProbeTrap[trap.upper()], symbols, target)
-        count += 1
-    return count
-
-
-def harness_controls(runner, assembly):
-    # This intentionally omits the wrapper's pre-call adjustment: the probe must
-    # detect its wrong real entry alignment, rather than merely matching text.
-    misaligned = """
-.text
-.globl sc_bad_alignment
-sc_bad_alignment:
-    movq $1, %rdi
-    call sc_probe_scalar
-    ret
-"""
-    observed, symbols = runner.assemble(assembly + misaligned, ["sc_bad_alignment"])
-    validate_trap(observed, ProbeTrap.ALIGNMENT, symbols, "alignment oracle negative control")
-    malformed = """
-.text
-.globl sc_bad_argument
-sc_bad_argument:
-    movq $2, %rdi
-    subq $8, %rsp
-    call sc_probe_scalar
-    addq $8, %rsp
-    ret
-"""
-    observed, symbols = runner.assemble(assembly + malformed, ["sc_bad_argument"])
-    validate_trap(observed, ProbeTrap.ARGUMENT, symbols, "argument oracle negative control")
-    # A well-aligned legal call is also a harness control, so an always-trapping
-    # probe is not sufficient to claim successful fault detection.
-    good = wrapper("sc_good_control", "sc_probe_scalar", (1, 0, 0))
-    observed, _ = runner.assemble(assembly + good, ["sc_good_control"])
-    validate_values(observed, [1001], ["legal probe control"])
+        yield f"sc_trap_{trap}_{shape}_{depth}", ProbeTrap[trap.upper()]
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("ir_tests", type=Path)
-    parser.add_argument("--artifacts", type=Path, required=True)
+    parser.add_argument("--artifacts", type=Path, help="scratch directory for the linked program")
     arguments = parser.parse_args()
-    arguments.artifacts.mkdir(parents=True, exist_ok=False)
     raw = command([arguments.ir_tests.resolve(), "--emit-native"], timeout=30).stdout.decode()
     require("validated typed IR" in raw, "fixture did not emit validated assembly")
-    (arguments.artifacts / "generated.s").write_text(raw)
-    assembly = instrument(raw)
-    (arguments.artifacts / "instrumented.s").write_text(assembly)
-    runner = NativeRunner(arguments.artifacts, None, 10)
-    harness_controls(runner, assembly)
     tests = cases()
-    names, expected, wrappers, functions = [], [], [], []
-    for index, (target, values, result, name) in enumerate(tests):
-        function = f"sc_case_{index}"
-        names.append(name)
-        expected.append(result)
-        functions.append(function)
-        wrappers.append(wrapper(function, target, values))
-    full_assembly = assembly + "\n".join(wrappers)
-    (arguments.artifacts / "all-cases.s").write_text(full_assembly)
-    observed, _ = runner.assemble(full_assembly, functions)
-    validate_values(observed, expected, names)
-    traps = required_traps(runner, assembly)
-    (arguments.artifacts / "cases.tsv").write_text(
-        "case\texpected_i64\n" + "".join(f"{name}\t{value}\n" for name, value in zip(names, expected))
-    )
-    summary = (
+    names = [name for _, _, _, name in tests]
+    expected = [result for _, _, result, _ in tests]
+    wrappers = [wrapper(f"sc_case_{index}", target, values) for index, (target, values, _, _) in enumerate(tests)]
+    entries = [f"sc_case_{index}" for index in range(len(tests))]
+    traps = list(required_traps())
+    for number, (target, _) in enumerate(traps):
+        # Executing the required right-hand side must stop at its exact trap.
+        wrappers.append(wrapper(f"sc_required_trap_{number}", target, (int("_and_" in target), 0, 0)))
+        entries.append(f"sc_required_trap_{number}")
+    with tempfile.TemporaryDirectory(prefix="aurora-short-circuit-ir-") as temporary:
+        directory = arguments.artifacts.resolve() if arguments.artifacts else Path(temporary)
+        directory.mkdir(parents=True, exist_ok=True)
+        program = directory / "all-cases.s"
+        program.write_text(
+            instrument(raw) + "\n".join(wrappers) + freestanding_glue(entries, range(len(tests)), note=True)
+        )
+        command(["as", "--64", "-L", program, "-o", directory / "all-cases.o"])
+        harness = Freestanding()
+        harness.prepare(directory)
+        binary = directory / "all-cases"
+        harness.link([directory / "all-cases.o"], binary)
+        check_words(observe(run([binary], 10)), expected, names)
+        symbols = symbols_of(binary)
+        for number, (target, trap) in enumerate(traps):
+            check_trap(observe(run([binary, len(tests) + number], 10)), trap, symbols, target)
+    print(
         f"PASS short-circuit direct IR native: {len(tests)} value/effect cases; "
         "9 call kinds, 4 retained stack depths, full truth tables; "
-        f"{traps} exact required-RHS traps; 2 exact fault controls and 1 legal alignment control"
+        f"{len(traps)} exact required-RHS traps; one link"
     )
-    (arguments.artifacts / "summary.txt").write_text(summary + "\n")
-    print(summary)
 
 
 if __name__ == "__main__":

@@ -3,7 +3,6 @@
 
 from pathlib import Path
 import argparse
-import json
 import subprocess
 
 PAYLOAD_SECTORS = 127
@@ -16,119 +15,6 @@ def require(condition: bool, message: str) -> None:
     # Explicit checks remain active under PYTHONOPTIMIZE / python -O.
     if not condition:
         raise ValueError(message)
-
-
-def validate_bios_root(bios: str, uefi: str) -> None:
-    """Keep the value probe and live terminal policy, without unrelated UEFI imports."""
-    begin = uefi.index("auto aurora_kernel_value()")
-    end = uefi.index("\n}\n", begin) + 3
-    terminal = uefi[uefi.index("// Private bootstrap transport of copied facts;") :]
-    require(
-        bios == "module kernel;\nimport kernel.terminal_event;\n\n" + uefi[begin:end] + "\n" + terminal,
-        "BIOS Aurora root must preserve exact value and terminal-event probes only",
-    )
-
-
-def validate_language_symbols(symbols: str, final_image: bool = False, console: bool = False) -> None:
-    rows = [line.split(maxsplit=2) for line in symbols.splitlines() if line.strip()]
-    require(rows and all(len(row) == 3 for row in rows), "Invalid defined Aurora symbol inventory")
-    entries = [(row[1], row[2]) for row in rows if row[2].startswith("aurora_kernel_")]
-    expected = [("T", "aurora_kernel_value"), ("T", "aurora_kernel_terminal_event")]
-    if final_image:
-        expected.append(("T", "aurora_kernel_main"))  # Existing C++ entry.
-    require(sorted(entries) == sorted(expected), "Unexpected BIOS Aurora kernel entry set")
-    forbidden = (
-        "interrupt_budget",
-        "round_robin",
-        "TickDecision",
-        "SelectionDecision",
-        "ipc_transition",
-        "TransactionSnapshot",
-        "TransactionDecision",
-        "aurora_console_byte",
-        "aurora_console_command",
-        "aurora::console::Line::",
-        "aurora::console::Snapshot::",
-        "aurora::console::Presentation<",
-    )
-    require(
-        not any(part in row[2] for row in rows for part in forbidden),
-        "Unused UEFI or retired native console policy linked into BIOS image",
-    )
-    bridge = [(row[1], row[2]) for row in rows if row[2] == "__au_runtime_console_entry"]
-    require(
-        bridge == ([("T", "__au_runtime_console_entry")] if console else []),
-        "BIOS console service bridge differs from selected profile",
-    )
-
-
-def root_controls(bios: str, uefi: str) -> int:
-    validate_bios_root(bios, uefi)
-    valid = "00000000 T aurora_kernel_value\n0000004b T aurora_reflect_size\n00000050 T aurora_kernel_terminal_event\n"
-    validate_language_symbols(valid)
-    validate_language_symbols(valid + "000000cc T aurora_kernel_main\n", final_image=True)
-    invalid_symbols = (
-        "",
-        valid + "000000cc T aurora_kernel_value\n",
-        valid.replace("00000050 T aurora_kernel_terminal_event\n", ""),
-        valid + "000000cc T aurora_kernel_terminal_event\n",
-        valid.replace("T aurora_kernel_value", "t aurora_kernel_value"),
-        valid.replace("aurora_kernel_value", "aurora_kernel_unexpected"),
-        valid + "000000cc T aurora_kernel_budget_tick\n",
-        valid + "000000cc T aurora_kernel_round_robin_next\n",
-        valid + "000000cc T aurora_kernel_ipc_transition\n",
-        valid + "000000cc t __au_v_m2_6kernel14ipc_transition_n1_6kernel_d22transaction_transition\n",
-        valid + "000000cc t __au_k_TransactionSnapshot\n",
-        valid + "000000cc t __au_k_TransactionDecision\n",
-        valid + "000000cc t __au_v_m2_6kernel16interrupt_budget_n1_6kernel_d14interrupt_tick\n",
-        valid + "000000cc t __au_v_m2_6kernel11round_robin_n1_6kernel_d16round_robin_next\n",
-        valid + "000000cc t __au_k_TickDecision\n",
-        valid + "000000cc t __au_k_SelectionDecision\n",
-        valid + "malformed\n",
-    )
-    bad_inventories = [(symbols, False) for symbols in invalid_symbols]
-    bad_inventories += [(symbols + "000000cc T aurora_kernel_main\n", True) for symbols in invalid_symbols]
-    bad_inventories += [(valid, True), (valid + "000000cc T aurora_kernel_main\n" * 2, True)]
-    for invalid, final_image in bad_inventories:
-        try:
-            validate_language_symbols(invalid, final_image)
-        except ValueError:
-            continue
-        raise RuntimeError("Invalid BIOS Aurora graph accepted by negative control")
-    console_valid = valid + "00000100 T __au_runtime_console_entry\n"
-    validate_language_symbols(console_valid, console=True)
-    for extra in (
-        "00000110 T aurora_console_byte\n",
-        "00000110 T aurora_console_command\n",
-        "00000110 t aurora::console::Line::consume(unsigned char)\n",
-        "00000110 t aurora::console::Presentation<Transport>::render()\n",
-        "00000110 T __au_runtime_console_entry\n",
-    ):
-        try:
-            validate_language_symbols(console_valid + extra, console=True)
-        except ValueError:
-            continue
-        raise RuntimeError("Retired or duplicate BIOS console entry accepted")
-    for symbols, console in ((valid, True), (console_valid, False)):
-        try:
-            validate_language_symbols(symbols, console=console)
-        except ValueError:
-            continue
-        raise RuntimeError("Wrong BIOS console profile accepted")
-    bad_roots = (
-        bios.replace("own(40)", "own(41)"),
-        bios.replace("module kernel;", "module kernel;\nimport kernel.round_robin;"),
-        bios + "\nauto extra() -> i64 { return 0; }\n",
-        bios.replace("import kernel.terminal_event;\n", ""),
-        bios.replace("return 5u64;", "return 4u64;"),
-    )
-    for invalid in bad_roots:
-        try:
-            validate_bios_root(invalid, uefi)
-        except ValueError:
-            continue
-        raise RuntimeError("Changed BIOS value/root accepted by negative control")
-    return len(bad_inventories) + len(bad_roots) + 7
 
 
 def validate(boot: bytes, kernel: bytes, elf: bytes, packet_offset: int) -> None:
@@ -215,98 +101,15 @@ def package_image(boot: bytes, kernel: bytes, elf: bytes, packet_offset: int) ->
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--root", type=Path, default=Path(__file__).resolve().parents[1], help="source root (default: repository root)"
-    )
-    parser.add_argument("--build-dir", type=Path, help="artifact directory (default: ROOT/build)")
-    parser.add_argument("--check-only", action="store_true", help="validate existing aurora.img without writing")
-    parser.add_argument("--bios-fixture-family", choices=("ordinary", "schedule"))
-    parser.add_argument("--console", action="store_true", help="require the sealed BIOS console session")
-    arguments = parser.parse_args()
-    root = arguments.root.resolve()
-    build = (arguments.build_dir if arguments.build_dir is not None else root / "build").resolve()
-    root_negative_controls = root_controls(
-        (root / "examples/kernel-bios.au").read_text(), (root / "examples/kernel.au").read_text()
-    )
-    # Check the compiled root and final image separately. The generic reflection
-    # entrypoints are compiler bootstrap output; UEFI policy graphs are forbidden.
-    for artifact in ("kernel-language.o", "kernel.elf"):
-        validate_language_symbols(
-            subprocess.check_output(["nm", "--defined-only", "--demangle", str(build / artifact)], text=True),
-            final_image=artifact == "kernel.elf",
-            console=arguments.console,
-        )
+    parser.add_argument("--build-dir", type=Path, required=True, help="profile artifact directory")
+    build = parser.parse_args().build_dir.resolve()
     boot = (build / "boot.bin").read_bytes()
     kernel = (build / "kernel.bin").read_bytes()
     elf = (build / "kernel.elf").read_bytes()
-    require(not (arguments.console and arguments.bios_fixture_family), "Console cannot admit BIOS fixture authority")
-    fixture_present = b"AURORA_FIXTURE_READY" in kernel
-    require(fixture_present == bool(arguments.bios_fixture_family), "BIOS fixture reader differs from selected image")
-    user_metadata = json.loads((build / "user-metadata.json").read_text())
-    require(
-        user_metadata.get("bios_fixture_family") == arguments.bios_fixture_family,
-        "BIOS fixture metadata differs from selected image",
-    )
     boot_symbols = subprocess.check_output(["nm", "-a", str(build / "boot.o")], text=True)
     packets = [int(line.split()[0], 16) for line in boot_symbols.splitlines() if line.split()[-1] == "packet"]
     require(len(packets) == 1, "Missing unique assembler disk-packet symbol")
-    packet_offset = packets[0]
-    validate(boot, kernel, elf, packet_offset)
-    undefined = subprocess.check_output(["nm", "-u", str(build / "kernel.elf")], text=True)
-    require(not undefined.strip(), f"Unresolved runtime symbols: {undefined}")
-    # Negative controls prove invalid inputs are rejected before packaging.
-    corrupted_entry = bytearray(elf)
-    corrupted_entry[24:32] = bytes(8)
-    corrupted_permissions = bytearray(elf)
-    table = int.from_bytes(elf[32:40], "little")
-    corrupted_permissions[table + 4 : table + 8] = (7).to_bytes(4, "little")
-    corrupted_headers = bytearray(elf)
-    corrupted_headers[32:40] = (len(elf) + 1).to_bytes(8, "little")
-    malformed_packets = []
-    for field, value in ((2, 0), (2, 128), (4, 65520), (6, 0x2000), (8, 2)):
-        malformed = bytearray(boot)
-        malformed[packet_offset + field : packet_offset + field + 2] = value.to_bytes(2, "little")
-        if field == 4:
-            # Keep the physical destination valid while forcing a 64 KiB transfer-window crossing.
-            malformed[packet_offset + 6 : packet_offset + 8] = (1).to_bytes(2, "little")
-        malformed_packets.append((malformed, kernel, elf))
-    for invalid in (
-        (boot[:-1], kernel, elf),
-        (boot[:-2] + bytes(2), kernel, elf),
-        (boot, bytes(PAYLOAD_SECTORS * 512 + 1), elf),
-        (boot, b"", elf),
-        (boot, kernel, corrupted_entry),
-        (boot, kernel, bytes(64)),
-        (boot, kernel, corrupted_permissions),
-        (boot, kernel, corrupted_headers),
-        *malformed_packets,
-    ):
-        try:
-            validate(*invalid, packet_offset)
-        except ValueError:
-            continue
-        raise RuntimeError("Invalid image was accepted by negative control")
-    try:
-        validate(boot, kernel, elf, packet_offset + 1)
-    except ValueError:
-        pass
-    else:
-        raise RuntimeError("Unaligned BIOS packet accepted")
-    # Publish only after all image and source/root negative controls succeeded.
-    image = package_image(boot, kernel, elf, packet_offset)
-    if arguments.check_only:
-        require((build / "aurora.img").read_bytes() == image, "Existing BIOS image differs from validated packaging")
-    else:
-        (build / "aurora.img").write_bytes(image)
-    print(
-        f"PASS: boot signature, ELF entry, zero unresolved symbols, {len(kernel)}-byte payload, "
-        "1 MiB image; 14 negative controls; RX/R/RW segments and bounded BIOS packet"
-    )
-
-    print(
-        "PASS: BIOS value/ownership and terminal-event roots verified; no unused UEFI policy graph; "
-        f"{root_negative_controls} root/symbol negative controls"
-    )
+    (build / "aurora.img").write_bytes(package_image(boot, kernel, elf, packets[0]))
 
 
 if __name__ == "__main__":

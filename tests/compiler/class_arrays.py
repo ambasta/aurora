@@ -1,20 +1,17 @@
 #!/usr/bin/env python3
 """Copied-class fixed arrays: native values, exact traps and fail-closed bounds.
 
-Uses the shared full-width observer and source/output preservation checks.
-Rejections run with absent and pre-existing output, including under python -O.
-This is finite layout, initialization and copy evidence, not a safety proof.
+Cases are data for the shared native runner (native_runner.py). This is finite
+layout, initialization and copy evidence, not a safety proof.
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 from pathlib import Path
 import random
-import tempfile
 
-from composed_values import Suite, Trap, observer_self_test, program, require
+from composed_values import Suite, Trap, program, require
 from packed_values import byte_storage
 
 
@@ -41,12 +38,10 @@ public:
 };
 """
 SETUP = "Leaf first=Leaf(7);Leaf second=Leaf(35);array<Leaf,2> items={first,second};"
-PRESERVED = b"previous-verified-assembly\x00\xff\n"
 
 
 def reject(suite, name, source, error=True, modules=None):
-    for suffix, previous in (("absent output", None), ("saved output", PRESERVED)):
-        suite.check(name + ": " + suffix, source, error=error, modules=modules, existing_output=previous)
+    suite.check(name, source, error=error, modules=modules)
 
 
 def local_cases(suite, seed, steps):
@@ -552,21 +547,15 @@ def main():
     parser.add_argument("compiler", type=Path)
     parser.add_argument("--seed", type=int, default=64064)
     parser.add_argument("--steps", type=int, default=12)
-    parser.add_argument("--keep-going", action="store_true")
     args = parser.parse_args()
     require(1 <= args.steps <= 64, "steps must be from 1 through 64")
-    compiler = args.compiler.resolve()
-    print(f"compiler_sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}", flush=True)
-    with tempfile.TemporaryDirectory(prefix="aurora-class-arrays-") as temporary:
-        suite = Suite(Path(temporary), compiler, args.keep_going)
-        observer_self_test(suite)
-        local_cases(suite, args.seed, args.steps)
-        field_cases(suite)
-        layout_cases(suite)
-        module_template_cases(suite)
-        rejection_cases(suite)
-        require(not suite.failures, "\n".join(suite.failures))
-        print(f"PASS class arrays: {suite.count} cases, {suite.rejections} rejections, {suite.traps} exact traps")
+    suite = Suite(args.compiler, "class arrays")
+    local_cases(suite, args.seed, args.steps)
+    field_cases(suite)
+    layout_cases(suite)
+    module_template_cases(suite)
+    rejection_cases(suite)
+    suite.finish()
 
 
 if __name__ == "__main__":

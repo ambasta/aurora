@@ -1,34 +1,16 @@
 #!/usr/bin/env python3
-"""Exercise encapsulated class construction and scoped receiver execution."""
+"""Encapsulated class construction and scoped receiver execution (native_runner.py)."""
 
 from pathlib import Path
-import resource
-import os
-import signal
-import subprocess
 import sys
-import tempfile
 
-COMPILER = Path(sys.argv[1]).resolve()
-LIBRARY = Path(__file__).resolve().parents[2] / "library"
-COUNT = 0
+from native_runner import Suite, Trap, require
 
-
-def require(value, message):
-    if not value:
-        raise AssertionError(message)
+SUITE = Suite(Path(sys.argv[1]), "classes")
 
 
-def run(command, good=True):
-    result = subprocess.run(
-        [str(x) for x in command],
-        capture_output=True,
-        timeout=5,
-        preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)),
-    )
-    if good:
-        require(result.returncode == 0, f"{command}: {result.returncode}: {result.stderr!r}")
-    return result
+def calls(assembly):
+    return [line for line in assembly.splitlines() if line.startswith("    call ")]
 
 
 def check(
@@ -38,89 +20,31 @@ def check(
     expected=42,
     error=None,
     library=False,
-    root_sets=None,
-    setup=None,
-    roots=True,
     trap=False,
     existing_output=None,
     calls_in_order=None,
     inlined=(),
     called=(),
 ):
-    global COUNT
-    with tempfile.TemporaryDirectory(prefix="aurora-modules-") as directory:
-        base = Path(directory)
-        groups = root_sets if root_sets is not None else [modules or {}]
-        search = []
-        for index, files in enumerate(groups):
-            root = base / f"root{index}"
-            root.mkdir()
-            search.append(root)
-            for module, text in files.items():
-                path = root / (module.replace(".", "/") + ".au")
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(text)
-        if library:
-            search.append(LIBRARY)
-        if setup:
-            setup(base, search)
-        input_path = base / "input.au"
-        input_path.write_text(source)
-        assembly = base / "program.s"
-        if existing_output is not None:
-            assembly.write_text(existing_output)
-        command = [COMPILER, input_path, "-o", assembly]
-        if roots:
-            for root in search:
-                command.extend(["--module-root", root])
-        compiled = run(command, good=error is None)
-        require(input_path.read_text() == source, name + ": compiler changed input")
-        if error:
-            require(compiled.returncode == 1, name + ": invalid graph accepted")
-            if existing_output is None:
-                require(not assembly.exists(), name + ": output created on rejection")
-            else:
-                require(assembly.read_text() == existing_output, name + ": existing output changed on rejection")
-            require(error.encode() in compiled.stderr, name + ": " + repr(compiled.stderr))
-        else:
-            calls = [line for line in assembly.read_text().splitlines() if line.startswith("    call ")]
-            for method in inlined:
-                require(not any(line.endswith(method) for line in calls), name + ": getter was not inlined")
-            for method in called:
-                require(any(line.endswith(method) for line in calls), name + ": non-getter body was inlined")
-            if calls_in_order:
-                code = assembly.read_text()
-                positions = [code.index("call " + name) for name in calls_in_order]
-                require(positions == sorted(positions), name + ": wrong initializer call order")
-            bridge = base / "entry.s"
-            bridge.write_text(""".text
-.globl _start
-_start:
-    call test
-    pushq %rax
-    movq $1, %rax
-    movq $1, %rdi
-    movq %rsp, %rsi
-    movq $8, %rdx
-    syscall
-    movq $60, %rax
-    xorq %rdi, %rdi
-    syscall
-.section .note.GNU-stack,"",@progbits
-""")
-            run(["as", "--64", assembly, "-o", base / "program.o"])
-            run(["as", "--64", bridge, "-o", base / "entry.o"])
-            run(["ld", "-o", base / "program", base / "entry.o", base / "program.o"])
-            executed = run([base / "program"], good=not trap)
-            if trap:
-                require(executed.returncode == -signal.SIGILL and not executed.stdout, name + ": expected exact SIGILL")
-            else:
-                require(len(executed.stdout) == 8, name + ": missing scalar result")
-                require(
-                    int.from_bytes(executed.stdout, "little", signed=True) == expected, name + ": wrong scalar result"
-                )
-        COUNT += 1
-        print("PASS classes", name)
+    def inspect(assembly):
+        for method in inlined:
+            require(not any(line.endswith(method) for line in calls(assembly)), "getter was not inlined")
+        for method in called:
+            require(any(line.endswith(method) for line in calls(assembly)), "non-getter body was inlined")
+        if calls_in_order:
+            positions = [assembly.index("call " + callee) for callee in calls_in_order]
+            require(positions == sorted(positions), "wrong initializer call order")
+
+    probes = inlined or called or calls_in_order
+    SUITE.check(
+        name,
+        source,
+        Trap.OVERFLOW if trap else expected,
+        error,
+        modules=modules,
+        existing_output=existing_output,
+        inspect=inspect if probes else None,
+    )
 
 
 def app(body, imports=""):
@@ -545,4 +469,4 @@ check(
     error="cycle",
 )
 
-print(f"{COUNT} class constructor and method checks passed")
+SUITE.finish()

@@ -295,13 +295,15 @@ callback, port, pointer, syscall or device address.
 
 Source/editor/host-report cases live in `tests/compiler/console_service.py`,
 including copied service inputs/results and `console::write_bytes` success/timeout prefixes.
-Independently constructed hostile IR lives in `console_service_ir.cpp`. Acceptance
+Independently constructed hostile IR lives in `console_service_ir.cpp`; the shared
+hand-built fixtures and checks are one translation unit, `service_ir_common.cpp`,
+linked by every service IR test, and each test runs only its own cases. Acceptance
 requires the applicable gates on final integrated source; host-grant and UART
 tests remain separate from generated-code tests.
 `display_service.py`, `display_service_ir.cpp` and the handwritten
 `display_service_abi.S` add second-kind source, cross-module copied reflection,
-forged-kind/slot/operation/loan and seven-argument ABI coverage, while retaining
-Console regression. The Display gates are in Meson dev/slow and the compiler
+forged-kind/slot/operation/loan and seven-argument ABI coverage. The Display
+gates are in the Meson merge suite and the compiler
 native test graph. Native Display grant/transport and guest qualification remain
 separate from these compiler tests. See the
 [kernel migration contract](../docs/native-console-service.md) for required

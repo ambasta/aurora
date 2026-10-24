@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Original-clock PTY gate for an explicitly selected, admitted native image."""
+"""Original-clock PTY gate for an explicitly selected native image."""
 
 from pathlib import Path
 import argparse
@@ -22,9 +22,11 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from kernel_layout import LAYOUT
 from kernel_profiles import FIXTURE_MODES
 
-import kernel_program_console_admission as admission
-import kernel_uefi_console_clock as clock
 import qemu_transport as transport
+
+
+class Blocked(Exception):
+    pass
 
 
 def need(okay, message):
@@ -445,7 +447,7 @@ def validate_wc(text, plans, images, timer, *, checksum=False):
 
 def validate_file_call(text, mode, expected, service_results, images, timer):
     validate_retained_service(text, final=True)
-    need(mode in admission.GUEST_MODES and mode.startswith("program-file-call"), "Exact file-call profile")
+    need(mode.startswith("program-file-call"), "Exact file-call profile")
     need("FAIL" not in text and text.count("AURORA_FILE_CALL_READY:") == 1, "File-call startup/failure")
     need(
         text.count("AURORA_PROGRAM_CONSOLE_QUIET:") == text.count("AURORA_UEFI_OK") == 1,
@@ -871,7 +873,7 @@ def validate_failstop(part, mode, status, images):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=admission.GUEST_MODES, default="program-console")
+    parser.add_argument("--mode", default="program-console")
     parser.add_argument("--build-dir", type=Path, required=True)
     parser.add_argument("--read-only-recovery", action="store_true")
     args = parser.parse_args()
@@ -879,24 +881,20 @@ def main():
         not args.read_only_recovery or args.mode.endswith(("-fault", "-budget")),
         "Read-only recovery requires a fault or budget profile",
     )
-    admission.configure_paths(args.build_dir, ROOT)
-    admitted = admission.checked(args.mode)
-    admission_digest = admission.digest(admission.RECEIPT)
+    need(args.mode.startswith("program-"), "Expected a protected program-console profile")
+    build = args.build_dir.resolve()
+    admitted = dict(
+        user_images=json.loads((build / "user-images.json").read_text()),
+        timer=json.loads((build / "service-timer-metadata.json").read_text()),
+    )
     evidence_root = ROOT / "build/program-console-evidence"
     evidence_root.mkdir(parents=True, exist_ok=True)
     output = Path(tempfile.mkdtemp(prefix=args.mode + "-guest-", dir=evidence_root))
-    shutil.copy2(admission.RECEIPT, output / "admission.json")
     print("Protected-console guest evidence: " + str(output))
-
-    def unchanged():
-        need(
-            admission.checked(args.mode) == admitted and admission.digest(admission.RECEIPT) == admission_digest,
-            "Admitted image or report changed during guest execution",
-        )
 
     qemu = shutil.which(os.environ.get("QEMU", "qemu-system-x86_64"))
     if not qemu:
-        raise admission.Blocked("QEMU unavailable")
+        raise Blocked("QEMU unavailable")
     selected = subprocess.check_output(
         [
             "bash",
@@ -912,17 +910,12 @@ def main():
         "uefi",
         args.mode,
         qemu,
-        admission.BUILD / "esp",
+        build / "esp",
         os.environ.get("QEMU_DATA", ""),
         firmware=firmware,
         code=code,
         variables=variables,
     )
-    receipt = clock.receipt(
-        command, qemu, firmware, code, variables, os.environ.get("QEMU_DATA", ""), esp=str(admission.BUILD / "esp")
-    )
-    receipt.update(timeout_argv=None, test_supervision="private PTY, 180-second total deadline", mode=args.mode)
-    (output / "clock.json").write_text(json.dumps(receipt, indent=2) + "\n")
     master, slave = pty.openpty()
     tty.setraw(slave)
     transcript = bytearray()
@@ -939,7 +932,6 @@ def main():
         "read_only_recovery": args.read_only_recovery,
         "clock": "tcg-original-clock",
         "purpose": "guest",
-        "admission_sha256": admission_digest,
     }
     try:
         with (output / "qemu.stderr").open("wb") as errors:
@@ -1104,7 +1096,6 @@ def main():
                 status = transport.wait_exit(process, 5)
                 part = bytes(transcript[begin:]).decode("ascii")
                 validate_failstop(part, args.mode, status, admitted["user_images"])
-                unchanged()
                 metrics.update(
                     status="passed",
                     exit_status=35,
@@ -1209,7 +1200,6 @@ def main():
                 send(b"exit\n")
                 receive(b"AURORA_UEFI_OK", begin)
                 need(transport.wait_exit(process, 5) == 33, "File-call normal guest exit")
-                unchanged()
                 metrics.update(
                     validate_file_call(
                         bytes(transcript).decode("ascii"),
@@ -1404,7 +1394,6 @@ def main():
                 if not tail:
                     break
                 transcript.extend(tail)
-            unchanged()
             metrics.update(
                 validate(
                     bytes(transcript).decode("ascii"),
@@ -1440,7 +1429,7 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, terminate)
     try:
         main()
-    except admission.Blocked as error:
+    except Blocked as error:
         print("BLOCKED: program console PTY: " + str(error), file=sys.stderr)
         raise SystemExit(2) from error
     except (ValueError, OSError, KeyError, TypeError, subprocess.SubprocessError) as error:

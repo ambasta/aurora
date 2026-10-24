@@ -1,0 +1,852 @@
+actual written PREALLOC NREXT64 inode	ready none 131 131 17003 1 5 written 192 512 ok
+index -9223372036854775808	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+index -1	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+index 0	ready none 131 131 17003 1 5 written 192 512 ok
+index 1	ready none 131 131 17003 1 5 written 193 512 ok
+index 32	ready none 131 131 17003 1 5 written 224 512 ok
+index 33	ready none 131 131 17003 1 5 written 225 107 ok
+index 34	end none 131 131 17003 1 5 none 0 0 ok
+index 35	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+index 9223372036854775807	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+capacity 0	source_too_small capacity 0 0 0 0 0 none 0 0 ok
+capacity 1	source_too_small capacity 0 0 0 0 0 none 0 0 ok
+capacity 655359	source_too_small capacity 0 0 0 0 0 none 0 0 ok
+capacity 655360	ready none 131 131 17003 1 5 written 192 512 ok
+capacity 655361	ready none 131 131 17003 1 5 written 192 512 ok
+capacity 9223372036854775808	ready none 131 131 17003 1 5 written 192 512 ok
+capacity 18446744073709551615	ready none 131 131 17003 1 5 written 192 512 ok
+inode number 0	invalid_inode inode_address 0 0 0 0 0 none 0 0 ok
+inode number 1	invalid_inode inode_address 0 0 0 0 0 none 0 0 ok
+inode number 7	invalid_inode inode_address 0 0 0 0 0 none 0 0 ok
+inode number 8	invalid_inode identity 0 0 0 0 0 none 0 0 ok
+inode number 128	invalid_inode identity 0 0 0 0 0 none 0 0 ok
+inode number 131	ready none 131 131 17003 1 5 written 192 512 ok
+inode number 262144	invalid_inode inode_address 0 0 0 0 0 none 0 0 ok
+inode number 4294967295	invalid_inode inode_address 0 0 0 0 0 none 0 0 ok
+inode number 4294967296	unsupported_profile inode_address 0 0 0 0 0 none 0 0 ok
+inode number 18446744073709551615	unsupported_profile inode_address 0 0 0 0 0 none 0 0 ok
+superblock length 1	geometry_rejected geometry 0 0 0 0 0 none 0 0 ok
+inode length 1	invalid_inode inode_length 0 0 0 0 0 none 0 0 ok
+superblock length 511	geometry_rejected geometry 0 0 0 0 0 none 0 0 ok
+inode length 511	invalid_inode inode_length 0 0 0 0 0 none 0 0 ok
+superblock length 513	geometry_rejected geometry 0 0 0 0 0 none 0 0 ok
+inode length 513	invalid_inode inode_length 0 0 0 0 0 none 0 0 ok
+unrepaired inode byte 0	invalid_inode magic 0 0 0 0 0 none 0 0 ok
+unrepaired inode byte 24	invalid_inode checksum 0 0 0 0 0 none 0 0 ok
+unrepaired inode byte 100	invalid_inode checksum 0 0 0 0 0 none 0 0 ok
+unrepaired inode byte 103	invalid_inode checksum 0 0 0 0 0 none 0 0 ok
+unrepaired inode byte 175	invalid_inode checksum 0 0 0 0 0 none 0 0 ok
+unrepaired inode byte 176	invalid_inode checksum 0 0 0 0 0 none 0 0 ok
+unrepaired inode byte 191	invalid_inode checksum 0 0 0 0 0 none 0 0 ok
+unrepaired inode byte 511	invalid_inode checksum 0 0 0 0 0 none 0 0 ok
+field 0:2=0	invalid_inode magic 0 0 0 0 0 none 0 0 ok
+field 4:1=2	unsupported_profile version 0 0 0 0 0 none 0 0 ok
+field 152:8=132	invalid_inode identity 0 0 0 0 0 none 0 0 ok
+field 160:1=0	invalid_inode identity 0 0 0 0 0 none 0 0 ok
+field 120:8=1	unsupported_profile flags 0 0 0 0 0 none 0 0 ok
+field 120:8=9223372036854775808	unsupported_profile flags 0 0 0 0 0 none 0 0 ok
+field 90:2=1	unsupported_profile flags 0 0 0 0 0 none 0 0 ok
+field 90:2=32768	unsupported_profile flags 0 0 0 0 0 none 0 0 ok
+field 2:2=16877	unsupported_profile file_type 0 0 0 0 0 none 0 0 ok
+field 5:1=1	unsupported_profile file_format 0 0 0 0 0 none 0 0 ok
+field 5:1=3	unsupported_profile file_format 0 0 0 0 0 none 0 0 ok
+field 82:1=1	unsupported_profile attribute_fork 0 0 0 0 0 none 0 0 ok
+field 83:1=1	unsupported_profile attribute_fork 0 0 0 0 0 none 0 0 ok
+field 6:2=1	invalid_inode core 0 0 0 0 0 none 0 0 ok
+field 16:4=0	invalid_inode core 0 0 0 0 0 none 0 0 ok
+field 16:4=2147483648	invalid_inode core 0 0 0 0 0 none 0 0 ok
+field 16:4=4294967295	invalid_inode core 0 0 0 0 0 none 0 0 ok
+field 72:4=1	unsupported_profile extent_hints 0 0 0 0 0 none 0 0 ok
+field 76:4=1	invalid_inode core 0 0 0 0 0 none 0 0 ok
+field 80:2=1	invalid_inode core 0 0 0 0 0 none 0 0 ok
+field 84:4=1	invalid_inode core 0 0 0 0 0 none 0 0 ok
+field 88:2=1	invalid_inode core 0 0 0 0 0 none 0 0 ok
+field 96:4=0	invalid_inode core 0 0 0 0 0 none 0 0 ok
+field 128:4=1	unsupported_profile extent_hints 0 0 0 0 0 none 0 0 ok
+field 132:1=1	invalid_inode core 0 0 0 0 0 none 0 0 ok
+field 143:1=1	invalid_inode core 0 0 0 0 0 none 0 0 ok
+field 24:8=0	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+field 24:8=2	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+field 24:8=21	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+field 24:8=22	invalid_inode extent_count 0 0 0 0 0 none 0 0 ok
+field 24:8=18446744073709551615	invalid_inode extent_count 0 0 0 0 0 none 0 0 ok
+field 56:8=0	unsupported_profile file_size 0 0 0 0 0 none 0 0 ok
+field 56:8=9223372036854775807	ready none 131 131 9223372036854775807 1 5 written 192 512 ok
+field 56:8=9223372036854775808	invalid_inode file_size 0 0 0 0 0 none 0 0 ok
+field 56:8=18446744073709551615	invalid_inode file_size 0 0 0 0 0 none 0 0 ok
+field 64:8=4	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+field 64:8=18446744073709551615	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+extent count layout flags2=0	ready none 131 131 17003 1 5 written 192 512 ok
+legacy PREALLOC optional flags2=0	ready none 131 131 17003 1 5 written 192 512 ok
+count layout flags2=0, count=0	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+count layout flags2=0, count=2	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+count layout flags2=0, count=21	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+count layout flags2=0, count=22	invalid_inode extent_count 0 0 0 0 0 none 0 0 ok
+count layout flags2=0, count=4294967295	invalid_inode extent_count 0 0 0 0 0 none 0 0 ok
+extent count layout flags2=8	ready none 131 131 17003 1 5 written 192 512 ok
+legacy PREALLOC optional flags2=8	ready none 131 131 17003 1 5 written 192 512 ok
+count layout flags2=8, count=0	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+count layout flags2=8, count=2	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+count layout flags2=8, count=21	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+count layout flags2=8, count=22	invalid_inode extent_count 0 0 0 0 0 none 0 0 ok
+count layout flags2=8, count=4294967295	invalid_inode extent_count 0 0 0 0 0 none 0 0 ok
+extent count layout flags2=16	ready none 131 131 17003 1 5 written 192 512 ok
+legacy PREALLOC optional flags2=16	ready none 131 131 17003 1 5 written 192 512 ok
+count layout flags2=16, count=0	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+count layout flags2=16, count=2	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+count layout flags2=16, count=21	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+count layout flags2=16, count=22	invalid_inode extent_count 0 0 0 0 0 none 0 0 ok
+count layout flags2=16, count=4294967295	invalid_inode extent_count 0 0 0 0 0 none 0 0 ok
+extent count layout flags2=24	ready none 131 131 17003 1 5 written 192 512 ok
+legacy PREALLOC optional flags2=24	ready none 131 131 17003 1 5 written 192 512 ok
+count layout flags2=24, count=0	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+count layout flags2=24, count=2	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+count layout flags2=24, count=21	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+count layout flags2=24, count=22	invalid_inode extent_count 0 0 0 0 0 none 0 0 ok
+count layout flags2=24, count=4294967295	invalid_inode extent_count 0 0 0 0 0 none 0 0 ok
+missing flag feature 8	unsupported_profile flags 0 0 0 0 0 none 0 0 ok
+missing flag feature 32	unsupported_profile flags 0 0 0 0 0 none 0 0 ok
+CRC-covered opaque byte 8	ready none 131 131 17003 1 5 written 192 512 ok
+CRC-covered opaque byte 20	ready none 131 131 17003 1 5 written 192 512 ok
+CRC-covered opaque byte 32	ready none 131 131 17003 1 5 written 192 512 ok
+CRC-covered opaque byte 92	ready none 131 131 17003 1 5 written 192 512 ok
+CRC-covered opaque byte 104	ready none 131 131 17003 1 5 written 192 512 ok
+CRC-covered opaque byte 112	ready none 131 131 17003 1 5 written 192 512 ok
+CRC-covered opaque byte 144	ready none 131 131 17003 1 5 written 192 512 ok
+CRC-covered opaque byte 192	ready none 131 131 17003 1 5 written 192 512 ok
+CRC-covered opaque byte 511	ready none 131 131 17003 1 5 written 192 512 ok
+file size 1	ready none 131 131 1 1 1 written 192 1 ok
+file size 511	ready none 131 131 511 1 1 written 192 511 ok
+file size 512	ready none 131 131 512 1 1 written 192 512 ok
+file size 513	ready none 131 131 513 1 1 written 193 1 ok
+file size 4095	ready none 131 131 4095 1 1 written 199 511 ok
+file size 4096	ready none 131 131 4096 1 1 written 199 512 ok
+file size 4097	ready none 131 131 4097 1 2 written 200 1 ok
+file size 17003	ready none 131 131 17003 1 5 written 225 107 ok
+file size 20479	ready none 131 131 20479 1 5 written 231 511 ok
+file size 20480	ready none 131 131 20480 1 5 written 231 512 ok
+unwritten, request 0	ready none 131 131 20480 1 5 unwritten 0 512 ok
+unwritten, request 34	ready none 131 131 20480 1 5 unwritten 0 512 ok
+unwritten, request -1	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+hole at file start, request 0	unsupported_profile trailing_allocation 0 0 0 0 0 none 0 0 ok
+hole at file start, request 34	unsupported_profile trailing_allocation 0 0 0 0 0 none 0 0 ok
+hole at file start, request -1	unsupported_profile trailing_allocation 0 0 0 0 0 none 0 0 ok
+maximum logical offset, request 0	unsupported_profile trailing_allocation 0 0 0 0 0 none 0 0 ok
+maximum logical offset, request 34	unsupported_profile trailing_allocation 0 0 0 0 0 none 0 0 ok
+maximum logical offset, request -1	unsupported_profile trailing_allocation 0 0 0 0 0 none 0 0 ok
+zero extent, request 0	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+zero extent, request 34	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+zero extent, request -1	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+trailing allocation, request 0	unsupported_profile trailing_allocation 0 0 0 0 0 none 0 0 ok
+trailing allocation, request 34	unsupported_profile trailing_allocation 0 0 0 0 0 none 0 0 ok
+trailing allocation, request -1	unsupported_profile trailing_allocation 0 0 0 0 0 none 0 0 ok
+missing allocation, request 0	ready none 131 131 17003 1 4 written 192 512 ok
+missing allocation, request 34	end none 131 131 17003 1 4 none 0 0 ok
+missing allocation, request -1	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+second declared extent, request 0	invalid_extent file_offset 0 0 0 0 0 none 0 0 ok
+second declared extent, request 34	invalid_extent file_offset 0 0 0 0 0 none 0 0 ok
+second declared extent, request -1	invalid_extent file_offset 0 0 0 0 0 none 0 0 ok
+physical interval 0+5	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+physical interval 1+5	ready none 131 131 20480 1 5 written 8 512 ok
+physical interval 24+5	ready none 131 131 20480 1 5 written 192 512 ok
+physical interval 20475+5	ready none 131 131 20480 1 5 written 163800 512 ok
+physical interval 20476+5	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+physical interval 20480+5	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+physical interval 32767+5	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+physical interval 32768+5	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+physical interval 32769+5	ready none 131 131 20480 1 5 written 163848 512 ok
+physical interval 32792+5	ready none 131 131 20480 1 5 written 164032 512 ok
+physical interval 65538+5	ready none 131 131 20480 1 5 written 327696 512 ok
+physical interval 65539+5	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+physical interval 65542+5	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+physical interval 65543+5	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+physical interval 81926+5	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+physical interval 81927+5	ready none 131 131 20480 1 5 written 458808 512 ok
+physical interval 131072+5	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+physical interval 4503599627239423+5	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+physical interval 4503599627239424+5	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+physical interval 4503599627370495+5	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+exact internal-log interval 95+5	ready none 131 131 20480 1 5 written 328440 512 ok
+exact internal-log interval 96+5	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+exact internal-log interval 100+1	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+exact internal-log interval 199+1	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+exact internal-log interval 199+2	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+exact internal-log interval 200+1	ready none 131 131 4096 1 1 written 329280 512 ok
+last AG tail 59+5	ready none 131 131 20480 1 5 written 491992 512 ok
+last AG tail 60+5	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+last AG tail 63+5	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+last AG tail 64+5	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+last AG tail 20479+5	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+reserved exact boundary 4503599627239423+1	ready none 131 131 1024 1 1 written 9007199254478846 512 ok
+reserved exact boundary 4503599627239419+5	ready none 131 131 5120 1 5 written 9007199254478838 512 ok
+reserved exact boundary 4503599627239423+2	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+reserved exact boundary 4503599627239419+6	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+reserved exact boundary 4503599627239424+1	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+reserved exact boundary 4503599627239425+1	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+reserved exact boundary 4503599627370495+1	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+maximum block count and 64KiB block size	ready none 131 131 137438887936 1 2097151 written 268438399 512 ok
+maximum supported file end	end none 131 131 137438887936 1 2097151 none 0 0 ok
+nonzero AG inode address	ready none 262275 163971 17003 1 5 written 192 512 ok
+valid excluded inode size	unsupported_profile inode_size 0 0 0 0 0 none 0 0 ok
+checksum before index	invalid_inode checksum 0 0 0 0 0 none 0 0 ok
+checksum before index	invalid_inode checksum 0 0 0 0 0 none 0 0 ok
+checksum before index	invalid_inode checksum 0 0 0 0 0 none 0 0 ok
+geometry before capacity	geometry_rejected geometry 0 0 0 0 0 none 0 0 ok
+capacity before inode	source_too_small capacity 0 0 0 0 0 none 0 0 ok
+actual file sector 0	success window@0+512 ok
+actual file sector 1	success window@512+512 ok
+actual file sector 2	success window@1024+512 ok
+actual file sector 3	success window@1536+512 ok
+actual file sector 4	success window@2048+512 ok
+actual file sector 5	success window@2560+512 ok
+actual file sector 6	success window@3072+512 ok
+actual file sector 7	success window@3584+512 ok
+actual file sector 8	success window@0+512 ok
+actual file sector 9	success window@512+512 ok
+actual file sector 10	success window@1024+512 ok
+actual file sector 11	success window@1536+512 ok
+actual file sector 12	success window@2048+512 ok
+actual file sector 13	success window@2560+512 ok
+actual file sector 14	success window@3072+512 ok
+actual file sector 15	success window@3584+512 ok
+actual file sector 16	success window@0+512 ok
+actual file sector 17	success window@512+512 ok
+actual file sector 18	success window@1024+512 ok
+actual file sector 19	success window@1536+512 ok
+actual file sector 20	success window@2048+512 ok
+actual file sector 21	success window@2560+512 ok
+actual file sector 22	success window@3072+512 ok
+actual file sector 23	success window@3584+512 ok
+actual file sector 24	success window@0+512 ok
+actual file sector 25	success window@512+512 ok
+actual file sector 26	success window@1024+512 ok
+actual file sector 27	success window@1536+512 ok
+actual file sector 28	success window@2048+512 ok
+actual file sector 29	success window@2560+512 ok
+actual file sector 30	success window@3072+512 ok
+actual file sector 31	success window@3584+512 ok
+actual file sector 32	success window@0+512 ok
+actual file sector 33	success window@512+107 ok
+exact one-sector window 0	success window@0+512 ok
+exact one-sector window 7	success window@0+512 ok
+exact one-sector window 8	success window@0+512 ok
+exact one-sector window 33	success window@0+107 ok
+synthetic nonzero final allocation tail is zeroed	success window@512+107 ok
+input window size 1	invalid_source zero ok
+input window size 511	invalid_source zero ok
+input window size 512	success window@0+512 ok
+input window size 513	invalid_source zero ok
+input window size 4096	success window@0+512 ok
+empty public subspan window	invalid_source zero ok
+window base 0	out_of_range zero ok
+window base 191	out_of_range zero ok
+window base 193	out_of_range zero ok
+window base 9223372036854775807	out_of_range zero ok
+window base 9223372036854775808	out_of_range zero ok
+window base 18446744073709551615	out_of_range zero ok
+read invalid/end index -9223372036854775808	out_of_range zero ok
+read invalid/end index -1	out_of_range zero ok
+read invalid/end index 34	out_of_range zero ok
+read invalid/end index 35	out_of_range zero ok
+read invalid/end index 9223372036854775807	out_of_range zero ok
+synthetic high-LBA actual window read	success window@0+512 ok
+synthetic near-u64 data-byte bound read	success window@0+512 ok
+synthetic maximum-size final sector read	success window@0+512 ok
+end before invalid window	out_of_range zero ok
+invalid inode read is masked	invalid_source zero ok
+capacity read is masked	invalid_source zero ok
+unwritten read is not data	success zero ok
+fabricated masking ready	ready none 1 2 3 4 5 written 6 7 80 16 40 24 0
+fabricated masking end	end none 1 2 3 4 5 none 0 0 80 16 40 24 0
+fabricated masking invalid_index	invalid_index none 0 0 0 0 0 none 0 0 80 16 40 24 0
+fabricated masking geometry_rejected	geometry_rejected none 0 0 0 0 0 none 0 0 80 16 40 24 0
+fabricated masking source_too_small	source_too_small none 0 0 0 0 0 none 0 0 80 16 40 24 0
+fabricated masking unsupported_profile	unsupported_profile none 0 0 0 0 0 none 0 0 80 16 40 24 0
+fabricated masking invalid_inode	invalid_inode none 0 0 0 0 0 none 0 0 80 16 40 24 0
+fabricated masking invalid_extent	invalid_extent none 0 0 0 0 0 none 0 0 80 16 40 24 0
+fabricated coordinate kind masking none	none 0 0
+fabricated coordinate kind masking written	written 999 333
+fabricated coordinate kind masking hole	hole 0 333
+fabricated coordinate kind masking unwritten	unwritten 0 333
+historical sparse full-payload sector 0	success zero ok
+historical sparse full-payload sector 1	success zero ok
+historical sparse full-payload sector 2	success zero ok
+historical sparse full-payload sector 3	success zero ok
+historical sparse full-payload sector 4	success zero ok
+historical sparse full-payload sector 5	success zero ok
+historical sparse full-payload sector 6	success zero ok
+historical sparse full-payload sector 7	success zero ok
+historical sparse full-payload sector 8	success window@0+480 ok
+historical sparse full-payload sector 9	success zero ok
+historical sparse full-payload sector 10	success zero ok
+historical sparse full-payload sector 11	success zero ok
+historical sparse full-payload sector 12	success zero ok
+historical sparse full-payload sector 13	success zero ok
+historical sparse full-payload sector 14	success zero ok
+historical sparse full-payload sector 15	success zero ok
+historical sparse full-payload sector 16	success zero ok
+historical sparse full-payload sector 17	success zero ok
+historical sparse full-payload sector 18	success zero ok
+historical sparse full-payload sector 19	success zero ok
+historical sparse full-payload sector 20	success zero ok
+historical sparse full-payload sector 21	success zero ok
+historical sparse full-payload sector 22	success zero ok
+historical sparse full-payload sector 23	success zero ok
+historical sparse full-payload sector 24	success zero ok
+historical sparse full-payload sector 25	success zero ok
+historical sparse full-payload sector 26	success zero ok
+historical sparse full-payload sector 27	success zero ok
+historical sparse full-payload sector 28	success zero ok
+historical sparse full-payload sector 29	success zero ok
+historical sparse full-payload sector 30	success zero ok
+historical sparse full-payload sector 31	success zero ok
+historical sparse full-payload sector 32	success zero ok
+historical sparse full-payload sector 33	success zero ok
+historical sparse full-payload sector 34	success zero ok
+historical sparse full-payload sector 35	success zero ok
+historical sparse full-payload sector 36	success zero ok
+historical sparse full-payload sector 37	success zero ok
+historical sparse full-payload sector 38	success zero ok
+historical sparse full-payload sector 39	success zero ok
+historical sparse full-payload sector 40	success zero ok
+historical sparse full-payload sector 41	success zero ok
+historical sparse full-payload sector 42	success zero ok
+historical sparse full-payload sector 43	success zero ok
+historical sparse full-payload sector 44	success zero ok
+historical sparse full-payload sector 45	success zero ok
+historical sparse full-payload sector 46	success zero ok
+historical sparse full-payload sector 47	success zero ok
+historical sparse full-payload sector 48	success window@0+512 ok
+historical sparse full-payload sector 49	success window@512+398 ok
+historical sparse full-payload sector 50	success zero ok
+historical sparse full-payload sector 51	success zero ok
+historical sparse full-payload sector 52	success zero ok
+historical sparse full-payload sector 53	success zero ok
+historical sparse full-payload sector 54	success zero ok
+historical sparse full-payload sector 55	success zero ok
+historical sparse full-payload sector 56	success zero ok
+historical sparse full-payload sector 57	success zero ok
+historical sparse full-payload sector 58	success zero ok
+historical sparse full-payload sector 59	success zero ok
+historical sparse full-payload sector 60	success zero ok
+historical sparse full-payload sector 61	success zero ok
+historical sparse full-payload sector 62	success zero ok
+historical sparse full-payload sector 63	success zero ok
+historical sparse full-payload sector 64	success window@0+1 ok
+historical sparse coordinate -1	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+historical sparse coordinate 0	ready none 134 134 32769 3 3 hole 0 512 ok
+historical sparse coordinate 7	ready none 134 134 32769 3 3 hole 0 512 ok
+historical sparse coordinate 8	ready none 134 134 32769 3 3 written 120 512 ok
+historical sparse coordinate 15	ready none 134 134 32769 3 3 written 127 512 ok
+historical sparse coordinate 16	ready none 134 134 32769 3 3 hole 0 512 ok
+historical sparse coordinate 47	ready none 134 134 32769 3 3 hole 0 512 ok
+historical sparse coordinate 48	ready none 134 134 32769 3 3 written 232 512 ok
+historical sparse coordinate 55	ready none 134 134 32769 3 3 written 239 512 ok
+historical sparse coordinate 56	ready none 134 134 32769 3 3 hole 0 512 ok
+historical sparse coordinate 63	ready none 134 134 32769 3 3 hole 0 512 ok
+historical sparse coordinate 64	ready none 134 134 32769 3 3 written 248 1 ok
+historical sparse coordinate 65	end none 134 134 32769 3 3 none 0 0 ok
+historical sparse coordinate 66	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+historical empty empty EOF remains unsupported -1	unsupported_profile file_size 0 0 0 0 0 none 0 0 ok
+historical empty empty EOF remains unsupported 0	unsupported_profile file_size 0 0 0 0 0 none 0 0 ok
+historical empty empty EOF remains unsupported 1	unsupported_profile file_size 0 0 0 0 0 none 0 0 ok
+historical reserve empty EOF remains unsupported -1	unsupported_profile file_size 0 0 0 0 0 none 0 0 ok
+historical reserve empty EOF remains unsupported 0	unsupported_profile file_size 0 0 0 0 0 none 0 0 ok
+historical reserve empty EOF remains unsupported 1	unsupported_profile file_size 0 0 0 0 0 none 0 0 ok
+synthetic adjacent fragmented, large_count=False, sector 0	ready none 131 131 16367 3 4 written 192 512 ok
+synthetic adjacent fragmented, large_count=False, sector 0	success window@0+512 ok
+synthetic adjacent fragmented, large_count=False, sector 7	ready none 131 131 16367 3 4 written 199 512 ok
+synthetic adjacent fragmented, large_count=False, sector 7	success window@0+512 ok
+synthetic adjacent fragmented, large_count=False, sector 8	ready none 131 131 16367 3 4 written 320 512 ok
+synthetic adjacent fragmented, large_count=False, sector 8	success window@0+512 ok
+synthetic adjacent fragmented, large_count=False, sector 15	ready none 131 131 16367 3 4 written 327 512 ok
+synthetic adjacent fragmented, large_count=False, sector 15	success window@0+512 ok
+synthetic adjacent fragmented, large_count=False, sector 16	ready none 131 131 16367 3 4 written 328 512 ok
+synthetic adjacent fragmented, large_count=False, sector 16	success window@0+512 ok
+synthetic adjacent fragmented, large_count=False, sector 23	ready none 131 131 16367 3 4 written 335 512 ok
+synthetic adjacent fragmented, large_count=False, sector 23	success window@0+512 ok
+synthetic adjacent fragmented, large_count=False, sector 24	ready none 131 131 16367 3 4 written 164016 512 ok
+synthetic adjacent fragmented, large_count=False, sector 24	success window@0+512 ok
+synthetic adjacent fragmented, large_count=False, sector 31	ready none 131 131 16367 3 4 written 164023 495 ok
+synthetic adjacent fragmented, large_count=False, sector 31	success window@0+495 ok
+synthetic adjacent fragmented index endpoint -1, False	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+synthetic adjacent fragmented index endpoint 32, False	end none 131 131 16367 3 4 none 0 0 ok
+synthetic adjacent fragmented index endpoint 33, False	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+synthetic adjacent fragmented, large_count=True, sector 0	ready none 131 131 16367 3 4 written 192 512 ok
+synthetic adjacent fragmented, large_count=True, sector 0	success window@0+512 ok
+synthetic adjacent fragmented, large_count=True, sector 7	ready none 131 131 16367 3 4 written 199 512 ok
+synthetic adjacent fragmented, large_count=True, sector 7	success window@0+512 ok
+synthetic adjacent fragmented, large_count=True, sector 8	ready none 131 131 16367 3 4 written 320 512 ok
+synthetic adjacent fragmented, large_count=True, sector 8	success window@0+512 ok
+synthetic adjacent fragmented, large_count=True, sector 15	ready none 131 131 16367 3 4 written 327 512 ok
+synthetic adjacent fragmented, large_count=True, sector 15	success window@0+512 ok
+synthetic adjacent fragmented, large_count=True, sector 16	ready none 131 131 16367 3 4 written 328 512 ok
+synthetic adjacent fragmented, large_count=True, sector 16	success window@0+512 ok
+synthetic adjacent fragmented, large_count=True, sector 23	ready none 131 131 16367 3 4 written 335 512 ok
+synthetic adjacent fragmented, large_count=True, sector 23	success window@0+512 ok
+synthetic adjacent fragmented, large_count=True, sector 24	ready none 131 131 16367 3 4 written 164016 512 ok
+synthetic adjacent fragmented, large_count=True, sector 24	success window@0+512 ok
+synthetic adjacent fragmented, large_count=True, sector 31	ready none 131 131 16367 3 4 written 164023 495 ok
+synthetic adjacent fragmented, large_count=True, sector 31	success window@0+495 ok
+synthetic adjacent fragmented index endpoint -1, True	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+synthetic adjacent fragmented index endpoint 32, True	end none 131 131 16367 3 4 none 0 0 ok
+synthetic adjacent fragmented index endpoint 33, True	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+synthetic mixed sparse, large_count=False, sector 0	ready none 131 131 40887 4 6 hole 0 512 ok
+synthetic mixed sparse, large_count=False, sector 0	success zero ok
+synthetic mixed sparse, large_count=False, sector 7	ready none 131 131 40887 4 6 hole 0 512 ok
+synthetic mixed sparse, large_count=False, sector 7	success zero ok
+synthetic mixed sparse, large_count=False, sector 8	ready none 131 131 40887 4 6 written 192 512 ok
+synthetic mixed sparse, large_count=False, sector 8	success window@0+512 ok
+synthetic mixed sparse, large_count=False, sector 15	ready none 131 131 40887 4 6 written 199 512 ok
+synthetic mixed sparse, large_count=False, sector 15	success window@0+512 ok
+synthetic mixed sparse, large_count=False, sector 16	ready none 131 131 40887 4 6 written 200 512 ok
+synthetic mixed sparse, large_count=False, sector 16	success window@0+512 ok
+synthetic mixed sparse, large_count=False, sector 23	ready none 131 131 40887 4 6 written 207 512 ok
+synthetic mixed sparse, large_count=False, sector 23	success window@0+512 ok
+synthetic mixed sparse, large_count=False, sector 24	ready none 131 131 40887 4 6 hole 0 512 ok
+synthetic mixed sparse, large_count=False, sector 24	success zero ok
+synthetic mixed sparse, large_count=False, sector 31	ready none 131 131 40887 4 6 hole 0 512 ok
+synthetic mixed sparse, large_count=False, sector 31	success zero ok
+synthetic mixed sparse, large_count=False, sector 32	ready none 131 131 40887 4 6 unwritten 0 512 ok
+synthetic mixed sparse, large_count=False, sector 32	success zero ok
+synthetic mixed sparse, large_count=False, sector 39	ready none 131 131 40887 4 6 unwritten 0 512 ok
+synthetic mixed sparse, large_count=False, sector 39	success zero ok
+synthetic mixed sparse, large_count=False, sector 40	ready none 131 131 40887 4 6 hole 0 512 ok
+synthetic mixed sparse, large_count=False, sector 40	success zero ok
+synthetic mixed sparse, large_count=False, sector 47	ready none 131 131 40887 4 6 hole 0 512 ok
+synthetic mixed sparse, large_count=False, sector 47	success zero ok
+synthetic mixed sparse, large_count=False, sector 48	ready none 131 131 40887 4 6 written 164016 512 ok
+synthetic mixed sparse, large_count=False, sector 48	success window@0+512 ok
+synthetic mixed sparse, large_count=False, sector 55	ready none 131 131 40887 4 6 written 164023 512 ok
+synthetic mixed sparse, large_count=False, sector 55	success window@0+512 ok
+synthetic mixed sparse, large_count=False, sector 56	ready none 131 131 40887 4 6 written 164024 512 ok
+synthetic mixed sparse, large_count=False, sector 56	success window@0+512 ok
+synthetic mixed sparse, large_count=False, sector 63	ready none 131 131 40887 4 6 written 164031 512 ok
+synthetic mixed sparse, large_count=False, sector 63	success window@0+512 ok
+synthetic mixed sparse, large_count=False, sector 64	ready none 131 131 40887 4 6 hole 0 512 ok
+synthetic mixed sparse, large_count=False, sector 64	success zero ok
+synthetic mixed sparse, large_count=False, sector 71	ready none 131 131 40887 4 6 hole 0 512 ok
+synthetic mixed sparse, large_count=False, sector 71	success zero ok
+synthetic mixed sparse, large_count=False, sector 72	ready none 131 131 40887 4 6 unwritten 0 512 ok
+synthetic mixed sparse, large_count=False, sector 72	success zero ok
+synthetic mixed sparse, large_count=False, sector 79	ready none 131 131 40887 4 6 unwritten 0 439 ok
+synthetic mixed sparse, large_count=False, sector 79	success zero ok
+synthetic mixed sparse index endpoint -1, False	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+synthetic mixed sparse index endpoint 80, False	end none 131 131 40887 4 6 none 0 0 ok
+synthetic mixed sparse index endpoint 81, False	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+synthetic mixed sparse, large_count=True, sector 0	ready none 131 131 40887 4 6 hole 0 512 ok
+synthetic mixed sparse, large_count=True, sector 0	success zero ok
+synthetic mixed sparse, large_count=True, sector 7	ready none 131 131 40887 4 6 hole 0 512 ok
+synthetic mixed sparse, large_count=True, sector 7	success zero ok
+synthetic mixed sparse, large_count=True, sector 8	ready none 131 131 40887 4 6 written 192 512 ok
+synthetic mixed sparse, large_count=True, sector 8	success window@0+512 ok
+synthetic mixed sparse, large_count=True, sector 15	ready none 131 131 40887 4 6 written 199 512 ok
+synthetic mixed sparse, large_count=True, sector 15	success window@0+512 ok
+synthetic mixed sparse, large_count=True, sector 16	ready none 131 131 40887 4 6 written 200 512 ok
+synthetic mixed sparse, large_count=True, sector 16	success window@0+512 ok
+synthetic mixed sparse, large_count=True, sector 23	ready none 131 131 40887 4 6 written 207 512 ok
+synthetic mixed sparse, large_count=True, sector 23	success window@0+512 ok
+synthetic mixed sparse, large_count=True, sector 24	ready none 131 131 40887 4 6 hole 0 512 ok
+synthetic mixed sparse, large_count=True, sector 24	success zero ok
+synthetic mixed sparse, large_count=True, sector 31	ready none 131 131 40887 4 6 hole 0 512 ok
+synthetic mixed sparse, large_count=True, sector 31	success zero ok
+synthetic mixed sparse, large_count=True, sector 32	ready none 131 131 40887 4 6 unwritten 0 512 ok
+synthetic mixed sparse, large_count=True, sector 32	success zero ok
+synthetic mixed sparse, large_count=True, sector 39	ready none 131 131 40887 4 6 unwritten 0 512 ok
+synthetic mixed sparse, large_count=True, sector 39	success zero ok
+synthetic mixed sparse, large_count=True, sector 40	ready none 131 131 40887 4 6 hole 0 512 ok
+synthetic mixed sparse, large_count=True, sector 40	success zero ok
+synthetic mixed sparse, large_count=True, sector 47	ready none 131 131 40887 4 6 hole 0 512 ok
+synthetic mixed sparse, large_count=True, sector 47	success zero ok
+synthetic mixed sparse, large_count=True, sector 48	ready none 131 131 40887 4 6 written 164016 512 ok
+synthetic mixed sparse, large_count=True, sector 48	success window@0+512 ok
+synthetic mixed sparse, large_count=True, sector 55	ready none 131 131 40887 4 6 written 164023 512 ok
+synthetic mixed sparse, large_count=True, sector 55	success window@0+512 ok
+synthetic mixed sparse, large_count=True, sector 56	ready none 131 131 40887 4 6 written 164024 512 ok
+synthetic mixed sparse, large_count=True, sector 56	success window@0+512 ok
+synthetic mixed sparse, large_count=True, sector 63	ready none 131 131 40887 4 6 written 164031 512 ok
+synthetic mixed sparse, large_count=True, sector 63	success window@0+512 ok
+synthetic mixed sparse, large_count=True, sector 64	ready none 131 131 40887 4 6 hole 0 512 ok
+synthetic mixed sparse, large_count=True, sector 64	success zero ok
+synthetic mixed sparse, large_count=True, sector 71	ready none 131 131 40887 4 6 hole 0 512 ok
+synthetic mixed sparse, large_count=True, sector 71	success zero ok
+synthetic mixed sparse, large_count=True, sector 72	ready none 131 131 40887 4 6 unwritten 0 512 ok
+synthetic mixed sparse, large_count=True, sector 72	success zero ok
+synthetic mixed sparse, large_count=True, sector 79	ready none 131 131 40887 4 6 unwritten 0 439 ok
+synthetic mixed sparse, large_count=True, sector 79	success zero ok
+synthetic mixed sparse index endpoint -1, True	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+synthetic mixed sparse index endpoint 80, True	end none 131 131 40887 4 6 none 0 0 ok
+synthetic mixed sparse index endpoint 81, True	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+synthetic trailing hole, large_count=False, sector 0	ready none 131 131 49139 2 2 written 192 512 ok
+synthetic trailing hole, large_count=False, sector 0	success window@0+512 ok
+synthetic trailing hole, large_count=False, sector 7	ready none 131 131 49139 2 2 written 199 512 ok
+synthetic trailing hole, large_count=False, sector 7	success window@0+512 ok
+synthetic trailing hole, large_count=False, sector 8	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=False, sector 8	success zero ok
+synthetic trailing hole, large_count=False, sector 15	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=False, sector 15	success zero ok
+synthetic trailing hole, large_count=False, sector 16	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=False, sector 16	success zero ok
+synthetic trailing hole, large_count=False, sector 23	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=False, sector 23	success zero ok
+synthetic trailing hole, large_count=False, sector 24	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=False, sector 24	success zero ok
+synthetic trailing hole, large_count=False, sector 31	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=False, sector 31	success zero ok
+synthetic trailing hole, large_count=False, sector 32	ready none 131 131 49139 2 2 unwritten 0 512 ok
+synthetic trailing hole, large_count=False, sector 32	success zero ok
+synthetic trailing hole, large_count=False, sector 39	ready none 131 131 49139 2 2 unwritten 0 512 ok
+synthetic trailing hole, large_count=False, sector 39	success zero ok
+synthetic trailing hole, large_count=False, sector 40	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=False, sector 40	success zero ok
+synthetic trailing hole, large_count=False, sector 47	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=False, sector 47	success zero ok
+synthetic trailing hole, large_count=False, sector 48	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=False, sector 48	success zero ok
+synthetic trailing hole, large_count=False, sector 55	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=False, sector 55	success zero ok
+synthetic trailing hole, large_count=False, sector 56	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=False, sector 56	success zero ok
+synthetic trailing hole, large_count=False, sector 63	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=False, sector 63	success zero ok
+synthetic trailing hole, large_count=False, sector 64	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=False, sector 64	success zero ok
+synthetic trailing hole, large_count=False, sector 71	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=False, sector 71	success zero ok
+synthetic trailing hole, large_count=False, sector 72	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=False, sector 72	success zero ok
+synthetic trailing hole, large_count=False, sector 79	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=False, sector 79	success zero ok
+synthetic trailing hole, large_count=False, sector 80	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=False, sector 80	success zero ok
+synthetic trailing hole, large_count=False, sector 87	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=False, sector 87	success zero ok
+synthetic trailing hole, large_count=False, sector 88	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=False, sector 88	success zero ok
+synthetic trailing hole, large_count=False, sector 95	ready none 131 131 49139 2 2 hole 0 499 ok
+synthetic trailing hole, large_count=False, sector 95	success zero ok
+synthetic trailing hole index endpoint -1, False	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+synthetic trailing hole index endpoint 96, False	end none 131 131 49139 2 2 none 0 0 ok
+synthetic trailing hole index endpoint 97, False	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+synthetic trailing hole, large_count=True, sector 0	ready none 131 131 49139 2 2 written 192 512 ok
+synthetic trailing hole, large_count=True, sector 0	success window@0+512 ok
+synthetic trailing hole, large_count=True, sector 7	ready none 131 131 49139 2 2 written 199 512 ok
+synthetic trailing hole, large_count=True, sector 7	success window@0+512 ok
+synthetic trailing hole, large_count=True, sector 8	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=True, sector 8	success zero ok
+synthetic trailing hole, large_count=True, sector 15	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=True, sector 15	success zero ok
+synthetic trailing hole, large_count=True, sector 16	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=True, sector 16	success zero ok
+synthetic trailing hole, large_count=True, sector 23	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=True, sector 23	success zero ok
+synthetic trailing hole, large_count=True, sector 24	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=True, sector 24	success zero ok
+synthetic trailing hole, large_count=True, sector 31	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=True, sector 31	success zero ok
+synthetic trailing hole, large_count=True, sector 32	ready none 131 131 49139 2 2 unwritten 0 512 ok
+synthetic trailing hole, large_count=True, sector 32	success zero ok
+synthetic trailing hole, large_count=True, sector 39	ready none 131 131 49139 2 2 unwritten 0 512 ok
+synthetic trailing hole, large_count=True, sector 39	success zero ok
+synthetic trailing hole, large_count=True, sector 40	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=True, sector 40	success zero ok
+synthetic trailing hole, large_count=True, sector 47	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=True, sector 47	success zero ok
+synthetic trailing hole, large_count=True, sector 48	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=True, sector 48	success zero ok
+synthetic trailing hole, large_count=True, sector 55	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=True, sector 55	success zero ok
+synthetic trailing hole, large_count=True, sector 56	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=True, sector 56	success zero ok
+synthetic trailing hole, large_count=True, sector 63	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=True, sector 63	success zero ok
+synthetic trailing hole, large_count=True, sector 64	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=True, sector 64	success zero ok
+synthetic trailing hole, large_count=True, sector 71	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=True, sector 71	success zero ok
+synthetic trailing hole, large_count=True, sector 72	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=True, sector 72	success zero ok
+synthetic trailing hole, large_count=True, sector 79	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=True, sector 79	success zero ok
+synthetic trailing hole, large_count=True, sector 80	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=True, sector 80	success zero ok
+synthetic trailing hole, large_count=True, sector 87	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=True, sector 87	success zero ok
+synthetic trailing hole, large_count=True, sector 88	ready none 131 131 49139 2 2 hole 0 512 ok
+synthetic trailing hole, large_count=True, sector 88	success zero ok
+synthetic trailing hole, large_count=True, sector 95	ready none 131 131 49139 2 2 hole 0 499 ok
+synthetic trailing hole, large_count=True, sector 95	success zero ok
+synthetic trailing hole index endpoint -1, True	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+synthetic trailing hole index endpoint 96, True	end none 131 131 49139 2 2 none 0 0 ok
+synthetic trailing hole index endpoint 97, True	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+synthetic all unwritten, large_count=False, sector 0	ready none 131 131 8191 1 2 unwritten 0 512 ok
+synthetic all unwritten, large_count=False, sector 0	success zero ok
+synthetic all unwritten, large_count=False, sector 7	ready none 131 131 8191 1 2 unwritten 0 512 ok
+synthetic all unwritten, large_count=False, sector 7	success zero ok
+synthetic all unwritten, large_count=False, sector 8	ready none 131 131 8191 1 2 unwritten 0 512 ok
+synthetic all unwritten, large_count=False, sector 8	success zero ok
+synthetic all unwritten, large_count=False, sector 15	ready none 131 131 8191 1 2 unwritten 0 511 ok
+synthetic all unwritten, large_count=False, sector 15	success zero ok
+synthetic all unwritten index endpoint -1, False	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+synthetic all unwritten index endpoint 16, False	end none 131 131 8191 1 2 none 0 0 ok
+synthetic all unwritten index endpoint 17, False	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+synthetic all unwritten, large_count=True, sector 0	ready none 131 131 8191 1 2 unwritten 0 512 ok
+synthetic all unwritten, large_count=True, sector 0	success zero ok
+synthetic all unwritten, large_count=True, sector 7	ready none 131 131 8191 1 2 unwritten 0 512 ok
+synthetic all unwritten, large_count=True, sector 7	success zero ok
+synthetic all unwritten, large_count=True, sector 8	ready none 131 131 8191 1 2 unwritten 0 512 ok
+synthetic all unwritten, large_count=True, sector 8	success zero ok
+synthetic all unwritten, large_count=True, sector 15	ready none 131 131 8191 1 2 unwritten 0 511 ok
+synthetic all unwritten, large_count=True, sector 15	success zero ok
+synthetic all unwritten index endpoint -1, True	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+synthetic all unwritten index endpoint 16, True	end none 131 131 8191 1 2 none 0 0 ok
+synthetic all unwritten index endpoint 17, True	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+synthetic all holes, large_count=False, sector 0	ready none 131 131 4097 0 0 hole 0 512 ok
+synthetic all holes, large_count=False, sector 0	success zero ok
+synthetic all holes, large_count=False, sector 7	ready none 131 131 4097 0 0 hole 0 512 ok
+synthetic all holes, large_count=False, sector 7	success zero ok
+synthetic all holes, large_count=False, sector 8	ready none 131 131 4097 0 0 hole 0 1 ok
+synthetic all holes, large_count=False, sector 8	success zero ok
+synthetic all holes index endpoint -1, False	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+synthetic all holes index endpoint 9, False	end none 131 131 4097 0 0 none 0 0 ok
+synthetic all holes index endpoint 10, False	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+synthetic all holes, large_count=True, sector 0	ready none 131 131 4097 0 0 hole 0 512 ok
+synthetic all holes, large_count=True, sector 0	success zero ok
+synthetic all holes, large_count=True, sector 7	ready none 131 131 4097 0 0 hole 0 512 ok
+synthetic all holes, large_count=True, sector 7	success zero ok
+synthetic all holes, large_count=True, sector 8	ready none 131 131 4097 0 0 hole 0 1 ok
+synthetic all holes, large_count=True, sector 8	success zero ok
+synthetic all holes index endpoint -1, True	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+synthetic all holes index endpoint 9, True	end none 131 131 4097 0 0 none 0 0 ok
+synthetic all holes index endpoint 10, True	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+synthetic count capacity 0/False/0	ready none 131 131 1 0 0 hole 0 1 ok
+synthetic count capacity 0/False/0	ready none 131 131 1 0 0 hole 0 1 ok
+synthetic count capacity 0/False/0	ready none 131 131 1 0 0 hole 0 1 ok
+synthetic overfull fork	invalid_inode extent_count 0 0 0 0 0 none 0 0 ok
+synthetic count capacity 0/True/0	ready none 131 131 1 0 0 hole 0 1 ok
+synthetic count capacity 0/True/0	ready none 131 131 1 0 0 hole 0 1 ok
+synthetic count capacity 0/True/0	ready none 131 131 1 0 0 hole 0 1 ok
+synthetic overfull fork	invalid_inode extent_count 0 0 0 0 0 none 0 0 ok
+synthetic count capacity 1/False/0	ready none 131 131 8191 1 1 written 192 512 ok
+synthetic count capacity 1/False/14	ready none 131 131 8191 1 1 hole 0 512 ok
+synthetic count capacity 1/False/15	ready none 131 131 8191 1 1 hole 0 511 ok
+synthetic declared-last record 1/False	ready none 131 131 8191 1 1 written 192 512 ok
+synthetic overfull fork	invalid_inode extent_count 0 0 0 0 0 none 0 0 ok
+synthetic count capacity 1/True/0	ready none 131 131 8191 1 1 written 192 512 ok
+synthetic count capacity 1/True/14	ready none 131 131 8191 1 1 hole 0 512 ok
+synthetic count capacity 1/True/15	ready none 131 131 8191 1 1 hole 0 511 ok
+synthetic declared-last record 1/True	ready none 131 131 8191 1 1 written 192 512 ok
+synthetic overfull fork	invalid_inode extent_count 0 0 0 0 0 none 0 0 ok
+synthetic count capacity 2/False/0	ready none 131 131 16383 2 2 written 192 512 ok
+synthetic count capacity 2/False/30	ready none 131 131 16383 2 2 hole 0 512 ok
+synthetic count capacity 2/False/31	ready none 131 131 16383 2 2 hole 0 511 ok
+synthetic declared-last record 2/False	ready none 131 131 16383 2 2 unwritten 0 512 ok
+synthetic overfull fork	invalid_inode extent_count 0 0 0 0 0 none 0 0 ok
+synthetic count capacity 2/True/0	ready none 131 131 16383 2 2 written 192 512 ok
+synthetic count capacity 2/True/30	ready none 131 131 16383 2 2 hole 0 512 ok
+synthetic count capacity 2/True/31	ready none 131 131 16383 2 2 hole 0 511 ok
+synthetic declared-last record 2/True	ready none 131 131 16383 2 2 unwritten 0 512 ok
+synthetic overfull fork	invalid_inode extent_count 0 0 0 0 0 none 0 0 ok
+synthetic count capacity 21/False/0	ready none 131 131 172031 21 21 written 192 512 ok
+synthetic count capacity 21/False/334	ready none 131 131 172031 21 21 hole 0 512 ok
+synthetic count capacity 21/False/335	ready none 131 131 172031 21 21 hole 0 511 ok
+synthetic declared-last record 21/False	ready none 131 131 172031 21 21 written 352 512 ok
+synthetic overfull fork	invalid_inode extent_count 0 0 0 0 0 none 0 0 ok
+synthetic count capacity 21/True/0	ready none 131 131 172031 21 21 written 192 512 ok
+synthetic count capacity 21/True/334	ready none 131 131 172031 21 21 hole 0 512 ok
+synthetic count capacity 21/True/335	ready none 131 131 172031 21 21 hole 0 511 ok
+synthetic declared-last record 21/True	ready none 131 131 172031 21 21 written 352 512 ok
+synthetic overfull fork	invalid_inode extent_count 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation overlap, index 0	invalid_extent file_offset 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation overlap, index 8	invalid_extent file_offset 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation overlap, index 16	invalid_extent file_offset 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation overlap, index 31	invalid_extent file_offset 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation overlap, index 32	invalid_extent file_offset 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation overlap, index -1	invalid_extent file_offset 0 0 0 0 0 none 0 0 ok
+synthetic bad later metadata masks zero target: overlap	invalid_source zero ok
+synthetic all-record validation reverse, index 0	invalid_extent file_offset 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation reverse, index 8	invalid_extent file_offset 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation reverse, index 16	invalid_extent file_offset 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation reverse, index 31	invalid_extent file_offset 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation reverse, index 32	invalid_extent file_offset 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation reverse, index -1	invalid_extent file_offset 0 0 0 0 0 none 0 0 ok
+synthetic bad later metadata masks zero target: reverse	invalid_source zero ok
+synthetic all-record validation duplicate, index 0	invalid_extent file_offset 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation duplicate, index 8	invalid_extent file_offset 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation duplicate, index 16	invalid_extent file_offset 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation duplicate, index 31	invalid_extent file_offset 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation duplicate, index 32	invalid_extent file_offset 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation duplicate, index -1	invalid_extent file_offset 0 0 0 0 0 none 0 0 ok
+synthetic bad later metadata masks zero target: duplicate	invalid_source zero ok
+synthetic all-record validation zero later length, index 0	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation zero later length, index 8	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation zero later length, index 16	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation zero later length, index 31	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation zero later length, index 32	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation zero later length, index -1	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+synthetic bad later metadata masks zero target: zero later length	invalid_source zero ok
+synthetic all-record validation last reserved, index 0	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation last reserved, index 8	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation last reserved, index 16	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation last reserved, index 31	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation last reserved, index 32	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation last reserved, index -1	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic bad later metadata masks zero target: last reserved	invalid_source zero ok
+synthetic all-record validation last encoded gap, index 0	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation last encoded gap, index 8	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation last encoded gap, index 16	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation last encoded gap, index 31	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation last encoded gap, index 32	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation last encoded gap, index -1	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic bad later metadata masks zero target: last encoded gap	invalid_source zero ok
+synthetic all-record validation last AG header, index 0	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation last AG header, index 8	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation last AG header, index 16	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation last AG header, index 31	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation last AG header, index 32	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic all-record validation last AG header, index -1	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic bad later metadata masks zero target: last AG header	invalid_source zero ok
+synthetic later physical range 0+1, unwritten=False, request=0	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 0+1, unwritten=False, request=8	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 0+1, unwritten=False, request=16	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 0+1, unwritten=False, request=56	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 0+1, unwritten=False, request=-1	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 32768+1, unwritten=False, request=0	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 32768+1, unwritten=False, request=8	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 32768+1, unwritten=False, request=16	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 32768+1, unwritten=False, request=56	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 32768+1, unwritten=False, request=-1	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 20479+2, unwritten=False, request=0	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 20479+2, unwritten=False, request=8	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 20479+2, unwritten=False, request=16	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 20479+2, unwritten=False, request=56	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 20479+2, unwritten=False, request=-1	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 20480+1, unwritten=False, request=0	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 20480+1, unwritten=False, request=8	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 20480+1, unwritten=False, request=16	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 20480+1, unwritten=False, request=56	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 20480+1, unwritten=False, request=-1	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 4503599627239423+2, unwritten=False, request=0	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 4503599627239423+2, unwritten=False, request=8	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 4503599627239423+2, unwritten=False, request=16	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 4503599627239423+2, unwritten=False, request=56	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 4503599627239423+2, unwritten=False, request=-1	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 4503599627239424+1, unwritten=False, request=0	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 4503599627239424+1, unwritten=False, request=8	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 4503599627239424+1, unwritten=False, request=16	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 4503599627239424+1, unwritten=False, request=56	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 4503599627239424+1, unwritten=False, request=-1	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic trailing allocation False/0	unsupported_profile trailing_allocation 0 0 0 0 0 none 0 0 ok
+synthetic trailing allocation False/8	unsupported_profile trailing_allocation 0 0 0 0 0 none 0 0 ok
+synthetic trailing allocation False/-1	unsupported_profile trailing_allocation 0 0 0 0 0 none 0 0 ok
+synthetic last short hole	success zero ok
+synthetic later physical range 0+1, unwritten=True, request=0	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 0+1, unwritten=True, request=8	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 0+1, unwritten=True, request=16	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 0+1, unwritten=True, request=56	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 0+1, unwritten=True, request=-1	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 32768+1, unwritten=True, request=0	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 32768+1, unwritten=True, request=8	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 32768+1, unwritten=True, request=16	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 32768+1, unwritten=True, request=56	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 32768+1, unwritten=True, request=-1	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 20479+2, unwritten=True, request=0	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 20479+2, unwritten=True, request=8	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 20479+2, unwritten=True, request=16	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 20479+2, unwritten=True, request=56	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 20479+2, unwritten=True, request=-1	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 20480+1, unwritten=True, request=0	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 20480+1, unwritten=True, request=8	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 20480+1, unwritten=True, request=16	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 20480+1, unwritten=True, request=56	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 20480+1, unwritten=True, request=-1	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 4503599627239423+2, unwritten=True, request=0	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 4503599627239423+2, unwritten=True, request=8	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 4503599627239423+2, unwritten=True, request=16	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 4503599627239423+2, unwritten=True, request=56	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 4503599627239423+2, unwritten=True, request=-1	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 4503599627239424+1, unwritten=True, request=0	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 4503599627239424+1, unwritten=True, request=8	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 4503599627239424+1, unwritten=True, request=16	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 4503599627239424+1, unwritten=True, request=56	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later physical range 4503599627239424+1, unwritten=True, request=-1	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic trailing allocation True/0	unsupported_profile trailing_allocation 0 0 0 0 0 none 0 0 ok
+synthetic trailing allocation True/8	unsupported_profile trailing_allocation 0 0 0 0 0 none 0 0 ok
+synthetic trailing allocation True/-1	unsupported_profile trailing_allocation 0 0 0 0 0 none 0 0 ok
+synthetic last short hole	success zero ok
+synthetic allocation sum mismatch	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+synthetic allocation sum mismatch	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+synthetic allocation sum mismatch	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+synthetic allocation sum mismatch	invalid_extent block_count 0 0 0 0 0 none 0 0 ok
+synthetic last possible record rejected before first read	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic last possible record rejected before first read	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic hole ignores poisoned window 1/0	success zero ok
+synthetic hole ignores poisoned window 1/1	success zero ok
+synthetic hole ignores poisoned window 511/0	success zero ok
+synthetic hole ignores poisoned window 511/1	success zero ok
+synthetic hole ignores poisoned window 512/0	success zero ok
+synthetic hole ignores poisoned window 512/1	success zero ok
+synthetic hole ignores poisoned window 513/0	success zero ok
+synthetic hole ignores poisoned window 513/1	success zero ok
+synthetic hole ignores poisoned window 4096/0	success zero ok
+synthetic hole ignores poisoned window 4096/1	success zero ok
+synthetic hole ignores empty window	success zero ok
+synthetic hole never extends EOF 2	out_of_range zero ok
+synthetic hole never extends EOF 3	out_of_range zero ok
+synthetic hole never extends EOF -1	out_of_range zero ok
+synthetic unwritten ignores poisoned window 1/0	success zero ok
+synthetic unwritten ignores poisoned window 1/1	success zero ok
+synthetic unwritten ignores poisoned window 511/0	success zero ok
+synthetic unwritten ignores poisoned window 511/1	success zero ok
+synthetic unwritten ignores poisoned window 512/0	success zero ok
+synthetic unwritten ignores poisoned window 512/1	success zero ok
+synthetic unwritten ignores poisoned window 513/0	success zero ok
+synthetic unwritten ignores poisoned window 513/1	success zero ok
+synthetic unwritten ignores poisoned window 4096/0	success zero ok
+synthetic unwritten ignores poisoned window 4096/1	success zero ok
+synthetic unwritten ignores empty window	success zero ok
+synthetic unwritten never extends EOF 2	out_of_range zero ok
+synthetic unwritten never extends EOF 3	out_of_range zero ok
+synthetic unwritten never extends EOF -1	out_of_range zero ok
+synthetic i64 maximum sparse file	ready none 131 131 9223372036854775807 0 0 hole 0 512 ok
+synthetic i64 maximum sparse file	ready none 131 131 9223372036854775807 0 0 hole 0 511 ok
+synthetic i64 maximum sparse file	end none 131 131 9223372036854775807 0 0 none 0 0 ok
+synthetic i64 maximum sparse file	invalid_index sector_index 0 0 0 0 0 none 0 0 ok
+synthetic i64 maximum sparse final sector	success zero ok
+synthetic far sparse extent near signed EOF	ready none 131 131 9223372036854775807 1 1 written 199 511 ok
+synthetic far sparse final mapped sector	success window@0+511 ok
+synthetic maximum encoded logical offset never scaled	unsupported_profile trailing_allocation 0 0 0 0 0 none 0 0 ok
+synthetic far sparse extent near signed EOF	ready none 131 131 9223372036854775807 1 1 unwritten 0 511 ok
+synthetic far sparse final mapped sector	success zero ok
+synthetic maximum encoded logical offset never scaled	unsupported_profile trailing_allocation 0 0 0 0 0 none 0 0 ok
+synthetic later unwritten log 95+5/0	ready none 131 131 32768 2 6 written 192 512 ok
+synthetic later unwritten log 95+5/16	ready none 131 131 32768 2 6 unwritten 0 512 ok
+synthetic later unwritten log 96+5/0	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later unwritten log 96+5/16	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later unwritten log 199+1/0	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later unwritten log 199+1/16	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later unwritten log 200+1/0	ready none 131 131 32768 2 2 written 192 512 ok
+synthetic later unwritten log 200+1/16	ready none 131 131 32768 2 2 unwritten 0 512 ok
+synthetic later unwritten last AG 59+5/0	ready none 131 131 32768 2 6 written 192 512 ok
+synthetic later unwritten last AG 59+5/16	ready none 131 131 32768 2 6 unwritten 0 512 ok
+synthetic later unwritten last AG 60+5/0	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later unwritten last AG 60+5/16	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later unwritten last AG 63+1/0	ready none 131 131 32768 2 2 written 192 512 ok
+synthetic later unwritten last AG 63+1/16	ready none 131 131 32768 2 2 unwritten 0 512 ok
+synthetic later unwritten last AG 64+1/0	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic later unwritten last AG 64+1/16	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+synthetic maximum count in all21 records	ready none 131 131 2886216646656 21 44040171 written 8321501311 512 ok
+synthetic all21 maximum records final read	success window@0+512 ok
+synthetic malformed later record outranks earlier trailing allocation	invalid_extent extent_address 0 0 0 0 0 none 0 0 ok
+real indexed-root entry to actual first file sector	found 131 1 success window@0+512
+reject private request field	1:374: error AU3001: private class field is inaccessible
+reject closed kind argument	1:391: error AU3001: expected fs::XfsFileSectorKind, got u64
+reject exact u64 coordinate	1:391: error AU3001: expected u64, got i64
+reject private coordinate field	1:481: error AU3001: private class field is inaccessible
+reject exact i64 sector	1:392: error AU3001: expected i64, got u64
+reject exact u64 inode	1:392: error AU3001: expected u64, got i64
+reject closed status enum	1:366: error AU3001: expected distinct i64, u64 or u8 conversion types
+reject private failure helper	aurorac: error AU4001: private function is not imported: fs::xf_failure
+reject private report field	1:496: error AU3001: private class field is inaccessible
+reject coordinate is not a request	1:577: error AU3001: expected fs::XfsFileRequest, got fs::XfsFileSector
+reject exact u64 base	1:509: error AU3001: expected u64, got i64

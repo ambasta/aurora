@@ -2,10 +2,9 @@
 """Independent native acceptance for bounded readonly byte spans and std.binary.
 
 A Python byte-list model supplies expected values without inspecting compiler
-layout or IR. Normal observations retain all 64 result bits; bounds failures
-must be kernel-generated SIGILL at the exact named bounds UD2. Every rejected
-program must exit normally with status 1 and preserve both an absent output and
-an existing byte-exact output. Explicit require checks stay active under -O.
+layout or IR. Results are complete 64-bit values; bounds failures must reach the
+exact named bounds UD2 (native_runner.py). Rejections must be one well-formed
+diagnostic, leave no artifact and not change an existing one.
 
 The lifetime fixtures use supported array writes after an acquired span. Source
 array assignment expressions and global arrays are unavailable, so this suite
@@ -13,33 +12,16 @@ does not claim to prove later-argument mutation exclusion; direct IR tests cover
 that boundary. This is bounded acceptance evidence, not a memory-safety proof.
 
 Run: python3 tests/compiler/readonly_spans.py build/aurorac
-Harness: python3 -O tests/compiler/readonly_spans.py --self-test-only
 """
 
 from __future__ import annotations
 
-import re
 import argparse
-from dataclasses import replace
 from enum import Enum
-import hashlib
 from pathlib import Path
 import random
-import signal
-import tempfile
-import time
 
-from unsigned_oracle import (
-    Case,
-    NativeRunner,
-    Observation,
-    UD2,
-    command,
-    rejected,
-    require,
-    validate_trap,
-    validate_values,
-)
+from native_runner import DIAGNOSTIC, Suite as Runner, require
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -92,136 +74,22 @@ def decode(values, offset, endian):
 
 
 class Suite:
-    def __init__(self, directory, compiler, timeout, keep_going, *, compiler_timeout=None):
-        self.runner = NativeRunner(directory, compiler, timeout)
-        self.compiler_timeout = timeout if compiler_timeout is None else compiler_timeout
-        self.keep_going = keep_going
-        self.count = self.traps = self.rejections = 0
-        self.failures = []
+    """readonly_spans-module cases on one shared runner: `check`/`reject`, then `finish`."""
+
+    def __init__(self, compiler, timeout=10, *, label="readonly spans", compiler_timeout=None):
+        self.runner = Runner(compiler, label, timeout=timeout, pattern=DIAGNOSTIC)
 
     def check(self, name, body, expected=MAX_U64, definitions="", helpers="", result="u64", imports=()):
-        program = source(body, definitions, helpers, result, imports)
-        path = self.runner.directory / "input.au"
-        output = self.runner.directory / "compiled.s"
-        path.write_text(program)
-        output.unlink(missing_ok=True)
-        try:
-            command(
-                [self.runner.compiler, "--module-root", ROOT / "library", path, "-o", output],
-                timeout=self.compiler_timeout,
-            )
-            require(path.read_text() == program, name + ": compiler changed source")
-            observed, symbols = self.runner.assemble(output.read_text(), ["test"])
-            if isinstance(expected, Trap):
-                validate_trap(observed, expected, symbols, name)
-                self.traps += 1
-            else:
-                validate_values(observed, [Case(name, body, expected, result)])
-            self.count += 1
-            print("PASS readonly spans", name, flush=True)
-        except AssertionError as failure:
-            details = f"{name}: {failure}\nReproduction source:\n{program}"
-            if not self.keep_going:
-                raise AssertionError(details) from failure
-            self.failures.append(details)
-            print("FAIL readonly spans", details, flush=True)
+        self.runner.check(name, source(body, definitions, helpers, result, imports), expected)
 
     def reject(self, name, body, definitions="", helpers="", imports=(), diagnostic=None):
         self.reject_program(name, source(body, definitions, helpers, imports=imports), diagnostic)
 
     def reject_program(self, name, program, diagnostic=None):
-        try:
-            path = self.runner.directory / "invalid.au"
-            path.write_text(program)
-            output = self.runner.directory / "rejected.s"
-            sentinel = b"readonly spans existing output\n\x00\xff"
-            for existing in (False, True):
-                output.unlink(missing_ok=True)
-                if existing:
-                    output.write_bytes(sentinel)
-                observed = command(
-                    [self.runner.compiler, "--module-root", ROOT / "library", path, "-o", output],
-                    timeout=self.compiler_timeout,
-                    allow_rejection=True,
-                )
-                require(
-                    observed.returncode == 1
-                    and re.fullmatch(
-                        rf"(?:{re.escape(str(path))}:[1-9][0-9]*:[1-9][0-9]*|aurorac): error "
-                        r"AU(?:100[12]|200[123]|3001|4001): [^\n]+\n",
-                        observed.stderr.decode(errors="strict"),
-                    )
-                    is not None,
-                    f"{name}: expected normal compiler rejection, got {observed.returncode}: {observed.stderr!r}",
-                )
-                if diagnostic is not None:
-                    require(
-                        diagnostic.encode() in observed.stderr,
-                        f"{name}: wrong reason for rejection: {observed.stderr!r}",
-                    )
-                require(path.read_text() == program, name + ": compiler changed source")
-                if existing:
-                    require(output.read_bytes() == sentinel, name + ": rejection changed output")
-                else:
-                    require(not output.exists(), name + ": rejection created an artifact")
-            self.rejections += 1
-            print("PASS span rejection", name, flush=True)
-        except AssertionError as failure:
-            details = f"{failure}\nReproduction source:\n{program}"
-            if not self.keep_going:
-                raise AssertionError(details) from failure
-            self.failures.append(details)
-            print("FAIL span rejection", name, details, flush=True)
+        self.runner.reject(name, program, True if diagnostic is None else diagnostic)
 
-
-def self_tests(suite):
-    require(checksum([0, 128, 255]) == 1021, "bad independent checksum")
-    require(
-        decode([1, 2, 3, 4], 0, "little") == 0x04030201 and decode([1, 2, 3, 4], 0, "big") == 0x01020304,
-        "bad independent endian model",
-    )
-    for offset in (MIN_I64, -1, 1, MAX_I64):
-        require(decode([1, 2, 3, 4], offset, "little") is None, "bad independent offset model")
-    require(decode([1, 2, 3], 0, "little") is None, "short input accepted")
-    full = Observation(MAX_U64.to_bytes(8, "little"), exit_code=0)
-    validate_values(full, [Case("all 64 result bits", "", MAX_U64)])
-    rejected(lambda: validate_values(full, [Case("low-byte-only result", "", 255)]), "truncated result")
-    for observed in (
-        replace(full, output=full.output[:-1]),
-        replace(full, output=full.output + b"x"),
-        replace(full, exit_code=1),
-        replace(full, terminal_signal=signal.SIGILL),
-    ):
-        rejected(
-            lambda observed=observed: validate_values(observed, [Case("invalid native result", "", MAX_U64)]),
-            "invalid result",
-        )
-    symbols = {Trap.BOUNDS.value: 4096, Trap.OVERFLOW.value: 8192}
-    good = Observation(
-        b"", terminal_signal=signal.SIGILL, delivery_signal=signal.SIGILL, pc=4096, instruction=UD2, signal_code=2
-    )
-    validate_trap(good, Trap.BOUNDS, symbols, "bounds observer")
-    for observed in (
-        replace(good, pc=8192),
-        replace(good, instruction=0x9090),
-        replace(good, signal_code=0),
-        replace(good, output=bytes(8)),
-        replace(good, terminal_signal=signal.SIGSEGV),
-        replace(good, delivery_signal=signal.SIGFPE),
-    ):
-        rejected(
-            lambda observed=observed: validate_trap(observed, Trap.BOUNDS, symbols, "invalid bounds fault"),
-            "invalid fault",
-        )
-    assembly = (
-        ".text\n.globl test\ntest:\n.Laurora_bounds_trap:\nud2\n"
-        ".Laurora_overflow_trap:\nud2\n"
-        '.section .note.GNU-stack,"",@progbits\n'
-    )
-    observed, actual_symbols = suite.runner.assemble(assembly, ["test"])
-    validate_trap(observed, Trap.BOUNDS, actual_symbols, "native exact bounds UD2")
-    rejected(lambda: validate_trap(observed, Trap.OVERFLOW, actual_symbols, "wrong site"), "wrong native site")
-    print("PASS span harness: independent model, 64-bit results, exact bounds UD2", flush=True)
+    def finish(self):
+        return self.runner.finish()
 
 
 def model_cases(suite, seed, steps):
@@ -241,7 +109,7 @@ def model_cases(suite, seed, steps):
         suite.check(f"seed {seed}: every byte and exact size at capacity {capacity}", body, HIGH_BIT + checksum(values))
         suite.check(
             f"const owner and signed size at capacity {capacity}",
-            array("bytes", values, const=True) + view() + f"if(view.at(0)!=255u8){{return -1;}}return view.size();",
+            array("bytes", values, const=True) + view() + "if(view.at(0)!=255u8){return -1;}return view.size();",
             capacity,
             result="i64",
         )
@@ -685,46 +553,19 @@ def binary_cases(suite, seed, steps):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", nargs="?", type=Path, default=ROOT / "build/aurorac")
-    parser.add_argument("--self-test-only", action="store_true")
-    parser.add_argument("--keep-going", action="store_true")
     parser.add_argument("--seed", type=int, default=14014)
     parser.add_argument("--steps", type=int, default=16)
-    parser.add_argument(
-        "--timeout", type=float, help="override both compiler and native watchdogs (defaults: 45 and 10 seconds)"
-    )
+    parser.add_argument("--timeout", type=float, default=10, help="native and per-rejection watchdog")
     args = parser.parse_args()
-    require((args.timeout is None or args.timeout > 0) and 1 <= args.steps <= 64, "invalid timeout or steps")
-    # Omission separates host compilation from native execution; an explicit
-    # legacy --timeout still controls both, as do existing imported Suite callers.
-    native_timeout = 10 if args.timeout is None else args.timeout
-    compiler_timeout = 45 if args.timeout is None else args.timeout
-    compiler = args.compiler.resolve()
-    started = time.monotonic()
-    if not args.self_test_only:
-        print(
-            f"INFO readonly spans compiler={compiler} "
-            f"sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()} "
-            f"seed={args.seed} steps={args.steps}",
-            flush=True,
-        )
-    with tempfile.TemporaryDirectory(prefix="aurora-readonly-spans-") as temporary:
-        suite = Suite(Path(temporary), compiler, native_timeout, args.keep_going, compiler_timeout=compiler_timeout)
-        self_tests(suite)
-        if args.self_test_only:
-            return
-        model_cases(suite, args.seed, args.steps)
-        lifetime_cases(suite)
-        call_cases(suite)
-        bounds_cases(suite)
-        rejection_cases(suite)
-        binary_cases(suite, args.seed, args.steps)
-        require(not suite.failures, f"{len(suite.failures)} readonly-span cases failed")
-        print(
-            f"PASS readonly spans: {suite.count} native cases including {suite.traps} exact bounds traps; "
-            f"{suite.rejections} rejection cases, each with absent and existing output; "
-            f"{time.monotonic() - started:.2f}s",
-            flush=True,
-        )
+    require(args.timeout > 0 and 1 <= args.steps <= 64, "invalid timeout or steps")
+    suite = Suite(args.compiler, args.timeout)
+    model_cases(suite, args.seed, args.steps)
+    lifetime_cases(suite)
+    call_cases(suite)
+    bounds_cases(suite)
+    rejection_cases(suite)
+    binary_cases(suite, args.seed, args.steps)
+    suite.finish()
 
 
 if __name__ == "__main__":

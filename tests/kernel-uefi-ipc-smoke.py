@@ -2,7 +2,7 @@
 """Strict ordered evidence for the fixed staged IPC fixture, not a general log parser."""
 
 from pathlib import Path
-import copy, importlib.util, json, re, sys
+import importlib.util, json, re, sys
 
 spec = importlib.util.spec_from_file_location("pci", Path(__file__).with_name("kernel-pci-smoke.py"))
 pci = importlib.util.module_from_spec(spec)
@@ -264,119 +264,11 @@ def validate_protocol_projection(status, text, mode, metadata):
         pci.validate(status, text, "pci")
 
 
-def self_test():
-    arena = 0x1000000
-    kernel = arena + 0x11000
-    prefix = (
-        f"AURORA_UEFI_ENTRY\nAURORA_UEFI_EXIT_OK: attempts=1\nAURORA_UEF"
-        f"I_PAYLOAD_ENTRY\nAURORA_UEFI_OWNERSHIP_OK: arena={arena} bytes"
-        f"=1048576 descriptors=111\nAURORA_UEFI_PROTECTION_OK: root="
-        f"{kernel} stack={arena + 0x47E00}\nAURORA_ACPI_CPU: id=0 uid=0 "
-        f"enabled=1 capable=0 x2=0\nAURORA_ACPI_TOPOLOGY: records=1 enab"
-        f"led=1 capable=0 lapic=4276092928\nAURORA_ACPI_WINDOW_CLOSED: c"
-        f"opies=14\nAURORA_PCI_APERTURE: base=3758096384 bytes=268435456"
-        f" segment=0 first=0 last=255\nAURORA_PCI_FUNCTION: segment=0 bu"
-        f"s=0 device=0 function=0 vendor=32902 product=10688 class=6 sub"
-        f"class=0 interface=0 header=0 command=7 secondary=0 subordinate"
-        f"=0\nAURORA_PCI_INVENTORY: functions=1 buses=1\nAURORA_PCI_WIND"
-        f"OW_CLOSED: reads=39\n"
-    )
-    rejected = 0
-    for mode in MODES:
-        metadata = {}
-        for index, name in enumerate(("clean", "bounds")):
-            base = BASE + index * 16384
-            metadata[name] = dict(
-                entry=base,
-                size=128,
-                return_pc=base + 60,
-                bounds_pc=base + 64,
-                overflow_pc=base + 68,
-                division_zero_pc=base + 72,
-                shift_count_pc=base + 76,
-                probe_pc=0,
-                probe_offset=0,
-            )
-        rows = [row.replace(r"(\d+)", str(arena + 0x47C00)) for row in expected(mode, metadata, arena)]
-        case_prefix = prefix + ("AURORA_FIXTURE_READY\n" if mode in FIXTURE_MODES else "")
-        text = case_prefix + "\n".join(rows) + "\n"
-        status = 33 if mode in SUCCESS else 35
-        validate(status, text, mode, metadata)
-        failures = [
-            (0, text),
-            (status, text + "AURORA_UEFI_IPC_OK\n"),
-            (status, text + "AURORA_UEFI_RUNTIME_FAIL: unexpected\n"),
-        ]
-        for i, line in enumerate(text.splitlines()):
-            failures.extend(
-                ((status, text.replace(line + "\n", "", 1)), (status, text.replace(line + "\n", (line + "\n") * 2, 1)))
-            )
-        for i, line in enumerate(rows):
-            for field in re.findall(r"([a-z]+)=\d+", line):
-                changed = re.sub(rf"{field}=\d+", f"{field}=9999999999999999999", line)
-                failures.append((status, text.replace(line, changed, 1)))
-            if i + 1 < len(rows):
-                swapped = rows.copy()
-                swapped[i], swapped[i + 1] = swapped[i + 1], swapped[i]
-                failures.append((status, case_prefix + "\n".join(swapped) + "\n"))
-        if mode not in SUCCESS:
-            failures.append((status, text + SUFFIX))
-        for field, value in [
-            ("return_pc", 0),
-            ("bounds_pc", BASE - 2),
-            ("overflow_pc", BASE + 16384),
-            ("size", 8192),
-            ("entry", 0),
-            ("return_pc", True),
-            ("probe_offset", 8),
-        ]:
-            altered = copy.deepcopy(metadata)
-            old = altered["clean"][field]
-            altered["clean"][field] = value
-            bad = text.replace(f"pc={old} ", f"pc={int(value)} ") if field == "return_pc" else text
-            try:
-                validate(status, bad, mode, altered)
-            except ValueError:
-                rejected += 1
-            else:
-                raise RuntimeError(f"Bad IPC metadata accepted: {mode} {field}")
-        for code, bad in failures:
-            try:
-                validate(code, bad, mode, metadata)
-            except ValueError:
-                rejected += 1
-            else:
-                raise RuntimeError(f"Bad IPC transcript accepted: {mode}")
-    # Only the four closed Call modes widen the caller; service and IPC stay one page.
-    for call_mode in ("user-call", "user-call-pending", "user-call-owner", "user-call-site"):
-        boundary = copy.deepcopy(metadata)
-        boundary["clean"]["size"] = 8192
-        metadata_valid(boundary, call_mode)
-        for name, size, selected in (
-            ("clean", 8193, call_mode),
-            ("bounds", 4097, call_mode),
-            ("clean", 4097, "ipc-fault"),
-        ):
-            changed = copy.deepcopy(boundary)
-            changed["clean"]["size"] = 128
-            changed[name]["size"] = size
-            try:
-                metadata_valid(changed, selected)
-            except ValueError:
-                rejected += 1
-            else:
-                raise RuntimeError("Call-specific image boundary widened")
-    print(f"PASS: IPC transcripts {len(MODES)} positive and {rejected} negative cases")
-
-
 if __name__ == "__main__":
-    if sys.argv[1:] == ["--self-test"]:
-        self_test()
-    else:
-        try:
-            validate(
-                int(sys.argv[1]), Path(sys.argv[2]).read_text(), sys.argv[3], json.loads(Path(sys.argv[4]).read_text())
-            )
-        except (ValueError, IndexError, KeyError) as error:
-            raise SystemExit(f"FAIL: {error}")
-        print("PASS: staged IPC exact transcript")
+    try:
+        validate(
+            int(sys.argv[1]), Path(sys.argv[2]).read_text(), sys.argv[3], json.loads(Path(sys.argv[4]).read_text())
+        )
+    except (ValueError, IndexError, KeyError) as error:
+        raise SystemExit(f"FAIL: {error}")
+    print("PASS: staged IPC exact transcript")

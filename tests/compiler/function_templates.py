@@ -1,39 +1,21 @@
 #!/usr/bin/env python3
-"""Focused executable contract for bounded explicit function templates (M021).
+"""Bounded explicit function templates (M021): native results, traps and rejections.
+
+Cases are data on one native_runner.Suite: complete 64-bit results, exact trap
+sites and diagnostic fragments (matched case-insensitively).
 
 Run: python3 -O tests/compiler/function_templates.py build/aurorac
-     python3 tests/compiler/function_templates.py --plan-only
-
-Native observations preserve all 64 result bits. Traps require a kernel SIGILL
-at the exact named UD2 instruction, using composed_values/integer_oracle's
-freestanding observer. Every negative fixture is compiled with both absent and
-byte-exact pre-existing output; all source, module, and library inputs must remain
-unchanged. require() stays active under -O. Successful cases are deleted; failing
-source, modules, command, diagnostics and native artifacts remain under tmp/.
-Counts are observed and disjoint (native returns, traps, rejection executions),
-with unique negative fixture counts reported separately. This is bounded evidence,
-not a language-equivalence or memory-safety proof. No kernel images are produced.
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 from itertools import product
-import json
 from pathlib import Path
 import random
-import re
-import resource
-import shutil
-import subprocess
-import tempfile
-import time
 
-from composed_values import Trap, observer_self_test, program, require, signed_bits
-from integer_oracle import NativeRunner, validate_trap, validate_values
+from native_runner import ROOT, Suite, Trap, require
 
-ROOT = Path(__file__).resolve().parents[2]
 IMPORTS = "import std.utility;import std.array;"
 SCALARS = ("i64", "u64", "u8", "bool")
 VALUES = {"i64": "-9223372036854775808", "u64": "18446744073709551615u64", "u8": "255u8", "bool": "true"}
@@ -52,126 +34,10 @@ LEAF = (
 EMPTY = "class Empty{public:Empty(){}auto answer()const->i64{return 42;}};"
 BOX = "template<Value T>class Box{public:T item;Box(T x):item(x){} };"
 TAG = "template<Value T>class Tag{public:Tag(){} };"
-PRESERVED = b"previous verified assembly\x00\xff\n"
 
 
 def p(body, definitions="", helpers="", imports=IMPORTS, result="i64"):
-    return program(body, definitions, helpers, imports, result)
-
-
-class Suite:
-    def __init__(self, directory, compiler, keep_going=False, fixture="", plan_only=False):
-        self.directory, self.compiler = directory, compiler
-        self.keep_going, self.fixture, self.plan_only = keep_going, fixture, plan_only
-        self.runner = None if plan_only else NativeRunner(directory, compiler, 5)
-        self.library_inputs = (
-            {} if plan_only else {path: path.read_bytes() for path in (ROOT / "library").rglob("*.au")}
-        )
-        self.count = self.traps = self.rejections = self.negative_fixtures = 0
-        self.attempts = self.selected_fixtures = 0
-        self.failures, self.names = [], set()
-
-    def check(self, name, source, expected=42, error=None, modules=None, existing_output=None, _selected=False):
-        if not _selected:
-            require(name not in self.names, "duplicate fixture name: " + name)
-            self.names.add(name)
-            if self.fixture and self.fixture.lower() not in name.lower():
-                return
-            self.selected_fixtures += 1
-        self.attempts += 1
-        if self.plan_only:
-            self.count += 1
-            self.rejections += int(error is not None)
-            self.traps += int(isinstance(expected, Trap) and error is None)
-            print("PLAN function templates", name, flush=True)
-            return
-        slug = re.sub(r"[^a-zA-Z0-9]+", "-", name)[:75].strip("-")
-        directory = Path(tempfile.mkdtemp(prefix=slug + "-", dir=self.directory))
-        source_path, output = directory / "input.au", directory / "compiled.s"
-        source_path.write_text(source)
-        inputs = dict(self.library_inputs)
-        inputs[source_path] = source.encode()
-        roots = [ROOT / "library"]
-        if modules:
-            root = directory / "modules"
-            root.mkdir()
-            roots.insert(0, root)
-            for module, content in modules.items():
-                path = root / (module.replace(".", "/") + ".au")
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(content)
-                inputs[path] = content.encode()
-        if existing_output is not None:
-            output.write_bytes(existing_output)
-        command = [str(self.compiler), str(source_path), "-o", str(output)]
-        for root in roots:
-            command.extend(["--module-root", str(root)])
-        (directory / "command.json").write_text(json.dumps(command, indent=2) + "\n")
-        original_runner_directory = self.runner.directory
-        try:
-            compiled = subprocess.run(
-                command,
-                capture_output=True,
-                timeout=10,
-                preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)),
-            )
-            (directory / "stdout.bin").write_bytes(compiled.stdout)
-            (directory / "stderr.bin").write_bytes(compiled.stderr)
-            for path, before in inputs.items():
-                require(path.read_bytes() == before, name + ": input changed: " + str(path))
-            if error is not None:
-                require(
-                    compiled.returncode == 1,
-                    f"{name}: expected compiler exit 1, got {compiled.returncode}: {compiled.stderr!r}",
-                )
-                require(bool(compiled.stderr), name + ": missing rejection diagnostic")
-                if existing_output is None:
-                    require(not output.exists(), name + ": artifact created on rejection")
-                else:
-                    require(output.read_bytes() == existing_output, name + ": previous output changed on rejection")
-                if error is not True:
-                    fragments = (error,) if isinstance(error, str) else error
-                    require(
-                        any(x.lower().encode() in compiled.stderr.lower() for x in fragments),
-                        name + ": unexpected diagnostic: " + repr(compiled.stderr),
-                    )
-                self.rejections += 1
-            else:
-                require(compiled.returncode == 0, f"{name}: compiler exit {compiled.returncode}: {compiled.stderr!r}")
-                self.runner.directory = directory
-                observed, symbols = self.runner.assemble(output.read_text(), ["test"])
-                if isinstance(expected, Trap):
-                    validate_trap(observed, expected, symbols, name)
-                    self.traps += 1
-                else:
-                    validate_values(observed, [signed_bits(expected)], [name])
-            self.count += 1
-            print("PASS function templates", name, flush=True)
-        except (AssertionError, OSError, subprocess.TimeoutExpired) as failure:
-            details = f"{name}: {failure}\nPreserved reproduction: {directory}"
-            (directory / "failure.txt").write_text(details + "\n")
-            self.failures.append(details)
-            print("FAIL function templates", details, flush=True)
-            if not self.keep_going:
-                raise AssertionError(details) from failure
-        else:
-            shutil.rmtree(directory)
-        finally:
-            self.runner.directory = original_runner_directory
-
-    def reject(self, name, source, error=True, modules=None):
-        require(name not in self.names, "duplicate fixture name: " + name)
-        self.names.add(name)
-        if self.fixture and self.fixture.lower() not in name.lower():
-            return
-        self.selected_fixtures += 1
-        before = self.rejections
-        for suffix, previous in (("absent output", None), ("saved output", PRESERVED)):
-            self.check(
-                name + ": " + suffix, source, error=error, modules=modules, existing_output=previous, _selected=True
-            )
-        if self.rejections == before + 2:
-            self.negative_fixtures += 1
+    return "module app;" + imports + definitions + helpers + f"auto test()->{result}{{{body}}}"
 
 
 def native_cases(suite, seed, steps):
@@ -1041,6 +907,8 @@ def module_cases(suite):
             imports="import bridge;",
         ),
         modules=specialized,
+        # Visibility depends on this unit's own imports; a pack's union import would widen it.
+        standalone=True,
     )
     suite.check(
         "directly imported specialization metadata matches instantiated class",
@@ -1164,83 +1032,15 @@ def main():
     parser.add_argument("compiler", type=Path, nargs="?", default=ROOT / "build/aurorac")
     parser.add_argument("--seed", type=int, default=21021)
     parser.add_argument("--steps", type=int, default=24)
-    parser.add_argument(
-        "--section", choices=("all", "native", "boundaries", "rejections", "modules", "traps"), default="all"
-    )
-    parser.add_argument("--fixture", default="", help="case-insensitive fixture-name substring")
-    parser.add_argument("--self-test-only", action="store_true")
-    parser.add_argument("--plan-only", action="store_true", help="enumerate/count fixtures without compiling anything")
-    parser.add_argument("--keep-going", action="store_true")
     args = parser.parse_args()
     require(1 <= args.steps <= 128, "steps must be between 1 and 128")
-    require(not (args.self_test_only and args.plan_only), "choose self-test-only or plan-only")
-    compiler = args.compiler.resolve()
-    started = time.monotonic()
-    if not args.self_test_only and not args.plan_only:
-        print(
-            f"INFO function templates compiler={compiler} sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}",
-            flush=True,
-        )
-        for relative in ("tests/compiler/function_templates.py", "library/std/utility.au", "library/std/array.au"):
-            print(
-                f"INFO function templates {relative} sha256="
-                f"{hashlib.sha256((ROOT / relative).read_bytes()).hexdigest()}",
-                flush=True,
-            )
-    temporary_root = Path(tempfile.gettempdir())
-    temporary_root.mkdir(exist_ok=True)
-    directory = Path(tempfile.mkdtemp(prefix="function-templates-", dir=temporary_root))
-    clean = False
-    try:
-        suite = Suite(directory, compiler, args.keep_going, args.fixture, args.plan_only)
-        if not args.plan_only:
-            observer_self_test(suite)
-        if args.self_test_only:
-            print("PASS function templates observer self-tests; no compiler acceptance claimed", flush=True)
-            clean = True
-            return
-        sections = {
-            "native": lambda: native_cases(suite, args.seed, args.steps),
-            "boundaries": lambda: boundary_cases(suite),
-            "rejections": lambda: rejection_cases(suite),
-            "modules": lambda: module_cases(suite),
-            "traps": lambda: trap_cases(suite),
-        }
-        for name, run in sections.items():
-            if args.section in ("all", name):
-                before = (suite.count, suite.traps, suite.rejections, suite.selected_fixtures)
-                run()
-                print(
-                    f"INFO function templates section={name} fixtures={suite.selected_fixtures - before[3]} "
-                    f"executions={suite.count - before[0]} traps={suite.traps - before[1]} "
-                    f"rejection-runs={suite.rejections - before[2]}",
-                    flush=True,
-                )
-        require(suite.selected_fixtures > 0, "no fixtures selected")
-        native = suite.count - suite.traps - suite.rejections
-        label = "planned" if args.plan_only else "passed"
-        print(
-            f"INFO function templates: {suite.selected_fixtures} selected fixtures; {suite.count} {label} executions; "
-            f"{native} native returns; {suite.traps} exact-site traps; {suite.negative_fixtures} rejection fixtures / "
-            f"{suite.rejections} rejection runs; {len(suite.failures)} failed executions; "
-            f"section={args.section}; seed={args.seed}; steps={args.steps}; elapsed={time.monotonic() - started:.2f}s",
-            flush=True,
-        )
-        require(suite.count + len(suite.failures) == suite.attempts, "execution accounting mismatch")
-        require(
-            suite.rejections == 2 * suite.negative_fixtures or bool(suite.failures), "rejection accounting mismatch"
-        )
-        require(not suite.failures, f"{len(suite.failures)} failed executions; artifacts: {directory}")
-        print(
-            "PLAN function templates complete (not executed)" if args.plan_only else "PASS function templates complete",
-            flush=True,
-        )
-        clean = True
-    finally:
-        if clean:
-            shutil.rmtree(directory)
-        else:
-            print("INFO function templates retained artifacts:", directory, flush=True)
+    suite = Suite(args.compiler, "function templates", ignore_case=True, pack_templates=32)
+    native_cases(suite, args.seed, args.steps)
+    boundary_cases(suite)
+    rejection_cases(suite)
+    module_cases(suite)
+    trap_cases(suite)
+    suite.finish()
 
 
 if __name__ == "__main__":

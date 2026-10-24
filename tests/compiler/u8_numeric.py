@@ -10,43 +10,28 @@ an explicit full-width sentinel for excluded overflow/zero-divisor inputs.
 Separate failure-edge fixtures require SIGILL at the exact retained named UD2.
 
 Source fixtures exercise byte literals, conversions, constness, classes, arrays,
-Scalar/Value templates and copied value calls. Rejections preserve both missing
-and existing output artifacts. All checks remain active under python3 -O.
+Scalar/Value templates and copied value calls. Rejections leave no artifact and must
+not change an existing one (native_runner.py).
 No aggregate byte-layout assumption is made by this numerical suite.
 
 Run: python3 tests/compiler/u8_numeric.py build/aurorac
-Harness only: python3 tests/compiler/u8_numeric.py --self-test-only
 This is exhaustive evidence for bounded numeric domains, not a safety proof.
 """
 
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass, replace
-import hashlib
+from dataclasses import dataclass
 from pathlib import Path
-import signal
 import struct
-import sys
 import tempfile
-import time
 from typing import Callable
 
-from unsigned_oracle import (
-    Case,
-    NativeRunner,
-    Observation,
-    Rejection,
-    Trap,
-    command,
-    rejected,
-    require,
-    validate_trap,
-    validate_values,
-)
+from native_runner import DIAGNOSTIC, ROOT, Freestanding, Rejection, Suite, Trap, command, freestanding_glue, observe
+from native_runner import require, run
+from unsigned_oracle import Case
 
 
-ROOT = Path(__file__).resolve().parents[2]
 BYTE_MAX = 255
 EXCLUDED = (1 << 64) - 1
 
@@ -193,82 +178,24 @@ def validate_sweep(observed, specifications, report=True):
     return count
 
 
-def run_sweeps(runner):
+def run_sweeps(compiler, directory, timeout):
+    """One module and one scan loop for every byte and ordered byte pair."""
     specifications = list(sweeps())
     source = "module byte_oracle;\n" + "\n".join(
         f"auto byte_{s.name}(i64 left,i64 right)->u64{{{s.body}}}" for s in specifications
     )
-    path = runner.directory / "sweep.au"
-    output = runner.directory / "sweep.s"
+    path, output, program = directory / "sweep.au", directory / "sweep.s", directory / "program.s"
     path.write_text(source)
-    command([runner.compiler, path, "-o", output], timeout=runner.timeout)
+    command([compiler, path, "-o", output], timeout=timeout)
     require(path.read_text() == source, "compiler changed numerical sweep input")
-    observed, _ = runner.assemble(output.read_text() + scan_assembly(specifications), ["u8_scan"])
-    return validate_sweep(observed, specifications)
-
-
-def self_tests(runner):
-    require(
-        checked(-1) == EXCLUDED and checked(256) == EXCLUDED and checked(255) == 255, "invalid mathematical byte range"
+    program.write_text(
+        output.read_text() + scan_assembly(specifications) + freestanding_glue(["u8_scan"], [0], note=True)
     )
-    for a in range(256):
-        require(a + (BYTE_MAX - a) == 255, "invalid complement reference")
-        for b in range(1, 256):
-            require(a == (a // b) * b + a % b and 0 <= a % b < b, "invalid division/remainder reference")
-    spec = Sweep("self", "", lambda a, b: (1 << 63) + 256 * a + b, 2, 3)
-    payload = b"".join(spec.expected(a, b).to_bytes(8, "little") for a in range(2) for b in range(3)) + bytes(8)
-    good = Observation(payload, exit_code=0)
-    validate_sweep(good, [spec], report=False)
-    for bad in (
-        replace(good, output=payload[:-1]),
-        replace(good, output=payload + b"x"),
-        replace(good, output=bytes(len(payload))),
-        replace(good, exit_code=1),
-        replace(good, terminal_signal=signal.SIGILL),
-        replace(good, output=payload[:-8] + (256).to_bytes(8, "little")),
-    ):
-        rejected(lambda bad=bad: validate_sweep(bad, [spec], report=False), "invalid sweep observation")
-    assembly = ".text\n.globl byte_self\nbyte_self:\nmovq %rdi,%rax\nshlq $8,%rax\naddq %rsi,%rax\nbtsq $63,%rax\nret\n"
-    observed, _ = runner.assemble(assembly + scan_assembly([spec]), ["u8_scan"])
-    validate_sweep(observed, [spec], report=False)
-    high = Observation(EXCLUDED.to_bytes(8, "little"), exit_code=0)
-    validate_values(high, [Case("full-width sentinel", "", EXCLUDED)])
-    rejected(lambda: validate_values(high, [Case("truncated sentinel", "", 255)]), "low-byte-only comparison")
-    sites = "\n".join(t.value + ":\nud2" for t in Trap)
-    for expected in Trap:
-        observed, symbols = runner.assemble(
-            ".text\n.globl test\ntest:\njmp "
-            + expected.value
-            + "\n"
-            + sites
-            + '\n.section .note.GNU-stack,"",@progbits\n',
-            ["test"],
-        )
-        validate_trap(observed, expected, symbols, "native exact UD2 self-test")
-        for wrong in Trap:
-            if wrong is not expected:
-                rejected(lambda wrong=wrong: validate_trap(observed, wrong, symbols, "wrong site"), "wrong trap site")
-        for bad in (
-            replace(observed, terminal_signal=signal.SIGFPE),
-            replace(observed, delivery_signal=signal.SIGSEGV),
-            replace(observed, instruction=0x9090),
-            replace(observed, signal_code=0),
-            replace(observed, output=bytes(8)),
-        ):
-            rejected(lambda bad=bad: validate_trap(bad, expected, symbols, "invalid fault"), "invalid fault metadata")
-    observed, symbols = runner.assemble(
-        ".text\n.globl test\ntest:\nxorq %rax,%rax\nxorq %rdx,%rdx\n"
-        "xorq %rcx,%rcx\ndivq %rcx\n" + sites + '\n.section .note.GNU-stack,"",@progbits\n',
-        ["test"],
-    )
-    require(observed.terminal_signal == signal.SIGFPE, "hardware divide self-test did not fault")
-    rejected(lambda: validate_trap(observed, Trap.ZERO, symbols, "hardware #DE"), "hardware divide fault")
-    rejected(lambda: command([sys.executable, "-c", "while True: pass"], timeout=0.05), "timeout")
-    print(
-        "PASS u8 harness: full-width outputs, row ordering, malformed observations, "
-        "three exact UD2 sites, hardware divide and timeout rejection",
-        flush=True,
-    )
+    command(["as", "--64", program, "-o", directory / "program.o"])
+    harness = Freestanding()
+    harness.prepare(directory)
+    harness.link([directory / "program.o"], directory / "program")
+    return validate_sweep(observe(run([directory / "program"], timeout)), specifications)
 
 
 CELL = (
@@ -536,52 +463,21 @@ def rejection_cases():
 
 
 def main():
-    started = time.monotonic()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", type=Path, nargs="?", default=ROOT / "build/aurorac")
-    parser.add_argument("--self-test-only", action="store_true")
     parser.add_argument("--timeout", type=float, default=10)
     args = parser.parse_args()
     require(args.timeout > 0, "timeout must be positive")
     compiler = args.compiler.resolve()
-    if not args.self_test_only:
-        print(
-            f"INFO u8 numeric compiler={compiler} sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}",
-            flush=True,
-        )
     with tempfile.TemporaryDirectory(prefix="aurora-u8-numeric-") as temporary:
-        runner = NativeRunner(Path(temporary), compiler, args.timeout)
-        self_tests(runner)
-        if args.self_test_only:
-            return
-        count = run_sweeps(runner)
-        positives = list(positive_cases())
-        batch = []
-        for case in positives:
-            if case.prelude:
-                if batch:
-                    runner.cases(batch)
-                    batch = []
-                runner.cases([case])
-            else:
-                batch.append(case)
-        if batch:
-            runner.cases(batch)
-        print(f"PASS u8 source: {len(positives)} positive cases", flush=True)
-        traps = list(trap_cases())
-        for case in traps:
-            runner.cases([case])
-        print(f"PASS u8 faults: {len(traps)} exact named UD2 cases", flush=True)
-        negatives = list(rejection_cases())
-        for case in negatives:
-            runner.rejection(case)
-        print(f"PASS u8 rejection: {len(negatives)} cases, each with absent and existing output", flush=True)
-    print(
-        f"PASS u8 numeric: {count} exhaustive observations, {len(positives)} source cases, "
-        f"{len(traps)} exact trap checks, {len(negatives)} rejections; "
-        f"{time.monotonic() - started:.2f}s",
-        flush=True,
-    )
+        count = run_sweeps(compiler, Path(temporary), args.timeout)
+    print(f"PASS u8 numeric: {count} exhaustive observations", flush=True)
+    suite = Suite(compiler, "u8 source", timeout=args.timeout)
+    for case in [*positive_cases(), *trap_cases()]:
+        suite.value(case.name, case.body, case.expected, case.result_type, case.prelude, case.imports)
+    for case in rejection_cases():
+        suite.reject(case.name, case.source, pattern=DIAGNOSTIC)
+    suite.finish()
 
 
 if __name__ == "__main__":

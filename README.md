@@ -156,11 +156,12 @@ make smoke-all               # separate emulator matrix; QEMU and firmware requi
 For direct Meson commands, configure a separate [build](docs/meson-bootstrap.md)
 for each toolchain, with matching `gcc`/`g++` on PATH. `make test` and the
 compiler-only shortcuts reuse an explicitly predecessor-configured build
-incrementally. `dev` is quick feedback; `full` includes all
-native compiler, full-package and kernel/boot-image gates. Named `slow`,
-`integration`, `boot`, `core` and `bytes` suites support focused work. A merge
-requires the final-source GCC 16 gates in [AGENTS.md](AGENTS.md), including the
-complete `full` suite and separate normal BIOS/UEFI and affected emulator profiles.
+incrementally. `make test` runs the `merge` suite; `make test-release` runs the
+opt-in `release` suite (corpus emitter differential, mutation testing, complete
+subset sweeps); `full` is their union. Named `dev`, `slow`, `integration`, `boot`,
+`core` and `bytes` suites support focused work. A merge requires the final-source
+GCC 16 gates in [AGENTS.md](AGENTS.md), including the `merge` suite and separate
+normal BIOS/UEFI and affected emulator profiles.
 
 Normal development reuses dependency-tracked compiler and C++ fixture builds.
 Changing source reruns affected build commands; changing toolchain/configuration

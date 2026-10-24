@@ -32,7 +32,6 @@ import re
 from pathlib import Path
 import signal
 import stat
-import subprocess
 import sys
 import time
 
@@ -40,115 +39,9 @@ sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 from bootstrap_frontend import stage_modules
-from frontend_bridge import render
 from qemu_transport import run_logged
 
 SOURCE_ROOTS = ("compiler", "examples", "kernel", "library", "tests")
-
-
-def non_emitter_path(name):
-    """Only known documentation and native-kernel edits may omit the second profile.
-
-    Everything else is conservative: compiler/ABI sources, generators, options,
-    runtime/library inputs, AU corpus inputs, tools and the selector's own tests.
-    """
-    path = Path(name)
-    if not path.parts or path.is_absolute() or ".." in path.parts:
-        raise ValueError("unsupported Git path")
-    return (
-        path.suffix == ".md"
-        or name == "LICENSE"
-        or (path.parts[0] == "kernel" and path.suffix in (".cpp", ".hpp", ".h", ".inc", ".s", ".S", ".ld"))
-    )
-
-
-def closed_profile_required(root, comparison_base):
-    """Inspect the live worktree, never infer a comparison base or cache a decision."""
-    if not comparison_base:
-        return True, "no explicit comparison base"
-    try:
-        root = Path(root).resolve(strict=True)
-
-        def git(*arguments):
-            result = subprocess.run(
-                ["git", "-C", str(root), "-c", "core.fsmonitor=false", *arguments],
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=10,
-                env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
-            )
-            if result.stderr:
-                raise ValueError("ambiguous Git result")
-            return result.stdout
-
-        def paths(*arguments):
-            output = git(*arguments)
-            if output and not output.endswith("\0"):
-                raise ValueError("incomplete Git path list")
-            return output.split("\0")[:-1]
-
-        if Path(git("rev-parse", "--show-toplevel").strip()).resolve() != root:
-            raise ValueError("unsupported source root")
-        for name in (*SOURCE_ROOTS, "runtime", "scripts"):
-            if not (root / name).is_dir() or (root / name).is_symlink():
-                raise ValueError("unsupported source layout")
-        for name in ("meson.build", "meson_options.txt", "compiler/x86_module.au", "scripts/frontend_bridge.py"):
-            if not (root / name).is_file():
-                raise ValueError("unsupported source layout")
-        base = git("rev-parse", "--verify", "--end-of-options", comparison_base + "^{commit}").strip()
-        if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", base):
-            raise ValueError("unresolved comparison commit")
-        tracked = paths("ls-files", "-v", "-z")
-        if not tracked or any(not row.startswith("H ") for row in tracked):
-            raise ValueError("unsupported index state")
-        if any((root / row[2:]).is_symlink() for row in tracked if not non_emitter_path(row[2:])):
-            raise ValueError("unsupported source symlink")
-        # This compares base directly with the current working tree, including
-        # staged and unstaged changes. New relevant files must not disappear.
-        names = paths("diff", "--no-ext-diff", "--no-renames", "--name-only", "-z", base, "--")
-        names += paths("ls-files", "--others", "--exclude-standard", "-z")
-        # Local ignore rules must not hide an AU module that can shadow imports.
-        # Limit this check to source roots, not retained/generated build outputs.
-        names += [
-            name
-            for name in paths(
-                "ls-files",
-                "--others",
-                "--ignored",
-                "--exclude-standard",
-                "-z",
-                "--",
-                *SOURCE_ROOTS,
-                "runtime",
-                "scripts",
-            )
-            if Path(name).suffix == ".au"
-        ]
-        relevant = sorted(name for name in names if not non_emitter_path(name))
-        if relevant:
-            return True, f"base {base}: emitter-relevant or unknown input {relevant[0]}"
-        return False, f"base {base}: only known non-emitter changes ({len(names)} paths)"
-    except (OSError, ValueError, subprocess.SubprocessError) as error:
-        return True, "comparison unavailable: " + str(error)
-
-
-def selected_closed_profile(arguments):
-    parser = argparse.ArgumentParser(description="Run the closed emitter profile unless an explicit base excludes it")
-    parser.add_argument("--source-root", type=Path, required=True)
-    parser.add_argument("--comparison-base", default="")
-    parser.add_argument("command", nargs=argparse.REMAINDER)
-    args = parser.parse_args(arguments)
-    command = args.command[1:] if args.command[:1] == ["--"] else args.command
-    if not command:
-        parser.error("missing closed-profile command")
-    required, reason = closed_profile_required(args.source_root, args.comparison_base)
-    print(("RUN" if required else "SKIP") + " closed emitter profile: " + reason, flush=True)
-    if not required:
-        return 77
-    # Replace the selector so Meson's existing timeout/signal owner supervises
-    # the real guarded command, without another waiting process layer.
-    os.execvp(command[0], command)
 
 
 OUTPUTS = ("assembly.s", "stack.json", "abi.json")
@@ -201,10 +94,6 @@ def identity(path):
 def sources(root):
     # Match hosted_lexer_bootstrap.py: source roots, never generated build trees.
     return sorted(path for name in SOURCE_ROOTS for path in (root / name).rglob("*.au"))
-
-
-def source_identities(root):
-    return {str(path.relative_to(root)): identity(path) for path in sources(root)}
 
 
 def file_state(path):
@@ -451,40 +340,11 @@ def main():
     }
     rejected = []
     try:
-        original_sources = source_identities(root)
-        bridge_identity = identity(ROOT / "scripts/frontend_bridge.py")
         module_root = artifacts / "compiler-modules"
-        staged_inputs = [*modules, *historical_modules, decimal]
-        stage_modules(module_root, staged_inputs)
-        staged = {str(path.relative_to(module_root)): identity(path) for path in sorted(module_root.rglob("*.au"))}
-        expected = sorted(
-            (
-                hashlib.sha256(render(path.read_bytes().decode()).encode()).hexdigest(),
-                len(render(path.read_bytes().decode()).encode()),
-            )
-            for path in staged_inputs
-        )
-        require(sorted((row["sha256"], row["bytes"]) for row in staged.values()) == expected, "module staging differs")
+        stage_modules(module_root, [*modules, *historical_modules, decimal])
         write_json(
             artifacts / "inputs.json",
-            {
-                "source_root": str(root),
-                "source_roots": SOURCE_ROOTS,
-                "sources": original_sources,
-                "compilers": compiler_ids,
-                "flags": flags,
-                "current_convergence": current_convergence,
-                "historical_corpus": sorted(historical),
-                "historical_corpus_manifest": identity(HISTORICAL_CORPUS),
-                "new_consumers": sorted(new_consumers),
-                "staged_modules": staged,
-                "harness": identity(Path(__file__)),
-                "staging_helper": identity(ROOT / "scripts/bootstrap_frontend.py"),
-                "bridge_table": bridge_identity,
-                "process_helper": identity(ROOT / "scripts/qemu_transport.py"),
-                "scope": "All source-root *.au inputs; one flag profile; assembly plus both sidecars; text diagnostics",
-                "limits": "Artifact identity is not compiler build provenance; no machine execution or I/O injection",
-            },
+            {"compilers": compiler_ids, "flags": flags, "new_consumers": sorted(new_consumers)},
         )
         compiler_by_label = dict(zip(labels, compilers, strict=True))
         jobs = []
@@ -553,17 +413,6 @@ def main():
             f"rejected inputs changed: new {sorted(set(rejected) - EXPECTED_REJECTED)}, "
             f"now accepted {sorted(EXPECTED_REJECTED - set(rejected))}",
         )
-        require(source_identities(root) == original_sources, "source corpus changed during comparison")
-        require(
-            identity(ROOT / "scripts/frontend_bridge.py") == bridge_identity, "bridge table changed during comparison"
-        )
-        require(
-            {str(path.relative_to(module_root)): identity(path) for path in sorted(module_root.rglob("*.au"))}
-            == staged,
-            "staged modules changed during comparison",
-        )
-        for label, compiler in zip(labels, compilers, strict=True):
-            require({"path": str(compiler), **identity(compiler)} == compiler_ids[label], f"{label} compiler changed")
         report["state"] = "passed"
     except BaseException as error:
         report["state"] = "failed"
@@ -585,8 +434,6 @@ if __name__ == "__main__":
 
     signal.signal(signal.SIGTERM, terminate)
     try:
-        if sys.argv[1:2] == ["--select-closed-profile"]:
-            sys.exit(selected_closed_profile(sys.argv[2:]))
         main()
     except (OSError, ValueError) as error:
         sys.exit("emitter differential: " + str(error))

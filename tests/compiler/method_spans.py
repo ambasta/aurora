@@ -4,15 +4,11 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import nullcontext
-import hashlib
 import random
 from pathlib import Path
 import tempfile
 
 from byte_buffer import BufferSuite, CREATE, check_state, program
-from owned_bytes import command
-from unsigned_oracle import require
 
 SPAN = "builtin::span<const u8>"
 ARRAY = "const builtin::array<u8, 3> data = {7u8, 128u8, 255u8};"
@@ -269,23 +265,6 @@ def modeled_cases(suite):
         suite.run(exe, quota, initial, 0, 42, allocations, 1, fail_after=fail_after)
 
 
-def reject(suite, name, source, diagnostic):
-    folder = suite.directory / ("reject-" + name)
-    folder.mkdir()
-    path = folder / "input.au"
-    path.write_text(source)
-    output = folder / "output.s"
-    for prior in (None, b"preserve prior assembly\n"):
-        if prior is not None:
-            output.write_bytes(prior)
-        result = command([suite.compiler, *suite.module_args, path, "-o", output])
-        (folder / "stderr.txt").write_bytes(result.stderr)
-        require(result.returncode == 1, f"{name}: expected exit 1: {result.stderr!r}")
-        require(diagnostic in result.stderr.decode(), f"{name}: expected {diagnostic!r}: {result.stderr.decode()}")
-        require(not output.exists() if prior is None else output.read_bytes() == prior, f"{name}: modified output")
-    suite.rejections += 1
-
-
 def rejection_cases(suite):
     for name, body, helpers, diagnostic in (
         (
@@ -319,7 +298,7 @@ def rejection_cases(suite):
             "copied argument requires an ordinary function call",
         ),
     ):
-        reject(suite, name, program(READER + body, COPIED_HELPERS + helpers), diagnostic)
+        suite.reject(name, program(READER + body, COPIED_HELPERS + helpers), diagnostic)
     frozen = "cannot mutate or move an owner while a readonly span is live"
     for name, body in {
         "self-append": "buffer.try_append_bytes(buffer.bytes());",
@@ -330,9 +309,8 @@ def rejection_cases(suite):
         ),
         "borrowed-root-move": f"const {SPAN} input = buffer.bytes(); std::ByteBuffer moved = move(buffer);",
     }.items():
-        reject(suite, name, program(CREATE + body + "return 0;"), frozen)
-    reject(
-        suite,
+        suite.reject(name, program(CREATE + body + "return 0;"), frozen)
+    suite.reject(
         "later-owner-mutation",
         program(
             READER + "builtin::OwnedBytes source = region.try_allocate(1); "
@@ -341,8 +319,7 @@ def rejection_cases(suite):
         ),
         frozen,
     )
-    reject(
-        suite,
+    suite.reject(
         "const-destination",
         program(
             CREATE
@@ -352,21 +329,18 @@ def rejection_cases(suite):
         ),
         "mutable method requires a mutable receiver",
     )
-    reject(
-        suite,
+    suite.reject(
         "wrong-argument",
         program(CREATE + "buffer.try_append_bytes(1); return 0;"),
         "span initializer requires borrow_bytes, a live span or its subspan",
     )
-    reject(
-        suite,
+    suite.reject(
         "constructor-span",
         program("return 0;", f"class Bad {{ public: Bad({SPAN} input) {{}} }};"),
         "only scalar, enum or class constructor parameters are supported",
     )
     consume = "auto consume(builtin::ByteRegion region, builtin::OwnedBytes input) -> bool { return input.ok(); }"
-    reject(
-        suite,
+    suite.reject(
         "later-owner-move",
         program(
             READER + "builtin::OwnedBytes source = region.try_allocate(1); "
@@ -375,8 +349,7 @@ def rejection_cases(suite):
         ),
         frozen,
     )
-    reject(
-        suite,
+    suite.reject(
         "later-receiver-move",
         program(
             READER + "return reader.later(reader.bytes(), consume_reader(region, move(reader)));",
@@ -384,8 +357,7 @@ def rejection_cases(suite):
         ),
         frozen,
     )
-    reject(
-        suite,
+    suite.reject(
         "return-parameter",
         program(
             "return 0;", HELPERS.replace("return borrow_bytes(payload).subspan(offset.get(), count);", "return input;")
@@ -397,30 +369,16 @@ def rejection_cases(suite):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", type=Path)
-    parser.add_argument("--compile-only", action="store_true")
-    parser.add_argument("--artifacts", type=Path)
+    parser.add_argument("--artifacts", type=Path, help="retain this run in a new directory")
     args = parser.parse_args()
-    compiler = args.compiler.resolve(strict=True)
-    before = hashlib.sha256(compiler.read_bytes()).hexdigest()
-    if args.artifacts is not None:
-        args.artifacts.mkdir(parents=True, exist_ok=False)
-    context = (
-        tempfile.TemporaryDirectory(prefix="aurora-method-spans-")
-        if args.artifacts is None
-        else nullcontext(args.artifacts)
-    )
-    with context as temporary:
-        suite = BufferSuite(compiler, Path(temporary), args.compile_only)
+    with tempfile.TemporaryDirectory(prefix="aurora-method-spans-") as temporary:
+        suite = BufferSuite(args.compiler.resolve(strict=True), args.artifacts or Path(temporary), deferred=True)
         append_cases(suite)
         method_cases(suite)
         modeled_cases(suite)
         rejection_cases(suite)
-        require(hashlib.sha256(compiler.read_bytes()).hexdigest() == before, "compiler changed during gate")
-        print(
-            f"PASS method spans: {suite.programs} programs, {suite.native} native cases, "
-            f"{suite.rejections} rejections, {suite.skipped_native} native cases skipped"
-        )
-        print(f"compiler_sha256={before}")
+        suite.finish()
+        print(f"PASS method spans: {suite.native} native runs")
 
 
 if __name__ == "__main__":

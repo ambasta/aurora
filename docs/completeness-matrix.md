@@ -24,7 +24,11 @@ Validation cleanup passed independent integrated qualification in
 [PR #244](https://github.com/ambasta/aurora/pull/244). [Fixture consolidation](kernel-fixture-consolidation.md)
 now leaves 81 canonical images (61 UEFI, 20 BIOS), with every fault mode a
 boot-selected fixture case; `full` builds all of them. The production-image and
-loader-stage steps remain, so this is not yet the few-test-images target.
+loader-stage steps remain, so this is not yet the few-test-images target. Each image
+build runs one compiler-fact stack check and one image/W^X/symbol-policy check
+in place of the former per-profile admission scripts.
+The compiler-semantics runners now compile one packed program per test through
+`tests/compiler/native_runner.py`; library-behaviour runners are not yet migrated.
 
 Next dependencies: [roadmap](roadmap.md). Required checks:
 [development and qualification](developer-test-contract.md).

@@ -496,7 +496,8 @@ def main():
     )
     selection.add_argument(
         "--suite",
-        choices=["full", "compiler", "dev", "slow", "integration", "boot", "exhaustive"],
+        choices=["merge", "release", "full", "compiler", "dev", "slow", "integration", "boot", "exhaustive", "guest"]
+        + ["guest-" + family for family in kernel_profiles.GUEST_FAMILIES],
     )
     selection.add_argument("--build-only", nargs="+", choices=["aurorac", "aurora-fmt"])
     selection.add_argument("--tests", nargs="+", help="Run exact registered names in the hosted-only build")

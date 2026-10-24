@@ -2,9 +2,6 @@
 """Opt-in current-source Event developer smoke; never independent qualification."""
 
 import argparse
-import copy
-import hashlib
-import io
 import json
 import os
 from pathlib import Path
@@ -14,16 +11,16 @@ import selectors
 import shutil
 import signal
 import stat
+import struct
 import subprocess
 import sys
 import tempfile
 import time
 
-import kernel_iommu_event_admission as admission
 import kernel_iommu_event_esp as esp
 import kernel_iommu_event_oracle as oracle
 import kernel_uefi_oracle as normal
-from kernel_emulator_clock import expected_uefi_argv
+from kernel_elf import Elf
 import qemu_transport as transport
 import smoke_outputs
 from qemu_transport import ChildNotReaped, Qmp, exited, reap_completed
@@ -32,20 +29,22 @@ from owned_outputs import allocated_bytes
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = None
-MODES = admission.MODES[:4]
+# iommu-event-observe is a read-only build profile without a guest capture fixture.
+MODES = ("iommu-event-denial", "iommu-event-success", "iommu-event-overflow", "iommu-event-command-error")
 STREAM_LIMIT = 1024 * 1024
 EVIDENCE_LIMIT = 1024**3
 FREE_FLOOR = 1024**3
 RUN_MARKER = ".event-smoke-run.json"
-FIRMWARE = {
-    "code": (3653632, "624e06de18b4fa535e90db7160d00d3d07d206422b89999bf1e27d920264e4e0"),
-    "vars": (540672, "5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e"),
+# Linked symbol, exact bytes and alignment of each allocation the guest retains for capture.
+RETAINED = {
+    "terminal": ("uefi_event_terminal", 672, 8),
+    "backing": ("uefi_event_backing", 32768, 4096),
+    "ring": ("_ZN6aurora11iommu_event16BootLifetimeRing6bytes_E", 4096, 4096),
+    "before_ring": ("uefi_event_before_ring", 4096, 4096),
+    "after_ring": ("uefi_event_after_ring", 4096, 4096),
 }
-MODEL = {
-    "hw/i386/amd_iommu.c": "a506dccf0c112cc791208724651b3aaca300f8b713362dfd07af2308e6f5a2d9",
-    "hw/i386/amd_iommu.h": "94d50d0dd0548c533252b4fdff7ec3cf800aed8655ce38db24de837adf1785e4",
-}
-DEVICE_CONFIG = "CONFIG_Q35=y\nCONFIG_AMD_IOMMU=y\nCONFIG_EDU=y\nCONFIG_ISA_DEBUG=y\n"
+SHT_NOBITS = 8
+SHF_WRITE_ALLOC = 3
 need = esp.need
 json_object = oracle.json_object
 
@@ -73,146 +72,48 @@ def read_json(path):
     return json_object(path.read_bytes())
 
 
-def data_files(directory):
-    directory = safe_path(directory, directory=True)
-    result, visited, pending, total = {}, set(), [(directory, 0)], 0
-    while pending:
-        current, depth = pending.pop()
-        resolved = safe_path(current.resolve(strict=True), directory=True)
-        need(depth <= 8 and len(visited) < 64, "QEMU data directory limit")
-        need(resolved not in visited, "QEMU data directory cycle or repeated alias")
-        visited.add(resolved)
-        for path in current.iterdir():
-            target = path.resolve(strict=True)
-            if target.is_dir():
-                pending.append((path, depth + 1))
-                need(len(pending) + len(visited) <= 64, "QEMU data directory limit")
-                continue
-            need(stat.S_ISREG(target.stat().st_mode), "Nonregular QEMU data")
-            need(len(result) < 256, "QEMU data inventory limit")
-            total += target.stat().st_size
-            need(total <= 32 * 1024**2, "QEMU data size limit")
-            result[str(path.relative_to(directory))] = dict(path=str(target), **identity(target))
-    need(result, "Empty QEMU data")
-    return result
-
-
-PACKAGE_MARKER = dict(
-    schema="aurora-event-runtime-v1",
-    model="aurora-amdvi-command-stop-v1",
-    qemu_version="10.0.13",
-    firmware_version="2025.02-8+deb13u1",
-)
+# The packaged runtime must provide the command-stop AMD-Vi model the oracle expects.
+PACKAGE_MARKER = dict(schema="aurora-event-runtime-v1", model="aurora-amdvi-command-stop-v1")
 
 
 def packaged_runtime(prefix):
     """The selected package is the tool trust boundary; this is not attestation."""
     prefix = safe_path(prefix, directory=True)
-    need(read_json(prefix / "runtime.json") == PACKAGE_MARKER, "Unsupported packaged Event model/version")
+    marker = read_json(prefix / "runtime.json")
+    need({key: marker.get(key) for key in PACKAGE_MARKER} == PACKAGE_MARKER, "Unsupported packaged Event model")
     qemu = safe_path(prefix / "bin/qemu-system-x86_64")
     need(os.access(qemu, os.X_OK), "Packaged Event QEMU is not executable")
-    for name in (*MODEL, "configs/devices/x86_64-softmmu/aurora-dma.mak"):
-        need(safe_path(prefix / "model" / name).stat().st_size > 0, "Empty packaged model input")
-    firmware = {}
-    for role, filename in (("code", "OVMF_CODE_4M.fd"), ("vars", "OVMF_VARS_4M.fd")):
-        path = safe_path(prefix / "firmware" / filename)
-        need(path.stat().st_size == FIRMWARE[role][0], "Unsupported packaged firmware size: " + role)
-        firmware[role] = str(path)
+    firmware = {
+        role: str(safe_path(prefix / "firmware" / filename))
+        for role, filename in (("code", "OVMF_CODE_4M.fd"), ("vars", "OVMF_VARS_4M.fd"))
+    }
     libraries = [safe_path(prefix / name, directory=True) for name in ("lib", "lib64") if (prefix / name).exists()]
-    library_path = ":".join(str(path) for path in libraries)
-    version = io.BytesIO()
-    transport.run_logged(
-        [str(qemu), "--version"],
-        version,
-        timeout=5,
-        limit=4096,
-        expected=0,
-        timeout_status=False,
-        env={"PATH": "/usr/bin:/bin", "LC_ALL": "C", "LD_LIBRARY_PATH": library_path},
-    )
-    need(re.match(rb"QEMU emulator version 10\.0\.13(?:\s|$)", version.getvalue()), "Unsupported packaged QEMU version")
     return dict(
-        packaged=True,
         qemu=str(qemu),
         data=str(safe_path((prefix / "share/qemu").resolve(strict=True), directory=True)),
-        library_path=library_path,
+        library_path=":".join(str(path) for path in libraries),
         **firmware,
     )
 
 
 def runtime_inputs(args):
-    """Verify a supplied build record, never its historical acceptance status.
-
-    Like the compiler toolchain, this is a trusted user-supplied executable and
-    build record. Hashes bind the actual inputs; they are not build attestation.
-    """
+    """Select a trusted user-supplied Event QEMU build, like the compiler toolchain."""
     if getattr(args, "tool_prefix", None):
         return packaged_runtime(args.tool_prefix)
-    record_path = safe_path(args.build_receipt)
-    build = read_json(record_path)
-    source = safe_path(build["source_path"], directory=True)
-    files = {str(record_path): identity(record_path)}
-    for name, digest in MODEL.items():
-        path = safe_path(source / name)
-        observed = identity(path)
-        need(observed["sha256"] == digest, "Custom model source changed")
-        files[str(path)] = observed
-    config = safe_path(source / "configs/devices/x86_64-softmmu/aurora-dma.mak")
-    observed = identity(config)
-    need(
-        observed["sha256"] == hashlib.sha256(DEVICE_CONFIG.encode()).hexdigest(),
-        "Custom model device configuration changed",
-    )
-    files[str(config)] = observed
+    build = read_json(safe_path(args.build_receipt))
     binary = safe_path(build["binary_path"])
-    observed = identity(binary)
-    need(
-        os.access(binary, os.X_OK) and observed == dict(bytes=build["binary_bytes"], sha256=build["binary_sha256"]),
-        "Custom QEMU binary/build record mismatch",
-    )
-    files[str(binary)] = observed
-    libraries_path = safe_path(build["runtime_library_manifest"]["path"])
-    observed = identity(libraries_path)
-    need(observed["sha256"] == build["runtime_library_manifest"]["sha256"], "Dependency manifest changed")
-    libraries = read_json(libraries_path)
-    files[str(libraries_path)] = observed
-    library_dirs = libraries["LD_LIBRARY_PATH"]
+    need(os.access(binary, os.X_OK), "Custom Event QEMU is not executable")
+    library_dirs = read_json(safe_path(build["runtime_library_manifest"]["path"]))["LD_LIBRARY_PATH"]
     need(type(library_dirs) is str, "Invalid library path")
     for path in library_dirs.split(":") if library_dirs else []:
         safe_path(path, directory=True)
-    bindings = libraries["libraries"]
-    need(type(bindings) is dict and 1 <= len(bindings) <= 64, "Dependency inventory limit")
-    for alias, row in bindings.items():
-        target = safe_path(row["resolved_path"])
-        need(Path(alias).is_absolute() and Path(alias).resolve(strict=True) == target, "Dependency resolution changed")
-        observed = identity(target)
-        need(observed == {k: row[k] for k in ("bytes", "sha256")}, "Dependency bytes changed")
-        files[str(target)] = observed
-    for role in FIRMWARE:
-        path = safe_path(getattr(args, role))
-        observed = identity(path)
-        need(observed == dict(zip(("bytes", "sha256"), FIRMWARE[role])), "Unsupported default split OVMF " + role)
-        files[str(path)] = observed
     return dict(
         qemu=str(binary),
         code=str(safe_path(args.code)),
         vars=str(safe_path(args.vars)),
         data=str(safe_path(args.data, directory=True)),
-        data_files=data_files(args.data),
-        files=files,
         library_path=library_dirs,
-        library_bindings=bindings,
     )
-
-
-def verify_runtime(runtime):
-    if runtime.get("packaged"):
-        return
-    for path, recorded in runtime["files"].items():
-        need(identity(path) == recorded, "Runtime input changed: " + path)
-    for alias, row in runtime["library_bindings"].items():
-        need(Path(alias).resolve(strict=True) == Path(row["resolved_path"]), "Dependency link changed")
-    need(data_files(runtime["data"]) == runtime["data_files"], "QEMU data changed")
 
 
 def environment(directory, runtime):
@@ -274,12 +175,10 @@ def child_limits():
 def copy_private(source, destination, digest=None):
     source = esp.regular(source)
     need(not os.path.lexists(destination), "Private destination exists")
-    before = identity(source)
     with source.open("rb") as left, destination.open("xb") as right:
         shutil.copyfileobj(left, right)
     destination.chmod(0o600)
-    need(identity(destination) == before == identity(source), "Input changed during private copy")
-    need(digest is None or before["sha256"] == digest, "Private copy identity mismatch")
+    need(digest is None or esp.sha256(destination) == digest, "Private copy identity mismatch")
 
 
 def capture_guest(mode, receipt, runtime, master, directory, *, master_sha256):
@@ -293,14 +192,9 @@ def capture_guest(mode, receipt, runtime, master, directory, *, master_sha256):
     directory.mkdir(mode=0o700)
     for name in ("home", "no-modules"):
         (directory / name).mkdir(mode=0o700)
-    if runtime.get("packaged"):
-        # Only writable guest VARS is copied; package tools remain in their prefix.
-        shutil.copyfile(runtime["vars"], directory / "vars.fd")
-        (directory / "vars.fd").chmod(0o600)
-    else:
-        copy_private(runtime["vars"], directory / "vars.fd", runtime["files"][runtime["vars"]]["sha256"])
+    # Only writable guest VARS is copied; tools and read-only CODE stay in place.
+    copy_private(runtime["vars"], directory / "vars.fd")
     copy_private(master, directory / "esp.raw", master_sha256)
-    verify_dependencies(runtime, directory)
     process = serial_stream = serial_read = serial_write = None
     outputs, captured, errors = {}, {}, []
     selector = selectors.DefaultSelector()
@@ -411,7 +305,6 @@ def capture_guest(mode, receipt, runtime, master, directory, *, master_sha256):
     if unsettled or (process and process.returncode is None):
         raise ChildNotReaped("; ".join(errors))
     need(not errors, "; ".join(errors))
-    verify_runtime(runtime)
     result = oracle.validate(
         mode,
         receipt,
@@ -440,30 +333,6 @@ def bounded_child(argv, log, *, env=None, timeout=1800, expected=0, limit=32 * S
         preexec_fn=child_limits,
         timeout_status=False,
     )
-
-
-def verify_dependencies(runtime, directory):
-    if runtime.get("packaged"):
-        return
-    bindings = runtime["library_bindings"]
-    loaders = {row["resolved_path"] for alias, row in bindings.items() if Path(alias).name == "ld-linux-x86-64.so.2"}
-    need(len(loaders) == 1, "Expected recorded x86-64 ELF interpreter")
-    log = directory / "dependency-resolution.log"
-    bounded_child(
-        [loaders.pop(), "--list", runtime["qemu"]], log, env=environment(directory, runtime), timeout=5, limit=65536
-    )
-    rows = log.read_text().splitlines()
-    selected = set()
-    for row in rows:
-        if re.fullmatch(r"\s*linux-vdso.so.1 \(0x[0-9a-f]+\)", row):
-            continue
-        match = re.fullmatch(r"\s*(?:\S+ => )?(/\S+) \(0x[0-9a-f]+\)", row)
-        need(match is not None, "Unresolved/unexpected dynamic dependency")
-        selected.add(str(Path(match[1]).resolve(strict=True)))
-    need(
-        selected == {row["resolved_path"] for row in bindings.values()}, "Selected dynamic dependency inventory differs"
-    )
-    verify_runtime(runtime)
 
 
 def build(mode, directory, label=None):
@@ -498,148 +367,134 @@ def build(mode, directory, label=None):
         "Invalid native image directory handoff",
     )
     need(BUILD.parts[-3:] == ("kernel-images", "uefi", mode), "Wrong native image profile")
-    admission.configure_paths(BUILD, ROOT)
     budget(directory)
 
 
-def stage(mode, directory):
-    checked = admission.checked(mode) if mode != "normal" else None
-    # Reuse the complete ordinary build inventory, including PE inputs/sidecars.
-    if mode == "normal":
-        graphical = admission.load("event_normal_inventory", ROOT / "scripts/kernel_graphical_console_admission.py")
-        graphical.configure_paths(BUILD, ROOT)
-        files = graphical.build_files("normal")
-        graphical.common.verify_object_exports(files)
-    else:
-        files = admission.build_files(mode)
-    admitted = list(files)
-    files += [BUILD / name for name in ("bar-metadata.json", "ivrs-metadata.json")]
-    if checked:
-        files += [admission.RECEIPT]
-    expected = admission.common.hashes(files)
-    if checked:
-        for path in admitted:
-            key = "build:" + path.relative_to(BUILD).as_posix()
-            need(expected[key] == checked["sha256"][key], "Admitted Event image changed before staging")
-    directory.mkdir(mode=0o700)
-    for path in files:
-        esp.regular(path)
-        target = directory / path.relative_to(BUILD)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        copy_private(path, target, expected["build:" + path.relative_to(BUILD).as_posix()])
-    result = dict(
-        mode=mode,
-        files={str(p.relative_to(directory)): identity(p) for p in directory.rglob("*") if p.is_file()},
-    )
-    if checked:
-        decoder = admission.load("event_smoke_layout", ROOT / "scripts/kernel_stack.py")
-        linked = decoder.Elf(directory / "payload.elf")
-        layout = {
-            name: [s.address for s in linked.symbols if s.name == "__" + name]
-            for name in ("payload_text_end", "payload_read_end", "payload_memory_end")
-        }
-        need(all(len(values) == 1 for values in layout.values()), "Ambiguous current image layout")
-        layout = {name: values[0] for name, values in layout.items()} | {
-            "payload_size": (directory / "payload.bin").stat().st_size
-        }
-        expected_header = (
-            "namespace aurora::uefi {\n"
-            + "".join(
-                f"inline constexpr unsigned long long {name}={layout[name]};\n"
-                for name in ("payload_size", "payload_text_end", "payload_read_end", "payload_memory_end")
-            )
-            + "}\n"
+def section_alignment(elf, index):
+    """sh_addralign of one section header; kernel_elf.Section omits it."""
+    shoff, shentsize = struct.unpack_from("<Q", elf.data, 40)[0], struct.unpack_from("<H", elf.data, 58)[0]
+    return struct.unpack_from("<Q", elf.data, shoff + index * shentsize + 48)[0]
+
+
+def backing_evidence(linked, directory):
+    """Locate every retained Event allocation in the linked payload for RAM capture."""
+    names = {item[0] for item in RETAINED.values()} | {"__payload_read_end", "__payload_memory_end"}
+    symbols = {}
+    for symbol in linked.symbols:
+        if symbol.name in names:
+            need(symbol.name not in symbols, "Ambiguous retained Event symbol: " + symbol.name)
+            symbols[symbol.name] = symbol
+    begin, end = symbols["__payload_read_end"].address, symbols["__payload_memory_end"].address
+    need(0 < begin < end <= 0x20000 and begin % 4096 == end % 4096 == 0, "Invalid retained payload RW bound")
+    owner = Elf(directory / "objects" / "event-intake.o")
+    result = {}
+    for role, (name, size, alignment) in RETAINED.items():
+        symbol = symbols[name]
+        section = linked.sections[symbol.section]
+        need(
+            symbol.kind == 1
+            and symbol.size == size
+            and symbol.address % alignment == 0
+            and begin <= symbol.address
+            and symbol.address + size <= end,
+            "Changed retained Event object extent/alignment: " + role,
         )
-        need((directory / "uefi-payload.hpp").read_text() == expected_header, "Current header/linked layout mismatch")
-        result["checked"] = copy.deepcopy(checked)
-        result["checked"]["image"]["payload_layout"] = layout
-        oracle.capture_layout(result["checked"])
-    write_json(directory / "image.json", result)
-    return result
-
-
-def verify_stage(directory, record):
-    safe_path(directory, directory=True)
-    need(not any(p.is_symlink() for p in directory.rglob("*")), "Symlink in staged image")
-    need(read_json(directory / "image.json") == record, "Staged image record changed")
-    need(
-        record["files"]
-        == {
-            str(p.relative_to(directory)): identity(p)
-            for p in directory.rglob("*")
-            if p.is_file() and p.name != "image.json"
-        },
-        "Staged image changed",
+        need(
+            section.kind == SHT_NOBITS
+            and section.flags == SHF_WRITE_ALLOC
+            and section_alignment(linked, symbol.section) >= alignment
+            and section.address <= symbol.address
+            and symbol.address + size <= section.address + section.size,
+            "Retained Event object must occupy allocated writable non-executable zero-initialized BSS: " + role,
+        )
+        originals = [row for row in owner.symbols if row.name == name and row.section]
+        need(
+            len(originals) == 1
+            and originals[0].kind == 1
+            and originals[0].size == size
+            and owner.sections[originals[0].section].kind == SHT_NOBITS,
+            "Retained Event object lacks exact native owner: " + role,
+        )
+        for other in result.values():
+            need(
+                symbol.address + size <= other["offset"] or other["offset"] + other["bytes"] <= symbol.address,
+                "Overlapping retained Event allocations",
+            )
+        result[role] = dict(
+            symbol=name, offset=symbol.address, bytes=size, alignment=alignment, arena_offset=0x22000 + symbol.address
+        )
+    return dict(
+        objects=result,
+        retained_bytes=sum(row["bytes"] for row in result.values()),
+        payload_rw_begin=begin,
+        payload_memory_end=end,
     )
+
+
+def image_receipt(mode, directory):
+    """The current image facts the Event oracle consumes: linked layout and retained allocations."""
+    linked = Elf(directory / "payload.elf")
+    layout = {
+        name: [s.address for s in linked.symbols if s.name == "__" + name]
+        for name in ("payload_text_end", "payload_read_end", "payload_memory_end")
+    }
+    need(all(len(values) == 1 for values in layout.values()), "Ambiguous current image layout")
+    layout = {name: values[0] for name, values in layout.items()} | {
+        "payload_size": (directory / "payload.bin").stat().st_size
+    }
+    image = dict(mode=mode, payload_layout=layout, backing=backing_evidence(linked, directory))
+    return dict(mode=mode, image=image)
+
+
+def stage(mode, directory):
+    """Copy the loader, sidecars and the inputs of the Event image receipt from BUILD."""
+    names = ["esp/EFI/BOOT/BOOTX64.EFI", "bar-metadata.json", "ivrs-metadata.json"]
+    if mode != "normal":
+        names += ["payload.elf", "payload.bin", "uefi-payload.hpp", "objects/event-intake.o"]
+    directory.mkdir(mode=0o700)
+    for name in names:
+        target = directory / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        copy_private(BUILD / name, target)
+    record = dict(mode=mode)
+    if mode != "normal":
+        record["receipt"] = image_receipt(mode, directory)
+        oracle.capture_layout(record["receipt"])
+    write_json(directory / "image.json", record)
+    return record
 
 
 def normal_boot(args, directory, image):
     qemu = safe_path(Path(shutil.which(args.normal_qemu) or args.normal_qemu).resolve())
-    paths = [qemu]
-    for value in (args.normal_firmware, args.normal_code, args.normal_vars):
-        if value:
-            paths.append(safe_path(value))
-    packaged = bool(getattr(args, "tool_prefix", None))
-    before = {} if packaged else {str(p): identity(p) for p in paths}
-    if args.normal_data and not packaged:
-        data_before = data_files(args.normal_data)
     argv = transport.command(
         qemu,
         args.normal_data,
         firmware=transport.firmware_args(args.normal_firmware, args.normal_code, args.normal_vars),
         boot=transport.fat_boot(image / "esp"),
     )
-    need(
-        argv
-        == expected_uefi_argv(
-            "normal",
-            str(qemu),
-            args.normal_firmware,
-            args.normal_data,
-            args.normal_code,
-            args.normal_vars,
-            esp=str(image / "esp"),
-        ),
-        "Normal restoration command differs from independent clock contract",
-    )
     argv.append("-no-user-config")
-    write_json(directory / "normal-launch.json", dict(argv=argv, inputs=before))
+    write_json(directory / "normal-launch.json", dict(argv=argv))
     log = directory / "normal-restoration.log"
     status = bounded_child(argv, log, timeout=30, expected=33)
     normal.validate(status, log.read_text(), "normal")
-    if not packaged:
-        need(before == {str(p): identity(p) for p in paths}, "Normal runtime input changed")
-        if args.normal_data:
-            need(data_files(args.normal_data) == data_before, "Normal data changed")
 
 
-def capture_staged(mode, build, image, runtime, master, directory, *, master_sha256):
-    """Run one admitted staged image in its own worker process, without builds."""
+def capture_staged(mode, build, image, record, runtime, master, directory, *, master_sha256):
+    """Run one staged image, without builds, with signals turned into interrupts."""
     need(mode in MODES and build.parts[-3:] == ("kernel-images", "uefi", mode), "Wrong staged Event profile")
     need(build.is_absolute() and build.is_dir() and build.resolve(strict=True) == build, "Invalid prebuilt Event image")
     need(
         not directory.resolve().is_relative_to(build) and not directory.resolve().is_relative_to(image.resolve()),
-        "Guest output cannot modify the admitted Event image",
+        "Guest output cannot modify the staged Event image",
     )
-    admission.configure_paths(build, ROOT)
-    staged = read_json(image / "image.json")
-    need(staged.get("mode") == mode, "Staged Event mode differs")
-    verify_stage(image, staged)
-    checked = copy.deepcopy(staged["checked"])
-    del checked["image"]["payload_layout"]
-    need(admission.checked(mode) == checked, "Current Event admission changed before launch")
-    loader = image / "esp/EFI/BOOT/BOOTX64.EFI"
-    fat = esp.validate_image(master, esp.sha256(loader), loader.stat().st_size)
-    need(fat["image_sha256"] == master_sha256, "Event master differs from admitted staged loader")
+    need(record["mode"] == mode, "Staged Event mode differs")
 
     def interrupted(signum, _frame):
         raise KeyboardInterrupt("Event worker interrupted by signal " + str(signum))
 
     previous = {sig: signal.signal(sig, interrupted) for sig in (signal.SIGINT, signal.SIGTERM)}
     try:
-        capture_guest(mode, staged["checked"], runtime, master, directory, master_sha256=master_sha256)
-        need(admission.checked(mode) == checked, "Current Event admission changed after launch")
-        verify_stage(image, staged)
+        capture_guest(mode, record["receipt"], runtime, master, directory, master_sha256=master_sha256)
     finally:
         for sig, handler in previous.items():
             signal.signal(sig, handler)
@@ -673,26 +528,23 @@ def window(args, directory, runtime):
                     esp.sha256(loader),
                     args.mtools_dir,
                     esp_dir,
-                    developer=True,
-                    packaged=bool(getattr(args, "tool_prefix", None)),
                     run_command=lambda command, log, env: bounded_child(
                         command, log, env=env, timeout=60, limit=STREAM_LIMIT
                     ),
                 )
                 master, fat = Path(built["master"]), built["fat32"]
-            verify_stage(image, staged)
             budget(directory)
             if not args.build_only:
                 capture_staged(
                     mode,
                     BUILD,
                     image,
+                    staged,
                     runtime,
                     master,
                     directory / (mode + "-guest"),
                     master_sha256=fat["image_sha256"],
                 )
-            verify_stage(image, staged)
             record["status"] = "build-checked" if args.build_only else "local-developer-evidence-passed"
             write_json(directory / "summary.json", dict(profiles=results, errors=errors))
             print(record["status"] + ": " + mode, flush=True)
@@ -704,10 +556,8 @@ def window(args, directory, runtime):
             errors.append("restoration blocked: owned child has not been reaped")
         elif normal_record:
             try:
-                verify_stage(normal_image, normal_record)
                 if not args.build_only:
                     normal_boot(args, directory, normal_image)
-                verify_stage(normal_image, normal_record)
                 results.append(dict(mode="normal-restoration", status="passed"))
             except BaseException as error:
                 errors.append("restoration: " + type(error).__name__ + ": " + str(error))
@@ -755,27 +605,9 @@ def prerequisites(args):
     if not args.esp_dir:
         tool = shutil.which("mformat")
         if not (args.mtools_dir or tool):
-            raise PrerequisiteBlocked("Install supported GNU mtools 4.0.48 or supply EVENT_ESP_DIR")
+            raise PrerequisiteBlocked("Install GNU mtools or supply EVENT_ESP_DIR")
         args.mtools_dir = args.mtools_dir or str(Path(tool).parent)
-        Path(args.mtools_dir).resolve(strict=True)
-        tools = esp.developer_tool_identity(args.mtools_dir, hash_tools=not prefix)
-        if prefix:
-            for name, tool in tools.items():
-                version = io.BytesIO()
-                transport.run_logged(
-                    [tool["command_path"], "--version"],
-                    version,
-                    timeout=5,
-                    limit=4096,
-                    expected=0,
-                    timeout_status=False,
-                    env={"PATH": "/usr/bin:/bin", "LC_ALL": "C", "HOME": "/nonexistent", "MTOOLSRC": "/dev/null"},
-                )
-                expected = (name + " (GNU mtools) " + esp.DEVELOPER_MTOOLS_VERSION).encode()
-                need(
-                    version.getvalue().splitlines() and version.getvalue().splitlines()[0] == expected,
-                    "Unsupported packaged mtools version: " + name,
-                )
+        esp.mtools(args.mtools_dir)
     else:
         directory = safe_path(args.esp_dir, directory=True)
         for mode in MODES:
@@ -811,11 +643,9 @@ def prerequisites(args):
         for value in (args.normal_firmware, args.normal_code, args.normal_vars):
             if value:
                 safe_path(value)
-        expected_uefi_argv(
-            "normal", str(qemu), args.normal_firmware, args.normal_data, args.normal_code, args.normal_vars
-        )
+        transport.firmware_args(args.normal_firmware, args.normal_code, args.normal_vars)
         if args.normal_data:
-            safe_path(args.normal_data, directory=True) if prefix else data_files(args.normal_data)
+            safe_path(args.normal_data, directory=True)
     parent = Path(args.output_parent).absolute()
     if parent == ROOT / "build":
         parent.mkdir(exist_ok=True)
@@ -878,7 +708,7 @@ def main():
     outputs.start(directory)
     status = 1
     try:
-        if runtime and not runtime.get("packaged"):
+        if runtime:
             write_json(directory / "runtime.json", runtime)
         window(args, directory, runtime)
         status = 0

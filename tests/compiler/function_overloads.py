@@ -1,19 +1,16 @@
 #!/usr/bin/env python3
-"""Exact ordinary overload source/native gate. Checks survive Python -O.
+"""Exact ordinary overload selection, native results and rejections.
 
-All 64 native return bits and exact trap sites are observed. Rejections run with
-absent and preserved output; source and library inputs stay byte-identical.
-Failures are retained. This finite suite is not a language safety proof.
+Cases are data on one native_runner.Suite: complete 64-bit results, exact trap
+sites and diagnostic fragments (matched case-insensitively).
 """
 
-from pathlib import Path
-import argparse, hashlib, json, random, re, resource, shutil, subprocess, tempfile, time
+import argparse
 from itertools import product
-from composed_values import Trap, observer_self_test, program, require, signed_bits
-from integer_oracle import NativeRunner, validate_trap, validate_values
+from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
-PRESERVED = b"previous verified assembly\x00\xff\n"
+from native_runner import Suite, Trap
+
 SCALARS = ("i64", "u64", "u8", "bool")
 VALUES = {"i64": "-7", "u64": "18446744073709551615u64", "u8": "255u8", "bool": "true"}
 COUNTER = (
@@ -23,122 +20,7 @@ COUNTER = (
 
 
 def p(body, definitions="", imports="", result="i64"):
-    return program(body, definitions, imports=imports, result=result)
-
-
-class Suite:
-    def __init__(self, directory, compiler, keep_going=False, fixture="", plan_only=False):
-        self.directory, self.compiler = directory, compiler
-        self.keep_going, self.fixture, self.plan_only = keep_going, fixture, plan_only
-        self.runner = None if plan_only else NativeRunner(directory, compiler, 5)
-        self.library_inputs = (
-            {} if plan_only else {path: path.read_bytes() for path in (ROOT / "library").rglob("*.au")}
-        )
-        self.count = self.traps = self.rejections = self.negative_fixtures = 0
-        self.attempts = self.selected_fixtures = 0
-        self.failures, self.names = [], set()
-
-    def check(self, name, source, expected=42, error=None, modules=None, existing_output=None, _selected=False):
-        if not _selected:
-            require(name not in self.names, "duplicate fixture name: " + name)
-            self.names.add(name)
-            if self.fixture and self.fixture.lower() not in name.lower():
-                return
-            self.selected_fixtures += 1
-        self.attempts += 1
-        if self.plan_only:
-            self.count += 1
-            self.rejections += int(error is not None)
-            self.traps += int(isinstance(expected, Trap) and error is None)
-            print("PLAN function overloads", name, flush=True)
-            return
-        slug = re.sub(r"[^a-zA-Z0-9]+", "-", name)[:75].strip("-")
-        directory = Path(tempfile.mkdtemp(prefix=slug + "-", dir=self.directory))
-        source_path, output = directory / "input.au", directory / "compiled.s"
-        source_path.write_text(source)
-        inputs = dict(self.library_inputs)
-        inputs[source_path] = source.encode()
-        roots = [ROOT / "library"]
-        if modules:
-            root = directory / "modules"
-            root.mkdir()
-            roots.insert(0, root)
-            for module, content in modules.items():
-                path = root / (module.replace(".", "/") + ".au")
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(content)
-                inputs[path] = content.encode()
-        if existing_output is not None:
-            output.write_bytes(existing_output)
-        command = [str(self.compiler), str(source_path), "-o", str(output)]
-        for root in roots:
-            command.extend(["--module-root", str(root)])
-        (directory / "command.json").write_text(json.dumps(command, indent=2) + "\n")
-        original_runner_directory = self.runner.directory
-        try:
-            compiled = subprocess.run(
-                command,
-                capture_output=True,
-                timeout=10,
-                preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)),
-            )
-            (directory / "stdout.bin").write_bytes(compiled.stdout)
-            (directory / "stderr.bin").write_bytes(compiled.stderr)
-            for path, before in inputs.items():
-                require(path.read_bytes() == before, name + ": input changed: " + str(path))
-            if error is not None:
-                require(
-                    compiled.returncode == 1,
-                    f"{name}: expected compiler exit 1, got {compiled.returncode}: {compiled.stderr!r}",
-                )
-                require(bool(compiled.stderr), name + ": missing rejection diagnostic")
-                if existing_output is None:
-                    require(not output.exists(), name + ": artifact created on rejection")
-                else:
-                    require(output.read_bytes() == existing_output, name + ": previous output changed on rejection")
-                if error is not True:
-                    fragments = (error,) if isinstance(error, str) else error
-                    require(
-                        any(x.lower().encode() in compiled.stderr.lower() for x in fragments),
-                        name + ": unexpected diagnostic: " + repr(compiled.stderr),
-                    )
-                self.rejections += 1
-            else:
-                require(compiled.returncode == 0, f"{name}: compiler exit {compiled.returncode}: {compiled.stderr!r}")
-                self.runner.directory = directory
-                observed, symbols = self.runner.assemble(output.read_text(), ["test"])
-                if isinstance(expected, Trap):
-                    validate_trap(observed, expected, symbols, name)
-                    self.traps += 1
-                else:
-                    validate_values(observed, [signed_bits(expected)], [name])
-            self.count += 1
-            print("PASS function overloads", name, flush=True)
-        except (AssertionError, OSError, subprocess.TimeoutExpired) as failure:
-            details = f"{name}: {failure}\nPreserved reproduction: {directory}"
-            (directory / "failure.txt").write_text(details + "\n")
-            self.failures.append(details)
-            print("FAIL function overloads", details, flush=True)
-            if not self.keep_going:
-                raise AssertionError(details) from failure
-        else:
-            shutil.rmtree(directory)
-        finally:
-            self.runner.directory = original_runner_directory
-
-    def reject(self, name, source, error=True, modules=None):
-        require(name not in self.names, "duplicate fixture name: " + name)
-        self.names.add(name)
-        if self.fixture and self.fixture.lower() not in name.lower():
-            return
-        self.selected_fixtures += 1
-        before = self.rejections
-        for suffix, previous in (("absent output", None), ("saved output", PRESERVED)):
-            self.check(
-                name + ": " + suffix, source, error=error, modules=modules, existing_output=previous, _selected=True
-            )
-        if self.rejections == before + 2:
-            self.negative_fixtures += 1
+    return "module app;" + imports + definitions + f"auto test()->{result}{{{body}}}"
 
 
 def cases(s):
@@ -163,11 +45,13 @@ def cases(s):
             p(f"return pick({VALUES[left]},{VALUES[right]});", defs),
             expected,
         )
-    for declarations in (
-        definitions,
-        "".join(reversed([f"auto pick({t} x)->i64{{return {i + 39};}}" for i, t in enumerate(SCALARS)])),
+    for number, declarations in enumerate(
+        (
+            definitions,
+            "".join(reversed([f"auto pick({t} x)->i64{{return {i + 39};}}" for i, t in enumerate(SCALARS)])),
+        )
     ):
-        s.check("declaration permutation " + str(len(s.names)), p("return pick(true);", declarations))
+        s.check(f"declaration permutation {number}", p("return pick(true);", declarations))
     s.check(
         "zero through six parameters",
         p(
@@ -471,26 +355,10 @@ def cases(s):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", type=Path)
-    parser.add_argument("--keep-going", action="store_true")
     args = parser.parse_args()
-    (ROOT / "tmp").mkdir(exist_ok=True)
-    directory = Path(tempfile.mkdtemp(prefix="function-overloads-", dir=ROOT / "tmp"))
-    s = Suite(directory, args.compiler.resolve(), args.keep_going)
-    print("INFO overload compiler sha256=" + hashlib.sha256(s.compiler.read_bytes()).hexdigest(), flush=True)
-    observer_self_test(s)
-    cases(s)
-    require(s.count + len(s.failures) == s.attempts, "execution accounting mismatch")
-    require(s.rejections == 2 * s.negative_fixtures, "rejection accounting mismatch")
-    print(
-        f"INFO overloads {s.selected_fixtures} fixtures; {s.count} execu"
-        f"tions; {s.count - s.traps - s.rejections} native returns; "
-        f"{s.traps} exact-site traps; {s.negative_fixtures} negative fix"
-        f"tures; {s.rejections} rejection runs; {len(s.failures)} failures",
-        flush=True,
-    )
-    require(not s.failures, "failed fixtures remain in " + str(directory))
-    shutil.rmtree(directory)
-    print("PASS function overloads complete", flush=True)
+    suite = Suite(args.compiler, "function overloads", ignore_case=True)
+    cases(suite)
+    suite.finish()
 
 
 if __name__ == "__main__":

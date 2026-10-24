@@ -1,21 +1,19 @@
 #!/usr/bin/env python3
-"""Exact-bool logical source/native oracle using the established native runner.
+"""Exact-bool logical operators against Python's boolean AST.
 
-Python's independent boolean AST supplies values and observable call traces. The
-shared source harness checks all result bits, exact UD2 sites, rejected-output
-preservation and unchanged inputs, with failures retained under --artifacts.
+Python's independent boolean AST supplies values and observable call traces.
+Cases are data on one native_runner.Suite: complete 64-bit results, exact trap
+sites and diagnostic fragments (matched case-insensitively).
 """
 
 import argparse
 import ast
-import hashlib
 from itertools import product
-import json
 from pathlib import Path
 import random
-import time
-from function_overloads import Suite, p, COUNTER
-from composed_values import Trap, observer_self_test, require
+
+from function_overloads import p, COUNTER
+from native_runner import Suite, Trap
 
 TRACE = """class Trace { i64 value; public: Trace():value(0){}
 auto mark(i64 digit,bool answer)->bool{value=value*10+digit;return answer;}
@@ -405,55 +403,16 @@ def resource_cases(s):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", type=Path)
-    parser.add_argument("--artifacts", type=Path, required=True)
+    parser.add_argument("--artifacts", type=Path, help="accepted for the Meson artifact adapter; unused")
     parser.add_argument("--seed", type=int, default=24024)
-    parser.add_argument("--fixture", default="")
-    parser.add_argument("--plan-only", action="store_true")
     args = parser.parse_args()
-    directory = args.artifacts.resolve()
-    directory.mkdir(parents=True, exist_ok=False)
-    compiler = args.compiler.resolve()
-    pin = hashlib.sha256(compiler.read_bytes()).hexdigest() if not args.plan_only else None
-    suite = Suite(directory, compiler, fixture=args.fixture, plan_only=args.plan_only)
-    fixtures = []
-    original = suite.check
-
-    def recorded(name, source, expected=42, error=None, **kwargs):
-        fixtures.append(
-            {
-                "name": name,
-                "source": source,
-                "expected": expected.value if isinstance(expected, Trap) else expected,
-                "error": error,
-            }
-        )
-        (directory / "fixtures.json").write_text(json.dumps(fixtures, indent=2) + "\n")
-        return original(name, source, expected, error, **kwargs)
-
-    suite.check = recorded
-    started = time.monotonic()
-    if not args.plan_only:
-        observer_self_test(suite)
+    suite = Suite(args.compiler, "short circuit", ignore_case=True)
     truth_and_order(suite, args.seed)
     contexts(suite)
     traps(suite)
     rejections(suite)
     resource_cases(suite)
-    if not args.plan_only:
-        require(hashlib.sha256(compiler.read_bytes()).hexdigest() == pin, "compiler changed")
-    summary = {
-        "status": "planned" if args.plan_only else "passed",
-        "compiler_sha256": pin,
-        "seed": args.seed,
-        "selected_fixtures": suite.selected_fixtures,
-        "executions": suite.count,
-        "rejections": suite.rejections,
-        "negative_fixtures": suite.negative_fixtures,
-        "exact_traps": suite.traps,
-        "elapsed_seconds": time.monotonic() - started,
-    }
-    (directory / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
-    print("PASS short circuit " + json.dumps(summary), flush=True)
+    suite.finish()
 
 
 if __name__ == "__main__":

@@ -1,22 +1,20 @@
 #!/usr/bin/env python3
 """Hosted ByteBuffer checks using the existing owner bridge and allocation oracle.
 
-Complete byte models cover repeated operations and recoverable failures. Compile
-admission can run without linking or executing generated programs. This focused
+Complete byte models cover repeated operations and recoverable failures. All
+programs share one packed native binary (owned_bytes.Suite, deferred). This focused
 library gate does not qualify a compiler, kernel or full native aggregate.
 """
 
 from __future__ import annotations
 
 import argparse
-from contextlib import nullcontext
-import hashlib
 from pathlib import Path
 import random
 import tempfile
 
+from native_runner import require
 from owned_bytes import ROOT, Suite, command
-from unsigned_oracle import require
 
 MAX_I64 = (1 << 63) - 1
 MIN_I64 = -(1 << 63)
@@ -39,14 +37,16 @@ def program(body, helpers=""):
 
 
 class BufferSuite(Suite):
-    def __init__(self, compiler, directory, compile_only):
-        super().__init__(compiler, directory, ROOT / "library", entry_name="entry")
+    """Library-rooted hosted suite; compile_only (immediate mode only) skips native runs."""
+
+    def __init__(self, compiler, directory, compile_only=False, *, deferred=False):
+        super().__init__(compiler, directory, ROOT / "library", entry_name="entry", deferred=deferred)
         self.compile_only = compile_only
         self.skipped_native = 0
 
-    def compile(self, name, source, entry_name=None):
+    def compile(self, name, source, entry_name=None, **options):
         if not self.compile_only:
-            return super().compile(name, source, entry_name)
+            return super().compile(name, source, entry_name, **options)
         folder = self.directory / name
         folder.mkdir()
         input_path = folder / "input.au"
@@ -402,30 +402,18 @@ def example_cases(suite):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", type=Path)
-    parser.add_argument("--compile-only", action="store_true")
     parser.add_argument("--artifacts", type=Path, help="retain this run in a new directory")
     args = parser.parse_args()
-    compiler = args.compiler.resolve(strict=True)
-    if args.artifacts is not None:
-        args.artifacts.mkdir(parents=True, exist_ok=False)
-    context = (
-        tempfile.TemporaryDirectory(prefix="aurora-byte-buffer-")
-        if args.artifacts is None
-        else nullcontext(args.artifacts)
-    )
-    with context as temporary:
-        suite = BufferSuite(compiler, Path(temporary), args.compile_only)
+    with tempfile.TemporaryDirectory(prefix="aurora-byte-buffer-") as temporary:
+        suite = BufferSuite(args.compiler.resolve(strict=True), args.artifacts or Path(temporary), deferred=True)
         basic_cases(suite)
         growth_cases(suite)
         ownership_cases(suite)
         model_cases(suite)
         rejection_cases(suite)
         example_cases(suite)
-        print(
-            f"PASS byte buffer: {suite.programs} programs, {suite.native} native cases, "
-            f"{suite.rejections} rejections, {suite.skipped_native} native cases skipped"
-        )
-        print(f"compiler_sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}")
+        suite.finish()
+        print(f"PASS byte buffer: {suite.native} native runs")
 
 
 if __name__ == "__main__":

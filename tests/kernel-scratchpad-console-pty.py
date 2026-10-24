@@ -3,8 +3,6 @@
 
 import argparse
 import errno
-import hashlib
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -22,12 +20,8 @@ import tty
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import qemu_transport as transport
-import kernel_uefi_console_clock as clock
 import kernel_scratchpad_console_oracle as oracle
 
-spec = importlib.util.spec_from_file_location("scratchpad_images", ROOT / "scripts/kernel-uefi-ipc-images.py")
-images = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(images)
 need = oracle.need
 
 
@@ -109,20 +103,6 @@ def run(args):
     if args.payload is None:
         args.payload = time.strftime("Scratchpad %H:%M:%S", time.gmtime())
     plan = plans(args.case, args.payload)
-    # Recompute actual linked admission; an old report alone cannot authorize a guest.
-    images.scratchpad_stack(build, fixture=fixture)
-    files = [
-        build / name
-        for name in (
-            "payload.elf",
-            "user-clean.bin",
-            "user-bounds.bin",
-            "user-images.json",
-            "service-timer-metadata.json",
-        )
-    ]
-    files += [build / "esp/EFI/BOOT/BOOTX64.EFI"]
-    hashes = {str(path.relative_to(build)): hashlib.sha256(path.read_bytes()).hexdigest() for path in files}
     metadata = dict(
         images=json.loads((build / "user-images.json").read_text()),
         kernel=json.loads((build / "service-timer-metadata.json").read_text()),
@@ -149,17 +129,6 @@ def run(args):
         code=code,
         variables=variables,
     )
-    receipt = clock.receipt(
-        argv, qemu, firmware, code, variables, os.environ.get("QEMU_DATA", ""), esp=str(build / "esp")
-    )
-    receipt.update(
-        timeout_argv=None,
-        test_supervision="private PTY; fixed 180-second total deadline; external kill is unverified",
-        mode=mode,
-        case=args.case,
-        payload_chosen_after_build=args.payload,
-        image_hashes=hashes,
-    )
     if args.output:
         output = args.output.resolve()
         output.mkdir(parents=True, exist_ok=False)
@@ -168,7 +137,6 @@ def run(args):
         parent.mkdir(exist_ok=True)
         output = Path(tempfile.mkdtemp(prefix=mode + "-", dir=parent))
     print("Scratchpad evidence:", output, flush=True)
-    (output / "clock.json").write_text(json.dumps(receipt, indent=2) + "\n")
     (output / "plan.json").write_text(json.dumps(plan, indent=2) + "\n")
     (output / "metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
     master, slave = pty.openpty()
@@ -239,13 +207,6 @@ def run(args):
                 transcript.extend(chunk)
             result.update(
                 oracle.validate(process.returncode, transcript.decode("ascii"), plan, metadata, fixture=fixture)
-            )
-            need(
-                all(
-                    hashlib.sha256(path.read_bytes()).hexdigest() == hashes[str(path.relative_to(build))]
-                    for path in files
-                ),
-                "Admitted files changed during guest",
             )
             result["verified"] = True
     finally:

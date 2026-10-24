@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Build/reproduce a pinned mtools ESP; inspect FAT read-only, without mounting.
+"""Build/reproduce an mtools ESP; inspect FAT read-only, without mounting.
 
 The sole file is EFI/BOOT/BOOTX64.EFI. This is a 64-MiB FAT32 superfloppy,
-not a partitioned disk. Admission establishes format and input identity only;
+not a partitioned disk. Validation establishes format and loader content only;
 it does not launch a guest, establish independent review, or qualify hardware.
 """
 
@@ -23,10 +23,7 @@ IMAGE_BYTES = 64 * 1024 * 1024
 TOTAL_SECTORS = IMAGE_BYTES // SECTOR_BYTES
 RESERVATION_BYTES = 256 * 1024 * 1024
 FREE_FLOOR_BYTES = 1024 * 1024 * 1024
-MTOOLS_SHA256 = "0fcd90361bb5077f1289342f6e7713f98269847dbda25d6f1657018f42c53e85"
-MTOOLS_BYTES = 214336
 MTOOLS_COMMANDS = ("mformat", "mmd", "mcopy", "minfo", "mdir")
-DEVELOPER_MTOOLS_VERSION = "4.0.48"
 LABEL = b"AURORA_ESP".ljust(11)
 EOC = 0x0FFFFFF8
 
@@ -95,7 +92,7 @@ class Fat32:
         fat = self.read(32 * SECTOR_BYTES, fat_bytes)
         need(self.read((32 + self.fat_sectors) * SECTOR_BYTES, fat_bytes) == fat, "FAT copies differ")
         self.fat = [item[0] for item in struct.iter_unpack("<I", fat)]
-        # Pinned mtools emits all 32 bits set in reserved entry 1. Allocation
+        # mtools emits all 32 bits set in reserved entry 1. Allocation
         # entries retain the strict 28-bit check; no input bits are masked.
         need(self.fat[:2] == [0x0FFFFFF8, 0xFFFFFFFF], "Invalid reserved FAT entries or dirty volume")
         need(all(value <= 0x0FFFFFFF for value in self.fat[2:]), "Reserved high FAT bits are nonzero")
@@ -222,22 +219,19 @@ def validate_image(path, loader_sha256, loader_bytes=None):
     return result
 
 
-def verify_tools(root):
-    root = Path(root).absolute()
-    need(root.resolve(strict=True) == root and root.is_dir(), "Invalid mtools root")
-    executable = regular(root / "mtools")
-    need(
-        executable.stat().st_size == MTOOLS_BYTES and sha256(executable) == MTOOLS_SHA256,
-        "Unreviewed mtools executable",
-    )
-    for name in MTOOLS_COMMANDS:
-        path = root / name
-        need(
-            path.is_symlink() and os.readlink(path) == "mtools" and path.resolve() == executable,
-            "Unexpected mtools command: " + name,
-        )
+def mtools(root):
+    """Select installed GNU mtools commands under one directory.
+
+    GNU mtools reads system configuration before MTOOLSRC, so MTOOLSRC=/dev/null
+    alone is not isolation; the standard system configuration must be absent.
+    """
     for path in (Path("/etc/mtools.conf"), Path("/etc/default/mtools.conf")):
-        need(not os.path.lexists(path), "Unreviewed system mtools configuration: " + str(path))
+        need(not os.path.lexists(path), "System mtools configuration exists: " + str(path))
+    root = Path(root).absolute()
+    need(root.resolve(strict=True).is_dir(), "Invalid mtools root")
+    for name in MTOOLS_COMMANDS:
+        executable = regular((root / name).resolve(strict=True))
+        need(os.access(executable, os.X_OK), "mtools command is not executable: " + name)
     return root
 
 
@@ -251,68 +245,32 @@ def same_bytes(first, second):
                 return True
 
 
-def developer_tool_identity(root, home=None, *, hash_tools=True):
-    """Bind installed tools, without inheriting the historical executable pin.
-
-    GNU mtools reads system configuration, then ~/.mtoolsrc, then MTOOLSRC;
-    MTOOLSRC=/dev/null alone is not isolation. This bounded contract supports
-    GNU 4.0.48 with the standard system configuration locations only.
-    """
-    for path in (Path("/etc/mtools.conf"), Path("/etc/default/mtools.conf")):
-        need(not os.path.lexists(path), "Developer system mtools configuration exists: " + str(path))
-    if home is not None:
-        need(home.resolve(strict=True) == home and home.is_dir(), "Invalid private mtools home")
-        need(not os.path.lexists(home / ".mtoolsrc"), "Developer private mtools configuration exists")
-    root = Path(root).absolute()
-    need(root.is_dir(), "Invalid developer mtools root")
-    identities = {}
-    for name in MTOOLS_COMMANDS:
-        selected = root / name
-        executable = regular(selected.resolve(strict=True))
-        need(os.access(executable, os.X_OK), "Developer mtools is not executable: " + name)
-        identities[name] = dict(
-            command_path=str(selected),
-            resolved_path=str(executable),
-        )
-        if hash_tools:
-            identities[name].update(bytes=executable.stat().st_size, sha256=sha256(executable))
-    return identities
-
-
-def build(loader, loader_sha256, mtools_root, output_dir, *, developer=False, run_command=None, packaged=False):
-    need(not packaged or developer, "Packaged tools require developer ESP mode")
-    need(run_command is None or developer, "Command callback requires developer ESP mode")
-    need(not developer or callable(run_command), "Developer ESP mode requires a bounded command callback")
+def build(loader, loader_sha256, mtools_root, output_dir, *, run_command=None):
+    need(run_command is None or callable(run_command), "Invalid ESP command callback")
     check_hash(loader_sha256)
     loader = regular(loader)
-    need(0 < loader.stat().st_size < IMAGE_BYTES // 2, "Invalid admitted loader size")
-    need(sha256(loader) == loader_sha256, "Admitted loader SHA256 mismatch")
-    if developer:
-        tools = Path(mtools_root).absolute()
-        tool_identity = developer_tool_identity(tools, hash_tools=not packaged)
-    else:
-        tools = verify_tools(mtools_root)
+    need(0 < loader.stat().st_size < IMAGE_BYTES // 2, "Invalid loader size")
+    need(sha256(loader) == loader_sha256, "Loader SHA256 mismatch")
+    tools = mtools(mtools_root)
     output = Path(output_dir).absolute()
     need(output.parent.resolve(strict=True) == output.parent and output.parent.is_dir(), "Invalid output parent")
-    # Developer runs may retain evidence in the checkout's disposable build area.
-    # Independently pinned ESP preparation still requires external output.
+    # Output may live in the checkout's disposable build area, never in author source.
     need(
-        not output.is_relative_to(ROOT) or (developer and output.is_relative_to(ROOT / "build")),
-        "ESP output must be outside author source, except developer output in build/",
+        not output.is_relative_to(ROOT) or output.is_relative_to(ROOT / "build"),
+        "ESP output must be outside author source, except in build/",
     )
     need(not os.path.lexists(output), "Output directory already exists")
     reservation = max(RESERVATION_BYTES, 3 * IMAGE_BYTES + 3 * loader.stat().st_size + 16 * 1024 * 1024)
     need(shutil.disk_usage(output.parent).free >= FREE_FLOOR_BYTES + reservation, "ESP disk reservation failed")
     output.mkdir(mode=0o700)
-    # Keep a pinned private input: mcopy never depends on a mutable source path.
-    admitted = output / "admitted-loader.efi"
-    with loader.open("rb") as source, admitted.open("xb") as target:
+    # Keep a private input snapshot: mcopy never depends on a mutable source path.
+    snapshot = output / "loader-snapshot.efi"
+    with loader.open("rb") as source, snapshot.open("xb") as target:
         shutil.copyfileobj(source, target)
-    need(sha256(admitted) == loader_sha256, "Loader changed during input snapshot")
-    admitted.chmod(0o400)
+    need(sha256(snapshot) == loader_sha256, "Loader changed during input snapshot")
+    snapshot.chmod(0o400)
     commands = []
     results = []
-    versions = {}
     for role in ("master", "rebuild"):
         home = output / (role + "-home")
         home.mkdir(mode=0o700)
@@ -328,21 +286,13 @@ def build(loader, loader_sha256, mtools_root, output_dir, *, developer=False, ru
             MTOOLS_NO_VFAT="1",
         )
 
-        def verify_developer_identity():
-            need(
-                developer_tool_identity(tools, home, hash_tools=not packaged) == tool_identity,
-                "Developer mtools identity changed",
-            )
-            need(shutil.disk_usage(output).free >= FREE_FLOOR_BYTES, "ESP free-space floor failed")
-
         def run(name, *args):
-            if developer:
-                verify_developer_identity()
+            need(shutil.disk_usage(output).free >= FREE_FLOOR_BYTES, "ESP free-space floor failed")
             command = [str(tools / name), *map(str, args)]
             commands.append(dict(command=command, environment=environment))
             (output / "commands.json").write_text(json.dumps(commands, indent=2) + "\n")
             log = output / (role + "-" + str(len(commands)) + "-" + name + ".log")
-            if developer:
+            if run_command:
                 run_command(command, log, environment)
             else:
                 with log.open("xb") as stream:
@@ -356,22 +306,7 @@ def build(loader, loader_sha256, mtools_root, output_dir, *, developer=False, ru
                         check=True,
                         umask=0o077,
                     )
-            if developer:
-                verify_developer_identity()
             return log
-
-        if developer and not packaged and role == "master":
-            for name in MTOOLS_COMMANDS:
-                log = run(name, "--version")
-                with log.open("rb") as stream:
-                    version = stream.read(4097)
-                need(len(version) <= 4096, "Oversized developer mtools version output: " + name)
-                expected = (name + " (GNU mtools) " + DEVELOPER_MTOOLS_VERSION).encode("ascii")
-                need(
-                    version.splitlines() and version.splitlines()[0] == expected,
-                    "Unsupported developer mtools version: " + name + "; require GNU " + DEVELOPER_MTOOLS_VERSION,
-                )
-                versions[name] = version.decode("ascii")
 
         with image.open("xb") as stream:
             stream.truncate(IMAGE_BYTES)
@@ -403,26 +338,20 @@ def build(loader, loader_sha256, mtools_root, output_dir, *, developer=False, ru
         )
         run("mmd", "-i", image, "::/EFI")
         run("mmd", "-i", image, "::/EFI/BOOT")
-        run("mcopy", "-i", image, admitted, "::/EFI/BOOT/BOOTX64.EFI")
+        run("mcopy", "-i", image, snapshot, "::/EFI/BOOT/BOOTX64.EFI")
         run("minfo", "-i", image, "::")
         run("mdir", "-i", image, "-/", "::")
         run("mcopy", "-i", image, "::/EFI/BOOT/BOOTX64.EFI", readback)
-        need(same_bytes(admitted, readback), "mtools loader readback differs")
-        results.append(validate_image(image, loader_sha256, admitted.stat().st_size))
+        need(same_bytes(snapshot, readback), "mtools loader readback differs")
+        results.append(validate_image(image, loader_sha256, snapshot.stat().st_size))
         image.chmod(0o444)
     need(same_bytes(output / "esp-master.raw", output / "esp-rebuild.raw"), "Independent ESP rebuild differs")
-    need(results[0] == results[1], "Independent FAT admission differs")
-    if developer:
-        verify_developer_identity()
-    else:
-        verify_tools(tools)
-    need(sha256(loader) == loader_sha256 and sha256(admitted) == loader_sha256, "Admitted loader changed")
+    need(results[0] == results[1], "Independent FAT validation differs")
+    need(sha256(snapshot) == loader_sha256, "Loader snapshot changed")
     result = dict(
         schema="aurora-iommu-event-esp-build-v1",
-        status="requires-independent-review",
         loader_path=str(loader),
         mtools_root=str(tools),
-        mtools_sha256=MTOOLS_SHA256,
         source_date_epoch=946684800,
         timezone="UTC",
         independent_byte_identity=True,
@@ -431,22 +360,8 @@ def build(loader, loader_sha256, mtools_root, output_dir, *, developer=False, ru
         rebuild=str(output / "esp-rebuild.raw"),
         fat32=results[0],
         commands=commands,
-        builder_sha256=None if packaged else sha256(Path(__file__)),
     )
-    if developer:
-        result.update(
-            schema="aurora-iommu-event-developer-esp-build-v1",
-            status="developer-byte-identity-checked",
-            independent_review=False,
-            mtools={}
-            if packaged
-            else {name: dict(**tool_identity[name], version_output=versions[name]) for name in MTOOLS_COMMANDS},
-        )
-        del result["mtools_sha256"]
-        if packaged:
-            del result["mtools"]
-            del result["builder_sha256"]
-    with (output / "esp-admission.json").open("x") as stream:
+    with (output / "esp-build.json").open("x") as stream:
         json.dump(result, stream, indent=2, sort_keys=True)
         stream.write("\n")
     return result

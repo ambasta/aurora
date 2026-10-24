@@ -3,7 +3,7 @@
 The digest-pinned container is the supported reproducible development route.
 Native GNU/Linux x86-64 setup is an advanced route requiring the exact pinned
 tools below; other native tool versions are unsupported. Final qualification
-still requires GCC 16 `full`, independent review, normal BIOS/UEFI boots and
+still requires the GCC 16 `merge` suite, independent review, normal BIOS/UEFI boots and
 affected image/fault/recovery/restoration gates. The GitHub Actions workflow only
 packages the dependency image; it does not run product validation.
 
@@ -123,12 +123,12 @@ For a combined local qualification, start with one IVRS case, then explicitly
 reuse its generated BAR and IVRS coverage for the remaining family cases:
 
 ```sh
-python3 scripts/kernel-uefi-ivrs-run.py ivrs-default --output "$run/setup-ivrs"
+python3 scripts/kernel-uefi-device-run.py ivrs-default --output "$run/setup-ivrs"
 export AURORA_IVRS_COVERAGE="$run/setup-ivrs/controls/ivrs-coverage.json"
 export AURORA_BAR_COVERAGE="$run/setup-ivrs/controls/bar-coverage.json"
-AURORA_BAR_RECEIPTS="$run/bar" scripts/kernel-uefi-bar-all.sh
-AURORA_IVRS_RECEIPTS="$run/ivrs" scripts/kernel-uefi-ivrs-all.sh
-python3 scripts/kernel-uefi-bar-run.py bar-prepare --output "$run/bar-prepare"
+AURORA_BAR_RECEIPTS="$run/bar" scripts/kernel-run.sh bar
+AURORA_IVRS_RECEIPTS="$run/ivrs" scripts/kernel-run.sh ivrs
+python3 scripts/kernel-uefi-device-run.py bar-prepare --output "$run/bar-prepare"
 ```
 
 Choose a fresh absolute `$run` and the selected QEMU/data/stock OVMF first. This
@@ -285,7 +285,8 @@ open-file guarantees.
 
 ## Choosing tests and consoles
 
-- `make test`: final native `full`; `make -C compiler test`
+- `make test`: the `merge` suite; `make test-release`: the opt-in `release`
+  suite (releases, compiler bumps); `make -C compiler test`
   and `scripts/compiler-test.sh` select the same compiler-only Meson suite.
 - `make test-exhaustive`: the separate whole-space UTF-8 library sweeps; see
   [normal and exhaustive scope](meson-bootstrap.md#coverage-and-limits).
@@ -295,7 +296,7 @@ open-file guarantees.
   Partial profiles never become full acceptance by accumulation.
 - `make smoke`, `make smoke-fault`, `make smoke-page-fault`, `make smoke-all` and
   the affected profile commands exercise actual emulator behavior.
-- `SANITIZE=1 ./scripts/kernel-tests.sh` covers hosted allocator checks, not all
+- `meson test -C build/meson --suite full` covers hosted allocator checks, not all
   native code and not generated Aurora assembly.
 - `make test-developer-commands` checks command routing with fake tools, without
   compiling Aurora or starting a real guest. It is not native acceptance.

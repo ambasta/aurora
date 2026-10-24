@@ -1,19 +1,15 @@
 #!/usr/bin/env python3
 """Focused sector-sized owned values: exact bytes, copy isolation and fail-closed bounds.
 
-All scalar observations use the existing full-width native oracle. Every rejected
-source preserves absent/existing output artifacts. Traps require SIGILL at the
-exact named bounds UD2. Literal Python byte models do not use compiler layouts.
+Results are complete 64-bit values and traps must reach the exact named bounds
+UD2 (native_runner.py). Literal Python byte models do not use compiler layouts.
 """
 
 from pathlib import Path
 import argparse
-import hashlib
-import shutil
-import tempfile
 
+from native_runner import require
 from packed_values import Suite, Trap, byte_storage
-from unsigned_oracle import require
 
 
 BLOCK = byte_storage("Block", 512)
@@ -272,52 +268,25 @@ def main():
     parser.add_argument("compiler", type=Path)
     parser.add_argument("--work-dir", type=Path)
     args = parser.parse_args()
-    compiler = args.compiler.resolve()
-    print(f"compiler_sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}", flush=True)
-    work = args.work_dir.resolve() if args.work_dir else Path(tempfile.mkdtemp(prefix="aurora-sector-values-"))
-    work.mkdir(parents=True, exist_ok=True)
-    print(f"work directory: {work}", flush=True)
-    try:
-        suite = Suite(work, compiler, 15, False)
-        assemble = suite.runner.assemble
-
-        def retain_observation(assembly, functions):
-            observed, symbols = assemble(assembly, functions)
-            (work / "last-native-output.bin").write_bytes(observed.output)
-            identity = hashlib.sha256(assembly.encode()).hexdigest()
-            (work / "last-native-observation.txt").write_text(
-                f"assembly_sha256={identity}\n{observed!r}\nsymbols={symbols!r}\n"
+    suite = Suite(args.compiler, 15, "sector values")
+    if args.work_dir:
+        suite.runner.directory = args.work_dir.resolve()
+    positive_cases(suite)
+    rejection_cases(suite)
+    for offset in (-1, 512, (1 << 63) - 1):
+        for write in (False, True):
+            body = (
+                f"Block block=Block();return u64(block.set({offset},255u8));"
+                if write
+                else f"const Block block=Block();return u64(block.at({offset}));"
             )
-            return observed, symbols
-
-        suite.runner.assemble = retain_observation
-        positive_cases(suite)
-        rejection_cases(suite)
-        for offset in (-1, 512, (1 << 63) - 1):
-            for write in (False, True):
-                body = (
-                    f"Block block=Block();return u64(block.set({offset},255u8));"
-                    if write
-                    else f"const Block block=Block();return u64(block.at({offset}));"
-                )
-                suite.check(
-                    f"sector {'write' if write else 'read'} bounds {offset}",
-                    body,
-                    expected=Trap.BOUNDS,
-                    definitions=BLOCK,
-                )
-    except Exception as error:
-        (work / "failure.txt").write_text(str(error) + "\n")
-        print(f"FAIL: retained sector value inputs and native artifacts in {work}", flush=True)
-        raise
-    else:
-        if not args.work_dir:
-            shutil.rmtree(work)
-    print(
-        f"PASS sector values: {suite.count - suite.traps} full-width native cases, "
-        f"{suite.rejections} rejections, {suite.traps} exact bounds traps",
-        flush=True,
-    )
+            suite.check(
+                f"sector {'write' if write else 'read'} bounds {offset}",
+                body,
+                expected=Trap.BOUNDS,
+                definitions=BLOCK,
+            )
+    suite.finish()
 
 
 if __name__ == "__main__":

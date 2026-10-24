@@ -1,7 +1,5 @@
-// Independently authored distinct-service IR, retaining both single-kind suites.
-#define DISPLAY_SERVICE_IR_MAIN display_service_regression
-#include "display_service_ir.cpp"
-#undef DISPLAY_SERVICE_IR_MAIN
+// Independently authored distinct-service IR; display-service-ir also runs the Display cases.
+#include "service_ir_common.hpp"
 #include <fstream>
 
 namespace {
@@ -270,7 +268,7 @@ Module executedNonlexical() {
 } // namespace
 
 int main(int argc, char **argv) {
-    display_service_regression();
+    displayServiceCases();
     callChecks();
     good(groupDirect());
     good(groupDirect(true));
@@ -538,5 +536,5 @@ int main(int argc, char **argv) {
         output.flush();
         need(static_cast<bool>(output), "cannot write executed-IR assembly destination");
     }
-    std::cout << "PASS distinct service groups and single-kind regression: " << checks << " checks\n";
+    std::cout << "PASS distinct service groups and Display service IR: " << checks << " checks\n";
 }

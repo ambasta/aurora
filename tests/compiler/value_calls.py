@@ -1,34 +1,14 @@
 #!/usr/bin/env python3
-"""Execute independent by-value class arguments and complete typed results."""
+"""Class values across function boundaries: copies, factories, snapshots (native_runner.py)."""
 
 from pathlib import Path
-import resource
-import os
-import signal
-import subprocess
 import sys
 import tempfile
 
+from native_runner import LIBRARY, Suite, Trap, require, run
+
 COMPILER = Path(sys.argv[1]).resolve()
-LIBRARY = Path(__file__).resolve().parents[2] / "library"
-COUNT = 0
-
-
-def require(value, message):
-    if not value:
-        raise AssertionError(message)
-
-
-def run(command, good=True):
-    result = subprocess.run(
-        [str(x) for x in command],
-        capture_output=True,
-        timeout=5,
-        preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)),
-    )
-    if good:
-        require(result.returncode == 0, f"{command}: {result.returncode}: {result.stderr!r}")
-    return result
+SUITE = Suite(COMPILER, "value calls")
 
 
 def check(
@@ -38,102 +18,28 @@ def check(
     expected=42,
     error=None,
     library=False,
-    root_sets=None,
-    setup=None,
-    roots=True,
     trap=False,
     existing_output=None,
-    calls_in_order=None,
     equivalent_source=None,
 ):
-    global COUNT
-    with tempfile.TemporaryDirectory(prefix="aurora-modules-") as directory:
-        base = Path(directory)
-        groups = root_sets if root_sets is not None else [modules or {}]
-        search = []
-        for index, files in enumerate(groups):
-            root = base / f"root{index}"
-            root.mkdir()
-            search.append(root)
-            for module, text in files.items():
-                path = root / (module.replace(".", "/") + ".au")
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(text)
-        if library:
-            search.append(LIBRARY)
-        if setup:
-            setup(base, search)
-        input_path = base / "input.au"
-        input_path.write_text(source)
-        inputs = {input_path: input_path.read_bytes()}
-        for root in search:
-            inputs.update({path: path.read_bytes() for path in root.rglob("*.au")})
-        assembly = base / "program.s"
-        if existing_output is not None:
-            assembly.write_text(existing_output)
-        command = [COMPILER, input_path, "-o", assembly]
-        if roots:
-            for root in search:
-                command.extend(["--module-root", root])
-        compiled = run(command, good=error is None)
-        for path, before in inputs.items():
-            require(path.read_bytes() == before, name + ": compiler changed input: " + str(path))
-        if error:
-            require(compiled.returncode == 1, name + ": invalid graph accepted")
-            if existing_output is None:
-                require(not assembly.exists(), name + ": output created on rejection")
-            else:
-                require(assembly.read_text() == existing_output, name + ": existing output changed on rejection")
-            require(error.encode() in compiled.stderr, name + ": " + repr(compiled.stderr))
-        else:
-            if equivalent_source is not None:
-                named_input, named_output = base / "named.au", base / "named.s"
-                named_input.write_text(equivalent_source)
-                named_command = [COMPILER, named_input, "-o", named_output]
-                if roots:
-                    for root in search:
-                        named_command.extend(["--module-root", root])
-                run(named_command)
-                require(named_input.read_text() == equivalent_source, name + ": compiler changed named input")
-                for path, before in inputs.items():
-                    require(path.read_bytes() == before, name + ": compiler changed input: " + str(path))
-                require(
-                    assembly.read_bytes() == named_output.read_bytes(),
-                    name + ": direct return differs from named-local assembly",
-                )
-            if calls_in_order:
-                code = assembly.read_text()
-                positions = [code.index("call " + name) for name in calls_in_order]
-                require(positions == sorted(positions), name + ": wrong initializer call order")
-            bridge = base / "entry.s"
-            bridge.write_text(""".text
-.globl _start
-_start:
-    call test
-    pushq %rax
-    movq $1, %rax
-    movq $1, %rdi
-    movq %rsp, %rsi
-    movq $8, %rdx
-    syscall
-    movq $60, %rax
-    xorq %rdi, %rdi
-    syscall
-.section .note.GNU-stack,"",@progbits
-""")
-            run(["as", "--64", assembly, "-o", base / "program.o"])
-            run(["as", "--64", bridge, "-o", base / "entry.o"])
-            run(["ld", "-o", base / "program", base / "entry.o", base / "program.o"])
-            executed = run([base / "program"], good=not trap)
-            if trap:
-                require(executed.returncode == -signal.SIGILL and not executed.stdout, name + ": expected exact SIGILL")
-            else:
-                require(len(executed.stdout) == 8, name + ": missing scalar result")
-                require(
-                    int.from_bytes(executed.stdout, "little", signed=True) == expected, name + ": wrong scalar result"
-                )
-        COUNT += 1
-        print("PASS values", name)
+    def inspect(assembly):
+        # A direct return must lower exactly like its named-local form.
+        with tempfile.TemporaryDirectory(prefix="aurora-named-") as directory:
+            named_input, named_output = Path(directory) / "named.au", Path(directory) / "named.s"
+            named_input.write_text(equivalent_source)
+            result = run([COMPILER, "--module-root", LIBRARY, named_input, "-o", named_output])
+            require(result.returncode == 0, f"named-local form failed: {result.stderr!r}")
+            require(named_output.read_text() == assembly, "direct return differs from named-local assembly")
+
+    SUITE.check(
+        name,
+        source,
+        Trap.OVERFLOW if trap else expected,
+        error,
+        modules=modules,
+        existing_output=existing_output,
+        inspect=inspect if equivalent_source is not None else None,
+    )
 
 
 def app(body, imports=""):
@@ -744,8 +650,7 @@ for label, source, diagnostic in [
         "complete local name",
     ),
 ]:
-    for prior in (None, "existing assembly must survive rejection\n"):
-        check(label, source, error=diagnostic, existing_output=prior)
+    check(label, source, error=diagnostic)
 
 # Direct ordinary calls retain the typed destination and complete-copy return.
 # Compare representative lowerings byte-for-byte with their named-local forms.
@@ -928,8 +833,7 @@ for label, source, diagnostic, use_library in [
         False,
     ),
 ]:
-    for prior in (None, "existing assembly must survive rejection\n"):
-        check(label, source, error=diagnostic, existing_output=prior, library=use_library)
+    check(label, source, error=diagnostic, library=use_library)
 
 # Bounded copied arguments use the same observable behavior as explicit locals.
 for label, expression, helpers in (
@@ -989,16 +893,14 @@ for label, body in (
         ),
     )
 for expression in ("Other(42)", "make_other()"):
-    for prior in (None, "existing assembly must survive rejection\n"):
-        check(
-            "temporary exact nominal mismatch " + expression,
-            program(
-                "return get(" + expression + ");",
-                "auto get(Counter c)->i64{return c.get();}auto make_other()->Other{return Other(42);}",
-                COUNTER + COUNTER.replace("Counter", "Other"),
-            ),
-            error="expected Counter",
-            existing_output=prior,
-        )
+    check(
+        "temporary exact nominal mismatch " + expression,
+        program(
+            "return get(" + expression + ");",
+            "auto get(Counter c)->i64{return c.get();}auto make_other()->Other{return Other(42);}",
+            COUNTER + COUNTER.replace("Counter", "Other"),
+        ),
+        error="expected Counter",
+    )
 
-print(f"{COUNT} class value function-boundary checks passed")
+SUITE.finish()

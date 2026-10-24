@@ -25,7 +25,6 @@ for part in client service; do
         "${extra[@]}" "$out/$part.o" -o "$out/$part.elf"
     objcopy -O binary "$out/$part.elf" "$out/$part.bin"
 done
-python3 -B tests/kernel-snapshot-abi.py "$out"
 as --64 -L "$out/service.s" tests/kernel-snapshot-entry.S -o "$out/service-host.o"
 as --64 -L "$out/client.s" -o "$out/client-host.o"
 "$AURORAC" --module-root kernel/policies --module-root library tests/kernel-programs/call-snapshot-service.au -o "$out/checksum.s"
@@ -67,4 +66,4 @@ for rejected in mutation private; do
     grep -q 'AU3001' "$out/reject-$rejected.log"
 done
 wc -c "$out/client.bin" "$out/service.bin"
-echo 'PASS: focused native replay; complete linked stack admission and guests remain unqualified'
+echo 'PASS: focused native replay'

@@ -1,7 +1,5 @@
 // Independent Serve IR admission and register-only ABI fixture.
-#define main console_service_regression
-#include "console_service_ir.cpp"
-#undef main
+#include "service_ir_common.hpp"
 #include <fstream>
 namespace {
 Module serveOperation() {

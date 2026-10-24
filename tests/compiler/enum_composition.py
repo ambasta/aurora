@@ -2,11 +2,8 @@
 """Combined enum/Value composition and independent class method-result checks.
 
 Expectations come from source-level values and an ordinary Python snapshot model,
-never compiler IR or generated assembly. Native observations must exit normally
-and contain exactly eight result bytes. Every rejection is checked with both an
-absent output and a pre-existing byte-exact output, preserving all source inputs.
-No kernel, fault injection, trap observer, or experimental compiler API is used.
-Explicit require calls keep checks active under python3 -O.
+never compiler IR or generated assembly. Cases are data for the shared native
+runner (native_runner.py): complete 64-bit results and artifact-preserving rejections.
 
 Run: python3 tests/compiler/enum_composition.py build/aurorac
 Optional reproducible model: --seed 12012 --steps 24
@@ -15,14 +12,11 @@ Optional reproducible model: --seed 12012 --steps 24
 from __future__ import annotations
 
 import argparse
-import hashlib
 from itertools import product
 from pathlib import Path
 import random
-import resource
-import subprocess
-import tempfile
-import time
+
+from native_runner import Suite, require
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -66,167 +60,8 @@ public:
 BASE = ENUMS + EMPTY + LEAF + PACKET + FACTORY
 
 
-def require(condition, message):
-    if not condition:
-        raise AssertionError(message)
-
-
 def program(body, definitions="", helpers="", imports="", result="i64"):
     return "module app;" + imports + definitions + helpers + f"auto test()->{result}{{{body}}}"
-
-
-def validate_native(observed, expected):
-    require(observed.returncode == 0, f"native exit {observed.returncode}: {observed.stderr!r}")
-    require(observed.stderr == b"", f"unexpected native stderr: {observed.stderr!r}")
-    require(len(observed.stdout) == 8, f"expected eight result bytes: {observed.stdout!r}")
-    actual = int.from_bytes(observed.stdout, "little", signed=False)
-    require(actual == expected % (1 << 64), f"expected {expected % (1 << 64)}, got {actual}")
-
-
-ENTRY = """.text
-.globl _start
-_start:
-    call test
-    pushq %rax
-    movq $1, %rax
-    movq $1, %rdi
-    movq %rsp, %rsi
-    movq $8, %rdx
-    syscall
-    cmpq $8, %rax
-    jne .Lwrite_failed
-    movq $60, %rax
-    xorq %rdi, %rdi
-    syscall
-.Lwrite_failed:
-    movq $60, %rax
-    movq $1, %rdi
-    syscall
-.section .note.GNU-stack,"",@progbits
-"""
-
-
-def run(command):
-    return subprocess.run(
-        [str(x) for x in command],
-        capture_output=True,
-        timeout=8,
-        preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)),
-    )
-
-
-def execute(directory, assembly):
-    entry = directory / "entry.s"
-    entry.write_text(ENTRY)
-    for command in (
-        ("as", "--64", assembly, "-o", directory / "program.o"),
-        ("as", "--64", entry, "-o", directory / "entry.o"),
-        ("ld", "-o", directory / "program", directory / "entry.o", directory / "program.o"),
-    ):
-        built = run(command)
-        require(built.returncode == 0, f"{command[0]} failed: {built.stderr!r}")
-    return run([directory / "program"])
-
-
-def harness_self_test():
-    good = subprocess.CompletedProcess([], 0, (MAX_U64).to_bytes(8, "little"), b"")
-    validate_native(good, MAX_U64)
-    invalid = [
-        subprocess.CompletedProcess([], code, payload, diagnostic)
-        for code, payload, diagnostic in (
-            (1, good.stdout, b""),
-            (-11, good.stdout, b""),
-            (0, b"", b""),
-            (0, good.stdout[:-1], b""),
-            (0, good.stdout + b"x", b""),
-            (0, b"\x00" * 8, b""),
-            (0, good.stdout, b"unexpected"),
-        )
-    ]
-    for observed in invalid:
-        try:
-            validate_native(observed, MAX_U64)
-        except AssertionError:
-            pass
-        else:
-            raise AssertionError("invalid native observation accepted")
-    with tempfile.TemporaryDirectory(prefix="aurora-enum-harness-") as temporary:
-        directory = Path(temporary)
-        for value in (0, 42, HIGH_U64, MAX_U64):
-            assembly = directory / "program.s"
-            assembly.write_text(
-                f'.text\n.globl test\ntest:\nmovabsq ${value}, %rax\nret\n.section .note.GNU-stack,"",@progbits\n'
-            )
-            validate_native(execute(directory, assembly), value)
-    print("PASS enum composition harness: exact 64-bit native values and rejected invalid observations", flush=True)
-
-
-class Suite:
-    def __init__(self, compiler, keep_going=False):
-        self.compiler = compiler
-        self.keep_going = keep_going
-        self.count = 0
-        self.executions = 0
-        self.rejections = 0
-        self.rejection_compiles = 0
-        self.modeled_steps = 0
-        self.failures = []
-        self.library_inputs = {p: p.read_bytes() for p in (ROOT / "library").rglob("*.au")}
-
-    def check(self, name, source, expected=42, reject=False, modules=None):
-        with tempfile.TemporaryDirectory(prefix="aurora-enum-composition-") as temporary:
-            directory = Path(temporary)
-            input_path = directory / "input.au"
-            output = directory / "program.s"
-            input_path.write_text(source)
-            inputs = dict(self.library_inputs)
-            inputs[input_path] = source.encode()
-            roots = [ROOT / "library"]
-            if modules:
-                module_root = directory / "modules"
-                roots.insert(0, module_root)
-                for module, content in modules.items():
-                    path = module_root / (module.replace(".", "/") + ".au")
-                    path.parent.mkdir(parents=True, exist_ok=True)
-                    path.write_text(content)
-                    inputs[path] = content.encode()
-            command = [self.compiler, input_path, "-o", output]
-            for root in roots:
-                command.extend(["--module-root", root])
-            try:
-                artifacts = (None, b"previous verified artifact\x00\xff\n") if reject else (None,)
-                for original in artifacts:
-                    if original is not None:
-                        output.write_bytes(original)
-                    compiled = run(command)
-                    for path, before in inputs.items():
-                        require(path.read_bytes() == before, "source input changed: " + str(path))
-                    if reject:
-                        require(
-                            compiled.returncode == 1,
-                            f"expected ordinary rejection exit 1, got {compiled.returncode}: {compiled.stderr!r}",
-                        )
-                        require(bool(compiled.stderr.strip()), "missing type/syntax diagnostic")
-                        if original is None:
-                            require(not output.exists(), "rejection created output artifact")
-                        else:
-                            require(output.read_bytes() == original, "rejection changed prior artifact")
-                        self.rejection_compiles += 1
-                    else:
-                        require(compiled.returncode == 0, f"compiler exit {compiled.returncode}: {compiled.stderr!r}")
-                        validate_native(execute(directory, output), expected)
-                        self.executions += 1
-                self.count += 1
-                self.rejections += int(reject)
-                print("PASS enum composition", name, flush=True)
-            except (AssertionError, subprocess.TimeoutExpired) as failure:
-                details = f"{name}: {failure}\nSource:\n{source}"
-                if modules:
-                    details += "\nModules:\n" + repr(modules)
-                if not self.keep_going:
-                    raise AssertionError(details) from failure
-                self.failures.append(details)
-                print("FAIL enum composition", details, flush=True)
 
 
 def value_cases(suite):
@@ -607,12 +442,12 @@ def wide_cases(suite):
             MAX_U64,
         )
     suite.check(
-        "enum leaves count toward composed 64-leaf limit", program("return 42;", wide_definitions(60)), reject=True
+        "enum leaves count toward composed 64-leaf limit", program("return 42;", wide_definitions(60)), error=True
     )
     suite.check(
         "empty descendant counts toward composed four-level limit",
         program("return 42;", wide_definitions(extra_level=True)),
-        reject=True,
+        error=True,
     )
     suite.check(
         "named wrapper around std array is a Value argument and method result",
@@ -661,7 +496,6 @@ def modeled_copies(suite, seed, steps):
     suite.check(
         f"independent enum/class snapshot model seed={seed} steps={steps}", program(body, BASE, result="u64"), MAX_U64
     )
-    suite.modeled_steps += steps
 
 
 def module_cases(suite):
@@ -719,7 +553,7 @@ def module_cases(suite):
         suite.check(
             "class result requires direct visible import " + missing,
             program(body, imports=imports, result="u64"),
-            reject=True,
+            error=True,
             modules=modules,
         )
     private = "enum class Secret{ok,error};"
@@ -739,7 +573,7 @@ def module_cases(suite):
         suite.check(
             "export visibility rejects hidden " + label,
             program("return 42;", imports="import hidden;"),
-            reject=True,
+            error=True,
             modules={"hidden": "export module hidden;import std.utility;" + private + exposed},
         )
     suite.check(
@@ -789,7 +623,7 @@ def module_cases(suite):
             "const std::pair<right::Status,i64> wrong=source;return 42;",
             imports="import left;import right;import std.utility;",
         ),
-        reject=True,
+        error=True,
         modules=exported,
     )
 
@@ -894,7 +728,7 @@ def rejection_cases(suite):
             "std::pair<Status,std::pair<Status,i64>>(Status::ok,42);return 42;",
         ),
     ):
-        suite.check(label, program(body, BASE, imports="import std.utility;import std.array;"), reject=True)
+        suite.check(label, program(body, BASE, imports="import std.utility;import std.array;"), error=True)
     for label, action in (
         ("replacement", "input.second=leaf;"),
         ("mutable receiver", "input.second.set(Status::error,0u64);"),
@@ -907,7 +741,7 @@ def rejection_cases(suite):
                 f"auto mutate({pair} input,Leaf leaf)->i64{{{action}return 42;}}",
                 imports="import std.utility;",
             ),
-            reject=True,
+            error=True,
         )
     for operator in ("+", "-", "*", "/", "%", "&", "|", "^", "<<", ">>"):
         suite.check(
@@ -917,7 +751,7 @@ def rejection_cases(suite):
                 BASE,
                 imports="import std.utility;",
             ),
-            reject=True,
+            error=True,
         )
     for operator in ("<", "<=", ">", ">="):
         suite.check(
@@ -927,7 +761,7 @@ def rejection_cases(suite):
                 BASE,
                 imports="import std.utility;",
             ),
-            reject=True,
+            error=True,
         )
     for label, argument in (("nominal enum", "Status"), ("named concrete class", "Leaf")):
         suite.check(
@@ -936,7 +770,7 @@ def rejection_cases(suite):
                 f"static_assert(size_of(Only<{argument}>)>0);return 42;",
                 ENUMS + LEAF + "template<Scalar T>class Only{T item;public:Only(T source):item(source){} };",
             ),
-            reject=True,
+            error=True,
         )
     for constraints, concrete in (("Scalar T,Value U", "Status,Leaf"), ("Value T,Scalar U", "Leaf,Status")):
         suite.check(
@@ -945,7 +779,7 @@ def rejection_cases(suite):
                 f"static_assert(size_of(Mixed<{concrete}>)>0);return 42;",
                 ENUMS + LEAF + f"template<{constraints}>class Mixed{{T a;U b;public:Mixed(T x,U y):a(x),b(y){{}}}};",
             ),
-            reject=True,
+            error=True,
         )
     method_init = "Factory factory=Factory(Status::ok,42u64);"
     suite.check(
@@ -979,7 +813,7 @@ def rejection_cases(suite):
         ),
         ("wrong enum method argument", "Leaf leaf=Leaf(Status::ok,42u64);leaf.change(Other::ok);return 42;", ""),
     ):
-        suite.check(label, program(body, BASE, helpers), reject=True)
+        suite.check(label, program(body, BASE, helpers), error=True)
     for label, declaration in (
         ("wrong nominal class return", "auto make()const->Packet{Leaf value=Leaf(Status::ok,42u64);return value;}"),
         ("wrong nominal enum return", "auto status()const->Status{return Other::ok;}"),
@@ -987,7 +821,7 @@ def rejection_cases(suite):
         suite.check(
             label + " remains rejected",
             program("return 42;", BASE + "class Invalid{public:Invalid(){}" + declaration + "};"),
-            reject=True,
+            error=True,
         )
     suite.check(
         "direct copied class return preserves enum payload",
@@ -1038,7 +872,7 @@ def rejection_cases(suite):
             "Box<Status> box=Box<Status>();return 42;",
             ENUMS + "template<Value T>class Box{builtin::array<T,2> data;public:Box():data{}{} };",
         ),
-        reject=True,
+        error=True,
     )
     suite.check(
         "decimal enum cannot satisfy Scalar constraint",
@@ -1047,7 +881,7 @@ def rejection_cases(suite):
             "template<Scalar T>class Only{T item;public:Only(T source):item(source){} };",
             imports="import std.decimal;",
         ),
-        reject=True,
+        error=True,
     )
     suite.check(
         "decimal result private enum field remains private after composition",
@@ -1059,7 +893,7 @@ def rejection_cases(suite):
             ENUMS,
             imports="import std.decimal;import std.utility;",
         ),
-        reject=True,
+        error=True,
     )
 
 
@@ -1068,24 +902,9 @@ def main():
     parser.add_argument("compiler", type=Path, nargs="?", default=ROOT / "build/aurorac")
     parser.add_argument("--seed", type=int, default=12012)
     parser.add_argument("--steps", type=int, default=24)
-    parser.add_argument("--self-test-only", action="store_true")
-    parser.add_argument("--keep-going", action="store_true")
     args = parser.parse_args()
     require(1 <= args.steps <= 64, "steps must be between 1 and 64")
-    harness_self_test()
-    if args.self_test_only:
-        return
-    compiler = args.compiler.resolve()
-    print(
-        f"INFO enum composition compiler={compiler} sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}",
-        flush=True,
-    )
-    for module in (ROOT / "library/std/utility.au", ROOT / "library/std/decimal.au"):
-        print(
-            f"INFO enum composition {module.name} sha256={hashlib.sha256(module.read_bytes()).hexdigest()}", flush=True
-        )
-    started = time.monotonic()
-    suite = Suite(compiler, args.keep_going)
+    suite = Suite(args.compiler, "enum composition")
     value_cases(suite)
     snapshot_cases(suite)
     owned_field_cases(suite)
@@ -1095,15 +914,7 @@ def main():
     module_cases(suite)
     decimal_cases(suite)
     rejection_cases(suite)
-    print(
-        f"INFO enum composition: {suite.count} passed, {suite.executions} native executions, "
-        f"{suite.rejections} ordinary rejections ({suite.rejection_compiles} artifact checks), "
-        f"{suite.modeled_steps} snapshot model steps, {len(suite.failures)} failures; "
-        f"seed={args.seed}; elapsed={time.monotonic() - started:.2f}s",
-        flush=True,
-    )
-    require(not suite.failures, f"{len(suite.failures)} enum-composition checks failed")
-    print("PASS enum composition complete", flush=True)
+    suite.finish()
 
 
 if __name__ == "__main__":

@@ -3,9 +3,7 @@
 
 from pathlib import Path
 import argparse
-import hashlib
 import itertools
-import json
 import os
 import random
 import subprocess
@@ -14,8 +12,6 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.dont_write_bytecode = True
-sys.path.insert(0, str(ROOT / "scripts"))
-from compiler_contract import add_identity_arguments, resolve_identity, validate_identity_selection
 
 # All accepted tuples, explicit and independent of production branches/ordinals.
 ACCEPTED = {
@@ -37,20 +33,13 @@ def need(condition, message):
         raise RuntimeError(message)
 
 
-def sha(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--compiler", default="build/aurorac")
-    add_identity_arguments(parser)
     parser.add_argument("--output")
     parser.add_argument("--sanitize", action="store_true", default=os.environ.get("SANITIZE") == "1")
     args = parser.parse_args()
-    validate_identity_selection(args)
     compiler = Path(args.compiler).resolve(strict=True)
-    identity = resolve_identity(args, compiler, ROOT)
     out = Path(args.output).absolute() if args.output else ROOT / "build/terminal-event-native" / str(time.time_ns())
     need(not out.exists(), "Output must be fresh")
     need(not any(p.is_symlink() for p in (out, *out.parents)), "Output symlink denied")
@@ -58,7 +47,6 @@ def main():
     env = dict(
         os.environ, ASAN_OPTIONS="detect_leaks=0:halt_on_error=1", UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1"
     )
-    commands = []
 
     def run(argv, name, data=None):
         result = subprocess.run(
@@ -72,8 +60,6 @@ def main():
         )
         (out / (name + ".stdout")).write_bytes(result.stdout)
         (out / (name + ".stderr")).write_bytes(result.stderr)
-        commands.append(dict(argv=[str(x) for x in argv], status=result.returncode, name=name))
-        (out / "commands.json").write_text(json.dumps(commands, indent=2) + "\n")
         need(result.returncode == 0, name + " failed; see retained stderr")
         return result.stdout
 
@@ -155,32 +141,10 @@ def main():
         exe = out / fixture
         run(flags + [f"tests/{fixture}.cpp", obj, "-o", exe], fixture + "-link")
         run([exe], fixture)
-    receipt = dict(
-        status="passed",
-        scope="focused-terminal-event",
-        compiler_identity=identity.record(),
-        compiler_sha256=sha(compiler),
-        sanitize=args.sanitize,
-        generated_assembly_sanitized=False,
-        finite=len(finite),
-        producer=len(vectors),
-        decoder=len(decoder_vectors),
-        adapter=count,
-        accepted_literal=[[*row, e] for row, e in ACCEPTED.items()],
-        source_sha256={
-            str(p.relative_to(ROOT)): sha(p)
-            for p in [
-                ROOT / "kernel/user-program.hpp",
-                ROOT / "kernel/terminal-event-transport.hpp",
-                ROOT / "kernel/policies/kernel/terminal_event.au",
-                ROOT / "examples/kernel.au",
-                Path(__file__),
-                ROOT / "tests/kernel-terminal-event-native.cpp",
-            ]
-        },
+    print(
+        f"kernel terminal event native: passed finite={len(finite)} producer={len(vectors)} "
+        f"decoder={len(decoder_vectors)} adapter={count} sanitize={args.sanitize} (output {out})"
     )
-    (out / "run.json").write_text(json.dumps(receipt, indent=2) + "\n")
-    print(json.dumps(receipt, sort_keys=True))
 
 
 if __name__ == "__main__":

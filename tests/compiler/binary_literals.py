@@ -1,14 +1,12 @@
 #!/usr/bin/env python3
 """Exact binary spelling, rejection boundaries and decimal assembly equivalence."""
 
-import hashlib
 import json
 from pathlib import Path
-import subprocess
 import sys
 import tempfile
 
-from unsigned_oracle import Case, NativeRunner, Trap, command, require
+from native_runner import Suite, Trap, require, run
 
 
 def binary(value, suffix="", group=5, prefix="0b"):
@@ -24,7 +22,7 @@ def binary(value, suffix="", group=5, prefix="0b"):
 
 def main():
     compiler = Path(sys.argv[1]).resolve(strict=True)
-    print(f"compiler_sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}", flush=True)
+    suite = Suite(compiler, "binary literals", timeout=10)
     # Independent Python values cover all byte payloads and every u64 bit position.
     spellings = [(binary(value, "u8", 4), f"{value}u8", "u8", value) for value in range(256)]
     for value in sorted({0, 42, (1 << 64) - 1} | {1 << bit for bit in range(64)}):
@@ -37,29 +35,33 @@ def main():
         ("0B11111111u8", "255u8", "u8", 255),
         ("0b" + "0" * 128 + "1", "1", "i64", 1),
     ]
-    cases = [
-        Case(
-            f"binary spelling {spelling}",
-            f"static_assert({spelling}=={decimal});return " + (f"u64({spelling});" if kind == "u8" else f"{spelling};"),
-            value,
-            result_type="i64" if kind == "i64" else "u64",
-        )
-        for spelling, decimal, kind, value in spellings
-        if value >= 0
-    ]
+    for spelling, decimal, kind, value in spellings:
+        if value >= 0:
+            body = f"static_assert({spelling}=={decimal});return " + (
+                f"u64({spelling});" if kind == "u8" else f"{spelling};"
+            )
+            suite.value(f"binary spelling {spelling}", body, value, "i64" if kind == "i64" else "u64")
     # Restricted static_assert still excludes unary minus; runtime supports -2^63.
-    cases += [
-        Case("binary signed minimum", "return -" + binary(1 << 63) + ";", -(1 << 63), result_type="i64"),
-        Case(
-            "binary byte array and operators", "const array<u8,2> a={0b0001u8,0B1111u8};return u64((a[0]<<3)|a[1]);", 15
-        ),
-        Case(
-            "binary class and parameter",
-            "const Box b=Box(0b10'1010u64);return b.get();",
-            42,
-            prelude="class Box{u64 v;public:Box(u64 n):v(n){}auto get()const->u64{return v;}};",
-        ),
-    ]
+    suite.value("binary signed minimum", "return -" + binary(1 << 63) + ";", -(1 << 63), "i64")
+    suite.value(
+        "binary byte array and operators",
+        "const array<u8,2> a={0b0001u8,0B1111u8};return u64((a[0]<<3)|a[1]);",
+        15,
+        "u64",
+    )
+    suite.value(
+        "binary class and parameter",
+        "const Box b=Box(0b10'1010u64);return b.get();",
+        42,
+        "u64",
+        prelude="class Box{u64 v;public:Box(u64 n):v(n){}auto get()const->u64{return v;}};",
+    )
+    for body, trap in [
+        ("return " + binary((1 << 64) - 1, "u64") + "+0b1u64;", Trap.OVERFLOW),
+        ("return u64(0b1u8<<8);", Trap.COUNT),
+        ("return 0b1u64/0b0u64;", Trap.ZERO),
+    ]:
+        suite.value("binary preserves checked trap " + body, body, trap, "u64")
     malformed = [
         "0b",
         "0B",
@@ -88,24 +90,12 @@ def main():
     ]
     with tempfile.TemporaryDirectory(prefix="aurora-binary-literals-") as temporary:
         root = Path(temporary)
-        runner = NativeRunner(root, compiler, 10)
-        for offset in range(0, len(cases) - 1, 32):
-            runner.cases(cases[offset : min(offset + 32, len(cases) - 1)])
-        runner.cases([cases[-1]])
-        for body, trap in [
-            ("return " + binary((1 << 64) - 1, "u64") + "+0b1u64;", Trap.OVERFLOW),
-            ("return u64(0b1u8<<8);", Trap.COUNT),
-            ("return 0b1u64/0b0u64;", Trap.ZERO),
-        ]:
-            runner.cases([Case("binary preserves checked trap", body, trap)])
         source, output = root / "literal.au", root / "literal.s"
         prefix = "module test;\r\n\tauto value()->u64{return "
         for spelling in malformed:
             text = prefix + spelling + ";}"
             source.write_text(text)
-            result = subprocess.run(
-                [compiler, "--check", "--diagnostics=json", source], capture_output=True, timeout=10
-            )
+            result = run([compiler, "--check", "--diagnostics=json", source], timeout=10)
             require(result.returncode == 1 and not result.stderr, f"invalid binary accepted: {spelling}")
             diagnostic = json.loads(result.stdout)["diagnostics"][0]
             require(
@@ -117,16 +107,6 @@ def main():
                 and diagnostic["range"]["end"]["offset"] == len(prefix) + len(spelling),
                 f"binary diagnostic is not the complete token: {diagnostic}",
             )
-            for sentinel in (None, b"preserve existing output\n"):
-                output.unlink(missing_ok=True)
-                if sentinel is not None:
-                    output.write_bytes(sentinel)
-                rejected = subprocess.run([compiler, source, "-o", output], capture_output=True, timeout=10)
-                require(rejected.returncode == 1, "malformed literal emitted assembly")
-                require(
-                    not output.exists() if sentinel is None else output.read_bytes() == sentinel,
-                    "malformed literal changed assembly",
-                )
         decimal_prefix = "module test;auto value()->i64{return "
         for spelling, token, message in [
             ("-1foo", "1foo", "integer literal out of range or invalid suffix"),
@@ -137,9 +117,7 @@ def main():
             ("18446744073709551616", "18446744073709551616", "integer literal out of range or invalid suffix"),
         ]:
             source.write_text(decimal_prefix + spelling + ";}")
-            rejected = subprocess.run(
-                [compiler, "--check", "--diagnostics=json", source], capture_output=True, timeout=10
-            )
+            rejected = run([compiler, "--check", "--diagnostics=json", source], timeout=10)
             require(rejected.returncode == 1 and not rejected.stderr, "malformed decimal accepted")
             diagnostic = json.loads(rejected.stdout)["diagnostics"][0]
             start = len(decimal_prefix) + spelling.index(token)
@@ -175,16 +153,7 @@ def main():
                 ),
             ]
         for body, kind, message, imports in rejections:
-            source.write_text(f"module test;{imports}auto value()->{kind}{{{body}}}")
-            rejected = subprocess.run(
-                [compiler, "--check", "--module-root", Path(__file__).resolve().parents[2] / "library", source],
-                capture_output=True,
-                timeout=10,
-            )
-            require(
-                rejected.returncode == 1 and message.encode() in rejected.stderr,
-                f"literal boundary accepted or changed: {body}: {rejected.stderr!r}",
-            )
+            suite.reject(f"literal boundary {body}", f"module test;{imports}auto value()->{kind}{{{body}}}", message)
 
         def assembly(binary_spelling):
             source.write_text(
@@ -194,13 +163,14 @@ def main():
                     for index, (spelling, decimal, kind, _) in enumerate(spellings)
                 )
             )
-            command([compiler, source, "-o", output], timeout=10)
+            require(run([compiler, source, "-o", output], timeout=10).returncode == 0, "spellings did not compile")
             return output.read_bytes()
 
         require(assembly(True) == assembly(False), "binary spellings changed decimal-equivalent assembly")
+    suite.finish()
     print(
-        f"PASS binary literals: {len(cases)} native values, 3 checked traps, {len(malformed)} malformed and "
-        f"{len(rejections)} boundary rejections, 6 decimal diagnostics; {len(spellings)} assembly-equivalent spellings"
+        f"PASS binary literal diagnostics: {len(malformed)} malformed tokens, 6 decimal diagnostics; "
+        f"{len(spellings)} assembly-equivalent spellings"
     )
 
 

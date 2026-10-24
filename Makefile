@@ -8,7 +8,7 @@ export EVENT_TOOL_PREFIX EVENT_BUILD_RECEIPT EVENT_CODE EVENT_VARS EVENT_DATA EV
 export AURORA_BAR_FIRMWARE AURORA_BAR_COVERAGE AURORA_BAR_RECEIPTS AURORA_NVME_RECEIPTS
 export CLEAN_PATHS
 
-.PHONY: all compiler kernel kernel-uefi test test-exhaustive
+.PHONY: all compiler kernel kernel-uefi test test-release test-exhaustive
 all:
 	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --kernel bios --publish-compiler
 
@@ -22,7 +22,10 @@ kernel-uefi:
 	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --kernel uefi
 
 test:
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite full
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite merge
+
+test-release:
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite release
 
 test-exhaustive:
 	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite exhaustive
@@ -38,16 +41,15 @@ help:
 	  'make console-uefi     Open an opt-in UEFI timer-polled serial console' \
 	  'make program-console-uefi  Build/check and open the protected command console' \
 	  'make smoke-program-console-uefi  Build/check and test the protected command console' \
-	  'make test-program-stream  Run copied-stream and two-role authority host tests' \
 	  'make capture-framebuffer  Build/check and save a local PNG preview under build/' \
 	  'make smoke-iommu-event  Opt-in custom-model Event guests with current admission and normal restoration' \
 	  'make smoke-graphical-console  Build/check graphical guests, capture pixels and restore normal UEFI' \
 	  'make smoke-console    Build and verify BIOS console PTY acceptance' \
 	  'make smoke-console-uefi  Build and verify UEFI console PTY acceptance' \
-	  'make test             Build and run the normal full Meson native suite' \
+	  'make test             Build and run the merge suite (every merge)' \
+	  'make test-release     Run the opt-in release suite (releases, compiler bumps)' \
 	  'make test-exhaustive  Run the separate complete combinatorial library sweeps' \
 	  'make smoke-all        Run the full emulator suite, including both consoles' \
-	  'make test-developer-commands  Check shortcuts with fake tools only' \
 	  'make clean-dry-run    Show Meson product cleanup commands; MESON_BUILD_DIR selects one build' \
 	  'make clean            Meson clean for default builds; preserve configuration/logs/test scratch' \
 	  'make clean-scratch-dry-run / clean-scratch CLEAN_PATHS="build/..."  Select reviewed scratch' \
@@ -63,10 +65,6 @@ clean clean-dry-run:
 .PHONY: clean-scratch clean-scratch-dry-run
 clean-scratch clean-scratch-dry-run:
 	python3 -B scripts/clean.py --scratch $(if $(filter clean-scratch-dry-run,$@),--dry-run,)
-
-.PHONY: test-clean
-test-clean:
-	python3 -B tests/test_clean.py
 
 .PHONY: run
 run:
@@ -104,10 +102,6 @@ smoke-graphical-console:
 capture-framebuffer:
 	./scripts/kernel-run.sh framebuffer
 
-.PHONY: test-program-stream
-test-program-stream:
-	./scripts/kernel-program-tests.sh
-
 .PHONY: smoke-console
 smoke-console:
 	./scripts/kernel-console-smoke.sh bios
@@ -115,29 +109,6 @@ smoke-console:
 .PHONY: smoke-console-uefi
 smoke-console-uefi:
 	./scripts/kernel-console-smoke.sh uefi
-
-.PHONY: test-developer-commands
-test-developer-commands:
-	python3 -B -O tests/kernel-graphical-image-policy.py
-	python3 -B -O tests/kernel-graphical-profile-metadata.py
-	python3 -B -O tests/framebuffer-preview.py
-	python3 -B -O tests/developer-commands.py
-	python3 -B -O tests/uefi-firmware.py
-	python3 -B -O tests/kernel-console-routing.py
-	python3 -B tests/kernel-uefi-bar-runner.py
-	python3 -B -O tests/kernel-uefi-bar-runner.py
-
-.PHONY: test-uefi
-test-uefi:
-	./scripts/kernel-uefi-tests.sh
-
-.PHONY: test-acpi
-test-acpi:
-	./scripts/kernel-acpi-tests.sh
-
-.PHONY: test-pci
-test-pci:
-	./scripts/kernel-pci-tests.sh
 
 .PHONY: smoke
 smoke:
@@ -157,11 +128,11 @@ smoke-scheduling:
 
 .PHONY: smoke-uefi
 smoke-uefi:
-	./scripts/kernel-uefi-all.sh
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite guest-uefi
 
 .PHONY: smoke-acpi
 smoke-acpi:
-	./scripts/kernel-acpi-all.sh
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite guest-acpi
 
 .PHONY: smoke-division
 smoke-division:
@@ -169,7 +140,7 @@ smoke-division:
 
 .PHONY: smoke-pci
 smoke-pci:
-	./scripts/kernel-pci-all.sh
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite guest-pci
 
 .PHONY: smoke-unsigned
 smoke-unsigned:
@@ -177,43 +148,33 @@ smoke-unsigned:
 
 .PHONY: smoke-uefi-runtime
 smoke-uefi-runtime:
-	./scripts/kernel-uefi-runtime-all.sh
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite guest-runtime
 
 .PHONY: smoke-uefi-ipc
 smoke-uefi-ipc:
-	./scripts/kernel-uefi-ipc-all.sh
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite guest-ipc
 
 .PHONY: smoke-uefi-budget
 smoke-uefi-budget:
-	./scripts/kernel-uefi-budget-all.sh
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite guest-budget
 
 .PHONY: smoke-uefi-dispatch
 smoke-uefi-dispatch:
-	./scripts/kernel-uefi-dispatch-all.sh
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite guest-dispatch
 
 .PHONY: smoke-uefi-user-phases
 smoke-uefi-user-phases:
-	./scripts/kernel-uefi-user-phases-all.sh
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite guest-user-phases
 
 .PHONY: smoke-all
 smoke-all:
-	./scripts/kernel-uefi-tables-all.sh
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite guest
 	./scripts/kernel-run.sh ivrs --smoke
-	./scripts/kernel-uefi-pin-all.sh
-	./scripts/kernel-uefi-span-all.sh
 	./scripts/kernel-run.sh bar --smoke
 	./scripts/kernel-protection-smoke.sh
 	./scripts/kernel-scheduling-smoke.sh
-	./scripts/kernel-uefi-all.sh
-	./scripts/kernel-acpi-all.sh
 	./scripts/kernel-division-smoke.sh
-	./scripts/kernel-pci-all.sh
 	./scripts/kernel-unsigned-smoke.sh
-	./scripts/kernel-uefi-runtime-all.sh
-	./scripts/kernel-uefi-ipc-all.sh
-	./scripts/kernel-uefi-budget-all.sh
-	./scripts/kernel-uefi-dispatch-all.sh
-	./scripts/kernel-uefi-user-phases-all.sh
 	./scripts/kernel-console-smoke.sh bios
 	./scripts/kernel-console-smoke.sh uefi
 
@@ -234,21 +195,13 @@ smoke-nvme-prepare:
 	./scripts/kernel-run.sh bar-prepare --smoke \
 	    --output "$${AURORA_NVME_RECEIPTS}"
 
-.PHONY: test-uefi-bar
-test-uefi-bar:
-	./scripts/kernel-uefi-bar-tests.sh
-
 .PHONY: smoke-uefi-bar
 smoke-uefi-bar:
 	./scripts/kernel-run.sh bar --smoke
 
 .PHONY: smoke-uefi-span
 smoke-uefi-span:
-	./scripts/kernel-uefi-span-all.sh
-
-.PHONY: test-uefi-ivrs
-test-uefi-ivrs:
-	./scripts/kernel-uefi-ivrs-tests.sh
+	./scripts/kernel-uefi-smoke.sh runtime-span
 
 .PHONY: smoke-uefi-ivrs
 smoke-uefi-ivrs:
@@ -258,29 +211,17 @@ smoke-uefi-ivrs:
 test-pin-ledger:
 	./scripts/kernel-pin-tests.sh
 
-.PHONY: test-uefi-pins
-test-uefi-pins:
-	./scripts/kernel-uefi-pin-tests.sh
-
 .PHONY: smoke-uefi-pins
 smoke-uefi-pins:
-	./scripts/kernel-uefi-pin-all.sh
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite guest-pins
 
 .PHONY: test-dormant-tables
 test-dormant-tables:
 	./scripts/kernel-dormant-tests.sh
 
-.PHONY: test-uefi-tables
-test-uefi-tables:
-	./scripts/kernel-uefi-tables-tests.sh
-
 .PHONY: smoke-uefi-tables
 smoke-uefi-tables:
-	./scripts/kernel-uefi-tables-all.sh
-
-.PHONY: test-boot
-test-boot:
-	python3 -B -O tests/kernel-boot-image.py
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite guest-tables
 
 .PHONY: test-boot-capacity
 test-boot-capacity:
@@ -290,18 +231,6 @@ test-boot-capacity:
 smoke-boot-capacity:
 	python3 -B tests/kernel-boot-capacity.py --qemu
 
-.PHONY: test-native-cap-contracts
-test-native-cap-contracts:
-	python3 -B -O tests/native-cap-contracts.py
-
-.PHONY: test-compiler-contract
-test-compiler-contract:
-	python3 -B tests/test_compiler_contract.py
-	python3 -B -O tests/test_compiler_contract.py
-
-.PHONY: test-emulator-clock
-test-emulator-clock:
-	PYTHONDONTWRITEBYTECODE=1 python3 -O tests/kernel-emulator-clock.py
 
 .PHONY: test-iommu-diagnostics
 test-iommu-diagnostics:
@@ -311,17 +240,5 @@ test-iommu-diagnostics:
 formatter:
 	$(MAKE) -C compiler formatter
 
-.PHONY: test-graphical-controls
-test-graphical-controls:
-	python3 -B -O tests/kernel-graphical-admission-controls.py
-	python3 -B -O tests/kernel-graphical-smoke.py
-
-.PHONY: test-inventory
-test-inventory:
-	python3 -B tests/test-inventory.py
-
-.PHONY: test-artifact-budget
-test-artifact-budget:
-	python3 -B -O tests/test_artifact_budget.py
 
 smoke-all: smoke-boot-capacity

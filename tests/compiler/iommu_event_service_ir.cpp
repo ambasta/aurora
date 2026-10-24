@@ -1,7 +1,5 @@
-// Independent hostile IR for the third sealed kind; preserve single-kind regressions.
-#define DISPLAY_SERVICE_IR_MAIN display_service_regression
-#include "display_service_ir.cpp"
-#undef DISPLAY_SERVICE_IR_MAIN
+// Independent hostile IR for the third sealed kind (IOMMU event).
+#include "service_ir_common.hpp"
 #include <fstream>
 namespace {
 constexpr auto eventKind = service::Kind::IommuEvent;
@@ -109,7 +107,6 @@ Module executedEvent() {
 }
 } // namespace
 int main(int argc, char **argv) {
-    display_service_regression();
     good(eventPoll());
     good(eventPoll(true));
     good(eventPoll(true, true));
@@ -330,6 +327,6 @@ int main(int argc, char **argv) {
         output.flush();
         need(static_cast<bool>(output), "cannot write executed event IR destination");
     }
-    std::cout << "PASS IOMMU event and Console/Display hostile IR: " << checks << " checks\n";
+    std::cout << "PASS IOMMU event hostile IR: " << checks << " checks\n";
     return 0;
 }

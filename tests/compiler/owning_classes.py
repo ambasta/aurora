@@ -1,22 +1,19 @@
 #!/usr/bin/env python3
 """Direct owning-class source admission and real hosted allocation/cleanup tests.
 
---compile-only emits assembly and checks rejection/output preservation. It does
-not link or execute a generated program and reports that boundary explicitly.
+All programs share one packed native binary (owned_bytes.Suite, deferred).
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 import tempfile
 
+from native_runner import require
 from owned_bytes import OWNER, REGION, ROOT, Suite, command, program
-from unsigned_oracle import require
 
-ENTRY = "__au_v_m1_11owned_bytes_n0__d5entry"
 BOX = f"""
 class Box {{
     u8 prefix;
@@ -69,37 +66,12 @@ public:
 
 
 class OwningSuite(Suite):
-    def __init__(self, compiler, directory, compile_only):
-        super().__init__(compiler, directory, entry_name="entry")
-        self.compile_only = compile_only
-        self.skipped_native = 0
+    """Owning-class programs; the bridge checks every resource entry stays private."""
 
-    def compile(self, name, source):
-        if not self.compile_only:
-            return super().compile(name, source)
-        folder = self.directory / name
-        folder.mkdir()
-        input_path = folder / "input.au"
-        assembly = folder / "output.s"
-        input_path.write_text(source)
-        result = command([self.compiler, *self.module_args, input_path, "-o", assembly])
-        require(result.returncode == 0, f"{name}: compile failed: {result.stderr.decode()}")
-        text = assembly.read_text()
-        require(f".local {ENTRY}\n" in text, f"{name}: missing private entry")
-        self.programs += 1
-        return folder / "native-not-built"
-
-    def run(self, *args, **kwargs):
-        if self.compile_only:
-            self.skipped_native += 1
-        else:
-            super().run(*args, **kwargs)
-
-    def trap(self, *args, **kwargs):
-        if self.compile_only:
-            self.skipped_native += 1
-        else:
-            super().trap(*args, **kwargs)
+    def __init__(self, compiler, directory):
+        super().__init__(
+            compiler, directory, ROOT / "library", entry_name="entry", deferred=True, label="owning classes"
+        )
 
     def producing_field_initializers(self):
         helpers = f"""
@@ -608,38 +580,33 @@ class OwningSuite(Suite):
 
         # Raw byte owners may resize before transfer, but the device still requires
         # whole-sector backing and must not expose resizing through either API.
-        saved_module_args = self.module_args
-        self.module_args = ["--module-root", ROOT / "library"]
-        try:
-            imports = (
-                "import std.binary; import std.binary_buffer; import storage.sector; "
-                "import storage.block_io; import storage.ram_sector;"
-            )
-            setup = (
+        imports = (
+            "import std.binary; import std.binary_buffer; import storage.sector; "
+            "import storage.block_io; import storage.ram_sector;"
+        )
+        setup = (
+            f"{OWNER} bytes = region.try_allocate(512); "
+            "storage::RamSectorDevice device = storage::RamSectorDevice(region, move(bytes));"
+        )
+        for name, action in {
+            "ram-device-resize-unexposed": "device.try_resize(513);",
+            "ram-device-payload-resize-private": "device.payload.try_resize(513);",
+        }.items():
+            self.reject(name, program(setup + action + "return 0;", imports))
+        unaligned = self.compile(
+            "resized-backing-retains-whole-sector-invariant",
+            program(
                 f"{OWNER} bytes = region.try_allocate(512); "
-                "storage::RamSectorDevice device = storage::RamSectorDevice(region, move(bytes));"
-            )
-            for name, action in {
-                "ram-device-resize-unexposed": "device.try_resize(513);",
-                "ram-device-payload-resize-private": "device.payload.try_resize(513);",
-            }.items():
-                self.reject(name, program(setup + action + "return 0;", imports))
-            unaligned = self.compile(
-                "resized-backing-retains-whole-sector-invariant",
-                program(
-                    f"{OWNER} bytes = region.try_allocate(512); "
-                    "if (!bytes.try_resize(n)) { return -1; } "
-                    "storage::RamSectorDevice device = storage::RamSectorDevice(region, move(bytes)); "
-                    "const storage::SectorGeometry geometry = device.geometry(); "
-                    "if (device.status() != storage::SectorIoStatus::invalid_source || "
-                    "geometry.sector_count() != 0u64 || geometry.can_write()) { return -2; } return 42;",
-                    imports,
-                ),
-            )
-            for length in (1, 511, 513, 1023):
-                self.run(unaligned, max(512, length), length, 0, 42, 2, 1, release_order=[1, 2])
-        finally:
-            self.module_args = saved_module_args
+                "if (!bytes.try_resize(n)) { return -1; } "
+                "storage::RamSectorDevice device = storage::RamSectorDevice(region, move(bytes)); "
+                "const storage::SectorGeometry geometry = device.geometry(); "
+                "if (device.status() != storage::SectorIoStatus::invalid_source || "
+                "geometry.sector_count() != 0u64 || geometry.can_write()) { return -2; } return 42;",
+                imports,
+            ),
+        )
+        for length in (1, 511, 513, 1023):
+            self.run(unaligned, max(512, length), length, 0, 42, 2, 1, release_order=[1, 2])
 
     def cases(self):
         dynamic = self.compile(
@@ -934,30 +901,18 @@ class OwningSuite(Suite):
         self.resize_cases()
         self.copied_resource_results()
         self.producing_field_initializers()
-        return {
-            "mode": "compile-only" if self.compile_only else "native",
-            "compiled_programs": self.programs,
-            "source_rejections": self.rejections,
-            "native_cases": self.native,
-            "exact_bounds_traps": self.traps,
-            "native_checks_not_run": self.skipped_native,
-        }
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", type=Path)
     parser.add_argument("--artifact-dir", type=Path)
-    parser.add_argument("--compile-only", action="store_true")
     args = parser.parse_args()
-    compiler = args.compiler.resolve(strict=True)
     with tempfile.TemporaryDirectory(prefix="aurora-owning-classes-") as temporary:
-        directory = args.artifact_dir.resolve() if args.artifact_dir else Path(temporary)
-        directory.mkdir(parents=True, exist_ok=True)
-        summary = OwningSuite(compiler, directory, args.compile_only).cases()
-        summary["compiler_sha256"] = hashlib.sha256(compiler.read_bytes()).hexdigest()
-        (directory / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
-        print(json.dumps(summary, sort_keys=True))
+        suite = OwningSuite(args.compiler.resolve(strict=True), args.artifact_dir or Path(temporary))
+        suite.cases()
+        suite.finish()
+        print(f"PASS owning classes: {suite.native} native runs, {suite.traps} exact bounds traps")
 
 
 if __name__ == "__main__":

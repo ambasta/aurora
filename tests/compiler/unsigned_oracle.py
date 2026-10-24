@@ -1,55 +1,51 @@
 #!/usr/bin/env python3
-"""Independent bounded native mathematical oracle for u64 and std.bit.
+"""Checked u64 arithmetic, conversions, shifts and std.bit against Python integers.
 
 Python integers are unbounded: arithmetic is checked for representability only
-after computing its mathematical result. Only complement uses a 64-bit mask;
-overflowing arithmetic and shifts never silently wrap. Counts are signed i64,
-and invalid counts are distinct from arithmetic overflow and division by zero.
+after computing its mathematical result, so overflowing arithmetic and shifts
+never silently wrap. Counts are signed i64; invalid counts are distinct from
+arithmetic overflow and division by zero. Results are complete 64-bit values,
+and traps must reach the exact named UD2 (native_runner.py).
 
-Generated Aurora functions execute as Linux/x86-64 machine code. A freestanding
-syscall bridge returns all eight bytes, decoded according to each result type.
-The existing integer_signal.cpp host adapter records the signal, instruction
-pointer, and instruction bytes before restoring the actual terminating fault.
-Trap checks require actual SIGILL at the exact retained, named UD2 instruction;
-hardware divide faults, generic failures, and timeouts never count as success.
-
-Run: python3 tests/compiler/unsigned_oracle.py build/aurorac
-Optional deterministic stress: --seed 8008 --random-count 200
-Use --self-test-only to validate the harness without a compiler implementation.
-This is bounded test evidence, not a language-equivalence or safety proof.
+Run: python3 tests/compiler/unsigned_oracle.py build/aurorac [--seed 8008 --random-count 200]
 """
 
 from __future__ import annotations
 
-import re
 import argparse
-from dataclasses import dataclass, replace
-from enum import Enum
-import hashlib
-import os
+from dataclasses import dataclass
+import importlib.util
 from pathlib import Path
 import random
-import resource
-import shlex
-import signal
-import struct
-import subprocess
 import sys
-import tempfile
-import time
+
+if importlib.util.find_spec("native_runner") is None:
+    # Loaded by path from another directory (tests/kernel-unsigned-source.py), or as
+    # a copy by fixtures/xfs-offline/verify_native.py, whose checkout is two levels up.
+    sys.path.append(str(Path(__file__).resolve().parent))
+    sys.path.append(str(Path(sys.argv[0]).resolve().parents[2] / "tests" / "compiler"))
+
+from native_runner import (  # noqa: E402, F401 - re-exported for library tests not yet migrated
+    DIAGNOSTIC,
+    ROOT,
+    UD2,
+    NativeRunner,
+    Observation,
+    Rejection,
+    Suite,
+    Trap,
+    command,
+    rejected,
+    require,
+    validate_case_values as validate_values,
+    validate_trap,
+)
 
 
 MAX = (1 << 64) - 1
+SIGN = 1 << 63
 SIGNED_MIN = -(1 << 63)
 SIGNED_MAX = (1 << 63) - 1
-ROOT = Path(__file__).resolve().parents[2]
-UD2 = 0x0B0F
-
-
-class Trap(Enum):
-    ZERO = ".Laurora_division_zero_trap"
-    OVERFLOW = ".Laurora_overflow_trap"
-    COUNT = ".Laurora_shift_count_trap"
 
 
 @dataclass(frozen=True)
@@ -60,28 +56,6 @@ class Case:
     result_type: str = "u64"
     prelude: str = ""
     imports: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class Rejection:
-    name: str
-    source: str
-
-
-@dataclass(frozen=True)
-class Observation:
-    output: bytes
-    exit_code: int | None = None
-    terminal_signal: int | None = None
-    delivery_signal: int | None = None
-    pc: int | None = None
-    instruction: int | None = None
-    signal_code: int | None = None
-
-
-def require(condition, message):
-    if not condition:
-        raise AssertionError(message)
 
 
 def representable(value):
@@ -114,352 +88,6 @@ def right_shift(value, count):
 
 def complement(value):
     return (~value) & MAX
-
-
-def validate_values(observed, cases):
-    names = [case.name for case in cases]
-    require(
-        observed.exit_code == 0 and observed.terminal_signal is None,
-        f"{names}: expected normal return, observed {observed}",
-    )
-    require(
-        len(observed.output) == len(cases) * 8,
-        f"{names}: expected {len(cases) * 8} result bytes, got {len(observed.output)}",
-    )
-    for index, case in enumerate(cases):
-        require(case.result_type in ("u64", "i64", "bool"), "unknown oracle result type")
-        actual = int.from_bytes(
-            observed.output[index * 8 : (index + 1) * 8], "little", signed=case.result_type == "i64"
-        )
-        require(actual == case.expected, f"{case.name}: expected {case.expected}, got {actual} ({case.result_type})")
-
-
-def validate_trap(observed, expected, symbols, name):
-    require(expected.value in symbols, f"{name}: missing named trap {expected.value}")
-    require(
-        observed.exit_code is None
-        and observed.terminal_signal == signal.SIGILL
-        and observed.delivery_signal == signal.SIGILL,
-        f"{name}: expected actual SIGILL termination, observed {observed}",
-    )
-    require(not observed.output, f"{name}: trap unexpectedly returned scalar bytes")
-    require(
-        observed.pc == symbols[expected.value],
-        f"{name}: wrong trap PC {observed.pc!r}; expected {expected.value} at {symbols[expected.value]:#x}",
-    )
-    require(observed.instruction == UD2, f"{name}: trap instruction is not UD2")
-    require(
-        observed.signal_code is not None and observed.signal_code > 0,
-        f"{name}: SIGILL was not a kernel-generated instruction fault",
-    )
-
-
-def command(args, timeout=5, allow_signal=False, allow_rejection=False):
-    before = resource.getrusage(resource.RUSAGE_CHILDREN)
-    started = time.monotonic()
-    try:
-        result = subprocess.run(
-            [str(arg) for arg in args],
-            capture_output=True,
-            timeout=timeout,
-            preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)),
-        )
-    except subprocess.TimeoutExpired as error:
-        wall = time.monotonic() - started
-        after = resource.getrusage(resource.RUSAGE_CHILDREN)
-        raise AssertionError(
-            f"timeout is a failure, not a trap: {args}\n"
-            f"cap_s={timeout:.6f} wall_s={wall:.6f} "
-            f"child_user_s={after.ru_utime - before.ru_utime:.6f} "
-            f"child_system_s={after.ru_stime - before.ru_stime:.6f}"
-        ) from error
-    require(
-        result.returncode == 0
-        or (allow_signal and result.returncode < 0)
-        or (allow_rejection and result.returncode == 1),
-        f"command failed ({result.returncode}): {args}\n{result.stderr.decode(errors='replace')}",
-    )
-    return result
-
-
-def entry(functions):
-    # Each write exposes the entire returned scalar, never only an exit status.
-    # Pop the result after writing so every call retains the same ABI alignment.
-    instructions = [
-        ".text",
-        ".globl _start",
-        "_start:",
-        "    call aurora_install_integer_signal_observer",
-        "    testq %rax, %rax",
-        "    jz .Lobserver_installed",
-        "    movq $60, %rax",
-        "    movq $125, %rdi",
-        "    syscall",
-        ".Lobserver_installed:",
-    ]
-    for function in functions:
-        instructions.extend(
-            [
-                f"    call {function}",
-                "    pushq %rax",
-                "    movq $1, %rax",
-                "    movq $1, %rdi",
-                "    movq %rsp, %rsi",
-                "    movq $8, %rdx",
-                "    syscall",
-                "    addq $8, %rsp",
-            ]
-        )
-    instructions.extend(
-        [
-            "    movq $60, %rax",
-            "    xorq %rdi, %rdi",
-            "    syscall",
-            '.section .note.GNU-stack,"",@progbits',
-            "",
-        ]
-    )
-    return "\n".join(instructions)
-
-
-class NativeRunner:
-    def __init__(self, directory, compiler, timeout):
-        self.directory = directory
-        self.compiler = compiler
-        self.timeout = timeout
-        self.observer = directory / "integer_signal.o"
-        command(
-            shlex.split(os.environ.get("CXX", "c++"))
-            + [
-                "-std=c++23",
-                "-O2",
-                "-Wall",
-                "-Wextra",
-                "-Werror",
-                "-c",
-                "-ffreestanding",
-                "-fno-stack-protector",
-                "-fno-exceptions",
-                "-fno-rtti",
-                "-fno-asynchronous-unwind-tables",
-                "-fno-pie",
-                ROOT / "tests/compiler/integer_signal.cpp",
-                "-o",
-                self.observer,
-            ],
-            timeout=30,
-        )
-
-    def assemble(self, assembly, functions):
-        program = self.directory / "program.s"
-        program.write_text(assembly)
-        (self.directory / "entry.s").write_text(entry(functions))
-        # -L retains compiler-local trap labels for exact instruction attribution.
-        command(["as", "--64", "-L", program, "-o", self.directory / "program.o"])
-        command(["as", "--64", self.directory / "entry.s", "-o", self.directory / "entry.o"])
-        binary = self.directory / "program"
-        command(["ld", "-o", binary, self.directory / "entry.o", self.directory / "program.o", self.observer])
-        symbols = {}
-        for line in command(["nm", "--defined-only", "--numeric-sort", binary]).stdout.decode().splitlines():
-            fields = line.split()
-            if len(fields) == 3:
-                symbols[fields[2]] = int(fields[0], 16)
-        result = command([binary], timeout=self.timeout, allow_signal=True)
-        if result.returncode == 0:
-            require(not result.stderr, "normal return unexpectedly reported a fault")
-            return Observation(result.stdout, exit_code=0), symbols
-        require(
-            len(result.stderr) == 40, f"signal {result.returncode} without one complete fault record: {result.stderr!r}"
-        )
-        identity, delivered, pc, instruction, code = struct.unpack("<QQQQq", result.stderr)
-        require(identity == 0x4155524F52414654, "malformed native fault record identity")
-        return Observation(
-            result.stdout,
-            terminal_signal=-result.returncode,
-            delivery_signal=delivered,
-            pc=pc,
-            instruction=instruction,
-            signal_code=code,
-        ), symbols
-
-    def cases(self, cases, *, compiler_timeout=None):
-        require(
-            cases and (len(cases) == 1 or all(not c.prelude for c in cases)),
-            "only independent scalar cases may be batched",
-        )
-        require(
-            all(not isinstance(c.expected, Trap) for c in cases) or len(cases) == 1, "trap batch would hide later cases"
-        )
-        source = "module test;\n"
-        for module in sorted({module for case in cases for module in case.imports}):
-            source += f"import {module};\n"
-        functions = []
-        for index, case in enumerate(cases):
-            function = f"oracle_{index}"
-            functions.append(function)
-            source += case.prelude + f"\nauto {function}()->{case.result_type}{{{case.body}}}\n"
-        input_path = self.directory / "input.au"
-        input_path.write_text(source)
-        output = self.directory / "compiled.s"
-        output.unlink(missing_ok=True)
-        try:
-            command(
-                [self.compiler, "--module-root", ROOT / "library", input_path, "-o", output],
-                timeout=self.timeout if compiler_timeout is None else compiler_timeout,
-            )
-            require(input_path.read_text() == source, "compiler modified its input")
-            observed, symbols = self.assemble(output.read_text(), functions)
-            if isinstance(cases[0].expected, Trap):
-                validate_trap(observed, cases[0].expected, symbols, cases[0].name)
-            else:
-                validate_values(observed, cases)
-        except AssertionError as error:
-            raise AssertionError(f"{error}\nReproduction source:\n{source}") from error
-
-    def rejection(self, case):
-        input_path = self.directory / "invalid.au"
-        input_path.write_text(case.source)
-        output = self.directory / "rejected.s"
-        # Exercise both absent and already-present artifacts. A rejection must
-        # neither publish assembly nor damage an existing user-owned output.
-        sentinel = b"unsigned oracle existing output\n"
-        for existing in (False, True):
-            output.unlink(missing_ok=True)
-            if existing:
-                output.write_bytes(sentinel)
-            result = command(
-                [self.compiler, "--module-root", ROOT / "library", input_path, "-o", output],
-                timeout=self.timeout,
-                allow_rejection=True,
-            )
-            require(
-                result.returncode == 1
-                and re.fullmatch(
-                    rf"(?:{re.escape(str(input_path))}:[1-9][0-9]*:[1-9][0-9]*|aurorac): error "
-                    r"AU(?:100[12]|200[123]|3001|4001): [^\n]+\n",
-                    result.stderr.decode(errors="strict"),
-                )
-                is not None,
-                f"{case.name}: expected normal compiler rejection, got {result.returncode}: "
-                f"{result.stderr!r}\nReproduction source:\n{case.source}",
-            )
-            require(input_path.read_text() == case.source, f"{case.name}: compiler modified input")
-            if existing:
-                require(output.read_bytes() == sentinel, f"{case.name}: rejection changed output")
-            else:
-                require(not output.exists(), f"{case.name}: rejection created an artifact")
-
-
-def rejected(check, label):
-    try:
-        check()
-    except AssertionError:
-        return
-    raise AssertionError(f"harness self-test accepted {label}")
-
-
-def self_tests(runner):
-    for a in range(25):
-        for b in range(1, 25):
-            q, r = division(a, b), remainder(a, b)
-            require(a == q * b + r and 0 <= r < b, "bad reference division identity")
-    require(
-        representable(MAX) == MAX and representable(MAX + 1) is Trap.OVERFLOW and representable(-1) is Trap.OVERFLOW,
-        "bad unsigned representability",
-    )
-    require(signed(SIGNED_MAX) == SIGNED_MAX and signed(1 << 63) is Trap.OVERFLOW, "bad signed conversion reference")
-    require(
-        division(MAX, 2) == SIGNED_MAX
-        and remainder(MAX, 2) == 1
-        and division(MAX, 0) is Trap.ZERO
-        and remainder(0, 0) is Trap.ZERO,
-        "bad full-width division reference",
-    )
-    require(
-        left_shift(1, 63) == 1 << 63
-        and left_shift(2, 63) is Trap.OVERFLOW
-        and right_shift(MAX, 63) == 1
-        and left_shift(0, 64) is Trap.COUNT
-        and right_shift(0, -1) is Trap.COUNT,
-        "bad shift reference",
-    )
-    require(
-        complement(0) == MAX and complement(MAX) == 0 and complement(1 << 63) == SIGNED_MAX, "bad complement reference"
-    )
-
-    scalar = Observation(MAX.to_bytes(8, "little"), exit_code=0)
-    validate_values(scalar, [Case("correct unsigned scalar", "", MAX)])
-    validate_values(scalar, [Case("correct signed scalar", "", -1, "i64")])
-    rejected(lambda: validate_values(scalar, [Case("wrong value", "", MAX - 1)]), "wrong value")
-    rejected(lambda: validate_values(scalar, [Case("wrong signedness", "", -1)]), "wrong signedness")
-    rejected(lambda: validate_values(Observation(b"*", exit_code=0), [Case("short", "", 42)]), "short output")
-    rejected(
-        lambda: validate_values(
-            Observation((2).to_bytes(8, "little"), exit_code=0), [Case("noncanonical bool", "", 1, "bool")]
-        ),
-        "noncanonical bool",
-    )
-    symbols = {Trap.ZERO.value: 4096, Trap.OVERFLOW.value: 8192, Trap.COUNT.value: 12288}
-    trap = Observation(
-        b"", terminal_signal=signal.SIGILL, delivery_signal=signal.SIGILL, pc=4096, instruction=UD2, signal_code=2
-    )
-    validate_trap(trap, Trap.ZERO, symbols, "correct synthetic trap")
-    for expected in (Trap.OVERFLOW, Trap.COUNT):
-        rejected(lambda: validate_trap(trap, expected, symbols, "wrong PC"), "wrong trap PC")
-    for wrong in (signal.SIGFPE, signal.SIGSEGV, signal.SIGABRT):
-        result = replace(trap, terminal_signal=wrong, delivery_signal=wrong)
-        rejected(lambda: validate_trap(result, Trap.ZERO, symbols, "wrong signal"), f"signal {wrong}")
-    for result in (
-        replace(trap, delivery_signal=signal.SIGFPE),
-        replace(trap, instruction=0x9090),
-        replace(trap, signal_code=0),
-        replace(trap, output=b"returned"),
-        replace(trap, exit_code=1),
-    ):
-        rejected(lambda: validate_trap(result, Trap.ZERO, symbols, "bad metadata"), "bad trap metadata")
-    rejected(lambda: validate_trap(trap, Trap.ZERO, {}, "missing symbol"), "missing trap symbol")
-
-    def native(code):
-        return runner.assemble(
-            ".text\n.globl test\ntest:\n" + code + '\n.section .note.GNU-stack,"",@progbits\n', ["test"]
-        )
-
-    observed, _ = native(f"movabsq ${MAX}, %rax\nret")
-    validate_values(observed, [Case("native unsigned maximum", "", MAX)])
-    rejected(lambda: validate_values(observed, [Case("native wrong value", "", 0)]), "native wrong value")
-    observed, _ = native(f"movabsq ${SIGNED_MIN}, %rax\nret")
-    validate_values(observed, [Case("native signed minimum", "", SIGNED_MIN, "i64")])
-    for expected in Trap:
-        sites = "\n".join(label.value + ":\nud2" for label in Trap)
-        observed, symbols = native(f"jmp {expected.value}\n" + sites)
-        validate_trap(observed, expected, symbols, "native exact UD2")
-        for wrong in Trap:
-            if wrong is not expected:
-                rejected(lambda: validate_trap(observed, wrong, symbols, "native wrong site"), "native wrong trap site")
-    for setup in ("xorq %rdx, %rdx\nxorq %rcx, %rcx", "movq $1, %rdx\nmovq $1, %rcx"):
-        observed, symbols = native("xorq %rax, %rax\n" + setup + "\ndivq %rcx\n.Laurora_division_zero_trap:\nud2")
-        require(observed.terminal_signal == signal.SIGFPE, "native #DE self-test did not execute")
-        rejected(lambda: validate_trap(observed, Trap.ZERO, symbols, "native #DE"), "hardware divide fault")
-    try:
-        command([sys.executable, "-c", "while True: pass"], timeout=0.05)
-    except AssertionError as error:
-        require(isinstance(error.__cause__, subprocess.TimeoutExpired), "timeout cause must be retained")
-        metrics = re.search(
-            r"\ncap_s=([0-9]+\.[0-9]+) wall_s=([0-9]+\.[0-9]+) "
-            r"child_user_s=([0-9]+\.[0-9]+) child_system_s=([0-9]+\.[0-9]+)$",
-            str(error),
-        )
-        require(
-            metrics is not None and all(float(value) >= 0 for value in metrics.groups()),
-            "timeout must report nonnegative cap, wall and child CPU metrics",
-        )
-    else:
-        raise AssertionError("harness self-test accepted timeout")
-    print(
-        "PASS unsigned oracle self-tests: full-width u64/i64, wrong values/signals, "
-        "three exact UD2 sites, hardware #DE and timeout rejection",
-        flush=True,
-    )
 
 
 def operand_pairs(seed, count):
@@ -715,52 +343,148 @@ def rejection_cases():
         yield Rejection("type boundary " + source, source)
 
 
+def app(body, imports="", result="u64"):
+    return "module app; " + imports + " auto test() -> " + result + " { " + body + " }"
+
+
+def surface_cases(suite):
+    """Typed-surface programs: literals, classes, arrays, calls and modules."""
+    for name, expression, result in [
+        ("maximum literal", f"{MAX}u64", MAX),
+        ("leading zero decimal", "010u64", 10),
+        ("leading zero eight", "08u64", 8),
+        ("complement high bit", f"~{SIGN}u64", SIGN - 1),
+        ("add high", f"{SIGN}u64 + 42u64", SIGN + 42),
+        ("subtract maximum", f"{MAX}u64 - {SIGN}u64", SIGN - 1),
+        ("multiply high", "9223372036854775807u64 * 2u64", MAX - 1),
+        ("remainder high", f"{MAX}u64 % {SIGN}u64", SIGN - 1),
+        ("bit and", "85u64 & 51u64", 17),
+        ("bit or", "85u64 | 51u64", 119),
+        ("bit xor", "85u64 ^ 51u64", 102),
+        ("logical high shift", f"{SIGN}u64 >> 1", SIGN // 2),
+        ("bit precedence", "1u64 | 2u64 ^ 3u64 & 6u64", 1),
+        ("shift addition precedence", "1u64 << 1 + 2", 8),
+        ("shift left associativity", "16u64 >> 1 >> 2", 2),
+        ("conversion to unsigned", "u64(42)", 42),
+    ]:
+        suite.check(name, app("return " + expression + ";"), result)
+    for name, expression, result_type, trap in [
+        ("subtraction underflow", "0u64-1u64", "u64", Trap.OVERFLOW),
+        ("multiplication overflow", f"{SIGN}u64*2u64", "u64", Trap.OVERFLOW),
+        ("left overflow", "2u64<<63", "u64", Trap.OVERFLOW),
+        ("left negative", "0u64<<-1", "u64", Trap.COUNT),
+        ("right negative", "0u64>>-1", "u64", Trap.COUNT),
+        ("conversion high", f"i64({SIGN}u64)", "i64", Trap.OVERFLOW),
+    ]:
+        suite.check(name, app("return " + expression + ";", result=result_type), trap)
+    for name, source, error in [
+        ("signed literal overflow", app(f"return {SIGN};"), "integer literal"),
+        ("unknown suffix", app("return 1ul;"), "integer literal"),
+        ("partial minimum literal suffix", app("return -9223372036854775808abc;", result="i64"), "integer literal"),
+        ("negative unsigned minimum", app(f"return -{SIGN}u64;"), "expected"),
+        ("signed bitwise", app("return 1&2;", result="i64"), "expected"),
+        ("signed shift", app("return 1<<2;", result="i64"), "expected"),
+        ("unsigned owner unsupported", app("own<u64> a=own(1u64); return 0u64;"), "expected 'i64'"),
+        ("unsigned index rejected", app("const array<u64,1> a={42u64};return a[0u64];"), "expected"),
+        ("metadata index unsigned", app("return reflect_size(8u64);", result="i64"), "expected"),
+        ("private builtin conversion name", "module app;auto u64(i64 x)->i64{return x;}", "reserved function"),
+        ("literal static assert mismatch", app("static_assert(1u64==1);return 0u64;"), "expected"),
+    ]:
+        suite.reject(name, source, error)
+    suite.check(
+        "reflection and high static comparison",
+        app(
+            "static_assert(type_id(u64)==8);static_assert(size_of(u64)==8);static_assert(field_count(u64)==0);"
+            "static_assert(18446744073709551615u64>9223372036854775807u64);"
+            "static_assert(type_id(array<u64,2>)==2000002);"
+            "return reflect_size(type_id(array<u64,2>))+reflect_size(type_id(u64));",
+            result="i64",
+        ),
+        24,
+    )
+    suite.check(
+        "unsigned class value boundary",
+        "module app;\n"
+        "class Box {u64 value;public:Box(u64 n):value(n){} auto get() const->u64{return value;} "
+        "auto add(u64 n)->u64{value=value+n;return value;}};\n"
+        "auto copy(Box b,u64 n)->Box{const Box result=Box(b.get()+n);return result;}\n"
+        "auto test()->u64{Box b=Box(9223372036854775808u64);const Box c=copy(b,b.add(42u64)-b.get());"
+        "return c.get();}\n",
+        SIGN,
+    )
+    # Full-width fields across the private aggregate ABI.
+    fields = " ".join(f"u64 f{i};" for i in range(64))
+    initializers = ",".join(f".f{i}={MAX - i}u64" for i in range(64))
+    suite.check(
+        "six maximum-width unsigned value parameters",
+        "module app;class Wide{public:" + fields + "};"
+        "auto select(Wide a,Wide b,Wide c,Wide d,Wide e,Wide f)->Wide{const Wide result=f;return result;}"
+        "auto test()->u64{const Wide a=Wide{" + initializers + "};const Wide b=select(a,a,a,a,a,a);return b.f63;}",
+        MAX - 63,
+    )
+    suite.check(
+        "mixed six scalar unsigned arguments",
+        "module app;auto choose(i64 a,u64 b,bool c,u64 d,i64 e,u64 f)->u64{if(c){return b^d^f;}return 0u64;}"
+        "auto test()->u64{return 1u64+choose(0,18446744073709551615u64,true,1u64,0,9223372036854775808u64);}",
+        SIGN - 1,
+    )
+    suite.check(
+        "receiver high payload survives divide and shifts",
+        "module app;class C{u64 n;public:C(u64 x):n(x){}auto run(u64 divisor,i64 count)->u64{"
+        "const u64 q=n/divisor;n=q>>count;return n;}};"
+        "auto test()->u64{C c=C(18446744073709551615u64);return c.run(3u64,1);}",
+        (MAX // 3) >> 1,
+    )
+    suite.check(
+        "unsigned recursive scalar",
+        "module app;auto sum(u64 n)->u64{if(n==0u64){return 0u64;}return n+sum(n-1u64);}"
+        "auto test()->u64{return sum(9u64);}",
+        45,
+    )
+    suite.check(
+        "unsigned class result preserves snapshot",
+        "module app;class C{u64 n;public:C(u64 x):n(x){}auto get()const->u64{return n;}"
+        "auto bump()->u64{n=n+1u64;return n;}};auto save(C copy,u64 ignored)->C{return copy;}"
+        "auto test()->u64{C c=C(9223372036854775808u64);const C snapshot=save(c,c.bump());return snapshot.get();}",
+        SIGN,
+    )
+    suite.check(
+        "cross-module u64 private field and result",
+        app("const values::Cell c=values::make(18446744073709551615u64);return c.get();", "import values;"),
+        MAX,
+        modules={
+            "values": "export module values;export namespace values{class Cell{u64 n;public:Cell(u64 x):n(x){}"
+            "auto get()const->u64{return n;}};auto make(u64 x)->Cell{const Cell result=Cell(x);return result;}}"
+        },
+    )
+    suite.check(
+        "unsigned and signed array metadata separate",
+        app(
+            "static_assert(type_id(array<u64,1>)!=type_id(array<i64,1>));"
+            "static_assert(type_id(array<u64,1>)!=type_id(array<bool,1>));static_assert(type_id(u64)!=type_id(i64));"
+            "return reflect_size(8)+reflect_field_count(8);",
+            result="i64",
+        ),
+        8,
+    )
+
+
 def main():
-    started = time.monotonic()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", type=Path, nargs="?", default=ROOT / "build/aurorac")
     parser.add_argument("--seed", type=int, default=8008)
     parser.add_argument("--random-count", type=int, default=32)
-    parser.add_argument("--self-test-only", action="store_true")
     parser.add_argument("--timeout", type=float, default=5)
     args = parser.parse_args()
     require(0 <= args.random_count <= 10000, "random-count must be between 0 and 10000")
-    require(args.timeout > 0, "timeout must be positive")
-    if not args.self_test_only:
-        compiler = args.compiler.resolve()
-        print(
-            f"INFO unsigned oracle compiler={compiler} sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}",
-            flush=True,
-        )
-        for module in ("bit", "integer"):
-            module_path = ROOT / f"library/std/{module}.au"
-            print(
-                f"INFO unsigned oracle std.{module} sha256={hashlib.sha256(module_path.read_bytes()).hexdigest()}",
-                flush=True,
-            )
-    with tempfile.TemporaryDirectory(prefix="aurora-unsigned-oracle-") as temporary:
-        runner = NativeRunner(Path(temporary), args.compiler.resolve(), args.timeout)
-        self_tests(runner)
-        if args.self_test_only:
-            return
-        cases = list(generated_cases(args.seed, args.random_count))
-        values = [case for case in cases if not isinstance(case.expected, Trap) and not case.prelude]
-        singletons = [case for case in cases if isinstance(case.expected, Trap) or case.prelude]
-        for start in range(0, len(values), 32):
-            runner.cases(values[start : start + 32])
-        for case in singletons:
-            runner.cases([case])
-        negatives = list(rejection_cases())
-        for case in negatives:
-            runner.rejection(case)
-        traps = sum(isinstance(case.expected, Trap) for case in cases)
-        print(
-            f"PASS unsigned oracle: {len(cases)} native cases, {traps} exact-site traps, "
-            f"{len(negatives)} rejection cases with absent/existing output checks; "
-            f"seed={args.seed}, random-count={args.random_count}; "
-            f"elapsed={time.monotonic() - started:.2f}s"
-        )
+    suite = Suite(args.compiler, "unsigned oracle", timeout=args.timeout)
+    for case in generated_cases(args.seed, args.random_count):
+        suite.value(case.name, case.body, case.expected, case.result_type, case.prelude, case.imports)
+    for case in rejection_cases():
+        suite.reject(case.name, case.source, pattern=DIAGNOSTIC)
+    surface_cases(suite)
+    suite.finish()
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

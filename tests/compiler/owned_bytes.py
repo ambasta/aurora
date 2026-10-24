@@ -5,12 +5,14 @@ No alternate interpreter or fixed buffer models allocation. A trusted scalar-ret
 bridge grants one region for each invocation. The driver checks that its grant can
 close, reports real allocation counters, and verifies bounds traps at the exact
 emitted UD2. Generated Aurora assembly is not sanitizer-instrumented.
+
+All programs of a run are packed into one compiled and linked binary
+(native_runner.py); AURORA_CASE selects the program an invocation runs.
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -19,8 +21,10 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import threading
 
-from unsigned_oracle import require
+import native_runner
+from native_runner import require
 
 ROOT = Path(__file__).resolve().parents[2]
 REGION = "builtin::ByteRegion"
@@ -37,6 +41,8 @@ DRIVER = r"""
 #include <unistd.h>
 extern "C" std::uint64_t __au_runtime_bytes_test_entry(std::uint64_t, std::int64_t, std::int64_t);
 extern "C" const unsigned char __au_runtime_bytes_test_bounds[];
+extern "C" std::uint64_t __au_runtime_bytes_test_case;
+extern "C" const std::uint64_t __au_runtime_bytes_test_count;
 static void trapped(int signal, siginfo_t *info, void *context) {
     const auto *frame = static_cast<const ucontext_t *>(context);
     const auto pc = static_cast<std::uintptr_t>(frame->uc_mcontext.gregs[REG_RIP]);
@@ -96,6 +102,11 @@ static void deallocate(void *context, void *address) noexcept {
 int main(int argc, char **argv) {
     if (argc != 4 && argc != 5 && argc != 6)
         return 80;
+    // One linked binary holds every program of a run; AURORA_CASE selects one.
+    const char *selected = std::getenv("AURORA_CASE");
+    __au_runtime_bytes_test_case = selected == nullptr ? 0 : std::strtoull(selected, nullptr, 10);
+    if (__au_runtime_bytes_test_case >= __au_runtime_bytes_test_count)
+        return 79;
     struct sigaction action {};
     action.sa_sigaction = trapped;
     action.sa_flags = SA_SIGINFO;
@@ -129,51 +140,54 @@ int main(int argc, char **argv) {
 }
 """
 
-# Appended to compiler output, which already owns the non-executable-stack note.
-BRIDGE = r"""
-.text
-.globl __au_runtime_bytes_test_entry
-.type __au_runtime_bytes_test_entry, @function
-__au_runtime_bytes_test_entry:
-    pushq %rbp
-    movq %rsp, %rbp
-    subq $32, %rsp
-    movq %rdi, (%rsp)
-    movq %rsi, 8(%rsp)
-    movq %rdx, 16(%rsp)
-    movq $0, 24(%rsp)
-    movq %rsp, %r11
-    call ENTRY
-    leave
-    ret
-.size __au_runtime_bytes_test_entry, .-__au_runtime_bytes_test_entry
-.globl __au_runtime_bytes_test_bounds
-.set __au_runtime_bytes_test_bounds, .Laurora_bounds_trap
-"""
+
+def bridge(entries):
+    """Region/n/flag bridge to the selected resource entry, following the compiler's caller convention."""
+    lines = [
+        ".text",
+        ".globl __au_runtime_bytes_test_entry",
+        ".type __au_runtime_bytes_test_entry, @function",
+        "__au_runtime_bytes_test_entry:",
+        "    pushq %rbp",
+        "    movq %rsp, %rbp",
+        "    subq $32, %rsp",
+        "    movq %rdi, (%rsp)",
+        "    movq %rsi, 8(%rsp)",
+        "    movq %rdx, 16(%rsp)",
+        "    movq $0, 24(%rsp)",
+        "    movq __au_runtime_bytes_test_case(%rip), %rax",
+        "    leaq .Lbytes_test_table(%rip), %rcx",
+        "    movq (%rcx,%rax,8), %rax",
+        "    movq %rsp, %r11",
+        "    call *%rax",
+        "    leave",
+        "    ret",
+        ".size __au_runtime_bytes_test_entry, .-__au_runtime_bytes_test_entry",
+        ".globl __au_runtime_bytes_test_bounds",
+        ".set __au_runtime_bytes_test_bounds, .Laurora_bounds_trap",
+        ".data",
+        ".balign 8",
+        ".globl __au_runtime_bytes_test_case",
+        "__au_runtime_bytes_test_case:",
+        "    .quad 0",
+        '.section .data.rel.ro,"aw"',
+        ".balign 8",
+        ".globl __au_runtime_bytes_test_count",
+        "__au_runtime_bytes_test_count:",
+        f"    .quad {len(entries)}",
+        ".Lbytes_test_table:",
+        *(f"    .quad {entry}" for entry in entries),
+        ".text",
+        "",
+    ]
+    return "\n".join(lines)
 
 
 def bridged_assembly(text, entry):
-    assembly = text + BRIDGE.replace("ENTRY", entry)
-    notes = [line.strip() for line in assembly.splitlines() if ".note.GNU-stack" in line]
+    """Compiler output, which owns the one non-executable-stack note, plus the bridge for one entry."""
+    notes = [line.strip() for line in text.splitlines() if ".note.GNU-stack" in line]
     require(notes == ['.section .note.GNU-stack,"",@progbits'], "bridge requires one non-executable-stack note")
-    return assembly
-
-
-def bridge_self_test():
-    note = '.section .note.GNU-stack,"",@progbits\n'
-    bridged_assembly(".text\n" + note, "entry")
-    for text in (
-        ".text\n",
-        note + note,
-        note.replace('"",', '"x",'),
-        note + '.section .note.GNU-stack,"x",@progbits\n',
-    ):
-        try:
-            bridged_assembly(text, "entry")
-        except AssertionError:
-            pass
-        else:
-            raise AssertionError("bridge accepted a missing, duplicate or executable stack note")
+    return text + "\n" + bridge([entry])
 
 
 def program(body, helpers=""):
@@ -184,69 +198,111 @@ HOST_FLAGS = ("-std=c++23", "-O2", "-Wall", "-Wextra", "-Wpedantic", "-Werror")
 
 
 def command(args, timeout=30):
-    result = subprocess.run([str(arg) for arg in args], capture_output=True, timeout=timeout, check=False)
-    return result
+    return subprocess.run([str(arg) for arg in args], capture_output=True, timeout=timeout, check=False)
+
+
+def last_function(text):
+    """Old default entry: the last non-reflection native function of the program."""
+    symbols = re.findall(r"^\.type ([A-Za-z_][A-Za-z_0-9]*), @function$", text, re.M)
+    entries = [symbol for symbol in symbols if not symbol.startswith(("aurora_reflect_", "__au_reflect_"))]
+    require(entries, "no native function")
+    return entries[-1]
+
+
+def named_function(name):
+    def select(text):
+        symbols = re.findall(r"^\.type ([A-Za-z_][A-Za-z_0-9]*), @function$", text, re.M)
+        selected = [symbol for symbol in symbols if symbol == name or symbol.endswith(f"__d{len(name)}{name}")]
+        require(len(selected) == 1, f"expected one entry named {name}, found {selected}")
+        return selected[0]
+
+    return select
+
+
+class HostedBytes:
+    """native_runner harness: the C++ allocation driver and hosted byte runtime."""
+
+    def __init__(self, suite):
+        self.suite = suite
+
+    def prepare(self, directory):
+        # Compile the driver and runtime adapter once per run.
+        self.objects = []
+        for source in (self.suite.driver, ROOT / "runtime/hosted_bytes.cpp"):
+            output = Path(directory) / (source.stem + ".o")
+            result = command([*self.suite.cxx, *HOST_FLAGS, "-I", ROOT, "-c", source, "-o", output], timeout=120)
+            require(result.returncode == 0, f"host object {source.name} failed: {result.stderr.decode()}")
+            self.objects.append(output)
+
+    def glue(self, entries, values, text):
+        for entry in entries:
+            require(f".local {entry}\n" in text, f"resource entry {entry} must stay private")
+        return bridge(entries)
+
+    def link(self, objects, binary):
+        result = command([*self.suite.cxx, *HOST_FLAGS, *self.objects, *objects, "-o", binary], timeout=120)
+        require(result.returncode == 0, f"host link failed: {result.stderr.decode()}")
+
+    def invoke(self, binary, index, arguments, timeout):
+        return native_runner.run([binary, *arguments], timeout, env={**os.environ, "AURORA_CASE": str(index)})
 
 
 class Suite:
-    def __init__(self, compiler, directory, module_root=None, entry_name=None):
+    """Hosted programs: `compile` then `run`/`trap` invocations, then `finish`.
+
+    With deferred=True every program is packed into one binary built by
+    `finish()`. Without it (the interface other tests still use) each
+    `compile` links its own program now and `run` executes immediately.
+    """
+
+    def __init__(self, compiler, directory, module_root=None, entry_name=None, *, deferred=False, label="owned bytes"):
         self.compiler = compiler
         self.module_args = [] if module_root is None else ["--module-root", module_root]
         self.entry_name = entry_name
-        self.directory = directory
+        self.directory = Path(directory)
+        self.directory.mkdir(parents=True, exist_ok=True)
+        self.deferred = deferred
         self.native = self.rejections = self.programs = self.traps = 0
         self.cxx = shlex.split(os.environ.get("CXX", "g++"))
-        self.driver = directory / "driver.cpp"
+        self.driver = self.directory / "driver.cpp"
         self.driver.write_text(DRIVER)
-        self.host_objects = None
+        self.lock = threading.Lock()
+        self.runner = native_runner.Suite(
+            compiler, label, module_roots=self.roots(), harness=HostedBytes(self), directory=self.directory
+        )
 
-    def host(self):
-        # The driver and runtime adapter are the same for every program, so
-        # compile them once with the same flags and link each program to them.
-        if self.host_objects is None:
-            objects = []
-            for source in (self.driver, ROOT / "runtime/hosted_bytes.cpp"):
-                output = self.directory / (source.stem + ".o")
-                result = command([*self.cxx, *HOST_FLAGS, "-I", ROOT, "-c", source, "-o", output], timeout=60)
-                require(result.returncode == 0, f"host object {source.name} failed: {result.stderr.decode()}")
-                objects.append(output)
-            self.host_objects = objects
-        return self.host_objects
+    def roots(self):
+        arguments = [str(argument) for argument in self.module_args]
+        return [Path(arguments[i + 1]) for i in range(0, len(arguments), 2) if arguments[i] == "--module-root"]
 
-    def compile(self, name, source, entry_name=None):
-        folder = self.directory / name
-        folder.mkdir()
-        source_path = folder / "input.au"
-        source_path.write_text(source)
-        assembly = folder / "output.s"
-        result = command([self.compiler, *self.module_args, source_path, "-o", assembly])
-        require(result.returncode == 0, f"{name}: compile failed: {result.stderr.decode()}")
-        text = assembly.read_text()
-        symbols = re.findall(r"^\.type ([A-Za-z_][A-Za-z_0-9]*), @function$", text, re.M)
-        entries = [
-            symbol
-            for symbol in symbols
-            if not symbol.startswith("aurora_reflect_") and not symbol.startswith("__au_reflect_")
-        ]
-        require(entries, f"{name}: no native function")
-        selected_name = entry_name or self.entry_name
-        if selected_name is None:
-            entry = entries[-1]
-        else:
-            selected = [
-                symbol
-                for symbol in entries
-                if symbol == selected_name or symbol.endswith(f"__d{len(selected_name)}{selected_name}")
-            ]
-            require(len(selected) == 1, f"{name}: expected one entry named {selected_name}, found {selected}")
-            entry = selected[0]
-        require(f".local {entry}\n" in text, f"{name}: resource entry must stay private")
-        assembly.write_text(bridged_assembly(text, entry))
-        executable = folder / "native"
-        result = command([*self.cxx, *HOST_FLAGS, *self.host(), assembly, "-o", executable], timeout=60)
-        require(result.returncode == 0, f"{name}: host link failed: {result.stderr.decode()}")
+    def compile(self, name, source, entry_name=None, *, modules=None, inspect=None, standalone=False):
+        entry = entry_name or self.entry_name
+        if self.deferred:
+            return self.runner.program(
+                name, source, entry=entry or "entry", modules=modules, inspect=inspect, standalone=standalone
+            )
+        self.runner.module_roots = self.roots()
+        self.runner.start(self.directory)
+        # The program's folder keeps its name: callers key observations by executable.parent.name.
+        binary, text = self.runner.build(
+            name,
+            source,
+            named_function(entry) if entry else last_function,
+            modules=modules,
+            folder=self.directory / name,
+        )
+        if inspect is not None:
+            inspect(text)
         self.programs += 1
-        return executable
+        return binary
+
+    def _invoke(self, executable, arguments, check):
+        if self.deferred:
+            executable.invoke(arguments, check)
+            return
+        result = command([executable, *arguments])
+        self.last_observation = result
+        check(result)
 
     def run(
         self,
@@ -261,38 +317,52 @@ class Suite:
         release_order=None,
         attempted_sizes=None,
     ):
-        arguments = [executable, quota, length, flag]
+        arguments = [quota, length, flag]
         if fail_after is not None or attempted_sizes is not None:
             arguments.append(-1 if fail_after is None else fail_after)
         if attempted_sizes is not None:
             arguments.append("trace-attempts")
-        result = command(arguments)
-        self.last_observation = result
-        require(result.returncode == 0, f"{executable.name}: execution failed {result.returncode}: {result.stderr!r}")
-        lines = result.stdout.splitlines()
-        require(len(lines) == (1 if attempted_sizes is None else 2), "unexpected allocator trace output")
-        observed = [int(part) for part in lines[0].split()]
-        if attempted_sizes is not None:
-            attempts = [int(part) for part in lines[1].split()]
-            require(attempts == attempted_sizes, f"wrong allocation attempts: {attempts} != {attempted_sizes}")
-        require(
-            observed[:4] == [expected & MASK, allocations, allocations, peak],
-            f"{executable.parent.name}: observed {observed}, expected {expected, allocations, peak}",
-        )
-        require(sorted(observed[4:]) == list(range(1, allocations + 1)), "actual allocation/free identity mismatch")
-        if release_order is not None:
-            require(observed[4:] == release_order, f"wrong cleanup order: {observed[4:]} != {release_order}")
-        self.native += 1
+        label = f"{getattr(executable, 'name', executable)} {arguments}"
+
+        def check(result):
+            require(result.returncode == 0, f"{label}: execution failed {result.returncode}: {result.stderr!r}")
+            lines = result.stdout.splitlines()
+            require(len(lines) == (1 if attempted_sizes is None else 2), f"{label}: unexpected allocator trace")
+            observed = [int(part) for part in lines[0].split()]
+            if attempted_sizes is not None:
+                attempts = [int(part) for part in lines[1].split()]
+                require(attempts == attempted_sizes, f"{label}: wrong allocation attempts {attempts}")
+            require(
+                observed[:4] == [expected & MASK, allocations, allocations, peak],
+                f"{label}: observed {observed}, expected {expected, allocations, peak}",
+            )
+            require(sorted(observed[4:]) == list(range(1, allocations + 1)), f"{label}: allocation/free mismatch")
+            if release_order is not None:
+                require(observed[4:] == release_order, f"{label}: wrong cleanup order {observed[4:]}")
+            with self.lock:
+                self.native += 1
+
+        self._invoke(executable, arguments, check)
 
     def trap(self, executable, quota, length, flag=0):
-        result = command([executable, quota, length, flag])
-        require(
-            result.returncode == 77 and result.stdout == b"exact-bounds-trap\n",
-            f"{executable.parent.name}: wrong fault {result.returncode}: {result.stdout!r}",
-        )
-        self.traps += 1
+        label = f"{getattr(executable, 'name', executable)} trap {[quota, length, flag]}"
 
-    def reject(self, name, source):
+        def check(result):
+            require(
+                result.returncode == 77 and result.stdout == b"exact-bounds-trap\n",
+                f"{label}: wrong fault {result.returncode}: {result.stdout!r}",
+            )
+            with self.lock:
+                self.traps += 1
+
+        self._invoke(executable, [quota, length, flag], check)
+
+    def reject(self, name, source, diagnostic=True, *, modules=None):
+        if self.deferred:
+            self.runner.reject(name, source, diagnostic, modules=modules)
+            return
+        # Immediate mode keeps the interface its remaining users record: an absent
+        # and then an existing output, each compiled through `command`.
         folder = self.directory / ("reject-" + name)
         folder.mkdir()
         input_path = folder / "input.au"
@@ -303,11 +373,23 @@ class Suite:
                 output.write_bytes(prior)
             result = command([self.compiler, *self.module_args, input_path, "-o", output])
             require(result.returncode == 1 and result.stderr, f"{name}: expected clean rejection, got {result}")
+            if diagnostic is not True:
+                require(diagnostic in result.stderr.decode(), f"{name}: wrong diagnostic {result.stderr!r}")
             require(
                 (not output.exists()) if prior is None else output.read_bytes() == prior,
                 f"{name}: rejection modified output",
             )
+        require(input_path.read_text() == source, f"{name}: rejection modified its input")
         self.rejections += 1
+
+    def finish(self):
+        counts = self.runner.finish()
+        self.programs, self.rejections = counts["programs"], counts["rejections"]
+        return counts
+
+
+class OwnedBytesCases(Suite):
+    """The owned-bytes and typed-owner program families."""
 
     def typed_borrow_cases(self, node, owner):
         helpers = (
@@ -343,18 +425,10 @@ class Suite:
             return snapshot.score();
         """
         local = self.compile("typed-borrow-local", program(local_body, helpers))
-        facts_path = self.directory / "typed-borrow-local" / "abi.json"
-        facts_assembly = facts_path.with_suffix(".s")
-        emitted = command(
-            [
-                self.compiler,
-                self.directory / "typed-borrow-local" / "input.au",
-                "-o",
-                facts_assembly,
-                "--abi-facts",
-                facts_path,
-            ]
-        )
+        facts_input = self.directory / "typed-borrow-local.au"
+        facts_input.write_text(program(local_body, helpers))
+        facts_path = self.directory / "typed-borrow-local.abi.json"
+        emitted = command([self.compiler, facts_input, "-o", facts_path.with_suffix(".s"), "--abi-facts", facts_path])
         require(emitted.returncode == 0, "typed borrowed ABI facts did not emit")
         facts = json.loads(facts_path.read_text())
         require(facts["version"] == 3, "typed borrowed ABI facts require version 3")
@@ -481,8 +555,6 @@ class Suite:
             self.reject("typed-borrow-" + name, source)
 
     def typed_cases(self):
-        previous_entry = self.entry_name
-        self.entry_name = "entry"
         node = """
             enum class Kind { unused, literal, binary };
             class Node {
@@ -587,6 +659,32 @@ class Suite:
                 }
             };
         """
+
+        def returned_shape(text):
+
+            def body(method):
+                start = re.search(r"^__au_m_\w+_d%d%s:$" % (len(method), method), text, re.M)
+                require(start, f"missing {method}")
+                return text[start.end() : text.index("\n.size ", start.end())].split("\n")
+
+            direct, held, score = body("direct"), body("held"), body("score")
+            call = direct.index("    call __au_runtime_values_at")
+            require(
+                direct[call - 1].startswith("    movq -")
+                and direct[call - 1].endswith("(%rbp), %rcx")
+                and direct[call + 1] == "    xorq %rax, %rax"
+                and direct[call + 2].startswith("    jmp .Lreturn"),
+                "direct element return still copies through a local",
+            )
+            call = held.index("    call __au_runtime_values_at")
+            require(held[call - 1].startswith("    leaq -"), "held element return lost its local copy")
+            # The receiver's kind is compared with the enum case without a stack round trip.
+            compare = score.index("    cmpq %rax, %rcx")
+            require(
+                score[compare - 2] == "    movq %rax, %rcx" and "    pushq %rax" not in score[compare - 3 : compare],
+                "constant comparison still spills its left operand",
+            )
+
         returned = self.compile(
             "typed-returned-element",
             program(
@@ -609,30 +707,7 @@ class Suite:
         """,
                 node + pool,
             ),
-        )
-        text = (self.directory / "typed-returned-element" / "output.s").read_text()
-
-        def body(method):
-            start = re.search(r"^__au_m_\w+_d%d%s:$" % (len(method), method), text, re.M)
-            require(start, f"missing {method}")
-            return text[start.end() : text.index("\n.size ", start.end())].split("\n")
-
-        direct, held, score = body("direct"), body("held"), body("score")
-        call = direct.index("    call __au_runtime_values_at")
-        require(
-            direct[call - 1].startswith("    movq -")
-            and direct[call - 1].endswith("(%rbp), %rcx")
-            and direct[call + 1] == "    xorq %rax, %rax"
-            and direct[call + 2].startswith("    jmp .Lreturn"),
-            "direct element return still copies through a local",
-        )
-        call = held.index("    call __au_runtime_values_at")
-        require(held[call - 1].startswith("    leaq -"), "held element return lost its local copy")
-        # The receiver's kind is compared with the enum case without a stack round trip.
-        compare = score.index("    cmpq %rax, %rcx")
-        require(
-            score[compare - 2] == "    movq %rax, %rcx" and "    pushq %rax" not in score[compare - 3 : compare],
-            "constant comparison still spills its left operand",
+            inspect=returned_shape,
         )
         for count, flag in ((1, 0), (4, 2), (200, 199)):
             self.run(returned, count * 24, count, flag, 42, 1, 1)
@@ -958,7 +1033,7 @@ class Suite:
             self.reject("typed-" + name, program(body, node + same_layout))
         for element in ("i64", "builtin::OwnedBytes", "builtin::ByteRegion", "builtin::span<const u8>"):
             self.reject(
-                "typed-invalid-element-" + str(self.rejections),
+                "typed-invalid-element-" + element,
                 program(f"builtin::OwnedValues<{element}> values=region.try_allocate(1);return 0;"),
             )
 
@@ -997,15 +1072,18 @@ class Suite:
                 return values.at(count-1);
             }
         """
+
+        def compact_copies(text):
+            require("rep movsb" in text, "typed wide copied value did not exercise compact copies")
+            require(
+                "leaq 8(%rsp), %rax\n    pushq %rsi\n    pushq %rdi\n    pushq %rcx" in text,
+                "typed wide copied argument did not exercise captured RSP packing",
+            )
+
         compact = self.compile(
             "typed-compact-copied-return",
             program("Wide copied=snapshot(region,n,flag);return score(17,copied,29)-46;", wide_helpers),
-        )
-        compact_text = (compact.parent / "output.s").read_text()
-        require("rep movsb" in compact_text, "typed wide copied value did not exercise compact copies")
-        require(
-            "leaq 8(%rsp), %rax\n    pushq %rsi\n    pushq %rdi\n    pushq %rcx" in compact_text,
-            "typed wide copied argument did not exercise captured RSP packing",
+            inspect=compact_copies,
         )
         for count in (1, 3):
             for flag, expected in ((0, 36), (1, 116)):
@@ -1022,18 +1100,14 @@ class Suite:
             body += (
                 ("Node out=values." if operation.startswith("at") else "bool out=values.") + operation + ";return 0;"
             )
-            self.reject("typed-consumed-receiver-" + str(self.rejections), program(body, consuming))
+            self.reject("typed-consumed-receiver-" + operation.split("(")[0], program(body, consuming))
 
-        module_root = self.directory / "typed-module-inputs"
-        module_root.mkdir()
-        (module_root / "left.au").write_text(
-            "export module left;export namespace left {class Node{public:i64 value;};auto marker()->i64{return 0;}}"
-        )
-        (module_root / "right.au").write_text(
-            "export module right;export namespace right {class Node{public:i64 value;};auto marker()->i64{return 0;}}"
-        )
-        previous_modules = self.module_args
-        self.module_args = [*previous_modules, "--module-root", module_root]
+        modules = {
+            "left": "export module left;export namespace left {class Node{public:i64 value;};"
+            "auto marker()->i64{return 0;}}",
+            "right": "export module right;export namespace right {class Node{public:i64 value;};"
+            "auto marker()->i64{return 0;}}",
+        }
         imported = """
             module typed_imports;import left;import right;
             auto entry(builtin::ByteRegion region,i64 n,i64 flag)->i64{
@@ -1044,23 +1118,16 @@ class Suite:
                 return copied.value;
             }
         """
-        imported_owner = self.compile("typed-imported-identity", imported)
+        imported_owner = self.compile("typed-imported-identity", imported, modules=modules)
         self.run(imported_owner, 800, 0, 0, 42, 1, 1)
-        self.reject("typed-imported-wrong-fill", imported.replace("(100,left)", "(100,right)"))
-        self.reject("typed-imported-wrong-result", imported.replace("left::Node copied", "right::Node copied"))
-        self.module_args = previous_modules
-
-        self.entry_name = previous_entry
+        self.reject("typed-imported-wrong-fill", imported.replace("(100,left)", "(100,right)"), modules=modules)
+        self.reject(
+            "typed-imported-wrong-result", imported.replace("left::Node copied", "right::Node copied"), modules=modules
+        )
 
     def emitter_storage_cases(self):
         # Exercise the real source workspace in the existing region/owner driver.
         # Large logical bounds need no million-row allocation or IR fixture.
-        module_root = self.directory / "emitter-modules"
-        source = module_root / "aurora/compiler/x86_storage.au"
-        source.parent.mkdir(parents=True)
-        source.write_bytes((ROOT / "compiler/x86_storage.au").read_bytes())
-        previous_modules = self.module_args
-        self.module_args = [*previous_modules, "--module-root", ROOT / "library", "--module-root", module_root]
         executable = self.compile(
             "emitter-checked-storage",
             """
@@ -1151,7 +1218,7 @@ class Suite:
                 return 42;
             }
             """,
-            entry_name="entry",
+            modules={"aurora.compiler.x86_storage": (ROOT / "compiler/x86_storage.au").read_text()},
         )
         self.run(executable, 0, 0, 0, 42, 8, 8)
         for last_id in (0, 7):
@@ -1165,7 +1232,6 @@ class Suite:
             self.run(executable, 0, malformed_address, 6, 42, 8, 8)
         for completed in (0, 4):
             self.run(executable, 0, 0, 5, 42, completed, completed, fail_after=completed)
-        self.module_args = previous_modules
 
     def cases(self):
         self.typed_cases()
@@ -1402,6 +1468,15 @@ class Suite:
         definitions = "".join(
             f"auto {name}(i64 x)->i64{{return x+{index};}}" for index, name in enumerate(collisions, 1)
         )
+
+        def private_helpers(text):
+            for name in collisions:
+                require(
+                    f".local {name}\n" in text and f".globl {name}\n" not in text,
+                    f"host dependency can be interposed by source helper {name}",
+                )
+
+        # Root-level helper names must stay private symbols, so this program is not packed.
         collision = self.compile(
             "local-libc-collisions",
             program(
@@ -1413,13 +1488,8 @@ class Suite:
         """,
                 definitions,
             ),
+            inspect=private_helpers,
         )
-        emitted = (collision.parent / "output.s").read_text()
-        for name in collisions:
-            require(
-                f".local {name}\n" in emitted and f".globl {name}\n" not in emitted,
-                f"host dependency can be interposed by source helper {name}",
-            )
         self.run(collision, 66, 0, 0, 86, 2, 1, release_order=[1, 2])
         readonly = self.compile(
             "const-owner",
@@ -1659,28 +1729,20 @@ class Suite:
             ),
         )
         self.reject("reserved-helper", "module bad;auto __au_runtime_bytes_drop()->i64{return 0;}")
-        return {
-            "programs": self.programs,
-            "native_cases": self.native,
-            "exact_bounds_traps": self.traps,
-            "source_rejections": self.rejections,
-        }
 
 
 def main():
-    bridge_self_test()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", type=Path)
     parser.add_argument("--artifact-dir", type=Path)
     args = parser.parse_args()
-    compiler = args.compiler.resolve(strict=True)
     with tempfile.TemporaryDirectory(prefix="aurora-owned-bytes-") as temporary:
         directory = args.artifact_dir.resolve() if args.artifact_dir else Path(temporary)
         directory.mkdir(parents=True, exist_ok=True)
-        summary = Suite(compiler, directory).cases()
-        summary["compiler_sha256"] = hashlib.sha256(compiler.read_bytes()).hexdigest()
-        (directory / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
-        print(json.dumps(summary, sort_keys=True))
+        suite = OwnedBytesCases(args.compiler.resolve(strict=True), directory, ROOT / "library", deferred=True)
+        suite.cases()
+        suite.finish()
+        print(f"PASS owned bytes: {suite.native} native runs, {suite.traps} exact bounds traps")
 
 
 if __name__ == "__main__":
