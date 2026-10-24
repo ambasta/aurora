@@ -3216,34 +3216,59 @@ export namespace compiler_resolver {
         }
         return 0;
     }
-    auto check_visible_names(Session& session, i64 unit) -> i64 {
-        const i64 base = session.work_count();
-        const i64 count = session.meta_count();
-        i64 at = 0;
-        while (at < count && session.good()) {
-            const MetaRow value = session.meta(at);
-            if (value.kind() == MetaTag::symbol && value.word(1) >= 0 && value.word(7) < 0 && value.word(9) < 0) {
-                const i64 owner = value.word(1);
-                if (owner == unit || (exported(session, at) && direct_import(session, unit, owner))) {
-                    const i64 name = value.word(3);
-                    if (session.index(55, unit, name, 0, 0) < 0) {
-                        session.index_insert(55, unit, name, 0, 0, at);
-                        session.append_work(WorkRow(name, at, 0, 0, 0, 0));
-                        i64 parent = prefix_parent(session, name);
-                        while (parent >= 0 && session.good()) {
-                            if (session.index(56, unit, parent, 0, 0) < 0) {
-                                session.index_insert(56, unit, parent, 0, 0, at);
+    // Only symbols defined by unit or by a module it imports directly can be
+    // visible in it. make_symbol and template instantiation link every symbol
+    // with an owner into that owner's category lists, and no symbol's owner
+    // changes, so walking the owners' lists visits every row the old scan of all
+    // metadata accepted. Visiting order does not matter here: names are recorded
+    // once and then sorted.
+    auto collect_visible(Session& session, i64 unit, i64 owner, i64 count) -> i64 {
+        i64 tag = 0;
+        while (tag < 8 && session.good()) {
+            const i64 list = session.index(33, owner, tag, 0, 0);
+            i64 at = -1;
+            if (list >= 0) {
+                at = mw(session, list, 0);
+            }
+            while (at >= 0 && session.good()) {
+                const MetaRow value = session.meta(at);
+                if (at < count && value.kind() == MetaTag::symbol && value.word(1) >= 0 && value.word(7) < 0
+                    && value.word(9) < 0) {
+                    const i64 defining = value.word(1);
+                    if (defining == unit || (exported(session, at) && direct_import(session, unit, defining))) {
+                        const i64 name = value.word(3);
+                        if (session.index(55, unit, name, 0, 0) < 0) {
+                            session.index_insert(55, unit, name, 0, 0, at);
+                            session.append_work(WorkRow(name, at, 0, 0, 0, 0));
+                            i64 parent = prefix_parent(session, name);
+                            while (parent >= 0 && session.good()) {
+                                if (session.index(56, unit, parent, 0, 0) < 0) {
+                                    session.index_insert(56, unit, parent, 0, 0, at);
+                                }
+                                parent = prefix_parent(session, parent);
                             }
-                            parent = prefix_parent(session, parent);
                         }
                     }
                 }
+                at = value.word(14);
             }
-            at = at + 1;
+            tag = tag + 1;
+        }
+        return 0;
+    }
+    auto check_visible_names(Session& session, i64 unit) -> i64 {
+        const i64 base = session.work_count();
+        const i64 count = session.meta_count();
+        collect_visible(session, unit, unit, count);
+        i64 edge = import_head(session, unit);
+        while (edge >= 0 && session.good()) {
+            const i64 target = mw(session, edge, 1);
+            collect_visible(session, unit, target, count);
+            edge = mw(session, edge, 4);
         }
         sort_names(session, base);
         const i64 end = session.work_count();
-        at = base;
+        i64 at = base;
         while (at < end && session.good()) {
             const WorkRow value = session.work(at);
             const i64 name = value.word(0);
@@ -3307,27 +3332,79 @@ export namespace compiler_resolver {
         set_mw(session, view, word, i64(bits));
         return 0;
     }
-    auto reflection_view(Session& session, i64 output, i64 unit) -> i64 {
-        const i64 scope = mw(session, unit, 13);
-        const i64 count = session.meta_count();
-        i64 at = 0;
-        while (at < count && session.good()) {
-            const MetaRow row = session.meta(at);
-            if (row.kind() == MetaTag::symbol && row.word(1) >= 0 && (row.declaration_kind()
-                == DeclarationKind::class_value || row.declaration_kind() == DeclarationKind::enumeration)) {
-                if (row.word(1) == unit || (row.word(6) != 0 && direct_import(session, unit, row.word(1)))) {
-                    ResolvedTypeKind kind = ResolvedTypeKind::class_value;
-                    if (row.declaration_kind() == DeclarationKind::enumeration) {
-                        kind = ResolvedTypeKind::enum_value;
-                    }
-                    const i64 type = concrete_type(session, kind, at, -1, 0);
-                    if (type_accessible(session, type, unit, -1)) {
-                        show_nominal(session, output, at, scope);
-                    }
-                }
+    // Pushes the class and enum list heads of owner, once per distinct owner.
+    // Every class or enum symbol with an owner is on that owner's list for its
+    // category, in creation order.
+    auto push_nominal_lists(Session& session, i64 owner, i64 base) -> i64 {
+        i64 at = base;
+        while (at < session.work_count() && session.good()) {
+            const WorkRow seen = session.work(at);
+            if (seen.word(1) == owner) {
+                return 0;
             }
             at = at + 1;
         }
+        i64 tag = 1;
+        while (tag <= 2 && session.good()) {
+            const i64 list = session.index(33, owner, tag, 0, 0);
+            if (list >= 0) {
+                const i64 head = mw(session, list, 0);
+                session.append_work(WorkRow(head, owner, 0, 0, 0, 0));
+            }
+            tag = tag + 1;
+        }
+        return 0;
+    }
+    // Shows each class or enum of unit and its direct imports in metadata order,
+    // merging their creation-ordered lists; rows made while showing are not
+    // visited, as the old scan bounded by the starting row count did not visit them.
+    auto reflection_view(Session& session, i64 output, i64 unit) -> i64 {
+        const i64 scope = mw(session, unit, 13);
+        const i64 count = session.meta_count();
+        const i64 base = session.work_count();
+        push_nominal_lists(session, unit, base);
+        i64 edge = import_head(session, unit);
+        while (edge >= 0 && session.good()) {
+            const i64 target = mw(session, edge, 1);
+            push_nominal_lists(session, target, base);
+            edge = mw(session, edge, 4);
+        }
+        const i64 lists = session.work_count();
+        bool done = false;
+        while (!done && session.good()) {
+            i64 selected = -1;
+            i64 at = count;
+            i64 list = base;
+            while (list < lists && session.good()) {
+                const WorkRow head = session.work(list);
+                if (head.word(0) >= 0 && head.word(0) < at) {
+                    at = head.word(0);
+                    selected = list;
+                }
+                list = list + 1;
+            }
+            if (selected < 0) {
+                done = true;
+            } else {
+                const MetaRow row = session.meta(at);
+                const WorkRow head = session.work(selected);
+                session.set_work(selected, WorkRow(row.word(14), head.word(1), 0, 0, 0, 0));
+                if (row.kind() == MetaTag::symbol && row.word(1) >= 0 && (row.declaration_kind()
+                    == DeclarationKind::class_value || row.declaration_kind() == DeclarationKind::enumeration)) {
+                    if (row.word(1) == unit || (row.word(6) != 0 && direct_import(session, unit, row.word(1)))) {
+                        ResolvedTypeKind kind = ResolvedTypeKind::class_value;
+                        if (row.declaration_kind() == DeclarationKind::enumeration) {
+                            kind = ResolvedTypeKind::enum_value;
+                        }
+                        const i64 type = concrete_type(session, kind, at, -1, 0);
+                        if (type_accessible(session, type, unit, -1)) {
+                            show_nominal(session, output, at, scope);
+                        }
+                    }
+                }
+            }
+        }
+        session.truncate_work(base);
         return 0;
     }
     auto resolve_class_bodies(Session& session, i64 symbol) -> i64 {

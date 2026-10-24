@@ -1226,7 +1226,8 @@ std::uint64_t resolutionQuota() {
     // permutation is a separate phase with at most one mark per nominal.
     const auto loweringWork = std::max(nominals, add(8, mul(2, D)));
     // Linkage's temporary signature/prefix lists restore their caller's base.
-    const auto work = std::max({mul(12, b), sum({mul(5, Sx), types, mul(2, D), 4096, 128}), loweringWork});
+    // Ingest holds <=12 request rows per file byte and one row per token ordinal.
+    const auto work = std::max({add(mul(13, b), 1), sum({mul(5, Sx), types, mul(2, D), 4096, 128}), loweringWork});
     const auto capacity = [&](std::uint64_t count) {
         return add(mul(2, count), 8);
     };

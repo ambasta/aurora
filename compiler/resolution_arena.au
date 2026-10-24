@@ -21,9 +21,12 @@ import aurora.compiler.resolution_rows;
 // every referenced range has an explicit producer charge; nothing charges a
 // guessed number of rows per declaration. Namespace/name candidate bounds and
 // semantic metadata/worklist counts are supplied by the resolver producer.
-// Scratch projection uses in-place heapsort and at most 12*one-file bytes.
+// Scratch projection holds at most 12 request rows per one-file byte plus one
+// per-ordinal row per byte and the end of input (13*one-file + 1 rows).
 // Prefix helpers add name depth (or two depths for comparison) to their caller's
-// saved scratch base, then restore it; AVL balancing uses parent links, no stack.
+// saved scratch base, then restore it. Index lookups follow hash chains threaded
+// through the index rows (no extra owner); the two key-ordered domains also keep
+// AVL links, balanced through parent links with no stack.
 // Count publication always follows successful set; all eleven allocation results,
 // including inert failures, remain owned until ordinary consuming cleanup.
 export namespace compiler_resolver {
@@ -379,6 +382,109 @@ export namespace compiler_resolver {
             }
             return child_id;
         }
+        // Every key is in a hash chain over the index rows themselves: with n rows
+        // there are B buckets, the largest power of two not above n, and row b
+        // holds the head of bucket b. Chains are rebuilt whenever n reaches a power
+        // of two. Only the reflected-array (76) and descriptor (84) domains, which
+        // lowering walks in key order, are also linked into the AVL tree.
+        auto ordered_domain(i64 domain) const -> bool {
+            return domain == 76 || domain == 84;
+        }
+        auto index_buckets(i64 count) const -> i64 {
+            if (count < 1) {
+                return 0;
+            }
+            const i64 half = count / 2;
+            i64 buckets = 1;
+            while (buckets <= half) {
+                buckets = buckets * 2;
+            }
+            return buckets;
+        }
+        // Keys hash as their two's-complement bits. Bounded polynomial steps keep
+        // every intermediate below 2^48, so no checked operation can trap.
+        auto key_bits(i64 value) const -> u64 {
+            if (value < 0) {
+                return 9223372036854775808u64 + u64(-(value + 1));
+            }
+            return u64(value);
+        }
+        auto mix_key(u64 hash, u64 value) const -> u64 {
+            return (hash & 1099511627775u64) * 131u64 + (value & 4294967295u64);
+        }
+        auto bucket_of(u64 hash, i64 buckets) const -> i64 {
+            const u64 folded = (hash ^ (hash >> 27)) & 134217727u64;
+            return i64(((folded * 2654435761u64) >> 15) & u64(buckets - 1));
+        }
+        // Atom keys (domain 1) compare by spelling, so they hash their source bytes.
+        auto key_bucket(i64 domain, i64 first, i64 second, i64 third, i64 fourth, i64 buckets) -> i64 {
+            u64 hash = key_bits(domain);
+            if (domain == 1) {
+                if (first < 0 || second < 0 || first > source_used || second > source_used - first) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                const builtin::span<const u8> all = borrow_bytes(sources);
+                i64 at = 0;
+                while (at < second) {
+                    hash = mix_key(hash, u64(all.at(first + at)));
+                    at = at + 1;
+                }
+                hash = mix_key(hash, key_bits(second));
+            } else {
+                hash = mix_key(hash, key_bits(first));
+                hash = mix_key(hash, key_bits(second));
+                if (third != 0 || fourth != 0) {
+                    hash = mix_key(mix_key(hash, key_bits(third)), key_bits(fourth));
+                }
+            }
+            return bucket_of(hash, buckets);
+        }
+        auto row_bucket(IndexRow row, i64 buckets) -> i64 {
+            return key_bucket(row.key_domain(), row.first_key(), row.second_key(), row.third_key(), row.fourth_key(),
+                buckets);
+        }
+        // Puts node at the head of its bucket chain within the first buckets rows.
+        auto chain_node(i64 node, i64 buckets) -> bool {
+            IndexRow row = index_row(node);
+            const i64 slot = row_bucket(row, buckets);
+            if (!good() || slot < 0 || slot >= buckets) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            if (slot == node) {
+                row.set_chain(row.bucket_head());
+                row.set_bucket(node);
+                return set_index_row(node, row);
+            }
+            IndexRow head = index_row(slot);
+            row.set_chain(head.bucket_head());
+            head.set_bucket(node);
+            return set_index_row(node, row) && set_index_row(slot, head);
+        }
+        // Chains a node just appended as row index_used - 1.
+        auto hash_node(i64 node) -> bool {
+            if (node != index_used - 1) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            const i64 buckets = index_buckets(index_used);
+            if (buckets != index_used) {
+                return chain_node(node, buckets);
+            }
+            i64 at = 0;
+            while (at < buckets && good()) {
+                IndexRow row = index_row(at);
+                row.set_bucket(-1);
+                set_index_row(at, row);
+                at = at + 1;
+            }
+            at = 0;
+            while (at < index_used && good()) {
+                chain_node(at, buckets);
+                at = at + 1;
+            }
+            return good();
+        }
         // The matching node, or its value when value is set; -1 when absent.
         auto find(i64 domain, i64 first, i64 second, i64 third, i64 fourth, bool value) -> i64 {
             if (!good()) {
@@ -387,10 +493,22 @@ export namespace compiler_resolver {
             if (domain < 1) {
                 return fail_storage(StorageStatus::invalid);
             }
-            i64 node = index_root;
+            const i64 buckets = index_buckets(index_used);
+            if (buckets == 0) {
+                return -1;
+            }
+            const i64 slot = key_bucket(domain, first, second, third, fourth, buckets);
+            if (!good()) {
+                return -1;
+            }
+            // buckets <= index_used <= indexes.size(); key_bucket masks into range.
+            if (slot < 0 || slot >= buckets || slot >= indexes.size()) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            const IndexRow head = indexes.at(slot);
+            i64 node = head.bucket_head();
             i64 steps = 0;
-            // Between checked row reads, only atom comparison can change sticky status.
-            // Keep each node checked before its direct read, without replaying status guards.
+            // Between checked row reads only atom comparison can latch failure.
             while (node >= 0) {
                 if (steps >= index_used || node >= index_used || node >= indexes.size()) {
                     return fail_storage(StorageStatus::invalid);
@@ -415,11 +533,7 @@ export namespace compiler_resolver {
                     }
                     return node;
                 }
-                if (order < 0) {
-                    node = row.left_child();
-                } else {
-                    node = row.right_child();
-                }
+                node = row.chain_next();
                 if (node < -1) {
                     return fail_storage(StorageStatus::invalid);
                 }
@@ -966,7 +1080,9 @@ export namespace compiler_resolver {
             return true;
         }
         auto meta(i64 index) -> MetaRow {
-            if (!valid_meta_index(index)) {
+            // valid_meta_index, written out: this is the resolver's hottest read.
+            if (!good() || index < 0 || index >= meta_used || index >= metadata.size()) {
+                fail_storage(StorageStatus::invalid);
                 const MetaRow empty = MetaRow(MetaTag::invalid);
                 return empty;
             }
@@ -1172,6 +1288,33 @@ export namespace compiler_resolver {
             if (!good() || domain < 1 || value < 0) {
                 return fail_storage(StorageStatus::invalid);
             }
+            const i64 existing = find(domain, first, second, third, fourth, true);
+            if (existing >= 0 || !good()) {
+                return existing;
+            }
+            if (!ordered_domain(domain)) {
+                const i64 appended = append_index_row(IndexRow(domain, first, second, third, fourth, value));
+                if (appended < 0 || !hash_node(appended)) {
+                    return -1;
+                }
+                return value;
+            }
+            const i64 before = index_used;
+            const i64 inserted = tree_insert(domain, first, second, third, fourth, value);
+            if (inserted < 0 || !good()) {
+                return -1;
+            }
+            // The tree holds only keys the hash chains hold, so this key is new.
+            if (index_used != before + 1) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (!hash_node(before)) {
+                return -1;
+            }
+            return inserted;
+        }
+        // AVL insertion of a new key of an ordered domain, appended as the last row.
+        auto tree_insert(i64 domain, i64 first, i64 second, i64 third, i64 fourth, i64 value) -> i64 {
             i64 parent = -1;
             i64 node = index_root;
             i64 direction = 0;

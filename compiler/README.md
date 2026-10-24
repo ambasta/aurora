@@ -42,6 +42,20 @@ longer reorders the list. Region, success, ID and length checks are unchanged.
 On the 46-module frontend workload this cut user instructions by 6.1% and user
 cycles by about 4.5% (six alternating pairs, identical outputs).
 
+Resolver index keys are found through hash chains threaded through the index
+rows (bucket heads live in the first rows, rebuilt when the row count reaches a
+power of two); only the two domains lowering walks in key order keep AVL links.
+Ingest marks requested token ordinals instead of heapsorting the requests and
+publishes each module's token references as one sorted range rather than one
+index row per token. Visibility and reflection walk the owners' category lists
+instead of all metadata, metadata name searches skip the prefix the key shares
+with both bounds, and owned-value bounds checks and sizes avoid divq. Outputs
+are byte-identical. Against the native-verifier baseline (`f2256be`), C2 on
+the 47-input frontend now runs 0.65x the user instructions and 0.73x the
+cycles; against `6c4871d`, a one-line `std.json` rejection takes 0.52x the
+instructions and 0.58x the cycles on C1 (paired runs on a shared host; see the
+commit messages for each step).
+
 ## Build and check
 
 For a fresh checkout, select a local copy of the pinned checkpoint compiler, or

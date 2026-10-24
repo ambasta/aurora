@@ -1247,6 +1247,41 @@ export namespace compiler_ir_metadata {
             }
             return 0;
         }
+        // compare_bytes' view of one byte: -1 outside the owner or for a failed owner.
+        auto compared_byte(i64 index) const -> i64 {
+            if (index < 0 || index >= bytes.size() || !bytes.ok()) {
+                return -1;
+            }
+            return i64(bytes.at(index));
+        }
+        // The first offset from start below count where compare_bytes would see the
+        // two ranges differ, or count when they agree there.
+        auto shared_bytes(i64 left, i64 right, i64 count, i64 start) const -> i64 {
+            if (start < 0 || start >= count) {
+                return count;
+            }
+            const i64 limit = bytes.size();
+            if (bytes.ok() && left >= 0 && left <= limit && count <= limit - left && right >= 0 && right <= limit
+                && count <= limit - right) {
+                const builtin::span<const u8> checked = borrow_bytes(bytes);
+                i64 at = start;
+                while (at < count) {
+                    if (checked.at(left + at) != checked.at(right + at)) {
+                        return at;
+                    }
+                    at = at + 1;
+                }
+                return count;
+            }
+            i64 at = start;
+            while (at < count) {
+                if (compared_byte(left + at) != compared_byte(right + at)) {
+                    return at;
+                }
+                at = at + 1;
+            }
+            return count;
+        }
         auto type_at(i64 index) const -> RawTypeRow {
             if (index < 0 || index >= type_count() || !types.ok()) {
                 const RawTypeRow invalid = invalid_type();

@@ -296,6 +296,67 @@ export namespace compiler_x86 {
         }
         return false;
     }
+    // An owned-value index is in bounds when (index + 1) * stride fits within the
+    // byte length; a product beyond 64 bits exceeds every length. This is the
+    // unsigned index < length / stride test without a division. The index stays
+    // in %rsi; %rax and %rdx are clobbered, as the division clobbered them.
+    auto values_bounds_check(EmitWorkspace& w, i64 length, i64 stride) -> bool {
+        w.line_number("movq $", stride, ", %rax");
+        w.line("mulq %rsi");
+        w.line("jc .Laurora_bounds_trap");
+        w.line_number("addq $", stride, ", %rax");
+        w.line("jc .Laurora_bounds_trap");
+        w.begin_line();
+        w.text("cmpq ");
+        w.memory(length);
+        w.text(", %rax");
+        w.end_line();
+        return w.line("ja .Laurora_bounds_trap");
+    }
+    // Unsigned %rax / stride for a constant stride: a shift for powers of two,
+    // otherwise Granlund-Montgomery multiplication by a 65-bit reciprocal with the
+    // add-and-shift fixup, exact for every 64-bit dividend. Clobbers %rcx and %rdx.
+    auto divide_by_stride(EmitWorkspace& w, i64 stride) -> bool {
+        if (stride < 1 || stride > 1073741824) {
+            w.line_number("movq $", stride, ", %rcx");
+            w.line("xorq %rdx, %rdx");
+            return w.line("divq %rcx");
+        }
+        i64 power = 1;
+        i64 shift = 0;
+        while (power < stride) {
+            power = power * 2;
+            shift = shift + 1;
+        }
+        if (power == stride) {
+            if (shift != 0) {
+                w.line_number("shrq $", shift, ", %rax");
+            }
+            return w.ok();
+        }
+        // floor(2^64 * (power - stride) / stride) + 1, by long division in 32-bit
+        // digits; power - stride < stride < 2^30, so no step overflows.
+        const u64 divisor = u64(stride);
+        const u64 scaled = u64(power - stride) * 4294967296u64;
+        const u64 high = scaled / divisor;
+        const u64 low = (scaled % divisor) * 4294967296u64 / divisor;
+        const u64 magic = high * 4294967296u64 + low + 1u64;
+        w.line("movq %rax, %rcx");
+        w.text("    movabsq $");
+        if (magic > 9223372036854775807u64) {
+            w.text("-");
+            w.unsigned_number((18446744073709551615u64 - magic) + 1u64);
+        } else {
+            w.unsigned_number(magic);
+        }
+        w.text(", %rdx\n");
+        w.line("mulq %rdx");
+        w.line("movq %rcx, %rax");
+        w.line("subq %rdx, %rax");
+        w.line("shrq $1, %rax");
+        w.line("addq %rdx, %rax");
+        return w.line_number("shrq $", shift - 1, ", %rax");
+    }
     auto emit_resources(EmitWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
         const compiler_ir_instructions::InstructionStore& s, i64 instruction) -> bool {
         if (emit_spans(w, m, s, instruction)) {
@@ -335,16 +396,7 @@ export namespace compiler_x86 {
             w.line("movq %rax, %rsi");
             if (form == 63) {
                 const i64 length = bytes_owner_address(w, m, first, field, 16);
-                w.begin_line();
-                w.text("movq ");
-                w.memory(length);
-                w.text(", %rax");
-                w.end_line();
-                w.line_number("movq $", stride, ", %rcx");
-                w.line("xorq %rdx, %rdx");
-                w.line("divq %rcx");
-                w.line("cmpq %rax, %rsi");
-                w.line("jae .Laurora_bounds_trap");
+                values_bounds_check(w, length, stride);
             }
             const i64 owner = bytes_owner_address(w, m, first, field, 0);
             w.begin_line();
@@ -388,10 +440,7 @@ export namespace compiler_x86 {
             w.text(", %rax");
             w.end_line();
             if (form == 68 && resource_owner_kind(m, callable, first, field) == 17) {
-                const i64 stride = owner_element_stride(m, callable, first, field);
-                w.line_number("movq $", stride, ", %rcx");
-                w.line("xorq %rdx, %rdx");
-                w.line("divq %rcx");
+                divide_by_stride(w, owner_element_stride(m, callable, first, field));
             }
             return true;
         }

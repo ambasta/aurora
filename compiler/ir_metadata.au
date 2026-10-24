@@ -55,6 +55,38 @@ export namespace compiler_ir_metadata {
         }
         return 0;
     }
+    // Searches of admitted sorted names start each comparison after the bytes the
+    // key is known to share with both search bounds: in sorted order every name
+    // between two bounds shares at least that prefix with the key. Callable,
+    // class and enum names are proven sorted before any search reads them.
+    auto shared_prefix(const MetadataStore& store, ByteRange left, ByteRange right, i64 start) -> i64 {
+        i64 count = left.count();
+        if (right.count() < count) {
+            count = right.count();
+        }
+        return store.shared_bytes(left.begin(), right.begin(), count, start);
+    }
+    // compare_names(left, right) when their first shared bytes are equal.
+    auto order_after(const MetadataStore& store, ByteRange left, ByteRange right, i64 shared) -> i64 {
+        if (shared < left.count() && shared < right.count()) {
+            const i64 a = store.compared_byte(left.begin() + shared);
+            const i64 b = store.compared_byte(right.begin() + shared);
+            if (a < b) {
+                return -1;
+            }
+            if (a > b) {
+                return 1;
+            }
+            return 0;
+        }
+        if (left.count() < right.count()) {
+            return -1;
+        }
+        if (left.count() > right.count()) {
+            return 1;
+        }
+        return 0;
+    }
     auto named(const MetadataStore& store, ByteRange name, builtin::span<const u8> expected) -> bool {
         if (name.count() != expected.size()) {
             return false;
@@ -71,17 +103,26 @@ export namespace compiler_ir_metadata {
     auto find_class(const MetadataStore& store, ByteRange name) -> i64 {
         i64 begin = 0;
         i64 end = store.class_count();
+        i64 below = 0;
+        i64 above = 0;
         while (begin < end) {
             const i64 middle = begin + (end - begin) / 2;
             const ClassRow row = store.class_at(middle);
-            const i64 order = compare_names(store, row.name(), name);
+            i64 start = below;
+            if (above < start) {
+                start = above;
+            }
+            const i64 shared = shared_prefix(store, row.name(), name, start);
+            const i64 order = order_after(store, row.name(), name, shared);
             if (order == 0) {
                 return middle;
             }
             if (order < 0) {
                 begin = middle + 1;
+                below = shared;
             } else {
                 end = middle;
+                above = shared;
             }
         }
         return -1;
@@ -89,17 +130,26 @@ export namespace compiler_ir_metadata {
     auto find_enum(const MetadataStore& store, ByteRange name) -> i64 {
         i64 begin = 0;
         i64 end = store.enum_count();
+        i64 below = 0;
+        i64 above = 0;
         while (begin < end) {
             const i64 middle = begin + (end - begin) / 2;
             const EnumRow row = store.enum_at(middle);
-            const i64 order = compare_names(store, row.name(), name);
+            i64 start = below;
+            if (above < start) {
+                start = above;
+            }
+            const i64 shared = shared_prefix(store, row.name(), name, start);
+            const i64 order = order_after(store, row.name(), name, shared);
             if (order == 0) {
                 return middle;
             }
             if (order < 0) {
                 begin = middle + 1;
+                below = shared;
             } else {
                 end = middle;
+                above = shared;
             }
         }
         return -1;
@@ -237,14 +287,23 @@ export namespace compiler_ir_metadata {
         const i64 first = store.input_index_count() - store.callable_count();
         i64 begin = 0;
         i64 end = store.callable_count();
+        i64 below = 0;
+        i64 above = 0;
         while (begin < end) {
             const i64 middle = begin + (end - begin) / 2;
             const IndexRow id = store.index_at(first + middle);
             const CallableRow row = store.callable_at(id.value());
-            if (compare_names(store, row.name(), name) < 0) {
+            i64 start = below;
+            if (above < start) {
+                start = above;
+            }
+            const i64 shared = shared_prefix(store, row.name(), name, start);
+            if (order_after(store, row.name(), name, shared) < 0) {
                 begin = middle + 1;
+                below = shared;
             } else {
                 end = middle;
+                above = shared;
             }
         }
         if (begin >= store.callable_count()) {

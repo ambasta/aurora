@@ -37,6 +37,42 @@ export namespace compiler_resolver {
         }
         return session.index_insert(7, first, last, 0, 0, result);
     }
+    // The half-0 reference ingest made for a token ordinal of a module, or -1.
+    // Ingest publishes each module's references as one range sorted by ordinal
+    // and half, bounded by index keys (9, module, -1) and (9, module, -2).
+    auto ingested_reference(Session& session, i64 module_id, i64 ordinal) -> i64 {
+        if (module_id < 0 || ordinal < 0) {
+            return -1;
+        }
+        const i64 first = session.index(9, module_id, -1, 0, 0);
+        const i64 last = session.index(9, module_id, -2, 0, 0);
+        if (first < 0 || last < first || !session.good()) {
+            return -1;
+        }
+        // Lower bound of the ordinal; its half 0, when made, precedes half 1.
+        i64 begin = first;
+        i64 end = last;
+        while (begin < end && session.good()) {
+            const i64 middle = begin + (end - begin) / 2;
+            const MetaRow row = session.meta(middle);
+            if (row.kind() != MetaTag::source_reference || row.word(0) != module_id) {
+                return session.fail_storage(StorageStatus::invalid);
+            }
+            if (row.word(5) < ordinal) {
+                begin = middle + 1;
+            } else {
+                end = middle;
+            }
+        }
+        if (!session.good() || begin >= last) {
+            return -1;
+        }
+        const MetaRow found = session.meta(begin);
+        if (found.word(5) != ordinal || found.word(6) != 0) {
+            return -1;
+        }
+        return begin;
+    }
     auto component_ref(Session& session, MetaRow base, WorkRow location) -> i64 {
         const i64 begin = location.word(0);
         const i64 end = location.word(1);
@@ -47,7 +83,13 @@ export namespace compiler_resolver {
             return session.fail_storage(StorageStatus::invalid);
         }
         const i64 ordinal = base.word(5) + location.word(4);
-        const i64 existing = session.index(9, base.word(0), ordinal, 0, base.word(9));
+        i64 existing = -1;
+        if (base.word(9) == 0) {
+            existing = ingested_reference(session, base.word(0), ordinal);
+        }
+        if (existing < 0 && session.good()) {
+            existing = session.index(9, base.word(0), ordinal, 0, base.word(9));
+        }
         if (existing >= 0 || !session.good()) {
             return existing;
         }

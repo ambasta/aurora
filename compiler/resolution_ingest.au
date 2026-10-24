@@ -72,132 +72,107 @@ namespace compiler_resolver {
         }
         return session.good();
     }
-    // Moves the larger child into root's hole and returns its index, or -1 once
-    // held belongs at root or a write failed.
-    auto promote(Session& session, WorkRow held, i64 root, i64 child, WorkRow selected) -> i64 {
-        if (!held.before_request(selected.word(0), selected.word(3), selected.word(1), selected.word(2))
-            || !session.set_work(root, selected)) {
-            return -1;
-        }
-        return child;
+    // Publishes one requested half of a token from its half-0 reference row; half
+    // 1 starts one byte later, at the second '>' of a split '>>'.
+    auto make_reference(Session& session, MetaRow token_row, i64 half) -> i64 {
+        MetaRow row = token_row;
+        row.set_word(1, token_row.word(1) + half);
+        row.set_word(4, token_row.word(4) + half);
+        row.set_word(6, half);
+        return session.append_meta(row);
     }
-    // Sift held down from initial within the first end rows: larger children
-    // move up and held fills the final hole. Each level copies each child once.
-    auto sift_requests(Session& session, WorkRow held, i64 initial, i64 end) -> bool {
-        i64 root = initial;
-        i64 next = initial;
-        while (next >= 0 && root * 2 + 1 < end && session.good()) {
-            const i64 left = root * 2 + 1;
-            const WorkRow first = session.work(left);
-            if (left + 1 < end) {
-                const WorkRow second = session.work(left + 1);
-                if (first.before_request(second.word(0), second.word(3), second.word(1), second.word(2))) {
-                    next = promote(session, held, root, left + 1, second);
-                } else {
-                    next = promote(session, held, root, left, first);
-                }
-            } else {
-                next = promote(session, held, root, left, first);
-            }
-            if (next >= 0) {
-                root = next;
-            }
-        }
-        return session.good() && session.set_work(root, held);
-    }
-    auto sort_requests(Session& session) -> bool {
-        const i64 count = session.work_count();
-        i64 root = count / 2;
-        while (root > 0 && session.good()) {
-            root = root - 1;
-            const WorkRow held = session.work(root);
-            sift_requests(session, held, root, count);
-        }
-        // Move the largest request to the end, then sift the displaced last one.
-        i64 end = count;
-        while (end > 1 && session.good()) {
-            end = end - 1;
-            const WorkRow held = session.work(end);
-            const WorkRow largest = session.work(0);
-            if (!session.set_work(end, largest) || !sift_requests(session, held, 0, end)) {
-                return false;
-            }
-        }
-        return session.good();
-    }
+    // Requests occupy the first n scratch rows. Row n + o then records, for token
+    // ordinal o, whether half 0 and half 1 were requested (words 0 and 1) and the
+    // references made for them (words 2 and 3). References are made in (ordinal,
+    // half) order during one token scan, so a module's references are one sorted
+    // metadata range. Index keys (9, module, -1) and (9, module, -2) hold its
+    // bounds for ingested_reference; the range needs no per-reference index row.
     auto project_sources(Session& session, i64 module_id) -> bool {
-        if (!sort_requests(session)) {
-            session.truncate_work(0);
-            return false;
-        }
+        const i64 requests = session.work_count();
         const MetaRow source = session.meta(module_id);
         if (source.kind() != MetaTag::module_source) {
             session.fail_storage(StorageStatus::invalid);
             session.truncate_work(0);
             return false;
         }
+        // Every token spans at least one byte, so a valid ordinal never exceeds the
+        // module length; a larger one would be past the end of input.
+        i64 last = -1;
         i64 request = 0;
+        while (request < requests && session.good()) {
+            const WorkRow item = session.work(request);
+            const i64 half = item.word(3);
+            if (item.word(0) < 0 || item.word(0) > source.word(1) || half < 0 || half > 1) {
+                session.fail_storage(StorageStatus::invalid);
+            }
+            if (item.word(0) > last) {
+                last = item.word(0);
+            }
+            request = request + 1;
+        }
+        i64 ordinal = 0;
+        while (ordinal <= last && session.good()) {
+            session.append_work(WorkRow(0, 0, -1, -1, -1, -1));
+            ordinal = ordinal + 1;
+        }
+        request = 0;
+        while (request < requests && session.good()) {
+            const WorkRow item = session.work(request);
+            const i64 slot = requests + item.word(0);
+            WorkRow marks = session.work(slot);
+            if (marks.word(item.word(3)) == 0) {
+                marks.set_word(item.word(3), 1);
+                session.set_work(slot, marks);
+            }
+            request = request + 1;
+        }
+        const i64 first_reference = session.meta_count();
         i64 offset = 0;
         i64 line = 1;
         i64 line_start = 0;
-        i64 ordinal = 0;
-        while (request < session.work_count() && session.good()) {
+        ordinal = 0;
+        bool complete = last < 0;
+        while (!complete && session.good()) {
             const compiler_lexer::Cursor cursor = compiler_lexer::Cursor(offset, line, line_start);
             const compiler_lexer::Lexeme token = session.scan(module_id, cursor);
             if (token.kind() == compiler_lexer::Event::token || token.kind() == compiler_lexer::Event::end_of_input) {
-                const WorkRow pending = session.work(request);
-                if (pending.word(0) < ordinal || (token.kind() == compiler_lexer::Event::end_of_input && pending.word(0)
-                    != ordinal)) {
+                const i64 slot = requests + ordinal;
+                const WorkRow marks = session.work(slot);
+                i64 first = -1;
+                i64 second = -1;
+                if (token.kind() == compiler_lexer::Event::end_of_input && ordinal != last) {
                     session.fail_storage(StorageStatus::invalid);
                 }
-                i64 previous_half = -1;
-                i64 reference = -1;
-                bool complete = false;
-                while (!complete && request < session.work_count() && session.good()) {
-                    const WorkRow item = session.work(request);
-                    if (item.word(0) != ordinal) {
-                        complete = true;
-                    } else {
-                        const i64 half = item.word(3);
-                        if (half < 0 || half > 1 || (half == 1 && (token.kind() != compiler_lexer::Event::token
-                            || token.next_offset() - offset != 2 || session.source_byte(source.word(0) + offset) != '>'
-                            || session.source_byte(source.word(0) + offset + 1) != '>'))) {
+                if (marks.word(0) != 0 || marks.word(1) != 0) {
+                    MetaRow token_row = MetaRow(MetaTag::source_reference);
+                    token_row.set_word(0, module_id);
+                    token_row.set_word(1, source.word(0) + offset);
+                    token_row.set_word(2, source.word(0) + token.next_offset());
+                    token_row.set_word(3, line);
+                    token_row.set_word(4, offset - line_start + 1);
+                    token_row.set_word(5, ordinal);
+                    token_row.set_word(6, 0);
+                    token_row.set_word(7, token.next_line());
+                    token_row.set_word(8, token.next_offset() - token.next_line_start() + 1);
+                    token_row.set_word(9, 0);
+                    if (marks.word(0) != 0) {
+                        first = make_reference(session, token_row, 0);
+                    }
+                    if (marks.word(1) != 0 && session.good()) {
+                        if (token.kind() != compiler_lexer::Event::token || token.next_offset() - offset != 2
+                            || session.source_byte(source.word(0) + offset) != '>' || session.source_byte(source.word(0)
+                            + offset + 1) != '>') {
                             session.fail_storage(StorageStatus::invalid);
                         } else {
-                            if (half != previous_half) {
-                                MetaRow row = MetaRow(MetaTag::source_reference);
-                                row.set_word(0, module_id);
-                                row.set_word(1, source.word(0) + offset + half);
-                                row.set_word(2, source.word(0) + token.next_offset());
-                                row.set_word(3, line);
-                                row.set_word(4, offset - line_start + 1 + half);
-                                row.set_word(5, ordinal);
-                                row.set_word(6, half);
-                                row.set_word(7, token.next_line());
-                                row.set_word(8, token.next_offset() - token.next_line_start() + 1);
-                                row.set_word(9, 0);
-                                reference = session.append_meta(row);
-                                if (reference >= 0 && session.index_insert(9, module_id, ordinal, half, 0, reference)
-                                    != reference) {
-                                    session.fail_storage(StorageStatus::invalid);
-                                }
-                                previous_half = half;
-                            }
-                            if (session.good()) {
-                                SyntaxRow row = session.syntax(item.word(1));
-                                if (row.word(11) != module_id || !row.set_word(item.word(2), reference)
-                                    || !session.set_syntax(item.word(1), row)) {
-                                    session.fail_storage(StorageStatus::invalid);
-                                }
-                            }
-                            request = request + 1;
+                            second = make_reference(session, token_row, 1);
                         }
                     }
-                }
-                if (token.kind() == compiler_lexer::Event::end_of_input) {
-                    if (request != session.work_count()) {
-                        session.fail_storage(StorageStatus::invalid);
+                    if (session.good()) {
+                        session.set_work(slot, WorkRow(marks.word(0), marks.word(1), first, second, -1, -1));
                     }
+                }
+                if (token.kind() == compiler_lexer::Event::end_of_input || ordinal == last) {
+                    complete = true;
                 } else {
                     ordinal = ordinal + 1;
                 }
@@ -214,6 +189,23 @@ namespace compiler_resolver {
             offset = token.next_offset();
             line = token.next_line();
             line_start = token.next_line_start();
+        }
+        const i64 end_reference = session.meta_count();
+        if (session.good() && (session.index_insert(9, module_id, -1, 0, 0, first_reference) != first_reference
+            || session.index_insert(9, module_id, -2, 0, 0, end_reference) != end_reference)) {
+            session.fail_storage(StorageStatus::invalid);
+        }
+        request = 0;
+        while (request < requests && session.good()) {
+            const WorkRow item = session.work(request);
+            const WorkRow marks = session.work(requests + item.word(0));
+            const i64 reference_row = marks.word(2 + item.word(3));
+            SyntaxRow row = session.syntax(item.word(1));
+            if (row.word(11) != module_id || !row.set_word(item.word(2), reference_row)
+                || !session.set_syntax(item.word(1), row)) {
+                session.fail_storage(StorageStatus::invalid);
+            }
+            request = request + 1;
         }
         session.truncate_work(0);
         return session.good();

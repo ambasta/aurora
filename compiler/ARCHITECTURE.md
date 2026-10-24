@@ -12,14 +12,14 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 | Source loading and file I/O | C++ host | Native runtime and source-loading migration |
 | Formatting | Aurora owns syntax roles, layout and findings; native host retains source transport and token/comment/reparse/idempotence checks | Final-source qualification required |
 | Lexing and parsing | Aurora | Complete final-source predecessor/current convergence |
-| Resolution, immutable linkage spelling and typed lowering | Aurora; native projection reads bounded copied name chunks | Validate final integrated behavior and paired compile-time/output gates |
+| Resolution, immutable linkage spelling and typed lowering | Aurora; native projection reads bounded copied name chunks; hash-chained index lookups, AVL order only for the two walked domains | Validate final integrated behavior and paired compile-time/output gates |
 | Metadata, callable and frame admission | Aurora owns frame size and disjoint slot domains; C++ transports raw declarations | Retain host conversion, quota arithmetic and transport bounds |
 | Instruction storage and static admission | Aurora owns service argument-vector shape and copied-argument contracts | Preserve admission before whole-function verification |
 | Initialization and synchronous service loans | Aurora verification workspace | Final integrated allocation, cleanup and semantic qualification |
 | Current values, operand stacks, bounds evidence | Aurora whole-function verifier | Final-source qualification; no native fallback |
 | Ownership, provenance and worklist | Aurora whole-function verifier over the original paired source stores | Preserve diagnostic priority, declaration order, bounded FIFO work and nominal type identity |
 | Call graph | Aurora | Validate final integrated behavior |
-| x86 emission | Aurora, fixed native transport | Same acceptance, diagnostics and ABI facts as the C++ backend on the whole corpus, byte-identical C1/C2 (`emitter-differential-*`); inlines single-field getters; no register allocation yet |
+| x86 emission | Aurora, fixed native transport | Same acceptance, diagnostics and ABI facts as the C++ backend on the whole corpus, byte-identical C1/C2 (`emitter-differential-*`); inlines single-field getters; owned-value bounds checks and sizes use multiplies, not divq; no register allocation yet |
 | Direct class fields | Aurora source and independent metadata admission share an 8,192-field cap, including empty, nested, resource and array fields | Existing leaf, byte, depth and array-element limits still apply |
 | Private host bridge | One 84-entry table generates Aurora forwarders and host transport declarations; compiler facts supply layouts, symbols and raw enum validation | Preserve fail-closed conversion; native replacement remains incomplete |
 | Bootstrap route | One digest-pinned checkpoint (C2 of `2fd30b2`, built once from the recorded six-stage source route), then current C1/C2 with convergence | Bump in one hop: build an accepted main commit with the current checkpoint, pass C1/C2 convergence and the historical-oracle differential, then the release gates ([recipe](README.md#bumping-the-checkpoint-one-hop)) |

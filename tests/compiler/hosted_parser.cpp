@@ -4285,7 +4285,7 @@ public:
         const auto next = active ^ 1U;
         // A consuming call never has an armed input after transfer begins.
         owner = pair = false;
-        // Only the index pool requests eight 80-byte rows during this transfer.
+        // Only the index pool requests eight rows during this transfer.
         // Infer the runtime's allocation header from the first empty owner.
         allocations.watchedBytes =
             allocations.initialBytes[0] + 8 * sizeof(aurora::hosted_abi::compiler_resolver::IndexRow);
@@ -4608,17 +4608,19 @@ void rawCatalogueControls() {
 void rawResolutionOwnership() {
     namespace Wire = aurora::hosted_abi::compiler_resolver;
     using Index = Wire::IndexRow;
-    static_assert(sizeof(Index) == 80 && alignof(Index) == 8);
+    static_assert(sizeof(Index) == 96 && alignof(Index) == 8);
     static_assert(offsetof(Index, domain) == 0 && offsetof(Index, key0) == 8 && offsetof(Index, key1) == 16 &&
                   offsetof(Index, key2) == 24 && offsetof(Index, key3) == 32 && offsetof(Index, payload) == 40 &&
                   offsetof(Index, left) == 48 && offsetof(Index, right) == 56 && offsetof(Index, parent) == 64 &&
-                  offsetof(Index, height) == 72);
+                  offsetof(Index, height) == 72 && offsetof(Index, chain) == 80 && offsetof(Index, bucket) == 88);
     static_assert(
         std::is_same_v<decltype(Index::domain), std::int64_t> && std::is_same_v<decltype(Index::key0), std::int64_t> &&
         std::is_same_v<decltype(Index::key1), std::int64_t> && std::is_same_v<decltype(Index::key2), std::int64_t> &&
         std::is_same_v<decltype(Index::key3), std::int64_t> && std::is_same_v<decltype(Index::payload), std::int64_t> &&
         std::is_same_v<decltype(Index::left), std::int64_t> && std::is_same_v<decltype(Index::right), std::int64_t> &&
-        std::is_same_v<decltype(Index::parent), std::int64_t> && std::is_same_v<decltype(Index::height), std::int64_t>);
+        std::is_same_v<decltype(Index::parent), std::int64_t> &&
+        std::is_same_v<decltype(Index::height), std::int64_t> && std::is_same_v<decltype(Index::chain), std::int64_t> &&
+        std::is_same_v<decltype(Index::bucket), std::int64_t>);
     namespace Lowering = aurora::hosted_abi::compiler_lowering;
     using Output = Lowering::OutputRow;
     using Operand = Lowering::OperandRow;
