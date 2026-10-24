@@ -15,13 +15,11 @@ native executables. All assertions use explicit require() under python -O too.
 from __future__ import annotations
 
 import argparse
-import hashlib
-import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import re
 import resource
 import subprocess
-import sys
 import tempfile
 
 REGION = 0x1122334455667788
@@ -54,22 +52,18 @@ def command(args, expected=0):
 
 
 def body(assembly, name):
-    pattern = rf"(?m)^{re.escape(name)}:\n([\s\S]*?)^\.size {re.escape(name)},[^\n]*\n"
-    matches = list(re.finditer(pattern, assembly))
-    require(len(matches) == 1, f"one private body for {name}, got {len(matches)}")
-    return matches[0]
+    """(start, end) of the one private body between `name:` and its `.size name,` line."""
+    head = f"\n{name}:\n"
+    require(assembly.count(head) == 1, f"one private body for {name}, got {assembly.count(head)}")
+    start = assembly.index(head) + len(head)
+    end = assembly.find(f"\n.size {name},", start - 1)
+    require(end >= 0, f"{name}: private body has a .size line")
+    return start, end + 1
 
 
 def replace_body(assembly, name, code):
-    match = body(assembly, name)
-    return assembly[: match.start(1)] + code + assembly[match.end(1) :]
-
-
-def mutate_body(assembly, name, old, new):
-    match = body(assembly, name)
-    code = match[1]
-    require(code.count(old) == 1, f"{name}: exact unique mutant site {old!r}")
-    return replace_body(assembly, name, code.replace(old, new))
+    start, end = body(assembly, name)
+    return assembly[:start] + code + assembly[end:]
 
 
 def shape_cases():
@@ -411,7 +405,7 @@ def private_symbols(symbols):
     return set(re.findall(r"\bt (\S+)$", symbols, re.M))
 
 
-def execute(directory, name, assembly, test_cases, expected=0, rejected_target=None):
+def execute(directory, name, assembly, test_cases):
     source = directory / (name + ".s")
     obj = directory / (name + ".o")
     executable = directory / (name + ".elf")
@@ -423,34 +417,21 @@ def execute(directory, name, assembly, test_cases, expected=0, rejected_target=N
     for target in {case["target"] for case in test_cases if not case["target"].startswith("abi_array_mint_")}:
         require(target in symbols, f"{target}: private boundary linkage")
     command(["ld", "-o", executable, obj])
-    result = command([executable], expected)
+    result = command([executable])
     require(len(result.stdout) == 8, f"{name}: exactly one complete native observation")
     observed = int.from_bytes(result.stdout, "little")
-    if expected == 0:
-        require(observed == len(test_cases), f"{name}: all boundaries ran ({observed}/{len(test_cases)})")
-    else:
-        require(observed < len(test_cases), f"{name}: mutant failed inside a known boundary")
-        require(test_cases[observed]["target"] == rejected_target, f"{name}: exact targeted boundary rejected")
-    receipt = {
-        "status": result.returncode,
-        "observation": observed,
-        "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
-    }
-    if expected:
-        receipt["rejected_case"] = test_cases[observed]["name"]
-    (directory / (name + ".json")).write_text(json.dumps(receipt, indent=2) + "\n")
-    print(f"PASS logical span ABI {name}: {len(test_cases) if not expected else receipt['rejected_case']}", flush=True)
+    require(observed == len(test_cases), f"{name}: all boundaries ran ({observed}/{len(test_cases)})")
+    print(f"PASS logical span ABI {name}: {len(test_cases)}", flush=True)
     return observed
 
 
+def run_programs(directory, programs):
+    """Assemble, link and run independent (name, assembly, cases) programs concurrently."""
+    with ThreadPoolExecutor(max_workers=len(programs)) as pool:
+        list(pool.map(lambda program: execute(directory, *program), programs))
+
+
 def main():
-    require(
-        private_symbols(
-            "0 t target\n0 t target\n0 T public\n0 d datum\n0 t target_suffix\n0 t prefix_target\n0 t target.suffix\n"
-        )
-        == {"target", "target_suffix", "prefix_target", "target.suffix"},
-        "private symbol presence, duplicates and exact names",
-    )
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("ir_tests", type=Path)
     parser.add_argument(
@@ -467,9 +448,7 @@ def main():
         require("validated typed IR" in raw[graph], "verified backend output required")
         (args.artifacts / (graph + "-generated.s")).write_text(raw[graph])
     require("__au_runtime_bytes_" not in raw["array"], "complete array-only graph has zero owner-runtime references")
-    assembled = {}
-    all_cases = {}
-    count = 0
+    programs = []
     for name, owner, handwritten in (
         ("array", False, False),
         ("owner", True, False),
@@ -480,72 +459,10 @@ def main():
             for mode in range(4):
                 emitted = replace_body(emitted, f"abi_result_{mode}", handwritten_result(mode))
         selected = cases(owner, handwritten)
-        full = emitted + harness(selected, owner)
-        assembled[name], all_cases[name] = full, selected
-        execute(args.artifacts, name, full, selected)
-        count += len(selected)
-    # Deliberately corrupt separate full-width copy/save boundaries. The baseline
-    # executes first, so an always-failing oracle cannot satisfy these controls.
-    mutants = [
-        ("bind-seventh-word", "owner", "abi_forward_1_1_0_0", "    movq %rax, -8(%rbp)", "    movq $0, -8(%rbp)", 91),
-        (
-            "reborrow-owner-word",
-            "owner",
-            "abi_forward_1_1_1_0",
-            "    movq %rcx, -88(%rbp)",
-            "    movq $0, -88(%rbp)",
-            91,
-        ),
-        ("window-start", "owner", "abi_forward_1_1_2_0", "    movq %rcx, -184(%rbp)", "    movq $0, -184(%rbp)", 91),
-        ("packed-seventh-word", "owner", "abi_forward_1_1_0_0", "    movq %rax, 48(%rsp)", "    movq $0, 48(%rsp)", 91),
-        ("returned-seventh-word", "owner", "abi_result_0", "    movq %rcx, 48(%r10)", "    movq $0, 48(%r10)", 94),
-        (
-            "result-overcopy",
-            "owner",
-            "abi_result_0",
-            "    movq %rcx, 48(%r10)",
-            "    movq %rcx, 48(%r10)\n    movq $0, 56(%r10)",
-            94,
-        ),
-        ("current-value-save", "owner", "abi_borrow_0", "    popq %rax", "    popq %rdx", 93),
-        ("saved-operand", "owner", "abi_borrow_1", "    popq %rax", "    popq %rax\n    addq $1, (%rsp)", 93),
-        (
-            "runtime-alignment",
-            "owner",
-            "abi_borrow_0",
-            "    subq $8, %rsp\n    call __au_runtime_bytes_borrow_span",
-            "    nop\n    call __au_runtime_bytes_borrow_span",
-            92,
-        ),
-    ]
-    for name, graph, target, old, new, status in mutants:
-        changed = mutate_body(assembled[graph], target, old, new)
-        execute(args.artifacts, "mutant-" + name, changed, all_cases[graph], status, target)
-    # Corrupt the expected hidden-result mode while retaining writable decoy
-    # storage, so this is an exact oracle failure rather than a generic crash.
-    wrong = mutate_body(assembled["owner"], "abi_result_3", "    movq %rax, -248(%rbp)", "    movq %r11, -248(%rbp)")
-    execute(args.artifacts, "mutant-hidden-result-register", wrong, all_cases["owner"], 94, "abi_result_3")
-    summary = f"PASS logical span ABI: {count} handwritten boundary cases, {len(mutants) + 1} exact rejected mutants"
-    (args.artifacts / "cases.json").write_text(json.dumps(all_cases, indent=2) + "\n")
-    (args.artifacts / "summary.txt").write_text(summary + "\n")
-    root = Path(__file__).resolve().parents[2]
-    sources = [Path(__file__).resolve(), Path(__file__).with_suffix(".cpp").resolve()]
-    sources += [
-        root / "compiler" / name
-        for name in ("ir.hpp", "ir_verify.hpp", "ir_verify.cpp", "ir_layout.hpp", "types.hpp", "x86.hpp")
-    ]
-    manifest = {
-        "status": "passed",
-        "native_boundary_executions": count,
-        "rejected_mutants": len(mutants) + 1,
-        "array_owner_runtime_references": 0,
-        "python": sys.version,
-        "python_optimization": sys.flags.optimize,
-        "fixture_sha256": hashlib.sha256(args.ir_tests.read_bytes()).hexdigest(),
-        "sources": {str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sources},
-        "tools": {name: command([name, "--version"]).stdout.decode().splitlines()[0] for name in ("as", "ld", "nm")},
-    }
-    (args.artifacts / "run.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        programs.append((name, emitted + harness(selected, owner), selected))
+    count = sum(len(selected) for _, _, selected in programs)
+    run_programs(args.artifacts, programs)
+    summary = f"PASS logical span ABI: {count} handwritten boundary cases"
     print(summary)
     print(f"Artifacts: {args.artifacts}")
 

@@ -289,24 +289,20 @@ transport failure at valid coordinates, not geometry or synchronous faults.
 Select the hosted/paging/admission checks from the configured Meson build:
 
 ```sh
-meson test -C BUILD graphical-console-native graphical-paging \
+meson test -C BUILD graphical-console-native font5x7 graphical-paging \
     graphical-admission-controls graphical-admission-controls-optimized \
     graphical-smoke-controls graphical-smoke-controls-optimized
 ```
 
 Meson `slow`/`full` includes the hosted runner; `dev`/`full` includes paging,
 admission and compiler-free smoke controls (`make test-graphical-controls`).
-For a pinned hosted run:
-
-```sh
-python3 -B -O tests/kernel-graphical-console.py --run /path/to/aurorac \
-    --compiler-sha256 REVIEWED_SHA256
-```
-
-A controlled `--developer-build-receipt` is also supported. Each run recompiles
-the observer and hashes its recursive quoted-header closure, including capture
-policy. The inventory requires 154 generated-consumer cases: 117 transcript/
-geometry, two session resets, 13 output failures and 22 entry denials.
+Meson compiles the consumer and links `graphical-console-host` once. The runner
+streams 154 cases (117 transcript/geometry, two session resets, 13 output failures
+and 22 entry denials) to it; each case runs in a fresh child, and its counters
+and digests of the exact store sequence, every viewport checkpoint and the final
+guarded framebuffer are compared with `tests/kernel-graphical-console.golden`,
+generated once from the former independent Python model. `font5x7` compares all
+256 byte mappings of the shared font, as visual rows, with `tests/font5x7.golden`.
 
 Qualification assigns each claim to its actual check:
 

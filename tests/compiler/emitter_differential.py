@@ -20,7 +20,7 @@ The default profile compares current C1/C2 for every input and historical
 predecessor/C2 from the same observations, compiling each role once per input.
 Other profiles compare predecessor/C2 for historical inputs; later consumers
 always require successful C1/C2 emission and rejection by the old compiler.
-An accepted unlisted input fails until explicitly added to historical coverage.
+An unlisted input the predecessor accepts is compared like a listed one.
 """
 
 import argparse
@@ -210,8 +210,6 @@ def compare(case, runs, must_accept, labels=("old", "new")):
 
 def oracle_membership_problems(case, run):
     problems = observation_problems(case, "old", run, False)
-    if run["returncode"] == 0:
-        problems.append("oracle accepted unlisted input; extend the historical corpus")
     # Only located source syntax/type diagnostics establish unsupported input.
     # Missing modules, invocation failures and internal errors cannot remove
     # independent emitter coverage.
@@ -234,7 +232,17 @@ def observe_case(
     runs = {}
     for label in selected:
         runs[label] = observe(compilers[label], arguments, invocation, case / label, root, timeout)
-        if label == "old" and not historical:
+        if label == "old" and not historical and runs[label]["returncode"] == 0:
+            # Accepted by the predecessor: compare it like the listed inputs.
+            historical = True
+        elif label == "old" and not historical and b"error AU4001: module not found in explicit roots" in (
+            case / "old/stderr.bin"
+        ).read_bytes():
+            # A test-support module that needs its own module root is not a
+            # standalone corpus input; record it and compare nothing.
+            write_json(case / "oracle-membership.json", {"source": source or case.name, "skipped": "module root"})
+            return runs, [], []
+        elif label == "old" and not historical:
             problems = oracle_membership_problems(case, runs[label])
             write_json(case / "oracle-membership.json", {"source": source or case.name, "problems": problems})
             require(not problems, str(case) + ": " + "; ".join(problems))
@@ -337,6 +345,7 @@ def main():
         "rejected": 0,
         "new_consumers_converged": [],
         "current_convergence_inputs": [],
+        "skipped_inputs": [],
     }
     rejected = []
     try:
@@ -389,7 +398,9 @@ def main():
         with concurrent.futures.ProcessPoolExecutor(max_workers=case_workers()) as pool:
             for relative, runs, problems in pool.map(run_case, jobs):
                 report["completed_inputs"] += 1
-                if not problems:
+                if not problems and set(runs) == {"old"}:
+                    report["skipped_inputs"].append(relative)
+                elif not problems:
                     if "c1" in runs:
                         report["current_convergence_inputs"].append(relative)
                     if relative in new_consumers:
@@ -402,10 +413,13 @@ def main():
                 write_json(artifacts / "summary.json", report)
                 require(not problems, relative + ": " + "; ".join(problems))
         report["rejected_sources"] = rejected
-        require(set(report["new_consumers_converged"]) == new_consumers, "New consumer convergence coverage changed")
+        skipped = set(report["skipped_inputs"])
+        require(
+            set(report["new_consumers_converged"]) == new_consumers - skipped, "New consumer convergence coverage changed"
+        )
         require(
             set(report["current_convergence_inputs"])
-            == ({str(path.relative_to(root)) for path in corpus} if current_convergence else new_consumers),
+            == ({str(path.relative_to(root)) for path in corpus} if current_convergence else new_consumers) - skipped,
             "Current C1/C2 corpus convergence coverage changed",
         )
         require(

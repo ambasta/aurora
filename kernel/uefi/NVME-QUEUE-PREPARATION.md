@@ -113,7 +113,7 @@ fresh full native aggregate or broad kernel qualification.
 
 1. `make test-nvme-queues`: hosted lifecycle and production API tests; full and
    small generation limits; illegal test settings and incompatible profiles.
-2. Repeat the queue runner with fatal ASan/UBSan. Include the existing page-policy
+2. Repeat those tests in a `-Db_sanitize=address,undefined` build. Include the existing page-policy
    and PinLedger tests normally and under their sanitizer modes; their semantics
    must remain unchanged. No sanitizer credit applies to generated Aurora code.
 3. `make test-uefi-bar`: all existing BAR/resource policy, serial/trace/provenance

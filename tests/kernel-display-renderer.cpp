@@ -1,9 +1,12 @@
+// Runs the real generated Aurora status page once for one geometry and prints its
+// store count and an FNV-1a digest of the complete guarded framebuffer, compared
+// with tests/kernel-display-renderer.golden. A foreign Console grant must be denied
+// (exit 77) before any store.
 #include "../kernel/display-session.hpp"
 #include "../kernel/console-session.hpp"
 #include "../kernel/uefi/framebuffer-pixels.hpp"
 #include <array>
 #include <cstdlib>
-#include <fstream>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -71,10 +74,11 @@ extern "C" auto __au_runtime_display_pixel(const void *grant, U64 generation, U6
     return Session::pixel(grant, generation, x, y, r, g, b);
 }
 int main(int argc, char **argv) {
-    need(argc == 6 || argc == 7);
+    need(argc == 5 || argc == 6);
     const auto width = std::stoul(argv[1]), height = std::stoul(argv[2]), pitch = std::stoul(argv[3]);
     const auto format = std::stoul(argv[4]);
-    foreign_test = argc == 7 && std::string(argv[6]) == "foreign-console";
+    foreign_test = argc == 6;
+    need(!foreign_test || std::string(argv[5]) == "foreign-console");
     const auto size = (pitch * height * 4 + 4095) & ~U64{4095};
     const auto geometry = FramebufferGeometry::parse(0xc0000000, size, width, height, pitch, format, 36);
     need(geometry.has_value());
@@ -98,8 +102,9 @@ int main(int argc, char **argv) {
     }
     const auto completion = __au_runtime_display_entry(&argument);
     need(Session::close(argument, completion) == aurora::display::Completion::rendered);
-    std::ofstream output(argv[5], std::ios::binary);
-    output.write(reinterpret_cast<const char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-    need(output.good());
-    std::cout << "PASS: actual Aurora renderer stores=" << stores << " bytes=" << bytes.size() << '\n';
+    need(!foreign_test);
+    U64 digest = 0xcbf29ce484222325ULL;
+    for (const auto byte : bytes)
+        digest = (digest ^ static_cast<U64>(byte)) * 0x100000001b3ULL;
+    std::cout << "stores=" << stores << " bytes=" << bytes.size() << " digest=" << std::hex << digest << '\n';
 }

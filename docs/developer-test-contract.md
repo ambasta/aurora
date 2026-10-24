@@ -87,3 +87,13 @@ their fixtures into one module linked with the hosted byte runtime and streams
 runs as rows. Expected values come from Python's standard library (json, the
 UTF-8 codec, int/str) or from reviewed golden files in `tests/compiler/golden/`
 frozen from the former models; rejections are compiled one source each.
+
+Kernel and service observers are Meson executables linked once with their
+generated Aurora objects (`scripts/meson-native-fixture.py` compiles, bridges and
+assembles each root as a dependency-tracked custom target). `tests/golden.py`
+compares a driver's stdout, each `mode` of a multi-mode program, or each
+rejected source's exact diagnostic with the golden file beside it (`--update`
+rewrites it for a reviewed change). Policy observers print per-family digests
+and histograms of their full-width vector families (`tests/policy-vectors.hpp`).
+C++ test-configuration guards are one-line compile-fail cases in
+`tests/kernel-compile-fail.txt`.

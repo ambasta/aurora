@@ -8,6 +8,9 @@ oracle_env.set('TEMP', meson.current_build_dir())
 oracle_env.set('PYTHONDONTWRITEBYTECODE', '1')
 oracle_env.set('CXX', oracle_cxx)
 artifact_adapter = files('meson_artifacts.py')
+# Shared drivers: golden-output comparison and Aurora fixture objects built once.
+golden_runner = files('golden.py')
+fixture_builder = files('../scripts/meson-native-fixture.py')
 # Test drivers and fixtures are not performance-critical; the code under test in
 # hosted_frontend keeps the project optimization level. -O1, not -O0: with GCC 16
 # these template-heavy fixtures compile no faster at -O0 and emit ~24x larger
@@ -56,10 +59,20 @@ test('volatile-file-source-native', python,
     depends: aurorac, suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'],
     env: oracle_env, workdir: meson.current_build_dir(), timeout: 120, is_parallel: true)
 
+# The scratchpad host in its three modes, built once; the runner links each generated root.
+scratchpad_hosts = []
+scratchpad_args = []
+foreach mode : ['client', 'input', 'output']
+  scratchpad_hosts += static_library('scratchpad-' + mode + '-host',
+      ['compiler/scratchpad_host.cpp', 'compiler/service_group_abi.S'],
+      cpp_args: mode == 'output' ? [] : ['-DAURORA_SCRATCHPAD_' + mode.to_upper() + '_TEST'],
+      native: true, override_options: fixture_options)
+  scratchpad_args += ['--' + mode + '-host', scratchpad_hosts[-1].full_path()]
+endforeach
 test('scratchpad-source-native', python,
     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/scratchpad.py'), aurorac,
-           '--artifacts', '@ARTIFACTS@'],
-    depends: aurorac, suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'],
+           '--artifacts', '@ARTIFACTS@'] + scratchpad_args,
+    depends: [aurorac] + scratchpad_hosts, suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'],
     env: oracle_env, workdir: meson.current_build_dir(), timeout: 180, is_parallel: true)
 
 # Model and ownership checks use one standalone source graph. No production
@@ -191,10 +204,14 @@ owning_classes_ir = executable(
     include_directories: include_directories('../compiler'), native: true, override_options: fixture_options, install: false,
 )
 test('owning-classes-ir', owning_classes_ir, suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
+owning_classes_abi_driver = static_library(
+    'owning-classes-abi-driver', ['compiler/owning_classes_abi_driver.cpp', '../runtime/hosted_bytes.cpp'],
+    include_directories: include_directories('..'), native: true, override_options: fixture_options, install: false,
+)
 test(
     'owning-classes-abi', python,
-    args: ['-B', '-O', files('compiler/owning_classes_abi.py'), owning_classes_ir],
-    depends: owning_classes_ir, suite: ['full', 'merge', 'dev', 'core', 'compiler'],
+    args: ['-B', '-O', files('compiler/owning_classes_abi.py'), owning_classes_ir, owning_classes_abi_driver.full_path()],
+    depends: [owning_classes_ir, owning_classes_abi_driver], suite: ['full', 'merge', 'dev', 'core', 'compiler'],
     env: oracle_env, workdir: meson.current_build_dir(), timeout: 180,
 )
 
@@ -290,10 +307,28 @@ console_service_ir = executable(
 test('console-service-ir', console_service_ir, suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
 console_session = executable('console-session', 'kernel-console-session.cpp', native: true, override_options: fixture_options, install: false)
 test('console-session', console_session, suite: ['full', 'merge', 'dev'], timeout: 120)
+# Hosts for the console service runner, built once; it links each generated root.
+console_service_hosts = {
+  'console': static_library('console-service-host', ['compiler/console_service_host.cpp',
+                            'compiler/console_service_abi.S'], native: true, override_options: fixture_options),
+  'region': static_library('console-service-region-host', ['compiler/console_service_host.cpp',
+                           'compiler/console_service_abi.S', '../runtime/hosted_bytes.cpp'],
+                           cpp_args: ['-DAURORA_CONSOLE_REGION_TEST'], include_directories: include_directories('..'),
+                           native: true, override_options: fixture_options),
+  'note': static_library('console-note-policy-host', 'compiler/console_note_policy_host.cpp',
+                         native: true, override_options: fixture_options),
+  'files': static_library('console-files-policy-host', 'compiler/console_files_policy_host.cpp',
+                          native: true, override_options: fixture_options),
+}
+console_service_args = []
+foreach name, host : console_service_hosts
+  console_service_args += ['--' + name + '-host', host.full_path()]
+endforeach
 test('console-service-source-native', python,
      args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/console_service.py'), aurorac,
-            '--comparison-compiler', aurorac_stage2, '--artifacts', '@ARTIFACTS@'],
-     depends: [aurorac, aurorac_stage2], suite: ['full', 'merge', 'slow', 'core', 'compiler'], env: oracle_env,
+            '--comparison-compiler', aurorac_stage2] + console_service_args + ['--artifacts', '@ARTIFACTS@'],
+     depends: [aurorac, aurorac_stage2] + console_service_hosts.values(),
+     suite: ['full', 'merge', 'slow', 'core', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
 
 # Second sealed kind reuses the service verifier and private bridge.
@@ -345,11 +380,47 @@ iommu_event_ir = executable(
     dependencies: hosted_frontend,
     include_directories: include_directories('../compiler'), native: true, override_options: fixture_options, install: false,
 )
-test('iommu-event-source-native', python,
-     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/iommu_event_service.py'), aurorac,
-            iommu_event_ir.full_path(), '--artifacts', '@ARTIFACTS@'],
-     depends: [aurorac, iommu_event_ir], suite: ['full', 'merge', 'slow', 'core', 'compiler'], env: oracle_env,
-     workdir: meson.current_build_dir(), timeout: 300)
+test('iommu-event-service-ir', iommu_event_ir, suite: ['full', 'merge', 'slow', 'core', 'compiler'], timeout: 60)
+iommu_event_ir_assembly = custom_target('iommu-event-ir-assembly', output: 'iommu-event-ir.s',
+    command: [iommu_event_ir, '@OUTPUT@'], capture: false)
+iommu_event_ir_object = custom_target('iommu-event-ir-object', input: iommu_event_ir_assembly,
+    output: 'iommu-event-ir.o',
+    command: [find_program('as', native: true), '--64', '@INPUT@', files('compiler/iommu_event_ir_bridge.S'),
+              '-o', '@OUTPUT@'])
+iommu_event_objects = {'ir': iommu_event_ir_object}
+foreach fixture : [
+    ['consumer', '../examples/kernel-iommu-event-service.au', 'intake', []],
+    ['abi', 'compiler/iommu_event_service.au', 'service', []],
+    ['cross-module', 'compiler/iommu_event_service_cross.au', 'service',
+     ['--module-root', meson.current_source_dir() / 'compiler/iommu-event-modules']],
+]
+  iommu_event_objects += {fixture[0]: custom_target('iommu-event-' + fixture[0], input: fixture[1],
+      output: 'iommu-event-' + fixture[0] + '.o', depfile: 'iommu-event-' + fixture[0] + '.d',
+      command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',
+                '--module-root', meson.project_source_root() / 'library'] + fixture[3] + [
+                '--bridge', files('compiler/iommu_event_' + fixture[2] + '_bridge.S'),
+                '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])}
+endforeach
+# The executed consumer, its kernel composition, the source ABI fixture (also
+# across a module boundary) and the independent IR, each linked once; every
+# mode's exit, signal and output is golden.
+foreach program : [['consumer', 'compiler/iommu_event_service_host.cpp', 'consumer'],
+                   ['composition', 'kernel-iommu-event-composition.cpp', 'consumer'],
+                   ['abi', 'compiler/iommu_event_service_host.cpp', 'abi'],
+                   ['cross-module', 'compiler/iommu_event_service_host.cpp', 'cross-module'],
+                   ['ir', 'compiler/iommu_event_service_host.cpp', 'ir']]
+  iommu_event_program = executable('iommu-event-' + program[0],
+      [program[1], 'compiler/iommu_event_service_abi.S', iommu_event_objects[program[2]]],
+      link_args: ['-no-pie'], native: true, override_options: fixture_options, install: false)
+  test('iommu-event-' + program[0], python,
+       args: ['-B', golden_runner, files('compiler/iommu-event-' + program[0] + '.golden'), '--modes', '--',
+              iommu_event_program],
+       suite: ['full', 'merge', 'slow', 'core', 'compiler'], env: oracle_env, timeout: 60)
+endforeach
+test('iommu-event-rejections', python,
+     args: ['-B', golden_runner, files('compiler/iommu_event_service_rejections.golden'), '--reject', '--', aurorac,
+            '--check'],
+     depends: aurorac, suite: ['full', 'merge', 'slow', 'core', 'compiler'], env: oracle_env, timeout: 60)
 iommu_event_session = executable('iommu-event-session', 'kernel-iommu-event-session.cpp', native: true, override_options: fixture_options, install: false)
 test('iommu-event-session', iommu_event_session, suite: ['full', 'merge', 'dev'], timeout: 120)
 iommu_event_profile = executable('iommu-event-profile', 'kernel-uefi-event-profile.cpp', cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page'], native: true, override_options: fixture_options, install: false)
@@ -370,21 +441,43 @@ foreach model : ['framebuffer', 'framebuffer-tables', 'framebuffer-loader', 'fra
 endforeach
 display_session = executable('display-session', 'kernel-display-session.cpp', native: true, override_options: fixture_options, install: false)
 test('display-session', display_session, suite: ['full', 'merge', 'dev'], timeout: 120)
-foreach control : [
-    'kernel_framebuffer_probe_oracle.py',
-    'test_framebuffer_capture.py',
-]
-    test(control, python, args: ['-B', files(control)], suite: ['full', 'merge', 'dev'], env: oracle_env, timeout: 120)
-endforeach
+test('kernel_framebuffer_probe_oracle.py', python, args: ['-B', files('kernel_framebuffer_probe_oracle.py')],
+     suite: ['full', 'merge', 'dev'], env: oracle_env, timeout: 120)
+display_page_object = custom_target('display-page',
+    input: '../examples/kernel-display-service.au', output: 'display-page.o', depfile: 'display-page.d',
+    command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',
+              '--module-root', meson.project_source_root() / 'library',
+              '--assemble-with', files('../kernel/uefi/display-service-entry.S'),
+              '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
+display_renderer = executable('display-renderer', 'kernel-display-renderer.cpp', display_page_object,
+    cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page'], link_args: ['-no-pie'],
+    native: true, override_options: fixture_options, install: false)
 test('display-renderer-native', python,
-     args: ['-B', files('kernel-display-renderer.py'), aurorac], depends: aurorac,
-     suite: ['full', 'merge', 'slow'], env: oracle_env, timeout: 300)
-# The complete generated graphical consumer remains outside fast developer feedback.
-# Its driver builds consumer/harness artifacts per invocation, never aurorac itself.
-test('graphical-console-native', python,
-     args: ['-B', artifact_adapter, python, '-B', '-O', files('kernel-graphical-console.py'), '--run', aurorac,
-            '--developer-selected-compiler', '--artifacts', '@ARTIFACTS@'], depends: aurorac,
-     suite: ['full', 'merge', 'slow'], env: oracle_env, workdir: meson.current_build_dir(), timeout: 600)
+     args: ['-B', golden_runner, files('kernel-display-renderer.golden'), '--modes', '--', display_renderer],
+     suite: ['full', 'merge', 'slow'], env: oracle_env, timeout: 60)
+# The real generated graphical consumer and the shared font, each compiled and
+# linked once with its host; results are compared with the golden files.
+graphical_console_object = custom_target('graphical-console-consumer',
+    input: '../examples/kernel-graphical-console.au', output: 'graphical-console-consumer.o',
+    depfile: 'graphical-console-consumer.d',
+    command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',
+              '--module-root', meson.project_source_root() / 'library',
+              '--assemble-with', files('../kernel/uefi/graphical-console-entry.S'),
+              '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
+graphical_console_host = executable('graphical-console-host', 'kernel-graphical-console.cpp', graphical_console_object,
+    cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page'], link_args: ['-no-pie'],
+    native: true, override_options: fixture_options, install: false)
+test('graphical-console-native', python, args: ['-B', files('kernel-graphical-console.py'), graphical_console_host],
+     suite: ['full', 'merge', 'slow'], env: oracle_env, timeout: 120)
+font_glyphs_object = custom_target('font-glyphs-module',
+    input: 'kernel-programs/font-glyphs.au', output: 'font-glyphs.o', depfile: 'font-glyphs.d',
+    command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',
+              '--module-root', meson.project_source_root() / 'library',
+              '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
+font_glyphs = executable('font-glyphs', 'font-glyphs.cpp', font_glyphs_object,
+    native: true, override_options: fixture_options, install: false)
+test('font5x7', python, args: ['-B', golden_runner, files('font5x7.golden'), '--', font_glyphs],
+     suite: ['full', 'merge', 'dev'], env: oracle_env, timeout: 60)
 graphical_paging = executable('graphical-paging', 'kernel-graphical-paging.cpp',
                             cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page'],
                             native: true, install: false, override_options: ['optimization=1'],

@@ -3,14 +3,11 @@
 
 The separate C++ IR producer is supplied prebuilt. The older logical-span oracle
 provides assembly execution/canary plumbing only; parameter shapes, records,
-method registers, results and corruption controls below are independently stated.
+method registers and results below are independently stated.
 """
 
 import argparse
-import hashlib
-import json
 from pathlib import Path
-import sys
 import tempfile
 import logical_spans_abi as abi
 
@@ -134,89 +131,11 @@ def main():
     forward_cases = cases()
     direct = observed + abi.harness(direct_cases, True) + "\n.data\n" + extra
     full = outgoing + abi.harness(forward_cases, True) + "\n.data\n" + extra
-    abi.execute(args.artifacts, "incoming-generated-results", direct, direct_cases)
-    abi.execute(args.artifacts, "outgoing-handwritten-methods", full, forward_cases)
-    # Every control must produce the oracle's exact failure status and case,
-    # rather than an accidental trap, crash, or an always-failing baseline.
-    controls = []
-    target_name = "method_span_forward_1_1_0_0_0"
-    controls += [
-        ("incoming-seventh-word", target_name, "    movq %rax, -8(%rbp)", "    movq $0, -8(%rbp)", 91),
-        ("outgoing-seventh-word", target_name, "    movq %rax, 48(%rsp)", "    movq $0, 48(%rsp)", 91),
-        (
-            "receiver-register",
-            target_name,
-            "    call method_span_target_1_1_0",
-            "    xorq %r10, %r10\n    call method_span_target_1_1_0",
-            91,
-        ),
-    ]
-    # Independently corrupt every complete record word, including opaque owner
-    # payload words, so accidental truncation cannot hide behind length checks.
-    for word in range(7):
-        controls.append(
-            (
-                f"packed-word-{word}",
-                target_name,
-                f"    movq %rax, {8 * word}(%rsp)",
-                f"    movq $-1, {8 * word}(%rsp)",
-                91,
-            )
-        )
-    odd = "method_span_forward_1_1_0_1_0"
-    controls += [
-        (
-            "odd-stack-alignment",
-            odd,
-            "    subq $8, %rsp\n    call method_span_target_1_1_0",
-            "    nop\n    call method_span_target_1_1_0",
-            92,
-        ),
-        (
-            "saved-operand",
-            odd,
-            "    call method_span_target_1_1_0",
-            "    addq $1, 72(%rsp)\n    call method_span_target_1_1_0",
-            93,
-        ),
-    ]
-    for name, function, old, new, status in controls:
-        changed = abi.mutate_body(full, function, old, new)
-        abi.execute(args.artifacts, "mutant-" + name, changed, forward_cases, status, function)
-    # Overcopy is checked against complete hidden-result canaries in direct calls.
-    function = "method_span_target_1_1_2"
-    changed = abi.mutate_body(
-        direct, function, "    movq %rcx, 48(%r10)", "    movq %rcx, 48(%r10)\n    movq $0, 56(%r10)"
+    abi.run_programs(
+        args.artifacts,
+        [("incoming-generated-results", direct, direct_cases), ("outgoing-handwritten-methods", full, forward_cases)],
     )
-    abi.execute(args.artifacts, "mutant-result-overcopy", changed, direct_cases, 94, function)
-    for mode, offset in ((1, 88), (2, 136)):
-        function = f"method_span_target_1_1_{mode}"
-        changed = abi.mutate_body(
-            direct, function, f"    movq %rax, -{offset}(%rbp)", f"    movq %r11, -{offset}(%rbp)"
-        )
-        abi.execute(args.artifacts, f"mutant-hidden-result-register-{mode}", changed, direct_cases, 94, function)
-    summary = (
-        f"PASS method span ABI: {len(direct_cases) + len(forward_cases)} native cases, "
-        f"{len(controls) + 3} exact rejected mutants"
-    )
-    root = Path(__file__).resolve().parents[2]
-    sources = [Path(__file__).resolve(), Path(__file__).resolve().with_suffix(".cpp"), Path(abi.__file__).resolve()] + [
-        root / "compiler" / x for x in ("ir.hpp", "ir_verify.hpp", "ir_verify.cpp", "x86.hpp", "ir_layout.hpp")
-    ]
-    receipt = {
-        "status": "passed",
-        "native_cases": len(direct_cases) + len(forward_cases),
-        "rejected_mutants": len(controls) + 3,
-        "python": sys.version,
-        "python_optimization": sys.flags.optimize,
-        "fixture_sha256": hashlib.sha256(args.ir_tests.read_bytes()).hexdigest(),
-        "sources": {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sources},
-    }
-    (args.artifacts / "run.json").write_text(json.dumps(receipt, indent=2) + "\n")
-    (args.artifacts / "cases.json").write_text(
-        json.dumps({"incoming": direct_cases, "outgoing": forward_cases}, indent=2) + "\n"
-    )
-    (args.artifacts / "summary.txt").write_text(summary + "\n")
+    summary = f"PASS method span ABI: {len(direct_cases) + len(forward_cases)} native cases"
     print(summary)
     print(f"Artifacts: {args.artifacts}")
 

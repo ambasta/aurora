@@ -1,6 +1,8 @@
 // Host-only observation adapter. No host I/O implementation is linked into the
 // kernel; the real Aurora object and real C++ transport decoder are linked here.
+// Fixed full-width vector families are compared with tests/kernel-budget-native.golden.
 #include "../kernel/uefi/budget-transport.hpp"
+#include "policy-vectors.hpp"
 #include <array>
 #include <cstdio>
 #include <cstring>
@@ -29,35 +31,94 @@ auto copied_first_tick_faults() -> bool {
 }
 } // namespace
 
-int main(int argc, char **argv) {
-    const bool decode = argc == 2 && std::strcmp(argv[1], "decode") == 0;
-    if (argc != 1 && !decode)
-        return 2;
+using namespace policy_vectors;
+
+namespace {
+auto policy(Family &family, U64 initial, U64 remaining, U64 used) -> void {
+    const auto result = aurora::uefi::language_budget_tick(initial, remaining, used);
+    // Every nonzero word the policy produces must decode in its own context.
+    if (result != 0 && !aurora::uefi::BudgetTransition::decode(result, initial, remaining, used))
+        std::exit(4);
+    family.observe({initial, remaining, used}, {result});
+}
+auto decoder(Family &family, U64 encoded, U64 initial, U64 remaining, U64 used) -> void {
+    U64 result{};
+    if (const auto value = aurora::uefi::BudgetTransition::decode(encoded, initial, remaining, used))
+        result = (U64{value->resume() ? 1U : 2U} << 16) | (U64{value->used()} << 8) | value->remaining();
+    family.observe({encoded, initial, remaining, used}, {result});
+}
+} // namespace
+
+int main() {
     if (!copied_first_tick_faults()) {
         std::fputs("FAIL: copied first-tick policy faults must reject against original context\n", stderr);
         return 7;
     }
-    const std::size_t width = decode ? 4 : 3;
-    std::array<std::uint64_t, 4> input{};
-    for (;;) {
-        const auto count = std::fread(input.data(), 1, width * 8, stdin);
-        if (count == 0 && std::feof(stdin))
-            return 0;
-        if (count != width * 8)
-            return 3;
-        std::uint64_t result{};
-        if (decode) {
-            const auto value = aurora::uefi::BudgetTransition::decode(input[0], input[1], input[2], input[3]);
-            if (value)
-                result = (std::uint64_t{value->resume() ? 1U : 2U} << 16) | (std::uint64_t{value->used()} << 8) |
-                         value->remaining();
-        } else {
-            result = aurora::uefi::language_budget_tick(input[0], input[1], input[2]);
-            const auto value = aurora::uefi::BudgetTransition::decode(result, input[0], input[1], input[2]);
-            if (result != 0 && !value)
-                return 4;
+    {
+        // Every reachable state: initial in [1, 128], used below it, remaining conserved.
+        Family family("policy-states");
+        for (U64 initial = 1; initial <= 128; ++initial)
+            for (U64 used = 0; used < initial; ++used)
+                policy(family, initial, initial - used, used);
+    }
+    {
+        Family family("policy-edges");
+        const U64 values[] = {0, 1, 2, 3, 63, 64, 127, 128, 129, 255, 256, (U64{1} << 63) - 1, U64{1} << 63, maximum};
+        for (const auto a : values)
+            for (const auto b : values)
+                for (const auto c : values)
+                    policy(family, a, b, c);
+    }
+    {
+        // Near-conserving and wide counts around every initial budget.
+        Family family("policy-near");
+        for (U64 initial = 1; initial <= 128; ++initial) {
+            for (U64 remaining = 0; remaining < 131; ++remaining) {
+                for (int offset = -2; offset <= 2; ++offset) {
+                    const auto used = static_cast<std::int64_t>(initial) - static_cast<std::int64_t>(remaining) + offset;
+                    if (used >= 0)
+                        policy(family, initial, remaining, static_cast<U64>(used));
+                }
+                for (const U64 used : {U64{1} << 63, maximum})
+                    policy(family, initial, remaining, used);
+            }
+            for (const U64 remaining : {U64{1} << 63, maximum})
+                for (const U64 used : {U64{0}, U64{1}, initial - 1, initial, maximum})
+                    policy(family, initial, remaining, used);
         }
-        if (std::fwrite(&result, 1, sizeof(result), stdout) != sizeof(result))
-            return 5;
+    }
+    {
+        Family family("policy-random");
+        Random random(20261004);
+        for (unsigned i = 0; i < 16384; ++i) {
+            const auto initial = random();
+            const auto remaining = random();
+            policy(family, initial, remaining, random());
+        }
+    }
+    {
+        // All 18-bit encodings against the only possible conserved total.
+        Family family("decoder-compact");
+        for (U64 encoded = 0; encoded < (U64{1} << 18); ++encoded) {
+            const auto total = (encoded & 255) + ((encoded >> 8) & 255);
+            decoder(family, encoded, total, total, 0);
+        }
+    }
+    {
+        // Every valid output and every one-bit mutation at every valid source state.
+        Family family("decoder-states");
+        for (U64 initial = 1; initial <= 128; ++initial)
+            for (U64 used = 0; used < initial; ++used) {
+                const auto remaining = initial - used;
+                const auto word = aurora::uefi::language_budget_tick(initial, remaining, used);
+                decoder(family, word, initial, remaining, used);
+                for (unsigned bit = 0; bit < 64; ++bit)
+                    decoder(family, word ^ (U64{1} << bit), initial, remaining, used);
+                decoder(family, word, initial, remaining - 1, used);
+                decoder(family, word, initial, remaining, used + 1);
+            }
+        const auto first = aurora::uefi::language_budget_tick(3, 3, 0);
+        for (const U64 value : {U64{0}, U64{129}, U64{255}, U64{1} << 63, maximum})
+            decoder(family, first, value, 3, 0);
     }
 }

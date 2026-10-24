@@ -11,6 +11,7 @@ unchanged siblings and failed requests, plus odd/even saved scalar stacks.
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import os
 from pathlib import Path
 import re
@@ -22,205 +23,6 @@ from unsigned_oracle import require
 
 ROOT = Path(__file__).resolve().parents[2]
 
-DRIVER = r"""
-#include "runtime/hosted_bytes.hpp"
-#include <array>
-#include <cstdint>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include <string>
-#include <vector>
-using namespace aurora::hosted::bytes;
-extern "C" std::uint64_t __au_runtime_bytes_test_entry(void *, void *);
-struct Trace {
-    std::vector<void *> allocations;
-    std::vector<bool> live;
-    std::vector<std::size_t> released;
-    static void *allocate(void *context, std::size_t size) noexcept {
-        auto &self = *static_cast<Trace *>(context);
-        void *p = std::malloc(size);
-        if (p) { self.allocations.push_back(p); self.live.push_back(true); }
-        return p;
-    }
-    static void release(void *context, void *p) noexcept {
-        auto &self = *static_cast<Trace *>(context);
-        for (std::size_t i = 0; i < self.allocations.size(); ++i)
-            if (self.live[i] && self.allocations[i] == p) {
-                self.live[i] = false; self.released.push_back(i + 1); std::free(p); return;
-            }
-        std::abort();
-    }
-};
-static void check(bool value, const char *message) {
-    if (!value) { std::fprintf(stderr, "ABI failure: %s\n", message); std::exit(90); }
-}
-static void put(void *p, std::uint64_t value) { std::memcpy(p, &value, 8); }
-static std::uint64_t get(const void *p) { std::uint64_t value; std::memcpy(&value,p,8); return value; }
-static void allocate_field(unsigned char *p, Region &region, std::int64_t length) {
-    NativeOwner owner{}; __au_runtime_bytes_allocate(region.id(), length, &owner);
-    check(owner.success == 1, "host fixture allocation succeeded"); std::memcpy(p,&owner,32);
-}
-static void init_parcel(unsigned char *p, Region &region, int n) {
-    p[0] = 197 + n; put(p + 40, 123456789 + n); p[80] = 223 + n;
-    allocate_field(p + 8,region,3 + n); allocate_field(p + 48,region,5 + n);
-}
-static void padding(const unsigned char *p, unsigned char poison) {
-    for (int i = 1; i < 8; ++i) check(p[i] == poison, "leading representation padding preserved");
-    for (int i = 81; i < 88; ++i) check(p[i] == poison, "trailing representation padding preserved");
-}
-static void consumed(const unsigned char *p, int n) {
-    check(p[0] == 197 + n && get(p+40) == static_cast<unsigned>(123456789+n) && p[80] == 223+n,
-          "move preserves source scalar bytes");
-    for (int base : {8,48}) for (int i = 0; i < 32; ++i) check(p[base+i] == 0, "source descriptor cleared");
-    padding(p,0xab);
-}
-static void valid_result(const unsigned char *p, Region &region) {
-    check(p[0] == 197 && get(p+40) == 123456789 && p[80] == 223, "result scalar layout");
-    for (int base : {8,48}) {
-        check(get(p+base) == region.id() && get(p+base+8) != 0 && get(p+base+24) == 1,
-              "result descriptor words survive padding cleanup");
-        check(get(p+base+16) == static_cast<unsigned>(base == 8 ? 3 : 5), "result descriptor length");
-    }
-    padding(p,0xcd);
-}
-static void drop(unsigned char *p) {
-    NativeOwner owner{}; std::memcpy(&owner,p,32); std::memset(p,0,32); __au_runtime_bytes_drop(&owner);
-}
-static void seed_parcel(unsigned char *p) {
-    for (int base : {8,48}) {
-        NativeOwner owner{}; std::memcpy(&owner,p+base,32);
-        for (std::int64_t i = 0; i < owner.length; ++i)
-            check(__au_runtime_bytes_set(&owner,i,base+i) == 1,"seed copied payload bytes");
-    }
-}
-static void resized_parcel(const unsigned char *p, const unsigned char *before, int field, Region &region,
-                           unsigned char poison) {
-    check(p[0] == 197 && get(p+40) == 123456789 && p[80] == 223,"resize preserves scalar bytes");
-    padding(p,poison);
-    for (int base : {8,48}) {
-        const int initial = base == 8 ? 3 : 5;
-        check(get(p+base) == region.id() && get(p+base+24) == 1,"resize preserves region and success");
-        check(get(p+base+16) == static_cast<unsigned>(base == field ? 65 : initial),
-              "resize targets exact descriptor length");
-        if (base == field)
-            check(get(p+base+8) != get(before+base+8),"changed-size resize replaces allocation identity");
-        else
-            check(std::memcmp(p+base,before+base,32) == 0,"resize leaves sibling descriptor unchanged");
-        NativeOwner owner{}; std::memcpy(&owner,p+base,32);
-        for (std::int64_t i = 0; i < initial; ++i)
-            check(__au_runtime_bytes_at(&owner,i) == static_cast<unsigned>(base+i),
-                  "resize preserves both payload prefixes");
-        if (base == field)
-            for (std::int64_t i = initial; i < 65; ++i)
-                check(__au_runtime_bytes_at(&owner,i) == 0,"resize zeroes every extension byte");
-    }
-}
-int main(int argc, char **argv) {
-    check(argc == 2,"one fixture mode"); const std::string mode = argv[1];
-    const bool resize = mode.starts_with("resize-");
-    const bool resize_move = mode == "resize-move";
-    const bool resize_method = resize && !resize_move;
-    const bool copied_resource = mode == "copied-resource";
-    const bool six_input = mode == "six" || copied_resource;
-    const int resize_field = mode == "resize-odd" || mode == "resize-even" ? 48 : 8;
-    Trace trace; Region region(1024, Allocator{&trace, Trace::allocate, Trace::release});
-    alignas(16) std::array<unsigned char, 208> input;
-    alignas(16) std::array<unsigned char, 112> output;
-    input.fill(0xab); output.fill(0xcd);
-    unsigned char *record = input.data()+8, *result = output.data()+8;
-    // Ordinary resource entry records start with authority. Borrowed methods
-    // receive the object directly, so no record header may overwrite padding.
-    if (mode != "method" && !resize_method) put(record,region.id());
-    if (mode == "move" || six_input || resize_move) init_parcel(record+8,region,0);
-    if (six_input) init_parcel(record+96,region,1);
-    if (mode == "method" || resize_method) {
-        init_parcel(record,region,0);
-        padding(record,0xab);
-    }
-    if (resize) seed_parcel(resize_move ? record+8 : record);
-    const auto input_before = input;
-    const auto answer = __au_runtime_bytes_test_entry(record,result);
-    if (mode.starts_with("construct"))
-        check(answer == ((mode == "construct" || mode == "construct-produced") ? 8 : 42),
-              "constructor lengths and cleanup preserve result");
-    else if (mode == "copied") check(answer == 42,"owning receiver with copied args and result");
-    else if (copied_resource) {
-        consumed(record+8,0); consumed(record+96,1);
-        check(result[0] == 201 && get(result+8) == 0x123456789ULL,
-              "copied resource result preserves packed scalar values after cleanup");
-        for (int i = 1; i < 8; ++i)
-            check(result[i] == 0xcd,"copied resource return preserves result padding");
-    }
-    else if (resize_method) {
-        if (mode == "resize-failed") {
-            check(answer == static_cast<std::uint64_t>(-1000),"failed resize result");
-            check(input == input_before,"failed resize preserves every input byte");
-            for (int base : {8,48}) {
-                NativeOwner owner{}; std::memcpy(&owner,record+base,32);
-                for (std::int64_t i = 0; i < owner.length; ++i)
-                    check(__au_runtime_bytes_at(&owner,i) == static_cast<unsigned>(base+i),
-                          "failed resize preserves both payloads");
-            }
-        } else {
-            const std::uint64_t saved = mode == "resize-odd" ? 4294967313ULL
-                                      : mode == "resize-even" ? 8589934627ULL : 0;
-            check(answer == 65 + saved,"resize result and saved scalar stack");
-            resized_parcel(record,input_before.data()+8,resize_field,region,0xab);
-            for (std::size_t i = 0; i < input.size(); ++i)
-                if (i < static_cast<std::size_t>(8+resize_field+8) ||
-                    i >= static_cast<std::size_t>(8+resize_field+24))
-                    check(input[i] == input_before[i],"resize only changes selected identity and length words");
-        }
-        drop(record+48); drop(record+8);
-    } else if (resize_move) {
-        consumed(record+8,0);
-        resized_parcel(result,input_before.data()+16,8,region,0xcd);
-        drop(result+48); drop(result+8);
-    } else if (mode == "method") {
-        check(answer == 1,"borrowed payload write result");
-        check(input == input_before,"borrowed method does not alter descriptor/scalar/padding bytes");
-        NativeOwner owner{}; std::memcpy(&owner,record+8,32);
-        check(__au_runtime_bytes_at(&owner,0) == 42,"borrowed write reaches actual payload");
-        drop(record+48); drop(record+8);
-    } else {
-        consumed(record+8,0); if (mode == "six") consumed(record+96,1);
-        valid_result(result,region);
-        NativeOwner owner{}; std::memcpy(&owner,result+8,32);
-        check(__au_runtime_bytes_at(&owner,0) == 0,
-              "real zeroed allocated payload survived transfer");
-        drop(result+48); drop(result+8);
-    }
-    for (int i = 0; i < 8; ++i) check(input[i] == 0xab && output[i] == 0xcd,"left canary");
-    const int input_extent = six_input ? 184 : mode == "move" || resize_move ? 96
-                                                : mode == "method" || resize_method ? 88 : 8;
-    for (std::size_t i = 8 + input_extent; i < input.size(); ++i) check(input[i] == 0xab,"right input canary");
-    for (std::size_t i = copied_resource ? 24 : 96; i < output.size(); ++i)
-        check(output[i] == 0xcd,"right result canary");
-    if (mode.starts_with("construct") || mode == "method" || mode == "copied" || resize_method)
-        for (auto byte : output) check(byte == 0xcd,"scalar result does not write hidden destination");
-    std::vector<std::size_t> expected = resize && mode != "resize-failed"
-                                          ? (resize_field == 8 ? std::vector<std::size_t>{1,2,3}
-                                                               : std::vector<std::size_t>{2,3,1})
-                                     : mode == "copied" ? std::vector<std::size_t>{1}
-                                     : six_input ? std::vector<std::size_t>{5,4,3,2,1}
-                                                       : std::vector<std::size_t>{2,1};
-    check(trace.released == expected,"exact reverse release order, no duplicate release");
-    const auto metrics = region.metrics();
-    check(metrics.used == 0 && metrics.live_allocations == 0 && metrics.releases == expected.size(),
-          "all transferred resources released exactly once");
-    check(region.close(),"region closes without leaked owners");
-    if (copied_resource) {
-        check(result[0] == 201 && get(result+8) == 0x123456789ULL,
-              "copied resource payload remains readable after region close");
-        for (int i = 1; i < 8; ++i)
-            check(result[i] == 0xcd,"copied resource result padding survives region close");
-    }
-    std::printf("PASS hosted owning ABI %s", mode.c_str());
-    for (auto id : trace.released) std::printf(" %zu",id);
-    std::puts("");
-}
-"""
 
 ALIGN = "movq %rsp,%r9\nandq $15,%r9\ncmpq $8,%r9\njne .Lowning_abi_fail\n"
 
@@ -331,159 +133,74 @@ def command(args, timeout=60):
     return result.stdout
 
 
+MODES = (
+    "move",
+    "construct",
+    "construct-odd",
+    "construct-even",
+    "construct-produced",
+    "construct-produced-odd",
+    "construct-produced-even",
+    "six",
+    "method",
+    "copied",
+    "copied-resource",
+    "resize-first",
+    "resize-odd",
+    "resize-even",
+    "resize-failed",
+    "resize-move",
+)
+HANDWRITTEN = {
+    "construct": ("owning_constructor", handwritten_constructor),
+    "copied": ("copy_method", handwritten_copied),
+    "six": ("owning_six", handwritten_six),
+}
+
+
+def boundary(fixture, driver, cxx, directory, mode, handwritten):
+    """Link one emitted (or handwritten-target) boundary with the hosted driver and run it."""
+    candidate = command([fixture, "--emit-abi", mode]).decode()
+    if handwritten:
+        symbol, body = HANDWRITTEN[mode]
+        pattern = rf"(?m)^{symbol}:\n[\s\S]*?^\.size {symbol},[^\n]*\n"
+        candidate, replaced = re.subn(pattern, lambda _: f"{symbol}:\n{body()}.size {symbol},.-{symbol}\n", candidate)
+        require(replaced == 1, "exactly one private emitted target replaced")
+    candidate = re.sub(r"call __au_runtime_bytes_(allocate|drop|at|set|resize)\b", r"call owning_abi_\1", candidate)
+    stem = f"{mode}-{int(handwritten)}"
+    source = directory / (stem + ".s")
+    source.write_text(candidate + bridge(mode))
+    executable = directory / (stem + ".elf")
+    command([*cxx, "-no-pie", source, driver, "-o", executable])
+    symbols = command(["nm", executable]).decode()
+    if mode.startswith("resize-") and mode != "resize-move":
+        entry_symbol = "owning_resize_method"
+    else:
+        entry_symbol = "owning_method" if mode == "method" else "owning_entry"
+    require(re.search(rf"\bt {entry_symbol}$", symbols, re.M), "resource entry retains private binding")
+    output = command([executable, mode]).decode()
+    require(output.startswith("PASS hosted owning ABI"), "hosted adapter observation recorded")
+    return f"PASS owning class ABI {mode} handwritten-target={handwritten}: {output.strip()}"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("fixture", type=Path)
+    parser.add_argument("driver", type=Path, help="Meson-built driver and hosted byte adapter library")
     parser.add_argument("--work-dir", type=Path)
     args = parser.parse_args()
     cxx = shlex.split(os.environ.get("CXX", "g++"))
-    count = 0
+    fixture, driver = args.fixture.resolve(strict=True), args.driver.resolve(strict=True)
+    jobs = [
+        (mode, handwritten) for mode in MODES for handwritten in ((False, True) if mode in HANDWRITTEN else (False,))
+    ]
     with tempfile.TemporaryDirectory(prefix="aurora-owning-abi-") as temporary:
         directory = args.work_dir or Path(temporary)
         directory.mkdir(parents=True, exist_ok=True)
-        driver = directory / "driver.cpp"
-        driver.write_text(DRIVER)
-        command(
-            [
-                *cxx,
-                "-std=c++23",
-                "-O2",
-                "-Wall",
-                "-Wextra",
-                "-Werror",
-                "-I",
-                ROOT,
-                "-c",
-                driver,
-                "-o",
-                directory / "driver.o",
-            ]
-        )
-        command(
-            [
-                *cxx,
-                "-std=c++23",
-                "-O2",
-                "-Wall",
-                "-Wextra",
-                "-Werror",
-                "-I",
-                ROOT,
-                "-c",
-                ROOT / "runtime/hosted_bytes.cpp",
-                "-o",
-                directory / "runtime.o",
-            ]
-        )
-        for mode in (
-            "move",
-            "construct",
-            "construct-odd",
-            "construct-even",
-            "construct-produced",
-            "construct-produced-odd",
-            "construct-produced-even",
-            "six",
-            "method",
-            "copied",
-            "copied-resource",
-            "resize-first",
-            "resize-odd",
-            "resize-even",
-            "resize-failed",
-            "resize-move",
-        ):
-            assembly = command([args.fixture.resolve(), "--emit-abi", mode]).decode()
-            for handwritten in (False, True) if mode in ("construct", "six", "copied") else (False,):
-                candidate = assembly
-                if handwritten:
-                    symbol = (
-                        "owning_constructor"
-                        if mode == "construct"
-                        else "copy_method"
-                        if mode == "copied"
-                        else "owning_six"
-                    )
-                    body = (
-                        handwritten_constructor()
-                        if mode == "construct"
-                        else handwritten_copied()
-                        if mode == "copied"
-                        else handwritten_six()
-                    )
-                    pattern = rf"(?m)^{symbol}:\n[\s\S]*?^\.size {symbol},[^\n]*\n"
-                    candidate, replaced = re.subn(
-                        pattern, lambda _: f"{symbol}:\n{body}.size {symbol},.-{symbol}\n", candidate
-                    )
-                    require(replaced == 1, "exactly one private emitted target replaced")
-                candidate = re.sub(
-                    r"call __au_runtime_bytes_(allocate|drop|at|set|resize)\b", r"call owning_abi_\1", candidate
-                )
-                stem = f"{mode}-{int(handwritten)}"
-                source = directory / (stem + ".s")
-                source.write_text(candidate + bridge(mode))
-                executable = directory / (stem + ".elf")
-                command([*cxx, "-no-pie", directory / "driver.o", directory / "runtime.o", source, "-o", executable])
-                symbols = command(["nm", executable]).decode()
-                entry_symbol = (
-                    "owning_resize_method"
-                    if mode.startswith("resize-") and mode != "resize-move"
-                    else "owning_method"
-                    if mode == "method"
-                    else "owning_entry"
-                )
-                for symbol in [entry_symbol]:
-                    require(re.search(rf"\bt {symbol}$", symbols, re.M), "resource entry retains private binding")
-                output = command([executable, mode]).decode()
-                (directory / (stem + ".observation")).write_text(output)
-                require(output.startswith("PASS hosted owning ABI"), "hosted adapter observation recorded")
-                print(f"PASS owning class ABI {mode} handwritten-target={handwritten}: {output.strip()}", flush=True)
-                count += 1
-        # Deliberate backend-text mutants establish that the literal host oracle
-        # detects descriptor clearing, representation padding, and drop ordering.
-        mutants = []
-        move = (directory / "move-0.s").read_text()
-        original = "    movq $0, 16(%r11)"
-        require(move.count(original) == 1, "one descriptor source-clear mutant site")
-        mutants.append(("source-clear", "move", move.replace(original, "    nop"), "source descriptor cleared"))
-        original = "    movq -432(%rbp), %r10"
-        require(move.count(original) == 1, "one owning return result-pointer site")
-        mutants.append(
-            (
-                "result-padding",
-                "move",
-                move.replace(original, original + "\n    movb $0, 1(%r10)"),
-                "leading representation padding preserved",
-            )
-        )
-        construct = (directory / "construct-0.s").read_text()
-        left, right = "    leaq -48(%rbp), %rdi", "    leaq -88(%rbp), %rdi"
-        require(construct.count(left) == 1 and construct.count(right) == 1, "one class reverse-drop pair")
-        reversed_drops = construct.replace(left, "REVERSE_DROP_SENTINEL").replace(right, left)
-        reversed_drops = reversed_drops.replace("REVERSE_DROP_SENTINEL", right)
-        mutants.append(("drop-order", "construct", reversed_drops, "exact reverse release order"))
-        resize = (directory / "resize-first-0.s").read_text()
-        original = "    leaq 8(%r10), %rdi"
-        require(resize.count(original) == 1, "one borrowed resize descriptor address")
-        mutants.append(
-            (
-                "resize-field-offset",
-                "resize-first",
-                resize.replace(original, "    leaq 48(%r10), %rdi"),
-                "resize result and saved scalar stack",
-            )
-        )
-        for name, mode, candidate, diagnostic in mutants:
-            source = directory / ("mutant-" + name + ".s")
-            executable = directory / ("mutant-" + name + ".elf")
-            source.write_text(candidate)
-            command([*cxx, "-no-pie", directory / "driver.o", directory / "runtime.o", source, "-o", executable])
-            result = subprocess.run([str(executable), mode], capture_output=True, timeout=30, check=False)
-            observed = result.stdout.decode(errors="replace") + result.stderr.decode(errors="replace")
-            (directory / ("mutant-" + name + ".observation")).write_text(observed)
-            require(result.returncode == 90 and diagnostic in observed, f"{name}: exact host oracle rejects mutant")
-            print(f"PASS owning class ABI rejected mutant {name}", flush=True)
-    print(f"PASS owning class ABI: {count} literal-layout hosted boundary cases and {len(mutants)} rejected mutants")
+        with ThreadPoolExecutor(max_workers=len(os.sched_getaffinity(0))) as pool:
+            for line in pool.map(lambda job: boundary(fixture, driver, cxx, directory, *job), jobs):
+                print(line, flush=True)
+    print(f"PASS owning class ABI: {len(jobs)} literal-layout hosted boundary cases")
 
 
 if __name__ == "__main__":

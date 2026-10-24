@@ -69,9 +69,9 @@ the guest smoke that selected them. `native-kernel-profile-images` now makes
   inventory; this last positive-parse/negative-coverage assertion is retained.
 - IPC request/cancel input, dispatch cursor/mask/output, user disposal
   input/output and budget zero/counts/wide/output: the native producer and
-  production-decoder tests (`kernel-ipc-transition-native.py`,
-  `kernel-round-robin-native.py`, `kernel-client-disposal-native.py`,
-  `kernel-budget-native.cpp`) and their adapters' preserve-on-denial loops.
+  production-decoder tests (`native-policy-ipc-transition`, `-round-robin`,
+  `-client-disposal` and `-budget`, golden vector families) and their adapters'
+  preserve-on-denial loops.
 
 Historical synthetic transcript cases remain rejection controls, not boot
 profiles; the clock catalog and launch lists reject the retired modes.

@@ -10,9 +10,10 @@ is relaunched with a fresh scrubbed stack for every request/completion; its actu
 completion return supplies the next absolute offset. This is a finite snapshot
 consumer, not persistent Aurora locals, mutable files or general process lifetime.
 
-`scripts/kernel-snapshot-tests.sh` compiles those sources, the minimal combined
-supervisor root and existing Mailbox for a bounded native replay. It also links
-the two user fixtures under the unchanged 4 KiB limit. Native SIGILL observation
+The `native-protected-snapshot` Meson test links those sources, the minimal
+combined supervisor root and existing Mailbox for a bounded native replay; the
+snapshot kernel profile links the two user fixtures under the unchanged 4 KiB
+limit. Native SIGILL observation
 of the actual service bounds read is not protected fault containment evidence.
 The fixed copied service record is 96 bytes at user stack top minus112, with
 phase/operation/offset at0/8/16, Snapshot64 bytes at24..87 and zero tail padding.

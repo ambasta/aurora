@@ -1,0 +1,25 @@
+# Kernel test-configuration guards: expected diagnostic, compiler arguments, code.
+# Pin ledger and NVMe queue fault interfaces exist only in explicit test builds.
+A small pin generation limit is only available in explicit test builds	-DAURORA_PIN_LEDGER_TEST_GENERATION_LIMIT=3	#include "kernel/pin-ledger.hpp"
+Pin test interfaces require explicit AURORA_PIN_LEDGER_TESTING=1	-DAURORA_PIN_LEDGER_TESTING=0	#include "kernel/pin-ledger.hpp"
+A generation limit must be a positive representable integer	-DAURORA_PIN_LEDGER_TESTING=1 -DAURORA_PIN_LEDGER_TEST_GENERATION_LIMIT=0	#include "kernel/pin-ledger.hpp"
+A generation limit must be a positive representable integer	-DAURORA_PIN_LEDGER_TESTING=1 -DAURORA_PIN_LEDGER_TEST_GENERATION_LIMIT=-1	#include "kernel/pin-ledger.hpp"
+A small queue generation limit is only available in explicit test builds	-DAURORA_RUNTIME_IMAGE_POLICY=one_page -DNDEBUG -DAURORA_NVME_QUEUE_GENERATION_LIMIT=3	#include "kernel/uefi/nvme-queues.hpp"
+Queue test interfaces require explicit AURORA_NVME_QUEUE_TESTING=1	-DAURORA_RUNTIME_IMAGE_POLICY=one_page -DNDEBUG -DAURORA_NVME_QUEUE_TESTING=0	#include "kernel/uefi/nvme-queues.hpp"
+A generation limit must be a positive representable integer	-DAURORA_RUNTIME_IMAGE_POLICY=one_page -DNDEBUG -DAURORA_NVME_QUEUE_TESTING=1 -DAURORA_NVME_QUEUE_GENERATION_LIMIT=0	#include "kernel/uefi/nvme-queues.hpp"
+A generation limit must be a positive representable integer	-DAURORA_RUNTIME_IMAGE_POLICY=one_page -DNDEBUG -DAURORA_NVME_QUEUE_TESTING=1 -DAURORA_NVME_QUEUE_GENERATION_LIMIT=-1	#include "kernel/uefi/nvme-queues.hpp"
+# NVMe preparation builds only in the complete standalone BAR profile.
+NVMe preparation requires the standalone BAR profile	-DAURORA_RUNTIME_IMAGE_POLICY=one_page -DNDEBUG -DAURORA_UEFI_NVME_PREPARE -DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_BAR_CAPTURE -DAURORA_UEFI_BAR_EDK2 -DAURORA_UEFI_RUNTIME	#include "kernel/uefi/pci.cpp"
+NVMe preparation requires the standalone BAR profile	-DAURORA_RUNTIME_IMAGE_POLICY=one_page -DNDEBUG -DAURORA_UEFI_NVME_PREPARE -DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_BAR_CAPTURE -DAURORA_UEFI_BAR_EDK2 -DAURORA_UEFI_IVRS	#include "kernel/uefi/pci.cpp"
+NVMe preparation requires the standalone BAR profile	-DAURORA_RUNTIME_IMAGE_POLICY=one_page -DNDEBUG -DAURORA_UEFI_NVME_PREPARE -DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_BAR_CAPTURE -DAURORA_UEFI_BAR_EDK2 -DAURORA_UEFI_TABLES	#include "kernel/uefi/pci.cpp"
+NVMe preparation requires the standalone BAR profile	-DAURORA_RUNTIME_IMAGE_POLICY=one_page -DNDEBUG -DAURORA_UEFI_NVME_PREPARE -DAURORA_UEFI_PCI -DAURORA_UEFI_BAR_CAPTURE -DAURORA_UEFI_BAR_EDK2	#include "kernel/uefi/pci.cpp"
+NVMe preparation requires the standalone BAR profile	-DAURORA_RUNTIME_IMAGE_POLICY=one_page -DNDEBUG -DAURORA_UEFI_NVME_PREPARE -DAURORA_UEFI_ACPI -DAURORA_UEFI_BAR_CAPTURE -DAURORA_UEFI_BAR_EDK2	#include "kernel/uefi/pci.cpp"
+NVMe preparation requires the standalone BAR profile	-DAURORA_RUNTIME_IMAGE_POLICY=one_page -DNDEBUG -DAURORA_UEFI_NVME_PREPARE -DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_BAR_EDK2	#include "kernel/uefi/pci.cpp"
+NVMe preparation requires the standalone BAR profile	-DAURORA_RUNTIME_IMAGE_POLICY=one_page -DNDEBUG -DAURORA_UEFI_NVME_PREPARE -DAURORA_UEFI_ACPI -DAURORA_UEFI_PCI -DAURORA_UEFI_BAR_CAPTURE	#include "kernel/uefi/pci.cpp"
+# Dormant tables: test access needs the explicit value, and the inspector a CPU-only test image.
+Dormant-table test access requires explicit value1	-DAURORA_DORMANT_TABLE_TESTING=0	#include "tests/kernel-dormant-api.cpp"
+A small pin generation limit is only available in explicit test builds	-DAURORA_PIN_LEDGER_TEST_GENERATION_LIMIT=3	#include "tests/kernel-dormant-api.cpp"
+A generation limit must be a positive representable integer	-DAURORA_PIN_LEDGER_TESTING=1 -DAURORA_PIN_LEDGER_TEST_GENERATION_LIMIT=0	#include "tests/kernel-dormant-api.cpp"
+A generation limit must be a positive representable integer	-DAURORA_PIN_LEDGER_TESTING=1 -DAURORA_PIN_LEDGER_TEST_GENERATION_LIMIT=-1	#include "tests/kernel-dormant-api.cpp"
+Dormant table inspector is restricted to explicit CPU-only test images		#include "kernel/uefi/dormant-inspector.hpp"
+'DormantTableTestAccess' in namespace 'aurora::memory' does not name a type		#include "kernel/dormant-tables.hpp"\naurora::memory::DormantTableTestAccess *probe;

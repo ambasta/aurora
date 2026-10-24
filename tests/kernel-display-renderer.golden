@@ -1,0 +1,6 @@
+800 600 800 1	exit 0 | stdout: stores=484711 bytes=1921088 digest=d0e04cd37526e681
+800 600 803 0	exit 0 | stdout: stores=484711 bytes=1929280 digest=6d0c9a4228e1a195
+43 40 47 1	exit 0 | stdout: stores=1795 bytes=8256 digest=48a042cc5b4e24ed
+53 199 61 0	exit 0 | stdout: stores=11041 bytes=49216 digest=20996389c5049524
+1024 768 1024 0	exit 0 | stdout: stores=791143 bytes=3145792 digest=5894423cfb4352cd
+800 600 800 1 foreign-console	exit 77

@@ -30,6 +30,10 @@ in place of the former per-profile admission scripts.
 The compiler-semantics runners now compile one packed program per test through
 `tests/compiler/native_runner.py`; the token-scan, UTF-8, JSON and package library
 tests compile one driver per library surface and stream their cases as data.
+Kernel policy, graphical console, display renderer, IOMMU event, protected
+note/snapshot, pin/NVMe/dormant and executable-semantics tests build once in Meson
+and compare golden results; their Python reimplementation oracles, mutant controls
+and receipts are gone.
 
 Next dependencies: [roadmap](roadmap.md). Required checks:
 [development and qualification](developer-test-contract.md).

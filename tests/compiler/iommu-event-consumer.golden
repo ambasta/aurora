@@ -1,0 +1,33 @@
+fault	exit 0 | stdout: PASS IOMMU event consumer fault
+finite	exit 0 | stdout: PASS IOMMU event consumer finite
+empty	exit 0 | stdout: PASS IOMMU event consumer empty
+partial	exit 0 | stdout: PASS IOMMU event consumer partial
+zero-poll	exit 0 | stdout: PASS IOMMU event consumer zero-poll
+zero-record	exit 0 | stdout: PASS IOMMU event consumer zero-record
+invalid-poll-budget	exit 0 | stdout: PASS IOMMU event consumer invalid-poll-budget
+invalid-record-budget	exit 0 | stdout: PASS IOMMU event consumer invalid-record-budget
+poll-budget	exit 0 | stdout: PASS IOMMU event consumer poll-budget
+record-budget	exit 0 | stdout: PASS IOMMU event consumer record-budget
+maximum-budget	exit 0 | stdout: PASS IOMMU event consumer maximum-budget
+code5	exit 0 | stdout: PASS IOMMU event consumer code5
+code6	exit 0 | stdout: PASS IOMMU event consumer code6
+unsupported	exit 0 | stdout: PASS IOMMU event consumer unsupported
+malformed-code2	exit 0 | stdout: PASS IOMMU event consumer malformed-code2
+poll-overflow	exit 0 | stdout: PASS IOMMU event consumer poll-overflow
+poll-transport	exit 0 | stdout: PASS IOMMU event consumer poll-transport
+ack-overflow	exit 0 | stdout: PASS IOMMU event consumer ack-overflow
+ack-transport	exit 0 | stdout: PASS IOMMU event consumer ack-transport
+output	exit 0 | stdout: PASS IOMMU event output failure at all 96 prefixes
+poll-enum-4	signal SIGILL
+poll-enum-wide	signal SIGILL
+status-32	signal SIGILL
+status-wide	signal SIGILL
+status-all-ones	signal SIGILL
+payload-0-word0	signal SIGILL
+payload-0-word1	signal SIGILL
+payload-2-word0	signal SIGILL
+payload-2-word1	signal SIGILL
+payload-3-word0	signal SIGILL
+payload-3-word1	signal SIGILL
+ack-enum-3	signal SIGILL
+ack-enum-wide	signal SIGILL

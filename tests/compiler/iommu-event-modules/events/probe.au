@@ -1,0 +1,7 @@
+export module events.probe;
+export namespace event_probe {
+    auto event_only(builtin::IommuEventSession& events) -> builtin::IommuEventSample {
+        const builtin::IommuEventSample result = events.poll();
+        return result;
+    }
+}

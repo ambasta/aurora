@@ -1,12 +1,17 @@
+// Host-only observation of the real Aurora terminal-event producer and decoder over
+// fixed full-width vector families (compared with tests/kernel-terminal-event-native.golden),
+// or, with TERMINAL_SUBSTITUTE, of ProgramRun against hostile producer proposals.
 #include "../kernel/user-program.hpp"
+#include "policy-vectors.hpp"
+#include <set>
+#include <vector>
 #include <array>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
-#include <string_view>
 using namespace aurora::user;
-static void require(bool value) {
+[[maybe_unused]] static void require(bool value) {
     if (!value)
         std::abort();
 }
@@ -36,14 +41,21 @@ static auto wire(ProgramEvent e) -> std::uint64_t {
         return 0;
     }
 }
-auto main(int argc, char **argv) -> int {
-    require(argc == 2);
-    const std::string_view mode{argv[1]};
+// Every compact result and high-bit mutation of every positive result.
+static auto proposals() -> std::vector<std::uint64_t> {
+    std::set<std::uint64_t> words{~std::uint64_t{0}};
+    for (std::uint64_t word = 0; word < 9; ++word)
+        words.insert(word);
+    for (std::uint64_t event = 0; event < 6; ++event)
+        for (unsigned bit = 3; bit < 64; ++bit)
+            words.insert(event | (std::uint64_t{1} << bit));
+    return {words.begin(), words.end()};
+}
+auto main() -> int {
+    const auto words = proposals();
 #ifdef TERMINAL_SUBSTITUTE
-    require(mode == "adapter");
-    std::uint64_t encoded;
     std::size_t count = 0;
-    while (std::cin >> encoded) {
+    for (const auto encoded : words) {
         for (const auto layout :
              {ProgramLayout::bios(),
               *ProgramLayout::create(0x400000, 0x403000, 1, 0x500000, 0x504000, 0x600000, 0x604000)}) {
@@ -106,16 +118,69 @@ auto main(int argc, char **argv) -> int {
             require(calls == 0);
         }
     }
-    std::cout << count << '\n';
+    require(count == words.size() * 10);
+    std::cout << "PASS: " << count << " hostile terminal proposals against ProgramRun\n";
 #else
-    std::uint64_t v, m, t, e;
-    while (std::cin >> v >> m >> t >> e) {
-        if (mode == "policy")
-            std::cout << language_terminal_event(v, m, t) << '\n';
-        else {
-            require(mode == "decoder");
-            std::cout << wire(decode_terminal_event(e, v, m, t)) << '\n';
-        }
+    using namespace policy_vectors;
+    std::vector<std::array<U64, 3>> finite, hostile;
+    for (U64 v = 0; v < 256; ++v)
+        for (U64 m = 0; m < 32; ++m)
+            for (U64 t = 0; t < 2; ++t)
+                finite.push_back({v, m, t});
+    std::vector<U64> edges;
+    for (U64 value = 0; value < 34; ++value)
+        edges.push_back(value);
+    for (const U64 value : {U64{127}, U64{128}, U64{129}, U64{130}, U64{254}, U64{255}, U64{256}, U64{257},
+                            U64{65535}, U64{65536}, (U64{1} << 32) - 1, U64{1} << 32, (U64{1} << 63) - 1,
+                            U64{1} << 63, maximum})
+        edges.push_back(value);
+    for (const auto v : edges)
+        for (const auto m : edges)
+            for (const U64 t : {U64{0}, U64{1}, U64{2}, U64{255}, U64{256}, U64{1} << 32, U64{1} << 63, maximum})
+                hostile.push_back({v, m, t});
+    Random random(0x7465726D);
+    for (unsigned i = 0; i < 4096; ++i) {
+        std::array<U64, 3> row{};
+        for (auto &word : row)
+            word = random();
+        hostile.push_back(row);
+    }
+    const auto policy = [](Family &family, const std::array<U64, 3> &r) {
+        family.observe({r[0], r[1], r[2]}, {language_terminal_event(r[0], r[1], r[2])});
+    };
+    const auto decoder = [](Family &family, const std::array<U64, 3> &r, U64 e) {
+        family.observe({r[0], r[1], r[2], e}, {wire(decode_terminal_event(e, r[0], r[1], r[2]))});
+    };
+    {
+        Family family("policy-finite", Rows::nonzero);
+        for (const auto &row : finite)
+            policy(family, row);
+    }
+    {
+        Family family("policy-hostile");
+        for (const auto &row : hostile)
+            policy(family, row);
+    }
+    {
+        Family family("decoder-finite", Rows::nonzero);
+        for (const auto &row : finite)
+            for (U64 e = 0; e < 8; ++e)
+                decoder(family, row, e);
+    }
+    {
+        // Every accepted tuple and near misses against every proposal word.
+        Family family("decoder-proposals");
+        const std::array<U64, 3> rows[] = {{129, 1, 1}, {6, 2, 0},  {6, 2, 1},   {6, 4, 0},  {6, 4, 1},
+                                           {6, 8, 0},   {6, 8, 1},  {6, 16, 0},  {6, 16, 1}, {256, 1, 1},
+                                           {129, 33, 1}, {129, 1, 2}, {6, 3, 1}};
+        for (const auto &row : rows)
+            for (const auto e : words)
+                decoder(family, row, e);
+    }
+    {
+        Family family("decoder-hostile");
+        for (std::size_t i = 0; i < hostile.size(); ++i)
+            decoder(family, hostile[i], words[i % words.size()]);
     }
 #endif
 }

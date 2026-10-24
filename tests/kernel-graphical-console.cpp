@@ -1,19 +1,27 @@
 // Hosted generated-consumer observer, driven by kernel-graphical-console.py.
 // Hosted evidence does not establish linked-image or guest qualification.
 // Real generated Aurora consumer + private assembly entry + production Sessions.
+// Each stdin line is one case: width height pitch format fail_after sessions mode
+// count, then count (present byte damage) samples. Every case runs in a forked
+// child with fresh state and prints its counters and FNV-1a digests of the exact
+// store sequence, every viewport checkpoint and the final guarded buffer; the
+// parent appends the child's exit status. A denial exits 77 only when untouched.
 #include "../kernel/graphical-session.hpp"
 #include "../kernel/console-session.hpp"
 #include "../kernel/display-session.hpp"
 #include "../kernel/uefi/framebuffer-pixels.hpp"
 #include "../kernel/uefi/graphical-capture-policy.hpp"
 #include <array>
+#include <cstdio>
 #include <cstdlib>
-#include <filesystem>
-#include <fstream>
+#include <iostream>
+#include <sstream>
 #include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <sys/wait.h>
+#include <unistd.h>
 #include <vector>
 
 namespace {
@@ -23,8 +31,23 @@ std::optional<FramebufferAdmission> admission;
 U64 row_pitch{}, visible_width{}, visible_height{};
 std::vector<std::byte> bytes;
 std::vector<aurora::console::Sample> script;
-std::filesystem::path output;
-std::ofstream trace;
+class Digest final {
+    U64 state_ = 0xcbf29ce484222325ULL;
+
+public:
+    auto add(U64 value, unsigned count) -> void {
+        for (unsigned i = 0; i < count; ++i)
+            state_ = (state_ ^ ((value >> (8 * i)) & 0xff)) * 0x100000001b3ULL;
+    }
+    auto add(const std::byte *data, U64 count) -> void {
+        for (U64 i = 0; i < count; ++i)
+            add(static_cast<U64>(data[i]), 1);
+    }
+    [[nodiscard]] auto value() const -> U64 {
+        return state_;
+    }
+};
+Digest trace, frame_digest;
 U64 stores{}, consumed{}, entries{}, next_calls{}, put_calls{}, pixel_calls{}, frames{};
 U64 fail_after = std::numeric_limits<U64>::max();
 bool quiet = true, denied = false;
@@ -88,28 +111,12 @@ auto check_capture_policy() -> void {
             need(!policy::fail_pixel(actual, successful_stores));
     }
 }
-auto word(std::ostream &stream, U64 value, unsigned count) -> void {
-    for (unsigned i = 0; i < count; ++i)
-        stream.put(static_cast<char>(value >> (8 * i)));
-    need(stream.good());
-}
+// Every store is in the exact store digest, so a checkpoint digests only the viewport.
 auto checkpoint() -> void {
-    auto name = std::to_string(frames++);
-    name.insert(0, 3 - name.size(), '0');
-    std::ofstream file(output / ("frame-" + name + ".bin"), std::ios::binary);
-    for (U64 i = 0; i < bytes.size(); ++i) {
-        bool in_view = false;
-        if (i >= 32 && i < bytes.size() - 32) {
-            const auto offset = i - 32, y = offset / (row_pitch * 4), x = (offset % (row_pitch * 4)) / 4;
-            in_view = y >= 128 && y < 146 && x >= 32 && x < 440;
-        }
-        if (!in_view)
-            need(bytes[i] == std::byte{0xa5});
-    }
+    ++frames;
     need(visible_width >= 440 && visible_height >= 146);
     for (U64 y = 128; y < 146; ++y)
-        file.write(reinterpret_cast<const char *>(bytes.data() + 32 + (y * row_pitch + 32) * 4), 408 * 4);
-    need(file.good());
+        frame_digest.add(bytes.data() + 32 + (y * row_pitch + 32) * 4, 408 * 4);
 }
 class Store final {
 public:
@@ -117,8 +124,8 @@ public:
         need(offset % 4 == 0 && offset + 4 <= admission->geometry().mapped_bytes());
         for (unsigned i = 0; i < 4; ++i)
             bytes[32 + offset + i] = std::byte(value >> (8 * i));
-        word(trace, offset, 8);
-        word(trace, value, 4);
+        trace.add(offset, 8);
+        trace.add(value, 4);
         ++stores;
     }
 };
@@ -187,31 +194,20 @@ extern "C" auto __au_runtime_display_pixel(const void *grant, U64 generation, U6
     ++pixel_calls;
     return Display::pixel(grant, generation, x, y, r, g, b);
 }
-int main(int argc, char **argv) {
-    check_capture_policy();
-    need(argc == 9 || argc == 10);
-    const U64 sessions = argc == 10 ? std::stoull(argv[9]) : 1;
+struct Case {
+    U64 width{}, height{}, pitch{}, format{}, sessions{};
+    std::string mode;
+};
+auto run_case(const Case &test) -> void {
+    const U64 sessions = test.sessions, width = test.width, height = test.height, pitch = test.pitch;
+    const U64 format = test.format;
     need(sessions == 1 || sessions == 2);
-    const U64 width = std::stoull(argv[1]), height = std::stoull(argv[2]), pitch = std::stoull(argv[3]);
-    const U64 format = std::stoull(argv[4]);
     row_pitch = pitch;
     visible_width = width;
     visible_height = height;
-    output = argv[5];
-    fail_after = std::stoull(argv[7]);
-    const std::string mode = argv[8];
+    const std::string &mode = test.mode;
     denied = mode != "normal";
     need(sessions == 1 || !denied);
-    std::filesystem::create_directories(output);
-    trace.open(output / "stores.bin", std::ios::binary);
-    std::ifstream input(argv[6]);
-    U64 present{}, byte{}, damage{};
-    while (input >> present >> byte >> damage) {
-        need(present <= 1 && byte <= 255 && damage <= 1 && (present || damage));
-        need(present || byte == 0);
-        script.push_back({present != 0, static_cast<std::uint8_t>(byte), damage != 0});
-    }
-    need(input.eof());
     const auto size = (pitch * height * 4 + 4095) & ~U64{4095};
     const auto geometry = FramebufferGeometry::parse(0xc0000000, size, width, height, pitch, format, 36);
     need(geometry.has_value());
@@ -298,14 +294,47 @@ int main(int argc, char **argv) {
         static_cast<void>(Display::close(display, legacy));
         need(sessions == 1 || raw == 0);
     }
-    trace.close();
-    need(!trace.fail());
-    std::ofstream final_pixels(output / "pixels.bin", std::ios::binary);
-    final_pixels.write(reinterpret_cast<const char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-    need(final_pixels.good());
-    std::ofstream report(output / "report.json");
-    report << "{\"completion\":" << raw << ",\"consumed\":" << consumed << ",\"entries\":" << entries
-           << ",\"next_calls\":" << next_calls << ",\"put_calls\":" << put_calls << ",\"pixel_calls\":" << pixel_calls
-           << ",\"stores\":" << stores << ",\"frames\":" << frames << "}\n";
-    need(report.good());
+    Digest screen;
+    screen.add(bytes.data(), bytes.size());
+    std::printf("completion=%llu consumed=%llu entries=%llu next=%llu put=%llu pixel=%llu stores=%llu frames=%llu "
+                "store-digest=%016llx frame-digest=%016llx screen-digest=%016llx ",
+                static_cast<unsigned long long>(raw), static_cast<unsigned long long>(consumed),
+                static_cast<unsigned long long>(entries), static_cast<unsigned long long>(next_calls),
+                static_cast<unsigned long long>(put_calls), static_cast<unsigned long long>(pixel_calls),
+                static_cast<unsigned long long>(stores), static_cast<unsigned long long>(frames),
+                static_cast<unsigned long long>(trace.value()), static_cast<unsigned long long>(frame_digest.value()),
+                static_cast<unsigned long long>(screen.value()));
+}
+int main() {
+    check_capture_policy();
+    for (std::string line; std::getline(std::cin, line);) {
+        std::istringstream fields(line);
+        Case test;
+        U64 count{};
+        need(static_cast<bool>(fields >> test.width >> test.height >> test.pitch >> test.format >> fail_after >>
+                               test.sessions >> test.mode >> count));
+        script.clear();
+        for (U64 i = 0; i < count; ++i) {
+            U64 present{}, byte{}, damage{};
+            need(static_cast<bool>(fields >> present >> byte >> damage));
+            need(present <= 1 && byte <= 255 && damage <= 1 && (present || damage));
+            need(present || byte == 0);
+            script.push_back({present != 0, static_cast<std::uint8_t>(byte), damage != 0});
+        }
+        std::fflush(stdout);
+        const pid_t child = fork();
+        need(child >= 0);
+        if (child == 0) {
+            run_case(test);
+            std::fflush(stdout);
+            std::_Exit(0);
+        }
+        int status = 0;
+        need(waitpid(child, &status, 0) == child);
+        if (WIFEXITED(status))
+            std::printf("exit=%d\n", WEXITSTATUS(status));
+        else
+            std::printf("signal=%d\n", WTERMSIG(status));
+    }
+    need(std::cin.eof());
 }

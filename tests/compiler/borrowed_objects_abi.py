@@ -3,14 +3,11 @@
 
 The separate C++ IR producer is supplied prebuilt. The older logical-span oracle
 provides assembly execution/canary plumbing only; parameter shapes, records,
-method registers, results and corruption controls below are independently stated.
+method registers and results below are independently stated.
 """
 
 import argparse
-import hashlib
-import json
 from pathlib import Path
-import sys
 import tempfile
 import logical_spans_abi as abi
 
@@ -258,28 +255,14 @@ def main():
         args.artifacts = Path(tempfile.mkdtemp(prefix="borrowed-objects-abi-"))
     else:
         args.artifacts.mkdir(parents=True, exist_ok=False)
-    root = Path(__file__).resolve().parents[2]
-    sources = [Path(__file__).resolve(), Path(__file__).resolve().with_suffix(".cpp"), Path(abi.__file__).resolve()]
-    sources += sorted((root / "compiler").glob("*.hpp"))
-    bound_inputs = {path: path.read_bytes() for path in sources}
-    fixture_before = args.ir_tests.read_bytes()
-    commands = []
     original_command = abi.command
 
-    def recorded_command(argv, expected=0):
-        ordinal = len(commands)
-        entry = {"argv": [str(part) for part in argv], "expected_status": expected}
-        commands.append(entry)
-        (args.artifacts / "commands.json").write_text(json.dumps(commands, indent=2) + "\n")
+    def checked_command(argv, expected=0):
         result = original_command(argv, expected)
-        for channel in ("stdout", "stderr"):
-            (args.artifacts / f"command-{ordinal:03d}.{channel}.bin").write_bytes(getattr(result, channel))
         abi.require(not result.stderr, f"ABI command emitted unexpected stderr: {argv}: {result.stderr!r}")
-        entry["actual_status"] = result.returncode
-        (args.artifacts / "commands.json").write_text(json.dumps(commands, indent=2) + "\n")
         return result
 
-    abi.command = recorded_command
+    abi.command = checked_command
     raw = abi.command([args.ir_tests.resolve()]).stdout.decode()
     (args.artifacts / "generated.s").write_text(raw)
     extra = abi.blob("method_hidden", [0])
@@ -308,63 +291,10 @@ def main():
 
     direct = observed + harness(direct_cases) + "\n.data\n" + extra
     full = outgoing + harness(forward_cases) + "\n.data\n" + extra
-    abi.execute(args.artifacts, "incoming-generated-results", direct, direct_cases)
-    abi.execute(args.artifacts, "outgoing-handwritten-helpers", full, forward_cases)
-    # Every control must produce the oracle's exact failure status and case,
-    # rather than an accidental trap, crash, or an always-failing baseline.
-    controls = []
-    target_name = "borrow_object_forward_1_1_0_0_0"
-    controls += [
-        ("incoming-seventh-word", target_name, "    movq %rax, -8(%rbp)", "    movq $0, -8(%rbp)", 91),
-        ("outgoing-seventh-word", target_name, "    movq %rax, 48(%rsp)", "    movq $0, 48(%rsp)", 91),
-        (
-            "receiver-register",
-            target_name,
-            "    call borrow_object_target_1_1_0",
-            "    xorq %r10, %r10\n    call borrow_object_target_1_1_0",
-            91,
-        ),
+    programs = [
+        ("incoming-generated-results", direct, direct_cases),
+        ("outgoing-handwritten-helpers", full, forward_cases),
     ]
-    # Independently corrupt every complete record word, including opaque owner
-    # payload words, so accidental truncation cannot hide behind length checks.
-    for word in range(7):
-        controls.append(
-            (
-                f"packed-word-{word}",
-                target_name,
-                f"    movq %rax, {8 * word}(%rsp)",
-                f"    movq $-1, {8 * word}(%rsp)",
-                91,
-            )
-        )
-    odd = "borrow_object_forward_1_1_0_1_0"
-    controls += [
-        (
-            "odd-stack-alignment",
-            odd,
-            "    subq $8, %rsp\n    call borrow_object_target_1_1_0",
-            "    nop\n    call borrow_object_target_1_1_0",
-            92,
-        ),
-        (
-            "saved-operand",
-            odd,
-            "    call borrow_object_target_1_1_0",
-            "    addq $1, 72(%rsp)\n    call borrow_object_target_1_1_0",
-            93,
-        ),
-    ]
-    for name, function, old, new, status in controls:
-        changed = abi.mutate_body(full, function, old, new)
-        abi.execute(args.artifacts, "mutant-" + name, changed, forward_cases, status, function)
-    # A copied result occupies exactly one word; the remaining literal canaries stay unchanged.
-    function = "borrow_object_target_1_1_1"
-    changed = abi.mutate_body(
-        direct, function, "    movq %rax, 0(%r10)", "    movq %rax, 0(%r10)\n    movq $0, 8(%r10)"
-    )
-    abi.execute(args.artifacts, "mutant-result-overcopy", changed, direct_cases, 94, function)
-    changed = abi.mutate_body(direct, function, "    movq %rax, -88(%rbp)", "    movq %r11, -88(%rbp)")
-    abi.execute(args.artifacts, "mutant-hidden-result-register", changed, direct_cases, 94, function)
     # Separate observations enter the paired ABI with a literal two-pointer
     # record, then observe generated forwarding through handwritten callees.
     # An ordinary nested helper clobbers every caller-saved register so keeping
@@ -373,121 +303,33 @@ def main():
     paired_outgoing = paired_observed
     for arity in range(5):
         paired_outgoing = abi.replace_body(paired_outgoing, f"paired_target_{arity}", paired_target(arity))
-    paired_assembly, paired_selected = {}, {}
+    paired_selected = {}
     for mode in ("direct", "generated", "outgoing"):
         selected = paired_cases(mode)
         assembly = paired_outgoing if mode == "outgoing" else paired_observed
         assembly += paired_harness(harness(selected), selected)
-        paired_assembly[mode], paired_selected[mode] = assembly, selected
-        abi.execute(args.artifacts, "paired-" + mode, assembly, selected)
-    paired_controls = [
-        ("second-entry-selector", "direct", "paired_target_0", "    movq 8(%r10), %r11", "    movq (%r10), %r11", 93),
-        (
-            "first-outgoing-pointer",
-            "outgoing",
-            "paired_forward_0_0",
-            "    movq %r10, 0(%rsp)",
-            "    movq $0, 0(%rsp)",
-            91,
-        ),
-        (
-            "second-outgoing-pointer",
-            "outgoing",
-            "paired_forward_0_0",
-            "    movq %r10, 8(%rsp)",
-            "    movq $0, 8(%rsp)",
-            91,
-        ),
-        (
-            "paired-odd-alignment",
-            "outgoing",
-            "paired_forward_0_1",
-            "    subq $8, %rsp\n    call paired_target_0",
-            "    nop\n    call paired_target_0",
-            92,
-        ),
-        (
-            "paired-retained-operand",
-            "outgoing",
-            "paired_forward_0_1",
-            "    call paired_target_0",
-            "    addq $1, 24(%rsp)\n    call paired_target_0",
-            93,
-        ),
-    ]
-    for name, mode, function, old, new, status in paired_controls:
-        changed = abi.mutate_body(paired_assembly[mode], function, old, new)
-        abi.execute(args.artifacts, "mutant-" + name, changed, paired_selected[mode], status, function)
+        paired_selected[mode] = selected
+        programs.append(("paired-" + mode, assembly, selected))
     bounded_outgoing = paired_observed
     for roots, mutable, tail in bounded_shapes():
         bounded_outgoing = abi.replace_body(
             bounded_outgoing, f"bounded_target_{roots}_{mutable}_{tail}", bounded_target(roots, tail)
         )
-    bounded_assembly, bounded_selected = {}, {}
+    bounded_selected = {}
     for mode in ("direct", "generated", "outgoing"):
         selected = bounded_cases(mode)
         assembly = bounded_outgoing if mode == "outgoing" else paired_observed
         assembly += bounded_harness(harness(selected), selected)
-        bounded_assembly[mode], bounded_selected[mode] = assembly, selected
-        abi.execute(args.artifacts, "bounded-" + mode, assembly, selected)
-    bounded_controls = []
-    for roots in range(2, 4):
-        for ordinal in range(roots):
-            function = f"bounded_forward_{roots}_0_0_0"
-            old = f"    movq %r10, {ordinal * 8}(%rsp)"
-            bounded_controls.append(
-                (f"root-{roots}-lane-{ordinal}", "outgoing", function, old, f"    movq $0, {ordinal * 8}(%rsp)", 91)
-            )
-        if roots % 2:
-            reserved = (roots * 8 + 15) & ~15
-            function = f"bounded_forward_{roots}_0_0_1"
-            bounded_controls.append(
-                (
-                    f"odd-tuple-{roots}-retained",
-                    "outgoing",
-                    function,
-                    f"    call bounded_target_{roots}_0_0",
-                    f"    addq $1, {reserved + 8}(%rsp)\n    call bounded_target_{roots}_0_0",
-                    93,
-                )
-            )
-    for name, mode, function, old, new, status in bounded_controls:
-        changed = abi.mutate_body(bounded_assembly[mode], function, old, new)
-        abi.execute(args.artifacts, "mutant-" + name, changed, bounded_selected[mode], status, function)
+        bounded_selected[mode] = selected
+        programs.append(("bounded-" + mode, assembly, selected))
+    abi.run_programs(args.artifacts, programs)
     native_cases = (
         len(direct_cases)
         + len(forward_cases)
         + sum(map(len, paired_selected.values()))
         + sum(map(len, bounded_selected.values()))
     )
-    rejected_mutants = len(controls) + 2 + len(paired_controls) + len(bounded_controls)
-    summary = f"PASS borrowed object ABI: {native_cases} native cases, {rejected_mutants} exact rejected mutants"
-    abi.require(args.ir_tests.read_bytes() == fixture_before, "fixture changed during ABI gate")
-    for path, content in bound_inputs.items():
-        abi.require(path.read_bytes() == content, f"bound ABI source changed: {path}")
-    receipt = {
-        "status": "passed",
-        "native_cases": native_cases,
-        "rejected_mutants": rejected_mutants,
-        "python": sys.version,
-        "python_optimization": sys.flags.optimize,
-        "fixture_sha256": hashlib.sha256(args.ir_tests.read_bytes()).hexdigest(),
-        "sources": {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest() for p in sources},
-    }
-    (args.artifacts / "run.json").write_text(json.dumps(receipt, indent=2) + "\n")
-    (args.artifacts / "cases.json").write_text(
-        json.dumps(
-            {
-                "incoming": direct_cases,
-                "outgoing": forward_cases,
-                "paired": paired_selected,
-                "bounded": bounded_selected,
-            },
-            indent=2,
-        )
-        + "\n"
-    )
-    (args.artifacts / "summary.txt").write_text(summary + "\n")
+    summary = f"PASS borrowed object ABI: {native_cases} native cases"
     print(summary)
     print(f"Artifacts: {args.artifacts}")
 

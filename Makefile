@@ -186,7 +186,7 @@ test-storage-model:
 
 .PHONY: test-nvme-queues
 test-nvme-queues:
-	./scripts/kernel-nvme-queue-tests.sh
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --tests kernel-nvme-queues kernel-nvme-queues-generation-3 kernel-nvme-queues-api kernel-compile-fail
 
 .PHONY: smoke-nvme-prepare
 smoke-nvme-prepare:
@@ -209,7 +209,7 @@ smoke-uefi-ivrs:
 
 .PHONY: test-pin-ledger
 test-pin-ledger:
-	./scripts/kernel-pin-tests.sh
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --tests kernel-pin-ledger kernel-pin-ledger-generation-3 kernel-pin-api kernel-compile-fail
 
 .PHONY: smoke-uefi-pins
 smoke-uefi-pins:
@@ -217,7 +217,8 @@ smoke-uefi-pins:
 
 .PHONY: test-dormant-tables
 test-dormant-tables:
-	./scripts/kernel-dormant-tests.sh
+	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --tests kernel-dormant-tables kernel-dormant-decoder kernel-dormant-oracle \
+	    kernel-dormant-generation kernel-dormant-api kernel-iommu-oracle kernel-iommu-event-completion kernel-compile-fail
 
 .PHONY: smoke-uefi-tables
 smoke-uefi-tables:

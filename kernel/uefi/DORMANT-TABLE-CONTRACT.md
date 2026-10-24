@@ -109,8 +109,8 @@ Mode-specific raw .su, disassembly and the calculated bound are retained under t
 selected native profile's table-stack/<mode> directory. A table-sized stack temporary or reintroduced
 parser-to-PCI edge fails the regression gate. No stack/page-layout widening occurs.
 
-Commands: make test-dormant-tables, SANITIZE=1 make test-dormant-tables,
-make test-uefi-tables and make smoke-uefi-tables. Hosted checks do not establish
+Commands: make test-dormant-tables (a `-Db_sanitize=address,undefined` build for
+sanitizers), make test-uefi-tables and make smoke-uefi-tables. Hosted checks do not establish
 actual guest behavior or hardware DMA authority.
 
 ## Separate architectural translation oracle

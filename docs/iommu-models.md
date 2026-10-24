@@ -2,7 +2,7 @@
 
 The independent test-only models in `tests/amd310-translation-oracle.hpp` and `tests/amd310-event-completion-oracle.hpp` interpret copied bytes and caller-supplied assumptions. They perform no MMIO, DMA, publication or reclamation. Their reference is [AMD 48882-PUB revision 3.10, February 2025](https://kib.kiev.ua/x86docs/AMD/IOMMU/48882-3.10.pdf), SHA256 `cd7559334b3f46a72d56e9f2fac786fcbf5d6a2c41e7770a46fcacc080bc8a12`.
 
-`make test-dormant-tables` and its `SANITIZE=1` variant check handwritten raw-byte fixtures, real constructor snapshots, existing ownership controls and deliberate semantic mutants. A mutant must compile, reach its intended failing fixture and normal summary, and emit no sanitizer diagnostic. Model outcomes never substitute for actual hardware/guest completion or page-reuse authority.
+`make test-dormant-tables` runs the Meson-built programs that check handwritten raw-byte fixtures, real constructor snapshots and ownership controls; `kernel-compile-fail` checks the test-configuration guards, and `kernel-dormant-api` checks at compile time that table storage and writers stay private. Build a sanitizer configuration with `meson setup -Db_sanitize=address,undefined` when needed. Model outcomes never substitute for actual hardware/guest completion or page-reuse authority.
 
 ## Translation semantics
 

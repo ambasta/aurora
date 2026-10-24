@@ -1,0 +1,154 @@
+exit	(440, 146, 443, 0)	completion=0 consumed=5 entries=1 next=5 put=0 pixel=10620 stores=10620 frames=6 store-digest=adad774668c0208e frame-digest=a2e70e303216cb0c screen-digest=b1658368164cbb65 exit=0
+editing	(440, 146, 443, 0)	completion=0 consumed=27 entries=1 next=27 put=0 pixel=23847 stores=23847 frames=28 store-digest=23436a8952f25ed0 frame-digest=84471544b68cab88 screen-digest=b1658368164cbb65 exit=0
+commands	(440, 146, 443, 0)	completion=0 consumed=49 entries=1 next=49 put=0 pixel=32141 stores=32141 frames=50 store-digest=29b21bff380752da frame-digest=eb1c96676234fc20 screen-digest=b1658368164cbb65 exit=0
+note-replace	(440, 146, 443, 0)	completion=0 consumed=67 entries=1 next=67 put=0 pixel=30670 stores=30670 frames=68 store-digest=ccd994d8ebe5d354 frame-digest=3e2127c95136d0b8 screen-digest=b1658368164cbb65 exit=0
+note-empty	(440, 146, 443, 0)	completion=0 consumed=57 entries=1 next=57 put=0 pixel=27095 stores=27095 frames=58 store-digest=9bcd90f0599c7d8b frame-digest=3495d9a4e84293c0 screen-digest=b1658368164cbb65 exit=0
+note-edit-crlf	(440, 146, 443, 0)	completion=0 consumed=37 entries=1 next=37 put=0 pixel=18985 stores=18985 frames=38 store-digest=ad8f97c7ebec55bb frame-digest=22a7cf90faef80ac screen-digest=b1658368164cbb65 exit=0
+note-malformed	(440, 146, 443, 0)	completion=0 consumed=56 entries=1 next=56 put=0 pixel=26037 stores=26037 frames=57 store-digest=b25d9137aa515be9 frame-digest=db5c4b9f29ecc2fd screen-digest=b1658368164cbb65 exit=0
+note-control	(440, 146, 443, 0)	completion=0 consumed=47 entries=1 next=47 put=0 pixel=25821 stores=25821 frames=48 store-digest=07fe1e4bdb318de4 frame-digest=325ce838bf1d5cc8 screen-digest=b1658368164cbb65 exit=0
+note-nonascii	(440, 146, 443, 0)	completion=0 consumed=47 entries=1 next=47 put=0 pixel=25821 stores=25821 frames=48 store-digest=07fe1e4bdb318de4 frame-digest=325ce838bf1d5cc8 screen-digest=b1658368164cbb65 exit=0
+note-damage-absent	(440, 146, 443, 0)	completion=0 consumed=47 entries=1 next=47 put=0 pixel=25821 stores=25821 frames=48 store-digest=07fe1e4bdb318de4 frame-digest=325ce838bf1d5cc8 screen-digest=b1658368164cbb65 exit=0
+note-damage-byte	(440, 146, 443, 0)	completion=0 consumed=47 entries=1 next=47 put=0 pixel=25821 stores=25821 frames=48 store-digest=07fe1e4bdb318de4 frame-digest=325ce838bf1d5cc8 screen-digest=b1658368164cbb65 exit=0
+note-damage-enter	(440, 146, 443, 0)	completion=0 consumed=47 entries=1 next=47 put=0 pixel=25821 stores=25821 frames=48 store-digest=07fe1e4bdb318de4 frame-digest=6ee0dec498c58610 screen-digest=b1658368164cbb65 exit=0
+note-damaged-crlf	(440, 146, 443, 0)	completion=0 consumed=47 entries=1 next=47 put=0 pixel=23380 stores=23380 frames=48 store-digest=c9a6cb281ea61c91 frame-digest=ecfbcdc6b75521cc screen-digest=b1658368164cbb65 exit=0
+note-maximum	(440, 146, 443, 0)	completion=0 consumed=79 entries=1 next=79 put=0 pixel=29338 stores=29338 frames=80 store-digest=7f6990efb72256ea frame-digest=62e841ae0ba0e160 screen-digest=b1658368164cbb65 exit=0
+note-overlong	(440, 146, 443, 0)	completion=0 consumed=80 entries=1 next=80 put=0 pixel=30125 stores=30125 frames=81 store-digest=a2364b3bde1ba27c frame-digest=5d4686a44dd917ed screen-digest=b1658368164cbb65 exit=0
+files-copy	(440, 146, 443, 0)	completion=0 consumed=59 entries=1 next=59 put=0 pixel=22599 stores=22599 frames=60 store-digest=c2b47dcf36af6963 frame-digest=00422a3f32811614 screen-digest=b1658368164cbb65 exit=0
+files-copy-full	(440, 146, 443, 0)	completion=0 consumed=66 entries=1 next=66 put=0 pixel=25102 stores=25102 frames=67 store-digest=e85d9aa1587639cd frame-digest=c14c59975d6881e9 screen-digest=b1658368164cbb65 exit=0
+files-copy-invalid	(440, 146, 443, 0)	completion=0 consumed=68 entries=1 next=68 put=0 pixel=27541 stores=27541 frames=69 store-digest=341f89f3c59ce6cd frame-digest=03f1ee59d778370d screen-digest=b1658368164cbb65 exit=0
+files-demo	(440, 146, 443, 0)	completion=0 consumed=75 entries=1 next=75 put=0 pixel=28767 stores=28767 frames=76 store-digest=ea5961a072ec898c frame-digest=f6e1e114847e6484 screen-digest=b1658368164cbb65 exit=0
+files-capacity	(440, 146, 443, 0)	completion=0 consumed=79 entries=1 next=79 put=0 pixel=30315 stores=30315 frames=80 store-digest=f5497158497ed969 frame-digest=8b65f6f43654ace4 screen-digest=b1658368164cbb65 exit=0
+files-replace-empty	(440, 146, 443, 0)	completion=0 consumed=61 entries=1 next=61 put=0 pixel=24966 stores=24966 frames=62 store-digest=5fcdf790185067a1 frame-digest=88b8b3bbd61b7ee0 screen-digest=b1658368164cbb65 exit=0
+files-missing	(440, 146, 443, 0)	completion=0 consumed=43 entries=1 next=43 put=0 pixel=25310 stores=25310 frames=44 store-digest=5cccdb40b7aabdff frame-digest=31dc73478cefcf38 screen-digest=b1658368164cbb65 exit=0
+files-grammar	(440, 146, 443, 0)	completion=0 consumed=69 entries=1 next=69 put=0 pixel=27667 stores=27667 frames=70 store-digest=e3fb5edfde02585a frame-digest=109314e84949e820 screen-digest=b1658368164cbb65 exit=0
+files-names	(440, 146, 443, 0)	completion=0 consumed=75 entries=1 next=75 put=0 pixel=29630 stores=29630 frames=76 store-digest=b6d72f76206b808f frame-digest=7b6d7dc34ac21558 screen-digest=b1658368164cbb65 exit=0
+files-maximum-content	(440, 146, 443, 0)	completion=0 consumed=69 entries=1 next=69 put=0 pixel=26753 stores=26753 frames=70 store-digest=56872a05565b1fd3 frame-digest=b15eae7aca89b72c screen-digest=b1658368164cbb65 exit=0
+files-maximum-name	(440, 146, 443, 0)	completion=0 consumed=79 entries=1 next=79 put=0 pixel=29295 stores=29295 frames=80 store-digest=af64bf00c585b631 frame-digest=dcbd4970a8925a20 screen-digest=b1658368164cbb65 exit=0
+files-overlong-content	(440, 146, 443, 0)	completion=0 consumed=80 entries=1 next=80 put=0 pixel=28223 stores=28223 frames=81 store-digest=72899d11fa11653e frame-digest=a0984218dfc6c9a9 screen-digest=b1658368164cbb65 exit=0
+files-rejected	(440, 146, 443, 0)	completion=0 consumed=63 entries=1 next=63 put=0 pixel=27596 stores=27596 frames=64 store-digest=b0345727751bf309 frame-digest=6f3be60bca276b94 screen-digest=b1658368164cbb65 exit=0
+files-combined-budget	(440, 146, 443, 0)	completion=1 consumed=80 entries=1 next=80 put=0 pixel=30152 stores=30152 frames=81 store-digest=78dcdedad9b33dc8 frame-digest=e2e6aaf83393d825 screen-digest=b9a3eaa06e734799 exit=0
+capacity64	(440, 146, 443, 0)	completion=0 consumed=70 entries=1 next=70 put=0 pixel=23987 stores=23987 frames=71 store-digest=681a24dc8100b8b4 frame-digest=2fffe37cbab96b51 screen-digest=b1658368164cbb65 exit=0
+overflow65	(440, 146, 443, 0)	completion=0 consumed=72 entries=1 next=72 put=0 pixel=27085 stores=27085 frames=73 store-digest=28db4e74e083131d frame-digest=d2cb2a164a1e9129 screen-digest=b1658368164cbb65 exit=0
+bad-control	(440, 146, 443, 0)	completion=0 consumed=15 entries=1 next=15 put=0 pixel=16363 stores=16363 frames=16 store-digest=e35b39eb54ab0f4d frame-digest=01559b17447f10b4 screen-digest=b1658368164cbb65 exit=0
+damage	(440, 146, 443, 0)	completion=0 consumed=13 entries=1 next=13 put=0 pixel=15762 stores=15762 frames=14 store-digest=6c33c10cd721b537 frame-digest=430de8b8b06e7a44 screen-digest=b1658368164cbb65 exit=0
+damaged-crlf	(440, 146, 443, 0)	completion=0 consumed=15 entries=1 next=15 put=0 pixel=18813 stores=18813 frames=16 store-digest=19cfb28fae0b1b83 frame-digest=207ecbb803c24e0c screen-digest=b1658368164cbb65 exit=0
+events80	(440, 146, 443, 0)	completion=1 consumed=80 entries=1 next=80 put=0 pixel=21959 stores=21959 frames=81 store-digest=ed2b6128342ebc62 frame-digest=d29af0787eb56e49 screen-digest=b9a3eaa06e734799 exit=0
+samples96	(440, 146, 443, 0)	completion=1 consumed=96 entries=1 next=96 put=0 pixel=10375 stores=10375 frames=97 store-digest=e1d3dd0027e678bc frame-digest=349d4165b80641c9 screen-digest=b9a3eaa06e734799 exit=0
+printable-0	(440, 146, 443, 0)	completion=0 consumed=46 entries=1 next=46 put=0 pixel=19867 stores=19867 frames=47 store-digest=8886fcf82f6818a9 frame-digest=0f9fa45ba322eaa1 screen-digest=b1658368164cbb65 exit=0
+printable-1	(440, 146, 443, 0)	completion=0 consumed=46 entries=1 next=46 put=0 pixel=19916 stores=19916 frames=47 store-digest=b0277da226c3c502 frame-digest=84187ea7b79b5ddd screen-digest=b1658368164cbb65 exit=0
+printable-2	(440, 146, 443, 0)	completion=0 consumed=21 entries=1 next=21 put=0 pixel=15378 stores=15378 frames=22 store-digest=77fd934c9144bff6 frame-digest=894dd25f098a987c screen-digest=b1658368164cbb65 exit=0
+exit	(800, 600, 803, 1)	completion=0 consumed=5 entries=1 next=5 put=0 pixel=10620 stores=10620 frames=6 store-digest=3ebecd2602d57e2b frame-digest=389a84e342543d88 screen-digest=4aab736705fbcc69 exit=0
+editing	(800, 600, 803, 1)	completion=0 consumed=27 entries=1 next=27 put=0 pixel=23847 stores=23847 frames=28 store-digest=4e175d1d37fd1e31 frame-digest=99208162c05df1e4 screen-digest=4aab736705fbcc69 exit=0
+commands	(800, 600, 803, 1)	completion=0 consumed=49 entries=1 next=49 put=0 pixel=32141 stores=32141 frames=50 store-digest=e3854205b7db1fd8 frame-digest=69e90dc19a458464 screen-digest=4aab736705fbcc69 exit=0
+note-replace	(800, 600, 803, 1)	completion=0 consumed=67 entries=1 next=67 put=0 pixel=30670 stores=30670 frames=68 store-digest=544048f15c1406cc frame-digest=d30a7609251d17e8 screen-digest=4aab736705fbcc69 exit=0
+note-empty	(800, 600, 803, 1)	completion=0 consumed=57 entries=1 next=57 put=0 pixel=27095 stores=27095 frames=58 store-digest=cc066ba77ba07f90 frame-digest=159172b204a4aa14 screen-digest=4aab736705fbcc69 exit=0
+note-edit-crlf	(800, 600, 803, 1)	completion=0 consumed=37 entries=1 next=37 put=0 pixel=18985 stores=18985 frames=38 store-digest=26c766faf019c9b5 frame-digest=1d879602d38a5d80 screen-digest=4aab736705fbcc69 exit=0
+note-malformed	(800, 600, 803, 1)	completion=0 consumed=56 entries=1 next=56 put=0 pixel=26037 stores=26037 frames=57 store-digest=dbc1795ddec3be17 frame-digest=6f5cbc9a1c8bf8c1 screen-digest=4aab736705fbcc69 exit=0
+note-control	(800, 600, 803, 1)	completion=0 consumed=47 entries=1 next=47 put=0 pixel=25821 stores=25821 frames=48 store-digest=3f5611053503d3f0 frame-digest=2afc48140a5ab28c screen-digest=4aab736705fbcc69 exit=0
+note-nonascii	(800, 600, 803, 1)	completion=0 consumed=47 entries=1 next=47 put=0 pixel=25821 stores=25821 frames=48 store-digest=3f5611053503d3f0 frame-digest=2afc48140a5ab28c screen-digest=4aab736705fbcc69 exit=0
+note-damage-absent	(800, 600, 803, 1)	completion=0 consumed=47 entries=1 next=47 put=0 pixel=25821 stores=25821 frames=48 store-digest=3f5611053503d3f0 frame-digest=2afc48140a5ab28c screen-digest=4aab736705fbcc69 exit=0
+note-damage-byte	(800, 600, 803, 1)	completion=0 consumed=47 entries=1 next=47 put=0 pixel=25821 stores=25821 frames=48 store-digest=3f5611053503d3f0 frame-digest=2afc48140a5ab28c screen-digest=4aab736705fbcc69 exit=0
+note-damage-enter	(800, 600, 803, 1)	completion=0 consumed=47 entries=1 next=47 put=0 pixel=25821 stores=25821 frames=48 store-digest=3f5611053503d3f0 frame-digest=e396b0dba7903ef0 screen-digest=4aab736705fbcc69 exit=0
+note-damaged-crlf	(800, 600, 803, 1)	completion=0 consumed=47 entries=1 next=47 put=0 pixel=23380 stores=23380 frames=48 store-digest=3b646a1018fc009c frame-digest=c492b643bb34d32c screen-digest=4aab736705fbcc69 exit=0
+note-maximum	(800, 600, 803, 1)	completion=0 consumed=79 entries=1 next=79 put=0 pixel=29338 stores=29338 frames=80 store-digest=54c2920e540526b4 frame-digest=2015b2c9c7023fa8 screen-digest=4aab736705fbcc69 exit=0
+note-overlong	(800, 600, 803, 1)	completion=0 consumed=80 entries=1 next=80 put=0 pixel=30125 stores=30125 frames=81 store-digest=f0cc842b7a76c3ed frame-digest=e968d09be57e45d5 screen-digest=4aab736705fbcc69 exit=0
+files-copy	(800, 600, 803, 1)	completion=0 consumed=59 entries=1 next=59 put=0 pixel=22599 stores=22599 frames=60 store-digest=9d4f580dbeb39234 frame-digest=13879cfb2f19fb34 screen-digest=4aab736705fbcc69 exit=0
+files-copy-full	(800, 600, 803, 1)	completion=0 consumed=66 entries=1 next=66 put=0 pixel=25102 stores=25102 frames=67 store-digest=39c23637f35c80c5 frame-digest=473df5322e49d5c9 screen-digest=4aab736705fbcc69 exit=0
+files-copy-invalid	(800, 600, 803, 1)	completion=0 consumed=68 entries=1 next=68 put=0 pixel=27541 stores=27541 frames=69 store-digest=38cf4ce1b7166e71 frame-digest=2e7bacaf5724d7c9 screen-digest=4aab736705fbcc69 exit=0
+files-demo	(800, 600, 803, 1)	completion=0 consumed=75 entries=1 next=75 put=0 pixel=28767 stores=28767 frames=76 store-digest=bad67ef29b9a78c8 frame-digest=436623a793b23b00 screen-digest=4aab736705fbcc69 exit=0
+files-capacity	(800, 600, 803, 1)	completion=0 consumed=79 entries=1 next=79 put=0 pixel=30315 stores=30315 frames=80 store-digest=6277c9782df05a6a frame-digest=6be358b3335376ec screen-digest=4aab736705fbcc69 exit=0
+files-replace-empty	(800, 600, 803, 1)	completion=0 consumed=61 entries=1 next=61 put=0 pixel=24966 stores=24966 frames=62 store-digest=716a5c901d22d73b frame-digest=81e84ec81d509938 screen-digest=4aab736705fbcc69 exit=0
+files-missing	(800, 600, 803, 1)	completion=0 consumed=43 entries=1 next=43 put=0 pixel=25310 stores=25310 frames=44 store-digest=0f527e55c3b1f242 frame-digest=6642f1ff7096298c screen-digest=4aab736705fbcc69 exit=0
+files-grammar	(800, 600, 803, 1)	completion=0 consumed=69 entries=1 next=69 put=0 pixel=27667 stores=27667 frames=70 store-digest=1cbf1cbd2805384a frame-digest=5d1521818958d108 screen-digest=4aab736705fbcc69 exit=0
+files-names	(800, 600, 803, 1)	completion=0 consumed=75 entries=1 next=75 put=0 pixel=29630 stores=29630 frames=76 store-digest=27fd01359260c676 frame-digest=6920251d1076f53c screen-digest=4aab736705fbcc69 exit=0
+files-maximum-content	(800, 600, 803, 1)	completion=0 consumed=69 entries=1 next=69 put=0 pixel=26753 stores=26753 frames=70 store-digest=387b5fec74f23f84 frame-digest=89ad5e7abd17ea4c screen-digest=4aab736705fbcc69 exit=0
+files-maximum-name	(800, 600, 803, 1)	completion=0 consumed=79 entries=1 next=79 put=0 pixel=29295 stores=29295 frames=80 store-digest=99df353c22b24107 frame-digest=5f9b5821eaad7aac screen-digest=4aab736705fbcc69 exit=0
+files-overlong-content	(800, 600, 803, 1)	completion=0 consumed=80 entries=1 next=80 put=0 pixel=28223 stores=28223 frames=81 store-digest=9b11dd0887420fef frame-digest=564235c1c355eba9 screen-digest=4aab736705fbcc69 exit=0
+files-rejected	(800, 600, 803, 1)	completion=0 consumed=63 entries=1 next=63 put=0 pixel=27596 stores=27596 frames=64 store-digest=eac866674153b4f9 frame-digest=8a7eea8bd311ac18 screen-digest=4aab736705fbcc69 exit=0
+files-combined-budget	(800, 600, 803, 1)	completion=1 consumed=80 entries=1 next=80 put=0 pixel=30152 stores=30152 frames=81 store-digest=9a8cb36eaf606cca frame-digest=8fee9e47db8b8a89 screen-digest=2bac01e80068f105 exit=0
+capacity64	(800, 600, 803, 1)	completion=0 consumed=70 entries=1 next=70 put=0 pixel=23987 stores=23987 frames=71 store-digest=f39b2f57f3fb254a frame-digest=5e30295ce68ddb49 screen-digest=4aab736705fbcc69 exit=0
+overflow65	(800, 600, 803, 1)	completion=0 consumed=72 entries=1 next=72 put=0 pixel=27085 stores=27085 frames=73 store-digest=8a83f7a19a3af094 frame-digest=a1fee6fbd750bf01 screen-digest=4aab736705fbcc69 exit=0
+bad-control	(800, 600, 803, 1)	completion=0 consumed=15 entries=1 next=15 put=0 pixel=16363 stores=16363 frames=16 store-digest=e8514ca8c3e1ae4a frame-digest=cce62b6820076c58 screen-digest=4aab736705fbcc69 exit=0
+damage	(800, 600, 803, 1)	completion=0 consumed=13 entries=1 next=13 put=0 pixel=15762 stores=15762 frames=14 store-digest=56ceb98f2faf7f9c frame-digest=3e74ddaaf3e63c34 screen-digest=4aab736705fbcc69 exit=0
+damaged-crlf	(800, 600, 803, 1)	completion=0 consumed=15 entries=1 next=15 put=0 pixel=18813 stores=18813 frames=16 store-digest=7818b32554b9beae frame-digest=4b2ccca028c91600 screen-digest=4aab736705fbcc69 exit=0
+events80	(800, 600, 803, 1)	completion=1 consumed=80 entries=1 next=80 put=0 pixel=21959 stores=21959 frames=81 store-digest=3f6aa33ad46290d6 frame-digest=ed7d0d10007bbf95 screen-digest=2bac01e80068f105 exit=0
+samples96	(800, 600, 803, 1)	completion=1 consumed=96 entries=1 next=96 put=0 pixel=10375 stores=10375 frames=97 store-digest=76a997717de53a28 frame-digest=c08634331f6d7e95 screen-digest=2bac01e80068f105 exit=0
+printable-0	(800, 600, 803, 1)	completion=0 consumed=46 entries=1 next=46 put=0 pixel=19867 stores=19867 frames=47 store-digest=962c4d7f1642192c frame-digest=9854fc53af2aa895 screen-digest=4aab736705fbcc69 exit=0
+printable-1	(800, 600, 803, 1)	completion=0 consumed=46 entries=1 next=46 put=0 pixel=19916 stores=19916 frames=47 store-digest=00387aa85e70c62c frame-digest=0e280a198926840d screen-digest=4aab736705fbcc69 exit=0
+printable-2	(800, 600, 803, 1)	completion=0 consumed=21 entries=1 next=21 put=0 pixel=15378 stores=15378 frames=22 store-digest=7c0598f7e829df50 frame-digest=20f557a1b21ed408 screen-digest=4aab736705fbcc69 exit=0
+exit	(1024, 768, 1024, 0)	completion=0 consumed=5 entries=1 next=5 put=0 pixel=10620 stores=10620 frames=6 store-digest=f0e4acbc679aee9a frame-digest=a2e70e303216cb0c screen-digest=1119b2ac1704ce55 exit=0
+editing	(1024, 768, 1024, 0)	completion=0 consumed=27 entries=1 next=27 put=0 pixel=23847 stores=23847 frames=28 store-digest=69d3fb15931e8763 frame-digest=84471544b68cab88 screen-digest=1119b2ac1704ce55 exit=0
+commands	(1024, 768, 1024, 0)	completion=0 consumed=49 entries=1 next=49 put=0 pixel=32141 stores=32141 frames=50 store-digest=6abfec83eea4e6ac frame-digest=eb1c96676234fc20 screen-digest=1119b2ac1704ce55 exit=0
+note-replace	(1024, 768, 1024, 0)	completion=0 consumed=67 entries=1 next=67 put=0 pixel=30670 stores=30670 frames=68 store-digest=014f9f703864dd40 frame-digest=3e2127c95136d0b8 screen-digest=1119b2ac1704ce55 exit=0
+note-empty	(1024, 768, 1024, 0)	completion=0 consumed=57 entries=1 next=57 put=0 pixel=27095 stores=27095 frames=58 store-digest=c4a32b202b4f0c2d frame-digest=3495d9a4e84293c0 screen-digest=1119b2ac1704ce55 exit=0
+note-edit-crlf	(1024, 768, 1024, 0)	completion=0 consumed=37 entries=1 next=37 put=0 pixel=18985 stores=18985 frames=38 store-digest=96634d3b1d2337cf frame-digest=22a7cf90faef80ac screen-digest=1119b2ac1704ce55 exit=0
+note-malformed	(1024, 768, 1024, 0)	completion=0 consumed=56 entries=1 next=56 put=0 pixel=26037 stores=26037 frames=57 store-digest=ed18fe28d85e5727 frame-digest=db5c4b9f29ecc2fd screen-digest=1119b2ac1704ce55 exit=0
+note-control	(1024, 768, 1024, 0)	completion=0 consumed=47 entries=1 next=47 put=0 pixel=25821 stores=25821 frames=48 store-digest=1739b06f36e517fe frame-digest=325ce838bf1d5cc8 screen-digest=1119b2ac1704ce55 exit=0
+note-nonascii	(1024, 768, 1024, 0)	completion=0 consumed=47 entries=1 next=47 put=0 pixel=25821 stores=25821 frames=48 store-digest=1739b06f36e517fe frame-digest=325ce838bf1d5cc8 screen-digest=1119b2ac1704ce55 exit=0
+note-damage-absent	(1024, 768, 1024, 0)	completion=0 consumed=47 entries=1 next=47 put=0 pixel=25821 stores=25821 frames=48 store-digest=1739b06f36e517fe frame-digest=325ce838bf1d5cc8 screen-digest=1119b2ac1704ce55 exit=0
+note-damage-byte	(1024, 768, 1024, 0)	completion=0 consumed=47 entries=1 next=47 put=0 pixel=25821 stores=25821 frames=48 store-digest=1739b06f36e517fe frame-digest=325ce838bf1d5cc8 screen-digest=1119b2ac1704ce55 exit=0
+note-damage-enter	(1024, 768, 1024, 0)	completion=0 consumed=47 entries=1 next=47 put=0 pixel=25821 stores=25821 frames=48 store-digest=1739b06f36e517fe frame-digest=6ee0dec498c58610 screen-digest=1119b2ac1704ce55 exit=0
+note-damaged-crlf	(1024, 768, 1024, 0)	completion=0 consumed=47 entries=1 next=47 put=0 pixel=23380 stores=23380 frames=48 store-digest=5b137def88f07358 frame-digest=ecfbcdc6b75521cc screen-digest=1119b2ac1704ce55 exit=0
+note-maximum	(1024, 768, 1024, 0)	completion=0 consumed=79 entries=1 next=79 put=0 pixel=29338 stores=29338 frames=80 store-digest=e8de40f28d5b4c8b frame-digest=62e841ae0ba0e160 screen-digest=1119b2ac1704ce55 exit=0
+note-overlong	(1024, 768, 1024, 0)	completion=0 consumed=80 entries=1 next=80 put=0 pixel=30125 stores=30125 frames=81 store-digest=19ba131800f27994 frame-digest=5d4686a44dd917ed screen-digest=1119b2ac1704ce55 exit=0
+files-copy	(1024, 768, 1024, 0)	completion=0 consumed=59 entries=1 next=59 put=0 pixel=22599 stores=22599 frames=60 store-digest=7574b5ed76bdb8cf frame-digest=00422a3f32811614 screen-digest=1119b2ac1704ce55 exit=0
+files-copy-full	(1024, 768, 1024, 0)	completion=0 consumed=66 entries=1 next=66 put=0 pixel=25102 stores=25102 frames=67 store-digest=ae31eab90e70859e frame-digest=c14c59975d6881e9 screen-digest=1119b2ac1704ce55 exit=0
+files-copy-invalid	(1024, 768, 1024, 0)	completion=0 consumed=68 entries=1 next=68 put=0 pixel=27541 stores=27541 frames=69 store-digest=935662dde151cad9 frame-digest=03f1ee59d778370d screen-digest=1119b2ac1704ce55 exit=0
+files-demo	(1024, 768, 1024, 0)	completion=0 consumed=75 entries=1 next=75 put=0 pixel=28767 stores=28767 frames=76 store-digest=49ba47e63d2b069d frame-digest=f6e1e114847e6484 screen-digest=1119b2ac1704ce55 exit=0
+files-capacity	(1024, 768, 1024, 0)	completion=0 consumed=79 entries=1 next=79 put=0 pixel=30315 stores=30315 frames=80 store-digest=f1bc9740d45f9ac8 frame-digest=8b65f6f43654ace4 screen-digest=1119b2ac1704ce55 exit=0
+files-replace-empty	(1024, 768, 1024, 0)	completion=0 consumed=61 entries=1 next=61 put=0 pixel=24966 stores=24966 frames=62 store-digest=b777f0dd7356154e frame-digest=88b8b3bbd61b7ee0 screen-digest=1119b2ac1704ce55 exit=0
+files-missing	(1024, 768, 1024, 0)	completion=0 consumed=43 entries=1 next=43 put=0 pixel=25310 stores=25310 frames=44 store-digest=4840ea0cf78036bb frame-digest=31dc73478cefcf38 screen-digest=1119b2ac1704ce55 exit=0
+files-grammar	(1024, 768, 1024, 0)	completion=0 consumed=69 entries=1 next=69 put=0 pixel=27667 stores=27667 frames=70 store-digest=012156e3c67d6e49 frame-digest=109314e84949e820 screen-digest=1119b2ac1704ce55 exit=0
+files-names	(1024, 768, 1024, 0)	completion=0 consumed=75 entries=1 next=75 put=0 pixel=29630 stores=29630 frames=76 store-digest=76fa4c09fe44cbcd frame-digest=7b6d7dc34ac21558 screen-digest=1119b2ac1704ce55 exit=0
+files-maximum-content	(1024, 768, 1024, 0)	completion=0 consumed=69 entries=1 next=69 put=0 pixel=26753 stores=26753 frames=70 store-digest=b743e06ff1a30e33 frame-digest=b15eae7aca89b72c screen-digest=1119b2ac1704ce55 exit=0
+files-maximum-name	(1024, 768, 1024, 0)	completion=0 consumed=79 entries=1 next=79 put=0 pixel=29295 stores=29295 frames=80 store-digest=2e25ada0be4ae80b frame-digest=dcbd4970a8925a20 screen-digest=1119b2ac1704ce55 exit=0
+files-overlong-content	(1024, 768, 1024, 0)	completion=0 consumed=80 entries=1 next=80 put=0 pixel=28223 stores=28223 frames=81 store-digest=3af0ffb7d0602ca6 frame-digest=a0984218dfc6c9a9 screen-digest=1119b2ac1704ce55 exit=0
+files-rejected	(1024, 768, 1024, 0)	completion=0 consumed=63 entries=1 next=63 put=0 pixel=27596 stores=27596 frames=64 store-digest=66c0cf403a563af1 frame-digest=6f3be60bca276b94 screen-digest=1119b2ac1704ce55 exit=0
+files-combined-budget	(1024, 768, 1024, 0)	completion=1 consumed=80 entries=1 next=80 put=0 pixel=30152 stores=30152 frames=81 store-digest=229c9f86172bcbc3 frame-digest=e2e6aaf83393d825 screen-digest=2a6117e202ed0e09 exit=0
+capacity64	(1024, 768, 1024, 0)	completion=0 consumed=70 entries=1 next=70 put=0 pixel=23987 stores=23987 frames=71 store-digest=fba86a3e653723f7 frame-digest=2fffe37cbab96b51 screen-digest=1119b2ac1704ce55 exit=0
+overflow65	(1024, 768, 1024, 0)	completion=0 consumed=72 entries=1 next=72 put=0 pixel=27085 stores=27085 frames=73 store-digest=7523505f245eb071 frame-digest=d2cb2a164a1e9129 screen-digest=1119b2ac1704ce55 exit=0
+bad-control	(1024, 768, 1024, 0)	completion=0 consumed=15 entries=1 next=15 put=0 pixel=16363 stores=16363 frames=16 store-digest=745de3c3d234599b frame-digest=01559b17447f10b4 screen-digest=1119b2ac1704ce55 exit=0
+damage	(1024, 768, 1024, 0)	completion=0 consumed=13 entries=1 next=13 put=0 pixel=15762 stores=15762 frames=14 store-digest=8bee0fef2a1d0a39 frame-digest=430de8b8b06e7a44 screen-digest=1119b2ac1704ce55 exit=0
+damaged-crlf	(1024, 768, 1024, 0)	completion=0 consumed=15 entries=1 next=15 put=0 pixel=18813 stores=18813 frames=16 store-digest=e0909e28677014af frame-digest=207ecbb803c24e0c screen-digest=1119b2ac1704ce55 exit=0
+events80	(1024, 768, 1024, 0)	completion=1 consumed=80 entries=1 next=80 put=0 pixel=21959 stores=21959 frames=81 store-digest=93fd0c65538e9b3f frame-digest=d29af0787eb56e49 screen-digest=2a6117e202ed0e09 exit=0
+samples96	(1024, 768, 1024, 0)	completion=1 consumed=96 entries=1 next=96 put=0 pixel=10375 stores=10375 frames=97 store-digest=32035dac74564327 frame-digest=349d4165b80641c9 screen-digest=2a6117e202ed0e09 exit=0
+printable-0	(1024, 768, 1024, 0)	completion=0 consumed=46 entries=1 next=46 put=0 pixel=19867 stores=19867 frames=47 store-digest=1ea30d4624c5ef46 frame-digest=0f9fa45ba322eaa1 screen-digest=1119b2ac1704ce55 exit=0
+printable-1	(1024, 768, 1024, 0)	completion=0 consumed=46 entries=1 next=46 put=0 pixel=19916 stores=19916 frames=47 store-digest=f9b1d4d38af9d67b frame-digest=84187ea7b79b5ddd screen-digest=1119b2ac1704ce55 exit=0
+printable-2	(1024, 768, 1024, 0)	completion=0 consumed=21 entries=1 next=21 put=0 pixel=15378 stores=15378 frames=22 store-digest=4cc97ce8de08fb1d frame-digest=894dd25f098a987c screen-digest=1119b2ac1704ce55 exit=0
+note-reset	(440, 146, 443, 1)	completion=0 consumed=37 entries=2 next=37 put=0 pixel=30583 stores=30583 frames=39 store-digest=60ab85ae32493241 frame-digest=a2a5cc6e716bbd48 screen-digest=0ce6df8a8e3407e9 exit=0
+files-reset	(440, 146, 443, 1)	completion=0 consumed=34 entries=2 next=34 put=0 pixel=29802 stores=29802 frames=36 store-digest=bc78876ff93f1d76 frame-digest=40f3fa4b40aec451 screen-digest=0ce6df8a8e3407e9 exit=0
+failure-baseline	(440, 146, 443, 1)	completion=0 consumed=19 entries=1 next=19 put=0 pixel=20785 stores=20785 frames=20 store-digest=16d1292020177294 frame-digest=ca08b642b85217e8 screen-digest=0ce6df8a8e3407e9 exit=0
+failure-0	(440, 146, 443, 1)	completion=2 consumed=0 entries=1 next=0 put=0 pixel=1 stores=0 frames=1 store-digest=cbf29ce484222325 frame-digest=6cbcde6b07c4ace5 screen-digest=790c33f15c2c0765 exit=0
+failure-1	(440, 146, 443, 1)	completion=2 consumed=0 entries=1 next=0 put=0 pixel=2 stores=1 frames=1 store-digest=fde92c9af9c95591 frame-digest=5470dbbe5da7bf60 screen-digest=2ee9364bd13fe1a0 exit=0
+failure-53	(440, 146, 443, 1)	completion=2 consumed=0 entries=1 next=0 put=0 pixel=54 stores=53 frames=1 store-digest=6209b30300de2c0f frame-digest=eecec171e98979d0 screen-digest=eedf7a423aa5cad0 exit=0
+failure-55	(440, 146, 443, 1)	completion=2 consumed=0 entries=1 next=0 put=0 pixel=56 stores=55 frames=1 store-digest=608308655266d76e frame-digest=f2e6cc8e804bafc5 screen-digest=99b4bfe00a1ded05 exit=0
+failure-10392	(440, 146, 443, 1)	completion=2 consumed=7 entries=1 next=7 put=0 pixel=10393 stores=10392 frames=8 store-digest=d4ae08bbcbe64b22 frame-digest=2c5de51163ff54a5 screen-digest=05fa8bffa29e9684 exit=0
+failure-20784	(440, 146, 443, 1)	completion=2 consumed=19 entries=1 next=19 put=0 pixel=20785 stores=20784 frames=20 store-digest=6bf79e3363361c11 frame-digest=ca08b642b85217e8 screen-digest=0ce6df8a8e3407e9 exit=0
+note-failure-baseline	(440, 146, 443, 1)	completion=0 consumed=52 entries=1 next=52 put=0 pixel=26000 stores=26000 frames=53 store-digest=b218f4bb20c627c6 frame-digest=aa4c25573ebe1c69 screen-digest=0ce6df8a8e3407e9 exit=0
+note-failure-13000	(440, 146, 443, 1)	completion=2 consumed=17 entries=1 next=17 put=0 pixel=13001 stores=13000 frames=18 store-digest=fe17b5fec86f4103 frame-digest=9a33958fbd3f0ca5 screen-digest=1947aa07cc52c1ec exit=0
+note-failure-25999	(440, 146, 443, 1)	completion=2 consumed=52 entries=1 next=52 put=0 pixel=26000 stores=25999 frames=53 store-digest=5ec5f30c37475d18 frame-digest=cedfdc2fca78a9e9 screen-digest=7c884875fb5fe2b1 exit=0
+files-failure-baseline	(440, 146, 443, 1)	completion=0 consumed=33 entries=1 next=33 put=0 pixel=20199 stores=20199 frames=34 store-digest=c441d1881eb39615 frame-digest=11f7a5d6c423c2e4 screen-digest=0ce6df8a8e3407e9 exit=0
+files-failure-10099	(440, 146, 443, 1)	completion=2 consumed=14 entries=1 next=14 put=0 pixel=10100 stores=10099 frames=15 store-digest=c6744054cef355b3 frame-digest=546899ec0a6769a8 screen-digest=fe8ce1adf1e80fc4 exit=0
+files-failure-20198	(440, 146, 443, 1)	completion=2 consumed=33 entries=1 next=33 put=0 pixel=20199 stores=20198 frames=34 store-digest=57e9e02e9a7216a1 frame-digest=11f7a5d6c423c2e4 screen-digest=0ce6df8a8e3407e9 exit=0
+denied-null-record	(440, 146, 443, 1)	exit=77
+denied-copied-record	(440, 146, 443, 1)	exit=77
+denied-null-console	(440, 146, 443, 1)	exit=77
+denied-null-display	(440, 146, 443, 1)	exit=77
+denied-forged-console	(440, 146, 443, 1)	exit=77
+denied-forged-display	(440, 146, 443, 1)	exit=77
+denied-crossed	(440, 146, 443, 1)	exit=77
+denied-duplicate-console	(440, 146, 443, 1)	exit=77
+denied-duplicate-display	(440, 146, 443, 1)	exit=77
+denied-zero-console	(440, 146, 443, 1)	exit=77
+denied-zero-display	(440, 146, 443, 1)	exit=77
+denied-max-console	(440, 146, 443, 1)	exit=77
+denied-max-display	(440, 146, 443, 1)	exit=77
+denied-width	(440, 146, 443, 1)	exit=77
+denied-height	(440, 146, 443, 1)	exit=77
+denied-not-quiet	(440, 146, 443, 1)	exit=77
+denied-stale-console	(440, 146, 443, 1)	exit=77
+denied-stale-display	(440, 146, 443, 1)	exit=77
+denied-stale-both	(440, 146, 443, 1)	exit=77
+denied-reentry	(440, 146, 443, 1)	exit=77
+denied-geometry	(439, 146, 443, 1)	exit=77
+denied-geometry	(440, 145, 443, 1)	exit=77

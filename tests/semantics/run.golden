@@ -1,0 +1,630 @@
+boundary-+--9223372036854775808--9223372036854775808	trap overflow
+boundary-+--9223372036854775808--9223372036854775807	trap overflow
+boundary-+--9223372036854775808--3037000500	trap overflow
+boundary-+--9223372036854775808--1	trap overflow
+boundary-+--9223372036854775808-0	value -9223372036854775808
+boundary-+--9223372036854775808-1	value -9223372036854775807
+boundary-+--9223372036854775808-3037000500	value -9223372033817775308
+boundary-+--9223372036854775808-9223372036854775806	value -2
+boundary-+--9223372036854775808-9223372036854775807	value -1
+boundary-+--9223372036854775807--9223372036854775808	trap overflow
+boundary-+--9223372036854775807--9223372036854775807	trap overflow
+boundary-+--9223372036854775807--3037000500	trap overflow
+boundary-+--9223372036854775807--1	value -9223372036854775808
+boundary-+--9223372036854775807-0	value -9223372036854775807
+boundary-+--9223372036854775807-1	value -9223372036854775806
+boundary-+--9223372036854775807-3037000500	value -9223372033817775307
+boundary-+--9223372036854775807-9223372036854775806	value -1
+boundary-+--9223372036854775807-9223372036854775807	value 0
+boundary-+--3037000500--9223372036854775808	trap overflow
+boundary-+--3037000500--9223372036854775807	trap overflow
+boundary-+--3037000500--3037000500	value -6074001000
+boundary-+--3037000500--1	value -3037000501
+boundary-+--3037000500-0	value -3037000500
+boundary-+--3037000500-1	value -3037000499
+boundary-+--3037000500-3037000500	value 0
+boundary-+--3037000500-9223372036854775806	value 9223372033817775306
+boundary-+--3037000500-9223372036854775807	value 9223372033817775307
+boundary-+--1--9223372036854775808	trap overflow
+boundary-+--1--9223372036854775807	value -9223372036854775808
+boundary-+--1--3037000500	value -3037000501
+boundary-+--1--1	value -2
+boundary-+--1-0	value -1
+boundary-+--1-1	value 0
+boundary-+--1-3037000500	value 3037000499
+boundary-+--1-9223372036854775806	value 9223372036854775805
+boundary-+--1-9223372036854775807	value 9223372036854775806
+boundary-+-0--9223372036854775808	value -9223372036854775808
+boundary-+-0--9223372036854775807	value -9223372036854775807
+boundary-+-0--3037000500	value -3037000500
+boundary-+-0--1	value -1
+boundary-+-0-0	value 0
+boundary-+-0-1	value 1
+boundary-+-0-3037000500	value 3037000500
+boundary-+-0-9223372036854775806	value 9223372036854775806
+boundary-+-0-9223372036854775807	value 9223372036854775807
+boundary-+-1--9223372036854775808	value -9223372036854775807
+boundary-+-1--9223372036854775807	value -9223372036854775806
+boundary-+-1--3037000500	value -3037000499
+boundary-+-1--1	value 0
+boundary-+-1-0	value 1
+boundary-+-1-1	value 2
+boundary-+-1-3037000500	value 3037000501
+boundary-+-1-9223372036854775806	value 9223372036854775807
+boundary-+-1-9223372036854775807	trap overflow
+boundary-+-3037000500--9223372036854775808	value -9223372033817775308
+boundary-+-3037000500--9223372036854775807	value -9223372033817775307
+boundary-+-3037000500--3037000500	value 0
+boundary-+-3037000500--1	value 3037000499
+boundary-+-3037000500-0	value 3037000500
+boundary-+-3037000500-1	value 3037000501
+boundary-+-3037000500-3037000500	value 6074001000
+boundary-+-3037000500-9223372036854775806	trap overflow
+boundary-+-3037000500-9223372036854775807	trap overflow
+boundary-+-9223372036854775806--9223372036854775808	value -2
+boundary-+-9223372036854775806--9223372036854775807	value -1
+boundary-+-9223372036854775806--3037000500	value 9223372033817775306
+boundary-+-9223372036854775806--1	value 9223372036854775805
+boundary-+-9223372036854775806-0	value 9223372036854775806
+boundary-+-9223372036854775806-1	value 9223372036854775807
+boundary-+-9223372036854775806-3037000500	trap overflow
+boundary-+-9223372036854775806-9223372036854775806	trap overflow
+boundary-+-9223372036854775806-9223372036854775807	trap overflow
+boundary-+-9223372036854775807--9223372036854775808	value -1
+boundary-+-9223372036854775807--9223372036854775807	value 0
+boundary-+-9223372036854775807--3037000500	value 9223372033817775307
+boundary-+-9223372036854775807--1	value 9223372036854775806
+boundary-+-9223372036854775807-0	value 9223372036854775807
+boundary-+-9223372036854775807-1	trap overflow
+boundary-+-9223372036854775807-3037000500	trap overflow
+boundary-+-9223372036854775807-9223372036854775806	trap overflow
+boundary-+-9223372036854775807-9223372036854775807	trap overflow
+boundary----9223372036854775808--9223372036854775808	value 0
+boundary----9223372036854775808--9223372036854775807	value -1
+boundary----9223372036854775808--3037000500	value -9223372033817775308
+boundary----9223372036854775808--1	value -9223372036854775807
+boundary----9223372036854775808-0	value -9223372036854775808
+boundary----9223372036854775808-1	trap overflow
+boundary----9223372036854775808-3037000500	trap overflow
+boundary----9223372036854775808-9223372036854775806	trap overflow
+boundary----9223372036854775808-9223372036854775807	trap overflow
+boundary----9223372036854775807--9223372036854775808	value 1
+boundary----9223372036854775807--9223372036854775807	value 0
+boundary----9223372036854775807--3037000500	value -9223372033817775307
+boundary----9223372036854775807--1	value -9223372036854775806
+boundary----9223372036854775807-0	value -9223372036854775807
+boundary----9223372036854775807-1	value -9223372036854775808
+boundary----9223372036854775807-3037000500	trap overflow
+boundary----9223372036854775807-9223372036854775806	trap overflow
+boundary----9223372036854775807-9223372036854775807	trap overflow
+boundary----3037000500--9223372036854775808	value 9223372033817775308
+boundary----3037000500--9223372036854775807	value 9223372033817775307
+boundary----3037000500--3037000500	value 0
+boundary----3037000500--1	value -3037000499
+boundary----3037000500-0	value -3037000500
+boundary----3037000500-1	value -3037000501
+boundary----3037000500-3037000500	value -6074001000
+boundary----3037000500-9223372036854775806	trap overflow
+boundary----3037000500-9223372036854775807	trap overflow
+boundary----1--9223372036854775808	value 9223372036854775807
+boundary----1--9223372036854775807	value 9223372036854775806
+boundary----1--3037000500	value 3037000499
+boundary----1--1	value 0
+boundary----1-0	value -1
+boundary----1-1	value -2
+boundary----1-3037000500	value -3037000501
+boundary----1-9223372036854775806	value -9223372036854775807
+boundary----1-9223372036854775807	value -9223372036854775808
+boundary---0--9223372036854775808	trap overflow
+boundary---0--9223372036854775807	value 9223372036854775807
+boundary---0--3037000500	value 3037000500
+boundary---0--1	value 1
+boundary---0-0	value 0
+boundary---0-1	value -1
+boundary---0-3037000500	value -3037000500
+boundary---0-9223372036854775806	value -9223372036854775806
+boundary---0-9223372036854775807	value -9223372036854775807
+boundary---1--9223372036854775808	trap overflow
+boundary---1--9223372036854775807	trap overflow
+boundary---1--3037000500	value 3037000501
+boundary---1--1	value 2
+boundary---1-0	value 1
+boundary---1-1	value 0
+boundary---1-3037000500	value -3037000499
+boundary---1-9223372036854775806	value -9223372036854775805
+boundary---1-9223372036854775807	value -9223372036854775806
+boundary---3037000500--9223372036854775808	trap overflow
+boundary---3037000500--9223372036854775807	trap overflow
+boundary---3037000500--3037000500	value 6074001000
+boundary---3037000500--1	value 3037000501
+boundary---3037000500-0	value 3037000500
+boundary---3037000500-1	value 3037000499
+boundary---3037000500-3037000500	value 0
+boundary---3037000500-9223372036854775806	value -9223372033817775306
+boundary---3037000500-9223372036854775807	value -9223372033817775307
+boundary---9223372036854775806--9223372036854775808	trap overflow
+boundary---9223372036854775806--9223372036854775807	trap overflow
+boundary---9223372036854775806--3037000500	trap overflow
+boundary---9223372036854775806--1	value 9223372036854775807
+boundary---9223372036854775806-0	value 9223372036854775806
+boundary---9223372036854775806-1	value 9223372036854775805
+boundary---9223372036854775806-3037000500	value 9223372033817775306
+boundary---9223372036854775806-9223372036854775806	value 0
+boundary---9223372036854775806-9223372036854775807	value -1
+boundary---9223372036854775807--9223372036854775808	trap overflow
+boundary---9223372036854775807--9223372036854775807	trap overflow
+boundary---9223372036854775807--3037000500	trap overflow
+boundary---9223372036854775807--1	trap overflow
+boundary---9223372036854775807-0	value 9223372036854775807
+boundary---9223372036854775807-1	value 9223372036854775806
+boundary---9223372036854775807-3037000500	value 9223372033817775307
+boundary---9223372036854775807-9223372036854775806	value 1
+boundary---9223372036854775807-9223372036854775807	value 0
+boundary-*--9223372036854775808--9223372036854775808	trap overflow
+boundary-*--9223372036854775808--9223372036854775807	trap overflow
+boundary-*--9223372036854775808--3037000500	trap overflow
+boundary-*--9223372036854775808--1	trap overflow
+boundary-*--9223372036854775808-0	value 0
+boundary-*--9223372036854775808-1	value -9223372036854775808
+boundary-*--9223372036854775808-3037000500	trap overflow
+boundary-*--9223372036854775808-9223372036854775806	trap overflow
+boundary-*--9223372036854775808-9223372036854775807	trap overflow
+boundary-*--9223372036854775807--9223372036854775808	trap overflow
+boundary-*--9223372036854775807--9223372036854775807	trap overflow
+boundary-*--9223372036854775807--3037000500	trap overflow
+boundary-*--9223372036854775807--1	value 9223372036854775807
+boundary-*--9223372036854775807-0	value 0
+boundary-*--9223372036854775807-1	value -9223372036854775807
+boundary-*--9223372036854775807-3037000500	trap overflow
+boundary-*--9223372036854775807-9223372036854775806	trap overflow
+boundary-*--9223372036854775807-9223372036854775807	trap overflow
+boundary-*--3037000500--9223372036854775808	trap overflow
+boundary-*--3037000500--9223372036854775807	trap overflow
+boundary-*--3037000500--3037000500	trap overflow
+boundary-*--3037000500--1	value 3037000500
+boundary-*--3037000500-0	value 0
+boundary-*--3037000500-1	value -3037000500
+boundary-*--3037000500-3037000500	trap overflow
+boundary-*--3037000500-9223372036854775806	trap overflow
+boundary-*--3037000500-9223372036854775807	trap overflow
+boundary-*--1--9223372036854775808	trap overflow
+boundary-*--1--9223372036854775807	value 9223372036854775807
+boundary-*--1--3037000500	value 3037000500
+boundary-*--1--1	value 1
+boundary-*--1-0	value 0
+boundary-*--1-1	value -1
+boundary-*--1-3037000500	value -3037000500
+boundary-*--1-9223372036854775806	value -9223372036854775806
+boundary-*--1-9223372036854775807	value -9223372036854775807
+boundary-*-0--9223372036854775808	value 0
+boundary-*-0--9223372036854775807	value 0
+boundary-*-0--3037000500	value 0
+boundary-*-0--1	value 0
+boundary-*-0-0	value 0
+boundary-*-0-1	value 0
+boundary-*-0-3037000500	value 0
+boundary-*-0-9223372036854775806	value 0
+boundary-*-0-9223372036854775807	value 0
+boundary-*-1--9223372036854775808	value -9223372036854775808
+boundary-*-1--9223372036854775807	value -9223372036854775807
+boundary-*-1--3037000500	value -3037000500
+boundary-*-1--1	value -1
+boundary-*-1-0	value 0
+boundary-*-1-1	value 1
+boundary-*-1-3037000500	value 3037000500
+boundary-*-1-9223372036854775806	value 9223372036854775806
+boundary-*-1-9223372036854775807	value 9223372036854775807
+boundary-*-3037000500--9223372036854775808	trap overflow
+boundary-*-3037000500--9223372036854775807	trap overflow
+boundary-*-3037000500--3037000500	trap overflow
+boundary-*-3037000500--1	value -3037000500
+boundary-*-3037000500-0	value 0
+boundary-*-3037000500-1	value 3037000500
+boundary-*-3037000500-3037000500	trap overflow
+boundary-*-3037000500-9223372036854775806	trap overflow
+boundary-*-3037000500-9223372036854775807	trap overflow
+boundary-*-9223372036854775806--9223372036854775808	trap overflow
+boundary-*-9223372036854775806--9223372036854775807	trap overflow
+boundary-*-9223372036854775806--3037000500	trap overflow
+boundary-*-9223372036854775806--1	value -9223372036854775806
+boundary-*-9223372036854775806-0	value 0
+boundary-*-9223372036854775806-1	value 9223372036854775806
+boundary-*-9223372036854775806-3037000500	trap overflow
+boundary-*-9223372036854775806-9223372036854775806	trap overflow
+boundary-*-9223372036854775806-9223372036854775807	trap overflow
+boundary-*-9223372036854775807--9223372036854775808	trap overflow
+boundary-*-9223372036854775807--9223372036854775807	trap overflow
+boundary-*-9223372036854775807--3037000500	trap overflow
+boundary-*-9223372036854775807--1	value -9223372036854775807
+boundary-*-9223372036854775807-0	value 0
+boundary-*-9223372036854775807-1	value 9223372036854775807
+boundary-*-9223372036854775807-3037000500	trap overflow
+boundary-*-9223372036854775807-9223372036854775806	trap overflow
+boundary-*-9223372036854775807-9223372036854775807	trap overflow
+neg--9223372036854775808	trap overflow
+neg--9223372036854775807	value 9223372036854775807
+neg--3037000500	value 3037000500
+neg--1	value 1
+neg-0	value 0
+neg-1	value -1
+neg-3037000500	value -3037000500
+neg-9223372036854775806	value -9223372036854775806
+neg-9223372036854775807	value -9223372036854775807
+bounds-1--9223372036854775808-False	trap bounds
+bounds-1--9223372036854775808-True	trap bounds
+bounds-1--1-False	trap bounds
+bounds-1--1-True	trap bounds
+bounds-1-0-False	value 0
+bounds-1-0-True	value 42
+bounds-1-0-False	value 0
+bounds-1-0-True	value 42
+bounds-1-1-False	trap bounds
+bounds-1-1-True	trap bounds
+bounds-1-9223372036854775807-False	trap bounds
+bounds-1-9223372036854775807-True	trap bounds
+bounds-2--9223372036854775808-False	trap bounds
+bounds-2--9223372036854775808-True	trap bounds
+bounds-2--1-False	trap bounds
+bounds-2--1-True	trap bounds
+bounds-2-0-False	value 0
+bounds-2-0-True	value 42
+bounds-2-1-False	value 1
+bounds-2-1-True	value 42
+bounds-2-2-False	trap bounds
+bounds-2-2-True	trap bounds
+bounds-2-9223372036854775807-False	trap bounds
+bounds-2-9223372036854775807-True	trap bounds
+bounds-8--9223372036854775808-False	trap bounds
+bounds-8--9223372036854775808-True	trap bounds
+bounds-8--1-False	trap bounds
+bounds-8--1-True	trap bounds
+bounds-8-0-False	value 0
+bounds-8-0-True	value 42
+bounds-8-7-False	value 7
+bounds-8-7-True	value 42
+bounds-8-8-False	trap bounds
+bounds-8-8-True	trap bounds
+bounds-8-9223372036854775807-False	trap bounds
+bounds-8-9223372036854775807-True	trap bounds
+bool-array-loop	value 4
+ownership-read-read-read	value 42
+ownership-read-read-shared	value 42
+ownership-read-read-exclusive	value 42
+ownership-read-read-move	value 42
+ownership-read-shared-read	value 42
+ownership-read-shared-shared	value 42
+ownership-read-shared-exclusive	reject
+ownership-read-shared-move	reject
+ownership-read-exclusive-read	reject
+ownership-read-exclusive-shared	reject
+ownership-read-exclusive-exclusive	reject
+ownership-read-exclusive-move	reject
+ownership-read-move-read	reject
+ownership-read-move-shared	reject
+ownership-read-move-exclusive	reject
+ownership-read-move-move	reject
+ownership-shared-read-read	value 42
+ownership-shared-read-shared	value 42
+ownership-shared-read-exclusive	reject
+ownership-shared-read-move	reject
+ownership-shared-shared-read	value 42
+ownership-shared-shared-shared	value 42
+ownership-shared-shared-exclusive	reject
+ownership-shared-shared-move	reject
+ownership-shared-exclusive-read	reject
+ownership-shared-exclusive-shared	reject
+ownership-shared-exclusive-exclusive	reject
+ownership-shared-exclusive-move	reject
+ownership-shared-move-read	reject
+ownership-shared-move-shared	reject
+ownership-shared-move-exclusive	reject
+ownership-shared-move-move	reject
+ownership-exclusive-read-read	reject
+ownership-exclusive-read-shared	reject
+ownership-exclusive-read-exclusive	reject
+ownership-exclusive-read-move	reject
+ownership-exclusive-shared-read	reject
+ownership-exclusive-shared-shared	reject
+ownership-exclusive-shared-exclusive	reject
+ownership-exclusive-shared-move	reject
+ownership-exclusive-exclusive-read	reject
+ownership-exclusive-exclusive-shared	reject
+ownership-exclusive-exclusive-exclusive	reject
+ownership-exclusive-exclusive-move	reject
+ownership-exclusive-move-read	reject
+ownership-exclusive-move-shared	reject
+ownership-exclusive-move-exclusive	reject
+ownership-exclusive-move-move	reject
+ownership-move-read-read	reject
+ownership-move-read-shared	reject
+ownership-move-read-exclusive	reject
+ownership-move-read-move	reject
+ownership-move-shared-read	reject
+ownership-move-shared-shared	reject
+ownership-move-shared-exclusive	reject
+ownership-move-shared-move	reject
+ownership-move-exclusive-read	reject
+ownership-move-exclusive-shared	reject
+ownership-move-exclusive-exclusive	reject
+ownership-move-exclusive-move	reject
+ownership-move-move-read	reject
+ownership-move-move-shared	reject
+ownership-move-move-exclusive	reject
+ownership-move-move-move	reject
+scope-release-ref<i64>	value 42
+scope-release-mutref<i64>	value 42
+loop-backedge-true	reject
+returning-move-true	value 42
+loop-backedge-false	reject
+returning-move-false	value 42
+invalid-type-0	reject
+invalid-type-1	reject
+invalid-type-2	reject
+invalid-type-3	reject
+invalid-type-4	reject
+invalid-type-5	reject
+invalid-type-6	reject
+invalid-type-7	reject
+invalid-type-8	reject
+invalid-type-9	reject
+invalid-type-10	reject
+invalid-type-11	reject
+invalid-type-12	reject
+invalid-type-13	reject
+invalid-type-14	reject
+truncated-0	reject
+truncated-1	reject
+truncated-2	reject
+truncated-3	reject
+truncated-4	reject
+truncated-5	reject
+truncated-6	reject
+truncated-7	reject
+truncated-8	reject
+truncated-9	reject
+truncated-10	reject
+truncated-11	reject
+truncated-12	reject
+truncated-13	reject
+truncated-14	reject
+truncated-15	reject
+truncated-16	reject
+truncated-17	reject
+truncated-18	reject
+truncated-19	reject
+truncated-20	reject
+truncated-21	reject
+truncated-22	reject
+truncated-23	reject
+truncated-24	reject
+truncated-25	reject
+truncated-26	reject
+truncated-27	reject
+truncated-28	reject
+truncated-29	reject
+truncated-30	reject
+truncated-31	reject
+truncated-32	reject
+truncated-33	reject
+truncated-34	reject
+truncated-35	reject
+truncated-36	reject
+truncated-37	reject
+truncated-38	reject
+truncated-39	reject
+truncated-40	reject
+truncated-41	reject
+truncated-42	reject
+truncated-43	reject
+truncated-44	reject
+truncated-45	reject
+truncated-46	reject
+truncated-47	reject
+truncated-48	reject
+truncated-49	reject
+truncated-50	reject
+truncated-51	reject
+truncated-52	reject
+truncated-53	reject
+truncated-54	reject
+truncated-55	reject
+truncated-56	reject
+truncated-57	reject
+truncated-58	reject
+truncated-59	reject
+truncated-60	reject
+truncated-61	reject
+truncated-62	reject
+truncated-63	reject
+truncated-64	reject
+truncated-65	reject
+truncated-66	reject
+truncated-67	reject
+truncated-68	reject
+truncated-69	reject
+truncated-70	reject
+truncated-71	reject
+truncated-72	reject
+truncated-73	reject
+truncated-74	reject
+truncated-75	reject
+truncated-76	reject
+truncated-77	reject
+truncated-78	reject
+truncated-79	reject
+truncated-80	reject
+truncated-81	reject
+truncated-82	reject
+truncated-83	reject
+truncated-84	reject
+truncated-85	reject
+truncated-86	reject
+truncated-87	reject
+truncated-88	reject
+truncated-89	reject
+truncated-90	reject
+truncated-91	reject
+truncated-92	reject
+truncated-93	reject
+truncated-94	reject
+truncated-95	reject
+truncated-96	reject
+truncated-97	reject
+truncated-98	reject
+truncated-99	reject
+truncated-100	reject
+truncated-101	reject
+truncated-102	reject
+truncated-103	reject
+truncated-104	reject
+truncated-105	reject
+truncated-106	reject
+truncated-107	reject
+truncated-108	reject
+truncated-109	reject
+truncated-110	reject
+truncated-111	reject
+truncated-112	reject
+truncated-113	reject
+truncated-114	reject
+truncated-115	reject
+truncated-116	reject
+truncated-117	reject
+truncated-118	reject
+malformed-token-0	reject
+malformed-token-1	reject
+malformed-token-2	reject
+malformed-token-3	reject
+malformed-token-4	reject
+malformed-token-5	reject
+malformed-token-6	reject
+malformed-token-7	reject
+malformed-token-8	reject
+generated-0	trap bounds
+generated-1	value -3774901598
+generated-2	value 78
+generated-3	trap overflow
+generated-4	value 54
+generated-5	trap bounds
+generated-6	value -15
+generated-7	value -155604
+generated-8	value 107
+generated-9	value 12
+generated-10	trap bounds
+generated-11	value 9419582
+generated-12	value -3090629465719
+generated-13	value 922
+generated-14	value -896517906
+generated-15	trap bounds
+generated-16	value -49
+generated-17	value 170
+generated-18	value 370
+generated-19	value -14
+generated-20	trap bounds
+generated-21	trap overflow
+generated-22	value -7803
+generated-23	trap overflow
+generated-24	trap overflow
+generated-25	trap bounds
+generated-26	value -10
+generated-27	value -1
+generated-28	value 27
+generated-29	value 6
+generated-30	trap bounds
+generated-31	value -1
+generated-32	value -2523504979
+generated-33	trap overflow
+generated-34	value 177
+generated-35	trap bounds
+generated-36	value 20
+generated-37	value -10
+generated-38	value -14410260
+generated-39	trap overflow
+generated-40	trap bounds
+generated-41	value 63
+generated-42	trap overflow
+generated-43	value 7
+generated-44	value -79747230
+generated-45	trap bounds
+generated-46	value 28
+generated-47	value -31
+generated-48	value 37
+generated-49	value 21
+generated-50	trap bounds
+generated-51	trap overflow
+generated-52	value -6
+generated-53	value 4825
+generated-54	trap overflow
+generated-55	trap bounds
+generated-56	value -223266
+generated-57	value -166
+generated-58	value 9
+generated-59	value 7
+generated-60	trap bounds
+generated-61	value -11
+generated-62	value 436093304
+generated-63	value 0
+generated-64	value 5379
+generated-65	trap bounds
+generated-66	trap overflow
+generated-67	trap overflow
+generated-68	value -3
+generated-69	value -4
+generated-70	trap bounds
+generated-71	value 8
+generated-72	trap overflow
+generated-73	value 160
+generated-74	value -2320710089014393983
+generated-75	trap bounds
+generated-76	value 100060935441409936
+generated-77	value -247
+generated-78	value 1027
+generated-79	value -854
+generated-80	trap bounds
+generated-81	trap overflow
+generated-82	value -67593072
+generated-83	value 22420112
+generated-84	value -25
+generated-85	trap bounds
+generated-86	value 1202625655884
+generated-87	value 54
+generated-88	value 3074
+generated-89	value -14
+generated-90	trap bounds
+generated-91	value -18470
+generated-92	value -628
+generated-93	trap overflow
+generated-94	value -22
+generated-95	trap bounds
+generated-96	value -9223372036854775806
+generated-97	value 437202
+generated-98	value 8
+generated-99	value -21
+generated-100	trap bounds
+generated-101	value 410
+generated-102	value -3
+generated-103	value -52017065111
+generated-104	value 8852
+generated-105	trap bounds
+generated-106	value 1230384722171
+generated-107	value 9
+generated-108	value -16
+generated-109	value 97541704
+generated-110	trap bounds
+generated-111	trap overflow
+generated-112	value -89456
+generated-113	value 23
+generated-114	value 1
+generated-115	trap bounds
+generated-116	value 1164
+generated-117	trap overflow
+generated-118	value -20378378094747
+generated-119	value -238477
+generated-120	trap bounds
+generated-121	value -55
+generated-122	value 10007
+generated-123	value -17
+generated-124	value -51387221433
+generated-125	trap bounds
+generated-126	value 9
+generated-127	value -16995002

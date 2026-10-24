@@ -10,6 +10,7 @@
 #include <cstring>
 #include <initializer_list>
 #include <limits>
+#include <sys/prctl.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
 #include <type_traits>
@@ -143,8 +144,10 @@ template <typename Action> void expect_trap(const char *label, const char *marke
             std::_Exit(91);
         }
         close(descriptors[1]);
+        // A non-dumpable child skips the core handler entirely; with a piped
+        // core_pattern a zero RLIMIT_CORE alone still runs the helper per trap.
         const rlimit no_core{0, 0};
-        if (setrlimit(RLIMIT_CORE, &no_core) != 0) {
+        if (setrlimit(RLIMIT_CORE, &no_core) != 0 || prctl(PR_SET_DUMPABLE, 0) != 0) {
             std::_Exit(92);
         }
         alarm(10);

@@ -1,0 +1,29 @@
+"module event_rejection;\nauto f(builtin::IommuEventSession e)->u64{return 0u64;}\n"	2:6: error AU3001: service functions require one leading exclusive sealed service reference and copied result
+"module event_rejection;\nauto f(const builtin::IommuEventSession& e)->u64{return 0u64;}\n"	2:6: error AU3001: service functions require one leading exclusive sealed service reference and copied result
+"module event_rejection;\nauto f(u64 x,builtin::IommuEventSession& e)->u64{return x;}\n"	2:42: error AU2001: borrowed parameters require a supported leading ownership reference signature on an ordinary function (found 'e')
+"module event_rejection;\nauto f(builtin::IommuEventSession& e,builtin::IommuEventSession& f)->u64{return 0u64;}\n"	2:66: error AU2001: borrowed parameters require a supported leading ownership reference signature on an ordinary function (found 'f')
+"module event_rejection;\nauto f(builtin::IommuEventSession& e,builtin::DisplaySession& d)->u64{return 0u64;}\n"	2:63: error AU2001: borrowed parameters require a supported leading ownership reference signature on an ordinary function (found 'd')
+"module event_rejection;\nauto f(builtin::DisplaySession& d,builtin::IommuEventSession& e)->u64{return 0u64;}\n"	2:63: error AU2001: borrowed parameters require a supported leading ownership reference signature on an ordinary function (found 'e')
+"module event_rejection;\nauto f(builtin::IommuEventSession& e,builtin::ConsoleSession& c,builtin::DisplaySession& d)->u64{return 0u64;}\n"	2:90: error AU2001: borrowed parameters require a supported leading ownership reference signature on an ordinary function (found 'd')
+"module event_rejection;\nclass Holder{builtin::IommuEventSession authority;};auto f()->u64{return 0u64;}\n"	2:14: error AU2003: unsupported class field type 'builtin::IommuEventSession': class fields require scalar, class, private fixed-array or private owned-byte storage
+"module event_rejection;\nauto f()->u64{builtin::IommuEventSession e;return 0u64;}\n"	2:43: error AU2001: expected '=' (found ';')
+"module event_rejection;\nauto f(builtin::IommuEventSession& e)->u64{e.put(0u8);return 0u64;}\n"	2:46: error AU3001: unknown operation for sealed service kind
+"module event_rejection;\nauto f(builtin::IommuEventSession& e)->u64{e.acknowledge(16u64);return 0u64;}\n"	2:46: error AU3001: wrong argument count for method
+"module event_rejection;\nauto f(builtin::ConsoleSession& c)->u64{c.poll();return 0u64;}\n"	2:43: error AU3001: unknown operation for sealed service kind
+"module event_rejection;\nauto f(builtin::IommuEventSession& e)->u64{return f(e);}\n"	aurorac: error AU3001: invalid typed IR: recursive receiver call cycle
+"module event_rejection;\nauto h(builtin::ConsoleSession& c)->u64{return 0u64;}auto f(builtin::IommuEventSession& e)->u64{return h(e);}\n"	2:106: error AU3001: expected builtin::ConsoleSession, got builtin::IommuEventSession
+"module event_rejection;\nauto h(builtin::IommuEventSession& e,builtin::EventAckResult r)->u64{return 0u64;}auto f(builtin::IommuEventSession& e)->u64{return h(e,e.acknowledge());}\n"	2:139: error AU3001: service operation requires an active named exclusive service parameter
+"module event_rejection;\nauto f(builtin::IommuEventSession& e)->u64{builtin::IommuEventSession copy=e;return 0u64;}\n"	2:44: error AU3001: service capability cannot be stored in a local
+"module event_rejection;\nauto f(builtin::IommuEventSession& e)->builtin::IommuEventSession{return e;}\n"	2:66: error AU2001: only scalar function results or scalar-field class values are supported (found '{')
+"module event_rejection;\nauto f()->u64{return reflect_size(type_id(builtin::IommuEventSession));}\n"	2:35: error AU3001: resource capabilities are unavailable to reflection
+"module event_rejection;\nauto f(builtin::IommuEventSession& e)->u64{return u64(e);}\n"	2:55: error AU3001: service capability is not a value
+"module event_rejection;\nauto f()->u64{builtin::IommuEventSession e=builtin::IommuEventSession();return 0u64;}\n"	aurorac: error AU4001: reserved builtin namespace or identifier: builtin
+"module event_rejection;\nauto f(builtin::IommuEventSession& e)->u64{e.next();return 0u64;}\n"	2:46: error AU3001: unknown operation for sealed service kind
+"module event_rejection;\nauto f(builtin::IommuEventSession& e)->u64{e.pixel(0u64,0u64,0u8,0u8,0u8);return 0u64;}\n"	2:46: error AU3001: unknown operation for sealed service kind
+"module event_rejection;\nauto f(builtin::DisplaySession& d)->u64{d.poll();return 0u64;}\n"	2:43: error AU3001: unknown operation for sealed service kind
+"module event_rejection;\nauto f()->builtin::EventPollResult{return builtin::EventPollResult::invented;}\n"	aurorac: error AU4001: unknown sealed service enum case: builtin::EventPollResult::invented
+"module event_rejection;\nauto f()->builtin::EventAckResult{return builtin::EventAckResult::invented;}\n"	aurorac: error AU4001: unknown sealed service enum case: builtin::EventAckResult::invented
+"module event_rejection;\nauto f()->builtin::EventIntakeCompletion{return builtin::EventIntakeCompletion::invented;}\n"	aurorac: error AU4001: unknown sealed service enum case: builtin::EventIntakeCompletion::invented
+"module event_rejection;\nauto f(builtin::IommuEventSession& e)->builtin::ConsoleSample{return e.poll();}\n"	2:72: error AU3001: direct copied return requires an ordinary method on a complete receiver
+"module event_rejection;\nauto f(builtin::ConsoleSession& c)->builtin::IommuEventSample{return c.next();}\n"	2:72: error AU3001: direct copied return requires an ordinary method on a complete receiver
+"module event_rejection;\ntemplate<typename T> auto f(builtin::IommuEventSession& e,T value)->T{return value;}\n"	2:10: error AU2001: template parameters require Scalar, Value or bounded i64 capacity (found 'typename')

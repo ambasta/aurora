@@ -82,11 +82,13 @@ test('native-kernel-protection', native_host, suite: ['full', 'merge', 'slow', '
 native_host = executable('native-kernel-program', files('../../tests/kernel-program.cpp') + [native_bios_object],
     native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
     cpp_args: [], link_args: ['-no-pie'])
+native_program_host = native_host
 test('native-kernel-program', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-program-layout', files('../../tests/kernel-program-layout.cpp') + [native_bios_object],
     native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
     cpp_args: [], link_args: ['-no-pie'])
+native_program_layout_host = native_host
 test('native-kernel-program-layout', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-domain', files('../../tests/kernel-domain.cpp') + [native_bios_object],
@@ -97,6 +99,7 @@ test('native-kernel-domain', native_host, suite: ['full', 'merge', 'slow', 'inte
 native_host = executable('native-kernel-schedule', files('../../tests/kernel-schedule.cpp') + [native_bios_object],
     native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
     cpp_args: [], link_args: ['-no-pie'])
+native_schedule_host = native_host
 test('native-kernel-schedule', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-uefi-runtime', files('../../tests/kernel-uefi-runtime.cpp') + [native_bios_object],
@@ -283,54 +286,150 @@ test('native-storage-check-traceability-optimized', python, args: ['-B', '-O', f
 test('native-storage-test-traceability-optimized', python, args: ['-B', '-O', files('../../storage/design/model/test_traceability.py')],
      suite: ['full', 'merge', 'slow', 'storage'], env: native_test_env,
      workdir: native_root, timeout: 180)
-test('native-semantics-harness', python, args: ['-B', files('../../tests/semantics/test_runner.py')],
+test('native-semantics', python, args: ['-B', files('../../tests/semantics/run.py'), aurorac],
      suite: ['full', 'merge', 'slow', 'semantics'], env: native_test_env,
-     workdir: native_root, timeout: 180)
-test('native-semantics', python, args: native_adapter_args + ['--compiler', aurorac] + ['--', python] + ['-B', files('../../tests/semantics/run.py'), aurorac],
-     suite: ['full', 'merge', 'slow', 'semantics'], env: native_test_env,
-     workdir: native_root, timeout: 1200, depends: aurorac)
-test('native-protected-note', python,
-     args: native_artifact_args + ['--compiler', aurorac, '--', find_program('bash', native: true),
-                                  files('../../scripts/kernel-program-note-tests.sh'), '@ARTIFACTS@'],
-     depends: aurorac, suite: ['full', 'merge', 'slow', 'integration'], env: native_artifact_env,
-     workdir: native_root, timeout: 900)
-test('native-protected-snapshot', python,
-     args: native_artifact_args + ['--compiler', aurorac, '--', find_program('bash', native: true),
-                                  files('../../scripts/kernel-snapshot-tests.sh'), '@ARTIFACTS@'],
-     depends: aurorac, suite: ['full', 'merge', 'slow', 'integration'], env: native_artifact_env,
-     workdir: native_root, timeout: 900)
-test('native-policy-budget', python, args: native_artifact_args + ['--compiler', aurorac, '--', python, '-B', '-O', native_root / 'tests/kernel-budget-native.py', '--compiler', aurorac, '--output', '@ARTIFACTS@'],
-     depends: aurorac, suite: ['full', 'merge', 'slow', 'integration'], env: native_artifact_env,
-     workdir: native_root, timeout: 900)
-test('native-policy-round-robin', python, args: native_artifact_args + ['--compiler', aurorac, '--', python, '-B', '-O', files('../../tests/kernel-round-robin-native.py'), '--compiler', aurorac, '--output', '@ARTIFACTS@'],
-     depends: aurorac, suite: ['full', 'merge', 'slow', 'integration'], env: native_artifact_env,
-     workdir: native_root, timeout: 900)
-test('native-policy-ipc-transition', python, args: native_artifact_args + ['--compiler', aurorac, '--', python, '-B', '-O', files('../../tests/kernel-ipc-transition-native.py'), '--compiler', aurorac, '--output', '@ARTIFACTS@'],
-     depends: aurorac, suite: ['full', 'merge', 'slow', 'integration'], env: native_artifact_env,
-     workdir: native_root, timeout: 900)
-test('native-policy-client-disposal', python, args: native_artifact_args + ['--compiler', aurorac, '--', python, '-B', '-O', files('../../tests/kernel-client-disposal-native.py'), '--compiler', aurorac, '--output', '@ARTIFACTS@'],
-     depends: aurorac, suite: ['full', 'merge', 'slow', 'integration'], env: native_artifact_env,
-     workdir: native_root, timeout: 900)
-test('native-policy-terminal-event', python, args: native_artifact_args + ['--compiler', aurorac, '--', python, '-B', '-O', native_root / 'tests/kernel-terminal-event-native.py', '--compiler', aurorac, '--output', '@ARTIFACTS@'],
-     depends: aurorac, suite: ['full', 'merge', 'slow', 'integration'], env: native_artifact_env,
-     workdir: native_root, timeout: 900)
-test('native-pin-integration', python, args: native_adapter_args + ['--shared-output'] + ['--', find_program('bash', native: true), files('../../scripts/kernel-pin-tests.sh')],
-     suite: ['full', 'merge', 'slow', 'integration'], env: native_test_env, workdir: native_root,
-     timeout: 1800)
-test('native-nvme-queue-integration', python, args: native_adapter_args + ['--shared-output'] + ['--', find_program('bash', native: true), files('../../scripts/kernel-nvme-queue-tests.sh')],
-     suite: ['full', 'merge', 'slow', 'integration'], env: native_test_env, workdir: native_root,
-     timeout: 1800)
-test('native-dormant-integration', python, args: native_artifact_args + ['--', find_program('bash', native: true), files('../../scripts/kernel-dormant-tests.sh'), '@ARTIFACTS@'],
-     suite: ['full', 'merge', 'slow', 'integration'], env: native_test_env, workdir: native_root,
-     timeout: 1800)
+     workdir: native_output, timeout: 300, depends: aurorac)
+# Protected snapshot and note replays: each generated root is compiled and
+# assembled once (reflection exports localized so separately compiled roots can
+# share one hosted link) and linked with its native observer. The user images
+# themselves are built and checked by the snapshot and program-console profiles.
+native_fixture_command = [python, '-B', native_fixture, '--compiler', aurorac, '--source', '@INPUT@',
+                          '--object', '@OUTPUT@', '--depfile', '@DEPFILE@', '--keep-local-labels']
+policies_root = ['--module-root', native_root / 'kernel/policies']
+library_root = ['--module-root', native_root / 'library']
+protected_objects = {}
+foreach fixture : [
+    ['snapshot-client', 'tests/kernel-programs/snapshot-client.au', policies_root + ['--localize-reflection']],
+    ['snapshot-service', 'tests/kernel-programs/snapshot-service.au',
+     policies_root + ['--assemble-with', native_root / 'tests/kernel-snapshot-entry.S', '--localize-reflection']],
+    ['snapshot-checksum', 'tests/kernel-programs/call-snapshot-service.au',
+     policies_root + library_root + ['--defsym', 'CHECKSUM_SERVICE=1',
+     '--assemble-with', native_root / 'tests/kernel-snapshot-entry.S', '--localize-reflection']],
+    ['snapshot-supervisor', 'examples/kernel-snapshot.au',
+     policies_root + library_root + ['--assemble-with', native_root / 'kernel/uefi/snapshot-entry.S']],
+    ['note-client', 'tests/kernel-programs/program-upper-client.au', ['--localize-reflection']],
+    ['note-service', 'tests/kernel-programs/program-stream-service.au',
+     policies_root + ['--assemble-with', native_root / 'tests/kernel-program-note-entry.S', '--localize-reflection']],
+    ['note-supervisor', 'examples/kernel-program-console.au',
+     policies_root + library_root + ['--local-symbols', '--bridge', native_root / 'kernel/uefi/program-note-entry.S',
+     '--assemble-with', native_root / 'kernel/uefi/kernel-policy-entry.S']],
+    ['note-initial', 'tests/kernel-programs/program-note-initial.au',
+     library_root + ['--defsym', 'NOTE_TEST_INITIAL=1',
+     '--assemble-with', native_root / 'tests/kernel-program-note-entry.S', '--localize-reflection']],
+    ['note-stream', 'tests/kernel-programs/program-command-stream.au',
+     library_root + policies_root + ['--defsym', 'STREAM_TEST_INITIAL=1',
+     '--bridge', native_root / 'tests/kernel-program-note-entry.S', '--localize-reflection']],
+    ['note-file-service', 'tests/kernel-programs/file-call-service.au',
+     policies_root + ['--local-symbols', '--bridge', native_root / 'tests/kernel-file-call-entry.S']],
+]
+  protected_objects += {fixture[0]: custom_target('native-' + fixture[0], input: '../../' + fixture[1],
+      output: fixture[0] + '.o', depfile: fixture[0] + '.d', command: native_fixture_command + fixture[2])}
+endforeach
+native_host = executable('native-protected-snapshot',
+    files('../../tests/kernel-snapshot.cpp', '../../kernel/uefi/snapshot.cpp', '../../kernel/owned-bytes.cpp') +
+    [protected_objects['snapshot-client'], protected_objects['snapshot-service'],
+     protected_objects['snapshot-checksum'], protected_objects['snapshot-supervisor']],
+    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page', '-DNDEBUG', '-fno-exceptions', '-fno-rtti',
+               '-DAURORA_UEFI_SNAPSHOT', '-DAURORA_UEFI_RUNTIME', '-DAURORA_UEFI_IPC', '-DAURORA_UEFI_ACPI',
+               '-DAURORA_UEFI_PCI'],
+    link_args: ['-no-pie'])
+test('native-protected-snapshot', native_host, suite: ['full', 'merge', 'slow', 'integration'],
+     env: native_test_env, timeout: 120)
+native_host = executable('native-protected-note', files('../../tests/kernel-program-note.cpp') +
+    [protected_objects['note-client'], protected_objects['note-service'], protected_objects['note-supervisor'],
+     protected_objects['note-initial'], protected_objects['note-stream'], protected_objects['note-file-service']],
+    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    cpp_args: ['-DNDEBUG', '-fno-exceptions', '-fno-rtti'], link_args: ['-no-pie'])
+test('native-protected-note', native_host, suite: ['full', 'merge', 'slow', 'integration'],
+     env: native_test_env, timeout: 120)
+# Kernel policies: each real generated policy object is linked once with its C++
+# observer, whose fixed vector families are compared with a golden file. Copy
+# probes, hostile-producer adapters (one producer renamed) and source rejections
+# are separate programs and golden cases.
+policy_hosts = {}
+foreach policy : ['budget', 'round-robin', 'ipc-transition', 'client-disposal', 'terminal-event']
+  policy_hosts += {policy: executable('kernel-' + policy + '-native',
+      files('../../tests/kernel-' + policy + '-native.cpp') + [native_uefi_object],
+      native: true, install: false, override_options: ['optimization=1', 'warning_level=3'], link_args: ['-no-pie'])}
+  test('native-policy-' + policy, python,
+       args: ['-B', golden_runner, files('../../tests/kernel-' + policy + '-native.golden'), '--', policy_hosts[policy]],
+       suite: ['full', 'merge', 'slow', 'integration'], env: native_test_env, timeout: 120)
+endforeach
+foreach policy : ['round-robin', 'ipc-transition', 'client-disposal']
+  copy_object = custom_target('native-' + policy + '-copy',
+      input: '../../tests/kernel-programs/' + policy + '-copy.au', output: policy + '-copy.o',
+      depfile: policy + '-copy.d',
+      command: [python, '-B', native_fixture, '--compiler', aurorac, '--source', '@INPUT@',
+                '--module-root', native_root / 'kernel/policies', '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
+  native_host = executable('kernel-' + policy + '-copy', files('../../tests/kernel-' + policy + '-copy.cpp') + [copy_object],
+      native: true, install: false, override_options: ['optimization=1', 'warning_level=3'], link_args: ['-no-pie'])
+  test('native-' + policy + '-copy', native_host, suite: ['full', 'merge', 'slow', 'integration'],
+       env: native_test_env, timeout: 60)
+endforeach
+foreach adapter : [['ipc-transition', 'aurora_kernel_ipc_transition', 'kernel-ipc-transition-adapter.cpp', []],
+                   ['client-disposal', 'aurora_kernel_client_disposal', 'kernel-client-disposal-adapter.cpp', []],
+                   ['terminal-event', 'aurora_kernel_terminal_event', 'kernel-terminal-event-native.cpp',
+                    ['-DTERMINAL_SUBSTITUTE']]]
+  substituted = custom_target('native-' + adapter[0] + '-substitution', input: native_uefi_object,
+      output: adapter[0] + '-substitution.o',
+      command: [find_program('objcopy', native: true), '--redefine-sym', adapter[1] + '=' + adapter[1] + '_real',
+                '@INPUT@', '@OUTPUT@'])
+  native_host = executable('kernel-' + adapter[0] + '-adapter', files('../../tests/' + adapter[2]) + [substituted],
+      native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
+      cpp_args: adapter[3], link_args: ['-no-pie'])
+  test('native-' + adapter[0] + '-adapter', native_host, suite: ['full', 'merge', 'slow', 'integration'],
+       env: native_test_env, timeout: 60)
+endforeach
+# The program lifecycle tests also run against the UEFI policy object's terminal producer.
+foreach fixture : [['kernel-program', native_program_host], ['kernel-program-layout', native_program_layout_host],
+                   ['kernel-schedule', native_schedule_host]]
+  native_host = executable('native-' + fixture[0] + '-uefi-policy', native_uefi_object,
+      objects: fixture[1].extract_objects('../../tests/' + fixture[0] + '.cpp'),
+      native: true, install: false, link_args: ['-no-pie'])
+  test('native-' + fixture[0] + '-uefi-policy', native_host, suite: ['full', 'merge', 'slow', 'integration'],
+       env: native_test_env, timeout: 180)
+endforeach
+test('native-policy-rejections', python,
+     args: ['-B', golden_runner, files('../../tests/kernel-policy-rejections.golden'), '--reject', '--', aurorac,
+            '--module-root', native_root / 'kernel/policies'],
+     suite: ['full', 'merge', 'slow', 'integration'], env: native_test_env, timeout: 120, depends: aurorac)
+# Pin ledger, NVMe queue and dormant-table models: each program is built once and
+# runs its own fixtures; the configuration guards are compile-fail cases.
+foreach program : [
+    ['kernel-pin-ledger', 'kernel-pin-ledger.cpp', ['-DAURORA_PIN_LEDGER_TESTING=1']],
+    ['kernel-pin-ledger-generation-3', 'kernel-pin-ledger.cpp',
+     ['-DAURORA_PIN_LEDGER_TESTING=1', '-DAURORA_PIN_LEDGER_TEST_GENERATION_LIMIT=3']],
+    ['kernel-pin-api', 'kernel-pin-api.cpp', []],
+    ['kernel-nvme-queues', 'kernel-nvme-queues.cpp',
+     ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page', '-DNDEBUG', '-DAURORA_NVME_QUEUE_TESTING=1']],
+    ['kernel-nvme-queues-generation-3', 'kernel-nvme-queues.cpp',
+     ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page', '-DNDEBUG', '-DAURORA_NVME_QUEUE_TESTING=1',
+      '-DAURORA_NVME_QUEUE_GENERATION_LIMIT=3']],
+    ['kernel-nvme-queues-api', 'kernel-nvme-queues-api.cpp', ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page', '-DNDEBUG']],
+    ['kernel-dormant-tables', 'kernel-dormant-tables.cpp', []],
+    ['kernel-dormant-decoder', 'kernel-dormant-decoder.cpp', []],
+    ['kernel-dormant-oracle', 'kernel-dormant-oracle.cpp', []],
+    ['kernel-dormant-generation', 'kernel-dormant-generation.cpp',
+     ['-DAURORA_PIN_LEDGER_TESTING=1', '-DAURORA_PIN_LEDGER_TEST_GENERATION_LIMIT=3']],
+    ['kernel-dormant-api', 'kernel-dormant-api.cpp', []],
+    ['kernel-iommu-oracle', 'kernel-iommu-oracle.cpp', []],
+    ['kernel-iommu-event-completion', 'kernel-iommu-event-completion.cpp', []],
+]
+  native_host = executable(program[0], files('../../tests/' + program[1]),
+      native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=2'],
+      cpp_args: program[2])
+  test(program[0], native_host, suite: ['full', 'merge', 'slow', 'integration'], env: native_test_env, timeout: 120)
+endforeach
+test('kernel-compile-fail', python,
+     args: ['-B', files('../compile_fail.py'), files('../kernel-compile-fail.txt'), native_root] + native_cpp.cmd_array(),
+     suite: ['full', 'merge', 'slow', 'integration'], env: native_test_env, timeout: 120)
 if get_option('kernel_images')
   test('native-uefi-span-integration', python,
-       args: native_adapter_args + ['--compiler', aurorac, '--', find_program('bash', native: true),
-              files('../../scripts/kernel-uefi-span-tests.sh'), '--images',
-              meson.project_build_root() / 'kernel-images/uefi/runtime',
+       args: ['-B', files('../../tests/kernel-uefi-span.py'), aurorac,
               meson.project_build_root() / 'kernel-images/uefi/runtime-span'],
        suite: ['full', 'merge', 'slow', 'integration'], env: native_test_env, workdir: native_root,
-       timeout: 1800, depends: [aurorac, kernel_profile_users['uefi/runtime'], kernel_profile_users['uefi/runtime-span']])
+       timeout: 120, depends: [aurorac, kernel_profile_users['uefi/runtime-span']])
   # Building every profile runs its image and stack checks (kernel-images/meson.build).
   test('kernel-images', find_program('true'), depends: kernel_images_all,
        suite: ['full', 'merge', 'slow', 'integration', 'boot'], timeout: 900)

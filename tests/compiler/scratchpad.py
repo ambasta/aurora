@@ -6,11 +6,11 @@ files nor models settlement; these checks do not qualify protected guest use.
 """
 
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -128,6 +128,9 @@ def source_cases():
     yield Case("all canonical copied shapes and bounded constructors", body, 42, imports=imports)
 
 
+HOSTS = {}
+
+
 def compile_bridge(compiler, work, mode, source, entry, result_offset):
     assembly, facts = work / f"{mode}.s", work / f"{mode}.json"
     result = run(
@@ -163,23 +166,7 @@ def compile_bridge(compiler, work, mode, source, entry, result_offset):
     combined = work / f"{mode}-bridge.s"
     combined.write_text(assembly.read_text() + bridge)
     binary = work / mode
-    flags = [f"-DAURORA_SCRATCHPAD_{mode.upper()}_TEST"] if mode != "output" else []
-    result = run(
-        [
-            os.environ.get("CXX", "g++"),
-            "-std=c++23",
-            "-O1",
-            "-Wall",
-            "-Wextra",
-            "-Werror",
-            *flags,
-            ROOT / "tests/compiler/scratchpad_host.cpp",
-            ROOT / "tests/compiler/service_group_abi.S",
-            combined,
-            "-o",
-            binary,
-        ]
-    )
+    result = run([*shlex.split(os.environ.get("CXX", "g++")), combined, HOSTS[mode], "-o", binary])
     require(result.returncode == 0, result.stderr.decode())
     return binary
 
@@ -342,9 +329,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("compiler", type=Path)
     parser.add_argument("--artifacts", type=Path)
+    for mode in ("client", "input", "output"):
+        parser.add_argument(f"--{mode}-host", type=Path, required=True, help="Meson-built host library")
     args = parser.parse_args()
     compiler = args.compiler.resolve()
-    print(f"compiler_sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}", flush=True)
+    for mode in ("client", "input", "output"):
+        HOSTS[mode] = getattr(args, f"{mode}_host").resolve(strict=True)
     if args.artifacts:
         work = args.artifacts.resolve()
         work.mkdir(parents=True)
@@ -354,8 +344,7 @@ def main():
     print(f"artifacts={work}", flush=True)
     runner = NativeRunner(work, compiler, 30)
     cases = list(source_cases())
-    for start in range(0, len(cases), 4):
-        runner.cases(cases[start : start + 4])
+    runner.cases(cases)
     for kind, field in (
         ("Command", "bytes[0]"),
         ("Command", "count"),

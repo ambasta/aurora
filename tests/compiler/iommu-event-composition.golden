@@ -1,0 +1,16 @@
+fault	exit 0 | stdout: PASS IOMMU event composition fault
+wrap	exit 0 | stdout: PASS IOMMU event composition wrap
+empty	exit 0 | stdout: PASS IOMMU event composition empty
+code5	exit 0 | stdout: PASS IOMMU event composition code5
+code6	exit 0 | stdout: PASS IOMMU event composition code6
+unsupported	exit 0 | stdout: PASS IOMMU event composition unsupported
+malformed-code2	exit 0 | stdout: PASS IOMMU event composition malformed-code2
+output	exit 0 | stdout: PASS IOMMU event composition output: all 96 failure prefixes retain pending record
+poll-overflow	exit 0 | stdout: PASS IOMMU event composition poll-overflow
+ack-overflow	exit 0 | stdout: PASS IOMMU event composition ack-overflow
+ack-transport	exit 0 | stdout: PASS IOMMU event composition ack-transport
+zero-poll	exit 0 | stdout: PASS IOMMU event composition zero-poll
+zero-record	exit 0 | stdout: PASS IOMMU event composition zero-record
+poll-budget	exit 0 | stdout: PASS IOMMU event composition poll-budget
+record-budget	exit 0 | stdout: PASS IOMMU event composition record-budget
+maximum-budget	exit 0 | stdout: PASS IOMMU event composition maximum-budget

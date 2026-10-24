@@ -1,0 +1,13 @@
+policy-table 0 0 -> 0x1
+policy-table 0 0x1 -> 0x10002
+policy-table 0 0x2 -> 0x102
+policy-table 0 0x3 -> 0x10002
+policy-table 0x1 0 -> 0x10001
+policy-table 0x1 0x1 -> 0x10002
+policy-table 0x1 0x2 -> 0x102
+policy-table 0x1 0x3 -> 0x102
+policy-table: 8 vectors lead1=1 word=7 digest=c5ce4bcd96628722
+policy-edges: 1280 vectors lead1=4 word=28 zero=1248 digest=a2a830c6e3fd3ab9
+policy-random: 16384 vectors zero=16384 digest=df0e42e4ee97ba54
+decoder-compact: 1048576 vectors lead1=1 word=9 zero=1048566 digest=ce6ed7f756c7aae4
+decoder-mutations: 2440 vectors lead1=2 word=10 zero=2428 digest=9df3c4b42167f7fc

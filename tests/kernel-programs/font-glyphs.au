@@ -1,0 +1,3 @@
+module font_probe;
+import graphics.font5x7;
+auto font_glyph(u8 byte) -> u64 { return graphics::glyph_bits(byte); }

@@ -4,6 +4,7 @@
 import argparse
 import json
 import os
+import shlex
 from pathlib import Path
 import subprocess
 import tempfile
@@ -101,25 +102,7 @@ def mixed_region(compiler, work, comparison_compiler=None):
     bridge = work / "mixed-bridge.s"
     bridge.write_text(assembly.read_text() + (ROOT / "kernel/uefi/console-service-entry.S").read_text())
     binary = work / "mixed"
-    result = run(
-        [
-            os.environ.get("CXX", "g++"),
-            "-std=c++23",
-            "-O1",
-            "-Wall",
-            "-Wextra",
-            "-Werror",
-            "-DAURORA_CONSOLE_REGION_TEST",
-            "-I",
-            ROOT,
-            ROOT / "tests/compiler/console_service_host.cpp",
-            ROOT / "runtime/hosted_bytes.cpp",
-            ROOT / "tests/compiler/console_service_abi.S",
-            bridge,
-            "-o",
-            binary,
-        ]
-    )
+    result = link(bridge, HOSTS["region"], binary)
     require(result.returncode == 0, result.stderr.decode())
     for quota, limit, status, output, allocations, peak in [
         (16, 100, 0, b"OK", 2, 9),
@@ -156,13 +139,25 @@ def mixed_region(compiler, work, comparison_compiler=None):
         require(result.returncode != 0 and b"error AU" in result.stderr, f"mixed capability rejection {index}")
 
 
+HOSTS = {}
+
+
+def link(assembly, host, binary):
+    """Link generated assembly with one Meson-built host library."""
+    return run([*shlex.split(os.environ.get("CXX", "g++")), assembly, host, "-o", binary])
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("compiler", type=Path)
+    for name in ("console", "region", "note", "files"):
+        parser.add_argument(f"--{name}-host", type=Path, required=True, help="Meson-built host library")
     parser.add_argument("--artifacts", type=Path)
     parser.add_argument("--comparison-compiler", type=Path)
     args = parser.parse_args()
     compiler = args.compiler.resolve()
+    for name in ("console", "region", "note", "files"):
+        HOSTS[name] = getattr(args, f"{name}_host").resolve(strict=True)
     if args.artifacts:
         work = args.artifacts.resolve()
         work.mkdir(parents=True)
@@ -181,21 +176,7 @@ def main():
     binary = work / "editor"
     combined = work / "console-bridge.s"
     combined.write_text(text + (ROOT / "kernel/uefi/console-service-entry.S").read_text())
-    result = run(
-        [
-            os.environ.get("CXX", "g++"),
-            "-std=c++23",
-            "-O1",
-            "-Wall",
-            "-Wextra",
-            "-Werror",
-            ROOT / "tests/compiler/console_service_host.cpp",
-            ROOT / "tests/compiler/console_service_abi.S",
-            combined,
-            "-o",
-            binary,
-        ]
-    )
+    result = link(combined, HOSTS["console"], binary)
     require(result.returncode == 0, result.stderr.decode())
     ready = b"AURORA_CONSOLE_READY: UEFI, ASCII, 64-byte lines\r\naurora> "
     exit_output = b"exit\r\nAURORA_CONSOLE_EXIT\r\n"
@@ -485,11 +466,10 @@ auto note_contract() -> i64 {
     return 0;
 }
 """)
-    policy_assembly, policy_host, policy_binary = (work / ("note-policy" + suffix) for suffix in (".s", ".cpp", ""))
-    policy_host.write_text('extern "C" long note_contract();\nint main() { return int(note_contract()); }\n')
+    policy_assembly, policy_binary = work / "note-policy.s", work / "note-policy"
     result = run([compiler, "--module-root", ROOT / "library", policy, "-o", policy_assembly])
     require(result.returncode == 0, result.stderr.decode())
-    result = run([os.environ.get("CXX", "g++"), policy_host, policy_assembly, "-o", policy_binary])
+    result = link(policy_assembly, HOSTS["note"], policy_binary)
     require(result.returncode == 0, result.stderr.decode())
     result = run([policy_binary])
     require(result.returncode == 0, "shared note policy count/content/copy/suffix contract")
@@ -854,7 +834,7 @@ auto files_snapshot(i64 stage) -> console::SessionFiles {
     return files;
 }
 """)
-    files_assembly, files_host, files_binary = (work / ("files-policy" + suffix) for suffix in (".s", ".cpp", ""))
+    files_assembly, files_binary = work / "files-policy.s", work / "files-policy"
     result = run([compiler, "--module-root", ROOT / "library", files_source, "-o", files_assembly])
     require(result.returncode == 0, result.stderr.decode())
     with files_assembly.open("a") as stream:
@@ -874,47 +854,7 @@ checked_files_snapshot:
     ret
 .size checked_files_snapshot,.-checked_files_snapshot
 """)
-    files_host.write_text("""#include <array>
-#include <cstdint>
-extern "C" long files_contract();
-extern "C" long typed_files_contract();
-extern "C" long append_contract();
-extern "C" long copy_contract();
-extern "C" long span_compare_contract();
-extern "C" void checked_files_snapshot(long, void*);
-int main() {
-    if (const auto result = span_compare_contract()) return 20 + int(result);
-    if (const auto result = files_contract()) return int(result);
-    if (const auto result = typed_files_contract()) return 40 + int(result);
-    if (const auto result = append_contract()) return 80 + int(result);
-    if (const auto result = copy_contract()) return 100 + int(result);
-    for (long stage = 0; stage != 7; ++stage) {
-        std::array<unsigned char, 280> storage{};
-        storage.fill(0xa5);
-        checked_files_snapshot(stage, storage.data() + 8);
-        std::array<unsigned char, 264> expected{};
-        if (stage > 0 && stage < 4) {
-            expected[0] = 8;
-            expected[1] = stage == 1 ? 49 : stage == 2 ? 1 : 0;
-            for (unsigned i = 0; i != 8; ++i) expected[2 + i] = "abcdefgh"[i];
-            for (unsigned i = 0; i != expected[1]; ++i) expected[10 + i] = stage == 1 ? 'x' : 'y';
-            expected[256] = 1;
-        }
-        if (stage > 4) {
-            expected[0] = 3; expected[1] = stage == 5 ? 1 : 0;
-            for (unsigned i = 0; i != 3; ++i) expected[2 + i] = "src"[i];
-            expected[64] = 4; expected[65] = expected[1];
-            for (unsigned i = 0; i != 4; ++i) expected[66 + i] = "dest"[i];
-            if (stage == 5) { expected[10] = 'x'; expected[74] = 'x'; }
-            expected[256] = 3;
-        }
-        for (unsigned i = 0; i != storage.size(); ++i) {
-            if (storage[i] != (i < 8 || i >= 272 ? 0xa5 : expected[i - 8])) return 10 + int(stage);
-        }
-    }
-}
-""")
-    result = run([os.environ.get("CXX", "g++"), "-std=c++23", files_host, files_assembly, "-o", files_binary])
+    result = link(files_assembly, HOSTS["files"], files_binary)
     require(result.returncode == 0, result.stderr.decode())
     result = run([files_binary])
     require(result.returncode == 0, f"shared files policy count/content/copy/zero-suffix contract: {result.returncode}")
@@ -1002,21 +942,7 @@ odd(session) != 8) {
     require(result.returncode == 0, result.stderr.decode())
     abi_assembly.write_text(abi_assembly.read_text() + (ROOT / "kernel/uefi/console-service-entry.S").read_text())
     abi_binary = work / "mixed-abi"
-    result = run(
-        [
-            os.environ.get("CXX", "g++"),
-            "-std=c++23",
-            "-O1",
-            "-Wall",
-            "-Wextra",
-            "-Werror",
-            ROOT / "tests/compiler/console_service_host.cpp",
-            ROOT / "tests/compiler/console_service_abi.S",
-            abi_assembly,
-            "-o",
-            abi_binary,
-        ]
-    )
+    result = link(abi_assembly, HOSTS["console"], abi_binary)
     require(result.returncode == 0, result.stderr.decode())
     result = run([abi_binary], input=b"1 81 0\n")
     require(
@@ -1083,21 +1009,7 @@ odd(session) != 8) {
         imported_assembly.read_text() + (ROOT / "kernel/uefi/console-service-entry.S").read_text()
     )
     imported_binary = work / "imported"
-    result = run(
-        [
-            os.environ.get("CXX", "g++"),
-            "-std=c++23",
-            "-O1",
-            "-Wall",
-            "-Wextra",
-            "-Werror",
-            ROOT / "tests/compiler/console_service_host.cpp",
-            ROOT / "tests/compiler/console_service_abi.S",
-            imported_assembly,
-            "-o",
-            imported_binary,
-        ]
-    )
+    result = link(imported_assembly, HOSTS["console"], imported_binary)
     require(result.returncode == 0, result.stderr.decode())
     result = run([imported_binary], input=b"1 81 1\n")
     require(result.returncode == 0 and result.stdout == b"K", "cross-module copied-report/reflection inconsistency")
@@ -1131,21 +1043,7 @@ odd(session) != 8) {
     result = run([compiler, "--module-root", ROOT / "library", write_source, "-o", write_assembly])
     require(result.returncode == 0, result.stderr.decode())
     write_assembly.write_text(write_assembly.read_text() + (ROOT / "kernel/uefi/console-service-entry.S").read_text())
-    result = run(
-        [
-            os.environ.get("CXX", "g++"),
-            "-std=c++23",
-            "-O1",
-            "-Wall",
-            "-Wextra",
-            "-Werror",
-            ROOT / "tests/compiler/console_service_host.cpp",
-            ROOT / "tests/compiler/console_service_abi.S",
-            write_assembly,
-            "-o",
-            write_binary,
-        ]
-    )
+    result = link(write_assembly, HOSTS["console"], write_binary)
     require(result.returncode == 0, result.stderr.decode())
     # Every short prefix, including NUL/high bytes, first/final-byte timeout,
     # empty calls after timeout, copied reports and exactly one failed attempt.
