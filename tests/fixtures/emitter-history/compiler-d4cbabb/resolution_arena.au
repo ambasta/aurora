@@ -1,0 +1,1740 @@
+export module aurora.compiler.resolution_arena;
+import aurora.compiler.lexer;
+import aurora.compiler.resolution_kinds;
+import aurora.compiler.syntax_arena;
+import aurora.compiler.lowering_kinds;
+import aurora.compiler.lowering_errors;
+import aurora.compiler.lowering_storage;
+import aurora.compiler.resolution_rows;
+
+// The host owns the granting region. Every pointer-free row and every source
+// byte below belongs to this single move-only Session until explicit release.
+//
+// Storage charge ledger, before semantic rows and semantic index entries:
+// Metadata: 64 + U + E + Q + A + P + L + H.
+// Indexes: U + Q + A + P + N + L + H + 2G, in their separate typed pool.
+// U is sparse projected coordinates; E seeded text references; Q new identifier
+// coordinates (interned against U); A atoms; P prefixes; N name-cache entries;
+// L inclusive name ranges; H import bindings; G nonempty import lists.
+// U <= 3*expressions + edges + 4*types + 4*declarations <= 12*source bytes.
+// Q and A are bounded by source plus seed byte counts. Each index entry and
+// every referenced range has an explicit producer charge; nothing charges a
+// guessed number of rows per declaration. Namespace/name candidate bounds and
+// semantic metadata/worklist counts are supplied by the resolver producer.
+// Scratch projection holds at most 12 request rows per one-file byte plus one
+// per-ordinal row per byte and the end of input (13*one-file + 1 rows).
+// Prefix helpers add name depth (or two depths for comparison) to their caller's
+// saved scratch base, then restore it. Index lookups follow hash chains threaded
+// through the index rows (no extra owner); the two key-ordered domains also keep
+// AVL links, balanced through parent links with no stack.
+// Count publication always follows successful set; all eleven allocation results,
+// including inert failures, remain owned until ordinary consuming cleanup.
+export namespace compiler_resolver {
+    auto make_index_pool(builtin::ByteRegion region) -> builtin::OwnedValues<IndexRow> {
+        const IndexRow fill = IndexRow(0, -1, -1, -1, -1, -1);
+        builtin::OwnedValues<IndexRow> result = region.try_allocate(0, fill);
+        return move(result);
+    }
+
+    class Session {
+        builtin::OwnedBytes sources;
+        builtin::OwnedValues<SyntaxRow> forest;
+        builtin::OwnedValues<MetaRow> metadata;
+        builtin::OwnedValues<ResolvedRow> resolutions;
+        builtin::OwnedValues<WorkRow> scratch;
+        builtin::OwnedValues<IndexRow> indexes;
+        i64 source_used;
+        i64 graph_source_used;
+        i64 syntax_used;
+        i64 meta_used;
+        i64 resolved_used;
+        i64 work_used;
+        i64 index_used;
+        i64 modules;
+        i64 index_root;
+        StorageStatus failure;
+        SemanticError diagnostic;
+        i64 diagnostic_node;
+        i64 diagnostic_first;
+        i64 diagnostic_second;
+        // Keep the six resolver owners and all their fields in their existing order.
+        // Five typed owners plus five counts add 200 bytes; the two final report
+        // words bring the predicted Session extent from 304 to 520 bytes.
+        builtin::OwnedValues<compiler_lowering::OutputRow> outputRows;
+        builtin::OwnedValues<compiler_lowering::OperandRow> outputOperands;
+        builtin::OwnedValues<compiler_lowering::LocalRow> loweringLocals;
+        builtin::OwnedValues<compiler_lowering::SnapshotRow> loweringSnapshots;
+        builtin::OwnedValues<compiler_lowering::ContinuationRow> loweringContinuations;
+        i64 output_used;
+        i64 operand_used;
+        i64 local_used;
+        i64 snapshot_used;
+        i64 continuation_used;
+        compiler_lowering::LoweringError loweringError;
+        i64 diagnosticPayloadRow;
+
+        auto next_capacity(i64 current, i64 required) -> i64 {
+            if (current < 0 || required < 0) {
+                fail_storage(StorageStatus::invalid);
+                return -1;
+            }
+            i64 target = 8;
+            if (current > 4) {
+                if (current > 4611686018427387903) {
+                    target = required;
+                } else {
+                    target = current * 2;
+                }
+            }
+            if (target < required) {
+                target = required;
+            }
+            return target;
+        }
+        // The capacity a pool must grow to before it holds count elements of width
+        // bytes; 0 when they fit already, or -1 after latching failure. Lowering
+        // widths must agree with generated ABI facts before execution; resolver
+        // pools pass 1. Geometric spare capacity may shrink to the exact request at
+        // i64's byte boundary. Arithmetic failure is distinct from allocation exhaustion.
+        auto growth(i64 size, i64 count, i64 width) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            if (count < 0 || count > 9223372036854775807 / width) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (count <= size) {
+                return 0;
+            }
+            i64 next = next_capacity(size, count);
+            if (next > 9223372036854775807 / width) {
+                next = count;
+            }
+            if (next < count) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            return next;
+        }
+        auto grown(bool resized) -> bool {
+            if (!resized) {
+                fail_storage(StorageStatus::allocation);
+            }
+            return resized;
+        }
+        auto reserve_forest(i64 count) -> bool {
+            const i64 next = growth(forest.size(), count, 1);
+            if (next <= 0) {
+                return next == 0;
+            }
+            const SyntaxRow fill = SyntaxRow(SyntaxTag::invalid);
+            return grown(forest.try_resize(next, fill));
+        }
+        auto reserve_metadata(i64 count) -> bool {
+            const i64 next = growth(metadata.size(), count, 1);
+            if (next <= 0) {
+                return next == 0;
+            }
+            const MetaRow fill = MetaRow(MetaTag::invalid);
+            return grown(metadata.try_resize(next, fill));
+        }
+        auto reserve_indexes(i64 count) -> bool {
+            const i64 next = growth(indexes.size(), count, 1);
+            if (next <= 0) {
+                return next == 0;
+            }
+            const IndexRow fill = IndexRow(0, -1, -1, -1, -1, -1);
+            return grown(indexes.try_resize(next, fill));
+        }
+        auto reserve_resolutions(i64 count) -> bool {
+            const i64 next = growth(resolutions.size(), count, 1);
+            if (next <= 0) {
+                return next == 0;
+            }
+            const ResolvedRow fill = ResolvedRow();
+            return grown(resolutions.try_resize(next, fill));
+        }
+        auto reserve_scratch(i64 count) -> bool {
+            const i64 next = growth(scratch.size(), count, 1);
+            if (next <= 0) {
+                return next == 0;
+            }
+            const WorkRow fill = WorkRow(-1, -1, -1, -1, -1, -1);
+            return grown(scratch.try_resize(next, fill));
+        }
+        auto reserve_output_rows(i64 count) -> bool {
+            const i64 next = growth(outputRows.size(), count, 64);
+            if (next <= 0) {
+                return next == 0;
+            }
+            const compiler_lowering::OutputRow fill = compiler_lowering::OutputRow(
+                compiler_lowering::RecordKind::invalid, compiler_lowering::InstructionForm::BindServiceParameter, 0, 0);
+            return grown(outputRows.try_resize(next, fill));
+        }
+        auto reserve_output_operands(i64 count) -> bool {
+            const i64 next = growth(outputOperands.size(), count, 40);
+            if (next <= 0) {
+                return next == 0;
+            }
+            const compiler_lowering::OperandRow fill = compiler_lowering::OperandRow(
+                compiler_lowering::OperandRole::invalid, 0, 0u64, 0, 0);
+            return grown(outputOperands.try_resize(next, fill));
+        }
+        auto reserve_lowering_locals(i64 count) -> bool {
+            const i64 next = growth(loweringLocals.size(), count, 160);
+            if (next <= 0) {
+                return next == 0;
+            }
+            const compiler_lowering::LocalRow fill = compiler_lowering::LocalRow(-1, -1, 0, -1, -1, false);
+            return grown(loweringLocals.try_resize(next, fill));
+        }
+        auto reserve_lowering_snapshots(i64 count) -> bool {
+            const i64 next = growth(loweringSnapshots.size(), count, 48);
+            if (next <= 0) {
+                return next == 0;
+            }
+            const compiler_lowering::SnapshotRow fill = compiler_lowering::SnapshotRow(0, 0, false, false, false,
+                false);
+            return grown(loweringSnapshots.try_resize(next, fill));
+        }
+        auto reserve_lowering_continuations(i64 count) -> bool {
+            const i64 next = growth(loweringContinuations.size(), count, 496);
+            if (next <= 0) {
+                return next == 0;
+            }
+            const compiler_lowering::ArgumentLane empty_argument = compiler_lowering::ArgumentLane(-1,
+                compiler_lowering::ArgumentKind::absent, -1, -1, -1, -1);
+            const compiler_lowering::ContinuationRow fill = compiler_lowering::ContinuationRow(
+                compiler_lowering::ContinuationKind::invalid, -1, -1, empty_argument);
+            return grown(loweringContinuations.try_resize(next, fill));
+        }
+        // One AVL index serves the small set of resolver key domains. Atom keys
+        // compare their checked source bytes; all other domains compare integers.
+        auto compare_atom(i64 first, i64 second, i64 old_begin, i64 old_length) -> i64 {
+            if (first < 0 || second < 0 || first > source_used || second > source_used - first || old_begin < 0
+                || old_length < 0 || old_begin > source_used || old_length > source_used - old_begin) {
+                fail_storage(StorageStatus::invalid);
+                return 0;
+            }
+            i64 at = 0;
+            while (at < second && at < old_length) {
+                const u8 left = sources.at(first + at);
+                const u8 right = sources.at(old_begin + at);
+                if (left < right) {
+                    return -1;
+                }
+                if (left > right) {
+                    return 1;
+                }
+                at = at + 1;
+            }
+            if (second < old_length) {
+                return -1;
+            }
+            if (second > old_length) {
+                return 1;
+            }
+            return 0;
+        }
+        auto valid_index_id(i64 node) -> bool {
+            if (!good() || node < 0 || node >= index_used || node >= indexes.size()) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            return true;
+        }
+        auto set_index_row(i64 node, IndexRow row) -> bool {
+            if (!good() || node < 0 || node >= index_used || row.key_domain() < 1 || !indexes.set(node, row)) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            return true;
+        }
+        auto append_index_row(IndexRow row) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            if (row.key_domain() < 1 || index_used == 9223372036854775807) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (!reserve_indexes(index_used + 1)) {
+                return -1;
+            }
+            const i64 result = index_used;
+            if (!indexes.set(result, row)) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            index_used = index_used + 1;
+            return result;
+        }
+        auto index_height(i64 node) -> i64 {
+            if (node == -1) {
+                return 0;
+            }
+            if (!valid_index_id(node)) {
+                return -1;
+            }
+            const IndexRow row = indexes.at(node);
+            const i64 height = row.tree_height();
+            if (row.key_domain() < 1 || height < 1) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            return height;
+        }
+        auto update_height(i64 node) -> bool {
+            IndexRow row = index_row(node);
+            if (!good()) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            const i64 left = index_height(row.left_child());
+            const i64 right = index_height(row.right_child());
+            i64 height = left;
+            if (right > height) {
+                height = right;
+            }
+            if (!good() || height == 9223372036854775807) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            row.set_height(height + 1);
+            return set_index_row(node, row);
+        }
+        auto replace_child(i64 parent, i64 previous, i64 next) -> bool {
+            if (parent == -1) {
+                if (index_root != previous) {
+                    fail_storage(StorageStatus::invalid);
+                    return false;
+                }
+                index_root = next;
+                return true;
+            }
+            IndexRow row = index_row(parent);
+            if (!good()) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            if (row.left_child() == previous) {
+                row.set_left(next);
+            } else {
+                if (row.right_child() != previous) {
+                    fail_storage(StorageStatus::invalid);
+                    return false;
+                }
+                row.set_right(next);
+            }
+            return set_index_row(parent, row);
+        }
+        auto rotate_left(i64 node) -> i64 {
+            IndexRow root = index_row(node);
+            const i64 child_id = root.right_child();
+            IndexRow child = index_row(child_id);
+            if (!good() || child.parent_node() != node) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            const i64 parent = root.parent_node();
+            const i64 middle = child.left_child();
+            if (middle >= 0) {
+                IndexRow branch = index_row(middle);
+                if (!good() || branch.parent_node() != child_id) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                branch.set_parent(node);
+                if (!set_index_row(middle, branch)) {
+                    return -1;
+                }
+            }
+            root.set_right(middle);
+            root.set_parent(child_id);
+            child.set_left(node);
+            child.set_parent(parent);
+            if (!set_index_row(node, root) || !set_index_row(child_id, child) || !replace_child(parent, node, child_id)
+                || !update_height(node) || !update_height(child_id)) {
+                return -1;
+            }
+            return child_id;
+        }
+        auto rotate_right(i64 node) -> i64 {
+            IndexRow root = index_row(node);
+            const i64 child_id = root.left_child();
+            IndexRow child = index_row(child_id);
+            if (!good() || child.parent_node() != node) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            const i64 parent = root.parent_node();
+            const i64 middle = child.right_child();
+            if (middle >= 0) {
+                IndexRow branch = index_row(middle);
+                if (!good() || branch.parent_node() != child_id) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                branch.set_parent(node);
+                if (!set_index_row(middle, branch)) {
+                    return -1;
+                }
+            }
+            root.set_left(middle);
+            root.set_parent(child_id);
+            child.set_right(node);
+            child.set_parent(parent);
+            if (!set_index_row(node, root) || !set_index_row(child_id, child) || !replace_child(parent, node, child_id)
+                || !update_height(node) || !update_height(child_id)) {
+                return -1;
+            }
+            return child_id;
+        }
+        // Every key is in a hash chain over the index rows themselves: with n rows
+        // there are B buckets, the largest power of two not above n, and row b
+        // holds the head of bucket b. Chains are rebuilt whenever n reaches a power
+        // of two. Only the reflected-array (76) and descriptor (84) domains, which
+        // lowering walks in key order, are also linked into the AVL tree.
+        auto ordered_domain(i64 domain) const -> bool {
+            return domain == 76 || domain == 84;
+        }
+        auto index_buckets(i64 count) const -> i64 {
+            if (count < 1) {
+                return 0;
+            }
+            const i64 half = count / 2;
+            i64 buckets = 1;
+            while (buckets <= half) {
+                buckets = buckets * 2;
+            }
+            return buckets;
+        }
+        // Keys hash as their two's-complement bits. Bounded polynomial steps keep
+        // every intermediate below 2^48, so no checked operation can trap.
+        auto key_bits(i64 value) const -> u64 {
+            if (value < 0) {
+                return 9223372036854775808u64 + u64(-(value + 1));
+            }
+            return u64(value);
+        }
+        auto mix_key(u64 hash, u64 value) const -> u64 {
+            return (hash & 1099511627775u64) * 131u64 + (value & 4294967295u64);
+        }
+        auto bucket_of(u64 hash, i64 buckets) const -> i64 {
+            const u64 folded = (hash ^ (hash >> 27)) & 134217727u64;
+            return i64(((folded * 2654435761u64) >> 15) & u64(buckets - 1));
+        }
+        // Atom keys (domain 1) compare by spelling, so they hash their source bytes.
+        auto key_bucket(i64 domain, i64 first, i64 second, i64 third, i64 fourth, i64 buckets) -> i64 {
+            u64 hash = key_bits(domain);
+            if (domain == 1) {
+                if (first < 0 || second < 0 || first > source_used || second > source_used - first) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                const builtin::span<const u8> all = borrow_bytes(sources);
+                i64 at = 0;
+                while (at < second) {
+                    hash = mix_key(hash, u64(all.at(first + at)));
+                    at = at + 1;
+                }
+                hash = mix_key(hash, key_bits(second));
+            } else {
+                hash = mix_key(hash, key_bits(first));
+                hash = mix_key(hash, key_bits(second));
+                if (third != 0 || fourth != 0) {
+                    hash = mix_key(mix_key(hash, key_bits(third)), key_bits(fourth));
+                }
+            }
+            return bucket_of(hash, buckets);
+        }
+        auto row_bucket(IndexRow row, i64 buckets) -> i64 {
+            return key_bucket(row.key_domain(), row.first_key(), row.second_key(), row.third_key(), row.fourth_key(),
+                buckets);
+        }
+        // Puts node at the head of its bucket chain within the first buckets rows.
+        auto chain_node(i64 node, i64 buckets) -> bool {
+            IndexRow row = index_row(node);
+            const i64 slot = row_bucket(row, buckets);
+            if (!good() || slot < 0 || slot >= buckets) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            if (slot == node) {
+                row.set_chain(row.bucket_head());
+                row.set_bucket(node);
+                return set_index_row(node, row);
+            }
+            IndexRow head = index_row(slot);
+            row.set_chain(head.bucket_head());
+            head.set_bucket(node);
+            return set_index_row(node, row) && set_index_row(slot, head);
+        }
+        // Chains a node just appended as row index_used - 1.
+        auto hash_node(i64 node) -> bool {
+            if (node != index_used - 1) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            const i64 buckets = index_buckets(index_used);
+            if (buckets != index_used) {
+                return chain_node(node, buckets);
+            }
+            i64 at = 0;
+            while (at < buckets && good()) {
+                IndexRow row = index_row(at);
+                row.set_bucket(-1);
+                set_index_row(at, row);
+                at = at + 1;
+            }
+            at = 0;
+            while (at < index_used && good()) {
+                chain_node(at, buckets);
+                at = at + 1;
+            }
+            return good();
+        }
+        // The matching node, or its value when value is set; -1 when absent.
+        auto find(i64 domain, i64 first, i64 second, i64 third, i64 fourth, bool value) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            if (domain < 1) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            const i64 buckets = index_buckets(index_used);
+            if (buckets == 0) {
+                return -1;
+            }
+            const i64 slot = key_bucket(domain, first, second, third, fourth, buckets);
+            if (!good()) {
+                return -1;
+            }
+            // buckets <= index_used <= indexes.size(); key_bucket masks into range.
+            if (slot < 0 || slot >= buckets || slot >= indexes.size()) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            const IndexRow head = indexes.at(slot);
+            i64 node = head.bucket_head();
+            i64 steps = 0;
+            // Between checked row reads only atom comparison can latch failure.
+            while (node >= 0) {
+                if (steps >= index_used || node >= index_used || node >= indexes.size()) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                steps = steps + 1;
+                const IndexRow row = indexes.at(node);
+                if (row.key_domain() < 1) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                i64 order = 0;
+                if (domain == 1 && row.key_domain() == 1) {
+                    order = compare_atom(first, second, row.first_key(), row.second_key());
+                    if (!good()) {
+                        return -1;
+                    }
+                } else {
+                    order = row.key_order(domain, first, second, third, fourth);
+                }
+                if (order == 0) {
+                    if (value) {
+                        return row.value();
+                    }
+                    return node;
+                }
+                node = row.chain_next();
+                if (node < -1) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+            }
+            return -1;
+        }
+    public:
+        Session(builtin::ByteRegion region, builtin::OwnedBytes bytes, builtin::OwnedValues<SyntaxRow> syntax,
+            builtin::OwnedValues<MetaRow> meta, builtin::OwnedValues<ResolvedRow> resolved,
+            builtin::OwnedValues<WorkRow> work) : sources(move(bytes)), forest(move(syntax)), metadata(move(meta)),
+            resolutions(move(resolved)), scratch(move(work)), indexes(make_index_pool(region)), source_used(0),
+            graph_source_used(0), syntax_used(0), meta_used(64), resolved_used(0), work_used(0), index_used(0),
+            modules(0), index_root(-1), failure(StorageStatus::none), diagnostic(SemanticError::none),
+            diagnostic_node(-1), diagnostic_first(-1), diagnostic_second(-1),
+            outputRows(compiler_lowering::make_output_pool(region)),
+            outputOperands(compiler_lowering::make_operand_pool(region)),
+            loweringLocals(compiler_lowering::make_local_pool(region)),
+            loweringSnapshots(compiler_lowering::make_snapshot_pool(region)),
+            loweringContinuations(compiler_lowering::make_continuation_pool(region)), output_used(0), operand_used(0),
+            local_used(0), snapshot_used(0), continuation_used(0),
+            loweringError(compiler_lowering::LoweringError::none), diagnosticPayloadRow(-1) {
+        }
+        // create() checks every owner before publication; every failed resize latches failure.
+        // New owner mutation or construction paths must preserve this invariant.
+        auto good() const -> bool {
+            return failure == StorageStatus::none && diagnostic == SemanticError::none && loweringError
+                == compiler_lowering::LoweringError::none;
+        }
+        auto storage_status() const -> StorageStatus {
+            if (failure == StorageStatus::none && (!sources.ok() || !forest.ok() || !metadata.ok() || metadata.size()
+                < 64 || !resolutions.ok() || !scratch.ok() || !indexes.ok() || !outputRows.ok() || !outputOperands.ok()
+                || !loweringLocals.ok() || !loweringSnapshots.ok() || !loweringContinuations.ok())) {
+                return StorageStatus::allocation;
+            }
+            return failure;
+        }
+        auto fail_storage(StorageStatus code) -> i64 {
+            if (failure == StorageStatus::none && diagnostic == SemanticError::none && loweringError
+                == compiler_lowering::LoweringError::none) {
+                failure = code;
+            }
+            return -1;
+        }
+        auto reject(SemanticError code, i64 node, i64 first, i64 second) -> i64 {
+            if (diagnostic == SemanticError::none && failure == StorageStatus::none && loweringError
+                == compiler_lowering::LoweringError::none) {
+                if (code == SemanticError::none) {
+                    failure = StorageStatus::invalid;
+                } else {
+                    diagnostic = code;
+                    diagnostic_node = node;
+                    diagnostic_first = first;
+                    diagnostic_second = second;
+                }
+            }
+            return -1;
+        }
+        auto error_code() const -> SemanticError {
+            return diagnostic;
+        }
+        auto error_node() const -> i64 {
+            return diagnostic_node;
+        }
+        auto error_first() const -> i64 {
+            return diagnostic_first;
+        }
+        auto error_second() const -> i64 {
+            return diagnostic_second;
+        }
+        auto lowering_error() const -> compiler_lowering::LoweringError {
+            return loweringError;
+        }
+        auto diagnostic_payload_row() const -> i64 {
+            return diagnosticPayloadRow;
+        }
+        auto output_count() const -> i64 {
+            return output_used;
+        }
+        auto operand_count() const -> i64 {
+            return operand_used;
+        }
+        auto local_count() const -> i64 {
+            return local_used;
+        }
+        auto snapshot_count() const -> i64 {
+            return snapshot_used;
+        }
+        auto continuation_count() const -> i64 {
+            return continuation_used;
+        }
+        // A fixed reservation is the one-shot lowering entry marker. Reserve both
+        // owners, initialize all four rows, then publish counts and the marker.
+        // No source-semantic pass or success root is implemented by this operation.
+        auto reserve_diagnostic_payload() -> bool {
+            if (!good()) {
+                return false;
+            }
+            if (diagnosticPayloadRow != -1 || work_used != 0 || output_used != 0 || operand_used != 0 || local_used != 0
+                || snapshot_used != 0 || continuation_used != 0) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            if (!reserve_output_rows(1) || !reserve_output_operands(3)) {
+                return false;
+            }
+            const compiler_lowering::OperandRow source = compiler_lowering::OperandRow(
+                compiler_lowering::OperandRole::NoDiagnosticSource, 0, 0u64, 0, 0);
+            const compiler_lowering::OperandRow value = compiler_lowering::OperandRow(
+                compiler_lowering::OperandRole::NoDiagnosticValue, 0, 0u64, 0, 0);
+            const compiler_lowering::OutputRow row = compiler_lowering::OutputRow(
+                compiler_lowering::RecordKind::DiagnosticPayload,
+                compiler_lowering::InstructionForm::BindServiceParameter, 0, 3);
+            if (!outputOperands.set(0, source) || !outputOperands.set(1, value) || !outputOperands.set(2, value)
+                || !outputRows.set(0, row)) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            operand_used = 3;
+            output_used = 1;
+            diagnosticPayloadRow = 0;
+            return true;
+        }
+        // Payload IDs already exist at the decision site. This path never grows a
+        // pool. An impossible write latches storage failure before the reason.
+        auto reject_lowering(compiler_lowering::LoweringError reason, compiler_lowering::OperandRow source,
+            compiler_lowering::OperandRow first, compiler_lowering::OperandRow second) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            if (reason == compiler_lowering::LoweringError::none || diagnosticPayloadRow != 0 || output_used < 1
+                || operand_used < 3 || outputRows.size() < output_used || outputOperands.size() < operand_used) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            const compiler_lowering::OutputRow report = outputRows.at(0);
+            if (report.kind() != compiler_lowering::RecordKind::DiagnosticPayload || report.operand_begin() != 0
+                || report.operand_count() != 3) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (source.role() != compiler_lowering::OperandRole::NoDiagnosticSource && source.role()
+                != compiler_lowering::OperandRole::DiagnosticSourceRef && source.role()
+                != compiler_lowering::OperandRole::DiagnosticSyntheticRef) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (first.role() != compiler_lowering::OperandRole::NoDiagnosticValue && first.role()
+                != compiler_lowering::OperandRole::DiagnosticNameId && first.role()
+                != compiler_lowering::OperandRole::DiagnosticTypeId && first.role()
+                != compiler_lowering::OperandRole::DiagnosticInteger) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (second.role() != compiler_lowering::OperandRole::NoDiagnosticValue && second.role()
+                != compiler_lowering::OperandRole::DiagnosticNameId && second.role()
+                != compiler_lowering::OperandRole::DiagnosticTypeId && second.role()
+                != compiler_lowering::OperandRole::DiagnosticInteger) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if ((source.role() != compiler_lowering::OperandRole::NoDiagnosticSource && source.signed_value() < 0)
+                || (first.role() != compiler_lowering::OperandRole::NoDiagnosticValue && first.signed_value() < 0)
+                || (second.role() != compiler_lowering::OperandRole::NoDiagnosticValue && second.signed_value() < 0)) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (!outputOperands.set(0, source) || !outputOperands.set(1, first) || !outputOperands.set(2, second)) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            loweringError = reason;
+            return -1;
+        }
+        // Copied result views remain readable after a selected failure. Mutating
+        // access below stops on the first storage, resolver, or lowering failure.
+        auto view_output(i64 index) const -> compiler_lowering::OutputRow {
+            if (!outputRows.ok() || index < 0 || index >= output_used || index >= outputRows.size()) {
+                const compiler_lowering::OutputRow empty = compiler_lowering::OutputRow(
+                    compiler_lowering::RecordKind::invalid, compiler_lowering::InstructionForm::BindServiceParameter, 0,
+                    0);
+                return empty;
+            }
+            const compiler_lowering::OutputRow row = outputRows.at(index);
+            return row;
+        }
+        auto view_operand(i64 index) const -> compiler_lowering::OperandRow {
+            if (!outputOperands.ok() || index < 0 || index >= operand_used || index >= outputOperands.size()) {
+                const compiler_lowering::OperandRow empty = compiler_lowering::OperandRow(
+                    compiler_lowering::OperandRole::invalid, 0, 0u64, 0, 0);
+                return empty;
+            }
+            const compiler_lowering::OperandRow row = outputOperands.at(index);
+            return row;
+        }
+        auto append_output(compiler_lowering::OutputRow row) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            if (diagnosticPayloadRow != 0 || row.kind() == compiler_lowering::RecordKind::invalid || row.kind()
+                == compiler_lowering::RecordKind::DiagnosticPayload || row.kind()
+                == compiler_lowering::RecordKind::DiscardedInstruction || row.operand_begin() < 0 || row.operand_count()
+                < 0 || row.operand_begin() > operand_used || row.operand_count() > operand_used - row.operand_begin()
+                || output_used == 9223372036854775807) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (!reserve_output_rows(output_used + 1)) {
+                return -1;
+            }
+            const i64 result = output_used;
+            if (!outputRows.set(result, row)) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            output_used = output_used + 1;
+            return result;
+        }
+        auto append_operand(compiler_lowering::OperandRow row) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            if (diagnosticPayloadRow != 0 || row.role() == compiler_lowering::OperandRole::invalid || operand_used
+                == 9223372036854775807) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (!reserve_output_operands(operand_used + 1)) {
+                return -1;
+            }
+            const i64 result = operand_used;
+            if (!outputOperands.set(result, row)) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            operand_used = operand_used + 1;
+            return result;
+        }
+        // Only lowering's unpublished rows may be completed between its ordered
+        // logical and physical layout phases. The diagnostic reservation is fixed.
+        auto set_output(i64 index, compiler_lowering::OutputRow row) -> bool {
+            if (!good()) {
+                return false;
+            }
+            if (index <= 0 || index >= output_used || index >= outputRows.size() || row.kind()
+                == compiler_lowering::RecordKind::invalid || row.kind()
+                == compiler_lowering::RecordKind::DiagnosticPayload || row.kind()
+                == compiler_lowering::RecordKind::DiscardedInstruction || row.operand_begin() < 3 || row.operand_count()
+                < 0 || row.operand_begin() > operand_used || row.operand_count() > operand_used - row.operand_begin()) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            if (!outputRows.set(index, row)) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            return true;
+        }
+        auto set_operand(i64 index, compiler_lowering::OperandRow row) -> bool {
+            if (!good()) {
+                return false;
+            }
+            if (index < 3 || index >= operand_used || index >= outputOperands.size() || row.role()
+                == compiler_lowering::OperandRole::invalid) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            if (!outputOperands.set(index, row)) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            return true;
+        }
+        auto discard_instruction(i64 index) -> bool {
+            if (!good()) {
+                return false;
+            }
+            if (index < 0 || index >= output_used) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            compiler_lowering::OutputRow row = outputRows.at(index);
+            if (!row.discard_instruction() || !outputRows.set(index, row)) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            return true;
+        }
+        auto local(i64 index) -> compiler_lowering::LocalRow {
+            if (!good() || index < 0 || index >= local_used || index >= loweringLocals.size()) {
+                fail_storage(StorageStatus::invalid);
+                const compiler_lowering::LocalRow empty = compiler_lowering::LocalRow(-1, -1, 0, -1, -1, false);
+                return empty;
+            }
+            const compiler_lowering::LocalRow row = loweringLocals.at(index);
+            return row;
+        }
+        auto append_local(compiler_lowering::LocalRow row) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            const compiler_lowering::SnapshotRow state = row.state();
+            const bool formal_root = row.borrowed_object() && row.offset() <= 0 && row.offset() >= -5;
+            const bool stack_slot = !row.borrowed_object() && row.offset() > 0;
+            if (diagnosticPayloadRow != 0 || row.concrete_type_id() < 0 || (!formal_root && !stack_slot)
+                || row.name_source_id() < -1 || row.scope_id() < -1 || row.previous_binding() < -1
+                || row.previous_binding() >= local_used || state.shared_count() < 0 || state.object_shared_count() < 0
+                || local_used == 9223372036854775807) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (!reserve_lowering_locals(local_used + 1)) {
+                return -1;
+            }
+            const i64 result = local_used;
+            if (!loweringLocals.set(result, row)) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            local_used = local_used + 1;
+            return result;
+        }
+        auto set_local_state(i64 index, compiler_lowering::SnapshotRow state) -> bool {
+            compiler_lowering::LocalRow row = local(index);
+            if (!good() || state.shared_count() < 0 || state.object_shared_count() < 0) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            row.set_state(state);
+            if (!loweringLocals.set(index, row)) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            return true;
+        }
+        auto mark_local_read(i64 index) -> bool {
+            compiler_lowering::LocalRow row = local(index);
+            if (!good()) {
+                return false;
+            }
+            row.mark_read();
+            if (!loweringLocals.set(index, row)) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            return true;
+        }
+        auto snapshot(i64 index) -> compiler_lowering::SnapshotRow {
+            if (!good() || index < 0 || index >= snapshot_used || index >= loweringSnapshots.size()) {
+                fail_storage(StorageStatus::invalid);
+                const compiler_lowering::SnapshotRow empty = compiler_lowering::SnapshotRow(0, 0, false, false, false,
+                    false);
+                return empty;
+            }
+            const compiler_lowering::SnapshotRow row = loweringSnapshots.at(index);
+            return row;
+        }
+        // Capture only an existing prefix. Local identity and frame allocation
+        // stay monotonic even when branches add more Locals after this capture.
+        auto capture_locals(i64 prefix_length) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            if (diagnosticPayloadRow != 0 || prefix_length < 0 || prefix_length > local_used || prefix_length
+                > 9223372036854775807 - snapshot_used) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            const i64 required = snapshot_used + prefix_length;
+            if (!reserve_lowering_snapshots(required)) {
+                return -1;
+            }
+            i64 at = 0;
+            while (at < prefix_length) {
+                const compiler_lowering::LocalRow row = loweringLocals.at(at);
+                const compiler_lowering::SnapshotRow state = row.state();
+                if (!loweringSnapshots.set(snapshot_used + at, state)) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                at = at + 1;
+            }
+            const i64 result = snapshot_used;
+            snapshot_used = required;
+            return result;
+        }
+        auto restore_locals(i64 base, i64 prefix_length) -> bool {
+            if (!good()) {
+                return false;
+            }
+            if (base < 0 || prefix_length < 0 || prefix_length > local_used || base > snapshot_used || prefix_length
+                > snapshot_used - base) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            i64 at = 0;
+            while (at < prefix_length) {
+                const compiler_lowering::SnapshotRow state = loweringSnapshots.at(base + at);
+                if (!set_local_state(at, state)) {
+                    return false;
+                }
+                at = at + 1;
+            }
+            return true;
+        }
+        auto truncate_snapshots(i64 count) -> bool {
+            if (count < 0 || count > snapshot_used) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            snapshot_used = count;
+            return true;
+        }
+        auto continuation(i64 index) -> compiler_lowering::ContinuationRow {
+            if (!good() || index < 0 || index >= continuation_used || index >= loweringContinuations.size()) {
+                fail_storage(StorageStatus::invalid);
+                const compiler_lowering::ArgumentLane empty_argument = compiler_lowering::ArgumentLane(-1,
+                    compiler_lowering::ArgumentKind::absent, -1, -1, -1, -1);
+                const compiler_lowering::ContinuationRow empty = compiler_lowering::ContinuationRow(
+                    compiler_lowering::ContinuationKind::invalid, -1, -1, empty_argument);
+                return empty;
+            }
+            const compiler_lowering::ContinuationRow row = loweringContinuations.at(index);
+            return row;
+        }
+        auto append_continuation(compiler_lowering::ContinuationRow row) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            if (diagnosticPayloadRow != 0 || row.kind() == compiler_lowering::ContinuationKind::invalid
+                || continuation_used == 9223372036854775807) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (!reserve_lowering_continuations(continuation_used + 1)) {
+                return -1;
+            }
+            const i64 result = continuation_used;
+            if (!loweringContinuations.set(result, row)) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            continuation_used = continuation_used + 1;
+            return result;
+        }
+        auto set_continuation(i64 index, compiler_lowering::ContinuationRow row) -> bool {
+            if (!good() || index < 0 || index >= continuation_used || row.kind()
+                == compiler_lowering::ContinuationKind::invalid || !loweringContinuations.set(index, row)) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            return true;
+        }
+        auto truncate_continuations(i64 count) -> bool {
+            if (count < 0 || count > continuation_used) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            continuation_used = count;
+            return true;
+        }
+        // Function retirement only; branch restoration must never erase Locals.
+        auto reset_lowering_locals() -> bool {
+            if (!good() || snapshot_used != 0 || continuation_used != 0) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            local_used = 0;
+            return true;
+        }
+        auto source_size() const -> i64 {
+            return source_used;
+        }
+        auto syntax_count() const -> i64 {
+            return syntax_used;
+        }
+        auto meta_count() const -> i64 {
+            if (!metadata.ok()) {
+                return 0;
+            }
+            return meta_used;
+        }
+        auto resolved_count() const -> i64 {
+            return resolved_used;
+        }
+        auto work_count() const -> i64 {
+            return work_used;
+        }
+        auto module_count() const -> i64 {
+            return modules;
+        }
+        auto view_source(i64 index) const -> i64 {
+            if (!sources.ok() || index < 0 || index >= source_used || index >= sources.size()) {
+                return -1;
+            }
+            return i64(sources.at(index));
+        }
+        // Read only an already published symbol cache, even after a semantic or
+        // lowering failure. This path cannot alter the selected diagnostic.
+        auto linkage_chunk(i64 symbol, i64 offset) const -> LinkageChunk {
+            LinkageChunk result = LinkageChunk();
+            const MetaRow value = view_meta(symbol);
+            const MetaRow name = view_meta(value.word(0));
+            if (value.kind() != MetaTag::symbol || name.kind() != MetaTag::source_reference || name.word(0) != -1
+                || name.word(9) != symbol || name.word(1) < 0 || name.word(2) <= name.word(1) || name.word(2)
+                > source_used || !sources.ok() || source_used > sources.size() || offset < 0 || offset > name.word(2)
+                - name.word(1)) {
+                result.invalidate();
+                return result;
+            }
+            i64 at = name.word(1) + offset;
+            while (at < name.word(2) && result.size() < 512) {
+                result.append(sources.at(at));
+                at = at + 1;
+            }
+            return result;
+        }
+        auto source_byte(i64 index) -> u8 {
+            if (!good() || index < 0 || index >= source_used) {
+                fail_storage(StorageStatus::invalid);
+                return 0u8;
+            }
+            return sources.at(index);
+        }
+        auto view_syntax(i64 index) const -> SyntaxRow {
+            if (!forest.ok() || index < 0 || index >= syntax_used || index >= forest.size()) {
+                const SyntaxRow empty = SyntaxRow(SyntaxTag::invalid);
+                return empty;
+            }
+            const SyntaxRow row = forest.at(index);
+            return row;
+        }
+        auto syntax(i64 index) -> SyntaxRow {
+            if (!good() || index < 0 || index >= syntax_used || index >= forest.size()) {
+                fail_storage(StorageStatus::invalid);
+                const SyntaxRow empty = SyntaxRow(SyntaxTag::invalid);
+                return empty;
+            }
+            const SyntaxRow row = forest.at(index);
+            return row;
+        }
+        auto set_syntax(i64 index, SyntaxRow row) -> bool {
+            if (!good() || index < 0 || index >= syntax_used || !forest.set(index, row)) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            return true;
+        }
+        auto view_meta(i64 index) const -> MetaRow {
+            if (!metadata.ok() || index < 0 || index >= meta_used || index >= metadata.size()) {
+                const MetaRow empty = MetaRow(MetaTag::invalid);
+                return empty;
+            }
+            const MetaRow row = metadata.at(index);
+            return row;
+        }
+        auto valid_meta_index(i64 index) -> bool {
+            if (!good() || index < 0 || index >= meta_used || index >= metadata.size()) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            return true;
+        }
+        auto meta(i64 index) -> MetaRow {
+            // valid_meta_index, written out: this is the resolver's hottest read.
+            if (!good() || index < 0 || index >= meta_used || index >= metadata.size()) {
+                fail_storage(StorageStatus::invalid);
+                const MetaRow empty = MetaRow(MetaTag::invalid);
+                return empty;
+            }
+            const MetaRow row = metadata.at(index);
+            return row;
+        }
+        auto set_meta(i64 index, MetaRow row) -> bool {
+            if (!good() || index < 0 || index >= meta_used || !metadata.set(index, row)) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            return true;
+        }
+        auto append_meta(MetaRow row) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            if (meta_used == 9223372036854775807) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (!reserve_metadata(meta_used + 1)) {
+                return -1;
+            }
+            const i64 result = meta_used;
+            if (!metadata.set(result, row)) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            meta_used = meta_used + 1;
+            return result;
+        }
+        auto view_resolved(i64 index) const -> ResolvedRow {
+            if (!resolutions.ok() || index < 0 || index >= resolved_used || index >= resolutions.size()) {
+                const ResolvedRow empty = ResolvedRow();
+                return empty;
+            }
+            const ResolvedRow row = resolutions.at(index);
+            return row;
+        }
+        auto resolved(i64 index) -> ResolvedRow {
+            if (!good() || index < 0 || index >= resolved_used || index >= resolutions.size()) {
+                fail_storage(StorageStatus::invalid);
+                const ResolvedRow empty = ResolvedRow();
+                return empty;
+            }
+            const ResolvedRow row = resolutions.at(index);
+            return row;
+        }
+        auto set_resolved(i64 index, ResolvedRow row) -> bool {
+            if (!good() || index < 0 || index >= resolved_used || !resolutions.set(index, row)) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            return true;
+        }
+        auto view_work(i64 index) const -> WorkRow {
+            if (!scratch.ok() || index < 0 || index >= work_used || index >= scratch.size()) {
+                const WorkRow empty = WorkRow(-1, -1, -1, -1, -1, -1);
+                return empty;
+            }
+            const WorkRow row = scratch.at(index);
+            return row;
+        }
+        auto work(i64 index) -> WorkRow {
+            if (!good() || index < 0 || index >= work_used || index >= scratch.size()) {
+                fail_storage(StorageStatus::invalid);
+                const WorkRow empty = WorkRow(-1, -1, -1, -1, -1, -1);
+                return empty;
+            }
+            const WorkRow row = scratch.at(index);
+            return row;
+        }
+        auto set_work(i64 index, WorkRow row) -> bool {
+            if (!good() || index < 0 || index >= work_used || !scratch.set(index, row)) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            return true;
+        }
+        auto append_work(WorkRow row) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            if (work_used == 9223372036854775807) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (!reserve_scratch(work_used + 1)) {
+                return -1;
+            }
+            const i64 result = work_used;
+            if (!scratch.set(result, row)) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            work_used = work_used + 1;
+            return result;
+        }
+        auto append_syntax(SyntaxRow row) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            if (row.kind() == SyntaxTag::invalid || syntax_used == 9223372036854775807 || resolved_used
+                != syntax_used) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (!reserve_forest(syntax_used + 1) || !reserve_resolutions(syntax_used + 1)) {
+                return -1;
+            }
+            const ResolvedRow blank = ResolvedRow();
+            if (!forest.set(syntax_used, row) || !resolutions.set(syntax_used, blank)) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            const i64 result = syntax_used;
+            syntax_used = syntax_used + 1;
+            resolved_used = resolved_used + 1;
+            return result;
+        }
+        auto truncate_work(i64 count) -> bool {
+            if (count < 0 || count > work_used) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            work_used = count;
+            return true;
+        }
+        auto append_source(builtin::span<const u8> source) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            const i64 count = source.size();
+            if (modules >= 64 || count < 0 || count > 1048576 || count > 4194304 - graph_source_used) {
+                return fail_storage(StorageStatus::limit);
+            }
+            if (modules > 0) {
+                const MetaRow previous = metadata.at(modules - 1);
+                if (previous.kind() != MetaTag::module_unit) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+            }
+            if (count > 9223372036854775807 - source_used) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            const i64 required = source_used + count;
+            if (required > sources.size()) {
+                const i64 capacity = next_capacity(sources.size(), required);
+                if (capacity < required || !sources.try_resize(capacity)) {
+                    return fail_storage(StorageStatus::allocation);
+                }
+            }
+            i64 index = 0;
+            while (index < count) {
+                if (!sources.set(source_used + index, source.at(index))) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                index = index + 1;
+            }
+            MetaRow row = MetaRow(MetaTag::module_source);
+            row.set_word(0, source_used);
+            row.set_word(1, count);
+            row.set_word(11, modules);
+            if (!metadata.set(modules, row)) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            const i64 result = modules;
+            modules = modules + 1;
+            source_used = required;
+            graph_source_used = graph_source_used + count;
+            return result;
+        }
+        // A returned Lexeme is copied. The private source-field view ends before
+        // its caller changes metadata, so there is no self-view/mutable-call loan.
+        auto scan(i64 module_id, compiler_lexer::Cursor cursor) const -> compiler_lexer::Lexeme {
+            if (!sources.ok() || !metadata.ok() || module_id < 0 || module_id >= modules) {
+                return compiler_lexer::Lexeme(compiler_lexer::Event::invalid_cursor, 0, 1, 0);
+            }
+            const MetaRow row = metadata.at(module_id);
+            const i64 begin = row.word(0);
+            const i64 length = row.word(1);
+            if (begin < 0 || length < 0 || begin > source_used || length > source_used - begin) {
+                return compiler_lexer::Lexeme(compiler_lexer::Event::invalid_cursor, 0, 1, 0);
+            }
+            const builtin::span<const u8> all = borrow_bytes(sources);
+            const builtin::span<const u8> text = all.subspan(begin, length);
+            const compiler_lexer::Lexeme result = compiler_lexer::next_lexeme(text, cursor);
+            return result;
+        }
+        auto index_row(i64 node) -> IndexRow {
+            if (valid_index_id(node)) {
+                const IndexRow row = indexes.at(node);
+                if (row.key_domain() > 0) {
+                    return row;
+                }
+            }
+            fail_storage(StorageStatus::invalid);
+            const IndexRow empty = IndexRow(0, -1, -1, -1, -1, -1);
+            return empty;
+        }
+        auto index_node(i64 domain, i64 first, i64 second, i64 third, i64 fourth) -> i64 {
+            return find(domain, first, second, third, fourth, false);
+        }
+        auto index(i64 domain, i64 first, i64 second, i64 third, i64 fourth) -> i64 {
+            return find(domain, first, second, third, fourth, true);
+        }
+        auto index_insert(i64 domain, i64 first, i64 second, i64 third, i64 fourth, i64 value) -> i64 {
+            if (!good() || domain < 1 || value < 0) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            const i64 existing = find(domain, first, second, third, fourth, true);
+            if (existing >= 0 || !good()) {
+                return existing;
+            }
+            if (!ordered_domain(domain)) {
+                const i64 appended = append_index_row(IndexRow(domain, first, second, third, fourth, value));
+                if (appended < 0 || !hash_node(appended)) {
+                    return -1;
+                }
+                return value;
+            }
+            const i64 before = index_used;
+            const i64 inserted = tree_insert(domain, first, second, third, fourth, value);
+            if (inserted < 0 || !good()) {
+                return -1;
+            }
+            // The tree holds only keys the hash chains hold, so this key is new.
+            if (index_used != before + 1) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            if (!hash_node(before)) {
+                return -1;
+            }
+            return inserted;
+        }
+        // AVL insertion of a new key of an ordered domain, appended as the last row.
+        auto tree_insert(i64 domain, i64 first, i64 second, i64 third, i64 fourth, i64 value) -> i64 {
+            i64 parent = -1;
+            i64 node = index_root;
+            i64 direction = 0;
+            i64 steps = 0;
+            while (node >= 0 && good()) {
+                if (steps >= index_used) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                steps = steps + 1;
+                const IndexRow row = index_row(node);
+                if (!good()) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                direction = 0;
+                if (domain == 1 && row.key_domain() == 1) {
+                    direction = compare_atom(first, second, row.first_key(), row.second_key());
+                } else {
+                    direction = row.key_order(domain, first, second, third, fourth);
+                }
+                if (!good()) {
+                    return -1;
+                }
+                if (direction == 0) {
+                    return row.value();
+                }
+                parent = node;
+                if (direction < 0) {
+                    node = row.left_child();
+                } else {
+                    node = row.right_child();
+                }
+                if (node < -1) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+            }
+            IndexRow inserted = IndexRow(domain, first, second, third, fourth, value);
+            inserted.set_parent(parent);
+            const i64 new_id = append_index_row(inserted);
+            if (new_id < 0) {
+                return -1;
+            }
+            if (parent == -1) {
+                index_root = new_id;
+            } else {
+                IndexRow ancestor = index_row(parent);
+                if (direction < 0) {
+                    ancestor.set_left(new_id);
+                } else {
+                    ancestor.set_right(new_id);
+                }
+                if (!set_index_row(parent, ancestor)) {
+                    return -1;
+                }
+            }
+            node = parent;
+            steps = 0;
+            while (node >= 0 && good()) {
+                if (steps >= index_used) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                steps = steps + 1;
+                IndexRow root = index_row(node);
+                if (!good() || root.tree_height() < 1) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                const i64 previous_height = root.tree_height();
+                const i64 left = index_height(root.left_child());
+                const i64 right = index_height(root.right_child());
+                i64 height = left;
+                if (right > height) {
+                    height = right;
+                }
+                if (!good() || height == 9223372036854775807) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                height = height + 1;
+                // Insertion cannot affect ancestors after this subtree stops growing.
+                if (left - right <= 1 && right - left <= 1 && height == previous_height) {
+                    return value;
+                }
+                root.set_height(height);
+                if (!set_index_row(node, root)) {
+                    return -1;
+                }
+                if (left - right > 1) {
+                    const IndexRow branch = index_row(root.left_child());
+                    const i64 outer = index_height(branch.left_child());
+                    const i64 inner = index_height(branch.right_child());
+                    if (inner > outer) {
+                        rotate_left(root.left_child());
+                    }
+                    if (!good()) {
+                        return -1;
+                    }
+                    rotate_right(node);
+                    if (!good()) {
+                        return -1;
+                    }
+                    // The first insertion rotation restores the old subtree height.
+                    return value;
+                } else {
+                    if (right - left > 1) {
+                        const IndexRow branch = index_row(root.right_child());
+                        const i64 outer = index_height(branch.right_child());
+                        const i64 inner = index_height(branch.left_child());
+                        if (inner > outer) {
+                            rotate_right(root.right_child());
+                        }
+                        if (!good()) {
+                            return -1;
+                        }
+                        rotate_left(node);
+                        if (!good()) {
+                            return -1;
+                        }
+                        return value;
+                    }
+                }
+                node = root.parent_node();
+            }
+            return value;
+        }
+        auto index_replace(i64 domain, i64 first, i64 second, i64 third, i64 fourth, i64 value) -> bool {
+            if (!good() || value < 0) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            const i64 found = index_node(domain, first, second, third, fourth);
+            if (found < 0) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            IndexRow row = index_row(found);
+            row.set_value(value);
+            return set_index_row(found, row);
+        }
+        auto source_equal(i64 reference, builtin::span<const u8> text) -> bool {
+            const MetaRow row = meta(reference);
+            if (row.kind() != MetaTag::source_reference || row.word(1) < 0 || row.word(2) < row.word(1) || row.word(2)
+                > source_used) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            const i64 count = row.word(2) - row.word(1);
+            if (count != text.size()) {
+                return false;
+            }
+            i64 at = 0;
+            while (at < count) {
+                if (sources.at(row.word(1) + at) != text.at(at)) {
+                    return false;
+                }
+                at = at + 1;
+            }
+            return true;
+        }
+        auto source_prefix(i64 reference, builtin::span<const u8> text) -> bool {
+            const MetaRow row = meta(reference);
+            if (row.kind() != MetaTag::source_reference || row.word(1) < 0 || row.word(2) < row.word(1) || row.word(2)
+                > source_used) {
+                fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            if (text.size() > row.word(2) - row.word(1)) {
+                return false;
+            }
+            i64 at = 0;
+            while (at < text.size()) {
+                if (sources.at(row.word(1) + at) != text.at(at)) {
+                    return false;
+                }
+                at = at + 1;
+            }
+            return true;
+        }
+        auto scan_range(i64 begin, i64 length, compiler_lexer::Cursor cursor) const -> compiler_lexer::Lexeme {
+            if (!sources.ok() || begin < 0 || length < 0 || begin > source_used || length > source_used - begin) {
+                return compiler_lexer::Lexeme(compiler_lexer::Event::invalid_cursor, 0, 1, 0);
+            }
+            const builtin::span<const u8> all = borrow_bytes(sources);
+            const builtin::span<const u8> text = all.subspan(begin, length);
+            const compiler_lexer::Lexeme result = compiler_lexer::next_lexeme(text, cursor);
+            return result;
+        }
+        auto compare_components(i64 first, i64 second, bool left_more, bool right_more) -> i64 {
+            if (first == second) {
+                return 0;
+            }
+            const MetaRow left = meta(first);
+            const MetaRow right = meta(second);
+            if (left.kind() != MetaTag::atom || right.kind() != MetaTag::atom || left.word(0) < 0 || right.word(0) < 0
+                || left.word(1) < 1 || right.word(1) < 1 || left.word(0) > source_used || right.word(0) > source_used
+                || left.word(1) > source_used - left.word(0) || right.word(1) > source_used - right.word(0)) {
+                fail_storage(StorageStatus::invalid);
+                return 0;
+            }
+            i64 at = 0;
+            while (at < left.word(1) && at < right.word(1)) {
+                const u8 a = sources.at(left.word(0) + at);
+                const u8 b = sources.at(right.word(0) + at);
+                if (a < b) {
+                    return -1;
+                }
+                if (a > b) {
+                    return 1;
+                }
+                at = at + 1;
+            }
+            if (left.word(1) < right.word(1)) {
+                if (left_more && ':' > sources.at(right.word(0) + at)) {
+                    return 1;
+                }
+                return -1;
+            }
+            if (left.word(1) > right.word(1)) {
+                if (right_more && sources.at(left.word(0) + at) < ':') {
+                    return -1;
+                }
+                return 1;
+            }
+            return 0;
+        }
+        // Literal and linkage payload bytes have no new module identity.
+        // Existing graph offsets stay fixed while the same owner grows safely.
+        auto append_literal_byte(u8 value) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            if (source_used == 9223372036854775807) {
+                return fail_storage(StorageStatus::limit);
+            }
+            const i64 required = source_used + 1;
+            if (required > sources.size()) {
+                const i64 capacity = next_capacity(sources.size(), required);
+                if (capacity < required || !sources.try_resize(capacity)) {
+                    return fail_storage(StorageStatus::allocation);
+                }
+            }
+            const i64 result = source_used;
+            if (!sources.set(result, value)) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            source_used = required;
+            return result;
+        }
+        // Linkage fragments use the existing byte owner and checked element
+        // operations, but reserve once. No self-borrow spans survive a resize.
+        // Publish the visible byte count only after the whole copy succeeds.
+        auto append_linkage_text(builtin::span<const u8> text) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            const i64 count = text.size();
+            if (count < 0 || count > 9223372036854775807 - source_used) {
+                return fail_storage(StorageStatus::limit);
+            }
+            const i64 required = source_used + count;
+            if (required > sources.size()) {
+                const i64 capacity = next_capacity(sources.size(), required);
+                if (capacity < required || !sources.try_resize(capacity)) {
+                    return fail_storage(StorageStatus::allocation);
+                }
+            }
+            i64 at = 0;
+            while (at < count) {
+                if (!sources.set(source_used + at, text.at(at))) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                at = at + 1;
+            }
+            const i64 result = source_used;
+            source_used = required;
+            return result;
+        }
+        auto append_linkage_range(i64 begin, i64 end) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            if (begin < 0 || end <= begin || end > source_used || source_used > sources.size()) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            const i64 count = end - begin;
+            if (count > 9223372036854775807 - source_used) {
+                return fail_storage(StorageStatus::limit);
+            }
+            const i64 required = source_used + count;
+            if (required > sources.size()) {
+                const i64 capacity = next_capacity(sources.size(), required);
+                if (capacity < required || !sources.try_resize(capacity)) {
+                    return fail_storage(StorageStatus::allocation);
+                }
+            }
+            i64 at = 0;
+            while (at < count) {
+                const u8 byte = sources.at(begin + at);
+                if (!sources.set(source_used + at, byte)) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                at = at + 1;
+            }
+            const i64 result = source_used;
+            source_used = required;
+            return result;
+        }
+        auto append_text(builtin::span<const u8> text) -> i64 {
+            if (!good()) {
+                return -1;
+            }
+            const i64 count = text.size();
+            if (count < 0 || count > 2147483646 || count > 9223372036854775807 - source_used) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            const i64 required = source_used + count;
+            if (required > sources.size()) {
+                const i64 capacity = next_capacity(sources.size(), required);
+                if (capacity < required || !sources.try_resize(capacity)) {
+                    return fail_storage(StorageStatus::allocation);
+                }
+            }
+            i64 at = 0;
+            i64 line = 1;
+            i64 column = 1;
+            while (at < count) {
+                const u8 byte = text.at(at);
+                if (!sources.set(source_used + at, byte)) {
+                    return fail_storage(StorageStatus::invalid);
+                }
+                if (byte == '\n') {
+                    line = line + 1;
+                    column = 1;
+                } else {
+                    column = column + 1;
+                }
+                at = at + 1;
+            }
+            MetaRow row = MetaRow(MetaTag::source_reference);
+            row.set_word(0, -1);
+            row.set_word(1, source_used);
+            row.set_word(2, required);
+            row.set_word(3, 1);
+            row.set_word(4, 1);
+            row.set_word(5, 0);
+            row.set_word(6, 0);
+            row.set_word(7, line);
+            row.set_word(8, column);
+            row.set_word(9, meta_used);
+            source_used = required;
+            return append_meta(row);
+        }
+    };
+}
+
+export namespace compiler_resolver {
+    auto create(builtin::ByteRegion region) -> Session {
+        builtin::OwnedBytes bytes = region.try_allocate(0);
+        const SyntaxRow syntax_fill = SyntaxRow(SyntaxTag::invalid);
+        builtin::OwnedValues<SyntaxRow> syntax = region.try_allocate(0, syntax_fill);
+        const MetaRow meta_fill = MetaRow(MetaTag::invalid);
+        builtin::OwnedValues<MetaRow> meta = region.try_allocate(64, meta_fill);
+        const ResolvedRow resolved_fill = ResolvedRow();
+        builtin::OwnedValues<ResolvedRow> resolved = region.try_allocate(0, resolved_fill);
+        const WorkRow work_fill = WorkRow(-1, -1, -1, -1, -1, -1);
+        builtin::OwnedValues<WorkRow> work = region.try_allocate(0, work_fill);
+        Session session = Session(region, move(bytes), move(syntax), move(meta), move(resolved), move(work));
+        if (session.storage_status() != StorageStatus::none) {
+            session.fail_storage(StorageStatus::allocation);
+        }
+        return move(session);
+    }
+    auto append_source(Session& session, builtin::span<const u8> source) -> i64 {
+        return session.append_source(source);
+    }
+    auto append_text(Session& session, builtin::span<const u8> text) -> i64 {
+        return session.append_text(text);
+    }
+    auto count(const Session& session, i64 pool) -> i64 {
+        if (pool == 0) {
+            return session.source_size();
+        }
+        if (pool == 1) {
+            return session.syntax_count();
+        }
+        if (pool == 2) {
+            return session.meta_count();
+        }
+        if (pool == 3) {
+            return session.resolved_count();
+        }
+        if (pool == 4) {
+            return session.work_count();
+        }
+        if (pool == 5) {
+            return session.module_count();
+        }
+        return -1;
+    }
+    auto read_source(const Session& session, i64 index) -> i64 {
+        return session.view_source(index);
+    }
+    auto read_syntax(const Session& session, i64 index) -> SyntaxRow {
+        const SyntaxRow row = session.view_syntax(index);
+        return row;
+    }
+    auto read_meta(const Session& session, i64 index) -> MetaRow {
+        const MetaRow row = session.view_meta(index);
+        return row;
+    }
+    auto read_resolved(const Session& session, i64 index) -> ResolvedRow {
+        const ResolvedRow row = session.view_resolved(index);
+        return row;
+    }
+    auto status(const Session& session) -> SessionStatus {
+        const SessionStatus result = SessionStatus(session.storage_status(), session.error_code(), session.error_node(),
+            session.error_first(), session.error_second());
+        return result;
+    }
+    auto release(builtin::ByteRegion region, Session session) -> i64 {
+        return 0;
+    }
+    auto release_pair(builtin::ByteRegion region, Session session, compiler_parser::AstArena parsed) -> i64 {
+        return 0;
+    }
+}

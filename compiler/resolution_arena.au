@@ -30,6 +30,33 @@ import aurora.compiler.resolution_rows;
 // Count publication always follows successful set; all eleven allocation results,
 // including inert failures, remain owned until ordinary consuming cleanup.
 export namespace compiler_resolver {
+    // compare_atom over a borrowed source view: -1, 0 or 1, or -2 for a range outside used.
+    auto atom_order(builtin::span<const u8> text, i64 used, i64 first, i64 second, i64 old_begin,
+        i64 old_length) -> i64 {
+        if (first < 0 || second < 0 || first > used || second > used - first || old_begin < 0 || old_length < 0
+            || old_begin > used || old_length > used - old_begin) {
+            return -2;
+        }
+        i64 at = 0;
+        while (at < second && at < old_length) {
+            const u8 left = text.at(first + at);
+            const u8 right = text.at(old_begin + at);
+            if (left < right) {
+                return -1;
+            }
+            if (left > right) {
+                return 1;
+            }
+            at = at + 1;
+        }
+        if (second < old_length) {
+            return -1;
+        }
+        if (second > old_length) {
+            return 1;
+        }
+        return 0;
+    }
     auto make_index_pool(builtin::ByteRegion region) -> builtin::OwnedValues<IndexRow> {
         const IndexRow fill = IndexRow(0, -1, -1, -1, -1, -1);
         builtin::OwnedValues<IndexRow> result = region.try_allocate(0, fill);
@@ -215,25 +242,13 @@ export namespace compiler_resolver {
                 fail_storage(StorageStatus::invalid);
                 return 0;
             }
-            i64 at = 0;
-            while (at < second && at < old_length) {
-                const u8 left = sources.at(first + at);
-                const u8 right = sources.at(old_begin + at);
-                if (left < right) {
-                    return -1;
-                }
-                if (left > right) {
-                    return 1;
-                }
-                at = at + 1;
+            // Both ranges lie inside the used source, so atom_order cannot reject them.
+            i64 order = 0;
+            {
+                const builtin::span<const u8> text = borrow_bytes(sources);
+                order = atom_order(text, source_used, first, second, old_begin, old_length);
             }
-            if (second < old_length) {
-                return -1;
-            }
-            if (second > old_length) {
-                return 1;
-            }
-            return 0;
+            return order;
         }
         auto valid_index_id(i64 node) -> bool {
             if (!good() || node < 0 || node >= index_used || node >= indexes.size()) {
@@ -505,40 +520,52 @@ export namespace compiler_resolver {
             if (slot < 0 || slot >= buckets || slot >= indexes.size()) {
                 return fail_storage(StorageStatus::invalid);
             }
-            const IndexRow head = indexes.at(slot);
-            i64 node = head.bucket_head();
-            i64 steps = 0;
-            // Between checked row reads only atom comparison can latch failure.
-            while (node >= 0) {
-                if (steps >= index_used || node >= index_used || node >= indexes.size()) {
-                    return fail_storage(StorageStatus::invalid);
-                }
-                steps = steps + 1;
-                const IndexRow row = indexes.at(node);
-                if (row.key_domain() < 1) {
-                    return fail_storage(StorageStatus::invalid);
-                }
-                i64 order = 0;
-                if (domain == 1 && row.key_domain() == 1) {
-                    order = compare_atom(first, second, row.first_key(), row.second_key());
-                    if (!good()) {
-                        return -1;
+            // One view of the rows and the source text serves the whole chain walk;
+            // a malformed chain or atom range stops it and latches invalid storage.
+            i64 found = -1;
+            bool invalid = false;
+            {
+                const builtin::span<const IndexRow> rows = borrow_values(indexes);
+                const builtin::span<const u8> text = borrow_bytes(sources);
+                const IndexRow head = rows.at(slot);
+                i64 node = head.bucket_head();
+                i64 steps = 0;
+                while (node >= 0 && !invalid) {
+                    if (steps >= index_used || node >= index_used || node >= rows.size()) {
+                        invalid = true;
+                    } else {
+                        steps = steps + 1;
+                        const IndexRow row = rows.at(node);
+                        i64 order = 0;
+                        if (row.key_domain() < 1) {
+                            invalid = true;
+                        } else {
+                            if (domain == 1 && row.key_domain() == 1) {
+                                order = atom_order(text, source_used, first, second, row.first_key(), row.second_key());
+                                invalid = order == -2;
+                            } else {
+                                order = row.key_order(domain, first, second, third, fourth);
+                            }
+                        }
+                        if (!invalid) {
+                            if (order == 0) {
+                                found = node;
+                                if (value) {
+                                    found = row.value();
+                                }
+                                node = -1;
+                            } else {
+                                node = row.chain_next();
+                                invalid = node < -1;
+                            }
+                        }
                     }
-                } else {
-                    order = row.key_order(domain, first, second, third, fourth);
-                }
-                if (order == 0) {
-                    if (value) {
-                        return row.value();
-                    }
-                    return node;
-                }
-                node = row.chain_next();
-                if (node < -1) {
-                    return fail_storage(StorageStatus::invalid);
                 }
             }
-            return -1;
+            if (invalid) {
+                return fail_storage(StorageStatus::invalid);
+            }
+            return found;
         }
     public:
         Session(builtin::ByteRegion region, builtin::OwnedBytes bytes, builtin::OwnedValues<SyntaxRow> syntax,
@@ -1056,6 +1083,50 @@ export namespace compiler_resolver {
             }
             const SyntaxRow row = forest.at(index);
             return row;
+        }
+        // One word of a row, read in place through a view; the same checks and
+        // failure latch as the copying row readers.
+        auto syntax_word(i64 index, i64 word) -> i64 {
+            if (!good() || index < 0 || index >= syntax_used || index >= forest.size()) {
+                fail_storage(StorageStatus::invalid);
+                const SyntaxRow empty = SyntaxRow(SyntaxTag::invalid);
+                return empty.word(word);
+            }
+            i64 result = 0;
+            {
+                const builtin::span<const SyntaxRow> rows = borrow_values(forest);
+                const SyntaxRow row = rows.at(index);
+                result = row.word(word);
+            }
+            return result;
+        }
+        auto meta_word(i64 index, i64 word) -> i64 {
+            if (!good() || index < 0 || index >= meta_used || index >= metadata.size()) {
+                fail_storage(StorageStatus::invalid);
+                const MetaRow empty = MetaRow(MetaTag::invalid);
+                return empty.word(word);
+            }
+            i64 result = 0;
+            {
+                const builtin::span<const MetaRow> rows = borrow_values(metadata);
+                const MetaRow row = rows.at(index);
+                result = row.word(word);
+            }
+            return result;
+        }
+        auto meta_type_kind(i64 index) -> ResolvedTypeKind {
+            if (!good() || index < 0 || index >= meta_used || index >= metadata.size()) {
+                fail_storage(StorageStatus::invalid);
+                const MetaRow empty = MetaRow(MetaTag::invalid);
+                return empty.type_kind();
+            }
+            ResolvedTypeKind result = ResolvedTypeKind::invalid;
+            {
+                const builtin::span<const MetaRow> rows = borrow_values(metadata);
+                const MetaRow row = rows.at(index);
+                result = row.type_kind();
+            }
+            return result;
         }
         auto set_syntax(i64 index, SyntaxRow row) -> bool {
             if (!good() || index < 0 || index >= syntax_used || !forest.set(index, row)) {

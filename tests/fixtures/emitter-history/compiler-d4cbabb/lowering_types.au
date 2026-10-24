@@ -1,0 +1,1632 @@
+export module aurora.compiler.lowering_types;
+import aurora.compiler.lexer;
+import aurora.compiler.ir_metadata_storage;
+import aurora.compiler.lowering_common;
+import aurora.compiler.lowering_configuration;
+import aurora.compiler.lowering_kinds;
+import aurora.compiler.lowering_storage;
+import aurora.compiler.lowering_errors;
+import aurora.compiler.resolver;
+import aurora.compiler.resolution_kinds;
+import aurora.compiler.resolution_arena;
+import aurora.compiler.resolution_rows;
+import aurora.compiler.resolution_names;
+import aurora.compiler.syntax_arena;
+
+export namespace compiler_lowering {
+    // These indexes contain only identities/counters for the current pass.
+    // 70 nominal->Class, 71 layout state, 72 depth, 73 public descriptor ID;
+    // 74 array type->Carrier, 75 Carrier->Class, 76 reflected array ID->type;
+    // 77 field source identity, 78 field output row, 79 field public access;
+    // 80 function order, 81 class order, 82 enum order, 83 field count;
+    // 84 descriptor ID->row, 85 source callable uniqueness, 86 nominal byte leaves;
+    // 87 physical field offsets, 89 synthetic array origin, 90 field-name uniqueness;
+    // 88 enum case count, 92 method source order, 93 method count. Domain91 remains unused.
+    // There is no second type/name graph and no raw IR MetaRow representation.
+    auto tm(compiler_resolver::Session& session, i64 row, i64 word) -> i64 {
+        return compiler_resolver::mw(session, row, word);
+    }
+    auto sm(compiler_resolver::Session& session, i64 row, i64 word) -> i64 {
+        return compiler_resolver::sw(session, row, word);
+    }
+    auto tk(compiler_resolver::Session& session, i64 type) -> compiler_resolver::ResolvedTypeKind {
+        return compiler_resolver::type_kind(session, type);
+    }
+    auto index_set(compiler_resolver::Session& session, i64 domain, i64 first, i64 second, i64 value) -> bool {
+        if (!session.good()) {
+            return false;
+        }
+        if (session.index(domain, first, second, 0, 0) < 0) {
+            session.index_insert(domain, first, second, 0, 0, value);
+        } else {
+            session.index_replace(domain, first, second, 0, 0, value);
+        }
+        return session.good();
+    }
+    auto symbol_source(compiler_resolver::Session& session, i64 symbol) -> i64 {
+        const compiler_resolver::MetaRow row = session.meta(symbol);
+        if (row.native_mode() == compiler_resolver::NativeMode::sealed_builtin) {
+            return row.word(4);
+        }
+        return sm(session, row.word(5), 0);
+    }
+    auto class_count(compiler_resolver::Session& session) -> i64 {
+        return session.index(81, -1, 0, 0, 0);
+    }
+    auto class_symbol(compiler_resolver::Session& session, i64 index) -> i64 {
+        return session.index(81, index, 0, 0, 0);
+    }
+    auto enum_count(compiler_resolver::Session& session) -> i64 {
+        return session.index(82, -1, 0, 0, 0);
+    }
+    auto enum_symbol(compiler_resolver::Session& session, i64 index) -> i64 {
+        return session.index(82, index, 0, 0, 0);
+    }
+    auto function_count(compiler_resolver::Session& session) -> i64 {
+        return session.index(80, -1, 0, 0, 0);
+    }
+    auto function_symbol(compiler_resolver::Session& session, i64 index) -> i64 {
+        return session.index(80, index, 0, 0, 0);
+    }
+    auto admitted_function(compiler_resolver::Session& session, i64 symbol) -> bool {
+        return session.index(85, symbol, 0, 0, 0) >= 0;
+    }
+    auto enum_case_count(compiler_resolver::Session& session, i64 nominal) -> i64 {
+        return session.index(88, nominal, 0, 0, 0);
+    }
+    auto signature_result(compiler_resolver::Session& session, i64 symbol) -> i64 {
+        const i64 signature = tm(session, symbol, 11);
+        return tm(session, signature, 1);
+    }
+    auto signature_parameter(compiler_resolver::Session& session, i64 symbol, i64 ordinal) -> i64 {
+        const i64 signature = tm(session, symbol, 11);
+        i64 edge = tm(session, signature, 3);
+        i64 at = 0;
+        while (edge >= 0 && at < ordinal && session.good()) {
+            edge = tm(session, edge, 3);
+            at = at + 1;
+        }
+        return edge;
+    }
+    auto signature_count(compiler_resolver::Session& session, i64 symbol) -> i64 {
+        const i64 signature = tm(session, symbol, 11);
+        i64 edge = tm(session, signature, 3);
+        i64 count = 0;
+        while (edge >= 0 && session.good()) {
+            if (count >= session.meta_count()) {
+                return session.fail_storage(compiler_resolver::StorageStatus::invalid);
+            }
+            count = count + 1;
+            edge = tm(session, edge, 3);
+        }
+        return count;
+    }
+    auto field_syntax(compiler_resolver::Session& session, i64 nominal, i64 index) -> i64 {
+        return session.index(77, nominal, index, 0, 0);
+    }
+    auto field_public(compiler_resolver::Session& session, i64 nominal, i64 index) -> bool {
+        return session.index(79, nominal, index, 0, 0) == 1;
+    }
+    auto field_source(compiler_resolver::Session& session, i64 nominal, i64 index) -> i64 {
+        const i64 member = field_syntax(session, nominal, index);
+        const compiler_resolver::MetaRow symbol = session.meta(nominal);
+        if (symbol.native_mode() == compiler_resolver::NativeMode::sealed_builtin) {
+            return tm(session, member, 1);
+        }
+        return sm(session, member, 6);
+    }
+    auto field_type(compiler_resolver::Session& session, i64 nominal, i64 index) -> i64 {
+        const i64 member = field_syntax(session, nominal, index);
+        const compiler_resolver::MetaRow symbol = session.meta(nominal);
+        if (symbol.native_mode() == compiler_resolver::NativeMode::sealed_builtin) {
+            return tm(session, member, 2);
+        }
+        const i64 type_syntax = sm(session, member, 5);
+        return compiler_resolver::rw(session, type_syntax, 2);
+    }
+    auto field_total(compiler_resolver::Session& session, i64 nominal) -> i64 {
+        return session.index(83, nominal, 0, 0, 0);
+    }
+    auto class_row(compiler_resolver::Session& session, i64 type) -> i64 {
+        if (tk(session, type) != compiler_resolver::ResolvedTypeKind::class_value) {
+            return session.fail_storage(compiler_resolver::StorageStatus::invalid);
+        }
+        return session.index(70, tm(session, type, 1), 0, 0, 0);
+    }
+    auto carrier_class_row(compiler_resolver::Session& session, i64 carrier) -> i64 {
+        return session.index(75, carrier, 0, 0, 0);
+    }
+    auto owner_storage(compiler_resolver::Session& session, i64 type) -> bool {
+        const compiler_resolver::ResolvedTypeKind kind = tk(session, type);
+        return kind == compiler_resolver::ResolvedTypeKind::owned_bytes || kind
+            == compiler_resolver::ResolvedTypeKind::owned_values;
+    }
+    auto owning_type(compiler_resolver::Session& session, i64 type) -> bool {
+        if (owner_storage(session, type)) {
+            return true;
+        }
+        if (tk(session, type) != compiler_resolver::ResolvedTypeKind::class_value) {
+            return false;
+        }
+        const i64 nominal = tm(session, type, 1);
+        const i64 count = field_total(session, nominal);
+        i64 at = 0;
+        while (at < count && session.good()) {
+            const i64 type = field_type(session, nominal, at);
+            if (owner_storage(session, type)) {
+                return true;
+            }
+            at = at + 1;
+        }
+        return false;
+    }
+    auto class_array(compiler_resolver::Session& session, i64 type) -> bool {
+        if (tk(session, type) != compiler_resolver::ResolvedTypeKind::array_value) {
+            return false;
+        }
+        const i64 element = tm(session, type, 2);
+        return tk(session, element) == compiler_resolver::ResolvedTypeKind::class_value;
+    }
+    auto class_type(compiler_resolver::Session& session, i64 nominal) -> i64 {
+        return compiler_resolver::concrete_type(session, compiler_resolver::ResolvedTypeKind::class_value, nominal, -1,
+            0);
+    }
+    auto register_fields(compiler_resolver::Session& session, i64 nominal) -> bool {
+        const i64 source = symbol_source(session, nominal);
+        const compiler_resolver::MetaRow symbol = session.meta(nominal);
+        i64 count = 0;
+        i64 methods = 0;
+        if (symbol.native_mode() == compiler_resolver::NativeMode::sealed_builtin) {
+            i64 member = tm(session, symbol.word(8), 4);
+            while (member >= 0 && session.good()) {
+                index_set(session, 77, nominal, count, member);
+                index_set(session, 79, nominal, count, 1);
+                count = count + 1;
+                if (count > compiler_ir_metadata::maximum_class_fields()) {
+                    return fail(session, LoweringError::class_field_limit, source);
+                }
+                if (count > session.meta_count()) {
+                    return fail(session, LoweringError::ir_missing_class_storage_shape, -1);
+                }
+                member = tm(session, member, 3);
+            }
+        } else {
+            const i64 last = sm(session, symbol.word(5), 7);
+            i64 wrapper = last;
+            while (wrapper >= 0 && session.good()) {
+                const i64 member = sm(session, wrapper, 7);
+                const compiler_resolver::SyntaxRow row = session.syntax(member);
+                if (row.declaration_kind() == compiler_parser::SyntaxKind::field) {
+                    count = count + 1;
+                    if (count > compiler_ir_metadata::maximum_class_fields()) {
+                        return fail(session, LoweringError::class_field_limit, source);
+                    }
+                } else {
+                    methods = methods + 1;
+                }
+                const i64 previous = sm(session, wrapper, 2);
+                if (previous >= wrapper) {
+                    return fail(session, LoweringError::ir_missing_class_storage_shape, -1);
+                }
+                wrapper = previous;
+            }
+            i64 ordinal = count;
+            i64 method_ordinal = methods;
+            wrapper = last;
+            while (wrapper >= 0 && session.good()) {
+                const i64 member = sm(session, wrapper, 7);
+                const compiler_resolver::SyntaxRow row = session.syntax(member);
+                if (row.declaration_kind() == compiler_parser::SyntaxKind::field) {
+                    ordinal = ordinal - 1;
+                    index_set(session, 77, nominal, ordinal, member);
+                    const i64 public_access = sm(session, wrapper, 9);
+                    index_set(session, 79, nominal, ordinal, public_access);
+                } else {
+                    method_ordinal = method_ordinal - 1;
+                    const i64 method = compiler_resolver::rw(session, member, 1);
+                    index_set(session, 92, nominal, method_ordinal, method);
+                }
+                wrapper = sm(session, wrapper, 2);
+            }
+        }
+        index_set(session, 93, nominal, 0, methods);
+        return index_set(session, 83, nominal, 0, count);
+    }
+    auto has_constructor(compiler_resolver::Session& session, i64 nominal) -> bool {
+        return constructor_symbol(session, nominal) >= 0;
+    }
+    auto copied_leaves(compiler_resolver::Session& session, i64 total, i64 bytes) -> bool {
+        return total <= configured_limit(session, OperandRole::MaximumCopiedLeaves) && bytes
+            <= configured_limit(session, OperandRole::MaximumCopiedByteLeaves) && total - bytes
+            <= configured_limit(session, OperandRole::MaximumCopiedNonByteLeaves);
+    }
+    auto storage_width(compiler_resolver::Session& session, i64 type) -> i64 {
+        if (tk(session, type) == compiler_resolver::ResolvedTypeKind::u8_value) {
+            return 1;
+        }
+        return 8;
+    }
+    // Logical DFS owns exactly two WorkRows per active class, at most eight
+    // rows. The first is [nominal,nesting,next field,leaves,byte leaves,depth].
+    // The second is [composed,needs constructor,phase,element,repetitions,first leaf].
+    // Phase0 starts a field; phase1/2 resumes a class/class-array child. Child
+    // admission checks visiting, depth, then completion before allocating a row.
+    auto push_logical_class(compiler_resolver::Session& session, i64 nominal, i64 nesting) -> bool {
+        const i64 source = symbol_source(session, nominal);
+        const i64 state = session.index(71, nominal, 0, 0, 0);
+        if (state == 1) {
+            return fail(session, LoweringError::recursive_class_containment, source);
+        }
+        if (nesting > 4) {
+            return fail(session, LoweringError::class_containment_depth, source);
+        }
+        if (state == 2) {
+            return true;
+        }
+        index_set(session, 71, nominal, 0, 1);
+        const compiler_resolver::WorkRow frame = compiler_resolver::WorkRow(nominal, nesting, 0, 0, 0, 1);
+        const compiler_resolver::WorkRow field = compiler_resolver::WorkRow(0, 0, 0, -1, 1, 0);
+        session.append_work(frame);
+        session.append_work(field);
+        return session.good();
+    }
+    auto finish_logical_class(compiler_resolver::Session& session, compiler_resolver::WorkRow frame,
+        compiler_resolver::WorkRow pending) -> bool {
+        const i64 nominal = frame.word(0);
+        const i64 source = symbol_source(session, nominal);
+        const i64 count = field_total(session, nominal);
+        const i64 leaves = frame.word(3);
+        const i64 bytes = frame.word(4);
+        const i64 depth = frame.word(5);
+        const bool composed = pending.word(0) != 0;
+        const bool needs_constructor = pending.word(1) != 0;
+        if (composed && depth > 4) {
+            return fail(session, LoweringError::composed_class_depth, source);
+        }
+        if (needs_constructor && !has_constructor(session, nominal)) {
+            return fail(session, LoweringError::aggregate_field_requires_constructor, source);
+        }
+        const i64 leaf_begin = session.operand_count();
+        i64 at = 0;
+        while (at < count && session.good()) {
+            const i64 shape = session.index(78, nominal, at, 0, 0);
+            const i64 element = record_signed(session, shape, OperandRole::ElementTypeId);
+            const i64 length = record_signed(session, shape, OperandRole::Length);
+            if (tk(session, element) == compiler_resolver::ResolvedTypeKind::class_value) {
+                const i64 child = class_row(session, element);
+                const OperandRow child_leaves = record_slice(session, child, OperandRole::LeafTypes);
+                const i64 repetitions = record_signed(session, shape, OperandRole::ElementCount);
+                i64 repetition = 0;
+                while (repetition < repetitions && session.good()) {
+                    i64 item = 0;
+                    while (item < child_leaves.count() && session.good()) {
+                        const i64 leaf_type = list_value(session, child_leaves, item);
+                        put(session, OperandRole::TypeId, leaf_type);
+                        item = item + 1;
+                    }
+                    repetition = repetition + 1;
+                }
+            } else {
+                i64 item = 0;
+                while (item < length && session.good()) {
+                    put(session, OperandRole::TypeId, element);
+                    item = item + 1;
+                }
+            }
+            at = at + 1;
+        }
+        const i64 field_begin = session.operand_count();
+        at = 0;
+        while (at < count && session.good()) {
+            const i64 field = session.index(78, nominal, at, 0, 0);
+            put(session, OperandRole::OutputRowId, field);
+            at = at + 1;
+        }
+        // Unpublished storage placeholder is completed only after all logical
+        // layouts succeed, preserving the old two-pass first-error boundary.
+        const i64 storage_begin = session.operand_count();
+        const i64 storage = record(session, RecordKind::ClassStorage, storage_begin, 0);
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::ClassNominalId, nominal);
+        put_slice(session, OperandRole::LeafTypes, leaf_begin, leaves);
+        put_slice(session, OperandRole::Fields, field_begin, count);
+        put(session, OperandRole::StorageRef, storage);
+        const i64 result = emit_record(session, RecordKind::Class, begin);
+        index_set(session, 70, nominal, 0, result);
+        index_set(session, 72, nominal, 0, depth);
+        index_set(session, 86, nominal, 0, bytes);
+        return index_set(session, 71, nominal, 0, 2);
+    }
+    auto step_logical_class(compiler_resolver::Session& session, i64 frame_index) -> bool {
+        compiler_resolver::WorkRow frame = session.work(frame_index);
+        compiler_resolver::WorkRow pending = session.work(frame_index + 1);
+        const i64 nominal = frame.word(0);
+        const i64 nesting = frame.word(1);
+        const i64 at = frame.word(2);
+        const i64 count = field_total(session, nominal);
+        if (at == count) {
+            const bool complete = finish_logical_class(session, frame, pending);
+            session.truncate_work(frame_index);
+            return complete;
+        }
+        if (at < 0 || at > count || pending.word(2) < 0 || pending.word(2) > 2) {
+            session.fail_storage(compiler_resolver::StorageStatus::invalid);
+            return false;
+        }
+        const i64 source = symbol_source(session, nominal);
+        const i64 token = field_source(session, nominal, at);
+        const i64 type = field_type(session, nominal, at);
+        i64 leaves = frame.word(3);
+        i64 bytes = frame.word(4);
+        i64 depth = frame.word(5);
+        bool composed = pending.word(0) != 0;
+        bool needs_constructor = pending.word(1) != 0;
+        i64 element = pending.word(3);
+        i64 repetitions = pending.word(4);
+        i64 first_leaf = pending.word(5);
+        bool is_array = pending.word(2) == 2;
+        if (pending.word(2) == 0) {
+            const compiler_resolver::ResolvedTypeKind kind = tk(session, type);
+            const i64 name = compiler_resolver::source_name(session, token);
+            if (session.index(90, nominal, name, 0, 0) >= 0) {
+                return fail(session, LoweringError::duplicate_class_field, token);
+            }
+            index_set(session, 90, nominal, name, at);
+            element = type;
+            repetitions = 1;
+            first_leaf = leaves;
+            is_array = kind == compiler_resolver::ResolvedTypeKind::array_value;
+            if (is_array) {
+                element = tm(session, type, 2);
+                repetitions = tm(session, type, 3);
+                needs_constructor = true;
+                const compiler_resolver::ResolvedTypeKind element_kind = tk(session, element);
+                i64 maximum = configured_limit(session, OperandRole::MaximumScalarArrayLength);
+                if (element_kind == compiler_resolver::ResolvedTypeKind::u8_value) {
+                    maximum = configured_limit(session, OperandRole::MaximumByteArrayLength);
+                }
+                if (field_public(session, nominal, at) || repetitions < 1 || repetitions > maximum
+                    || (!compiler_resolver::scalar_kind(element_kind) && element_kind
+                    != compiler_resolver::ResolvedTypeKind::class_value)) {
+                    return fail(session, LoweringError::class_array_field_storage, token);
+                }
+            }
+            const compiler_resolver::ResolvedTypeKind element_kind = tk(session, element);
+            if (element_kind == compiler_resolver::ResolvedTypeKind::class_value) {
+                const i64 child = tm(session, element, 1);
+                if (child < 0) {
+                    return fail_pair(session, LoweringError::unknown_nested_class_type, -1,
+                        scalar(OperandRole::DiagnosticNameId, -child - 2), scalar(OperandRole::NoDiagnosticValue, 0));
+                }
+                if (session.index(73, child, 0, 0, 0) < 0) {
+                    session.fail_storage(compiler_resolver::StorageStatus::invalid);
+                    return false;
+                }
+                pending.set_word(0, 1);
+                pending.set_word(1, 1);
+                i64 phase = 1;
+                if (is_array) {
+                    phase = 2;
+                }
+                pending.set_word(2, phase);
+                pending.set_word(3, element);
+                pending.set_word(4, repetitions);
+                pending.set_word(5, first_leaf);
+                session.set_work(frame_index + 1, pending);
+                return push_logical_class(session, child, nesting + 1);
+            }
+            if (owner_storage(session, element)) {
+                needs_constructor = true;
+                if (field_public(session, nominal, at)) {
+                    return fail(session, LoweringError::owned_byte_field_must_be_private, token);
+                }
+                if (tm(session, nominal, 9) >= 0 || tm(session, nominal, 8) >= 0) {
+                    return fail(session, LoweringError::owning_class_template, token);
+                }
+            } else {
+                if (!compiler_resolver::scalar_value_kind(element_kind)) {
+                    return fail(session, LoweringError::class_field_requires_concrete_type, token);
+                }
+                leaves = leaves + repetitions;
+                if (element_kind == compiler_resolver::ResolvedTypeKind::u8_value) {
+                    bytes = bytes + repetitions;
+                }
+            }
+        } else {
+            // Resume once, after the child completed or was already cached.
+            // The duplicate-name and array-admission decisions are not repeated.
+            if (owning_type(session, element)) {
+                if (is_array) {
+                    return fail(session, LoweringError::owning_class_array, token);
+                }
+                return fail(session, LoweringError::nested_owning_class_field, token);
+            }
+            const i64 child = tm(session, element, 1);
+            const i64 child_row = class_row(session, element);
+            const OperandRow child_leaves = record_slice(session, child_row, OperandRole::LeafTypes);
+            if (is_array && child_leaves.count() > configured_limit(session, OperandRole::MaximumCopiedLeaves)
+                / repetitions) {
+                return fail(session, LoweringError::class_array_copied_leaf_limit, token);
+            }
+            leaves = leaves + child_leaves.count() * repetitions;
+            bytes = bytes + session.index(86, child, 0, 0, 0) * repetitions;
+            const i64 child_depth = session.index(72, child, 0, 0, 0) + 1;
+            if (depth < child_depth) {
+                depth = child_depth;
+            }
+        }
+        if (is_array) {
+            reflection_id(session, type, token);
+        }
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::ElementTypeId, element);
+        put(session, OperandRole::FirstLeaf, first_leaf);
+        put(session, OperandRole::Length, leaves - first_leaf);
+        i64 array_flag = 0;
+        if (is_array) {
+            array_flag = 1;
+        }
+        put(session, OperandRole::Array, array_flag);
+        i64 element_count = 1;
+        if (is_array && pending.word(2) == 2) {
+            element_count = repetitions;
+        }
+        put(session, OperandRole::ElementCount, element_count);
+        const i64 shape = emit_record(session, RecordKind::ClassField, begin);
+        index_set(session, 78, nominal, at, shape);
+        if (leaves > 8192) {
+            return fail(session, LoweringError::class_layout_frame_limit, source);
+        }
+        if (composed && !copied_leaves(session, leaves, bytes)) {
+            return fail(session, LoweringError::composed_class_leaf_limit, source);
+        }
+        frame.set_word(2, at + 1);
+        frame.set_word(3, leaves);
+        frame.set_word(4, bytes);
+        frame.set_word(5, depth);
+        i64 composed_flag = 0;
+        if (composed) {
+            composed_flag = 1;
+        }
+        i64 constructor_flag = 0;
+        if (needs_constructor) {
+            constructor_flag = 1;
+        }
+        pending.set_word(0, composed_flag);
+        pending.set_word(1, constructor_flag);
+        pending.set_word(2, 0);
+        session.set_work(frame_index, frame);
+        return session.set_work(frame_index + 1, pending);
+    }
+    auto logical_layout(compiler_resolver::Session& session, i64 nominal, i64 nesting) -> bool {
+        const i64 base = session.work_count();
+        push_logical_class(session, nominal, nesting);
+        while (session.work_count() > base && session.good()) {
+            const i64 active = session.work_count() - base;
+            if (active < 2 || active > 8 || active % 2 != 0) {
+                session.fail_storage(compiler_resolver::StorageStatus::invalid);
+            } else {
+                const i64 frame_index = session.work_count() - 2;
+                step_logical_class(session, frame_index);
+            }
+        }
+        session.truncate_work(base);
+        return session.good();
+    }
+    auto align_storage(compiler_resolver::Session& session, i64 cursor, i64 alignment) -> i64 {
+        if (alignment != 1 && alignment != 8) {
+            return error(session, LoweringError::ir_class_storage_alignment, -1);
+        }
+        if (cursor < 0 || cursor > 65536) {
+            return error(session, LoweringError::ir_class_storage_limit, -1);
+        }
+        return ((cursor + alignment - 1) / alignment) * alignment;
+    }
+    // Physical DFS uses one WorkRow per active class, at most four rows:
+    // [Class output row,depth,next child field,0,0,0]. Canonical top-level
+    // class iteration remains in prepare_types. No fifth row is allocated.
+    auto push_physical_class(compiler_resolver::Session& session, i64 class_record, i64 depth) -> bool {
+        if (depth > 4) {
+            return fail(session, LoweringError::ir_class_storage_depth, -1);
+        }
+        const i64 storage = record_signed(session, class_record, OperandRole::StorageRef);
+        const OutputRow existing = session.view_output(storage);
+        if (existing.operand_count() != 0) {
+            return true;
+        }
+        const compiler_resolver::WorkRow frame = compiler_resolver::WorkRow(class_record, depth, 0, 0, 0, 0);
+        session.append_work(frame);
+        return session.good();
+    }
+    auto finish_physical_class(compiler_resolver::Session& session, i64 class_record) -> bool {
+        const i64 storage = record_signed(session, class_record, OperandRole::StorageRef);
+        const OperandRow fields = record_slice(session, class_record, OperandRole::Fields);
+        const OperandRow leaves = record_slice(session, class_record, OperandRole::LeafTypes);
+        const i64 leaf_begin = session.operand_count();
+        i64 cursor = 0;
+        i64 alignment = 1;
+        i64 covered = 0;
+        i64 at = 0;
+        while (at < fields.count() && session.good()) {
+            const i64 field = list_value(session, fields, at);
+            const i64 element = record_signed(session, field, OperandRole::ElementTypeId);
+            const i64 first = record_signed(session, field, OperandRole::FirstLeaf);
+            const i64 length = record_signed(session, field, OperandRole::Length);
+            const bool is_array = record_signed(session, field, OperandRole::Array) != 0;
+            const i64 count = record_signed(session, field, OperandRole::ElementCount);
+            const compiler_resolver::ResolvedTypeKind kind = tk(session, element);
+            if (first != covered || length < 0 || (!(is_array && kind
+                == compiler_resolver::ResolvedTypeKind::class_value) && count != 1)) {
+                return fail(session, LoweringError::ir_logical_field_storage_range, -1);
+            }
+            if (owner_storage(session, element)) {
+                if (is_array || length != 0) {
+                    return fail(session, LoweringError::ir_owned_byte_field_descriptor, -1);
+                }
+                cursor = align_storage(session, cursor, 8);
+                alignment = 8;
+                index_set(session, 87, class_record, at, cursor);
+                cursor = cursor + 32;
+            } else {
+                if (kind == compiler_resolver::ResolvedTypeKind::class_value) {
+                    const i64 child = class_row(session, element);
+                    const i64 child_storage = record_signed(session, child, OperandRole::StorageRef);
+                    const OperandRow offsets = record_slice(session, child_storage, OperandRole::LeafOffsets);
+                    if (count < 1 || count > configured_limit(session, OperandRole::MaximumScalarArrayLength)
+                        || (!is_array && count != 1) || length != offsets.count() * count) {
+                        return fail(session, LoweringError::ir_nested_field_storage_shape, -1);
+                    }
+                    i64 child_alignment = 1;
+                    if (offsets.count() > 0) {
+                        child_alignment = record_signed(session, child_storage, OperandRole::Alignment);
+                    }
+                    cursor = align_storage(session, cursor, child_alignment);
+                    if (alignment < child_alignment) {
+                        alignment = child_alignment;
+                    }
+                    index_set(session, 87, class_record, at, cursor);
+                    const i64 size = record_signed(session, child_storage, OperandRole::SizeBytes);
+                    if (size < 1 || size > 65536 || (offsets.count() > 0 && count > (65536 - cursor) / size)) {
+                        return fail(session, LoweringError::ir_class_storage_limit, -1);
+                    }
+                    i64 repetition = 0;
+                    while (repetition < count && session.good()) {
+                        i64 item = 0;
+                        while (item < offsets.count() && session.good()) {
+                            const i64 element_offset = cursor + repetition * size;
+                            const i64 leaf_offset = list_value(session, offsets, item);
+                            put(session, OperandRole::Offset, element_offset + leaf_offset);
+                            item = item + 1;
+                        }
+                        repetition = repetition + 1;
+                    }
+                    if (offsets.count() > 0) {
+                        cursor = cursor + count * size;
+                    }
+                } else {
+                    bool valid_kind = compiler_resolver::scalar_value_kind(kind);
+                    if (is_array) {
+                        valid_kind = compiler_resolver::scalar_kind(kind);
+                    }
+                    i64 maximum = configured_limit(session, OperandRole::MaximumScalarArrayLength);
+                    if (kind == compiler_resolver::ResolvedTypeKind::u8_value) {
+                        maximum = configured_limit(session, OperandRole::MaximumByteArrayLength);
+                    }
+                    if (!valid_kind || length < 1 || (!is_array && length != 1) || (is_array && length > maximum)) {
+                        return fail(session, LoweringError::ir_scalar_field_storage_shape, -1);
+                    }
+                    const i64 width = storage_width(session, element);
+                    cursor = align_storage(session, cursor, width);
+                    if (alignment < width) {
+                        alignment = width;
+                    }
+                    index_set(session, 87, class_record, at, cursor);
+                    i64 item = 0;
+                    while (item < length && session.good()) {
+                        put(session, OperandRole::Offset, cursor);
+                        cursor = cursor + width;
+                        item = item + 1;
+                    }
+                }
+            }
+            if (cursor > 65536) {
+                return fail(session, LoweringError::ir_class_storage_limit, -1);
+            }
+            covered = covered + length;
+            at = at + 1;
+        }
+        if (covered != leaves.count()) {
+            return fail(session, LoweringError::ir_class_storage_leaf_coverage, -1);
+        }
+        if (cursor == 0) {
+            cursor = 8;
+            alignment = 8;
+        } else {
+            cursor = align_storage(session, cursor, alignment);
+        }
+        if (cursor < 0 || cursor > 65536) {
+            return fail(session, LoweringError::ir_storage_extent_limit, -1);
+        }
+        const i64 reserved =((cursor + 7) / 8) * 8;
+        const i64 field_begin = session.operand_count();
+        at = 0;
+        while (at < fields.count() && session.good()) {
+            const i64 field_offset = session.index(87, class_record, at, 0, 0);
+            put(session, OperandRole::Offset, field_offset);
+            at = at + 1;
+        }
+        const i64 begin = session.operand_count();
+        put_slice(session, OperandRole::LeafOffsets, leaf_begin, covered);
+        put_slice(session, OperandRole::FieldOffsets, field_begin, fields.count());
+        put(session, OperandRole::SizeBytes, cursor);
+        put(session, OperandRole::Alignment, alignment);
+        put(session, OperandRole::ReservedBytes, reserved);
+        return session.set_output(storage, OutputRow(RecordKind::ClassStorage, InstructionForm::Constant, begin, 5));
+    }
+    auto step_physical_class(compiler_resolver::Session& session, i64 frame_index) -> bool {
+        compiler_resolver::WorkRow frame = session.work(frame_index);
+        const i64 class_record = frame.word(0);
+        const i64 depth = frame.word(1);
+        const i64 at = frame.word(2);
+        const OperandRow fields = record_slice(session, class_record, OperandRole::Fields);
+        if (at == fields.count()) {
+            const bool complete = finish_physical_class(session, class_record);
+            session.truncate_work(frame_index);
+            return complete;
+        }
+        if (at < 0 || at > fields.count()) {
+            session.fail_storage(compiler_resolver::StorageStatus::invalid);
+            return false;
+        }
+        const i64 field = list_value(session, fields, at);
+        const i64 element = record_signed(session, field, OperandRole::ElementTypeId);
+        if (tk(session, element) == compiler_resolver::ResolvedTypeKind::class_value) {
+            if (owning_type(session, element)) {
+                return fail(session, LoweringError::ir_nested_owning_class_field, -1);
+            }
+            const i64 child = class_row(session, element);
+            if (child < 0) {
+                return fail(session, LoweringError::ir_missing_class_storage_shape, -1);
+            }
+            frame.set_word(2, at + 1);
+            session.set_work(frame_index, frame);
+            return push_physical_class(session, child, depth + 1);
+        }
+        frame.set_word(2, at + 1);
+        return session.set_work(frame_index, frame);
+    }
+    auto physical_layout(compiler_resolver::Session& session, i64 class_record, i64 depth) -> bool {
+        const i64 base = session.work_count();
+        push_physical_class(session, class_record, depth);
+        while (session.work_count() > base && session.good()) {
+            const i64 active = session.work_count() - base;
+            if (active > 4) {
+                session.fail_storage(compiler_resolver::StorageStatus::invalid);
+            } else {
+                const i64 frame_index = session.work_count() - 1;
+                step_physical_class(session, frame_index);
+            }
+        }
+        session.truncate_work(base);
+        return session.good();
+    }
+    // Byte spans and typed readonly spans share one capability shape and lifetime rules.
+    auto is_span(compiler_resolver::Session& session, i64 type) -> bool {
+        const compiler_resolver::ResolvedTypeKind kind = tk(session, type);
+        return kind == compiler_resolver::ResolvedTypeKind::byte_span || kind
+            == compiler_resolver::ResolvedTypeKind::value_span;
+    }
+    // The copied element class type of a typed span, or -1 for a byte span.
+    auto span_element(compiler_resolver::Session& session, i64 type) -> i64 {
+        if (tk(session, type) != compiler_resolver::ResolvedTypeKind::value_span) {
+            return -1;
+        }
+        return tm(session, type, 2);
+    }
+    // OwnedValues and typed spans hold the same bounded copied elements.
+    auto owned_element(compiler_resolver::Session& session, i64 type, i64 source) -> bool {
+        const compiler_resolver::ResolvedTypeKind kind = tk(session, type);
+        if (kind != compiler_resolver::ResolvedTypeKind::owned_values && kind
+            != compiler_resolver::ResolvedTypeKind::value_span) {
+            return true;
+        }
+        const i64 element = tm(session, type, 2);
+        const i64 nominal = tm(session, element, 1);
+        const i64 shape = class_row(session, element);
+        if (shape < 0) {
+            return fail_type(session, LoweringError::unknown_class_type, source, element);
+        }
+        const OperandRow leaves = record_slice(session, shape, OperandRole::LeafTypes);
+        const i64 bytes = session.index(86, nominal, 0, 0, 0);
+        const i64 storage = record_signed(session, shape, OperandRole::StorageRef);
+        if (owning_type(session, element) || !copied_leaves(session, leaves.count(), bytes) || record_signed(session,
+            storage, OperandRole::ReservedBytes) > configured_limit(session, OperandRole::MaximumCopiedBytes)) {
+            if (kind == compiler_resolver::ResolvedTypeKind::value_span) {
+                return fail(session, LoweringError::typed_span_requires_copied_element, source);
+            }
+            return fail(session, LoweringError::owned_values_require_copied_element, source);
+        }
+        return true;
+    }
+    auto check_template_owners(compiler_resolver::Session& session, i64 symbol, i64 source) -> bool {
+        const i64 instance = tm(session, symbol, 9);
+        if (instance < 0) {
+            return true;
+        }
+        const i64 count = tm(session, instance, 1);
+        i64 at = 0;
+        while (at < count && session.good()) {
+            const i64 argument = tm(session, instance, 2 + at);
+            if (argument >= 0 && tk(session, argument) == compiler_resolver::ResolvedTypeKind::class_value
+                && owning_type(session, argument)) {
+                return fail(session, LoweringError::owning_class_template_argument, source);
+            }
+            at = at + 1;
+        }
+        return session.good();
+    }
+    auto check_class_storage(compiler_resolver::Session& session, i64 nominal) -> bool {
+        const i64 source = symbol_source(session, nominal);
+        const i64 count = field_total(session, nominal);
+        bool composed = false;
+        i64 at = 0;
+        while (at < count && session.good()) {
+            const i64 type = field_type(session, nominal, at);
+            const i64 field_token = field_source(session, nominal, at);
+            if (!owned_element(session, type, field_token)) {
+                return false;
+            }
+            if (tk(session, type) == compiler_resolver::ResolvedTypeKind::class_value || class_array(session, type)) {
+                composed = true;
+            }
+            at = at + 1;
+        }
+        if (!check_template_owners(session, nominal, source)) {
+            return false;
+        }
+        const i64 type = class_type(session, nominal);
+        const i64 shape = class_row(session, type);
+        const i64 storage = record_signed(session, shape, OperandRole::StorageRef);
+        if ((composed || owning_type(session, type)) && record_signed(session, storage, OperandRole::ReservedBytes)
+            > configured_limit(session, OperandRole::MaximumCopiedBytes)) {
+            return fail(session, LoweringError::composed_or_owning_class_storage_limit, source);
+        }
+        return session.good();
+    }
+    auto class_carrier(compiler_resolver::Session& session, i64 type, i64 source) -> i64 {
+        const i64 element = tm(session, type, 2);
+        const i64 nominal = tm(session, element, 1);
+        const i64 shape = class_row(session, element);
+        if (shape < 0) {
+            return error_type(session, LoweringError::unknown_class_type, source, element);
+        }
+        const i64 length = tm(session, type, 3);
+        if (!class_array(session, type) || length < 1 || length > configured_limit(session,
+            OperandRole::MaximumScalarArrayLength) || owning_type(session, element)) {
+            return error(session, LoweringError::class_array_requires_concrete_copied_elements, source);
+        }
+        if (session.index(72, nominal, 0, 0, 0) >= 4) {
+            return error(session, LoweringError::class_array_containment_depth, source);
+        }
+        const i64 existing = session.index(74, type, 0, 0, 0);
+        if (existing >= 0) {
+            return existing;
+        }
+        const OperandRow leaves = record_slice(session, shape, OperandRole::LeafTypes);
+        const i64 bytes = session.index(86, nominal, 0, 0, 0);
+        if (leaves.count() > configured_limit(session, OperandRole::MaximumCopiedLeaves) / length
+            || !copied_leaves(session, leaves.count() * length, bytes * length)) {
+            return error(session, LoweringError::class_array_copied_leaf_limit, source);
+        }
+        const i64 carrier_begin = session.operand_count();
+        put(session, OperandRole::ElementTypeId, element);
+        put(session, OperandRole::ElementCount, length);
+        const i64 carrier = emit_record(session, RecordKind::Carrier, carrier_begin);
+        const i64 leaf_begin = session.operand_count();
+        i64 repetition = 0;
+        while (repetition < length && session.good()) {
+            i64 item = 0;
+            while (item < leaves.count() && session.good()) {
+                const i64 leaf_type = list_value(session, leaves, item);
+                put(session, OperandRole::TypeId, leaf_type);
+                item = item + 1;
+            }
+            repetition = repetition + 1;
+        }
+        const i64 field_prefix = session.operand_count();
+        put(session, OperandRole::ElementTypeId, element);
+        put(session, OperandRole::FirstLeaf, 0);
+        put(session, OperandRole::Length, leaves.count() * length);
+        put(session, OperandRole::Array, 1);
+        put(session, OperandRole::ElementCount, length);
+        const i64 field = emit_record(session, RecordKind::ClassField, field_prefix);
+        const i64 field_begin = session.operand_count();
+        put(session, OperandRole::OutputRowId, field);
+        const i64 storage_begin = session.operand_count();
+        const i64 storage = record(session, RecordKind::ClassStorage, storage_begin, 0);
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::CarrierId, carrier);
+        put_slice(session, OperandRole::LeafTypes, leaf_begin, leaves.count() * length);
+        put_slice(session, OperandRole::Fields, field_begin, 1);
+        put(session, OperandRole::StorageRef, storage);
+        const i64 result = emit_record(session, RecordKind::Class, begin);
+        if (!physical_layout(session, result, 1)) {
+            return -1;
+        }
+        if (record_signed(session, storage, OperandRole::ReservedBytes) > configured_limit(session,
+            OperandRole::MaximumCopiedBytes)) {
+            return error(session, LoweringError::class_array_storage_limit, source);
+        }
+        index_set(session, 74, type, 0, carrier);
+        index_set(session, 75, carrier, 0, result);
+        return carrier;
+    }
+    auto type_size(compiler_resolver::Session& session, i64 type, i64 source) -> i64 {
+        const compiler_resolver::ResolvedTypeKind kind = tk(session, type);
+        if (kind == compiler_resolver::ResolvedTypeKind::array_value) {
+            reflection_id(session, type, source);
+            if (!session.good()) {
+                return -1;
+            }
+            if (class_array(session, type)) {
+                const i64 carrier = class_carrier(session, type, source);
+                const i64 row = carrier_class_row(session, carrier);
+                const i64 storage = record_signed(session, row, OperandRole::StorageRef);
+                return record_signed(session, storage, OperandRole::SizeBytes);
+            }
+            const i64 length = tm(session, type, 3);
+            const i64 element = tm(session, type, 2);
+            return length * storage_width(session, element);
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::class_value) {
+            const i64 row = class_row(session, type);
+            if (row < 0) {
+                return error_type(session, LoweringError::unknown_class_type, source, type);
+            }
+            const i64 storage = record_signed(session, row, OperandRole::StorageRef);
+            return record_signed(session, storage, OperandRole::SizeBytes);
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::bool_value || kind
+            == compiler_resolver::ResolvedTypeKind::u8_value) {
+            return 1;
+        }
+        return 8;
+    }
+    auto resolved_field_count(compiler_resolver::Session& session, i64 type, i64 source) -> i64 {
+        if (tk(session, type) != compiler_resolver::ResolvedTypeKind::class_value) {
+            return 0;
+        }
+        const i64 nominal = tm(session, type, 1);
+        if (session.index(73, nominal, 0, 0, 0) < 0) {
+            return error_type(session, LoweringError::unknown_class_type, source, type);
+        }
+        i64 count = 0;
+        i64 at = 0;
+        while (at < field_total(session, nominal) && session.good()) {
+            if (field_public(session, nominal, at)) {
+                count = count + 1;
+            }
+            at = at + 1;
+        }
+        return count;
+    }
+    auto reflection_id(compiler_resolver::Session& session, i64 type, i64 source) -> i64 {
+        const compiler_resolver::ResolvedTypeKind kind = tk(session, type);
+        if (kind == compiler_resolver::ResolvedTypeKind::array_value) {
+            const i64 length = tm(session, type, 3);
+            const i64 element = tm(session, type, 2);
+            const compiler_resolver::ResolvedTypeKind element_kind = tk(session, element);
+            if (length < 0 || length > 65536) {
+                return session.fail_storage(compiler_resolver::StorageStatus::invalid);
+            }
+            i64 id = 1000000 + length * 2;
+            if (element_kind == compiler_resolver::ResolvedTypeKind::bool_value) {
+                id = id + 1;
+            }
+            if (element_kind == compiler_resolver::ResolvedTypeKind::u64_value) {
+                id = 2000000 + length;
+            }
+            if (element_kind == compiler_resolver::ResolvedTypeKind::u8_value) {
+                id = 3000000 + length;
+            }
+            if (element_kind == compiler_resolver::ResolvedTypeKind::class_value) {
+                const i64 nominal = tm(session, element, 1);
+                const i64 nominal_id = session.index(73, nominal, 0, 0, 0);
+                if (nominal_id < 0) {
+                    return error_type(session, LoweringError::unknown_class_type, source, element);
+                }
+                id = 4000000 + nominal_id * 64 + length;
+            }
+            index_set(session, 76, id, 0, type);
+            return id;
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::class_value || kind
+            == compiler_resolver::ResolvedTypeKind::enum_value) {
+            const i64 id = session.index(73, tm(session, type, 1), 0, 0, 0);
+            if (id >= 0) {
+                return id;
+            }
+            if (kind == compiler_resolver::ResolvedTypeKind::enum_value) {
+                return error_type(session, LoweringError::unknown_enum_type, source, type);
+            }
+            return error_type(session, LoweringError::unknown_class_type, source, type);
+        }
+        return scalar_descriptor(session, kind);
+    }
+    auto check_boundary_type(compiler_resolver::Session& session, i64 type, i64 source) -> bool {
+        if (tk(session, type) != compiler_resolver::ResolvedTypeKind::class_value) {
+            return true;
+        }
+        const i64 row = class_row(session, type);
+        if (row < 0) {
+            return fail_type(session, LoweringError::unknown_class_type, source, type);
+        }
+        const OperandRow leaves = record_slice(session, row, OperandRole::LeafTypes);
+        const i64 nominal = tm(session, type, 1);
+        const i64 byte_leaves = session.index(86, nominal, 0, 0, 0);
+        if (!copied_leaves(session, leaves.count(), byte_leaves)) {
+            return fail(session, LoweringError::function_class_leaf_limit, source);
+        }
+        const i64 storage = record_signed(session, row, OperandRole::StorageRef);
+        if (record_signed(session, storage, OperandRole::ReservedBytes) > configured_limit(session,
+            OperandRole::MaximumCopiedBytes)) {
+            return fail(session, LoweringError::function_class_storage_limit, source);
+        }
+        return session.good();
+    }
+    auto parameter_type(compiler_resolver::Session& session, i64 symbol, i64 index) -> i64 {
+        const i64 parameter = signature_parameter(session, symbol, index);
+        return tm(session, parameter, 1);
+    }
+    auto parameter_borrowed(compiler_resolver::Session& session, i64 symbol, i64 index) -> bool {
+        const i64 parameter = signature_parameter(session, symbol, index);
+        const i64 syntax = tm(session, parameter, 2);
+        return sm(session, syntax, 10) >= 0;
+    }
+    auto parameter_const(compiler_resolver::Session& session, i64 symbol, i64 index) -> bool {
+        const i64 parameter = signature_parameter(session, symbol, index);
+        const i64 syntax = tm(session, parameter, 2);
+        return sm(session, syntax, 9) == 1;
+    }
+    auto borrowed_root_count(compiler_resolver::Session& session, i64 symbol) -> i64 {
+        const i64 count = signature_count(session, symbol);
+        if (count < 0 || count > 6) {
+            return session.fail_storage(compiler_resolver::StorageStatus::invalid);
+        }
+        i64 roots = 0;
+        while (roots < count && session.good()) {
+            if (!parameter_borrowed(session, symbol, roots)) {
+                return roots;
+            }
+            const i64 type = parameter_type(session, symbol, roots);
+            if (tk(session, type) != compiler_resolver::ResolvedTypeKind::class_value && tk(session, type)
+                != compiler_resolver::ResolvedTypeKind::owned_values) {
+                return roots;
+            }
+            roots = roots + 1;
+        }
+        return roots;
+    }
+    auto parameter_kind(compiler_resolver::Session& session, i64 symbol,
+        i64 index) -> compiler_resolver::ResolvedTypeKind {
+        const i64 type = parameter_type(session, symbol, index);
+        return tk(session, type);
+    }
+    auto service_type_id(compiler_resolver::Session& session, i64 type) -> i64 {
+        i64 at = 0;
+        while (at < service_contract_count(session) && session.good()) {
+            const i64 row = service_contract(session, at);
+            if (record_signed(session, row, OperandRole::TypeId) == type) {
+                return record_signed(session, row, OperandRole::ServiceKindId);
+            }
+            at = at + 1;
+        }
+        return -1;
+    }
+    auto service_result(compiler_resolver::Session& session, i64 result) -> bool {
+        if (compiler_resolver::scalar_value_kind(tk(session, result))) {
+            return true;
+        }
+        // Copied helper results carry data, independently of service authority.
+        // The ordinary boundary check below enforces the existing layout bounds.
+        return tk(session, result) == compiler_resolver::ResolvedTypeKind::class_value && !owning_type(session, result);
+    }
+    auto validate_signature(compiler_resolver::Session& session, i64 symbol) -> bool {
+        const i64 source = symbol_source(session, symbol);
+        const i64 count = signature_count(session, symbol);
+        const i64 receiver = tm(session, symbol, 7);
+        const i64 root = tm(session, symbol, 5);
+        const i64 result = signature_result(session, symbol);
+        const compiler_resolver::ResolvedTypeKind result_kind = tk(session, result);
+        const bool constructor = compiler_resolver::declaration_kind(session, symbol)
+            == compiler_resolver::DeclarationKind::constructor;
+        const bool instantiated = tm(session, symbol, 9) >= 0 || tm(session, symbol, 8) >= 0;
+        // Native symbol uniqueness was settled by the resolver; this records
+        // exact already-chosen identity without attempting name resolution again.
+        if (session.index(85, symbol, 0, 0, 0) >= 0) {
+            return fail(session, LoweringError::duplicate_or_reserved_function_name, source);
+        }
+        if (count > 6) {
+            return fail(session, LoweringError::function_parameter_limit, source);
+        }
+        if (!owned_element(session, result, source)) {
+            return false;
+        }
+        i64 at = 0;
+        i64 borrowed = 0;
+        while (at < count && session.good()) {
+            const i64 type = parameter_type(session, symbol, at);
+            if (!owned_element(session, type, source)) {
+                return false;
+            }
+            if (parameter_borrowed(session, symbol, at)) {
+                borrowed = borrowed + 1;
+            }
+            at = at + 1;
+        }
+        if (!check_template_owners(session, symbol, source)) {
+            return false;
+        }
+        if (compiler_resolver::service_kind(result_kind)) {
+            return fail(session, LoweringError::service_capability_result, source);
+        }
+        bool service = false;
+        if (count > 0) {
+            const i64 first_type = parameter_type(session, symbol, 0);
+            service = compiler_resolver::service_kind(tk(session, first_type));
+        }
+        const bool console_region = service && count >= 2 && parameter_kind(session, symbol, 0)
+            == compiler_resolver::ResolvedTypeKind::console_session && parameter_kind(session, symbol, 1)
+            == compiler_resolver::ResolvedTypeKind::byte_region;
+        if (service) {
+            i64 services = 0;
+            i64 first = -1;
+            i64 second = -1;
+            while (services < count && session.good() && compiler_resolver::service_kind(parameter_kind(session, symbol,
+                services))) {
+                if (!parameter_borrowed(session, symbol, services) || parameter_const(session, symbol, services)) {
+                    return fail(session, LoweringError::service_function_leading_parameter_or_result, source);
+                }
+                const i64 parameter = parameter_type(session, symbol, services);
+                const i64 id = service_type_id(session, parameter);
+                if (id < 0) {
+                    session.fail_storage(compiler_resolver::StorageStatus::invalid);
+                    return false;
+                }
+                i64 previous = 0;
+                while (previous < services && session.good()) {
+                    const i64 previous_type = parameter_type(session, symbol, previous);
+                    if (service_type_id(session, previous_type) == id) {
+                        return fail(session, LoweringError::service_group_requires_distinct_leading_references, source);
+                    }
+                    previous = previous + 1;
+                }
+                if (services == 0) {
+                    first = id;
+                }
+                if (services == 1) {
+                    second = id;
+                }
+                services = services + 1;
+            }
+            if (services > 2 || !service_group_supported(session, first, second) || borrowed != services || receiver
+                >= 0 || constructor || instantiated || !service_result(session, result)) {
+                return fail(session, LoweringError::service_function_group_or_result, source);
+            }
+            at = services;
+            if (console_region) {
+                at = 2;
+            }
+            while (at < count && session.good()) {
+                const i64 type = parameter_type(session, symbol, at);
+                const compiler_resolver::ResolvedTypeKind kind = tk(session, type);
+                if (!compiler_resolver::scalar_value_kind(kind) && kind
+                    != compiler_resolver::ResolvedTypeKind::byte_span && (kind
+                    != compiler_resolver::ResolvedTypeKind::class_value || owning_type(session, type))) {
+                    return fail(session, LoweringError::service_helper_parameter_type, source);
+                }
+                at = at + 1;
+            }
+        } else {
+            at = 0;
+            while (at < count && session.good()) {
+                const i64 type = parameter_type(session, symbol, at);
+                if (compiler_resolver::service_kind(tk(session, type))) {
+                    return fail(session, LoweringError::service_capability_parameter_position, source);
+                }
+                at = at + 1;
+            }
+        }
+        if (borrowed > 0 && !service) {
+            const i64 first = parameter_type(session, symbol, 0);
+            const bool multiple_roots = borrowed > 1;
+            const bool borrowed_values = tk(session, first) == compiler_resolver::ResolvedTypeKind::owned_values;
+            if (borrowed_values && (borrowed != 1 || parameter_const(session, symbol, 0)
+                || !compiler_resolver::scalar_value_kind(result_kind))) {
+                return fail(session, LoweringError::borrowed_function_boundary, source);
+            }
+            if (borrowed > 3 || borrowed_root_count(session, symbol) != borrowed || count == 0
+                || !parameter_borrowed(session, symbol, 0) || receiver >= 0 || constructor || instantiated
+                || (!borrowed_values && (!owning_type(session, first) || tk(session, first)
+                != compiler_resolver::ResolvedTypeKind::class_value))
+                || (!compiler_resolver::scalar_value_kind(result_kind) && (multiple_roots || result_kind
+                != compiler_resolver::ResolvedTypeKind::class_value)) || owning_type(session, result)) {
+                return fail(session, LoweringError::borrowed_function_boundary, source);
+            }
+            at = 0;
+            while (at < borrowed && session.good()) {
+                const i64 type = parameter_type(session, symbol, at);
+                if (!parameter_borrowed(session, symbol, at) || (at > 0 && !parameter_const(session, symbol, at))
+                    || (!borrowed_values && (tk(session, type) != compiler_resolver::ResolvedTypeKind::class_value
+                    || !owning_type(session, type)))) {
+                    return fail(session, LoweringError::borrowed_function_boundary, source);
+                }
+                if (!borrowed_values) {
+                    const i64 nominal = tm(session, type, 1);
+                    if (tm(session, nominal, 9) >= 0 || tm(session, nominal, 8) >= 0) {
+                        return fail(session, LoweringError::borrowed_class_template_parameter, source);
+                    }
+                }
+                at = at + 1;
+            }
+            while (at < count && session.good()) {
+                const i64 type = parameter_type(session, symbol, at);
+                const compiler_resolver::ResolvedTypeKind kind = tk(session, type);
+                if ((!compiler_resolver::scalar_value_kind(kind) && (multiple_roots || (kind
+                    != compiler_resolver::ResolvedTypeKind::class_value && (borrowed_values || kind
+                    != compiler_resolver::ResolvedTypeKind::byte_span)))) || owning_type(session, type)) {
+                    return fail(session, LoweringError::borrowed_function_later_parameter_type, source);
+                }
+                at = at + 1;
+            }
+        }
+        at = 0;
+        bool resource = compiler_resolver::resource_kind(result_kind) || owning_type(session, result);
+        while (at < count && session.good()) {
+            if (parameter_const(session, symbol, at) && !parameter_borrowed(session, symbol, at)) {
+                return fail(session, LoweringError::const_permission_requires_borrowed_parameter, source);
+            }
+            const i64 type = parameter_type(session, symbol, at);
+            if (!parameter_borrowed(session, symbol, at) && (compiler_resolver::resource_kind(tk(session, type))
+                || owning_type(session, type))) {
+                resource = true;
+            }
+            at = at + 1;
+        }
+        bool resource_constructor = false;
+        if (constructor && receiver >= 0) {
+            const i64 receiver_type = class_type(session, receiver);
+            resource_constructor = owning_type(session, receiver_type);
+        }
+        if ((resource || resource_constructor) && !console_region) {
+            if ((receiver >= 0 && !resource_constructor) || instantiated || count == 0 || parameter_kind(session,
+                symbol, 0) != compiler_resolver::ResolvedTypeKind::byte_region
+                || (!compiler_resolver::scalar_value_kind(result_kind) && !owning_type(session, result) && result_kind
+                != compiler_resolver::ResolvedTypeKind::class_value)) {
+                return fail(session, LoweringError::resource_function_region_or_result, source);
+            }
+            at = 1;
+            while (at < count && session.good()) {
+                const i64 type = parameter_type(session, symbol, at);
+                const compiler_resolver::ResolvedTypeKind kind = tk(session, type);
+                bool class_argument = owning_type(session, type) && kind
+                    == compiler_resolver::ResolvedTypeKind::class_value;
+                if (resource_constructor) {
+                    class_argument = kind == compiler_resolver::ResolvedTypeKind::class_value && !owning_type(session,
+                        type);
+                }
+                if (!compiler_resolver::scalar_value_kind(kind) && !owner_storage(session, type) && !class_argument) {
+                    return fail(session, LoweringError::resource_argument_type, source);
+                }
+                at = at + 1;
+            }
+            if (resource_constructor && result_kind != compiler_resolver::ResolvedTypeKind::i64_value) {
+                return fail(session, LoweringError::owning_constructor_result, source);
+            }
+        }
+        if (is_span(session, result) && (receiver < 0 || constructor || sm(session, root, 9) != 1 || instantiated)) {
+            return fail(session, LoweringError::span_result_method_boundary, source);
+        }
+        if (receiver >= 0 && !resource_constructor) {
+            if ((!compiler_resolver::scalar_value_kind(result_kind) && result_kind
+                != compiler_resolver::ResolvedTypeKind::class_value && !is_span(session, result))
+                || owning_type(session, result)) {
+                return fail(session, LoweringError::method_result_type, source);
+            }
+            at = 0;
+            while (at < count && session.good()) {
+                const i64 type = parameter_type(session, symbol, at);
+                const compiler_resolver::ResolvedTypeKind kind = tk(session, type);
+                if ((!compiler_resolver::scalar_value_kind(kind) && kind
+                    != compiler_resolver::ResolvedTypeKind::class_value && !is_span(session, type))
+                    || owning_type(session, type)) {
+                    return fail(session, LoweringError::method_parameter_type, source);
+                }
+                at = at + 1;
+            }
+        }
+        if (!check_boundary_type(session, result, source)) {
+            return false;
+        }
+        at = 0;
+        while (at < count && session.good()) {
+            const i64 type = parameter_type(session, symbol, at);
+            if (!check_boundary_type(session, type, source)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return index_set(session, 85, symbol, 0, 1);
+    }
+    auto method_public(compiler_resolver::Session& session, i64 symbol) -> bool {
+        return tm(session, symbol, 6) != 0;
+    }
+    auto constructor_symbol(compiler_resolver::Session& session, i64 nominal) -> i64 {
+        i64 at = 0;
+        const i64 count = session.index(93, nominal, 0, 0, 0);
+        while (at < count && session.good()) {
+            const i64 symbol = session.index(92, nominal, at, 0, 0);
+            if (compiler_resolver::declaration_kind(session, symbol)
+                == compiler_resolver::DeclarationKind::constructor) {
+                return symbol;
+            }
+            at = at + 1;
+        }
+        return -1;
+    }
+    auto register_order(compiler_resolver::Session& session, i64 lane, i64 domain) -> i64 {
+        const i64 resolved = session.index(60, 0, 0, 0, 0);
+        i64 link = tm(session, resolved, lane);
+        i64 count = 0;
+        while (link >= 0 && session.good()) {
+            if (count >= session.meta_count()) {
+                return session.fail_storage(compiler_resolver::StorageStatus::invalid);
+            }
+            const i64 symbol = tm(session, link, 0);
+            index_set(session, domain, count, 0, symbol);
+            count = count + 1;
+            link = tm(session, link, 1);
+        }
+        index_set(session, domain, -1, 0, count);
+        return count;
+    }
+    auto register_enumeration(compiler_resolver::Session& session, i64 symbol, i64 public_id) -> bool {
+        const compiler_resolver::MetaRow identity = session.meta(symbol);
+        const i64 token = symbol_source(session, symbol);
+        i64 count = 0;
+        if (identity.native_mode() == compiler_resolver::NativeMode::sealed_builtin) {
+            i64 item = tm(session, identity.word(8), 4);
+            while (item >= 0 && session.good()) {
+                count = count + 1;
+                item = tm(session, item, 3);
+            }
+        } else {
+            const i64 last = sm(session, identity.word(5), 7);
+            count = syntax_list_count(session, last);
+            if (count < 1 || count > 256) {
+                return fail(session, LoweringError::enum_name_or_case_count, token);
+            }
+            // The list links each case to its predecessor. Copy it to scratch once,
+            // last case first, then name cases in source order and compare names.
+            const i64 base = session.work_count();
+            i64 item = last;
+            while (item >= 0 && session.good()) {
+                const compiler_resolver::WorkRow entry = compiler_resolver::WorkRow(item, -1, -1, -1, -1, -1);
+                session.append_work(entry);
+                item = compiler_resolver::sw(session, item, 2);
+            }
+            i64 at = 0;
+            while (at < count && session.good()) {
+                compiler_resolver::WorkRow entry = session.work(base + count - 1 - at);
+                const i64 source = sm(session, entry.word(0), 0);
+                const i64 name = compiler_resolver::source_name(session, source);
+                entry.set_word(1, name);
+                session.set_work(base + count - 1 - at, entry);
+                i64 before = 0;
+                while (before < at && session.good()) {
+                    const compiler_resolver::WorkRow earlier = session.work(base + count - 1 - before);
+                    if (earlier.word(1) == name) {
+                        session.truncate_work(base);
+                        return fail(session, LoweringError::duplicate_enum_case, source);
+                    }
+                    before = before + 1;
+                }
+                at = at + 1;
+            }
+            session.truncate_work(base);
+        }
+        if (count < 1 || count > 256) {
+            return fail(session, LoweringError::enum_name_or_case_count, token);
+        }
+        index_set(session, 73, symbol, 0, public_id);
+        index_set(session, 88, symbol, 0, count);
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::EnumNominalId, symbol);
+        put(session, OperandRole::CaseCount, count);
+        emit_record(session, RecordKind::EnumCases, begin);
+        return session.good();
+    }
+    auto append_function_order(compiler_resolver::Session& session, i64 symbol, i64 count, bool spans) -> i64 {
+        const i64 result = signature_result(session, symbol);
+        const bool returns_span = is_span(session, result);
+        if (returns_span == spans) {
+            index_set(session, 80, count, 0, symbol);
+            return count + 1;
+        }
+        return count;
+    }
+    auto order_functions(compiler_resolver::Session& session) -> bool {
+        const i64 resolved = session.index(60, 0, 0, 0, 0);
+        i64 count = 0;
+        i64 pass = 0;
+        while (pass < 2 && session.good()) {
+            const bool spans = pass == 0;
+            i64 link = tm(session, resolved, 1);
+            while (link >= 0 && session.good()) {
+                const i64 symbol = tm(session, link, 0);
+                count = append_function_order(session, symbol, count, spans);
+                link = tm(session, link, 1);
+            }
+            i64 class_index = 0;
+            while (class_index < class_count(session) && session.good()) {
+                const i64 nominal = class_symbol(session, class_index);
+                const i64 members = session.index(93, nominal, 0, 0, 0);
+                i64 at = 0;
+                while (at < members && session.good()) {
+                    const i64 method = session.index(92, nominal, at, 0, 0);
+                    count = append_function_order(session, method, count, spans);
+                    at = at + 1;
+                }
+                class_index = class_index + 1;
+            }
+            pass = pass + 1;
+        }
+        return index_set(session, 80, -1, 0, count);
+    }
+    auto verify_layout_order(compiler_resolver::Session& session) -> bool {
+        const i64 count = class_count(session);
+        if (initial_layout_count(session) != count) {
+            session.fail_storage(compiler_resolver::StorageStatus::invalid);
+            return false;
+        }
+        const i64 base = session.work_count();
+        i64 at = 0;
+        while (at < count && session.good()) {
+            session.append_work(compiler_resolver::WorkRow(0, 0, 0, 0, 0, 0));
+            at = at + 1;
+        }
+        at = 0;
+        while (at < count && session.good()) {
+            const i64 symbol = initial_layout_symbol(session, at);
+            const i64 public_id = session.index(73, symbol, 0, 0, 0);
+            if (public_id < 100 || public_id - 100 >= count || class_symbol(session, public_id - 100) != symbol) {
+                session.fail_storage(compiler_resolver::StorageStatus::invalid);
+            } else {
+                const i64 mark = base + public_id - 100;
+                compiler_resolver::WorkRow row = session.work(mark);
+                if (row.word(0) != 0) {
+                    session.fail_storage(compiler_resolver::StorageStatus::invalid);
+                } else {
+                    row.set_word(0, 1);
+                    session.set_work(mark, row);
+                }
+            }
+            at = at + 1;
+        }
+        session.truncate_work(base);
+        return session.good();
+    }
+    auto prepare_types(compiler_resolver::Session& session) -> bool {
+        if (!session.good() || session.work_count() != 0) {
+            session.fail_storage(compiler_resolver::StorageStatus::invalid);
+            return false;
+        }
+        const i64 array_source = session.append_text("array");
+        index_set(session, 89, -1, 0, array_source);
+        const i64 classes = register_order(session, 2, 81);
+        const i64 enumerations = register_order(session, 3, 82);
+        if (classes + enumerations > 999900) {
+            return fail(session, LoweringError::nominal_type_id_limit, -1);
+        }
+        if (enumerations > 64) {
+            return fail(session, LoweringError::enum_declaration_limit, -1);
+        }
+        // Domain sentinels make later sorted traversals independent of source
+        // order and avoid inventing another metadata owner or raw list protocol.
+        index_set(session, 76, -1, 0, 0);
+        index_set(session, 84, -1, 0, 0);
+        i64 at = 0;
+        while (at < enumerations && session.good()) {
+            const i64 nominal = enum_symbol(session, at);
+            register_enumeration(session, nominal, 100 + classes + at);
+            at = at + 1;
+        }
+        at = 0;
+        while (at < classes && session.good()) {
+            const i64 nominal = class_symbol(session, at);
+            index_set(session, 73, nominal, 0, 100 + at);
+            register_fields(session, nominal);
+            at = at + 1;
+        }
+        if (!verify_layout_order(session)) {
+            return false;
+        }
+        at = 0;
+        while (at < classes && session.good()) {
+            const i64 nominal = class_symbol(session, at);
+            logical_layout(session, nominal, 1);
+            at = at + 1;
+        }
+        at = 0;
+        while (at < classes && session.good()) {
+            const i64 nominal = initial_layout_symbol(session, at);
+            const i64 row = session.index(70, nominal, 0, 0, 0);
+            if (row < 0) {
+                return fail(session, LoweringError::ir_missing_class_storage_shape, -1);
+            }
+            physical_layout(session, row, 1);
+            at = at + 1;
+        }
+        at = 0;
+        while (at < classes && session.good()) {
+            const i64 nominal = class_symbol(session, at);
+            check_class_storage(session, nominal);
+            at = at + 1;
+        }
+        if (!session.good() || !order_functions(session)) {
+            return false;
+        }
+        at = 0;
+        while (at < function_count(session) && session.good()) {
+            const i64 symbol = function_symbol(session, at);
+            validate_signature(session, symbol);
+            at = at + 1;
+        }
+        return session.good();
+    }
+    auto publish_descriptor(compiler_resolver::Session& session, i64 id, i64 size, i64 fields) -> bool {
+        if (id < 0 || size < 0 || fields < 0 || session.index(84, id, 0, 0, 0) >= 0) {
+            session.fail_storage(compiler_resolver::StorageStatus::invalid);
+            return false;
+        }
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::PublicDescriptorId, id);
+        put(session, OperandRole::Size, size);
+        put(session, OperandRole::PublicFields, fields);
+        const i64 row = emit_record(session, RecordKind::Descriptor, begin);
+        return index_set(session, 84, id, 0, row);
+    }
+    auto publish_scalar_descriptor(compiler_resolver::Session& session,
+        compiler_resolver::ResolvedTypeKind kind) -> bool {
+        const i64 id = scalar_descriptor(session, kind);
+        const i64 size = scalar_descriptor_size(session, kind);
+        return publish_descriptor(session, id, size, 0);
+    }
+    auto visible_nominal(compiler_resolver::Session& session, i64 nominal, i64 scope) -> bool {
+        const i64 view = session.index(57, nominal, 0, 0, 0);
+        if (view < 0) {
+            return false;
+        }
+        if (scope < 0 || scope >= 64) {
+            session.fail_storage(compiler_resolver::StorageStatus::invalid);
+            return false;
+        }
+        i64 word = 1;
+        i64 bit = scope;
+        if (scope >= 32) {
+            word = 2;
+            bit = scope - 32;
+        }
+        const i64 stored = tm(session, view, word);
+        if (stored < 0 || stored > 4294967295) {
+            session.fail_storage(compiler_resolver::StorageStatus::invalid);
+            return false;
+        }
+        return (u64(stored) & (u64(1) << bit)) != u64(0);
+    }
+    auto descriptor_visible(compiler_resolver::Session& session, i64 id, i64 scope) -> bool {
+        if (id < 100) {
+            return true;
+        }
+        if (id >= 1000000) {
+            const i64 type = session.index(76, id, 0, 0, 0);
+            if (type < 0 || !class_array(session, type)) {
+                return true;
+            }
+            const i64 element = tm(session, type, 2);
+            const i64 nominal = tm(session, element, 1);
+            return visible_nominal(session, nominal, scope);
+        }
+        const i64 ordinal = id - 100;
+        if (ordinal < class_count(session)) {
+            const i64 nominal = class_symbol(session, ordinal);
+            return visible_nominal(session, nominal, scope);
+        }
+        const i64 enum_index = ordinal - class_count(session);
+        if (enum_index < enum_count(session)) {
+            const i64 nominal = enum_symbol(session, enum_index);
+            return visible_nominal(session, nominal, scope);
+        }
+        return fail(session, LoweringError::unknown_reflection_nominal, -1);
+    }
+    auto finalize_types(compiler_resolver::Session& session) -> bool {
+        // Reflection materialization follows every successful body, including
+        // array type/carrier effects from discarded static_assert instructions.
+        publish_scalar_descriptor(session, compiler_resolver::ResolvedTypeKind::i64_value);
+        publish_scalar_descriptor(session, compiler_resolver::ResolvedTypeKind::bool_value);
+        publish_scalar_descriptor(session, compiler_resolver::ResolvedTypeKind::owner);
+        publish_scalar_descriptor(session, compiler_resolver::ResolvedTypeKind::reference);
+        publish_scalar_descriptor(session, compiler_resolver::ResolvedTypeKind::mutable_reference);
+        publish_scalar_descriptor(session, compiler_resolver::ResolvedTypeKind::u64_value);
+        publish_scalar_descriptor(session, compiler_resolver::ResolvedTypeKind::u8_value);
+        i64 at = 0;
+        while (at < class_count(session) && session.good()) {
+            const i64 nominal = class_symbol(session, at);
+            const i64 type = class_type(session, nominal);
+            const i64 source = symbol_source(session, nominal);
+            const i64 id = session.index(73, nominal, 0, 0, 0);
+            const i64 size = type_size(session, type, source);
+            const i64 public_fields = resolved_field_count(session, type, source);
+            publish_descriptor(session, id, size, public_fields);
+            at = at + 1;
+        }
+        at = 0;
+        while (at < enum_count(session) && session.good()) {
+            const i64 nominal = enum_symbol(session, at);
+            const i64 id = session.index(73, nominal, 0, 0, 0);
+            publish_descriptor(session, id, 8, 0);
+            at = at + 1;
+        }
+        const i64 array_index = session.index_node(76, -1, 0, 0, 0);
+        i64 node = next_index(session, array_index);
+        while (node >= 0 && session.good()) {
+            const compiler_resolver::IndexRow item = session.index_row(node);
+            if (item.key_domain() != 76) {
+                node = -1;
+            } else {
+                const i64 type = item.value();
+                const i64 array_source = session.index(89, -1, 0, 0, 0);
+                const i64 size = type_size(session, type, array_source);
+                publish_descriptor(session, item.first_key(), size, 0);
+                node = next_index(session, node);
+            }
+        }
+        // Scopes are IDs, never module ingestion indices. Sort by scope and
+        // retain explicit empty nominal views and their builtin descriptors.
+        i64 scope = 0;
+        while (scope < 64 && session.good()) {
+            bool present = false;
+            at = 0;
+            while (at < session.module_count() && session.good()) {
+                if (tm(session, at, 13) == scope) {
+                    present = true;
+                }
+                at = at + 1;
+            }
+            if (present) {
+                const i64 begin = session.operand_count();
+                i64 count = 0;
+                const i64 descriptor_index = session.index_node(84, -1, 0, 0, 0);
+                node = next_index(session, descriptor_index);
+                while (node >= 0 && session.good()) {
+                    const compiler_resolver::IndexRow item = session.index_row(node);
+                    if (item.key_domain() != 84) {
+                        node = -1;
+                    } else {
+                        if (descriptor_visible(session, item.first_key(), scope)) {
+                            put(session, OperandRole::PublicDescriptorId, item.first_key());
+                            count = count + 1;
+                        }
+                        node = next_index(session, node);
+                    }
+                }
+                const i64 prefix = session.operand_count();
+                put(session, OperandRole::ModuleScope, scope);
+                put_slice(session, OperandRole::VisibleDescriptors, begin, count);
+                emit_record(session, RecordKind::DescriptorView, prefix);
+            }
+            scope = scope + 1;
+        }
+        return session.good();
+    }
+}

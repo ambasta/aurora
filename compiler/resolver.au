@@ -87,12 +87,10 @@ export namespace compiler_resolver {
     };
 
     auto mw(Session& session, i64 row, i64 word) -> i64 {
-        const MetaRow value = session.meta(row);
-        return value.word(word);
+        return session.meta_word(row, word);
     }
     auto sw(Session& session, i64 row, i64 word) -> i64 {
-        const SyntaxRow value = session.syntax(row);
-        return value.word(word);
+        return session.syntax_word(row, word);
     }
     auto rw(Session& session, i64 row, i64 word) -> i64 {
         const ResolvedRow value = session.resolved(row);
@@ -125,8 +123,7 @@ export namespace compiler_resolver {
         return value.declaration_kind();
     }
     auto type_kind(Session& session, i64 type) -> ResolvedTypeKind {
-        const MetaRow value = session.meta(type);
-        return value.type_kind();
+        return session.meta_type_kind(type);
     }
     auto scalar_kind(ResolvedTypeKind kind) -> bool {
         return kind == ResolvedTypeKind::i64_value || kind == ResolvedTypeKind::u64_value || kind

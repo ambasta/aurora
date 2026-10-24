@@ -1594,17 +1594,27 @@ export namespace compiler_ir_verification {
             }
             i64 begin = 0;
             i64 end = count;
-            while (begin < end) {
-                const i64 middle = begin + (end - begin) / 2;
-                const FactKey row = active_key(middle, count);
-                if (!good()) {
-                    return -1;
+            bool invalid = false;
+            // An empty prefix needs no view (and an empty search never probes).
+            if (count > 0) {
+                const builtin::span<const FactKey> keys = borrow_values(currentKeys);
+                while (begin < end && !invalid) {
+                    const i64 middle = begin + (end - begin) / 2;
+                    const FactKey row = keys.at(middle);
+                    if (row.kind() == FactKind::none) {
+                        invalid = true;
+                    } else {
+                        if (row.compare(kind, key, field) > 0) {
+                            begin = middle + 1;
+                        } else {
+                            end = middle;
+                        }
+                    }
                 }
-                if (row.compare(kind, key, field) > 0) {
-                    begin = middle + 1;
-                } else {
-                    end = middle;
-                }
+            }
+            if (invalid) {
+                fail(first_error(VerificationErrorFirst::internal));
+                return -1;
             }
             return begin;
         }

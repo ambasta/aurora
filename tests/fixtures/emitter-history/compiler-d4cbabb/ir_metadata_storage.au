@@ -1,0 +1,1472 @@
+export module aurora.compiler.ir_metadata_storage;
+
+// Durable metadata storage. Native ingress fills the exact raw prefixes once;
+// independent verification only appends normalization tails and writes results.
+// No source accessor exposes a descriptor, payload address or mutable raw row.
+export namespace compiler_ir_metadata {
+    auto maximum_class_fields() -> i64 {
+        return 8192;
+    }
+    enum class MetadataStatus {
+        pending,
+        success,
+        allocation,
+        invalid
+    };
+    // Generated facts pin these ordinals to native TypeKind. Raw rows retain
+    // integers, including unknown kinds, rather than accepting unchecked enums.
+    enum class MetadataTypeKind {
+        I64,
+        Bool,
+        Own,
+        Ref,
+        MutRef,
+        Class,
+        Array,
+        U64,
+        Parameter,
+        Enum,
+        U8,
+        ByteSpan,
+        ByteRegion,
+        OwnedBytes,
+        ConsoleSession,
+        DisplaySession,
+        IommuEventSession,
+        OwnedValues,
+        CallSession,
+        Com1UartGrant,
+        ServeSession,
+        ValueSpan
+    };
+    enum class MetadataError {
+        none,
+        //: invalid hosted IR metadata transport
+        integrity,
+        //: invalid typed IR: invalid metadata descriptor
+        descriptor,
+        //: invalid typed IR: missing root reflection scope
+        root_scope,
+        //: invalid typed IR: invalid reflection scope
+        scope,
+        //: invalid typed IR: reflection view references missing descriptor
+        view_descriptor,
+        //: invalid typed IR: too many enum declarations
+        enum_count,
+        //: invalid typed IR: invalid nominal enum declaration
+        enum_declaration,
+        //: invalid typed IR: class and enum nominal names overlap
+        nominal_overlap,
+        //: invalid typed IR: invalid nominal class layout
+        class_layout,
+        //: invalid typed IR: class exceeds 8192 direct fields
+        class_field_limit,
+        //: invalid typed IR: non-scalar class layout field
+        class_leaf,
+        //: invalid typed IR: logical fields reference unknown class layout
+        unknown_fields,
+        //: invalid typed IR: noncanonical class array element count
+        field_element_count,
+        //: invalid typed IR: class array carrier cannot be nested element type
+        nested_carrier,
+        //: invalid typed IR: invalid logical class field shape
+        field_shape,
+        //: invalid typed IR: owned storage field requires zero scalar leaves
+        owner_leaves,
+        //: invalid typed IR: invalid canonical owned value field type
+        owner_field_type,
+        //: invalid typed IR: nested owning class field is unsupported
+        nested_owner,
+        //: invalid typed IR: invalid nominal nested class field
+        nested_type,
+        //: invalid typed IR: class array element count exceeds 1..64
+        class_array_count,
+        //: invalid typed IR: nested class field length mismatch
+        nested_length,
+        //: invalid typed IR: logical class field range exceeds layout
+        field_range,
+        //: invalid typed IR: nested class field leaf type mismatch
+        nested_leaf,
+        //: invalid typed IR: logical class field leaf type mismatch
+        field_leaf,
+        //: invalid typed IR: logical class fields do not cover complete layout
+        leaf_coverage,
+        //: invalid typed IR: composed or owning class exceeds 64 scalar leaves excluding u8, 512 u8 leaves or 513 total
+        //: leaves
+        class_leaf_limit,
+        //: invalid typed IR: unknown class array carrier
+        unknown_carrier,
+        //: invalid typed IR: class array carrier requires exactly one class array field
+        carrier_shape,
+        //: invalid typed IR: cyclic nested class layout
+        cycle,
+        //: invalid typed IR: nested class layout exceeds depth 4
+        depth,
+        //: invalid typed IR: noncanonical sealed ConsoleSample layout
+        console_layout,
+        //: invalid typed IR: noncanonical sealed ConsoleSample fields
+        console_fields,
+        //: invalid typed IR: noncanonical sealed ConsoleSample field shape
+        console_field_shape,
+        //: invalid typed IR: noncanonical sealed IommuEventSample layout
+        event_layout,
+        //: invalid typed IR: noncanonical sealed IommuEventSample fields
+        event_fields,
+        //: invalid typed IR: noncanonical sealed IommuEventSample field shape
+        event_field_shape,
+        //: invalid typed IR: noncanonical sealed event service enum
+        event_enum,
+        //: invalid typed IR: noncanonical sealed service enum
+        service_enum,
+        //: IR: storage extent exceeds 65536 bytes
+        storage_extent,
+        //: IR: cyclic or excessive class storage depth
+        storage_depth,
+        //: IR: missing logical class storage shape
+        storage_shape,
+        //: IR: invalid class storage alignment
+        storage_alignment,
+        //: IR: invalid logical field range for storage
+        storage_field_range,
+        //: IR: owned byte field requires one non-scalar descriptor
+        storage_owner_shape,
+        //: IR: nested owning class fields are unsupported
+        storage_nested_owner,
+        //: IR: invalid nested field storage shape
+        storage_nested_shape,
+        //: IR: invalid scalar field storage shape
+        storage_scalar_shape,
+        //: IR: class storage exceeds 65536 bytes
+        storage_limit,
+        //: IR: class storage does not cover logical leaves
+        storage_coverage,
+        //: invalid typed IR: invalid canonical owned value type
+        owner_type,
+        //: invalid typed IR: owned value element requires known canonical class layout
+        owner_element_unknown,
+        //: invalid typed IR: owned value element must be a copied class, not an owner or carrier
+        owner_element_kind,
+        //: invalid typed IR: owned value element exceeds copied class leaf limits
+        owner_element_leaves,
+        //: invalid typed IR: owned value element storage exceeds 520 bytes
+        owner_element_storage,
+        //: invalid typed IR: composed or owning class storage exceeds 520 bytes
+        class_storage_limit,
+        //: invalid typed IR: noncanonical class storage metadata
+        supplied_storage,
+        //: invalid typed IR: empty module
+        empty_module,
+        //: invalid typed IR: invalid or reserved function symbol
+        function_symbol,
+        //: invalid typed IR: duplicate function
+        duplicate_function,
+        //: invalid typed IR: unknown function module scope
+        function_scope,
+        //: invalid typed IR: service signature requires a leading sealed group and no receiver or region
+        service_signature,
+        //: invalid typed IR: service signature requires distinct capability kinds
+        service_duplicates,
+        //: invalid typed IR: unsupported service group
+        service_group,
+        //: invalid typed IR: service signature requires later scalar, enum, copied value or readonly span arguments
+        service_parameters,
+        //: invalid typed IR: service signature has unsupported result
+        service_result,
+        //: invalid typed IR: borrowed roots require a free-function signature
+        borrowed_shape,
+        //: invalid typed IR: borrowed formal cannot have resource or borrowed result
+        borrowed_result,
+        //: invalid typed IR: borrowed roots count toward six parameters
+        borrowed_parameters,
+        //: invalid typed IR: borrowed root requires a canonical named class type
+        borrowed_root_type,
+        //: invalid typed IR: borrowed root requires a complete concrete owning class
+        borrowed_root_class,
+        //: invalid typed IR: borrowed root count exceeds the explicit formal prefix
+        borrowed_root_count,
+        //: invalid typed IR: multi-root borrowed signature requires scalar or enum values
+        borrowed_root_values,
+        //: invalid typed IR: resource signature only supports an owning constructor receiver
+        resource_receiver,
+        //: invalid typed IR: resource signature requires its region parameter first
+        resource_region,
+        //: invalid typed IR: resource signature requires scalar, owned byte or class result
+        resource_result,
+        //: invalid typed IR: resource signature requires exactly one region and supported owning parameters
+        resource_parameters,
+        //: invalid typed IR: service capability cannot cross an ordinary boundary or return
+        service_boundary,
+        //: invalid typed IR: invalid canonical service boundary type
+        service_type,
+        //: invalid typed IR: invalid resource boundary type
+        resource_boundary,
+        //: invalid typed IR: readonly span boundary requires ordinary parameter or const receiver result
+        span_boundary,
+        //: invalid typed IR: constructor result must remain scalar
+        constructor_result,
+        //: invalid typed IR: invalid value boundary type
+        value_type,
+        //: invalid typed IR: unknown value boundary class
+        value_class,
+        //: invalid typed IR: class array carrier cannot cross value boundary
+        value_carrier,
+        //: invalid typed IR: owning class requires an ordinary resource boundary
+        value_owner,
+        //: invalid typed IR: only an owning constructor may take a copied class resource parameter
+        value_resource,
+        //: invalid typed IR: value boundary class exceeds 64 scalar fields excluding u8, 512 u8 leaves or 513 total
+        //: leaves
+        value_leaves,
+        //: invalid typed IR: value boundary class storage exceeds 520 bytes
+        value_storage,
+        //: invalid typed IR: receiver span field summary requires span result
+        span_result,
+        //: invalid typed IR: too many parameters
+        parameter_count,
+        //: invalid typed IR: receiver signature requires scalar, enum or class values
+        receiver_signature,
+        //: invalid typed IR: invalid aggregate parameter type
+        aggregate_parameter,
+        //: invalid typed IR: unknown receiver class
+        receiver_class,
+        //: invalid typed IR: class array carrier cannot be receiver
+        receiver_carrier,
+        //: invalid typed IR: receiver span field summary requires exact direct byte-storage field or typed owner of
+        //: the view element
+        receiver_span,
+        //: invalid typed IR: owned value metadata requires exact owner spill
+        owner_spill,
+        //: invalid typed IR: service spills without a service signature
+        service_spills,
+        //: invalid typed IR: invalid frame size
+        frame_size,
+        //: invalid typed IR: invalid slot offset
+        slot_offset,
+        //: invalid typed IR: invalid slot payload type
+        slot_type,
+        //: invalid typed IR: overlapping scalar slot storage
+        slot_overlap,
+        //: invalid typed IR: unknown object class
+        object_class,
+        //: invalid typed IR: invalid object layout offset
+        object_offset,
+        //: invalid typed IR: overlapping object layouts
+        object_overlap,
+        //: invalid typed IR: object field slot type/layout mismatch
+        object_leaf,
+        //: invalid typed IR: scalar slot overlaps empty object or padding
+        object_padding,
+        //: invalid typed IR: invalid byte array origin extent
+        array_extent,
+        //: invalid typed IR: byte array origin requires exact u8 element slots
+        array_leaf,
+        //: invalid typed IR: byte array origin overlaps object storage
+        array_object,
+        //: invalid typed IR: overlapping byte array origins
+        array_overlap,
+        //: invalid typed IR: invalid span spill extent or alignment
+        span_extent,
+        //: invalid typed IR: span spill overlaps scalar, object or array storage
+        span_overlap,
+        //: invalid typed IR: overlapping span spills
+        span_spills,
+        //: invalid typed IR: invalid service spill extent or alignment
+        service_extent,
+        //: invalid typed IR: service spill overlaps scalar, object, array or span storage
+        service_overlap,
+        //: invalid typed IR: invalid region spill extent or alignment
+        region_extent,
+        //: invalid typed IR: region spill overlaps scalar, object, array or span storage
+        region_overlap,
+        //: invalid typed IR: invalid owned byte spill extent or alignment
+        byte_extent,
+        //: invalid typed IR: owned byte spill overlaps scalar, object, array or span storage
+        byte_overlap,
+        //: invalid typed IR: overlapping region or owned byte spills
+        resource_overlap,
+        //: invalid typed IR: noncanonical sealed CallResult layout
+        call_layout,
+        //: invalid typed IR: noncanonical sealed CallResult fields
+        call_fields,
+        //: invalid typed IR: invalid canonical typed span type
+        span_value_type,
+        //: invalid typed IR: typed span element requires known canonical class layout
+        span_element_unknown,
+        //: invalid typed IR: typed span element must be a copied class, not an owner or carrier
+        span_element_kind,
+        //: invalid typed IR: typed span element exceeds copied class leaf limits
+        span_element_leaves,
+        //: invalid typed IR: typed span element storage exceeds 520 bytes
+        span_element_storage,
+        //: invalid typed IR: typed span metadata requires exact span spill
+        span_value_spill
+    };
+    class ByteRange {
+        i64 firstByte;
+        i64 byteCount;
+    public:
+        ByteRange(i64 first, i64 count) : firstByte(first), byteCount(count) {
+        }
+        auto begin() const -> i64 {
+            return firstByte;
+        }
+        auto count() const -> i64 {
+            return byteCount;
+        }
+    };
+    class IndexRange {
+        i64 firstIndex;
+        i64 indexCount;
+    public:
+        IndexRange(i64 first, i64 count) : firstIndex(first), indexCount(count) {
+        }
+        auto begin() const -> i64 {
+            return firstIndex;
+        }
+        auto count() const -> i64 {
+            return indexCount;
+        }
+    };
+    class RawTypeTail {
+        i64 elementKind;
+        i64 arrayLength;
+        u64 elementParameterBytes;
+        u64 lengthParameterBytes;
+        u64 templateArgumentCount;
+    public:
+        RawTypeTail(i64 element, i64 length, u64 element_parameter, u64 length_parameter,
+            u64 arguments) : elementKind(element), arrayLength(length), elementParameterBytes(element_parameter),
+            lengthParameterBytes(length_parameter), templateArgumentCount(arguments) {
+        }
+        auto element_kind() const -> i64 {
+            return elementKind;
+        }
+        auto length() const -> i64 {
+            return arrayLength;
+        }
+        auto element_parameter_bytes() const -> u64 {
+            return elementParameterBytes;
+        }
+        auto length_parameter_bytes() const -> u64 {
+            return lengthParameterBytes;
+        }
+        auto template_argument_count() const -> u64 {
+            return templateArgumentCount;
+        }
+    };
+    class RawTypeRow {
+        i64 typeKind;
+        ByteRange nameRange;
+        RawTypeTail rawTail;
+    public:
+        RawTypeRow(i64 kind, ByteRange name, RawTypeTail tail) : typeKind(kind), nameRange(name), rawTail(tail) {
+        }
+        auto kind() const -> i64 {
+            return typeKind;
+        }
+        auto name() const -> ByteRange {
+            const ByteRange result = nameRange;
+            return result;
+        }
+        auto tail() const -> RawTypeTail {
+            const RawTypeTail result = rawTail;
+            return result;
+        }
+    };
+    // One source definition serves source admission and the closed native
+    // transport. The host reads this copied table through one generated bridge.
+    class FlagMasks {
+        u64 classLayout;
+        u64 classFields;
+        u64 classStorage;
+        u64 classArrayCarrier;
+        u64 callableReceiver;
+        u64 callableSpanSummary;
+        u64 receiverMutable;
+        u64 receiverConstructor;
+        u64 receiverPublic;
+        u64 serviceConsole;
+        u64 serviceDisplay;
+        u64 serviceIommu;
+        u64 flowLeader;
+        u64 flowFallthrough;
+        u64 flowReached;
+    public:
+        FlagMasks() : classLayout(1u64), classFields(2u64), classStorage(4u64), classArrayCarrier(8u64),
+            callableReceiver(1u64), callableSpanSummary(8u64), receiverMutable(1u64), receiverConstructor(2u64),
+            receiverPublic(4u64), serviceConsole(1u64), serviceDisplay(2u64), serviceIommu(4u64), flowLeader(1u64),
+            flowFallthrough(2u64), flowReached(4u64) {
+        }
+        auto class_layout() const -> u64 {
+            return classLayout;
+        }
+        auto class_fields() const -> u64 {
+            return classFields;
+        }
+        auto class_storage() const -> u64 {
+            return classStorage;
+        }
+        auto class_array_carrier() const -> u64 {
+            return classArrayCarrier;
+        }
+        auto callable_receiver() const -> u64 {
+            return callableReceiver;
+        }
+        auto callable_span_summary() const -> u64 {
+            return callableSpanSummary;
+        }
+        auto receiver_mutable() const -> u64 {
+            return receiverMutable;
+        }
+        auto receiver_constructor() const -> u64 {
+            return receiverConstructor;
+        }
+        auto receiver_public() const -> u64 {
+            return receiverPublic;
+        }
+        auto service_console() const -> u64 {
+            return serviceConsole;
+        }
+        auto service_display() const -> u64 {
+            return serviceDisplay;
+        }
+        auto service_call() const -> u64 {
+            return 8u64;
+        }
+        auto service_port() const -> u64 {
+            return 16u64;
+        }
+        auto service_serve() const -> u64 {
+            return 32u64;
+        }
+        auto service_iommu() const -> u64 {
+            return serviceIommu;
+        }
+        auto flow_leader() const -> u64 {
+            return flowLeader;
+        }
+        auto flow_fallthrough() const -> u64 {
+            return flowFallthrough;
+        }
+        auto flow_reached() const -> u64 {
+            return flowReached;
+        }
+        auto class_allowed() const -> u64 {
+            return classLayout | classFields | classStorage | classArrayCarrier;
+        }
+        auto callable_allowed() const -> u64 {
+            return callableReceiver | callableSpanSummary;
+        }
+        auto receiver_allowed() const -> u64 {
+            return receiverMutable | receiverConstructor | receiverPublic;
+        }
+    };
+    auto flag_masks() -> FlagMasks {
+        const FlagMasks result = FlagMasks();
+        return result;
+    }
+    class ReceiverShape {
+        // Genuine method/constructor receiver only. Borrowed free-function
+        // formals live once in CallableRow's explicit-formal type prefix.
+        ByteRange nameRange;
+        u64 flags; // named Receiver masks
+    public:
+        ReceiverShape(ByteRange name, u64 attributes) : nameRange(name), flags(attributes) {
+        }
+        auto name() const -> ByteRange {
+            const ByteRange result = nameRange;
+            return result;
+        }
+        auto attributes() const -> u64 {
+            return flags;
+        }
+    };
+    // A copied argument keeps construction within the six-parameter boundary;
+    // CallableRow stores these values directly, without another owner.
+    class CallableOptions {
+        u64 flags;
+        i64 receiverSpanField;
+        i64 frameBytes;
+        i64 borrowedRootCount;
+        i64 firstBorrowedMutable;
+    public:
+        CallableOptions(u64 attributes, i64 span, i64 frame, i64 roots, i64 first_mutable) : flags(attributes),
+            receiverSpanField(span), frameBytes(frame), borrowedRootCount(roots), firstBorrowedMutable(first_mutable) {
+        }
+        auto attributes() const -> u64 {
+            return flags;
+        }
+        auto receiver_span_field() const -> i64 {
+            return receiverSpanField;
+        }
+        auto frame_bytes() const -> i64 {
+            return frameBytes;
+        }
+        auto borrowed_root_count() const -> i64 {
+            return borrowedRootCount;
+        }
+        auto first_borrowed_mutable() const -> i64 {
+            return firstBorrowedMutable;
+        }
+    };
+    class CallableRow {
+        ByteRange nameRange;
+        IndexRange typeRange; // result, then every explicit source formal in order
+        i64 moduleScope;
+        ReceiverShape receiver;
+        i64 borrowedRootCount;
+        i64 firstBorrowedMutable;
+        u64 flags; // named Callable masks; all other bits are invalid
+        i64 receiverSpanField;
+        i64 frameBytes;
+        IndexRange slotRange;
+    public:
+        CallableRow(ByteRange name, IndexRange types, i64 scope, ReceiverShape first, CallableOptions options,
+            IndexRange slots) : nameRange(name), typeRange(types), moduleScope(scope), receiver(first),
+            borrowedRootCount(options.borrowed_root_count()), firstBorrowedMutable(options.first_borrowed_mutable()),
+            flags(options.attributes()), receiverSpanField(options.receiver_span_field()),
+            frameBytes(options.frame_bytes()), slotRange(slots) {
+        }
+        auto name() const -> ByteRange {
+            const ByteRange result = nameRange;
+            return result;
+        }
+        auto types() const -> IndexRange {
+            const IndexRange result = typeRange;
+            return result;
+        }
+        auto scope() const -> i64 {
+            return moduleScope;
+        }
+        auto first_receiver() const -> ReceiverShape {
+            const ReceiverShape result = receiver;
+            return result;
+        }
+        // Invalid raw rows never produce an index or mutable authority. The
+        // owner separately checks these indices against its declared type pool.
+        auto borrowed_root_count() const -> i64 {
+            if (borrowedRootCount < 0 || borrowedRootCount > 3 || typeRange.begin() < 0 || typeRange.count() < 1
+                || borrowedRootCount > typeRange.count() - 1 || typeRange.begin() > 9223372036854775807
+                - typeRange.count() || firstBorrowedMutable < 0 || firstBorrowedMutable > 1 || (borrowedRootCount == 0
+                && firstBorrowedMutable != 0)) {
+                return -1;
+            }
+            return borrowedRootCount;
+        }
+        auto first_borrowed_mutable() const -> i64 {
+            return firstBorrowedMutable;
+        }
+        auto borrowed_root_type(i64 ordinal) const -> i64 {
+            const i64 roots = borrowed_root_count();
+            if (ordinal < 0 || ordinal >= roots) {
+                return -1;
+            }
+            return typeRange.begin() + 1 + ordinal;
+        }
+        auto borrowed_root_mutable(i64 ordinal) const -> bool {
+            return ordinal == 0 && ordinal < borrowed_root_count() && firstBorrowedMutable == 1;
+        }
+        auto value_parameter_begin() const -> i64 {
+            const i64 roots = borrowed_root_count();
+            if (roots < 0) {
+                return -1;
+            }
+            return typeRange.begin() + 1 + roots;
+        }
+        auto value_parameter_count() const -> i64 {
+            const i64 roots = borrowed_root_count();
+            if (roots < 0) {
+                return -1;
+            }
+            return typeRange.count() - 1 - roots;
+        }
+        auto attributes() const -> u64 {
+            return flags;
+        }
+        auto receiver_span_field() const -> i64 {
+            return receiverSpanField;
+        }
+        auto frame_bytes() const -> i64 {
+            return frameBytes;
+        }
+        auto slots() const -> IndexRange {
+            const IndexRange result = slotRange;
+            return result;
+        }
+    };
+    // Raw record kinds use the existing lowering RecordKind identities 10..17,
+    // pinned against its generated enum facts by the host boundary. No second
+    // slot-kind enum or caller-supplied canonicality proof is retained.
+    class SlotRow {
+        i64 recordKind;
+        i64 slotOffset;
+        i64 typeIndex;
+        i64 slotLength;
+        i64 mutableValue;
+    public:
+        SlotRow(i64 kind, i64 offset, i64 type, i64 length, i64 mutable_value) : recordKind(kind), slotOffset(offset),
+            typeIndex(type), slotLength(length), mutableValue(mutable_value) {
+        }
+        auto kind() const -> i64 {
+            return recordKind;
+        }
+        auto offset() const -> i64 {
+            return slotOffset;
+        }
+        auto type() const -> i64 {
+            return typeIndex;
+        }
+        auto length() const -> i64 {
+            return slotLength;
+        }
+        auto mutable_value() const -> i64 {
+            return mutableValue;
+        }
+    };
+    class ClassRow {
+        ByteRange nameRange;
+        IndexRange leafRange;
+        IndexRange fieldRange;
+        i64 suppliedStorage;
+        u64 membershipBits;
+    public:
+        ClassRow(ByteRange name, IndexRange leaves, IndexRange fields, i64 supplied, u64 membership) : nameRange(name),
+            leafRange(leaves), fieldRange(fields), suppliedStorage(supplied), membershipBits(membership) {
+        }
+        auto name() const -> ByteRange {
+            const ByteRange result = nameRange;
+            return result;
+        }
+        auto leaves() const -> IndexRange {
+            const IndexRange result = leafRange;
+            return result;
+        }
+        auto fields() const -> IndexRange {
+            const IndexRange result = fieldRange;
+            return result;
+        }
+        auto supplied_storage() const -> i64 {
+            return suppliedStorage;
+        }
+        auto membership() const -> u64 {
+            return membershipBits;
+        }
+    };
+    class FieldRow {
+        i64 typeIndex;
+        i64 firstLeaf;
+        i64 leafCount;
+        i64 arrayFlag;
+        i64 elementCount;
+    public:
+        FieldRow(i64 type, i64 first, i64 length, i64 isArray, i64 elements) : typeIndex(type), firstLeaf(first),
+            leafCount(length), arrayFlag(isArray), elementCount(elements) {
+        }
+        auto type() const -> i64 {
+            return typeIndex;
+        }
+        auto first_leaf() const -> i64 {
+            return firstLeaf;
+        }
+        auto length() const -> i64 {
+            return leafCount;
+        }
+        auto array_flag() const -> i64 {
+            return arrayFlag;
+        }
+        auto element_count() const -> i64 {
+            return elementCount;
+        }
+    };
+    class PhysicalExtent {
+        i64 sizeBytes;
+        i64 alignmentBytes;
+        i64 reservedBytes;
+    public:
+        PhysicalExtent(i64 size, i64 alignment, i64 reserved) : sizeBytes(size), alignmentBytes(alignment),
+            reservedBytes(reserved) {
+        }
+        auto size_bytes() const -> i64 {
+            return sizeBytes;
+        }
+        auto alignment() const -> i64 {
+            return alignmentBytes;
+        }
+        auto reserved_bytes() const -> i64 {
+            return reservedBytes;
+        }
+    };
+    class StorageRow {
+        IndexRange leafOffsetRange;
+        IndexRange fieldOffsetRange;
+        PhysicalExtent physicalExtent;
+    public:
+        StorageRow(IndexRange leaves, IndexRange fields, PhysicalExtent extent) : leafOffsetRange(leaves),
+            fieldOffsetRange(fields), physicalExtent(extent) {
+        }
+        auto leaf_offsets() const -> IndexRange {
+            const IndexRange result = leafOffsetRange;
+            return result;
+        }
+        auto field_offsets() const -> IndexRange {
+            const IndexRange result = fieldOffsetRange;
+            return result;
+        }
+        auto extent() const -> PhysicalExtent {
+            const PhysicalExtent result = physicalExtent;
+            return result;
+        }
+    };
+    class IndexRow {
+        i64 indexValue;
+    public:
+        IndexRow(i64 value) : indexValue(value) {
+        }
+        auto value() const -> i64 {
+            return indexValue;
+        }
+    };
+    class DescriptorRow {
+        i64 descriptorId;
+        i64 sizeValue;
+        i64 publicFieldCount;
+    public:
+        DescriptorRow(i64 id, i64 size, i64 fields) : descriptorId(id), sizeValue(size), publicFieldCount(fields) {
+        }
+        auto id() const -> i64 {
+            return descriptorId;
+        }
+        auto size() const -> i64 {
+            return sizeValue;
+        }
+        auto public_fields() const -> i64 {
+            return publicFieldCount;
+        }
+    };
+    class ViewRow {
+        i64 moduleScope;
+        IndexRange descriptorRange;
+    public:
+        ViewRow(i64 scope, IndexRange descriptors) : moduleScope(scope), descriptorRange(descriptors) {
+        }
+        auto scope() const -> i64 {
+            return moduleScope;
+        }
+        auto descriptors() const -> IndexRange {
+            const IndexRange result = descriptorRange;
+            return result;
+        }
+    };
+    class EnumRow {
+        ByteRange nameRange;
+        i64 caseCount;
+    public:
+        EnumRow(ByteRange name, i64 cases) : nameRange(name), caseCount(cases) {
+        }
+        auto name() const -> ByteRange {
+            const ByteRange result = nameRange;
+            return result;
+        }
+        auto cases() const -> i64 {
+            return caseCount;
+        }
+    };
+    class ClassResultRow {
+        IndexRange fieldRange;
+        i64 canonicalStorage;
+        i64 nestingDepth;
+        i64 markValue;
+    public:
+        ClassResultRow(IndexRange fields, i64 storage, i64 depth, i64 mark) : fieldRange(fields),
+            canonicalStorage(storage), nestingDepth(depth), markValue(mark) {
+        }
+        auto fields() const -> IndexRange {
+            const IndexRange result = fieldRange;
+            return result;
+        }
+        auto canonical_storage() const -> i64 {
+            return canonicalStorage;
+        }
+        auto depth() const -> i64 {
+            return nestingDepth;
+        }
+        auto mark() const -> i64 {
+            return markValue;
+        }
+    };
+    class FrameRow {
+        i64 classIndex;
+        i64 nextField;
+        i64 pathDepth;
+    public:
+        FrameRow(i64 index, i64 next, i64 depth) : classIndex(index), nextField(next), pathDepth(depth) {
+        }
+        auto class_index() const -> i64 {
+            return classIndex;
+        }
+        auto next_field() const -> i64 {
+            return nextField;
+        }
+        auto path_depth() const -> i64 {
+            return pathDepth;
+        }
+    };
+    class CoreCounts {
+        i64 bytes;
+        i64 types;
+        i64 classes;
+        i64 fields;
+        i64 leaves;
+    public:
+        CoreCounts(i64 byte_count, i64 type_count, i64 class_count, i64 field_rows, i64 leaf_count) : bytes(byte_count),
+            types(type_count), classes(class_count), fields(field_rows), leaves(leaf_count) {
+        }
+        auto byte_count() const -> i64 {
+            return bytes;
+        }
+        auto type_count() const -> i64 {
+            return types;
+        }
+        auto class_count() const -> i64 {
+            return classes;
+        }
+        auto field_row_count() const -> i64 {
+            return fields;
+        }
+        auto leaf_count() const -> i64 {
+            return leaves;
+        }
+    };
+    class MapCounts {
+        i64 storage;
+        i64 indices;
+        i64 descriptors;
+        i64 views;
+        i64 enums;
+    public:
+        MapCounts(i64 storage_count, i64 index_count, i64 descriptor_count, i64 view_count,
+            i64 enum_count) : storage(storage_count), indices(index_count), descriptors(descriptor_count),
+            views(view_count), enums(enum_count) {
+        }
+        auto storage_count() const -> i64 {
+            return storage;
+        }
+        auto index_count() const -> i64 {
+            return indices;
+        }
+        auto descriptor_count() const -> i64 {
+            return descriptors;
+        }
+        auto view_count() const -> i64 {
+            return views;
+        }
+        auto enum_count() const -> i64 {
+            return enums;
+        }
+    };
+    class InputCounts {
+        CoreCounts coreCounts;
+        MapCounts mapCounts;
+    public:
+        InputCounts(CoreCounts core, MapCounts maps) : coreCounts(core), mapCounts(maps) {
+        }
+        auto byte_count() const -> i64 {
+            const CoreCounts value = coreCounts;
+            return value.byte_count();
+        }
+        auto type_count() const -> i64 {
+            const CoreCounts value = coreCounts;
+            return value.type_count();
+        }
+        auto class_count() const -> i64 {
+            const CoreCounts value = coreCounts;
+            return value.class_count();
+        }
+        auto field_row_count() const -> i64 {
+            const CoreCounts value = coreCounts;
+            return value.field_row_count();
+        }
+        auto leaf_count() const -> i64 {
+            const CoreCounts value = coreCounts;
+            return value.leaf_count();
+        }
+        auto storage_count() const -> i64 {
+            const MapCounts value = mapCounts;
+            return value.storage_count();
+        }
+        auto index_count() const -> i64 {
+            const MapCounts value = mapCounts;
+            return value.index_count();
+        }
+        auto descriptor_count() const -> i64 {
+            const MapCounts value = mapCounts;
+            return value.descriptor_count();
+        }
+        auto view_count() const -> i64 {
+            const MapCounts value = mapCounts;
+            return value.view_count();
+        }
+        auto enum_count() const -> i64 {
+            const MapCounts value = mapCounts;
+            return value.enum_count();
+        }
+    };
+    auto count_sum(i64 left, i64 right) -> i64 {
+        if (left < 0 || right < 0 || left > 9223372036854775807 - right) {
+            return -1;
+        }
+        return left + right;
+    }
+    auto field_capacity(InputCounts counts) -> i64 {
+        return count_sum(counts.field_row_count(), counts.leaf_count());
+    }
+    auto storage_capacity(InputCounts counts) -> i64 {
+        return count_sum(counts.storage_count(), counts.class_count());
+    }
+    auto index_capacity(InputCounts counts) -> i64 {
+        return count_sum(count_sum(counts.index_count(), counts.leaf_count()), field_capacity(counts));
+    }
+    auto valid_counts(InputCounts counts) -> bool {
+        return counts.byte_count() >= 0 && counts.type_count() >= 0 && counts.class_count() >= 0
+            && counts.field_row_count() >= 0 && counts.leaf_count() >= 0 && counts.storage_count() >= 0
+            && counts.index_count() >= 0 && counts.descriptor_count() >= 0 && counts.view_count() >= 0
+            && counts.enum_count() >= 0 && field_capacity(counts) >= 0 && field_capacity(counts) <= counts.type_count()
+            && storage_capacity(counts) >= 0 && index_capacity(counts) >= 0;
+    }
+    auto invalid_type() -> RawTypeRow {
+        return RawTypeRow(-1, ByteRange(-1, -1), RawTypeTail(-1, -1, 1u64, 1u64, 1u64));
+    }
+    auto invalid_callable() -> CallableRow {
+        return CallableRow(ByteRange(-1, -1), IndexRange(-1, -1), -1, ReceiverShape(ByteRange(-1, -1),
+            18446744073709551615u64), CallableOptions(18446744073709551615u64, -1, -1, -1, -1), IndexRange(-1, -1));
+    }
+    auto invalid_class() -> ClassRow {
+        return ClassRow(ByteRange(-1, -1), IndexRange(-1, -1), IndexRange(-1, -1), -1, 18446744073709551615u64);
+    }
+    auto invalid_field() -> FieldRow {
+        return FieldRow(-1, -1, -1, -1, -1);
+    }
+    auto invalid_storage() -> StorageRow {
+        return StorageRow(IndexRange(-1, -1), IndexRange(-1, -1), PhysicalExtent(-1, -1, -1));
+    }
+    auto invalid_result() -> ClassResultRow {
+        return ClassResultRow(IndexRange(-1, -1), -1, 0, 0);
+    }
+    auto type_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<RawTypeRow> {
+        const RawTypeRow fill = invalid_type();
+        builtin::OwnedValues<RawTypeRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto class_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<ClassRow> {
+        const ClassRow fill = invalid_class();
+        builtin::OwnedValues<ClassRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto field_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<FieldRow> {
+        const FieldRow fill = invalid_field();
+        builtin::OwnedValues<FieldRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto storage_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<StorageRow> {
+        const StorageRow fill = invalid_storage();
+        builtin::OwnedValues<StorageRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto index_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<IndexRow> {
+        const IndexRow fill = IndexRow(-1);
+        builtin::OwnedValues<IndexRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto descriptor_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<DescriptorRow> {
+        const DescriptorRow fill = DescriptorRow(-1, -1, -1);
+        builtin::OwnedValues<DescriptorRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto view_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<ViewRow> {
+        const ViewRow fill = ViewRow(-1, IndexRange(-1, -1));
+        builtin::OwnedValues<ViewRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto enum_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<EnumRow> {
+        const EnumRow fill = EnumRow(ByteRange(-1, -1), -1);
+        builtin::OwnedValues<EnumRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto callable_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<CallableRow> {
+        const CallableRow fill = invalid_callable();
+        builtin::OwnedValues<CallableRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto slot_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<SlotRow> {
+        const SlotRow fill = SlotRow(-1, -1, -1, -1, -1);
+        builtin::OwnedValues<SlotRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto result_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<ClassResultRow> {
+        const ClassResultRow fill = invalid_result();
+        builtin::OwnedValues<ClassResultRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto frame_pool(builtin::ByteRegion region) -> builtin::OwnedValues<FrameRow> {
+        const FrameRow fill = FrameRow(-1, -1, -1);
+        builtin::OwnedValues<FrameRow> result = region.try_allocate(4, fill);
+        return move(result);
+    }
+    class MetadataStore {
+        builtin::OwnedBytes bytes;
+        builtin::OwnedValues<RawTypeRow> types;
+        builtin::OwnedValues<ClassRow> classes;
+        builtin::OwnedValues<FieldRow> fields;
+        builtin::OwnedValues<StorageRow> storage;
+        builtin::OwnedValues<IndexRow> indices;
+        builtin::OwnedValues<DescriptorRow> descriptors;
+        builtin::OwnedValues<ViewRow> views;
+        builtin::OwnedValues<EnumRow> enums;
+        builtin::OwnedValues<CallableRow> callables;
+        builtin::OwnedValues<SlotRow> slots;
+        builtin::OwnedValues<ClassResultRow> results;
+        builtin::OwnedValues<FrameRow> frames;
+        // Only appendable pools need their original prefix ends retained.
+        // All immutable input counts are their checked allocation lengths.
+        i64 inputLeaves;
+        i64 inputFields;
+        i64 inputStorage;
+        i64 inputIndices;
+        // Declaration rows precede the occurrence-owned instruction type suffix.
+        i64 instructionTypeBegin;
+        i64 fieldEnd;
+        i64 storageEnd;
+        i64 indexEnd;
+        i64 frameCount;
+        MetadataStatus statusValue;
+        MetadataError errorValue;
+        bool started;
+    public:
+        // Empty owners establish region provenance once. A single borrowed
+        // initialization then resizes them to exact capacities; copied counts
+        // never cross an ordinary region-function boundary.
+        MetadataStore(builtin::ByteRegion region) : bytes(region.try_allocate(0)), types(type_pool(region, 0)),
+            classes(class_pool(region, 0)), fields(field_pool(region, 0)), storage(storage_pool(region, 0)),
+            indices(index_pool(region, 0)), descriptors(descriptor_pool(region, 0)), views(view_pool(region, 0)),
+            enums(enum_pool(region, 0)), callables(callable_pool(region, 0)), slots(slot_pool(region, 0)),
+            results(result_pool(region, 0)), frames(frame_pool(region)), inputLeaves(0), inputFields(0),
+            inputStorage(0), inputIndices(0), instructionTypeBegin(-1), fieldEnd(0), storageEnd(0), indexEnd(0),
+            frameCount(0), statusValue(MetadataStatus::pending), errorValue(MetadataError::none), started(false) {
+        }
+        auto initialize(InputCounts counts, i64 callableCount, i64 slotCount, i64 instructionBegin) -> bool {
+            if (started || statusValue != MetadataStatus::pending || instructionTypeBegin != -1) {
+                return false;
+            }
+            if (!valid_counts(counts) || callableCount < 0 || slotCount < 0 || instructionBegin < 0 || instructionBegin
+                > counts.type_count() || field_capacity(counts) > instructionBegin) {
+                statusValue = MetadataStatus::invalid;
+                errorValue = MetadataError::integrity;
+                return false;
+            }
+            inputLeaves = counts.leaf_count();
+            inputFields = counts.field_row_count();
+            inputStorage = counts.storage_count();
+            inputIndices = counts.index_count();
+            instructionTypeBegin = instructionBegin;
+            fieldEnd = inputFields;
+            storageEnd = inputStorage;
+            indexEnd = inputIndices;
+            // A failed initial owner is terminal, including zero-length owners.
+            // Later resize failures retain all successful siblings for cleanup.
+            if (!bytes.ok() || !types.ok() || !classes.ok() || !fields.ok() || !storage.ok() || !indices.ok()
+                || !descriptors.ok() || !views.ok() || !enums.ok() || !callables.ok() || !slots.ok() || !results.ok()
+                || !frames.ok()) {
+                statusValue = MetadataStatus::allocation;
+                return false;
+            }
+            const RawTypeRow empty_type = invalid_type();
+            const ClassRow empty_class = invalid_class();
+            const FieldRow empty_field = invalid_field();
+            const StorageRow empty_storage = invalid_storage();
+            const IndexRow empty_index = IndexRow(-1);
+            const DescriptorRow empty_descriptor = DescriptorRow(-1, -1, -1);
+            const ViewRow empty_view = ViewRow(-1, IndexRange(-1, -1));
+            const EnumRow empty_enum = EnumRow(ByteRange(-1, -1), -1);
+            const CallableRow empty_callable = invalid_callable();
+            const SlotRow empty_slot = SlotRow(-1, -1, -1, -1, -1);
+            const ClassResultRow empty_result = invalid_result();
+            if (!bytes.try_resize(counts.byte_count()) || !types.try_resize(counts.type_count(), empty_type)
+                || !classes.try_resize(counts.class_count(), empty_class) || !fields.try_resize(field_capacity(counts),
+                empty_field) || !storage.try_resize(storage_capacity(counts), empty_storage)
+                || !indices.try_resize(index_capacity(counts), empty_index)
+                || !descriptors.try_resize(counts.descriptor_count(), empty_descriptor)
+                || !views.try_resize(counts.view_count(), empty_view) || !enums.try_resize(counts.enum_count(),
+                empty_enum) || !callables.try_resize(callableCount, empty_callable) || !slots.try_resize(slotCount,
+                empty_slot) || !results.try_resize(counts.class_count(), empty_result) || !allocated()) {
+                statusValue = MetadataStatus::allocation;
+            }
+            return statusValue == MetadataStatus::pending;
+        }
+        auto allocated() const -> bool {
+            // Failed resize keeps its old owner valid; the terminal status must
+            // prevent that shorter but well-formed prefix from being published.
+            if (statusValue == MetadataStatus::allocation || statusValue == MetadataStatus::invalid) {
+                return false;
+            }
+            const i64 field_limit = count_sum(inputFields, inputLeaves);
+            const i64 storage_limit = count_sum(inputStorage, classes.size());
+            const i64 index_limit = count_sum(count_sum(inputIndices, inputLeaves), field_limit);
+            return inputLeaves >= 0 && inputFields >= 0 && inputStorage >= 0 && inputIndices >= 0
+                && instructionTypeBegin >= 0 && instructionTypeBegin <= types.size() && field_limit >= 0 && field_limit
+                <= instructionTypeBegin && storage_limit >= 0 && index_limit >= 0 && bytes.ok() && types.ok()
+                && classes.ok() && fields.ok() && storage.ok() && indices.ok() && descriptors.ok() && views.ok()
+                && enums.ok() && callables.ok() && slots.ok() && results.ok() && frames.ok() && fields.size()
+                == field_limit && storage.size() == storage_limit && indices.size() == index_limit && results.size()
+                == classes.size() && frames.size() == 4;
+        }
+        auto status() const -> MetadataStatus {
+            return statusValue;
+        }
+        auto error() const -> MetadataError {
+            return errorValue;
+        }
+        auto writable() const -> bool {
+            return started && statusValue == MetadataStatus::pending;
+        }
+        auto begin() -> bool {
+            if (started || statusValue != MetadataStatus::pending || !allocated()) {
+                return false;
+            }
+            started = true;
+            return true;
+        }
+        auto reject(MetadataError reason) -> bool {
+            if (statusValue == MetadataStatus::pending) {
+                statusValue = MetadataStatus::invalid;
+                errorValue = reason;
+                if (reason == MetadataError::none) {
+                    errorValue = MetadataError::integrity;
+                }
+            }
+            return false;
+        }
+        auto complete() -> bool {
+            if (!writable() || frameCount != 0) {
+                return reject(MetadataError::integrity);
+            }
+            statusValue = MetadataStatus::success;
+            return true;
+        }
+        auto byte_count() const -> i64 {
+            return bytes.size();
+        }
+        auto type_count() const -> i64 {
+            return types.size();
+        }
+        auto instruction_type_begin() const -> i64 {
+            return instructionTypeBegin;
+        }
+        auto class_count() const -> i64 {
+            return classes.size();
+        }
+        auto leaf_count() const -> i64 {
+            return inputLeaves;
+        }
+        auto input_field_count() const -> i64 {
+            return inputFields;
+        }
+        auto input_storage_count() const -> i64 {
+            return inputStorage;
+        }
+        auto input_index_count() const -> i64 {
+            return inputIndices;
+        }
+        auto descriptor_count() const -> i64 {
+            return descriptors.size();
+        }
+        auto view_count() const -> i64 {
+            return views.size();
+        }
+        auto enum_count() const -> i64 {
+            return enums.size();
+        }
+        auto callable_count() const -> i64 {
+            return callables.size();
+        }
+        auto slot_count() const -> i64 {
+            return slots.size();
+        }
+        auto field_row_count() const -> i64 {
+            return fieldEnd;
+        }
+        auto storage_count() const -> i64 {
+            return storageEnd;
+        }
+        auto index_count() const -> i64 {
+            return indexEnd;
+        }
+        auto frame_count() const -> i64 {
+            return frameCount;
+        }
+        auto byte_at(i64 index) const -> i64 {
+            if (index < 0 || index >= byte_count() || !bytes.ok()) {
+                return -1;
+            }
+            return i64(bytes.at(index));
+        }
+        // Keep byte_at's signed bounds, failed-owner sentinel and checked reads,
+        // but observe immutable owner facts once for this bounded comparison.
+        auto compare_bytes(i64 left, i64 right, i64 count) const -> i64 {
+            if (count <= 0) {
+                return 0;
+            }
+            const i64 limit = bytes.size();
+            const bool available = bytes.ok();
+            if (available && left >= 0 && left <= limit && count <= limit - left && right >= 0 && right <= limit
+                && count <= limit - right) {
+                // Validate the immutable owner once, then read the bounded ranges
+                // through a borrow. Span access retains inline bounds checks.
+                const builtin::span<const u8> checked = borrow_bytes(bytes);
+                if (left == right && checked.size() == limit) {
+                    return 0;
+                }
+                i64 compared = 0;
+                while (compared < count) {
+                    const i64 a = i64(checked.at(left + compared));
+                    const i64 b = i64(checked.at(right + compared));
+                    if (a < b) {
+                        return -1;
+                    }
+                    if (a > b) {
+                        return 1;
+                    }
+                    compared = compared + 1;
+                }
+                return 0;
+            }
+            i64 at = 0;
+            while (at < count) {
+                const i64 left_index = left + at;
+                i64 a = -1;
+                if (left_index >= 0 && left_index < limit && available) {
+                    a = i64(bytes.at(left_index));
+                }
+                const i64 right_index = right + at;
+                i64 b = -1;
+                if (right_index >= 0 && right_index < limit && available) {
+                    b = i64(bytes.at(right_index));
+                }
+                if (a < b) {
+                    return -1;
+                }
+                if (a > b) {
+                    return 1;
+                }
+                at = at + 1;
+            }
+            return 0;
+        }
+        // compare_bytes' view of one byte: -1 outside the owner or for a failed owner.
+        auto compared_byte(i64 index) const -> i64 {
+            if (index < 0 || index >= bytes.size() || !bytes.ok()) {
+                return -1;
+            }
+            return i64(bytes.at(index));
+        }
+        // The first offset from start below count where compare_bytes would see the
+        // two ranges differ, or count when they agree there.
+        auto shared_bytes(i64 left, i64 right, i64 count, i64 start) const -> i64 {
+            if (start < 0 || start >= count) {
+                return count;
+            }
+            const i64 limit = bytes.size();
+            if (bytes.ok() && left >= 0 && left <= limit && count <= limit - left && right >= 0 && right <= limit
+                && count <= limit - right) {
+                const builtin::span<const u8> checked = borrow_bytes(bytes);
+                i64 at = start;
+                while (at < count) {
+                    if (checked.at(left + at) != checked.at(right + at)) {
+                        return at;
+                    }
+                    at = at + 1;
+                }
+                return count;
+            }
+            i64 at = start;
+            while (at < count) {
+                if (compared_byte(left + at) != compared_byte(right + at)) {
+                    return at;
+                }
+                at = at + 1;
+            }
+            return count;
+        }
+        auto type_at(i64 index) const -> RawTypeRow {
+            if (index < 0 || index >= type_count() || !types.ok()) {
+                const RawTypeRow invalid = invalid_type();
+                return invalid;
+            }
+            const RawTypeRow result = types.at(index);
+            return result;
+        }
+        auto class_at(i64 index) const -> ClassRow {
+            if (index < 0 || index >= class_count() || !classes.ok()) {
+                const ClassRow invalid = invalid_class();
+                return invalid;
+            }
+            const ClassRow result = classes.at(index);
+            return result;
+        }
+        auto field_at(i64 index) const -> FieldRow {
+            if (index < 0 || index >= fieldEnd || !fields.ok()) {
+                const FieldRow invalid = invalid_field();
+                return invalid;
+            }
+            const FieldRow result = fields.at(index);
+            return result;
+        }
+        auto storage_at(i64 index) const -> StorageRow {
+            if (index < 0 || index >= storageEnd || !storage.ok()) {
+                const StorageRow invalid = invalid_storage();
+                return invalid;
+            }
+            const StorageRow result = storage.at(index);
+            return result;
+        }
+        auto index_at(i64 index) const -> IndexRow {
+            if (index < 0 || index >= indexEnd || !indices.ok()) {
+                return IndexRow(-1);
+            }
+            const IndexRow result = indices.at(index);
+            return result;
+        }
+        auto descriptor_at(i64 index) const -> DescriptorRow {
+            if (index < 0 || index >= descriptor_count() || !descriptors.ok()) {
+                return DescriptorRow(-1, -1, -1);
+            }
+            const DescriptorRow result = descriptors.at(index);
+            return result;
+        }
+        auto view_at(i64 index) const -> ViewRow {
+            if (index < 0 || index >= view_count() || !views.ok()) {
+                return ViewRow(-1, IndexRange(-1, -1));
+            }
+            const ViewRow result = views.at(index);
+            return result;
+        }
+        auto enum_at(i64 index) const -> EnumRow {
+            if (index < 0 || index >= enum_count() || !enums.ok()) {
+                return EnumRow(ByteRange(-1, -1), -1);
+            }
+            const EnumRow result = enums.at(index);
+            return result;
+        }
+        auto callable_at(i64 index) const -> CallableRow {
+            if (index < 0 || index >= callable_count() || !callables.ok()) {
+                const CallableRow invalid = invalid_callable();
+                return invalid;
+            }
+            const CallableRow result = callables.at(index);
+            return result;
+        }
+        auto slot_at(i64 index) const -> SlotRow {
+            if (index < 0 || index >= slot_count() || !slots.ok()) {
+                return SlotRow(-1, -1, -1, -1, -1);
+            }
+            const SlotRow result = slots.at(index);
+            return result;
+        }
+        auto result_at(i64 index) const -> ClassResultRow {
+            if (index < 0 || index >= class_count() || !results.ok()) {
+                const ClassResultRow invalid = invalid_result();
+                return invalid;
+            }
+            const ClassResultRow result = results.at(index);
+            return result;
+        }
+        auto append_field(FieldRow value) -> i64 {
+            if (!writable() || fieldEnd < input_field_count() || fieldEnd >= fields.size()) {
+                reject(MetadataError::integrity);
+                return -1;
+            }
+            const i64 index = fieldEnd;
+            if (!fields.set(index, value)) {
+                reject(MetadataError::integrity);
+                return -1;
+            }
+            fieldEnd = fieldEnd + 1;
+            return index;
+        }
+        auto append_storage(StorageRow value) -> i64 {
+            if (!writable() || storageEnd < input_storage_count() || storageEnd >= storage.size()) {
+                reject(MetadataError::integrity);
+                return -1;
+            }
+            const i64 index = storageEnd;
+            if (!storage.set(index, value)) {
+                reject(MetadataError::integrity);
+                return -1;
+            }
+            storageEnd = storageEnd + 1;
+            return index;
+        }
+        auto reserve_indices(i64 count) -> i64 {
+            if (!writable() || count < 0 || indexEnd < input_index_count() || indexEnd > indices.size() || count
+                > indices.size() - indexEnd) {
+                reject(MetadataError::integrity);
+                return -1;
+            }
+            const i64 first = indexEnd;
+            indexEnd = indexEnd + count;
+            return first;
+        }
+        auto set_index(i64 index, IndexRow value) -> bool {
+            if (!writable() || index < input_index_count() || index >= indexEnd || !indices.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            return true;
+        }
+        auto append_index(IndexRow value) -> i64 {
+            const i64 index = reserve_indices(1);
+            if (index < 0 || !set_index(index, value)) {
+                return -1;
+            }
+            return index;
+        }
+        auto set_result(i64 index, ClassResultRow value) -> bool {
+            if (!writable() || index < 0 || index >= class_count() || !results.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            return true;
+        }
+        auto frame_at(i64 index) const -> FrameRow {
+            if (index < 0 || index >= frameCount || !frames.ok()) {
+                return FrameRow(-1, -1, -1);
+            }
+            const FrameRow result = frames.at(index);
+            return result;
+        }
+        auto push_frame(FrameRow value) -> bool {
+            if (!writable() || frameCount < 0 || frameCount >= 4 || !frames.set(frameCount, value)) {
+                return reject(MetadataError::integrity);
+            }
+            frameCount = frameCount + 1;
+            return true;
+        }
+        auto set_frame(i64 index, FrameRow value) -> bool {
+            if (!writable() || index < 0 || index >= frameCount || !frames.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            return true;
+        }
+        auto pop_frame() -> bool {
+            if (!writable() || frameCount <= 0) {
+                return reject(MetadataError::integrity);
+            }
+            frameCount = frameCount - 1;
+            return true;
+        }
+    };
+    auto create(builtin::ByteRegion region) -> MetadataStore {
+        MetadataStore result = MetadataStore(region);
+        return move(result);
+    }
+    auto release(builtin::ByteRegion region, MetadataStore store) -> i64 {
+        return 0;
+    }
+}

@@ -1,0 +1,1151 @@
+export module aurora.compiler.ir_instruction_storage;
+import aurora.compiler.ir_metadata_storage;
+
+// Durable executable storage. Ingress fills immutable instruction/payload rows
+// once. Source structural admission normalizes code order before native values
+// are checked; immutable instruction/payload rows never move.
+// Layout comments are source predictions, never generated ABI evidence.
+export namespace compiler_ir_instructions {
+    enum class InstructionStatus {
+        pending,
+        admitted,
+        structured,
+        published,
+        allocation,
+        invalid
+    };
+    enum class InstructionError {
+        none,
+        //: invalid hosted IR instruction transport
+        integrity,
+        //: invalid typed IR: noncanonical instruction type payload
+        noncanonical_type,
+        //: invalid typed IR: empty function body
+        empty_body,
+        //: invalid typed IR: duplicate or invalid label
+        invalid_label,
+        //: invalid typed IR: unknown jump target
+        unknown_jump,
+        //: invalid typed IR: unknown branch target
+        unknown_branch,
+        //: invalid typed IR: reachable fallthrough without return
+        reachable_fallthrough,
+        //: invalid typed IR: unreachable semantic instruction
+        unreachable_semantic,
+        //: invalid typed IR: service bindings must form the leading entry group
+        service_prefix,
+        //: invalid typed IR: service parameter bindings overlap
+        service_overlap,
+        //: invalid typed IR: region parameter binding must begin the entry prefix
+        region_prefix,
+        //: invalid typed IR: owned byte parameter bindings must form the entry prefix
+        owner_prefix,
+        //: invalid typed IR: owned byte parameter bindings overlap
+        owner_overlap,
+        //: invalid typed IR: owning class parameter bindings must form the entry prefix
+        owning_prefix,
+        //: invalid typed IR: owning class parameter bindings overlap
+        owning_overlap,
+        //: invalid typed IR: object parameter bindings must form the entry prefix
+        object_prefix,
+        //: invalid typed IR: object parameter bindings overlap
+        object_overlap,
+        //: invalid typed IR: span parameter bindings must form the entry prefix
+        span_prefix,
+        //: invalid typed IR: span parameter bindings overlap
+        span_overlap,
+        //: invalid typed IR: parameter bindings must form the entry prefix
+        scalar_prefix,
+        //: invalid typed IR: scalar parameter bindings overlap
+        scalar_overlap,
+        //: invalid typed IR: parameter binding outside entry prefix
+        late_binding,
+        //: invalid typed IR: service binding requires exact authorized leading parameter
+        service_binding,
+        //: invalid typed IR: region parameter requires exact typed spill
+        region_slot,
+        //: invalid typed IR: owned byte parameter type mismatch
+        owner_type,
+        //: invalid typed IR: owned byte parameter requires bound region
+        owner_region,
+        //: invalid typed IR: owned byte parameter requires exact typed spill
+        owner_slot,
+        //: invalid typed IR: owned byte parameter must be mutable
+        owner_mutable,
+        //: invalid typed IR: span parameter type mismatch
+        span_type,
+        //: invalid typed IR: span parameter requires exact typed spill
+        span_slot,
+        //: invalid typed IR: owning class parameter type mismatch
+        owning_type,
+        //: invalid typed IR: owning class parameter requires bound region
+        owning_region,
+        //: invalid typed IR: owning class parameter requires exact nominal object slot
+        owning_slot,
+        //: invalid typed IR: owning class parameter must be mutable
+        owning_mutable,
+        //: invalid typed IR: copied parameter cannot bind owning class
+        object_owner,
+        //: invalid typed IR: object parameter type mismatch
+        object_type,
+        //: invalid typed IR: object parameter requires exact object slot
+        object_slot,
+        //: invalid typed IR: object parameter nominal class mismatch
+        object_nominal,
+        //: invalid typed IR: object parameter must be readonly
+        object_readonly,
+        //: invalid typed IR: parameter type mismatch
+        scalar_type,
+        //: invalid typed IR: parameter cannot bind object field storage
+        scalar_object,
+        //: invalid typed IR: parameter cannot bind byte array origin storage
+        scalar_array,
+        //: invalid typed IR: slot type/layout mismatch
+        scalar_slot,
+        //: invalid typed IR: ordinary call cannot target runtime symbol
+        call_runtime,
+        //: invalid typed IR: unknown call target
+        call_target,
+        //: invalid typed IR: plain call cannot target receiver function
+        call_receiver,
+        //: invalid typed IR: plain call cannot bypass a service loan
+        call_service,
+        //: invalid typed IR: plain call cannot target resource signature
+        call_resource,
+        //: invalid typed IR: plain call cannot target aggregate signature
+        call_aggregate,
+        //: invalid typed IR: unknown aggregate call target
+        aggregate_target,
+        //: invalid typed IR: aggregate call cannot target receiver function
+        aggregate_receiver,
+        //: invalid typed IR: aggregate call cannot bypass a service loan
+        aggregate_service,
+        //: invalid typed IR: aggregate call cannot target resource signature
+        aggregate_resource,
+        //: invalid typed IR: aggregate call requires aggregate signature
+        aggregate_signature,
+        //: invalid typed IR: aggregate call argument vector size mismatch
+        aggregate_vector,
+        //: invalid typed IR: span call argument vector size mismatch
+        aggregate_span_vector,
+        //: invalid typed IR: span argument cannot name object storage
+        aggregate_span_object,
+        //: invalid typed IR: non-span argument cannot name span storage
+        aggregate_nonspan,
+        //: invalid typed IR: scalar argument cannot name object storage
+        aggregate_scalar,
+        //: invalid typed IR: invalid aggregate parameter type
+        aggregate_parameter,
+        //: invalid typed IR: aggregate argument requires exact object slot
+        aggregate_argument_slot,
+        //: invalid typed IR: aggregate argument snapshots must be distinct
+        aggregate_argument_alias,
+        //: invalid typed IR: aggregate argument nominal class mismatch
+        aggregate_argument_nominal,
+        //: invalid typed IR: aggregate argument snapshot must be readonly
+        aggregate_argument_readonly,
+        //: invalid typed IR: aggregate result requires exact object slot
+        aggregate_result_slot,
+        //: invalid typed IR: aggregate result aliases argument snapshot
+        aggregate_result_alias,
+        //: invalid typed IR: aggregate result nominal class mismatch
+        aggregate_result_nominal,
+        //: invalid typed IR: invalid aggregate result type
+        aggregate_result_type,
+        //: invalid typed IR: scalar result cannot name object storage
+        aggregate_scalar_result,
+        //: invalid typed IR: unknown resource call target
+        resource_target,
+        //: invalid typed IR: resource call requires ordinary resource signature or owning constructor
+        resource_signature,
+        //: invalid typed IR: private constructor requires lexical class authority
+        resource_private,
+        //: invalid typed IR: resource call receiver offset does not match target
+        resource_receiver,
+        //: invalid typed IR: region requires exact typed spill
+        call_region_slot,
+        //: invalid typed IR: resource call argument vector size mismatch
+        resource_vector,
+        //: invalid typed IR: constructor cannot take owning class arguments
+        resource_constructor_argument,
+        //: invalid typed IR: resource call argument storage must be distinct
+        resource_argument_alias,
+        //: invalid typed IR: resource constructor receiver aliases owning argument
+        resource_receiver_alias,
+        //: invalid typed IR: owner type requires exact typed spill
+        call_owner_slot,
+        //: invalid typed IR: resource call owner argument nominal type mismatch
+        resource_argument_nominal,
+        //: invalid typed IR: const owned byte binding cannot be mutated or moved
+        call_owner_mutable,
+        //: invalid typed IR: owning object nominal class mismatch
+        call_owning_nominal,
+        //: invalid typed IR: const owning object cannot be moved or mutated
+        call_owning_mutable,
+        //: invalid typed IR: constructor receiver aliases copied argument snapshot
+        resource_copied_receiver,
+        //: invalid typed IR: constructor copied argument nominal class mismatch
+        resource_copied_nominal,
+        //: invalid typed IR: constructor copied argument snapshot must be readonly
+        resource_copied_readonly,
+        //: invalid typed IR: resource call non-owner argument cannot name storage
+        resource_nonowner,
+        //: invalid typed IR: resource call first argument must be region
+        resource_first,
+        //: invalid typed IR: invalid resource call parameter type
+        resource_parameter,
+        //: invalid typed IR: owning constructor requires scalar result and no result storage
+        resource_constructor_result,
+        //: invalid typed IR: owning constructor requires exact nominal receiver root
+        resource_constructor_root,
+        //: invalid typed IR: resource call owning result aliases argument
+        resource_result_alias,
+        //: invalid typed IR: resource call owner result nominal type mismatch
+        resource_result_nominal,
+        //: invalid typed IR: resource copied result requires exact object slot
+        resource_copied_result_slot,
+        //: invalid typed IR: resource copied result aliases argument storage
+        resource_copied_result_alias,
+        //: invalid typed IR: resource copied result nominal class mismatch
+        resource_copied_result_nominal,
+        //: invalid typed IR: invalid resource call result type
+        resource_result_type,
+        //: invalid typed IR: scalar resource call result cannot name owning storage
+        resource_scalar_result,
+        //: invalid typed IR: copy requires exact object slot
+        call_copy_slot,
+        //: invalid typed IR: copy nominal class mismatch
+        call_copy_nominal,
+        //: invalid typed IR: unknown method call target
+        method_target,
+        //: invalid typed IR: method call requires receiver target
+        method_receiver,
+        //: invalid typed IR: borrowed call requires borrowed formal target
+        borrowed_target,
+        //: invalid typed IR: borrowed call root lanes do not match target
+        borrowed_roots,
+        //: invalid typed IR: borrowed call requires active loan
+        borrowed_loan,
+        //: invalid typed IR: borrowed call root, lifetime, nominal type or authority mismatch
+        borrowed_root,
+        //: invalid typed IR: invalid borrowed object root
+        borrowed_selector,
+        //: invalid typed IR: borrowed object root is not bound
+        borrowed_unbound,
+        //: invalid typed IR: method call cannot target borrowed free function
+        method_borrowed,
+        //: invalid typed IR: private method requires lexical class authority
+        method_private,
+        //: invalid typed IR: method call cannot target resource signature or owning constructor
+        method_resource,
+        //: invalid typed IR: receiver signature requires scalar, enum or class values
+        method_signature,
+        //: invalid typed IR: constructor object argument vector size mismatch
+        constructor_vector,
+        //: invalid typed IR: receiver object argument vector size mismatch
+        method_vector,
+        //: invalid typed IR: method span argument vector size mismatch
+        method_span_vector,
+        //: invalid typed IR: span method argument cannot name object storage
+        method_span_object,
+        //: invalid typed IR: non-span method argument cannot name span storage
+        method_nonspan,
+        //: invalid typed IR: scalar constructor argument cannot name object storage
+        constructor_scalar,
+        //: invalid typed IR: scalar receiver argument cannot name object storage
+        method_scalar,
+        //: invalid typed IR: constructor receiver aliases argument snapshot
+        constructor_receiver_alias,
+        //: invalid typed IR: receiver aliases argument snapshot
+        method_receiver_alias,
+        //: invalid typed IR: constructor argument snapshots must be distinct
+        constructor_argument_alias,
+        //: invalid typed IR: receiver argument snapshots must be distinct
+        method_argument_alias,
+        //: invalid typed IR: constructor argument nominal class mismatch
+        constructor_argument_nominal,
+        //: invalid typed IR: receiver argument nominal class mismatch
+        method_argument_nominal,
+        //: invalid typed IR: constructor argument snapshot must be readonly
+        constructor_argument_readonly,
+        //: invalid typed IR: receiver argument snapshot must be readonly
+        method_argument_readonly,
+        //: invalid typed IR: invalid method receiver offset
+        method_offset,
+        //: invalid typed IR: invalid method receiver field index
+        method_field_index,
+        //: invalid typed IR: nested receiver cannot call constructor
+        method_nested_constructor,
+        //: invalid typed IR: invalid owned field root offset
+        method_field_root,
+        //: invalid typed IR: borrowed free formal grants no direct receiver field authority
+        method_field_authority,
+        //: invalid typed IR: receiver access without bound receiver
+        method_field_unbound,
+        //: invalid typed IR: receiver field type/layout mismatch
+        method_field_layout,
+        //: invalid typed IR: constructor cannot access owned field during initialization
+        method_field_constructor,
+        //: invalid typed IR: const receiver cannot supply mutable owned field
+        method_field_formal_mutable,
+        //: invalid typed IR: const object cannot supply mutable owned field
+        method_field_mutable,
+        //: invalid typed IR: owned field logical index out of range
+        method_field_range,
+        //: invalid typed IR: owned field operation requires class field
+        method_field_class,
+        //: invalid typed IR: nested method receiver nominal class mismatch
+        method_field_nominal,
+        //: invalid typed IR: forwarding without bound receiver
+        method_forward_unbound,
+        //: invalid typed IR: constructor cannot forward receiver during initialization
+        method_forward_constructor,
+        //: invalid typed IR: forwarded receiver nominal class mismatch
+        method_forward_nominal,
+        //: invalid typed IR: const receiver cannot forward mutable capability
+        method_forward_mutable,
+        //: invalid typed IR: method receiver is not an object slot
+        method_receiver_slot,
+        //: invalid typed IR: method receiver nominal class mismatch
+        method_receiver_nominal,
+        //: invalid typed IR: const object cannot supply mutable receiver
+        method_receiver_mutable,
+        //: invalid typed IR: multiple borrowed roots cannot produce span results
+        method_span_multiple,
+        //: invalid typed IR: span result requires direct receiver root
+        method_span_direct,
+        //: invalid typed IR: span result lacks receiver field summary
+        method_span_summary,
+        //: invalid typed IR: span requires exact typed spill
+        call_span_slot,
+        //: invalid typed IR: span parameter cannot be rebound
+        call_span_parameter,
+        //: invalid typed IR: method result aliases receiver
+        method_result_receiver,
+        //: invalid typed IR: method result aliases argument snapshot
+        method_result_alias,
+        //: invalid typed IR: method result requires exact object slot
+        method_result_slot,
+        //: invalid typed IR: method result nominal class mismatch
+        method_result_nominal,
+        //: invalid typed IR: scalar method result cannot name object storage
+        method_scalar_result,
+        //: invalid typed IR: unknown service helper target
+        service_target,
+        //: invalid typed IR: service helper requires service target and acquired loans
+        service_signature,
+        //: invalid typed IR: service helper argument vector mismatch
+        service_vector,
+        //: invalid typed IR: service copied argument vector mismatch
+        service_object_vector,
+        //: invalid typed IR: service helper requires distinct acquired loans in leading positions
+        service_leading,
+        //: invalid typed IR: service helper requires an unused loan with exact provenance
+        service_kind,
+        //: invalid typed IR: service span argument cannot name object storage
+        service_span_object,
+        //: invalid typed IR: service copied argument cannot name span storage
+        service_object_span,
+        //: invalid typed IR: invalid service parameter type
+        service_parameter,
+        //: invalid typed IR: service argument requires exact object slot
+        service_argument_slot,
+        //: invalid typed IR: service argument snapshots must be distinct
+        service_argument_alias,
+        //: invalid typed IR: service argument nominal class mismatch
+        service_argument_nominal,
+        //: invalid typed IR: service argument snapshot must be readonly
+        service_argument_readonly,
+        //: invalid typed IR: service scalar argument mismatch
+        service_scalar,
+        //: invalid typed IR: service result aliases argument snapshot
+        service_result_alias,
+        //: invalid typed IR: service scalar result mismatch
+        service_scalar_result,
+        //: invalid typed IR: scalar store cannot write nested class field
+        storage_nested_store,
+        //: invalid typed IR: object field cannot become a scalar borrow handle
+        storage_borrow_object,
+        //: invalid typed IR: invalid borrow-handle type
+        storage_borrow_type,
+        //: invalid typed IR: invalid array shape
+        storage_array_shape,
+        //: invalid typed IR: array layout underflow
+        storage_array_extent,
+        //: invalid typed IR: scalar array operation cannot address nested class field
+        storage_array_nested,
+        //: invalid typed IR: invalid constructor receiver signature
+        constructor_signature,
+        //: invalid typed IR: array lifetime requires exact byte array origin
+        storage_array_origin,
+        //: invalid typed IR: span borrow requires exact local byte array origin
+        storage_span_origin,
+        //: invalid typed IR: invalid constant type
+        constant_type,
+        //: invalid typed IR: noncanonical bool
+        constant_bool,
+        //: invalid typed IR: noncanonical u8
+        constant_u8,
+        //: invalid typed IR: invalid enum constant type
+        enum_constant_type,
+        //: invalid typed IR: enum constant is not a declared case
+        enum_constant_case,
+        //: invalid typed IR: invalid unary operation
+        unary_operation,
+        //: invalid typed IR: invalid unary operand type
+        unary_operand,
+        //: invalid typed IR: invalid binary operation
+        binary_operation,
+        //: invalid typed IR: invalid binary operand type
+        binary_operand,
+        //: invalid typed IR: invalid checked conversion types
+        conversion_types,
+        //: invalid typed IR: invalid comparison
+        comparison_operation,
+        //: invalid typed IR: non-scalar comparison
+        comparison_scalar,
+        //: invalid typed IR: ordered bool comparison or enum comparison
+        comparison_ordered,
+        //: invalid typed IR: service loan identity cannot change static root or kind
+        service_loan_identity,
+        //: invalid typed IR: service loan requires unsuspended parameter authority
+        service_loan_root,
+        //: invalid typed IR: service release requires exactly one completed helper call
+        service_release,
+        //: invalid typed IR: unknown sealed service operation
+        service_operation,
+        //: invalid typed IR: service operation kind does not match active capability
+        service_operation_kind,
+        //: invalid typed IR: service operation requires active unsuspended capability provenance
+        service_operation_root,
+        //: invalid typed IR: pixel requires closed enum result and no object storage
+        service_pixel_result,
+        //: invalid typed IR: put requires closed enum result and no object storage
+        service_put_result,
+        //: invalid typed IR: acknowledge requires closed enum result and no object storage
+        service_ack_result,
+        //: invalid typed IR: service observation requires exact pristine active copied sample object
+        service_sample_result,
+        //: invalid typed IR: port operation requires canonical scalar result
+        service_port_result,
+        //: invalid typed IR: span argument or result element type mismatch
+        call_span_type,
+        //: invalid typed IR: span borrow, reborrow, window or byte load changes the span element type
+        storage_span_type,
+        //: invalid typed IR: typed span element copy requires a typed span and an exact element object
+        storage_span_values
+    };
+    // The eight OutputRow-width leaves remain raw integers. The codec preserves
+    // unknown scalar operators for source admission to reject without enum
+    // conversion traps; unknown structural tags reject normally.
+    class RawInstructionRow {
+        i64 recordKind;
+        i64 instructionForm;
+        i64 unaryOperation;
+        i64 binaryOperation;
+        i64 comparisonOperation;
+        i64 queryOperation;
+        i64 operandBegin;
+        i64 operandCount;
+    public:
+        RawInstructionRow(i64 kind, i64 form, i64 begin, i64 count) : recordKind(kind), instructionForm(form),
+            unaryOperation(0), binaryOperation(0), comparisonOperation(0), queryOperation(0), operandBegin(begin),
+            operandCount(count) {
+        }
+        auto kind() const -> i64 {
+            return recordKind;
+        }
+        auto form() const -> i64 {
+            return instructionForm;
+        }
+        auto unary_operation() const -> i64 {
+            return unaryOperation;
+        }
+        auto binary_operation() const -> i64 {
+            return binaryOperation;
+        }
+        auto comparison_operation() const -> i64 {
+            return comparisonOperation;
+        }
+        auto query() const -> i64 {
+            return queryOperation;
+        }
+        auto operand_begin() const -> i64 {
+            return operandBegin;
+        }
+        auto operand_count() const -> i64 {
+            return operandCount;
+        }
+    };
+    class RawOperandRow {
+        i64 operandRole;
+        i64 signedValue;
+        u64 unsignedValue;
+        i64 sliceBegin;
+        i64 sliceCount;
+    public:
+        RawOperandRow(i64 role, i64 value, u64 unsigned_value, i64 begin, i64 count) : operandRole(role),
+            signedValue(value), unsignedValue(unsigned_value), sliceBegin(begin), sliceCount(count) {
+        }
+        auto role() const -> i64 {
+            return operandRole;
+        }
+        auto signed_value() const -> i64 {
+            return signedValue;
+        }
+        auto unsigned_value() const -> u64 {
+            return unsignedValue;
+        }
+        auto begin() const -> i64 {
+            return sliceBegin;
+        }
+        auto count() const -> i64 {
+            return sliceCount;
+        }
+    };
+    // InstructionId is immutable and one-based. CodePosition is zero-based
+    // within a body; neither declaration ordinals nor positions are row IDs.
+    class CodeRow {
+        i64 instructionId;
+        i64 targetPosition;
+        u64 flowFlags;
+        i64 scratchValue;
+    public:
+        CodeRow(i64 id, i64 target, u64 flags, i64 scratch) : instructionId(id), targetPosition(target),
+            flowFlags(flags), scratchValue(scratch) {
+        }
+        auto id() const -> i64 {
+            return instructionId;
+        }
+        auto target() const -> i64 {
+            return targetPosition;
+        }
+        auto flags() const -> u64 {
+            return flowFlags;
+        }
+        auto scratch() const -> i64 {
+            return scratchValue;
+        }
+        auto has_flow(u64 mask) const -> bool {
+            return (flowFlags & mask) != 0u64;
+        }
+    };
+    // The row index is the stable zero-based CallableId. Its allocation never
+    // moves, including when source normalization reduces retainedCount.
+    class BodyRow {
+        i64 codeBegin;
+        i64 codeCapacity;
+        i64 retainedCount;
+        i64 unreachableAfter;
+    public:
+        BodyRow(i64 begin, i64 capacity, i64 count, i64 unreachable) : codeBegin(begin), codeCapacity(capacity),
+            retainedCount(count), unreachableAfter(unreachable) {
+        }
+        auto begin() const -> i64 {
+            return codeBegin;
+        }
+        auto capacity() const -> i64 {
+            return codeCapacity;
+        }
+        auto count() const -> i64 {
+            return retainedCount;
+        }
+        auto unreachable_after() const -> i64 {
+            return unreachableAfter;
+        }
+    };
+    class InstructionCounts {
+        i64 instructionCount;
+        i64 operandCount;
+        i64 literalCount;
+        i64 bodyCount;
+    public:
+        InstructionCounts(i64 instructions, i64 operands, i64 literals, i64 bodies) : instructionCount(instructions),
+            operandCount(operands), literalCount(literals), bodyCount(bodies) {
+        }
+        auto instruction_count() const -> i64 {
+            return instructionCount;
+        }
+        auto operand_count() const -> i64 {
+            return operandCount;
+        }
+        auto literal_count() const -> i64 {
+            return literalCount;
+        }
+        auto body_count() const -> i64 {
+            return bodyCount;
+        }
+    };
+    auto valid_counts(InstructionCounts counts) -> bool {
+        return counts.instruction_count() >= 0 && counts.operand_count() >= 0 && counts.literal_count() >= 0
+            && counts.body_count() >= 0;
+    }
+    auto instruction_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<RawInstructionRow> {
+        const RawInstructionRow fill = RawInstructionRow(-1, -1, -1, -1);
+        builtin::OwnedValues<RawInstructionRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto operand_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<RawOperandRow> {
+        const RawOperandRow fill = RawOperandRow(-1, 0, 0u64, -1, -1);
+        builtin::OwnedValues<RawOperandRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto code_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<CodeRow> {
+        const CodeRow fill = CodeRow(0, -1, 0u64, 0);
+        builtin::OwnedValues<CodeRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    auto body_pool(builtin::ByteRegion region, i64 count) -> builtin::OwnedValues<BodyRow> {
+        const BodyRow fill = BodyRow(-1, -1, -1, 0);
+        builtin::OwnedValues<BodyRow> result = region.try_allocate(count, fill);
+        return move(result);
+    }
+    class InstructionStore {
+        builtin::OwnedValues<RawInstructionRow> instructions;
+        builtin::OwnedValues<RawOperandRow> operands;
+        builtin::OwnedBytes literals;
+        builtin::OwnedValues<CodeRow> codeOrder;
+        builtin::OwnedValues<BodyRow> bodies;
+        InstructionStatus statusValue;
+        InstructionError errorValue;
+        // Structural mutation is private and runs only while admitted. Scratch
+        // holds a sorted label-position index, the reachability queue, then
+        // old-to-normalized positions. Structured service identity admission
+        // later reuses only retained, cleared lanes for immutable instruction IDs.
+        auto flow_at(BodyRow body, i64 position) const -> CodeRow {
+            const CodeRow result = codeOrder.at(body.begin() + position);
+            return result;
+        }
+        auto form_at(BodyRow body, i64 position) const -> i64 {
+            const CodeRow code = flow_at(body, position);
+            const RawInstructionRow row = instructions.at(code.id() - 1);
+            return row.form();
+        }
+        // The sole native codec walk has already established that Label, Jump
+        // and BranchFalse each have their one scalar label operand here.
+        auto label_at(BodyRow body, i64 position) const -> i64 {
+            const CodeRow code = flow_at(body, position);
+            const RawInstructionRow row = instructions.at(code.id() - 1);
+            const RawOperandRow operand = operands.at(row.operand_begin());
+            return operand.signed_value();
+        }
+        auto set_scratch(BodyRow body, i64 position, i64 scratch) -> bool {
+            const CodeRow old = flow_at(body, position);
+            const CodeRow value = CodeRow(old.id(), old.target(), old.flags(), scratch);
+            if (!codeOrder.set(body.begin() + position, value)) {
+                return reject(InstructionError::integrity);
+            }
+            return true;
+        }
+        auto set_flow(BodyRow body, i64 position, i64 target, u64 flags) -> bool {
+            // Always reread scratch: its index can alias the instruction whose
+            // flow is changing, including an enqueued node or collected label.
+            const CodeRow old = flow_at(body, position);
+            const CodeRow value = CodeRow(old.id(), target, flags, old.scratch());
+            if (!codeOrder.set(body.begin() + position, value)) {
+                return reject(InstructionError::integrity);
+            }
+            return true;
+        }
+        auto indexed_label(BodyRow body, i64 index) const -> i64 {
+            const CodeRow slot = flow_at(body, index);
+            return label_at(body, slot.scratch());
+        }
+        auto swap_scratch(BodyRow body, i64 left, i64 right) -> bool {
+            const CodeRow first = flow_at(body, left);
+            const CodeRow second = flow_at(body, right);
+            return set_scratch(body, left, second.scratch()) && set_scratch(body, right, first.scratch());
+        }
+        auto sift_labels(BodyRow body, i64 root, i64 count) -> bool {
+            i64 current = root;
+            // A node has a left child exactly below count/2. Establishing this
+            // before multiplication bounds 2*current+1 by count-1.
+            while (current < count / 2) {
+                i64 child = current * 2 + 1;
+                if (child + 1 < count && indexed_label(body, child) < indexed_label(body, child + 1)) {
+                    child = child + 1;
+                }
+                if (indexed_label(body, current) >= indexed_label(body, child)) {
+                    return true;
+                }
+                if (!swap_scratch(body, current, child)) {
+                    return false;
+                }
+                current = child;
+            }
+            return true;
+        }
+        auto sort_labels(BodyRow body, i64 count) -> bool {
+            i64 root = count / 2;
+            while (root > 0) {
+                root = root - 1;
+                if (!sift_labels(body, root, count)) {
+                    return false;
+                }
+            }
+            i64 end = count;
+            while (end > 1) {
+                end = end - 1;
+                if (!swap_scratch(body, 0, end) || !sift_labels(body, 0, end)) {
+                    return false;
+                }
+            }
+            i64 at = 1;
+            while (at < count) {
+                if (indexed_label(body, at - 1) == indexed_label(body, at)) {
+                    return reject(InstructionError::invalid_label);
+                }
+                at = at + 1;
+            }
+            return true;
+        }
+        auto find_label(BodyRow body, i64 count, i64 label) const -> i64 {
+            i64 begin = 0;
+            i64 end = count;
+            while (begin < end) {
+                const i64 middle = begin + (end - begin) / 2;
+                if (indexed_label(body, middle) < label) {
+                    begin = middle + 1;
+                } else {
+                    end = middle;
+                }
+            }
+            if (begin == count || indexed_label(body, begin) != label) {
+                return -1;
+            }
+            const CodeRow slot = flow_at(body, begin);
+            return slot.scratch();
+        }
+        // AcquireServiceLoan's codec-checked leaves are LoanId, Offset and
+        // ServiceKindId. Scratch references immutable instruction IDs here,
+        // never normalized positions or service authority indexed by loan ID.
+        auto indexed_service_loan_operand(BodyRow body, i64 index, i64 field) const -> i64 {
+            const CodeRow slot = flow_at(body, index);
+            const RawInstructionRow row = instructions.at(slot.scratch() - 1);
+            const RawOperandRow operand = operands.at(row.operand_begin() + field);
+            return operand.signed_value();
+        }
+        auto sift_service_loans(BodyRow body, i64 root, i64 count) -> bool {
+            i64 current = root;
+            // Bound the child arithmetic before multiplying. Compare IDs
+            // directly so sparse extreme values cannot overflow a difference.
+            while (current < count / 2) {
+                i64 child = current * 2 + 1;
+                if (child + 1 < count && indexed_service_loan_operand(body, child, 0)
+                    < indexed_service_loan_operand(body, child + 1, 0)) {
+                    child = child + 1;
+                }
+                if (indexed_service_loan_operand(body, current, 0) >= indexed_service_loan_operand(body, child, 0)) {
+                    return true;
+                }
+                if (!swap_scratch(body, current, child)) {
+                    return false;
+                }
+                current = child;
+            }
+            return true;
+        }
+        auto sort_service_loans(BodyRow body, i64 count) -> bool {
+            i64 root = count / 2;
+            while (root > 0) {
+                root = root - 1;
+                if (!sift_service_loans(body, root, count)) {
+                    return false;
+                }
+            }
+            i64 end = count;
+            while (end > 1) {
+                end = end - 1;
+                if (!swap_scratch(body, 0, end) || !sift_service_loans(body, 0, end)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        auto returning(i64 form) const -> bool {
+            // Return, ReturnObject, ReturnSpan, ReturnBytes, ReturnOwnedObject.
+            // The native binding pins these raw forms to generated vocabulary.
+            return form == 43 || form == 44 || form == 53 || form == 76 || form == 80;
+        }
+        auto resolve_flow(BodyRow body) -> bool {
+            if (body.count() == 0) {
+                return reject(InstructionError::empty_body);
+            }
+            const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
+            const u64 leader = masks.flow_leader();
+            const u64 fallthrough = masks.flow_fallthrough();
+            i64 labels = 0;
+            i64 at = 0;
+            while (at < body.count()) {
+                const i64 form = form_at(body, at);
+                u64 flags = 0u64;
+                if (form != 41 && !returning(form)) {
+                    flags = fallthrough;
+                }
+                if (at == 0 || form == 40) {
+                    flags = flags | leader;
+                }
+                if (!set_flow(body, at, -1, flags)) {
+                    return false;
+                }
+                if (form == 40) {
+                    if (label_at(body, at) < 0) {
+                        return reject(InstructionError::invalid_label);
+                    }
+                    if (!set_scratch(body, labels, at)) {
+                        return false;
+                    }
+                    labels = labels + 1;
+                }
+                at = at + 1;
+            }
+            if (!sort_labels(body, labels)) {
+                return false;
+            }
+            // Resolve all explicit edges, even from unreachable instructions,
+            // before scratch is reused for the reachability queue.
+            at = 0;
+            while (at < body.count()) {
+                const i64 form = form_at(body, at);
+                if (form == 41 || form == 42) {
+                    const i64 target = find_label(body, labels, label_at(body, at));
+                    if (target < 0) {
+                        if (form == 41) {
+                            return reject(InstructionError::unknown_jump);
+                        }
+                        return reject(InstructionError::unknown_branch);
+                    }
+                    const CodeRow old = flow_at(body, at);
+                    if (!set_flow(body, at, target, old.flags())) {
+                        return false;
+                    }
+                    if (form == 42 && at + 1 < body.count()) {
+                        const CodeRow next = flow_at(body, at + 1);
+                        if (!set_flow(body, at + 1, next.target(), next.flags() | leader)) {
+                            return false;
+                        }
+                    }
+                }
+                at = at + 1;
+            }
+            return true;
+        }
+        // Mark before queueing so each position occupies at most one slot. The
+        // caller increments its bounded tail only when this adds a new node.
+        auto enqueue(BodyRow body, i64 position, i64 tail, u64 reached) -> bool {
+            if (position < 0 || position >= body.count() || tail < 0 || tail >= body.count()) {
+                return reject(InstructionError::integrity);
+            }
+            const CodeRow old = flow_at(body, position);
+            return set_flow(body, position, old.target(), old.flags() | reached) && set_scratch(body, tail, position);
+        }
+        auto reach_body(BodyRow body) -> bool {
+            const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
+            const u64 reached = masks.flow_reached();
+            const u64 fallthrough = masks.flow_fallthrough();
+            if (!enqueue(body, 0, 0, reached)) {
+                return false;
+            }
+            i64 head = 0;
+            i64 tail = 1;
+            while (head < tail) {
+                const CodeRow queued = flow_at(body, head);
+                const i64 position = queued.scratch();
+                head = head + 1;
+                const CodeRow code = flow_at(body, position);
+                // Conditional target precedes fallthrough, matching the native
+                // value-state worklist without making value claims here.
+                if (code.target() >= 0) {
+                    const CodeRow target = flow_at(body, code.target());
+                    if (!target.has_flow(reached)) {
+                        if (!enqueue(body, code.target(), tail, reached)) {
+                            return false;
+                        }
+                        tail = tail + 1;
+                    }
+                }
+                if (code.has_flow(fallthrough)) {
+                    const i64 next = position + 1;
+                    // Keep a terminal fallthrough flag for native value checking.
+                    // Its instruction's lifetime/value error precedes falling off
+                    // the body, and no out-of-range position is read or queued.
+                    if (next < body.count()) {
+                        const CodeRow following = flow_at(body, next);
+                        if (!following.has_flow(reached)) {
+                            if (!enqueue(body, next, tail, reached)) {
+                                return false;
+                            }
+                            tail = tail + 1;
+                        }
+                    }
+                }
+            }
+            return true;
+        }
+        auto normalize_body(i64 callable, BodyRow body) -> bool {
+            const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
+            const u64 reached = masks.flow_reached();
+            i64 retained = 0;
+            i64 unreachable = 0;
+            i64 at = 0;
+            while (at < body.count()) {
+                const CodeRow code = flow_at(body, at);
+                i64 mapped = -1;
+                if (code.has_flow(reached)) {
+                    mapped = retained;
+                    retained = retained + 1;
+                } else {
+                    if (unreachable == 0) {
+                        const i64 form = form_at(body, at);
+                        if (form != 40 && form != 41) {
+                            // Entry is reached, so this first omitted semantic row
+                            // follows at least one retained row. Native value checks
+                            // precede this source-owned final emission-order fact.
+                            unreachable = retained;
+                        }
+                    }
+                }
+                if (!set_scratch(body, at, mapped)) {
+                    return false;
+                }
+                at = at + 1;
+            }
+            // Remap every retained edge before forward compaction can overwrite
+            // an original position's mapping. Reachability retains its target.
+            at = 0;
+            while (at < body.count()) {
+                const CodeRow code = flow_at(body, at);
+                if (code.has_flow(reached) && code.target() >= 0) {
+                    const CodeRow target = flow_at(body, code.target());
+                    if (target.scratch() < 0 || target.scratch() >= retained) {
+                        return reject(InstructionError::integrity);
+                    }
+                    if (!set_flow(body, at, target.scratch(), code.flags())) {
+                        return false;
+                    }
+                }
+                at = at + 1;
+            }
+            i64 destination = 0;
+            at = 0;
+            while (at < body.count()) {
+                const CodeRow code = flow_at(body, at);
+                if (code.has_flow(reached)) {
+                    // IDs remain immutable; only copied code-order rows move.
+                    const CodeRow value = CodeRow(code.id(), code.target(), code.flags(), 0);
+                    if (!codeOrder.set(body.begin() + destination, value)) {
+                        return reject(InstructionError::integrity);
+                    }
+                    destination = destination + 1;
+                }
+                at = at + 1;
+            }
+            const BodyRow normalized = BodyRow(body.begin(), body.capacity(), retained, unreachable);
+            if (!bodies.set(callable, normalized)) {
+                return reject(InstructionError::integrity);
+            }
+            return true;
+        }
+    public:
+        InstructionStore(builtin::ByteRegion region, InstructionCounts counts) : instructions(instruction_pool(region,
+            counts.instruction_count())), operands(operand_pool(region, counts.operand_count())),
+            literals(region.try_allocate(counts.literal_count())), codeOrder(code_pool(region,
+            counts.instruction_count())), bodies(body_pool(region, counts.body_count())),
+            statusValue(InstructionStatus::pending), errorValue(InstructionError::none) {
+        }
+        auto initialize(InstructionCounts counts) -> bool {
+            if (statusValue != InstructionStatus::pending) {
+                return false;
+            }
+            if (!valid_counts(counts)) {
+                statusValue = InstructionStatus::invalid;
+                errorValue = InstructionError::integrity;
+            } else {
+                if (!allocated() || instructions.size() != counts.instruction_count() || operands.size()
+                    != counts.operand_count() || literals.size() != counts.literal_count() || bodies.size()
+                    != counts.body_count()) {
+                    statusValue = InstructionStatus::allocation;
+                }
+            }
+            return statusValue == InstructionStatus::pending;
+        }
+        auto allocated() const -> bool {
+            return instructions.ok() && operands.ok() && literals.ok() && codeOrder.ok() && bodies.ok()
+                && codeOrder.size() == instructions.size();
+        }
+        auto status() const -> InstructionStatus {
+            return statusValue;
+        }
+        auto error() const -> InstructionError {
+            return errorValue;
+        }
+        auto instruction_count() const -> i64 {
+            return instructions.size();
+        }
+        auto operand_count() const -> i64 {
+            return operands.size();
+        }
+        auto literal_count() const -> i64 {
+            return literals.size();
+        }
+        auto code_count() const -> i64 {
+            return codeOrder.size();
+        }
+        auto body_count() const -> i64 {
+            return bodies.size();
+        }
+        auto instruction_at(i64 id) const -> RawInstructionRow {
+            if (id <= 0 || id > instruction_count() || !instructions.ok()) {
+                return RawInstructionRow(-1, -1, -1, -1);
+            }
+            const RawInstructionRow result = instructions.at(id - 1);
+            return result;
+        }
+        auto operand_at(i64 index) const -> RawOperandRow {
+            if (index < 0 || index >= operand_count() || !operands.ok()) {
+                return RawOperandRow(-1, 0, 0u64, -1, -1);
+            }
+            const RawOperandRow result = operands.at(index);
+            return result;
+        }
+        auto literal_at(i64 index) const -> i64 {
+            if (index < 0 || index >= literal_count() || !literals.ok()) {
+                return -1;
+            }
+            return i64(literals.at(index));
+        }
+        auto code_at(i64 index) const -> CodeRow {
+            if (index < 0 || index >= code_count() || !codeOrder.ok()) {
+                return CodeRow(0, -1, 0u64, 0);
+            }
+            const CodeRow result = codeOrder.at(index);
+            return result;
+        }
+        auto body_at(i64 callable) const -> BodyRow {
+            if (callable < 0 || callable >= body_count() || !bodies.ok()) {
+                return BodyRow(-1, -1, -1, 0);
+            }
+            const BodyRow result = bodies.at(callable);
+            return result;
+        }
+        auto reject(InstructionError reason) -> bool {
+            // Static semantic admission follows complete CFG normalization.
+            // A rejected normalized body loses publication authority permanently.
+            if (statusValue == InstructionStatus::pending || statusValue == InstructionStatus::admitted || statusValue
+                == InstructionStatus::structured) {
+                statusValue = InstructionStatus::invalid;
+                errorValue = reason;
+                if (reason == InstructionError::none) {
+                    errorValue = InstructionError::integrity;
+                }
+            }
+            return false;
+        }
+        auto admit() -> bool {
+            if (statusValue != InstructionStatus::pending) {
+                return false;
+            }
+            statusValue = InstructionStatus::admitted;
+            return true;
+        }
+        // The only normalization entrypoint follows generic storage admission
+        // and the sole native codec shape walk. All bodies pass structural
+        // analysis before any body is compacted or native value states exist.
+        auto normalize_cfg() -> InstructionStatus {
+            if (statusValue != InstructionStatus::admitted) {
+                return statusValue;
+            }
+            i64 callable = 0;
+            while (callable < body_count()) {
+                const BodyRow body = bodies.at(callable);
+                if (!resolve_flow(body) || !reach_body(body)) {
+                    return statusValue;
+                }
+                callable = callable + 1;
+            }
+            callable = 0;
+            while (callable < body_count()) {
+                const BodyRow body = bodies.at(callable);
+                if (!normalize_body(callable, body)) {
+                    return statusValue;
+                }
+                callable = callable + 1;
+            }
+            statusValue = InstructionStatus::structured;
+            return statusValue;
+        }
+        // The narrow post-normalization mutation surface checks body-wide loan
+        // identity without imposing lexical acquisition/release ordering. It
+        // uses O(N + A log A) time and the first A retained scratch lanes only.
+        auto verify_service_loan_roots(i64 callable) -> bool {
+            if (statusValue != InstructionStatus::structured) {
+                return false;
+            }
+            if (callable < 0 || callable >= body_count()) {
+                return reject(InstructionError::integrity);
+            }
+            const BodyRow body = bodies.at(callable);
+            i64 loans = 0;
+            i64 at = 0;
+            bool valid = true;
+            while (at < body.count()) {
+                const CodeRow code = flow_at(body, at);
+                const RawInstructionRow row = instructions.at(code.id() - 1);
+                // AcquireServiceLoan is pinned to raw form 1 by the binding.
+                if (row.form() == 1) {
+                    const RawOperandRow loan = operands.at(row.operand_begin());
+                    if (loan.signed_value() <= 0) {
+                        valid = false;
+                    }
+                    if (!set_scratch(body, loans, code.id())) {
+                        return false;
+                    }
+                    loans = loans + 1;
+                }
+                at = at + 1;
+            }
+            if (valid && !sort_service_loans(body, loans)) {
+                return false;
+            }
+            at = 1;
+            while (valid && at < loans) {
+                if (indexed_service_loan_operand(body, at - 1, 0) == indexed_service_loan_operand(body, at, 0)
+                    && (indexed_service_loan_operand(body, at - 1, 1) != indexed_service_loan_operand(body, at, 1)
+                    || indexed_service_loan_operand(body, at - 1, 2) != indexed_service_loan_operand(body, at, 2))) {
+                    valid = false;
+                }
+                at = at + 1;
+            }
+            // Defer semantic rejection until exactly the collected lanes are
+            // cleared. Dropped capacity tails are neither read nor modified.
+            at = 0;
+            while (at < loans) {
+                if (!set_scratch(body, at, 0)) {
+                    return false;
+                }
+                at = at + 1;
+            }
+            if (!valid) {
+                return reject(InstructionError::service_loan_identity);
+            }
+            return true;
+        }
+        auto publish() -> bool {
+            if (statusValue != InstructionStatus::structured) {
+                return false;
+            }
+            statusValue = InstructionStatus::published;
+            return true;
+        }
+    };
+    auto create(builtin::ByteRegion region, i64 instructions, i64 operands, i64 literals,
+        i64 bodies) -> InstructionStore {
+        const InstructionCounts counts = InstructionCounts(instructions, operands, literals, bodies);
+        InstructionStore result = InstructionStore(region, counts);
+        result.initialize(counts);
+        return move(result);
+    }
+    auto release(builtin::ByteRegion region, InstructionStore store) -> i64 {
+        return 0;
+    }
+}

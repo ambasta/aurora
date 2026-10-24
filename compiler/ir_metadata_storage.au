@@ -1191,6 +1191,11 @@ export namespace compiler_ir_metadata {
         auto slot_count() const -> i64 {
             return slots.size();
         }
+        // A view of every slot row; only for an allocated (successfully begun) store.
+        auto slot_rows() const -> builtin::span<const SlotRow> {
+            const builtin::span<const SlotRow> all = borrow_values(slots);
+            return all;
+        }
         auto field_row_count() const -> i64 {
             return fieldEnd;
         }

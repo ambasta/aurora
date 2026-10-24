@@ -1866,9 +1866,23 @@ export namespace compiler_ir_metadata {
     auto slot_lower_bound(const MetadataStore& store, IndexRange range, i64 offset) -> i64 {
         i64 begin = range.begin();
         i64 end = range.begin() + range.count();
+        // Admitted ranges lie inside the slot owner; others keep the checked reader.
+        if (store.status() != MetadataStatus::success || begin < 0 || end > store.slot_count()) {
+            while (begin < end) {
+                const i64 middle = begin + (end - begin) / 2;
+                const SlotRow slot = store.slot_at(middle);
+                if (slot.offset() < offset) {
+                    begin = middle + 1;
+                } else {
+                    end = middle;
+                }
+            }
+            return begin;
+        }
+        const builtin::span<const SlotRow> rows = store.slot_rows();
         while (begin < end) {
             const i64 middle = begin + (end - begin) / 2;
-            const SlotRow slot = store.slot_at(middle);
+            const SlotRow slot = rows.at(middle);
             if (slot.offset() < offset) {
                 begin = middle + 1;
             } else {
@@ -2076,9 +2090,10 @@ export namespace compiler_ir_metadata {
         i64 begin = slots.begin();
         const i64 limit = begin + slots.count();
         i64 end = limit;
+        const builtin::span<const SlotRow> rows = store.slot_rows();
         while (begin < end) {
             const i64 middle = begin + (end - begin) / 2;
-            const SlotRow slot = store.slot_at(middle);
+            const SlotRow slot = rows.at(middle);
             const i64 slot_kind = slot.kind();
             if (slot_kind < kind || (slot_kind == kind && slot.offset() < offset)) {
                 begin = middle + 1;
@@ -2089,7 +2104,7 @@ export namespace compiler_ir_metadata {
         if (begin == limit) {
             return -1;
         }
-        const SlotRow candidate = store.slot_at(begin);
+        const SlotRow candidate = rows.at(begin);
         if (candidate.kind() != kind) {
             return -1;
         }

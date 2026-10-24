@@ -58,6 +58,9 @@ EXPECTED_REJECTED = {
     "compiler/lowering_errors.au",
     "compiler/lowering_kinds.au",
     "compiler/resolution_kinds.au",
+    "tests/fixtures/emitter-history/compiler-d4cbabb/lowering_errors.au",
+    "tests/fixtures/emitter-history/compiler-d4cbabb/lowering_kinds.au",
+    "tests/fixtures/emitter-history/compiler-d4cbabb/resolution_kinds.au",
     "kernel/policies/kernel/note_read.au",
     "kernel/policies/kernel/snapshot.au",
     "library/console/line.au",
@@ -74,6 +77,13 @@ HISTORICAL_MODULES = {
         "fa1da348a72dd84453639baa0b1dd80e1e93bd6828c0aa7dee95db8ea67f281f"
     ),
 }
+# The compiler's own modules as of d4cbabb, the last revision the oracle accepts:
+# compiler sources since use readonly typed views, which postdate the oracle.
+# Byte-exact copies keep that whole graph a historical input; the current
+# modules are later consumers. Retired modules stage with this graph.
+FROZEN_COMPILER = "tests/fixtures/emitter-history/compiler-d4cbabb"
+# SHA-256 over each frozen file's name, a NUL, its bytes and a NUL, in name order.
+FROZEN_COMPILER_SHA256 = "f82c0c6f947267e8370e72f29893f56507ff257cf6c1162a51a783f3f75eb650"
 
 
 def require(condition, message):
@@ -323,12 +333,26 @@ def main():
     require(EXPECTED_REJECTED.issubset(historical), "historical standalone rejection coverage missing")
     new_consumers = {str(path.relative_to(root)) for path in corpus} - historical
     modules = sorted((root / "compiler").glob("*.au"))
+    frozen = sorted((root / FROZEN_COMPILER).glob("*.au"))
+    frozen_digest = hashlib.sha256()
+    for path in frozen:
+        frozen_digest.update(path.name.encode() + b"\0" + path.read_bytes() + b"\0")
+    require(frozen_digest.hexdigest() == FROZEN_COMPILER_SHA256, "frozen historical compiler sources changed")
+    frozen_frontend = root / FROZEN_COMPILER / "frontend.au"
     historical_modules = [root / name for name in HISTORICAL_MODULES]
     for name, expected_digest in HISTORICAL_MODULES.items():
         require(name in historical, "retired module missing from historical emitter corpus: " + name)
         require(identity(root / name)["sha256"] == expected_digest, "retired historical module changed: " + name)
     decimal = root / "library/std/decimal_digits.au"
-    required = {root / "compiler/frontend.au", root / "compiler/lexer.au", decimal, *modules, *historical_modules}
+    required = {
+        root / "compiler/frontend.au",
+        root / "compiler/lexer.au",
+        decimal,
+        frozen_frontend,
+        *modules,
+        *frozen,
+        *historical_modules,
+    }
     require(len(corpus) > 1 and required.issubset(corpus), "required compiler/library corpus inputs are missing")
     flags = [
         flag
@@ -353,7 +377,9 @@ def main():
     rejected = []
     try:
         module_root = artifacts / "compiler-modules"
-        stage_modules(module_root, [*modules, *historical_modules, decimal])
+        stage_modules(module_root, [*modules, decimal])
+        frozen_root = artifacts / "frozen-compiler-modules"
+        stage_modules(frozen_root, [*frozen, *historical_modules])
         write_json(
             artifacts / "inputs.json",
             {"compilers": compiler_ids, "flags": flags, "new_consumers": sorted(new_consumers)},
@@ -363,17 +389,22 @@ def main():
         for source in corpus:
             relative = source.relative_to(root)
             # Kernel programs import kernel/policies; without it they only "reject".
-            roots = (
-                [module_root]
-                if source in modules
-                or source in historical_modules
-                or source == root / "tests/compiler/initialization_probe.au"
-                else [root / "library", root / "kernel/policies"]
-            )
+            roots = [root / "library", root / "kernel/policies"]
+            if source in modules:
+                roots = [module_root]
+            # The initialization probe is a historical consumer of the frozen graph.
+            probe = root / "tests/compiler/initialization_probe.au"
+            if source in frozen or source in historical_modules or source == probe:
+                roots = [frozen_root]
+            entry = source
+            if source == root / "compiler/frontend.au":
+                entry = module_root / "aurora/compiler/frontend.au"
+            if source == frozen_frontend:
+                entry = frozen_root / "aurora/compiler/frontend.au"
             arguments = [
                 *flags,
                 *(argument for path in roots for argument in ("--module-root", str(path))),
-                str(module_root / "aurora/compiler/frontend.au" if source == root / "compiler/frontend.au" else source),
+                str(entry),
                 "-o",
                 str(artifacts / "cases" / relative / "invocation" / "assembly.s"),
                 "--stack-facts",
@@ -382,7 +413,7 @@ def main():
                 str(artifacts / "cases" / relative / "invocation" / "abi.json"),
             ]
             # Match the existing corpus watchdog and whole-frontend exception.
-            timeout = 90 if source == root / "compiler/frontend.au" else 30
+            timeout = 90 if source in (root / "compiler/frontend.au", frozen_frontend) else 30
             jobs.append(
                 (
                     artifacts / "cases" / relative,

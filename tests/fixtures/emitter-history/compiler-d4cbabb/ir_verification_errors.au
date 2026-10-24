@@ -1,0 +1,682 @@
+export module aurora.compiler.ir_verification_errors;
+
+// Private production verifier error/status support.
+// Exact dynamic verifier diagnostics. Admission diagnostics remain independently owned.
+export namespace compiler_ir_verification {
+    enum class VerificationStatus {
+        pending,
+        success,
+        allocation,
+        invalid
+    };
+    enum class VerificationErrorFirst {
+        none,
+        //: invalid hosted IR verification workspace
+        internal,
+        //: hosted IR verification allocation failed
+        allocation,
+        //: invalid typed IR: block-entry state retention limit exceeds 65536
+        block_entry_state_retention_limit_exceeds_65536,
+        //: invalid typed IR: block-entry operand retention limit exceeds 262144
+        block_entry_operand_retention_limit_exceeds_262144,
+        //: invalid typed IR: builtin owner borrow requires one mutable root, scalar return and no region authority
+        builtin_owner_borrow_invalid_signature,
+        //: invalid typed IR: builtin owner borrow supports only scalar or copied tails
+        builtin_owner_borrow_supports_only_scalar_or_copied_tails,
+        //: invalid typed IR: borrowed object root is not bound
+        borrowed_object_root_is_not_bound,
+        //: invalid typed IR: builtin owner root is not a class receiver
+        builtin_owner_root_is_not_a_class_receiver,
+        //: invalid typed IR: owner type requires exact typed spill
+        owner_type_requires_exact_typed_spill,
+        //: invalid typed IR: literal span exceeds byte-string bound
+        literal_span_exceeds_byte_string_bound,
+        //: invalid typed IR: literal span requires exact typed spill
+        literal_span_requires_exact_typed_spill,
+        //: invalid typed IR: borrowed object root requires a class type
+        borrowed_object_root_requires_a_class_type,
+        //: invalid typed IR: worklist target is not a basic-block entry
+        worklist_target_is_not_a_basic_block_entry,
+        //: invalid typed IR: incompatible active object lifetimes at control-flow join
+        incompatible_active_object_lifetimes_at_control_flow_join,
+        //: invalid typed IR: incompatible active array lifetimes at control-flow join
+        incompatible_active_array_lifetimes_at_control_flow_join,
+        //: invalid typed IR: incompatible active span capabilities at control-flow join
+        incompatible_active_span_capabilities_at_control_flow_join,
+        //: invalid typed IR: incompatible service provenance or loans at control-flow join
+        incompatible_service_provenance_or_loans_at_control_flow_join,
+        //: invalid typed IR: incompatible owned byte lifetimes or ownership at control-flow join
+        incompatible_owned_byte_lifetimes_or_ownership_at_control_flow_join,
+        //: invalid typed IR: incompatible borrowed owner descriptor at control-flow join
+        incompatible_borrowed_owner_descriptor_at_control_flow_join,
+        //: invalid typed IR: incompatible owning object lifetimes or field ownership at control-flow join
+        incompatible_owning_object_lifetimes_or_field_ownership_at_control_flow_join,
+        //: invalid typed IR: incompatible object loans at control-flow join
+        incompatible_object_loans_at_control_flow_join,
+        //: invalid typed IR: incompatible value/guard stacks at control-flow join
+        incompatible_value_guard_stacks_at_control_flow_join,
+        //: invalid typed IR: missing or mistyped current value
+        missing_or_mistyped_current_value,
+        //: invalid typed IR: value stack underflow
+        value_stack_underflow,
+        //: invalid typed IR: object access conflicts with active synchronous loan
+        object_access_conflicts_with_active_synchronous_loan,
+        //: invalid typed IR: object field access outside active lifetime
+        object_field_access_outside_active_lifetime,
+        //: invalid typed IR: field access through consumed owning object
+        field_access_through_consumed_owning_object,
+        //: invalid typed IR: array element access outside active lifetime
+        array_element_access_outside_active_lifetime,
+        //: invalid typed IR: fixed array field write with live readonly span
+        fixed_array_field_write_with_live_readonly_span,
+        //: invalid typed IR: write to byte array with live readonly span
+        write_to_byte_array_with_live_readonly_span,
+        //: invalid typed IR: span capability is not active
+        span_capability_is_not_active,
+        //: invalid typed IR: literal span cannot carry another origin kind
+        literal_span_cannot_carry_another_origin_kind,
+        //: invalid typed IR: literal span must retain its exact immutable origin
+        literal_span_must_retain_its_exact_immutable_origin,
+        //: invalid typed IR: fixed array span cannot carry another origin kind
+        fixed_array_span_cannot_carry_another_origin_kind,
+        //: invalid typed IR: fixed array span receiver lifetime is not active
+        fixed_array_span_receiver_lifetime_is_not_active,
+        //: invalid typed IR: fixed array span object lifetime is not active
+        fixed_array_span_object_lifetime_is_not_active,
+        //: invalid typed IR: fixed array span field provenance mismatch
+        fixed_array_span_field_provenance_mismatch,
+        //: invalid typed IR: owned span cannot have parameter origin
+        owned_span_cannot_have_parameter_origin,
+        //: invalid typed IR: span owned byte origin lifetime is not active
+        span_owned_byte_origin_lifetime_is_not_active,
+        //: invalid typed IR: span owning root lifetime is not active
+        span_owning_root_lifetime_is_not_active,
+        //: invalid typed IR: span owner token is not active
+        span_owner_token_is_not_active,
+        //: invalid typed IR: span borrowed receiver provenance mismatch
+        span_borrowed_receiver_provenance_mismatch,
+        //: invalid typed IR: span owner region identity is not active
+        span_owner_region_identity_is_not_active,
+        //: invalid typed IR: span parameter origin does not exist
+        span_parameter_origin_does_not_exist,
+        //: invalid typed IR: span parameter origin lifetime is not active
+        span_parameter_origin_lifetime_is_not_active,
+        //: invalid typed IR: span array origin lifetime is not active
+        span_array_origin_lifetime_is_not_active,
+        //: invalid typed IR: span direct parent lifetime is not active
+        span_direct_parent_lifetime_is_not_active,
+        //: invalid typed IR: span direct parent origin mismatch
+        span_direct_parent_origin_mismatch,
+        //: invalid typed IR: span requires exact typed spill
+        span_requires_exact_typed_spill,
+        //: invalid typed IR: span spill is already active
+        span_spill_is_already_active,
+        //: invalid typed IR: span parameter cannot be rebound
+        span_parameter_cannot_be_rebound,
+        //: invalid typed IR: owned byte or root mutation with live readonly span
+        owned_byte_or_root_mutation_with_live_readonly_span,
+        //: invalid typed IR: region authority is not active
+        region_authority_is_not_active,
+        //: invalid typed IR: region requires exact typed spill
+        region_requires_exact_typed_spill,
+        //: invalid typed IR: owned byte lifetime is not active
+        owned_byte_lifetime_is_not_active,
+        //: invalid typed IR: owned byte operation requires exact typed spill
+        owned_byte_operation_requires_exact_typed_spill,
+        //: invalid typed IR: owned byte binding does not hold live ownership
+        owned_byte_binding_does_not_hold_live_ownership,
+        //: invalid typed IR: owned byte region identity does not match active authority
+        owned_byte_region_identity_does_not_match_active_authority,
+        //: invalid typed IR: const owned byte binding cannot be mutated or moved
+        const_owned_byte_binding_cannot_be_mutated_or_moved,
+        //: invalid typed IR: owned byte result requires pristine binding
+        owned_byte_result_requires_pristine_binding,
+        //: invalid typed IR: ownership creation site still has a live token
+        ownership_creation_site_still_has_a_live_token,
+        //: invalid typed IR: write to immutable scalar parameter
+        write_to_immutable_scalar_parameter,
+        //: invalid typed IR: write to initialized const object field
+        write_to_initialized_const_object_field,
+        //: invalid typed IR: borrowed free formal grants no direct receiver field authority
+        borrowed_free_formal_grants_no_direct_receiver_field_authority,
+        //: invalid typed IR: receiver access without bound receiver
+        receiver_access_without_bound_receiver,
+        //: invalid typed IR: receiver field type/layout mismatch
+        receiver_field_type_layout_mismatch,
+        //: invalid typed IR: receiver array operation requires array field
+        receiver_array_operation_requires_array_field,
+        //: invalid typed IR: receiver scalar array operation requires scalar array field
+        receiver_scalar_array_operation_requires_scalar_array_field,
+        //: invalid typed IR: constructor cannot access receiver array during initialization
+        constructor_cannot_access_receiver_array_during_initialization,
+        //: invalid typed IR: receiver array element not initialized
+        receiver_array_element_not_initialized,
+        //: invalid typed IR: receiver index access lacks matching dominating bounds token
+        receiver_index_access_lacks_matching_dominating_bounds_token,
+        //: invalid typed IR: array element not initialized
+        array_element_not_initialized,
+        //: invalid typed IR: indexed write to immutable scalar parameter
+        indexed_write_to_immutable_scalar_parameter,
+        //: invalid typed IR: indexed write to const object field
+        indexed_write_to_const_object_field,
+        //: invalid typed IR: index access lacks matching dominating bounds token
+        index_access_lacks_matching_dominating_bounds_token,
+        //: invalid typed IR: owning object does not hold complete live ownership
+        owning_object_does_not_hold_complete_live_ownership,
+        //: invalid typed IR: owning object field lacks live region ownership
+        owning_object_field_lacks_live_region_ownership,
+        //: invalid typed IR: nested class field not completely initialized
+        nested_class_field_not_completely_initialized,
+        //: invalid typed IR: empty object not completely initialized
+        empty_object_not_completely_initialized,
+        //: invalid typed IR: aggregate argument outside active object lifetime
+        aggregate_argument_outside_active_object_lifetime,
+        //: invalid typed IR: resource argument outside active object lifetime
+        resource_argument_outside_active_object_lifetime,
+        //: invalid typed IR: method argument outside active object lifetime
+        method_argument_outside_active_object_lifetime,
+        //: invalid typed IR: borrowed argument outside active object lifetime
+        borrowed_argument_outside_active_object_lifetime,
+        //: invalid typed IR: service argument outside active object lifetime
+        service_argument_outside_active_object_lifetime,
+        //: invalid typed IR: aggregate argument object not fully initialized
+        aggregate_argument_object_not_fully_initialized,
+        //: invalid typed IR: resource argument object not fully initialized
+        resource_argument_object_not_fully_initialized,
+        //: invalid typed IR: method argument object not fully initialized
+        method_argument_object_not_fully_initialized,
+        //: invalid typed IR: borrowed argument object not fully initialized
+        borrowed_argument_object_not_fully_initialized,
+        //: invalid typed IR: service argument object not fully initialized
+        service_argument_object_not_fully_initialized,
+        //: invalid typed IR: copy object outside active lifetime
+        copy_object_outside_active_lifetime,
+        //: invalid typed IR: copy source object not fully initialized
+        copy_source_object_not_fully_initialized,
+        //: invalid typed IR: copy requires exact object slot
+        copy_requires_exact_object_slot,
+        //: invalid typed IR: object loan requires exact owning root
+        object_loan_requires_exact_owning_root,
+        //: invalid typed IR: object loan requires complete live root
+        object_loan_requires_complete_live_root,
+        //: invalid typed IR: object loan field lacks live ownership
+        object_loan_field_lacks_live_ownership,
+        //: invalid typed IR: borrowed root field provenance mismatch
+        borrowed_root_field_provenance_mismatch,
+        //: invalid typed IR: object loan field region is not active
+        object_loan_field_region_is_not_active,
+        //: invalid typed IR: invalid borrowed object root
+        invalid_borrowed_object_root,
+        //: invalid typed IR: receiver nested class field not initialized
+        receiver_nested_class_field_not_initialized,
+        //: invalid typed IR: invalid owned field root offset
+        invalid_owned_field_root_offset,
+        //: invalid typed IR: constructor cannot access owned field during initialization
+        constructor_cannot_access_owned_field_during_initialization,
+        //: invalid typed IR: const receiver cannot supply mutable owned field
+        const_receiver_cannot_supply_mutable_owned_field,
+        //: invalid typed IR: const object cannot supply mutable owned field
+        const_object_cannot_supply_mutable_owned_field,
+        //: invalid typed IR: owned field logical index out of range
+        owned_field_logical_index_out_of_range,
+        //: invalid typed IR: owned field operation requires class field
+        owned_field_operation_requires_class_field,
+        //: invalid typed IR: invalid class array root offset
+        invalid_class_array_root_offset,
+        //: invalid typed IR: constructor cannot access class array during initialization
+        constructor_cannot_access_class_array_during_initialization,
+        //: invalid typed IR: const receiver cannot supply mutable class array
+        const_receiver_cannot_supply_mutable_class_array,
+        //: invalid typed IR: receiver class array not completely initialized
+        receiver_class_array_not_completely_initialized,
+        //: invalid typed IR: const object cannot supply mutable class array
+        const_object_cannot_supply_mutable_class_array,
+        //: invalid typed IR: class array logical field index out of range
+        class_array_logical_field_index_out_of_range,
+        //: invalid typed IR: class array operation requires class array field
+        class_array_operation_requires_class_array_field,
+        //: invalid typed IR: class array elements must be copied values
+        class_array_elements_must_be_copied_values,
+        //: invalid typed IR: class array access lacks matching dominating bounds token
+        class_array_access_lacks_matching_dominating_bounds_token,
+        //: invalid typed IR: copy result object already initialized
+        copy_result_object_already_initialized,
+        //: invalid typed IR: copy requires pristine result object
+        copy_requires_pristine_result_object,
+        //: invalid typed IR: owning object result requires pristine root
+        owning_object_result_requires_pristine_root,
+        //: invalid typed IR: owning object result requires pristine fields
+        owning_object_result_requires_pristine_fields,
+        //: invalid typed IR: copy nominal class mismatch
+        copy_nominal_class_mismatch,
+        //: invalid typed IR: owning object lifetime already active
+        owning_object_lifetime_already_active,
+        //: invalid typed IR: owning object field missing token
+        owning_object_field_missing_token,
+        //: invalid typed IR: owning object fields have different regions
+        owning_object_fields_have_different_regions,
+        //: invalid typed IR: owning object has no resource fields
+        owning_object_has_no_resource_fields,
+        //: invalid typed IR: owning object nominal class mismatch
+        owning_object_nominal_class_mismatch,
+        //: invalid typed IR: const owning object cannot be moved or mutated
+        const_owning_object_cannot_be_moved_or_mutated,
+        //: invalid typed IR: resource field requires owning root
+        resource_field_requires_owning_root,
+        //: invalid typed IR: resource field root is not complete and live
+        resource_field_root_is_not_complete_and_live,
+        //: invalid typed IR: resource field does not hold live ownership
+        resource_field_does_not_hold_live_ownership,
+        //: invalid typed IR: borrowed receiver provenance mismatch
+        borrowed_receiver_provenance_mismatch,
+        //: invalid typed IR: resource field region is not active
+        resource_field_region_is_not_active,
+        //: invalid typed IR: invalid owned byte field selector
+        invalid_owned_byte_field_selector,
+        //: invalid typed IR: owner access requires live bound builtin formal
+        owner_access_requires_live_bound_builtin_formal,
+        //: invalid typed IR: shared builtin formal cannot supply mutable owner access
+        shared_builtin_formal_cannot_supply_mutable_owner_access,
+        //: invalid typed IR: invalid owned byte object root
+        invalid_owned_byte_object_root,
+        //: invalid typed IR: owned byte access requires direct resource field
+        owned_byte_access_requires_direct_resource_field,
+        //: invalid typed IR: constructor cannot access resource field during initialization
+        constructor_cannot_access_resource_field_during_initialization,
+        //: invalid typed IR: const receiver cannot mutate resource field
+        const_receiver_cannot_mutate_resource_field,
+        //: invalid typed IR: const object cannot mutate resource field
+        const_object_cannot_mutate_resource_field,
+        //: invalid typed IR: invalid owned storage field selector
+        invalid_owned_storage_field_selector,
+        //: invalid typed IR: owned value snapshot aliases owner root
+        owned_value_snapshot_aliases_owner_root,
+        //: invalid typed IR: owned value snapshot nominal class mismatch
+        owned_value_snapshot_nominal_class_mismatch,
+        //: invalid typed IR: owned value snapshot must be readonly
+        owned_value_snapshot_must_be_readonly,
+        //: invalid typed IR: owned value snapshot requires complete copied or constructed value
+        owned_value_snapshot_requires_complete_copied_or_constructed_value,
+        //: invalid typed IR: typed owned values cannot supply a byte span
+        typed_owned_values_cannot_supply_a_byte_span,
+        //: invalid typed IR: receiver array span requires complete initialization
+        receiver_array_span_requires_complete_initialization,
+        //: invalid typed IR: invalid fixed array span root or field
+        invalid_fixed_array_span_root_or_field,
+        //: invalid typed IR: constructor cannot borrow receiver array
+        constructor_cannot_borrow_receiver_array,
+        //: invalid typed IR: fixed array span requires direct u8 array field
+        fixed_array_span_requires_direct_u8_array_field,
+        //: invalid typed IR: return with active synchronous service loan
+        return_with_active_synchronous_service_loan,
+        //: invalid typed IR: return with active synchronous object loan
+        return_with_active_synchronous_object_loan,
+        //: invalid typed IR: return with active owning object lifetime
+        return_with_active_owning_object_lifetime,
+        //: invalid typed IR: load before initialization
+        load_before_initialization,
+        //: invalid typed IR: push without current value
+        push_without_current_value,
+        //: invalid typed IR: noninteger left operand or binary type mismatch
+        noninteger_left_operand_or_binary_type_mismatch,
+        //: invalid typed IR: comparison type mismatch
+        comparison_type_mismatch,
+        //: invalid typed IR: borrow of uninitialized payload
+        borrow_of_uninitialized_payload,
+        //: invalid typed IR: call argument type mismatch
+        call_argument_type_mismatch,
+        //: invalid typed IR: aggregate scalar argument type mismatch
+        aggregate_scalar_argument_type_mismatch,
+        //: invalid typed IR: aggregate result outside active object lifetime
+        aggregate_result_outside_active_object_lifetime,
+        //: invalid typed IR: aggregate result object already initialized
+        aggregate_result_object_already_initialized,
+        //: invalid typed IR: aggregate result requires uninitialized object
+        aggregate_result_requires_uninitialized_object,
+        //: invalid typed IR: resource call owning argument has wrong region
+        resource_call_owning_argument_has_wrong_region,
+        //: invalid typed IR: resource call scalar argument type mismatch
+        resource_call_scalar_argument_type_mismatch,
+        //: invalid typed IR: resource copied result outside active object lifetime
+        resource_copied_result_outside_active_object_lifetime,
+        //: invalid typed IR: resource copied result object already initialized
+        resource_copied_result_object_already_initialized,
+        //: invalid typed IR: resource copied result requires uninitialized object
+        resource_copied_result_requires_uninitialized_object,
+        //: invalid typed IR: owned byte lifetime requires exact typed spill
+        owned_byte_lifetime_requires_exact_typed_spill,
+        //: invalid typed IR: owned byte parameter lifetime cannot restart
+        owned_byte_parameter_lifetime_cannot_restart,
+        //: invalid typed IR: owned byte lifetime already active
+        owned_byte_lifetime_already_active,
+        //: invalid typed IR: byte allocation cannot initialize typed owned values
+        byte_allocation_cannot_initialize_typed_owned_values,
+        //: invalid typed IR: value allocation requires typed owner
+        value_allocation_requires_typed_owner,
+        //: invalid typed IR: value load requires typed owner
+        value_load_requires_typed_owner,
+        //: invalid typed IR: value load result aliases owner root
+        value_load_result_aliases_owner_root,
+        //: invalid typed IR: value mutation requires typed owner
+        value_mutation_requires_typed_owner,
+        //: invalid typed IR: owned byte move source aliases result
+        owned_byte_move_source_aliases_result,
+        //: invalid typed IR: owner move nominal type mismatch
+        owner_move_nominal_type_mismatch,
+        //: invalid typed IR: byte payload operation cannot access typed owned values
+        byte_payload_operation_cannot_access_typed_owned_values,
+        //: invalid typed IR: owned byte store index requires i64
+        owned_byte_store_index_requires_i64,
+        //: invalid typed IR: array lifetime already active
+        array_lifetime_already_active,
+        //: invalid typed IR: array lifetime is not active
+        array_lifetime_is_not_active,
+        //: invalid typed IR: array lifetime ends with live readonly span
+        array_lifetime_ends_with_live_readonly_span,
+        //: invalid typed IR: span borrow requires active byte array origin
+        span_borrow_requires_active_byte_array_origin,
+        //: invalid typed IR: subspan offset requires i64
+        subspan_offset_requires_i64,
+        //: invalid typed IR: span lifetime ends with live child reborrow
+        span_lifetime_ends_with_live_child_reborrow,
+        //: invalid typed IR: lifetime operation requires exact object slot
+        lifetime_operation_requires_exact_object_slot,
+        //: invalid typed IR: object parameter lifetime cannot restart
+        object_parameter_lifetime_cannot_restart,
+        //: invalid typed IR: object lifetime already active
+        object_lifetime_already_active,
+        //: invalid typed IR: object lifetime is not active
+        object_lifetime_is_not_active,
+        //: invalid typed IR: empty initialization requires exact object slot
+        empty_initialization_requires_exact_object_slot,
+        //: invalid typed IR: empty initialization requires zero logical fields and leaves
+        empty_initialization_requires_zero_logical_fields_and_leaves,
+        //: invalid typed IR: owning object move source aliases result
+        owning_object_move_source_aliases_result,
+        //: invalid typed IR: resource field initialization requires bound owning constructor
+        resource_field_initialization_requires_bound_owning_constructor,
+        //: invalid typed IR: resource field initialization requires direct owner field
+        resource_field_initialization_requires_direct_owner_field,
+        //: invalid typed IR: resource field initialization owner nominal type mismatch
+        resource_field_initialization_owner_nominal_type_mismatch,
+        //: invalid typed IR: constructor resource field initialized more than once
+        constructor_resource_field_initialized_more_than_once,
+        //: invalid typed IR: constructor resource field has wrong region
+        constructor_resource_field_has_wrong_region,
+        //: invalid typed IR: copy source aliases result
+        copy_source_aliases_result,
+        //: invalid typed IR: owning class cannot be implicitly copied
+        owning_class_cannot_be_implicitly_copied,
+        //: invalid typed IR: constructor cannot project receiver during initialization
+        constructor_cannot_project_receiver_during_initialization,
+    };
+    enum class VerificationErrorSecond {
+        none,
+        //: invalid typed IR: projection source aliases result
+        projection_source_aliases_result,
+        //: invalid typed IR: projection logical field index out of range
+        projection_logical_field_index_out_of_range,
+        //: invalid typed IR: projection requires class field
+        projection_requires_class_field,
+        //: invalid typed IR: owning class field cannot be copied
+        owning_class_field_cannot_be_copied,
+        //: invalid typed IR: class field assignment source aliases root
+        class_field_assignment_source_aliases_root,
+        //: invalid typed IR: class field assignment nominal class mismatch
+        class_field_assignment_nominal_class_mismatch,
+        //: invalid typed IR: class field initialization requires bound constructor receiver
+        class_field_initialization_requires_bound_constructor_receiver,
+        //: invalid typed IR: class field initialization requires constructor receiver
+        class_field_initialization_requires_constructor_receiver,
+        //: invalid typed IR: class field initialization requires class field
+        class_field_initialization_requires_class_field,
+        //: invalid typed IR: class field initializer nominal class mismatch
+        class_field_initializer_nominal_class_mismatch,
+        //: invalid typed IR: constructor class field initialized more than once
+        constructor_class_field_initialized_more_than_once,
+        //: invalid typed IR: constructor class field leaves already initialized
+        constructor_class_field_leaves_already_initialized,
+        //: invalid typed IR: invalid class array initialization root
+        invalid_class_array_initialization_root,
+        //: invalid typed IR: class array initialization requires constructor receiver
+        class_array_initialization_requires_constructor_receiver,
+        //: invalid typed IR: class array initialization requires exact object slot
+        class_array_initialization_requires_exact_object_slot,
+        //: invalid typed IR: local class array initialization requires declared carrier field
+        local_class_array_initialization_requires_declared_carrier_field,
+        //: invalid typed IR: class array initialization requires class array field
+        class_array_initialization_requires_class_array_field,
+        //: invalid typed IR: class array initializer element count mismatch
+        class_array_initializer_element_count_mismatch,
+        //: invalid typed IR: class array initialization source aliases root
+        class_array_initialization_source_aliases_root,
+        //: invalid typed IR: class array initializer nominal class mismatch
+        class_array_initializer_nominal_class_mismatch,
+        //: invalid typed IR: constructor class array initialized more than once
+        constructor_class_array_initialized_more_than_once,
+        //: invalid typed IR: constructor class array leaves already initialized
+        constructor_class_array_leaves_already_initialized,
+        //: invalid typed IR: class array projection source aliases result
+        class_array_projection_source_aliases_result,
+        //: invalid typed IR: class array assignment source aliases root
+        class_array_assignment_source_aliases_root,
+        //: invalid typed IR: class array assignment nominal class mismatch
+        class_array_assignment_nominal_class_mismatch,
+        //: invalid typed IR: constructor cannot read receiver during initialization
+        constructor_cannot_read_receiver_during_initialization,
+        //: invalid typed IR: receiver field not initialized
+        receiver_field_not_initialized,
+        //: invalid typed IR: write through const receiver
+        write_through_const_receiver,
+        //: invalid typed IR: constructor field initialized more than once
+        constructor_field_initialized_more_than_once,
+        //: invalid typed IR: receiver array zero requires constructor receiver
+        receiver_array_zero_requires_constructor_receiver,
+        //: invalid typed IR: constructor array initialized more than once
+        constructor_array_initialized_more_than_once,
+        //: invalid typed IR: invalid or duplicate object loan identity
+        invalid_or_duplicate_object_loan_identity,
+        //: invalid typed IR: invalid object loan field selector
+        invalid_object_loan_field_selector,
+        //: invalid typed IR: builtin owner loan requires mutable authority
+        builtin_owner_loan_requires_mutable_authority,
+        //: invalid typed IR: builtin owner field loan requires mutable lexical receiver
+        builtin_owner_field_loan_requires_mutable_lexical_receiver,
+        //: invalid typed IR: builtin owner loan requires typed owned values
+        builtin_owner_loan_requires_typed_owned_values,
+        //: invalid typed IR: bound root loan requires named borrowed formal
+        bound_root_loan_requires_named_borrowed_formal,
+        //: invalid typed IR: shared formal cannot supply mutable object loan
+        shared_formal_cannot_supply_mutable_object_loan,
+        //: invalid typed IR: const object cannot supply mutable object loan
+        const_object_cannot_supply_mutable_object_loan,
+        //: invalid typed IR: release requires active object loan
+        release_requires_active_object_loan,
+        //: invalid typed IR: object loan release requires completed borrowed call
+        object_loan_release_requires_completed_borrowed_call,
+        //: invalid typed IR: borrowed call root count mismatch
+        borrowed_call_root_count_mismatch,
+        //: invalid typed IR: borrowed call requires active loan
+        borrowed_call_requires_active_loan,
+        //: invalid typed IR: object loan already used by a call
+        object_loan_already_used_by_a_call,
+        //: invalid typed IR: borrowed call field selector mismatch
+        borrowed_call_field_selector_mismatch,
+        //: invalid typed IR: borrowed call root, nominal type or authority mismatch
+        borrowed_call_root_nominal_type_or_authority_mismatch,
+        //: invalid typed IR: builtin borrowed call requires one mutable owner and scalar result
+        builtin_borrowed_call_requires_one_mutable_owner_and_scalar_result,
+        //: invalid typed IR: builtin borrowed call supports only scalar or copied tails
+        builtin_borrowed_call_supports_only_scalar_or_copied_tails,
+        //: invalid typed IR: builtin borrowed call owner nominal type mismatch
+        builtin_borrowed_call_owner_nominal_type_mismatch,
+        //: invalid typed IR: builtin borrowed call requires bound owner formal
+        builtin_borrowed_call_requires_bound_owner_formal,
+        //: invalid typed IR: builtin borrowed call requires exact owner slot
+        builtin_borrowed_call_requires_exact_owner_slot,
+        //: invalid typed IR: builtin borrowed call requires mutable lexical receiver field
+        builtin_borrowed_call_requires_mutable_lexical_receiver_field,
+        //: invalid typed IR: builtin borrowed call lifetime or owner token mismatch
+        builtin_borrowed_call_lifetime_or_owner_token_mismatch,
+        //: invalid typed IR: class borrowed call requires an exact class root
+        class_borrowed_call_requires_an_exact_class_root,
+        //: invalid typed IR: borrowed call requires named bound formal
+        borrowed_call_requires_named_bound_formal,
+        //: invalid typed IR: borrowed call formal authority mismatch
+        borrowed_call_formal_authority_mismatch,
+        //: invalid typed IR: borrowed call object lifetime or authority mismatch
+        borrowed_call_object_lifetime_or_authority_mismatch,
+        //: invalid typed IR: borrowed call root lifetime mismatch
+        borrowed_call_root_lifetime_mismatch,
+        //: invalid typed IR: method call requires class receiver
+        method_call_requires_class_receiver,
+        //: invalid typed IR: method argument type mismatch
+        method_argument_type_mismatch,
+        //: invalid typed IR: method receiver outside active object lifetime
+        method_receiver_outside_active_object_lifetime,
+        //: invalid typed IR: object constructor called more than once
+        object_constructor_called_more_than_once,
+        //: invalid typed IR: constructor requires uninitialized object
+        constructor_requires_uninitialized_object,
+        //: invalid typed IR: method receiver object not fully initialized
+        method_receiver_object_not_fully_initialized,
+        //: invalid typed IR: method result outside active object lifetime
+        method_result_outside_active_object_lifetime,
+        //: invalid typed IR: method result object already initialized
+        method_result_object_already_initialized,
+        //: invalid typed IR: method result requires uninitialized object
+        method_result_requires_uninitialized_object,
+        //: invalid typed IR: builtin borrowed call cannot return an escaping owner or view
+        builtin_borrowed_call_cannot_return_an_escaping_owner_or_view,
+        //: invalid typed IR: unknown metadata query
+        unknown_metadata_query,
+        //: invalid typed IR: metadata query changes defining-module scope
+        metadata_query_changes_defining_module_scope,
+        //: invalid typed IR: scalar return cannot return class value or resource value
+        scalar_return_cannot_return_class_value_or_resource_value,
+        //: invalid typed IR: unbalanced stack at return
+        unbalanced_stack_at_return,
+        //: invalid typed IR: return with active owned byte lifetime
+        return_with_active_owned_byte_lifetime,
+        //: invalid typed IR: return with active span or byte array lifetime
+        return_with_active_span_or_byte_array_lifetime,
+        //: invalid typed IR: constructor returns before all fields initialized
+        constructor_returns_before_all_fields_initialized,
+        //: invalid typed IR: constructor returns before all class fields initialized
+        constructor_returns_before_all_class_fields_initialized,
+        //: invalid typed IR: owning constructor lacks region
+        owning_constructor_lacks_region,
+        //: invalid typed IR: constructor returns before all resource fields initialized
+        constructor_returns_before_all_resource_fields_initialized,
+        //: invalid typed IR: span return requires const owning receiver field summary
+        span_return_requires_const_owning_receiver_field_summary,
+        //: invalid typed IR: span return does not match receiver field summary and token
+        span_return_does_not_match_receiver_field_summary_and_token,
+        //: invalid typed IR: unbalanced stack at span return
+        unbalanced_stack_at_span_return,
+        //: invalid typed IR: span return with unrelated active local lifetime
+        span_return_with_unrelated_active_local_lifetime,
+        //: invalid typed IR: cyclic returned span parent chain
+        cyclic_returned_span_parent_chain,
+        //: invalid typed IR: span return with unrelated active span lifetime
+        span_return_with_unrelated_active_span_lifetime,
+        //: invalid typed IR: object return requires class result; owning classes require an explicit move return
+        object_return_requires_copied_class_result,
+        //: invalid typed IR: object return requires exact object slot
+        object_return_requires_exact_object_slot,
+        //: invalid typed IR: object return nominal class mismatch
+        object_return_nominal_class_mismatch,
+        //: invalid typed IR: object return outside active lifetime
+        object_return_outside_active_lifetime,
+        //: invalid typed IR: returned object not fully initialized
+        returned_object_not_fully_initialized,
+        //: invalid typed IR: unbalanced stack at object return
+        unbalanced_stack_at_object_return,
+        //: invalid typed IR: owning object return requires ordinary owning class result
+        owning_object_return_requires_ordinary_owning_class_result,
+        //: invalid typed IR: owning object return requires bound region
+        owning_object_return_requires_bound_region,
+        //: invalid typed IR: owning object return has wrong region
+        owning_object_return_has_wrong_region,
+        //: invalid typed IR: unbalanced stack at owning object return
+        unbalanced_stack_at_owning_object_return,
+        //: invalid typed IR: owner return nominal type mismatch
+        owner_return_nominal_type_mismatch,
+        //: invalid typed IR: owned byte return requires bound region parameter
+        owned_byte_return_requires_bound_region_parameter,
+        //: invalid typed IR: owned byte return has wrong region
+        owned_byte_return_has_wrong_region,
+        //: invalid typed IR: unbalanced stack at owned byte return
+        unbalanced_stack_at_owned_byte_return,
+        //: invalid typed IR: service loan requires unsuspended parameter authority
+        service_loan_requires_unsuspended_parameter_authority,
+        //: invalid typed IR: service release requires exactly one completed helper call
+        service_release_requires_exactly_one_completed_helper_call,
+        //: invalid typed IR: service operation requires active unsuspended capability provenance
+        service_operation_requires_active_unsuspended_capability_provenance,
+        //: invalid typed IR: pixel argument type mismatch
+        pixel_argument_type_mismatch,
+        //: invalid typed IR: port write byte argument type mismatch
+        port_write_byte_argument_type_mismatch,
+        //: invalid typed IR: port write offset argument type mismatch
+        port_write_offset_argument_type_mismatch,
+        //: invalid typed IR: service observation requires exact pristine active copied sample object
+        service_observation_requires_pristine_sample,
+        //: invalid typed IR: service observation cannot overwrite initialized sample storage
+        service_observation_cannot_overwrite_initialized_sample_storage,
+        //: invalid typed IR: unknown sealed service operation
+        unknown_sealed_service_operation,
+        //: invalid typed IR: service helper requires distinct acquired loans in leading positions
+        service_helper_requires_distinct_acquired_loans_in_leading_positions,
+        //: invalid typed IR: service helper requires an unused loan with exact provenance
+        service_helper_requires_an_unused_loan_with_exact_provenance,
+        //: invalid typed IR: service span argument is not active
+        service_span_argument_is_not_active,
+        //: invalid typed IR: service scalar argument mismatch
+        service_scalar_argument_mismatch,
+        //: invalid typed IR: reachable fallthrough without return
+        reachable_fallthrough_without_return,
+        //: invalid typed IR: operand stack depth differs from linear emission order
+        operand_stack_depth_differs_from_linear_emission_order,
+        //: invalid typed IR: unreachable semantic instruction
+        unreachable_semantic_instruction,
+        //: invalid typed IR: callable body count mismatch
+        callable_body_count_mismatch,
+        //: invalid typed IR: callable body ID does not match declaration order
+        callable_body_id_does_not_match_declaration_order,
+    };
+    // Copied transport record, not two independent failure states. Enum range
+    // validity is checked by the native boundary before typed construction.
+    class VerificationError {
+        VerificationErrorFirst firstValue;
+        VerificationErrorSecond secondValue;
+    public:
+        VerificationError(VerificationErrorFirst first, VerificationErrorSecond second) : firstValue(first),
+            secondValue(second) {
+        }
+        auto first() const -> VerificationErrorFirst {
+            return firstValue;
+        }
+        auto second() const -> VerificationErrorSecond {
+            return secondValue;
+        }
+        auto canonical() const -> bool {
+            return firstValue == VerificationErrorFirst::none || secondValue == VerificationErrorSecond::none;
+        }
+        auto empty() const -> bool {
+            return firstValue == VerificationErrorFirst::none && secondValue == VerificationErrorSecond::none;
+        }
+        auto allocation() const -> bool {
+            return firstValue == VerificationErrorFirst::allocation && secondValue == VerificationErrorSecond::none;
+        }
+        auto same(VerificationError other) const -> bool {
+            return firstValue == other.first() && secondValue == other.second();
+        }
+    };
+    auto first_error(VerificationErrorFirst value) -> VerificationError {
+        return VerificationError(value, VerificationErrorSecond::none);
+    }
+    auto second_error(VerificationErrorSecond value) -> VerificationError {
+        return VerificationError(VerificationErrorFirst::none, value);
+    }
+}

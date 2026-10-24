@@ -109,7 +109,9 @@ checkpoint C0 --compiles--> C1 (aurorac) --compiles--> C2 (aurorac-stage2)
 
 [`checkpoint.json`](checkpoint.json) pins C0 by source commit, tree and
 executable SHA-256, and pins the historical oracle the same way. C0 is the C2 of
-main commit `2fd30b2` built in one hop from the last historical stage (below). No
+main commit `d4cbabb` (typed views), built in one hop from the previous
+checkpoint, the C2 of `2fd30b2`; `history` in `checkpoint.json` lists earlier pins
+and the first one was built from the last historical stage (below). No
 compiler binary is committed or downloaded. Meson's `bootstrap_compiler` option
 names a local copy; `scripts/bootstrap.py select` accepts it only if its bytes
 have the pinned digest, and the frontend generator and initialization probe
@@ -120,7 +122,7 @@ those tests fail as blocked rather than pass.
 
 ```sh
 # Local copies of the pinned executables; only their digests are pinned.
-C0=/workspace/build/bootstrap-reseed/checkpoint/aurorac
+C0=/workspace/build/checkpoint-d4cbabbb692a/aurorac
 ORACLE=/workspace/build/bootstrap-reseed/oracle/aurorac
 meson setup build/meson . "-Dbootstrap_compiler=$C0" \
   "-Dhistorical_oracle=$ORACLE" "-Duefi_ld=$UEFI_LD"
@@ -157,7 +159,19 @@ and both emitter differentials. It copies NEW's C2 to `OUTPUT/aurorac`, writes
 commands, logs and timings) and prints the new pin. The bump commit records that
 pin in `checkpoint.json`, moves the old one to `history`, and qualifies with the
 release suite and the merge gates. Adding `--expect SHA256` reproduces a recorded
-hop. With the pinned image, builds were byte-identical across build directories:
+hop. To rebuild the current C0 from the previous one (C2 of `2fd30b2`, kept at
+`build/bootstrap-reseed/checkpoint/aurorac` or rebuilt by the historical route below):
+
+```sh
+git worktree add --detach build/hop-src d4cbabbb692a5553d8b14641e145a2f5ddc6ca93
+./scripts/container.sh python3 scripts/bootstrap.py hop --jobs "$(nproc)" \
+  --compiler /workspace/build/bootstrap-reseed/checkpoint/aurorac --oracle "$ORACLE" \
+  --source /workspace/build/hop-src --commit d4cbabbb692a5553d8b14641e145a2f5ddc6ca93 \
+  --tree ea4bba96465978e978646ef67c541df9073328a3 --output /workspace/build/checkpoint-d4cbabbb692a \
+  --expect deae50d0f1d339a297608ef5e50f163e68fc32c9d32614e74a99ca6d9542e42e
+```
+
+With the pinned image, builds were byte-identical across build directories:
 all six historical stages matched their earlier receipt, and C2 rebuilt from C0
 at unchanged compiler source equals C0 itself.
 
@@ -203,7 +217,8 @@ remain readable as records of their own runs.
 | Owner-field initialization | `bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4` | Copied arguments used by its frontend |
 | Paired roots | `052f79d7995be93053f73659bcfc37687b00b341` | Region-backed owner-field initialization |
 | Multiple roots and mutable typed buffers (`borrow`, oracle) | `672821f70f37b185c46690791bd00d74d4414403` | Paired-root frontend signature and ordered ABI facts |
-| Checkpoint C0 | `2fd30b2c252afda5fbf6e78c399bca1cae7bd04e` (its C2) | Three borrowed roots for the Aurora emitter; mutable typed-buffer borrows |
+| First checkpoint | `2fd30b2c252afda5fbf6e78c399bca1cae7bd04e` (its C2) | Three borrowed roots for the Aurora emitter; mutable typed-buffer borrows |
+| Checkpoint C0 | `d4cbabbb692a5553d8b14641e145a2f5ddc6ca93` (its C2) | Readonly typed views, used by the compiler's own sources |
 
 Direct skips between historical stages failed before producing comparable
 frontend assembly (missing `--abi-facts`, incomplete class-argument names,
@@ -262,7 +277,12 @@ mismatch, internal failure or watchdog timeout fails the gate and reports partia
 coverage. Equal rejection is not emission coverage, so the gate also fails if any
 historically supported input outside its fixed list of function-less modules is rejected.
 Historical membership and its exact oracle commit come from
-`tests/compiler/emitter-historical-corpus.txt`. The gate also runs the oracle on
+`tests/compiler/emitter-historical-corpus.txt`. The compiler's own modules adopted
+readonly typed views at `d4cbabb`'s bump, which the oracle predates, so their
+historical members are byte-exact copies of that revision under
+`tests/fixtures/emitter-history/compiler-d4cbabb`, compiled as one graph (with the
+retired modules and the initialization probe); the current compiler modules are
+later consumers. The gate also runs the oracle on
 unlisted inputs and requires a source-language rejection with preserved outputs;
 an accepted omission fails and must extend historical coverage. Unsupported new
 consumers still require successful C1/C2 emission, without per-feature exception
