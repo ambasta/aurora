@@ -43,6 +43,7 @@ def check(
     roots=True,
     trap=False,
     existing_output=None,
+    check_only=False,
 ):
     global COUNT
     with tempfile.TemporaryDirectory(prefix="aurora-modules-") as directory:
@@ -66,7 +67,7 @@ def check(
         assembly = base / "program.s"
         if existing_output is not None:
             assembly.write_text(existing_output)
-        command = [COMPILER, input_path, "-o", assembly]
+        command = [COMPILER, input_path] + (["--check"] if check_only else ["-o", assembly])
         if roots:
             for root in search:
                 command.extend(["--module-root", root])
@@ -78,6 +79,8 @@ def check(
             else:
                 require(assembly.read_text() == existing_output, name + ": existing output changed on rejection")
             require(error.encode() in compiled.stderr, name + ": " + repr(compiled.stderr))
+        elif check_only:
+            require(not assembly.exists(), name + ": check created output")
         else:
             bridge = base / "entry.s"
             bridge.write_text(""".text
@@ -255,10 +258,41 @@ check(
     error="imports must precede",
 )
 check(
-    "duplicate import rejected",
-    app("return 42;", "import value; import value;"),
-    {"value": "export module value; export auto answer()->i64{return 42;}"},
-    error="duplicate import",
+    "duplicate dotted import with trivia rejected",
+    app("return 42;", "import value.part; import value // comment\n . part;"),
+    {"value.part": "export module value.part; export auto answer()->i64{return 42;}"},
+    error="duplicate import in app: value.part",
+)
+# Traversal must reach each edge before diagnosing its duplicate. In particular,
+# an earlier dependency's parse/header failure is not hidden by a later edge.
+for dependency, error in (
+    ("export module value; @", "module value: unsupported character"),
+    ("export module other;", "module header mismatch: expected value, got other"),
+):
+    check(
+        "dependency failure precedes duplicate import: " + error,
+        app("return 42;", "import value; import value;"),
+        {"value": dependency},
+        error=error,
+        check_only=True,
+    )
+diamond = {
+    "left": "export module left; import shared; export auto left_value()->i64{return shared_value();}",
+    "right": "export module right; import shared; export auto right_value()->i64{return shared_value();}",
+    "shared": "export module shared; export auto shared_value()->i64{return 21;}",
+}
+check(
+    "diamond dependency visited once",
+    app("return left_value()+right_value();", "import left; import right; import shared;"),
+    diamond,
+    check_only=True,
+)
+check(
+    "depth first child failure precedes later sibling",
+    app("return 42;", "import left; import right;"),
+    {**diamond, "shared": "export module shared; @", "right": "export module wrong;"},
+    error="module shared: unsupported character",
+    check_only=True,
 )
 check(
     "duplicate visible exports",
@@ -521,6 +555,12 @@ check(
     error="graph exceeds 4194304",
 )
 check(
+    "exactly 64 graph files accepted",
+    app("return 42;", "".join(f"import item{i};" for i in range(63))),
+    {f"item{i}": f"export module item{i};" for i in range(63)},
+    check_only=True,
+)
+check(
     "graph file cap",
     app("return 42;", "".join(f"import item{i};" for i in range(64))),
     {f"item{i}": f"export module item{i};" for i in range(64)},
@@ -529,6 +569,26 @@ check(
 chain = {f"level{i}": f"export module level{i}; import level{i + 1};" for i in range(16)}
 chain["level16"] = "export module level16;"
 check("import depth cap", app("return 42;", "import level0;"), chain, error="depth exceeds 16")
+check(
+    "exactly 16 import edges accepted",
+    app("return 42;", "import level1;"),
+    chain,
+    check_only=True,
+)
+check(
+    "depth checked before completed dependency shortcut",
+    app("return 42;", "import level16; import level0;"),
+    chain,
+    error="module import depth exceeds 16",
+    check_only=True,
+)
+check(
+    "child header validated before entering excessive depth",
+    app("return 42;", "import level0;"),
+    {**chain, "level16": "export module wrong;"},
+    error="module header mismatch: expected level16, got wrong",
+    check_only=True,
+)
 check(
     "namespace depth cap",
     "module app; namespace "

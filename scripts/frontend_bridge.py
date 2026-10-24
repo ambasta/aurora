@@ -252,6 +252,12 @@ ROWS = (
         "",
     ),
     (
+        "resolver_graph_step(compiler_resolver::Session& session, i64 root) -> compiler_resolver::WorkRow",
+        "copy compiler_resolver::graph_step(session, root)",
+        "",
+        "",
+    ),
+    (
         "resolver_count(const compiler_resolver::Session& session, i64 pool) -> i64",
         "direct compiler_resolver::count(session, pool)",
         "",

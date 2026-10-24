@@ -91,3 +91,13 @@ Precommit failures preserve existing source/output bytes. Cleanup addresses only
 This provides ordinary atomic replacement and prevents target symlink/hard-link swaps from causing writes through a source inode. It is not a claim of crash durability (there is no file/directory fsync protocol), multi-file transactions, or artifact integrity against a privileged or caller-equivalent actor that can tamper with private temporary entries or rewrite the output directory. Such an actor can also replace artifacts after commit. Inputs are captured byte buffers, not atomic file/repository versions.
 
 Native tests cover the destination/temp-name collision, poisoned partial writes, source aliases, destination swaps, pinned-parent replacement, own-temp cleanup and actual OS write/rename failures. The rename-denial fault gate requires an unprivileged test user; it fails explicitly rather than silently skipping that check under root.
+
+## Loading boundary
+
+Aurora's resolver Session owns import traversal and dependency postorder. Each
+step returns only the next requested module to the host, or completion. Temporary
+ancestry frames are cleared before ingestion; existing order rows and import
+bindings retain progress without a second owner. The host still authorizes and
+opens files, reads bounded bytes or authorized overlays, and validates imported
+headers/interfaces before the next traversal step. Explicit-order in-memory
+resolution remains supported independently of filesystem traversal.

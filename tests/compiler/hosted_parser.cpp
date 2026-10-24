@@ -4313,6 +4313,62 @@ public:
     }
 };
 
+void rawModuleTraversal() {
+    namespace Wire = aurora::hosted_abi::compiler_resolver;
+    context = "source module traversal order, scratch and allocation cleanup";
+    const auto execute = [](std::size_t allowance) {
+        Allocations allocations;
+        RawResolution resolution(allocations);
+        for (const auto &text : {"module root;import alpha // import trivia\n . beta;import gamma;",
+                                 "export module alpha.beta;import shared;",
+                                 "export module shared;",
+                                 "export module gamma;import shared;"})
+            require(resolution.ingest(text), "graph fixture ingestion failed");
+        const auto baseline = allocations.successful;
+        if (allowance != std::numeric_limits<std::size_t>::max())
+            allocations.allowed = baseline + allowance;
+        GuardedRecord<Wire::WorkRow> result;
+        aurora_hosted_resolver_graph_step(resolution.data(), 0, &result.value);
+        result.check();
+        const auto status = resolution.status();
+        const auto used = allocations.successful - baseline;
+        require(checked_hosted_resolver_count(resolution.data(), 4) == 0,
+                "graph step retained scratch across host ingestion boundary");
+        if (status.storage == Wire::StorageStatus::allocation) {
+            require(result.value.value0 == -1, "graph allocation failure published completion");
+        } else {
+            require(status.storage == Wire::StorageStatus::none && result.value.value0 == 0,
+                    "valid diamond graph did not complete");
+            const std::array<std::int64_t, 4> orders{3, 1, 0, 2}, scopes{0, 2, 1, 3};
+            for (std::size_t index = 0; index < orders.size(); ++index) {
+                const auto unit = resolution.meta(static_cast<std::int64_t>(index));
+                require(unit.value12 == orders[index] && unit.value13 == scopes[index] && unit.value14 == (index == 0),
+                        "source graph changed dependency postorder or scope identity");
+            }
+        }
+        resolution.finish();
+        require(allocations.successful == allocations.released, "graph step leaked an owner");
+        ++cases;
+        return used;
+    };
+    const auto allocations = execute(std::numeric_limits<std::size_t>::max());
+    for (std::size_t allowed = 0; allowed < allocations; ++allowed)
+        execute(allowed);
+
+    aurora::HostedResolution resolution;
+    const auto root =
+        resolution.add(std::make_shared<const aurora::SourceText>("root.au", "module root;auto f()->i64{return 0;}"));
+    require(!resolution.nextImport(root.id), "empty graph requested an import");
+    bool rejected = false;
+    try {
+        resolution.add(std::make_shared<const aurora::SourceText>("late.au", "export module late;"));
+    } catch (const aurora::Error &) {
+        rejected = true;
+    }
+    require(rejected, "completed source graph accepted a late module");
+    ++cases;
+}
+
 void rawLinkageModes() {
     namespace Wire = aurora::hosted_abi::compiler_resolver;
     context = "every linkage mode including sealed seeds and cloned template names";
@@ -7916,6 +7972,7 @@ int main(int argc, char **argv) {
         rawCatalogueControls();
         rawLinkageCaches();
         rawLinkageModes();
+        rawModuleTraversal();
         diagnosticExpectations();
         // Table rows cover ordinary semicolon inputs. Keep distinct trivia,
         // boundary/depth and alternate stop-mode contracts explicit here.

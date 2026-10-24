@@ -307,6 +307,15 @@ with tempfile.TemporaryDirectory(prefix="aurora-lsp-test-") as directory:
             failure["code"] == code and failure["message"] == message and failure["range"]["start"]["line"] == 1,
             "imported parser/semantic/resolver message and original URI/range",
         )
+    imported.write_text("export module dep;\n@")
+    stages, _ = phases([opened(source, caller.replace("import dep;", "import dep; import dep;"))], [root])
+    earlier_import = by_uri(stages[0], imported)["diagnostics"][0]
+    require(
+        earlier_import["code"] == "AU1001"
+        and earlier_import["message"] == "module dep: unsupported character"
+        and earlier_import["range"]["start"] == {"line": 1, "character": 0},
+        "source graph visits earlier bad dependency before diagnosing a later duplicate edge",
+    )
     imported.write_text(DEP_GOOD)
     stages, _ = phases([opened(source, caller)])
     missing_root = by_uri(stages[0], source)["diagnostics"][0]

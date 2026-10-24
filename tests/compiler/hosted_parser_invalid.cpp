@@ -2503,6 +2503,9 @@ extern "C" std::int64_t aurora_hosted_resolver_order_module(void *session, const
 extern "C" std::int64_t aurora_hosted_resolver_bind_import(void *, const void *) {
     throw std::runtime_error("import-free resolution fixture acquired an import binding");
 }
+extern "C" void aurora_hosted_resolver_graph_step(void *, std::int64_t, void *) {
+    throw std::runtime_error("explicit-order resolution fixture acquired graph traversal");
+}
 extern "C" std::int64_t aurora_hosted_resolver_run(void *session) {
     checkSession(session);
     resolverRunning = true;

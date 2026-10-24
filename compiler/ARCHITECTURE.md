@@ -9,7 +9,7 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 
 | Component | Current source authority | Remaining work |
 |---|---|---|
-| Source loading and file I/O | C++ host | Native runtime and source-loading migration |
+| Module traversal | Aurora owns discovery requests, duplicate/cycle/depth/file limits and dependency postorder; C++ retains authorized file opening and bytes | Native runtime/file I/O migration |
 | Formatting | Aurora owns syntax roles, layout and findings; native host retains source transport and token/comment/reparse/idempotence checks | Final-source qualification required |
 | Lexing and parsing | Aurora | Complete final-source predecessor/current convergence |
 | Resolution, immutable linkage spelling and typed lowering | Aurora; native projection reads bounded copied name chunks; hash-chained index lookups, AVL order only for the two walked domains | Validate final integrated behavior and paired compile-time/output gates |
@@ -21,7 +21,7 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 | Call graph | Aurora | Validate final integrated behavior |
 | x86 emission | Aurora, fixed native transport | Same acceptance, diagnostics and ABI facts as the C++ backend on the whole corpus, byte-identical C1/C2 (`emitter-differential-*`); inlines single-field getters; owned-value bounds checks and sizes use multiplies, not divq; no register allocation yet |
 | Direct class fields | Aurora source and independent metadata admission share an 8,192-field cap, including empty, nested, resource and array fields | Existing leaf, byte, depth and array-element limits still apply |
-| Private host bridge | One 84-entry table generates Aurora forwarders and host transport declarations; compiler facts supply layouts, symbols and raw enum validation | Preserve fail-closed conversion; native replacement remains incomplete |
+| Private host bridge | One 85-entry table generates Aurora forwarders and host transport declarations; compiler facts supply layouts, symbols and raw enum validation | Preserve fail-closed conversion; native replacement remains incomplete |
 | Bootstrap route | One digest-pinned checkpoint (C2 of `d4cbabb`, one hop from the C2 of `2fd30b2`, which the recorded six-stage source route built), then current C1/C2 with convergence | Bump in one hop: build an accepted main commit with the current checkpoint, pass C1/C2 convergence and the historical-oracle differential, then the release gates ([recipe](README.md#bumping-the-checkpoint-one-hop)) |
 | Assembly, linking and hosted runtime | External bootstrap tools/C++ | Native replacements remain incomplete |
 
@@ -37,6 +37,15 @@ Expressions, declarations and bodies are part of the same Aurora parser. The
 legacy C++ expression parser is retired; final-source convergence remains a required gate.
 
 ## Current boundaries
+
+Module loading advances through source-owned graph steps in the existing resolver
+Session. Transient scratch frames track active ancestry and are cleared before
+host parsing/ingestion. Completed module order/scopes and import bindings persist;
+resumption replays unfinished ancestry, bounded by 64 files and depth 16. Duplicate
+checks happen at each edge, and depth precedes active/completed checks. Host opening,
+inode authority, byte quotas, overlays and header/interface admission remain native.
+The explicit-order in-memory resolver API remains separate compatibility transport,
+not a fallback traversal. No additional owner, callback or runtime capability is used.
 
 Metadata and instruction-flow masks share the source-owned `FlagMasks` table.
 Its existing generated ABI bridge supplies native readers; structural passes
