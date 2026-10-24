@@ -112,36 +112,35 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("ir_tests", type=Path)
     parser.add_argument("--air", type=Path, required=True, help="generated method-spans program")
-    parser.add_argument("--artifacts", type=Path)
     args = parser.parse_args()
-    if args.artifacts is None:
-        args.artifacts = Path(tempfile.mkdtemp(prefix="method-spans-abi-"))
-    else:
-        args.artifacts.mkdir(parents=True, exist_ok=False)
-    raw = abi.command([args.ir_tests.resolve(), "--output", args.air, "method-spans-abi"]).stdout.decode()
-    (args.artifacts / "generated.s").write_text(raw)
-    extra = abi.blob("method_hidden", [0]) + abi.blob(
-        "method_result_expected", [1, abi.REGION, abi.ALLOCATION, 29, 1, 0, 29]
-    )
-    observed = abi.replace_body(raw, "method_span_observe", observer())
-    outgoing = observed
-    for n, mask in shapes():
-        for mode in range(3):
-            suffix = f"{n}_{mask}_{mode}"
-            outgoing = abi.replace_body(
-                outgoing, f"method_span_target_{suffix}", target(mode).replace("SUFFIX", suffix)
-            )
-    direct_cases = cases(True)
-    forward_cases = cases()
-    direct = observed + abi.harness(direct_cases, True) + "\n.data\n" + extra
-    full = outgoing + abi.harness(forward_cases, True) + "\n.data\n" + extra
-    abi.run_programs(
-        args.artifacts,
-        [("incoming-generated-results", direct, direct_cases), ("outgoing-handwritten-methods", full, forward_cases)],
-    )
-    summary = f"PASS method span ABI: {len(direct_cases) + len(forward_cases)} native cases"
-    print(summary)
-    print(f"Artifacts: {args.artifacts}")
+    with tempfile.TemporaryDirectory(prefix="method-spans-abi-") as scratch:
+        artifacts = Path(scratch)
+        raw = abi.command([args.ir_tests.resolve(), "--output", args.air, "method-spans-abi"]).stdout.decode()
+        (artifacts / "generated.s").write_text(raw)
+        extra = abi.blob("method_hidden", [0]) + abi.blob(
+            "method_result_expected", [1, abi.REGION, abi.ALLOCATION, 29, 1, 0, 29]
+        )
+        observed = abi.replace_body(raw, "method_span_observe", observer())
+        outgoing = observed
+        for n, mask in shapes():
+            for mode in range(3):
+                suffix = f"{n}_{mask}_{mode}"
+                outgoing = abi.replace_body(
+                    outgoing, f"method_span_target_{suffix}", target(mode).replace("SUFFIX", suffix)
+                )
+        direct_cases = cases(True)
+        forward_cases = cases()
+        direct = observed + abi.harness(direct_cases, True) + "\n.data\n" + extra
+        full = outgoing + abi.harness(forward_cases, True) + "\n.data\n" + extra
+        abi.run_programs(
+            artifacts,
+            [
+                ("incoming-generated-results", direct, direct_cases),
+                ("outgoing-handwritten-methods", full, forward_cases),
+            ],
+        )
+        summary = f"PASS method span ABI: {len(direct_cases) + len(forward_cases)} native cases"
+        print(summary)
 
 
 if __name__ == "__main__":

@@ -6,6 +6,9 @@
 // child with fresh state and prints its counters and FNV-1a digests of the exact
 // store sequence, every viewport checkpoint and the final guarded buffer; the
 // parent appends the child's exit status. A denial exits 77 only when untouched.
+// With --trace, a case also prints each checkpoint ("frame STORES HEX", the
+// 408x18 viewport) and each store ("store OFFSET VALUE"); the guest graphical
+// smoke compares QEMU captures with this output.
 #include "../kernel/graphical-session.hpp"
 #include "../kernel/console-session.hpp"
 #include "../kernel/display-session.hpp"
@@ -50,7 +53,7 @@ public:
 Digest trace, frame_digest;
 U64 stores{}, consumed{}, entries{}, next_calls{}, put_calls{}, pixel_calls{}, frames{};
 U64 fail_after = std::numeric_limits<U64>::max();
-bool quiet = true, denied = false;
+bool quiet = true, denied = false, tracing = false;
 auto need(bool value) -> void {
     if (!value)
         std::abort();
@@ -117,6 +120,13 @@ auto checkpoint() -> void {
     need(visible_width >= 440 && visible_height >= 146);
     for (U64 y = 128; y < 146; ++y)
         frame_digest.add(bytes.data() + 32 + (y * row_pitch + 32) * 4, 408 * 4);
+    if (!tracing)
+        return;
+    std::printf("frame %llu ", static_cast<unsigned long long>(stores));
+    for (U64 y = 128; y < 146; ++y)
+        for (U64 i = 0; i < 408 * 4; ++i)
+            std::printf("%02x", static_cast<unsigned>(bytes[32 + (y * row_pitch + 32) * 4 + i]));
+    std::printf("\n");
 }
 class Store final {
 public:
@@ -127,6 +137,8 @@ public:
         trace.add(offset, 8);
         trace.add(value, 4);
         ++stores;
+        if (tracing)
+            std::printf("store %llu %u\n", static_cast<unsigned long long>(offset), value);
     }
 };
 class DisplayTransport final {
@@ -298,14 +310,21 @@ auto run_case(const Case &test) -> void {
     screen.add(bytes.data(), bytes.size());
     std::printf("completion=%llu consumed=%llu entries=%llu next=%llu put=%llu pixel=%llu stores=%llu frames=%llu "
                 "store-digest=%016llx frame-digest=%016llx screen-digest=%016llx ",
-                static_cast<unsigned long long>(raw), static_cast<unsigned long long>(consumed),
-                static_cast<unsigned long long>(entries), static_cast<unsigned long long>(next_calls),
-                static_cast<unsigned long long>(put_calls), static_cast<unsigned long long>(pixel_calls),
-                static_cast<unsigned long long>(stores), static_cast<unsigned long long>(frames),
-                static_cast<unsigned long long>(trace.value()), static_cast<unsigned long long>(frame_digest.value()),
+                static_cast<unsigned long long>(raw),
+                static_cast<unsigned long long>(consumed),
+                static_cast<unsigned long long>(entries),
+                static_cast<unsigned long long>(next_calls),
+                static_cast<unsigned long long>(put_calls),
+                static_cast<unsigned long long>(pixel_calls),
+                static_cast<unsigned long long>(stores),
+                static_cast<unsigned long long>(frames),
+                static_cast<unsigned long long>(trace.value()),
+                static_cast<unsigned long long>(frame_digest.value()),
                 static_cast<unsigned long long>(screen.value()));
 }
-int main() {
+int main(int argc, char **argv) {
+    need(argc == 1 || (argc == 2 && std::string_view(argv[1]) == "--trace"));
+    tracing = argc == 2;
     check_capture_policy();
     for (std::string line; std::getline(std::cin, line);) {
         std::istringstream fields(line);

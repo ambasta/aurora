@@ -6,7 +6,6 @@ model. These source checks do not establish retained-domain or guest behavior.
 """
 
 import argparse
-import hashlib
 from pathlib import Path
 import shutil
 import tempfile
@@ -174,18 +173,11 @@ def privacy_cases():
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("compiler", type=Path)
-    parser.add_argument("--artifacts", type=Path)
     args = parser.parse_args()
     compiler = args.compiler.resolve()
-    print(f"compiler_sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}", flush=True)
     cases = list(value_cases()) + list(rejection_cases()) + list(cancellation_cases())
     rejections = list(privacy_cases())
-    if args.artifacts:
-        work = args.artifacts.resolve()
-        work.mkdir(parents=True)
-    else:
-        (ROOT / "build").mkdir(exist_ok=True)
-        work = Path(tempfile.mkdtemp(prefix="volatile-file-", dir=ROOT / "build"))
+    work = Path(tempfile.mkdtemp(prefix="volatile-file-"))
     print(f"artifacts={work}", flush=True)
     runner = NativeRunner(work, compiler, 10)
     for start in range(0, len(cases), 4):
@@ -193,8 +185,7 @@ def main():
     for rejection in rejections:
         runner.rejection(rejection)
     print(f"PASS volatile file: {len(cases)} generated-code cases, {len(rejections)} source rejections", flush=True)
-    if not args.artifacts:
-        shutil.rmtree(work)
+    shutil.rmtree(work)
 
 
 if __name__ == "__main__":

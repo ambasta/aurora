@@ -7,7 +7,7 @@ historical predecessor, exit status, diagnostics and ABI facts must match exactl
 its assembly and stack facts are recorded but may differ, because code generation
 is allowed to improve. C1/C2 convergence stays byte-exact for every output. One run
 covers one selected flag profile; default, local symbols and referenced reflection
-are not interchangeable receipts. All evidence is retained in a new directory.
+are not interchangeable receipts. Evidence is kept in a temporary directory after a failure.
 
 This covers the same five *.au source roots as hosted_lexer_bootstrap.py, including
 rejected standalone modules. It does not generate the Python runners' embedded
@@ -30,9 +30,11 @@ import json
 import os
 import re
 from pathlib import Path
+import shutil
 import signal
 import stat
 import sys
+import tempfile
 import time
 
 sys.dont_write_bytecode = True
@@ -235,9 +237,11 @@ def observe_case(
         if label == "old" and not historical and runs[label]["returncode"] == 0:
             # Accepted by the predecessor: compare it like the listed inputs.
             historical = True
-        elif label == "old" and not historical and b"error AU4001: module not found in explicit roots" in (
-            case / "old/stderr.bin"
-        ).read_bytes():
+        elif (
+            label == "old"
+            and not historical
+            and b"error AU4001: module not found in explicit roots" in (case / "old/stderr.bin").read_bytes()
+        ):
             # A test-support module that needs its own module root is not a
             # standalone corpus input; record it and compare nothing.
             write_json(case / "oracle-membership.json", {"source": source or case.name, "skipped": "module root"})
@@ -293,13 +297,13 @@ def main():
         "--stage1-compiler", type=Path, required=True, help="current C1 for corpus convergence and later consumers"
     )
     parser.add_argument("--source-root", type=Path, default=ROOT)
-    parser.add_argument("--artifacts", type=Path, required=True, help="new directory; never removed, even on success")
     parser.add_argument("--local-symbols", action="store_true", help="apply to both compilers for every input")
     parser.add_argument(
         "--referenced-reflection-only", action="store_true", help="apply to both compilers for every input"
     )
     args = parser.parse_args()
-    root, artifacts = args.source_root.resolve(strict=True), args.artifacts.resolve()
+    root = args.source_root.resolve(strict=True)
+    artifacts = Path(tempfile.mkdtemp(prefix="aurora-emitter-differential-")).resolve()
     labels = ("old", "new", "c1")
     compilers = [path.resolve(strict=True) for path in (args.old_compiler, args.new_compiler, args.stage1_compiler)]
     for path in compilers:
@@ -335,8 +339,7 @@ def main():
         if enabled
     ]
     current_convergence = not flags
-    artifacts.mkdir(parents=True, exist_ok=False)
-    print(f"Retaining emitter differential evidence: {artifacts}", flush=True)
+    print(f"Emitter differential evidence (kept after a failure): {artifacts}", flush=True)
     report = {
         "state": "running",
         "total_inputs": len(corpus),
@@ -415,7 +418,8 @@ def main():
         report["rejected_sources"] = rejected
         skipped = set(report["skipped_inputs"])
         require(
-            set(report["new_consumers_converged"]) == new_consumers - skipped, "New consumer convergence coverage changed"
+            set(report["new_consumers_converged"]) == new_consumers - skipped,
+            "New consumer convergence coverage changed",
         )
         require(
             set(report["current_convergence_inputs"])
@@ -439,6 +443,7 @@ def main():
         "assembly, stack, ABI, diagnostics, preservation: " + json.dumps(report),
         flush=True,
     )
+    shutil.rmtree(artifacts)
 
 
 if __name__ == "__main__":

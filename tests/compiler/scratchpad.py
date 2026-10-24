@@ -328,19 +328,13 @@ def output_cases(binary):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("compiler", type=Path)
-    parser.add_argument("--artifacts", type=Path)
     for mode in ("client", "input", "output"):
         parser.add_argument(f"--{mode}-host", type=Path, required=True, help="Meson-built host library")
     args = parser.parse_args()
     compiler = args.compiler.resolve()
     for mode in ("client", "input", "output"):
         HOSTS[mode] = getattr(args, f"{mode}_host").resolve(strict=True)
-    if args.artifacts:
-        work = args.artifacts.resolve()
-        work.mkdir(parents=True)
-    else:
-        (ROOT / "build").mkdir(exist_ok=True)
-        work = Path(tempfile.mkdtemp(prefix="scratchpad-source-", dir=ROOT / "build"))
+    work = Path(tempfile.mkdtemp(prefix="scratchpad-source-"))
     print(f"artifacts={work}", flush=True)
     runner = NativeRunner(work, compiler, 30)
     cases = list(source_cases())
@@ -370,8 +364,7 @@ def main():
         f"PASS scratchpad: {len(cases)} generated record/parser cases; client, editor and output transcripts",
         flush=True,
     )
-    if not args.artifacts:
-        shutil.rmtree(work)
+    shutil.rmtree(work)
 
 
 if __name__ == "__main__":

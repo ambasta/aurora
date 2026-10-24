@@ -22,14 +22,11 @@ from __future__ import annotations
 import argparse
 import codecs
 import itertools
-import json
 from pathlib import Path
 import random
-import resource
-import subprocess
 
 import runtime_records as records
-from unsigned_oracle import Observation, require
+from unsigned_oracle import require
 
 ROOT = Path(__file__).resolve().parents[2]
 GOLDEN = Path(__file__).with_name("golden")
@@ -523,91 +520,6 @@ def main():
         for row in rejections:
             driver.reject(row["label"], row["source"], row["diagnostic"])
     print(f"PASS UTF-8 ({args.profile}): {count} cases, {observations} u64 observations, {len(rejections)} rejections")
-
-
-# The bounded process runner below is retained for tests/compiler/xfs_geometry.py.
-
-
-class Suite:
-    def __init__(self, compiler, directory, timeout, sanitized_compiler):
-        self.compiler = compiler
-        self.directory = directory
-        self.timeout = timeout
-        self.sanitized_compiler = sanitized_compiler
-        self.count = 0
-        self.batches = 0
-        self.receipts = []
-
-    def command(self, args, directory, name, compiler=False, native=False):
-        address_limit = None if compiler and self.sanitized_compiler else (512 if compiler else 128) << 20
-
-        def limits():
-            resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
-            resource.setrlimit(resource.RLIMIT_CPU, (10, 11))
-            resource.setrlimit(resource.RLIMIT_FSIZE, (8 << 20, 8 << 20))
-            if address_limit is not None:
-                resource.setrlimit(resource.RLIMIT_AS, (address_limit, address_limit))
-
-        receipt = {
-            "command": [str(arg) for arg in args],
-            "cpu_soft_seconds": 10,
-            "cpu_hard_seconds": 11,
-            "address_space_bytes": address_limit,
-            "file_size_bytes": 8 << 20,
-            "wall_seconds": self.timeout if native else 30,
-        }
-        try:
-            with (
-                (directory / f"{name}.stdout").open("wb") as stdout,
-                (directory / f"{name}.stderr").open("wb") as stderr,
-            ):
-                result = subprocess.run(
-                    [str(arg) for arg in args],
-                    stdout=stdout,
-                    stderr=stderr,
-                    timeout=receipt["wall_seconds"],
-                    preexec_fn=limits,
-                )
-            receipt["returncode"] = result.returncode
-            require(
-                result.returncode == 0,
-                f"{name}: expected exit 0, got {result.returncode}: "
-                + (directory / f"{name}.stderr").read_bytes()[:4096].decode(errors="replace"),
-            )
-            require(
-                (directory / f"{name}.stderr").stat().st_size == 0, f"{name}: unexpected stderr; see retained artifact"
-            )
-            return (directory / f"{name}.stdout").read_bytes()
-        except subprocess.TimeoutExpired as error:
-            receipt["timeout"] = True
-            raise AssertionError(f"{name}: wall timeout is a failure") from error
-        finally:
-            (directory / f"{name}.command.json").write_text(json.dumps(receipt, indent=2) + "\n")
-
-    def execute(self, directory, functions):
-        instructions = [".text", ".globl _start", "_start:"]
-        for function in functions:
-            instructions.extend(
-                [
-                    f"call {function}",
-                    "pushq %rax",
-                    "movq $1,%rax",
-                    "movq $1,%rdi",
-                    "movq %rsp,%rsi",
-                    "movq $8,%rdx",
-                    "syscall",
-                    "addq $8,%rsp",
-                ]
-            )
-        instructions.extend(["movq $60,%rax", "xorq %rdi,%rdi", "syscall", '.section .note.GNU-stack,"",@progbits'])
-        (directory / "entry.s").write_text("\n".join(instructions) + "\n")
-        self.command(["as", "--64", directory / "compiled.s", "-o", directory / "program.o"], directory, "assemble")
-        self.command(["as", "--64", directory / "entry.s", "-o", directory / "entry.o"], directory, "entry")
-        self.command(
-            ["ld", "-o", directory / "program", directory / "entry.o", directory / "program.o"], directory, "link"
-        )
-        output = self.command([directory / "program"], directory, "native", native=True)
-        return Observation(output, exit_code=0)
 
 
 if __name__ == "__main__":

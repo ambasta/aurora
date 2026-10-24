@@ -403,7 +403,6 @@ def resource_cases(s):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", type=Path)
-    parser.add_argument("--artifacts", type=Path, help="accepted for the Meson artifact adapter; unused")
     parser.add_argument("--seed", type=int, default=24024)
     args = parser.parse_args()
     suite = Suite(args.compiler, "short circuit", ignore_case=True)

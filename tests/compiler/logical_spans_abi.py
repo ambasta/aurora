@@ -438,37 +438,35 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("ir_tests", type=Path)
     parser.add_argument("--air", type=Path, required=True, help="generated logical-spans program")
-    parser.add_argument(
-        "--artifacts", type=Path, help="new artifact directory; default: unique directory beneath TMPDIR"
-    )
     args = parser.parse_args()
-    if args.artifacts is None:
-        args.artifacts = Path(tempfile.mkdtemp(prefix="aurora-logical-span-abi-"))
-    else:
-        args.artifacts.mkdir(parents=True, exist_ok=False)
-    raw = {}
-    for graph in ("array", "owner"):
-        raw[graph] = command([args.ir_tests.resolve(), "--output", args.air, "logical-spans-" + graph]).stdout.decode()
-        require("validated typed IR" in raw[graph], "verified backend output required")
-        (args.artifacts / (graph + "-generated.s")).write_text(raw[graph])
-    require("__au_runtime_bytes_" not in raw["array"], "complete array-only graph has zero owner-runtime references")
-    programs = []
-    for name, owner, handwritten in (
-        ("array", False, False),
-        ("owner", True, False),
-        ("handwritten-results", True, True),
-    ):
-        emitted = instrument(raw["owner" if owner else "array"])
-        if handwritten:
-            for mode in range(4):
-                emitted = replace_body(emitted, f"abi_result_{mode}", handwritten_result(mode))
-        selected = cases(owner, handwritten)
-        programs.append((name, emitted + harness(selected, owner), selected))
-    count = sum(len(selected) for _, _, selected in programs)
-    run_programs(args.artifacts, programs)
-    summary = f"PASS logical span ABI: {count} handwritten boundary cases"
-    print(summary)
-    print(f"Artifacts: {args.artifacts}")
+    with tempfile.TemporaryDirectory(prefix="aurora-logical-span-abi-") as scratch:
+        artifacts = Path(scratch)
+        raw = {}
+        for graph in ("array", "owner"):
+            raw[graph] = command(
+                [args.ir_tests.resolve(), "--output", args.air, "logical-spans-" + graph]
+            ).stdout.decode()
+            require("validated typed IR" in raw[graph], "verified backend output required")
+            (artifacts / (graph + "-generated.s")).write_text(raw[graph])
+        require(
+            "__au_runtime_bytes_" not in raw["array"], "complete array-only graph has zero owner-runtime references"
+        )
+        programs = []
+        for name, owner, handwritten in (
+            ("array", False, False),
+            ("owner", True, False),
+            ("handwritten-results", True, True),
+        ):
+            emitted = instrument(raw["owner" if owner else "array"])
+            if handwritten:
+                for mode in range(4):
+                    emitted = replace_body(emitted, f"abi_result_{mode}", handwritten_result(mode))
+            selected = cases(owner, handwritten)
+            programs.append((name, emitted + harness(selected, owner), selected))
+        count = sum(len(selected) for _, _, selected in programs)
+        run_programs(artifacts, programs)
+        summary = f"PASS logical span ABI: {count} handwritten boundary cases"
+        print(summary)
 
 
 if __name__ == "__main__":

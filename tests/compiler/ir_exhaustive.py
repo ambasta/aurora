@@ -432,7 +432,6 @@ parser.add_argument("--abi-facts", type=Path, required=True)
 parser.add_argument("--compiler", type=Path, required=True)
 parser.add_argument("--frontend-library", type=Path, required=True)
 parser.add_argument("--main-library", type=Path, required=True)
-parser.add_argument("--artifacts", type=Path, required=True)
 args = parser.parse_args()
 
 
@@ -483,9 +482,10 @@ def dispatch_checks(directory):
     print("3 canonical instruction-codec dispatch checks passed")
 
 
-dispatch_checks(args.artifacts / "dispatch")
-source_verifier_probes(args.artifacts / "verification-dispatch", args)
-source_emitter_probes(args.artifacts / "dispatch", args)
+with tempfile.TemporaryDirectory(prefix="aurora-ir-exhaustive-") as scratch:
+    dispatch_checks(Path(scratch) / "dispatch")
+    source_verifier_probes(Path(scratch) / "verification-dispatch", args)
+    source_emitter_probes(Path(scratch) / "dispatch", args)
 
 
 # When the direct-IR executable is supplied, exercise the same validated module

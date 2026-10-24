@@ -4,12 +4,20 @@ cd "$(dirname "$0")/.."
 # Compatibility alias: normal restoration now boots the isolated native image.
 shared_normal=false
 if [[ "${1-}" == --shared-normal ]]; then shared_normal=true; shift; fi
-run_only= output_dir=
+run_only= output_dir= scratch=
 if [[ "${1-}" == --run-only ]]; then
-    if (( $# < 4 )) || [[ -z "$2" || "$3" != --output-dir || -z "$4" ]]; then
-        echo 'Expected --run-only <absolute native profile directory> --output-dir <fresh directory>' >&2; exit 2
+    if (( $# < 2 )) || [[ -z "$2" ]]; then
+        echo 'Expected --run-only <absolute native profile directory> [--output-dir <fresh directory>]' >&2; exit 2
     fi
-    run_only="$2"; output_dir="$4"; shift 4
+    run_only="$2"; shift 2
+    if [[ "${1-}" == --output-dir ]]; then
+        [[ -n "${2-}" ]] || { echo 'Expected --output-dir <fresh directory>' >&2; exit 2; }
+        output_dir="$2"; shift 2
+    else
+        # Private scratch, kept after a failure and removed after a pass.
+        scratch="$(mktemp -d)"; output_dir="$scratch/output"
+        echo "Scratch: $scratch"
+    fi
 fi
 if (( $# > 1 )); then echo 'Expected one exact UEFI mode' >&2; exit 2; fi
 mode="${1-normal}"
@@ -110,3 +118,4 @@ else
     python3 tests/kernel-uefi-smoke.py "$status" "$log" "$mode"
 fi
 echo "PASS: actual OVMF UEFI gate ($mode)"
+if [[ -n "$scratch" ]]; then rm -rf "$scratch"; fi

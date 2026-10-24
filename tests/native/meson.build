@@ -15,12 +15,6 @@ native_test_variables = {
   'UBSAN_OPTIONS': 'halt_on_error=1:print_stacktrace=1',
 }
 native_test_env = environment(native_test_variables)
-# Some legacy runners require source-contained output even for out-of-tree builds.
-native_artifact_env = environment(native_test_variables)
-native_artifact_env.set('TMPDIR', native_root)
-native_artifact_env.set('TMP', native_root)
-native_artifact_env.set('TEMP', native_root)
-native_artifact_args = ['-B', artifact_adapter, python] + native_adapter_args
 
 # Shared generated Aurora fixtures have Ninja dependencies and private outputs.
 native_bios_object = custom_target('native-bios-policy',
@@ -441,9 +435,8 @@ if get_option('kernel_images')
   foreach family : profile_data['guests'].split('|')
     foreach mode : profile_data['guests.' + family].split('|')
       canonical = profile_data.get('aliases.uefi/' + mode, 'uefi/' + mode)
-      test('guest-uefi-' + mode, python,
-           args: ['-B', artifact_adapter, find_program('bash', native: true), uefi_smoke, '--run-only',
-                  meson.project_build_root() / 'kernel-images' / canonical, '--output-dir', '@ARTIFACTS@', mode],
+      test('guest-uefi-' + mode, find_program('bash', native: true),
+           args: [uefi_smoke, '--run-only', meson.project_build_root() / 'kernel-images' / canonical, mode],
            depends: kernel_profile_images[canonical], suite: ['guest', 'guest-' + family],
            workdir: native_root, timeout: 180)
     endforeach

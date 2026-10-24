@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -245,7 +244,6 @@ def main(name, describe):
     parser.add_argument("--keep", type=Path, help="retain the compiled driver and case files here")
     args = parser.parse_args()
     compiler = args.compiler.resolve(strict=True)
-    print(f"compiler_sha256={hashlib.sha256(compiler.read_bytes()).hexdigest()}", flush=True)
     if args.keep:
         args.keep.mkdir(parents=True, exist_ok=False)
     with tempfile.TemporaryDirectory(prefix=f"aurora-{name}-") as scratch:

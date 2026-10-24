@@ -21,11 +21,9 @@ AIR = Path(__file__).resolve().parent / "ir" / "readonly-windows-ir" / "abi.air"
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("ir_tests", type=Path)
-    parser.add_argument("--artifacts", type=Path, help="scratch directory for the linked program")
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="aurora-window-ir-") as temporary:
-        directory = args.artifacts.resolve() if args.artifacts else Path(temporary)
-        directory.mkdir(parents=True, exist_ok=True)
+        directory = Path(temporary)
         assembly = command([args.ir_tests.resolve(), "--output", AIR, "native"]).stdout.decode()
         values = [11, 128, 255]
         names, expected, wrappers = [], [], []

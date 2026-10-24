@@ -287,16 +287,15 @@ not replace this oracle with the current Aurora emitter. The
 `emitter-differential-default` and `emitter-differential-closed` tests in the
 `release` suite (run at compiler bumps and releases, not on every merge) compare the historical corpus against it, and unsupported later consumers
 against current C1/C2, in ordinary and closed profiles. To run these guarded tests
-directly while retaining successful artifacts:
+directly:
 
 ```sh
-AURORA_MESON_KEEP_ARTIFACTS=1 meson test -C build/meson-compiler \
-  --num-processes 2 --print-errorlogs \
+meson test -C build/meson-compiler --num-processes 2 --print-errorlogs \
   emitter-differential-default emitter-differential-closed
 ```
 
-Each evidence directory retains compiler hashes, flags, exact commands,
-diagnostics and assembly/stack/ABI artifacts. Against the historical oracle,
+The evidence directory, kept after a failure and removed after a pass, holds
+compiler hashes, flags, exact commands, diagnostics and assembly/stack/ABI artifacts. Against the historical oracle,
 accepted inputs must match exit status, diagnostics and ABI facts byte for byte;
 assembly and stack facts may differ (a `historical-*-differs.json` marker records
 it), because a frozen emitter must not forbid better code. C1/C2 must match every

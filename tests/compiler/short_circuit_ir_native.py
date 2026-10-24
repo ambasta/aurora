@@ -236,7 +236,6 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("ir_tests", type=Path)
     parser.add_argument("--air", type=Path, required=True, help="generated short-circuit program")
-    parser.add_argument("--artifacts", type=Path, help="scratch directory for the linked program")
     arguments = parser.parse_args()
     raw = command([arguments.ir_tests.resolve(), "--output", arguments.air, "native"], timeout=30).stdout.decode()
     require("validated typed IR" in raw, "fixture did not emit validated assembly")
@@ -251,8 +250,7 @@ def main():
         wrappers.append(wrapper(f"sc_required_trap_{number}", target, (int("_and_" in target), 0, 0)))
         entries.append(f"sc_required_trap_{number}")
     with tempfile.TemporaryDirectory(prefix="aurora-short-circuit-ir-") as temporary:
-        directory = arguments.artifacts.resolve() if arguments.artifacts else Path(temporary)
-        directory.mkdir(parents=True, exist_ok=True)
+        directory = Path(temporary)
         program = directory / "all-cases.s"
         program.write_text(
             instrument(raw) + "\n".join(wrappers) + freestanding_glue(entries, range(len(tests)), note=True)

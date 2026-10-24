@@ -90,9 +90,9 @@ Build and test routes are intentionally distinct:
   stage outputs, checks that the shim is the sole global definition, compares
   symbol locations/sizes/types and statically linked code/data bytes against
   ordinary output, and rejects invalid `--local-symbols` option combinations.
-- Historical `compiler_contract.py` receipts retain their original meaning and
-  validation. New raw-seed/legacy executor runs reject with Meson migration
-  instructions. `std.token_scan` is checked against reviewed golden reports
+- Historical compiler-contract receipts keep their original meaning in Git
+  history; their readers are retired, and legacy executor controls reject with
+  Meson migration instructions. `std.token_scan` is checked against reviewed golden reports
   (`tests/compiler/golden/token_scan.jsonl`) through one compiled driver.
 
 This is an Aurora-written lexer participating in its own hosted rebuild. The

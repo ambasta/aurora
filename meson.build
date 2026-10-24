@@ -71,12 +71,13 @@ frontend_object = custom_target(
   command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '@INPUT@', '-o', '@OUTPUT@'],
 )
 frontend_args = ['-DAURORA_HOSTED_LEXER', '-DAURORA_HOSTED_PARSER']
-frontend_host_sources = files('compiler/hosted_lexer.cpp', 'compiler/hosted_parser.cpp',
-                              'compiler/hosted_resolver.cpp', 'compiler/hosted_lowering.cpp',
-                              'compiler/hosted_lowering_diagnostics.cpp', 'compiler/hosted_graph.cpp',
-                              'compiler/hosted_ir_metadata.cpp', 'compiler/hosted_ir_instructions.cpp',
-                              'compiler/hosted_x86.cpp', 'compiler/ir_verify.cpp', 'compiler/ir_text.cpp',
-                              'runtime/hosted_bytes.cpp')
+# The parser-through-IR adapters; hosted-parser-invalid links these objects alone.
+frontend_adapter_sources = files('compiler/hosted_parser.cpp', 'compiler/hosted_resolver.cpp',
+                                 'compiler/hosted_lowering.cpp', 'compiler/hosted_lowering_diagnostics.cpp',
+                                 'compiler/hosted_ir_metadata.cpp', 'compiler/hosted_ir_instructions.cpp',
+                                 'compiler/ir_verify.cpp', 'runtime/hosted_bytes.cpp')
+frontend_host_sources = frontend_adapter_sources + files('compiler/hosted_lexer.cpp', 'compiler/hosted_graph.cpp',
+                                                         'compiler/hosted_x86.cpp', 'compiler/ir_text.cpp')
 frontend_library = static_library(
   'hosted-frontend', [frontend_host_sources, frontend_object, frontend_assembly[3]],
   cpp_args: frontend_args, native: true, install: false,

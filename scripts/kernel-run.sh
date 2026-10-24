@@ -174,7 +174,11 @@ if [[ "$mode" == graphical-console ]]; then
         python3 -B scripts/kernel_graphical_smoke.py --stage "$selected_mode" --build-dir "$image_dir" --images "$window/images"
     done
     [[ "$action" != --build-only ]] || exit 0
+    # Guest captures are compared with the real consumer run on the host.
+    build_root="${image_dir%/kernel-images/*}"
+    meson compile -C "$build_root" tests/graphical-console-host >"$window/build-renderer.log"
     python3 -B scripts/kernel_graphical_smoke.py --images "$window/images" --evidence "$window/guests" \
+        --renderer "$build_root/tests/graphical-console-host" \
         "$qemu" "$UEFI_FIRMWARE_COMBINED" "$UEFI_FIRMWARE_CODE" "$UEFI_FIRMWARE_VARS" "${QEMU_DATA:-}"
     exit 0
 elif [[ "$mode" == framebuffer ]]; then

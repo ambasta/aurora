@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Independent native tests for the NEW M022 hidden method ABI and old controls.
 
-Usage: method_values_abi.py path/to/prebuilt-method-values-ir [--work-dir DIR]
+Usage: method_values_abi.py path/to/prebuilt-method-values-ir
 A textual IR case supplies the IR directly, without source lowering. One boundary
 side is replaced by independently authored assembly in every execution. Expected
 records/offsets are literal protocol oracles, never obtained from emitter/layout
@@ -505,11 +505,9 @@ ret
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("fixture", type=Path)
-    parser.add_argument("--work-dir", type=Path)
     args = parser.parse_args()
     fixture = args.fixture.resolve()
-    WORK = args.work_dir.resolve() if args.work_dir else Path(tempfile.mkdtemp(prefix="aurora-method-abi-"))
-    WORK.mkdir(parents=True, exist_ok=True)
+    WORK = Path(tempfile.mkdtemp(prefix="aurora-method-abi-"))
     print(f"fixture sha256={hashlib.sha256(fixture.read_bytes()).hexdigest()}", flush=True)
     print(f"work directory: {WORK}", flush=True)
     try:
@@ -536,5 +534,4 @@ if __name__ == "__main__":
         print(f"FAIL: retained native failure artifacts in {WORK}", flush=True)
         raise
     else:
-        if not args.work_dir:
-            shutil.rmtree(WORK)
+        shutil.rmtree(WORK)

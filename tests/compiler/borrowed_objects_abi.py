@@ -253,89 +253,85 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("ir_tests", type=Path)
     parser.add_argument("--air", type=Path, required=True, help="generated borrowed-objects program")
-    parser.add_argument("--artifacts", type=Path)
     args = parser.parse_args()
-    if args.artifacts is None:
-        args.artifacts = Path(tempfile.mkdtemp(prefix="borrowed-objects-abi-"))
-    else:
-        args.artifacts.mkdir(parents=True, exist_ok=False)
-    original_command = abi.command
+    with tempfile.TemporaryDirectory(prefix="borrowed-objects-abi-") as scratch:
+        artifacts = Path(scratch)
+        original_command = abi.command
 
-    def checked_command(argv, expected=0):
-        result = original_command(argv, expected)
-        abi.require(not result.stderr, f"ABI command emitted unexpected stderr: {argv}: {result.stderr!r}")
-        return result
+        def checked_command(argv, expected=0):
+            result = original_command(argv, expected)
+            abi.require(not result.stderr, f"ABI command emitted unexpected stderr: {argv}: {result.stderr!r}")
+            return result
 
-    abi.command = checked_command
-    raw = abi.command([args.ir_tests.resolve(), "--output", args.air, "borrowed-objects-abi"]).stdout.decode()
-    (args.artifacts / "generated.s").write_text(raw)
-    extra = abi.blob("method_hidden", [0])
-    observed = raw
-    outgoing = observed
-    for n, mask in shapes():
-        for mode in range(2):
-            suffix = f"{n}_{'scalar' if mask < 0 else mask}_{mode}"
-            outgoing = abi.replace_body(
-                outgoing, f"borrow_object_target_{suffix}", target(mode, n, mask).replace("SUFFIX", suffix)
+        abi.command = checked_command
+        raw = abi.command([args.ir_tests.resolve(), "--output", args.air, "borrowed-objects-abi"]).stdout.decode()
+        (artifacts / "generated.s").write_text(raw)
+        extra = abi.blob("method_hidden", [0])
+        observed = raw
+        outgoing = observed
+        for n, mask in shapes():
+            for mode in range(2):
+                suffix = f"{n}_{'scalar' if mask < 0 else mask}_{mode}"
+                outgoing = abi.replace_body(
+                    outgoing, f"borrow_object_target_{suffix}", target(mode, n, mask).replace("SUFFIX", suffix)
+                )
+        direct_cases = cases(True)
+        forward_cases = cases()
+        # The compiler is the one stack-note authority. The reused handwritten
+        # harness's standalone footer must not duplicate it (GNU as 2.47 warns).
+        stack_note = '.section .note.GNU-stack,"",@progbits\n'
+        abi.require(raw.count(stack_note) == 1, "producer must emit one compiler-owned stack note")
+
+        def harness(selected):
+            text = abi.harness(selected, True)
+            abi.require(
+                text.endswith(stack_note) and text.count(stack_note) == 1,
+                "standalone harness must have exactly one known stack-note footer",
             )
-    direct_cases = cases(True)
-    forward_cases = cases()
-    # The compiler is the one stack-note authority. The reused handwritten
-    # harness's standalone footer must not duplicate it (GNU as 2.47 warns).
-    stack_note = '.section .note.GNU-stack,"",@progbits\n'
-    abi.require(raw.count(stack_note) == 1, "producer must emit one compiler-owned stack note")
+            return text[: -len(stack_note)]
 
-    def harness(selected):
-        text = abi.harness(selected, True)
-        abi.require(
-            text.endswith(stack_note) and text.count(stack_note) == 1,
-            "standalone harness must have exactly one known stack-note footer",
+        direct = observed + harness(direct_cases) + "\n.data\n" + extra
+        full = outgoing + harness(forward_cases) + "\n.data\n" + extra
+        programs = [
+            ("incoming-generated-results", direct, direct_cases),
+            ("outgoing-handwritten-helpers", full, forward_cases),
+        ]
+        # Separate observations enter the paired ABI with a literal two-pointer
+        # record, then observe generated forwarding through handwritten callees.
+        # An ordinary nested helper clobbers every caller-saved register so keeping
+        # the second pointer live in R11 cannot accidentally pass the getter cases.
+        paired_observed = abi.replace_body(raw, "paired_scalar_clobber", abi.align() + abi.clobber(0) + "    ret\n")
+        paired_outgoing = paired_observed
+        for arity in range(5):
+            paired_outgoing = abi.replace_body(paired_outgoing, f"paired_target_{arity}", paired_target(arity))
+        paired_selected = {}
+        for mode in ("direct", "generated", "outgoing"):
+            selected = paired_cases(mode)
+            assembly = paired_outgoing if mode == "outgoing" else paired_observed
+            assembly += paired_harness(harness(selected), selected)
+            paired_selected[mode] = selected
+            programs.append(("paired-" + mode, assembly, selected))
+        bounded_outgoing = paired_observed
+        for roots, mutable, tail in bounded_shapes():
+            bounded_outgoing = abi.replace_body(
+                bounded_outgoing, f"bounded_target_{roots}_{mutable}_{tail}", bounded_target(roots, tail)
+            )
+        bounded_selected = {}
+        for mode in ("direct", "generated", "outgoing"):
+            selected = bounded_cases(mode)
+            assembly = bounded_outgoing if mode == "outgoing" else paired_observed
+            assembly += bounded_harness(harness(selected), selected)
+            bounded_selected[mode] = selected
+            programs.append(("bounded-" + mode, assembly, selected))
+        abi.run_programs(artifacts, programs)
+        native_cases = (
+            len(direct_cases)
+            + len(forward_cases)
+            + sum(map(len, paired_selected.values()))
+            + sum(map(len, bounded_selected.values()))
         )
-        return text[: -len(stack_note)]
-
-    direct = observed + harness(direct_cases) + "\n.data\n" + extra
-    full = outgoing + harness(forward_cases) + "\n.data\n" + extra
-    programs = [
-        ("incoming-generated-results", direct, direct_cases),
-        ("outgoing-handwritten-helpers", full, forward_cases),
-    ]
-    # Separate observations enter the paired ABI with a literal two-pointer
-    # record, then observe generated forwarding through handwritten callees.
-    # An ordinary nested helper clobbers every caller-saved register so keeping
-    # the second pointer live in R11 cannot accidentally pass the getter cases.
-    paired_observed = abi.replace_body(raw, "paired_scalar_clobber", abi.align() + abi.clobber(0) + "    ret\n")
-    paired_outgoing = paired_observed
-    for arity in range(5):
-        paired_outgoing = abi.replace_body(paired_outgoing, f"paired_target_{arity}", paired_target(arity))
-    paired_selected = {}
-    for mode in ("direct", "generated", "outgoing"):
-        selected = paired_cases(mode)
-        assembly = paired_outgoing if mode == "outgoing" else paired_observed
-        assembly += paired_harness(harness(selected), selected)
-        paired_selected[mode] = selected
-        programs.append(("paired-" + mode, assembly, selected))
-    bounded_outgoing = paired_observed
-    for roots, mutable, tail in bounded_shapes():
-        bounded_outgoing = abi.replace_body(
-            bounded_outgoing, f"bounded_target_{roots}_{mutable}_{tail}", bounded_target(roots, tail)
-        )
-    bounded_selected = {}
-    for mode in ("direct", "generated", "outgoing"):
-        selected = bounded_cases(mode)
-        assembly = bounded_outgoing if mode == "outgoing" else paired_observed
-        assembly += bounded_harness(harness(selected), selected)
-        bounded_selected[mode] = selected
-        programs.append(("bounded-" + mode, assembly, selected))
-    abi.run_programs(args.artifacts, programs)
-    native_cases = (
-        len(direct_cases)
-        + len(forward_cases)
-        + sum(map(len, paired_selected.values()))
-        + sum(map(len, bounded_selected.values()))
-    )
-    summary = f"PASS borrowed object ABI: {native_cases} native cases"
-    print(summary)
-    print(f"Artifacts: {args.artifacts}")
+        summary = f"PASS borrowed object ABI: {native_cases} native cases"
+        print(summary)
 
 
 if __name__ == "__main__":

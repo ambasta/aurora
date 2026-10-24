@@ -8,8 +8,6 @@ It does not establish the owned-span runtime or whole-project acceptance gates.
 from __future__ import annotations
 
 import argparse
-import hashlib
-import json
 from pathlib import Path
 import subprocess
 import tempfile
@@ -271,48 +269,41 @@ REJECTION_DIAGNOSTICS = {
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("compiler", type=Path)
-    parser.add_argument("--artifacts", type=Path)
     args = parser.parse_args()
     compiler = args.compiler.resolve()
-    directory = args.artifacts or Path(tempfile.mkdtemp(prefix="aurora-owned-span-source-"))
-    directory.mkdir(parents=True, exist_ok=True)
-    before = hashlib.sha256(compiler.read_bytes()).hexdigest()
-    accepted, rejected = cases()
-    outcomes = []
-    for expected, fixtures in ((True, accepted), (False, rejected)):
-        for name, source in fixtures.items():
-            path = directory / f"{name}.au"
-            path.write_text(source)
-            run = subprocess.run(
-                [str(compiler), str(path), "-o", str(path.with_suffix(".s"))],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                check=False,
-            )
-            path.with_suffix(".stderr").write_text(run.stderr)
-            path.with_suffix(".stdout").write_text(run.stdout)
-            outcomes.append({"name": name, "expected_acceptance": expected, "returncode": run.returncode})
-            if (run.returncode == 0) != expected:
-                raise RuntimeError(f"{name}: expected {'acceptance' if expected else 'rejection'}: {run.stderr}")
-            if path.read_text() != source:
-                raise RuntimeError(f"{name}: compiler changed the source")
-            assembly = path.with_suffix(".s")
-            if expected:
-                if not assembly.is_file() or not assembly.stat().st_size:
-                    raise RuntimeError(f"{name}: accepted source produced no assembly")
-            else:
-                if run.returncode != 1 or assembly.exists():
-                    raise RuntimeError(f"{name}: rejection did not fail closed with exit 1")
-                diagnostic = REJECTION_DIAGNOSTICS.get(
-                    name, "cannot mutate or move an owner while a readonly span is live"
+    with tempfile.TemporaryDirectory(prefix="aurora-owned-span-source-") as scratch:
+        directory = Path(scratch)
+        accepted, rejected = cases()
+        for expected, fixtures in ((True, accepted), (False, rejected)):
+            for name, source in fixtures.items():
+                path = directory / f"{name}.au"
+                path.write_text(source)
+                run = subprocess.run(
+                    [str(compiler), str(path), "-o", str(path.with_suffix(".s"))],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    check=False,
                 )
-                if diagnostic not in run.stderr:
-                    raise RuntimeError(f"{name}: wrong rejection diagnostic, wanted {diagnostic!r}: {run.stderr}")
-    if hashlib.sha256(compiler.read_bytes()).hexdigest() != before:
-        raise RuntimeError("compiler changed during source gate")
-    (directory / "result.json").write_text(json.dumps({"compiler_sha256": before, "cases": outcomes}, indent=2) + "\n")
-    print(f"PASS owned readonly span source: {len(accepted)} accepted, {len(rejected)} rejected; {directory}")
+                path.with_suffix(".stderr").write_text(run.stderr)
+                path.with_suffix(".stdout").write_text(run.stdout)
+                if (run.returncode == 0) != expected:
+                    raise RuntimeError(f"{name}: expected {'acceptance' if expected else 'rejection'}: {run.stderr}")
+                if path.read_text() != source:
+                    raise RuntimeError(f"{name}: compiler changed the source")
+                assembly = path.with_suffix(".s")
+                if expected:
+                    if not assembly.is_file() or not assembly.stat().st_size:
+                        raise RuntimeError(f"{name}: accepted source produced no assembly")
+                else:
+                    if run.returncode != 1 or assembly.exists():
+                        raise RuntimeError(f"{name}: rejection did not fail closed with exit 1")
+                    diagnostic = REJECTION_DIAGNOSTICS.get(
+                        name, "cannot mutate or move an owner while a readonly span is live"
+                    )
+                    if diagnostic not in run.stderr:
+                        raise RuntimeError(f"{name}: wrong rejection diagnostic, wanted {diagnostic!r}: {run.stderr}")
+        print(f"PASS owned readonly span source: {len(accepted)} accepted, {len(rejected)} rejected; {directory}")
 
 
 if __name__ == "__main__":

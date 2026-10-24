@@ -122,8 +122,8 @@ allocate/release once; quota and physical-page exhaustion allocate/release zero
 times. The success grant has exactly 512 logical bytes. All prior profile cases,
 six runtime imports, page pool, stack and image caps remain unchanged.
 
-`scripts/kernel-owned-views-tests.sh` additionally checks extreme sector indices and
-rejects corruption of actual success/failure payloads, status and canaries.
+The `native-kernel-uefi-owned-views-*` Meson tests additionally check extreme sector
+indices and reject corruption of actual success/failure payloads, status and canaries.
 Generated assembly is not host-sanitizer-instrumented. Source/object/linked
 admission binds the private signature, canonical layout, cleanup/copy order and
 call closure; independent exact-image review and a real owned-bytes guest plus

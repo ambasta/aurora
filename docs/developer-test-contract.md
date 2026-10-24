@@ -60,15 +60,12 @@ image trap sites are verified again by the kernel itself at load time
 Report fresh-build and merge-suite wall time at full concurrency next to the
 previous main. Missing tools or skipped gates are reported, never passed.
 
-## Transition
+## Where tests live
 
-The test tree still predates these rules: most of `full` is per-batch generated
-programs, Python reimplementation oracles, admission scripts and meta-tests, and
-it takes about 14 minutes. The release suite now holds the corpus emitter
-differential, IR mutation testing (`ir-exhaustive`), XFS mutation controls and
-the complete copy of a subset test (`borrowed-objects`); everything else is in merge until the rewrite replaces it
-with data-driven drivers. The test inventories, Meson-identity, developer-contract,
-artifact-budget, clean and emitter-selector meta-tests are deleted.
+The release suite holds the corpus emitter differential, IR mutation testing
+(`ir-exhaustive`), the bootstrap tooling tests and the complete copies of subset
+tests; everything else is in merge. There are no test inventories, oracle
+self-tests or compiler-identity pins.
 
 Compiler-semantics runners in `tests/compiler` register cases as data on
 `native_runner.Suite`: accepted cases are packed into one compiled program per

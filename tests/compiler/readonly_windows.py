@@ -305,12 +305,9 @@ def lifetimes(suite):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", type=Path)
-    parser.add_argument("--artifacts", type=Path, help="scratch directory for the generated programs")
     parser.add_argument("--seed", type=int, default=23023)
     args = parser.parse_args()
     suite = Suite(args.compiler, 15, label="readonly windows")
-    if args.artifacts:
-        suite.runner.directory = args.artifacts.resolve()
     model(suite, args.seed)
     calls(suite)
     lifetimes(suite)

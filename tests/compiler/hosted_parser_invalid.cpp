@@ -4,6 +4,7 @@
 #include "hosted_parser.hpp"
 #include "hosted_resolver.hpp"
 #include "lexer.hpp"
+#include "lexer_reference.hpp"
 #include "services.hpp"
 #include "../../runtime/bytes_abi.hpp"
 #include <algorithm>
@@ -21,6 +22,12 @@
 #include <stdexcept>
 #include <utility>
 #include <vector>
+
+// The production adapter objects are linked without the generated frontend, so
+// the C++ reference lexer stands in for the Aurora lexer entry.
+aurora::LexedSource aurora::lexSource(std::shared_ptr<const SourceText> source, TriviaRetention retention) {
+    return lexSourceReference(std::move(source), retention);
+}
 
 namespace {
 using ResultWords = std::array<std::int64_t, 6>;

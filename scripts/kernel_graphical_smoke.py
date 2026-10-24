@@ -20,7 +20,7 @@ import tty
 import kernel_uefi_oracle as normal
 import qemu_transport as transport
 import smoke_outputs
-from framebuffer_capture_oracle import BASE, SIZE, VISIBLE, WIDTH, HEIGHT, PITCH, need, parse_ppm
+from framebuffer_capture_oracle import BASE, SIZE, VISIBLE, WIDTH, HEIGHT, PITCH, need, parse_ppm, ppm_rgb
 
 ROOT = Path(__file__).resolve().parents[1]
 MODES = ("graphical-console", "graphical-console-capture")
@@ -30,9 +30,6 @@ _spec = importlib.util.spec_from_file_location(
 capture = importlib.util.module_from_spec(_spec)
 sys.modules[_spec.name] = capture
 _spec.loader.exec_module(capture)
-sys.path.insert(0, str(ROOT / "tests"))
-from kernel_graphical_oracle import reference, byte_samples
-from kernel_display_oracle import ppm_rgb
 
 PREFIX = "AURORA_GRAPHICAL_"
 NUMBER = r"(0|[1-9][0-9]{0,19})"
@@ -133,6 +130,32 @@ def markers(raw, production=False, final=False):
             row["reason"] = reason
         rows.append((kind, row))
     return rows
+
+
+def native(renderer, data, fail_after=None):
+    """Checkpoints and stores of the real consumer, from the Meson-built graphical-console-host.
+
+    frames[n] and frame_stores[n] are the viewport and store count before sample
+    n (the last pair after completion); stores are (offset, value) in order.
+    """
+    limit = (1 << 64) - 1 if fail_after is None else fail_after
+    script = " ".join(f"1 {byte} 0" for byte in data)
+    line = f"{WIDTH} {HEIGHT} {PITCH} 1 {limit} 1 normal {len(data)} {script}\n"
+    result = subprocess.run([renderer, "--trace"], input=line.encode(), capture_output=True, timeout=60, check=False)
+    need(result.returncode == 0 and not result.stderr, "graphical-console-host failed")
+    *trace, summary = result.stdout.decode().splitlines()
+    model = dict(frames=[], frame_stores=[], stores=[])
+    for row in trace:
+        kind, first, second = row.split(" ")
+        if kind == "frame":
+            model["frame_stores"].append(int(first))
+            model["frames"].append(bytes.fromhex(second))
+        else:
+            need(kind == "store", "graphical-console-host trace")
+            model["stores"].append((int(first), int(second)))
+    fields = dict(field.split("=") for field in summary.split())
+    need(fields["exit"] == "0" and int(fields["stores"]) == len(model["stores"]), "graphical-console-host summary")
+    return dict(model, completion=int(fields["completion"]), consumed=int(fields["consumed"]))
 
 
 def compare(baseline, raw, ppm, frame=None, stores=None):
@@ -268,7 +291,7 @@ def capture_case(args, case, directory, record):
     name, selector, data = case
     idle = name == "idle4096"
     fail_after = {b"F": 0, b"I": 55}.get(selector)
-    model = reference(byte_samples(data or b"exit\r"), fail_after=fail_after)
+    model = native(args.renderer, data or b"exit\r", fail_after)
     with guest(args, "graphical-console-capture", directory, record) as channel:
         wait(channel, lambda rows: bool(rows))
         channel.stop()
@@ -328,7 +351,7 @@ def probe(channel, stem):
 
 
 def production_case(args, directory, record):
-    model = reference(byte_samples(b"".join(PRODUCTION)))
+    model = native(args.renderer, b"".join(PRODUCTION))
     with guest(args, "graphical-console", directory, record) as channel:
         while b"AURORA_UEFI_OK\r\n" not in channel.serial_bytes:
             channel.drain_serial()
@@ -503,6 +526,7 @@ def main():
     parser.add_argument("--status", type=int)
     parser.add_argument("--build-dir", type=Path, help="exact native profile directory for --stage")
     parser.add_argument("--evidence", type=Path)
+    parser.add_argument("--renderer", type=Path, help="Meson-built tests/graphical-console-host")
     parser.add_argument("inputs", nargs="*")
     args = parser.parse_args()
     signal.signal(signal.SIGTERM, lambda signum, frame: (_ for _ in ()).throw(KeyboardInterrupt("SIGTERM")))
@@ -523,6 +547,7 @@ def main():
         args.evidence and not args.evidence.exists() and len(args.inputs) == 5,
         "fresh evidence and QEMU OVMF CODE VARS DATA required",
     )
+    need(args.renderer is not None and args.renderer.is_file(), "--renderer graphical-console-host required")
     args.evidence = args.evidence.resolve()
     need(all(re.fullmatch(r"/[A-Za-z0-9_./+\-]+", str(p)) for p in (args.evidence, args.images)), "unsafe capture path")
     args.qemu, firmware, code, variables, args.data = args.inputs

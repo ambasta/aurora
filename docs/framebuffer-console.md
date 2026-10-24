@@ -36,8 +36,8 @@ For all four capture cases, run the same entrypoint with
 admitted image: the paused capture gate's release byte is `G` for the success
 scene, or one of the three framebuffer fault selectors in the fixture table
 (record, permissions, stale), each of which used to be its own image. It checks
-the success scene and all three no-write cases with the existing independent
-pixel/serial oracles,
+the success scene against the native display renderer's golden output
+(`tests/kernel-display-renderer.golden`), all three no-write cases, and the serial oracle,
 then invokes the normal UEFI smoke entrypoint for an actual restoration boot,
 even after a guest failure. An unreaped guest blocks restoration. Each attempt
 retains its captures, admissions, normal boot log and summary in a fresh directory.
@@ -55,8 +55,8 @@ For build-only inspection and retained review inputs:
 
 ```sh
 AURORA_GRAPHICAL_KEEP_RUNS=all scripts/kernel-graphical-smoke.sh --build-only
-python3 -B scripts/kernel_graphical_smoke.py --images DIR/images \
-    --evidence DIR/guests QEMU OVMF CODE VARS DATA
+python3 -B scripts/kernel_graphical_smoke.py --images DIR/images --evidence DIR/guests \
+    --renderer BUILD/tests/graphical-console-host QEMU OVMF CODE VARS DATA
 ```
 
 Use the printed run directory for `DIR`, an OVMF combined path or CODE/VARS pair,
@@ -73,8 +73,9 @@ only. Production synchronizes on observed viewport boundaries; capture sends onl
 the selector before PRE_SAMPLE 0, then synchronizes bytes on completed samples.
 Idle receives no input or pause between release and its terminal marker.
 
-Each physical/PPM pair checks scanout, modeled viewport, every outside byte and
-the 1,024-byte tail against its real baseline. Selected editing/control/capacity
+Each physical/PPM pair checks scanout, the viewport against the real consumer run
+on the host for the same input (`tests/graphical-console-host --trace`), and every
+outside byte and the 1,024-byte tail against its real baseline. Selected editing/control/capacity
 milestones are sampled, not continuously observed. F/I overlays exactly 0/55
 successful stores and checks 1/56 attempts, without hosted A5-fill bytes.
 Production starts with an already-painted baseline, so it cannot establish
@@ -130,7 +131,7 @@ or `OwnedBytes` video-memory surrogate reaches source.
 seven five-bit groups with documented packed-bit orientation. The graphical
 consumer adds lowercase/punctuation and unit-scale drawing; the status page uses
 3x/2x scaling. Hosted tests compare all 256 base-font byte mappings to independent
-visual rows and both consumers to pixel oracles.
+visual rows and both consumers to reviewed golden outputs.
 
 ### Firmware handoff and mapping
 
@@ -180,7 +181,7 @@ The mixed-stack plus fault cap remains 15,360 bytes within the 16 KiB stack.
 Hosted geometry/packing, coverage splits/holes, forbidden intersections,
 PAT/width, mocked GOP/freeing and tree/guard/alias controls are bootstrap models.
 Generated-Aurora pixel tests cover native BGR, padded RGB, clipped odd surfaces and
-maximum geometry, with independent glyph/byte oracles and guard/padding/tail checks.
+maximum geometry, against reviewed golden outputs with guard/padding/tail checks.
 Hosted cross-kind, stale-generation, reentry, lifetime and mapping denials remain
 separate from guest captures.
 

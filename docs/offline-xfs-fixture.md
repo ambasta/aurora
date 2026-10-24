@@ -80,8 +80,7 @@ The immutable native compiler was `/tmp/aurora-m014-compiler-corrected`, SHA256
 `2d86780c0082d861e7031955737eef81bb36936c7971d5032b6a1abbb4a24bf8`.
 The sanitized compiler was `/tmp/aurora-m014-compiler-corrected-sanitized`,
 SHA256 `ca87388b07dd39207ab3342bed2b9cd4ad5212362b435289e7f97b93574476fa`.
-Its separate receipt is
-[`native-sanitized-results.json`](../fixtures/xfs-offline/README.md).
+Its separate receipt, `native-sanitized-results.json`, remains in Git history.
 The first sanitizer attempt stopped before native case execution because
 LeakSanitizer cannot operate under this environment's tracing. The preserved
 failure record contains the diagnostic excerpt and does not claim a passed
@@ -135,23 +134,15 @@ To reproduce the native comparison using the preserved header, run from the
 isolated storage workspace:
 
 ```sh
-python3 fixtures/xfs-offline/verify_native.py
-python3 -O fixtures/xfs-offline/verify_native.py
+python3 -O fixtures/xfs-offline/verify_native.py --compiler build/meson/aurorac
 # Optional independent receipt, leaving the author's recorded receipt untouched:
-python3 fixtures/xfs-offline/verify_native.py --receipt /tmp/xfs-review.json
-ASAN_OPTIONS=detect_leaks=0:halt_on_error=1 \
-  python3 fixtures/xfs-offline/verify_native.py \
-  --compiler /tmp/aurora-m014-compiler-corrected-sanitized \
-  --compiler-sha256 ca87388b07dd39207ab3342bed2b9cd4ad5212362b435289e7f97b93574476fa \
-  --receipt /tmp/xfs-review-sanitized.json
+python3 fixtures/xfs-offline/verify_native.py --compiler build/meson/aurorac --receipt /tmp/xfs-review.json
 ```
 
-The verifier uses explicit fatal checks, including compiler/fixture identity,
-length, and GF(2) checks, which remain active under optimized Python. Default
-runs print a summary and do not rewrite any receipt. `--receipt PATH` explicitly
-writes the result JSON. `--compiler PATH --compiler-sha256 HASH` permits review
-with another independently pinned compiler; the supplied hash must match its
-bytes. The author's [`native-results.json`](../fixtures/xfs-offline/README.md)
+Meson runs the same check as `xfs-offline-native`. The verifier uses explicit
+fatal checks, including fixture identity, length, and GF(2) checks, which remain
+active under optimized Python. Default runs print a summary and do not rewrite
+any receipt. `--receipt PATH` explicitly writes the result JSON. The author's [`native-results.json`](../fixtures/xfs-offline/README.md)
 records every expected and observed full-width scalar, the normal exit code,
 source hashes, and generated source/assembly hashes. Repeating this check reads
 only the small saved header; it does not need the filesystem image or extracted

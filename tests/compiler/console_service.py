@@ -152,289 +152,293 @@ def main():
     parser.add_argument("compiler", type=Path)
     for name in ("console", "region", "note", "files"):
         parser.add_argument(f"--{name}-host", type=Path, required=True, help="Meson-built host library")
-    parser.add_argument("--artifacts", type=Path)
     parser.add_argument("--comparison-compiler", type=Path)
     args = parser.parse_args()
     compiler = args.compiler.resolve()
     for name in ("console", "region", "note", "files"):
         HOSTS[name] = getattr(args, f"{name}_host").resolve(strict=True)
-    if args.artifacts:
-        work = args.artifacts.resolve()
-        work.mkdir(parents=True)
-    else:
-        (ROOT / "build").mkdir(exist_ok=True)
-        work = Path(tempfile.mkdtemp(prefix="console-service-", dir=ROOT / "build"))
-    mixed_region(compiler, work, args.comparison_compiler.resolve() if args.comparison_compiler else None)
-    assembly = work / "console.s"
-    result = run(
-        [compiler, "--module-root", ROOT / "library", ROOT / "examples/kernel-console-service.au", "-o", assembly]
-    )
-    require(result.returncode == 0, result.stderr.decode())
-    text = assembly.read_text()
-    require("__au_runtime_bytes_" not in text, "service graph unexpectedly requires owning-byte runtime")
-    require(".local aurora_kernel_value" in text, "service graph contains an ordinary public root")
-    binary = work / "editor"
-    combined = work / "console-bridge.s"
-    combined.write_text(text + (ROOT / "kernel/uefi/console-service-entry.S").read_text())
-    result = link(combined, HOSTS["console"], binary)
-    require(result.returncode == 0, result.stderr.decode())
-    ready = b"AURORA_CONSOLE_READY: UEFI, ASCII, 64-byte lines\r\naurora> "
-    exit_output = b"exit\r\nAURORA_CONSOLE_EXIT\r\n"
+    with tempfile.TemporaryDirectory(prefix="console-service-") as scratch:
+        work = Path(scratch)
+        mixed_region(compiler, work, args.comparison_compiler.resolve() if args.comparison_compiler else None)
+        assembly = work / "console.s"
+        result = run(
+            [compiler, "--module-root", ROOT / "library", ROOT / "examples/kernel-console-service.au", "-o", assembly]
+        )
+        require(result.returncode == 0, result.stderr.decode())
+        text = assembly.read_text()
+        require("__au_runtime_bytes_" not in text, "service graph unexpectedly requires owning-byte runtime")
+        require(".local aurora_kernel_value" in text, "service graph contains an ordinary public root")
+        binary = work / "editor"
+        combined = work / "console-bridge.s"
+        combined.write_text(text + (ROOT / "kernel/uefi/console-service-entry.S").read_text())
+        result = link(combined, HOSTS["console"], binary)
+        require(result.returncode == 0, result.stderr.decode())
+        ready = b"AURORA_CONSOLE_READY: UEFI, ASCII, 64-byte lines\r\naurora> "
+        exit_output = b"exit\r\nAURORA_CONSOLE_EXIT\r\n"
 
-    def execute(samples, limit=2**64 - 1, malformed=0, sessions=1):
-        data = "".join(f"{present} {byte} {damage}\n" for present, byte, damage in samples).encode()
-        return run([binary, limit, malformed, sessions], input=data)
+        def execute(samples, limit=2**64 - 1, malformed=0, sessions=1):
+            data = "".join(f"{present} {byte} {damage}\n" for present, byte, damage in samples).encode()
+            return run([binary, limit, malformed, sessions], input=data)
 
-    def samples(value):
-        return [(1, byte, 0) for byte in value]
+        def samples(value):
+            return [(1, byte, 0) for byte in value]
 
-    normal = execute(samples(b"help\r\nstatus\nexit\n"))
-    require(normal.returncode == 0, normal.stderr.decode())
-    require(normal.stdout.startswith(ready) and normal.stdout.endswith(exit_output), "normal transcript boundaries")
-    require(normal.stdout.count(b"help    Show commands") == 1, "CRLF submitted twice")
-    require(b"timer-woken polling; line capacity=64" in normal.stdout, "missing Aurora status presentation")
-    for data in [b"e\x08exit\n", b"x\x7fexit\n", b"\x08\x7fexit\n"]:
-        result = execute(samples(data))
-        require(result.returncode == 0 and result.stdout.endswith(exit_output), "edit/empty-backspace regression")
-    for bad in [b"x" * 64, b"x" * 65 + b"\x08exit", b"exit ", b"\x1bexit", b"\xffexit", b"a\x00exit"]:
-        result = execute(samples(bad + b"\nexit\n"))
-        require(result.returncode == 0 and result.stdout.endswith(exit_output), "bad-line recovery failed")
-        expected = b"Unknown command." if bad in [b"x" * 64, b"exit "] else b"Line rejected:"
-        require(expected in result.stdout, "line rejection/unknown distinction changed")
-    for byte in range(256):
-        if 32 <= byte <= 126 or byte in (8, 10, 13, 127):
-            continue
-        result = execute(samples(bytes([byte]) + b"exit\nexit\n"))
-        require(result.returncode == 0 and b"Line rejected:" in result.stdout, f"unsafe input byte {byte}")
-    for delimiter in (10, 13):
-        value = samples(b"exit") + [(1, delimiter, 1), (0, 0, 1)] + samples(b"exit\nexit\n")
-        result = execute(value)
-        require(result.returncode == 0 and result.stdout.count(b"Line rejected:") == 2, "damage delimiter propagation")
-    result = execute([(0, 0, 1)] + samples(b"exit\nexit\n"))
-    require(result.returncode == 0 and result.stdout.count(b"Line rejected:") == 1, "absent damage ignored")
-    # The real generated service owns one bounded RAM-only note per invocation.
-    written = b"note: RAM-only; lost when session exits.\r\n"
-    missing = b"note: not found (RAM-only).\r\n"
+        normal = execute(samples(b"help\r\nstatus\nexit\n"))
+        require(normal.returncode == 0, normal.stderr.decode())
+        require(normal.stdout.startswith(ready) and normal.stdout.endswith(exit_output), "normal transcript boundaries")
+        require(normal.stdout.count(b"help    Show commands") == 1, "CRLF submitted twice")
+        require(b"timer-woken polling; line capacity=64" in normal.stdout, "missing Aurora status presentation")
+        for data in [b"e\x08exit\n", b"x\x7fexit\n", b"\x08\x7fexit\n"]:
+            result = execute(samples(data))
+            require(result.returncode == 0 and result.stdout.endswith(exit_output), "edit/empty-backspace regression")
+        for bad in [b"x" * 64, b"x" * 65 + b"\x08exit", b"exit ", b"\x1bexit", b"\xffexit", b"a\x00exit"]:
+            result = execute(samples(bad + b"\nexit\n"))
+            require(result.returncode == 0 and result.stdout.endswith(exit_output), "bad-line recovery failed")
+            expected = b"Unknown command." if bad in [b"x" * 64, b"exit "] else b"Line rejected:"
+            require(expected in result.stdout, "line rejection/unknown distinction changed")
+        for byte in range(256):
+            if 32 <= byte <= 126 or byte in (8, 10, 13, 127):
+                continue
+            result = execute(samples(bytes([byte]) + b"exit\nexit\n"))
+            require(result.returncode == 0 and b"Line rejected:" in result.stdout, f"unsafe input byte {byte}")
+        for delimiter in (10, 13):
+            value = samples(b"exit") + [(1, delimiter, 1), (0, 0, 1)] + samples(b"exit\nexit\n")
+            result = execute(value)
+            require(
+                result.returncode == 0 and result.stdout.count(b"Line rejected:") == 2, "damage delimiter propagation"
+            )
+        result = execute([(0, 0, 1)] + samples(b"exit\nexit\n"))
+        require(result.returncode == 0 and result.stdout.count(b"Line rejected:") == 1, "absent damage ignored")
+        # The real generated service owns one bounded RAM-only note per invocation.
+        written = b"note: RAM-only; lost when session exits.\r\n"
+        missing = b"note: not found (RAM-only).\r\n"
 
-    def readback(content):
-        return b"cat note\r\n" + content + b"\r\naurora> "
+        def readback(content):
+            return b"cat note\r\n" + content + b"\r\naurora> "
 
-    result = execute(samples(b"cat note\nexit\n"))
-    require(result.returncode == 0 and missing in result.stdout, "fresh note should be missing")
-    script = samples(b"write note first value\r\n") + [(0, 0, 0)] * 20
-    script += samples(b"status\nhelp\nunknown\n\ncat note\ncat note\nexit\n")
-    result = execute(script)
-    require(result.returncode == 0 and result.stdout.count(written) == 1, "write replayed after CRLF/idle/commands")
-    require(result.stdout.count(readback(b"first value")) == 2, "note did not survive idle/other commands")
-    for content in (b"", b"x", b" " * 53, b"!" * 53, b"a b "):
-        script = samples(b"write note longer old suffix\nwrite note " + content + b"\ncat note\nexit\n")
+        result = execute(samples(b"cat note\nexit\n"))
+        require(result.returncode == 0 and missing in result.stdout, "fresh note should be missing")
+        script = samples(b"write note first value\r\n") + [(0, 0, 0)] * 20
+        script += samples(b"status\nhelp\nunknown\n\ncat note\ncat note\nexit\n")
         result = execute(script)
-        require(result.returncode == 0 and readback(content) in result.stdout, f"exact replacement {content!r}")
-        require(result.stdout.count(written) == 2, "accepted write count changed")
-    malformed_writes = (
-        b"write note",
-        b"write notes new",
-        b"write noteX new",
-        b"write  note new",
-        b"Write note new",
-        b"write note " + b"x" * 54,
-        b"write note " + b"x" * 54 + b"\b",
-        b"write note new\x00",
-        b"write note new\xff",
-        b"write note new\x1b",
-    )
-    for value in malformed_writes:
-        result = execute(samples(b"write note saved\n" + value + b"\ncat note\nexit\n"))
-        require(result.returncode == 0 and readback(b"saved") in result.stdout, f"bad write mutated note: {value!r}")
-        require(result.stdout.count(written) == 1, "bad write was acknowledged")
-    for damage in ([(0, 0, 1)], [(1, ord("x"), 1)], [(1, 10, 1)], [(1, 13, 1)]):
-        script = samples(b"write note saved\nwrite note replacement") + damage
-        script += samples(b"\ncat note\nexit\n")
+        require(result.returncode == 0 and result.stdout.count(written) == 1, "write replayed after CRLF/idle/commands")
+        require(result.stdout.count(readback(b"first value")) == 2, "note did not survive idle/other commands")
+        for content in (b"", b"x", b" " * 53, b"!" * 53, b"a b "):
+            script = samples(b"write note longer old suffix\nwrite note " + content + b"\ncat note\nexit\n")
+            result = execute(script)
+            require(result.returncode == 0 and readback(content) in result.stdout, f"exact replacement {content!r}")
+            require(result.stdout.count(written) == 2, "accepted write count changed")
+        malformed_writes = (
+            b"write note",
+            b"write notes new",
+            b"write noteX new",
+            b"write  note new",
+            b"Write note new",
+            b"write note " + b"x" * 54,
+            b"write note " + b"x" * 54 + b"\b",
+            b"write note new\x00",
+            b"write note new\xff",
+            b"write note new\x1b",
+        )
+        for value in malformed_writes:
+            result = execute(samples(b"write note saved\n" + value + b"\ncat note\nexit\n"))
+            require(
+                result.returncode == 0 and readback(b"saved") in result.stdout, f"bad write mutated note: {value!r}"
+            )
+            require(result.stdout.count(written) == 1, "bad write was acknowledged")
+        for damage in ([(0, 0, 1)], [(1, ord("x"), 1)], [(1, 10, 1)], [(1, 13, 1)]):
+            script = samples(b"write note saved\nwrite note replacement") + damage
+            script += samples(b"\ncat note\nexit\n")
+            result = execute(script)
+            require(result.returncode == 0 and readback(b"saved") in result.stdout, "UART damage mutated note")
+            require(result.stdout.count(written) == 1, "damaged write was acknowledged")
+        script = samples(b"write note saved\r") + [(1, 10, 1)]
+        script += samples(b"write note replacement\n\ncat note\nexit\n")
         result = execute(script)
-        require(result.returncode == 0 and readback(b"saved") in result.stdout, "UART damage mutated note")
-        require(result.stdout.count(written) == 1, "damaged write was acknowledged")
-    script = samples(b"write note saved\r") + [(1, 10, 1)]
-    script += samples(b"write note replacement\n\ncat note\nexit\n")
-    result = execute(script)
-    require(result.returncode == 0 and readback(b"saved") in result.stdout, "damaged suppressed LF lost rejection")
-    require(result.stdout.count(written) == 1, "damage or empty line replayed a write")
-    result = execute(samples(b"write notf\be edited\ncat note\nexit\n"))
-    require(result.returncode == 0 and readback(b"edited") in result.stdout, "edited write failed")
-    result = execute(samples(b"write note secret\nexit\ncat note\nexit\n"), sessions=2)
-    require(result.returncode == 0 and result.stdout.count(ready) == 2, "second invocation did not run")
-    require(result.stdout.count(missing) == 1, "note survived session exit in the same process")
+        require(result.returncode == 0 and readback(b"saved") in result.stdout, "damaged suppressed LF lost rejection")
+        require(result.stdout.count(written) == 1, "damage or empty line replayed a write")
+        result = execute(samples(b"write notf\be edited\ncat note\nexit\n"))
+        require(result.returncode == 0 and readback(b"edited") in result.stdout, "edited write failed")
+        result = execute(samples(b"write note secret\nexit\ncat note\nexit\n"), sessions=2)
+        require(result.returncode == 0 and result.stdout.count(ready) == 2, "second invocation did not run")
+        require(result.stdout.count(missing) == 1, "note survived session exit in the same process")
 
-    # Named files share this session without changing the separate note policy.
-    def file_written(name, count):
-        return b"wrote " + name + b": " + str(count).encode() + (b" byte\r\n" if count == 1 else b" bytes\r\n")
+        # Named files share this session without changing the separate note policy.
+        def file_written(name, count):
+            return b"wrote " + name + b": " + str(count).encode() + (b" byte\r\n" if count == 1 else b" bytes\r\n")
 
-    def file_read(name, content):
-        return b"cat " + name + b"\r\n" + content + b"\r\naurora> "
+        def file_read(name, content):
+            return b"cat " + name + b"\r\n" + content + b"\r\naurora> "
 
-    result = execute(samples(b"append absent x\nwrite a lower\nappend a case\nappend a \ncat a\nappend note x\nexit\n"))
-    require(
-        result.returncode == 0
-        and file_read(b"a", b"lowercase") in result.stdout
-        and file_written(b"a", 4) in result.stdout
-        and file_written(b"a", 0) in result.stdout
-        and b"files: not found (RAM-only)." in result.stdout
-        and b"files: note is reserved." in result.stdout,
-        "shared append command semantics",
-    )
-    result = execute(samples(b"write a original\ncopy a b\nwrite a changed\ncat b\ncat a\ncopy a a\nexit\n"))
-    require(
-        result.returncode == 0
-        and file_read(b"b", b"original") in result.stdout
-        and file_read(b"a", b"changed") in result.stdout
-        and file_written(b"b", 8) in result.stdout,
-        "copy retains independent source/destination bytes",
-    )
-    for command in (
-        b"copy",
-        b"copy ",
-        b"copy a",
-        b"copy a ",
-        b"copy  a",
-        b"copy a  b",
-        b"copy a b ",
-        b"copy a b c",
-        b"copy a .",
-        b"copy .. b",
-        b"copy a abcdefghi",
-        b"copy a/b c",
-    ):
-        result = execute(samples(b"write a saved\n" + command + b"\ncat a\nls\nexit\n"))
+        result = execute(
+            samples(b"append absent x\nwrite a lower\nappend a case\nappend a \ncat a\nappend note x\nexit\n")
+        )
         require(
             result.returncode == 0
-            and b"files: invalid name or content." in result.stdout
-            and file_read(b"a", b"saved") in result.stdout
-            and b"files: a\r\n" in result.stdout,
-            f"copy grammar changed store: {command!r}",
+            and file_read(b"a", b"lowercase") in result.stdout
+            and file_written(b"a", 4) in result.stdout
+            and file_written(b"a", 0) in result.stdout
+            and b"files: not found (RAM-only)." in result.stdout
+            and b"files: note is reserved." in result.stdout,
+            "shared append command semantics",
         )
-    script = b"write a first\nwrite b second\nwrite c third\nwrite d fourth\nwrite e fifth\n"
-    script += b"write a x\ncat a\nrm b\nwrite e \nls\ncat e\nrm absent\ncat absent\nrm note\nexit\n"
-    result = execute(samples(script))
-    require(result.returncode == 0 and result.stdout.count(b"\r\nwrote ") == 6, "four-file write/replacement count")
-    for expected in (
-        b"files: full (4 files).\r\n",
-        b"files: a e c d\r\n",
-        b"files: note is reserved.\r\n",
-        file_written(b"a", 5),
-        file_written(b"b", 6),
-        file_written(b"c", 5),
-        file_written(b"d", 6),
-        file_written(b"a", 1),
-        file_written(b"e", 0),
-        file_read(b"a", b"x"),
-        file_read(b"e", b""),
-    ):
-        require(expected in result.stdout, "named-file capacity, slot reuse or exact readback")
-    require(result.stdout.count(b"files: not found (RAM-only).\r\n") == 2, "missing cat/rm outcomes")
-    for name in (b"x", b"abcdefgh", b"A._-09z", b"notes", b"Note"):
-        for content in (b"", b"x", b"x" * 9, b"x" * 10, b" " * 49, b"!" * 49, b"space and suffix "):
-            result = execute(samples(b"write " + name + b" " + content + b"\ncat " + name + b"\nexit\n"))
+        result = execute(samples(b"write a original\ncopy a b\nwrite a changed\ncat b\ncat a\ncopy a a\nexit\n"))
+        require(
+            result.returncode == 0
+            and file_read(b"b", b"original") in result.stdout
+            and file_read(b"a", b"changed") in result.stdout
+            and file_written(b"b", 8) in result.stdout,
+            "copy retains independent source/destination bytes",
+        )
+        for command in (
+            b"copy",
+            b"copy ",
+            b"copy a",
+            b"copy a ",
+            b"copy  a",
+            b"copy a  b",
+            b"copy a b ",
+            b"copy a b c",
+            b"copy a .",
+            b"copy .. b",
+            b"copy a abcdefghi",
+            b"copy a/b c",
+        ):
+            result = execute(samples(b"write a saved\n" + command + b"\ncat a\nls\nexit\n"))
             require(
                 result.returncode == 0
-                and file_read(name, content) in result.stdout
-                and file_written(name, len(content)) in result.stdout,
-                "name/content boundary and exact write confirmation",
+                and b"files: invalid name or content." in result.stdout
+                and file_read(b"a", b"saved") in result.stdout
+                and b"files: a\r\n" in result.stdout,
+                f"copy grammar changed store: {command!r}",
             )
-    result = execute(samples(b"write a first\nwrite ab second\nwrite a x\ncat a\ncat ab\nrm a\ncat ab\nexit\n"))
-    require(
-        result.returncode == 0
-        and file_read(b"a", b"x") in result.stdout
-        and result.stdout.count(file_read(b"ab", b"second")) == 2,
-        "filename equality must distinguish a complete name from its prefix",
-    )
-    bad_files = (
-        b"w",
-        b"wr",
-        b"wri",
-        b"writ",
-        b"writeX a x",
-        b"ca",
-        b"catX a",
-        b"r",
-        b"rmX a",
-        b"l",
-        b"lsX",
-        b"write a",
-        b"write  a x",
-        b"write abcdefghi x",
-        b"write . x",
-        b"write .. x",
-        b"write a/b x",
-        b"write a\\b x",
-        b"write a " + b"x" * 50,
-        b"cat a ",
-        b"rm a x",
-        b"ls extra",
-        b"write",
-        b"cat",
-        b"rm",
-        b"write a bad\x00",
-        b"write a bad\xff",
-    )
-    for command in bad_files:
-        result = execute(samples(b"write a saved\n" + command + b"\ncat a\nls\nexit\n"))
-        require(result.returncode == 0 and file_read(b"a", b"saved") in result.stdout, "bad file command mutated state")
+        script = b"write a first\nwrite b second\nwrite c third\nwrite d fourth\nwrite e fifth\n"
+        script += b"write a x\ncat a\nrm b\nwrite e \nls\ncat e\nrm absent\ncat absent\nrm note\nexit\n"
+        result = execute(samples(script))
+        require(result.returncode == 0 and result.stdout.count(b"\r\nwrote ") == 6, "four-file write/replacement count")
+        for expected in (
+            b"files: full (4 files).\r\n",
+            b"files: a e c d\r\n",
+            b"files: note is reserved.\r\n",
+            file_written(b"a", 5),
+            file_written(b"b", 6),
+            file_written(b"c", 5),
+            file_written(b"d", 6),
+            file_written(b"a", 1),
+            file_written(b"e", 0),
+            file_read(b"a", b"x"),
+            file_read(b"e", b""),
+        ):
+            require(expected in result.stdout, "named-file capacity, slot reuse or exact readback")
+        require(result.stdout.count(b"files: not found (RAM-only).\r\n") == 2, "missing cat/rm outcomes")
+        for name in (b"x", b"abcdefgh", b"A._-09z", b"notes", b"Note"):
+            for content in (b"", b"x", b"x" * 9, b"x" * 10, b" " * 49, b"!" * 49, b"space and suffix "):
+                result = execute(samples(b"write " + name + b" " + content + b"\ncat " + name + b"\nexit\n"))
+                require(
+                    result.returncode == 0
+                    and file_read(name, content) in result.stdout
+                    and file_written(name, len(content)) in result.stdout,
+                    "name/content boundary and exact write confirmation",
+                )
+        result = execute(samples(b"write a first\nwrite ab second\nwrite a x\ncat a\ncat ab\nrm a\ncat ab\nexit\n"))
         require(
-            result.stdout.count(file_written(b"a", 5)) == 1 and b"files: a\r\n" in result.stdout,
-            "failed command created file",
+            result.returncode == 0
+            and file_read(b"a", b"x") in result.stdout
+            and result.stdout.count(file_read(b"ab", b"second")) == 2,
+            "filename equality must distinguish a complete name from its prefix",
         )
-    result = execute(samples(b"write a lower\nwrite A upper\nwrite aa prefix\ncat a\ncat A\ncat aa\nexit\n"))
-    require(
-        all(
-            file_read(name, value) in result.stdout
-            for name, value in ((b"a", b"lower"), (b"A", b"upper"), (b"aa", b"prefix"))
-        ),
-        "case/prefix distinctions",
-    )
-    for damage in ([(0, 0, 1)], [(1, ord("x"), 1)], [(1, 13, 1)]):
-        result = execute(samples(b"write a saved\nwrite a bad") + damage + samples(b"\ncat a\nexit\n"))
+        bad_files = (
+            b"w",
+            b"wr",
+            b"wri",
+            b"writ",
+            b"writeX a x",
+            b"ca",
+            b"catX a",
+            b"r",
+            b"rmX a",
+            b"l",
+            b"lsX",
+            b"write a",
+            b"write  a x",
+            b"write abcdefghi x",
+            b"write . x",
+            b"write .. x",
+            b"write a/b x",
+            b"write a\\b x",
+            b"write a " + b"x" * 50,
+            b"cat a ",
+            b"rm a x",
+            b"ls extra",
+            b"write",
+            b"cat",
+            b"rm",
+            b"write a bad\x00",
+            b"write a bad\xff",
+        )
+        for command in bad_files:
+            result = execute(samples(b"write a saved\n" + command + b"\ncat a\nls\nexit\n"))
+            require(
+                result.returncode == 0 and file_read(b"a", b"saved") in result.stdout, "bad file command mutated state"
+            )
+            require(
+                result.stdout.count(file_written(b"a", 5)) == 1 and b"files: a\r\n" in result.stdout,
+                "failed command created file",
+            )
+        result = execute(samples(b"write a lower\nwrite A upper\nwrite aa prefix\ncat a\ncat A\ncat aa\nexit\n"))
         require(
-            result.returncode == 0 and file_read(b"a", b"saved") in result.stdout, "damaged file command mutated state"
+            all(
+                file_read(name, value) in result.stdout
+                for name, value in ((b"a", b"lower"), (b"A", b"upper"), (b"aa", b"prefix"))
+            ),
+            "case/prefix distinctions",
         )
-    result = execute(samples(b"write a valueX\b!\r\ncat a\r\nexit\n"))
-    require(result.returncode == 0 and file_read(b"a", b"value!") in result.stdout, "file edit/CRLF")
-    result = execute(samples(b"write a secret\nexit\ncat a\nls\nexit\n"), sessions=2)
-    require(
-        result.returncode == 0
-        and b"files: not found (RAM-only).\r\n" in result.stdout
-        and b"files: empty (RAM-only).\r\n" in result.stdout,
-        "files survived session exit",
-    )
-    file_script = samples(b"write a x\ncat a\nrm a\nls\nexit\n")
-    file_normal = execute(file_script)
-    require(file_normal.returncode == 0, "file output baseline failed")
-    for position in range(len(file_normal.stdout)):
-        result = execute(file_script, position)
+        for damage in ([(0, 0, 1)], [(1, ord("x"), 1)], [(1, 13, 1)]):
+            result = execute(samples(b"write a saved\nwrite a bad") + damage + samples(b"\ncat a\nexit\n"))
+            require(
+                result.returncode == 0 and file_read(b"a", b"saved") in result.stdout,
+                "damaged file command mutated state",
+            )
+        result = execute(samples(b"write a valueX\b!\r\ncat a\r\nexit\n"))
+        require(result.returncode == 0 and file_read(b"a", b"value!") in result.stdout, "file edit/CRLF")
+        result = execute(samples(b"write a secret\nexit\ncat a\nls\nexit\n"), sessions=2)
         require(
-            result.returncode == 1 and result.stdout == file_normal.stdout[:position],
-            f"file output timeout retried or changed prefix at {position}",
+            result.returncode == 0
+            and b"files: not found (RAM-only).\r\n" in result.stdout
+            and b"files: empty (RAM-only).\r\n" in result.stdout,
+            "files survived session exit",
         )
-    note_script = samples(b"cat note\nwrite note abc\ncat note\nwrite note \ncat note\nexit\n")
-    note_normal = execute(note_script)
-    require(note_normal.returncode == 0, "note output baseline failed")
-    for position in range(len(note_normal.stdout)):
-        result = execute(note_script, position)
-        require(
-            result.returncode == 1 and result.stdout == note_normal.stdout[:position],
-            f"note output timeout retried or changed prefix at {position}",
-        )
-    for position in range(len(normal.stdout)):
-        result = execute(samples(b"help\r\nstatus\nexit\n"), position)
-        require(
-            result.returncode == 1 and result.stdout == normal.stdout[:position],
-            f"output timeout retried, ignored or changed prefix at {position}",
-        )
-    for malformed in range(1, 6):
-        result = execute(samples(b"exit\n"), malformed=malformed)
-        require(result.returncode < 0, f"noncanonical report {malformed} accepted")
-    # Exercise the reusable note policy without trusting the line editor to
-    # sanitize its public copied-buffer/count input or preserve copied values.
-    policy = work / "note-policy.au"
-    policy.write_text("""module note_policy;
+        file_script = samples(b"write a x\ncat a\nrm a\nls\nexit\n")
+        file_normal = execute(file_script)
+        require(file_normal.returncode == 0, "file output baseline failed")
+        for position in range(len(file_normal.stdout)):
+            result = execute(file_script, position)
+            require(
+                result.returncode == 1 and result.stdout == file_normal.stdout[:position],
+                f"file output timeout retried or changed prefix at {position}",
+            )
+        note_script = samples(b"cat note\nwrite note abc\ncat note\nwrite note \ncat note\nexit\n")
+        note_normal = execute(note_script)
+        require(note_normal.returncode == 0, "note output baseline failed")
+        for position in range(len(note_normal.stdout)):
+            result = execute(note_script, position)
+            require(
+                result.returncode == 1 and result.stdout == note_normal.stdout[:position],
+                f"note output timeout retried or changed prefix at {position}",
+            )
+        for position in range(len(normal.stdout)):
+            result = execute(samples(b"help\r\nstatus\nexit\n"), position)
+            require(
+                result.returncode == 1 and result.stdout == normal.stdout[:position],
+                f"output timeout retried, ignored or changed prefix at {position}",
+            )
+        for malformed in range(1, 6):
+            result = execute(samples(b"exit\n"), malformed=malformed)
+            require(result.returncode < 0, f"noncanonical report {malformed} accepted")
+        # Exercise the reusable note policy without trusting the line editor to
+        # sanitize its public copied-buffer/count input or preserve copied values.
+        policy = work / "note-policy.au"
+        policy.write_text("""module note_policy;
 import console.session_note;
 import std.binary_buffer;
 import std.binary;
@@ -466,16 +470,16 @@ auto note_contract() -> i64 {
     return 0;
 }
 """)
-    policy_assembly, policy_binary = work / "note-policy.s", work / "note-policy"
-    result = run([compiler, "--module-root", ROOT / "library", policy, "-o", policy_assembly])
-    require(result.returncode == 0, result.stderr.decode())
-    result = link(policy_assembly, HOSTS["note"], policy_binary)
-    require(result.returncode == 0, result.stderr.decode())
-    result = run([policy_binary])
-    require(result.returncode == 0, "shared note policy count/content/copy/suffix contract")
-    # Existing hosted policy fixture also observes complete private copied records.
-    files_source = work / "files-policy.au"
-    files_source.write_text("""module files_policy;
+        policy_assembly, policy_binary = work / "note-policy.s", work / "note-policy"
+        result = run([compiler, "--module-root", ROOT / "library", policy, "-o", policy_assembly])
+        require(result.returncode == 0, result.stderr.decode())
+        result = link(policy_assembly, HOSTS["note"], policy_binary)
+        require(result.returncode == 0, result.stderr.decode())
+        result = run([policy_binary])
+        require(result.returncode == 0, "shared note policy count/content/copy/suffix contract")
+        # Existing hosted policy fixture also observes complete private copied records.
+        files_source = work / "files-policy.au"
+        files_source.write_text("""module files_policy;
 import std.bytes;
 import console.session_files;
 import console.protected_files;
@@ -834,11 +838,11 @@ auto files_snapshot(i64 stage) -> console::SessionFiles {
     return files;
 }
 """)
-    files_assembly, files_binary = work / "files-policy.s", work / "files-policy"
-    result = run([compiler, "--module-root", ROOT / "library", files_source, "-o", files_assembly])
-    require(result.returncode == 0, result.stderr.decode())
-    with files_assembly.open("a") as stream:
-        stream.write("""
+        files_assembly, files_binary = work / "files-policy.s", work / "files-policy"
+        result = run([compiler, "--module-root", ROOT / "library", files_source, "-o", files_assembly])
+        require(result.returncode == 0, result.stderr.decode())
+        with files_assembly.open("a") as stream:
+            stream.write("""
 .text
 .global checked_files_snapshot
 .type checked_files_snapshot,@function
@@ -854,15 +858,17 @@ checked_files_snapshot:
     ret
 .size checked_files_snapshot,.-checked_files_snapshot
 """)
-    result = link(files_assembly, HOSTS["files"], files_binary)
-    require(result.returncode == 0, result.stderr.decode())
-    result = run([files_binary])
-    require(result.returncode == 0, f"shared files policy count/content/copy/zero-suffix contract: {result.returncode}")
-    # Reuse the six-formal mixed ABI graph for copied nested/array/enum inputs
-    # and results. Independent snapshots cross two calls beside scalars/spans;
-    # the host put also retains its odd scalar-expression-depth coverage.
-    abi_source = work / "mixed-abi.au"
-    abi_source.write_text("""module kernel_console_service;
+        result = link(files_assembly, HOSTS["files"], files_binary)
+        require(result.returncode == 0, result.stderr.decode())
+        result = run([files_binary])
+        require(
+            result.returncode == 0, f"shared files policy count/content/copy/zero-suffix contract: {result.returncode}"
+        )
+        # Reuse the six-formal mixed ABI graph for copied nested/array/enum inputs
+        # and results. Independent snapshots cross two calls beside scalars/spans;
+        # the host put also retains its odd scalar-expression-depth coverage.
+        abi_source = work / "mixed-abi.au"
+        abi_source.write_text("""module kernel_console_service;
     enum class Marker { okay, wrong };
     class Payload {
         builtin::ConsoleSample observation;
@@ -937,20 +943,20 @@ odd(session) != 8) {
     }
     auto aurora_kernel_value() -> i64 { return 42; }
     """)
-    abi_assembly = work / "mixed-abi.s"
-    result = run([compiler, abi_source, "-o", abi_assembly])
-    require(result.returncode == 0, result.stderr.decode())
-    abi_assembly.write_text(abi_assembly.read_text() + (ROOT / "kernel/uefi/console-service-entry.S").read_text())
-    abi_binary = work / "mixed-abi"
-    result = link(abi_assembly, HOSTS["console"], abi_binary)
-    require(result.returncode == 0, result.stderr.decode())
-    result = run([abi_binary], input=b"1 81 0\n")
-    require(
-        result.returncode == 0 and result.stdout == b"z", "mixed copied service input/result/span/odd-depth failure"
-    )
-    modules = work / "modules"
-    (modules / "service").mkdir(parents=True)
-    (modules / "service/helpers.au").write_text("""export module service.helpers;
+        abi_assembly = work / "mixed-abi.s"
+        result = run([compiler, abi_source, "-o", abi_assembly])
+        require(result.returncode == 0, result.stderr.decode())
+        abi_assembly.write_text(abi_assembly.read_text() + (ROOT / "kernel/uefi/console-service-entry.S").read_text())
+        abi_binary = work / "mixed-abi"
+        result = link(abi_assembly, HOSTS["console"], abi_binary)
+        require(result.returncode == 0, result.stderr.decode())
+        result = run([abi_binary], input=b"1 81 0\n")
+        require(
+            result.returncode == 0 and result.stdout == b"z", "mixed copied service input/result/span/odd-depth failure"
+        )
+        modules = work / "modules"
+        (modules / "service").mkdir(parents=True)
+        (modules / "service/helpers.au").write_text("""export module service.helpers;
     export namespace service_test {
         auto fetch(builtin::ConsoleSession& session) -> builtin::ConsoleSample {
             const builtin::ConsoleSample report = session.next();
@@ -984,8 +990,8 @@ odd(session) != 8) {
         }
     }
     """)
-    imported = work / "imported.au"
-    imported.write_text("""module kernel_console_service;
+        imported = work / "imported.au"
+        imported.write_text("""module kernel_console_service;
     import service.helpers;
     auto console_service(builtin::ConsoleSession& session) -> builtin::ConsoleCompletion {
         const service_test::Holder saved = service_test::fetch_saved(session);
@@ -1002,19 +1008,19 @@ odd(session) != 8) {
     }
     auto aurora_kernel_value() -> i64 { return 42; }
     """)
-    imported_assembly = work / "imported.s"
-    result = run([compiler, "--module-root", modules, imported, "-o", imported_assembly])
-    require(result.returncode == 0, result.stderr.decode())
-    imported_assembly.write_text(
-        imported_assembly.read_text() + (ROOT / "kernel/uefi/console-service-entry.S").read_text()
-    )
-    imported_binary = work / "imported"
-    result = link(imported_assembly, HOSTS["console"], imported_binary)
-    require(result.returncode == 0, result.stderr.decode())
-    result = run([imported_binary], input=b"1 81 1\n")
-    require(result.returncode == 0 and result.stdout == b"K", "cross-module copied-report/reflection inconsistency")
-    write_source = work / "write-result.au"
-    write_source.write_text("""module kernel_console_service;
+        imported_assembly = work / "imported.s"
+        result = run([compiler, "--module-root", modules, imported, "-o", imported_assembly])
+        require(result.returncode == 0, result.stderr.decode())
+        imported_assembly.write_text(
+            imported_assembly.read_text() + (ROOT / "kernel/uefi/console-service-entry.S").read_text()
+        )
+        imported_binary = work / "imported"
+        result = link(imported_assembly, HOSTS["console"], imported_binary)
+        require(result.returncode == 0, result.stderr.decode())
+        result = run([imported_binary], input=b"1 81 1\n")
+        require(result.returncode == 0 and result.stdout == b"K", "cross-module copied-report/reflection inconsistency")
+        write_source = work / "write-result.au"
+        write_source.write_text("""module kernel_console_service;
     import console.io;
     auto console_service(builtin::ConsoleSession& session) -> builtin::ConsoleCompletion {
         const builtin::ConsoleSample request = session.next();
@@ -1039,146 +1045,154 @@ odd(session) != 8) {
     }
     auto aurora_kernel_value() -> i64 { return 42; }
     """)
-    write_assembly, write_binary = work / "write-result.s", work / "write-result"
-    result = run([compiler, "--module-root", ROOT / "library", write_source, "-o", write_assembly])
-    require(result.returncode == 0, result.stderr.decode())
-    write_assembly.write_text(write_assembly.read_text() + (ROOT / "kernel/uefi/console-service-entry.S").read_text())
-    result = link(write_assembly, HOSTS["console"], write_binary)
-    require(result.returncode == 0, result.stderr.decode())
-    # Every short prefix, including NUL/high bytes, first/final-byte timeout,
-    # empty calls after timeout, copied reports and exactly one failed attempt.
-    for length in range(6):
-        for limit in range(length + 1):
-            result = run([write_binary, limit], input=f"1 {length} 0\n1 {limit} 0\n".encode())
-            failed = int(limit < length)
-            require(
-                result.returncode == failed
-                and result.stdout == b"A\x00\xffz!"[:limit]
-                and result.stderr == f"completion={failed} attempts={limit + failed}\n".encode(),
-                f"copied WriteResult prefix/count/status/no-retry contract: length={length}, limit={limit}",
-            )
-    negative = {
-        "by-value": "auto f(builtin::ConsoleSession s) -> i64 { return 0; }",
-        "const": "auto f(const builtin::ConsoleSession& s) -> i64 { return 0; }",
-        "second": "auto f(i64 n, builtin::ConsoleSession& s) -> i64 { return 0; }",
-        "two": "auto f(builtin::ConsoleSession& s, builtin::ConsoleSession& t) -> i64 { return 0; }",
-        "local": "auto f(builtin::ConsoleSession& s) -> i64 { builtin::ConsoleSession x = s; return 0; }",
-        "value": "auto f(builtin::ConsoleSession& s) -> i64 { return i64(s); }",
-        "reflect": "auto f() -> i64 { return size_of(builtin::ConsoleSession); }",
-        "reflect-id": "auto f() -> i64 { return type_id(builtin::ConsoleSession); }",
-        "reflect-fields": "auto f() -> i64 { return field_count(builtin::ConsoleSession); }",
-        "field": "class C { builtin::ConsoleSession session; }; auto f() -> i64 { return 0; }",
-        "return": "auto f(builtin::ConsoleSession& s) -> builtin::ConsoleSession { return s; }",
-        "region": "auto f(builtin::ConsoleSession& s, i64 n, builtin::ByteRegion r) -> i64 { return n; }",
-        "owner": "auto f(builtin::ConsoleSession& s, builtin::OwnedBytes b) -> i64 { return 0; }",
-        "owned-class": (
-            "class Owner { builtin::OwnedBytes bytes; public: "
-            "Owner(builtin::ByteRegion region, builtin::OwnedBytes value) : bytes(move(value)) {} }; "
-            "auto f(builtin::ConsoleSession& s, Owner value) -> i64 { return 0; }"
-        ),
-        "seven-formals": (
-            "class Value { public: i64 count; }; "
-            "auto f(builtin::ConsoleSession& s, Value value, i64 a, i64 b, i64 c, i64 d, i64 e) "
-            "-> i64 { return 0; }"
-        ),
-        "recursive": "auto f(builtin::ConsoleSession& s) -> i64 { return f(s); }",
-        "scalar-cycle": (
-            "auto again() -> i64 { return again(); } auto f(builtin::ConsoleSession& s) -> i64 { return again(); }"
-        ),
-        "suspended": (
-            "auto g(builtin::ConsoleSession& s, builtin::ConsolePutResult n) -> i64 { return 0; } "
-            "auto f(builtin::ConsoleSession& s) -> i64 { return g(s, s.put(65u8)); }"
-        ),
-        "overload": "auto f(builtin::ConsoleSession& s) -> i64 { return 0; } auto f(i64 s) -> i64 { return 0; }",
-        "forged": "auto g(builtin::ConsoleSession& s) -> i64 { return 0; } auto f() -> i64 { return g(0); }",
-        "wrong-put": "auto f(builtin::ConsoleSession& s) -> i64 { s.put(65); return 0; }",
-        "unknown-op": "auto f(builtin::ConsoleSession& s) -> i64 { return s.read_port(1); }",
-        "shadow": "namespace builtin { class ConsoleSession {}; } auto f() -> i64 { return 0; }",
-        "template": (
-            "template<Scalar T> auto f(builtin::ConsoleSession& s, T n) -> i64 { return 0; } "
-            "auto answer() -> i64 { return 0; }"
-        ),
-        "owner-result": "auto f(builtin::ConsoleSession& s) -> builtin::OwnedBytes { return 0; }",
-        "span-result": (
-            "auto f(builtin::ConsoleSession& s, builtin::span<const u8> bytes) "
-            "-> builtin::span<const u8> { return bytes; }"
-        ),
-        "reference-result": (
-            "class Reply { public: i64 count; }; auto f(builtin::ConsoleSession& s) -> Reply& { return s; }"
-        ),
-        "copied-result-incomplete": (
-            "class Reply { public: i64 count; }; "
-            "auto f(builtin::ConsoleSession& s, bool ready) -> Reply { "
-            "if (ready) { const Reply result = Reply{.count = 0}; return result; } }"
-        ),
-        "copied-result-suspended": (
-            "class Reply { public: i64 count; }; "
-            "auto g(builtin::ConsoleSession& s, builtin::ConsolePutResult status) -> Reply { "
-            "const Reply result = Reply{.count = 0}; return result; } "
-            "auto f(builtin::ConsoleSession& s) -> Reply { const Reply result = g(s, s.put(65u8)); return result; }"
-        ),
-        "copied-input-suspended": (
-            "class Value { builtin::ConsolePutResult status; public: "
-            "Value(builtin::ConsolePutResult result) : status(result) {} }; "
-            "auto use(builtin::ConsoleSession& s, Value value) -> i64 { return 0; } "
-            "auto f(builtin::ConsoleSession& s) -> i64 { return use(s, Value(s.put(65u8))); }"
-        ),
-    }
-    borrowed_parameter_error = (
-        "AU2001: borrowed parameters require a supported leading ownership reference signature on an ordinary function"
-    )
-    expected_errors = {
-        "by-value": "AU3001: service functions require one leading exclusive sealed service reference",
-        "const": "AU3001: service functions require one leading exclusive sealed service reference",
-        "field": "AU2003: unsupported class field type 'builtin::ConsoleSession'",
-        "forged": "AU3001: service forwarding requires a named exclusive service parameter",
-        "local": "AU3001: service capability cannot be stored in a local",
-        "overload": "AU4001: borrowed-object functions cannot be overloaded",
-        "owner": "AU3001: service helper parameters require scalars, enums, copied values or readonly byte spans",
-        "owned-class": "AU3001: service helper parameters require scalars, enums, copied values or readonly byte spans",
-        "seven-formals": "AU3001: at most six parameters supported",
-        "recursive": "AU3001: invalid typed IR: recursive receiver call cycle",
-        "reflect": "AU3001: resource capabilities are unavailable to reflection",
-        "reflect-id": "AU3001: resource capabilities are unavailable to reflection",
-        "reflect-fields": "AU3001: resource capabilities are unavailable to reflection",
-        "region": "AU3001: service helper parameters require scalars, enums, copied values or readonly byte spans",
-        "return": "AU2001: only scalar function results or scalar-field class values are supported",
-        "scalar-cycle": "AU3001: invalid typed IR: recursive receiver call cycle",
-        "second": borrowed_parameter_error,
-        "shadow": "AU2001: reserved builtin storage name",
-        "suspended": "AU3001: service operation requires an active named exclusive service parameter",
-        "template": borrowed_parameter_error,
-        "two": borrowed_parameter_error,
-        "unknown-op": "AU3001: unknown operation for sealed service kind",
-        "value": "AU3001: service capability is not a value",
-        "wrong-put": "AU3001: expected u8, got i64",
-        "owner-result": "AU3001: service functions require a leading exclusive sealed service group and copied result",
-        "span-result": "AU2001: only scalar function results or scalar-field class values are supported",
-        "reference-result": "expected '{'",
-        "copied-result-incomplete": "AU3001: function must return on every path",
-        "copied-result-suspended": "AU3001: service operation requires an active named exclusive service parameter",
-        "copied-input-suspended": "AU3001: service operation requires an active named exclusive service parameter",
-    }
-    for name, body in negative.items():
-        source = work / f"{name}.au"
-        source.write_text("module rejected;\n" + body + "\n")
-        output = work / "preserved.s"
-        output.write_bytes(b"previous output\x00\xff")
-        result = run([compiler, source, "-o", output])
-        require(
-            result.returncode == 1 and expected_errors[name].encode() in result.stderr,
-            f"{name}: unexpected status or diagnostic: {result.stderr.decode(errors='replace')}",
+        write_assembly, write_binary = work / "write-result.s", work / "write-result"
+        result = run([compiler, "--module-root", ROOT / "library", write_source, "-o", write_assembly])
+        require(result.returncode == 0, result.stderr.decode())
+        write_assembly.write_text(
+            write_assembly.read_text() + (ROOT / "kernel/uefi/console-service-entry.S").read_text()
         )
-        require(output.read_bytes() == b"previous output\x00\xff", f"{name}: damaged prior output")
-    print(
-        f"PASS console service: generated editor, exhaustive rejected bytes, {len(normal.stdout)} timeout prefixes, "
-        f"RAM-note lifetime/replacement/rejection and {len(note_normal.stdout)} note timeout prefixes, "
-        "byte-span comparisons, four-file policy/records/lifetime/rejections and "
-        f"{len(file_normal.stdout)} file timeout prefixes, "
-        "canonical host reports, copied service inputs/results/WriteResult prefixes and "
-        f"{len(negative)} source rejections; "
-        f"evidence {work}"
-    )
+        result = link(write_assembly, HOSTS["console"], write_binary)
+        require(result.returncode == 0, result.stderr.decode())
+        # Every short prefix, including NUL/high bytes, first/final-byte timeout,
+        # empty calls after timeout, copied reports and exactly one failed attempt.
+        for length in range(6):
+            for limit in range(length + 1):
+                result = run([write_binary, limit], input=f"1 {length} 0\n1 {limit} 0\n".encode())
+                failed = int(limit < length)
+                require(
+                    result.returncode == failed
+                    and result.stdout == b"A\x00\xffz!"[:limit]
+                    and result.stderr == f"completion={failed} attempts={limit + failed}\n".encode(),
+                    f"copied WriteResult prefix/count/status/no-retry contract: length={length}, limit={limit}",
+                )
+        negative = {
+            "by-value": "auto f(builtin::ConsoleSession s) -> i64 { return 0; }",
+            "const": "auto f(const builtin::ConsoleSession& s) -> i64 { return 0; }",
+            "second": "auto f(i64 n, builtin::ConsoleSession& s) -> i64 { return 0; }",
+            "two": "auto f(builtin::ConsoleSession& s, builtin::ConsoleSession& t) -> i64 { return 0; }",
+            "local": "auto f(builtin::ConsoleSession& s) -> i64 { builtin::ConsoleSession x = s; return 0; }",
+            "value": "auto f(builtin::ConsoleSession& s) -> i64 { return i64(s); }",
+            "reflect": "auto f() -> i64 { return size_of(builtin::ConsoleSession); }",
+            "reflect-id": "auto f() -> i64 { return type_id(builtin::ConsoleSession); }",
+            "reflect-fields": "auto f() -> i64 { return field_count(builtin::ConsoleSession); }",
+            "field": "class C { builtin::ConsoleSession session; }; auto f() -> i64 { return 0; }",
+            "return": "auto f(builtin::ConsoleSession& s) -> builtin::ConsoleSession { return s; }",
+            "region": "auto f(builtin::ConsoleSession& s, i64 n, builtin::ByteRegion r) -> i64 { return n; }",
+            "owner": "auto f(builtin::ConsoleSession& s, builtin::OwnedBytes b) -> i64 { return 0; }",
+            "owned-class": (
+                "class Owner { builtin::OwnedBytes bytes; public: "
+                "Owner(builtin::ByteRegion region, builtin::OwnedBytes value) : bytes(move(value)) {} }; "
+                "auto f(builtin::ConsoleSession& s, Owner value) -> i64 { return 0; }"
+            ),
+            "seven-formals": (
+                "class Value { public: i64 count; }; "
+                "auto f(builtin::ConsoleSession& s, Value value, i64 a, i64 b, i64 c, i64 d, i64 e) "
+                "-> i64 { return 0; }"
+            ),
+            "recursive": "auto f(builtin::ConsoleSession& s) -> i64 { return f(s); }",
+            "scalar-cycle": (
+                "auto again() -> i64 { return again(); } auto f(builtin::ConsoleSession& s) -> i64 { return again(); }"
+            ),
+            "suspended": (
+                "auto g(builtin::ConsoleSession& s, builtin::ConsolePutResult n) -> i64 { return 0; } "
+                "auto f(builtin::ConsoleSession& s) -> i64 { return g(s, s.put(65u8)); }"
+            ),
+            "overload": "auto f(builtin::ConsoleSession& s) -> i64 { return 0; } auto f(i64 s) -> i64 { return 0; }",
+            "forged": "auto g(builtin::ConsoleSession& s) -> i64 { return 0; } auto f() -> i64 { return g(0); }",
+            "wrong-put": "auto f(builtin::ConsoleSession& s) -> i64 { s.put(65); return 0; }",
+            "unknown-op": "auto f(builtin::ConsoleSession& s) -> i64 { return s.read_port(1); }",
+            "shadow": "namespace builtin { class ConsoleSession {}; } auto f() -> i64 { return 0; }",
+            "template": (
+                "template<Scalar T> auto f(builtin::ConsoleSession& s, T n) -> i64 { return 0; } "
+                "auto answer() -> i64 { return 0; }"
+            ),
+            "owner-result": "auto f(builtin::ConsoleSession& s) -> builtin::OwnedBytes { return 0; }",
+            "span-result": (
+                "auto f(builtin::ConsoleSession& s, builtin::span<const u8> bytes) "
+                "-> builtin::span<const u8> { return bytes; }"
+            ),
+            "reference-result": (
+                "class Reply { public: i64 count; }; auto f(builtin::ConsoleSession& s) -> Reply& { return s; }"
+            ),
+            "copied-result-incomplete": (
+                "class Reply { public: i64 count; }; "
+                "auto f(builtin::ConsoleSession& s, bool ready) -> Reply { "
+                "if (ready) { const Reply result = Reply{.count = 0}; return result; } }"
+            ),
+            "copied-result-suspended": (
+                "class Reply { public: i64 count; }; "
+                "auto g(builtin::ConsoleSession& s, builtin::ConsolePutResult status) -> Reply { "
+                "const Reply result = Reply{.count = 0}; return result; } "
+                "auto f(builtin::ConsoleSession& s) -> Reply { const Reply result = g(s, s.put(65u8)); return result; }"
+            ),
+            "copied-input-suspended": (
+                "class Value { builtin::ConsolePutResult status; public: "
+                "Value(builtin::ConsolePutResult result) : status(result) {} }; "
+                "auto use(builtin::ConsoleSession& s, Value value) -> i64 { return 0; } "
+                "auto f(builtin::ConsoleSession& s) -> i64 { return use(s, Value(s.put(65u8))); }"
+            ),
+        }
+        borrowed_parameter_error = (
+            "AU2001: borrowed parameters require a supported leading ownership reference signature "
+            "on an ordinary function"
+        )
+        expected_errors = {
+            "by-value": "AU3001: service functions require one leading exclusive sealed service reference",
+            "const": "AU3001: service functions require one leading exclusive sealed service reference",
+            "field": "AU2003: unsupported class field type 'builtin::ConsoleSession'",
+            "forged": "AU3001: service forwarding requires a named exclusive service parameter",
+            "local": "AU3001: service capability cannot be stored in a local",
+            "overload": "AU4001: borrowed-object functions cannot be overloaded",
+            "owner": "AU3001: service helper parameters require scalars, enums, copied values or readonly byte spans",
+            "owned-class": (
+                "AU3001: service helper parameters require scalars, enums, copied values or readonly byte spans"
+            ),
+            "seven-formals": "AU3001: at most six parameters supported",
+            "recursive": "AU3001: invalid typed IR: recursive receiver call cycle",
+            "reflect": "AU3001: resource capabilities are unavailable to reflection",
+            "reflect-id": "AU3001: resource capabilities are unavailable to reflection",
+            "reflect-fields": "AU3001: resource capabilities are unavailable to reflection",
+            "region": "AU3001: service helper parameters require scalars, enums, copied values or readonly byte spans",
+            "return": "AU2001: only scalar function results or scalar-field class values are supported",
+            "scalar-cycle": "AU3001: invalid typed IR: recursive receiver call cycle",
+            "second": borrowed_parameter_error,
+            "shadow": "AU2001: reserved builtin storage name",
+            "suspended": "AU3001: service operation requires an active named exclusive service parameter",
+            "template": borrowed_parameter_error,
+            "two": borrowed_parameter_error,
+            "unknown-op": "AU3001: unknown operation for sealed service kind",
+            "value": "AU3001: service capability is not a value",
+            "wrong-put": "AU3001: expected u8, got i64",
+            "owner-result": (
+                "AU3001: service functions require a leading exclusive sealed service group and copied result"
+            ),
+            "span-result": "AU2001: only scalar function results or scalar-field class values are supported",
+            "reference-result": "expected '{'",
+            "copied-result-incomplete": "AU3001: function must return on every path",
+            "copied-result-suspended": "AU3001: service operation requires an active named exclusive service parameter",
+            "copied-input-suspended": "AU3001: service operation requires an active named exclusive service parameter",
+        }
+        for name, body in negative.items():
+            source = work / f"{name}.au"
+            source.write_text("module rejected;\n" + body + "\n")
+            output = work / "preserved.s"
+            output.write_bytes(b"previous output\x00\xff")
+            result = run([compiler, source, "-o", output])
+            require(
+                result.returncode == 1 and expected_errors[name].encode() in result.stderr,
+                f"{name}: unexpected status or diagnostic: {result.stderr.decode(errors='replace')}",
+            )
+            require(output.read_bytes() == b"previous output\x00\xff", f"{name}: damaged prior output")
+        print(
+            "PASS console service: generated editor, exhaustive rejected bytes, "
+            f"{len(normal.stdout)} timeout prefixes, "
+            f"RAM-note lifetime/replacement/rejection and {len(note_normal.stdout)} note timeout prefixes, "
+            "byte-span comparisons, four-file policy/records/lifetime/rejections and "
+            f"{len(file_normal.stdout)} file timeout prefixes, "
+            "canonical host reports, copied service inputs/results/WriteResult prefixes and "
+            f"{len(negative)} source rejections; "
+            f"evidence {work}"
+        )
 
 
 if __name__ == "__main__":

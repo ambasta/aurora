@@ -20,10 +20,7 @@ import tempfile
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-COMPILER = Path("/tmp/aurora-m014-compiler-corrected")
 sys.dont_write_bytecode = True
-sys.path.insert(0, str(ROOT / "scripts"))
-from compiler_contract import add_identity_arguments, resolve_identity, validate_identity_selection
 
 FIXTURE_SHA256 = "55ad821909c312048d9936a74c8904cd25f97aa190b48ae0004b03eaffdc6586"
 HEX_SHA256 = "d1d3fbc3f8b693d1c0ddf395e92b136a81b2a5d30b9e3cdec36addd580d42986"
@@ -151,14 +148,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--transport-self-test-only", action="store_true")
     parser.add_argument("--receipt", type=Path, help="explicit JSON output path; no receipt is written by default")
-    parser.add_argument("--compiler", type=Path, default=COMPILER)
-    add_identity_arguments(parser)
+    parser.add_argument("--compiler", type=Path)
     args = parser.parse_args()
-    validate_identity_selection(args, preflight=args.transport_self_test_only)
     if not args.transport_self_test_only:
+        require(args.compiler is not None, "--compiler is required")
         compiler = args.compiler.resolve(strict=True)
-        identity = resolve_identity(args, compiler, ROOT)
-        compiler_sha256 = identity.sha256
     fixture = HERE / "superblock-v5-512.hex"
     data = read_fixture_hex(fixture)
     with fixture.open("rb") as stream:
@@ -279,8 +273,7 @@ def main():
             "fixture_transport_sha256": HEX_SHA256,
             "fixture_transport": "canonical 32-row ASCII hex; decoded raw512 SHA independently checked",
             "compiler_path": str(compiler),
-            "compiler_sha256": compiler_sha256,
-            "compiler_identity": identity.record(),
+            "compiler_sha256": sha256(compiler),
             "oracle": "Python unbounded-integer GF(2) division, normal polynomial 0x11edc6f41",
             "source_sha256": {
                 str(path.relative_to(ROOT)): sha256(path)
@@ -302,7 +295,6 @@ def main():
             "generated_source_sha256": sha256(work / "input.au"),
             "generated_assembly_sha256": sha256(work / "compiled.s"),
         }
-        identity.verify()
         if args.receipt is not None:
             args.receipt.write_text(json.dumps(report, indent=2) + "\n")
         print(f"PASS {len(cases)} native observations against real mkfs.xfs fixture")

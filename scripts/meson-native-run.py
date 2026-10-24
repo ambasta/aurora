@@ -4,8 +4,6 @@
 import argparse
 from contextlib import nullcontext
 import fcntl
-import hashlib
-import json
 import os
 from pathlib import Path
 import shlex
@@ -58,7 +56,6 @@ def main():
             PYTHONDONTWRITEBYTECODE="1",
         )
         compiler = args.compiler.resolve(strict=True) if args.compiler else None
-        before = hashlib.sha256(compiler.read_bytes()).hexdigest() if compiler else None
         if compiler:
             env["AURORAC"] = str(compiler)
         command = args.command[1:] if args.command[:1] == ["--"] else args.command
@@ -72,23 +69,7 @@ def main():
             if locked is not None:
                 fcntl.flock(locked, fcntl.LOCK_EX)
             status = 0
-            try:
-                status = subprocess.run(command, cwd=root, env=env).returncode
-            finally:
-                if compiler and hashlib.sha256(compiler.read_bytes()).hexdigest() != before:
-                    raise RuntimeError("Meson-selected compiler changed during native gate")
-            print(
-                json.dumps(
-                    dict(
-                        scope="meson-native-gate",
-                        compiler=str(compiler) if compiler else None,
-                        observed_compiler_sha256=before,
-                        status=status,
-                        assurance="Observed artifact only; not an acceptance pin or fresh build",
-                    )
-                ),
-                flush=True,
-            )
+            status = subprocess.run(command, cwd=root, env=env).returncode
             if status:
                 sys.exit(status if status > 0 else 128 - status)
             completed_successfully = True

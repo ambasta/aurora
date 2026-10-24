@@ -1,18 +1,16 @@
 """Fail-closed oracle for the admitted 800x600 BGR32 emulator fixture.
 
-No production font or packing helper is imported. The existing independent
-row-pattern scene oracle is separately pinned by the capture manifest.
+The expected scene is the native display renderer's reviewed golden output
+(tests/kernel-display-renderer.golden): the captured pixels, placed in the
+renderer's guarded 0xA5 buffer, must reproduce its store count and digest.
 """
 
 import hashlib
 import re
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "tests"))
-from kernel_display_oracle import reference, ppm_rgb
-
+GOLDEN = ROOT / "tests/kernel-display-renderer.golden"
 BASE, SIZE, WIDTH, HEIGHT, PITCH = 0x80000000, 1921024, 800, 600, 800
 VISIBLE = WIDTH * HEIGHT * 4
 GATE = f"AURORA_DISPLAY_CAPTURE_GATE: base={BASE} bytes={SIZE}"
@@ -26,15 +24,32 @@ def need(condition, reason):
         raise ValueError(reason)
 
 
-def expected():
-    raw, stores = reference(WIDTH, HEIGHT, PITCH, 1, guard=False)
-    rgb = ppm_rgb(WIDTH, HEIGHT, PITCH, 1, raw)
-    need(stores == 484711, "independent store count drift")
-    need(
-        hashlib.sha256(rgb).hexdigest() == "aa54951e2adf263c9e1c8abe47f85b03165f97cdbb6dd5a6bb8c3d01fc61d74e",
-        "independent scene drift",
-    )
-    return raw[:VISIBLE], rgb, stores
+def ppm_rgb(width, height, pitch, pixel_format, pixels):
+    rgb = bytearray()
+    for y in range(height):
+        for x in range(width):
+            offset = (y * pitch + x) * 4
+            a, g, c, _ = pixels[offset : offset + 4]
+            rgb.extend((a, g, c) if pixel_format == 0 else (c, g, a))
+    return bytes(rgb)
+
+
+def fnv1a(data):
+    value = 0xCBF29CE484222325
+    for byte in data:
+        value = ((value ^ byte) * 0x100000001B3) & ((1 << 64) - 1)
+    return value
+
+
+def golden():
+    """The renderer's (stores, digest) for this geometry, over its 32-byte guards and page-rounded buffer."""
+    for line in GOLDEN.read_text().splitlines():
+        arguments, _, result = line.partition("\t")
+        if arguments == f"{WIDTH} {HEIGHT} {PITCH} 1":
+            match = re.fullmatch(r"exit 0 \| stdout: stores=(\d+) bytes=(\d+) digest=([0-9a-f]+)", result)
+            need(match is not None and int(match[2]) == SIZE + 64, "renderer golden geometry")
+            return int(match[1]), int(match[3], 16)
+    raise ValueError("renderer golden lacks the fixture geometry")
 
 
 def parse_ppm(data):
@@ -127,9 +142,9 @@ def validate_capture(mode, baseline, after, screenshot, baseline_screenshot):
     need(before_rgb == ppm_rgb(WIDTH, HEIGHT, PITCH, 1, baseline), "baseline scanout mismatch")
     need(actual_rgb == ppm_rgb(WIDTH, HEIGHT, PITCH, 1, after), "physical/screenshot mismatch")
     if mode == "framebuffer":
-        desired, rgb, stores = expected()
-        need(after[:VISIBLE] == desired, "visible BGR32 pixel mismatch")
-        need(actual_rgb == rgb, "screenshot scene mismatch")
+        stores, digest = golden()
+        guarded = b"\xa5" * 32 + after[:VISIBLE] + b"\xa5" * (SIZE - VISIBLE + 32)
+        need(fnv1a(guarded) == digest, "visible BGR32 pixels differ from the native renderer")
         need(after[VISIBLE:] == baseline[VISIBLE:], "1024-byte resource tail modified")
     else:
         stores = 0

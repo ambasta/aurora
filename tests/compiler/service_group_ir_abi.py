@@ -25,24 +25,19 @@ def run(command):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("ir_binary", type=Path)
-    parser.add_argument("--artifacts", type=Path)
     args = parser.parse_args()
     binary = args.ir_binary.resolve()
-    if args.artifacts:
-        work = args.artifacts.resolve()
-        work.mkdir(parents=True)
-    else:
-        (ROOT / "build").mkdir(exist_ok=True)
-        work = Path(tempfile.mkdtemp(prefix="service-group-ir-abi-", dir=ROOT / "build"))
-    assembly = work / "nonlexical.s"
-    result = run([binary, "--output", AIR, "executed", assembly])
-    print(result.stdout.decode(), end="")
-    text = assembly.read_text()
-    if ".local group_caller" not in text:
-        raise RuntimeError("nonlexical IR entry lost private linkage")
-    assembly.write_text(
-        text
-        + """
+    with tempfile.TemporaryDirectory(prefix="service-group-ir-abi-") as scratch:
+        work = Path(scratch)
+        assembly = work / "nonlexical.s"
+        result = run([binary, "--output", AIR, "executed", assembly])
+        print(result.stdout.decode(), end="")
+        text = assembly.read_text()
+        if ".local group_caller" not in text:
+            raise RuntimeError("nonlexical IR entry lost private linkage")
+        assembly.write_text(
+            text
+            + """
 .text
 .globl __au_runtime_group_entry
 .hidden __au_runtime_group_entry
@@ -56,25 +51,25 @@ __au_runtime_group_entry:
     ret
 .size __au_runtime_group_entry,.-__au_runtime_group_entry
 """
-    )
-    executable = work / "nonlexical"
-    run(
-        [
-            os.environ.get("CXX", "g++"),
-            "-std=c++23",
-            "-O1",
-            "-Wall",
-            "-Wextra",
-            "-Werror",
-            ROOT / "tests/compiler/service_group_ir_host.cpp",
-            ROOT / "tests/compiler/service_group_abi.S",
-            assembly,
-            "-o",
-            executable,
-        ]
-    )
-    print(run([executable]).stdout.decode(), end="")
-    print(f"PASS grouped IR execution artifacts: {work}")
+        )
+        executable = work / "nonlexical"
+        run(
+            [
+                os.environ.get("CXX", "g++"),
+                "-std=c++23",
+                "-O1",
+                "-Wall",
+                "-Wextra",
+                "-Werror",
+                ROOT / "tests/compiler/service_group_ir_host.cpp",
+                ROOT / "tests/compiler/service_group_abi.S",
+                assembly,
+                "-o",
+                executable,
+            ]
+        )
+        print(run([executable]).stdout.decode(), end="")
+        print(f"PASS grouped IR execution artifacts: {work}")
 
 
 if __name__ == "__main__":

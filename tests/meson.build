@@ -7,7 +7,6 @@ oracle_env.set('TMP', meson.current_build_dir())
 oracle_env.set('TEMP', meson.current_build_dir())
 oracle_env.set('PYTHONDONTWRITEBYTECODE', '1')
 oracle_env.set('CXX', oracle_cxx)
-artifact_adapter = files('meson_artifacts.py')
 # Shared drivers: golden-output comparison and Aurora fixture objects built once.
 golden_runner = files('golden.py')
 fixture_builder = files('../scripts/meson-native-fixture.py')
@@ -54,8 +53,7 @@ foreach entry : [
 endforeach
 
 test('volatile-file-source-native', python,
-    args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/volatile_file.py'), aurorac,
-           '--artifacts', '@ARTIFACTS@'],
+    args: ['-B', '-O', files('compiler/volatile_file.py'), aurorac],
     depends: aurorac, suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'],
     env: oracle_env, workdir: meson.current_build_dir(), timeout: 120, is_parallel: true)
 
@@ -70,8 +68,7 @@ foreach mode : ['client', 'input', 'output']
   scratchpad_args += ['--' + mode + '-host', scratchpad_hosts[-1].full_path()]
 endforeach
 test('scratchpad-source-native', python,
-    args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/scratchpad.py'), aurorac,
-           '--artifacts', '@ARTIFACTS@'] + scratchpad_args,
+    args: ['-B', '-O', files('compiler/scratchpad.py'), aurorac] + scratchpad_args,
     depends: [aurorac] + scratchpad_hosts, suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'],
     env: oracle_env, workdir: meson.current_build_dir(), timeout: 180, is_parallel: true)
 
@@ -189,8 +186,7 @@ lint_fixture = executable(
     native: true, override_options: fixture_options, install: false,
 )
 test('semantic-lint', python,
-     args: ['-B', artifact_adapter, python, '-B', files('compiler/lint.py'),
-            aurora_fmt, aurorac, lint_fixture, '--artifacts', '@ARTIFACTS@'],
+     args: ['-B', files('compiler/lint.py'), aurora_fmt, aurorac, lint_fixture],
      depends: [aurora_fmt, aurorac, lint_fixture], suite: ['full', 'merge', 'dev', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 
@@ -216,13 +212,11 @@ test(
 
 # Logical owner views share the established readonly-span source type.
 test('owned-spans-source', python,
-     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/owned_spans_source.py'), aurorac,
-            '--artifacts', '@ARTIFACTS@'],
+     args: ['-B', '-O', files('compiler/owned_spans_source.py'), aurorac],
      depends: aurorac, suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 180)
 foreach mode : ['standalone', 'receiver']
-    span_kernel_args = ['-B', artifact_adapter, python, '-B', '-O', files('compiler/owned_spans_kernel.py'), aurorac,
-                        '--artifacts', '@ARTIFACTS@']
+    span_kernel_args = ['-B', '-O', files('compiler/owned_spans_kernel.py'), aurorac]
     if mode == 'receiver'
         span_kernel_args += ['--receiver-bound']
     endif
@@ -231,15 +225,13 @@ foreach mode : ['standalone', 'receiver']
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 endforeach
 test('logical-spans-abi', python,
-     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/logical_spans_abi.py'),
-            aurora_ir_check, '--air', abi_air['logical-spans'], '--artifacts', '@ARTIFACTS@'],
+     args: ['-B', '-O', files('compiler/logical_spans_abi.py'), aurora_ir_check, '--air', abi_air['logical-spans']],
      depends: [aurora_ir_check, abi_air['logical-spans']], suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 
 # Synchronous method capabilities retain independent IR and literal-layout ABI gates.
 test('method-spans-abi', python,
-     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/method_spans_abi.py'),
-            aurora_ir_check, '--air', abi_air['method-spans'], '--artifacts', '@ARTIFACTS@'],
+     args: ['-B', '-O', files('compiler/method_spans_abi.py'), aurora_ir_check, '--air', abi_air['method-spans']],
      depends: [aurora_ir_check, abi_air['method-spans']], suite: ['full', 'merge', 'slow', 'core', 'bytes', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 # Keep routine borrowed-object feedback small; full owner/helper and literal ABI
@@ -253,8 +245,7 @@ test('borrowed-objects', python,
      depends: aurorac, suite: ['full', 'release', 'bytes', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300, is_parallel: true)
 test('borrowed-objects-abi', python,
-     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/borrowed_objects_abi.py'),
-            aurora_ir_check, '--air', abi_air['borrowed-objects'], '--artifacts', '@ARTIFACTS@'],
+     args: ['-B', '-O', files('compiler/borrowed_objects_abi.py'), aurora_ir_check, '--air', abi_air['borrowed-objects']],
      depends: [aurora_ir_check, abi_air['borrowed-objects']], suite: ['full', 'merge', 'slow', 'core', 'bytes', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 
@@ -279,34 +270,30 @@ foreach name, host : console_service_hosts
   console_service_args += ['--' + name + '-host', host.full_path()]
 endforeach
 test('console-service-source-native', python,
-     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/console_service.py'), aurorac,
-            '--comparison-compiler', aurorac_stage2] + console_service_args + ['--artifacts', '@ARTIFACTS@'],
+     args: ['-B', '-O', files('compiler/console_service.py'), aurorac,
+            '--comparison-compiler', aurorac_stage2] + console_service_args,
      depends: [aurorac, aurorac_stage2] + console_service_hosts.values(),
      suite: ['full', 'merge', 'slow', 'core', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
 
 # Second sealed kind reuses the service verifier and private bridge.
 test('display-service-abi', python,
-     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/service_group_ir_abi.py'),
-            aurora_ir_check.full_path(), '--artifacts', '@ARTIFACTS@'],
+     args: ['-B', '-O', files('compiler/service_group_ir_abi.py'), aurora_ir_check.full_path()],
      depends: aurora_ir_check, suite: ['full', 'merge', 'dev', 'core', 'compiler'], env: oracle_env, timeout: 120)
 test('display-service-source-native', python,
-     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/display_service.py'), aurorac,
-            '--artifacts', '@ARTIFACTS@'],
+     args: ['-B', '-O', files('compiler/display_service.py'), aurorac],
      depends: aurorac, suite: ['full', 'merge', 'slow', 'core', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
 
 # Port remains a sealed singleton with fixed hosted mocks, never native I/O.
 test('port-service-source-native', python,
-     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/port_service.py'), aurorac,
-            aurora_ir_check.full_path(), '--artifacts', '@ARTIFACTS@'],
+     args: ['-B', '-O', files('compiler/port_service.py'), aurorac, aurora_ir_check.full_path()],
      depends: [aurorac, aurora_ir_check], suite: ['full', 'merge', 'slow', 'core', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
 
 # Serve keeps an exact copied two-register result and singleton grant.
 test('serve-service-source-native', python,
-     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/serve_service.py'), aurorac,
-            aurora_ir_check.full_path(), '--artifacts', '@ARTIFACTS@'],
+     args: ['-B', '-O', files('compiler/serve_service.py'), aurorac, aurora_ir_check.full_path()],
      depends: [aurorac, aurora_ir_check], suite: ['full', 'merge', 'slow', 'core', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
 
@@ -467,10 +454,10 @@ test('lexer-trivia', python,
 emitter_probe_main = static_library('emitter-probe-main',
     objects: aurorac.extract_all_objects(recursive: false), native: true, build_by_default: false)
 test('ir-exhaustive', python,
-     args: ['-B', artifact_adapter, python, '-B', files('compiler/ir_exhaustive.py'), aurora_ir_check,
+     args: ['-B', files('compiler/ir_exhaustive.py'), aurora_ir_check,
             '--abi-header', frontend_assembly[3], '--abi-facts', frontend_assembly[2],
             '--compiler', aurorac, '--frontend-library', frontend_library,
-            '--main-library', emitter_probe_main, '--artifacts', '@ARTIFACTS@'],
+            '--main-library', emitter_probe_main],
      depends: [aurora_ir_check, frontend_assembly, frontend_library, aurorac, emitter_probe_main], suite: ['full', 'release', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 600, is_parallel: false)
 test('stack-guards', python,
@@ -478,20 +465,17 @@ test('stack-guards', python,
      depends: aurora_ir_check, suite: ['full', 'merge', 'slow', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 test('method-values-abi', python,
-     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/method_values_abi.py'),
-            aurora_ir_check, '--work-dir', '@ARTIFACTS@'],
+     args: ['-B', '-O', files('compiler/method_values_abi.py'), aurora_ir_check],
      depends: aurora_ir_check, suite: ['full', 'merge', 'slow', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 foreach family : ['readonly_windows', 'short_circuit']
     test(family.replace('_', '-'), python,
-         args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/' + family + '.py'),
-                aurorac, '--artifacts', '@ARTIFACTS@'],
+         args: ['-B', '-O', files('compiler/' + family + '.py'), aurorac],
          depends: aurorac, suite: ['full', 'merge', 'slow', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
     generated = family == 'short_circuit' ? [abi_air['short-circuit']] : []
     test(family.replace('_', '-') + '-ir-native', python,
-         args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/' + family + '_ir_native.py'),
-                aurora_ir_check, '--artifacts', '@ARTIFACTS@'] + (generated.length() > 0 ? ['--air'] + generated : []),
+         args: ['-B', '-O', files('compiler/' + family + '_ir_native.py'), aurora_ir_check] + (generated.length() > 0 ? ['--air'] + generated : []),
          depends: [aurora_ir_check] + generated, suite: ['full', 'merge', 'slow', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
 endforeach
@@ -533,7 +517,7 @@ foreach family : ['byte_storage', 'storage_binary', 'block_io', 'xfs_geometry', 
 endforeach
 test('xfs-offline-native', python,
      args: ['-B', '-O', files('../fixtures/xfs-offline/verify_native.py'),
-            '--compiler', aurorac, '--meson-selected-compiler'],
+            '--compiler', aurorac],
      depends: aurorac, suite: ['full', 'merge', 'slow', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
 foreach family : ['host_sources_tests', 'host_output_tests']
@@ -576,10 +560,10 @@ test('hosted-lexer-bootstrap', python, args: bootstrap_args,
 # compiler bumps and releases (release suite), not on every merge.
 foreach profile : [['default', []], ['closed', ['--local-symbols', '--referenced-reflection-only']]]
   test('emitter-differential-' + profile[0], python,
-       args: ['-B', artifact_adapter, python, '-B', files('compiler/emitter_differential.py'),
+       args: ['-B', files('compiler/emitter_differential.py'),
               '--old-compiler', historical_cpp_oracle, '--old-compiler-sha256', historical_cpp_oracle_sha256,
               '--new-compiler', aurorac_stage2, '--stage1-compiler', aurorac,
-              '--source-root', meson.project_source_root()] + profile[1] + ['--artifacts', '@ARTIFACTS@'],
+              '--source-root', meson.project_source_root()] + profile[1],
        depends: [aurorac, aurorac_stage2], suite: ['full', 'release', 'compiler'], env: oracle_env,
        workdir: meson.current_build_dir(), timeout: 900, is_parallel: false, priority: 1)
 endforeach
@@ -642,14 +626,12 @@ test('hosted-parser', hosted_parser_test,
                  '../compiler/ir_verification_transfer.au',
                  '../compiler/ir_verification.au'),
      suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
+# The already-built adapter objects with forged Aurora entries; the generated
+# frontend object itself is never linked.
 hosted_parser_invalid = executable(
-    'hosted-parser-invalid', ['compiler/hosted_parser_invalid.cpp', '../compiler/hosted_parser.cpp',
-                              '../compiler/hosted_resolver.cpp', '../compiler/hosted_lowering.cpp',
-                              '../compiler/hosted_lowering_diagnostics.cpp', '../compiler/hosted_ir_metadata.cpp',
-                              '../compiler/hosted_ir_instructions.cpp',
-                              '../compiler/ir_verify.cpp',
-                              '../runtime/hosted_bytes.cpp', frontend_assembly[3]],
-    cpp_args: ['-DAURORA_HOSTED_PARSER'], include_directories: include_directories('../compiler', '..'),
+    'hosted-parser-invalid', 'compiler/hosted_parser_invalid.cpp',
+    objects: frontend_library.extract_objects(frontend_adapter_sources),
+    dependencies: frontend_headers, cpp_args: frontend_args, include_directories: include_directories('../compiler'),
     native: true, override_options: fixture_options, install: false,
 )
 test('hosted-parser-invalid', hosted_parser_invalid,
