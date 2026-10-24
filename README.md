@@ -30,12 +30,13 @@ The public dependency image pinned in `ci/image` is the supported reproducible
 development environment, with the exact tools and firmware. With Docker or
 Podman installed, start from the repository root.
 
-Reconstruct the pinned predecessor from the host checkout with
-`python3 scripts/bootstrap.py build --container`. Then enter the pinned shell
-with `./scripts/container.sh bash` and configure the two current Meson graphs
-using the `-Dbootstrap_receipt` option printed by the driver, as shown in the
-[source-bootstrap recipe](compiler/README.md#source-bootstrap). It checks the
-local receipt and executable digest rather than trusting a compiler path alone.
+Select a local copy of the checkpoint compiler pinned by
+`compiler/checkpoint.json` (or rebuild it from the recorded route). Then enter
+the pinned shell with `./scripts/container.sh bash` and configure the two current
+Meson graphs with `-Dbootstrap_compiler` (and `-Dhistorical_oracle` for the
+emitter differential), as shown in the
+[source-bootstrap recipe](compiler/README.md#source-bootstrap). Meson accepts only
+the pinned executable digests rather than trusting a compiler path alone.
 Then run:
 
 ```sh
@@ -144,7 +145,7 @@ Use the checks appropriate to the change:
 
 ```sh
 meson setup build/gcc16 \
-  "-Dbootstrap_receipt=$RECEIPT"
+  "-Dbootstrap_compiler=$C0" "-Dhistorical_oracle=$ORACLE"
 meson compile -C build/gcc16 -j 4 --ninja-args=meson-test-prereq
 meson test -C build/gcc16 --suite dev --no-rebuild --num-processes 4
 meson test -C build/gcc16 --suite full --no-rebuild --num-processes 4
@@ -155,7 +156,7 @@ make smoke-all               # separate emulator matrix; QEMU and firmware requi
 
 For direct Meson commands, configure a separate [build](docs/meson-bootstrap.md)
 for each toolchain, with matching `gcc`/`g++` on PATH. `make test` and the
-compiler-only shortcuts reuse an explicitly predecessor-configured build
+compiler-only shortcuts reuse an explicitly checkpoint-configured build
 incrementally. `make test` runs the `merge` suite; `make test-release` runs the
 opt-in `release` suite (corpus emitter differential, mutation testing, complete
 subset sweeps); `full` is their union. Named `dev`, `slow`, `integration`, `boot`,

@@ -530,8 +530,8 @@ foreach family : ['host_sources_tests', 'host_output_tests']
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 endforeach
 
-# Bootstrap tooling only matters when the route runs: at compiler bumps.
-test('bootstrap-identity-optimized', python,
+# Checkpoint selection and the one-hop bump driver; the hop itself runs at bumps.
+test('bootstrap-checkpoint', python,
      args: ['-B', '-O', files('test_bootstrap.py')],
      suite: ['full', 'release'], env: oracle_env, timeout: 60)
 
@@ -558,12 +558,18 @@ test('hosted-lexer-bootstrap', python, args: bootstrap_args,
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180, is_parallel: false)
 # Historical C++ emitter oracle versus C2, plus C1/C2 corpus convergence: run at
 # compiler bumps and releases (release suite), not on every merge.
+# Without -Dhistorical_oracle these tests fail as blocked rather than pass.
 foreach profile : [['default', []], ['closed', ['--local-symbols', '--referenced-reflection-only']]]
+  if historical_cpp_oracle == ''
+    differential_args = ['-B', '-c', 'import sys; sys.exit("BLOCKED: configure -Dhistorical_oracle; see compiler/README.md")']
+  else
+    differential_args = ['-B', files('compiler/emitter_differential.py'),
+                         '--old-compiler', historical_cpp_oracle, '--old-compiler-sha256', historical_cpp_oracle_sha256,
+                         '--new-compiler', aurorac_stage2, '--stage1-compiler', aurorac,
+                         '--source-root', meson.project_source_root()] + profile[1]
+  endif
   test('emitter-differential-' + profile[0], python,
-       args: ['-B', files('compiler/emitter_differential.py'),
-              '--old-compiler', historical_cpp_oracle, '--old-compiler-sha256', historical_cpp_oracle_sha256,
-              '--new-compiler', aurorac_stage2, '--stage1-compiler', aurorac,
-              '--source-root', meson.project_source_root()] + profile[1],
+       args: differential_args,
        depends: [aurorac, aurorac_stage2], suite: ['full', 'release', 'compiler'], env: oracle_env,
        workdir: meson.current_build_dir(), timeout: 900, is_parallel: false, priority: 1)
 endforeach

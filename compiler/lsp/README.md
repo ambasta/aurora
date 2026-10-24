@@ -11,12 +11,12 @@ The ordinary compiler does not require JSON. Enable the separate LSP target
 explicitly with an externally installed `nlohmann_json >= 3.11.3` development
 package and the normal Meson/Ninja tools:
 
-First complete the [source-bootstrap recipe](../README.md#source-bootstrap);
-`RECEIPT` below is the receipt path printed by reconstruction.
+First select the checkpoint compiler with the
+[source-bootstrap recipe](../README.md#source-bootstrap); `C0` below is its path.
 
 ```sh
 meson setup build/lsp -Dlsp=true \
-  "-Dbootstrap_receipt=$RECEIPT"
+  "-Dbootstrap_compiler=$C0"
 meson compile -C build/lsp --jobs 1 aurora-lsp lsp-units
 meson test -C build/lsp --no-rebuild --suite lsp --print-errorlogs
 build/lsp/aurora-lsp --module-root "$PWD/library"
@@ -35,7 +35,7 @@ and sysroot only for configuration. For example:
 ```sh
 PKG_CONFIG_PATH="$PREFIX/usr/share/pkgconfig" \
 PKG_CONFIG_SYSROOT_DIR="$PREFIX" meson setup build/lsp -Dlsp=true \
-  "-Dbootstrap_receipt=$RECEIPT"
+  "-Dbootstrap_compiler=$C0"
 ```
 
 JSON and compiler implementation headers are confined to separate translation

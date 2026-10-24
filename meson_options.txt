@@ -7,8 +7,6 @@ option('kernel_images', type: 'boolean', value: true,
 option('kernel_compiler', type: 'string', value: '',
        description: 'Optional absolute prebuilt aurorac for kernel images; empty builds the native compiler')
 option('bootstrap_compiler', type: 'string', value: '',
-       description: 'Required absolute predecessor aurorac path; see compiler/README.md source-bootstrap recipe')
-option('bootstrap_compiler_sha256', type: 'string', value: '',
-       description: 'Required SHA256 from the local six-source reconstruction receipt')
-option('bootstrap_receipt', type: 'string', value: '',
-       description: 'Required absolute reconstruction receipt from scripts/bootstrap.py build')
+       description: 'Required absolute checkpoint aurorac pinned by compiler/checkpoint.json; see compiler/README.md')
+option('historical_oracle', type: 'string', value: '',
+       description: 'Absolute historical C++-emitter aurorac pinned by compiler/checkpoint.json; required by the emitter differential')

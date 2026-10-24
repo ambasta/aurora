@@ -11,7 +11,7 @@ no tests of tests. This page says how to run things today.
 
 ```sh
 ./scripts/container.sh bash           # pinned GCC 16 / QEMU / OVMF environment
-meson setup build/meson -Dbootstrap_receipt=... -Duefi_ld=...
+meson setup build/meson -Dbootstrap_compiler=... -Dhistorical_oracle=... -Duefi_ld=...
 ninja -C build/meson -j"$(nproc)"
 meson test -C build/meson --suite merge --num-processes "$(nproc)"
 meson test -C build/meson --suite release --num-processes "$(nproc)"   # opt-in
@@ -55,7 +55,7 @@ image trap sites are verified again by the kernel itself at load time
 | --- | --- |
 | Development | incremental build, focused tests; a native host build directory is fine for feedback |
 | Every merge | pinned container, final source: build, merge suite, the guest families the change touches, normal BIOS and UEFI smokes |
-| Releases, compiler bumps | release suite, every guest family, bootstrap reseed checks in [compiler/README.md](../compiler/README.md) |
+| Releases, compiler bumps | release suite, every guest family; a bump is one checkpoint hop ([compiler/README.md](../compiler/README.md#bumping-the-checkpoint-one-hop)) |
 
 Report fresh-build and merge-suite wall time at full concurrency next to the
 previous main. Missing tools or skipped gates are reported, never passed.

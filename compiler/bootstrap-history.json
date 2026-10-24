@@ -1,0 +1,17 @@
+{
+  "note": "Historical six-stage source route that produced the first checkpoint (compiler/checkpoint.json). Run by scripts/bootstrap.py at driver_commit, which reads this manifest as compiler/bootstrap-route.json; see compiler/README.md#historical-route. Each stage is built by the previous stage's aurorac.",
+  "driver_commit": "2fd30b2c252afda5fbf6e78c399bca1cae7bd04e",
+  "schema": 1,
+  "build_predecessor": "borrow",
+  "historical_cpp_oracle": "borrow",
+  "meson_options": ["-Dkernel_images=false", "-Dlsp=false", "-Doptimization=2", "-Ddebug=false", "-Dcpp_std=c++23", "-Dwarning_level=3", "-Dwerror=true"],
+  "convergence_test": "hosted-lexer-bootstrap",
+  "stages": [
+    {"name": "seed", "commit": "bdf646f09d5e14c88124c4bc9e4f998beda16183", "tree": "a2e916072b25cf6a67e36982eb3d9b0bceb64ab8", "targets": ["aurorac"], "sha256": "ade632fec2128f051c81768ca334bbb52668831f1ee2fd14aa8a9faeccbd587d"},
+    {"name": "facts", "commit": "17f4f1440e6faa9cdaf8711c04400854bdb60d9e", "tree": "893303b3ed93721e32d30aa6167329b8e4ca8378", "targets": ["aurorac", "aurorac-stage2"], "sha256": "5c7c0548be87a74077c0b566071888483a7b9ad1ccec2119cb5e704b2f339250"},
+    {"name": "copied", "commit": "c0ef02cc105de2b7699d8565f6a53f1dea9e1205", "tree": "5b71db41c29de6065b305cf3a4bcfb2146d34ed8", "targets": ["aurorac", "aurorac-stage2"], "sha256": "d3bc344a4fa30a58da2d23ad95e2eb88d9a6f90ad1e59a7c3d434edd9387b42d"},
+    {"name": "fields", "commit": "bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4", "tree": "bb8d6152964b82af6a97838d32105db25440da0a", "targets": ["aurorac", "aurorac-stage2"], "sha256": "e2c1c39081948a7934c2131fba1a1093415ed90140b3f5c99b9fbd15a67a0529"},
+    {"name": "paired", "commit": "052f79d7995be93053f73659bcfc37687b00b341", "tree": "c717955a5323bf45c40bc183d5a3f7924a32e213", "targets": ["aurorac", "aurorac-stage2"], "sha256": "bc1223ae1d08b0905993de5b54ebdc558e0b00569661751ce9d207cd8a8544f7"},
+    {"name": "borrow", "commit": "672821f70f37b185c46690791bd00d74d4414403", "tree": "b76cf3aa16c687ed5c51408e1fdbe1b4f8dd6610", "targets": ["aurorac", "aurorac-stage2"], "sha256": "41611b84dcbafc81a9eec7ee6fd99a1e7bdfd7bec5a44f96041bf9d174baeb16"}
+  ]
+}

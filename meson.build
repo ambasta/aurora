@@ -9,24 +9,23 @@ project(
 native_cpp = meson.get_compiler('cpp', native: true)
 python = find_program('python3', native: true)
 fs = import('fs')
-# One reconstruction receipt selects the build predecessor and the historical C++
-# oracle. Reading the receipt and pin makes any change to them reconfigure; the
+# compiler/checkpoint.json pins the one checkpoint compiler (C0) by digest; C0
+# compiles C1 and C1 compiles C2. The optional historical C++ emitter oracle is
+# pinned there too. Reading the pin makes a change to it reconfigure; the
 # generators check each executable's digest just before running it.
-bootstrap_receipt = get_option('bootstrap_receipt')
 bootstrap_driver = files('scripts/bootstrap.py')
-bootstrap_pin = files('compiler/bootstrap-route.json')
-bootstrap_select = run_command(python, '-B', bootstrap_driver, 'select', '--receipt', bootstrap_receipt,
+bootstrap_pin = files('compiler/checkpoint.json')
+bootstrap_select = run_command(python, '-B', bootstrap_driver, 'select',
                                '--compiler', get_option('bootstrap_compiler'),
-                               '--sha256', get_option('bootstrap_compiler_sha256'), check: false)
+                               '--oracle', get_option('historical_oracle'), check: false)
 if bootstrap_select.returncode() != 0
   error(bootstrap_select.stderr().strip())
 endif
-bootstrap_selected = bootstrap_select.stdout().strip().split('\n')
-fs.read(bootstrap_receipt)
+bootstrap_selected = bootstrap_select.stdout().split('\n')
 fs.read(bootstrap_pin)
 bootstrap_compiler_path = bootstrap_selected[0]
 bootstrap_sha256 = bootstrap_selected[1]
-# Roles remain independent even while the same historical binary supplies both.
+# Roles stay independent: the oracle is the historical C++ backend, never C0.
 historical_cpp_oracle = bootstrap_selected[2]
 historical_cpp_oracle_sha256 = bootstrap_selected[3]
 bootstrap_compiler = find_program(bootstrap_compiler_path, native: true)

@@ -758,9 +758,9 @@ The formatter now uses this signature in one shared `append_row` helper for
 pieces, tokens, findings, breakpoints and braces. Each caller snapshots its count
 and prepares copied arguments before lending the private owner, then updates the
 count after the loan ends. Growth limits and terminal allocation failure are
-unchanged. The [source-bootstrap recipe](README.md#source-bootstrap) selects a
-replacement sixth checkpoint with this capability and the native C++ emitter;
-no seventh predecessor is introduced. Focused route/consumer convergence is not
+unchanged. The historical route's replacement sixth stage has this capability and the
+native C++ emitter, and remains the emitter oracle
+([source bootstrap](README.md#source-bootstrap)); no seventh stage was introduced. Focused route/consumer convergence is not
 final-source qualification: the integrated GCC 16 `full` and applicable
 boot/emulator gates remain required, with exact receipts retained in the accompanying PR.
 

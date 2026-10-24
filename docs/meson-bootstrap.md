@@ -15,10 +15,10 @@ Select matching real `gcc` and `g++` on PATH: a stack-guard
 runner invokes bare `gcc`. Keep one stable build directory per toolchain/configuration:
 
 ```sh
-# Complete source bootstrap first; RECEIPT is its printed receipt path.
-# PATH must already select the matching GCC 16 pair.
+# C0 and ORACLE are local copies of the executables pinned by
+# compiler/checkpoint.json. PATH must already select the matching GCC 16 pair.
 CXX=g++ meson setup build/gcc16 --backend=ninja -Dlsp=false \
-  "-Dbootstrap_receipt=$RECEIPT"
+  "-Dbootstrap_compiler=$C0" "-Dhistorical_oracle=$ORACLE"
 meson compile -C build/gcc16 -j 3
 # Optional quick feedback while developing; merge below includes these tests.
 meson test -C build/gcc16 --suite dev --no-rebuild --num-processes 4 --print-errorlogs
@@ -35,10 +35,9 @@ configuration needs a separate directory. The Make shortcuts check the selected
 compiler, binutils, Meson and Ninja versions before setup or build work, with a
 short blocked reason and the container command when tools are unsupported.
 Direct Meson setup checks the same tool versions.
-Missing or unsupported tools are blocked. Predecessor admission also verifies
-the recorded tool versions and digests at configure time;
-after replacing tools in place, reconstruct the predecessor and configure a fresh
-build directory. Unset `CPATH`, `CPLUS_INCLUDE_PATH`, `C_INCLUDE_PATH` and
+Missing or unsupported tools are blocked. Checkpoint admission verifies the
+pinned executable digests at configure time; after replacing tools in place,
+configure a fresh build directory. Unset `CPATH`, `CPLUS_INCLUDE_PATH`, `C_INCLUDE_PATH` and
 `LIBRARY_PATH`, including empty definitions; use explicit Meson include/link flags
 instead. Use a clean directory for bootstrap
 compatibility or uncertain dependency identity. Do not modify inputs while
@@ -56,15 +55,15 @@ never sweep historical, failed, kept or user-owned review output automatically.
 
 `make test` invokes the same `merge` selection; `make test-release` selects `release`. `make -C compiler test` and
 `scripts/compiler-test.sh` select `compiler`. Set `MESON_BUILD_DIR` to a
-matching predecessor-configured directory, or omit it for `build/meson` (normal
+matching checkpoint-configured directory, or omit it for `build/meson` (normal
 image-enabled work) or `build/meson-compiler` (hosted-only compiler work).
-First configure these directories with the predecessor path, mandatory digest and receipt using the
-[source-bootstrap recipe](../compiler/README.md#source-bootstrap). Missing
-predecessor selections reject with that recipe rather than creating a raw seed.
+First configure these directories with the checkpoint and oracle paths using the
+[source-bootstrap recipe](../compiler/README.md#source-bootstrap). A missing
+checkpoint selection rejects with that recipe rather than creating a raw seed.
 The shortcuts stop on build/test failure and reject mismatched compiler/flag
 selections or missing project options. Reconfigure an older chosen build
-explicitly with the `-Dbootstrap_receipt` option, or configure a fresh matching directory.
-The wrapper does not invent a predecessor or automatically migrate configurations.
+explicitly with the `-Dbootstrap_compiler` option, or configure a fresh matching directory.
+The wrapper does not invent a checkpoint or automatically migrate configurations.
 
 Focused checks use exact Meson test names rather than compiler-consuming Make
 aliases. For example, in a configured compiler build:
@@ -255,8 +254,21 @@ BIOS/UEFI smoke, affected fault/recovery profiles, sanitizers and physical hardw
 remain separate gates. Retained receipts/logs remain readable; generated products
 can be losslessly archived with exact mapping after review.
 
-An optional `BOOTSTRAP_RECEIPT`, with optional `BOOTSTRAP_COMPILER` and
-`BOOTSTRAP_COMPILER_SHA256` cross-checks, requests a verified predecessor for Make shortcuts. A different selection refreshes only the implicit default build
-under its existing lock; explicit custom build directories require the printed
-reconfigure command. With no request, the configured predecessor is reused.
-`container.sh` forwards the path literally, so select a container-visible path.
+An optional `BOOTSTRAP_COMPILER` or `HISTORICAL_ORACLE` requests a different
+pinned selection for Make shortcuts. A different selection refreshes only the
+implicit default build under its existing lock; explicit custom build directories
+require the printed reconfigure command. With no request, the configured
+checkpoint is reused. `container.sh` forwards the paths literally, so select
+container-visible paths.
+
+## Bootstrap stages
+
+One pinned checkpoint compiler C0 builds C1 (`aurorac`); C1 builds C2
+(`aurorac-stage2`); `hosted-lexer-bootstrap` requires C1/C2 convergence, like
+GCC's stage compare. `compiler/checkpoint.json` pins C0 and the separate
+historical C++ emitter oracle by digest. A bump is one hop
+(`scripts/bootstrap.py hop`): build an accepted main commit with the current C0,
+check C1/C2 and the emitter differential, record its C2 as the new pin. The
+six-stage route that produced the first checkpoint is a record in
+`compiler/bootstrap-history.json`; see the
+[source-bootstrap recipe](../compiler/README.md#source-bootstrap) for both.

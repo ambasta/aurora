@@ -44,11 +44,10 @@ cycles by about 4.5% (six alternating pairs, identical outputs).
 
 ## Build and check
 
-For a fresh checkout, either complete [source bootstrap](#source-bootstrap) in
-the selected pinned tool environment or select a provenance-verified retained
-artifact under the [bootstrap evolution policy](#bootstrap-evolution-policy).
-Then explicitly configure Meson with that predecessor path using the setup
-commands below. The ordinary shortcuts reuse the configured graph:
+For a fresh checkout, select a local copy of the pinned checkpoint compiler, or
+rebuild it from the [recorded route](#historical-route), and configure Meson with
+its path using the [setup commands](#source-bootstrap) below. The ordinary
+shortcuts reuse the configured graph:
 
 ```sh
 make -C compiler
@@ -69,119 +68,118 @@ The optional [language server](lsp/README.md) has its own dependency and suite.
 ### Bootstrap evolution policy
 
 New language features land first with independent library or product consumers.
-Compiler adoption waits for a reviewed predecessor bump: every input compiled by
-that predecessor, including compiler-imported library helpers, must remain within
-its supported language subset. Batch bumps at milestones or for a justified set
-of compiler adoptions, rather than requiring a bump for each feature.
+Compiler adoption waits for a scheduled checkpoint bump: every input the
+checkpoint compiles, including compiler-imported library helpers, must stay
+within its supported language subset. Batch bumps at milestones or for a
+justified set of compiler adoptions, rather than one bump per feature. A bump
+reviews the new pin, its hop receipt, the release suite and the batched adoption
+together. Keep every checkpoint commit reachable from main, with its receipt in
+the bump PR, so each one can be rebuilt from the one before it.
 
-A bump reviews the source pin, full historical-seed route, build/tool identities,
-qualification evidence, supported corpus and batched adoption together. Preserve
-every qualified checkpoint under a durable immutable reference (such as a
-protected tag), with its original source identity and receipts. This retention
-rule does not require every checkpoint to remain in the active chain: replacements
-or shortening must satisfy the existing cross-route gates below. Preserve the
-source needed to reconstruct the full seed route, not only old run summaries.
-
-The build predecessor and historical C++ emitter oracle are separate roles even
-when one executable currently serves both. Identify and retain the oracle
-independently before adopting a bootstrap predecessor with the Aurora emitter.
+The build predecessor (the checkpoint) and the historical C++ emitter oracle are
+separate roles with separate pins; a newer checkpoint never replaces the oracle.
 Review corpus membership changes against the previous supported set; unexplained
 removal or reclassification of a previously supported input fails qualification.
 New accepted oracle inputs extend coverage. Unexpected rejection must not shrink
 the required corpus, and equal rejection is not emission coverage.
 
-Ordinary development may use a retained, digest-verified predecessor with matching
-source, build configuration, tool/environment identities and qualification
-evidence. This is an artifact-reuse route, not a fresh source-bootstrap result.
-A source hash alone is not a cache identity across different tools/configurations;
-a binary digest establishes identity, not source provenance. Rebuild from the
-seed for bump qualification and fresh source-bootstrap claims. A cached later
-checkpoint does not shorten the source chain; direct-build and cross-route proof
-is still required. All current C1/C2, differential, final-source GCC 16 full,
-applicable image/emulator and independent-review gates remain unchanged.
-
-The checked-in [route manifest](bootstrap-route.json) pins every source commit and
-tree, the fixed build options, the final predecessor and the separately named
-historical C++ oracle. The [reconstruction driver](../scripts/bootstrap.py) records
-local source, command, tool/runtime, header-input and artifact identities. Current
-setup requires both the recorded executable digest and that complete receipt.
-Invocation guards retain those bindings without replaying historical evidence
-checks on every use. These local records are not signed attestations or a trust
-anchor against someone who can forge the records and binaries together.
-
 ### Source bootstrap
 
-The Aurora-native emitter requires three borrowed roots: its mutable output
-workspace and the existing readonly metadata and instruction stores. The replacement
-sixth checkpoint `672821f70f37b185c46690791bd00d74d4414403` supplies that capability and synchronous
-mutable typed-buffer borrows for the formatter. It replaces the historical
-`7811ba83730e9a8b4329da983a01e475d73999a6` hop rather than adding a seventh stage.
-Qualification requires the source-bootstrap gates below, final integrated-source
-GCC 16 `full` and the applicable boot/emulator gates.
+The build has one predecessor stage and a self-check, like GCC's
+bootstrap-and-compare:
 
-The current source no longer contains a C++ expression parser or raw compiler
-seed. Meson requires `bootstrap_compiler`, an absolute executable path. Ninja
-tracks that executable as an ordinary input; changing it regenerates the frontend.
-The source build below establishes the predecessor's provenance. Acceptance still
-compares the actual generated frontend and current compiler stages.
-
-Use a normal Git checkout containing all six commits in `bootstrap-route.json`.
-Fetch missing checkpoint objects from the repository before starting; the driver
-never downloads executables or rewrites source history. From the host checkout,
-the supported pinned-container route is one command:
-
-```sh
-python3 scripts/bootstrap.py build --container
+```text
+checkpoint C0 --compiles--> C1 (aurorac) --compiles--> C2 (aurorac-stage2)
+                            hosted-lexer-bootstrap: C1 and C2 output identical
 ```
 
-The host uses Git to prepare clean detached worktrees. The existing
-`container.sh` runs the same driver inside the pinned image, which does not need
-Git: it verifies the prepared file bytes/modes against the host's source manifest
-before and after compilation. All prepared sources and outputs remain below
-`build/bootstrap`, inside the existing checkout mount. No image, package or host
-settings are changed. For advanced native use, select the exact pinned toolchain
-and Git on PATH, then omit `--container`.
-
-The driver uses the existing Meson setup, compiler targets and
-`hosted-lexer-bootstrap` convergence at every historical stage, with at most two
-workers. It records exact commands, output/log hashes, clean source commit/tree
-and byte inventories, and the pinned tools' paths, versions and executable digests.
-That identifies the toolchain; it is not a proof of its full runtime closure.
-It prints one Meson option, `-Dbootstrap_receipt`. Inside the same container/native
-path layout, use it for both current configurations:
+[`checkpoint.json`](checkpoint.json) pins C0 by source commit, tree and
+executable SHA-256, and pins the historical oracle the same way. C0 is the C2 of
+main commit `2fd30b2` built in one hop from the last historical stage (below). No
+compiler binary is committed or downloaded. Meson's `bootstrap_compiler` option
+names a local copy; `scripts/bootstrap.py select` accepts it only if its bytes
+have the pinned digest, and the frontend generator and initialization probe
+recheck the digest before each run. Ninja tracks the executable, so replacing
+it regenerates the frontend. The optional `historical_oracle` option selects the
+oracle for the two `emitter-differential-*` tests (release suite); without it
+those tests fail as blocked rather than pass.
 
 ```sh
-# RECEIPT is the receipt path printed by the completed reconstruction.
-meson setup build/meson . \
-  "-Dbootstrap_receipt=$RECEIPT" "-Duefi_ld=$UEFI_LD"
+# Local copies of the pinned executables; only their digests are pinned.
+C0=/workspace/build/bootstrap-reseed/checkpoint/aurorac
+ORACLE=/workspace/build/bootstrap-reseed/oracle/aurorac
+meson setup build/meson . "-Dbootstrap_compiler=$C0" \
+  "-Dhistorical_oracle=$ORACLE" "-Duefi_ld=$UEFI_LD"
 meson setup build/meson-compiler . -Dkernel_images=false \
-  "-Dbootstrap_receipt=$RECEIPT"
+  "-Dbootstrap_compiler=$C0" "-Dhistorical_oracle=$ORACLE"
 meson compile -C build/meson-compiler -j 2 aurorac aurorac-stage2
-meson test -C build/meson-compiler --no-rebuild --num-processes 1 \
-  hosted-lexer-bootstrap
+meson test -C build/meson-compiler --no-rebuild hosted-lexer-bootstrap
 ```
 
-A later invocation reuses only a complete receipt with matching pinned sources,
-configuration and tool/environment identity, after checking the executable,
-recorded inputs, source bytes and logs. Missing/mismatched predecessor data fails
-closed and names the cached `build --container` plus Meson reconfiguration; it is
-never blessed by hashing an arbitrary executable. Meson derives the predecessor
-and the historical C++ oracle from the receipt at configure time, and changes to
-the receipt or pin reconfigure. The frontend generator, initialization probe and
-emitter differential each check their executable's digest just before running it.
-The older `bootstrap_compiler` and `bootstrap_compiler_sha256` options remain as
-optional cross-checks. Editing the driver itself does not invalidate receipts or
-the cache. A missing pinned commit names the `git fetch origin` command. Add
-`--fresh` to reconstruct all six stages in new directories, keeping old successful
-and failed evidence. A fresh route is required for predecessor-bump qualification;
-a cache hit is explicitly not a fresh source bootstrap. Receipts are local to
-the recorded environment and paths, not a universal binary digest for every host.
+`BOOTSTRAP_COMPILER` and `HISTORICAL_ORACLE` request a different selection for
+`make test`: the wrapper reconfigures the implicit default build after checking
+the pin, and rejects an explicit `MESON_BUILD_DIR` with the exact reconfigure
+command. A build directory configured with the former `bootstrap_receipt`
+option must be recreated with `meson setup --wipe`, which the wrapper prints.
+The container launcher forwards both variables literally.
 
-The replacement sixth stage still builds directly with the paired-root compiler.
-This mechanism neither adds a seventh stage nor establishes another successful
-skip. The existing register-carry hop remains omitted. Historical stage convergence
-does not replace current C1/C2, emitter differential, final-source GCC 16 full,
-applicable image/guest or independent-review gates.
+#### Bumping the checkpoint (one hop)
+
+Pick an accepted main commit `NEW` whose compiler adopts the batched features.
+Its `checkpoint.json` still pins the current C0, so its own Meson graph accepts
+C0. From the host checkout, then inside the pinned container:
+
+```sh
+git worktree add --detach build/hop-src NEW        # host: clean checkout of NEW
+git rev-parse NEW^{tree}                           # host: TREE
+python3 scripts/bootstrap.py hop --compiler "$C0" --oracle "$ORACLE" \
+  --source build/hop-src --commit NEW --tree TREE --output build/checkpoint-NEW
+```
+
+The hop checks that the checkout's files hash to `TREE`, configures NEW with
+C0 and the fixed options, builds C1 and C2, and runs `hosted-lexer-bootstrap`
+and both emitter differentials. It copies NEW's C2 to `OUTPUT/aurorac`, writes
+`OUTPUT/receipt.json` (source, predecessor and oracle digests, tool versions,
+commands, logs and timings) and prints the new pin. The bump commit records that
+pin in `checkpoint.json`, moves the old one to `history`, and qualifies with the
+release suite and the merge gates. Adding `--expect SHA256` reproduces a recorded
+hop. With the pinned image, builds were byte-identical across build directories:
+all six historical stages matched their earlier receipt, and C2 rebuilt from C0
+at unchanged compiler source equals C0 itself.
+
+#### Historical route
+
+The first checkpoint came from the six-stage source route kept in
+[`bootstrap-history.json`](bootstrap-history.json): a GNU C++ seed and five
+Aurora stages, each built by the previous one, ending at the `borrow` stage
+`672821f`. That stage is also the historical C++ emitter oracle. The route's
+driver is `scripts/bootstrap.py` at commit `2fd30b2`, which reads
+`compiler/bootstrap-route.json` at that commit; the history file records every
+stage's commit, tree and reconstructed digest. To rebuild C0 without any binary
+(host, then container; about 13 minutes on 4 cores under load, plus the hop's tests):
+
+```sh
+mkdir -p build/route
+git archive 2fd30b2 scripts/bootstrap.py scripts/meson_toolchain.py \
+  compiler/bootstrap-route.json | tar -x -C build/route
+(cd build/route && python3 -c 'import sys; sys.path.insert(0, "scripts"); import bootstrap, pathlib;
+print(bootstrap.prepare_sources(pathlib.Path("cache").resolve(), bootstrap.route()))')   # host Git
+# SOURCES: the printed sources.json path, under /workspace in the container.
+./scripts/container.sh bash -c 'cd build/route && python3 scripts/bootstrap.py build \
+  --cache "$PWD/cache" --prepared SOURCES'   # six stages; prints RECEIPT
+git worktree add --detach build/hop-src 2fd30b2
+# BORROW: borrow/build/aurorac beside RECEIPT; it is also the oracle.
+./scripts/container.sh python3 scripts/bootstrap.py hop \
+  --compiler BORROW --receipt RECEIPT --source build/hop-src \
+  --commit 2fd30b2c252afda5fbf6e78c399bca1cae7bd04e \
+  --tree 7850b23a8995b1603422c86575d30ab53dda2527 --output build/checkpoint \
+  --expect 8bcb17f354f8a28e3dfcde0e34ede9ebbbc7447d5395d52a59548d96fc1d619d
+```
+
+`2fd30b2` still selects its predecessor through the six-stage receipt, so this
+first hop passes `--receipt` (which also supplies its oracle) instead of
+`--oracle`. The oracle is that route's `borrow/build/aurorac`. Older receipts
+remain readable as records of their own runs.
 
 | Stage | Immutable source | Required predecessor capability |
 |---|---|---|
@@ -190,70 +188,15 @@ applicable image/guest or independent-review gates.
 | Copied arguments | `c0ef02cc105de2b7699d8565f6a53f1dea9e1205` | ABI-facts compiler |
 | Owner-field initialization | `bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4` | Copied arguments used by its frontend |
 | Paired roots | `052f79d7995be93053f73659bcfc37687b00b341` | Region-backed owner-field initialization |
-| Multiple roots and mutable typed buffers | `672821f70f37b185c46690791bd00d74d4414403` | Paired-root frontend signature and ordered ABI facts |
-| Current C1/C2 | Final integrated source | Three borrowed roots for the Aurora emitter; mutable typed-buffer borrows for formatter append |
+| Multiple roots and mutable typed buffers (`borrow`, oracle) | `672821f70f37b185c46690791bd00d74d4414403` | Paired-root frontend signature and ordered ABI facts |
+| Checkpoint C0 | `2fd30b2c252afda5fbf6e78c399bca1cae7bd04e` (its C2) | Three borrowed roots for the Aurora emitter; mutable typed-buffer borrows |
 
-The following failed skip attempts refer to their original historical sources,
-including the old multi-root checkpoint `7811ba8`, not the replacement above.
+Direct skips between historical stages failed before producing comparable
+frontend assembly (missing `--abi-facts`, incomplete class-argument names,
+`move(named_local)` transfers, and a second or third borrowed root); the
+commands and identities are in the corresponding PRs.
 
-| Historical direct skip experiment | Observed boundary | Route status |
-|---|---|---|
-| Seed → copied-argument source | `--abi-facts` unsupported | Retain ABI-facts stage |
-| ABI-facts → owner-field source | Class argument requires a complete local name | Retain copied-argument stage |
-| Copied-argument → paired-root source | Owning transfer requires `move(named_local)` | Retain owner-field stage |
-| Owner-field → multi-root source | Second borrowed root rejected | Retain paired-root stage |
-| Paired-root → current source | Third borrowed root rejected | Retain multi-root stage |
-| Each still earlier compiler → current source | Missing facts or second borrowed root rejected | No direct replacement checkpoint established |
-
-These attempts failed before producing comparable frontend assembly; they are
-negative diagnostics, not convergence or qualification. Commands, exact source
-and compiler identities, timings, peak memory, host load and failed artifacts
-belong in the accompanying PR/retained evidence rather than this status table.
-
-| Next checkpoint decision | Required evidence before changing the route |
-|---|---|
-| Replace the largest experimentally buildable suffix with one checkpoint | Build that exact source directly with the proposed earlier compiler; compare predecessor-generated frontend assembly against its normal-route build under the narrowly bounded cross-route gate below, then build the next source through both routes |
-| Admit a new stage or replacement | Record its complete historical-seed source route, current C1/C2 assembly/object/facts/header and corpus convergence, and uninterrupted final-source full qualification; retain failed attempts without waivers |
-| No successful shorter route | Keep six source-built stages; replacement of stage six does not establish a shorter route |
-
-For the cross-route predecessor comparison only, assembly text may differ solely
-in documented label names or equivalent address spelling, provided the assembled
-objects are byte-for-byte identical. Retain both assembly files, the classified
-differences, assembly commands/tool identities and object comparison. This is not
-a general machine-code-equivalence waiver: any other textual difference fails.
-Downstream generated assembly, objects, ABI facts, generated headers and corpus
-outputs still require exact equality, including the existing C1/C2 convergence
-and emitter differential gates. Safety, rejection and final-source qualification
-requirements are unchanged.
-
-A retained compiler may be reused only with its exact source/build/tool provenance
-and qualification receipt, not by filename or digest alone. Current setup verifies
-the selected executable against the mandatory recorded digest and reconstruction
-receipt. Meson tracks that historical evidence as configuration dependencies.
-The generation and historical-oracle commands check the selected compiler,
-receipt, route, driver and freshly resolved runtime identities before and after
-use. The configured selection is digest-bound in the generated commands, not a
-new reconstruction receipt. Ordinary Make uses these current-selection checks;
-changing the predecessor still requires full validation and reconfiguration.
-See the [configuration/invocation split](../docs/developer-test-contract.md#predecessor-backed-frontend-and-historical-receipts).
-
-Both ordinary default directories are now configured: `make`/`make test` use the
-image-enabled graph, while `make -C compiler test` uses the hosted-only graph.
-For other configurations, repeat setup with the receipt option and use
-`MESON_BUILD_DIR`. Keep using the same host/container path layout so configured
-absolute executable paths remain valid. An unconfigured directory needs explicit
-setup; the wrapper does not guess a predecessor.
-
-`BOOTSTRAP_RECEIPT` requests a different verified predecessor for `make test`;
-`BOOTSTRAP_COMPILER` and `BOOTSTRAP_COMPILER_SHA256` are optional cross-checks.
-A build directory configured before the receipt option existed must be recreated
-with `meson setup --wipe`, which the wrapper prints. The wrapper reconfigures an implicit default build in place, preserving
-its other options and files. An explicit `MESON_BUILD_DIR` with a different
-selection is rejected with the exact reconfigure command. Without this variable,
-the wrapper reuses the configured predecessor. The container launcher forwards
-all three values literally; both paths must be valid inside the container.
-
-The predecessor emits frontend A for current compiler C1; C1 emits B for current
+The checkpoint emits frontend A for current compiler C1; C1 emits B for current
 compiler C2. The same compilation emits `--abi-facts` metadata for collected
 resolved declarations and the exact emitted module. The closed private bootstrap
 adapter generates its record layouts, enum values and bridge symbol targets from
@@ -280,10 +223,10 @@ migrations still await execution qualification.
 
 ## Emitter migration qualification
 
-The source-built replacement sixth checkpoint `672821f70f37b185c46690791bd00d74d4414403` retains
-the C++ x86 backend. The manifest independently selects it as the historical oracle
-as well as the build predecessor, never a production fallback. Replacing the historical `7811ba8` hop does
-not replace this oracle with the current Aurora emitter. The
+The last historical stage, `672821f70f37b185c46690791bd00d74d4414403`, retains
+the C++ x86 backend. `checkpoint.json` pins its route-built executable as the
+historical oracle (`-Dhistorical_oracle`), separately from the checkpoint and never
+as a production fallback; checkpoint bumps do not replace it. The
 `emitter-differential-default` and `emitter-differential-closed` tests in the
 `release` suite (run at compiler bumps and releases, not on every merge) compare the historical corpus against it, and unsupported later consumers
 against current C1/C2, in ordinary and closed profiles. To run these guarded tests
@@ -436,7 +379,7 @@ The replaced C++ grammar is removed, including module/container headers. Unresol
 declaration admission, module visibility, template resolution and resolved
 type/lifetime analysis run in Aurora. Production lowers the resolved Session
 directly to typed IR, without a resolved C++ AST round trip. The
-historical predecessor remains the source-bootstrap starting point; this does not
+pinned checkpoint remains the bootstrap starting point; this does not
 establish whole-compiler self-hosting.
 
 CFG joins require exact source lifetime, provenance and operand-stack agreement

@@ -22,7 +22,7 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 | x86 emission | Aurora, fixed native transport | Same acceptance, diagnostics and ABI facts as the C++ backend on the whole corpus, byte-identical C1/C2 (`emitter-differential-*`); inlines single-field getters; no register allocation yet |
 | Direct class fields | Aurora source and independent metadata admission share an 8,192-field cap, including empty, nested, resource and array fields | Existing leaf, byte, depth and array-element limits still apply |
 | Private host bridge | One 84-entry table generates Aurora forwarders and host transport declarations; compiler facts supply layouts, symbols and raw enum validation | Preserve fail-closed conversion; native replacement remains incomplete |
-| Bootstrap route | Six source-built predecessors, then current C1/C2; direct skips fail at recorded capability boundaries | Replace stages only after an actual direct build, the [bounded cross-route frontend comparison](README.md#source-bootstrap), complete seed route and final full/convergence gates |
+| Bootstrap route | One digest-pinned checkpoint (C2 of `2fd30b2`, built once from the recorded six-stage source route), then current C1/C2 with convergence | Bump in one hop: build an accepted main commit with the current checkpoint, pass C1/C2 convergence and the historical-oracle differential, then the release gates ([recipe](README.md#bumping-the-checkpoint-one-hop)) |
 | Assembly, linking and hosted runtime | External bootstrap tools/C++ | Native replacements remain incomplete |
 
 ## Hosted Aurora parser
@@ -155,10 +155,10 @@ per-call overhead. Actual elapsed time and peak RSS, including transient resizin
 and native copied strings, remain unmeasured for this source draft.
 `x86.hpp` contains the public interface only; no production fallback remains.
 
-The next qualification must source-build with the explicit three-root predecessor
-in [the bootstrap recipe](README.md#source-bootstrap), compare full assembly and
-both sidecars to the external old compiler, check all existing backend/host
-artifact gates and C1/C2 convergence, measure time and peak memory, then run the
+Each checkpoint bump builds with the pinned checkpoint from
+[the bootstrap recipe](README.md#source-bootstrap), compares full assembly and
+both sidecars to the external old compiler, checks all existing backend/host
+artifact gates and C1/C2 convergence, measures time and peak memory, then runs the
 final-source GCC 16 full suite plus normal BIOS/UEFI and affected profiles.
 
 ## Compile speed
