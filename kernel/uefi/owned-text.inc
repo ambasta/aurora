@@ -75,7 +75,7 @@ extern "C" [[noreturn]] void __au_runtime_bytes_kernel_fault(std::uint64_t reaso
 #ifndef AURORA_CONSOLE_REGION
 auto run_owned_text(memory::PhysicalPages &pool) -> void {
 #if defined(AURORA_RUNTIME_FIXTURE) && !defined(AURORA_CONSOLE_REGION)
-    select_fixture(Fixture::text_site, Fixture::text_stale);
+    select_fixture(Fixture::text_baseline, Fixture::text_stale);
 #endif
     require(pool.used() == 0, "text exclusive backing pool");
     constexpr std::array<U64, 5> scalars{0x1f642, 0xd800, 1114114, 1114112, 1114113};

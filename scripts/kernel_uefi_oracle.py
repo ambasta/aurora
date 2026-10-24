@@ -1,6 +1,11 @@
 """Shared ordinary UEFI serial oracle; no process or image access."""
 
 import re
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from kernel_profiles import EARLY_FIXTURE_IMAGE, FIXTURE_MODES  # noqa: E402
 
 
 def need(value, reason):
@@ -8,7 +13,25 @@ def need(value, reason):
         raise ValueError(reason)
 
 
+def early_selection(text, mode):
+    """The early-fixture loader echoes its fw_cfg selector before any exit attempt."""
+    image, value = FIXTURE_MODES.get(mode, ("", 0))
+    selected = re.findall(r"AURORA_EARLY_FIXTURE: value=(\d+)", text)
+    if image != EARLY_FIXTURE_IMAGE:
+        need(not selected, "Unexpected early fixture selector")
+        return
+    need(selected == [str(value)], "Wrong early fixture selector")
+    marker = text.index("AURORA_EARLY_FIXTURE:")
+    need(
+        text.count("AURORA_UEFI_ENTRY") == 1
+        and text.index("AURORA_UEFI_ENTRY") < marker
+        and all(word not in text[:marker] for word in ("AURORA_UEFI_EXIT_", "AURORA_UEFI_FAIL:")),
+        "Early fixture selected after loader entry",
+    )
+
+
 def validate(status, text, mode):
+    early_selection(text, mode)
     rejected = re.findall(r"AURORA_UEFI_EXIT_REJECTED: attempt=(\d+)", text)
     need(
         rejected == (["1", "2", "3"] if mode == "stale-exhausted" else ["1"] if mode == "stale" else []),

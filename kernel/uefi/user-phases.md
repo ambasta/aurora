@@ -102,8 +102,9 @@ adapter operations, not a user-language unsafe or destruction interface.
   recovery or safe continuation after an unknown origin is claimed.
 - user-stale-grant: a retired client's old grant fails under the fresh incarnation.
 
-Every mode except user-phases and user-resume boots the one `user-fixture` image
-and picks its case from the serial selector. user-context and user-unknown used to
+Every mode except user-resume boots the one `user-fixture` image and picks its
+case from the serial selector; user-phases is its baseline selector, which runs
+the ordinary flow. user-context and user-unknown used to
 be separate images whose first client always ran its register loop or unknown UD2.
 The fixture's first client now carries the shared selectable probe set (see
 [service-budget.md](service-budget.md)); the launcher selects the register loop

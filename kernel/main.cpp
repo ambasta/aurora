@@ -419,7 +419,7 @@ auto kernel_main() -> void {
     page_self_test();
 #ifdef AURORA_BIOS_FIXTURE
 #ifdef AURORA_TEST_SCHEDULE
-    const auto selected = aurora::bios::read_fixture(aurora::bios::Fixture::bios_schedule_forged,
+    const auto selected = aurora::bios::read_fixture(aurora::bios::Fixture::bios_schedule_baseline,
                                                      aurora::bios::Fixture::bios_schedule_root);
 #else
     const auto selected = aurora::bios::read_fixture(aurora::bios::Fixture::bios_division_kernel_trap,

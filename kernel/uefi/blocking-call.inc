@@ -324,7 +324,7 @@ auto call_completion_controls(U64 ticket) -> void {
 }
 auto run_blocking_calls(memory::PhysicalPages &producer_pool) -> void {
 #if defined(AURORA_RUNTIME_FIXTURE) && !defined(AURORA_FILE_CALL)
-    select_fixture(Fixture::call_pending, Fixture::call_site);
+    select_fixture(Fixture::call_baseline, Fixture::call_site);
 #endif
     for (unsigned scenario = 0; scenario < 4; ++scenario) {
         require(prepare_snapshot(arena, producer_pool, snapshot_slot, SnapshotProducerCase::normal) ==

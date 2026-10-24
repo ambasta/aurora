@@ -4,7 +4,7 @@ import importlib.util, json, re, sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from kernel_layout import LAYOUT
-from kernel_profiles import FIXTURE_MODES
+from kernel_profiles import fixture_cases, selected_modes, serial_fixture_byte
 
 spec = importlib.util.spec_from_file_location("pci", Path(__file__).with_name("kernel-pci-smoke.py"))
 pci = importlib.util.module_from_spec(spec)
@@ -40,7 +40,7 @@ def run_console_region(command, log, mode):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
     import qemu_transport as transport
 
-    startup_byte = FIXTURE_MODES.get(mode, ("", None))[1]
+    startup_byte = serial_fixture_byte(mode) or None
     startup_sent = startup_byte is None
 
     payload = b"x" if mode.endswith(("cancel-ready", "fault")) else b"abcdefghijklmnopqrstuvwxyz012345\n"
@@ -79,12 +79,22 @@ def run_console_region(command, log, mode):
         need(not errors, "Protected console transport cleanup: " + "; ".join(errors))
 
 
+def selector_projection(text, before):
+    """Every mode of a folded fixture image reads one selector after timer admission, before `before`."""
+    ready = list(re.finditer(r"^AURORA_FIXTURE_READY\n", text, re.M))
+    need(len(ready) == 1 and text.count("AURORA_FIXTURE") == 1, "Exact fixture READY line/count")
+    timer = text.find("AURORA_UEFI_TIMER_READY:")
+    later = [index for index in (text.find(marker) for marker in before) if index >= 0]
+    need(0 <= timer < ready[0].start() and later and ready[0].end() <= min(later), "Fixture selection phase")
+    return text[: ready[0].start()] + text[ready[0].end() :]
+
+
 def validate_console_region(status, text, metadata, mode):
     """Check integrated parking, resumption, cancellation and cleanup in guest output.
 
     Native tests cover policy and frame components, not the integrated ParkedRun path.
     """
-    text = text.replace("\r", "")
+    text = selector_projection(text.replace("\r", ""), ("AURORA_UEFI_TIMER_ARM:",))
     validate_region_metadata(metadata, True)
     need(status == 33 and text.endswith(SUFFIX), "Protected console natural successful exit")
     arenas = re.findall(r"AURORA_UEFI_OWNERSHIP_OK: arena=(\d+) bytes=1048576 descriptors=\d+", text)
@@ -195,10 +205,7 @@ def validate_console_region(status, text, metadata, mode):
     )
     need(output == expected_output, "Exact source-produced output across the whole execution")
     need("_FAIL:" not in text, "No concealed runtime failure")
-    need(
-        metadata["clean"]["size"] <= LAYOUT.image_slot_bytes and metadata["clean"]["user_stack"] <= LAYOUT.stack_cap,
-        "Unchanged user caps",
-    )
+    need(metadata["clean"]["size"] <= LAYOUT.image_slot_bytes, "Unchanged user image cap")
     print("PASS: protected console waits, original budget, result and reclamation: " + mode)
 
 
@@ -216,7 +223,8 @@ def validate_region_metadata(metadata, console_region=False):
         "probe_pc",
     }
     operations = ("allocate", "borrow_length", "at", "set", "resize", "drop")
-    extra = {"bytes_" + name + "_pc" for name in operations} | {"user_stack", "compiled_begin", "compiled_end"}
+    # The user stack reserve is the build's per-image stack check (kernel_stack_check.py), not metadata.
+    extra = {"bytes_" + name + "_pc" for name in operations} | {"compiled_begin", "compiled_end"}
     if console_region:
         extra |= {"console_next_pc", "console_put_pc"}
     for index, name in enumerate(("clean", "bounds")):
@@ -252,13 +260,13 @@ def validate_region_metadata(metadata, console_region=False):
     need(
         len(sites) == (8 if console_region else 6)
         and all(BASE <= pc < BASE + image["size"] for pc in sites)
-        and 0 < image["user_stack"] <= LAYOUT.stack_cap
         and BASE <= image["compiled_begin"] < image["compiled_end"] <= BASE + image["size"],
-        "Owned text linked stack and six byte sites",
+        "Owned text six byte sites",
     )
 
 
 def validate_owned_text(status, text, metadata, mode):
+    text = selector_projection(text.replace("\r", ""), ("AURORA_UEFI_TIMER_ARM:", "AURORA_UEFI_RUNTIME_FAIL:"))
     denied = mode != "runtime-owned-text"
     need(type(status) is int and status == (35 if denied else 33), "Owned text exact exit")
     validate_region_metadata(metadata)
@@ -470,8 +478,10 @@ def validate_owned_text(status, text, metadata, mode):
     print("PASS: protected Utf8Text returns, quota rollback, fault/budget and quiescent reclamation")
 
 
-# Modes that boot the shared runtime-fixture image, from the one fixture table.
-PLAIN_FIXTURE_MODES = tuple(mode for mode, (image, _) in FIXTURE_MODES.items() if image == "runtime-fixture")
+# Fault cases of the shared runtime-fixture image, from the one fixture table.
+PLAIN_FIXTURE_MODES = fixture_cases("runtime-fixture")
+# Guest runs that boot runtime-fixture with a selector, its baseline included.
+SELECTED = selected_modes("runtime-fixture")
 # Hostile user probes that runtime-fixture's clean image selects at entry.
 PROBE_NAMES = {"stack", "kernel", "window", "write", "return", "unknown", "syscall", "sysenter"}
 
@@ -490,12 +500,14 @@ def checked_fixture_projection(text):
     return text[: ready[0].start()] + text[ready[0].end() + 1 :]
 
 
-def validate(status, text, mode, metadata, *, retained=0, final_slot=0):
+def validate(status, text, mode, metadata, *, retained=0, final_slot=0, selected=None):
+    """`selected` marks a guest run of runtime-fixture; pin/table oracles reuse "runtime" without one."""
     if mode.startswith("runtime-console-region"):
         return validate_console_region(status, text, metadata, mode)
     if mode.startswith("runtime-owned-text"):
         return validate_owned_text(status, text, metadata, mode)
-    if mode in PLAIN_FIXTURE_MODES:
+    selected = mode in PLAIN_FIXTURE_MODES if selected is None else selected
+    if selected:
         text = checked_fixture_projection(text)
     else:
         need("AURORA_FIXTURE" not in text, "Ordinary runtime must not read a fixture selector")
@@ -514,7 +526,7 @@ def validate(status, text, mode, metadata, *, retained=0, final_slot=0):
         "probe_pc",
     }
     need(type(metadata) is dict and set(metadata) == {"clean", "bounds"}, "Malformed metadata set")
-    fixture = mode in PLAIN_FIXTURE_MODES
+    fixture = selected
     for index, name in enumerate(("clean", "bounds")):
         image = dict(metadata[name])
         probes = image.pop("probes", None) if type(image) is dict else None
@@ -800,7 +812,11 @@ if __name__ == "__main__":
         sys.exit(run_console_region(sys.argv[5:], Path(sys.argv[3]), sys.argv[2]))
     try:
         validate(
-            int(sys.argv[1]), Path(sys.argv[2]).read_text(), sys.argv[3], json.loads(Path(sys.argv[4]).read_text())
+            int(sys.argv[1]),
+            Path(sys.argv[2]).read_text(),
+            sys.argv[3],
+            json.loads(Path(sys.argv[4]).read_text()),
+            selected=sys.argv[3] in SELECTED,
         )
     except ValueError as error:
         sys.exit(f"FAIL: {error}")

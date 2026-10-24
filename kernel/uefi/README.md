@@ -114,8 +114,18 @@ page faults14/3 and14/17 on the private IDT, then fail-stop.
 
 ## Gates and limits
 
+`uefi/production` is the one production UEFI image: this loader and payload with
+ACPI, PCI, the protected runtime, IPC, budgets and the protected program console,
+and no fixture selector, test hook or capture handshake (`production-profile.hpp`).
+
 The eight OVMF modes are normal, stale, stale-exhausted, bad-handoff, bad-map,
-bad-table, wp and nx. They validate successful ownership transfer, bounded retry,
+bad-table, wp and nx. `normal` boots the ordinary image; the other seven, with
+`acpi-duplicate-root`, are cases of the one `early-fixture` image. Its loader
+reads a decimal selector from the QEMU fw_cfg file `opt/aurora/fixture` at entry
+(before ExitBootServices, while OVMF still owns the UART), echoes it as
+`AURORA_EARLY_FIXTURE: value=N`, and copies it into one extra handoff word that the
+payload admits only within the family; a missing, malformed or out-of-family file
+fails at entry. Ordinary images have neither the fw_cfg reader nor the word. They validate successful ownership transfer, bounded retry,
 rejection before accepting malformed metadata, rejection of an extra low-memory
 mapping, and actual hardware W^X enforcement. Hosted tests exercise124 descriptor,
 header and complete-tree cases; image validation has14 negative PE/payload cases;

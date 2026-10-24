@@ -211,8 +211,10 @@ launch routing; existing Make and console-script commands remain aliases.
 `bios`/`uefi` default to normal smoke; `--console` selects the ordinary interactive
 console. `bios-console`/`uefi-console` default to interactive sessions, or select
 `--smoke` for their existing PTY acceptance checks. Protected `program-console`
-and existing `program-*` fault profiles default to their protected PTY smoke;
-only `program-console --console` opens an interactive protected session.
+(an alias of `production`, the one production UEFI image) and existing
+`program-*` fault profiles default to their protected PTY smoke; only
+`program-console --console` (or `production --console`) opens an interactive
+protected session.
 
 The shared launcher uses the existing profile builders and semantic oracles.
 Lower-level serial smoke adapters retain fault modes, clock plans and isolated

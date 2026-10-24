@@ -11,21 +11,26 @@ acpi = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(acpi)
 need = acpi.need
 WINDOW = acpi.WINDOW
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import kernel_profiles  # noqa: E402
+
 SUCCESS = ("pci", "pci-devices", "pci-bridge")
-MODES = SUCCESS + ("pci-checksum", "pci-cycle", "pci-write", "pci-revoked")
+# Guest runs of every PCI mode, the successful baseline and its variants included, boot pci-fixture.
+SELECTED = kernel_profiles.selected_modes("pci-fixture")
+MODES = SUCCESS + kernel_profiles.fixture_cases("pci-fixture")
 SUFFIX = "AURORA_UEFI_LANGUAGE_OK: value=42\nAURORA_UEFI_OK\n"
 
 
-def validate(status, text, mode):
+def validate(status, text, mode, selected=None):
+    """`selected` marks a guest run's own PCI selector; reused transcript prefixes carry none."""
     need(mode in MODES, "Unknown PCI mode")
     marker = "AURORA_FIXTURE_READY\n"
-    fixture = mode not in SUCCESS
-    need(text.count(marker) == (1 if fixture else 0), "Exact PCI fixture selector readiness")
-    if fixture:
-        need(
-            text.index("AURORA_ACPI_WINDOW_CLOSED:") < text.index(marker) < text.index("AURORA_UEFI_PAYLOAD_FAIL:"),
-            "Selector admission phase",
-        )
+    selected = mode not in SUCCESS if selected is None else selected
+    need(text.count(marker) == int(selected), "Exact PCI fixture selector readiness")
+    if selected:
+        need(text.index("AURORA_ACPI_WINDOW_CLOSED:") < text.index(marker), "Selector admission phase")
+        if "AURORA_UEFI_PAYLOAD_FAIL:" in text:
+            need(text.index(marker) < text.index("AURORA_UEFI_PAYLOAD_FAIL:"), "Selector admission phase")
         if "AURORA_PCI_APERTURE:" in text:
             need(text.index(marker) < text.index("AURORA_PCI_APERTURE:"), "PCI mapping preceded selector")
         text = text.replace(marker, "", 1)
@@ -176,6 +181,6 @@ def validate(status, text, mode):
 
 if __name__ == "__main__":
     try:
-        validate(int(sys.argv[1]), Path(sys.argv[2]).read_text(), sys.argv[3])
+        validate(int(sys.argv[1]), Path(sys.argv[2]).read_text(), sys.argv[3], sys.argv[3] in SELECTED)
     except ValueError as error:
         sys.exit(f"FAIL: {error}")

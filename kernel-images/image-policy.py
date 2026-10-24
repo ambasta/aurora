@@ -23,7 +23,7 @@ RULES = [
         ],
     },
     {
-        "profiles": ["uefi/nx"],
+        "profiles": ["uefi/early-fixture"],
         "callbacks": ["payload_main(="],
     },
     {
@@ -49,6 +49,7 @@ RULES = [
             "uefi/console",
             "uefi/console-fixture",
             "uefi/program-*",
+            "uefi/production",
             "uefi/ram-scratchpad-console*",
         ],
         "imports": ["__au_runtime_console_next", "__au_runtime_console_put"],
@@ -108,6 +109,7 @@ RULES = [
             "uefi/dispatch*",
             "uefi/user-*",
             "uefi/program-*",
+            "uefi/production",
             "uefi/ram-scratchpad-console*",
             "bios/*",
         ],
@@ -121,6 +123,7 @@ RULES = [
             "uefi/dispatch*",
             "uefi/user-*",
             "uefi/program-*",
+            "uefi/production",
             "uefi/ram-scratchpad-console*",
         ],
         "reachable": ["aurora_kernel_budget_tick"],
@@ -133,17 +136,23 @@ RULES = [
             "uefi/dispatch*",
             "uefi/user-*",
             "uefi/program-*",
+            "uefi/production",
             "uefi/ram-scratchpad-console*",
         ],
         "reachable": ["aurora_kernel_ipc_transition"],
     },
     {
-        "profiles": ["uefi/dispatch*", "uefi/user-phases", "uefi/user-fixture"],
+        "profiles": ["uefi/dispatch*", "uefi/user-fixture"],
         "reachable": ["aurora_kernel_round_robin_next"],
     },
     {
         "profiles": ["uefi/user-resume", "uefi/user-fixture"],
         "reachable": ["aurora_kernel_client_disposal"],
+    },
+    # No fixture state or capture handshake links into the production image.
+    {
+        "profiles": ["uefi/production"],
+        "forbidden": ["*fixture*", "*Fixture*", "*hostile*", "*capture_gate*", "*capture_scenario*"],
     },
     # The BIOS image keeps only its own policies; UEFI supervisor policies must not link into it.
     {

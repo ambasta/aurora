@@ -5,9 +5,7 @@
     defined(AURORA_UEFI_BAR_ADMISSION) || defined(AURORA_UEFI_BAR_EDK2) || defined(AURORA_UEFI_IVRS) ||                \
     defined(AURORA_UEFI_NVME_PREPARE) || defined(AURORA_UEFI_PINS) || defined(AURORA_UEFI_TABLES) ||                   \
     defined(AURORA_UEFI_IPC) || defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_DISPATCH) ||                \
-    defined(AURORA_UEFI_USER_BUDGET) || defined(AURORA_UEFI_WP) || defined(AURORA_UEFI_NX) ||                          \
-    defined(AURORA_UEFI_STALE) || defined(AURORA_UEFI_EXHAUSTED) || defined(AURORA_UEFI_BAD_HANDOFF) ||                \
-    defined(AURORA_UEFI_BAD_TABLE) || defined(AURORA_UEFI_BAD_MAP) || defined(AURORA_KERNEL_BYTES_TESTING)
+    defined(AURORA_UEFI_USER_BUDGET) || defined(AURORA_EARLY_FIXTURE) || defined(AURORA_KERNEL_BYTES_TESTING)
 #error "Owned bytes require the exclusive normal CPU allocation profile"
 #endif
 

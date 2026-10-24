@@ -23,3 +23,9 @@ A generation limit must be a positive representable integer	-DAURORA_PIN_LEDGER_
 A generation limit must be a positive representable integer	-DAURORA_PIN_LEDGER_TESTING=1 -DAURORA_PIN_LEDGER_TEST_GENERATION_LIMIT=-1	#include "tests/kernel-dormant-api.cpp"
 Dormant table inspector is restricted to explicit CPU-only test images		#include "kernel/uefi/dormant-inspector.hpp"
 'DormantTableTestAccess' in namespace 'aurora::memory' does not name a type		#include "kernel/dormant-tables.hpp"\naurora::memory::DormantTableTestAccess *probe;
+# The production image rejects every test hook; the fw_cfg selector exists only in early-fixture.
+The production image rejects fixture selectors, test hooks and capture handshakes	-DAURORA_PRODUCTION -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_PROGRAM_CONSOLE -DAURORA_RUNTIME_FIXTURE	#include "kernel/uefi/production-profile.hpp"
+The production image rejects fixture selectors, test hooks and capture handshakes	-DAURORA_PRODUCTION -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_PROGRAM_CONSOLE -DAURORA_EARLY_FIXTURE	#include "kernel/uefi/production-profile.hpp"
+The production image rejects fixture selectors, test hooks and capture handshakes	-DAURORA_PRODUCTION -DAURORA_UEFI_RUNTIME -DAURORA_UEFI_PROGRAM_CONSOLE -DAURORA_UEFI_GRAPHICAL_CAPTURE	#include "kernel/uefi/production-profile.hpp"
+The production image carries the protected runtime and program console	-DAURORA_PRODUCTION -DAURORA_UEFI_RUNTIME	#include "kernel/uefi/production-profile.hpp"
+The fw_cfg selector belongs only to the early-fixture image		#include "kernel/uefi/early-fixture.hpp"

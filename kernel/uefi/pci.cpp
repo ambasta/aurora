@@ -212,7 +212,7 @@ auto discover_pci(U64 arena,
 #ifdef AURORA_PCI_FIXTURE
     // ACPI has closed its window before this call. Admit the selector before
     // parsing or acquiring any PCI mapping; no normal image contains this path.
-    const auto selected = read_fixture(Fixture::pci_checksum, Fixture::pci_revoked);
+    const auto selected = read_fixture(Fixture::pci_baseline, Fixture::pci_revoked);
     if (!selected)
         return false;
     pci_fixture = *selected;

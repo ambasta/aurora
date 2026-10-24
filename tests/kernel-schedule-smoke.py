@@ -12,7 +12,30 @@ def need(value, reason):
         raise ValueError(reason)
 
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+import kernel_profiles  # noqa: E402
+
+# Modes that boot bios-schedule-fixture: its cases, the baseline and the machine variants.
+SELECTED = tuple(
+    "--" + mode
+    for mode in kernel_profiles.BIOS_ALIASES
+    if kernel_profiles.canonical_profile("bios", mode) == "bios-schedule-fixture"
+)
+
+
 def validate(status, text, mode, metadata):
+    marker = "AURORA_FIXTURE_READY\n"
+    text = text.replace("\r", "")
+    need(text.count(marker) == int(mode in SELECTED), "Exact scheduler fixture readiness")
+    if mode in SELECTED:
+        need(
+            text.index("AURORA_PAGES_OK:") < text.index(marker)
+            and all(
+                text.index(marker) < text.find(item) for item in ("AURORA_APIC_", "AURORA_SCHEDULE_") if item in text
+            ),
+            "Scheduler selector phase",
+        )
+        text = text.replace(marker, "", 1)
     need("AURORA_USER_OK:" in text, "Missing earlier protected-user gate")
     need("AURORA_EXCEPTION_OK:" in text and "AURORA_PAGES_OK:" in text, "Missing foundations")
     if mode != "--schedule":

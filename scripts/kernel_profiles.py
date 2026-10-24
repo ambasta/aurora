@@ -14,9 +14,26 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from kernel_layout import IMAGE_POLICIES, LAYOUT, metadata as layout_metadata, read_table
 
 FIXTURES = read_table(Path(__file__).resolve().parents[1] / "kernel/uefi/runtime-fixtures.inc")
+
+
+def check_fixture_families(rows):
+    """read_fixture admits one value interval per image, so each image's rows are consecutive values."""
+    values = [value for _, _, value in rows.values()]
+    if len(set(values)) != len(values) or not all(0 < value < 256 for value in values):
+        raise ValueError("Fixture selectors must be distinct bytes")
+    for image in {image for _, image, _ in rows.values()}:
+        family = sorted(value for _, owner, value in rows.values() if owner == image)
+        if family != list(range(family[0], family[0] + len(family))):
+            raise ValueError("Fixture family is not one selector interval: " + image)
+
+
+check_fixture_families(FIXTURES)
 FIXTURE_MODES = {
     mode: (image, value) for name, (mode, image, value) in FIXTURES.items() if not name.startswith("bios_")
 }
+# Early-fixture modes inject before ExitBootServices, while firmware owns the UART:
+# their selector travels in a QEMU fw_cfg file instead of a serial byte.
+EARLY_FIXTURE_IMAGE = "early-fixture"
 BIOS_FIXTURE_MODES = {
     mode: (image, value) for name, (mode, image, value) in FIXTURES.items() if name.startswith("bios_")
 }
@@ -51,7 +68,6 @@ UEFI_FAMILIES = [
             "-DAURORA_BLOCKING_CALL",
         ],
         {
-            "user-call": [],
             "user-call-fixture": ["-DAURORA_RUNTIME_FIXTURE"],
         },
     ),
@@ -87,8 +103,6 @@ UEFI_FAMILIES = [
             "-DAURORA_OWNED_TEXT",
         ],
         {
-            "runtime-owned-text": [],
-            "runtime-console-region": ["-DAURORA_CONSOLE_REGION"],
             "runtime-console-region-fixture": ["-DAURORA_CONSOLE_REGION", "-DAURORA_RUNTIME_FIXTURE"],
             "runtime-owned-text-fixture": ["-DAURORA_RUNTIME_FIXTURE"],
         },
@@ -102,7 +116,6 @@ UEFI_FAMILIES = [
             "-DAURORA_UEFI_IPC",
         ],
         {
-            "snapshot": [],
             "snapshot-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_SNAPSHOT_FIXTURE"],
         },
     ),
@@ -124,7 +137,9 @@ UEFI_FAMILIES = [
             "-DAURORA_UEFI_PROGRAM_CONSOLE",
         ],
         {
-            "program-console": [],
+            # The one production UEFI image: this full protected stack with the
+            # program console, and no fixture selector, test hook or capture handshake.
+            "production": ["-DAURORA_PRODUCTION"],
             "program-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_PROGRAM_FIXTURE"],
             "program-file-call": ["-DAURORA_BLOCKING_CALL", "-DAURORA_FILE_CALL"],
             "program-file-call-fixture": ["-DAURORA_BLOCKING_CALL", "-DAURORA_FILE_CALL", "-DAURORA_RUNTIME_FIXTURE"],
@@ -176,7 +191,6 @@ UEFI_FAMILIES = [
         {
             "user-resume": ["-DAURORA_USER_RESUME"],
             "user-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_USER_FIXTURE"],
-            "user-phases": ["-DAURORA_USER_PHASES"],
         },
     ),
     (
@@ -189,7 +203,6 @@ UEFI_FAMILIES = [
             "-DAURORA_UEFI_DISPATCH",
         ],
         {
-            "dispatch": [],
             "dispatch-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_DISPATCH_FIXTURE"],
         },
     ),
@@ -202,14 +215,12 @@ UEFI_FAMILIES = [
             "-DAURORA_UEFI_SERVICE_BUDGET",
         ],
         {
-            "budget": [],
             "budget-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_BUDGET_FIXTURE"],
         },
     ),
     (
         ["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI", "-DAURORA_UEFI_RUNTIME", "-DAURORA_UEFI_IPC"],
         {
-            "ipc": [],
             "ipc-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_IPC_FIXTURE"],
         },
     ),
@@ -239,34 +250,25 @@ UEFI_FAMILIES = [
     (
         ["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI", "-DAURORA_UEFI_RUNTIME"],
         {
-            "runtime": [],
             "runtime-span": [],
             "runtime-multipage": ["-DAURORA_RUNTIME_MULTIPAGE"],
             "runtime-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_RUNTIME_CONTROL_FIXTURE"],
         },
     ),
-    (["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI"], {"pci": [], "pci-devices": [], "pci-bridge": []}),
     (
         ["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI"],
         {
             "pci-fixture": ["-DAURORA_PCI_FIXTURE"],
         },
     ),
-    (["-DAURORA_UEFI_ACPI"], {"acpi": [], "acpi-two": []}),
     (
         ["-DAURORA_UEFI_ACPI"],
         {
             "acpi-fixture": ["-DAURORA_ACPI_FIXTURE"],
-            "acpi-duplicate-root": ["-DAURORA_ACPI_DUPLICATE_ROOT"],
         },
     ),
-    (["-DAURORA_UEFI_EXHAUSTED"], {"stale-exhausted": []}),
-    (["-DAURORA_UEFI_STALE"], {"stale": []}),
-    (["-DAURORA_UEFI_BAD_HANDOFF"], {"bad-handoff": []}),
-    (["-DAURORA_UEFI_BAD_TABLE"], {"bad-table": []}),
-    (["-DAURORA_UEFI_BAD_MAP"], {"bad-map": []}),
-    (["-DAURORA_UEFI_WP"], {"wp": []}),
-    (["-DAURORA_UEFI_NX"], {"nx": []}),
+    # Loader and payload handoff faults, selected by a fw_cfg file read at loader entry.
+    (["-DAURORA_UEFI_ACPI", "-DAURORA_EARLY_FIXTURE"], {"early-fixture": []}),
 ]
 
 BIOS_CONTROLS = {
@@ -524,7 +526,9 @@ def bios_profile(mode, controls):
     )
 
 
-def uefi_profile(mode, flags):
+def uefi_profile(profile_mode, flags):
+    # The production image composes exactly the protected program console.
+    mode = "program-console" if profile_mode == "production" else profile_mode
     scratchpad = mode in ("ram-scratchpad-console", "ram-scratchpad-console-fixture")
     scratchpad_fixture = mode == "ram-scratchpad-console-fixture"
     runtime = scratchpad or mode.startswith(("runtime", "ipc", "budget", "dispatch", "user-", "program-", "snapshot"))
@@ -686,7 +690,7 @@ def uefi_profile(mode, flags):
             entry, bridge = "examples/kernel-" + source + ".au", "kernel/uefi/" + adapter + "-entry.S"
     return dict(
         platform="uefi",
-        mode=mode,
+        mode=profile_mode,
         flags=flags,
         language=entry,
         roots=["kernel/policies", "library"],
@@ -735,17 +739,52 @@ GUEST_FAMILIES = {
 }
 
 
-UEFI_ALIASES = {
+# Machine variants boot their baseline mode's image and selector on other QEMU hardware.
+UEFI_VARIANTS = {
     "budget-smp": "budget",
-    # Rejected in ACPI discovery, before the fixture selector is read.
-    "ivrs-missing": "ivrs-fixture",
     "pci-devices": "pci",
     "pci-bridge": "pci",
     "acpi-two": "acpi",
 }
+UEFI_ALIASES = {
+    # Rejected in ACPI discovery, before the fixture selector is read.
+    "ivrs-missing": "ivrs-fixture",
+    # The protected program console is the production image's console.
+    "program-console": "production",
+}
 UEFI_ALIASES.update({mode: image for mode, (image, _) in FIXTURE_MODES.items()})
-BIOS_ALIASES = {"schedule-smp": "schedule", "schedule-no-apic": "schedule", "no-nx": "normal"}
+UEFI_ALIASES.update({variant: UEFI_ALIASES.get(base, base) for variant, base in UEFI_VARIANTS.items()})
+# Baseline rows select a fixture image's normal flow; the image has no separate ordinary build.
+BASELINE_MODES = frozenset(mode for name, (mode, _, _) in FIXTURES.items() if name.endswith("_baseline"))
+
+
+def fixture_cases(image):
+    """Fault modes of one fixture image, excluding its baseline selector."""
+    return tuple(mode for mode, (owner, _) in FIXTURE_MODES.items() if owner == image and mode not in BASELINE_MODES)
+
+
+# The scheduler baseline and its machine variants boot bios-schedule-fixture with its baseline selector.
+BIOS_VARIANTS = {"schedule-smp": "schedule", "schedule-no-apic": "schedule"}
+BIOS_ALIASES = {"no-nx": "normal"}
 BIOS_ALIASES.update({mode: image for mode, (image, _) in BIOS_FIXTURE_MODES.items()})
+BIOS_ALIASES.update({variant: BIOS_ALIASES.get(base, base) for variant, base in BIOS_VARIANTS.items()})
+
+
+def selected_modes(image):
+    """Every mode that boots one fixture image with a selector: cases, baseline and its machine variants."""
+    modes = tuple(mode for mode, (owner, _) in FIXTURE_MODES.items() if owner == image)
+    return modes + tuple(variant for variant, base in UEFI_VARIANTS.items() if base in modes)
+
+
+def serial_fixture_byte(mode):
+    image, value = FIXTURE_MODES.get(UEFI_VARIANTS.get(mode, mode), ("", ""))
+    return "" if image == EARLY_FIXTURE_IMAGE else value
+
+
+def fw_cfg_fixture(mode):
+    """QEMU arguments carrying an early-fixture selector; empty for every other mode."""
+    image, value = FIXTURE_MODES.get(mode, ("", 0))
+    return ["-fw_cfg", f"name=opt/aurora/fixture,string={value}"] if image == EARLY_FIXTURE_IMAGE else []
 
 
 def canonical_profile(platform, mode):
@@ -833,9 +872,9 @@ if __name__ == "__main__":
     action.add_argument("--bios-fixture-byte")
     args = parser.parse_args()
     if args.bios_fixture_byte:
-        print(BIOS_FIXTURE_MODES.get(args.bios_fixture_byte, ("", ""))[1])
+        print(BIOS_FIXTURE_MODES.get(BIOS_VARIANTS.get(args.bios_fixture_byte, args.bios_fixture_byte), ("", ""))[1])
     elif args.fixture_byte:
-        print(FIXTURE_MODES.get(args.fixture_byte, ("", ""))[1])
+        print(serial_fixture_byte(args.fixture_byte))
     elif args.select:
         try:
             print(select(args.select, os.environ))

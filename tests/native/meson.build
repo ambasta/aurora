@@ -441,4 +441,10 @@ if get_option('kernel_images')
            workdir: native_root, timeout: 180)
     endforeach
   endforeach
+  # The production image's protected program console, through its PTY oracle.
+  test('guest-uefi-production', python,
+       args: ['-B', files('../../tests/kernel-program-console-pty.py'), '--mode', 'program-console',
+              '--build-dir', meson.project_build_root() / 'kernel-images/uefi/production'],
+       depends: kernel_profile_images['uefi/production'], suite: ['guest', 'guest-production'],
+       workdir: native_root, timeout: 300)
 endif

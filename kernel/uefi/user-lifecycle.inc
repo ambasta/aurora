@@ -67,15 +67,14 @@
 }
 auto run_user_lifecycle() -> void {
 #ifdef AURORA_USER_FIXTURE
-    if (fixture == Fixture::user_pending || fixture == Fixture::user_context || fixture == Fixture::user_unknown) {
+    // The baseline runs the ordinary user-phases flow of the former user-phases image.
+    if (fixture == Fixture::user_phases_baseline || fixture == Fixture::user_pending ||
+        fixture == Fixture::user_context || fixture == Fixture::user_unknown) {
         run_dispatcher();
         Serial::text("AURORA_UEFI_USER_PHASES_OK\r\n");
         return;
     }
 #endif
-#ifdef AURORA_USER_PHASES
-    run_dispatcher();
-#else
     dispatcher.emplace(registry);
     require(create(0) == 0 && create(1) == 1 && create(2) == 2 && frames.used() == 12, "user three owned domains");
     dispatch_bind();
@@ -133,6 +132,5 @@ auto run_user_lifecycle() -> void {
     transaction = 0;
     launch = {};
     Serial::text("AURORA_UEFI_DISPATCH_CLEANUP_OK: used=0 records=0\r\nAURORA_UEFI_DISPATCH_OK\r\n");
-#endif
     Serial::text("AURORA_UEFI_USER_PHASES_OK\r\n");
 }

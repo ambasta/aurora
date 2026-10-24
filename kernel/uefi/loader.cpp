@@ -4,6 +4,7 @@
 #endif
 #include "tables.hpp"
 #include "graphical-profile.hpp"
+#include "production-profile.hpp"
 #ifdef AURORA_UEFI_GRAPHICAL_CONSOLE
 #include "framebuffer-loader.hpp"
 #endif
@@ -72,6 +73,18 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
     Serial::text("AURORA_UEFI_ENTRY\r\n");
     if (relocated_anchor != &anchor || *relocated_anchor != Handoff::magic)
         fail("PE relocation");
+#ifdef AURORA_EARLY_FIXTURE
+    using aurora::uefi::early::Fixture;
+    const auto early = aurora::uefi::early::FwCfg::read();
+    if (!early)
+        fail("early fixture selector");
+    const auto injected = [&](Fixture fixture) {
+        return *early == fixture;
+    };
+    Serial::text("AURORA_EARLY_FIXTURE: value=");
+    Serial::number(static_cast<unsigned>(*early));
+    Serial::text("\r\n");
+#endif
     const auto system_address = reinterpret_cast<U64>(system);
     if (!header_valid(system_address, 0x5453595320494249ULL, 120))
         fail("system table");
@@ -145,6 +158,9 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
     put(handoff, 0, Handoff::magic);
     put(handoff, 8, 1, 4);
     put(handoff, 12, Handoff::header, 4);
+#ifdef AURORA_EARLY_FIXTURE
+    put(handoff, Handoff::fixture_offset, static_cast<unsigned>(*early));
+#endif
 #ifdef AURORA_UEFI_ACPI
     put(handoff, 8, 2, 4);
 #endif
@@ -229,8 +245,8 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
         if (flags && !tables.map(arena + offset, flags))
             fail("private tables");
     }
-#ifdef AURORA_UEFI_BAD_TABLE
-    if (!tables.map(0x10000, 3 | aurora::uefi::PageTables::nx))
+#ifdef AURORA_EARLY_FIXTURE
+    if (injected(Fixture::early_bad_table) && !tables.map(0x10000, 3 | aurora::uefi::PageTables::nx))
         fail("bad-table injection");
 #endif
 #ifdef AURORA_UEFI_ACPI
@@ -297,8 +313,9 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
             const auto before = roots.root();
             if (!roots.accept(candidate))
                 fail("duplicate or invalid ACPI roots");
-#ifdef AURORA_ACPI_DUPLICATE_ROOT
-            if (before == 0 && roots.root() != 0 && !roots.accept(candidate))
+#ifdef AURORA_EARLY_FIXTURE
+            if (injected(Fixture::early_acpi_duplicate_root) && before == 0 && roots.root() != 0 &&
+                !roots.accept(candidate))
                 fail("duplicate or invalid ACPI roots");
 #else
             static_cast<void>(before);
@@ -382,12 +399,9 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
         put(handoff, 40, stride);
         put(handoff, 48, version, 4);
         put(handoff, 52, attempt, 4);
-#ifdef AURORA_UEFI_STALE
-        if (attempt == 1)
+#ifdef AURORA_EARLY_FIXTURE
+        if ((injected(Fixture::early_stale) && attempt == 1) || injected(Fixture::early_stale_exhausted))
             key ^= 1;
-#endif
-#ifdef AURORA_UEFI_EXHAUSTED
-        key ^= 1;
 #endif
         const auto status = exit(image, key);
         if (status == 0) {
@@ -406,15 +420,19 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
     Serial::text("AURORA_UEFI_EXIT_OK: attempts=");
     Serial::number(Bytes{handoff}.get(52, 4));
     Serial::text("\r\n");
-#ifdef AURORA_UEFI_BAD_HANDOFF
-    put(handoff, 8, 2, 4);
-#endif
-#ifdef AURORA_UEFI_BAD_MAP
-    const auto map_bytes = span(arena + Handoff::map_offset, Bytes{handoff}.get(32));
-    for (U64 offset = 0; offset < map_bytes.size(); offset += Bytes{handoff}.get(40)) {
-        const Bytes descriptor{map_bytes.subspan(offset, Bytes{handoff}.get(40))};
-        if (descriptor.get(8) <= arena && descriptor.get(8) + descriptor.get(24) * 4096 >= arena + Handoff::arena_bytes)
-            put(map_bytes, offset + 32, descriptor.get(32) | (1ULL << 63));
+#ifdef AURORA_EARLY_FIXTURE
+    // Swap the version between the RSDP-free and RSDP-bearing forms, so the
+    // version no longer describes the copied handoff in either composition.
+    if (injected(Fixture::early_bad_handoff))
+        put(handoff, 8, Bytes{handoff}.get(8, 4) == 1 ? 2 : 1, 4);
+    if (injected(Fixture::early_bad_map)) {
+        const auto map_bytes = span(arena + Handoff::map_offset, Bytes{handoff}.get(32));
+        for (U64 offset = 0; offset < map_bytes.size(); offset += Bytes{handoff}.get(40)) {
+            const Bytes descriptor{map_bytes.subspan(offset, Bytes{handoff}.get(40))};
+            if (descriptor.get(8) <= arena &&
+                descriptor.get(8) + descriptor.get(24) * 4096 >= arena + Handoff::arena_bytes)
+                put(map_bytes, offset + 32, descriptor.get(32) | (1ULL << 63));
+        }
     }
 #endif
     asm volatile("cli" : : : "memory");

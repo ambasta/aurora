@@ -215,7 +215,7 @@ auto ipc_deliver(bool fault) -> void {
 }
 auto run_ipc() -> void {
 #ifdef AURORA_IPC_FIXTURE
-    select_fixture(Fixture::ipc_fault, Fixture::ipc_unknown);
+    select_fixture(Fixture::ipc_baseline, Fixture::ipc_unknown);
 #endif
 #ifdef AURORA_IPC_FIXTURE
     if (fixture == Fixture::ipc_exhausted)

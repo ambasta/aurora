@@ -881,7 +881,22 @@ def validate(status, text, mode, metadata):
     if mode.startswith("user-ram-file"):
         return validate_ram_file(status, text, mode, metadata)
     if mode in ("user-call", "user-call-pending", "user-call-owner", "user-call-site"):
-        return validate_call(status, text, mode, metadata)
+        # Every call mode, the baseline included, boots user-call-fixture: one
+        # selector after timer admission and before the first call domain.
+        marker = "AURORA_FIXTURE_READY\n"
+        text = text.replace("\r", "")
+        later = [
+            index for index in (text.find(item) for item in ("AURORA_UEFI_TIMER_ARM:", "AURORA_CALL_")) if index >= 0
+        ]
+        need(
+            text.count(marker) == 1
+            and text.count("AURORA_FIXTURE") == 1
+            and 0 <= text.find("AURORA_UEFI_TIMER_READY:") < text.index(marker)
+            and later
+            and text.index(marker) + len(marker) <= min(later),
+            "Exact call fixture readiness",
+        )
+        return validate_call(status, text.replace(marker, "", 1), mode, metadata)
     if mode == "user-resume":
         return validate_resume(status, text, metadata)
     need(mode in MODES, "Unknown user-phase mode")

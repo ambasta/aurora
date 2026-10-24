@@ -32,8 +32,10 @@ MODES = (
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import kernel_profiles  # noqa: E402
 
-# Modes that boot the shared budget-fixture image, from the one fixture table.
-FIXTURE_MODES = tuple(mode for mode, (image, _) in kernel_profiles.FIXTURE_MODES.items() if image == "budget-fixture")
+# Fault cases of the shared budget-fixture image, from the one fixture table.
+FIXTURE_MODES = kernel_profiles.fixture_cases("budget-fixture")
+# Every guest mode that boots budget-fixture: the cases, the baseline and its SMP variant.
+SELECTED = kernel_profiles.selected_modes("budget-fixture")
 # Instruction probes the fixture service selects from its launch word.
 PROBE_FAULTS = {"mmio": (14, 5), "softint": (13, 514), "fpu": (7, 0)}
 # Every fixture wrapper carries the complete selectable set (see ipc-user-entry.S).
@@ -45,8 +47,13 @@ EARLY = MODES[4:9]
 EVENT = r"AURORA_UEFI_DOMAIN_EVENT: vector=(\d+) error=(\d+) pc=(\d+) cpl=(\d+) root=(\d+) frame=(\d+) cr2=(\d+)"
 
 
-def metadata_valid(meta, mode, probe_image=None):
-    """probe_image names the one image whose wrapper carries the fixture probes."""
+def metadata_valid(meta, mode, probe_image=None, fixture_image=None):
+    """probe_image names the one image whose wrapper carries the fixture probes.
+
+    fixture_image marks budget-fixture's own metadata; callers that reuse these
+    checks for their own images under the tag "budget" carry neither.
+    """
+    fixture_image = mode in FIXTURE_MODES if fixture_image is None else fixture_image
     need(type(meta) is dict and set(meta) == {"images", "kernel"}, "Malformed budget metadata")
     images = meta["images"]
     need(type(images) is dict and set(images) == {"clean", "bounds"}, "Budget image set")
@@ -54,7 +61,7 @@ def metadata_valid(meta, mode, probe_image=None):
     base_images = {}
     # Only one fixture image carries the probe set and context loop: the budget
     # service here, or the image a dispatcher/user caller names.
-    if probe_image is None and mode in FIXTURE_MODES:
+    if probe_image is None and fixture_image:
         probe_image = "bounds"
     for index, name in enumerate(("clean", "bounds")):
         image = dict(images[name]) if type(images[name]) is dict else images[name]
@@ -109,7 +116,7 @@ def metadata_valid(meta, mode, probe_image=None):
         "Drain range outside owned RX",
     )
     need(
-        (2 <= kernel["forged_pc"] < kernel["text_end"]) if mode in FIXTURE_MODES else kernel["forged_pc"] == 0,
+        (2 <= kernel["forged_pc"] < kernel["text_end"]) if fixture_image else kernel["forged_pc"] == 0,
         "Forged site authority",
     )
     return base_images
@@ -126,14 +133,14 @@ def firmware_prefix(prefix, mode):
 
 def validate(status, text, mode, meta):
     marker = "AURORA_FIXTURE_READY\n"
-    need(text.count(marker) == (1 if mode in FIXTURE_MODES else 0), "Exact budget fixture readiness")
-    if mode in FIXTURE_MODES:
+    need(text.count(marker) == (1 if mode in SELECTED else 0), "Exact budget fixture readiness")
+    if mode in SELECTED:
         need(text.index("AURORA_PCI_WINDOW_CLOSED:") < text.index(marker), "Budget selector before firmware completion")
         boundary = [text.index(item) for item in ("AURORA_UEFI_TIMER_", "AURORA_UEFI_RUNTIME_FAIL:") if item in text]
         need(boundary and text.index(marker) < min(boundary), "Budget selector after timer admission")
         text = text.replace(marker, "", 1)
     need(mode in MODES, "Unknown budget mode")
-    base_images = metadata_valid(meta, mode)
+    base_images = metadata_valid(meta, mode, fixture_image=mode in SELECTED)
     need(status == (33 if mode in SUCCESS else 35), "Wrong budget exit")
     lines = text.splitlines()
     start = next(

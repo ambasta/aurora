@@ -8,21 +8,18 @@
 #endif
 #if defined(AURORA_IVRS_FIXTURE) || defined(AURORA_IPC_FIXTURE) || defined(AURORA_BUDGET_FIXTURE) ||                   \
     defined(AURORA_DISPATCH_FIXTURE) || defined(AURORA_USER_FIXTURE) || defined(AURORA_ACPI_FIXTURE) ||                \
-    defined(AURORA_ACPI_DUPLICATE_ROOT) || defined(AURORA_CONSOLE_SERVICE_FIXTURE) ||                                  \
+    defined(AURORA_EARLY_FIXTURE) || defined(AURORA_CONSOLE_SERVICE_FIXTURE) ||                                        \
     defined(AURORA_DORMANT_TABLE_TESTING) || defined(AURORA_KERNEL_BYTES_TESTING) ||                                   \
     defined(AURORA_NVME_QUEUE_GENERATION_LIMIT) || defined(AURORA_NVME_QUEUE_TESTING) ||                               \
     defined(AURORA_PCI_FIXTURE) || defined(AURORA_RUNTIME_CONTROL_FIXTURE) || defined(AURORA_PIN_FIXTURE) ||           \
     defined(AURORA_TABLE_FIXTURE) || defined(AURORA_PROGRAM_FIXTURE) || defined(AURORA_SNAPSHOT_FIXTURE) ||            \
-    defined(AURORA_UEFI_BAD_HANDOFF) || defined(AURORA_UEFI_BAD_MAP) || defined(AURORA_UEFI_BAD_TABLE) ||              \
     defined(AURORA_UEFI_BAR_ADMISSION) || defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_BAR_EDK2) ||         \
-    defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_DISPATCH) || defined(AURORA_UEFI_EXHAUSTED) ||                 \
-    defined(AURORA_UEFI_FRAMEBUFFER) || defined(AURORA_UEFI_FRAMEBUFFER_CAPTURE) ||                                    \
-    defined(AURORA_UEFI_FRAMEBUFFER_FIXTURE) || defined(AURORA_UEFI_FRAMEBUFFER_PROBE) || defined(AURORA_UEFI_IPC) ||  \
-    defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_NVME_PREPARE) || defined(AURORA_UEFI_NX) ||                       \
-    defined(AURORA_UEFI_OWNED_BYTES) || defined(AURORA_UEFI_PCI) || defined(AURORA_UEFI_PINS) ||                       \
-    defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_UEFI_RUNTIME) || defined(AURORA_UEFI_SERVICE_BUDGET) ||     \
-    defined(AURORA_UEFI_STALE) || defined(AURORA_UEFI_TABLES) || defined(AURORA_UEFI_USER_BUDGET) ||                   \
-    defined(AURORA_UEFI_WP)
+    defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_DISPATCH) || defined(AURORA_UEFI_FRAMEBUFFER) ||               \
+    defined(AURORA_UEFI_FRAMEBUFFER_CAPTURE) || defined(AURORA_UEFI_FRAMEBUFFER_FIXTURE) ||                            \
+    defined(AURORA_UEFI_FRAMEBUFFER_PROBE) || defined(AURORA_UEFI_IPC) || defined(AURORA_UEFI_IVRS) ||                 \
+    defined(AURORA_UEFI_NVME_PREPARE) || defined(AURORA_UEFI_OWNED_BYTES) || defined(AURORA_UEFI_PCI) ||               \
+    defined(AURORA_UEFI_PINS) || defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_UEFI_RUNTIME) ||               \
+    defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_TABLES) || defined(AURORA_UEFI_USER_BUDGET)
 #error "Graphical Console rejects legacy profile and fault selectors"
 #endif
 #elif defined(AURORA_UEFI_GRAPHICAL_FIXTURE) || defined(AURORA_UEFI_GRAPHICAL_CAPTURE)

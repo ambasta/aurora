@@ -966,7 +966,7 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
         return false;
     install_architecture();
 #if defined(AURORA_RUNTIME_CONTROL_FIXTURE)
-    select_fixture(Fixture::runtime_root, Fixture::runtime_terminal_output);
+    select_fixture(Fixture::runtime_baseline, Fixture::runtime_terminal_output);
     user::terminal_mutation = fixture == Fixture::runtime_terminal_input    ? 1
                               : fixture == Fixture::runtime_terminal_output ? 2
                                                                             : 0;
@@ -979,11 +979,11 @@ const bool restart_service = fixture == Fixture::runtime_table_quarantine;
 #endif
 #ifdef AURORA_UEFI_SERVICE_BUDGET
 #ifdef AURORA_BUDGET_FIXTURE
-    select_fixture(Fixture::budget_fault, Fixture::budget_context);
+    select_fixture(Fixture::budget_baseline, Fixture::budget_context);
 #elif defined(AURORA_DISPATCH_FIXTURE)
-    select_fixture(Fixture::dispatch_budget, Fixture::dispatch_peer_code);
+    select_fixture(Fixture::dispatch_baseline, Fixture::dispatch_peer_code);
 #elif defined(AURORA_USER_FIXTURE)
-    select_fixture(Fixture::user_retire_pending, Fixture::user_unknown);
+    select_fixture(Fixture::user_phases_baseline, Fixture::user_unknown);
 #elif defined(AURORA_PROGRAM_FIXTURE)
     select_fixture(Fixture::program_request_fault, Fixture::program_unknown);
 #endif
@@ -992,7 +992,7 @@ const bool restart_service = fixture == Fixture::runtime_table_quarantine;
 #ifdef AURORA_OWNED_TEXT
 #ifdef AURORA_CONSOLE_REGION
 #ifdef AURORA_RUNTIME_FIXTURE
-    select_fixture(Fixture::console_fault, Fixture::console_budget);
+    select_fixture(Fixture::console_baseline, Fixture::console_budget);
 #endif
     run_console_application(producer_pool);
 #ifdef AURORA_RUNTIME_FIXTURE

@@ -17,6 +17,9 @@ import subprocess
 import sys
 import time
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from kernel_profiles import fw_cfg_fixture  # noqa: E402
+
 MAX_IO = 1024 * 1024
 
 
@@ -171,6 +174,7 @@ def profile_command(
             ],
         }
         prefix = [arg for device in devices.get(mode, ()) for arg in ("-device", device)]
+        prefix += fw_cfg_fixture(mode)
         need(clock in ("tcg-original-clock", "tcg-fixed0-noalign-nosleep"), "Unknown emulator clock profile")
         if clock == "tcg-fixed0-noalign-nosleep":
             prefix += ["-icount", "shift=0,align=off,sleep=off"]

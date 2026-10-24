@@ -77,8 +77,8 @@ revocation; no orphan-discard or general process lifecycle is claimed.
 - dispatch-peer-code: the third client actually faults reading another client's
   absent user code mapping, at the exact controlled probe site.
 
-Every mode except `dispatch` boots the one `dispatch-fixture` image and picks its
-case from the serial selector. dispatch-peer-code used to have its own image whose
+Every mode boots the one `dispatch-fixture` image and picks its case from the
+serial selector; `dispatch` is the baseline selector, which runs the ordinary flow. dispatch-peer-code used to have its own image whose
 third client always ran the read. The fixture's third client now carries the
 shared selectable probe set (see [service-budget.md](service-budget.md)), and the
 launcher selects the peer-code probe for that client only when the mode asks.

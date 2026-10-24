@@ -1,4 +1,5 @@
 #include "graphical-profile.hpp"
+#include "production-profile.hpp"
 #include "handoff.hpp"
 #include "tables.hpp"
 #include "acpi.hpp"
@@ -133,12 +134,14 @@ auto payload_main(U64 arena, U64 size) -> void {
     Serial::text(" stack=");
     Serial::number(stack);
     Serial::text("\r\n");
-#ifdef AURORA_UEFI_WP
-    *reinterpret_cast<volatile std::uint8_t *>(arena + Handoff::payload_offset) = 0;
-#endif
-#ifdef AURORA_UEFI_NX
-    *reinterpret_cast<volatile std::uint8_t *>(arena + Handoff::pool_offset) = 0xc3;
-    reinterpret_cast<void (*)()>(arena + Handoff::pool_offset)();
+#ifdef AURORA_EARLY_FIXTURE
+    using aurora::uefi::early::Fixture;
+    if (aurora::uefi::early::selected(h.get(Handoff::fixture_offset), Fixture::early_wp))
+        *reinterpret_cast<volatile std::uint8_t *>(arena + Handoff::payload_offset) = 0;
+    if (aurora::uefi::early::selected(h.get(Handoff::fixture_offset), Fixture::early_nx)) {
+        *reinterpret_cast<volatile std::uint8_t *>(arena + Handoff::pool_offset) = 0xc3;
+        reinterpret_cast<void (*)()>(arena + Handoff::pool_offset)();
+    }
 #endif
 #ifdef AURORA_UEFI_FRAMEBUFFER_PROBE
     std::uint32_t graphics_a, graphics_b, graphics_c, graphics_d;

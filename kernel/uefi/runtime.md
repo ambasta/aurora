@@ -117,8 +117,8 @@ and shared exception object relocations; absolute relocations are rejected.
 - `runtime-syscall`, `runtime-sysenter`: alternate inherited entry mechanisms
   cannot transfer user execution to firmware/kernel targets.
 
-All runtime fault modes boot the one `runtime-fixture` image and pick their case
-from the serial selector. The ten user-fault cases used to be separate images,
+All runtime modes except span and multipage boot the one `runtime-fixture` image
+and pick their case from the serial selector; `runtime` is the baseline selector. The ten user-fault cases used to be separate images,
 each with a client built for one probe. The fixture's clean client now carries
 every probe and the trusted launcher passes the selected one in its first entry
 argument (`runtime_probe()`); the bounds client, page tables and every kernel

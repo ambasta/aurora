@@ -7,7 +7,9 @@ in Git/PR history and retained evidence. Historical passes do not replace the
 
 ## Observable gate
 
-An opt-in UEFI `program-console` image accepts `upper`, then `text> Hello, Aurora 42!`,
+The `program-console` mode boots the production UEFI image (`uefi/production`,
+see [fixture consolidation](kernel-fixture-consolidation.md#production-image)), which
+accepts `upper`, then `text> Hello, Aurora 42!`,
 and prints `HELLO, AURORA 42!` once before returning to `aurora>`. The uppercase
 transformation executes in a separately compiled, one-page RX Aurora CPL3 client.
 A separate CPL3 stream service validates and returns its requested output byte.
@@ -353,7 +355,7 @@ same original-clock PTY and hostile transcript oracles:
 
 ```sh
 make program-console-uefi
-make smoke-program-console-uefi
+make smoke-program-console-uefi    # or make smoke-production / meson test --suite guest-production
 ./scripts/kernel-program-console-smoke.sh program-pending
 ```
 

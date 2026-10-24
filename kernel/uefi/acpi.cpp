@@ -152,7 +152,7 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
 #ifdef AURORA_ACPI_FIXTURE
     // Payload admission precedes every firmware window acquisition. Loader-time
     // root rejection deliberately remains a separate, earlier fixture.
-    const auto selected = read_fixture(Fixture::acpi_disabled, Fixture::acpi_revoked);
+    const auto selected = read_fixture(Fixture::acpi_baseline, Fixture::acpi_revoked);
     if (!selected)
         return false;
     const auto fixture = *selected;

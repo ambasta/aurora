@@ -4,7 +4,8 @@ set -euo pipefail
 usage() {
     printf '%s\n' \
         'Usage: scripts/kernel-run.sh [PROFILE] [--console|--smoke]' \
-        'Profiles: bios, uefi, bios-console, uefi-console, program-console, program-*.' \
+        'Profiles: bios, uefi, bios-console, uefi-console, production, program-console, program-*.' \
+        'production boots the one production UEFI image; its console is the protected program console.' \
         '--ram-scratchpad-console selects the bounded RAM scratchpad: put/get/help/status/exit.' \
         'Default: bios --smoke. bios-console/uefi-console default to --console; program-* to --smoke.' \
         'bios/uefi --console selects the ordinary interactive console (300 seconds).' \
@@ -34,13 +35,14 @@ case "$profile" in
     bios|uefi) platform="$profile"; mode=normal; action="${action:---smoke}" ;;
     bios-console|uefi-console) platform="${profile%-console}"; mode=console; action="${action:---console}" ;;
     --ram-scratchpad-console|ram-scratchpad-console) platform=uefi; mode=ram-scratchpad-console; profile=ram-scratchpad-console; scratchpad=true; strict=true; label='RAM scratchpad Console'; action="${action:---console}" ;;
+    production) platform=uefi; mode=program-console; protected=true; strict=true; action="${action:---smoke}" ;;
     program-*) platform=uefi; mode="$profile"; protected=true; strict=true; action="${action:---smoke}" ;;
     graphical-console|iommu-event) platform=uefi; mode="$profile"; action="${action:---smoke}" ;;
     framebuffer) platform=uefi; mode="$profile"; strict=true; label='framebuffer preview'; action="${action:-preview}" ;;
     *) usage >&2; exit 2 ;;
 esac
 case "$action:$profile" in
-    --console:bios|--console:uefi|--console:bios-console|--console:uefi-console|--console:program-*|--console:ram-scratchpad-console|--smoke:*) ;;
+    --console:bios|--console:uefi|--console:bios-console|--console:uefi-console|--console:production|--console:program-*|--console:ram-scratchpad-console|--smoke:*) ;;
     --build-only:iommu-event|--build-only:graphical-console) ;;
     preview:framebuffer) [[ $# == 1 ]] || { usage >&2; exit 2; } ;;
     --full-smoke:framebuffer) action=--smoke ;;
