@@ -2,8 +2,8 @@
 ; RUN: stack-facts
 ; CHECK-JSON: functions.paired.service_abi.record {"parameters":[["builtin::ConsoleSession",16],["builtin::DisplaySession",16],["scalar",8],["scalar",8]],"result_bytes":8}
 ; RUN: emit
-; CHECK-DAG: movq 32(%r11), %rax
-; CHECK-DAG: movq 40(%r11), %rax
+; CHECK-DAG: movq 32(%r11), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq 40(%r11), {{%r[a-z0-9]+}}
 function paired
   result i64
   params [console display u64 u64]

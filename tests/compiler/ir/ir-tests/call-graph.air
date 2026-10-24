@@ -1,19 +1,20 @@
 ; CASE: transitive graph retention preserves order and stable callable IDs
 ; RUN: metadata
-; CHECK-DAG: callable 0 leaf 
-; CHECK-DAG: callable 1 unused 
-; CHECK-DAG: callable 2 bridge 
-; CHECK-DAG: callable 3 root 
-; CHECK-DAG: callable 4 other_root 
-; CHECK-DAG: {{^retained leaf bridge root other_root$}}
-
-; CHECK: body root 3
-; CHECK-NEXT: code root 0 id 7 
+; CHECK: callable [[#LEAF:]] leaf 
+; CHECK: callable [[#LEAF+1]] unused 
+; CHECK: callable [[#LEAF+2]] bridge 
+; CHECK: callable [[#LEAF+3]] root 
+; CHECK: callable [[#LEAF+4]] other_root 
+; CHECK: {{^retained leaf bridge root other_root$}}
+; CHECK: code bridge {{[0-9]+}} id [[#BRIDGE:]] 
+; CHECK: body root [[#LEAF+3]]
+; CHECK-NEXT: code root 0 id [[#ROOT:]] 
 ; CHECK-SAME: {{: Call bridge$}}
-; CHECK-NEXT: code root 1 id 8 
+; CHECK-RANGE: [[#ROOT]] [[#BRIDGE+1]]..
+; CHECK-NEXT: code root 1 id [[#ROOT+1]] 
 ; CHECK-SAME: {{: Call bridge$}}
-; CHECK-NEXT: code root 2 id 9 
-; CHECK-NEXT: body other_root 4
+; CHECK-NEXT: code root 2 id [[#ROOT+2]] 
+; CHECK-NEXT: body other_root [[#LEAF+4]]
 ; RUN: abi-facts
 ; RUN: abi-facts
 ; ABI: function unused ignored_pruned_function ignored_member

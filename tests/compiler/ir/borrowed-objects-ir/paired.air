@@ -592,11 +592,12 @@ end
 ; CASE: paired borrowed roots: stack facts, saved selector and ABI facts
 ; BASE: paired distinct nominal roots
 ; RUN: stack-facts
-; CHECK-JSON: functions.borrow_pair.local_bytes 48
-; CHECK-JSON: functions.borrow_pair.calls.pair_leaf 48
+; CHECK: "borrow_pair":{"local_bytes":[[#LOCAL:]],"calls":{{\{[^}]*}}"pair_leaf":[[#CALL:]]
+; CHECK-RANGE: [[#CALL]] 16..[[#LOCAL]]
+; CHECK-RANGE: [[#CALL%16]] 0..0
 ; RUN: emit
-; CHECK-DAG: movq 8(%r10), %r11\n    movq %r11, -16(%rbp)
-; CHECK-DAG: movq -16(%rbp), %r10
+; CHECK-DAG: movq 8(%r10), [[SELECTOR:%r[a-z0-9]+]]\n    movq [[SELECTOR]], [[#SAVED:]](%rbp)
+; CHECK-DAG: movq [[#SAVED]](%rbp), %r10
 ; RUN: emit
 ; CHECK-NOT: --1(%rbp)
 ; RUN: abi-facts

@@ -232,6 +232,32 @@ def result_check(size, suffix):
     )
 
 
+def hidden_saves(assembly, symbol, frame, registers):
+    """Frame slots where the emitted prologue saves the hidden inputs. They are
+    read from the code, not frozen: the property is that the probed reservation
+    covers the declared frame and the distinct saves lie inside it beyond the frame."""
+    text = assembly.split(symbol + ":\n", 1)[1].split(".size " + symbol + ",", 1)[0]
+    lines = text.splitlines()
+    require(lines[:2] == ["    pushq %rbp", "    movq %rsp, %rbp"], f"{symbol}: frame-pointer preamble")
+    reserved, at = 0, 2
+    while match := re.fullmatch(r"    subq \$(\d+), %rsp", lines[at]):
+        require(lines[at + 1] == "    orq $0, (%rsp)", f"{symbol}: unprobed reservation")
+        reserved, at = reserved + int(match[1]), at + 2
+    saves = {}
+    for line in lines[at : at + len(registers)]:
+        match = re.fullmatch(r"    movq %(\w+), -(\d+)\(%rbp\)", line)
+        require(match and match[1] in registers, f"{symbol}: hidden inputs are saved first")
+        saves[match[1]] = int(match[2])
+    slots = list(saves.values())
+    require(
+        set(saves) == set(registers)
+        and len(set(slots)) == len(slots)
+        and all(frame + 8 <= slot <= reserved for slot in slots),
+        f"{symbol}: hidden saves {saves} outside the {reserved}-byte reservation beyond the {frame}-byte frame",
+    )
+    return saves
+
+
 def native_cases(assembly):
     clobber = (
         ALIGN
@@ -255,26 +281,19 @@ jne .Labi_fail
         + CLOBBER
     )
     nested_probe = check_record("expected_record", 8, "nested") + CLOBBER
-    saved_inputs = """leaq receiver, %rsi
-cmpq %rsi, -104(%rbp)
-jne .Labi_fail
-leaq input_record, %rsi
-cmpq %rsi, -112(%rbp)
-jne .Labi_fail
-"""
-    scalar_frame = """leaq -120(%rbp), %rsi
-cmpq %rsi, %rsp
-jne .Labi_fail
-"""
-    result_frame = """leaq result, %rsi
-cmpq %rsi, -120(%rbp)
-jne .Labi_fail
-leaq -136(%rbp), %rsi
-cmpq %rsi, %rsp
-jne .Labi_fail
-"""
+
+    # The handwritten callee runs on the generated caller's RBP and checks the
+    # caller's own save slots, as read from its prologue, still hold the inputs.
+    def saved_inputs(symbol, registers):
+        saves = hidden_saves(assembly, symbol, 96, registers)
+        code = ""
+        for register, value in (("r10", "receiver"), ("r11", "input_record"), ("rax", "result")):
+            if register in saves:
+                code += f"leaq {value}, %rsi\ncmpq %rsi, -{saves[register]}(%rbp)\njne .Labi_fail\n"
+        return code
+
     replacements = {
-        "abi_clobber": saved_inputs + scalar_frame + clobber,
+        "abi_clobber": saved_inputs("abi_in_scalar", {"r10", "r11"}) + clobber,
         "abi_receiver_probe": receiver_probe,
         "abi_nested_probe": nested_probe,
     }
@@ -292,7 +311,7 @@ jne .Labi_fail
         "incoming-six-mixed-class-nested",
         assembly,
         incoming_setup("abi_in_result") + result_check(24, "new_result"),
-        {**replacements, "abi_clobber": saved_inputs + result_frame + clobber},
+        {**replacements, "abi_clobber": saved_inputs("abi_in_result", {"r10", "r11", "rax"}) + clobber},
         result_bytes=expected,
     )
     # Generated callers keep an unrelated operand pushed. The independently
@@ -513,21 +532,11 @@ if __name__ == "__main__":
     try:
         assembly = run([fixture, "--output", AIR, "abi"]).decode()
         (WORK / "fixture.s").write_text(assembly)
-        # Freeze hidden-slot ownership as well as observable behavior. These
-        # numeric offsets are independently specified from each fixture frame.
-        for symbol, required in {
-            "abi_in_scalar": ["subq $112, %rsp", "movq %r10, -104(%rbp)", "movq %r11, -112(%rbp)"],
-            "abi_in_result": [
-                "subq $128, %rsp",
-                "movq %r10, -104(%rbp)",
-                "movq %r11, -112(%rbp)",
-                "movq %rax, -120(%rbp)",
-            ],
-            "abi_empty": ["subq $48, %rsp", "movq %r10, -24(%rbp)", "movq %r11, -32(%rbp)", "movq %rax, -40(%rbp)"],
-        }.items():
-            body = assembly.split(symbol + ":\n", 1)[1].split(".size " + symbol + ",", 1)[0]
-            for instruction in required:
-                require(instruction in body, f"{symbol}: frozen hidden frame instruction missing: {instruction}")
+        # Hidden receiver (R10), record (R11) and result (RAX) inputs are saved
+        # in private slots inside each probed reservation, beyond the frame.
+        hidden_saves(assembly, "abi_in_scalar", 96, {"r10", "r11"})
+        hidden_saves(assembly, "abi_in_result", 96, {"r10", "r11", "rax"})
+        hidden_saves(assembly, "abi_empty", 16, {"r10", "r11", "rax"})
         native_cases(assembly)
         print(f"PASS method ABI: {COUNT} independent native cases; private symbols checked in every object", flush=True)
     except Exception:

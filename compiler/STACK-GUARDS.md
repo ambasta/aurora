@@ -21,8 +21,10 @@ The mechanism follows the page-step/immediate-touch approach documented by
 `aurora-ir-check --output tests/compiler/ir/stack-probes/abi.air guard-fixtures`
 emits validated direct IR.
 `sector_values_abi.py --stack-guards` selects only the compact guard corpus. It
-checks literal frame/record reservations, immediate real endpoint probes and
-bottom-slot stores before adding global labels at probe instructions. Stripping
+checks that each prologue reserves at least the declared frame in probed page
+steps, that the odd call keeps its live operand and alignment pair, and then adds
+global labels at the real probe instructions; `stack_guards.c` names probes by
+ordinal and its stack tops by the declared frames. Stripping
 those labels must recover the exact emitted text. No instructions are rewritten,
 no missing probes are synthesized, and no unprotected variant is run.
 
@@ -135,11 +137,14 @@ the retained linear emission order, including control-flow joins; the emitter
 checks that operand and outgoing reservations balance at each function's end.
 Facts contain only the actual emitted function/reflection symbol set.
 
-The `tests/compiler/ir/stack-probes/` cases check literal fact expectations
-alongside their assembly assertions (`CHECK-PROBES` checks the page-stepped
-reservation property itself) for page-boundary frames, private ABI modes, even/odd packed
-calls, branches/loops, service records, seventh host arguments, resource runtime
-calls, reflection leaves, pruning and emitter reuse. A malformed unused imported
+The `tests/compiler/ir/stack-probes/` cases check the facts against the emitted
+code rather than literal sizes: `CHECK-PROBES` measures the page-stepped, probed
+reservation, `local_bytes` must equal it plus 16, hidden saves must lie inside it
+beyond the declared frame, and call-site bytes must be 16-byte aligned and cover
+the packed record. Copied-record and service facts, including host-call arity,
+stay exact because bridges and the C++ runtime depend on them. Cases cover
+page-boundary frames, private ABI modes, even/odd packed calls, branches/loops,
+service records, seventh host arguments, resource runtime calls, reflection leaves, pruning and emitter reuse. A malformed unused imported
 body still rejects. The existing diagnostics CLI gate checks JSON shape, ordinary
 assembly equality, option rejection and output protection. These finite checks
 support compiler intent and implementation regression coverage; emitted metadata

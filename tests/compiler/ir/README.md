@@ -60,8 +60,21 @@ expand the same way.
 ; CHECK-JSON-DIFF: A B N / CHECK-JSON-RATIO: A B N   integer members, A - B == N / A == B * N
 ; CHECK-RUN-EQUAL: N [FROM|TO]  output (or its text from FROM up to the next TO)
 ;                             identical to this case's earlier RUN N (from 1)
-; CHECK-PROBES: N             stack reservation of N bytes on the following lines
+; CHECK-PROBES: [ [[#NAME:]] ] N | LO..HI   page-stepped, probed stack reservation on
+;                             the following lines: exactly N bytes, or any total within
+;                             the bounds, optionally defining NAME as the total
+; CHECK-RANGE: VALUE LO..HI   integer bound, normally over [[#EXPR]] values
 ```
+
+Pattern variables follow FileCheck and last for the case's RUN lines:
+`[[NAME:regex]]` and `[[#NAME:]]` (a decimal integer) define a variable from a
+match, `[[NAME]]` matches its text (a backreference inside the defining
+pattern) and `[[#EXPR]]` matches the value of an expression over integers and
+numeric variables with `+ - * %`, unary minus and parentheses. `[[#EXPR]]` is
+also replaced inside `CHECK-JSON*`, `CHECK-RANGE` and `CHECK-PROBES` operands, so
+facts can be compared with the emitted code, for example
+`CHECK-PROBES: [[#RES:]] 4080..` followed by
+`CHECK-JSON: functions.f.local_bytes [[#RES+16]]`.
 
 A case body is either a full module or zero-context unified hunks
 (`@@ -a,b +c,d @@`, as `diff -U0` writes them) against its base; `-` lines must
@@ -72,11 +85,21 @@ and metrics after real ingress, with sentinel inputs (`null` passes none). CHECK
 patterns may contain `\n`, and `{{...}}` spans are regular expressions.
 
 Expectations state the property under test, not the current output: a bound,
-presence or absence, an unordered set, a relation between two facts, equality
-with another run, or a `{{...}}` placeholder for a register or offset that
-legitimate code generation may change. Exact values are for contracts the
-case exists to fix, such as private ABI save slots, native host-call arity,
-copy sequences checked by an independent oracle, or verifier metric rows.
+presence or absence, an unordered set, a relation between two facts or between
+facts and the emitted code, equality with another run, or a placeholder for a
+register, slot or offset that legitimate code generation may change. Exact
+values are kept only where something outside the compiler depends on them:
+the hidden-input registers (R10 receiver or result, R11 record, RAX result) and
+SysV argument registers that handwritten bridges and harnesses use; record
+layouts, copied-record and service-record facts and host-call arity
+(`sysv_arguments`, `result_max`) that kernel bridges and the C++ runtime read,
+preferably checked through `abi-facts`, `stack-facts` or `metadata` output;
+documented verifier limits; and diagnostics. Frame sizes, save slots, scratch
+registers, probe totals, instruction IDs and verifier metrics are checked as
+bounds, orderings or relations (a save slot lies inside the probed reservation
+beyond the declared frame and is the slot read back; `local_bytes` is the probed
+reservation plus 16; call-site bytes are 16-byte aligned and cover the packed
+record).
 
 `aurora-ir-check --output FILE CASE [DEST]` writes a case's first RUN output, for
 the native ABI runners that link emitted assembly against handwritten harnesses.

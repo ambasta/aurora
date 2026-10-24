@@ -641,10 +641,16 @@ end
 ; BASE: mutable receiver reborrow downgrades and returns
 ; RUN: emit
 ; CHECK-DAG: .local construct_pair
-; CHECK-DAG: movq %r10, -24(%rbp)
-; CHECK-DAG: movq -8(%rbp), %r10
-; CHECK-DAG: leaq -16(%rbp), %r10
-; CHECK-DAG: movq %rax, 8(%r10)
+; CHECK-DAG: {{^    movq -[0-9]+\(%rbp\), %r10$}}
+; CHECK-DAG: {{^    leaq -[0-9]+\(%rbp\), %r10$}}
+; RUN: emit
+; CHECK: construct_pair:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: [[#RES:]] 16..
+; CHECK-NEXT:     movq %r10, [[#RECEIVER:]](%rbp)
+; CHECK-RANGE: [[#RECEIVER]] [[#-RES]]..-24
+; CHECK: movq [[#RECEIVER]](%rbp), %r10\n    {{movq %r[a-z0-9]+, 8\(%r10\)}}
 @@ -7 +7 @@
 -  object 16 Pair true
 +  object 16 Pair false

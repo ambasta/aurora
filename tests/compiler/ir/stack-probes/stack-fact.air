@@ -1,7 +1,10 @@
 ; CASE: branch and loop call maxima, reflection edges and pruned imports
 ; RUN: stack-facts
-; CHECK-JSON: functions.branches.local_bytes 32
-; CHECK-JSON: functions.branches.calls {"aurora_reflect_size":16,"leaf":32}
+; CHECK: "branches":{"local_bytes":[[#LOCAL:]],"calls":{"aurora_reflect_size":[[#REFLECT:]],"leaf":[[#LEAF:]]},
+; CHECK-RANGE: [[#REFLECT]] 16..[[#LOCAL]]
+; CHECK-RANGE: [[#LEAF]] [[#REFLECT+8]]..[[#LOCAL]]
+; CHECK-RANGE: [[#REFLECT%16]] 0..0
+; CHECK-RANGE: [[#LEAF%16]] 0..0
 ; CHECK-JSON: functions.unused_import <missing>
 ; CHECK-JSON-NOT: functions.leaf <missing>
 ; CHECK-JSON-COUNT: functions 6
@@ -75,7 +78,7 @@ end
 ; CHECK-JSON-COUNT: functions 3
 ; CHECK-JSON: functions.branches <missing>
 ; CHECK-JSON: functions.probe_scalar.service_abi <missing>
-; CHECK: {"version":2,"functions":{"aurora_reflect_field_count":{"local_bytes":8,"calls":{},"copied_record":null},"aurora_reflect_size":{"local_bytes":8,"calls":{},"copied_record":null},"probe_scalar":{"local_bytes":16,"calls":{},"copied_record":null}}}\n
+; CHECK: {"version":2,"functions":{"aurora_reflect_field_count":{"local_bytes":8,"calls":{},"copied_record":null},"aurora_reflect_size":{"local_bytes":8,"calls":{},"copied_record":null},"probe_scalar":{"local_bytes":{{[0-9]+}},"calls":{},"copied_record":null}}}\n
 function probe_scalar
   result i64
   frame 0

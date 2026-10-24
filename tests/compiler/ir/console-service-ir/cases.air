@@ -1072,8 +1072,9 @@ end
 ; RUN: stack-facts
 ; CHECK-JSON-ONEOF: functions.copied_caller.service_abi.record <missing>|null
 ; CHECK-JSON-ONEOF: functions.copied_helper.service_abi.record <missing>|null
-; CHECK-JSON-RANGE: functions.copied_caller.calls.copied_helper ..
-; CHECK-JSON-DIFF: functions.copied_caller.local_bytes functions.copied_caller.calls.copied_helper 24
+; CHECK: "copied_caller":{"local_bytes":[[#LOCAL:]],"calls":{{\{[^}]*}}"copied_helper":[[#CALL:]]
+; CHECK-RANGE: [[#CALL]] 16..[[#LOCAL]]
+; CHECK-RANGE: [[#CALL%16]] 0..0
 @@ -8 +8 @@
 -  result (class Packet)
 +  result bool
@@ -1106,8 +1107,9 @@ end
 ; RUN: stack-facts
 ; CHECK-JSON-ONEOF: functions.copied_caller.service_abi.record <missing>|null
 ; CHECK-JSON-ONEOF: functions.copied_helper.service_abi.record <missing>|null
-; CHECK-JSON-RANGE: functions.copied_caller.calls.copied_helper ..
-; CHECK-JSON-DIFF: functions.copied_caller.local_bytes functions.copied_caller.calls.copied_helper 24
+; CHECK: "copied_caller":{"local_bytes":[[#LOCAL:]],"calls":{{\{[^}]*}}"copied_helper":[[#CALL:]]
+; CHECK-RANGE: [[#CALL]] 16..[[#LOCAL]]
+; CHECK-RANGE: [[#CALL%16]] 0..0
 @@ -10 +10 @@
 -  result (class Packet)
 +  result bool

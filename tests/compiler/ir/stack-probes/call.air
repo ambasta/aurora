@@ -1,19 +1,28 @@
 ; CASE: packed call facts and outgoing record probes odd=0
-; RUN: stack-facts
-; CHECK-JSON: functions.probe_caller.local_bytes 80
-; CHECK-JSON: functions.probe_caller.calls {"probe_target":80}
-; CHECK-JSON: functions.probe_target.local_bytes 48
 ; RUN: emit
+; CHECK: probe_target:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: [[#TARGET:]] 16..
 ; CHECK: probe_caller:
-; CHECK-NEXT: {{.+}}
-; CHECK-NEXT: {{.+}}
-; CHECK-PROBES: 48
-; CHECK:     subq $16, %rsp
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: [[#RES:]] 32..
+; CHECK:     subq $[[#RECORD:]], %rsp
 ; CHECK-NEXT:     orq $0, (%rsp)
 ; CHECK-NEXT: {{^(?!    subq \$)}}
-; RUN: emit
-; CHECK-DAG:     movq %rsp, %r11\n    leaq -16(%rbp), %r10\n
-; CHECK-DAG:     call probe_target\n    addq $16, %rsp\n
+; CHECK-RANGE: [[#RECORD]] 8..
+; CHECK-RANGE: [[#RECORD%16]] 0..0
+; CHECK-DAG: {{^    (movq %rsp|leaq [0-9]+\(%rsp\)), %r11$}}
+; CHECK-DAG: {{^    leaq -?[0-9]+\(%rbp\), %r10$}}
+; CHECK-NEXT:     call probe_target
+; CHECK-NEXT:     addq $[[#RECORD]], %rsp
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_target.copied_record {"parameter_bytes":[8],"result_bytes":8}
+; CHECK-JSON: functions.probe_target.local_bytes [[#TARGET+16]]
+; CHECK: "probe_caller":{"local_bytes":[[#LOCAL:]],"calls":{"probe_target":[[#CALL:]]}
+; CHECK-RANGE: [[#CALL]] [[#RES+16+RECORD]]..[[#LOCAL]]
+; CHECK-RANGE: [[#CALL%16]] 0..0
 layout Box [i64]
 function probe_target
   result (class Box)
@@ -41,22 +50,33 @@ end
 
 ; CASE: packed call facts and outgoing record probes odd=1
 ; BASE: packed call facts and outgoing record probes odd=0
-; RUN: stack-facts
-; CHECK-JSON: functions.probe_caller.local_bytes 96
-; CHECK-JSON: functions.probe_caller.calls {"probe_target":96}
-; CHECK-JSON: functions.probe_target.local_bytes 48
 ; RUN: emit
+; CHECK: probe_target:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: [[#TARGET:]] 16..
 ; CHECK: probe_caller:
-; CHECK-NEXT: {{.+}}
-; CHECK-NEXT: {{.+}}
-; CHECK-PROBES: 48
-; CHECK:     subq $16, %rsp
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: [[#RES:]] 32..
+; CHECK:     subq $[[#RECORD:]], %rsp
 ; CHECK-NEXT:     orq $0, (%rsp)
 ; CHECK-NEXT: {{^(?!    subq \$)}}
-; RUN: emit
-; CHECK-DAG:     movq %rsp, %r11\n    leaq -16(%rbp), %r10\n
-; CHECK-DAG:     subq $8, %rsp\n    call probe_target\n    addq $8, %rsp\n    addq $16, %rsp\n
-; CHECK-DAG:     addq %rcx, %rax\n    jo .Laurora_overflow_trap\n
+; CHECK-RANGE: [[#RECORD]] 8..
+; CHECK-RANGE: [[#RECORD%16]] 0..0
+; CHECK-DAG: {{^    (movq %rsp|leaq [0-9]+\(%rsp\)), %r11$}}
+; CHECK-DAG: {{^    leaq -?[0-9]+\(%rbp\), %r10$}}
+; CHECK-NEXT:     subq $[[#PAD:]], %rsp
+; CHECK-NEXT:     call probe_target
+; CHECK-NEXT:     addq $[[#PAD]], %rsp
+; CHECK-NEXT:     addq $[[#RECORD]], %rsp
+; CHECK: addq {{%r[a-z0-9]+}}, {{%r[a-z0-9]+}}\n    jo .Laurora_overflow_trap\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_target.copied_record {"parameter_bytes":[8],"result_bytes":8}
+; CHECK-JSON: functions.probe_target.local_bytes [[#TARGET+16]]
+; CHECK: "probe_caller":{"local_bytes":[[#LOCAL:]],"calls":{"probe_target":[[#CALL:]]}
+; CHECK-RANGE: [[#CALL]] [[#RES+16+8+RECORD]]..[[#LOCAL]]
+; CHECK-RANGE: [[#CALL%16]] 0..0
 @@ -20,0 +21,2 @@
 +    Constant 1
 +    Push

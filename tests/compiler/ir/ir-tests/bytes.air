@@ -2804,8 +2804,8 @@ end
 ; CASE: u8 checked width and packed byte storage
 ; BASE: u8 callable operations and packed-storage fixture
 ; RUN: emit
-; CHECK-DAG: xorq $255, %rax
-; CHECK-DAG: cmpq $7, %rax
-; CHECK-DAG: cmpq $255, %rax
-; CHECK-DAG: movb %dil, -8(%rbp)
-; CHECK-DAG: movzbq (%rcx,%rax,1), %rax
+; CHECK-DAG: {{xorq \$255, %r[a-z0-9]+}}
+; CHECK-DAG: {{cmpq \$7, %r[a-z0-9]+}}
+; CHECK-DAG: {{cmpq \$255, %r[a-z0-9]+}}
+; CHECK-DAG: {{movb %dil, -[0-9]+\(%rbp\)}}
+; CHECK-DAG: {{movzbq \(%r[a-z0-9]+,%r[a-z0-9]+,1\), %r[a-z0-9]+}}

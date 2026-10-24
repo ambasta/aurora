@@ -1131,18 +1131,20 @@ end
 
 ; CASE: array zero, scalar mapping, bool stride and checked index emission
 ; RUN: emit
-; CHECK-DAG: movq $0, 8(%r10)
-; CHECK-DAG: movq $0, 16(%r10)
-; CHECK-DAG: movq %rax, 24(%r10)
-; CHECK-DAG: movq $0, 32(%r10)
-; CHECK-DAG: movq $0, 40(%r10)
-; CHECK-DAG: movq $0, 48(%r10)
-; CHECK-DAG: movq $0, 56(%r10)
-; CHECK-DAG: cmpq $2, %rax\n    jae .Laurora_bounds_trap
-; CHECK-DAG: movq 8(%r10,%rax,8), %rax
-; CHECK-DAG: movq %rax, 8(%r10,%rcx,8)
-; CHECK-DAG: movq 32(%r10,%rax,8), %rax
-; CHECK-DAG: movq %rax, 32(%r10,%rcx,8)
+; CHECK-DAG: {{movq (\$0|%r[a-z0-9]+), 8\(%r[a-z0-9]+\)$}}
+; CHECK-DAG: {{movq (\$0|%r[a-z0-9]+), 16\(%r[a-z0-9]+\)$}}
+; CHECK-DAG: {{movq (\$0|%r[a-z0-9]+), 24\(%r[a-z0-9]+\)$}}
+; CHECK-DAG: {{movq (\$0|%r[a-z0-9]+), 32\(%r[a-z0-9]+\)$}}
+; CHECK-DAG: {{movq (\$0|%r[a-z0-9]+), 40\(%r[a-z0-9]+\)$}}
+; CHECK-DAG: {{movq (\$0|%r[a-z0-9]+), 48\(%r[a-z0-9]+\)$}}
+; CHECK-DAG: {{movq (\$0|%r[a-z0-9]+), 56\(%r[a-z0-9]+\)$}}
+; CHECK-DAG: {{cmpq \$2, %r[a-z0-9]+}}\n    jae .Laurora_bounds_trap
+; CHECK-DAG: {{movq 8\(%r[a-z0-9]+,%r[a-z0-9]+,8\), %r[a-z0-9]+}}
+; CHECK-DAG: {{movq %r[a-z0-9]+, 8\(%r[a-z0-9]+,%r[a-z0-9]+,8\)}}
+; CHECK-DAG: {{movq 32\(%r[a-z0-9]+,%r[a-z0-9]+,8\), %r[a-z0-9]+}}
+; CHECK-DAG: {{movq %r[a-z0-9]+, 32\(%r[a-z0-9]+,%r[a-z0-9]+,8\)}}
+; RUN: metadata
+; CHECK: class ArrayBox storage [0 8 16 24 32 40 48 56] [0 8 24 32 48] 64 8 64
 layout ArrayBox [i64*3 bool*3 i64 i64]
 fields ArrayBox [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
 function test
@@ -1466,17 +1468,16 @@ end
 ; CASE: receiver store guard precedes RHS and receiver reload follows call
 ; RUN: emit
 ; CHECK: set_array:
+; CHECK: movq %r10, [[#RECEIVER:]](%rbp)
 ; CHECK-NOT: call array_rhs_method
-; CHECK-NOT: movq %rax, 8(%r10,%rcx,8)
+; CHECK-NOT: {{movq %r[a-z0-9]+, 8\(%r[a-z0-9]+,%r[a-z0-9]+,8\)}}
 ; CHECK: jae .Laurora_bounds_trap
-; CHECK-NOT: movq %rax, 8(%r10,%rcx,8)
+; CHECK-NOT: {{movq %r[a-z0-9]+, 8\(%r[a-z0-9]+,%r[a-z0-9]+,8\)}}
 ; CHECK: call array_rhs_method
-; CHECK: movq %rax, 8(%r10,%rcx,8)
-; RUN: emit
-; CHECK: set_array:
-; CHECK: call array_rhs_method
-; CHECK-NOT: movq %rax, 8(%r10,%rcx,8)
-; CHECK: movq -24(%rbp), %r10
+; CHECK-NOT: {{movq %r[a-z0-9]+, 8\(%r[a-z0-9]+,%r[a-z0-9]+,8\)}}
+; CHECK: movq [[#RECEIVER]](%rbp), [[BASE:%r[a-z0-9]+]]
+; CHECK-NOT: {{movq %r[a-z0-9]+, 8\(%r[a-z0-9]+,%r[a-z0-9]+,8\)}}
+; CHECK: movq {{%r[a-z0-9]+}}, 8([[BASE]],{{%r[a-z0-9]+}},8)
 layout ArrayBox [i64*3 bool*3 i64 i64]
 fields ArrayBox [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
 function test

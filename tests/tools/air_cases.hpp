@@ -14,7 +14,7 @@
 namespace aurora::test::air {
 class Check {
 public:
-    std::string kind; // CHECK, CHECK-NEXT, ..., CHECK-JSON-RANGE, CHECK-RUN-EQUAL
+    std::string kind; // CHECK, CHECK-NEXT, ..., CHECK-JSON-RANGE, CHECK-RUN-EQUAL, CHECK-RANGE
     std::string pattern;
     int line;
 };
@@ -73,6 +73,7 @@ inline bool directive(const std::string &line, std::string &keyword, std::string
                                            "CHECK-RUN-EQUAL",
                                            "CHECK-DAG",
                                            "CHECK-PROBES",
+                                           "CHECK-RANGE",
                                            "CASE",
                                            "BASE",
                                            "ABI"};

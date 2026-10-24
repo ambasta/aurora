@@ -1228,6 +1228,12 @@ end
 ; CASE: constructor receiver and packed argument record use private storage
 ; BASE: composed nominal copies and mixed constructor record
 ; RUN: emit
-; CHECK: construct_outer:\n
-; CHECK-DAG: movq %r10, -56(%rbp)
-; CHECK-DAG: movq %r11, -64(%rbp)
+; CHECK: construct_outer:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: [[#RES:]] 48..
+; CHECK-DAG: movq %r10, [[#RECEIVER:]](%rbp)
+; CHECK-DAG: movq %r11, [[#RECORD:]](%rbp)
+; CHECK-RANGE: [[#RECEIVER]] [[#-RES]]..-56
+; CHECK-RANGE: [[#RECORD]] [[#-RES]]..-56
+; CHECK-RANGE: [[#(RECEIVER-RECORD)*(RECEIVER-RECORD)]] 64..

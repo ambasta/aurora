@@ -561,14 +561,14 @@ end
 ; CASE: u64 CheckedDivide native division guard
 ; BASE: u64 binary 0
 ; RUN: emit
-; CHECK-NOT: divq %r11
+; CHECK-NOT: {{divq %r[a-z0-9]+}}
 ; CHECK: jz .Laurora_division_zero_trap
-; CHECK: divq %r11
+; CHECK: {{divq %r[a-z0-9]+}}
 ; RUN: emit
-; CHECK-DAG: xorq %rdx, %rdx\n    divq %r11
+; CHECK-DAG: xorq %rdx, %rdx\n    {{divq %r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-NOT: idivq
-; CHECK-NOT: cmpq $-1, %r11
+; CHECK-NOT: {{cmpq \$-1, %r[a-z0-9]+}}
 @@ -8 +8 @@
 -    BinaryValue CheckedAdd u64
 +    BinaryValue CheckedDivide u64
@@ -648,14 +648,14 @@ end
 ; CASE: u64 CheckedRemainder native division guard
 ; BASE: u64 binary 0
 ; RUN: emit
-; CHECK-NOT: divq %r11
+; CHECK-NOT: {{divq %r[a-z0-9]+}}
 ; CHECK: jz .Laurora_division_zero_trap
-; CHECK: divq %r11
+; CHECK: {{divq %r[a-z0-9]+}}
 ; RUN: emit
-; CHECK-DAG: xorq %rdx, %rdx\n    divq %r11
+; CHECK-DAG: xorq %rdx, %rdx\n    {{divq %r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-NOT: idivq
-; CHECK-NOT: cmpq $-1, %r11
+; CHECK-NOT: {{cmpq \$-1, %r[a-z0-9]+}}
 @@ -8 +8 @@
 -    BinaryValue CheckedAdd u64
 +    BinaryValue CheckedRemainder u64
@@ -1017,11 +1017,11 @@ end
 ; CASE: u64 ShiftLeft native guard order
 ; BASE: u64 binary 0
 ; RUN: emit
-; CHECK-NOT: shlq %cl, %rax
+; CHECK-NOT: {{shlq %cl, %r[a-z0-9]+}}
 ; CHECK: ja .Laurora_shift_count_trap
-; CHECK: shlq %cl, %rax
+; CHECK: {{shlq %cl, %r[a-z0-9]+}}
 ; RUN: emit
-; CHECK-DAG: cmpq %rdx, %r11\n    jne .Laurora_overflow_trap
+; CHECK-DAG: {{cmpq %r[a-z0-9]+, %r[a-z0-9]+}}\n    jne .Laurora_overflow_trap
 @@ -7,2 +7,2 @@
 -    Constant 1 u64
 -    BinaryValue CheckedAdd u64
@@ -1124,9 +1124,9 @@ end
 ; CASE: u64 ShiftRight native guard order
 ; BASE: u64 binary 0
 ; RUN: emit
-; CHECK-NOT: shrq %cl, %rax
+; CHECK-NOT: {{shrq %cl, %r[a-z0-9]+}}
 ; CHECK: ja .Laurora_shift_count_trap
-; CHECK: shrq %cl, %rax
+; CHECK: {{shrq %cl, %r[a-z0-9]+}}
 @@ -7,2 +7,2 @@
 -    Constant 1 u64
 -    BinaryValue CheckedAdd u64

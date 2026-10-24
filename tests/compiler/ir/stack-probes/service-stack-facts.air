@@ -1,4 +1,18 @@
 ; CASE: service record and seventh pixel argument odd=0
+; RUN: emit
+; CHECK: pixel_caller:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: [[#CALLER:]] 16..
+; CHECK: pixel:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: [[#PIXEL:]] 48..
+; CHECK:     subq $[[#SEVENTH:]], %rsp
+; CHECK-NEXT:     movq {{%r[a-z0-9]+}}, (%rsp)
+; CHECK-NEXT:     call __au_runtime_display_pixel
+; CHECK-NEXT:     addq $[[#SEVENTH]], %rsp
+; CHECK-RANGE: [[#SEVENTH]] 8..16
 ; RUN: stack-facts
 ; CHECK-JSON: functions.pixel.copied_record null
 ; CHECK-JSON: functions.pixel_caller.copied_record null
@@ -7,12 +21,12 @@
 ; CHECK-JSON: functions.pixel_caller.service_abi.calls {}
 ; CHECK-JSON: functions.pixel.service_abi.calls {"__au_runtime_display_pixel":{"sysv_arguments":7,"result_max":1}}
 ; CHECK-JSON: functions.pixel.service_abi {"record":{"parameters":[["builtin::DisplaySession",16]],"result_bytes":8},"calls":{"__au_runtime_display_pixel":{"sysv_arguments":7,"result_max":1}}}
-; CHECK-JSON: functions.pixel.local_bytes 120
-; CHECK-JSON: functions.pixel.calls {"__au_runtime_display_pixel":96}
-; CHECK-JSON: functions.pixel_caller.local_bytes 64
-; CHECK-JSON: functions.pixel_caller.calls {"pixel":64}
-; RUN: emit
-; CHECK-DAG:     subq $16, %rsp\n    movq %r10, (%rsp)\n    call __au_runtime_display_pixel\n
+; CHECK: "pixel":{"local_bytes":[[#LOCAL:]],"calls":{"__au_runtime_display_pixel":[[#HOST:]]},
+; CHECK-RANGE: [[#HOST]] [[#PIXEL+16]]..[[#LOCAL-SEVENTH]]
+; CHECK-RANGE: [[#HOST%16]] 0..0
+; CHECK: "pixel_caller":{"local_bytes":[[#CALLER_LOCAL:]],"calls":{"pixel":[[#CALL:]]},
+; CHECK-RANGE: [[#CALL]] [[#CALLER+16]]..[[#CALLER_LOCAL]]
+; CHECK-RANGE: [[#CALL%16]] 0..0
 enum __au_display_put_result 2
 function pixel_caller
   result i64
@@ -48,6 +62,20 @@ end
 
 ; CASE: service record and seventh pixel argument odd=1
 ; BASE: service record and seventh pixel argument odd=0
+; RUN: emit
+; CHECK: pixel_caller:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: [[#CALLER:]] 16..
+; CHECK: pixel:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: [[#PIXEL:]] 48..
+; CHECK:     subq $[[#SEVENTH:]], %rsp
+; CHECK-NEXT:     movq {{%r[a-z0-9]+}}, (%rsp)
+; CHECK-NEXT:     call __au_runtime_display_pixel
+; CHECK-NEXT:     addq $[[#SEVENTH]], %rsp
+; CHECK-RANGE: [[#SEVENTH]] 8..16
 ; RUN: stack-facts
 ; CHECK-JSON: functions.pixel.copied_record null
 ; CHECK-JSON: functions.pixel_caller.copied_record null
@@ -56,12 +84,12 @@ end
 ; CHECK-JSON: functions.pixel_caller.service_abi.calls {}
 ; CHECK-JSON: functions.pixel.service_abi.calls {"__au_runtime_display_pixel":{"sysv_arguments":7,"result_max":1}}
 ; CHECK-JSON: functions.pixel.service_abi {"record":{"parameters":[["builtin::DisplaySession",16]],"result_bytes":8},"calls":{"__au_runtime_display_pixel":{"sysv_arguments":7,"result_max":1}}}
-; CHECK-JSON: functions.pixel.local_bytes 128
-; CHECK-JSON: functions.pixel.calls {"__au_runtime_display_pixel":96}
-; CHECK-JSON: functions.pixel_caller.local_bytes 64
-; CHECK-JSON: functions.pixel_caller.calls {"pixel":64}
-; RUN: emit
-; CHECK-DAG:     subq $8, %rsp\n    movq %r10, (%rsp)\n    call __au_runtime_display_pixel\n
+; CHECK: "pixel":{"local_bytes":[[#LOCAL:]],"calls":{"__au_runtime_display_pixel":[[#HOST:]]},
+; CHECK-RANGE: [[#HOST]] [[#PIXEL+16]]..[[#LOCAL-SEVENTH]]
+; CHECK-RANGE: [[#HOST%16]] 0..0
+; CHECK: "pixel_caller":{"local_bytes":[[#CALLER_LOCAL:]],"calls":{"pixel":[[#CALL:]]},
+; CHECK-RANGE: [[#CALL]] [[#CALLER+16]]..[[#CALLER_LOCAL]]
+; CHECK-RANGE: [[#CALL%16]] 0..0
 @@ -18,0 +19,2 @@
 +    Constant 42
 +    Push

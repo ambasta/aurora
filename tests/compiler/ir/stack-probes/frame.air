@@ -3,14 +3,14 @@
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 0
+; CHECK-PROBES: [[#RES:]] 0..
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 16
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 function probe_scalar
@@ -26,14 +26,14 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 16
+; CHECK-PROBES: [[#RES:]] 16..
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 32
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -3 +3 @@
@@ -46,14 +46,14 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 4080
+; CHECK-PROBES: [[#RES:]] 4080..
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 4096
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -3 +3 @@
@@ -66,14 +66,14 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 4096
+; CHECK-PROBES: [[#RES:]] 4096..
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 4112
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -3 +3 @@
@@ -86,14 +86,14 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 4112
+; CHECK-PROBES: [[#RES:]] 4112..
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 4128
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -3 +3 @@
@@ -106,14 +106,14 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 8192
+; CHECK-PROBES: [[#RES:]] 8192..
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 8208
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -3 +3 @@
@@ -126,14 +126,14 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 8208
+; CHECK-PROBES: [[#RES:]] 8208..
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 8224
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -3 +3 @@
@@ -146,14 +146,14 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 65520
+; CHECK-PROBES: [[#RES:]] 65520..
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 65536
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -3 +3 @@
@@ -166,14 +166,14 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 65536
+; CHECK-PROBES: [[#RES:]] 65536..
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 65552
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -3 +3 @@
@@ -186,15 +186,17 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 16
-; CHECK-NEXT:     movq %r10, -8(%rbp)
+; CHECK-PROBES: [[#RES:]] 0..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-0-8]]
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 32
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -0,0 +1 @@
@@ -210,15 +212,17 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 32
-; CHECK-NEXT:     movq %r10, -24(%rbp)
+; CHECK-PROBES: [[#RES:]] 16..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-16-8]]
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 48
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -0,0 +1 @@
@@ -236,15 +240,17 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 4096
-; CHECK-NEXT:     movq %r10, -4088(%rbp)
+; CHECK-PROBES: [[#RES:]] 4080..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-4080-8]]
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 4112
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -0,0 +1 @@
@@ -262,15 +268,17 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 4112
-; CHECK-NEXT:     movq %r10, -4104(%rbp)
+; CHECK-PROBES: [[#RES:]] 4096..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-4096-8]]
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 4128
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -0,0 +1 @@
@@ -288,15 +296,17 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 4128
-; CHECK-NEXT:     movq %r10, -4120(%rbp)
+; CHECK-PROBES: [[#RES:]] 4112..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-4112-8]]
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 4144
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -0,0 +1 @@
@@ -314,15 +324,17 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 8208
-; CHECK-NEXT:     movq %r10, -8200(%rbp)
+; CHECK-PROBES: [[#RES:]] 8192..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-8192-8]]
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 8224
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -0,0 +1 @@
@@ -340,15 +352,17 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 8224
-; CHECK-NEXT:     movq %r10, -8216(%rbp)
+; CHECK-PROBES: [[#RES:]] 8208..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-8208-8]]
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 8240
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -0,0 +1 @@
@@ -366,15 +380,17 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 65536
-; CHECK-NEXT:     movq %r10, -65528(%rbp)
+; CHECK-PROBES: [[#RES:]] 65520..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-65520-8]]
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 65552
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -0,0 +1 @@
@@ -392,15 +408,17 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 65552
-; CHECK-NEXT:     movq %r10, -65544(%rbp)
+; CHECK-PROBES: [[#RES:]] 65536..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-65536-8]]
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 65568
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -0,0 +1 @@
@@ -417,16 +435,21 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 32
-; CHECK-NEXT:     movq %r11, -24(%rbp)
-; CHECK-NEXT:     movq %r10, -32(%rbp)
+; CHECK-PROBES: [[#RES:]] 16..
+; CHECK-NEXT:     movq %r11, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-16-8]]
+; CHECK-NEXT:     movq %r10, [[#SAVE1:]](%rbp)
+; CHECK-RANGE: [[#SAVE1]] [[#0-RES]]..[[#0-16-8]]
+; CHECK-RANGE: [[#(SAVE0-SAVE1)*(SAVE0-SAVE1)]] 64..
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#SAVE1]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 48
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record {"parameter_bytes":[8],"result_bytes":8}
 layout Box [i64]
@@ -446,16 +469,21 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 4096
-; CHECK-NEXT:     movq %r11, -4088(%rbp)
-; CHECK-NEXT:     movq %r10, -4096(%rbp)
+; CHECK-PROBES: [[#RES:]] 4080..
+; CHECK-NEXT:     movq %r11, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-4080-8]]
+; CHECK-NEXT:     movq %r10, [[#SAVE1:]](%rbp)
+; CHECK-RANGE: [[#SAVE1]] [[#0-RES]]..[[#0-4080-8]]
+; CHECK-RANGE: [[#(SAVE0-SAVE1)*(SAVE0-SAVE1)]] 64..
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#SAVE1]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 4112
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record {"parameter_bytes":[8],"result_bytes":8}
 @@ -5 +5 @@
@@ -468,16 +496,21 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 4112
-; CHECK-NEXT:     movq %r11, -4104(%rbp)
-; CHECK-NEXT:     movq %r10, -4112(%rbp)
+; CHECK-PROBES: [[#RES:]] 4096..
+; CHECK-NEXT:     movq %r11, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-4096-8]]
+; CHECK-NEXT:     movq %r10, [[#SAVE1:]](%rbp)
+; CHECK-RANGE: [[#SAVE1]] [[#0-RES]]..[[#0-4096-8]]
+; CHECK-RANGE: [[#(SAVE0-SAVE1)*(SAVE0-SAVE1)]] 64..
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#SAVE1]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 4128
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record {"parameter_bytes":[8],"result_bytes":8}
 @@ -5 +5 @@
@@ -490,16 +523,21 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 4128
-; CHECK-NEXT:     movq %r11, -4120(%rbp)
-; CHECK-NEXT:     movq %r10, -4128(%rbp)
+; CHECK-PROBES: [[#RES:]] 4112..
+; CHECK-NEXT:     movq %r11, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-4112-8]]
+; CHECK-NEXT:     movq %r10, [[#SAVE1:]](%rbp)
+; CHECK-RANGE: [[#SAVE1]] [[#0-RES]]..[[#0-4112-8]]
+; CHECK-RANGE: [[#(SAVE0-SAVE1)*(SAVE0-SAVE1)]] 64..
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#SAVE1]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 4144
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record {"parameter_bytes":[8],"result_bytes":8}
 @@ -5 +5 @@
@@ -512,16 +550,21 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 8208
-; CHECK-NEXT:     movq %r11, -8200(%rbp)
-; CHECK-NEXT:     movq %r10, -8208(%rbp)
+; CHECK-PROBES: [[#RES:]] 8192..
+; CHECK-NEXT:     movq %r11, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-8192-8]]
+; CHECK-NEXT:     movq %r10, [[#SAVE1:]](%rbp)
+; CHECK-RANGE: [[#SAVE1]] [[#0-RES]]..[[#0-8192-8]]
+; CHECK-RANGE: [[#(SAVE0-SAVE1)*(SAVE0-SAVE1)]] 64..
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#SAVE1]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 8224
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record {"parameter_bytes":[8],"result_bytes":8}
 @@ -5 +5 @@
@@ -534,16 +577,21 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 8224
-; CHECK-NEXT:     movq %r11, -8216(%rbp)
-; CHECK-NEXT:     movq %r10, -8224(%rbp)
+; CHECK-PROBES: [[#RES:]] 8208..
+; CHECK-NEXT:     movq %r11, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-8208-8]]
+; CHECK-NEXT:     movq %r10, [[#SAVE1:]](%rbp)
+; CHECK-RANGE: [[#SAVE1]] [[#0-RES]]..[[#0-8208-8]]
+; CHECK-RANGE: [[#(SAVE0-SAVE1)*(SAVE0-SAVE1)]] 64..
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#SAVE1]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 8240
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record {"parameter_bytes":[8],"result_bytes":8}
 @@ -5 +5 @@
@@ -556,16 +604,21 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 65536
-; CHECK-NEXT:     movq %r11, -65528(%rbp)
-; CHECK-NEXT:     movq %r10, -65536(%rbp)
+; CHECK-PROBES: [[#RES:]] 65520..
+; CHECK-NEXT:     movq %r11, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-65520-8]]
+; CHECK-NEXT:     movq %r10, [[#SAVE1:]](%rbp)
+; CHECK-RANGE: [[#SAVE1]] [[#0-RES]]..[[#0-65520-8]]
+; CHECK-RANGE: [[#(SAVE0-SAVE1)*(SAVE0-SAVE1)]] 64..
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#SAVE1]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 65552
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record {"parameter_bytes":[8],"result_bytes":8}
 @@ -5 +5 @@
@@ -578,16 +631,21 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 65552
-; CHECK-NEXT:     movq %r11, -65544(%rbp)
-; CHECK-NEXT:     movq %r10, -65552(%rbp)
+; CHECK-PROBES: [[#RES:]] 65536..
+; CHECK-NEXT:     movq %r11, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-65536-8]]
+; CHECK-NEXT:     movq %r10, [[#SAVE1:]](%rbp)
+; CHECK-RANGE: [[#SAVE1]] [[#0-RES]]..[[#0-65536-8]]
+; CHECK-RANGE: [[#(SAVE0-SAVE1)*(SAVE0-SAVE1)]] 64..
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#SAVE1]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 65568
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record {"parameter_bytes":[8],"result_bytes":8}
 @@ -5 +5 @@
@@ -599,16 +657,21 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 32
-; CHECK-NEXT:     movq %r10, -24(%rbp)
-; CHECK-NEXT:     movq %r11, -32(%rbp)
+; CHECK-PROBES: [[#RES:]] 16..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-16-8]]
+; CHECK-NEXT:     movq %r11, [[#SAVE1:]](%rbp)
+; CHECK-RANGE: [[#SAVE1]] [[#0-RES]]..[[#0-16-8]]
+; CHECK-RANGE: [[#(SAVE0-SAVE1)*(SAVE0-SAVE1)]] 64..
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#SAVE1]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 48
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 layout Box [i64]
@@ -632,16 +695,21 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 4096
-; CHECK-NEXT:     movq %r10, -4088(%rbp)
-; CHECK-NEXT:     movq %r11, -4096(%rbp)
+; CHECK-PROBES: [[#RES:]] 4080..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-4080-8]]
+; CHECK-NEXT:     movq %r11, [[#SAVE1:]](%rbp)
+; CHECK-RANGE: [[#SAVE1]] [[#0-RES]]..[[#0-4080-8]]
+; CHECK-RANGE: [[#(SAVE0-SAVE1)*(SAVE0-SAVE1)]] 64..
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#SAVE1]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 4112
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -5 +5 @@
@@ -654,16 +722,21 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 4112
-; CHECK-NEXT:     movq %r10, -4104(%rbp)
-; CHECK-NEXT:     movq %r11, -4112(%rbp)
+; CHECK-PROBES: [[#RES:]] 4096..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-4096-8]]
+; CHECK-NEXT:     movq %r11, [[#SAVE1:]](%rbp)
+; CHECK-RANGE: [[#SAVE1]] [[#0-RES]]..[[#0-4096-8]]
+; CHECK-RANGE: [[#(SAVE0-SAVE1)*(SAVE0-SAVE1)]] 64..
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#SAVE1]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 4128
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -5 +5 @@
@@ -676,16 +749,21 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 4128
-; CHECK-NEXT:     movq %r10, -4120(%rbp)
-; CHECK-NEXT:     movq %r11, -4128(%rbp)
+; CHECK-PROBES: [[#RES:]] 4112..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-4112-8]]
+; CHECK-NEXT:     movq %r11, [[#SAVE1:]](%rbp)
+; CHECK-RANGE: [[#SAVE1]] [[#0-RES]]..[[#0-4112-8]]
+; CHECK-RANGE: [[#(SAVE0-SAVE1)*(SAVE0-SAVE1)]] 64..
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#SAVE1]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 4144
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -5 +5 @@
@@ -698,16 +776,21 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 8208
-; CHECK-NEXT:     movq %r10, -8200(%rbp)
-; CHECK-NEXT:     movq %r11, -8208(%rbp)
+; CHECK-PROBES: [[#RES:]] 8192..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-8192-8]]
+; CHECK-NEXT:     movq %r11, [[#SAVE1:]](%rbp)
+; CHECK-RANGE: [[#SAVE1]] [[#0-RES]]..[[#0-8192-8]]
+; CHECK-RANGE: [[#(SAVE0-SAVE1)*(SAVE0-SAVE1)]] 64..
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#SAVE1]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 8224
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -5 +5 @@
@@ -720,16 +803,21 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 8224
-; CHECK-NEXT:     movq %r10, -8216(%rbp)
-; CHECK-NEXT:     movq %r11, -8224(%rbp)
+; CHECK-PROBES: [[#RES:]] 8208..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-8208-8]]
+; CHECK-NEXT:     movq %r11, [[#SAVE1:]](%rbp)
+; CHECK-RANGE: [[#SAVE1]] [[#0-RES]]..[[#0-8208-8]]
+; CHECK-RANGE: [[#(SAVE0-SAVE1)*(SAVE0-SAVE1)]] 64..
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#SAVE1]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 8240
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -5 +5 @@
@@ -742,16 +830,21 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 65536
-; CHECK-NEXT:     movq %r10, -65528(%rbp)
-; CHECK-NEXT:     movq %r11, -65536(%rbp)
+; CHECK-PROBES: [[#RES:]] 65520..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-65520-8]]
+; CHECK-NEXT:     movq %r11, [[#SAVE1:]](%rbp)
+; CHECK-RANGE: [[#SAVE1]] [[#0-RES]]..[[#0-65520-8]]
+; CHECK-RANGE: [[#(SAVE0-SAVE1)*(SAVE0-SAVE1)]] 64..
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#SAVE1]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 65552
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -5 +5 @@
@@ -764,16 +857,21 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 65552
-; CHECK-NEXT:     movq %r10, -65544(%rbp)
-; CHECK-NEXT:     movq %r11, -65552(%rbp)
+; CHECK-PROBES: [[#RES:]] 65536..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-65536-8]]
+; CHECK-NEXT:     movq %r11, [[#SAVE1:]](%rbp)
+; CHECK-RANGE: [[#SAVE1]] [[#0-RES]]..[[#0-65536-8]]
+; CHECK-RANGE: [[#(SAVE0-SAVE1)*(SAVE0-SAVE1)]] 64..
+; CHECK-DAG: movq [[#SAVE0]](%rbp), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#SAVE1]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 65568
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -5 +5 @@
@@ -786,17 +884,25 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 48
-; CHECK-NEXT:     movq %r10, -24(%rbp)
-; CHECK-NEXT:     movq %r11, -32(%rbp)
-; CHECK-NEXT:     movq %rax, -40(%rbp)
+; CHECK-PROBES: [[#RES:]] 16..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-16-8]]
+; CHECK-NEXT:     movq %r11, [[#SAVE1:]](%rbp)
+; CHECK-RANGE: [[#SAVE1]] [[#0-RES]]..[[#0-16-8]]
+; CHECK-NEXT:     movq %rax, [[#SAVE2:]](%rbp)
+; CHECK-RANGE: [[#SAVE2]] [[#0-RES]]..[[#0-16-8]]
+; CHECK-RANGE: [[#(SAVE0-SAVE1)*(SAVE0-SAVE1)]] 64..
+; CHECK-RANGE: [[#(SAVE0-SAVE2)*(SAVE0-SAVE2)]] 64..
+; CHECK-RANGE: [[#(SAVE1-SAVE2)*(SAVE1-SAVE2)]] 64..
+; CHECK-DAG: movq [[#SAVE1]](%rbp), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#SAVE2]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 64
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -5,0 +6 @@
@@ -808,17 +914,25 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 4112
-; CHECK-NEXT:     movq %r10, -4088(%rbp)
-; CHECK-NEXT:     movq %r11, -4096(%rbp)
-; CHECK-NEXT:     movq %rax, -4104(%rbp)
+; CHECK-PROBES: [[#RES:]] 4080..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-4080-8]]
+; CHECK-NEXT:     movq %r11, [[#SAVE1:]](%rbp)
+; CHECK-RANGE: [[#SAVE1]] [[#0-RES]]..[[#0-4080-8]]
+; CHECK-NEXT:     movq %rax, [[#SAVE2:]](%rbp)
+; CHECK-RANGE: [[#SAVE2]] [[#0-RES]]..[[#0-4080-8]]
+; CHECK-RANGE: [[#(SAVE0-SAVE1)*(SAVE0-SAVE1)]] 64..
+; CHECK-RANGE: [[#(SAVE0-SAVE2)*(SAVE0-SAVE2)]] 64..
+; CHECK-RANGE: [[#(SAVE1-SAVE2)*(SAVE1-SAVE2)]] 64..
+; CHECK-DAG: movq [[#SAVE1]](%rbp), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#SAVE2]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 4128
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -5 +5,2 @@
@@ -832,17 +946,25 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 4128
-; CHECK-NEXT:     movq %r10, -4104(%rbp)
-; CHECK-NEXT:     movq %r11, -4112(%rbp)
-; CHECK-NEXT:     movq %rax, -4120(%rbp)
+; CHECK-PROBES: [[#RES:]] 4096..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-4096-8]]
+; CHECK-NEXT:     movq %r11, [[#SAVE1:]](%rbp)
+; CHECK-RANGE: [[#SAVE1]] [[#0-RES]]..[[#0-4096-8]]
+; CHECK-NEXT:     movq %rax, [[#SAVE2:]](%rbp)
+; CHECK-RANGE: [[#SAVE2]] [[#0-RES]]..[[#0-4096-8]]
+; CHECK-RANGE: [[#(SAVE0-SAVE1)*(SAVE0-SAVE1)]] 64..
+; CHECK-RANGE: [[#(SAVE0-SAVE2)*(SAVE0-SAVE2)]] 64..
+; CHECK-RANGE: [[#(SAVE1-SAVE2)*(SAVE1-SAVE2)]] 64..
+; CHECK-DAG: movq [[#SAVE1]](%rbp), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#SAVE2]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 4144
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -5 +5,2 @@
@@ -856,17 +978,25 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 4144
-; CHECK-NEXT:     movq %r10, -4120(%rbp)
-; CHECK-NEXT:     movq %r11, -4128(%rbp)
-; CHECK-NEXT:     movq %rax, -4136(%rbp)
+; CHECK-PROBES: [[#RES:]] 4112..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-4112-8]]
+; CHECK-NEXT:     movq %r11, [[#SAVE1:]](%rbp)
+; CHECK-RANGE: [[#SAVE1]] [[#0-RES]]..[[#0-4112-8]]
+; CHECK-NEXT:     movq %rax, [[#SAVE2:]](%rbp)
+; CHECK-RANGE: [[#SAVE2]] [[#0-RES]]..[[#0-4112-8]]
+; CHECK-RANGE: [[#(SAVE0-SAVE1)*(SAVE0-SAVE1)]] 64..
+; CHECK-RANGE: [[#(SAVE0-SAVE2)*(SAVE0-SAVE2)]] 64..
+; CHECK-RANGE: [[#(SAVE1-SAVE2)*(SAVE1-SAVE2)]] 64..
+; CHECK-DAG: movq [[#SAVE1]](%rbp), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#SAVE2]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 4160
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -5 +5,2 @@
@@ -880,17 +1010,25 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 8224
-; CHECK-NEXT:     movq %r10, -8200(%rbp)
-; CHECK-NEXT:     movq %r11, -8208(%rbp)
-; CHECK-NEXT:     movq %rax, -8216(%rbp)
+; CHECK-PROBES: [[#RES:]] 8192..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-8192-8]]
+; CHECK-NEXT:     movq %r11, [[#SAVE1:]](%rbp)
+; CHECK-RANGE: [[#SAVE1]] [[#0-RES]]..[[#0-8192-8]]
+; CHECK-NEXT:     movq %rax, [[#SAVE2:]](%rbp)
+; CHECK-RANGE: [[#SAVE2]] [[#0-RES]]..[[#0-8192-8]]
+; CHECK-RANGE: [[#(SAVE0-SAVE1)*(SAVE0-SAVE1)]] 64..
+; CHECK-RANGE: [[#(SAVE0-SAVE2)*(SAVE0-SAVE2)]] 64..
+; CHECK-RANGE: [[#(SAVE1-SAVE2)*(SAVE1-SAVE2)]] 64..
+; CHECK-DAG: movq [[#SAVE1]](%rbp), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#SAVE2]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 8240
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -5 +5,2 @@
@@ -904,17 +1042,25 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 8240
-; CHECK-NEXT:     movq %r10, -8216(%rbp)
-; CHECK-NEXT:     movq %r11, -8224(%rbp)
-; CHECK-NEXT:     movq %rax, -8232(%rbp)
+; CHECK-PROBES: [[#RES:]] 8208..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-8208-8]]
+; CHECK-NEXT:     movq %r11, [[#SAVE1:]](%rbp)
+; CHECK-RANGE: [[#SAVE1]] [[#0-RES]]..[[#0-8208-8]]
+; CHECK-NEXT:     movq %rax, [[#SAVE2:]](%rbp)
+; CHECK-RANGE: [[#SAVE2]] [[#0-RES]]..[[#0-8208-8]]
+; CHECK-RANGE: [[#(SAVE0-SAVE1)*(SAVE0-SAVE1)]] 64..
+; CHECK-RANGE: [[#(SAVE0-SAVE2)*(SAVE0-SAVE2)]] 64..
+; CHECK-RANGE: [[#(SAVE1-SAVE2)*(SAVE1-SAVE2)]] 64..
+; CHECK-DAG: movq [[#SAVE1]](%rbp), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#SAVE2]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 8256
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -5 +5,2 @@
@@ -928,17 +1074,25 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 65552
-; CHECK-NEXT:     movq %r10, -65528(%rbp)
-; CHECK-NEXT:     movq %r11, -65536(%rbp)
-; CHECK-NEXT:     movq %rax, -65544(%rbp)
+; CHECK-PROBES: [[#RES:]] 65520..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-65520-8]]
+; CHECK-NEXT:     movq %r11, [[#SAVE1:]](%rbp)
+; CHECK-RANGE: [[#SAVE1]] [[#0-RES]]..[[#0-65520-8]]
+; CHECK-NEXT:     movq %rax, [[#SAVE2:]](%rbp)
+; CHECK-RANGE: [[#SAVE2]] [[#0-RES]]..[[#0-65520-8]]
+; CHECK-RANGE: [[#(SAVE0-SAVE1)*(SAVE0-SAVE1)]] 64..
+; CHECK-RANGE: [[#(SAVE0-SAVE2)*(SAVE0-SAVE2)]] 64..
+; CHECK-RANGE: [[#(SAVE1-SAVE2)*(SAVE1-SAVE2)]] 64..
+; CHECK-DAG: movq [[#SAVE1]](%rbp), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#SAVE2]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 65568
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -5 +5,2 @@
@@ -952,17 +1106,25 @@ end
 ; CHECK: probe_scalar:
 ; CHECK-NEXT:     pushq %rbp
 ; CHECK-NEXT:     movq %rsp, %rbp
-; CHECK-PROBES: 65568
-; CHECK-NEXT:     movq %r10, -65544(%rbp)
-; CHECK-NEXT:     movq %r11, -65552(%rbp)
-; CHECK-NEXT:     movq %rax, -65560(%rbp)
+; CHECK-PROBES: [[#RES:]] 65536..
+; CHECK-NEXT:     movq %r10, [[#SAVE0:]](%rbp)
+; CHECK-RANGE: [[#SAVE0]] [[#0-RES]]..[[#0-65536-8]]
+; CHECK-NEXT:     movq %r11, [[#SAVE1:]](%rbp)
+; CHECK-RANGE: [[#SAVE1]] [[#0-RES]]..[[#0-65536-8]]
+; CHECK-NEXT:     movq %rax, [[#SAVE2:]](%rbp)
+; CHECK-RANGE: [[#SAVE2]] [[#0-RES]]..[[#0-65536-8]]
+; CHECK-RANGE: [[#(SAVE0-SAVE1)*(SAVE0-SAVE1)]] 64..
+; CHECK-RANGE: [[#(SAVE0-SAVE2)*(SAVE0-SAVE2)]] 64..
+; CHECK-RANGE: [[#(SAVE1-SAVE2)*(SAVE1-SAVE2)]] 64..
+; CHECK-DAG: movq [[#SAVE1]](%rbp), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#SAVE2]](%rbp), {{%r[a-z0-9]+}}
 ; RUN: emit
 ; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
 ; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
 ; RUN: stack-facts
-; CHECK-JSON: functions.probe_scalar.local_bytes 65584
+; CHECK-JSON: functions.probe_scalar.local_bytes [[#RES+16]]
 ; CHECK-JSON: functions.probe_scalar.calls {}
 ; CHECK-JSON: functions.probe_scalar.copied_record null
 @@ -5 +5,2 @@

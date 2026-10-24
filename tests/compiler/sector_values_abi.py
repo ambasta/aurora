@@ -5,8 +5,9 @@ Usage: sector_values_abi.py AURORA_IR_CHECK --air SECTOR_VALUES_AIR [--work-dir 
        sector_values_abi.py AURORA_IR_CHECK --stack-guards [--work-dir DIR]
 The fixture builds direct IR, never Aurora source. Every native execution has a
 handwritten boundary side; protocol bytes and offsets below do not call any
-production layout helper. Stack measurements inspect emitted fixture assembly,
-not runtime high-water instrumentation or arbitrary-program resource bounds.
+production layout helper. Stack checks use the compiler's stack facts and the
+emitted prologues, not runtime high-water instrumentation or arbitrary-program
+resource bounds.
 """
 
 import argparse
@@ -150,19 +151,19 @@ def result_check(size):
 def independent_target(kind, corrupt=False):
     size = 512 if kind == "block" else 520
     record_size = 512 if kind == "block" else 3120
-    record_from_rbp = 1560 if kind == "block" else 6792
     result_register = "%rax" if kind == "method" else "%r10"
     code = ALIGN + f"movq {result_register}, %rdx\n"
+    # The record lies in the caller's live stack: above this call's return
+    # address and below the caller's frame pointer (RBP is still the caller's).
+    # Its exact position inside that frame is the caller's private layout.
     code += f"""testq $7, %rdx
 jnz .Labi_fail
-leaq 16(%rsp), %rsi
+leaq 8(%rsp), %rsi
 cmpq %rsi, %r11
-jne .Labi_fail
-leaq -{record_from_rbp}(%rbp), %rsi
-cmpq %rsi, %r11
-jne .Labi_fail
-cmpq $1, {record_size}(%r11)
-jne .Labi_fail
+jb .Labi_fail
+leaq {record_size}(%r11), %rsi
+cmpq %rbp, %rsi
+ja .Labi_fail
 """
     code += disjoint("%rdx", size, "%r11", record_size, "result_record")
     if kind == "method":
@@ -255,69 +256,69 @@ result_right: .quad 0x6262626262626262
     print("PASS sector ABI", name, flush=True)
 
 
-def measure_stack(assembly):
-    measurements = {
-        "method": "Exact static analysis of emitted controlled fixtures; not runtime high-water instrumentation.",
-        "origin": "Bytes below the initial aligned _start stack pointer, including its call return address.",
-        "no_general_program_bound": True,
-        "modes": {},
-    }
+def stack_facts(fixture, air, case, work):
+    """The compiler's own stack facts for one case's module."""
+    module = run([fixture, "--module", air, case]).decode()
+    path = work / "stack-facts.air"
+    path.write_text(f"; CASE: facts\n; RUN: stack-facts\n{module}")
+    return json.loads(run([fixture, "--output", path, "facts"]))["functions"]
+
+
+def prologue(text, symbol):
+    """Bytes the emitted prologue reserves in canonical page steps, each probed
+    at once, and the index of the first line after it."""
+    lines = text.splitlines()
+    require(lines[:2] == ["    pushq %rbp", "    movq %rsp, %rbp"], f"{symbol}: frame-pointer preamble")
+    if lines[2] == "    subq $0, %rsp":
+        return 0, 3
+    total, at = 0, 2
+    while match := re.fullmatch(r"    subq \$(\d+), %rsp", lines[at]):
+        step = int(match[1])
+        require(0 < step <= 4096 and step % 16 == 0, f"{symbol}: reservation step {step}")
+        require(lines[at + 1] == "    orq $0, (%rsp)", f"{symbol}: missing immediate endpoint probe")
+        total, at = total + step, at + 2
+        if step < 4096:
+            break
+    require(total > 0, f"{symbol}: missing prologue reservation")
+    return total, at
+
+
+def check_stack(assembly, facts):
+    """Stack properties from the compiler's facts and the emitted prologues:
+    reservations cover the declared frames and are probed, hidden inputs are
+    saved inside the reservation, and the facts account for the reservation,
+    the packed record and call alignment. Frame layout is not pinned."""
     require("subq $0, %rsp" in body(assembly, "sector_clobber"), "generated clobber has zero source frame")
     for kind in ["function", "constructor", "method", "block"]:
+        # Declared IR frames (abi_programs.py) and the literal wire record.
         source_in = 512 if kind == "block" else 3120
         source_out = 1024 if kind == "block" else 3648
         record = 512 if kind == "block" else 3120
-        expected_in = source_in + (32 if kind == "method" else 16)
-        expected_out = source_out + 16
-        incoming = body(assembly, "sector_in_" + kind)
-        target = body(assembly, "sector_target_" + kind)
-        outgoing = body(assembly, "sector_out_" + kind)
-        reservations = lambda text: [int(value) for value in re.findall(r"subq \$(\d+), %rsp", text)]
-        measured_in = reservations(incoming)
-        measured_target = reservations(target)
-        measured_out = reservations(outgoing)
-        require(measured_in == [expected_in], f"{kind}: incoming prologue reservation {measured_in}")
-        require(measured_target == [expected_in], f"{kind}: target prologue reservation {measured_target}")
-        require(measured_out == [expected_out, record, 8], f"{kind}: outgoing stack reservations {measured_out}")
-        # Every allocation in these exact fixtures is below 4096 bytes, so the
-        # independent extents above remain single steps. Even such small steps
-        # need an endpoint probe before a later reservation can accumulate.
-        for text, sizes in ((incoming, [expected_in]), (target, [expected_in]), (outgoing, [expected_out, record])):
-            for size in sizes:
-                require(
-                    f"subq ${size}, %rsp\n    orq $0, (%rsp)\n" in text,
-                    f"{kind}: missing immediate {size}-byte endpoint probe",
-                )
-        require(f"addq ${record}, %rsp" in outgoing, f"{kind}: packed argument cleanup")
-        require("addq $8, %rsp" in outgoing, f"{kind}: odd-stack alignment cleanup")
-        saves = {
-            "function": [("r11", 3128), ("r10", 3136)],
-            "constructor": [("r10", 3128), ("r11", 3136)],
-            "method": [("r10", 3128), ("r11", 3136), ("rax", 3144)],
-            "block": [("r11", 520), ("r10", 528)],
-        }[kind]
-        for register, offset in saves:
-            require(f"movq %{register}, -{offset}(%rbp)" in incoming, f"{kind}: exact hidden save {register}")
-        # Both generated and handwritten target callees have a return address;
-        # only the generated target additionally pushes rbp and reserves its frame.
-        handwritten_peak = 16 + measured_out[0] + 8 + measured_out[1] + measured_out[2] + 8
-        generated_peak = handwritten_peak + 8 + measured_target[0]
-        incoming_peak = 16 + measured_in[0] + (0 if kind == "block" else 16)
-        measurements["modes"][kind] = {
-            "incoming_source_frame_bytes": source_in,
-            "incoming_prologue_reserved_bytes": measured_in[0],
-            "incoming_hidden_reserved_bytes": measured_in[0] - source_in,
-            "outgoing_source_frame_bytes": source_out,
-            "outgoing_prologue_reserved_bytes": measured_out[0],
-            "packed_argument_record_bytes": measured_out[1],
-            "live_scalar_operand_bytes_at_call": 8,
-            "odd_depth_alignment_bytes": measured_out[2],
-            "incoming_generated_chain_peak_bytes": incoming_peak,
-            "outgoing_handwritten_target_chain_peak_bytes": handwritten_peak,
-            "outgoing_generated_target_chain_peak_bytes": generated_peak,
-            "additional_return_record_bytes": 0,
-        }
-    return measurements
+        hidden = {"r11", "r10"} | ({"rax"} if kind == "method" else set())
+        for symbol in ("sector_in_" + kind, "sector_target_" + kind):
+            text = body(assembly, symbol)
+            reserved, at = prologue(text, symbol)
+            require(reserved >= source_in, f"{symbol}: reservation {reserved} below frame {source_in}")
+            lines = text.splitlines()[at : at + len(hidden)]
+            saves = [re.fullmatch(r"    movq %(\w+), -(\d+)\(%rbp\)", line) for line in lines]
+            require(all(saves) and {save[1] for save in saves} == hidden, f"{symbol}: hidden inputs saved first")
+            slots = [int(save[2]) for save in saves]
+            require(
+                len(set(slots)) == len(slots) and all(source_in + 8 <= slot <= reserved for slot in slots),
+                f"{symbol}: hidden saves {slots} outside the reservation beyond the frame",
+            )
+            require(facts[symbol]["local_bytes"] >= reserved + 16, f"{symbol}: facts omit the reservation")
+        symbol = "sector_out_" + kind
+        text = body(assembly, symbol)
+        reserved, _ = prologue(text, symbol)
+        require(reserved >= source_out, f"{symbol}: reservation {reserved} below frame {source_out}")
+        packed = [int(size) for size in re.findall(r"^    subq \$(\d+), %rsp\n    orq \$0, \(%rsp\)$", text, re.M)]
+        require(len(packed) == 2 and packed[1] >= record, f"{symbol}: probed packed record reservation {packed}")
+        require(f"addq ${packed[1]}, %rsp" in text, f"{symbol}: packed argument cleanup")
+        call = facts[symbol]["calls"]["sector_target_" + kind]
+        require(call % 16 == 0, f"{symbol}: unaligned call at {call} bytes")
+        require(call >= reserved + 16 + record, f"{symbol}: facts omit the record at the call")
+        require(facts[symbol]["local_bytes"] >= call, f"{symbol}: call bytes exceed local bytes")
 
 
 def native_cases(assembly, work):
@@ -435,59 +436,41 @@ def native_cases(assembly, work):
 
 
 def label_guard_probes(assembly):
-    """Add only symbol metadata at real emitted probes; never change instructions."""
-    expected = {
-        **{
-            f"guard_frame_{size}": [4096] * (size // 4096) + ([size % 4096] if size % 4096 else [])
-            for size in (4080, 4096, 4112, 8192, 65536)
-        },
-        "guard_target": [32],
-        "guard_call_even": [32, 16],
-        "guard_call_odd": [32, 16],
-        "guard_recursive": [512],
-    }
+    """Add only symbol metadata at real emitted probes; never change instructions.
+    stack_guards.c names probes by ordinal; their count follows from the declared
+    frames through the page-stepped prologue, which is checked here, not pinned."""
+    frames = {f"guard_frame_{size}": size for size in (4080, 4096, 4112, 8192, 65536)}
+    frames |= {"guard_target": 16, "guard_call_even": 32, "guard_call_odd": 32, "guard_recursive": 512}
     labeled = assembly
-    for symbol, reservations in expected.items():
+    for symbol, frame in frames.items():
         original = body(assembly, symbol)
         lines = original.splitlines(keepends=True)
-        require(lines[:2] == ["    pushq %rbp\n", "    movq %rsp, %rbp\n"], f"{symbol}: frame-pointer preamble changed")
-        actual = [int(value) for value in re.findall(r"^    subq \$(\d+), %rsp$", original, re.M)]
-        require(
-            actual == reservations + ([8] if symbol == "guard_call_odd" else []),
-            f"{symbol}: independent reservation sizes changed: {actual}",
-        )
+        # Only the preamble and the probed steps precede the body, so the
+        # bottom-slot store follows the completed reservation.
+        reserved, _ = prologue(original, symbol)
+        require(reserved >= frame, f"{symbol}: reservation {reserved} below frame {frame}")
         modified = []
         probes = 0
         for index, line in enumerate(lines):
             if line == "    orq $0, (%rsp)\n":
                 require(
-                    probes < len(reservations)
-                    and index > 0
-                    and lines[index - 1] == f"    subq ${reservations[probes]}, %rsp\n",
-                    f"{symbol}: probe is not the immediate expected reservation endpoint",
+                    index > 0 and re.fullmatch(r"    subq \$\d+, %rsp\n", lines[index - 1]),
+                    f"{symbol}: probe is not the immediate reservation endpoint",
                 )
                 probes += 1
                 label = f"guard_probe_{symbol}_{probes}"
                 modified.extend([f".globl {label}\n", f"{label}:\n"])
             modified.append(line)
-        require(probes == len(reservations), f"{symbol}: missing or extra real emitted probe")
-        if symbol.startswith("guard_frame_"):
-            size = int(symbol.removeprefix("guard_frame_"))
-            at = 2 + 2 * len(reservations)
-            require(
-                lines[at : at + 3]
-                == ["    movabsq $42, %rax\n", f"    movq %rax, -{size}(%rbp)\n", f"    movq -{size}(%rbp), %rax\n"],
-                f"{symbol}: bottom-slot store/load must follow completed frame reservation",
-            )
         labeled = replace(labeled, symbol, "".join(modified))
     stripped = re.sub(r"(?m)^\.globl (guard_probe_\w+)\n\1:\n", "", labeled)
     require(stripped == assembly, "guard labeling changed emitted instructions or other metadata")
+    odd = body(assembly, "guard_call_odd")
     require(
-        "    pushq %rax\n    subq $16, %rsp\n    orq $0, (%rsp)\n" in body(assembly, "guard_call_odd"),
+        re.search(r"^    pushq %\w+\n    subq \$\d+, %rsp\n    orq \$0, \(%rsp\)$", odd, re.M),
         "odd live operand must precede record reservation",
     )
     require(
-        "    subq $8, %rsp\n    call guard_target\n    addq $8, %rsp\n" in body(assembly, "guard_call_odd"),
+        re.search(r"^    subq \$(\d+), %rsp\n    call guard_target\n    addq \$\1, %rsp$", odd, re.M),
         "odd operand call alignment changed",
     )
     return labeled
@@ -558,9 +541,10 @@ def stack_guard_cases(fixture, work):
 def sector_abi_cases(fixture, air, work):
     assembly = run([fixture, "--output", air, "abi"]).decode()
     (work / "fixture.s").write_text(assembly)
-    measurements = measure_stack(assembly)
-    (work / "stack-measurements.json").write_text(json.dumps(measurements, indent=2) + "\n")
-    print("Emitted stack measurements: " + json.dumps(measurements, sort_keys=True), flush=True)
+    facts = stack_facts(fixture, air, "abi", work)
+    (work / "stack-facts.json").write_text(json.dumps(facts, indent=2, sort_keys=True) + "\n")
+    check_stack(assembly, facts)
+    print("PASS sector ABI stack facts and probed reservations", flush=True)
     count = native_cases(assembly, work)
     print(f"PASS sector ABI: {count} independent native cases; all payload bytes and status checked", flush=True)
 

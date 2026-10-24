@@ -37,12 +37,12 @@ end
 ; CASE: division guard ordering
 ; BASE: typed checked division
 ; RUN: emit
-; CHECK-NOT: cmpq $-1, %r11
-; CHECK-NOT: idivq %r11
+; CHECK-NOT: {{cmpq \$-1, %r[a-z0-9]+}}
+; CHECK-NOT: {{idivq %r[a-z0-9]+}}
 ; CHECK: jz .Laurora_division_zero_trap
-; CHECK-NOT: idivq %r11
-; CHECK: cmpq $-1, %r11
-; CHECK: idivq %r11
+; CHECK-NOT: {{idivq %r[a-z0-9]+}}
+; CHECK: cmpq $-1, [[DIVISOR:%r[a-z0-9]+]]
+; CHECK: idivq [[DIVISOR]]
 
 ; CASE: typed checked remainder
 ; BASE: typed checked division
@@ -85,12 +85,12 @@ end
 ; CASE: remainder guard ordering
 ; BASE: typed checked division
 ; RUN: emit
-; CHECK-NOT: cmpq $-1, %r11
-; CHECK-NOT: idivq %r11
+; CHECK-NOT: {{cmpq \$-1, %r[a-z0-9]+}}
+; CHECK-NOT: {{idivq %r[a-z0-9]+}}
 ; CHECK: jz .Laurora_division_zero_trap
-; CHECK-NOT: idivq %r11
-; CHECK: cmpq $-1, %r11
-; CHECK: idivq %r11
+; CHECK-NOT: {{idivq %r[a-z0-9]+}}
+; CHECK: cmpq $-1, [[DIVISOR:%r[a-z0-9]+]]
+; CHECK: idivq [[DIVISOR]]
 @@ -8 +8 @@
 -    BinaryValue CheckedDivide
 +    BinaryValue CheckedRemainder

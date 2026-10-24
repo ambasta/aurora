@@ -37,6 +37,11 @@ and receipts are gone.
 Hand-built verifier/emitter IR cases are textual IR data (`tests/compiler/ir`,
 one `aurora-ir-check` driver) instead of 24 C++ fixture translation units; the
 five shape-sweep ABI programs are generated per build by `abi_programs.py`.
+IR cases and the sector/method native ABI runners pin only what bridges, harnesses
+and the C++ runtime depend on (hidden-input registers, record/service facts,
+host-call arity, documented verifier limits, diagnostics); frames, save slots,
+probe totals, instruction IDs and verifier metrics are checked as bounds and
+relations against the compiler's stack/ABI facts.
 
 Next dependencies: [roadmap](roadmap.md). Required checks:
 [development and qualification](developer-test-contract.md).

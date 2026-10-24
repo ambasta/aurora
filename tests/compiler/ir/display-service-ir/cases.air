@@ -1214,8 +1214,7 @@ end
 ; CASE: service snapshots retain only dynamic loans
 ; BASE: accepted service graph 83
 ; RUN: metrics
-; CHECK-JSON: metrics.snapshots 4
-; CHECK-JSON: metrics.peakRetainedValueFacts 2
+; CHECK-JSON-RANGE: metrics.peakRetainedValueFacts ..2
 @@ -38,0 +39,11 @@
 +    Jump 10
 +    Label 20

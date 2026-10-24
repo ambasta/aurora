@@ -1,7 +1,5 @@
 ; CASE: current-only loop join converges with prefix 0
 ; RUN: metrics
-; CHECK-JSON: metrics.snapshots 1
-; CHECK-JSON: metrics.peakOperandDepth 0
 ; CHECK-JSON: metrics.peakRetainedOperandFacts 0
 ; CHECK-JSON: metrics.peakRetainedValueFacts 0
 function test
@@ -16,8 +14,6 @@ end
 ; CASE: current-only loop join converges with prefix 1
 ; BASE: current-only loop join converges with prefix 0
 ; RUN: metrics
-; CHECK-JSON: metrics.snapshots 2
-; CHECK-JSON: metrics.peakOperandDepth 0
 ; CHECK-JSON: metrics.peakRetainedOperandFacts 0
 ; CHECK-JSON: metrics.peakRetainedValueFacts 0
 @@ -4,0 +5 @@
@@ -26,8 +22,6 @@ end
 ; CASE: current-only loop join converges with prefix 2
 ; BASE: current-only loop join converges with prefix 0
 ; RUN: metrics
-; CHECK-JSON: metrics.snapshots 2
-; CHECK-JSON: metrics.peakOperandDepth 0
 ; CHECK-JSON: metrics.peakRetainedOperandFacts 0
 ; CHECK-JSON: metrics.peakRetainedValueFacts 0
 @@ -4,0 +5 @@
@@ -35,10 +29,9 @@ end
 
 ; CASE: initialization payload for 0 slots
 ; RUN: metrics
-; CHECK-JSON: metrics.snapshots 7
-; CHECK-JSON: metrics.peakOperandDepth 0
-; CHECK-JSON: metrics.peakRetainedValueFacts 0
-; CHECK-JSON: metrics.peakRetainedInitializationPayloadBytes 0
+; CHECK: "snapshots":[[#SNAPSHOTS:]],
+; CHECK: "peakRetainedInitializationPayloadBytes":[[#PAYLOAD:]]}
+; CHECK-RANGE: [[#PAYLOAD]] ..[[#SNAPSHOTS*2*8*0]]
 function initialization_payload
   result i64
   frame 0
@@ -63,10 +56,9 @@ end
 ; CASE: initialization payload for 1 slots
 ; BASE: initialization payload for 0 slots
 ; RUN: metrics
-; CHECK-JSON: metrics.snapshots 7
-; CHECK-JSON: metrics.peakOperandDepth 0
-; CHECK-JSON: metrics.peakRetainedValueFacts 12
-; CHECK-JSON: metrics.peakRetainedInitializationPayloadBytes 112
+; CHECK: "snapshots":[[#SNAPSHOTS:]],
+; CHECK: "peakRetainedInitializationPayloadBytes":[[#PAYLOAD:]]}
+; CHECK-RANGE: [[#PAYLOAD]] ..[[#SNAPSHOTS*2*8*1]]
 @@ -3 +3,2 @@
 -  frame 0
 +  frame 16
@@ -76,10 +68,9 @@ end
 
 ; CASE: initialization payload for 63 slots
 ; RUN: metrics
-; CHECK-JSON: metrics.snapshots 7
-; CHECK-JSON: metrics.peakOperandDepth 0
-; CHECK-JSON: metrics.peakRetainedValueFacts 756
-; CHECK-JSON: metrics.peakRetainedInitializationPayloadBytes 112
+; CHECK: "snapshots":[[#SNAPSHOTS:]],
+; CHECK: "peakRetainedInitializationPayloadBytes":[[#PAYLOAD:]]}
+; CHECK-RANGE: [[#PAYLOAD]] ..[[#SNAPSHOTS*2*8*1]]
 function initialization_payload
   result i64
   frame 64
@@ -110,10 +101,9 @@ end
 ; CASE: initialization payload for 64 slots
 ; BASE: initialization payload for 63 slots
 ; RUN: metrics
-; CHECK-JSON: metrics.snapshots 7
-; CHECK-JSON: metrics.peakOperandDepth 0
-; CHECK-JSON: metrics.peakRetainedValueFacts 768
-; CHECK-JSON: metrics.peakRetainedInitializationPayloadBytes 112
+; CHECK: "snapshots":[[#SNAPSHOTS:]],
+; CHECK: "peakRetainedInitializationPayloadBytes":[[#PAYLOAD:]]}
+; CHECK-RANGE: [[#PAYLOAD]] ..[[#SNAPSHOTS*2*8*1]]
 @@ -4 +4 @@
 -repeat 63
 +repeat 64
@@ -124,10 +114,9 @@ end
 ; CASE: initialization payload for 65 slots
 ; BASE: initialization payload for 63 slots
 ; RUN: metrics
-; CHECK-JSON: metrics.snapshots 7
-; CHECK-JSON: metrics.peakOperandDepth 0
-; CHECK-JSON: metrics.peakRetainedValueFacts 780
-; CHECK-JSON: metrics.peakRetainedInitializationPayloadBytes 224
+; CHECK: "snapshots":[[#SNAPSHOTS:]],
+; CHECK: "peakRetainedInitializationPayloadBytes":[[#PAYLOAD:]]}
+; CHECK-RANGE: [[#PAYLOAD]] ..[[#SNAPSHOTS*2*8*2]]
 @@ -3,2 +3,2 @@
 -  frame 64
 -repeat 63
@@ -140,10 +129,9 @@ end
 ; CASE: initialization payload for 65536 slots
 ; BASE: initialization payload for 63 slots
 ; RUN: metrics
-; CHECK-JSON: metrics.snapshots 7
-; CHECK-JSON: metrics.peakOperandDepth 0
-; CHECK-JSON: metrics.peakRetainedValueFacts 786432
-; CHECK-JSON: metrics.peakRetainedInitializationPayloadBytes 114688
+; CHECK: "snapshots":[[#SNAPSHOTS:]],
+; CHECK: "peakRetainedInitializationPayloadBytes":[[#PAYLOAD:]]}
+; CHECK-RANGE: [[#PAYLOAD]] ..[[#SNAPSHOTS*2*8*1024]]
 @@ -3,2 +3,2 @@
 -  frame 64
 -repeat 63

@@ -150,11 +150,12 @@ end
 ; BASE: sparse maximum label identity
 ; RUN: metadata
 ; CHECK: body direct 0
-; CHECK-NEXT: code direct 0 id 1 target 1 
+; CHECK-NEXT: code direct 0 id [[#FIRST:]] target 1 
 ; CHECK-NOT: falls
-; CHECK-NEXT: code direct 1 id 4 
+; CHECK-NEXT: code direct 1 id [[#ENTRY:]] 
 ; CHECK-SAME: falls entry
-; CHECK-NEXT: code direct 2 id 5 target 1 
+; CHECK-RANGE: [[#ENTRY]] [[#FIRST+2]]..
+; CHECK-NEXT: code direct 2 id [[#ENTRY+1]] target 1 
 ; CHECK-NOT: falls
 ; CHECK-NOT: code direct 3 
 @@ -4,0 +5,2 @@

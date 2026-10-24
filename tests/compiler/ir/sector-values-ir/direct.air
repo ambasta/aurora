@@ -1,19 +1,11 @@
 ; CASE: exact scalar/compact byte copy length=0
-; RUN: emit
-; CHECK: entry:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_69:\n
-; RUN: emit
-; CHECK: .Lau0_70:
-; CHECK-NEXT: .Lau0_71:
-; RUN: emit
-; CHECK: .Lau0_72:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_73:\n
-; RUN: emit
-; CHECK: .Lau0_73:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lreturn0:\n
+; RUN: abi-facts
+; ABI: function entry entry
+; ABI: function target target
+; CHECK-JSON: functions.entry.parameters [{"offset":0,"bytes":8,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.entry.result {"bytes":8,"kind":"class","type_name":"Value"}
+; CHECK-JSON: functions.target.parameters [{"offset":0,"bytes":8,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.target.result {"bytes":8,"kind":"class","type_name":"Value"}
 layout Value []
 fields Value []
 function entry
@@ -46,35 +38,13 @@ end
 
 ; CASE: exact scalar/compact byte copy length=1
 ; BASE: exact scalar/compact byte copy length=0
-; RUN: emit
-; CHECK: entry:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 0(%r11), %rax
-; CHECK-NEXT:     movb %al, -8(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_69:\n
-; RUN: emit
-; CHECK: .Lau0_70:
-; CHECK-NEXT:     movzbq -8(%rbp), %rax
-; CHECK-NEXT:     movb %al, -16(%rbp)
-; CHECK-NEXT: .Lau0_71:
-; RUN: emit
-; CHECK: .Lau0_72:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -16(%rbp), %rax
-; CHECK-NEXT:     movb %al, 0(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_73:\n
-; RUN: emit
-; CHECK: .Lau0_73:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -24(%rbp), %rax
-; CHECK-NEXT:     movb %al, 0(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lreturn0:\n
+; RUN: abi-facts
+; ABI: function entry entry
+; ABI: function target target
+; CHECK-JSON: functions.entry.parameters [{"offset":0,"bytes":8,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.entry.result {"bytes":8,"kind":"class","type_name":"Value"}
+; CHECK-JSON: functions.target.parameters [{"offset":0,"bytes":8,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.target.result {"bytes":8,"kind":"class","type_name":"Value"}
 @@ -1,2 +1,2 @@
 -layout Value []
 -fields Value []
@@ -88,119 +58,13 @@ end
 +  slot 8 u8
 
 ; CASE: exact scalar/compact byte copy length=7
-; RUN: emit
-; CHECK: entry:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 0(%r11), %rax
-; CHECK-NEXT:     movb %al, -8(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 1(%r11), %rax
-; CHECK-NEXT:     movb %al, -7(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 2(%r11), %rax
-; CHECK-NEXT:     movb %al, -6(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 3(%r11), %rax
-; CHECK-NEXT:     movb %al, -5(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 4(%r11), %rax
-; CHECK-NEXT:     movb %al, -4(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 5(%r11), %rax
-; CHECK-NEXT:     movb %al, -3(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 6(%r11), %rax
-; CHECK-NEXT:     movb %al, -2(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_69:\n
-; RUN: emit
-; CHECK: .Lau0_70:
-; CHECK-NEXT:     movzbq -8(%rbp), %rax
-; CHECK-NEXT:     movb %al, -16(%rbp)
-; CHECK-NEXT:     movzbq -7(%rbp), %rax
-; CHECK-NEXT:     movb %al, -15(%rbp)
-; CHECK-NEXT:     movzbq -6(%rbp), %rax
-; CHECK-NEXT:     movb %al, -14(%rbp)
-; CHECK-NEXT:     movzbq -5(%rbp), %rax
-; CHECK-NEXT:     movb %al, -13(%rbp)
-; CHECK-NEXT:     movzbq -4(%rbp), %rax
-; CHECK-NEXT:     movb %al, -12(%rbp)
-; CHECK-NEXT:     movzbq -3(%rbp), %rax
-; CHECK-NEXT:     movb %al, -11(%rbp)
-; CHECK-NEXT:     movzbq -2(%rbp), %rax
-; CHECK-NEXT:     movb %al, -10(%rbp)
-; CHECK-NEXT: .Lau0_71:
-; RUN: emit
-; CHECK: .Lau0_72:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -16(%rbp), %rax
-; CHECK-NEXT:     movb %al, 0(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -15(%rbp), %rax
-; CHECK-NEXT:     movb %al, 1(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -14(%rbp), %rax
-; CHECK-NEXT:     movb %al, 2(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -13(%rbp), %rax
-; CHECK-NEXT:     movb %al, 3(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -12(%rbp), %rax
-; CHECK-NEXT:     movb %al, 4(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -11(%rbp), %rax
-; CHECK-NEXT:     movb %al, 5(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -10(%rbp), %rax
-; CHECK-NEXT:     movb %al, 6(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_73:\n
-; RUN: emit
-; CHECK: .Lau0_73:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -24(%rbp), %rax
-; CHECK-NEXT:     movb %al, 0(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -23(%rbp), %rax
-; CHECK-NEXT:     movb %al, 1(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -22(%rbp), %rax
-; CHECK-NEXT:     movb %al, 2(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -21(%rbp), %rax
-; CHECK-NEXT:     movb %al, 3(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -20(%rbp), %rax
-; CHECK-NEXT:     movb %al, 4(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -19(%rbp), %rax
-; CHECK-NEXT:     movb %al, 5(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -18(%rbp), %rax
-; CHECK-NEXT:     movb %al, 6(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lreturn0:\n
+; RUN: abi-facts
+; ABI: function entry entry
+; ABI: function target target
+; CHECK-JSON: functions.entry.parameters [{"offset":0,"bytes":8,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.entry.result {"bytes":8,"kind":"class","type_name":"Value"}
+; CHECK-JSON: functions.target.parameters [{"offset":0,"bytes":8,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.target.result {"bytes":8,"kind":"class","type_name":"Value"}
 layout Value [u8*7]
 fields Value [(u8 {0,1} 1 false)*7]
 function entry
@@ -248,35 +112,13 @@ function target
 end
 
 ; CASE: exact scalar/compact byte copy length=8
-; RUN: emit
-; CHECK: entry:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movq 0(%r11), %rax
-; CHECK-NEXT:     movq %rax, -8(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_69:\n
-; RUN: emit
-; CHECK: .Lau0_70:
-; CHECK-NEXT:     movq -8(%rbp), %rax
-; CHECK-NEXT:     movq %rax, -16(%rbp)
-; CHECK-NEXT: .Lau0_71:
-; RUN: emit
-; CHECK: .Lau0_72:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movq -16(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 0(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_73:\n
-; RUN: emit
-; CHECK: .Lau0_73:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movq -24(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 0(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lreturn0:\n
+; RUN: abi-facts
+; ABI: function entry entry
+; ABI: function target target
+; CHECK-JSON: functions.entry.parameters [{"offset":0,"bytes":8,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.entry.result {"bytes":8,"kind":"class","type_name":"Value"}
+; CHECK-JSON: functions.target.parameters [{"offset":0,"bytes":8,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.target.result {"bytes":8,"kind":"class","type_name":"Value"}
 layout Value [u8*8]
 fields Value [(u8 {0,1} 1 false)*8]
 function entry
@@ -319,49 +161,13 @@ function target
 end
 
 ; CASE: exact scalar/compact byte copy length=9
-; RUN: emit
-; CHECK: entry:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movq 0(%r11), %rax
-; CHECK-NEXT:     movq %rax, -16(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 8(%r11), %rax
-; CHECK-NEXT:     movb %al, -8(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_69:\n
-; RUN: emit
-; CHECK: .Lau0_70:
-; CHECK-NEXT:     movq -16(%rbp), %rax
-; CHECK-NEXT:     movq %rax, -32(%rbp)
-; CHECK-NEXT:     movzbq -8(%rbp), %rax
-; CHECK-NEXT:     movb %al, -24(%rbp)
-; CHECK-NEXT: .Lau0_71:
-; RUN: emit
-; CHECK: .Lau0_72:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movq -32(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 0(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -24(%rbp), %rax
-; CHECK-NEXT:     movb %al, 8(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_73:\n
-; RUN: emit
-; CHECK: .Lau0_73:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movq -48(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 0(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -40(%rbp), %rax
-; CHECK-NEXT:     movb %al, 8(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lreturn0:\n
+; RUN: abi-facts
+; ABI: function entry entry
+; ABI: function target target
+; CHECK-JSON: functions.entry.parameters [{"offset":0,"bytes":16,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.entry.result {"bytes":16,"kind":"class","type_name":"Value"}
+; CHECK-JSON: functions.target.parameters [{"offset":0,"bytes":16,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.target.result {"bytes":16,"kind":"class","type_name":"Value"}
 layout Value [u8*9]
 fields Value [(u8 {0,1} 1 false)*9]
 function entry
@@ -430,63 +236,13 @@ end
 
 ; CASE: exact scalar/compact byte copy length=10
 ; BASE: exact scalar/compact byte copy length=9
-; RUN: emit
-; CHECK: entry:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movq 0(%r11), %rax
-; CHECK-NEXT:     movq %rax, -16(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 8(%r11), %rax
-; CHECK-NEXT:     movb %al, -8(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 9(%r11), %rax
-; CHECK-NEXT:     movb %al, -7(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_69:\n
-; RUN: emit
-; CHECK: .Lau0_70:
-; CHECK-NEXT:     movq -16(%rbp), %rax
-; CHECK-NEXT:     movq %rax, -32(%rbp)
-; CHECK-NEXT:     movzbq -8(%rbp), %rax
-; CHECK-NEXT:     movb %al, -24(%rbp)
-; CHECK-NEXT:     movzbq -7(%rbp), %rax
-; CHECK-NEXT:     movb %al, -23(%rbp)
-; CHECK-NEXT: .Lau0_71:
-; RUN: emit
-; CHECK: .Lau0_72:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movq -32(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 0(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -24(%rbp), %rax
-; CHECK-NEXT:     movb %al, 8(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -23(%rbp), %rax
-; CHECK-NEXT:     movb %al, 9(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_73:\n
-; RUN: emit
-; CHECK: .Lau0_73:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movq -48(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 0(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -40(%rbp), %rax
-; CHECK-NEXT:     movb %al, 8(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -39(%rbp), %rax
-; CHECK-NEXT:     movb %al, 9(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lreturn0:\n
+; RUN: abi-facts
+; ABI: function entry entry
+; ABI: function target target
+; CHECK-JSON: functions.entry.parameters [{"offset":0,"bytes":16,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.entry.result {"bytes":16,"kind":"class","type_name":"Value"}
+; CHECK-JSON: functions.target.parameters [{"offset":0,"bytes":16,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.target.result {"bytes":16,"kind":"class","type_name":"Value"}
 @@ -1,2 +1,2 @@
 -layout Value [u8*9]
 -fields Value [(u8 {0,1} 1 false)*9]
@@ -503,77 +259,13 @@ end
 
 ; CASE: exact scalar/compact byte copy length=11
 ; BASE: exact scalar/compact byte copy length=9
-; RUN: emit
-; CHECK: entry:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movq 0(%r11), %rax
-; CHECK-NEXT:     movq %rax, -16(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 8(%r11), %rax
-; CHECK-NEXT:     movb %al, -8(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 9(%r11), %rax
-; CHECK-NEXT:     movb %al, -7(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 10(%r11), %rax
-; CHECK-NEXT:     movb %al, -6(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_69:\n
-; RUN: emit
-; CHECK: .Lau0_70:
-; CHECK-NEXT:     movq -16(%rbp), %rax
-; CHECK-NEXT:     movq %rax, -32(%rbp)
-; CHECK-NEXT:     movzbq -8(%rbp), %rax
-; CHECK-NEXT:     movb %al, -24(%rbp)
-; CHECK-NEXT:     movzbq -7(%rbp), %rax
-; CHECK-NEXT:     movb %al, -23(%rbp)
-; CHECK-NEXT:     movzbq -6(%rbp), %rax
-; CHECK-NEXT:     movb %al, -22(%rbp)
-; CHECK-NEXT: .Lau0_71:
-; RUN: emit
-; CHECK: .Lau0_72:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movq -32(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 0(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -24(%rbp), %rax
-; CHECK-NEXT:     movb %al, 8(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -23(%rbp), %rax
-; CHECK-NEXT:     movb %al, 9(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -22(%rbp), %rax
-; CHECK-NEXT:     movb %al, 10(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_73:\n
-; RUN: emit
-; CHECK: .Lau0_73:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movq -48(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 0(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -40(%rbp), %rax
-; CHECK-NEXT:     movb %al, 8(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -39(%rbp), %rax
-; CHECK-NEXT:     movb %al, 9(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -38(%rbp), %rax
-; CHECK-NEXT:     movb %al, 10(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lreturn0:\n
+; RUN: abi-facts
+; ABI: function entry entry
+; ABI: function target target
+; CHECK-JSON: functions.entry.parameters [{"offset":0,"bytes":16,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.entry.result {"bytes":16,"kind":"class","type_name":"Value"}
+; CHECK-JSON: functions.target.parameters [{"offset":0,"bytes":16,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.target.result {"bytes":16,"kind":"class","type_name":"Value"}
 @@ -1,2 +1,2 @@
 -layout Value [u8*9]
 -fields Value [(u8 {0,1} 1 false)*9]
@@ -593,91 +285,13 @@ end
 +  slot 7 u8
 
 ; CASE: exact scalar/compact byte copy length=12
-; RUN: emit
-; CHECK: entry:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movq 0(%r11), %rax
-; CHECK-NEXT:     movq %rax, -16(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 8(%r11), %rax
-; CHECK-NEXT:     movb %al, -8(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 9(%r11), %rax
-; CHECK-NEXT:     movb %al, -7(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 10(%r11), %rax
-; CHECK-NEXT:     movb %al, -6(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 11(%r11), %rax
-; CHECK-NEXT:     movb %al, -5(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_69:\n
-; RUN: emit
-; CHECK: .Lau0_70:
-; CHECK-NEXT:     movq -16(%rbp), %rax
-; CHECK-NEXT:     movq %rax, -32(%rbp)
-; CHECK-NEXT:     movzbq -8(%rbp), %rax
-; CHECK-NEXT:     movb %al, -24(%rbp)
-; CHECK-NEXT:     movzbq -7(%rbp), %rax
-; CHECK-NEXT:     movb %al, -23(%rbp)
-; CHECK-NEXT:     movzbq -6(%rbp), %rax
-; CHECK-NEXT:     movb %al, -22(%rbp)
-; CHECK-NEXT:     movzbq -5(%rbp), %rax
-; CHECK-NEXT:     movb %al, -21(%rbp)
-; CHECK-NEXT: .Lau0_71:
-; RUN: emit
-; CHECK: .Lau0_72:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movq -32(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 0(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -24(%rbp), %rax
-; CHECK-NEXT:     movb %al, 8(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -23(%rbp), %rax
-; CHECK-NEXT:     movb %al, 9(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -22(%rbp), %rax
-; CHECK-NEXT:     movb %al, 10(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -21(%rbp), %rax
-; CHECK-NEXT:     movb %al, 11(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_73:\n
-; RUN: emit
-; CHECK: .Lau0_73:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movq -48(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 0(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -40(%rbp), %rax
-; CHECK-NEXT:     movb %al, 8(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -39(%rbp), %rax
-; CHECK-NEXT:     movb %al, 9(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -38(%rbp), %rax
-; CHECK-NEXT:     movb %al, 10(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -37(%rbp), %rax
-; CHECK-NEXT:     movb %al, 11(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lreturn0:\n
+; RUN: abi-facts
+; ABI: function entry entry
+; ABI: function target target
+; CHECK-JSON: functions.entry.parameters [{"offset":0,"bytes":16,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.entry.result {"bytes":16,"kind":"class","type_name":"Value"}
+; CHECK-JSON: functions.target.parameters [{"offset":0,"bytes":16,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.target.result {"bytes":16,"kind":"class","type_name":"Value"}
 layout Value [u8*12]
 fields Value [(u8 {0,1} 1 false)*12]
 function entry
@@ -721,105 +335,13 @@ endrepeat
 end
 
 ; CASE: exact scalar/compact byte copy length=13
-; RUN: emit
-; CHECK: entry:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movq 0(%r11), %rax
-; CHECK-NEXT:     movq %rax, -16(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 8(%r11), %rax
-; CHECK-NEXT:     movb %al, -8(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 9(%r11), %rax
-; CHECK-NEXT:     movb %al, -7(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 10(%r11), %rax
-; CHECK-NEXT:     movb %al, -6(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 11(%r11), %rax
-; CHECK-NEXT:     movb %al, -5(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 12(%r11), %rax
-; CHECK-NEXT:     movb %al, -4(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_69:\n
-; RUN: emit
-; CHECK: .Lau0_70:
-; CHECK-NEXT:     movq -16(%rbp), %rax
-; CHECK-NEXT:     movq %rax, -32(%rbp)
-; CHECK-NEXT:     movzbq -8(%rbp), %rax
-; CHECK-NEXT:     movb %al, -24(%rbp)
-; CHECK-NEXT:     movzbq -7(%rbp), %rax
-; CHECK-NEXT:     movb %al, -23(%rbp)
-; CHECK-NEXT:     movzbq -6(%rbp), %rax
-; CHECK-NEXT:     movb %al, -22(%rbp)
-; CHECK-NEXT:     movzbq -5(%rbp), %rax
-; CHECK-NEXT:     movb %al, -21(%rbp)
-; CHECK-NEXT:     movzbq -4(%rbp), %rax
-; CHECK-NEXT:     movb %al, -20(%rbp)
-; CHECK-NEXT: .Lau0_71:
-; RUN: emit
-; CHECK: .Lau0_72:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movq -32(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 0(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -24(%rbp), %rax
-; CHECK-NEXT:     movb %al, 8(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -23(%rbp), %rax
-; CHECK-NEXT:     movb %al, 9(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -22(%rbp), %rax
-; CHECK-NEXT:     movb %al, 10(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -21(%rbp), %rax
-; CHECK-NEXT:     movb %al, 11(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -20(%rbp), %rax
-; CHECK-NEXT:     movb %al, 12(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_73:\n
-; RUN: emit
-; CHECK: .Lau0_73:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movq -48(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 0(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -40(%rbp), %rax
-; CHECK-NEXT:     movb %al, 8(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -39(%rbp), %rax
-; CHECK-NEXT:     movb %al, 9(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -38(%rbp), %rax
-; CHECK-NEXT:     movb %al, 10(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -37(%rbp), %rax
-; CHECK-NEXT:     movb %al, 11(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -36(%rbp), %rax
-; CHECK-NEXT:     movb %al, 12(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lreturn0:\n
+; RUN: abi-facts
+; ABI: function entry entry
+; ABI: function target target
+; CHECK-JSON: functions.entry.parameters [{"offset":0,"bytes":16,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.entry.result {"bytes":16,"kind":"class","type_name":"Value"}
+; CHECK-JSON: functions.target.parameters [{"offset":0,"bytes":16,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.target.result {"bytes":16,"kind":"class","type_name":"Value"}
 layout Value [u8*13]
 fields Value [(u8 {0,1} 1 false)*13]
 function entry
@@ -863,119 +385,13 @@ endrepeat
 end
 
 ; CASE: exact scalar/compact byte copy length=14
-; RUN: emit
-; CHECK: entry:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movq 0(%r11), %rax
-; CHECK-NEXT:     movq %rax, -16(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 8(%r11), %rax
-; CHECK-NEXT:     movb %al, -8(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 9(%r11), %rax
-; CHECK-NEXT:     movb %al, -7(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 10(%r11), %rax
-; CHECK-NEXT:     movb %al, -6(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 11(%r11), %rax
-; CHECK-NEXT:     movb %al, -5(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 12(%r11), %rax
-; CHECK-NEXT:     movb %al, -4(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 13(%r11), %rax
-; CHECK-NEXT:     movb %al, -3(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_69:\n
-; RUN: emit
-; CHECK: .Lau0_70:
-; CHECK-NEXT:     movq -16(%rbp), %rax
-; CHECK-NEXT:     movq %rax, -32(%rbp)
-; CHECK-NEXT:     movzbq -8(%rbp), %rax
-; CHECK-NEXT:     movb %al, -24(%rbp)
-; CHECK-NEXT:     movzbq -7(%rbp), %rax
-; CHECK-NEXT:     movb %al, -23(%rbp)
-; CHECK-NEXT:     movzbq -6(%rbp), %rax
-; CHECK-NEXT:     movb %al, -22(%rbp)
-; CHECK-NEXT:     movzbq -5(%rbp), %rax
-; CHECK-NEXT:     movb %al, -21(%rbp)
-; CHECK-NEXT:     movzbq -4(%rbp), %rax
-; CHECK-NEXT:     movb %al, -20(%rbp)
-; CHECK-NEXT:     movzbq -3(%rbp), %rax
-; CHECK-NEXT:     movb %al, -19(%rbp)
-; CHECK-NEXT: .Lau0_71:
-; RUN: emit
-; CHECK: .Lau0_72:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movq -32(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 0(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -24(%rbp), %rax
-; CHECK-NEXT:     movb %al, 8(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -23(%rbp), %rax
-; CHECK-NEXT:     movb %al, 9(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -22(%rbp), %rax
-; CHECK-NEXT:     movb %al, 10(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -21(%rbp), %rax
-; CHECK-NEXT:     movb %al, 11(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -20(%rbp), %rax
-; CHECK-NEXT:     movb %al, 12(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -19(%rbp), %rax
-; CHECK-NEXT:     movb %al, 13(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_73:\n
-; RUN: emit
-; CHECK: .Lau0_73:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movq -48(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 0(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -40(%rbp), %rax
-; CHECK-NEXT:     movb %al, 8(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -39(%rbp), %rax
-; CHECK-NEXT:     movb %al, 9(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -38(%rbp), %rax
-; CHECK-NEXT:     movb %al, 10(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -37(%rbp), %rax
-; CHECK-NEXT:     movb %al, 11(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -36(%rbp), %rax
-; CHECK-NEXT:     movb %al, 12(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -35(%rbp), %rax
-; CHECK-NEXT:     movb %al, 13(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lreturn0:\n
+; RUN: abi-facts
+; ABI: function entry entry
+; ABI: function target target
+; CHECK-JSON: functions.entry.parameters [{"offset":0,"bytes":16,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.entry.result {"bytes":16,"kind":"class","type_name":"Value"}
+; CHECK-JSON: functions.target.parameters [{"offset":0,"bytes":16,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.target.result {"bytes":16,"kind":"class","type_name":"Value"}
 layout Value [u8*14]
 fields Value [(u8 {0,1} 1 false)*14]
 function entry
@@ -1019,133 +435,13 @@ endrepeat
 end
 
 ; CASE: exact scalar/compact byte copy length=15
-; RUN: emit
-; CHECK: entry:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movq 0(%r11), %rax
-; CHECK-NEXT:     movq %rax, -16(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 8(%r11), %rax
-; CHECK-NEXT:     movb %al, -8(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 9(%r11), %rax
-; CHECK-NEXT:     movb %al, -7(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 10(%r11), %rax
-; CHECK-NEXT:     movb %al, -6(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 11(%r11), %rax
-; CHECK-NEXT:     movb %al, -5(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 12(%r11), %rax
-; CHECK-NEXT:     movb %al, -4(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 13(%r11), %rax
-; CHECK-NEXT:     movb %al, -3(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 14(%r11), %rax
-; CHECK-NEXT:     movb %al, -2(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_69:\n
-; RUN: emit
-; CHECK: .Lau0_70:
-; CHECK-NEXT:     movq -16(%rbp), %rax
-; CHECK-NEXT:     movq %rax, -32(%rbp)
-; CHECK-NEXT:     movzbq -8(%rbp), %rax
-; CHECK-NEXT:     movb %al, -24(%rbp)
-; CHECK-NEXT:     movzbq -7(%rbp), %rax
-; CHECK-NEXT:     movb %al, -23(%rbp)
-; CHECK-NEXT:     movzbq -6(%rbp), %rax
-; CHECK-NEXT:     movb %al, -22(%rbp)
-; CHECK-NEXT:     movzbq -5(%rbp), %rax
-; CHECK-NEXT:     movb %al, -21(%rbp)
-; CHECK-NEXT:     movzbq -4(%rbp), %rax
-; CHECK-NEXT:     movb %al, -20(%rbp)
-; CHECK-NEXT:     movzbq -3(%rbp), %rax
-; CHECK-NEXT:     movb %al, -19(%rbp)
-; CHECK-NEXT:     movzbq -2(%rbp), %rax
-; CHECK-NEXT:     movb %al, -18(%rbp)
-; CHECK-NEXT: .Lau0_71:
-; RUN: emit
-; CHECK: .Lau0_72:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movq -32(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 0(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -24(%rbp), %rax
-; CHECK-NEXT:     movb %al, 8(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -23(%rbp), %rax
-; CHECK-NEXT:     movb %al, 9(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -22(%rbp), %rax
-; CHECK-NEXT:     movb %al, 10(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -21(%rbp), %rax
-; CHECK-NEXT:     movb %al, 11(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -20(%rbp), %rax
-; CHECK-NEXT:     movb %al, 12(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -19(%rbp), %rax
-; CHECK-NEXT:     movb %al, 13(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -18(%rbp), %rax
-; CHECK-NEXT:     movb %al, 14(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_73:\n
-; RUN: emit
-; CHECK: .Lau0_73:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movq -48(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 0(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -40(%rbp), %rax
-; CHECK-NEXT:     movb %al, 8(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -39(%rbp), %rax
-; CHECK-NEXT:     movb %al, 9(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -38(%rbp), %rax
-; CHECK-NEXT:     movb %al, 10(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -37(%rbp), %rax
-; CHECK-NEXT:     movb %al, 11(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -36(%rbp), %rax
-; CHECK-NEXT:     movb %al, 12(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -35(%rbp), %rax
-; CHECK-NEXT:     movb %al, 13(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -34(%rbp), %rax
-; CHECK-NEXT:     movb %al, 14(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lreturn0:\n
+; RUN: abi-facts
+; ABI: function entry entry
+; ABI: function target target
+; CHECK-JSON: functions.entry.parameters [{"offset":0,"bytes":16,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.entry.result {"bytes":16,"kind":"class","type_name":"Value"}
+; CHECK-JSON: functions.target.parameters [{"offset":0,"bytes":16,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.target.result {"bytes":16,"kind":"class","type_name":"Value"}
 layout Value [u8*15]
 fields Value [(u8 {0,1} 1 false)*15]
 function entry
@@ -1189,49 +485,13 @@ endrepeat
 end
 
 ; CASE: exact scalar/compact byte copy length=16
-; RUN: emit
-; CHECK: entry:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movq 0(%r11), %rax
-; CHECK-NEXT:     movq %rax, -16(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movq 8(%r11), %rax
-; CHECK-NEXT:     movq %rax, -8(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_69:\n
-; RUN: emit
-; CHECK: .Lau0_70:
-; CHECK-NEXT:     movq -16(%rbp), %rax
-; CHECK-NEXT:     movq %rax, -32(%rbp)
-; CHECK-NEXT:     movq -8(%rbp), %rax
-; CHECK-NEXT:     movq %rax, -24(%rbp)
-; CHECK-NEXT: .Lau0_71:
-; RUN: emit
-; CHECK: .Lau0_72:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movq -32(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 0(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movq -24(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 8(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_73:\n
-; RUN: emit
-; CHECK: .Lau0_73:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movq -48(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 0(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movq -40(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 8(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lreturn0:\n
+; RUN: abi-facts
+; ABI: function entry entry
+; ABI: function target target
+; CHECK-JSON: functions.entry.parameters [{"offset":0,"bytes":16,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.entry.result {"bytes":16,"kind":"class","type_name":"Value"}
+; CHECK-JSON: functions.target.parameters [{"offset":0,"bytes":16,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.target.result {"bytes":16,"kind":"class","type_name":"Value"}
 layout Value [u8*16]
 fields Value [(u8 {0,1} 1 false)*16]
 function entry
@@ -1269,63 +529,13 @@ endrepeat
 end
 
 ; CASE: exact scalar/compact byte copy length=17
-; RUN: emit
-; CHECK: entry:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movq 0(%r11), %rax
-; CHECK-NEXT:     movq %rax, -24(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movq 8(%r11), %rax
-; CHECK-NEXT:     movq %rax, -16(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 16(%r11), %rax
-; CHECK-NEXT:     movb %al, -8(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_69:\n
-; RUN: emit
-; CHECK: .Lau0_70:
-; CHECK-NEXT:     movq -24(%rbp), %rax
-; CHECK-NEXT:     movq %rax, -48(%rbp)
-; CHECK-NEXT:     movq -16(%rbp), %rax
-; CHECK-NEXT:     movq %rax, -40(%rbp)
-; CHECK-NEXT:     movzbq -8(%rbp), %rax
-; CHECK-NEXT:     movb %al, -32(%rbp)
-; CHECK-NEXT: .Lau0_71:
-; RUN: emit
-; CHECK: .Lau0_72:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movq -48(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 0(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movq -40(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 8(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -32(%rbp), %rax
-; CHECK-NEXT:     movb %al, 16(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_73:\n
-; RUN: emit
-; CHECK: .Lau0_73:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movq -72(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 0(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movq -64(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 8(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -56(%rbp), %rax
-; CHECK-NEXT:     movb %al, 16(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lreturn0:\n
+; RUN: abi-facts
+; ABI: function entry entry
+; ABI: function target target
+; CHECK-JSON: functions.entry.parameters [{"offset":0,"bytes":24,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.entry.result {"bytes":24,"kind":"class","type_name":"Value"}
+; CHECK-JSON: functions.target.parameters [{"offset":0,"bytes":24,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.target.result {"bytes":24,"kind":"class","type_name":"Value"}
 layout Value [u8*17]
 fields Value [(u8 {0,1} 1 false)*17]
 function entry
@@ -1369,217 +579,13 @@ endrepeat
 end
 
 ; CASE: exact scalar/compact byte copy length=63
-; RUN: emit
-; CHECK: entry:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movq 0(%r11), %rax
-; CHECK-NEXT:     movq %rax, -64(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movq 8(%r11), %rax
-; CHECK-NEXT:     movq %rax, -56(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movq 16(%r11), %rax
-; CHECK-NEXT:     movq %rax, -48(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movq 24(%r11), %rax
-; CHECK-NEXT:     movq %rax, -40(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movq 32(%r11), %rax
-; CHECK-NEXT:     movq %rax, -32(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movq 40(%r11), %rax
-; CHECK-NEXT:     movq %rax, -24(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movq 48(%r11), %rax
-; CHECK-NEXT:     movq %rax, -16(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 56(%r11), %rax
-; CHECK-NEXT:     movb %al, -8(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 57(%r11), %rax
-; CHECK-NEXT:     movb %al, -7(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 58(%r11), %rax
-; CHECK-NEXT:     movb %al, -6(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 59(%r11), %rax
-; CHECK-NEXT:     movb %al, -5(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 60(%r11), %rax
-; CHECK-NEXT:     movb %al, -4(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 61(%r11), %rax
-; CHECK-NEXT:     movb %al, -3(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     movzbq 62(%r11), %rax
-; CHECK-NEXT:     movb %al, -2(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_69:\n
-; RUN: emit
-; CHECK: .Lau0_70:
-; CHECK-NEXT:     movq -64(%rbp), %rax
-; CHECK-NEXT:     movq %rax, -128(%rbp)
-; CHECK-NEXT:     movq -56(%rbp), %rax
-; CHECK-NEXT:     movq %rax, -120(%rbp)
-; CHECK-NEXT:     movq -48(%rbp), %rax
-; CHECK-NEXT:     movq %rax, -112(%rbp)
-; CHECK-NEXT:     movq -40(%rbp), %rax
-; CHECK-NEXT:     movq %rax, -104(%rbp)
-; CHECK-NEXT:     movq -32(%rbp), %rax
-; CHECK-NEXT:     movq %rax, -96(%rbp)
-; CHECK-NEXT:     movq -24(%rbp), %rax
-; CHECK-NEXT:     movq %rax, -88(%rbp)
-; CHECK-NEXT:     movq -16(%rbp), %rax
-; CHECK-NEXT:     movq %rax, -80(%rbp)
-; CHECK-NEXT:     movzbq -8(%rbp), %rax
-; CHECK-NEXT:     movb %al, -72(%rbp)
-; CHECK-NEXT:     movzbq -7(%rbp), %rax
-; CHECK-NEXT:     movb %al, -71(%rbp)
-; CHECK-NEXT:     movzbq -6(%rbp), %rax
-; CHECK-NEXT:     movb %al, -70(%rbp)
-; CHECK-NEXT:     movzbq -5(%rbp), %rax
-; CHECK-NEXT:     movb %al, -69(%rbp)
-; CHECK-NEXT:     movzbq -4(%rbp), %rax
-; CHECK-NEXT:     movb %al, -68(%rbp)
-; CHECK-NEXT:     movzbq -3(%rbp), %rax
-; CHECK-NEXT:     movb %al, -67(%rbp)
-; CHECK-NEXT:     movzbq -2(%rbp), %rax
-; CHECK-NEXT:     movb %al, -66(%rbp)
-; CHECK-NEXT: .Lau0_71:
-; RUN: emit
-; CHECK: .Lau0_72:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movq -128(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 0(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movq -120(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 8(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movq -112(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 16(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movq -104(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 24(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movq -96(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 32(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movq -88(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 40(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movq -80(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 48(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -72(%rbp), %rax
-; CHECK-NEXT:     movb %al, 56(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -71(%rbp), %rax
-; CHECK-NEXT:     movb %al, 57(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -70(%rbp), %rax
-; CHECK-NEXT:     movb %al, 58(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -69(%rbp), %rax
-; CHECK-NEXT:     movb %al, 59(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -68(%rbp), %rax
-; CHECK-NEXT:     movb %al, 60(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -67(%rbp), %rax
-; CHECK-NEXT:     movb %al, 61(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     movzbq -66(%rbp), %rax
-; CHECK-NEXT:     movb %al, 62(%rsp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_73:\n
-; RUN: emit
-; CHECK: .Lau0_73:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movq -192(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 0(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movq -184(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 8(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movq -176(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 16(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movq -168(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 24(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movq -160(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 32(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movq -152(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 40(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movq -144(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 48(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -136(%rbp), %rax
-; CHECK-NEXT:     movb %al, 56(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -135(%rbp), %rax
-; CHECK-NEXT:     movb %al, 57(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -134(%rbp), %rax
-; CHECK-NEXT:     movb %al, 58(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -133(%rbp), %rax
-; CHECK-NEXT:     movb %al, 59(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -132(%rbp), %rax
-; CHECK-NEXT:     movb %al, 60(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -131(%rbp), %rax
-; CHECK-NEXT:     movb %al, 61(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -130(%rbp), %rax
-; CHECK-NEXT:     movb %al, 62(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lreturn0:\n
+; RUN: abi-facts
+; ABI: function entry entry
+; ABI: function target target
+; CHECK-JSON: functions.entry.parameters [{"offset":0,"bytes":64,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.entry.result {"bytes":64,"kind":"class","type_name":"Value"}
+; CHECK-JSON: functions.target.parameters [{"offset":0,"bytes":64,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.target.result {"bytes":64,"kind":"class","type_name":"Value"}
 layout Value [u8*63]
 fields Value [(u8 {0,1} 1 false)*63]
 function entry
@@ -1623,72 +629,13 @@ endrepeat
 end
 
 ; CASE: exact scalar/compact byte copy length=64
-; RUN: emit
-; CHECK: entry:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     pushq %rsi
-; CHECK-NEXT:     pushq %rdi
-; CHECK-NEXT:     pushq %rcx
-; CHECK-NEXT:     leaq 0(%r11), %rsi
-; CHECK-NEXT:     leaq -64(%rbp), %rdi
-; CHECK-NEXT:     movq $64, %rcx
-; CHECK-NEXT:     cld
-; CHECK-NEXT:     rep movsb
-; CHECK-NEXT:     popq %rcx
-; CHECK-NEXT:     popq %rdi
-; CHECK-NEXT:     popq %rsi
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_69:\n
-; RUN: emit
-; CHECK: .Lau0_70:
-; CHECK-NEXT:     pushq %rsi
-; CHECK-NEXT:     pushq %rdi
-; CHECK-NEXT:     pushq %rcx
-; CHECK-NEXT:     leaq -64(%rbp), %rsi
-; CHECK-NEXT:     leaq -128(%rbp), %rdi
-; CHECK-NEXT:     movq $64, %rcx
-; CHECK-NEXT:     cld
-; CHECK-NEXT:     rep movsb
-; CHECK-NEXT:     popq %rcx
-; CHECK-NEXT:     popq %rdi
-; CHECK-NEXT:     popq %rsi
-; CHECK-NEXT: .Lau0_71:
-; RUN: emit
-; CHECK: .Lau0_72:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     leaq 0(%rsp), %rax
-; CHECK-NEXT:     pushq %rsi
-; CHECK-NEXT:     pushq %rdi
-; CHECK-NEXT:     pushq %rcx
-; CHECK-NEXT:     leaq -128(%rbp), %rsi
-; CHECK-NEXT:     movq %rax, %rdi
-; CHECK-NEXT:     movq $64, %rcx
-; CHECK-NEXT:     cld
-; CHECK-NEXT:     rep movsb
-; CHECK-NEXT:     popq %rcx
-; CHECK-NEXT:     popq %rdi
-; CHECK-NEXT:     popq %rsi
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_73:\n
-; RUN: emit
-; CHECK: .Lau0_73:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     pushq %rsi
-; CHECK-NEXT:     pushq %rdi
-; CHECK-NEXT:     pushq %rcx
-; CHECK-NEXT:     leaq -192(%rbp), %rsi
-; CHECK-NEXT:     leaq 0(%r10), %rdi
-; CHECK-NEXT:     movq $64, %rcx
-; CHECK-NEXT:     cld
-; CHECK-NEXT:     rep movsb
-; CHECK-NEXT:     popq %rcx
-; CHECK-NEXT:     popq %rdi
-; CHECK-NEXT:     popq %rsi
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lreturn0:\n
+; RUN: abi-facts
+; ABI: function entry entry
+; ABI: function target target
+; CHECK-JSON: functions.entry.parameters [{"offset":0,"bytes":64,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.entry.result {"bytes":64,"kind":"class","type_name":"Value"}
+; CHECK-JSON: functions.target.parameters [{"offset":0,"bytes":64,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.target.result {"bytes":64,"kind":"class","type_name":"Value"}
 layout Value [u8*64]
 fields Value [(u8 {0,1} 1 false)*64]
 function entry
@@ -1726,72 +673,13 @@ endrepeat
 end
 
 ; CASE: exact scalar/compact byte copy length=65
-; RUN: emit
-; CHECK: entry:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     pushq %rsi
-; CHECK-NEXT:     pushq %rdi
-; CHECK-NEXT:     pushq %rcx
-; CHECK-NEXT:     leaq 0(%r11), %rsi
-; CHECK-NEXT:     leaq -72(%rbp), %rdi
-; CHECK-NEXT:     movq $65, %rcx
-; CHECK-NEXT:     cld
-; CHECK-NEXT:     rep movsb
-; CHECK-NEXT:     popq %rcx
-; CHECK-NEXT:     popq %rdi
-; CHECK-NEXT:     popq %rsi
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_69:\n
-; RUN: emit
-; CHECK: .Lau0_70:
-; CHECK-NEXT:     pushq %rsi
-; CHECK-NEXT:     pushq %rdi
-; CHECK-NEXT:     pushq %rcx
-; CHECK-NEXT:     leaq -72(%rbp), %rsi
-; CHECK-NEXT:     leaq -144(%rbp), %rdi
-; CHECK-NEXT:     movq $65, %rcx
-; CHECK-NEXT:     cld
-; CHECK-NEXT:     rep movsb
-; CHECK-NEXT:     popq %rcx
-; CHECK-NEXT:     popq %rdi
-; CHECK-NEXT:     popq %rsi
-; CHECK-NEXT: .Lau0_71:
-; RUN: emit
-; CHECK: .Lau0_72:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     leaq 0(%rsp), %rax
-; CHECK-NEXT:     pushq %rsi
-; CHECK-NEXT:     pushq %rdi
-; CHECK-NEXT:     pushq %rcx
-; CHECK-NEXT:     leaq -144(%rbp), %rsi
-; CHECK-NEXT:     movq %rax, %rdi
-; CHECK-NEXT:     movq $65, %rcx
-; CHECK-NEXT:     cld
-; CHECK-NEXT:     rep movsb
-; CHECK-NEXT:     popq %rcx
-; CHECK-NEXT:     popq %rdi
-; CHECK-NEXT:     popq %rsi
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_73:\n
-; RUN: emit
-; CHECK: .Lau0_73:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     pushq %rsi
-; CHECK-NEXT:     pushq %rdi
-; CHECK-NEXT:     pushq %rcx
-; CHECK-NEXT:     leaq -216(%rbp), %rsi
-; CHECK-NEXT:     leaq 0(%r10), %rdi
-; CHECK-NEXT:     movq $65, %rcx
-; CHECK-NEXT:     cld
-; CHECK-NEXT:     rep movsb
-; CHECK-NEXT:     popq %rcx
-; CHECK-NEXT:     popq %rdi
-; CHECK-NEXT:     popq %rsi
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lreturn0:\n
+; RUN: abi-facts
+; ABI: function entry entry
+; ABI: function target target
+; CHECK-JSON: functions.entry.parameters [{"offset":0,"bytes":72,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.entry.result {"bytes":72,"kind":"class","type_name":"Value"}
+; CHECK-JSON: functions.target.parameters [{"offset":0,"bytes":72,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.target.result {"bytes":72,"kind":"class","type_name":"Value"}
 layout Value [u8*65]
 fields Value [(u8 {0,1} 1 false)*65]
 function entry
@@ -1835,72 +723,13 @@ endrepeat
 end
 
 ; CASE: exact scalar/compact byte copy length=511
-; RUN: emit
-; CHECK: entry:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     pushq %rsi
-; CHECK-NEXT:     pushq %rdi
-; CHECK-NEXT:     pushq %rcx
-; CHECK-NEXT:     leaq 0(%r11), %rsi
-; CHECK-NEXT:     leaq -512(%rbp), %rdi
-; CHECK-NEXT:     movq $511, %rcx
-; CHECK-NEXT:     cld
-; CHECK-NEXT:     rep movsb
-; CHECK-NEXT:     popq %rcx
-; CHECK-NEXT:     popq %rdi
-; CHECK-NEXT:     popq %rsi
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_69:\n
-; RUN: emit
-; CHECK: .Lau0_70:
-; CHECK-NEXT:     pushq %rsi
-; CHECK-NEXT:     pushq %rdi
-; CHECK-NEXT:     pushq %rcx
-; CHECK-NEXT:     leaq -512(%rbp), %rsi
-; CHECK-NEXT:     leaq -1024(%rbp), %rdi
-; CHECK-NEXT:     movq $511, %rcx
-; CHECK-NEXT:     cld
-; CHECK-NEXT:     rep movsb
-; CHECK-NEXT:     popq %rcx
-; CHECK-NEXT:     popq %rdi
-; CHECK-NEXT:     popq %rsi
-; CHECK-NEXT: .Lau0_71:
-; RUN: emit
-; CHECK: .Lau0_72:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     leaq 0(%rsp), %rax
-; CHECK-NEXT:     pushq %rsi
-; CHECK-NEXT:     pushq %rdi
-; CHECK-NEXT:     pushq %rcx
-; CHECK-NEXT:     leaq -1024(%rbp), %rsi
-; CHECK-NEXT:     movq %rax, %rdi
-; CHECK-NEXT:     movq $511, %rcx
-; CHECK-NEXT:     cld
-; CHECK-NEXT:     rep movsb
-; CHECK-NEXT:     popq %rcx
-; CHECK-NEXT:     popq %rdi
-; CHECK-NEXT:     popq %rsi
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_73:\n
-; RUN: emit
-; CHECK: .Lau0_73:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     pushq %rsi
-; CHECK-NEXT:     pushq %rdi
-; CHECK-NEXT:     pushq %rcx
-; CHECK-NEXT:     leaq -1536(%rbp), %rsi
-; CHECK-NEXT:     leaq 0(%r10), %rdi
-; CHECK-NEXT:     movq $511, %rcx
-; CHECK-NEXT:     cld
-; CHECK-NEXT:     rep movsb
-; CHECK-NEXT:     popq %rcx
-; CHECK-NEXT:     popq %rdi
-; CHECK-NEXT:     popq %rsi
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lreturn0:\n
+; RUN: abi-facts
+; ABI: function entry entry
+; ABI: function target target
+; CHECK-JSON: functions.entry.parameters [{"offset":0,"bytes":512,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.entry.result {"bytes":512,"kind":"class","type_name":"Value"}
+; CHECK-JSON: functions.target.parameters [{"offset":0,"bytes":512,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.target.result {"bytes":512,"kind":"class","type_name":"Value"}
 layout Value [u8*511]
 fields Value [(u8 {0,1} 1 false)*511]
 function entry
@@ -1944,72 +773,13 @@ endrepeat
 end
 
 ; CASE: exact scalar/compact byte copy length=512
-; RUN: emit
-; CHECK: entry:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_69:\n
-; CHECK:     pushq %rsi
-; CHECK-NEXT:     pushq %rdi
-; CHECK-NEXT:     pushq %rcx
-; CHECK-NEXT:     leaq 0(%r11), %rsi
-; CHECK-NEXT:     leaq -512(%rbp), %rdi
-; CHECK-NEXT:     movq $512, %rcx
-; CHECK-NEXT:     cld
-; CHECK-NEXT:     rep movsb
-; CHECK-NEXT:     popq %rcx
-; CHECK-NEXT:     popq %rdi
-; CHECK-NEXT:     popq %rsi
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_69:\n
-; RUN: emit
-; CHECK: .Lau0_70:
-; CHECK-NEXT:     pushq %rsi
-; CHECK-NEXT:     pushq %rdi
-; CHECK-NEXT:     pushq %rcx
-; CHECK-NEXT:     leaq -512(%rbp), %rsi
-; CHECK-NEXT:     leaq -1024(%rbp), %rdi
-; CHECK-NEXT:     movq $512, %rcx
-; CHECK-NEXT:     cld
-; CHECK-NEXT:     rep movsb
-; CHECK-NEXT:     popq %rcx
-; CHECK-NEXT:     popq %rdi
-; CHECK-NEXT:     popq %rsi
-; CHECK-NEXT: .Lau0_71:
-; RUN: emit
-; CHECK: .Lau0_72:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_73:\n
-; CHECK:     leaq 0(%rsp), %rax
-; CHECK-NEXT:     pushq %rsi
-; CHECK-NEXT:     pushq %rdi
-; CHECK-NEXT:     pushq %rcx
-; CHECK-NEXT:     leaq -1024(%rbp), %rsi
-; CHECK-NEXT:     movq %rax, %rdi
-; CHECK-NEXT:     movq $512, %rcx
-; CHECK-NEXT:     cld
-; CHECK-NEXT:     rep movsb
-; CHECK-NEXT:     popq %rcx
-; CHECK-NEXT:     popq %rdi
-; CHECK-NEXT:     popq %rsi
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_73:\n
-; RUN: emit
-; CHECK: .Lau0_73:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     pushq %rsi
-; CHECK-NEXT:     pushq %rdi
-; CHECK-NEXT:     pushq %rcx
-; CHECK-NEXT:     leaq -1536(%rbp), %rsi
-; CHECK-NEXT:     leaq 0(%r10), %rdi
-; CHECK-NEXT:     movq $512, %rcx
-; CHECK-NEXT:     cld
-; CHECK-NEXT:     rep movsb
-; CHECK-NEXT:     popq %rcx
-; CHECK-NEXT:     popq %rdi
-; CHECK-NEXT:     popq %rsi
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lreturn0:\n
+; RUN: abi-facts
+; ABI: function entry entry
+; ABI: function target target
+; CHECK-JSON: functions.entry.parameters [{"offset":0,"bytes":512,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.entry.result {"bytes":512,"kind":"class","type_name":"Value"}
+; CHECK-JSON: functions.target.parameters [{"offset":0,"bytes":512,"kind":"class","type_name":"Value"}]
+; CHECK-JSON: functions.target.result {"bytes":512,"kind":"class","type_name":"Value"}
 layout Value [u8*512]
 fields Value [(u8 {0,1} 1 false)*512]
 function entry
@@ -2049,16 +819,13 @@ end
 ; CASE: unaligned selected field range project_local
 ; RUN: emit
 ; CHECK: .Lau0_70:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
 ; CHECK-NOT: .Lau0_71:\n
-; CHECK:     movq 1(%r10), %rax
-; CHECK-NEXT:     movq %rax, -64(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
+; CHECK: {{mov[a-z]* }}1({{%r[a-z0-9]+}}), {{%r[a-z0-9]+}}\n    {{mov[a-z]* %[a-z0-9]+}}, [[#DEST:]](%rbp)
 ; CHECK-NOT: .Lau0_71:\n
-; CHECK:     movzbq 9(%r10), %rax
-; CHECK-NEXT:     movb %al, -56(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
+; CHECK: {{mov[a-z]* }}9({{%r[a-z0-9]+}}), {{%r[a-z0-9]+}}\n    {{mov[a-z]* %[a-z0-9]+}}, [[#DEST+8]](%rbp)
 ; CHECK: .Lau0_71:\n
+; RUN: metadata
+; CHECK-DAG: class Bytes9 storage [0 1 2 3 4 5 6 7 8] [0] 9 1 16
 layout Bytes9 [u8*9]
 layout Wrapped [u8*11]
 fields Bytes9 [(u8 0 9 true)]
@@ -2126,16 +893,13 @@ end
 ; CASE: unaligned selected field range project_receiver
 ; RUN: emit
 ; CHECK: .Lau0_70:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
 ; CHECK-NOT: .Lau0_71:\n
-; CHECK:     movq 1(%r10), %rax
-; CHECK-NEXT:     movq %rax, -64(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
+; CHECK: {{mov[a-z]* }}1({{%r[a-z0-9]+}}), {{%r[a-z0-9]+}}\n    {{mov[a-z]* %[a-z0-9]+}}, [[#DEST:]](%rbp)
 ; CHECK-NOT: .Lau0_71:\n
-; CHECK:     movzbq 9(%r10), %rax
-; CHECK-NEXT:     movb %al, -56(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
+; CHECK: {{mov[a-z]* }}9({{%r[a-z0-9]+}}), {{%r[a-z0-9]+}}\n    {{mov[a-z]* %[a-z0-9]+}}, [[#DEST+8]](%rbp)
 ; CHECK: .Lau0_71:\n
+; RUN: metadata
+; CHECK-DAG: class Bytes9 storage [0 1 2 3 4 5 6 7 8] [0] 9 1 16
 layout Bytes9 [u8*9]
 layout Wrapped [u8*11]
 fields Bytes9 [(u8 0 9 true)]
@@ -2178,16 +942,13 @@ end
 ; BASE: unaligned selected field range project_local
 ; RUN: emit
 ; CHECK: .Lau0_70:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
 ; CHECK-NOT: .Lau0_71:\n
-; CHECK:     movq -16(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 1(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
+; CHECK: {{mov[a-z]* }}[[#SOURCE:]](%rbp), {{%r[a-z0-9]+}}\n    {{mov[a-z]* %[a-z0-9]+}}, 1({{%r[a-z0-9]+}})
 ; CHECK-NOT: .Lau0_71:\n
-; CHECK:     movzbq -8(%rbp), %rax
-; CHECK-NEXT:     movb %al, 9(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
+; CHECK: {{mov[a-z]* }}[[#SOURCE+8]](%rbp), {{%r[a-z0-9]+}}\n    {{mov[a-z]* %[a-z0-9]+}}, 9({{%r[a-z0-9]+}})
 ; CHECK: .Lau0_71:\n
+; RUN: metadata
+; CHECK-DAG: class Bytes9 storage [0 1 2 3 4 5 6 7 8] [0] 9 1 16
 @@ -40,9 +39,0 @@
 -  slot 56 u8
 -  slot 57 u8
@@ -2209,16 +970,13 @@ end
 ; CASE: unaligned selected field range assign_receiver
 ; RUN: emit
 ; CHECK: .Lau0_70:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
 ; CHECK-NOT: .Lau0_71:\n
-; CHECK:     movq -16(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 1(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
+; CHECK: {{mov[a-z]* }}[[#SOURCE:]](%rbp), {{%r[a-z0-9]+}}\n    {{mov[a-z]* %[a-z0-9]+}}, 1({{%r[a-z0-9]+}})
 ; CHECK-NOT: .Lau0_71:\n
-; CHECK:     movzbq -8(%rbp), %rax
-; CHECK-NEXT:     movb %al, 9(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
+; CHECK: {{mov[a-z]* }}[[#SOURCE+8]](%rbp), {{%r[a-z0-9]+}}\n    {{mov[a-z]* %[a-z0-9]+}}, 9({{%r[a-z0-9]+}})
 ; CHECK: .Lau0_71:\n
+; RUN: metadata
+; CHECK-DAG: class Bytes9 storage [0 1 2 3 4 5 6 7 8] [0] 9 1 16
 layout Bytes9 [u8*9]
 layout Wrapped [u8*11]
 fields Bytes9 [(u8 0 9 true)]
@@ -2249,16 +1007,13 @@ end
 ; CASE: unaligned selected field range initialize
 ; RUN: emit
 ; CHECK: .Lau0_70:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
 ; CHECK-NOT: .Lau0_71:\n
-; CHECK:     movq -16(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 1(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
+; CHECK: {{mov[a-z]* }}[[#SOURCE:]](%rbp), {{%r[a-z0-9]+}}\n    {{mov[a-z]* %[a-z0-9]+}}, 1({{%r[a-z0-9]+}})
 ; CHECK-NOT: .Lau0_71:\n
-; CHECK:     movzbq -8(%rbp), %rax
-; CHECK-NEXT:     movb %al, 9(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
+; CHECK: {{mov[a-z]* }}[[#SOURCE+8]](%rbp), {{%r[a-z0-9]+}}\n    {{mov[a-z]* %[a-z0-9]+}}, 9({{%r[a-z0-9]+}})
 ; CHECK: .Lau0_71:\n
+; RUN: metadata
+; CHECK-DAG: class Bytes9 storage [0 1 2 3 4 5 6 7 8] [0] 9 1 16
 layout Bytes9 [u8*9]
 layout Wrapped [u8*11]
 fields Bytes9 [(u8 0 9 true)]
@@ -2291,126 +1046,13 @@ function entry
 end
 
 ; CASE: mixed binding and return widths and padding boundaries
-; RUN: emit
-; CHECK: sector_in_mixed:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_70:\n
-; CHECK:     movq 0(%r11), %rax
-; CHECK-NEXT:     movq %rax, -48(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_70:\n
-; CHECK:     movzbq 8(%r11), %rax
-; CHECK-NEXT:     movb %al, -40(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_70:\n
-; CHECK:     movzbq 9(%r11), %rax
-; CHECK-NEXT:     movb %al, -39(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_70:\n
-; CHECK:     movzbq 10(%r11), %rax
-; CHECK-NEXT:     movb %al, -38(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_70:\n
-; CHECK:     movq 16(%r11), %rax
-; CHECK-NEXT:     movq %rax, -32(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_70:\n
-; CHECK:     movq 24(%r11), %rax
-; CHECK-NEXT:     movq %rax, -24(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_70:\n
-; CHECK:     movq 32(%r11), %rax
-; CHECK-NEXT:     movq %rax, -16(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_70:\n
-; CHECK:     movzbq 40(%r11), %rax
-; CHECK-NEXT:     movb %al, -8(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_70:\n
-; CHECK:     movzbq 41(%r11), %rax
-; CHECK-NEXT:     movb %al, -7(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_70:\n
-; CHECK:     movzbq 42(%r11), %rax
-; CHECK-NEXT:     movb %al, -6(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_70:\n
-; CHECK:     movzbq 43(%r11), %rax
-; CHECK-NEXT:     movb %al, -5(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_70:\n
-; CHECK:     movzbq 44(%r11), %rax
-; CHECK-NEXT:     movb %al, -4(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_70:\n
-; CHECK:     movzbq 45(%r11), %rax
-; CHECK-NEXT:     movb %al, -3(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_70:\n
-; CHECK:     movzbq 46(%r11), %rax
-; CHECK-NEXT:     movb %al, -2(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_70:\n
-; RUN: emit
-; CHECK: .Lau0_70:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movq -48(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 0(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -40(%rbp), %rax
-; CHECK-NEXT:     movb %al, 8(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -39(%rbp), %rax
-; CHECK-NEXT:     movb %al, 9(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -38(%rbp), %rax
-; CHECK-NEXT:     movb %al, 10(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movq -32(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 16(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movq -24(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 24(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movq -16(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 32(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -8(%rbp), %rax
-; CHECK-NEXT:     movb %al, 40(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -7(%rbp), %rax
-; CHECK-NEXT:     movb %al, 41(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -6(%rbp), %rax
-; CHECK-NEXT:     movb %al, 42(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -5(%rbp), %rax
-; CHECK-NEXT:     movb %al, 43(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -4(%rbp), %rax
-; CHECK-NEXT:     movb %al, 44(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -3(%rbp), %rax
-; CHECK-NEXT:     movb %al, 45(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -2(%rbp), %rax
-; CHECK-NEXT:     movb %al, 46(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lreturn0:\n
+; RUN: abi-facts
+; ABI: function sector_in_mixed sector_in_mixed
+; CHECK-JSON: functions.sector_in_mixed.parameters [{"offset":0,"bytes":48,"kind":"class","type_name":"CopyMixed"}]
+; CHECK-JSON: functions.sector_in_mixed.result {"bytes":48,"kind":"class","type_name":"CopyMixed"}
+; RUN: metadata
+; CHECK-DAG: class CopyBytes9 storage [0 1 2 3 4 5 6 7 8] [0] 9 1 16
+; CHECK-DAG: class CopyMixed storage [0 1 2 3 4 5 6 7 8 9 10 16 24 32 40 41 42 43 44 45 46] [0 1 10 16 24 32 40] 48 8 48
 layout CopyBytes9 [u8*9]
 layout CopyMixed [u8*11 bool (enum CopyState) u64 u8*7]
 fields CopyBytes9 [(u8 0 9 true)]
@@ -2448,86 +1090,13 @@ function sector_in_mixed
 end
 
 ; CASE: eight logical U8 leaves split by canonical nested padding
-; RUN: emit
-; CHECK: sector_in_gap:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_70:\n
-; CHECK:     movq 0(%r11), %rax
-; CHECK-NEXT:     movq %rax, -24(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_70:\n
-; CHECK:     movzbq 8(%r11), %rax
-; CHECK-NEXT:     movb %al, -16(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_70:\n
-; CHECK:     movzbq 9(%r11), %rax
-; CHECK-NEXT:     movb %al, -15(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_70:\n
-; CHECK:     movzbq 10(%r11), %rax
-; CHECK-NEXT:     movb %al, -14(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_70:\n
-; CHECK:     movzbq 11(%r11), %rax
-; CHECK-NEXT:     movb %al, -13(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_70:\n
-; CHECK:     movzbq 12(%r11), %rax
-; CHECK-NEXT:     movb %al, -12(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_70:\n
-; CHECK:     movzbq 13(%r11), %rax
-; CHECK-NEXT:     movb %al, -11(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_70:\n
-; CHECK:     movzbq 14(%r11), %rax
-; CHECK-NEXT:     movb %al, -10(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lau0_70:\n
-; CHECK:     movzbq 16(%r11), %rax
-; CHECK-NEXT:     movb %al, -8(%rbp)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lau0_70:\n
-; RUN: emit
-; CHECK: .Lau0_70:\n
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movq -24(%rbp), %rax
-; CHECK-NEXT:     movq %rax, 0(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -16(%rbp), %rax
-; CHECK-NEXT:     movb %al, 8(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -15(%rbp), %rax
-; CHECK-NEXT:     movb %al, 9(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -14(%rbp), %rax
-; CHECK-NEXT:     movb %al, 10(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -13(%rbp), %rax
-; CHECK-NEXT:     movb %al, 11(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -12(%rbp), %rax
-; CHECK-NEXT:     movb %al, 12(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -11(%rbp), %rax
-; CHECK-NEXT:     movb %al, 13(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -10(%rbp), %rax
-; CHECK-NEXT:     movb %al, 14(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK-NOT: .Lreturn0:\n
-; CHECK:     movzbq -8(%rbp), %rax
-; CHECK-NEXT:     movb %al, 16(%r10)
-; CHECK-NOT: {{^    (pushq %r(si|di|cx)|popq %r(si|di|cx)|cld$|rep |leaq .*\(%rsp\), %rax$|(movq|movzbq) .*\(.*, %rax$)}}
-; CHECK: .Lreturn0:\n
+; RUN: abi-facts
+; ABI: function sector_in_gap sector_in_gap
+; CHECK-JSON: functions.sector_in_gap.parameters [{"offset":0,"bytes":24,"kind":"class","type_name":"GapOuter"}]
+; CHECK-JSON: functions.sector_in_gap.result {"bytes":24,"kind":"class","type_name":"GapOuter"}
+; RUN: metadata
+; CHECK-DAG: class GapChild storage [0 8 9 10 11 12 13 14] [0 8] 16 8 16
+; CHECK-DAG: class GapOuter storage [0 8 9 10 11 12 13 14 16] [0 16] 24 8 24
 layout GapChild [u64 u8*7]
 layout GapOuter [u64 u8*8]
 fields GapChild [(u64 0 1 false) (u8 1 7 true)]

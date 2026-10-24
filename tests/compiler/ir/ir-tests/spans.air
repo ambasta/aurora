@@ -1392,10 +1392,8 @@ end
 ; CHECK-DAG: .local span_mixed_callee\n
 ; CHECK-DAG: .local span_mixed_forward\n
 ; RUN: emit
-; CHECK: cmpq -272(%rbp), %rax
-; CHECK-NOT: movq -312(%rbp), %rcx
-; CHECK-NOT: movzbq (%rcx,%rax,1), %rax
-; CHECK: jae .Laurora_bounds_trap
-; CHECK-NOT: movzbq (%rcx,%rax,1), %rax
-; CHECK: movq -312(%rbp), %rcx
-; CHECK: movzbq (%rcx,%rax,1), %rax
+; CHECK: {{^    cmpq -[0-9]+\(%rbp\), %r[a-z0-9]+$}}
+; CHECK-NEXT: jae .Laurora_bounds_trap
+; CHECK-NOT: movzbq
+; CHECK: {{^    movq -[0-9]+\(%rbp\), }}[[POINTER:%r[a-z0-9]+]]
+; CHECK-NEXT: movzbq ([[POINTER]],{{%r[a-z0-9]+}},1), {{%r[a-z0-9]+}}

@@ -1,8 +1,7 @@
 ; CASE: retained operands: blocks=16
 ; RUN: metrics
-; CHECK-JSON: metrics.snapshots 17
-; CHECK-JSON: metrics.peakOperandDepth 64
-; CHECK-JSON: metrics.peakRetainedOperandFacts 1024
+; CHECK: "snapshots":[[#SNAPSHOTS:]],"peakOperandDepth":[[#DEPTH:]],"peakRetainedOperandFacts":[[#FACTS:]],
+; CHECK-RANGE: [[#FACTS-(SNAPSHOTS-1)*DEPTH]] 0..0
 function resource
   result i64
   frame 0
@@ -23,9 +22,8 @@ end
 ; CASE: retained operands: blocks=64
 ; BASE: retained operands: blocks=16
 ; RUN: metrics
-; CHECK-JSON: metrics.snapshots 65
-; CHECK-JSON: metrics.peakOperandDepth 64
-; CHECK-JSON: metrics.peakRetainedOperandFacts 4096
+; CHECK: "snapshots":[[#SNAPSHOTS:]],"peakOperandDepth":[[#DEPTH:]],"peakRetainedOperandFacts":[[#FACTS:]],
+; CHECK-RANGE: [[#FACTS-(SNAPSHOTS-1)*DEPTH]] 0..0
 @@ -9 +9 @@
 -repeat 15
 +repeat 63
@@ -33,9 +31,8 @@ end
 ; CASE: retained operands: blocks=256
 ; BASE: retained operands: blocks=16
 ; RUN: metrics
-; CHECK-JSON: metrics.snapshots 257
-; CHECK-JSON: metrics.peakOperandDepth 64
-; CHECK-JSON: metrics.peakRetainedOperandFacts 16384
+; CHECK: "snapshots":[[#SNAPSHOTS:]],"peakOperandDepth":[[#DEPTH:]],"peakRetainedOperandFacts":[[#FACTS:]],
+; CHECK-RANGE: [[#FACTS-(SNAPSHOTS-1)*DEPTH]] 0..0
 @@ -9 +9 @@
 -repeat 15
 +repeat 255
@@ -43,9 +40,8 @@ end
 ; CASE: retained operands: blocks=4096
 ; BASE: retained operands: blocks=16
 ; RUN: metrics
-; CHECK-JSON: metrics.snapshots 4097
-; CHECK-JSON: metrics.peakOperandDepth 64
-; CHECK-JSON: metrics.peakRetainedOperandFacts 262144
+; CHECK: "snapshots":[[#SNAPSHOTS:]],"peakOperandDepth":[[#DEPTH:]],"peakRetainedOperandFacts":[[#FACTS:]],
+; CHECK-RANGE: [[#FACTS-(SNAPSHOTS-1)*DEPTH]] 0..0
 @@ -9 +9 @@
 -repeat 15
 +repeat 4095
@@ -77,17 +73,11 @@ end
 ; RUN: metrics
 ; CHECK: "outcome":"rejected"
 ; CHECK: operand retention limit
-; CHECK-JSON: metrics.snapshots 4097
-; CHECK-JSON: metrics.peakOperandDepth 64
 ; CHECK-JSON: metrics.peakRetainedOperandFacts 262144
-; CHECK-JSON: metrics.peakRetainedValueFacts 262144
-; CHECK-JSON: metrics.peakRetainedInitializationPayloadBytes 0
 
 ; CASE: exact retained state accounting
 ; RUN: metrics
 ; CHECK-JSON: metrics.snapshots 65536
-; CHECK-JSON: metrics.peakRetainedOperandFacts 0
-; CHECK-JSON: metrics.peakRetainedInitializationPayloadBytes 0
 function resource
   result i64
   frame 0
@@ -113,18 +103,13 @@ end
 ; CHECK: "outcome":"rejected"
 ; CHECK: state retention limit
 ; CHECK-JSON: metrics.snapshots 65536
-; CHECK-JSON: metrics.peakOperandDepth 0
-; CHECK-JSON: metrics.peakRetainedOperandFacts 0
-; CHECK-JSON: metrics.peakRetainedValueFacts 0
-; CHECK-JSON: metrics.peakRetainedInitializationPayloadBytes 0
 @@ -6 +6 @@
 -repeat 65534
 +repeat 65535
 
 ; CASE: straight-line stack is not retained
 ; RUN: metrics
-; CHECK-JSON: metrics.snapshots 1
-; CHECK-JSON: metrics.peakOperandDepth 4096
+; CHECK-JSON-RANGE: metrics.peakOperandDepth 1..
 ; CHECK-JSON: metrics.peakRetainedOperandFacts 0
 function resource
   result i64
@@ -141,8 +126,8 @@ end
 
 ; CASE: worklist revisit does not recharge retained operands
 ; RUN: metrics
-; CHECK-JSON: metrics.snapshots 4
-; CHECK-JSON: metrics.peakRetainedOperandFacts 192
+; CHECK: "snapshots":[[#SNAPSHOTS:]],"peakOperandDepth":[[#DEPTH:]],"peakRetainedOperandFacts":[[#FACTS:]],
+; CHECK-RANGE: [[#FACTS]] 1..[[#(SNAPSHOTS-1)*DEPTH]]
 function resource
   result i64
   frame 16

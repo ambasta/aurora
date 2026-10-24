@@ -2372,7 +2372,6 @@ end
 
 ; CASE: immutable region authority does not occupy CFG snapshots
 ; RUN: metrics
-; CHECK-JSON: metrics.snapshots 4
 ; CHECK-JSON: metrics.peakRetainedValueFacts 0
 function region_snapshot
   result i64

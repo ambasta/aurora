@@ -282,28 +282,41 @@ end
 ; CASE: compact copies preserve registers and report transient stack peak
 ; BASE: 64-field value boundary accepted
 ; RUN: emit
-; CHECK-NOT: copy_empty:\n
-; CHECK: leaq 0(%rsp), %rax\n    pushq %rsi\n    pushq %rdi\n    pushq %rcx
-; RUN: emit
-; CHECK: copy_empty:\n
-; CHECK-NOT: .size copy_empty,
-; CHECK: pushq %rsi\n    pushq %rdi\n    pushq %rcx
-; RUN: emit
-; CHECK: copy_empty:\n
-; CHECK-NOT: .size copy_empty,
-; CHECK: movq $512, %rcx\n    cld\n    rep movsb\n    popq %rcx\n    popq %rdi\n    popq %rsi
-; RUN: emit
-; CHECK: copy_empty:\n
-; CHECK-NOT: .size copy_empty,
+; CHECK: test:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: [[#TEST:]] 1024..
+; CHECK:     subq $[[#RECORD:]], %rsp
+; CHECK-NEXT:     orq $0, (%rsp)
+; CHECK-RANGE: [[#RECORD]] 512..
+; CHECK-NEXT: {{^    leaq 0\(%rsp\), %r[a-z0-9]+$}}
+; CHECK-DAG:     pushq %rsi
+; CHECK-DAG:     pushq %rdi
+; CHECK-DAG:     pushq %rcx
 ; CHECK: rep movsb
-; CHECK-NOT: .size copy_empty,
+; CHECK-DAG:     popq %rcx
+; CHECK-DAG:     popq %rdi
+; CHECK-DAG:     popq %rsi
+; CHECK: call copy_empty
+; CHECK: copy_empty:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: [[#COPY:]] 512..
+; CHECK-DAG:     pushq %rsi
+; CHECK-DAG:     pushq %rdi
+; CHECK-DAG:     pushq %rcx
 ; CHECK: rep movsb
-; CHECK-NOT: rep movsb
+; CHECK-DAG:     popq %rcx
+; CHECK-DAG:     popq %rdi
+; CHECK-DAG:     popq %rsi
 ; CHECK: .size copy_empty,
 ; RUN: stack-facts
-; CHECK-JSON: functions.copy_empty.local_bytes 568
-; CHECK-JSON: functions.test.local_bytes 1576
-; CHECK-JSON: functions.test.calls.copy_empty 1552
+; CHECK-JSON: functions.copy_empty.copied_record {"parameter_bytes":[512],"result_bytes":512}
+; CHECK-JSON-RANGE: functions.copy_empty.local_bytes [[#COPY+16+8]]..
+; CHECK-JSON-RANGE: functions.test.calls.copy_empty [[#TEST+16+RECORD]]..
+; CHECK: "test":{"local_bytes":[[#LOCAL:]],"calls":{"copy_empty":[[#CALL:]]},
+; CHECK-RANGE: [[#LOCAL]] [[#TEST+16+RECORD+8]]..
+; CHECK-RANGE: [[#CALL%16]] 0..0
 
 ; CASE: aggregate edge cannot conceal receiver recursion
 ; RUN: verify
@@ -398,12 +411,15 @@ end
 ; BASE: value arguments with scalar result
 ; RUN: emit
 ; CHECK-DAG: .local copy_pair
-; CHECK-DAG: movq %r11, -72(%rbp)
-; CHECK-DAG: movq %r10, -80(%rbp)
 ; CHECK-DAG: movq %rsp, %r11
-; CHECK-DAG: leaq -48(%rbp), %r10
-; CHECK-DAG: movq 40(%r11), %rax
-; CHECK-DAG: movq %rax, 8(%r10)
+; CHECK-DAG: {{leaq -[0-9]+\(%rbp\), %r10}}
+; CHECK-DAG: movq %r11, [[#RECORD:]](%rbp)
+; CHECK-DAG: movq %r10, [[#RESULT:]](%rbp)
+; CHECK-DAG: movq [[#RECORD]](%rbp), %r11\n    movq 40(%r11), {{%r[a-z0-9]+}}
+; CHECK-DAG: movq [[#RESULT]](%rbp), %r10
+; CHECK-DAG: {{movq %r[a-z0-9]+, 8\(%r10\)}}
+; RUN: stack-facts
+; CHECK-JSON: functions.copy_pair.copied_record {"parameter_bytes":[16,8,16,8],"result_bytes":16}
 @@ -29 +29,2 @@
 -    AggregateCall copy_pair [16 0 32 0]
 +    AggregateCall copy_pair [16 0 32 0] 48
@@ -421,7 +437,9 @@ end
 ; CHECK-JSON-RANGE: metrics.snapshots ..8
 ; CHECK-JSON: metrics.peakOperandDepth 4096
 ; CHECK-JSON-RANGE: metrics.peakRetainedValueFacts ..65536
-; CHECK-JSON-RATIO: metrics.peakRetainedInitializationPayloadBytes metrics.snapshots 1024
+; CHECK: "snapshots":[[#SNAPSHOTS:]],
+; CHECK: "peakRetainedInitializationPayloadBytes":[[#PAYLOAD:]]}
+; CHECK-RANGE: [[#PAYLOAD]] ..[[#SNAPSHOTS*2*8*64]]
 function test
   result i64
   frame 32768

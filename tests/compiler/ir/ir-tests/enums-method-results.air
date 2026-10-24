@@ -2027,8 +2027,11 @@ end
 ; CASE: method result ABI emission
 ; BASE: method result with composed enum array empty descendants
 ; RUN: emit
-; CHECK-DAG: movq %r10, -168(%rbp)
-; CHECK-DAG: movq %r11, -176(%rbp)
-; CHECK-DAG: leaq -152(%rbp), %r11
-; CHECK-DAG: movq %rdi, -8(%rbp)
-; CHECK-DAG: movq %rsi, -16(%rbp)
+; CHECK: {{^    leaq -[0-9]+\(%rbp\), %r11$}}
+; CHECK: snapshot_outer:
+; CHECK-DAG: movq %r10, [[#RECEIVER:]](%rbp)
+; CHECK-DAG: movq %r11, [[#RESULT:]](%rbp)
+; CHECK-DAG: {{movq %rdi, -[0-9]+\(%rbp\)}}
+; CHECK-DAG: {{movq %rsi, -[0-9]+\(%rbp\)}}
+; CHECK-DAG: movq [[#RECEIVER]](%rbp), %r10
+; CHECK-DAG: movq [[#RESULT]](%rbp), {{%r[a-z0-9]+}}
