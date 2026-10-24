@@ -19,6 +19,10 @@ fixture_options = ['optimization=1']
 # Every test in full is also in exactly one of merge (run on every merge) or
 # release (opt-in: releases and compiler bumps). dev/slow/core/bytes are focused
 # selections; explicit library enumeration is separate in exhaustive.
+# Start the longest merge tests first so they do not form the tail of a run.
+slow_tests = {'json-library': 30, 'hosted-lexer-bootstrap': 30, 'package-graph': 20, 'method-values': 20,
+              'package-manifest': 15, 'hosted-parser': 15, 'decimal-values': 10, 'sector-values-abi': 10,
+              'readonly-windows': 5, 'json-string-write': 5, 'composed-values': 5}
 foreach entry : [
     ['frontend', 'compiler/run.py', 'core'],
     ['classes', 'compiler/classes.py', 'core'],
@@ -49,6 +53,7 @@ foreach entry : [
         workdir: meson.current_build_dir(),
         timeout: 300,
         is_parallel: true,
+        priority: slow_tests.get(entry[0], 0),
     )
 endforeach
 
@@ -110,8 +115,12 @@ test(
 
 # Textual IR cases (.air) run through one driver; each top-level directory of
 # tests/compiler/ir is one test. See tests/compiler/ir/README.md.
+# The textual IR printer/reader is test tooling: it stays out of the compiler's
+# own library so aurorac (and every image built by it) never waits for it.
+ir_text = static_library('ir-text', '../compiler/ir_text.cpp',
+    dependencies: hosted_frontend, native: true, override_options: fixture_options, install: false)
 aurora_ir_check = executable('aurora-ir-check', 'tools/aurora_ir_check.cpp',
-    dependencies: hosted_frontend, include_directories: include_directories('../compiler'),
+    dependencies: hosted_frontend, link_with: ir_text, include_directories: include_directories('../compiler'),
     native: true, override_options: fixture_options, install: false)
 air_lit = files('tools/air_lit.py')
 # The large native-ABI programs are loops over call shapes; abi_programs.py
@@ -152,7 +161,7 @@ foreach entry : [
 endforeach
 # Owner, view, writer and emitter API unit tests over modules from the same cases.
 ir_api = executable('ir-api', 'compiler/ir_api.cpp',
-    dependencies: hosted_frontend, include_directories: include_directories('../compiler'),
+    dependencies: hosted_frontend, link_with: ir_text, include_directories: include_directories('../compiler'),
     native: true, override_options: fixture_options, install: false)
 test('ir-api', ir_api, args: [meson.current_source_dir() / 'compiler' / 'ir'],
      suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
@@ -177,6 +186,7 @@ test(
     env: oracle_env,
     workdir: meson.current_build_dir(),
     timeout: 180,
+    priority: slow_tests['sector-values-abi'],
 )
 
 # Standalone behavioral runners participate in the ordinary full graph.
@@ -508,7 +518,8 @@ foreach family : ['json_library', 'json_owned', 'json_string_read', 'json_string
     test(family.replace('_', '-'), python,
          args: ['-B', files('compiler/' + family + '.py'), '--compiler', aurorac],
          depends: aurorac, suite: ['full', 'merge', 'dev', 'bytes', 'compiler'],
-         env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
+         env: oracle_env, workdir: meson.current_build_dir(), timeout: 300,
+         priority: slow_tests.get(family.replace('_', '-'), 0))
 endforeach
 # Every two-byte input and a native sweep of all code points through the same driver.
 test('utf8-exhaustive', python,
@@ -520,7 +531,8 @@ foreach family : ['identity', 'manifest', 'graph']
     test('package-' + family, python,
          args: ['-B', files('compiler/package_' + family + '.py'), '--compiler', aurorac],
          depends: aurorac, suite: ['full', 'merge', 'dev', 'packages', 'compiler'],
-         env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
+         env: oracle_env, workdir: meson.current_build_dir(), timeout: 300,
+         priority: slow_tests.get('package-' + family, 0))
 endforeach
 # Storage and filesystem libraries: one compiled driver per family over data cases,
 # compared with the golden file beside it (tests/compiler/storage).
@@ -570,7 +582,8 @@ bootstrap_args = ['-B', '-O', files('compiler/hosted_lexer_bootstrap.py'), auror
                   meson.project_source_root(), frontend_assembly[0], frontend_stage2_assembly[0]]
 test('hosted-lexer-bootstrap', python, args: bootstrap_args,
      depends: [aurorac, aurorac_stage2], suite: ['full', 'merge', 'dev', 'core', 'compiler'],
-     env: oracle_env, workdir: meson.current_build_dir(), timeout: 180, is_parallel: false)
+     env: oracle_env, workdir: meson.current_build_dir(), timeout: 180,
+     priority: slow_tests['hosted-lexer-bootstrap'])
 # Historical C++ emitter oracle versus C2, plus C1/C2 corpus convergence: run at
 # compiler bumps and releases (release suite), not on every merge.
 # Without -Dhistorical_oracle these tests fail as blocked rather than pass.
@@ -646,7 +659,8 @@ test('hosted-parser', hosted_parser_test,
                  '../compiler/ir_verification_services.au',
                  '../compiler/ir_verification_transfer.au',
                  '../compiler/ir_verification.au'),
-     suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
+     suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120,
+     priority: slow_tests['hosted-parser'])
 # The already-built adapter objects with forged Aurora entries; the generated
 # frontend object itself is never linked.
 hosted_parser_invalid = executable(
