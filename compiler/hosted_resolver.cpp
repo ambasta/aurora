@@ -1236,6 +1236,8 @@ std::uint64_t resolutionQuota() {
     const auto loweringWork = std::max(nominals, add(8, mul(2, D)));
     // Linkage's temporary signature/prefix lists restore their caller's base.
     // Ingest holds <=12 request rows per file byte and one row per token ordinal.
+    // Graph traversal needs at most 18 transient frames plus name-helper scratch,
+    // below the existing ingest/name bounds; no owner or capacity budget is added.
     const auto work = std::max({add(mul(13, b), 1), sum({mul(5, Sx), types, mul(2, D), 4096, 128}), loweringWork});
     const auto capacity = [&](std::uint64_t count) {
         return add(mul(2, count), 8);
@@ -1392,6 +1394,8 @@ class HostedResolution::Impl {
     SessionOwner owner;
     std::vector<ModuleSource> sources;
     bool finished = false, failed = false;
+    std::optional<std::size_t> graphRoot;
+    bool graphComplete = false;
     std::map<std::string, std::int64_t> builtinIdentities;
     std::map<service::Operation, std::int64_t> serviceSpellings;
     std::vector<service::Kind> serviceKinds;
@@ -1635,7 +1639,7 @@ public:
         seed();
     }
     HostedModule add(std::shared_ptr<const SourceText> source) {
-        if (finished || failed || !source || sources.size() >= 64)
+        if (finished || failed || graphComplete || !source || sources.size() >= 64)
             invalidResolution();
         try {
             const auto tokens = lex(source);
@@ -1671,9 +1675,57 @@ public:
             throw;
         }
     }
-    HostedResolvedSource
-    resolve(const std::vector<std::size_t> &order, std::size_t root, AnalysisMode mode, bool collectAbi) {
-        if (finished || failed || root >= sources.size() || order.size() != sources.size())
+    std::optional<std::string> nextImport(std::size_t root) {
+        if (finished || failed || root >= sources.size() || (graphRoot && *graphRoot != root))
+            invalidResolution();
+        graphRoot = root;
+        try {
+            wire::WorkRow result;
+            aurora_hosted_resolver_graph_step(owner.data(), static_cast<std::int64_t>(root), &result);
+            storage();
+            if (result.value0 == 0) {
+                for (std::size_t index = 0; index < sources.size(); ++index) {
+                    wire::MetaRow row;
+                    aurora_hosted_resolver_read_meta(owner.data(), static_cast<std::int64_t>(index), &row);
+                    if (row.tag != MetaTag::module_unit || row.value12 < 0 ||
+                        sizeValue(row.value12) >= sources.size() || row.value13 < 0 ||
+                        sizeValue(row.value13) >= sources.size() || row.value14 != (index == root))
+                        invalidResolution();
+                    sources[index].scope = intValue(row.value13);
+                }
+                graphComplete = true;
+                return std::nullopt;
+            }
+            if (result.value0 == 4)
+                throw Error("module import depth exceeds 16");
+            if (result.value0 == 5)
+                throw Error("module graph exceeds 64 files");
+            if (result.value1 < 0 || sizeValue(result.value1) >= sources.size())
+                invalidResolution();
+            const auto &header = sources[sizeValue(result.value1)].header;
+            if (result.value0 == 3)
+                throw Error("module import cycle involving " + header.moduleName);
+            if (result.value2 < 0 || sizeValue(result.value2) >= header.imports.size())
+                invalidResolution();
+            const auto &name = header.imports[sizeValue(result.value2)].text;
+            if (result.value0 == 2)
+                throw Error("duplicate import in " + header.moduleName + ": " + name);
+            if (result.value0 != 1)
+                invalidResolution();
+            return name;
+        } catch (...) {
+            failed = true;
+            owner.release();
+            throw;
+        }
+    }
+    HostedResolvedSource resolve(const std::vector<std::size_t> &order,
+                                 std::size_t root,
+                                 AnalysisMode mode,
+                                 bool collectAbi,
+                                 bool sourceOrdered = false) {
+        if (finished || failed || root >= sources.size() ||
+            (sourceOrdered ? (!graphComplete || graphRoot != root) : (graphRoot || order.size() != sources.size())))
             invalidResolution();
         finished = true;
         // The direct API may outlive this call. Release its sole armed native
@@ -1685,46 +1737,48 @@ public:
                 owner.release();
             }
         } release{owner};
-        std::vector<bool> seen(sources.size());
-        std::map<std::string, std::size_t> names;
-        for (std::size_t i = 0; i < sources.size(); ++i)
-            if (!names.emplace(sources[i].header.moduleName, i).second)
-                invalidResolution();
-        std::int64_t nextScope = 1;
-        for (std::size_t ordinal = 0; ordinal < order.size(); ++ordinal) {
-            const auto index = order[ordinal];
-            if (index >= sources.size() || seen[index])
-                invalidResolution();
-            seen[index] = true;
-            hosted_abi::ResolverOrderInput input;
-            input.module = static_cast<std::int64_t>(index);
-            input.order = static_cast<std::int64_t>(ordinal);
-            input.scope = index == root ? 0 : nextScope++;
-            input.root = index == root;
-            sources[index].scope = intValue(input.scope);
-            if (!aurora_hosted_resolver_order_module(owner.data(), &input)) {
-                storage();
-                invalidResolution();
-            }
-        }
-        for (std::size_t index = 0; index < sources.size(); ++index) {
-            const auto &unit = sources[index];
-            wire::MetaRow moduleRow;
-            aurora_hosted_resolver_read_meta(owner.data(), static_cast<std::int64_t>(index), &moduleRow);
-            if (moduleRow.tag != MetaTag::module_unit || unit.imports.size() != unit.header.imports.size())
-                invalidResolution();
-            for (std::size_t ordinal = 0; ordinal < unit.imports.size(); ++ordinal) {
-                const auto found = names.find(unit.header.imports[ordinal].text);
-                if (found == names.end() || unit.imports[ordinal] < 0 || moduleRow.value8 < 0 ||
-                    unit.imports[ordinal] > std::numeric_limits<std::int64_t>::max() - moduleRow.value8)
+        if (!sourceOrdered) {
+            std::vector<bool> seen(sources.size());
+            std::map<std::string, std::size_t> names;
+            for (std::size_t i = 0; i < sources.size(); ++i)
+                if (!names.emplace(sources[i].header.moduleName, i).second)
                     invalidResolution();
-                hosted_abi::ResolverImportInput input;
+            std::int64_t nextScope = 1;
+            for (std::size_t ordinal = 0; ordinal < order.size(); ++ordinal) {
+                const auto index = order[ordinal];
+                if (index >= sources.size() || seen[index])
+                    invalidResolution();
+                seen[index] = true;
+                hosted_abi::ResolverOrderInput input;
                 input.module = static_cast<std::int64_t>(index);
-                input.node = moduleRow.value8 + unit.imports[ordinal];
-                input.target = static_cast<std::int64_t>(found->second);
-                if (!aurora_hosted_resolver_bind_import(owner.data(), &input)) {
+                input.order = static_cast<std::int64_t>(ordinal);
+                input.scope = index == root ? 0 : nextScope++;
+                input.root = index == root;
+                sources[index].scope = intValue(input.scope);
+                if (!aurora_hosted_resolver_order_module(owner.data(), &input)) {
                     storage();
                     invalidResolution();
+                }
+            }
+            for (std::size_t index = 0; index < sources.size(); ++index) {
+                const auto &unit = sources[index];
+                wire::MetaRow moduleRow;
+                aurora_hosted_resolver_read_meta(owner.data(), static_cast<std::int64_t>(index), &moduleRow);
+                if (moduleRow.tag != MetaTag::module_unit || unit.imports.size() != unit.header.imports.size())
+                    invalidResolution();
+                for (std::size_t ordinal = 0; ordinal < unit.imports.size(); ++ordinal) {
+                    const auto found = names.find(unit.header.imports[ordinal].text);
+                    if (found == names.end() || unit.imports[ordinal] < 0 || moduleRow.value8 < 0 ||
+                        unit.imports[ordinal] > std::numeric_limits<std::int64_t>::max() - moduleRow.value8)
+                        invalidResolution();
+                    hosted_abi::ResolverImportInput input;
+                    input.module = static_cast<std::int64_t>(index);
+                    input.node = moduleRow.value8 + unit.imports[ordinal];
+                    input.target = static_cast<std::int64_t>(found->second);
+                    if (!aurora_hosted_resolver_bind_import(owner.data(), &input)) {
+                        storage();
+                        invalidResolution();
+                    }
                 }
             }
         }
@@ -1755,6 +1809,12 @@ HostedResolution::HostedResolution() : implementation(std::make_unique<Impl>()) 
 HostedResolution::~HostedResolution() = default;
 HostedModule HostedResolution::add(std::shared_ptr<const SourceText> source) {
     return implementation->add(std::move(source));
+}
+std::optional<std::string> HostedResolution::nextImport(std::size_t root) {
+    return implementation->nextImport(root);
+}
+HostedResolvedSource HostedResolution::resolve(std::size_t root, AnalysisMode mode, bool collectAbiDeclarations) {
+    return implementation->resolve({}, root, mode, collectAbiDeclarations, true);
 }
 HostedResolvedSource HostedResolution::resolve(const std::vector<std::size_t> &order,
                                                std::size_t root,

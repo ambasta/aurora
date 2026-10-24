@@ -482,4 +482,132 @@ export namespace compiler_resolver {
         }
         return session.index_insert(5, module_id, import_node, 0, 0, result) == result;
     }
+    // Frames are transient scratch rows: module, next import syntax, ordinal,
+    // entered. A host source request unwinds all frames before ingest. Replaying
+    // unfinished ancestry retains only completed module order and import bindings.
+    // The graph bounds (64 files, depth 16) bound this replay without another owner.
+    auto graph_walk(Session& session, i64 root) -> WorkRow {
+        const WorkRow initial = WorkRow(root, -1, 0, 0, -1, -1);
+        session.append_work(initial);
+        while (session.good() && session.work_count() > 0) {
+            const i64 depth = session.work_count() - 1;
+            WorkRow frame = session.work(depth);
+            const i64 module_id = frame.word(0);
+            const MetaRow unit = session.meta(module_id);
+            if (unit.kind() != MetaTag::module_unit) {
+                session.fail_storage(StorageStatus::invalid);
+                return WorkRow(-1, -1, -1, -1, -1, -1);
+            }
+            if (frame.word(3) == 0) {
+                // Entry priority is depth, active ancestry, then completed.
+                if (depth > 16) {
+                    return WorkRow(4, -1, -1, -1, -1, -1);
+                }
+                i64 ancestor = 0;
+                while (ancestor < depth) {
+                    const WorkRow active = session.work(ancestor);
+                    if (active.word(0) == module_id) {
+                        return WorkRow(3, module_id, -1, -1, -1, -1);
+                    }
+                    ancestor = ancestor + 1;
+                }
+                if (unit.word(12) >= 0) {
+                    session.truncate_work(depth);
+                } else {
+                    frame.set_word(1, unit.word(8));
+                    frame.set_word(3, 1);
+                    session.set_work(depth, frame);
+                }
+            } else {
+                const SyntaxRow definition = session.syntax(unit.word(10));
+                const i64 end = definition.word(7);
+                const SyntaxRow preamble = session.syntax(end);
+                const i64 node = frame.word(1);
+                if (definition.declaration_kind() != compiler_parser::SyntaxKind::module_definition
+                    || preamble.declaration_kind() != compiler_parser::SyntaxKind::preamble || node < unit.word(8)
+                    || node > end) {
+                    session.fail_storage(StorageStatus::invalid);
+                    return WorkRow(-1, -1, -1, -1, -1, -1);
+                }
+                if (node == end) {
+                    i64 count = 0;
+                    i64 at = 0;
+                    while (at < session.module_count()) {
+                        const MetaRow other = session.meta(at);
+                        if (other.word(12) >= 0) {
+                            count = count + 1;
+                        }
+                        at = at + 1;
+                    }
+                    i64 scope = count + 1;
+                    if (module_id == root) {
+                        scope = 0;
+                    }
+                    order_module(session, module_id, count, scope, module_id == root);
+                    session.truncate_work(depth);
+                } else {
+                    const SyntaxRow imported = session.syntax(node);
+                    if (imported.declaration_kind() != compiler_parser::SyntaxKind::import_name
+                        || imported.word(11) != module_id) {
+                        session.fail_storage(StorageStatus::invalid);
+                        return WorkRow(-1, -1, -1, -1, -1, -1);
+                    }
+                    const i64 name = source_name_range(session, imported.word(0), imported.word(6));
+                    i64 previous = import_head(session, module_id);
+                    while (previous >= 0 && session.good()) {
+                        const MetaRow bound = session.meta(previous);
+                        if (bound.kind() != MetaTag::import_name) {
+                            session.fail_storage(StorageStatus::invalid);
+                            return WorkRow(-1, -1, -1, -1, -1, -1);
+                        }
+                        if (bound.word(2) < node && source_name(session, bound.word(3)) == name) {
+                            return WorkRow(2, module_id, frame.word(2), -1, -1, -1);
+                        }
+                        previous = bound.word(4);
+                    }
+                    i64 target = -1;
+                    i64 at = 0;
+                    while (at < session.module_count() && session.good()) {
+                        const MetaRow candidate = session.meta(at);
+                        const SyntaxRow candidate_root = session.syntax(candidate.word(10));
+                        const SyntaxRow header = session.syntax(candidate_root.word(7));
+                        if (source_name_range(session, header.word(0), header.word(6)) == name) {
+                            target = at;
+                        }
+                        at = at + 1;
+                    }
+                    if (target < 0) {
+                        if (session.module_count() >= 64) {
+                            return WorkRow(5, -1, -1, -1, -1, -1);
+                        }
+                        return WorkRow(1, module_id, frame.word(2), -1, -1, -1);
+                    }
+                    if (session.index(5, module_id, node, 0, 0) < 0) {
+                        bind_import(session, module_id, node, target);
+                    }
+                    frame.set_word(1, node + 1);
+                    frame.set_word(2, frame.word(2) + 1);
+                    session.set_work(depth, frame);
+                    const WorkRow child = WorkRow(target, -1, 0, 0, -1, -1);
+                    session.append_work(child);
+                }
+            }
+        }
+        return WorkRow(0, -1, -1, -1, -1, -1);
+    }
+    // Status: complete, request source, duplicate, cycle, depth, file limit.
+    // Copied coordinates are diagnostic/transport observations, not authority.
+    auto graph_step(Session& session, i64 root) -> WorkRow {
+        if (!session.good() || session.work_count() != 0 || root < 0 || root >= session.module_count()) {
+            session.fail_storage(StorageStatus::invalid);
+            return WorkRow(-1, -1, -1, -1, -1, -1);
+        }
+        const WorkRow result = graph_walk(session, root);
+        session.truncate_work(0);
+        if (!session.good()) {
+            return WorkRow(-1, -1, -1, -1, -1, -1);
+        }
+        return result;
+    }
+
 }

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <map>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace aurora {
@@ -36,7 +37,7 @@ public:
 };
 
 // Owns the Aurora graph session and the immutable diagnostic source snapshots.
-// File opening and import graph authority stay in ModuleLoader.
+// Aurora owns graph traversal; ModuleLoader retains file-opening authority.
 class HostedResolution {
     class Impl;
     std::unique_ptr<Impl> implementation;
@@ -47,6 +48,11 @@ public:
     HostedResolution(const HostedResolution &) = delete;
     HostedResolution &operator=(const HostedResolution &) = delete;
     HostedModule add(std::shared_ptr<const SourceText> source);
+    // Advances source-owned traversal to its next host read, or completion.
+    std::optional<std::string> nextImport(std::size_t root);
+    HostedResolvedSource
+    resolve(std::size_t root, AnalysisMode mode = AnalysisMode::Check, bool collectAbiDeclarations = false);
+    // Explicit-order compatibility API for already-admitted in-memory modules.
     HostedResolvedSource resolve(const std::vector<std::size_t> &dependencyOrder,
                                  std::size_t root,
                                  AnalysisMode mode = AnalysisMode::Check,

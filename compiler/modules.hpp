@@ -16,24 +16,13 @@ using SourceOverlays = std::map<std::filesystem::path, std::shared_ptr<const Sou
 // operations.
 class ModuleLoader {
 public:
-    class Unit {
-    public:
-        HostedModule program;
-        std::filesystem::path path;
-    };
     class Graph {
     public:
-        std::map<std::string, std::unique_ptr<Unit>> units;
-        std::vector<std::string> order;
-        std::string root;
+        std::size_t root = 0;
         std::set<host::Identity> sourceIdentities;
         std::unique_ptr<HostedResolution> resolution = std::make_unique<HostedResolution>();
         HostedResolvedSource resolve(AnalysisMode mode = AnalysisMode::Check, bool collectAbiDeclarations = false) {
-            std::vector<std::size_t> modules;
-            modules.reserve(order.size());
-            for (const auto &name : order)
-                modules.push_back(units.at(name)->program.id);
-            return resolution->resolve(modules, units.at(root)->program.id, mode, collectAbiDeclarations);
+            return resolution->resolve(root, mode, collectAbiDeclarations);
         }
     };
 
@@ -44,7 +33,6 @@ private:
     SourceOverlays overlays;
     std::size_t bytesRead = 0;
     Graph graph;
-    std::set<std::string> active;
     std::shared_ptr<const SourceText> read(host::SourceFile file) {
         graph.sourceIdentities.insert(file.identity);
         const auto remaining = maxGraphBytes - bytesRead;
@@ -99,42 +87,6 @@ private:
             throw Error("ambiguous module found in multiple roots: " + name);
         return std::move(found.front());
     }
-    void visit(const std::string &name, int depth) {
-        if (depth > 16)
-            throw Error("module import depth exceeds 16");
-        if (active.contains(name))
-            throw Error("module import cycle involving " + name);
-        if (std::find(graph.order.begin(), graph.order.end(), name) != graph.order.end())
-            return;
-        active.insert(name);
-        auto &unit = *graph.units.at(name);
-        std::set<std::string> imports;
-        for (const auto &import : unit.program.imports) {
-            if (!imports.insert(import.text).second)
-                throw Error("duplicate import in " + name + ": " + import.text);
-            if (!graph.units.contains(import.text)) {
-                if (graph.units.size() >= 64)
-                    throw Error("module graph exceeds 64 files");
-                auto imported = std::make_unique<Unit>();
-                auto file = resolve(import.text);
-                imported->path = file.displayPath;
-                try {
-                    imported->program = graph.resolution->add(read(std::move(file)));
-                } catch (const Error &error) {
-                    throw error.withContext("module " + import.text + ": ");
-                }
-                if (imported->program.moduleName != import.text)
-                    throw Error("module header mismatch: expected " + import.text + ", got " +
-                                imported->program.moduleName);
-                if (!imported->program.interfaceUnit)
-                    throw Error("imported module requires an export module interface: " + import.text);
-                graph.units.emplace(import.text, std::move(imported));
-            }
-            visit(import.text, depth + 1);
-        }
-        active.erase(name);
-        graph.order.push_back(name);
-    }
 
 public:
     explicit ModuleLoader(const std::vector<std::filesystem::path> &searchRoots, SourceOverlays sourceOverlays = {})
@@ -163,12 +115,20 @@ public:
         }
     }
     Graph load(const std::filesystem::path &rootPath) {
-        auto root = std::make_unique<Unit>();
-        root->path = rootPath;
-        root->program = graph.resolution->add(read(host::SourceFile::explicitPath(rootPath)));
-        graph.root = root->program.moduleName;
-        graph.units.emplace(graph.root, std::move(root));
-        visit(graph.root, 0);
+        graph.root = graph.resolution->add(read(host::SourceFile::explicitPath(rootPath))).id;
+        while (const auto name = graph.resolution->nextImport(graph.root)) {
+            auto file = resolve(*name);
+            HostedModule imported;
+            try {
+                imported = graph.resolution->add(read(std::move(file)));
+            } catch (const Error &error) {
+                throw error.withContext("module " + *name + ": ");
+            }
+            if (imported.moduleName != *name)
+                throw Error("module header mismatch: expected " + *name + ", got " + imported.moduleName);
+            if (!imported.interfaceUnit)
+                throw Error("imported module requires an export module interface: " + *name);
+        }
         return std::move(graph);
     }
 };

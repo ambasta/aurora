@@ -110,8 +110,9 @@ Qualification requires final-source pinned-container `merge`, normal BIOS/UEFI
 and affected guest gates; releases and compiler bumps also run `release` and
 every guest family, including the
 [source-bootstrap gates](../compiler/README.md#source-bootstrap) for bumps.
-Host record projection, conversion, quota/report transport and source loading
-remain native dependencies; x86 text emission already runs in Aurora.
+Host record projection, conversion, quota/report transport and authorized source
+file I/O remain native dependencies; module traversal and x86 text emission run
+in Aurora.
 Native assembler/linker and host runtime/file/process services remain separate
 self-hosting dependencies.
 
