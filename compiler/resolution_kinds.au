@@ -25,7 +25,8 @@ export namespace compiler_resolver {
         owned_values,
         call_session,
         port_range,
-        serve_session
+        serve_session,
+        value_span
     };
     enum class DeclarationKind {
         invalid,
@@ -163,6 +164,7 @@ export namespace compiler_resolver {
         shadow_function_parameter,
         function_parameters,
         function_boundaries,
-        function_parameter_names
+        function_parameter_names,
+        span_named
     };
 }

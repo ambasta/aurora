@@ -190,6 +190,7 @@ static_assert(static_cast<std::int64_t>(SlotKind::ServiceSlot) == 14);
 static_assert(static_cast<std::int64_t>(SlotKind::RegionSlot) == 15);
 static_assert(static_cast<std::int64_t>(SlotKind::ByteSlot) == 16);
 static_assert(static_cast<std::int64_t>(SlotKind::OwnedValueType) == 17);
+static_assert(static_cast<std::int64_t>(SlotKind::SpanValueType) == 27);
 static_assert(spanBytes == 56);
 static_assert(service::capabilityBytes == 16);
 static_assert(static_cast<std::int64_t>(TypeKind::CallSession) == 18 &&
@@ -229,6 +230,9 @@ static_assert(static_cast<std::int64_t>(TypeKind::IommuEventSession) ==
               static_cast<std::int64_t>(wire::MetadataTypeKind::IommuEventSession));
 static_assert(static_cast<std::int64_t>(TypeKind::OwnedValues) ==
               static_cast<std::int64_t>(wire::MetadataTypeKind::OwnedValues));
+static_assert(static_cast<std::int64_t>(TypeKind::ValueSpan) == 21 &&
+              static_cast<std::int64_t>(TypeKind::ValueSpan) ==
+                  static_cast<std::int64_t>(wire::MetadataTypeKind::ValueSpan));
 
 // resolution_linkage.au spells only these admitted ordinary-overload kinds.
 static_assert(static_cast<std::int64_t>(wire::MetadataTypeKind::I64) == 0);
@@ -693,6 +697,8 @@ void detail::MetadataWriter::declarations(const Module &module) {
             slot(SlotKind::ByteSlot, offset, 0, 0, mutableValue);
         for (const auto &[offset, name] : function.ownedValueTypes)
             slot(SlotKind::OwnedValueType, offset, writer.slotType(Type::ownedValues(Type(name))));
+        for (const auto &[offset, name] : function.spanValueTypes)
+            slot(SlotKind::SpanValueType, offset, writer.slotType(Type::valueSpan(Type(name))));
         row.slotRange.indexCount = writer.slotCount() - row.slotRange.firstIndex;
         const auto receiver = [&](const Receiver &value) {
             wire::ReceiverShape shape;
@@ -829,7 +835,8 @@ void Metadata::publish() {
         if (row.mutableValue != 0 && row.mutableValue != 1)
             invalidTransport();
         const auto kind = static_cast<SlotKind>(row.recordKind);
-        if (kind == SlotKind::ScalarSlot || kind == SlotKind::ObjectSlot || kind == SlotKind::OwnedValueType)
+        if (kind == SlotKind::ScalarSlot || kind == SlotKind::ObjectSlot || kind == SlotKind::OwnedValueType ||
+            kind == SlotKind::SpanValueType)
             checkIndex(index(row.typeIndex), index(state_->instructionBegin));
     }
     if (counts.mapCounts.indices < count(callableCount()))
@@ -1089,6 +1096,9 @@ SlotMapRange<bool> FrameView::byteSlots() const {
 }
 SlotMapRange<std::string> FrameView::ownedValueTypes() const {
     return SlotMapRange<std::string>(range(static_cast<std::int64_t>(SlotKind::OwnedValueType)));
+}
+SlotMapRange<std::string> FrameView::spanValueTypes() const {
+    return SlotMapRange<std::string>(range(static_cast<std::int64_t>(SlotKind::SpanValueType)));
 }
 int SlotRange::offsetAt(std::size_t position) const {
     checkIndex(position, count_);

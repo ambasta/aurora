@@ -87,7 +87,8 @@ export namespace compiler_lowering {
         ReturnOwnedObject,
         AcquireObjectLoan,
         ReleaseObjectLoan,
-        BorrowedCall
+        BorrowedCall,
+        SpanValuesLoad
     };
     enum class Unary {
         CheckedNegate,
@@ -118,7 +119,7 @@ export namespace compiler_lowering {
         Size,
         PublicFieldCount
     };
-    // Fill rows are invalid records; InstructionForm has exactly the 84 IR forms.
+    // Fill rows are invalid records; InstructionForm has exactly the 85 IR forms.
     enum class RecordKind {
         invalid,
         Instruction,
@@ -146,7 +147,8 @@ export namespace compiler_lowering {
         Descriptor,
         DescriptorView,
         EnumCases,
-        UnreadLocal
+        UnreadLocal,
+        SpanValueType
     };
     // A role selects one signed, unsigned, slice, or explicitly absent payload.
     // Flat lists use their declared scalar-entry role, never raw field numbers.

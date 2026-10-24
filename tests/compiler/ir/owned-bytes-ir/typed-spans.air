@@ -1,0 +1,316 @@
+; CASE: typed span borrows a typed owner, narrows a window and copies an element
+; RUN: verify
+; EXPECT-OK
+layout ByteBox []
+layout Other [u8 u64 u8]
+layout Record [u8 u64 u8]
+fields ByteBox [(bytes 0 0 false)]
+fields Other [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields Record [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+storage ByteBox [] [0] 32 8 32
+storage Other [{0,8}*3] [{0,8}*3] 24 8 24
+storage Record [{0,8}*3] [{0,8}*3] 24 8 24
+function typed_span
+  result i64
+  params [region]
+  frame 240
+  slot 160 u8
+  slot 168 u64
+  slot 176 u8
+  slot 184 u8
+  slot 192 u64
+  slot 200 u8
+  slot 216 u8
+  slot 224 u64
+  slot 232 u8
+  object 176 Record false
+  object 200 Record false
+  object 232 Record true
+  span 96
+  span 152
+  region 8
+  bytes 40 true
+  values 40 Record
+  spanvalues 96 Record
+  spanvalues 152 Record
+    BindRegionParameter 0 8
+    BeginObject 232
+    Constant 7 u8
+    Store 232 u8
+    Constant 42 u64
+    Store 224 u64
+    Constant 9 u8
+    Store 216 u8
+    BeginObject 200
+    CopyObject 232 200
+    EndObject 232
+    BeginBytes 40
+    Constant 2
+    AllocateValues 8 40 200
+    EndObject 200
+    BorrowOwnedSpan 40 -1 96
+    Constant 1
+    Push
+    Constant 1
+    Subspan 96 152
+    BeginObject 176
+    Constant
+    SpanValuesLoad 152 176
+    EndObject 176
+    SpanLength 96
+    EndSpan 152
+    EndSpan 96
+    EndBytes 40
+    Return
+end
+
+; CASE: typed span metadata frame view
+; BASE: typed span borrows a typed owner, narrows a window and copies an element
+; RUN: metadata
+; CHECK: spanvalues typed_span 96 Record
+; CHECK-NEXT: spanvalues typed_span 152 Record
+
+; CASE: typed span borrow requires the owner's element
+; BASE: typed span borrows a typed owner, narrows a window and copies an element
+; RUN: verify
+; EXPECT-ERROR: changes the span element type
+@@ -31 +31 @@
+-  spanvalues 96 Record
++  spanvalues 96 Other
+
+; CASE: typed span window keeps its element
+; BASE: typed span borrows a typed owner, narrows a window and copies an element
+; RUN: verify
+; EXPECT-ERROR: changes the span element type
+@@ -32 +32 @@
+-  spanvalues 152 Record
++  spanvalues 152 Other
+
+; CASE: typed owner cannot supply a byte span
+; BASE: typed span borrows a typed owner, narrows a window and copies an element
+; RUN: verify
+; EXPECT-ERROR: typed owned values cannot supply a byte span
+@@ -31 +30,0 @@
+-  spanvalues 96 Record
+@@ -32 +30,0 @@
+-  spanvalues 152 Record
+@@ -55 +53 @@
+-    SpanValuesLoad 152 176
++    SpanLoad 152
+
+; CASE: byte load rejects a typed span
+; BASE: typed span borrows a typed owner, narrows a window and copies an element
+; RUN: verify
+; EXPECT-ERROR: changes the span element type
+@@ -55 +55 @@
+-    SpanValuesLoad 152 176
++    SpanLoad 152
+
+; CASE: element copy requires a typed span
+; BASE: typed span borrows a typed owner, narrows a window and copies an element
+; RUN: verify
+; EXPECT-ERROR: typed span element copy requires a typed span and an exact element object
+@@ -55 +55 @@
+-    SpanValuesLoad 152 176
++    SpanValuesLoad 40 176
+
+; CASE: element copy requires the exact element class
+; BASE: typed span borrows a typed owner, narrows a window and copies an element
+; RUN: verify
+; EXPECT-ERROR: typed span element copy requires a typed span and an exact element object
+@@ -23 +23 @@
+-  object 176 Record false
++  object 176 Other false
+
+; CASE: element copy requires a begun destination
+; BASE: typed span borrows a typed owner, narrows a window and copies an element
+; RUN: verify
+; EXPECT-ERROR: copy object outside active lifetime
+@@ -53 +52,0 @@
+-    BeginObject 176
+
+; CASE: element copy requires a live span
+; BASE: typed span borrows a typed owner, narrows a window and copies an element
+; RUN: verify
+; EXPECT-ERROR: span capability is not active
+@@ -53,0 +54 @@
++    EndSpan 152
+
+; CASE: element copy requires an i64 index
+; BASE: typed span borrows a typed owner, narrows a window and copies an element
+; RUN: verify
+; EXPECT-ERROR: missing or mistyped current value
+@@ -54 +54 @@
+-    Constant
++    Constant 1 u8
+
+; CASE: owner cannot be written while a typed span lives
+; BASE: typed span borrows a typed owner, narrows a window and copies an element
+; RUN: verify
+; EXPECT-ERROR: mutation with live readonly span
+@@ -55,0 +56,2 @@
++    Constant
++    ValuesStore 40 -1 176
+
+; CASE: owner cannot end while a typed span lives
+; BASE: typed span borrows a typed owner, narrows a window and copies an element
+; RUN: verify
+; EXPECT-ERROR: owned byte or root mutation with live readonly span
+@@ -59 +59 @@
+-    EndSpan 96
++    EndBytes 40
+@@ -60 +60 @@
+-    EndBytes 40
++    EndSpan 96
+
+; CASE: typed span annotation requires a span spill
+; BASE: typed span borrows a typed owner, narrows a window and copies an element
+; RUN: verify
+; EXPECT-ERROR: typed span metadata requires exact span spill
+@@ -32,0 +33 @@
++  spanvalues 200 Record
+
+; CASE: typed span annotation requires a known copied class
+; BASE: typed span borrows a typed owner, narrows a window and copies an element
+; RUN: verify
+; EXPECT-ERROR: typed span element requires known canonical class layout
+@@ -32 +32 @@
+-  spanvalues 152 Record
++  spanvalues 152 Absent
+
+; CASE: typed span parameter binds an annotated spill
+; RUN: verify
+; EXPECT-OK
+layout Other [u8 u64 u8]
+layout Record [u8 u64 u8]
+fields Other [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields Record [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+storage Other [{0,8}*3] [{0,8}*3] 24 8 24
+storage Record [{0,8}*3] [{0,8}*3] 24 8 24
+function count
+  result i64
+  params [(spanof Record)]
+  frame 64
+  span 56
+  spanvalues 56 Record
+    BindSpanParameter 0 56
+    SpanLength 56
+    EndSpan 56
+    Return
+end
+function caller
+  result i64
+  params [(spanof Record)]
+  frame 128
+  span 56
+  span 112
+  spanvalues 56 Record
+  spanvalues 112 Record
+    BindSpanParameter 0 56
+    ReborrowSpan 56 112
+    AggregateCall count [0] 0 [112]
+    EndSpan 112
+    EndSpan 56
+    Return
+end
+
+; CASE: typed span parameter requires its element annotation
+; BASE: typed span parameter binds an annotated spill
+; RUN: verify
+; EXPECT-ERROR: span parameter type mismatch
+@@ -12 +11,0 @@
+-  spanvalues 56 Record
+
+; CASE: typed span argument requires the parameter's element
+; BASE: typed span parameter binds an annotated spill
+; RUN: verify
+; EXPECT-ERROR: span argument or result element type mismatch
+@@ -20 +20 @@
+-  params [(spanof Record)]
++  params [span]
+@@ -24 +23,0 @@
+-  spanvalues 56 Record
+@@ -25 +23,0 @@
+-  spanvalues 112 Record
+
+; CASE: typed span ABI facts name the element
+; BASE: typed span parameter binds an annotated spill
+; RUN: abi-facts
+; ABI: function count count
+; CHECK: "parameters":[{"offset":0,"bytes":56,"kind":"value_span","type_name":"Record"}]
+
+; CASE: typed span element must be a copied class
+; BASE: typed span borrows a typed owner, narrows a window and copies an element
+; RUN: verify
+; EXPECT-ERROR: typed span element must be a copied class, not an owner or carrier
+@@ -32 +32 @@
+-  spanvalues 152 Record
++  spanvalues 152 ByteBox
+
+; CASE: typed span argument keeps the parameter's element class
+; BASE: typed span parameter binds an annotated spill
+; RUN: verify
+; EXPECT-ERROR: span argument or result element type mismatch
+@@ -20 +20 @@
+-  params [(spanof Record)]
++  params [(spanof Other)]
+@@ -24 +24 @@
+-  spanvalues 56 Record
++  spanvalues 56 Other
+@@ -25 +25 @@
+-  spanvalues 112 Record
++  spanvalues 112 Other
+
+; CASE: typed span receiver result borrows its summary field
+; RUN: verify
+; EXPECT-OK
+layout Record [u8 u64 u8]
+layout Other [u8 u64 u8]
+layout ValuesBox []
+fields Other [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields Record [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields ValuesBox [((values Record) 0 0 false)]
+storage Other [{0,8}*3] [{0,8}*3] 24 8 24
+storage Record [{0,8}*3] [{0,8}*3] 24 8 24
+storage ValuesBox [] [0] 32 8 32
+function view
+  result (spanof Record)
+  frame 64
+  receiver ValuesBox false false
+  spanfield 0
+  span 56
+  spanvalues 56 Record
+    BorrowOwnedSpan 0 0 56
+    ReturnSpan 56
+end
+
+; CASE: typed span reborrow keeps its element
+; BASE: typed span receiver result borrows its summary field
+; RUN: verify
+; EXPECT-ERROR: changes the span element type
+@@ -12 +12 @@
+-  frame 64
++  frame 128
+@@ -15,0 +16 @@
++  span 112
+@@ -16,0 +18 @@
++  spanvalues 112 Other
+@@ -18 +20,2 @@
+-    ReturnSpan 56
++    ReborrowSpan 56 112
++    ReturnSpan 112
+
+; CASE: typed span result requires a receiver field summary
+; BASE: typed span receiver result borrows its summary field
+; RUN: verify
+; EXPECT-ERROR: readonly span boundary requires ordinary parameter or const receiver result
+@@ -14 +13,0 @@
+-  spanfield 0
+
+; CASE: typed span summary field holds the result element
+; BASE: typed span receiver result borrows its summary field
+; RUN: verify
+; EXPECT-ERROR: or typed owner of the view element
+@@ -6 +6 @@
+-fields ValuesBox [((values Record) 0 0 false)]
++fields ValuesBox [((values Other) 0 0 false)]

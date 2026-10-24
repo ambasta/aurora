@@ -649,6 +649,51 @@ end with invocation. MethodCall derives caller-side authority from its own actua
 receiver token and requires a fresh result spill. Hidden-result calling modes
 transport the entire record without owner transfer or cleanup.
 
+## Readonly typed views
+
+```cpp
+const builtin::span<const Node> rows = borrow_values(nodes);
+const builtin::span<const Node> tail = rows.subspan(1, rows.size() - 1);
+const Node first = tail.at(0);
+auto total(builtin::span<const Node> rows) -> i64;
+auto view() const -> builtin::span<const Node>;   // one direct OwnedValues field
+```
+
+`builtin::span<const T>` is the readonly byte span generalized to the copied
+element classes that `builtin::OwnedValues<T>` admits; `span<const u8>` keeps
+its meaning, and other scalar elements still reject. `borrow_values(owner)`
+accepts a named OwnedValues local or a direct private OwnedValues field,
+including the implicit receiver field, whose element class must equal the
+view's. Views share every byte-span rule above: const non-rebindable bindings,
+copies and checked subspans that reborrow, synchronous function and method
+parameters, receiver-bound results of const methods, lexical lifetimes, and an
+owner that cannot be written, resized, moved or dropped while any view lives.
+Views cannot be stored, returned by ordinary functions, reflected or converted,
+and byte and typed views never convert into each other.
+
+`.size()` is the element count. `.at(i)` copies one element into a fresh typed
+local or direct copied return and fail-stops on an out-of-range index; it is the
+only element access, so no element reference escapes. The view validates the
+owner once when it is created; hosted element reads then need no runtime owner
+lookup, while kernel views over fragmented pages still check each read.
+
+The 56-byte record is unchanged: logical start and length count elements. A
+borrow divides the runtime's byte length by the element size, which a typed
+owner always divides exactly. Hosted views are contiguous (kind 0): an element
+read checks the index and copies the element's bytes. Kernel views over
+fragmented pages (kind 1) read each element through the checked
+`__au_runtime_values_at` on the owner snapshot, as byte views use
+`__au_runtime_bytes_at`; no runtime entry point was added.
+
+Typed IR marks a typed span spill with a `SpanValueType` slot annotation naming
+its element class, as `OwnedValueType` marks typed owners. Static admission
+proves element identity at every producer and consumer: a borrow names the
+owner's element, reborrows and windows keep it, byte loads reject typed spans,
+parameters, arguments and receiver results match their signature, and the new
+`SpanValuesLoad{offset,resultOffset}` copies into an exact element object. The
+whole-function verifier keeps owning lifetimes, initialization and loans, so
+an element copy needs a live view, an i64 index and a begun pristine object.
+
 ## Borrowed owning-object helpers
 
 An ordinary free helper accepts one leading named `T&` or `const T&` for an

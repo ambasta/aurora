@@ -103,7 +103,7 @@ export namespace compiler_lowering {
             if (!alias && is_resource_owner(session, type)) {
                 request.set_origin(0, SpanOriginKind::none, -1, -1, false);
             }
-            if (kind == compiler_resolver::ResolvedTypeKind::byte_span) {
+            if (is_span(session, type)) {
                 request.set_origin(-1, SpanOriginKind::incoming_parameter, -1, -1, false);
             }
             const i64 local = add_local(session, request);
@@ -119,7 +119,7 @@ export namespace compiler_lowering {
                         if (is_owner_storage(session, type)) {
                             emit_BindBytesParameter(session, parameter_index, offset);
                         } else {
-                            if (kind == compiler_resolver::ResolvedTypeKind::byte_span) {
+                            if (is_span(session, type)) {
                                 emit_BindSpanParameter(session, parameter_index, offset);
                             } else {
                                 if (owning_type(session, type)) {
@@ -277,7 +277,7 @@ export namespace compiler_lowering {
     auto function_slot_kind(RecordKind kind) -> bool {
         return kind == RecordKind::ScalarSlot || kind == RecordKind::ObjectSlot || kind == RecordKind::ArraySlot || kind
             == RecordKind::SpanSlot || kind == RecordKind::ServiceSlot || kind == RecordKind::RegionSlot || kind
-            == RecordKind::ByteSlot || kind == RecordKind::OwnedValueType;
+            == RecordKind::ByteSlot || kind == RecordKind::OwnedValueType || kind == RecordKind::SpanValueType;
     }
     auto publish_function(compiler_resolver::Session& session, i64 receiver) -> i64 {
         const ContinuationRow root = session.continuation(0);
@@ -440,8 +440,7 @@ export namespace compiler_lowering {
         i64 final_label = next_label;
         if (session.good()) {
             const ContinuationRow completed_root = session.continuation(0);
-            if (value_kind(session, completed_root.then_snapshot_base())
-                == compiler_resolver::ResolvedTypeKind::byte_span) {
+            if (is_span(session, completed_root.then_snapshot_base())) {
                 if (completed_root.second_label() < 0) {
                     const i64 staged_source_195 = compiler_resolver::mw(session, function, 4);
                     fail(session, LoweringError::span_method_missing_field_return, staged_source_195);

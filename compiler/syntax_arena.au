@@ -56,7 +56,8 @@ export namespace compiler_parser {
         namespace_header,
         admission_declaration,
         admission_parameter,
-        admission_class_end
+        admission_class_end,
+        type_span_element
     };
 
     class ParseFrame {
@@ -174,7 +175,8 @@ export namespace compiler_parser {
         byte_span,
         builtin_type,
         owned_values,
-        builtin_class
+        builtin_class,
+        value_span
     };
     // Unresolved syntax only. close encodes the original token and its half;
     // roots name their containing expression or declaration by its first token.

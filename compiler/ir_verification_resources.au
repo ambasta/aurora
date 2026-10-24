@@ -478,6 +478,20 @@ export namespace compiler_ir_verification {
             fact.set_span(payload);
             return w.fact_set(fact);
         }
+        if (form == 84) {
+            // Admission proved the typed spill and the exact element destination.
+            if (!span(w, m, s, base, AccessMode::read)) {
+                return false;
+            }
+            const i64 element = span_class(m, w.callable(), base);
+            if (element < 0) {
+                return w.fail(first_error(VerificationErrorFirst::internal));
+            }
+            if (!transfer_current_kind(w, 0) || !copy_target(w, m, transfer_value(s, id, 1), element)) {
+                return false;
+            }
+            return w.clear_current();
+        }
         return w.fail(first_error(VerificationErrorFirst::internal));
     }
     auto transfer_owning_objects(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
@@ -911,7 +925,7 @@ export namespace compiler_ir_verification {
             arg = arg - 1;
             const i64 type_id = target.value_parameter_begin() + arg;
             const compiler_ir_metadata::RawTypeRow type = m.type_at(type_id);
-            if (type.kind() == 11) {
+            if (compiler_ir_metadata::span_type(type)) {
                 if (!live_span(w, m, s, transfer_lane(s, id, spans_field, arg), read_access)) {
                     return false;
                 }
@@ -987,7 +1001,7 @@ export namespace compiler_ir_verification {
                     }
                 }
             }
-            if (result.kind() == 11) {
+            if (compiler_ir_metadata::span_type(result)) {
                 const i64 summary = target.receiver_span_field();
                 const i64 shape_index = class_field(m, receiver_class(m, target_id), summary);
                 const compiler_ir_metadata::FieldRow shape = m.field_at(shape_index);

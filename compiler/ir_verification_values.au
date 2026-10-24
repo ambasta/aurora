@@ -310,7 +310,7 @@ export namespace compiler_ir_verification {
             arg = arg - 1;
             const i64 type_id = target.value_parameter_begin() + arg;
             const compiler_ir_metadata::RawTypeRow type = m.type_at(type_id);
-            if (type.kind() == 11) {
+            if (compiler_ir_metadata::span_type(type)) {
                 if (!live_span(w, m, s, transfer_lane(s, id, 3, arg), AccessMode::read)) {
                     return false;
                 }

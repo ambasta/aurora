@@ -322,6 +322,12 @@ export namespace compiler_lowering {
         put(session, OperandRole::Offset, a0);
         return emit(session, InstructionForm::SpanLoad, begin);
     }
+    auto emit_SpanValuesLoad(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
+        const i64 begin = session.operand_count();
+        put(session, OperandRole::Offset, a0);
+        put(session, OperandRole::ResultOffset, a1);
+        return emit(session, InstructionForm::SpanValuesLoad, begin);
+    }
     auto emit_BindSpanParameter(compiler_resolver::Session& session, i64 a0, i64 a1) -> i64 {
         const i64 begin = session.operand_count();
         put(session, OperandRole::Index, a0);
@@ -737,9 +743,8 @@ export namespace compiler_lowering {
             const SnapshotRow state = local.state();
             const bool same_root =(root == -2 && local.span_origin_kind() == SpanOriginKind::receiver) || (root >= 0
                 && local.span_origin_kind() == SpanOriginKind::local && local.origin_local_id() == root);
-            if (state.live() && value_kind(session, local.concrete_type_id())
-                == compiler_resolver::ResolvedTypeKind::byte_span && same_root && (field < 0 || local.span_field_index()
-                == field)) {
+            if (state.live() && is_span(session, local.concrete_type_id()) && same_root && (field < 0
+                || local.span_field_index() == field)) {
                 return fail(session, LoweringError::owner_mutation_while_span_live, source);
             }
             at = at + 1;
@@ -866,7 +871,7 @@ export namespace compiler_lowering {
                 if (is_owner_storage(session, type)) {
                     words = 4;
                 } else {
-                    if (kind == compiler_resolver::ResolvedTypeKind::byte_span) {
+                    if (is_span(session, type)) {
                         words = 7;
                     } else {
                         if (kind == compiler_resolver::ResolvedTypeKind::class_value || kind
@@ -940,8 +945,17 @@ export namespace compiler_lowering {
                             emit_BeginBytes(session, offset);
                         }
                     } else {
-                        if (kind == compiler_resolver::ResolvedTypeKind::byte_span) {
+                        if (is_span(session, type)) {
                             local_slot(session, RecordKind::SpanSlot, offset);
+                            if (kind == compiler_resolver::ResolvedTypeKind::value_span) {
+                                owned_element(session, type, request.source());
+                                const i64 element = compiler_resolver::mw(session, type, 2);
+                                const i64 span_begin = session.operand_count();
+                                put(session, OperandRole::Offset, offset);
+                                const i64 span_nominal = compiler_resolver::mw(session, element, 1);
+                                put(session, OperandRole::ClassNominalId, span_nominal);
+                                emit_record(session, RecordKind::SpanValueType, span_begin);
+                            }
                         } else {
                             if (kind == compiler_resolver::ResolvedTypeKind::class_value || is_class_array(session,
                                 type)) {
@@ -1157,7 +1171,7 @@ export namespace compiler_lowering {
                     }
                     set_live(session, at, false, false);
                 } else {
-                    if (kind == compiler_resolver::ResolvedTypeKind::byte_span) {
+                    if (is_span(session, type)) {
                         if (state.live()) {
                             release_span(session, at, !terminal);
                         }
@@ -1197,8 +1211,7 @@ export namespace compiler_lowering {
             at = at - 1;
             const LocalRow local = session.local(at);
             const SnapshotRow state = local.state();
-            if (state.live() && value_kind(session, local.concrete_type_id())
-                == compiler_resolver::ResolvedTypeKind::byte_span) {
+            if (state.live() && is_span(session, local.concrete_type_id())) {
                 if (retained == at) {
                     retained = local.owner_id();
                 } else {

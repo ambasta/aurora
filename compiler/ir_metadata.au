@@ -395,8 +395,8 @@ export namespace compiler_ir_metadata {
             while (slot_index < slots.count()) {
                 const SlotRow slot = store.slot_at(slots.begin() + slot_index);
                 const i64 kind = slot.kind();
-                if (kind < 10 || kind > 17 || (kind != 12 && slot.length() != 0) || (kind != 11 && kind != 16
-                    && slot.mutable_value() != 0) || ((kind == 11 || kind == 16) && slot.mutable_value() != 0
+                if ((kind < 10 || kind > 17) && kind != 27 || (kind != 12 && slot.length() != 0) || (kind != 11 && kind
+                    != 16 && slot.mutable_value() != 0) || ((kind == 11 || kind == 16) && slot.mutable_value() != 0
                     && slot.mutable_value() != 1)) {
                     return fail(store, MetadataError::integrity);
                 }
@@ -406,7 +406,7 @@ export namespace compiler_ir_metadata {
                         return fail(store, MetadataError::integrity);
                     }
                 }
-                if (kind == 10 || kind == 11 || kind == 17) {
+                if (kind == 10 || kind == 11 || kind == 17 || kind == 27) {
                     if (next_type >= declarations || slot.type() != next_type) {
                         return fail(store, MetadataError::integrity);
                     }
@@ -1236,33 +1236,71 @@ export namespace compiler_ir_metadata {
         }
         return true;
     }
-    auto verify_owner_element(MetadataStore& store, RawTypeRow type) -> bool {
+    // 0 when the named class may be a copied runtime element; otherwise which
+    // rule fails: 1 unknown layout, 2 owner or carrier, 3 leaves, 4 storage.
+    auto copied_element_failure(const MetadataStore& store, ByteRange name) -> i64 {
         const FlagMasks masks = FlagMasks();
+        const i64 class_index = find_class(store, name);
+        if (class_index < 0) {
+            return 1;
+        }
+        const ClassRow row = store.class_at(class_index);
+        const ClassResultRow result = store.result_at(class_index);
+        if (!member(row, masks.class_layout()) || result.canonical_storage() < 0) {
+            return 1;
+        }
+        if (owning_class(store, class_index) || member(row, masks.class_array_carrier())) {
+            return 2;
+        }
+        if (!copied_leaves(store, row)) {
+            return 3;
+        }
+        const StorageRow storage = store.storage_at(result.canonical_storage());
+        const PhysicalExtent extent = storage.extent();
+        if (extent.size_bytes() < 1 || extent.size_bytes() > 520 || extent.reserved_bytes() > 520) {
+            return 4;
+        }
+        return 0;
+    }
+    auto verify_owner_element(MetadataStore& store, RawTypeRow type) -> bool {
         if (type.kind() == 13 && owner_type(type)) {
             return true;
         }
         if (type.kind() != 17 || !owner_type(type)) {
             return fail(store, MetadataError::owner_type);
         }
-        const i64 class_index = find_class(store, type.name());
-        if (class_index < 0) {
+        const i64 failure = copied_element_failure(store, type.name());
+        if (failure == 1) {
             return fail(store, MetadataError::owner_element_unknown);
         }
-        const ClassRow row = store.class_at(class_index);
-        const ClassResultRow result = store.result_at(class_index);
-        if (!member(row, masks.class_layout()) || result.canonical_storage() < 0) {
-            return fail(store, MetadataError::owner_element_unknown);
-        }
-        if (owning_class(store, class_index) || member(row, masks.class_array_carrier())) {
+        if (failure == 2) {
             return fail(store, MetadataError::owner_element_kind);
         }
-        if (!copied_leaves(store, row)) {
+        if (failure == 3) {
             return fail(store, MetadataError::owner_element_leaves);
         }
-        const StorageRow storage = store.storage_at(result.canonical_storage());
-        const PhysicalExtent extent = storage.extent();
-        if (extent.size_bytes() < 1 || extent.size_bytes() > 520 || extent.reserved_bytes() > 520) {
+        if (failure == 4) {
             return fail(store, MetadataError::owner_element_storage);
+        }
+        return true;
+    }
+    // A typed readonly span names one copied element class, like OwnedValues.
+    auto verify_span_element(MetadataStore& store, RawTypeRow type) -> bool {
+        if (type.kind() != 21 || !canonical_tail(type) || name_length(type.name()) == 0) {
+            return fail(store, MetadataError::span_value_type);
+        }
+        const i64 failure = copied_element_failure(store, type.name());
+        if (failure == 1) {
+            return fail(store, MetadataError::span_element_unknown);
+        }
+        if (failure == 2) {
+            return fail(store, MetadataError::span_element_kind);
+        }
+        if (failure == 3) {
+            return fail(store, MetadataError::span_element_leaves);
+        }
+        if (failure == 4) {
+            return fail(store, MetadataError::span_element_storage);
         }
         return true;
     }
@@ -1353,6 +1391,10 @@ export namespace compiler_ir_metadata {
             }
         }
         return false;
+    }
+    // Byte spans (11) and typed readonly spans (21) share one capability shape.
+    auto span_type(RawTypeRow type) -> bool {
+        return type.kind() == 11 || type.kind() == 21;
     }
     auto plain_type(RawTypeRow type, i64 kind) -> bool {
         return type.kind() == kind && name_length(type.name()) == 0 && canonical_tail(type);
@@ -1516,7 +1558,7 @@ export namespace compiler_ir_metadata {
         if (callable_flag(row, masks.callable_receiver())) {
             return fail(store, MetadataError::borrowed_shape);
         }
-        if (resource || result.kind() == 11 || callable_flag(row, masks.callable_span_summary())) {
+        if (resource || span_type(result) || callable_flag(row, masks.callable_span_summary())) {
             return fail(store, MetadataError::borrowed_result);
         }
         if (types.count() > 7) {
@@ -1615,7 +1657,7 @@ export namespace compiler_ir_metadata {
         i64 at = 0;
         while (at < row.value_parameter_count()) {
             const RawTypeRow parameter = store.type_at(row.value_parameter_begin() + at);
-            if (parameter.kind() == 5 || parameter.kind() == 11) {
+            if (parameter.kind() == 5 || span_type(parameter)) {
                 return true;
             }
             at = at + 1;
@@ -1650,10 +1692,13 @@ export namespace compiler_ir_metadata {
             return true;
         }
         const ReceiverShape receiver = row.first_receiver();
-        if (type.kind() == 11) {
-            if (!plain_type(type, 11) || !((parameter && (!callable_flag(row, masks.callable_receiver())
-                || !receiver_flag(receiver, masks.receiver_constructor()))) || (!parameter && callable_flag(row,
-                masks.callable_receiver()) && !receiver_flag(receiver, masks.receiver_mutable())
+        if (type.kind() == 11 || type.kind() == 21) {
+            if (type.kind() == 21 && !verify_span_element(store, type)) {
+                return false;
+            }
+            if ((type.kind() == 11 && !plain_type(type, 11)) || !((parameter && (!callable_flag(row,
+                masks.callable_receiver()) || !receiver_flag(receiver, masks.receiver_constructor()))) || (!parameter
+                && callable_flag(row, masks.callable_receiver()) && !receiver_flag(receiver, masks.receiver_mutable())
                 && !receiver_flag(receiver, masks.receiver_constructor()) && callable_flag(row,
                 masks.callable_span_summary())))) {
                 return fail(store, MetadataError::span_boundary);
@@ -1734,9 +1779,18 @@ export namespace compiler_ir_metadata {
             }
             const FieldRow field = store.field_at(fields.begin() + row.receiver_span_field());
             const RawTypeRow type = store.type_at(field.type());
-            if (!((plain_type(type, 13) && field.array_flag() == 0) || (plain_type(type, 10) && field.array_flag()
-                != 0))) {
-                return fail(store, MetadataError::receiver_span);
+            const RawTypeRow span_result = store.type_at(range_begin(row.types()));
+            if (span_result.kind() == 21) {
+                // A typed view names exactly one direct OwnedValues field of its element.
+                if (type.kind() != 17 || field.array_flag() != 0 || !canonical_tail(type) || compare_names(store,
+                    type.name(), span_result.name()) != 0) {
+                    return fail(store, MetadataError::receiver_span);
+                }
+            } else {
+                if (!((plain_type(type, 13) && field.array_flag() == 0) || (plain_type(type, 10) && field.array_flag()
+                    != 0))) {
+                    return fail(store, MetadataError::receiver_span);
+                }
             }
         }
         return true;
@@ -1762,7 +1816,7 @@ export namespace compiler_ir_metadata {
             }
             const IndexRange types = row.types();
             const RawTypeRow result = store.type_at(types.begin());
-            if (callable_flag(row, masks.callable_span_summary()) && !plain_type(result, 11)) {
+            if (callable_flag(row, masks.callable_span_summary()) && !plain_type(result, 11) && result.kind() != 21) {
                 return fail(store, MetadataError::span_result);
             }
             if (!verify_boundary_type(store, row, result, false, resource, service)) {
@@ -1912,6 +1966,24 @@ export namespace compiler_ir_metadata {
             kind = kind + 1;
         }
         return overlap;
+    }
+    // Each typed span annotation names exactly one span spill of its callable.
+    auto verify_span_value_slots(MetadataStore& store, CallableRow row) -> bool {
+        const IndexRange annotations = slot_group(store, row, 27);
+        const IndexRange spans = slot_group(store, row, 13);
+        i64 at = 0;
+        while (at < annotations.count()) {
+            const SlotRow slot = store.slot_at(annotations.begin() + at);
+            if (find_slot(store, spans, slot.offset()) < 0) {
+                return fail(store, MetadataError::span_value_spill);
+            }
+            const RawTypeRow type = store.type_at(slot.type());
+            if (!verify_span_element(store, type)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return true;
     }
     auto verify_owner_slots(MetadataStore& store, CallableRow row) -> bool {
         const IndexRange annotations = slot_group(store, row, 17);
@@ -2259,7 +2331,7 @@ export namespace compiler_ir_metadata {
         i64 at = 0;
         while (at < store.callable_count()) {
             const CallableRow row = store.callable_at(at);
-            if (!verify_owner_slots(store, row)) {
+            if (!verify_owner_slots(store, row) || !verify_span_value_slots(store, row)) {
                 return false;
             }
             const IndexRange services = slot_group(store, row, 14);

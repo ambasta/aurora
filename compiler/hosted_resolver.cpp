@@ -282,6 +282,8 @@ class Projection {
             return "array<" + child(value.value3) + ", " + child(value.value4) + ">";
         case Kind::owned_values:
             return "builtin::OwnedValues<" + child(value.value3) + ">";
+        case Kind::value_span:
+            return "builtin::span<const " + child(value.value3) + ">";
         default:
             invalidResolution();
         }
@@ -434,6 +436,9 @@ class Projection {
             break;
         case ResolvedTypeKind::owned_values:
             result = Type::ownedValues(type(value.value2));
+            break;
+        case ResolvedTypeKind::value_span:
+            result = Type::valueSpan(type(value.value2));
             break;
         default:
             invalidResolution();
@@ -689,6 +694,9 @@ public:
         break;
     case SemanticError::owned_named:
         message = "owned values require a named concrete copied class";
+        break;
+    case SemanticError::span_named:
+        message = "typed spans require a named concrete copied class";
         break;
     case SemanticError::unsubstituted_array:
         message = "unsubstituted array element or capacity parameter";
@@ -1130,9 +1138,9 @@ std::uint64_t resolutionQuota() {
     const auto scalarSlots = mul(frameBytes, F), objectSlots = mul(frameWords, F);
     const auto arraySlots = mul(frameWords, F), spanSlots = mul(frameWords / 7, F);
     const auto serviceSlots = mul(2, F), regionSlots = F, byteSlots = mul(frameWords / 4, F);
-    const auto ownedTypes = byteSlots;
-    const auto slots =
-        sum({scalarSlots, objectSlots, arraySlots, spanSlots, serviceSlots, regionSlots, byteSlots, ownedTypes});
+    const auto ownedTypes = byteSlots, spanTypes = spanSlots;
+    const auto slots = sum(
+        {scalarSlots, objectSlots, arraySlots, spanSlots, serviceSlots, regionSlots, byteSlots, ownedTypes, spanTypes});
     // Only genuine methods/constructors publish Receiver rows; root types are
     // among the existing <=6 explicit ParameterTypes charged below.
     const auto receiverRows = F, classRows = add(nominals, carriers), fieldRows = add(fields, carriers);
@@ -1160,7 +1168,8 @@ std::uint64_t resolutionQuota() {
                                    serviceSlots,
                                    regionSlots,
                                    mul(2, byteSlots),
-                                   mul(2, ownedTypes)});
+                                   mul(2, ownedTypes),
+                                   mul(2, spanTypes)});
     const auto setupOperands = sum({3, 8, 7 * 3, mul(6, service::operations.size()), serviceParameters, nominals, 1});
     const auto metadataOperands = sum({7,
                                        mul(11, F),

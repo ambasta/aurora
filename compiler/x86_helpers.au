@@ -31,6 +31,10 @@ export namespace compiler_x86 {
         const compiler_ir_metadata::RawTypeRow row = metadata.type_at(type);
         return row.kind();
     }
+    // Byte and typed readonly spans share the 56-byte capability record.
+    auto span_kind(i64 kind) -> bool {
+        return kind == 11 || kind == 21;
+    }
     auto type_class(const compiler_ir_metadata::MetadataStore& metadata, i64 type) -> i64 {
         const compiler_ir_metadata::RawTypeRow row = metadata.type_at(type);
         return compiler_ir_metadata::find_class(metadata, row.name());
@@ -155,7 +159,7 @@ export namespace compiler_x86 {
         if (kind == 5) {
             return class_reserved(metadata, type_class(metadata, type));
         }
-        if (kind == 11) {
+        if (span_kind(kind)) {
             return 56;
         }
         return 8;
@@ -177,7 +181,7 @@ export namespace compiler_x86 {
     }
     auto aggregate_signature(const compiler_ir_metadata::MetadataStore& metadata, i64 callable) -> bool {
         const i64 result = type_kind(metadata, result_type(metadata, callable));
-        if (result == 5 || result == 11 || result == 13 || result == 17) {
+        if (result == 5 || span_kind(result) || result == 13 || result == 17) {
             return true;
         }
         i64 at = 0;
@@ -194,7 +198,7 @@ export namespace compiler_x86 {
         i64 at = 0;
         while (at < parameter_count(metadata, callable)) {
             const i64 kind = type_kind(metadata, parameter_type(metadata, callable, at));
-            if (kind == 5 || kind == 11) {
+            if (kind == 5 || span_kind(kind)) {
                 return true;
             }
             at = at + 1;
@@ -230,6 +234,20 @@ export namespace compiler_x86 {
             class_id = slot_class(metadata, callable, offset);
         }
         return class_field_type(metadata, class_id, field);
+    }
+    // The element size of a typed readonly span spill, or -1 for a byte span.
+    auto span_element_stride(const compiler_ir_metadata::MetadataStore& metadata, i64 callable, i64 offset) -> i64 {
+        const compiler_ir_metadata::CallableRow function = metadata.callable_at(callable);
+        const compiler_ir_metadata::IndexRange slots = function.slots();
+        i64 at = 0;
+        while (at < slots.count()) {
+            const compiler_ir_metadata::SlotRow row = metadata.slot_at(slots.begin() + at);
+            if (row.offset() == offset && row.kind() == 27) {
+                return class_size(metadata, type_class(metadata, row.type()));
+            }
+            at = at + 1;
+        }
+        return -1;
     }
     auto owner_element_stride(const compiler_ir_metadata::MetadataStore& metadata, i64 callable, i64 offset,
         i64 field) -> i64 {

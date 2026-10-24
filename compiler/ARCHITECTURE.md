@@ -121,7 +121,7 @@ owner bridge and checks that both stores are the original admitted pair. The
 host transfers only retained callable IDs in emission order and requested ABI
 source/member names. It never serializes another instruction inventory.
 
-`x86_scalar.au`, `x86_objects.au` and `x86_resources.au` select all 84 instruction
+`x86_scalar.au`, `x86_objects.au` and `x86_resources.au` select all 85 instruction
 forms. Shared source helpers own widths, payload-only copies, owner transfers,
 padding, stack probes and private argument records. The source driver owns both
 peepholes, linkage, reflection ordering, literal IDs and traps. `x86_facts.au`

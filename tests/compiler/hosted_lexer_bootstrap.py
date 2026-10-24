@@ -1373,8 +1373,8 @@ def message_generation(facts, root):
         source.replace("unknown class type '{type}'", "unknown class type '{{type}'", 1),
         source.replace("unknown class type '{type}'", "[integrity] unknown class type '{type}'", 1),
         source.replace(
-            "        borrowed_arguments_require_distinct_roots\n",
-            "        borrowed_arguments_require_distinct_roots\n        //: dangling\n",
+            "        typed_span_access_requires_copied_destination\n",
+            "        typed_span_access_requires_copied_destination\n        //: dangling\n",
             1,
         ),
         source.replace(first, first + "\n        //: extra reason\n        unlisted_reason,", 1),

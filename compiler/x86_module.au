@@ -211,7 +211,7 @@ export namespace compiler_x86 {
             w.record_signature(copied_record_bytes(m, callable), service_record_bytes(m, callable));
         }
         const i64 result_kind = type_kind(m, result_type(m, callable));
-        const bool combined = receiver && packed && (result_kind == 5 || result_kind == 11);
+        const bool combined = receiver && packed && (result_kind == 5 || span_kind(result_kind));
         i64 record_save = 0;
         if (packed) {
             record_save = declared + 8;
@@ -220,7 +220,7 @@ export namespace compiler_x86 {
             }
         }
         i64 result_save = 0;
-        if (result_kind == 5 || result_kind == 11 || result_kind == 13 || result_kind == 17) {
+        if (result_kind == 5 || span_kind(result_kind) || result_kind == 13 || result_kind == 17) {
             result_save = declared + 16;
             if (combined) {
                 result_save = declared + 24;

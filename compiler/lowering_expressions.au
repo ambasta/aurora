@@ -320,7 +320,7 @@ export namespace compiler_lowering {
             class_carrier(session, type, source);
         }
         const compiler_resolver::ResolvedTypeKind kind = value_kind(session, type);
-        if (kind == compiler_resolver::ResolvedTypeKind::byte_span) {
+        if (is_span(session, type)) {
             return error(session, LoweringError::reflection_span_capability, source);
         }
         if (compiler_resolver::resource_kind(kind) || compiler_resolver::service_kind(kind)) {
@@ -376,7 +376,7 @@ export namespace compiler_lowering {
         }
         // Keep the legacy diagnostic precedence: the generic non-scalar guard
         // above wins for spans before this intentionally narrower check.
-        if (kind == compiler_resolver::ResolvedTypeKind::byte_span) {
+        if (is_span(session, type)) {
             return fail(session, LoweringError::span_capability_not_scalar, source);
         }
         const i64 staged_a1_113 = payload_type(session, type);
@@ -501,6 +501,9 @@ export namespace compiler_lowering {
         if (session.source_equal(source, "borrow_bytes")) {
             return fail(session, LoweringError::borrow_bytes_requires_span_binding_or_argument, source);
         }
+        if (session.source_equal(source, "borrow_values")) {
+            return fail(session, LoweringError::borrow_values_requires_span_binding_or_argument, source);
+        }
         if (session.source_equal(source, "own") || session.source_equal(source, "move") || session.source_equal(source,
             "borrow") || session.source_equal(source, "borrow_mut")) {
             return fail(session, LoweringError::ownership_constructor_requires_typed_initializer, source);
@@ -607,7 +610,7 @@ export namespace compiler_lowering {
         const i64 source = source_ref(session, node);
         if (frame.output_mark() >= 0) {
             const compiler_resolver::ResolvedTypeKind expected = value_kind(session, frame.output_mark());
-            if (expected == compiler_resolver::ResolvedTypeKind::byte_span) {
+            if (is_span(session, frame.output_mark())) {
                 return begin_span(session, frame_id);
             }
             if (expected == compiler_resolver::ResolvedTypeKind::array_value) {
@@ -759,8 +762,7 @@ export namespace compiler_lowering {
             return finish_expression(session, result, -1);
         }
         if (syntax.expression_kind() == compiler_parser::NodeKind::method_call && session.source_equal(source,
-            "subspan") && frame.output_mark() >= 0 && value_kind(session, frame.output_mark())
-            == compiler_resolver::ResolvedTypeKind::byte_span) {
+            "subspan") && frame.output_mark() >= 0 && is_span(session, frame.output_mark())) {
             return step_subspan(session, frame_id);
         }
         if (frame.phase() == ContinuationPhase::argument) {

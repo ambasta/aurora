@@ -810,8 +810,12 @@ export namespace compiler_x86 {
             if (kind == 9) {
                 workspace.text("\"enum\"");
             } else {
-                if (kind == 11) {
-                    workspace.text("\"span\"");
+                if (kind == 11 || kind == 21) {
+                    if (kind == 11) {
+                        workspace.text("\"span\"");
+                    } else {
+                        workspace.text("\"value_span\"");
+                    }
                 } else {
                     if (kind == 13 || kind == 17) {
                         workspace.text("\"owner\"");
@@ -857,7 +861,7 @@ export namespace compiler_x86 {
                 }
             }
         }
-        if (kind == 5 || kind == 9) {
+        if (kind == 5 || kind == 9 || kind == 21) {
             workspace.text(",\"type_name\":");
             fact_json_name(workspace, metadata, 5, type);
         }

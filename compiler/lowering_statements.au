@@ -64,8 +64,7 @@ export namespace compiler_lowering {
         if (kind == compiler_resolver::ResolvedTypeKind::byte_region) {
             return fail(session, LoweringError::region_parameter_position, source);
         }
-        if (kind == compiler_resolver::ResolvedTypeKind::byte_span && compiler_resolver::sw(session, declaration, 9)
-            == 1) {
+        if (is_span(session, type) && compiler_resolver::sw(session, declaration, 9) == 1) {
             return fail(session, LoweringError::span_binding_requires_const, source);
         }
         frame.set_phase(ContinuationPhase::child);
@@ -75,8 +74,8 @@ export namespace compiler_lowering {
             return push_expression(session, node, -1, -1);
         }
         if (kind == compiler_resolver::ResolvedTypeKind::class_value || kind
-            == compiler_resolver::ResolvedTypeKind::array_value || kind
-            == compiler_resolver::ResolvedTypeKind::byte_span || is_owner_storage(session, type)) {
+            == compiler_resolver::ResolvedTypeKind::array_value || is_span(session, type) || is_owner_storage(session,
+            type)) {
             return push_expression(session, node, type, declaration);
         }
         const compiler_resolver::SyntaxRow expression = session.syntax(node);
@@ -162,11 +161,14 @@ export namespace compiler_lowering {
         const i64 source = source_ref(session, frame.cursor());
         const i64 result = body_result_type(session);
         const compiler_resolver::ResolvedTypeKind kind = value_kind(session, result);
-        if (kind == compiler_resolver::ResolvedTypeKind::byte_span) {
+        if (is_span(session, result)) {
             const LocalRow span = session.local(local);
-            if (value_kind(session, span.concrete_type_id()) != compiler_resolver::ResolvedTypeKind::byte_span
-                || span.span_origin_kind() != SpanOriginKind::receiver || span.span_field_index() < 0) {
+            if (!is_span(session, span.concrete_type_id()) || span.span_origin_kind() != SpanOriginKind::receiver
+                || span.span_field_index() < 0) {
                 return fail(session, LoweringError::returned_span_requires_private_receiver_storage, source);
+            }
+            if (!match_type(session, span.concrete_type_id(), result, source)) {
+                return false;
             }
             ContinuationRow root = session.continuation(0);
             if (root.second_label() >= 0 && root.second_label() != span.span_field_index()) {
@@ -183,8 +185,7 @@ export namespace compiler_lowering {
                 at = at - 1;
                 const LocalRow row = session.local(at);
                 const SnapshotRow state = row.state();
-                if (state.live() && value_kind(session, row.concrete_type_id())
-                    == compiler_resolver::ResolvedTypeKind::byte_span) {
+                if (state.live() && is_span(session, row.concrete_type_id())) {
                     release_span(session, at, false);
                 }
             }
@@ -227,8 +228,7 @@ export namespace compiler_lowering {
             const i64 local = moved_source(session, node, result);
             return emit_return(session, frame_id, result, local);
         }
-        if (kind == compiler_resolver::ResolvedTypeKind::class_value || kind
-            == compiler_resolver::ResolvedTypeKind::byte_span) {
+        if (kind == compiler_resolver::ResolvedTypeKind::class_value || is_span(session, result)) {
             if (syntax.expression_kind() == compiler_parser::NodeKind::name) {
                 const i64 reference = source_ref(session, node);
                 // An existing binding always shadows the receiver field, even

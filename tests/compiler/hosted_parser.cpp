@@ -3169,11 +3169,11 @@ void bootstrapPreambleEnums(const std::vector<aurora::Token> &tokens,
              "construct_arguments constructor_arguments template_opening template_candidate type_start "
              "type_arguments type_argument_first type_argument_second type_array_element type_owned_element "
              "body_block body_if_then body_if_else body_while enum_case namespace_parent namespace_header "
-             "admission_declaration admission_parameter admission_class_end"},
+             "admission_declaration admission_parameter admission_class_end type_span_element"},
             {"TypeKind",
              true,
              "invalid i64_type u64_type u8_type bool_type named parameter capacity length_parameter array_type "
-             "own_type ref_type mutref_type byte_span builtin_type owned_values builtin_class"},
+             "own_type ref_type mutref_type byte_span builtin_type owned_values builtin_class value_span"},
             {"SyntaxKind",
              true,
              "invalid block local return_value static_assertion conditional loop expression assign field_assign "
@@ -3197,7 +3197,7 @@ void bootstrapPreambleEnums(const std::vector<aurora::Token> &tokens,
              "namespace_nesting_limit "
              "export_interface_required module_reexport imports_after_declarations template_parameter_limit "
              "template_parameter_kind template_parameter_name template_capacity_order template_declaration_kind "
-             "function_template_capacity class_template_shadow invalid"},
+             "function_template_capacity class_template_shadow span_element invalid"},
             {"AdmissionStatus",
              true,
              "success allocation_failure function_shadow typed_constructor borrowed_parameter const_parameter "
@@ -3262,7 +3262,7 @@ void bootstrapPreambleEnums(const std::vector<aurora::Token> &tokens,
         caseCount += names.size();
         ++cases;
     }
-    const std::array<std::size_t, 3> counts{8, 93, 132};
+    const std::array<std::size_t, 3> counts{8, 95, 133};
     require(caseCount == counts.at(module), "actual compiler enum case inventory differs");
     unchangedTokens(tokens, before);
     ++cases;
@@ -5615,19 +5615,19 @@ void loweringSchemaSources(const std::vector<aurora::Token> &tokens,
           "+set_call +set_next_argument +set_marks +set_cleanup_cursor +argument +set_argument"}},
     }};
     static const std::array<std::vector<std::pair<const char *, std::size_t>>, 3> enums{{
-        {{"InstructionForm", 84},
+        {{"InstructionForm", 85},
          {"Unary", 3},
          {"Binary", 10},
          {"Comparison", 6},
          {"Query", 2},
-         {"RecordKind", 27},
+         {"RecordKind", 28},
          {"OperandRole", 105},
          {"SpanOriginKind", 5},
          {"ContinuationKind", 7},
          {"ContinuationPhase", 14},
          {"ArgumentKind", 7},
          {"CleanupKind", 6}},
-        {{"LoweringStatus", 4}, {"LoweringError", 245}},
+        {{"LoweringStatus", 4}, {"LoweringError", 249}},
         {},
     }};
     static const std::array<const char *, 3> functions{

@@ -53,9 +53,10 @@ struct Fixture {
     std::span<std::byte> page(std::size_t index) {
         return std::span{backing}.subspan(index * page_bytes, page_bytes);
     }
-    bool pages_match(bool allocated) {
+    // Allocations take the released odd pages in order; released payload is zeroed.
+    bool pages_match(std::size_t payload_pages) {
         for (std::size_t index = 0; index < page_count; ++index) {
-            const bool payload = allocated && (index == 1 || index == 3 || index == 5);
+            const bool payload = index % 2 == 1 && index < 2 * payload_pages;
             const auto expected = payload ? std::byte{0} : sentinel(index);
             if (!std::all_of(page(index).begin(), page(index).end(), [expected](std::byte value) {
                     return value == expected;
@@ -79,7 +80,7 @@ bool expect_failed_borrow = false;
 extern "C" [[noreturn]] void __au_runtime_bytes_kernel_fault(std::uint64_t reason) noexcept {
     if (!expect_failed_borrow || reason != 2 || active == nullptr || active->region.metrics() != fault_metrics ||
         !active->region.is_open() || active->region.faulted() || active->pool.used() != 8 ||
-        !active->pages_match(false)) {
+        !active->pages_match(0)) {
         std::fputs("FAIL generated kernel owned spans: unexpected fault or changed failure state\n", stderr);
         std::_Exit(90);
     }
@@ -88,9 +89,11 @@ extern "C" [[noreturn]] void __au_runtime_bytes_kernel_fault(std::uint64_t reaso
     std::_Exit(82);
 }
 int main(int argc, char **argv) {
-    require(argc == 2 && argv[1][0] >= '0' && argv[1][0] <= '2' && argv[1][1] == '\0', "exact mode");
+    require(argc == 2 && argv[1][0] >= '0' && argv[1][0] <= '3' && argv[1][1] == '\0', "exact mode");
     const std::int64_t mode = argv[1][0] - '0';
-    const std::int64_t length = mode == 0 ? 8193 : mode == 1 ? 0 : -1;
+    // Mode 3 is a typed owner of 341 24-byte elements viewed through a typed span.
+    const std::int64_t length = mode == 0 ? 8193 : mode == 1 ? 0 : mode == 3 ? 341 : -1;
+    const std::size_t payload_pages = mode == 0 ? 3 : mode == 3 ? 2 : 0;
     Fixture fixture;
     active = &fixture;
     fault_metrics = fixture.region.metrics();
@@ -102,12 +105,12 @@ int main(int argc, char **argv) {
     expected.successful_allocations = 1;
     expected.releases = expected.successful_allocations;
     expected.peak_live_allocations = expected.successful_allocations;
-    expected.peak_used = mode == 0 ? 8193 : 0;
+    expected.peak_used = mode == 0 ? 8193 : mode == 3 ? 8184 : 0;
     expected.last_allocation_id = expected.successful_allocations;
     expected.last_released_id = expected.successful_allocations;
-    expected.peak_held_pages = mode == 0 ? 3 : 0;
+    expected.peak_held_pages = payload_pages;
     require(fixture.region.metrics() == expected, "exact metrics including no view-induced allocations/releases");
-    require(fixture.pool.used() == 8 && fixture.pages_match(mode == 0), "all pages and foreign leases preserved");
+    require(fixture.pool.used() == 8 && fixture.pages_match(payload_pages), "all pages and foreign leases preserved");
     require(fixture.region.close(), "explicit grant close");
     for (std::size_t index = 0; index < page_count; index += 2) {
         require(fixture.pool.release(*fixture.holders[index]), "release original holder");

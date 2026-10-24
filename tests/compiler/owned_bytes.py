@@ -554,6 +554,229 @@ class OwnedBytesCases(Suite):
         ):
             self.reject("typed-borrow-" + name, source)
 
+    def typed_span_cases(self, node, owner):
+        """Readonly typed views: borrow_values, size/at/subspan, parameters and receiver results."""
+        span = "builtin::span<const Node>"
+        helpers = (
+            node
+            + f"""
+            auto total({span} rows) -> i64 {{
+                i64 sum = 0;
+                i64 i = 0;
+                while (i < rows.size()) {{
+                    const Node row = rows.at(i);
+                    sum = sum + row.score();
+                    i = i + 1;
+                }}
+                return sum;
+            }}
+            class Pool {{
+                {owner} rows;
+            public:
+                Pool(builtin::ByteRegion region, {owner} owned) : rows(move(owned)) {{}}
+                auto put(i64 index, Node row) -> bool {{ return rows.set(index, row); }}
+                auto view() const -> {span} {{
+                    const {span} all = borrow_values(rows);
+                    return all;
+                }}
+                auto window(i64 offset) const -> {span} {{
+                    const {span} all = borrow_values(rows);
+                    const {span} part = all.subspan(offset, all.size() - offset);
+                    return part;
+                }}
+                auto score(i64 index) const -> i64 {{
+                    const {span} all = borrow_values(rows);
+                    const Node row = all.at(index);
+                    return row.score();
+                }}
+            }};
+        """
+        )
+        # Element k scores k + 2, so a wrong element, owner, start or stride shows.
+        fill_body = f"""
+            const Node fill = Node(Kind::literal, 2u8, -1);
+            {owner} values = region.try_allocate(n, fill);
+            if (!values.ok()) {{ return 43; }}
+            i64 k = 0;
+            while (k < n) {{
+                const Node row = Node(Kind::literal, 2u8, k);
+                if (!values.set(k, row)) {{ return -1; }}
+                k = k + 1;
+            }}
+        """
+        local = self.compile(
+            "typed-span-local",
+            program(
+                fill_body
+                + f"""
+            {{
+                const {span} all = borrow_values(values);
+                if (all.size() != n) {{ return -2; }}
+                if (n > 1) {{
+                    const {span} tail = all.subspan(1, n - 1);
+                    const {span} again = tail;
+                    const Node first = again.at(0);
+                    if (tail.size() != n - 1 || first.score() != 3 || total(tail) != total(all) - 2) {{ return -3; }}
+                }}
+                if (total(all) != n * (n - 1) / 2 + 2 * n) {{ return -4; }}
+                const Node chosen = all.at(flag);
+                if (chosen.score() != flag + 2) {{ return -5; }}
+            }}
+            // The view has ended, so the owner may be written and moved again.
+            if (!values.set(0, fill)) {{ return -6; }}
+            {owner} moved = move(values);
+            return 42;
+        """,
+                helpers,
+            ),
+        )
+        for count, flag in ((1, 0), (4, 3), (200, 117)):
+            self.run(local, count * 24, count, flag, 42, 1, 1)
+        for count, flag in ((4, -1), (4, 4), (0, 0)):
+            self.trap(local, count * 24, count, flag)
+        receiver = self.compile(
+            "typed-span-receiver",
+            program(
+                fill_body
+                + f"""
+            Pool pool = Pool(region, move(values));
+            const Node replaced = Node(Kind::literal, 2u8, 1000);
+            if (!pool.put(n - 1, replaced)) {{ return -2; }}
+            {{
+                const {span} rows = pool.view();
+                const {span} part = pool.window(flag);
+                const Node last = rows.at(n - 1);
+                const Node first = part.at(0);
+                if (rows.size() != n || part.size() != n - flag || last.score() != 1002 || first.score() != flag + 2
+                    || pool.score(flag) != flag + 2) {{
+                    return -3;
+                }}
+            }}
+            if (!pool.put(0, replaced)) {{ return -4; }}
+            return 42;
+        """,
+                helpers,
+            ),
+        )
+        # The last element is replaced; flag selects an earlier window start.
+        for count, flag in ((2, 0), (5, 2), (64, 62)):
+            self.run(receiver, count * 24, count, flag, 42, 1, 1)
+        self.trap(receiver, 96, 4, 5)
+
+        def reject(name, body, extra, diagnostic):
+            self.reject("typed-span-" + name, program(fill_body + body, helpers + extra), diagnostic)
+
+        other = "class Other { i64 value; public: Other(i64 v) : value(v) {} };"
+        view = f"const {span} all = borrow_values(values);"
+        live = "cannot mutate or move an owner while a readonly span is live"
+        for name, body, extra, diagnostic in (
+            ("set-while-live", f"{view} values.set(0, fill); return 0;", "", live),
+            ("resize-while-live", f"{view} values.try_resize(1, fill); return 0;", "", live),
+            ("move-while-live", f"{view} {owner} m = move(values); return 0;", "", live),
+            ("mutable-binding", f"{span} all = borrow_values(values); return 0;", "", "span bindings must be const"),
+            (
+                "element-mismatch",
+                "const builtin::span<const Other> all = borrow_values(values); return 0;",
+                other,
+                "expected Other, got Node",
+            ),
+            ("at-type-mismatch", f"{view} const Other o = all.at(0); return 0;", other, "expected Node, got Other"),
+            (
+                "at-argument",
+                f"{view} return consume(all.at(0));",
+                "auto consume(Node row) -> i64 { return row.score(); }",
+                "typed span access requires a typed copied local",
+            ),
+            (
+                "scalar-borrow",
+                "const i64 size = borrow_values(values); return size;",
+                "",
+                "borrow_values requires a span binding or span argument",
+            ),
+            (
+                "byte-owner",
+                f"{OWNER} bytes = region.try_allocate(4); const {span} b = borrow_values(bytes); return 0;",
+                "",
+                "borrow_values requires a named owned-values local",
+            ),
+            (
+                "byte-initializer",
+                f"{OWNER} bytes = region.try_allocate(4); const {span} b = borrow_bytes(bytes); return 0;",
+                "",
+                "span initializer requires borrow_bytes",
+            ),
+            (
+                "byte-parameter",
+                f"{view} return bytes(all);",
+                "auto bytes(builtin::span<const u8> view) -> i64 { return view.size(); }",
+                "expected builtin::span<const u8>, got builtin::span<const Node>",
+            ),
+            (
+                "typed-to-byte-reborrow",
+                f"{view} const builtin::span<const u8> b = all; return 0;",
+                "",
+                "expected builtin::span<const u8>, got builtin::span<const Node>",
+            ),
+            (
+                "free-function-result",
+                "return 0;",
+                f"auto leak({span} rows) -> {span} {{ return rows; }}",
+                "only scalar function results",
+            ),
+            (
+                "field",
+                "return 0;",
+                f"class Holder {{ {span} rows; public: Holder() {{}} }};",
+                "unsupported class field type 'builtin::span<const Node>'",
+            ),
+            (
+                "scalar-element",
+                "const builtin::span<const i64> all = borrow_values(values); return 0;",
+                "",
+                "expected 'u8' (found 'i64')",
+            ),
+            (
+                "template-element",
+                "return 0;",
+                "template<Scalar T> class Wrap { T value; public: Wrap(T v) : value(v) {} };"
+                "auto f(builtin::span<const Wrap<i64>> rows) -> i64 { return rows.size(); }",
+                "typed spans require a named concrete copied class",
+            ),
+            (
+                "mutable-call-while-receiver-view",
+                f"Pool pool = Pool(region, move(values)); const {span} rows = pool.view(); pool.put(0, fill); return 0;",
+                "",
+                "cannot mutate or move an owner while a readonly span is live",
+            ),
+            (
+                "mutable-method-result",
+                "return 0;",
+                f"class Bad {{ {owner} rows; public: Bad(builtin::ByteRegion region, {owner} owned) : rows(move(owned)) {{}}"
+                f" auto view() -> {span} {{ const {span} all = borrow_values(rows); return all; }} }};",
+                "span results require a const non-template class method",
+            ),
+            (
+                "borrowed-object-field",
+                "return 0;",
+                f"auto peek(const Pool& pool) -> i64 {{ const {span} rows = borrow_values(pool.rows); return rows.size(); }}",
+                "borrowed object parameters support public methods, not field access",
+            ),
+            (
+                "mutable-loan-while-live",
+                f"{view} grow(values, fill); return 0;",
+                f"auto grow({owner}& rows, Node fill) -> bool {{ return rows.try_resize(rows.size() + 1, fill); }}",
+                "cannot mutate or move an owner while a readonly span is live",
+            ),
+            ("reflect", f"{view} return i64(size_of({span}));", "", "span capabilities are unavailable to reflection"),
+        ):
+            reject(name, body, extra, diagnostic)
+        self.reject(
+            "typed-span-owning-element",
+            f"module bad; class Res {{ {OWNER} b; public: Res(builtin::ByteRegion r) : b(r.try_allocate(1)) {{}} }};"
+            "auto f(builtin::span<const Res> rows) -> i64 { return rows.size(); }",
+            "typed spans require a bounded pointer-free copied class element",
+        )
+
     def typed_cases(self):
         node = """
             enum class Kind { unused, literal, binary };
@@ -571,6 +794,7 @@ class OwnedBytesCases(Suite):
         """
         owner = "builtin::OwnedValues<Node>"
         self.typed_borrow_cases(node, owner)
+        self.typed_span_cases(node, owner)
         dynamic = self.compile(
             "typed-runtime-capacity",
             program(

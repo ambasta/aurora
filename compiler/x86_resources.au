@@ -194,6 +194,14 @@ export namespace compiler_x86 {
             w.text(", %rsi");
             w.end_line();
             w.call_runtime("__au_runtime_bytes_borrow_span");
+            const i64 stride = span_element_stride(m, callable, result);
+            if (stride > 0) {
+                // The runtime reports the owner's byte length; a typed owner's
+                // length is always a whole number of elements.
+                w.line_address("movq ", result - 48, ", %rax");
+                divide_by_stride(w, stride);
+                w.line_address("movq %rax, ", result - 48, "");
+            }
             w.pop("%rax");
             return true;
         }
@@ -279,6 +287,54 @@ export namespace compiler_x86 {
                 w.text(":\n");
             }
             return true;
+        }
+        if (form == 84) {
+            const i64 offset = operand_value(s, instruction, 0);
+            const i64 value = operand_value(s, instruction, 1);
+            const i64 stride = span_element_stride(m, callable, offset);
+            if (stride < 1) {
+                return w.fail();
+            }
+            w.line_address("cmpq ", offset - 48, ", %rax");
+            w.line("jae .Laurora_bounds_trap");
+            w.line_address("addq ", offset - 40, ", %rax");
+            const i64 function = w.function_index();
+            const i64 division = w.next_division();
+            // Kind 1 is a kernel owner snapshot read through the checked runtime;
+            // kind 0 is contiguous payload, copied whole like the runtime's copy.
+            // As for byte loads, a graph without owners has only kind-0 views.
+            const bool owned = w.owned_span_runtime();
+            if (owned) {
+                w.line_address("cmpq $0, ", offset, "");
+                w.begin_line();
+                w.text("je ");
+                resource_span_label(w, function, division, false);
+                w.end_line();
+                w.line_address("cmpq $1, ", offset, "");
+                w.line("jne .Laurora_bounds_trap");
+                w.line("movq %rax, %rsi");
+                w.line_address("leaq ", offset - 8, ", %rdi");
+                w.line_number("movq $", stride, ", %rdx");
+                w.line_address("leaq ", value, ", %rcx");
+                w.call_runtime("__au_runtime_values_at");
+                w.begin_line();
+                w.text("jmp ");
+                resource_span_label(w, function, division, true);
+                w.end_line();
+                resource_span_label(w, function, division, false);
+                w.text(":\n");
+            }
+            w.line_number("imulq $", stride, ", %rax, %rsi");
+            w.line_address("addq ", offset - 8, ", %rsi");
+            w.line_address("leaq ", value, ", %rdi");
+            w.line_number("movq $", stride, ", %rcx");
+            w.line("cld");
+            w.line("rep movsb");
+            if (owned) {
+                resource_span_label(w, function, division, true);
+                w.text(":\n");
+            }
+            return w.ok();
         }
         if (form == 59) {
             const i64 index = operand_value(s, instruction, 0);

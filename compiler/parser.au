@@ -72,6 +72,7 @@ export namespace compiler_parser {
         template_declaration_kind,
         function_template_capacity,
         class_template_shadow,
+        span_element,
         invalid
     };
     // Post-grammar declaration admission shares the parsed arena. The host
@@ -753,16 +754,23 @@ namespace compiler_parser {
                     }
                 } else {
                     if (frame.state() == FrameState::type_array_element || frame.state()
-                        == FrameState::type_owned_element) {
+                        == FrameState::type_owned_element || frame.state() == FrameState::type_span_element) {
                         const TypeSyntax element = arena.type_at(value);
                         const i64 element_index = value;
                         i64 length_index = -1;
                         i64 length = 0;
                         TypeKind kind = TypeKind::owned_values;
-                        if (frame.state() == FrameState::type_owned_element) {
+                        if (frame.state() == FrameState::type_owned_element || frame.state()
+                            == FrameState::type_span_element) {
                             if ((element.kind() != TypeKind::named && element.kind() != TypeKind::builtin_class)
                                 || element.first() >= 0) {
+                                if (frame.state() == FrameState::type_span_element) {
+                                    return TypeResult(ParseStatus::span_element, -1, token);
+                                }
                                 return TypeResult(ParseStatus::owned_element, -1, token);
+                            }
+                            if (frame.state() == FrameState::type_span_element) {
+                                kind = TypeKind::value_span;
                             }
                         } else {
                             kind = TypeKind::array_type;
@@ -944,32 +952,53 @@ namespace compiler_parser {
                                         return TypeResult(ParseStatus::expected_angle_open, -1, token);
                                     }
                                     token.update(advance(source, token));
+                                    bool typed_span = false;
                                     if (kind == TypeKind::byte_span) {
                                         if (!(type_word(source, token) == TypeWord::const_type)) {
                                             return TypeResult(ParseStatus::expected_const, -1, token);
                                         }
                                         token.update(advance(source, token));
-                                        if (!(type_word(source, token) == TypeWord::u8_type)) {
-                                            return TypeResult(ParseStatus::expected_u8, -1, token);
+                                        const TypeWord element_word = type_word(source, token);
+                                        if (!(element_word == TypeWord::u8_type)) {
+                                            // Any other builtin scalar is still a misspelled byte span.
+                                            if ((element_word != TypeWord::invalid && element_word
+                                                != TypeWord::builtin_type) || token.kind()
+                                                != compiler_lexer::Event::token
+                                                || !compiler_lexer::letter(source.at(token.first()))) {
+                                                return TypeResult(ParseStatus::expected_u8, -1, token);
+                                            }
+                                            typed_span = true;
                                         }
                                     } else {
                                         if (!(type_word(source, token) == TypeWord::i64_type)) {
                                             return TypeResult(ParseStatus::expected_i64, -1, token);
                                         }
                                     }
-                                    token.update(advance(source, token));
-                                    if (!single(source, token, '>')) {
-                                        return TypeResult(ParseStatus::expected_angle_close, -1, token);
+                                    if (typed_span) {
+                                        // builtin::span<const Element>: the element closes the frame.
+                                        ParseFrame parent = ParseFrame(FrameState::type_span_element, 0, -1,
+                                            original.index());
+                                        parent.designate(name_last);
+                                        const ParseFrame child = ParseFrame(FrameState::type_start, 0, -1, -1);
+                                        if (!arena.replace(parent) || !arena.push(child)) {
+                                            const TypeResult error = type_error(arena, token);
+                                            return error;
+                                        }
+                                    } else {
+                                        token.update(advance(source, token));
+                                        if (!single(source, token, '>')) {
+                                            return TypeResult(ParseStatus::expected_angle_close, -1, token);
+                                        }
+                                        const i64 close = token.index() * 2 + token.half();
+                                        token.update(advance(source, token));
+                                        value = arena.append_type(kind, original.index(), name_last, close, -1, -1);
+                                        if (value < 0) {
+                                            const TypeResult error = type_error(arena, token);
+                                            return error;
+                                        }
+                                        type_depth = type_depth - 1;
+                                        arena.pop();
                                     }
-                                    const i64 close = token.index() * 2 + token.half();
-                                    token.update(advance(source, token));
-                                    value = arena.append_type(kind, original.index(), name_last, close, -1, -1);
-                                    if (value < 0) {
-                                        const TypeResult error = type_error(arena, token);
-                                        return error;
-                                    }
-                                    type_depth = type_depth - 1;
-                                    arena.pop();
                                 } else {
                                     if (!atomic) {
                                         if (original.kind() != compiler_lexer::Event::token
@@ -3030,7 +3059,7 @@ namespace compiler_parser {
         if (kind == TypeKind::named || kind == TypeKind::builtin_class) {
             return AdmissionType(AdmissionKind::class_value, 0, start);
         }
-        if (kind == TypeKind::byte_span) {
+        if (kind == TypeKind::byte_span || kind == TypeKind::value_span) {
             return AdmissionType(AdmissionKind::span, 0, start);
         }
         if (kind == TypeKind::owned_values) {

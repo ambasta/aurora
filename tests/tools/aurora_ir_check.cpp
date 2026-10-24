@@ -105,6 +105,8 @@ std::string metadataText(const ValidatedModule &checked) {
             out += "bytes " + name + ' ' + std::to_string(offset) + (mutableValue ? " mutable" : "") + '\n';
         for (const auto &[offset, className] : frame.ownedValueTypes())
             out += "values " + name + ' ' + std::to_string(offset) + ' ' + className + '\n';
+        for (const auto &[offset, className] : frame.spanValueTypes())
+            out += "spanvalues " + name + ' ' + std::to_string(offset) + ' ' + className + '\n';
         // Storage origins of every frame byte and the extreme offsets.
         std::vector<int> offsets{INT_MIN};
         for (int offset = -1; offset <= frame.frameBytes() + 1; ++offset)

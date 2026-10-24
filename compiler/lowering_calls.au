@@ -29,10 +29,11 @@ export namespace compiler_lowering {
         }
         return span.origin_local_id();
     }
-    auto make_span(compiler_resolver::Session& session, ContinuationRow frame, i64 parent, i64 origin, i64 field,
+    // A span local for an expression of the given span type; the request carries
+    // the destination (named binding or temporary) and the exact span type.
+    auto add_span(compiler_resolver::Session& session, LocalRequest destination, i64 parent, i64 origin, i64 field,
         bool temporary) -> i64 {
-        const i64 type = scalar_id(session, compiler_resolver::ResolvedTypeKind::byte_span);
-        LocalRequest request = expression_request(session, frame, type, false);
+        LocalRequest request = destination;
         SpanOriginKind kind = SpanOriginKind::local;
         i64 root = origin;
         if (origin == -1) {
@@ -57,6 +58,75 @@ export namespace compiler_lowering {
         }
         return result;
     }
+    // borrow_values(owner): a readonly typed view of a named OwnedValues local or
+    // a direct private OwnedValues field, including the implicit receiver field.
+    auto borrow_values_span(compiler_resolver::Session& session, i64 frame_id) -> bool {
+        const ContinuationRow frame = session.continuation(frame_id);
+        const i64 node = frame.syntax_node();
+        const i64 reference = source_ref(session, node);
+        const i64 expected = frame.output_mark();
+        if (span_element(session, expected) < 0) {
+            return fail(session, LoweringError::invalid_span_initializer, reference);
+        }
+        require_arity(session, node, 1);
+        const i64 target = expression_argument(session, node, 0);
+        const compiler_resolver::SyntaxRow target_row = session.syntax(target);
+        i64 origin = -2;
+        i64 field = -1;
+        i64 type = -1;
+        if (target_row.expression_kind() == compiler_parser::NodeKind::name) {
+            const i64 name = source_ref(session, target);
+            if (lookup_local(session, name) < 0) {
+                field = implicit_field(session, name);
+            }
+            if (field < 0) {
+                origin = named_source(session, target);
+                type = local_type(session, origin);
+            } else {
+                const i64 receiver_nominal = body_receiver_nominal(session);
+                type = field_type(session, receiver_nominal, field);
+            }
+        } else {
+            if (target_row.expression_kind() != compiler_parser::NodeKind::member) {
+                return fail(session, LoweringError::borrow_values_requires_named_storage_or_private_field, reference);
+            }
+            const i64 receiver = target_row.word(1);
+            const compiler_resolver::SyntaxRow receiver_row = session.syntax(receiver);
+            if (receiver_row.expression_kind() != compiler_parser::NodeKind::name) {
+                return fail(session, LoweringError::borrow_values_requires_named_storage_or_private_field, reference);
+            }
+            origin = named_source(session, receiver);
+            const LocalRow local = session.local(origin);
+            if (local.borrowed_object()) {
+                const i64 member_source = source_ref(session, target);
+                return fail(session, LoweringError::borrowed_object_field_access, member_source);
+            }
+            const i64 member_reference = source_ref(session, target);
+            field = checked_field(session, local.concrete_type_id(), member_reference, false);
+            const i64 nominal = compiler_resolver::mw(session, local.concrete_type_id(), 1);
+            type = field_type(session, nominal, field);
+        }
+        if (!session.good() || !no_exclusive_object_loan(session, origin, reference)) {
+            return false;
+        }
+        if (value_kind(session, type) != compiler_resolver::ResolvedTypeKind::owned_values) {
+            return fail(session, LoweringError::borrow_values_requires_named_storage_or_private_field, reference);
+        }
+        const i64 owned = compiler_resolver::mw(session, type, 2);
+        const i64 viewed = span_element(session, expected);
+        if (!match_type(session, owned, viewed, reference)) {
+            return false;
+        }
+        const LocalRequest span_request = expression_request(session, frame, expected, false);
+        const i64 destination = add_span(session, span_request, -1, origin, field, false);
+        i64 offset = 0;
+        if (origin >= 0) {
+            offset = local_offset(session, origin);
+        }
+        const i64 result_offset = local_offset(session, destination);
+        emit_BorrowOwnedSpan(session, offset, field, result_offset);
+        return finish_expression(session, expected, destination);
+    }
     auto begin_span(compiler_resolver::Session& session, i64 frame_id) -> bool {
         ContinuationRow frame = session.continuation(frame_id);
         const i64 node = frame.syntax_node();
@@ -64,11 +134,14 @@ export namespace compiler_lowering {
         const i64 reference = source_ref(session, node);
         if (syntax.expression_kind() == compiler_parser::NodeKind::literal) {
             const compiler_resolver::MetaRow token = session.meta(reference);
-            if (!argument_use(session, frame_id) || session.source_byte(token.word(1)) != '"') {
+            if (!argument_use(session, frame_id) || session.source_byte(token.word(1)) != '"' || span_element(session,
+                frame.output_mark()) >= 0) {
                 return fail(session, LoweringError::invalid_span_initializer, reference);
             }
             const i64 count = decode_string(session, reference, false, false);
-            const i64 destination = make_span(session, frame, -1, -3, -1, false);
+            const i64 byte_type = scalar_id(session, compiler_resolver::ResolvedTypeKind::byte_span);
+            const LocalRequest span_request = expression_request(session, frame, byte_type, false);
+            const i64 destination = add_span(session, span_request, -1, -3, -1, false);
             const i64 begin = session.source_size();
             decode_string(session, reference, true, false);
             const OperandRow bytes = slice(OperandRole::LiteralBytes, begin, count);
@@ -83,17 +156,29 @@ export namespace compiler_lowering {
                 return false;
             }
             const LocalRow span = session.local(parent);
-            if (value_kind(session, span.concrete_type_id()) != compiler_resolver::ResolvedTypeKind::byte_span) {
+            if (!is_span(session, span.concrete_type_id())) {
                 return fail(session, LoweringError::invalid_span_initializer, reference);
             }
-            const i64 destination = make_span(session, frame, parent, span_origin_root(span), span.span_field_index(),
-                false);
+            if (frame.output_mark() >= 0 && !match_type(session, span.concrete_type_id(), frame.output_mark(),
+                reference)) {
+                return false;
+            }
+            const LocalRequest span_request = expression_request(session, frame, span.concrete_type_id(), false);
+            const i64 destination = add_span(session, span_request, parent, span_origin_root(span),
+                span.span_field_index(), false);
             const i64 staged_a1_13 = local_offset(session, destination);
             emit_ReborrowSpan(session, span.offset(), staged_a1_13);
             return finish_expression(session, span.concrete_type_id(), destination);
         }
         if (syntax.expression_kind() == compiler_parser::NodeKind::call && session.source_equal(reference,
+            "borrow_values")) {
+            return borrow_values_span(session, frame_id);
+        }
+        if (syntax.expression_kind() == compiler_parser::NodeKind::call && session.source_equal(reference,
             "borrow_bytes")) {
+            if (span_element(session, frame.output_mark()) >= 0) {
+                return fail(session, LoweringError::invalid_span_initializer, reference);
+            }
             require_arity(session, node, 1);
             const i64 target = expression_argument(session, node, 0);
             const compiler_resolver::SyntaxRow target_row = session.syntax(target);
@@ -149,7 +234,9 @@ export namespace compiler_lowering {
                     return fail(session, LoweringError::borrow_bytes_requires_named_storage, reference);
                 }
             }
-            const i64 destination = make_span(session, frame, -1, origin, field, false);
+            const i64 bytes_type = scalar_id(session, compiler_resolver::ResolvedTypeKind::byte_span);
+            const LocalRequest span_request = expression_request(session, frame, bytes_type, false);
+            const i64 destination = add_span(session, span_request, -1, origin, field, false);
             if (receiver_array) {
                 const i64 staged_a1_18 = local_offset(session, destination);
                 emit_BorrowReceiverArraySpan(session, field, staged_a1_18);
@@ -180,8 +267,11 @@ export namespace compiler_lowering {
             if (target_row.expression_kind() == compiler_parser::NodeKind::name) {
                 const i64 parent = named_source(session, target);
                 const i64 staged_type_23 = local_type(session, parent);
-                if (value_kind(session, staged_type_23) != compiler_resolver::ResolvedTypeKind::byte_span) {
+                if (!is_span(session, staged_type_23)) {
                     return fail(session, LoweringError::subspan_requires_live_readonly_view, reference);
+                }
+                if (frame.output_mark() >= 0 && !match_type(session, staged_type_23, frame.output_mark(), reference)) {
+                    return false;
                 }
                 frame.set_call(-1, parent, -1, 2);
                 frame.set_phase(ContinuationPhase::argument);
@@ -191,8 +281,7 @@ export namespace compiler_lowering {
             }
             frame.set_phase(ContinuationPhase::child);
             session.set_continuation(frame_id, frame);
-            const i64 staged_expected_25 = scalar_id(session, compiler_resolver::ResolvedTypeKind::byte_span);
-            return push_expression(session, target, staged_expected_25, -1);
+            return push_expression(session, target, frame.output_mark(), -1);
         }
         const compiler_resolver::ResolvedRow resolved_span = session.resolved(node);
         if (syntax.expression_kind() == compiler_parser::NodeKind::method_call || resolved_span.operation()
@@ -237,7 +326,12 @@ export namespace compiler_lowering {
         const i64 parent_node = expression_argument(session, frame.syntax_node(), 0);
         const compiler_resolver::SyntaxRow parent_syntax = session.syntax(parent_node);
         const bool temporary = parent_syntax.expression_kind() != compiler_parser::NodeKind::name;
-        const i64 destination = make_span(session, frame, parent_id, span_origin_root(parent),
+        if (frame.output_mark() >= 0 && !match_type(session, parent.concrete_type_id(), frame.output_mark(),
+            reference)) {
+            return false;
+        }
+        const LocalRequest span_request = expression_request(session, frame, parent.concrete_type_id(), false);
+        const i64 destination = add_span(session, span_request, parent_id, span_origin_root(parent),
             parent.span_field_index(), temporary);
         const i64 staged_a1_29 = local_offset(session, destination);
         emit_Subspan(session, parent.offset(), staged_a1_29);
@@ -594,8 +688,7 @@ export namespace compiler_lowering {
         const i64 node = frame.syntax_node();
         const i64 reference = source_ref(session, node);
         const i64 actual = compiler_resolver::sw(session, node, 2) - 1;
-        const bool span_destination = frame.output_mark() >= 0 && value_kind(session, frame.output_mark())
-            == compiler_resolver::ResolvedTypeKind::byte_span;
+        const bool span_destination = frame.output_mark() >= 0 && is_span(session, frame.output_mark());
         const bool binding = frame.scope_head() >= 0 || span_destination || (frame.output_mark() >= 0
             && !argument_use(session, frame_id));
         i64 count = 0;
@@ -724,19 +817,57 @@ export namespace compiler_lowering {
                             }
                         }
                     } else {
-                        if (kind == compiler_resolver::ResolvedTypeKind::byte_region) {
-                            if (!binding || !session.source_equal(reference, "try_allocate")
-                                || !is_owner_storage(session, frame.output_mark())) {
-                                return fail(session, LoweringError::region_allocation_requires_owned_bytes_initializer,
-                                    reference);
+                        if (kind == compiler_resolver::ResolvedTypeKind::value_span) {
+                            // size() reads the count; at() copies one element to a typed destination.
+                            if (implicit) {
+                                return fail(session, LoweringError::span_operation_requires_named_live_span, reference);
                             }
-                            count = 1;
-                            if (value_kind(session, frame.output_mark())
-                                == compiler_resolver::ResolvedTypeKind::owned_values) {
-                                count = 2;
+                            if (session.source_equal(reference, "size")) {
+                                if (binding) {
+                                    return fail(session, LoweringError::span_operation_requires_named_live_span,
+                                        reference);
+                                }
+                                if (actual != 0) {
+                                    return fail(session, LoweringError::span_size_argument_count, reference);
+                                }
+                            } else {
+                                if (session.source_equal(reference, "at")) {
+                                    count = 1;
+                                    if (actual != 1) {
+                                        return fail(session, LoweringError::span_at_argument_count, reference);
+                                    }
+                                    if (!binding) {
+                                        return fail(session,
+                                            LoweringError::typed_span_access_requires_copied_destination, reference);
+                                    }
+                                    if (frame.output_mark() >= 0) {
+                                        const i64 element = compiler_resolver::mw(session, type, 2);
+                                        match_type(session, frame.output_mark(), element, reference);
+                                    }
+                                } else {
+                                    if (session.source_equal(reference, "subspan")) {
+                                        return fail(session, LoweringError::subspan_requires_span_binding_or_argument,
+                                            reference);
+                                    } else {
+                                        return fail(session, LoweringError::unknown_readonly_span_operation, reference);
+                                    }
+                                }
                             }
                         } else {
-                            return fail(session, LoweringError::unknown_class_method, reference);
+                            if (kind == compiler_resolver::ResolvedTypeKind::byte_region) {
+                                if (!binding || !session.source_equal(reference, "try_allocate")
+                                    || !is_owner_storage(session, frame.output_mark())) {
+                                    return fail(session,
+                                        LoweringError::region_allocation_requires_owned_bytes_initializer, reference);
+                                }
+                                count = 1;
+                                if (value_kind(session, frame.output_mark())
+                                    == compiler_resolver::ResolvedTypeKind::owned_values) {
+                                    count = 2;
+                                }
+                            } else {
+                                return fail(session, LoweringError::unknown_class_method, reference);
+                            }
                         }
                     }
                 }
@@ -760,8 +891,7 @@ export namespace compiler_lowering {
             const i64 staged_nominal_62 = compiler_resolver::mw(session, callee, 7);
             result = nominal_type(session, staged_nominal_62);
         }
-        const bool span_destination = frame.output_mark() >= 0 && value_kind(session, frame.output_mark())
-            == compiler_resolver::ResolvedTypeKind::byte_span;
+        const bool span_destination = frame.output_mark() >= 0 && is_span(session, frame.output_mark());
         const bool inferred = argument_use(session, frame_id) && !span_destination;
         const bool binding = frame.scope_head() >= 0 || (frame.output_mark() >= 0 && !inferred);
         const bool method = is_method_expression(session, frame.syntax_node());
@@ -822,7 +952,7 @@ export namespace compiler_lowering {
             && frame.receiver_field_index() >= 0 && owning_type(session, frame.cleanup_cursor())) {
             return fail(session, LoweringError::copied_argument_requires_complete_method_receiver, reference);
         }
-        if (method && value_kind(session, result) == compiler_resolver::ResolvedTypeKind::byte_span) {
+        if (method && is_span(session, result)) {
             const i64 caller = body_function(session);
             if (borrowed_root_count(session, caller) > 1 && frame.capability_root_local() >= 0) {
                 const LocalRow receiver = session.local(frame.capability_root_local());
@@ -834,7 +964,7 @@ export namespace compiler_lowering {
                 return fail(session, LoweringError::span_method_result_requires_initializer_or_argument, reference);
             }
             const i64 staged_type_65 = body_result_type(session);
-            if (value_kind(session, staged_type_65) == compiler_resolver::ResolvedTypeKind::byte_span) {
+            if (is_span(session, staged_type_65)) {
                 return fail(session, LoweringError::span_method_forwards_returned_view, reference);
             }
             if (frame.receiver_field_index() >= 0) {
@@ -1142,9 +1272,8 @@ export namespace compiler_lowering {
                         session.set_continuation(frame_id, frame);
                     } else {
                         i64 expected = -1;
-                        if (kind == compiler_resolver::ResolvedTypeKind::class_value || (kind
-                            == compiler_resolver::ResolvedTypeKind::byte_span && !is_constructor_expression(session,
-                            frame.syntax_node()))) {
+                        if (kind == compiler_resolver::ResolvedTypeKind::class_value || (is_span(session, type)
+                            && !is_constructor_expression(session, frame.syntax_node()))) {
                             expected = type;
                         }
                         return push_expression(session, node, expected, -1);
@@ -1212,7 +1341,7 @@ export namespace compiler_lowering {
         }
         ArgumentKind kind = ArgumentKind::scalar;
         CleanupKind cleanup = CleanupKind::none;
-        if (value_kind(session, type) == compiler_resolver::ResolvedTypeKind::byte_span) {
+        if (is_span(session, type)) {
             kind = ArgumentKind::span;
             cleanup = CleanupKind::span;
         } else {
@@ -1412,15 +1541,16 @@ export namespace compiler_lowering {
         }
         i64 destination = -1;
         i64 destination_offset = 0;
-        if (value_kind(session, result) == compiler_resolver::ResolvedTypeKind::class_value || value_kind(session,
-            result) == compiler_resolver::ResolvedTypeKind::byte_span || is_owner_storage(session, result)) {
+        if (value_kind(session, result) == compiler_resolver::ResolvedTypeKind::class_value || is_span(session, result)
+            || is_owner_storage(session, result)) {
             if (resource && frame.scope_head() < 0 && !constructor && !argument_use(session, frame_id)
                 && frame.output_mark() < 0) {
                 return fail(session, LoweringError::resource_result_requires_typed_initializer, reference);
             }
-            if (value_kind(session, result) == compiler_resolver::ResolvedTypeKind::byte_span) {
+            if (is_span(session, result)) {
                 const i64 field = session.index(115, callee, 0, 0, 0);
-                destination = make_span(session, frame, -1, frame.capability_root_local(), field, false);
+                const LocalRequest span_request = expression_request(session, frame, result, false);
+                destination = add_span(session, span_request, -1, frame.capability_root_local(), field, false);
             } else {
                 i64 owner = -1;
                 if (resource && is_resource_owner(session, result)) {
@@ -1594,13 +1724,20 @@ export namespace compiler_lowering {
                     emit_AllocateBytes(session, offset, staged_a1_87);
                 }
             } else {
-                if (kind == compiler_resolver::ResolvedTypeKind::byte_span) {
+                if (is_span(session, type)) {
                     if (session.source_equal(source, "size")) {
                         emit_SpanLength(session, offset);
                         result = scalar_id(session, compiler_resolver::ResolvedTypeKind::i64_value);
                     } else {
-                        emit_SpanLoad(session, offset);
-                        result = scalar_id(session, compiler_resolver::ResolvedTypeKind::u8_value);
+                        if (kind == compiler_resolver::ResolvedTypeKind::value_span) {
+                            result = compiler_resolver::mw(session, type, 2);
+                            destination = expression_destination(session, frame, result, -1);
+                            const i64 element_offset = local_offset(session, destination);
+                            emit_SpanValuesLoad(session, offset, element_offset);
+                        } else {
+                            emit_SpanLoad(session, offset);
+                            result = scalar_id(session, compiler_resolver::ResolvedTypeKind::u8_value);
+                        }
                     }
                 } else {
                     if (session.source_equal(source, "ok")) {

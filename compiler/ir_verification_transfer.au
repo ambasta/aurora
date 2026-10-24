@@ -196,7 +196,7 @@ export namespace compiler_ir_verification {
         const ControlRow control = w.control();
         const i64 ordinal = signature.receiver_span_field();
         const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
-        const bool valid_summary = compiler_ir_metadata::plain_type(result, 11)
+        const bool valid_summary =(compiler_ir_metadata::plain_type(result, 11) || result.kind() == 21)
             && compiler_ir_metadata::callable_flag(signature, masks.callable_span_summary()) && control.has_receiver()
             && !receiver_constructor(m, w.callable()) && !receiver_mutable(m, w.callable());
         if (!require(w, valid_summary,
@@ -356,7 +356,8 @@ export namespace compiler_ir_verification {
     // 81: AcquireObjectLoan -> transfer_acquire_object_loan
     // 82: ReleaseObjectLoan -> transfer_release_object_loan
     // 83: BasicBorrowedCall -> transfer_method_call
-    // Outside 0..83: first_error(VerificationErrorFirst::internal), never success.
+    // 84: SpanValuesLoad -> transfer_spans
+    // Outside 0..84: first_error(VerificationErrorFirst::internal), never success.
     // Each admitted form has exactly one real route. In particular the immutable
     // service/region bindings and CFG-only forms are explicit, not a catch-all.
     auto transfer(VerificationWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
@@ -387,7 +388,7 @@ export namespace compiler_ir_verification {
         if (form == 44) {
             return return_object(w, m, transfer_value(s, id, 0));
         }
-        if ((form >= 47 && form <= 52) || (form >= 54 && form <= 59)) {
+        if ((form >= 47 && form <= 52) || (form >= 54 && form <= 59) || form == 84) {
             return transfer_spans(w, m, s, id);
         }
         if (form == 53) {

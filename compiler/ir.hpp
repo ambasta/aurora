@@ -226,6 +226,13 @@ class SpanLoad {
 public:
     int offset;
 };
+// Typed readonly span element copy: current i64 index; the destination is a
+// pristine exact-nominal copied object of the span's annotated element class.
+class SpanValuesLoad {
+public:
+    int offset;
+    int resultOffset;
+};
 class BindSpanParameter {
 public:
     int index;
@@ -661,7 +668,8 @@ using BasicInstruction = std::variant<BindServiceParameter,
                                       ReturnOwnedObject,
                                       AcquireObjectLoan,
                                       ReleaseObjectLoan,
-                                      BasicBorrowedCall<Offsets, Roots>>;
+                                      BasicBorrowedCall<Offsets, Roots>,
+                                      SpanValuesLoad>;
 using Instruction = BasicInstruction<std::vector<int>,
                                      std::vector<ServiceArgument>,
                                      std::vector<unsigned char>,
@@ -755,6 +763,9 @@ public:
     // Exact subset of byteSlots: missing means OwnedBytes, present means
     // OwnedValues of the named canonical copied class. Never grants a lifetime.
     std::map<int, std::string> ownedValueTypes;
+    // Exact subset of spanSlots: missing means a byte span, present means a
+    // readonly span of the named canonical copied class.
+    std::map<int, std::string> spanValueTypes;
     int frameBytes = 0;
     std::string name;
     int moduleScope = 0;

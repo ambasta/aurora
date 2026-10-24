@@ -120,7 +120,8 @@ export namespace compiler_lowering {
     }
     auto require_visible_type(compiler_resolver::Session& session, i64 type, i64 reference) -> bool {
         i64 checked = type;
-        if (value_kind(session, type) == compiler_resolver::ResolvedTypeKind::owned_values) {
+        if (value_kind(session, type) == compiler_resolver::ResolvedTypeKind::owned_values || value_kind(session, type)
+            == compiler_resolver::ResolvedTypeKind::value_span) {
             checked = compiler_resolver::mw(session, type, 2);
         }
         const compiler_resolver::ResolvedTypeKind kind = value_kind(session, checked);
@@ -231,12 +232,10 @@ export namespace compiler_lowering {
         }
         const i64 type = argument_type(session, parent.call_target(), parent.next_argument());
         const compiler_resolver::ResolvedTypeKind kind = value_kind(session, type);
-        if (kind == compiler_resolver::ResolvedTypeKind::byte_span && is_constructor_expression(session,
-            parent.syntax_node())) {
+        if (is_span(session, type) && is_constructor_expression(session, parent.syntax_node())) {
             return false;
         }
-        return kind == compiler_resolver::ResolvedTypeKind::class_value || kind
-            == compiler_resolver::ResolvedTypeKind::byte_span;
+        return kind == compiler_resolver::ResolvedTypeKind::class_value || is_span(session, type);
     }
     auto direct_return_use(compiler_resolver::Session& session, i64 frame_id) -> bool {
         if (frame_id == 0) {

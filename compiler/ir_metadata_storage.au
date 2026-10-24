@@ -36,7 +36,8 @@ export namespace compiler_ir_metadata {
         OwnedValues,
         CallSession,
         Com1UartGrant,
-        ServeSession
+        ServeSession,
+        ValueSpan
     };
     enum class MetadataError {
         none,
@@ -230,7 +231,8 @@ export namespace compiler_ir_metadata {
         receiver_class,
         //: invalid typed IR: class array carrier cannot be receiver
         receiver_carrier,
-        //: invalid typed IR: receiver span field summary requires exact direct byte-storage field
+        //: invalid typed IR: receiver span field summary requires exact direct byte-storage field or typed owner of
+        //: the view element
         receiver_span,
         //: invalid typed IR: owned value metadata requires exact owner spill
         owner_spill,
@@ -285,7 +287,19 @@ export namespace compiler_ir_metadata {
         //: invalid typed IR: noncanonical sealed CallResult layout
         call_layout,
         //: invalid typed IR: noncanonical sealed CallResult fields
-        call_fields
+        call_fields,
+        //: invalid typed IR: invalid canonical typed span type
+        span_value_type,
+        //: invalid typed IR: typed span element requires known canonical class layout
+        span_element_unknown,
+        //: invalid typed IR: typed span element must be a copied class, not an owner or carrier
+        span_element_kind,
+        //: invalid typed IR: typed span element exceeds copied class leaf limits
+        span_element_leaves,
+        //: invalid typed IR: typed span element storage exceeds 520 bytes
+        span_element_storage,
+        //: invalid typed IR: typed span metadata requires exact span spill
+        span_value_spill
     };
     class ByteRange {
         i64 firstByte;

@@ -146,7 +146,7 @@ public:
         const auto &function = module.functions.front();
         if (!function.code.empty() || !function.arraySlots.empty() || !function.spanSlots.empty() ||
             !function.regionSlots.empty() || !function.byteSlots.empty() || !function.ownedValueTypes.empty() ||
-            function.receiverSpanField)
+            !function.spanValueTypes.empty() || function.receiverSpanField)
             throw Error("unsupported initialization test callable fixture shape");
         for (const auto &[name, values] : module.classFields) {
             (void)values;

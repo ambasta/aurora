@@ -39,6 +39,7 @@ constexpr Name<TypeKind> typeKinds[] = {
     {TypeKind::CallSession, "call"},
     {TypeKind::Com1UartGrant, "uart"},
     {TypeKind::ServeSession, "serve"},
+    {TypeKind::ValueSpan, "spanof"},
 };
 constexpr Name<Unary> unaries[] = {
     {Unary::CheckedNegate, "CheckedNegate"}, {Unary::LogicalNot, "LogicalNot"}, {Unary::BitNot, "BitNot"}};
@@ -896,6 +897,8 @@ void printFunction(std::string &out, const Function &function) {
         out += "  bytes " + std::to_string(offset) + ' ' + boolText(mutableValue) + '\n';
     for (const auto &[offset, className] : function.ownedValueTypes)
         out += "  values " + std::to_string(offset) + ' ' + stringText(className) + '\n';
+    for (const auto &[offset, className] : function.spanValueTypes)
+        out += "  spanvalues " + std::to_string(offset) + ' ' + stringText(className) + '\n';
     for (const auto &instruction : function.code)
         out += "    " + instructionText(instruction) + '\n';
     out += "end\n";
@@ -1032,6 +1035,9 @@ class ModuleReader : public Reader {
         } else if (keyword == "values") {
             arity(nodes, 3, 3);
             insertOnce(function.ownedValueTypes, integer(nodes[1]), word(nodes[2], "class"), "values slot");
+        } else if (keyword == "spanvalues") {
+            arity(nodes, 3, 3);
+            insertOnce(function.spanValueTypes, integer(nodes[1]), word(nodes[2], "class"), "span values slot");
         } else {
             fail("unknown function line '" + keyword + "'");
         }

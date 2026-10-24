@@ -57,7 +57,7 @@ export namespace compiler_x86 {
             index = index - 1;
             const i64 type = parameter_type(metadata, target, index);
             const i64 kind = type_kind(metadata, type);
-            if (kind != 5 && kind != 11) {
+            if (kind != 5 && !span_kind(kind)) {
                 workspace.pop_argument(index);
             }
         }
@@ -78,7 +78,7 @@ export namespace compiler_x86 {
                 const i64 packed_address15 = workspace.pack_address(1, offset);
                 clear_padding(workspace, metadata, class_id, packed_address15);
             } else {
-                if (kind != 11) {
+                if (!span_kind(kind)) {
                     i64 width = 8;
                     if (kind == 10) {
                         width = 1;
@@ -96,7 +96,7 @@ export namespace compiler_x86 {
             const i64 type = parameter_type(metadata, target, index);
             const i64 kind = type_kind(metadata, type);
             const i64 offset = record_offset(metadata, target, index);
-            if (kind == 11) {
+            if (span_kind(kind)) {
                 const i64 source = operand_lane(store, instruction, span_field, index);
                 const i64 packed_address18 = workspace.pack_address(0, source);
                 const i64 packed_address19 = workspace.pack_address(1, offset);
@@ -390,7 +390,7 @@ export namespace compiler_x86 {
             if (roots > 1) {
                 // Multi-root signatures admit scalar/enum tails and results
                 // only. Keep all six scalar argument registers untouched.
-                if (aggregate || result_kind == 5 || result_kind == 11) {
+                if (aggregate || result_kind == 5 || span_kind(result_kind)) {
                     workspace.fail();
                     return true;
                 }
@@ -430,7 +430,7 @@ export namespace compiler_x86 {
                 }
             }
         }
-        if (result_kind == 5 || result_kind == 11) {
+        if (result_kind == 5 || span_kind(result_kind)) {
             const i64 result = operand_value(store, instruction, 3);
             if (aggregate) {
                 workspace.line_address("leaq ", result, ", %rax");
@@ -439,7 +439,7 @@ export namespace compiler_x86 {
             }
         }
         i64 getter = -1;
-        if (form == 38 && count == 0 && !aggregate && root_bytes == 0 && result_kind != 5 && result_kind != 11) {
+        if (form == 38 && count == 0 && !aggregate && root_bytes == 0 && result_kind != 5 && !span_kind(result_kind)) {
             getter = inline_getter_load(metadata, store, target);
         }
         if (getter > 0) {

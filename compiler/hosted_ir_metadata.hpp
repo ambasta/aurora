@@ -292,6 +292,7 @@ public:
     SlotSetRange regionSlots() const;
     SlotMapRange<bool> byteSlots() const;
     SlotMapRange<std::string> ownedValueTypes() const;
+    SlotMapRange<std::string> spanValueTypes() const;
 };
 
 // A borrowed callable identity. Every accessor reads the admitted owner; no

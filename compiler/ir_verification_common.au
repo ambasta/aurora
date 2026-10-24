@@ -130,6 +130,16 @@ export namespace compiler_ir_verification {
     auto exact_slot(const compiler_ir_metadata::MetadataStore& m, i64 callable, i64 kind, i64 base) -> i64 {
         return compiler_ir_instructions::entry_slot(m, callable, kind, base);
     }
+    // The element class of a typed readonly span spill, or -1 for a byte span.
+    auto span_class(const compiler_ir_metadata::MetadataStore& m, i64 callable, i64 base) -> i64 {
+        const i64 annotation = exact_slot(m, callable, 27, base);
+        if (annotation < 0) {
+            return -1;
+        }
+        const compiler_ir_metadata::SlotRow slot = m.slot_at(annotation);
+        const compiler_ir_metadata::RawTypeRow type = m.type_at(slot.type());
+        return named_class(m, type);
+    }
     auto slot_class(const compiler_ir_metadata::MetadataStore& m, i64 slot) -> i64 {
         const compiler_ir_metadata::SlotRow row = m.slot_at(slot);
         const compiler_ir_metadata::RawTypeRow type = m.type_at(row.type());
@@ -1534,9 +1544,11 @@ export namespace compiler_ir_verification {
             return false;
         }
         const TypeKey type = owner_key(m, w.callable(), root, ordinal);
-        if (!require(w, plain_key(type, 13),
-            first_error(VerificationErrorFirst::typed_owned_values_cannot_supply_a_byte_span)) || !span_target(w, m, s,
-            result)) {
+        const i64 element = span_class(m, w.callable(), result);
+        if (!require(w, element >= 0 || plain_key(type, 13),
+            first_error(VerificationErrorFirst::typed_owned_values_cannot_supply_a_byte_span)) || !require(w, element
+            < 0 || (type.kind() == 17 && type.nominal() == element), first_error(VerificationErrorFirst::internal))
+            || !span_target(w, m, s, result)) {
             return false;
         }
         const FactRow binding = owner_binding(w, root, ordinal);

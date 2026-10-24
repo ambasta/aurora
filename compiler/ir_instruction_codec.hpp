@@ -494,6 +494,14 @@ template <> struct InstructionCodec<SpanLoad> {
     }
 };
 
+template <> struct InstructionCodec<SpanValuesLoad> {
+    static constexpr auto form = InstructionForm::SpanValuesLoad;
+    template <class Cursor, class Value> static void fields(Cursor &cursor, Value &value) {
+        cursor.integer(OperandRole::Offset, value.offset);
+        cursor.integer(OperandRole::ResultOffset, value.resultOffset);
+    }
+};
+
 template <> struct InstructionCodec<BindSpanParameter> {
     static constexpr auto form = InstructionForm::BindSpanParameter;
     template <class Cursor, class Value> static void fields(Cursor &cursor, Value &value) {

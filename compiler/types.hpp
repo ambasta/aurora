@@ -39,7 +39,8 @@ enum class TypeKind {
     OwnedValues,
     CallSession,
     Com1UartGrant,
-    ServeSession
+    ServeSession,
+    ValueSpan
 };
 enum class TemplateArgumentKind {
     Type,
@@ -164,6 +165,15 @@ public:
         type.kind = TypeKind::OwnedValues;
         return type;
     }
+    // Readonly view of copied elements; ownedElement() recovers the element.
+    bool isValueSpan() const {
+        return kind == TypeKind::ValueSpan;
+    }
+    static Type valueSpan(const Type &element) {
+        Type type = element;
+        type.kind = TypeKind::ValueSpan;
+        return type;
+    }
     bool isResource() const {
         return isRegion() || isOwnerStorage();
     }
@@ -238,6 +248,8 @@ inline std::string typeName(const Type &type) {
         return "builtin::OwnedBytes";
     case TypeKind::OwnedValues:
         return "builtin::OwnedValues<" + typeName(type.ownedElement()) + ">";
+    case TypeKind::ValueSpan:
+        return "builtin::span<const " + typeName(type.ownedElement()) + ">";
     case TypeKind::Parameter:
         return type.className;
     case TypeKind::Enum:

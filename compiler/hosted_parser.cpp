@@ -283,6 +283,8 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             message = "nested dependent template arguments are not supported";
         else if (result.result == Status::owned_element)
             message = "owned values require a named concrete copied class";
+        else if (result.result == Status::span_element)
+            message = "typed spans require a named concrete copied class";
         else if (result.result == Status::array_element)
             message = "array elements require i64, u64, u8, bool or a concrete copied class";
         else if (result.result == Status::array_length)
@@ -754,7 +756,7 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     for (std::int64_t index = 0; index < typeCount; ++index) {
         auto &type = types[static_cast<std::size_t>(index)];
         aurora_hosted_parser_type(arena.data(), index, &type);
-        if (type.tag <= TypeSyntaxKind::invalid || type.tag > TypeSyntaxKind::builtin_class || type.token_index < 0 ||
+        if (type.tag <= TypeSyntaxKind::invalid || type.tag > TypeSyntaxKind::value_span || type.token_index < 0 ||
             type.token_index >= tokenCount || type.name_end < type.token_index || type.name_end >= tokenCount ||
             type.closing_token < 0 || type.closing_token / 2 >= tokenCount || type.first_child < -1 ||
             type.second_child < -1 || type.first_child >= index || type.second_child >= index ||
@@ -814,7 +816,7 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
         if (type.tag == TypeSyntaxKind::array_type) {
             if (type.first_child < 0 || type.second_child < 0)
                 invalid();
-        } else if (type.tag == TypeSyntaxKind::owned_values) {
+        } else if (type.tag == TypeSyntaxKind::owned_values || type.tag == TypeSyntaxKind::value_span) {
             if (type.first_child < 0 || type.second_child != -1)
                 invalid();
         } else if (type.tag != TypeSyntaxKind::named && (type.first_child != -1 || type.second_child != -1))
@@ -901,13 +903,14 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                 invalid();
         } else if (type.tag == TypeSyntaxKind::byte_span) {
             value = Type::ByteSpan;
-        } else if (type.tag == TypeSyntaxKind::array_type || type.tag == TypeSyntaxKind::owned_values) {
+        } else if (type.tag == TypeSyntaxKind::array_type || type.tag == TypeSyntaxKind::owned_values ||
+                   type.tag == TypeSyntaxKind::value_span) {
             const auto &elementSyntax = types[static_cast<std::size_t>(type.first_child)];
             const auto &element = typeValues[static_cast<std::size_t>(type.first_child)];
-            if (type.tag == TypeSyntaxKind::owned_values) {
+            if (type.tag != TypeSyntaxKind::array_type) {
                 if (!element.isClass() || !element.templateArguments.empty())
                     invalid();
-                value = Type::ownedValues(element);
+                value = type.tag == TypeSyntaxKind::owned_values ? Type::ownedValues(element) : Type::valueSpan(element);
             } else {
                 const auto &length = types[static_cast<std::size_t>(type.second_child)];
                 if (elementSyntax.tag == TypeSyntaxKind::capacity ||

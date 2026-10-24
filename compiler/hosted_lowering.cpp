@@ -463,6 +463,7 @@ class Projection {
         case RecordKind::RegionSlot:
         case RecordKind::ByteSlot:
         case RecordKind::OwnedValueType:
+        case RecordKind::SpanValueType:
             break;
         default:
             invalidLowering();
@@ -495,6 +496,10 @@ class Projection {
         }
         case RecordKind::OwnedValueType: {
             declaration.typeIndex = writer.slotType(Type::ownedValues(Type(className(values))));
+            break;
+        }
+        case RecordKind::SpanValueType: {
+            declaration.typeIndex = writer.slotType(Type::valueSpan(Type(className(values))));
             break;
         }
         default:

@@ -514,7 +514,15 @@ export namespace compiler_lowering {
         //: multiple borrowed roots cannot produce spans
         multiple_borrowed_span_production,
         //: borrowed arguments require distinct owning roots
-        borrowed_arguments_require_distinct_roots
+        borrowed_arguments_require_distinct_roots,
+        //: borrow_values requires a span binding or span argument
+        borrow_values_requires_span_binding_or_argument,
+        //: borrow_values requires a named owned-values local or a direct private owned-values field
+        borrow_values_requires_named_storage_or_private_field,
+        //: typed spans require a bounded pointer-free copied class element
+        typed_span_requires_copied_element,
+        //: typed span access requires a typed copied local or direct copied return
+        typed_span_access_requires_copied_destination
     };
 
     // Four eight-byte words in this order. Failure never publishes a module

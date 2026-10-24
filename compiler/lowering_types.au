@@ -710,8 +710,24 @@ export namespace compiler_lowering {
         session.truncate_work(base);
         return session.good();
     }
+    // Byte spans and typed readonly spans share one capability shape and lifetime rules.
+    auto is_span(compiler_resolver::Session& session, i64 type) -> bool {
+        const compiler_resolver::ResolvedTypeKind kind = tk(session, type);
+        return kind == compiler_resolver::ResolvedTypeKind::byte_span || kind
+            == compiler_resolver::ResolvedTypeKind::value_span;
+    }
+    // The copied element class type of a typed span, or -1 for a byte span.
+    auto span_element(compiler_resolver::Session& session, i64 type) -> i64 {
+        if (tk(session, type) != compiler_resolver::ResolvedTypeKind::value_span) {
+            return -1;
+        }
+        return tm(session, type, 2);
+    }
+    // OwnedValues and typed spans hold the same bounded copied elements.
     auto owned_element(compiler_resolver::Session& session, i64 type, i64 source) -> bool {
-        if (tk(session, type) != compiler_resolver::ResolvedTypeKind::owned_values) {
+        const compiler_resolver::ResolvedTypeKind kind = tk(session, type);
+        if (kind != compiler_resolver::ResolvedTypeKind::owned_values && kind
+            != compiler_resolver::ResolvedTypeKind::value_span) {
             return true;
         }
         const i64 element = tm(session, type, 2);
@@ -725,6 +741,9 @@ export namespace compiler_lowering {
         const i64 storage = record_signed(session, shape, OperandRole::StorageRef);
         if (owning_type(session, element) || !copied_leaves(session, leaves.count(), bytes) || record_signed(session,
             storage, OperandRole::ReservedBytes) > configured_limit(session, OperandRole::MaximumCopiedBytes)) {
+            if (kind == compiler_resolver::ResolvedTypeKind::value_span) {
+                return fail(session, LoweringError::typed_span_requires_copied_element, source);
+            }
             return fail(session, LoweringError::owned_values_require_copied_element, source);
         }
         return true;
@@ -1205,14 +1224,13 @@ export namespace compiler_lowering {
                 return fail(session, LoweringError::owning_constructor_result, source);
             }
         }
-        if (result_kind == compiler_resolver::ResolvedTypeKind::byte_span && (receiver < 0 || constructor || sm(session,
-            root, 9) != 1 || instantiated)) {
+        if (is_span(session, result) && (receiver < 0 || constructor || sm(session, root, 9) != 1 || instantiated)) {
             return fail(session, LoweringError::span_result_method_boundary, source);
         }
         if (receiver >= 0 && !resource_constructor) {
             if ((!compiler_resolver::scalar_value_kind(result_kind) && result_kind
-                != compiler_resolver::ResolvedTypeKind::class_value && result_kind
-                != compiler_resolver::ResolvedTypeKind::byte_span) || owning_type(session, result)) {
+                != compiler_resolver::ResolvedTypeKind::class_value && !is_span(session, result))
+                || owning_type(session, result)) {
                 return fail(session, LoweringError::method_result_type, source);
             }
             at = 0;
@@ -1220,8 +1238,8 @@ export namespace compiler_lowering {
                 const i64 type = parameter_type(session, symbol, at);
                 const compiler_resolver::ResolvedTypeKind kind = tk(session, type);
                 if ((!compiler_resolver::scalar_value_kind(kind) && kind
-                    != compiler_resolver::ResolvedTypeKind::class_value && kind
-                    != compiler_resolver::ResolvedTypeKind::byte_span) || owning_type(session, type)) {
+                    != compiler_resolver::ResolvedTypeKind::class_value && !is_span(session, type))
+                    || owning_type(session, type)) {
                     return fail(session, LoweringError::method_parameter_type, source);
                 }
                 at = at + 1;
@@ -1330,7 +1348,7 @@ export namespace compiler_lowering {
     }
     auto append_function_order(compiler_resolver::Session& session, i64 symbol, i64 count, bool spans) -> i64 {
         const i64 result = signature_result(session, symbol);
-        const bool returns_span = tk(session, result) == compiler_resolver::ResolvedTypeKind::byte_span;
+        const bool returns_span = is_span(session, result);
         if (returns_span == spans) {
             index_set(session, 80, count, 0, symbol);
             return count + 1;

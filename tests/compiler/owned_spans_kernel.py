@@ -48,7 +48,46 @@ auto forward(builtin::span<const u8> bytes) -> i64 {
     return consume(nested.subspan(0, nested.size()));
 }
 
+class Cell {
+    i64 first;
+    i64 second;
+    i64 third;
+public:
+    Cell(i64 value) : first(value), second(value * 2), third(value * 3) {}
+    auto sum() const -> i64 { return first + second + third; }
+};
+
+// 24-byte elements over fragmented pages: element 170 spans the first page boundary.
+auto cells(builtin::span<const Cell> rows) -> i64 {
+    const builtin::span<const Cell> tail = rows.subspan(170, rows.size() - 170);
+    const Cell straddle = tail.at(0);
+    const Cell last = rows.at(rows.size() - 1);
+    if (tail.size() != 171 || straddle.sum() != 1020 || last.sum() != 2040) { return -13; }
+    i64 total = 0;
+    i64 at = 0;
+    while (at < rows.size()) {
+        const Cell cell = rows.at(at);
+        total = total + cell.sum();
+        at = at + 1;
+    }
+    if (total != 347820) { return -14; }
+    return 42;
+}
+
 auto entry(builtin::ByteRegion region, i64 length, i64 mode) -> i64 {
+    if (mode == 3) {
+        const Cell fill = Cell(0);
+        builtin::OwnedValues<Cell> values = region.try_allocate(length, fill);
+        if (!values.ok() || values.size() != length) { return -15; }
+        i64 at = 0;
+        while (at < length) {
+            const Cell cell = Cell(at);
+            if (!values.set(at, cell)) { return -16; }
+            at = at + 1;
+        }
+        const builtin::span<const Cell> view = borrow_values(values);
+        return cells(view);
+    }
     builtin::OwnedBytes owner = region.try_allocate(length);
     if (mode == 2) {
         const builtin::span<const u8> failed = borrow_bytes(owner);
@@ -245,7 +284,7 @@ def main():
                     ASAN_OPTIONS="detect_leaks=0:halt_on_error=1:abort_on_error=1",
                     UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1",
                 )
-                for mode in range(3):
+                for mode in range(4):
                     result = run(f"mode-{mode}", [executable, mode], 82 if mode == 2 else 0, env)
                     require(not result.stderr, f"mode {mode}: unexpected stderr")
                     if mode == 2:
@@ -270,7 +309,7 @@ def main():
                             "wrong native success observation",
                         )
                     print(result.stdout.decode(), end="", flush=True)
-            receipt.update(status="passed", native_cases=0 if args.compile_only else 3)
+            receipt.update(status="passed", native_cases=0 if args.compile_only else 4)
         except BaseException as error:
             receipt.update(status="failed", error=str(error))
             raise

@@ -96,7 +96,7 @@ export namespace compiler_ir_instructions {
         i64 instruction = 0;
         while (instruction < store.instruction_count()) {
             const RawInstructionRow row = store.instruction_at(instruction + 1);
-            if (row.kind() != 1 || row.form() < 0 || row.form() > 83 || !bounded_range(row.operand_begin(),
+            if (row.kind() != 1 || row.form() < 0 || row.form() > 84 || !bounded_range(row.operand_begin(),
                 row.operand_count(), store.operand_count()) || (row.operand_count() != 0 && row.operand_begin()
                 != next_operand)) {
                 return fail(store, InstructionError::integrity);
@@ -219,7 +219,7 @@ export namespace compiler_ir_instructions {
         if (type.kind() == 5) {
             return 46;
         }
-        if (type.kind() == 11) {
+        if (compiler_ir_metadata::span_type(type)) {
             return 59;
         }
         return 45;
@@ -274,6 +274,40 @@ export namespace compiler_ir_instructions {
             return -1;
         }
         return index;
+    }
+    // The exact element of a span spill: -1 for a byte span, otherwise the
+    // annotation's type row. Admitted metadata pairs each annotation with a spill.
+    auto span_element_type(const compiler_ir_metadata::MetadataStore& metadata, i64 callable, i64 offset) -> i64 {
+        const i64 annotation = entry_slot(metadata, callable, 27, offset);
+        if (annotation < 0) {
+            return -1;
+        }
+        const compiler_ir_metadata::SlotRow slot = metadata.slot_at(annotation);
+        return slot.type();
+    }
+    // Whether a span spill holds exactly the span type a signature names.
+    auto span_matches_type(const compiler_ir_metadata::MetadataStore& metadata, i64 callable, i64 offset,
+        compiler_ir_metadata::RawTypeRow expected) -> bool {
+        const i64 element = span_element_type(metadata, callable, offset);
+        if (expected.kind() == 11) {
+            return element < 0;
+        }
+        if (expected.kind() != 21 || element < 0) {
+            return false;
+        }
+        const compiler_ir_metadata::RawTypeRow actual = metadata.type_at(element);
+        return compiler_ir_metadata::same_type(metadata, actual, expected);
+    }
+    auto same_span_element(const compiler_ir_metadata::MetadataStore& metadata, i64 callable, i64 left,
+        i64 right) -> bool {
+        const i64 first = span_element_type(metadata, callable, left);
+        const i64 second = span_element_type(metadata, callable, right);
+        if (first < 0 || second < 0) {
+            return first < 0 && second < 0;
+        }
+        const compiler_ir_metadata::RawTypeRow a = metadata.type_at(first);
+        const compiler_ir_metadata::RawTypeRow b = metadata.type_at(second);
+        return compiler_ir_metadata::same_type(metadata, a, b);
     }
     auto entry_has_region(const InstructionStore& store, i64 callable) -> bool {
         const RawInstructionRow first = entry_instruction(store, callable, 0);
@@ -488,6 +522,11 @@ export namespace compiler_ir_instructions {
                                 }
                                 if (entry_slot(metadata, callable, 13, offset) < 0) {
                                     return fail(store, InstructionError::span_slot);
+                                }
+                                const compiler_ir_metadata::RawTypeRow span_parameter = metadata.type_at(
+                                    declaration.value_parameter_begin() + position);
+                                if (!span_matches_type(metadata, callable, offset, span_parameter)) {
+                                    return fail(store, InstructionError::span_type);
                                 }
                             }
                         }
@@ -832,7 +871,7 @@ export namespace compiler_ir_instructions {
             return fail(store, InstructionError::aggregate_resource);
         }
         const compiler_ir_metadata::RawTypeRow result = call_type(metadata, target, 0);
-        const bool spans = call_has_parameter(metadata, target, 11);
+        const bool spans = call_has_parameter(metadata, target, 11) || call_has_parameter(metadata, target, 21);
         if (result.kind() != 5 && !call_has_parameter(metadata, target, 5) && !spans) {
             return fail(store, InstructionError::aggregate_signature);
         }
@@ -849,12 +888,15 @@ export namespace compiler_ir_instructions {
             const compiler_ir_metadata::RawTypeRow type = call_type(metadata, target, at + 1);
             const i64 object = call_lane(store, instruction, 1, at);
             const i64 span = call_lane(store, instruction, 3, at);
-            if (type.kind() == 11) {
+            if (compiler_ir_metadata::span_type(type)) {
                 if (object != 0) {
                     return fail(store, InstructionError::aggregate_span_object);
                 }
                 if (!call_exact_slot(store, metadata, caller, 13, span, InstructionError::call_span_slot)) {
                     return false;
+                }
+                if (!span_matches_type(metadata, caller, span, type)) {
+                    return fail(store, InstructionError::call_span_type);
                 }
             } else {
                 if (span != 0) {
@@ -1427,8 +1469,9 @@ export namespace compiler_ir_instructions {
             return fail(store, InstructionError::method_signature);
         }
         if (!compiler_ir_metadata::scalar_value(metadata, result) && !(!constructor && result.kind() == 5)
-            && !(result.kind() == 11 && compiler_ir_metadata::callable_flag(declaration, masks.callable_span_summary())
-            && !compiler_ir_metadata::receiver_flag(receiver, masks.receiver_mutable()) && !constructor)) {
+            && !(compiler_ir_metadata::span_type(result) && compiler_ir_metadata::callable_flag(declaration,
+            masks.callable_span_summary()) && !compiler_ir_metadata::receiver_flag(receiver, masks.receiver_mutable())
+            && !constructor)) {
             return fail(store, InstructionError::method_signature);
         }
         i64 at = 1;
@@ -1437,13 +1480,13 @@ export namespace compiler_ir_instructions {
             if (root_count > 1 && !compiler_ir_metadata::scalar_value(metadata, type)) {
                 return fail(store, InstructionError::method_signature);
             }
-            if (!compiler_ir_metadata::scalar_value(metadata, type) && type.kind() != 5 && !(!constructor && type.kind()
-                == 11)) {
+            if (!compiler_ir_metadata::scalar_value(metadata, type) && type.kind() != 5 && !(!constructor
+                && compiler_ir_metadata::span_type(type))) {
                 return fail(store, InstructionError::method_signature);
             }
             at = at + 1;
         }
-        const bool spans = call_has_parameter(metadata, target, 11);
+        const bool spans = call_has_parameter(metadata, target, 11) || call_has_parameter(metadata, target, 21);
         const bool aggregate = spans || call_has_parameter(metadata, target, 5);
         const i64 count = declaration.value_parameter_count();
         const i64 objects = call_objects_field(row.form());
@@ -1475,12 +1518,15 @@ export namespace compiler_ir_instructions {
             const compiler_ir_metadata::RawTypeRow type = call_type(metadata, target, at + 1);
             const i64 object = call_lane(store, instruction, objects, at);
             const i64 span = call_lane(store, instruction, span_field, at);
-            if (type.kind() == 11) {
+            if (compiler_ir_metadata::span_type(type)) {
                 if (object != 0) {
                     return fail(store, InstructionError::method_span_object);
                 }
                 if (!call_exact_slot(store, metadata, caller, 13, span, InstructionError::call_span_slot)) {
                     return false;
+                }
+                if (!span_matches_type(metadata, caller, span, type)) {
+                    return fail(store, InstructionError::call_span_type);
                 }
             } else {
                 if (span != 0) {
@@ -1504,7 +1550,10 @@ export namespace compiler_ir_instructions {
             return false;
         }
         const i64 result_root = call_value(store, instruction, call_result_field(row.form()));
-        if (result.kind() == 11) {
+        if (compiler_ir_metadata::span_type(result)) {
+            if (!span_matches_type(metadata, caller, result_root, result)) {
+                return fail(store, InstructionError::call_span_type);
+            }
             const compiler_ir_metadata::CallableRow source = metadata.callable_at(caller);
             if (source.borrowed_root_count() > 1 && root <= 0) {
                 return fail(store, InstructionError::method_span_multiple);
@@ -1853,6 +1902,65 @@ export namespace compiler_ir_instructions {
         // origin declaration. Only byte-array lifetime/span forms require one.
         return true;
     }
+    // Typed span element identity is static: every producer, transfer and
+    // reader agrees with the spill annotations, the owner and the signature.
+    auto verify_span_types(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata, i64 callable,
+        i64 instruction) -> bool {
+        const RawInstructionRow row = store.instruction_at(instruction);
+        const i64 form = row.form();
+        if (form == 50 || form == 51) {
+            if (span_element_type(metadata, callable, call_value(store, instruction, 1)) >= 0) {
+                return fail(store, InstructionError::storage_span_type);
+            }
+            return true;
+        }
+        if (form == 52) {
+            const i64 element = span_element_type(metadata, callable, call_value(store, instruction, 2));
+            if (element < 0) {
+                return true;
+            }
+            const i64 owner = storage_owner_type(metadata, callable, call_value(store, instruction, 0),
+                call_value(store, instruction, 1), false);
+            if (owner < 0) {
+                return fail(store, InstructionError::storage_span_type);
+            }
+            const compiler_ir_metadata::RawTypeRow owned = metadata.type_at(owner);
+            const compiler_ir_metadata::RawTypeRow viewed = metadata.type_at(element);
+            if (owned.kind() != 17 || compiler_ir_metadata::compare_names(metadata, owned.name(), viewed.name()) != 0) {
+                return fail(store, InstructionError::storage_span_type);
+            }
+            return true;
+        }
+        if (form == 54 || form == 55) {
+            if (!same_span_element(metadata, callable, call_value(store, instruction, 0), call_value(store, instruction,
+                1))) {
+                return fail(store, InstructionError::storage_span_type);
+            }
+            return true;
+        }
+        if (form == 58) {
+            if (span_element_type(metadata, callable, call_value(store, instruction, 0)) >= 0) {
+                return fail(store, InstructionError::storage_span_type);
+            }
+            return true;
+        }
+        if (form == 84) {
+            const i64 element = span_element_type(metadata, callable, call_value(store, instruction, 0));
+            const i64 index = entry_slot(metadata, callable, 11, call_value(store, instruction, 1));
+            if (element < 0 || index < 0) {
+                return fail(store, InstructionError::storage_span_values);
+            }
+            const compiler_ir_metadata::SlotRow slot = metadata.slot_at(index);
+            const compiler_ir_metadata::RawTypeRow object = metadata.type_at(slot.type());
+            const compiler_ir_metadata::RawTypeRow viewed = metadata.type_at(element);
+            if (object.kind() != 5 || compiler_ir_metadata::compare_names(metadata, object.name(), viewed.name())
+                != 0) {
+                return fail(store, InstructionError::storage_span_values);
+            }
+            return true;
+        }
+        return true;
+    }
     auto verify_storage_access(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 callable, i64 instruction) -> bool {
         const RawInstructionRow row = store.instruction_at(instruction);
@@ -1887,9 +1995,12 @@ export namespace compiler_ir_instructions {
                 return fail(store, InstructionError::storage_span_origin);
             }
             const i64 result_offset = call_value(store, instruction, 1);
+            if (span_element_type(metadata, callable, result_offset) >= 0) {
+                return fail(store, InstructionError::storage_span_type);
+            }
             return verify_call_span_result(store, metadata, callable, result_offset);
         }
-        return true;
+        return verify_span_types(store, metadata, callable, instruction);
     }
     auto verify_storage_accesses(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata) -> bool {
         i64 callable = 0;

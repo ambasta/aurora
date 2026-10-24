@@ -213,6 +213,9 @@ export namespace compiler_resolver {
         if (kind == ResolvedTypeKind::serve_session) {
             return 21;
         }
+        if (kind == ResolvedTypeKind::value_span) {
+            return 22;
+        }
         return 0;
     }
     auto category(DeclarationKind kind) -> i64 {
@@ -304,10 +307,11 @@ export namespace compiler_resolver {
         return leaf_is(session, name, "i64") || leaf_is(session, name, "u64") || leaf_is(session, name, "u8")
             || leaf_is(session, name, "own") || leaf_is(session, name, "move") || leaf_is(session, name, "borrow")
             || leaf_is(session, name, "borrow_mut") || leaf_is(session, name, "borrow_bytes") || leaf_is(session, name,
-            "read") || leaf_is(session, name, "write") || leaf_is(session, name, "size_of") || leaf_is(session, name,
-            "type_id") || leaf_is(session, name, "field_count") || leaf_is(session, name, "len") || leaf_is(session,
-            name, "reflect_size") || leaf_is(session, name, "reflect_field_count") || leaf_is(session, name,
-            "aurora_reflect_size") || leaf_is(session, name, "aurora_reflect_field_count");
+            "borrow_values") || leaf_is(session, name, "read") || leaf_is(session, name, "write") || leaf_is(session,
+            name, "size_of") || leaf_is(session, name, "type_id") || leaf_is(session, name, "field_count")
+            || leaf_is(session, name, "len") || leaf_is(session, name, "reflect_size") || leaf_is(session, name,
+            "reflect_field_count") || leaf_is(session, name, "aurora_reflect_size") || leaf_is(session, name,
+            "aurora_reflect_field_count");
     }
     auto concrete_type(Session& session, ResolvedTypeKind kind, i64 nominal, i64 element, i64 length) -> i64 {
         const i64 rank = type_rank(kind);
@@ -478,7 +482,8 @@ export namespace compiler_resolver {
             position = position + 1;
             const i64 current = item.word(0);
             const ResolvedTypeKind kind = type_kind(session, current);
-            if (kind == ResolvedTypeKind::array_value || kind == ResolvedTypeKind::owned_values) {
+            if (kind == ResolvedTypeKind::array_value || kind == ResolvedTypeKind::owned_values || kind
+                == ResolvedTypeKind::value_span) {
                 const i64 element = mw(session, current, 2);
                 enqueue_type(session, element, generation);
             } else {
@@ -709,7 +714,8 @@ export namespace compiler_resolver {
             == compiler_parser::TypeKind::owned_values) {
             return true;
         }
-        if (parameter && syntax.type_kind() == compiler_parser::TypeKind::byte_span) {
+        if (parameter && (syntax.type_kind() == compiler_parser::TypeKind::byte_span || syntax.type_kind()
+            == compiler_parser::TypeKind::value_span)) {
             return true;
         }
         if (syntax.type_kind() == compiler_parser::TypeKind::builtin_class) {
@@ -1898,12 +1904,20 @@ export namespace compiler_resolver {
                     }
                     bound = concrete_type(session, ResolvedTypeKind::array_value, -1, element, length);
                 } else {
-                    if (row.type_kind() == compiler_parser::TypeKind::owned_values) {
+                    if (row.type_kind() == compiler_parser::TypeKind::owned_values || row.type_kind()
+                        == compiler_parser::TypeKind::value_span) {
                         const i64 element = rw(session, row.word(3), 2);
-                        if (type_kind(session, element) != ResolvedTypeKind::class_value) {
-                            return reject(session, SemanticError::owned_named, node, -1, -1);
+                        if (row.type_kind() == compiler_parser::TypeKind::value_span) {
+                            if (type_kind(session, element) != ResolvedTypeKind::class_value) {
+                                return reject(session, SemanticError::span_named, node, -1, -1);
+                            }
+                            bound = concrete_type(session, ResolvedTypeKind::value_span, -1, element, 0);
+                        } else {
+                            if (type_kind(session, element) != ResolvedTypeKind::class_value) {
+                                return reject(session, SemanticError::owned_named, node, -1, -1);
+                            }
+                            bound = concrete_type(session, ResolvedTypeKind::owned_values, -1, element, 0);
                         }
-                        bound = concrete_type(session, ResolvedTypeKind::owned_values, -1, element, 0);
                     } else {
                         if (row.type_kind() == compiler_parser::TypeKind::parameter) {
                             const i64 name = source_name_range(session, row.word(0), row.word(1));
@@ -2226,7 +2240,8 @@ export namespace compiler_resolver {
         while (current >= 0 && !finished && session.good()) {
             const SyntaxRow row = session.syntax(current);
             if (row.type_kind() == compiler_parser::TypeKind::array_type || row.type_kind()
-                == compiler_parser::TypeKind::owned_values) {
+                == compiler_parser::TypeKind::owned_values || row.type_kind()
+                == compiler_parser::TypeKind::value_span) {
                 if (row.type_kind() == compiler_parser::TypeKind::array_type) {
                     const SyntaxRow element = session.syntax(row.word(3));
                     const SyntaxRow capacity = session.syntax(row.word(4));
@@ -2236,10 +2251,15 @@ export namespace compiler_resolver {
                         reject(session, SemanticError::unsubstituted_array, current, -1, -1);
                     }
                 }
-                if (row.type_kind() == compiler_parser::TypeKind::owned_values) {
+                if (row.type_kind() == compiler_parser::TypeKind::owned_values || row.type_kind()
+                    == compiler_parser::TypeKind::value_span) {
                     const SyntaxRow element = session.syntax(row.word(3));
                     if (element.word(3) >= 0) {
-                        reject(session, SemanticError::owned_named, current, -1, -1);
+                        if (row.type_kind() == compiler_parser::TypeKind::value_span) {
+                            reject(session, SemanticError::span_named, current, -1, -1);
+                        } else {
+                            reject(session, SemanticError::owned_named, current, -1, -1);
+                        }
                     }
                 }
                 current = row.word(3);
@@ -2507,8 +2527,9 @@ export namespace compiler_resolver {
                 if (!known_nominal(session, type)) {
                     reject(session, SemanticError::unknown_class_declaration, parameter, type, -1);
                 } else {
-                    if (!scalar_value_kind(kind) && kind != ResolvedTypeKind::class_value && !(!constructor && kind
-                        == ResolvedTypeKind::byte_span) && !(constructor && resource_kind(kind))) {
+                    if (!scalar_value_kind(kind) && kind != ResolvedTypeKind::class_value && !(!constructor && (kind
+                        == ResolvedTypeKind::byte_span || kind == ResolvedTypeKind::value_span)) && !(constructor
+                        && resource_kind(kind))) {
                         if (constructor) {
                             reject(session, SemanticError::constructor_parameter, parameter, -1, -1);
                         } else {

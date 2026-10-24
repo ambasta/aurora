@@ -170,7 +170,8 @@ static_assert(static_cast<std::int64_t>(lowering::InstructionForm::ServiceCall) 
               static_cast<std::int64_t>(lowering::InstructionForm::AggregateCall) == 20 &&
               static_cast<std::int64_t>(lowering::InstructionForm::MethodCall) == 38 &&
               static_cast<std::int64_t>(lowering::InstructionForm::ResourceCall) == 75 &&
-              static_cast<std::int64_t>(lowering::InstructionForm::BorrowedCall) == 83);
+              static_cast<std::int64_t>(lowering::InstructionForm::BorrowedCall) == 83 &&
+              static_cast<std::int64_t>(lowering::InstructionForm::SpanValuesLoad) == 84);
 static_assert(static_cast<std::int64_t>(lowering::InstructionForm::Load) == 7 &&
               static_cast<std::int64_t>(lowering::InstructionForm::Store) == 8 &&
               static_cast<std::int64_t>(lowering::InstructionForm::BoundsGuard) == 15 &&
