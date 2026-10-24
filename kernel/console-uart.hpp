@@ -65,6 +65,10 @@ public:
         }
         return {true, byte, damage};
     }
+    // Observation only: whether a received byte waits, read through the shared latch.
+    [[nodiscard]] static auto input_pending() -> bool {
+        return (status() & 1) != 0;
+    }
     [[nodiscard]] static auto try_put(std::uint8_t value) -> PutResult {
         for (unsigned remaining = 1000000; remaining > 0; --remaining) {
             if (status() & 0x20) {

@@ -14,5 +14,5 @@ SECTIONS {
 #endif
  . = ALIGN(4096); __payload_memory_end = .;
  /DISCARD/ : { *(.eh_frame*) *(.comment*) *(.note*) *(.got*) }
- ASSERT(. <= 0x20000, "UEFI payload exceeds reserved range")
+ ASSERT(. <= AURORA_PAYLOAD_LIMIT, "UEFI payload exceeds reserved range")
 }

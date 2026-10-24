@@ -31,6 +31,7 @@ MODES = (
 )
 SUCCESS = MODES[:5]
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from kernel_layout import LAYOUT  # noqa: E402
 import kernel_profiles  # noqa: E402
 
 # Modes that boot dispatch-fixture, whose peer wrapper carries the probe set.
@@ -356,7 +357,7 @@ def validate(status, text, mode, meta):
                         cpl == 0
                         and terminal
                         and r == kernel
-                        and arena + 0x44000 <= f <= arena + 0x48000 - 176
+                        and arena + LAYOUT.kernel_stack_bottom <= f <= arena + LAYOUT.kernel_stack_top - 176
                         and f % 8 == 0
                         and arena + 0x22000 + meta["kernel"]["drain_begin"]
                         <= pc
@@ -462,7 +463,7 @@ def validate(status, text, mode, meta):
                 and terminal
                 and d == domain
                 and r == kernel
-                and arena + 0x44000 <= sp < arena + 0x48000
+                and arena + LAYOUT.kernel_stack_bottom <= sp < arena + LAYOUT.kernel_stack_top
                 and sp % 8 == 0
                 and (domain != 1 or quiet and not armed),
                 "Restore before quiescence/ownership",

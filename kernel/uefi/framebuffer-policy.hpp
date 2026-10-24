@@ -168,12 +168,22 @@ public:
 
 // Exact final-map admission. The ordinary path requires complete descriptors.
 // The separately named GOP path is an exact probe-qualified fixture contract. It is never selected by a record label or by strict-parse failure.
+// The firmware path admits the source-bound GOP resource as firmware describes it.
 class FramebufferAdmission final {
     FramebufferGeometry geometry_;
     std::uint64_t arena_;
     FramebufferAdmission(const FramebufferGeometry &geometry, std::uint64_t arena)
         : geometry_(geometry), arena_(arena) {
     }
+    // complete: every mapped byte lies in reserved/MMIO descriptors.
+    // absent_or_complete: the aperture is either wholly outside the final map
+    // (firmware omits PCI apertures) or wholly described; a partial
+    // description is contradictory and denies. any: the exact fixture only.
+    enum class Coverage : unsigned char {
+        complete,
+        absent_or_complete,
+        any
+    };
     [[nodiscard]] static auto authorize(const FramebufferGeometry &geometry,
                                         std::span<const std::byte> map,
                                         std::size_t stride,
@@ -182,7 +192,7 @@ class FramebufferAdmission final {
                                         unsigned physical_bits,
                                         std::uint32_t cpuid_edx,
                                         std::uint64_t pat,
-                                        bool require_coverage) -> std::optional<FramebufferAdmission>;
+                                        Coverage coverage) -> std::optional<FramebufferAdmission>;
 
 public:
     static constexpr std::uint64_t virtual_address = 0xffffa00000001000ULL;
@@ -196,7 +206,30 @@ public:
                                                   unsigned physical_bits,
                                                   std::uint32_t cpuid_edx,
                                                   std::uint64_t pat) -> std::optional<FramebufferAdmission> {
-        return authorize(geometry, map, stride, version, arena, physical_bits, cpuid_edx, pat, true);
+        return authorize(geometry, map, stride, version, arena, physical_bits, cpuid_edx, pat, Coverage::complete);
+    }
+    // Production rule: the live (loader) or restored (payload) GOP resource with
+    // its own base, size, geometry and pixel format, and every check of the
+    // fixture rule except the emulator identity tuple. RAM, runtime, ACPI and
+    // persistent descriptors, the owned arena, LAPIC, IOAPIC and q35 ECAM deny;
+    // PAT index 3 must be UC. Physical-hardware support is not established here.
+    [[nodiscard]] static auto authorize_firmware(const FramebufferResource &resource,
+                                                 std::span<const std::byte> map,
+                                                 std::size_t stride,
+                                                 std::uint32_t version,
+                                                 std::uint64_t arena,
+                                                 unsigned physical_bits,
+                                                 std::uint32_t cpuid_edx,
+                                                 std::uint64_t pat) -> std::optional<FramebufferAdmission> {
+        return authorize(resource.geometry(),
+                         map,
+                         stride,
+                         version,
+                         arena,
+                         physical_bits,
+                         cpuid_edx,
+                         pat,
+                         Coverage::absent_or_complete);
     }
     // Exact probe-qualified fixture only. The external runner must additionally
     // pin q35/TCG/qemu64/one CPU/128 MiB/std VGA and the reviewed QEMU, OVMF,
@@ -216,7 +249,7 @@ public:
             geometry.mapped_bytes() != 1921024 || geometry.width() != 800 || geometry.height() != 600 ||
             geometry.pitch() != 800 || geometry.format() != 1 || resource.mode() != 3 || resource.mode_count() != 30)
             return std::nullopt;
-        return authorize(geometry, map, stride, version, arena, physical_bits, cpuid_edx, pat, false);
+        return authorize(geometry, map, stride, version, arena, physical_bits, cpuid_edx, pat, Coverage::any);
     }
     [[nodiscard]] auto geometry() const -> const FramebufferGeometry & {
         return geometry_;
@@ -239,7 +272,7 @@ inline auto FramebufferAdmission::authorize(const FramebufferGeometry &geometry,
                                             unsigned physical_bits,
                                             std::uint32_t cpuid_edx,
                                             std::uint64_t pat,
-                                            bool require_coverage) -> std::optional<FramebufferAdmission> {
+                                            Coverage coverage) -> std::optional<FramebufferAdmission> {
     constexpr auto required_features = (1U << 5) | (1U << 16); // MSR, PAT.
     if (physical_bits < 32 || physical_bits > 52 || !RuntimeLayout::valid(arena) ||
         (cpuid_edx & required_features) != required_features || ((pat >> (pat_index * 8)) & 255) != 0)
@@ -272,7 +305,8 @@ inline auto FramebufferAdmission::authorize(const FramebufferGeometry &geometry,
         const auto last = finish < end ? finish : end;
         covered += last - first; // The final map has already proved disjoint.
     }
-    if (require_coverage && covered != bytes)
+    if ((coverage == Coverage::complete && covered != bytes) ||
+        (coverage == Coverage::absent_or_complete && covered != 0 && covered != bytes))
         return std::nullopt;
     return FramebufferAdmission{geometry, arena};
 }

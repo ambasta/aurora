@@ -36,6 +36,9 @@ bool console_probe_used{};
            !timer_owner && !run_authority && selected_phase == ipc::Phase::inactive && !console_waiting &&
            console_wait_stack == 0 && timer_stop() && timer_quiet(0x100, false) && timer_quiet(0x200, false);
 }
+#ifdef AURORA_UEFI_GRAPHICAL_TERMINAL
+#include "graphical-terminal.inc"
+#endif
 #ifdef AURORA_FILE_CALL
 // Opaque copied state belongs to the Aurora lifecycle; only native code owns
 // the domains, verified address spaces, leases and authenticated read grants.
@@ -109,13 +112,37 @@ public:
                !command_note.bound() && program_boundary();
     }
     static auto wait() -> void {
+#ifdef AURORA_UEFI_GRAPHICAL_TERMINAL
+        // Render pending Console output before idling; no input is consumed
+        // here. A byte that arrived meanwhile is sampled without idling.
+        if (terminal_present())
+            return;
+#endif
         program_wait_sample();
     }
     [[noreturn]] static auto fail() -> void {
         stop("program console input authority");
     }
 };
+#ifdef AURORA_UEFI_GRAPHICAL_TERMINAL
+// The one COM1 transport. Bytes the Console session actually delivered are also
+// copied into the terminal grid; diagnostics written by native code are not.
+class ProgramConsoleTransport final {
+public:
+    static auto next() -> console::Sample {
+        return ProgramSerial::next();
+    }
+    static auto try_put(std::uint8_t byte) -> console::PutResult {
+        const auto result = ProgramSerial::try_put(byte);
+        if (result == console::PutResult::success)
+            terminal_grid.apply(byte);
+        return result;
+    }
+};
+using ProgramInputSession = console::Session<ProgramConsoleTransport, ProgramInputPlatform>;
+#else
 using ProgramInputSession = console::Session<ProgramSerial, ProgramInputPlatform>;
+#endif
 // The only native submission storage is the caller's result. Revoke the grant
 // before returning it to any command mutation or protected execution path.
 __attribute__((noinline)) auto program_read_input(program::Submission &input, U64 after_cr) -> void {
@@ -126,6 +153,11 @@ __attribute__((noinline)) auto program_read_input(program::Submission &input, U6
     require(input.valid(), "program closed input submission");
     ProgramInputSession::release(argument.console);
     require(ProgramInputPlatform::quiet(), "program released input boundary");
+#ifdef AURORA_UEFI_GRAPHICAL_TERMINAL
+    // A closing session reads no more input: render its final frame completely.
+    static_cast<void>(terminal_present(input.action() != program::Submission::Action::command &&
+                                       input.action() != program::Submission::Action::upper_payload));
+#endif
 }
 // One complete response, including the next prompt, uses the existing Console
 // operations only after native mutation or protected retirement is complete.
@@ -139,6 +171,9 @@ __attribute__((noinline)) auto program_read_input(program::Submission &input, U6
     ProgramInputSession::release(argument.console);
     argument.scrub();
     require(canonical && ProgramInputPlatform::quiet(), "program released response boundary");
+#ifdef AURORA_UEFI_GRAPHICAL_TERMINAL
+    static_cast<void>(terminal_present());
+#endif
     return result == 1;
 }
 template <class T> auto program_scrub_copy(T &value) -> void {
@@ -503,6 +538,9 @@ __attribute__((noinline)) auto run_program_console() -> void {
     hardware::Io::write(0x3f9, 0);
     require(hardware::Io::read(0x3f9) == 0, "program UART IRQ disabled");
     ProgramSerial::initialize_input();
+#ifdef AURORA_UEFI_GRAPHICAL_TERMINAL
+    terminal_install();
+#endif
     program::Response ready{program::Response::Kind::ready};
 #ifdef AURORA_FILE_CALL
     ready = program::Response{program::Response::Kind::file_reply};

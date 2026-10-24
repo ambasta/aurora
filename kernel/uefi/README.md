@@ -61,9 +61,9 @@ page-aligned arena are fixed and non-overlapping:
 - Firmware descriptor copy at0x1000, maximum64KiB, read-only/NX
 - At most16 private page-table pages at0x11000, supervisor RW/NX
 - Copied position-independent transition/GDT at0x21000, supervisor RX
-- Independent payload at0x22000, at most128KiB, separate RX/R-NX/RW-NX sections
-- Owned IDT at0x42000, supervisor RW/NX
-- Guard at0x43000, then stack0x44000..0x48000, supervisor RW/NX
+- Independent payload at0x22000, at most152KiB, separate RX/R-NX/RW-NX sections
+- Owned IDT at0x48000, supervisor RW/NX
+- Guard at0x49000, then stack0x4a000..0x4e000, supervisor RW/NX; 0x4e000..0x50000 absent
 - Bounded16-page allocation pool at0x50000, supervisor RW/NX
 
 Other arena pages stay absent. The map parser accepts version1 descriptors with
@@ -115,8 +115,16 @@ page faults14/3 and14/17 on the private IDT, then fail-stop.
 ## Gates and limits
 
 `uefi/production` is the one production UEFI image: this loader and payload with
-ACPI, PCI, the protected runtime, IPC, budgets and the protected program console,
-and no fixture selector, test hook or capture handshake (`production-profile.hpp`).
+ACPI, PCI, the protected runtime, IPC, budgets, the protected program console and
+its graphical terminal, and no fixture selector, test hook or capture handshake
+(`production-profile.hpp`, `graphical-profile.hpp`). Its loader captures the GOP
+mode before the final map, admits it under the firmware rule on every exit
+attempt and hands off version 7: a 136-byte header whose word 120 is the runtime
+metadata and word 128 the read-only framebuffer record page at 0xe0000. Every
+other image keeps the 128-byte header and rejects v7. After the shared timer maps
+the LAPIC, the runtime restores the framebuffer admission from the record,
+installs its leaves and verifies the paired tree before the console starts
+([fixture consolidation](../../docs/kernel-fixture-consolidation.md#production-image)).
 
 The eight OVMF modes are normal, stale, stale-exhausted, bad-handoff, bad-map,
 bad-table, wp and nx. `normal` boots the ordinary image; the other seven, with

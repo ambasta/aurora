@@ -99,7 +99,10 @@ The separate [protected-command console](docs/program-console-contract.md) runs
 replacement through two CPL3 domains, with revision invalidation and fault/budget
 recovery. Its public commands perform local build/image/stack checks. The same checked
 image can be passed by explicit build directory to the guest oracle; changed
-images still require independent review and final qualification.
+images still require independent review and final qualification. It is the
+console of the one production UEFI image, which also renders it on the firmware
+framebuffer; `make smoke-production` checks both (QEMU/OVMF only, see
+[production image](docs/kernel-fixture-consolidation.md#production-image)).
 
 For the output-only graphical status page, `make capture-framebuffer` builds and
 saves a PNG under `build/`. This [developer preview](docs/framebuffer-console.md#developer-preview)

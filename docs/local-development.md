@@ -212,7 +212,9 @@ launch routing; existing Make and console-script commands remain aliases.
 console. `bios-console`/`uefi-console` default to interactive sessions, or select
 `--smoke` for their existing PTY acceptance checks. Protected `program-console`
 (an alias of `production`, the one production UEFI image) and existing
-`program-*` fault profiles default to their protected PTY smoke; only
+`program-*` fault profiles default to their protected PTY smoke; `production` and
+`program-console` also run the framebuffer screen and fail-closed display guests
+(`scripts/kernel_production_smoke.py`); only
 `program-console --console` (or `production --console`) opens an interactive
 protected session.
 

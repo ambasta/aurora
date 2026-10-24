@@ -1,0 +1,232 @@
+export module graphics.text_cells;
+import graphics.font5x7;
+
+// One 6x9 text cell: background, 5x7 glyph at one pixel per bit and an optional
+// underline cursor. Shared by the graphical Console and the graphical terminal.
+// Lowercase and punctuation extend the base font; other bytes use its fallback.
+export namespace graphics {
+    auto text_glyph_bits(u8 byte) -> u64 {
+        if (byte == 'a') {
+            return 0b11110'10001'11110'10000'01110'00000'00000u64;
+        }
+        if (byte == 'b') {
+            return 0b01111'10001'10001'10001'01111'00001'00001u64;
+        }
+        if (byte == 'c') {
+            return 0b11110'00001'00001'00001'11110'00000'00000u64;
+        }
+        if (byte == 'd') {
+            return 0b11110'10001'10001'10001'11110'10000'10000u64;
+        }
+        if (byte == 'e') {
+            return 0b11110'00001'11111'10001'01110'00000'00000u64;
+        }
+        if (byte == 'f') {
+            return 0b00010'00010'00010'00111'00010'00010'01100u64;
+        }
+        if (byte == 'g') {
+            return 0b01110'10000'11110'10001'10001'11110'00000u64;
+        }
+        if (byte == 'h') {
+            return 0b10001'10001'10001'10001'01111'00001'00001u64;
+        }
+        if (byte == 'i') {
+            return 0b01110'00100'00100'00100'00110'00000'00100u64;
+        }
+        if (byte == 'j') {
+            return 0b00110'01001'01000'01000'01100'00000'01000u64;
+        }
+        if (byte == 'k') {
+            return 0b10001'01001'00111'01001'10001'00001'00001u64;
+        }
+        if (byte == 'l') {
+            return 0b01110'00100'00100'00100'00100'00100'00110u64;
+        }
+        if (byte == 'm') {
+            return 0b10001'10001'10101'10101'01011'00000'00000u64;
+        }
+        if (byte == 'n') {
+            return 0b10001'10001'10001'10001'01111'00000'00000u64;
+        }
+        if (byte == 'o') {
+            return 0b01110'10001'10001'10001'01110'00000'00000u64;
+        }
+        if (byte == 'p') {
+            return 0b00001'00001'01111'10001'01111'00000'00000u64;
+        }
+        if (byte == 'q') {
+            return 0b10000'10000'11110'10001'11110'00000'00000u64;
+        }
+        if (byte == 'r') {
+            return 0b00001'00001'00001'10011'01101'00000'00000u64;
+        }
+        if (byte == 's') {
+            return 0b01111'10000'01110'00001'11110'00000'00000u64;
+        }
+        if (byte == 't') {
+            return 0b01100'10010'00010'00010'00111'00010'00010u64;
+        }
+        if (byte == 'u') {
+            return 0b10110'11001'10001'10001'10001'00000'00000u64;
+        }
+        if (byte == 'v') {
+            return 0b00100'01010'10001'10001'10001'00000'00000u64;
+        }
+        if (byte == 'w') {
+            return 0b01010'10101'10101'10001'10001'00000'00000u64;
+        }
+        if (byte == 'x') {
+            return 0b10001'01010'00100'01010'10001'00000'00000u64;
+        }
+        if (byte == 'y') {
+            return 0b01110'10000'11110'10001'10001'00000'00000u64;
+        }
+        if (byte == 'z') {
+            return 0b11111'00010'00100'01000'11111'00000'00000u64;
+        }
+        if (byte == '!') {
+            return 0b00100'00000'00100'00100'00100'00100'00100u64;
+        }
+        if (byte == '"') {
+            return 0b00000'00000'00000'00000'01010'01010'01010u64;
+        }
+        if (byte == '#') {
+            return 0b00000'01010'11111'01010'01010'11111'01010u64;
+        }
+        if (byte == '$') {
+            return 0b00100'01111'10100'01110'00101'11110'00100u64;
+        }
+        if (byte == '%') {
+            return 0b11000'11001'00010'00100'01000'10011'00011u64;
+        }
+        if (byte == '&') {
+            return 0b10110'01001'01001'10101'00110'01001'00110u64;
+        }
+        if (byte == '\'') {
+            return 0b00000'00000'00000'00000'00010'00100'00100u64;
+        }
+        if (byte == '(') {
+            return 0b01000'00100'00010'00010'00010'00100'01000u64;
+        }
+        if (byte == ')') {
+            return 0b00010'00100'01000'01000'01000'00100'00010u64;
+        }
+        if (byte == '*') {
+            return 0b00000'10101'01110'11111'01110'10101'00000u64;
+        }
+        if (byte == '+') {
+            return 0b00000'00100'00100'11111'00100'00100'00000u64;
+        }
+        if (byte == ',') {
+            return 0b00010'00100'00000'00000'00000'00000'00000u64;
+        }
+        if (byte == '.') {
+            return 0b00100'00000'00000'00000'00000'00000'00000u64;
+        }
+        if (byte == '/') {
+            return 0b00001'00001'00010'00100'01000'10000'10000u64;
+        }
+        if (byte == ';') {
+            return 0b00010'00100'00100'00000'00000'00100'00000u64;
+        }
+        if (byte == '<') {
+            return 0b10000'01000'00100'00010'00100'01000'10000u64;
+        }
+        if (byte == '=') {
+            return 0b00000'00000'11111'00000'11111'00000'00000u64;
+        }
+        if (byte == '>') {
+            return 0b00001'00010'00100'01000'00100'00010'00001u64;
+        }
+        if (byte == '?') {
+            return 0b00100'00000'00100'01000'10000'10001'01110u64;
+        }
+        if (byte == '@') {
+            return 0b11110'00001'11101'10101'11101'10001'01110u64;
+        }
+        if (byte == '[') {
+            return 0b01110'00010'00010'00010'00010'00010'01110u64;
+        }
+        if (byte == '\\') {
+            return 0b10000'10000'01000'00100'00010'00001'00001u64;
+        }
+        if (byte == ']') {
+            return 0b01110'01000'01000'01000'01000'01000'01110u64;
+        }
+        if (byte == '^') {
+            return 0b00000'00000'00000'00000'10001'01010'00100u64;
+        }
+        if (byte == '_') {
+            return 0b11111'00000'00000'00000'00000'00000'00000u64;
+        }
+        if (byte == '`') {
+            return 0b00000'00000'00000'00000'00000'00100'00010u64;
+        }
+        if (byte == '{') {
+            return 0b01000'00100'00100'00010'00100'00100'01000u64;
+        }
+        if (byte == '|') {
+            return 0b00100'00100'00100'00100'00100'00100'00100u64;
+        }
+        if (byte == '}') {
+            return 0b00010'00100'00100'01000'00100'00100'00010u64;
+        }
+        if (byte == '~') {
+            return 0b00000'00000'00000'01101'10010'00000'00000u64;
+        }
+        return glyph_bits(byte);
+    }
+
+    // `glyph` is the cell byte plus 256 when the underline cursor is shown.
+    // 54 background stores, at most 35 glyph stores and five cursor stores, in
+    // that order. Pixels outside the surface are clipped, never stored.
+    auto draw_text_cell(builtin::DisplaySession& display, u64 width, u64 height, u64 x, u64 y, u64 glyph) -> bool {
+        if (glyph > 511u64) {
+            return false;
+        }
+        u64 dy = 0u64;
+        while (dy < 9u64) {
+            u64 dx = 0u64;
+            while (dx < 6u64) {
+                if (x + dx < width && y + dy < height) {
+                    if (display.pixel(x + dx, y + dy, 13u8, 20u8, 32u8) != builtin::DisplayPutResult::success) {
+                        return false;
+                    }
+                }
+                dx = dx + 1u64;
+            }
+            dy = dy + 1u64;
+        }
+        if (x < width && y < height) {
+            const u64 bits = text_glyph_bits(u8(glyph & 255u64));
+            u64 row = 0u64;
+            while (row < 7u64) {
+                u64 column = 0u64;
+                while (column < 5u64) {
+                    if (((bits >> i64(row * 5u64 + column)) & 1u64) != 0u64) {
+                        if (x + column < width && y + row < height) {
+                            if (display.pixel(x + column, y + row, 204u8, 226u8, 235u8)
+                                != builtin::DisplayPutResult::success) {
+                                return false;
+                            }
+                        }
+                    }
+                    column = column + 1u64;
+                }
+                row = row + 1u64;
+            }
+        }
+        if (glyph >= 256u64) {
+            u64 dx = 0u64;
+            while (dx < 5u64) {
+                if (x + dx < width && y + 7u64 < height) {
+                    if (display.pixel(x + dx, y + 7u64, 52u8, 188u8, 220u8) != builtin::DisplayPutResult::success) {
+                        return false;
+                    }
+                }
+                dx = dx + 1u64;
+            }
+        }
+        return true;
+    }
+}

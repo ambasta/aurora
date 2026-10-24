@@ -172,6 +172,14 @@ native_host = executable('native-kernel-uefi', files('../../tests/kernel-uefi.cp
     cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page', '-fno-pie'], link_args: ['-no-pie'])
 test('native-kernel-uefi', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
+# The handoff layout tables, for the production (v7) header and every other image.
+foreach variant : [['native-kernel-uefi-handoff', []],
+                   ['native-kernel-uefi-handoff-terminal', ['-DAURORA_UEFI_GRAPHICAL_TERMINAL']]]
+  native_host = executable(variant[0], files('../../tests/kernel-uefi-handoff.cpp'),
+      native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+      cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page'] + variant[1], link_args: [])
+  test(variant[0], native_host, suite: ['full', 'merge', 'dev'], env: native_test_env, timeout: 60)
+endforeach
 native_host = executable('native-kernel-acpi', files('../../tests/kernel-acpi.cpp'),
     native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=2'],
     cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page'], link_args: [])
@@ -441,10 +449,12 @@ if get_option('kernel_images')
            workdir: native_root, timeout: 180)
     endforeach
   endforeach
-  # The production image's protected program console, through its PTY oracle.
+  # The production image: its protected program console through the PTY oracle,
+  # then serial commands plus the graphical terminal's framebuffer in one guest.
   test('guest-uefi-production', python,
-       args: ['-B', files('../../tests/kernel-program-console-pty.py'), '--mode', 'program-console',
-              '--build-dir', meson.project_build_root() / 'kernel-images/uefi/production'],
-       depends: kernel_profile_images['uefi/production'], suite: ['guest', 'guest-production'],
-       workdir: native_root, timeout: 300)
+       args: ['-B', files('../../scripts/kernel_production_smoke.py'),
+              '--build-dir', meson.project_build_root() / 'kernel-images/uefi/production',
+              '--renderer', graphical_terminal_host],
+       depends: kernel_profile_images['uefi/production'] + [graphical_terminal_host],
+       suite: ['guest', 'guest-production'], workdir: native_root, timeout: 480)
 endif

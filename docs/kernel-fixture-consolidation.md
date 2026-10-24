@@ -59,25 +59,70 @@ selector or injection state.
 ## Production image
 
 `uefi/production` is the one production UEFI configuration: ACPI, PCI, the
-protected runtime, IPC, service and user budgets and the protected program
-console (`program-console` is its alias). `production-profile.hpp` makes any
-fixture, test, capture or probe flag a compile error in its loader and payload,
-the image policy forbids fixture or capture state in its linked payload, and
-`guest-uefi-production` (`make smoke-production`) runs the program-console PTY
-oracle on it. Capture, probe and BAR/IVRS conformance images remain test images.
+protected runtime, IPC, service and user budgets, the protected program console
+(`program-console` is its alias) and the graphical terminal that renders it.
+`production-profile.hpp` makes any fixture, test, capture or probe flag a compile
+error in its loader and payload, `graphical-profile.hpp` admits the graphical
+terminal only with that complete runtime stack and no test flag, the image policy
+forbids fixture or capture state in its linked payload, and
+`guest-uefi-production` (`make smoke-production`) exercises both consoles (see
+below). Capture, probe and BAR/IVRS conformance images remain test images.
 
-The graphical console is not in it. That needs kernel integration, not profile
-flags: (1) an image links one Aurora supervisor module and bridge, and the
-graphical and program consoles are separate root modules
-(`examples/kernel-graphical-console.au`, `examples/kernel-program-console.au`);
-(2) handoff word 120 is the runtime metadata in version 3 and the framebuffer
-record in version 6, and `run_graphical_console` requires version 6, so a
-combined handoff version and table verification are needed; (3) the graphical
-console admits only QEMU's std-VGA through
-`authorize_q35_ovmf_std_vga_fixture` and its bridge is unqualified, so
-`graphical-profile.hpp` requires `AURORA_UEFI_GRAPHICAL_FIXTURE` and rejects the
-runtime/IPC/program-console flags; (4) both consoles own COM1 input and their own
-LAPIC timer setup, with no arbitration between them.
+Composition. The image links two closed Aurora objects with separate bridges and
+import policies: the program console (`examples/kernel-program-console.au`,
+Console imports only) and the terminal painter
+(`examples/kernel-graphical-terminal.au`, whose only import is the Display pixel
+service; `imports:terminal` in the image policy). The protected program console
+is the only owner of COM1 input and of the LAPIC timer and stays the command
+surface: there is one input consumer and one timer user, so nothing is routed
+between consoles. Every byte its sealed Console session delivers is also copied
+into an 80x24 cell grid (`kernel/terminal-grid.hpp`, data only); native
+diagnostics are not. Changed cells are painted through one DisplaySession loan
+before the console's poll wait and after each Console turn releases its grant,
+never during a protected run, with the paired LAPIC/framebuffer tree verified at
+each paint and the leaf rechecked per store (`kernel/uefi/graphical-terminal.inc`).
+The standalone graphical console image keeps its own line editor and capture
+cases; both consoles draw cells through the shared `graphics.text_cells` library.
+
+Handoff. Version 7 is the production layout: word 112 is the copied RSDP, word
+120 the runtime metadata (as in v3) and word 128 the framebuffer record, in a
+136-byte header. Only the production header admits v7 and it admits nothing
+else; every other image keeps its 128-byte header, rejects v7 and validates
+v1-v6 unchanged (`native-kernel-uefi-handoff[-terminal]`). The early fixture's
+word 128 exists only in its own image, which can never compose the terminal.
+
+Framebuffer admission. The loader and the payload's restoration use the firmware
+rule (`FramebufferAdmission::authorize_firmware`): the source-bound GOP resource
+with its own base, size, geometry and pixel format, rechecked against every
+ExitBootServices retry's final map and again from the immutable record. It keeps
+every check of the std-VGA fixture rule except the emulator identity tuple: no
+RAM, runtime, ACPI or persistent overlap, no owned arena, LAPIC, IOAPIC or q35
+ECAM, physical width, PAT index 3 UC, supervisor RW/NX/UC leaves with absent
+guards and whole-tree verification. Firmware omits PCI apertures from the memory
+map, so the aperture must be either wholly absent from or wholly described by
+reserved/MMIO descriptors; a partial description denies. A missing GOP or a
+framebuffer in firmware RAM (QEMU ramfb) fails closed in the loader. The std-VGA
+fixture rule remains for the framebuffer and graphical-console capture images.
+This is exercised only under QEMU/OVMF; it is not physical-hardware support.
+
+Guest. `scripts/kernel_production_smoke.py` runs the program-console PTY oracle
+on the image, then one q35/OVMF/std-VGA guest with QMP: the commands in
+`tests/kernel-production-console.json` over serial, whose Console output must
+equal that reviewed transcript (only whole native diagnostic lines may
+interleave), and the framebuffer viewport, which must equal the real host painter's
+rendering of the transcript (`tests/graphical-terminal-host --viewport`) in
+physical memory and in the screendump, before a clean `exit`. It then boots the
+no-display and ramfb machines and requires the loader refusals. The harness, not
+the kernel, pins the std-VGA environment. Hosted cases: `graphical-terminal-native`
+(grid, wrap, scroll, erase, schedule-independent frames, painter geometry and
+cell bounds, a foreign Console grant), `uefi-framebuffer-loader` (the firmware
+rule as data) and the compile-fail guards.
+
+Payload reservation. The production payload had reached the former 128 KiB
+reservation exactly, so it is now 152 KiB (`kernel_payload_limit` 0x26000): the
+IDT moves to 0x48000, the guard to 0x49000 and the 16 KiB kernel stack to
+0x4a000..0x4e000, with 0x4e000..0x50000 still absent above it. Oracles read these
+values from `kernel/bootstrap-layout-values.inc`.
 
 ## Moved checks
 

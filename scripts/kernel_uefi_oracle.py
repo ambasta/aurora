@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from kernel_layout import LAYOUT  # noqa: E402
 from kernel_profiles import EARLY_FIXTURE_IMAGE, FIXTURE_MODES  # noqa: E402
 
 
@@ -123,7 +124,10 @@ def validate(status, text, mode):
         and 1 <= count <= 512,
         "Invalid arena/map",
     )
-    need(root == arena + 0x11000 and arena + 0x44000 <= stack < arena + 0x48000, "Inherited root/stack")
+    need(
+        root == arena + 0x11000 and arena + LAYOUT.kernel_stack_bottom <= stack < arena + LAYOUT.kernel_stack_top,
+        "Inherited root/stack",
+    )
     owned_lines = [
         "AURORA_UEFI_OWNED_BYTES: length=65 owners=2 pages=2 releases=2 used=0",
         "AURORA_UEFI_OWNED_BYTES: length=513 owners=2 pages=2 releases=4 used=0",
@@ -180,5 +184,10 @@ def validate(status, text, mode):
         if mode == "nx":
             need(rip == cr2, "NX RIP mismatch")
         else:
-            need(arena + 0x22000 <= rip < arena + 0x42000, "WP origin outside payload")
+            need(
+                arena + LAYOUT.kernel_payload_offset
+                <= rip
+                < arena + LAYOUT.kernel_payload_offset + LAYOUT.kernel_payload_limit,
+                "WP origin outside payload",
+            )
         need("AURORA_UEFI_LANGUAGE_OK:" not in text, "Fault continued")

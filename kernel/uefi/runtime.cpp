@@ -106,6 +106,14 @@
 #include "../file-service-transport.hpp"
 #endif
 #endif
+#ifdef AURORA_UEFI_GRAPHICAL_TERMINAL
+#include "graphical-profile.hpp"
+#include "framebuffer-payload.hpp"
+#include "framebuffer-pixels.hpp"
+#include "../display-session.hpp"
+#include "../terminal-grid.hpp"
+#include <cstddef>
+#endif
 namespace aurora::uefi {
 extern std::uint64_t saved_rsp asm("uefi_runtime_saved_rsp") __attribute__((visibility("hidden")));
 #if defined(AURORA_UEFI_IPC) || defined(AURORA_OWNED_TEXT) || defined(AURORA_RUNTIME_CONTROL_FIXTURE)
@@ -167,6 +175,11 @@ public:
     static void put(std::uint8_t byte) {
         Uart::put(byte);
     }
+#ifdef AURORA_UEFI_GRAPHICAL_TERMINAL
+    [[nodiscard]] static auto input_pending() -> bool {
+        return Uart::input_pending();
+    }
+#endif
     [[gnu::noinline]] static void text(std::string_view value) {
         Uart::text(value);
     }
@@ -741,6 +754,14 @@ auto program_console_put(const void *grant, U64 generation, U64 byte) -> U64 {
     return ProgramInputSession::put(grant, generation, byte);
 }
 #endif
+#ifdef AURORA_UEFI_GRAPHICAL_TERMINAL
+// The terminal painter's only hardware path: one authenticated, bounds-checked store.
+auto terminal_display_pixel(const void *, U64, U64, U64, U64, U64, U64) -> U64 asm("__au_runtime_display_pixel")
+    __attribute__((visibility("hidden")));
+auto terminal_display_pixel(const void *grant, U64 generation, U64 x, U64 y, U64 red, U64 green, U64 blue) -> U64 {
+    return TerminalDisplay::pixel(grant, generation, x, y, red, green, blue);
+}
+#endif
 #if defined(AURORA_UEFI_SNAPSHOT) || (defined(AURORA_BLOCKING_CALL) && !defined(AURORA_FILE_CALL))
 extern "C" [[noreturn]] void __au_runtime_bytes_kernel_fault(U64) noexcept {
     stop("snapshot producer ownership fault");
@@ -955,7 +976,13 @@ auto run_protected(U64 owned_arena, const Bytes &h, memory::PhysicalPages &produ
 #else
 auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
 #endif
-    if (h.get(8, 4) != 3 || !L::valid(owned_arena) || root() != h.get(88))
+#ifdef AURORA_UEFI_GRAPHICAL_TERMINAL
+    // The production composition's runtime metadata arrives only in v7.
+    constexpr unsigned runtime_version = 7;
+#else
+    constexpr unsigned runtime_version = 3;
+#endif
+    if (h.get(8, 4) != runtime_version || !L::valid(owned_arena) || root() != h.get(88))
         return false;
     arena = owned_arena;
     kernel_root = h.get(88);

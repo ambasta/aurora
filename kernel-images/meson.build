@@ -111,6 +111,27 @@ foreach profile_id : profile_data['profiles'].split('|')
     input: [language[0]] + bridge_input, output: language_name + '.o', build_subdir: object_subdir,
     command: [kernel_as, '--64', '@INPUT@', '-o', '@OUTPUT@'])}
   language_objects += [objects[language_name]]
+  # The production composition's second closed Aurora object: the graphical
+  # terminal painter, with its own private bridge and import policy.
+  terminal_language = profile_data[key + '.terminal_language']
+  if terminal_language != ''
+    terminal_bridge = profile_data[key + '.terminal_bridge']
+    terminal_assembly = custom_target(prefix + '-terminal-assembly',
+      input: files('../' + terminal_language),
+      output: ['terminal.s', 'terminal.stack.json', 'terminal.abi.json'],
+      build_subdir: output_subdir, depfile: 'terminal.d',
+      depend_files: compiler_files + files('../' + terminal_bridge, '../scripts/bootstrap_frontend.py'),
+      command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
+                '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--abi-facts', '@OUTPUT2@',
+                '--depfile', '@DEPFILE@', '--module-root', kernel_source / 'library',
+                '--local-symbols', '--referenced-reflection-only',
+                '--bridge', kernel_source / terminal_bridge])
+    stack_facts += [terminal_assembly[1]]
+    objects += {'terminal': custom_target(prefix + '-terminal-object',
+      input: terminal_assembly[0], output: 'terminal.o', build_subdir: object_subdir,
+      command: [kernel_as, '--64', '@INPUT@', '-o', '@OUTPUT@'])}
+    language_objects += [objects['terminal']]
+  endif
   if bios_console
     uart_assembly = custom_target(prefix + '-uart-assembly',
       input: files('../examples/kernel-uart.au'),
@@ -257,7 +278,7 @@ foreach profile_id : profile_data['profiles'].split('|')
   endif
 
   # Native Meson compiles own C++ dependency files and compile_commands entries.
-  # Keep the closed protected supervisor within its existing 128 KiB reservation.
+  # Keep the closed protected supervisor within its 152 KiB payload reservation.
   # Both bounded scratchpad compositions use the existing protected Console size recipe.
   profile_options = kernel_options + {'optimization': (closed or ram_scratchpad) ? 's' : '2'}
   cpp_names = profile_data[key + '.cpp'].split('|')
@@ -301,7 +322,8 @@ foreach profile_id : profile_data['profiles'].split('|')
   else
     linker_script = custom_target(prefix + '-linker-script', input: files('../kernel/uefi/payload.ld'),
       output: 'payload.ld', build_subdir: output_subdir,
-      command: native_cpp.cmd_array() + ['-E', '-P', '-x', 'c'] + profile_flags + ['@INPUT@', '-o', '@OUTPUT@'])
+      command: native_cpp.cmd_array() + ['-E', '-P', '-x', 'c'] + profile_flags +
+               ['-DAURORA_PAYLOAD_LIMIT=' + profile_data['layout.kernel_payload_limit'], '@INPUT@', '-o', '@OUTPUT@'])
     elf = custom_target(prefix + '-elf', input: link_objects, output: 'payload.elf',
       build_subdir: output_subdir,
       command: [kernel_ld, '-nostdlib', '-T', linker_script, '-z', 'max-page-size=0x1000', '@INPUT@', '-o', '@OUTPUT@'])

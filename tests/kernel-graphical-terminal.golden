@@ -1,0 +1,26 @@
+800 600 800 1 0 x:6175726f72613e20	exit 0 | stdout: stores=103762 cursor=8 digest=c68cadb3a025d4b4
+800 600 800 1 1 x:6175726f72613e20	exit 0 | stdout: stores=104553 cursor=8 digest=c68cadb3a025d4b4
+--rows 800 600 800 1 0 x:6175726f72613e2068656c58 x:082008 x:700d0a6175726f72613e20	exit 0 | stdout: stores=103890 cursor=88 digest=90a4543f9dd78e8c / 0|aurora> help| / 1|aurora>|
+--rows 800 600 800 1 1 x:6175726f72613e2068656c58 x:082008 x:700d0a6175726f72613e20	exit 0 | stdout: stores=106769 cursor=88 digest=90a4543f9dd78e8c / 0|aurora> help| / 1|aurora>|
+--rows 800 600 800 1 0 r:81:61	exit 0 | stdout: stores=104819 cursor=81 digest=b812106edbcb3108 / 0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa| / 1|a|
+--rows 800 600 800 1 0 r:80:61	exit 0 | stdout: stores=104805 cursor=79 digest=f707b83ed6dfa640 / 0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+--rows 800 600 800 1 0 r:80:61 x:08	exit 0 | stdout: stores=104805 cursor=79 digest=f707b83ed6dfa640 / 0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+--rows 800 600 800 1 0 r:30:6c696e650d0a x:6c617374	exit 0 | stdout: stores=104791 cursor=1844 digest=679e61406cf73d70 / 0|line| / 1|line| / 2|line| / 3|line| / 4|line| / 5|line| / 6|line| / 7|line| / 8|line| / 9|line| / 10|line| / 11|line| / 12|line| / 13|line| / 14|line| / 15|line| / 16|line| / 17|line| / 18|line| / 19|line| / 20|line| / 21|line| / 22|line| / 23|last|
+--rows 800 600 800 1 7 r:30:6c696e650d0a x:6c617374	exit 0 | stdout: stores=112663 cursor=1844 digest=679e61406cf73d70 / 0|line| / 1|line| / 2|line| / 3|line| / 4|line| / 5|line| / 6|line| / 7|line| / 8|line| / 9|line| / 10|line| / 11|line| / 12|line| / 13|line| / 14|line| / 15|line| / 16|line| / 17|line| / 18|line| / 19|line| / 20|line| / 21|line| / 22|line| / 23|last|
+--rows 800 600 800 1 1 r:30:6c696e650d0a x:6c617374	exit 0 | stdout: stores=127078 cursor=1844 digest=679e61406cf73d70 / 0|line| / 1|line| / 2|line| / 3|line| / 4|line| / 5|line| / 6|line| / 7|line| / 8|line| / 9|line| / 10|line| / 11|line| / 12|line| / 13|line| / 14|line| / 15|line| / 16|line| / 17|line| / 18|line| / 19|line| / 20|line| / 21|line| / 22|line| / 23|last|
+--rows 800 600 800 1 0 r:24:0a x:746f70	exit 0 | stdout: stores=103720 cursor=1843 digest=462f9a1df6eba414 / 23|top|
+--rows 800 600 800 1 0 x:6162630d58	exit 0 | stdout: stores=103725 cursor=1 digest=da2697ded22dd3e0 / 0|Xbc|
+--rows 800 600 800 1 0 x:08086162	exit 0 | stdout: stores=103715 cursor=2 digest=ec204f2efbfa97a8 / 0|ab|
+--rows 800 600 800 1 0 x:00017f80ff1b5b324a	exit 0 | stdout: stores=103830 cursor=9 digest=8fbd24355e66740 / 0|??????[2J|
+800 600 803 0 0 x:6175726f72613e20	exit 0 | stdout: stores=103762 cursor=8 digest=4137b337e0bd0ca8
+512 248 512 1 0 r:24:6c696e650d0a	exit 0 | stdout: stores=104743 cursor=1840 digest=5792c38b6dcf3410
+1024 768 1024 0 0 r:24:6c696e650d0a	exit 0 | stdout: stores=104743 cursor=1840 digest=92fe0002fc2c7528
+--cell 512 248 0 65	exit 0 | stdout: painted=1 stores=72 digest=f4ea6b60d32ac67d
+--cell 511 248 0 65	exit 0 | stdout: painted=0 stores=0 digest=b2c5e0406636c765
+--cell 512 247 0 65	exit 0 | stdout: painted=0 stores=0 digest=b2c5e0406636c765
+--cell 1024 768 0 65	exit 0 | stdout: painted=1 stores=72 digest=4ab7024aef08067d
+--cell 512 248 1919 65	exit 0 | stdout: painted=1 stores=72 digest=60ded36dfa8bd8dd
+--cell 512 248 1920 65	exit 0 | stdout: painted=0 stores=0 digest=b2c5e0406636c765
+--cell 512 248 0 511	exit 0 | stdout: painted=1 stores=77 digest=54773d1ef89907c8
+--cell 512 248 0 512	exit 0 | stdout: painted=0 stores=0 digest=b2c5e0406636c765
+--foreign-console	exit 77

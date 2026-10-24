@@ -267,6 +267,18 @@ public:
         return size_a <= ~std::uint64_t{0} - a && size_b <= ~std::uint64_t{0} - b &&
                (a + size_a <= b || b + size_b <= a);
     }
+    // v6 places the graphics record at word 120. v7 keeps word 120 for the
+    // runtime metadata and places the record at word 128; nothing else pairs.
+    [[nodiscard]] static auto paired_records(const Bytes &h, std::uint64_t arena) -> bool {
+        if (h.get(8, 4) == 6)
+            return h.get(120) == arena + Handoff::framebuffer_record_offset;
+#ifdef AURORA_UEFI_GRAPHICAL_TERMINAL
+        return h.get(8, 4) == 7 && h.get(120) == arena + RuntimeLayout::metadata_offset &&
+               h.get(Handoff::framebuffer_word) == arena + Handoff::framebuffer_record_offset;
+#else
+        return false;
+#endif
+    }
     // An explicitly paired boundary, never an extension of legacy verify's
     // device authority. Empty v6 staging still uses verify(arena, h); the caller
     // must additionally establish that base_ is the live CR3 before using this
@@ -286,15 +298,14 @@ public:
         const PageTables snapshot{base_, used_, framebuffer_};
         if (!apic || !framebuffer || snapshot.framebuffer_ || !RuntimeLayout::valid(arena) || snapshot.used_ == 0 ||
             snapshot.used_ > Handoff::table_pages || snapshot.base_ != arena + Handoff::tables_offset ||
-            h.get(0) != Handoff::magic || h.get(8, 4) != 6 || h.get(12, 4) != Handoff::header ||
+            h.get(0) != Handoff::magic || !paired_records(h, arena) || h.get(12, 4) != Handoff::header ||
             h.get(16) != Handoff::arena_bytes || h.get(24) != arena || !h.get(32) || h.get(32) > MemoryMap::max_bytes ||
             h.get(40) < 40 || h.get(40) > 256 || h.get(48, 4) != 1 || h.get(52, 4) < 1 || h.get(52, 4) > 3 ||
             !h.get(56) || h.get(56) > Handoff::payload_limit || h.get(56) > h.get(80) || !h.get(64) ||
             h.get(64) % 4096 || h.get(72) % 4096 || h.get(80) % 4096 || h.get(64) > h.get(72) ||
             h.get(72) > h.get(80) || h.get(80) > Handoff::payload_limit || h.get(88) != snapshot.base_ ||
             h.get(96) != snapshot.used_ || h.get(104) != arena + Handoff::payload_offset || !h.get(112) ||
-            h.get(120) != arena + Handoff::framebuffer_record_offset || apic->owned_arena() != arena ||
-            framebuffer->owned_arena() != arena)
+            apic->owned_arena() != arena || framebuffer->owned_arena() != arena)
             return false;
         const auto &geometry = framebuffer->geometry();
         const auto physical = geometry.base(), bytes = geometry.mapped_bytes();
@@ -452,11 +463,11 @@ public:
     }
 };
 inline auto expected_flags(std::uint64_t offset, const Bytes &h) -> std::uint64_t {
-    if ((h.get(8, 4) == 5 || h.get(8, 4) == 6) && offset == Handoff::framebuffer_record_offset)
+    if (Handoff::framebuffer(h) && offset == Handoff::framebuffer_record_offset)
         return 1 | PageTables::nx;
     if (h.get(8, 4) == 4 && offset == Handoff::bar_record_offset)
         return 1 | PageTables::nx;
-    if (h.get(8, 4) == 3) {
+    if (Handoff::runtime(h)) {
         const auto flags = RuntimeLayout::kernel_flags(offset);
         if (flags)
             return flags;

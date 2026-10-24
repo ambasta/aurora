@@ -1,0 +1,16 @@
+module kernel_graphical_terminal;
+import graphics.text_cells;
+
+// The production graphical terminal renders the protected program console. It
+// owns no input, timer or Console capability: the native adapter copies the
+// bytes the Console session wrote into an 80x24 cell grid and asks this module
+// to paint each changed cell through one sealed DisplaySession loan.
+// Layout: cell `position` is row-major; the viewport is 480x216 pixels at (32,32).
+auto paint_terminal_cell(builtin::DisplaySession& display, u64 width, u64 height, u64 position, u64 glyph) -> bool {
+    if (width < 512u64 || width > 1024u64 || height < 248u64 || height > 768u64 || position >= 1920u64) {
+        return false;
+    }
+    const u64 x = 32u64 + (position % 80u64) * 6u64;
+    const u64 y = 32u64 + (position / 80u64) * 9u64;
+    return graphics::draw_text_cell(display, width, height, x, y, glyph);
+}

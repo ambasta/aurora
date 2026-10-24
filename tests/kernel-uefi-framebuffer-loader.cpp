@@ -188,5 +188,110 @@ int main() {
     const auto changed_size = FramebufferLoader::capture(Bytes{boot}, 40);
     need(changed_size.has_value());
     need(!qualify(*changed_size, map));
+    // Production firmware rule, as data: the live GOP resource as firmware
+    // describes it, wholly absent from or wholly described by the final map.
+    class Rule final {
+    public:
+        U64 base, resource;
+        unsigned width, height, pitch, format;
+        // Optional final-map descriptor over the aperture: type, first page, pages, attributes.
+        unsigned type;
+        U64 start, pages, attributes;
+        unsigned bits;
+        U64 pat;
+        std::uint32_t edx;
+        bool admitted;
+    };
+    constexpr U64 uc = 0x0007040600070406ULL;
+    constexpr std::uint32_t features = (1U << 5) | (1U << 16);
+    constexpr unsigned none = 16;
+    const std::array<Rule, 28> rules{{
+        // Absent from the map (OVMF std VGA), any supported geometry or format.
+        {0x80000000, 1921024, 800, 600, 800, 1, none, 0, 0, 0, 40, uc, features, true},
+        {0xc0000000, 0x200000, 800, 600, 800, 0, none, 0, 0, 0, 36, uc, features, true},
+        {0xc0000000, 0x300000, 1024, 768, 1024, 0, none, 0, 0, 0, 36, uc, features, true},
+        {0xc0000000, 0x200000, 640, 480, 704, 1, none, 0, 0, 0, 36, uc, features, true},
+        // Wholly described by reserved or MMIO pages with UC/RO attributes only.
+        {0xc0000000, 0x200000, 800, 600, 800, 0, 11, 0xc0000000, 512, 1, 36, uc, features, true},
+        {0xc0000000, 0x200000, 800, 600, 800, 0, 0, 0xbffff000, 514, 0x4001, 36, uc, features, true},
+        // A partial description contradicts the firmware's own extent.
+        {0xc0000000, 0x200000, 800, 600, 800, 0, 11, 0xc0000000, 1, 1, 36, uc, features, false},
+        {0xc0000000, 0x200000, 800, 600, 800, 0, 11, 0xc01d4000, 1, 1, 36, uc, features, false},
+        // RAM, runtime, ACPI and persistent overlaps deny, even one page.
+        {0xc0000000, 0x200000, 800, 600, 800, 0, 1, 0xc0000000, 512, 0, 36, uc, features, false},
+        {0xc0000000, 0x200000, 800, 600, 800, 0, 4, 0xc0000000, 512, 0, 36, uc, features, false},
+        {0xc0000000, 0x200000, 800, 600, 800, 0, 7, 0xc0000000, 1, 0, 36, uc, features, false},
+        {0xc0000000, 0x200000, 800, 600, 800, 0, 9, 0xc0000000, 512, 0, 36, uc, features, false},
+        {0xc0000000, 0x200000, 800, 600, 800, 0, 14, 0xc0000000, 512, 0, 36, uc, features, false},
+        {0xc0000000, 0x200000, 800, 600, 800, 0, 11, 0xc0000000, 512, 1ULL << 63, 36, uc, features, false},
+        {0xc0000000, 0x200000, 800, 600, 800, 0, 11, 0xc0000000, 512, 8, 36, uc, features, false},
+        // The owned arena, LAPIC, IOAPIC and q35 ECAM never become pixels.
+        {0x1000000, 0x200000, 800, 600, 800, 0, none, 0, 0, 0, 36, uc, features, false},
+        {0xf00000, 0x200000, 800, 600, 800, 0, none, 0, 0, 0, 36, uc, features, false},
+        {0xfee00000, 0x200000, 800, 600, 800, 0, none, 0, 0, 0, 36, uc, features, false},
+        {0xfeb00000, 0x200000, 800, 600, 800, 0, none, 0, 0, 0, 36, uc, features, false},
+        {0xe0000000, 0x200000, 800, 600, 800, 0, none, 0, 0, 0, 36, uc, features, false},
+        {0xdff00000, 0x200000, 800, 600, 800, 0, none, 0, 0, 0, 36, uc, features, false},
+        // Physical width, PAT index 3 UC and the MSR/PAT features are required.
+        {0xc0000000, 0x200000, 800, 600, 800, 0, none, 0, 0, 0, 31, uc, features, false},
+        {0xc0000000, 0x200000, 800, 600, 800, 0, none, 0, 0, 0, 53, uc, features, false},
+        {0xc0000000, 0x200000, 800, 600, 800, 0, none, 0, 0, 0, 36, uc | (6ULL << 24), features, false},
+        {0xc0000000, 0x200000, 800, 600, 800, 0, none, 0, 0, 0, 36, uc, 1U << 5, false},
+        {0xc0000000, 0x200000, 800, 600, 800, 0, none, 0, 0, 0, 36, uc, 1U << 16, false},
+        // A resource beyond the physical width denies.
+        {0x1000000000, 0x200000, 800, 600, 800, 0, none, 0, 0, 0, 36, uc, features, false},
+        {0x7ffff00000, 0x200000, 800, 600, 800, 0, none, 0, 0, 0, 39, uc, features, false},
+    }};
+    for (const auto &rule : rules) {
+        reset();
+        put(mode, 0, 1, 4);
+        put(mode, 4, 0, 4);
+        put(mode, 24, rule.base);
+        put(mode, 32, rule.resource);
+        put(info, 4, rule.width, 4);
+        put(info, 8, rule.height, 4);
+        put(info, 32, rule.pitch, 4);
+        put(info, 12, rule.format, 4);
+        // Capture at the widest tested width; admission applies the rule's own.
+        const auto resource = FramebufferLoader::capture(Bytes{boot}, 40);
+        need(resource.has_value());
+        std::array<std::byte, 80> final_map{};
+        for (unsigned at = 0; at < 40; ++at)
+            final_map[at] = map[at];
+        const auto described = rule.type != none;
+        if (described) {
+            put(final_map, 40, rule.type, 4);
+            put(final_map, 48, rule.start);
+            put(final_map, 64, rule.pages);
+            put(final_map, 72, rule.attributes);
+        }
+        const auto grant =
+            FramebufferAdmission::authorize_firmware(*resource,
+                                                     std::span<const std::byte>{final_map}.first(described ? 80 : 40),
+                                                     40,
+                                                     1,
+                                                     0x1000000,
+                                                     rule.bits,
+                                                     rule.edx,
+                                                     rule.pat);
+        need(grant.has_value() == rule.admitted);
+        if (grant) {
+            need(grant->geometry().base() == rule.base && grant->geometry().width() == rule.width &&
+                 grant->mapping(FramebufferAdmission::virtual_address) ==
+                     (rule.base | FramebufferAdmission::leaf_flags) &&
+                 !grant->mapping(FramebufferAdmission::virtual_address + grant->geometry().mapped_bytes()));
+        }
+    }
+    // The fixture identity alone does not satisfy the firmware rule over RAM.
+    fixture_reset();
+    const auto identity = FramebufferLoader::capture(Bytes{boot}, 40);
+    need(identity.has_value());
+    std::array<std::byte, 80> ram{};
+    for (unsigned at = 0; at < 40; ++at)
+        ram[at] = map[at];
+    put(ram, 40, 7, 4);
+    put(ram, 48, 0x80000000);
+    put(ram, 64, 1);
+    need(!FramebufferAdmission::authorize_firmware(*identity, ram, 40, 1, 0x1000000, 40, features, uc));
     std::cout << "PASS: framebuffer pre-exit GOP capture " << checks << " checks\n";
 }

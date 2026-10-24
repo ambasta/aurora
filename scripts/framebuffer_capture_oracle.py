@@ -8,6 +8,7 @@ renderer's guarded 0xA5 buffer, must reproduce its store count and digest.
 import hashlib
 import re
 from pathlib import Path
+from kernel_layout import LAYOUT  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 GOLDEN = ROOT / "tests/kernel-display-renderer.golden"
@@ -105,7 +106,10 @@ def validate_serial(raw, mode, gate_only=False):
         and 1 <= count <= 512,
         "invalid arena/map",
     )
-    need(root == arena + 0x11000 and arena + 0x44000 <= stack < arena + 0x48000, "inherited root/stack")
+    need(
+        root == arena + 0x11000 and arena + LAYOUT.kernel_stack_bottom <= stack < arena + LAYOUT.kernel_stack_top,
+        "inherited root/stack",
+    )
     need(lines[positions[-1]] == GATE, "gate geometry")
     need(
         all(line.startswith(prefixes + ("AURORA_DISPLAY_",)) for line in lines if "AURORA_" in line),

@@ -1,7 +1,8 @@
 # Bounded framebuffer console
 
-Aurora renders an output-only status page and a separate serial-input graphical
-console after ExitBootServices. Both use sealed DisplaySession authority through
+Aurora renders an output-only status page, a separate serial-input graphical
+console and, in the production image, a graphical terminal of the protected
+program console after ExitBootServices. Both use sealed DisplaySession authority through
 trusted C++/assembly adapters. These are experimental QEMU profiles, with no GPU
 driver, keyboard, desktop, physical Framework display, DMA or IOMMU qualification.
 
@@ -10,6 +11,7 @@ driver, keyboard, desktop, physical Framework display, DMA or IOMMU qualificatio
 | `make capture-framebuffer` | Fresh output-only image admission and one PNG/physical capture | Negative guests, restoration boot and independent qualification |
 | `make smoke-graphical-console` | Fresh production/capture image checks, twenty guest cases and a normal boot | Final-source GCC 16 `full` and independent review |
 | Image admission v6 | Current build identity, image/private-ABI/stack/state structure | Selector, authority, pixel and diagnostic behavior |
+| `make smoke-production` | Production program console over serial and its framebuffer viewport against the host painter, no-GOP and ramfb refusals | Physical displays, final-source `full` and review |
 
 This document describes current behavior and gates, not a completed run. Exact
 commands, hashes, failures and past results belong in retained evidence and
@@ -154,6 +156,13 @@ Ordinary admission requires complete reserved/MMIO final-map coverage. It denies
 RAM, runtime/ACPI overlap, unsupported attributes, the owned arena, LAPIC, IOAPIC
 and q35 ECAM. Physical width and PAT index 3 UC are checked without changing
 PAT/MTRRs. Every exit retry rechecks the final map.
+
+The production firmware rule (`authorize_firmware`) admits the source-bound GOP
+resource as firmware describes it: its own base, size, geometry and format, with
+every check above except complete coverage. Because firmware omits PCI apertures
+from the memory map, the aperture must be wholly absent from or wholly described
+by reserved/MMIO descriptors; a partial description, RAM (including QEMU ramfb)
+or a missing GOP fails closed. Only the production image selects it.
 
 The explicit q35/OVMF/std-VGA fixture has a separate admission rule; missing
 descriptors never select it automatically. `FramebufferRecord::parse` gives a
@@ -323,3 +332,26 @@ Registration or structural admission alone establishes no pass. Fresh source,
 hosted, image, affected guest/restoration and
 [final GCC 16 full/review gates](../AGENTS.md#workflow) remain required. Partial/null
 pairs and deterministic synchronous faults are separate from these seven selectors.
+
+## Production graphical terminal
+
+`uefi/production` renders its protected program console, not a second console:
+the program console owns COM1 input and the LAPIC timer, and every byte its
+sealed Console session delivers is copied into an 80x24 cell grid
+(`kernel/terminal-grid.hpp`: CR, LF with scrolling, BS, wrap; other bytes are
+drawn with the fallback glyph, never interpreted). The separately compiled
+painter (`examples/kernel-graphical-terminal.au`, shared `graphics.text_cells`
+cells, 480x216 pixels at (32,32), at least 512x248) receives one cell position
+and glyph per call through a sealed DisplaySession; its object may import only
+`__au_runtime_display_pixel`. Changed cells are painted before each poll wait
+and after each Console turn, never during a protected run; each paint verifies
+the paired LAPIC/framebuffer tree, each store its leaf. A paint failure is a
+fail-stop. Handoff v7 carries the runtime metadata (word 120) and the record
+(word 128) separately. The painter call record is checked against the
+compiler's ABI facts when its bridge is rendered.
+
+`graphical-terminal-native` streams 26 cases to the Meson-built host
+(`tests/graphical-terminal-host`): grid layout, wrap, scroll, erase, control and
+escape bytes, cursor placement, RGB/BGR/padded/minimum/maximum surfaces, equal
+frame digests across paint schedules, painter geometry/position/glyph bounds and
+a foreign Console grant, against `tests/kernel-graphical-terminal.golden`.

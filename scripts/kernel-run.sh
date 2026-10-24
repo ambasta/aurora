@@ -205,6 +205,14 @@ if [[ "$action" == --smoke ]]; then
     if [[ "$scratchpad" == true ]]; then
         exec python3 -B tests/kernel-scratchpad-console-pty.py --build-dir "$image_dir"
     fi
+    if [[ "$mode" == program-console ]]; then
+        # The production image (program-console is its alias) has both consoles:
+        # the PTY oracle, then serial commands with the framebuffer.
+        build_root="${image_dir%/kernel-images/*}"
+        meson compile -C "$build_root" tests/graphical-terminal-host >/dev/null
+        exec python3 -B scripts/kernel_production_smoke.py --build-dir "$image_dir" \
+            --renderer "$build_root/tests/graphical-terminal-host"
+    fi
     if [[ "$protected" == true ]]; then
         if python3 -B tests/kernel-program-console-pty.py --mode "$mode" --build-dir "$image_dir"; then :; else
             status=$?; echo "FAIL: protected-console PTY exited $status" >&2; exit "$status"

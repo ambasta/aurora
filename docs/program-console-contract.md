@@ -8,7 +8,9 @@ in Git/PR history and retained evidence. Historical passes do not replace the
 ## Observable gate
 
 The `program-console` mode boots the production UEFI image (`uefi/production`,
-see [fixture consolidation](kernel-fixture-consolidation.md#production-image)), which
+see [fixture consolidation](kernel-fixture-consolidation.md#production-image)), whose
+graphical terminal also renders every byte this console's sealed session writes
+on the firmware framebuffer (input stays serial-only). It
 accepts `upper`, then `text> Hello, Aurora 42!`,
 and prints `HELLO, AURORA 42!` once before returning to `aurora>`. The uppercase
 transformation executes in a separately compiled, one-page RX Aurora CPL3 client.
@@ -334,7 +336,7 @@ absolute paths, with source hashes and coordinates retained. Escaping symlinks,
 other include roots/GCC versions and historical unbound header frames reject.
 This recognizes the standard-library implementation already trusted when inlined;
 it is a provenance/review scope, not an additional security proof. Protected
-program profiles use size optimization within the unchanged 128 KiB payload
+program profiles use size optimization within the 152 KiB payload
 reservation; complete frame/edge checks and stack limits still apply.
 
 Version 2 Aurora facts also describe the R11 packed-input/R10 copied-result ABI

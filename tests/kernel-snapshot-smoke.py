@@ -22,6 +22,7 @@ MODES = SUCCESS + (
 )
 # Modes that boot the shared snapshot-fixture image, from the one fixture table.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from kernel_layout import LAYOUT  # noqa: E402
 import kernel_profiles  # noqa: E402
 
 FIXTURE_MODES = tuple(mode for mode, (image, _) in kernel_profiles.FIXTURE_MODES.items() if image == "snapshot-fixture")
@@ -145,7 +146,10 @@ def validate(status, text, mode, metadata):
         need(match is not None, "Wrong snapshot phase/order/authority: " + line)
         if STACK in pattern:
             address = int(match[1])
-            need(arena + 0x44000 <= address < arena + 0x48000 and address % 8 == 0, "Wrong snapshot kernel stack")
+            need(
+                arena + LAYOUT.kernel_stack_bottom <= address < arena + LAYOUT.kernel_stack_top and address % 8 == 0,
+                "Wrong snapshot kernel stack",
+            )
     need(
         "AURORA_UEFI_PAYLOAD_FAIL:" not in text and "AURORA_UEFI_FAIL:" not in text, "Unexpected snapshot boot failure"
     )

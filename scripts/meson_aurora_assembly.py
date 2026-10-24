@@ -85,9 +85,38 @@ def validate_uart_policy_abi(facts):
             raise ValueError("UART private entry shape does not match compiler facts: " + name)
 
 
+def validate_terminal_paint_abi(facts):
+    """The paint bridge's six-qword record must be exactly the compiled entry."""
+    from bootstrap_frontend import abi_declaration, normalize_function_abi
+
+    _, raw = abi_declaration(facts, "functions", "paint_terminal_cell")
+    expected = {
+        "source_name": "paint_terminal_cell",
+        "receiver": None,
+        "receiver_mutable": None,
+        "borrowed_root_count": 0,
+        "borrowed_roots": [],
+        "borrowed_root_abi": {
+            "kind": "none",
+            "register": None,
+            "tuple_payload_bytes": 0,
+            "tuple_reserved_bytes": 0,
+            "saved_root_reserved_bytes": 0,
+        },
+        "parameter_bytes": 48,
+        "parameters": [{"offset": 0, "bytes": 16, "kind": "service"}]
+        + [{"offset": offset, "bytes": 8, "kind": "u64"} for offset in (16, 24, 32, 40)],
+        "result": {"bytes": 8, "kind": "bool"},
+    }
+    if normalize_function_abi(facts, raw) != expected:
+        raise ValueError("Terminal paint entry shape does not match compiler facts")
+
+
 def render_bridge(source, facts):
     if "# UART_POLICY_ABI:" in source:
         validate_uart_policy_abi(facts)
+    if "# TERMINAL_PAINT_ABI:" in source:
+        validate_terminal_paint_abi(facts)
     # Source spellings select compiler facts, never a second mangling recipe.
     from bootstrap_frontend import abi_function_symbol
 

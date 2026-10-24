@@ -26,6 +26,7 @@ import smoke_outputs
 from qemu_transport import ChildNotReaped, Qmp, exited, reap_completed
 from qemu_transport import MissingPrerequisite as PrerequisiteBlocked
 from owned_outputs import allocated_bytes
+from kernel_layout import LAYOUT  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = None
@@ -385,7 +386,10 @@ def backing_evidence(linked, directory):
             need(symbol.name not in symbols, "Ambiguous retained Event symbol: " + symbol.name)
             symbols[symbol.name] = symbol
     begin, end = symbols["__payload_read_end"].address, symbols["__payload_memory_end"].address
-    need(0 < begin < end <= 0x20000 and begin % 4096 == end % 4096 == 0, "Invalid retained payload RW bound")
+    need(
+        0 < begin < end <= LAYOUT.kernel_payload_limit and begin % 4096 == end % 4096 == 0,
+        "Invalid retained payload RW bound",
+    )
     owner = Elf(directory / "objects" / "event-intake.o")
     result = {}
     for role, (name, size, alignment) in RETAINED.items():

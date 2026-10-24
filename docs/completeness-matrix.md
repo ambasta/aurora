@@ -10,7 +10,7 @@ source and toolchain recorded in the relevant PR; pending checks remain pending.
 | Ideal filesystem and XFS compatibility | Bounded RAM storage and offline readers exist; the opt-in retained CPL3 service-owned [49-byte volatile file](https://github.com/ambasta/aurora/pull/234) and its [interactive scratchpad consumer](https://github.com/ambasta/aurora/pull/235) have bounded local qualification. Mounted durable services, recovery and XFS read-write are incomplete. |
 | Framework Laptop 13 AMD support | Emulator foundations include a pinned Debian source-packaging correction for the optional Event model; active drivers, DMA isolation, power/recovery and physical qualification are incomplete. |
 | Native binutils/glibc/Mesa alternatives | One digest-pinned checkpoint compiler (C2 of main `2fd30b2`, rebuilt once from the recorded six-stage source route) builds C1 and C2 with a convergence check, and bumps are one hop; core libraries exist; standalone native rebuilding, toolchain/runtime and graphics replacements are incomplete. |
-| Applications, terminal and tiling desktop | Bounded serial and graphical consoles exist; a separate [protected RAM scratchpad consumer](https://github.com/ambasta/aurora/pull/235) is implemented with bounded local qualification; general applications, terminal sessions and desktop are incomplete. |
+| Applications, terminal and tiling desktop | Bounded serial and graphical consoles exist, and the production image renders its protected program console on the framebuffer (80x24 output view, serial input only); a separate [protected RAM scratchpad consumer](https://github.com/ambasta/aurora/pull/235) is implemented with bounded local qualification; general applications, terminal sessions and desktop are incomplete. |
 
 The retained-run authority and transcript deduplication passed integrated
 qualification in [PR #242](https://github.com/ambasta/aurora/pull/242).
@@ -25,8 +25,10 @@ Validation cleanup passed independent integrated qualification in
 now leaves 62 canonical images (43 UEFI, 19 BIOS): every fault mode is a
 boot-selected fixture case (loader-stage faults through a fw_cfg early fixture),
 test baselines are baseline selectors of their fixtures, and `uefi/production`
-is the one fixture-free production UEFI image (protected program console; the
-graphical console is not yet integrated). Payload-bank folding of compositions
+is the one fixture-free production UEFI image: the protected program console,
+rendered on the firmware (GOP) framebuffer by the graphical terminal, under a
+v7 handoff and a firmware-described framebuffer admission exercised only under
+QEMU/OVMF (no physical display qualification). Payload-bank folding of compositions
 that differ only in user images remains, so this is not yet the few-test-images target. Each image
 build runs one compiler-fact stack check and one image/W^X/symbol-policy check
 in place of the former per-profile admission scripts.

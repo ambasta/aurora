@@ -138,8 +138,9 @@ UEFI_FAMILIES = [
         ],
         {
             # The one production UEFI image: this full protected stack with the
-            # program console, and no fixture selector, test hook or capture handshake.
-            "production": ["-DAURORA_PRODUCTION"],
+            # program console rendered by the graphical terminal, and no fixture
+            # selector, test hook or capture handshake.
+            "production": ["-DAURORA_PRODUCTION", "-DAURORA_UEFI_GRAPHICAL_TERMINAL"],
             "program-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_PROGRAM_FIXTURE"],
             "program-file-call": ["-DAURORA_BLOCKING_CALL", "-DAURORA_FILE_CALL"],
             "program-file-call-fixture": ["-DAURORA_BLOCKING_CALL", "-DAURORA_FILE_CALL", "-DAURORA_RUNTIME_FIXTURE"],
@@ -523,12 +524,16 @@ def bios_profile(mode, controls):
         ]
         + (["serial-input", "kernel-interactive-console", "kernel-uart"] if console else []),
         closed=False,
+        terminal_language="",
+        terminal_bridge="",
     )
 
 
 def uefi_profile(profile_mode, flags):
-    # The production image composes exactly the protected program console.
+    # The production image composes exactly the protected program console and,
+    # as a second closed Aurora object, the graphical terminal that renders it.
     mode = "program-console" if profile_mode == "production" else profile_mode
+    terminal = "-DAURORA_UEFI_GRAPHICAL_TERMINAL" in flags
     scratchpad = mode in ("ram-scratchpad-console", "ram-scratchpad-console-fixture")
     scratchpad_fixture = mode == "ram-scratchpad-console-fixture"
     runtime = scratchpad or mode.startswith(("runtime", "ipc", "budget", "dispatch", "user-", "program-", "snapshot"))
@@ -706,10 +711,13 @@ def uefi_profile(profile_mode, flags):
         + runtime_objects
         + console_objects
         + ["language"]
+        + (["terminal"] if terminal else [])
         + owned_objects
         + (["framebuffer"] if framebuffer else [])
         + (["event-intake"] if event and mode != "iommu-event-observe" else []),
         closed=program,
+        terminal_language="examples/kernel-graphical-terminal.au" if terminal else "",
+        terminal_bridge="kernel/uefi/graphical-terminal-entry.S" if terminal else "",
     )
 
 

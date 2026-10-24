@@ -27,6 +27,7 @@ MODES = (
 )
 CLEAN = ("bar-read", "bar-prepare", "bar-write", "bar-revoked", "bar-alias")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from kernel_layout import LAYOUT  # noqa: E402
 import kernel_profiles  # noqa: E402
 
 # Cases that boot bar-fixture and read its selector; state/capture/prepare do not.
@@ -284,7 +285,7 @@ def validate(status, serial, mode, payload=None):
             type(offset) is int
             and offset == 0x22000
             and type(extent) is int
-            and 0 < extent <= 0x20000
+            and 0 < extent <= LAYOUT.kernel_payload_limit
             and type(probe) is int
             and 0 <= probe < extent
             # The shared bar-fixture image links both fault sites, distinctly.

@@ -5,7 +5,7 @@
 #include "tables.hpp"
 #include "graphical-profile.hpp"
 #include "production-profile.hpp"
-#ifdef AURORA_UEFI_GRAPHICAL_CONSOLE
+#if defined(AURORA_UEFI_GRAPHICAL_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_TERMINAL)
 #include "framebuffer-loader.hpp"
 #endif
 #ifdef AURORA_UEFI_FRAMEBUFFER
@@ -118,7 +118,8 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
 #endif
         fail("bounded BAR firmware capture");
 #endif
-#if defined(AURORA_UEFI_FRAMEBUFFER) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
+#if defined(AURORA_UEFI_FRAMEBUFFER) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE) ||                                      \
+    defined(AURORA_UEFI_GRAPHICAL_TERMINAL)
     std::uint32_t graphics_a, graphics_b, graphics_c, graphics_d;
     asm volatile("cpuid"
                  : "=a"(graphics_a), "=b"(graphics_b), "=c"(graphics_c), "=d"(graphics_d)
@@ -231,6 +232,11 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
 #endif
     put(handoff, 120, arena + Handoff::framebuffer_record_offset);
 #endif
+#ifdef AURORA_UEFI_GRAPHICAL_TERMINAL
+    // Word 120 keeps the runtime metadata written above; the record has its own word.
+    put(handoff, 8, 7, 4);
+    put(handoff, Handoff::framebuffer_word, arena + Handoff::framebuffer_record_offset);
+#endif
     put(handoff, 16, Handoff::arena_bytes);
     put(handoff, 24, arena);
     put(handoff, 56, payload_size);
@@ -257,7 +263,8 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
         fail("interrupt tables");
 #endif
 #endif
-#if defined(AURORA_UEFI_FRAMEBUFFER) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
+#if defined(AURORA_UEFI_FRAMEBUFFER) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE) ||                                      \
+    defined(AURORA_UEFI_GRAPHICAL_TERMINAL)
     if (!tables.prepare_framebuffer(framebuffer->geometry()))
         fail("framebuffer table budget");
     asm volatile("cpuid" : "=a"(graphics_a), "=b"(graphics_b), "=c"(graphics_c), "=d"(graphics_d) : "a"(1U), "c"(0));
@@ -326,7 +333,8 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
             fail("RSDP source range");
         put(handoff, 112, rsdp);
 #endif
-#if defined(AURORA_UEFI_FRAMEBUFFER) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
+#if defined(AURORA_UEFI_FRAMEBUFFER) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE) ||                                      \
+    defined(AURORA_UEFI_GRAPHICAL_TERMINAL)
 #if defined(AURORA_UEFI_FRAMEBUFFER_FIXTURE) || defined(AURORA_UEFI_GRAPHICAL_FIXTURE)
         const auto graphics_grant = aurora::uefi::FramebufferAdmission::authorize_q35_ovmf_std_vga_fixture(
             *framebuffer,
@@ -337,6 +345,17 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
             graphics_bits,
             graphics_features,
             graphics_pat);
+#elif defined(AURORA_UEFI_GRAPHICAL_TERMINAL)
+        // Every exit retry rechecks the live GOP resource against its final map.
+        const auto graphics_grant =
+            aurora::uefi::FramebufferAdmission::authorize_firmware(*framebuffer,
+                                                                   span(arena + Handoff::map_offset, size),
+                                                                   stride,
+                                                                   version,
+                                                                   arena,
+                                                                   graphics_bits,
+                                                                   graphics_features,
+                                                                   graphics_pat);
 #else
         const auto graphics_grant =
             aurora::uefi::FramebufferAdmission::authorize_described(framebuffer->geometry(),

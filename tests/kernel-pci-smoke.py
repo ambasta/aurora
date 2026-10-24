@@ -12,6 +12,7 @@ spec.loader.exec_module(acpi)
 need = acpi.need
 WINDOW = acpi.WINDOW
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from kernel_layout import LAYOUT  # noqa: E402
 import kernel_profiles  # noqa: E402
 
 SUCCESS = ("pci", "pci-devices", "pci-bridge")
@@ -72,7 +73,12 @@ def validate(status, text, mode, selected=None):
             vector, error, rip, cr2 = map(int, fault[0])
             arena = int(re.search(r"OWNERSHIP_OK: arena=(\d+)", text)[1])
             need((vector, error, cr2) == (14, 3 if mode == "pci-write" else 0, WINDOW), "Wrong config protection fault")
-            need(arena + 0x22000 <= rip < arena + 0x42000, "Config fault outside payload")
+            need(
+                arena + LAYOUT.kernel_payload_offset
+                <= rip
+                < arena + LAYOUT.kernel_payload_offset + LAYOUT.kernel_payload_limit,
+                "Config fault outside payload",
+            )
             need(
                 text.index("AURORA_PCI_APERTURE:")
                 < text.index(marker)

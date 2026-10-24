@@ -208,6 +208,7 @@ def expected(mode, metadata, arena):
 
 # Modes that boot the shared ipc-fixture image, from the one fixture table.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from kernel_layout import LAYOUT  # noqa: E402
 import kernel_profiles  # noqa: E402
 
 FIXTURE_MODES = tuple(mode for mode, (image, _) in kernel_profiles.FIXTURE_MODES.items() if image == "ipc-fixture")
@@ -258,7 +259,10 @@ def validate_protocol_projection(status, text, mode, metadata):
         if " stack=" in line or mode == "ipc-kernel-trap" and line.startswith("AURORA_UEFI_DOMAIN_EVENT:"):
             field = "stack" if " stack=" in line else "frame"
             address = int(re.search(rf"{field}=(\d+)", line)[1])
-            need(arena + 0x44000 <= address < arena + 0x48000 and address % 8 == 0, "Wrong IPC kernel stack")
+            need(
+                arena + LAYOUT.kernel_stack_bottom <= address < arena + LAYOUT.kernel_stack_top and address % 8 == 0,
+                "Wrong IPC kernel stack",
+            )
     need("AURORA_UEFI_PAYLOAD_FAIL:" not in text and "AURORA_UEFI_FAIL:" not in text, "Unexpected boot failure")
     if mode in SUCCESS:
         pci.validate(status, text, "pci")

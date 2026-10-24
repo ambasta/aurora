@@ -10,6 +10,7 @@ import json
 import math
 import re
 import struct
+from kernel_layout import LAYOUT  # noqa: E402
 
 MODES = ("iommu-event-denial", "iommu-event-success", "iommu-event-overflow", "iommu-event-command-error")
 # transfers, completion, polls, acknowledgements, entered, output bytes, tail, status
@@ -78,7 +79,10 @@ def capture_layout(receipt):
     need(set(objects) == {role for _, role, _, _ in CAPTURES}, "retained object inventory")
     begin, end = backing["payload_rw_begin"], backing["payload_memory_end"]
     need(
-        type(begin) is int and type(end) is int and 0 < begin < end <= 0x20000 and begin % 4096 == end % 4096 == 0,
+        type(begin) is int
+        and type(end) is int
+        and 0 < begin < end <= LAYOUT.kernel_payload_limit
+        and begin % 4096 == end % 4096 == 0,
         "retained payload bounds",
     )
     result = [("handoff.bin", 0, 128)]
@@ -139,7 +143,10 @@ def boot_prefix(lines, arena, descriptors):
     for row, pattern in zip(rows, patterns):
         need(re.fullmatch(pattern, row) is not None, "boot prefix record: " + row[:90])
     stack = int(re.fullmatch(patterns[6], rows[6])[1])
-    need(stack % 8 == 0 and arena + 0x44000 <= stack < arena + 0x48000, "boot protected stack")
+    need(
+        stack % 8 == 0 and arena + LAYOUT.kernel_stack_bottom <= stack < arena + LAYOUT.kernel_stack_top,
+        "boot protected stack",
+    )
 
 
 def validate_handoff(header, receipt, arena, descriptors):
@@ -162,7 +169,7 @@ def validate_handoff(header, receipt, arena, descriptors):
     size, text, read, memory = (layout[k] for k in keys)
     backing = receipt["image"]["backing"]
     need(
-        0 < text <= read <= memory <= 0x20000
+        0 < text <= read <= memory <= LAYOUT.kernel_payload_limit
         and text <= size <= read
         and text % 4096 == read % 4096 == memory % 4096 == 0
         and read == backing["payload_rw_begin"]

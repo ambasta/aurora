@@ -30,6 +30,7 @@ MODES = (
     "budget-epoch",
 )
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from kernel_layout import LAYOUT  # noqa: E402
 import kernel_profiles  # noqa: E402
 
 # Fault cases of the shared budget-fixture image, from the one fixture table.
@@ -110,7 +111,7 @@ def metadata_valid(meta, mode, probe_image=None, fixture_image=None):
         "Malformed kernel sites",
     )
     need(
-        0 < kernel["drain_begin"] < kernel["drain_end"] < kernel["text_end"] <= 0x20000
+        0 < kernel["drain_begin"] < kernel["drain_end"] < kernel["text_end"] <= LAYOUT.kernel_payload_limit
         and kernel["drain_end"] - kernel["drain_begin"] == 4
         and kernel["text_end"] % 4096 == 0,
         "Drain range outside owned RX",
@@ -256,7 +257,7 @@ def validate(status, text, mode, meta):
                         cpl == 0
                         and error == 0
                         and cr2 == 0
-                        and arena + 0x44000 <= frame <= arena + 0x48000 - 176
+                        and arena + LAYOUT.kernel_stack_bottom <= frame <= arena + LAYOUT.kernel_stack_top - 176
                         and frame % 8 == 0,
                         "Invalid kernel timer frame",
                     )
@@ -388,7 +389,10 @@ def validate(status, text, mode, meta):
             need(restored is not None, "Malformed restored context")
             rs, rr, rsp = map(int, restored.groups()[:3])
             need(
-                rs == slot and rr == kernel and arena + 0x44000 <= rsp < arena + 0x48000 and rsp % 8 == 0,
+                rs == slot
+                and rr == kernel
+                and arena + LAYOUT.kernel_stack_bottom <= rsp < arena + LAYOUT.kernel_stack_top
+                and rsp % 8 == 0,
                 "Invalid restored kernel context",
             )
             if slot == 1:

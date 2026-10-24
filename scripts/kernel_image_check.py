@@ -135,7 +135,9 @@ def check_policy(profile, policy, image, languages):
     need(not present, f"{profile}: forbidden symbols present: {present}")
     for path in languages:
         imports = Elf(path).undefined()
-        extra = sorted(name for name in imports if not any(fnmatch(name, pattern) for pattern in policy["imports"]))
+        # "imports:STEM" rules widen only the generated object named STEM.o.
+        allowed = policy["imports"] + policy.get("imports:" + Path(path).stem, [])
+        extra = sorted(name for name in imports if not any(fnmatch(name, pattern) for pattern in allowed))
         need(not extra, f"{profile}: {Path(path).name} imports symbols outside its policy: {extra}")
 
 

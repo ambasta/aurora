@@ -389,6 +389,21 @@ graphical_console_host = executable('graphical-console-host', 'kernel-graphical-
     native: true, override_options: fixture_options, install: false)
 test('graphical-console-native', python, args: ['-B', files('kernel-graphical-console.py'), graphical_console_host],
      suite: ['full', 'merge', 'slow'], env: oracle_env, timeout: 120)
+# The production graphical terminal: the real cell grid and generated painter,
+# compiled and linked once with its host; results compare with the golden file.
+graphical_terminal_object = custom_target('graphical-terminal-painter',
+    input: '../examples/kernel-graphical-terminal.au', output: 'graphical-terminal-painter.o',
+    depfile: 'graphical-terminal-painter.d',
+    command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',
+              '--module-root', meson.project_source_root() / 'library', '--local-symbols',
+              '--referenced-reflection-only', '--bridge', files('../kernel/uefi/graphical-terminal-entry.S'),
+              '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
+graphical_terminal_host = executable('graphical-terminal-host', 'kernel-graphical-terminal.cpp',
+    graphical_terminal_object, cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page'], link_args: ['-no-pie'],
+    native: true, override_options: fixture_options, install: false)
+test('graphical-terminal-native', python,
+     args: ['-B', golden_runner, files('kernel-graphical-terminal.golden'), '--modes', '--', graphical_terminal_host],
+     suite: ['full', 'merge', 'dev'], env: oracle_env, timeout: 60)
 font_glyphs_object = custom_target('font-glyphs-module',
     input: 'kernel-programs/font-glyphs.au', output: 'font-glyphs.o', depfile: 'font-glyphs.d',
     command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',

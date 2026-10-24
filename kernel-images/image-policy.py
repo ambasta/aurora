@@ -3,6 +3,7 @@
 A Python literal (read with ast.literal_eval, never executed). Every rule whose
 `profiles` globs match a profile id (platform/mode) applies; lists merge.
   imports    - the complete set of symbols each generated Aurora object may import
+  imports:STEM - further imports allowed only for the generated object STEM.o
   reachable  - Aurora policy entry points the supervisor must actually call
   forbidden  - symbol globs the linked kernel image must not define
   callbacks  - reviewed indirect calls, "CALLER=CALLEE" C++ signature fragments;
@@ -57,6 +58,13 @@ RULES = [
     {
         "profiles": ["uefi/graphical-console*"],
         "imports": ["__au_runtime_console_next", "__au_runtime_display_pixel"],
+    },
+    # The production terminal painter reaches the framebuffer only through the
+    # sealed Display pixel service; the program-console object gains nothing.
+    {
+        "profiles": ["uefi/production"],
+        "imports:terminal": ["__au_runtime_display_pixel"],
+        "reachable": ["__au_runtime_terminal_paint"],
     },
     {
         "profiles": ["uefi/framebuffer"],

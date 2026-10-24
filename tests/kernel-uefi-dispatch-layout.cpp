@@ -61,8 +61,8 @@ public:
         return flags;
     if (offset < 0x11000 || offset == 0x23000)
         return 1 | nx;
-    if ((offset >= 0x11000 && offset < 0x21000) || offset == 0x24000 || offset == 0x42000 ||
-        (offset >= 0x44000 && offset < 0x48000) || (offset >= 0x50000 && offset < 0x81000))
+    if ((offset >= 0x11000 && offset < 0x21000) || offset == 0x24000 || offset == 0x48000 ||
+        (offset >= 0x4a000 && offset < 0x4e000) || (offset >= 0x50000 && offset < 0x81000))
         return 3 | nx;
     return offset == 0x21000 || offset == 0x22000 ? 1 : 0;
 }

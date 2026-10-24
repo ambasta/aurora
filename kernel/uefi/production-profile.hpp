@@ -18,7 +18,7 @@
     defined(AURORA_NVME_QUEUE_GENERATION_LIMIT)
 #error "The production image rejects fixture selectors, test hooks and capture handshakes"
 #endif
-#if !defined(AURORA_UEFI_RUNTIME) || !defined(AURORA_UEFI_PROGRAM_CONSOLE)
-#error "The production image carries the protected runtime and program console"
+#if !defined(AURORA_UEFI_RUNTIME) || !defined(AURORA_UEFI_PROGRAM_CONSOLE) || !defined(AURORA_UEFI_GRAPHICAL_TERMINAL)
+#error "The production image carries the protected runtime, the program console and its graphical terminal"
 #endif
 #endif

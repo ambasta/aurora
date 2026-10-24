@@ -39,6 +39,7 @@ HISTORICAL_MODES = (
     "ivrs-missing",
 )
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from kernel_layout import LAYOUT  # noqa: E402
 import kernel_profiles  # noqa: E402
 
 # Current cases that boot ivrs-fixture and read its selector.
@@ -287,7 +288,7 @@ def validate(status, serial, mode, payload=None):
             type(offset) is int
             and offset == 0x22000
             and type(extent) is int
-            and 0 < extent <= 0x20000
+            and 0 < extent <= LAYOUT.kernel_payload_limit
             and type(probe) is int
             and 0 < probe < extent
             and set(faults) == {"ivrs-write", "ivrs-revoked"}

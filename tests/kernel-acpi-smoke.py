@@ -12,6 +12,7 @@ WINDOW = 0xFFFF800000000000
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+from kernel_layout import LAYOUT  # noqa: E402
 import kernel_profiles  # noqa: E402
 from kernel_uefi_oracle import early_selection  # noqa: E402
 
@@ -136,7 +137,10 @@ def validate(status, text, mode, selected=None):
         and 1 <= count <= 512,
         "Invalid failure arena",
     )
-    need(root == arena + 0x11000 and arena + 0x44000 <= stack < arena + 0x48000, "Inherited failure root/stack")
+    need(
+        root == arena + 0x11000 and arena + LAYOUT.kernel_stack_bottom <= stack < arena + LAYOUT.kernel_stack_top,
+        "Inherited failure root/stack",
+    )
     need(
         "AURORA_ACPI_CPU:" not in text
         and "AURORA_ACPI_TOPOLOGY:" not in text
@@ -154,7 +158,12 @@ def validate(status, text, mode, selected=None):
         need(
             (vector, error, address) == (14, 3 if mode == "acpi-write" else 0, WINDOW), "Wrong window protection fault"
         )
-        need(arena + 0x22000 <= rip < arena + 0x42000, "Window fault outside owned payload")
+        need(
+            arena + LAYOUT.kernel_payload_offset
+            <= rip
+            < arena + LAYOUT.kernel_payload_offset + LAYOUT.kernel_payload_limit,
+            "Window fault outside owned payload",
+        )
         need(
             text.index("AURORA_UEFI_PROTECTION_OK:")
             < text.index(marker)

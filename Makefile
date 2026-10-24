@@ -41,7 +41,7 @@ help:
 	  'make console-uefi     Open an opt-in UEFI timer-polled serial console' \
 	  'make program-console-uefi  Build/check and open the protected command console' \
 	  'make smoke-program-console-uefi  Build/check and test the protected command console' \
-	  'make smoke-production  Build/check and test the production UEFI image (protected console)' \
+	  'make smoke-production  Build/check and test the production UEFI image (both consoles)' \
 	  'make capture-framebuffer  Build/check and save a local PNG preview under build/' \
 	  'make smoke-iommu-event  Opt-in custom-model Event guests with current admission and normal restoration' \
 	  'make smoke-graphical-console  Build/check graphical guests, capture pixels and restore normal UEFI' \
