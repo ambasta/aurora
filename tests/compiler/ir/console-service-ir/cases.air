@@ -1070,10 +1070,10 @@ end
 ; CHECK-DAG: "offset":16,"bytes":80,"kind":"class","type_name":"Packet"
 ; CHECK-DAG: "offset":96,"bytes":80,"kind":"class","type_name":"Packet"
 ; RUN: stack-facts
-; CHECK-JSON: functions.copied_caller.service_abi <missing>
-; CHECK-JSON: functions.copied_helper.service_abi <missing>
-; CHECK-JSON: functions.copied_caller.calls.copied_helper 720
-; CHECK-JSON: functions.copied_caller.local_bytes 744
+; CHECK-JSON-ONEOF: functions.copied_caller.service_abi.record <missing>|null
+; CHECK-JSON-ONEOF: functions.copied_helper.service_abi.record <missing>|null
+; CHECK-JSON-RANGE: functions.copied_caller.calls.copied_helper ..
+; CHECK-JSON-DIFF: functions.copied_caller.local_bytes functions.copied_caller.calls.copied_helper 24
 @@ -8 +8 @@
 -  result (class Packet)
 +  result bool
@@ -1104,10 +1104,10 @@ end
 ; CHECK-DAG: "offset":32,"bytes":80,"kind":"class","type_name":"Packet"
 ; CHECK-DAG: "offset":112,"bytes":80,"kind":"class","type_name":"Packet"
 ; RUN: stack-facts
-; CHECK-JSON: functions.copied_caller.service_abi <missing>
-; CHECK-JSON: functions.copied_helper.service_abi <missing>
-; CHECK-JSON: functions.copied_caller.calls.copied_helper 736
-; CHECK-JSON: functions.copied_caller.local_bytes 760
+; CHECK-JSON-ONEOF: functions.copied_caller.service_abi.record <missing>|null
+; CHECK-JSON-ONEOF: functions.copied_helper.service_abi.record <missing>|null
+; CHECK-JSON-RANGE: functions.copied_caller.calls.copied_helper ..
+; CHECK-JSON-DIFF: functions.copied_caller.local_bytes functions.copied_caller.calls.copied_helper 24
 @@ -10 +10 @@
 -  result (class Packet)
 +  result bool

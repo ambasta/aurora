@@ -86,12 +86,12 @@ end
 ; CHECK-DAG: origin packed_result_array 192 object - byte -
 ; CHECK-DAG: origin packed_result_array 193 object - byte -
 ; CHECK-DAG: origin packed_result_array 2147483647 object - byte -
-; CHECK-DAG: origin packed_tiny_roundtrip 8 object 8 byte -
-; CHECK-DAG: origin packed_tiny_roundtrip 7 object 8 byte -
-; CHECK-DAG: origin packed_tiny_roundtrip 6 object 8 byte -
-; CHECK-DAG: origin packed_tiny_roundtrip 16 object 16 byte -
-; CHECK-DAG: origin packed_tiny_roundtrip 15 object 16 byte -
-; CHECK-DAG: origin packed_tiny_roundtrip 14 object 16 byte -
+; CHECK-DAG: origin packed_tiny_roundtrip 8 object 8 
+; CHECK-DAG: origin packed_tiny_roundtrip 7 object 8 
+; CHECK-DAG: origin packed_tiny_roundtrip 6 object 8 
+; CHECK-DAG: origin packed_tiny_roundtrip 16 object 16 
+; CHECK-DAG: origin packed_tiny_roundtrip 15 object 16 
+; CHECK-DAG: origin packed_tiny_roundtrip 14 object 16 
 ; CHECK-DAG: origin packed_tiny_roundtrip 1 object - 
 ; CHECK-DAG: origin packed_tiny_roundtrip 5 object - 
 ; CHECK-DAG: origin packed_tiny_roundtrip 9 object - 

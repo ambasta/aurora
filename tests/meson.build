@@ -117,6 +117,16 @@ aurora_ir_check = executable('aurora-ir-check', 'tools/aurora_ir_check.cpp',
     dependencies: hosted_frontend, include_directories: include_directories('../compiler'),
     native: true, override_options: fixture_options, install: false)
 air_lit = files('tools/air_lit.py')
+# The large native-ABI programs are loops over call shapes; abi_programs.py
+# writes each as one case file per build for its directory test and runner.
+abi_air = {}
+foreach name : ['method-spans', 'borrowed-objects', 'logical-spans', 'sector-values', 'short-circuit']
+    abi_air += {name: custom_target(name + '-abi-air', output: name + '-abi.air',
+        input: files('compiler/ir/abi_programs.py'), command: [python, '-B', '@INPUT@', name, '@OUTPUT@'])}
+endforeach
+air_generated = {'owned-spans-ir': 'logical-spans', 'method-spans-ir': 'method-spans',
+                 'borrowed-objects-ir': 'borrowed-objects', 'sector-values-ir': 'sector-values',
+                 'short-circuit-ir': 'short-circuit'}
 foreach entry : [
     ['verifier-contract', ['full', 'merge', 'dev', 'core', 'compiler']],
     ['class-arrays-ir', ['full', 'merge', 'dev', 'core', 'compiler']],
@@ -138,9 +148,10 @@ foreach entry : [
     ['readonly-windows-ir', ['full', 'merge', 'slow', 'compiler']],
     ['short-circuit-ir', ['full', 'merge', 'slow', 'compiler']],
 ]
+    generated = entry[0] in air_generated ? [abi_air[air_generated[entry[0]]]] : []
     test(entry[0], python,
-         args: ['-B', air_lit, aurora_ir_check, meson.current_source_dir() / 'compiler' / 'ir' / entry[0]],
-         depends: aurora_ir_check, suite: entry[1], timeout: 120)
+         args: ['-B', air_lit, aurora_ir_check, meson.current_source_dir() / 'compiler' / 'ir' / entry[0]] + generated,
+         depends: [aurora_ir_check] + generated, suite: entry[1], timeout: 120)
 endforeach
 # Owner, view, writer and emitter API unit tests over modules from the same cases.
 ir_api = executable('ir-api', 'compiler/ir_api.cpp',
@@ -163,8 +174,8 @@ test(
 test(
     'sector-values-abi',
     python,
-    args: ['-B', '-O', files('compiler/sector_values_abi.py'), aurora_ir_check],
-    depends: aurora_ir_check,
+    args: ['-B', '-O', files('compiler/sector_values_abi.py'), aurora_ir_check, '--air', abi_air['sector-values']],
+    depends: [aurora_ir_check, abi_air['sector-values']],
     suite: ['full', 'merge', 'dev', 'bytes', 'compiler'],
     env: oracle_env,
     workdir: meson.current_build_dir(),
@@ -221,15 +232,15 @@ foreach mode : ['standalone', 'receiver']
 endforeach
 test('logical-spans-abi', python,
      args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/logical_spans_abi.py'),
-            aurora_ir_check, '--artifacts', '@ARTIFACTS@'],
-     depends: aurora_ir_check, suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'],
+            aurora_ir_check, '--air', abi_air['logical-spans'], '--artifacts', '@ARTIFACTS@'],
+     depends: [aurora_ir_check, abi_air['logical-spans']], suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 
 # Synchronous method capabilities retain independent IR and literal-layout ABI gates.
 test('method-spans-abi', python,
      args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/method_spans_abi.py'),
-            aurora_ir_check, '--artifacts', '@ARTIFACTS@'],
-     depends: aurora_ir_check, suite: ['full', 'merge', 'slow', 'core', 'bytes', 'compiler'],
+            aurora_ir_check, '--air', abi_air['method-spans'], '--artifacts', '@ARTIFACTS@'],
+     depends: [aurora_ir_check, abi_air['method-spans']], suite: ['full', 'merge', 'slow', 'core', 'bytes', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 # Keep routine borrowed-object feedback small; full owner/helper and literal ABI
 # sweeps remain explicit slow coverage. Full/unfiltered runs retain every gate.
@@ -243,8 +254,8 @@ test('borrowed-objects', python,
      workdir: meson.current_build_dir(), timeout: 300, is_parallel: true)
 test('borrowed-objects-abi', python,
      args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/borrowed_objects_abi.py'),
-            aurora_ir_check, '--artifacts', '@ARTIFACTS@'],
-     depends: aurora_ir_check, suite: ['full', 'merge', 'slow', 'core', 'bytes', 'compiler'],
+            aurora_ir_check, '--air', abi_air['borrowed-objects'], '--artifacts', '@ARTIFACTS@'],
+     depends: [aurora_ir_check, abi_air['borrowed-objects']], suite: ['full', 'merge', 'slow', 'core', 'bytes', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 
 # Sealed service authority has its own independent verifier and host-grant model.
@@ -477,10 +488,11 @@ foreach family : ['readonly_windows', 'short_circuit']
                 aurorac, '--artifacts', '@ARTIFACTS@'],
          depends: aurorac, suite: ['full', 'merge', 'slow', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
+    generated = family == 'short_circuit' ? [abi_air['short-circuit']] : []
     test(family.replace('_', '-') + '-ir-native', python,
          args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/' + family + '_ir_native.py'),
-                aurora_ir_check, '--artifacts', '@ARTIFACTS@'],
-         depends: aurora_ir_check, suite: ['full', 'merge', 'slow', 'compiler'],
+                aurora_ir_check, '--artifacts', '@ARTIFACTS@'] + (generated.length() > 0 ? ['--air'] + generated : []),
+         depends: [aurora_ir_check] + generated, suite: ['full', 'merge', 'slow', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
 endforeach
 # Library behaviour: one compiled driver per library, linked once with

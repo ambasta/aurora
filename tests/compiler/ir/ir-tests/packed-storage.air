@@ -940,12 +940,13 @@ end
 ; CASE: canonical mixed/nested/empty/tiny class byte layout
 ; BASE: packed bytes preserve composed receiver/results and tiny aggregate
 ; RUN: metadata
-; CHECK-NOT: class 
-; CHECK: class Empty storage [] [] 8 8 8
-; CHECK-NEXT: class Leaf storage [0 8 9 16] [0 8 16 24] 24 8 24
-; CHECK-NEXT: class Outer storage [0 8 16 17 24] [0 8 32] 32 8 32
-; CHECK-NEXT: class Tiny storage [0 1 2] [0] 3 1 8
-; CHECK-NEXT: enum 
+; CHECK-DAG: {{^}}class Empty storage [] [] 8 8 8
+; CHECK-DAG: {{^}}class Leaf storage [0 8 9 16] [0 8 16 24] 24 8 24
+; CHECK-DAG: {{^}}class Outer storage [0 8 16 17 24] [0 8 32] 32 8 32
+; CHECK-DAG: {{^}}class Tiny storage [0 1 2] [0] 3 1 8
+; RUN: metadata
+; CHECK: {{^(?:class .*\n){3}class .*}}
+; CHECK-NEXT: {{^(?!class )}}
 
 ; CASE: explicit canonical class storage metadata
 ; BASE: packed bytes preserve composed receiver/results and tiny aggregate

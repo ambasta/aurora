@@ -103,14 +103,14 @@ end
 ; CASE: inferred layout matches the literal storage oracle
 ; BASE: literal two-descriptor layout
 ; RUN: metadata
+; CHECK-DAG: class Copy storage [0 8] [0 8] 16 8 16
+; CHECK-DAG: class Empty storage [] [] 8 8 8
+; CHECK-DAG: class Only storage [] [0] 32 8 32
+; CHECK-DAG: class Pair storage [] [0 32] 64 8 64
+; CHECK-DAG: class Parcel storage [0 40 80] [0 8 40 48 80] 88 8 88
+; RUN: metadata
 ; CHECK-NOT: class 
-; CHECK: class Copy storage [0 8] [0 8] 16 8 16
-; CHECK-NEXT: class Empty storage [] [] 8 8 8
-; CHECK-NEXT: class Only storage [] [0] 32 8 32
-; CHECK-NEXT: class Pair storage [] [0 32] 64 8 64
-; CHECK-NEXT: class Parcel storage [0 40 80] [0 8 40 48 80] 88 8 88
-; CHECK-NOT: class 
-; CHECK: callable 0 
+; CHECK: {{^(class [^\n]*\n){5}callable 0 }}
 @@ -11,5 +10,0 @@
 -storage Copy [0 8] [0 8] 16 8 16
 -storage Empty [] [] 8 8 8

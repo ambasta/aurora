@@ -5,7 +5,7 @@
 ; CHECK-DAG: callable 2 bridge 
 ; CHECK-DAG: callable 3 root 
 ; CHECK-DAG: callable 4 other_root 
-; CHECK-DAG: retained leaf bridge root other_root
+; CHECK-DAG: {{^retained leaf bridge root other_root$}}
 
 ; CHECK: body root 3
 ; CHECK-NEXT: code root 0 id 7 
@@ -15,8 +15,11 @@
 ; CHECK-NEXT: code root 2 id 9 
 ; CHECK-NEXT: body other_root 4
 ; RUN: abi-facts
+; RUN: abi-facts
 ; ABI: function unused ignored_pruned_function ignored_member
-; CHECK-NOT: ignored
+; CHECK-RUN-EQUAL: 2
+; RUN: metadata
+; CHECK-NOT: {{^callable 5 }}
 views [(0 []) (1 [])]
 function leaf
   result i64
@@ -58,7 +61,7 @@ end
 ; CASE: graph retention by name
 ; BASE: transitive graph retention preserves order and stable callable IDs
 ; RUN: metadata
-; CHECK: retained leaf bridge root other_root
+; CHECK: {{^retained leaf bridge root other_root$}}
 
 
 ; CASE: unused imported call cannot hide missing target unknown call target
@@ -209,7 +212,7 @@ end
 ; CASE: rootless graph retains no imported implementation
 ; BASE: transitive graph retention preserves order and stable callable IDs
 ; RUN: metadata
-; CHECK: retained
+; CHECK: {{^retained$}}
 
 @@ -25,0 +26 @@
 +  scope 1
@@ -218,7 +221,7 @@ end
 
 ; CASE: unused acyclic receiver component is pruned
 ; RUN: metadata
-; CHECK: retained root
+; CHECK: {{^retained root$}}
 
 layout Pair [i64 bool]
 views [(0 []) (1 [])]
@@ -288,7 +291,7 @@ end
 
 ; CASE: service forwarding retains scalar descendants and permits unrelated scalar cycles
 ; RUN: metadata
-; CHECK: retained leaf service_helper service_root
+; CHECK: {{^retained leaf service_helper service_root$}}
 
 views [(0 []) (1 [])]
 function leaf

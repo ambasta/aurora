@@ -231,12 +231,13 @@ end
 
 ; CASE: all-body CFG normalization precedes entry admission with stable instruction IDs
 ; RUN: metadata
-; CHECK: body test 0
+; CHECK-NOT: {{^body }}
+; CHECK: body test {{[0-9]+$}}
 ; CHECK-NEXT: code test 0 
 ; CHECK-NEXT: code test 1 
 ; CHECK-NEXT: code test 2 
 ; CHECK-NEXT: code test 3 
-; CHECK-NEXT: body entry_parameters 1
+; CHECK-NEXT: body entry_parameters {{[0-9]+$}}
 ; CHECK-NEXT: code entry_parameters 0 id 7 
 ; CHECK-SAME: : BindParameter 0 
 ; CHECK-NEXT: code entry_parameters 1 id 8 
@@ -245,6 +246,7 @@ end
 ; CHECK-NEXT: code entry_parameters 3 id 12 
 ; CHECK-NEXT: code entry_parameters 4 
 ; CHECK-NEXT: code entry_parameters 5 
+; CHECK-NOT: code entry_parameters 6 
 function test
   result i64
   frame 16

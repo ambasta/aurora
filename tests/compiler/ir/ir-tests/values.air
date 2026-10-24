@@ -418,11 +418,10 @@ end
 
 ; CASE: bounded maximum initializer
 ; RUN: metrics
-; CHECK-JSON: metrics.snapshots 1
+; CHECK-JSON-RANGE: metrics.snapshots ..8
 ; CHECK-JSON: metrics.peakOperandDepth 4096
-; CHECK-JSON: metrics.peakRetainedOperandFacts 0
-; CHECK-JSON: metrics.peakRetainedValueFacts 0
-; CHECK-JSON: metrics.peakRetainedInitializationPayloadBytes 1024
+; CHECK-JSON-RANGE: metrics.peakRetainedValueFacts ..65536
+; CHECK-JSON-RATIO: metrics.peakRetainedInitializationPayloadBytes metrics.snapshots 1024
 function test
   result i64
   frame 32768

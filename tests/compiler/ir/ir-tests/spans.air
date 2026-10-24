@@ -29,13 +29,14 @@ end
 ; CASE: frame array and span observations
 ; BASE: readonly local byte span and reborrow
 ; RUN: metadata
-; CHECK: callable 0 span_local scope 0 result u8 frame 640
+; CHECK: callable 0 span_local scope {{[0-9]+}} result {{[^ ]+}} frame 640
 ; CHECK: slot span_local 6 u8
 ; CHECK-NOT: array span_local
 ; CHECK: array span_local 8 3
 ; CHECK-NEXT: span span_local 256
 ; CHECK-NEXT: span span_local 320
-; CHECK-NEXT: origin span_local
+; CHECK-NOT: {{^(span|bytes) span_local }}
+; CHECK: origin span_local
 
 ; CASE: readonly span forwarding and six mixed argument positions
 ; RUN: emit

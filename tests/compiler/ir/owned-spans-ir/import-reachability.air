@@ -1,6 +1,6 @@
 ; CASE: reachable imports and root bridges are retained, unused imports pruned
 ; RUN: metadata
-; CHECK: retained fixed_view fixed_caller unused_private_root\n
+; CHECK: {{^retained(?=.* fixed_view( |$))(?=.* fixed_caller( |$))(?=.* unused_private_root( |$))( \w+){3}$}}
 layout Fixed [i64 u8*4]
 fields Fixed [(i64 0 1 false) (u8 1 2 true) (u8 3 2 true)]
 views [(0 []) (1 [])]

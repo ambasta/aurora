@@ -337,9 +337,17 @@ std::string probes(const std::string &output, std::size_t &position, int expecte
 // the end of the previous match, CHECK-NEXT must start on the following line,
 // CHECK-SAME on the same line, consecutive CHECK-DAG lines match in any order
 // after it, and CHECK-NOT excludes the pattern up to the next positive match.
-// CHECK-JSON compares one dotted member path of compact JSON; CHECK-PROBES N
-// checks the stack reservation of N bytes on the lines after the last match.
-std::string matchChecks(const std::vector<Check> &checks, const std::string &output) {
+// CHECK-JSON compares one dotted member path of compact JSON, CHECK-JSON-NOT
+// requires a different value (for example <missing> or null) and
+// CHECK-JSON-RANGE path LO..HI bounds an integer (either side may be empty).
+// CHECK-JSON-ONEOF path A|B accepts any listed value; CHECK-JSON-DIFF A B N
+// and CHECK-JSON-RATIO A B N require integer members with A - B == N and
+// A == B * N. CHECK-RUN-EQUAL N requires the output of the case's earlier RUN
+// N (from 1); with N FROM|TO only the text from FROM up to the next TO.
+// CHECK-PROBES N checks the stack reservation of N bytes on the lines after the
+// last match.
+std::string
+matchChecks(const std::vector<Check> &checks, const std::string &output, const std::vector<std::string> &earlier) {
     std::size_t position = 0;
     bool matched = false;
     std::optional<std::size_t> dagStart;
@@ -373,13 +381,98 @@ std::string matchChecks(const std::vector<Check> &checks, const std::string &out
                 return where(check) + path + ": expected " + expected + " members, got " + actual;
             continue;
         }
-        if (check.kind == "CHECK-JSON") {
+        if (check.kind == "CHECK-JSON" || check.kind == "CHECK-JSON-NOT") {
             const auto space = check.pattern.find(' ');
             const auto path = check.pattern.substr(0, space);
             const auto expected = space == std::string::npos ? "" : check.pattern.substr(space + 1);
             const auto actual = jsonPath(output, path);
-            if (actual != expected)
+            if (check.kind == "CHECK-JSON" && actual != expected)
                 return where(check) + path + ": expected " + expected + ", got " + actual;
+            if (check.kind == "CHECK-JSON-NOT" && actual == expected)
+                return where(check) + path + ": unexpected " + actual;
+            continue;
+        }
+        if (check.kind == "CHECK-JSON-ONEOF") {
+            const auto space = check.pattern.find(' ');
+            const auto path = check.pattern.substr(0, space);
+            const auto choices = space == std::string::npos ? "" : check.pattern.substr(space + 1);
+            const auto actual = jsonPath(output, path);
+            bool found = false;
+            for (std::size_t begin = 0; begin <= choices.size() && !found;) {
+                auto end = choices.find('|', begin);
+                if (end == std::string::npos)
+                    end = choices.size();
+                found = choices.compare(begin, end - begin, actual) == 0;
+                begin = end + 1;
+            }
+            if (!found)
+                return where(check) + path + ": expected one of " + choices + ", got " + actual;
+            continue;
+        }
+        if (check.kind == "CHECK-JSON-DIFF" || check.kind == "CHECK-JSON-RATIO") {
+            const auto fields = words(check.pattern);
+            long long minuend = 0, subtrahend = 0, difference = 0;
+            const auto integer = [](std::string_view text, long long &value) {
+                const auto [last, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+                return error == std::errc{} && last == text.data() + text.size();
+            };
+            if (fields.size() != 3 || !integer(fields[2], difference))
+                return where(check) + "expects PATH PATH N";
+            const auto first = jsonPath(output, fields[0]), second = jsonPath(output, fields[1]);
+            const bool ratio = check.kind == "CHECK-JSON-RATIO";
+            if (!integer(first, minuend) || !integer(second, subtrahend) ||
+                (ratio ? minuend != subtrahend * difference : minuend - subtrahend != difference))
+                return where(check) + fields[0] + (ratio ? " / " : " - ") + fields[1] + ": expected " + fields[2] +
+                       ", got " + first + (ratio ? " / " : " - ") + second;
+            continue;
+        }
+        if (check.kind == "CHECK-JSON-RANGE") {
+            const auto space = check.pattern.find(' ');
+            const auto path = check.pattern.substr(0, space);
+            const auto range = space == std::string::npos ? "" : check.pattern.substr(space + 1);
+            const auto dots = range.find("..");
+            const auto integer = [](std::string_view text, long long &value) {
+                const auto [last, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+                return error == std::errc{} && last == text.data() + text.size();
+            };
+            long long low = LLONG_MIN, high = LLONG_MAX, value = 0;
+            if (dots == std::string::npos || (dots > 0 && !integer(std::string_view(range).substr(0, dots), low)) ||
+                (dots + 2 < range.size() && !integer(std::string_view(range).substr(dots + 2), high)))
+                return where(check) + "expects PATH LO..HI";
+            const auto actual = jsonPath(output, path);
+            if (!integer(actual, value) || value < low || value > high)
+                return where(check) + path + ": expected " + range + ", got " + actual;
+            continue;
+        }
+        if (check.kind == "CHECK-RUN-EQUAL") {
+            std::size_t run = 0;
+            const auto space = check.pattern.find(' ');
+            const auto text = check.pattern.substr(0, space);
+            const auto [last, error] = std::from_chars(text.data(), text.data() + text.size(), run);
+            if (error != std::errc{} || last != text.data() + text.size() || run == 0 || run > earlier.size())
+                return where(check) + "expects the number of an earlier RUN of this case";
+            if (space == std::string::npos) {
+                if (output != earlier[run - 1])
+                    return where(check) + "output differs from RUN " + text;
+                continue;
+            }
+            const auto bounds = unescape(check.pattern.substr(space + 1));
+            const auto bar = bounds.find('|');
+            if (bar == std::string::npos || bar == 0 || bar + 1 == bounds.size())
+                return where(check) + "expects N FROM|TO";
+            const auto from = bounds.substr(0, bar), to = bounds.substr(bar + 1);
+            const auto section = [&](const std::string &text) -> std::optional<std::string> {
+                const auto begin = text.find(from);
+                const auto end = begin == std::string::npos ? begin : text.find(to, begin + from.size());
+                if (end == std::string::npos)
+                    return std::nullopt;
+                return text.substr(begin, end - begin);
+            };
+            const auto mine = section(output), theirs = section(earlier[run - 1]);
+            if (!mine || !theirs)
+                return where(check) + "section " + check.pattern.substr(space + 1) + " missing";
+            if (*mine != *theirs)
+                return where(check) + "section differs from RUN " + text;
             continue;
         }
         const auto unescaped = unescape(check.pattern);
@@ -446,7 +539,7 @@ std::string matchChecks(const std::vector<Check> &checks, const std::string &out
 }
 
 // Returns an empty string on success, else the failure explanation.
-std::string runOnce(const Run &run, const std::vector<std::string> &moduleLines) {
+std::string runOnce(const Run &run, const std::vector<std::string> &moduleLines, std::vector<std::string> &outputs) {
     Module module;
     try {
         module = text::read(join(moduleLines));
@@ -460,6 +553,7 @@ std::string runOnce(const Run &run, const std::vector<std::string> &moduleLines)
     try {
         output = execute(run, std::move(module));
     } catch (const Error &error) {
+        outputs.emplace_back();
         if (!expectsError)
             return std::string("unexpected error: ") + error.what();
         for (const auto &expected : run.errors)
@@ -473,11 +567,14 @@ std::string runOnce(const Run &run, const std::vector<std::string> &moduleLines)
     }
     if (expectsError)
         return "expected an error, but the case succeeded";
-    return matchChecks(run.checks, output);
+    auto failure = matchChecks(run.checks, output, outputs);
+    outputs.push_back(std::move(output));
+    return failure;
 }
 std::string runCase(const Case &item, const std::vector<std::string> &moduleLines) {
+    std::vector<std::string> outputs; // earlier RUN outputs for CHECK-RUN-EQUAL
     for (const auto &run : item.runs)
-        if (auto failure = runOnce(run, moduleLines); !failure.empty())
+        if (auto failure = runOnce(run, moduleLines, outputs); !failure.empty())
             return "RUN " + run.action + ": " + failure;
     return {};
 }

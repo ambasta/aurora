@@ -54,6 +54,12 @@ expand the same way.
 ; ABI: function|record|enum SYMBOL SOURCE-NAME [MEMBER...]   (declarations for abi-facts)
 ; CHECK: / CHECK-NEXT: / CHECK-SAME: / CHECK-NOT: / CHECK-DAG: on the RUN output
 ; CHECK-JSON: dotted.member.path EXACT-VALUE / CHECK-JSON-COUNT: path N
+; CHECK-JSON-NOT: path VALUE   the member differs from VALUE (e.g. <missing>, null)
+; CHECK-JSON-RANGE: path LO..HI  integer member within bounds (LO or HI may be empty)
+; CHECK-JSON-ONEOF: path A|B  the member is one of the listed values
+; CHECK-JSON-DIFF: A B N / CHECK-JSON-RATIO: A B N   integer members, A - B == N / A == B * N
+; CHECK-RUN-EQUAL: N [FROM|TO]  output (or its text from FROM up to the next TO)
+;                             identical to this case's earlier RUN N (from 1)
 ; CHECK-PROBES: N             stack reservation of N bytes on the following lines
 ```
 
@@ -65,5 +71,20 @@ bodies, instruction IDs and control flow; `metrics` prints the verifier outcome
 and metrics after real ingress, with sentinel inputs (`null` passes none). CHECK
 patterns may contain `\n`, and `{{...}}` spans are regular expressions.
 
+Expectations state the property under test, not the current output: a bound,
+presence or absence, an unordered set, a relation between two facts, equality
+with another run, or a `{{...}}` placeholder for a register or offset that
+legitimate code generation may change. Exact values are for contracts the
+case exists to fix, such as private ABI save slots, native host-call arity,
+copy sequences checked by an independent oracle, or verifier metric rows.
+
 `aurora-ir-check --output FILE CASE [DEST]` writes a case's first RUN output, for
 the native ABI runners that link emitted assembly against handwritten harnesses.
+
+## Generated programs
+
+The method-span, borrowed-object, logical-span, sector-value and short-circuit
+ABI programs are loops over call shapes (about 1.2 MB of module text), so they
+are not stored. `abi_programs.py NAME OUT` writes each as one case file; Meson
+generates them once per build and passes the file to the directory's test and
+to its native ABI runner (`--air`).

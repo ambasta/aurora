@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Run every .air case file below the given directories with aurora-ir-check.
+"""Run every .air case file below the given directories (and any given generated
+.air files) with aurora-ir-check.
 
 Files are split across a process pool; each worker runs one driver process
 over a batch of files. Any failing case fails the test.
@@ -21,10 +22,10 @@ def run(driver, batch):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("driver")
-    parser.add_argument("directories", nargs="+", type=Path)
+    parser.add_argument("paths", nargs="+", type=Path, help="directories to search or .air files")
     parser.add_argument("--jobs", type=int, default=os.cpu_count() or 1)
     args = parser.parse_args()
-    files = sorted(path for directory in args.directories for path in directory.rglob("*.air"))
+    files = sorted(file for path in args.paths for file in (path.rglob("*.air") if path.is_dir() else [path]))
     if not files:
         print("no .air files found", file=sys.stderr)
         return 1

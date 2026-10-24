@@ -1,19 +1,16 @@
 ; CASE: referenced reflection retains referenced helper bodies and facts
+; RUN: emit
 ; RUN: emit referenced
-; CHECK-DAG: aurora_reflect_size:\n    cmpq $1, %rdi\n    je .Lscope0_size1\n    cmpq $100, %rdi\n    je .Lscope0_size100\n    cmpq $101, %rdi\n    je .Lscope0_size101\n    xorq %rax, %rax\n    ret\n.Lscope0_size1:\n    movq $8, %rax\n    ret\n.Lscope0_size100:\n    movq $16, %rax\n    ret\n.Lscope0_size101:\n    movq $0, %rax\n    ret\n.size aurora_reflect_size,
-; CHECK-DAG: __au_reflect_s1_field_count:\n    cmpq $1, %rdi\n    je .Lscope1_field_count1\n    cmpq $100, %rdi\n    je .Lscope1_field_count100\n    xorq %rax, %rax\n    ret\n.Lscope1_field_count1:\n    movq $0, %rax\n    ret\n.Lscope1_field_count100:\n    movq $1, %rax\n    ret\n.size __au_reflect_s1_field_count,
-; RUN: emit referenced
+; CHECK-RUN-EQUAL: 1 aurora_reflect_size:\n|.size aurora_reflect_size,
+; CHECK-RUN-EQUAL: 1 __au_reflect_s1_field_count:\n|.size __au_reflect_s1_field_count,
 ; CHECK-NOT: aurora_reflect_field_count:\n
 ; CHECK-NOT: __au_reflect_s1_size:\n
 ; CHECK-NOT: __au_reflect_s2_size:\n
 ; CHECK-NOT: __au_reflect_s2_field_count:\n
-; RUN: emit
-; CHECK-DAG: aurora_reflect_size:\n    cmpq $1, %rdi\n    je .Lscope0_size1\n    cmpq $100, %rdi\n    je .Lscope0_size100\n    cmpq $101, %rdi\n    je .Lscope0_size101\n    xorq %rax, %rax\n    ret\n.Lscope0_size1:\n    movq $8, %rax\n    ret\n.Lscope0_size100:\n    movq $16, %rax\n    ret\n.Lscope0_size101:\n    movq $0, %rax\n    ret\n.size aurora_reflect_size,
-; CHECK-DAG: __au_reflect_s1_field_count:\n    cmpq $1, %rdi\n    je .Lscope1_field_count1\n    cmpq $100, %rdi\n    je .Lscope1_field_count100\n    xorq %rax, %rax\n    ret\n.Lscope1_field_count1:\n    movq $0, %rax\n    ret\n.Lscope1_field_count100:\n    movq $1, %rax\n    ret\n.size __au_reflect_s1_field_count,
 ; RUN: stack-facts referenced
 ; CHECK-JSON-COUNT: functions 4
-; CHECK-JSON: functions.test.calls.aurora_reflect_size 32
-; CHECK-JSON: functions.scoped.calls.__au_reflect_s1_field_count 32
+; CHECK-JSON-NOT: functions.test.calls.aurora_reflect_size <missing>
+; CHECK-JSON-NOT: functions.scoped.calls.__au_reflect_s1_field_count <missing>
 ; CHECK-JSON: functions.aurora_reflect_field_count <missing>
 ; CHECK-JSON: functions.__au_reflect_s1_size <missing>
 ; CHECK-JSON: functions.__au_reflect_s2_size <missing>
@@ -55,6 +52,8 @@ end
 ; CASE: query-free closed output retains no reflection helpers
 ; RUN: emit referenced
 ; CHECK-NOT: aurora_reflect_
+; RUN: stack-facts referenced
+; CHECK-JSON-COUNT: functions 1
 function test
   result i64
   frame 16

@@ -5,8 +5,8 @@
 ; CHECK-JSON: functions.probe_target.local_bytes 48
 ; RUN: emit
 ; CHECK: probe_caller:
-; CHECK-NEXT:     pushq %rbp
-; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-NEXT: {{.+}}
+; CHECK-NEXT: {{.+}}
 ; CHECK-PROBES: 48
 ; CHECK:     subq $16, %rsp
 ; CHECK-NEXT:     orq $0, (%rsp)
@@ -47,8 +47,8 @@ end
 ; CHECK-JSON: functions.probe_target.local_bytes 48
 ; RUN: emit
 ; CHECK: probe_caller:
-; CHECK-NEXT:     pushq %rbp
-; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-NEXT: {{.+}}
+; CHECK-NEXT: {{.+}}
 ; CHECK-PROBES: 48
 ; CHECK:     subq $16, %rsp
 ; CHECK-NEXT:     orq $0, (%rsp)

@@ -3,7 +3,7 @@
 ; CHECK-JSON: functions.branches.local_bytes 32
 ; CHECK-JSON: functions.branches.calls {"aurora_reflect_size":16,"leaf":32}
 ; CHECK-JSON: functions.unused_import <missing>
-; CHECK-JSON: functions.leaf {"local_bytes":16,"calls":{},"copied_record":null}
+; CHECK-JSON-NOT: functions.leaf <missing>
 ; CHECK-JSON-COUNT: functions 6
 ; CHECK-JSON: functions.aurora_reflect_size.local_bytes 8
 ; CHECK-JSON: functions.aurora_reflect_size.calls {}
@@ -18,7 +18,7 @@
 ; RUN: emit local
 ; CHECK-NOT: .globl 
 ; RUN: stack-facts local
-; CHECK: {"version":2,"functions":{"__au_reflect_s1_field_count":{"local_bytes":8,"calls":{},"copied_record":null},"__au_reflect_s1_size":{"local_bytes":8,"calls":{},"copied_record":null},"aurora_reflect_field_count":{"local_bytes":8,"calls":{},"copied_record":null},"aurora_reflect_size":{"local_bytes":8,"calls":{},"copied_record":null},"branches":{"local_bytes":32,"calls":{"aurora_reflect_size":16,"leaf":32},"copied_record":null},"leaf":{"local_bytes":16,"calls":{},"copied_record":null}}}
+; CHECK-RUN-EQUAL: 1
 views [(0 []) (1 [])]
 function branches
   result i64

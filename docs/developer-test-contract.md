@@ -102,5 +102,7 @@ Hand-built IR is data: `.air` case files under `tests/compiler/ir`, one Meson
 test per directory, run by the single `aurora-ir-check` driver (format and
 directives in [tests/compiler/ir/README.md](../tests/compiler/ir/README.md)).
 A new verifier or emitter case is a few lines of module text with its expected
-diagnostic or CHECK lines, not a C++ translation unit. Only owner, view, writer
+diagnostic or CHECK lines, not a C++ translation unit. The large native-ABI
+programs that loop over call shapes are generated at build time by
+`tests/compiler/ir/abi_programs.py` rather than stored. Only owner, view, writer
 and emitter-object API tests remain C++ (`tests/compiler/ir_api.cpp`).

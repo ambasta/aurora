@@ -14,7 +14,7 @@
 namespace aurora::test::air {
 class Check {
 public:
-    std::string kind; // CHECK, CHECK-NEXT, CHECK-SAME, CHECK-NOT, CHECK-JSON
+    std::string kind; // CHECK, CHECK-NEXT, ..., CHECK-JSON-RANGE, CHECK-RUN-EQUAL
     std::string pattern;
     int line;
 };
@@ -65,6 +65,12 @@ inline bool directive(const std::string &line, std::string &keyword, std::string
                                            "CHECK-NOT",
                                            "CHECK-JSON",
                                            "CHECK-JSON-COUNT",
+                                           "CHECK-JSON-NOT",
+                                           "CHECK-JSON-ONEOF",
+                                           "CHECK-JSON-DIFF",
+                                           "CHECK-JSON-RATIO",
+                                           "CHECK-JSON-RANGE",
+                                           "CHECK-RUN-EQUAL",
                                            "CHECK-DAG",
                                            "CHECK-PROBES",
                                            "CASE",
