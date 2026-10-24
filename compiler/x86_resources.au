@@ -326,10 +326,15 @@ export namespace compiler_x86 {
             }
             w.line_number("imulq $", stride, ", %rax, %rsi");
             w.line_address("addq ", offset - 8, ", %rsi");
-            w.line_address("leaq ", value, ", %rdi");
-            w.line_number("movq $", stride, ", %rcx");
-            w.line("cld");
-            w.line("rep movsb");
+            if (w.loan_offset(0 - value) == offset) {
+                // In place (module_elidable): stash the element address instead.
+                w.line_address("movq %rsi, ", value, "");
+            } else {
+                w.line_address("leaq ", value, ", %rdi");
+                w.line_number("movq $", stride, ", %rcx");
+                w.line("cld");
+                w.line("rep movsb");
+            }
             if (owned) {
                 resource_span_label(w, function, division, true);
                 w.text(":\n");

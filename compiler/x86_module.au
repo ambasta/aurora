@@ -159,6 +159,157 @@ export namespace compiler_x86 {
         }
         return w.ok();
     }
+    // Scalar operands, list entries included, that lie in the frame extent
+    // (low, high]. Constants, type identities and byte slices are never offsets,
+    // so an unrelated equal value only makes a caller conservative.
+    auto module_operand_mentions(const compiler_ir_instructions::InstructionStore& s, i64 instruction, i64 low,
+        i64 high) -> i64 {
+        const compiler_ir_instructions::RawInstructionRow row = s.instruction_at(instruction);
+        i64 count = 0;
+        i64 at = 0;
+        while (at < row.operand_count()) {
+            const compiler_ir_instructions::RawOperandRow operand = s.operand_at(row.operand_begin() + at);
+            const i64 role = operand.role();
+            if (compiler_ir_instructions::list_role(role)) {
+                i64 item = 0;
+                while (item < operand.count()) {
+                    const compiler_ir_instructions::RawOperandRow entry = s.operand_at(operand.begin() + item);
+                    if (entry.signed_value() > low && entry.signed_value() <= high) {
+                        count = count + 1;
+                    }
+                    item = item + 1;
+                }
+            } else {
+                if (role != 10 && role != 11 && role != 33 && role != 100 && role != 101
+                    && !compiler_ir_instructions::type_role(role) && operand.signed_value() > low
+                    && operand.signed_value() <= high) {
+                    count = count + 1;
+                }
+            }
+            at = at + 1;
+        }
+        return count;
+    }
+    // Whether an instruction ends the span or makes it a new capability.
+    auto module_rewrites_span(const compiler_ir_instructions::InstructionStore& s, i64 instruction, i64 span) -> bool {
+        const compiler_ir_instructions::RawInstructionRow row = s.instruction_at(instruction);
+        if (row.form() == 56 || row.form() == 59) {
+            return operand_value(s, instruction, 0) == span || operand_value(s, instruction, 1) == span;
+        }
+        i64 at = 0;
+        while (at < row.operand_count()) {
+            const compiler_ir_instructions::RawOperandRow operand = s.operand_at(row.operand_begin() + at);
+            if (operand.role() == 6 && operand.signed_value() == span) {
+                return true;
+            }
+            at = at + 1;
+        }
+        return false;
+    }
+    auto module_const_method(const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 instruction) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
+        const i64 target = instruction_target(m, s, instruction);
+        if (target < 0 || !has_receiver(m, target)) {
+            return false;
+        }
+        const compiler_ir_metadata::CallableRow declaration = m.callable_at(target);
+        const compiler_ir_metadata::ReceiverShape receiver = declaration.first_receiver();
+        return declaration.borrowed_root_count() == 0 && !compiler_ir_metadata::receiver_flag(receiver,
+            masks.receiver_mutable()) && !compiler_ir_metadata::receiver_flag(receiver, masks.receiver_constructor());
+    }
+    // A typed span element can be read in place, without copying it into its
+    // object, when every condition below holds; the verifier still checks the
+    // copying program. The object is an immutable slot filled only by this
+    // SpanValuesLoad and otherwise only begun, ended or the sole receiver of
+    // const methods, which cannot write a receiver or keep its address. From the
+    // load to the last use the span is neither ended nor rebound and that range is
+    // entered only through the load, so the span stays live there; a live span
+    // freezes its owner, so the element is unchanged at every use.
+    auto module_elidable(const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 callable, i64 position, i64 span, i64 object) -> bool {
+        const i64 index = compiler_ir_instructions::entry_slot(m, callable, 11, object);
+        if (index < 0) {
+            return false;
+        }
+        const compiler_ir_metadata::SlotRow slot = m.slot_at(index);
+        const i64 size = class_size(m, slot_class(m, callable, object));
+        if (slot.mutable_value() != 0 || size < 8 || size > object) {
+            return false;
+        }
+        const i64 low = object - size;
+        const compiler_ir_instructions::BodyRow body = s.body_at(callable);
+        i64 last = -1;
+        i64 at = 0;
+        while (at < body.count()) {
+            const i64 instruction = module_instruction(s, callable, at);
+            const i64 form = module_form(s, instruction);
+            const i64 mentions = module_operand_mentions(s, instruction, low, object);
+            if (mentions != 0) {
+                bool allowed = mentions == 1 && at == position;
+                if (mentions == 1 && (form == 21 || form == 23) && operand_value(s, instruction, 0) == object) {
+                    allowed = true;
+                }
+                if (mentions == 1 && form == 38 && operand_value(s, instruction, 1) == object && operand_value(s,
+                    instruction, 4) == -1 && module_const_method(m, s, instruction) && at > position) {
+                    allowed = true;
+                    last = at;
+                }
+                if (!allowed) {
+                    return false;
+                }
+            }
+            at = at + 1;
+        }
+        if (last < 0) {
+            return false;
+        }
+        at = position + 1;
+        while (at <= last) {
+            if (module_rewrites_span(s, module_instruction(s, callable, at), span)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        // Every jump into (position, last] starts inside [position, last].
+        at = 0;
+        while (at < body.count()) {
+            const i64 instruction = module_instruction(s, callable, at);
+            const i64 form = module_form(s, instruction);
+            if ((form == 41 || form == 42) && (at < position || at > last)) {
+                const i64 label = operand_value(s, instruction, 0);
+                i64 inside = position + 1;
+                while (inside <= last) {
+                    const i64 candidate = module_instruction(s, callable, inside);
+                    if (module_form(s, candidate) == 40 && operand_value(s, candidate, 0) == label) {
+                        return false;
+                    }
+                    inside = inside + 1;
+                }
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    // Elided objects are recorded with the loans under negated offsets; loan
+    // identities are positive.
+    auto module_elide_span_objects(EmitWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 callable) -> bool {
+        const compiler_ir_instructions::BodyRow body = s.body_at(callable);
+        i64 at = 0;
+        while (at < body.count() && w.ok()) {
+            const i64 load = module_instruction(s, callable, at);
+            if (module_form(s, load) == 84) {
+                const i64 span = operand_value(s, load, 0);
+                const i64 object = operand_value(s, load, 1);
+                if (object > 0 && module_elidable(m, s, callable, at, span, object)) {
+                    w.add_loan(0 - object, span);
+                }
+            }
+            at = at + 1;
+        }
+        return w.ok();
+    }
     auto module_emit_callable(EmitWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
         const compiler_ir_instructions::InstructionStore& s, i64 callable, i64 binding, bool private_graph) -> bool {
         const compiler_ir_metadata::CallableRow declaration = m.callable_at(callable);
@@ -182,6 +333,9 @@ export namespace compiler_x86 {
                 w.add_loan(operand_value(s, instruction, 0), operand_value(s, instruction, 1));
             }
             at = at + 1;
+        }
+        if (!module_elide_span_objects(w, m, s, callable)) {
+            return false;
         }
         if (binding == 1 || private_graph || receiver || aggregate || module_hidden_symbol(m, callable)) {
             w.text(".local ");

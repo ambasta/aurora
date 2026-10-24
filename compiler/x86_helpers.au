@@ -318,8 +318,57 @@ export namespace compiler_x86 {
         }
         return save + ordinal * 8;
     }
+    // An in-place typed span element (module_elidable): kind 0 views stash the
+    // element address in the object's first word; kind 1 views copied it there.
+    auto elided_receiver(EmitWorkspace& workspace, i64 root, i64 span, Register target) -> bool {
+        if (!workspace.owned_span_runtime()) {
+            workspace.text("    movq ");
+            workspace.address(root);
+            workspace.text(", ");
+            workspace.reg(target);
+            return workspace.end_line();
+        }
+        const i64 function = workspace.function_index();
+        const i64 division = workspace.next_division();
+        workspace.line_address("cmpq $0, ", span, "");
+        workspace.text("    jne .Lelide_copy_");
+        workspace.number(function);
+        workspace.text("_");
+        workspace.number(division);
+        workspace.end_line();
+        workspace.text("    movq ");
+        workspace.address(root);
+        workspace.text(", ");
+        workspace.reg(target);
+        workspace.end_line();
+        workspace.text("    jmp .Lelide_done_");
+        workspace.number(function);
+        workspace.text("_");
+        workspace.number(division);
+        workspace.end_line();
+        workspace.text(".Lelide_copy_");
+        workspace.number(function);
+        workspace.text("_");
+        workspace.number(division);
+        workspace.text(":\n    leaq ");
+        workspace.address(root);
+        workspace.text(", ");
+        workspace.reg(target);
+        workspace.end_line();
+        workspace.text(".Lelide_done_");
+        workspace.number(function);
+        workspace.text("_");
+        workspace.number(division);
+        return workspace.text(":\n");
+    }
     auto receiver_address(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata, i64 root,
         Register target) -> bool {
+        if (root > 0) {
+            const i64 elided = workspace.loan_offset(0 - root);
+            if (elided > 0) {
+                return elided_receiver(workspace, root, elided, target);
+            }
+        }
         if (root >= -5 && root <= 0) {
             const i64 offset = root_save_offset(workspace, metadata, -root);
             workspace.text("    movq ");

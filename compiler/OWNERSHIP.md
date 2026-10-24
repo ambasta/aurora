@@ -677,6 +677,15 @@ only element access, so no element reference escapes. The view validates the
 owner once when it is created; hosted element reads then need no runtime owner
 lookup, while kernel views over fragmented pages still check each read.
 
+The emitter reads an element in place instead of copying it when the copy
+cannot be observed: the destination is an immutable local filled by that one
+read and otherwise only the sole receiver of const methods, and from the read to
+its last use the view is neither ended nor rebound and the code is entered only
+through the read. A live view freezes its owner, a const method cannot write its
+receiver and no address escapes, so every use sees the element the copy would
+hold. Kernel (kind 1) views still copy; uses select by the view's kind. The
+verifier checks the copying program either way.
+
 The 56-byte record is unchanged: logical start and length count elements. A
 borrow divides the runtime's byte length by the element size, which a typed
 owner always divides exactly. Hosted views are contiguous (kind 0): an element

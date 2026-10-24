@@ -469,7 +469,10 @@ export namespace compiler_x86 {
             const i64 offset = operand_value(store, instruction, 0);
             const i64 class_id = slot_class(metadata, current, offset);
             if (form == 21) {
-                clear_object(workspace, metadata, offset, class_id);
+                // An in-place element is never read from its own padding.
+                if (workspace.loan_offset(0 - offset) <= 0) {
+                    clear_object(workspace, metadata, offset, class_id);
+                }
             } else {
                 drop_object(workspace, metadata, offset, class_id);
             }
