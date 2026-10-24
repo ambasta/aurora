@@ -37,6 +37,9 @@ def plans(case, payload):
     write = lambda value, effect="normal", reply="saved": step(
         "put" + (" " + value if value else ""), reply, len(value) + 2, effect
     )
+    append = lambda value, effect="normal", reply="saved": step(
+        "append" + (" " + value if value else ""), reply, 1 if reply == "rejected" else len(value) + 2, effect
+    )
     read = lambda value, effect="normal", reply=None: step(
         "get",
         ("missing" if value is None else "data: " + value) if reply is None else reply,
@@ -48,6 +51,10 @@ def plans(case, payload):
         maximum = (payload + " / " + other + " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ" * 2)[:49]
         need(len(maximum) == 49, "Exact maximal payload")
         return [
+            read(None),
+            append("missing", reply="rejected"),
+            read(None),
+            append("", reply="rejected"),
             read(None),
             write(payload),
             step("help", oracle.HELP),
@@ -64,12 +71,48 @@ def plans(case, payload):
             step("put " + "Z" * 50, oracle.INVALID),
             read(maximum),
             read(maximum),
+            write("Hello"),
+            append(", Aurora"),
+            read("Hello, Aurora"),
+            append(""),
+            read("Hello, Aurora"),
+            write(maximum[:24]),
+            append(maximum[24:]),
+            read(maximum),
+            append("!", reply="rejected"),
+            read(maximum),
+            append(""),
+            read(maximum),
+            step("append " + "Z" * 50, oracle.INVALID),
+            read(maximum),
+            write(""),
+            append(maximum),
+            read(maximum),
         ]
     if case == "limit":
         value = payload[:3]
         return [write(value)] + [read(value) for _ in range(63)] + [step("get", oracle.LIMIT, effect="limit")]
     old, new = "old " + payload, "new " + payload
     baseline = write(old)
+    suffix = " + " + payload[:10]
+    if case == "1a":
+        return [
+            baseline,
+            step("append " + suffix, oracle.ABORTED, 2, "preloss"),
+            read(old),
+            append(suffix),
+            read(old + suffix),
+        ]
+    if case == "3a":
+        return [baseline, append(suffix, "commitloss", oracle.COMMITTED_FAILED), read(old + suffix)]
+    if case == "4a":
+        return [
+            baseline,
+            append("~i " + payload[:10], "servicefault", oracle.INDETERMINATE),
+            read(None),
+            write(new),
+            read(new),
+        ]
     if case == "1":
         return [baseline, step("put " + new, oracle.ABORTED, 2, "preloss"), read(old)]
     if case == "2":
@@ -175,17 +218,17 @@ def run(args):
             if fixture:
                 until(b"AURORA_SCRATCHPAD_FIXTURE_READY")
                 tty.setraw(master)
-                send(args.case.encode("ascii"))
+                send(args.case[0].encode("ascii"))
             until(b"aurora> ")
             # QEMU stdio may reenable ONLCR; retain raw startup, reset before input.
             tty.setraw(master)
-            for index, item in enumerate(plan):
+            for item in plan:
                 offset = len(transcript)
                 send(item["command"].encode("ascii") + b"\r")
                 if item["effect"] in {"backing", "timeout", "limit"}:
                     break
                 until(b"\r\naurora> ", offset)
-                if args.case == "normal" and index == 1:
+                if args.case == "normal" and item["command"] == "put " + args.payload:
                     # Leave source-owned locals parked through many Console wake IRQs.
                     delayed_until = time.monotonic() + 1.25
                     while time.monotonic() < delayed_until:
@@ -230,7 +273,7 @@ def run(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", required=True, type=Path)
-    parser.add_argument("--case", choices=["normal", "limit", *"12345678"], default="normal")
+    parser.add_argument("--case", choices=["normal", "limit", *"12345678", "1a", "3a", "4a"], default="normal")
     parser.add_argument("--payload", help="1..32 printable bytes chosen after building; default uses current UTC")
     parser.add_argument("--output", type=Path)
     run(parser.parse_args())

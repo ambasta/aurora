@@ -25,7 +25,7 @@ auto aurora_user_main(builtin::ServeSession& session) -> u64 {
             reply = file.cancel();
         } else {
             reply = file.request(request.value);
-            if ((request.value & 255u64) == 3u64 || reply == 6u64) {
+            if ((request.value & 255u64) == 3u64 || (request.value & 255u64) == 8u64 || reply == 6u64) {
                 marker = 0u64;
             }
             // WRITE_BYTE(0, '~'), then WRITE_BYTE(1, 'i'), both acknowledged.

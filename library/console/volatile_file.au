@@ -8,18 +8,19 @@ export namespace console {
     }
 
     // One unnamed binary file, owned entirely by the containing service local.
-    // The scalar protocol is data, never authority to read or replace the file.
+    // The scalar protocol is data, never authority to read, replace or append to the file.
     class VolatileFile {
         // Use the same checked inline byte-array storage as BinaryBuffer64,
         // without importing unrelated codecs into the one-page service image.
         array<u8, 64> committed;
         array<u8, 64> staging;
         i64 length;
+        u64 prefix;
         u64 target;
         u64 next;
         u64 mode;
     public:
-        VolatileFile() : committed{}, staging{}, length(-1), target(0u64), next(0u64), mode(0u64) {
+        VolatileFile() : committed{}, staging{}, length(-1), prefix(0u64), target(0u64), next(0u64), mode(0u64) {
         }
 
         // Cancellation is a private continuation result, not a request opcode.
@@ -30,6 +31,7 @@ export namespace console {
                 staging[index] = 0u8;
                 index = index + 1;
             }
+            prefix = 0u64;
             target = 0u64;
             next = 0u64;
             mode = 0u64;
@@ -48,6 +50,19 @@ export namespace console {
                 mode = 2u64;
                 return 1u64;
             }
+            // Append stages the source-owned prefix; DATA offsets stay suffix-relative.
+            if (mode == 0u64 && tag == 8u64 && word < 65536u64 && offset <= 49u64 && length >= 0 && u64(length) + offset
+                <= 49u64) {
+                prefix = u64(length);
+                target = offset;
+                i64 index = 0;
+                while (index < length) {
+                    staging[index] = committed[index];
+                    index = index + 1;
+                }
+                mode = 2u64;
+                return 1u64;
+            }
             if (mode == 1u64 && tag == 2u64 && word < 65536u64 && offset <= 49u64 && offset == next) {
                 if (length < 0 || offset == u64(length)) {
                     mode = 0u64;
@@ -63,7 +78,7 @@ export namespace console {
                 }
             }
             if (mode == 2u64 && tag == 4u64 && word < 16777216u64 && offset == next && next < target) {
-                staging[i64(offset)] = u8(word >> 16);
+                staging[i64(prefix + offset)] = u8(word >> 16);
                 next = next + 1u64;
                 return 1u64;
             }
@@ -75,7 +90,7 @@ export namespace console {
                     committed[index] = staging[index];
                     index = index + 1;
                 }
-                length = i64(target);
+                length = i64(prefix + target);
                 cancel();
                 return 5u64;
             }

@@ -24,8 +24,8 @@ def step(word, reply, variable="file"):
     return f"if ({variable}.request({word}u64) != {reply}u64) {{ return 0u64; }}\n"
 
 
-def replace(content, variable="file"):
-    source = step(3 | (len(content) << 8), 1, variable)
+def replace(content, variable="file", tag=3):
+    source = step(tag | (len(content) << 8), 1, variable)
     for index, byte in enumerate(content):
         source += step(4 | (index << 8) | (byte << 16), 1, variable)
     return source + step(5, 5, variable)
@@ -154,8 +154,50 @@ def cancellation_cases():
     )
 
 
+def append_cases():
+    cancel = "if (file.cancel() != 7u64) { return 0u64; }\n"
+
+    def append(content):
+        return replace(content, tag=8)
+
+    yield case("append missing is rejected including empty suffix", step(8, 6) + step(264, 6) + read(None))
+    yield case(
+        "append text then empty suffix", replace(b"Hello") + append(b", Aurora") + append(b"") + read(b"Hello, Aurora")
+    )
+    yield case("append to present empty", replace(b"") + append(A) + read(A))
+    maximum = bytes(range(49))
+    yield case("full binary suffix uses 51 exchanges", replace(b"") + append(maximum) + read(maximum))
+    yield case("replacement after append resets prefix", replace(A) + append(B) + replace(b"Z") + read(b"Z"))
+    yield case(
+        "append exact capacity and empty suffix at capacity",
+        replace(maximum[:20]) + append(maximum[20:]) + append(b"") + read(maximum),
+    )
+    yield case("append overflow preserves whole file", replace(maximum) + step(264, 6) + read(maximum))
+    yield case(
+        "append overflow does not permit partial capacity", replace(maximum[:48]) + step(520, 6) + read(maximum[:48])
+    )
+    for word in (8 | (50 << 8), 8 | (1 << 16), 8 | (1 << 63)):
+        yield case(f"append invalid begin {word}", replace(A) + step(word, 6) + read(A))
+    begin = step(520, 1)
+    first = step(4 | (227 << 16), 1)
+    for word in (5, 4, 4 | (2 << 8), 4 | (1 << 24), 4 | (1 << 63), 1, 3, 8):
+        yield case(
+            f"append invalid sequence {word}",
+            replace(A) + begin + first + step(word, 6) + read(A) + append(B) + read(A + B),
+        )
+    for count in (0, 1, 2):
+        staged = begin
+        for index in range(count):
+            staged += step(4 | (index << 8) | (255 << 16), 1)
+        yield case(
+            f"append abort staged {count}, explicit retry exactly once",
+            replace(A) + staged + cancel + read(A) + append(B) + read(A + B),
+        )
+    yield case("cancel after append cannot roll back", replace(A) + append(B) + cancel + read(A + B))
+
+
 def privacy_cases():
-    for field in ("committed[0]", "staging[0]", "length", "target", "next", "mode"):
+    for field in ("committed[0]", "staging[0]", "length", "prefix", "target", "next", "mode"):
         yield Rejection(
             f"private file storage {field}",
             "module private_file; import console.volatile_file; auto test() -> u64 {"
@@ -175,13 +217,12 @@ def main():
     parser.add_argument("compiler", type=Path)
     args = parser.parse_args()
     compiler = args.compiler.resolve()
-    cases = list(value_cases()) + list(rejection_cases()) + list(cancellation_cases())
+    cases = list(value_cases()) + list(rejection_cases()) + list(cancellation_cases()) + list(append_cases())
     rejections = list(privacy_cases())
     work = Path(tempfile.mkdtemp(prefix="volatile-file-"))
     print(f"artifacts={work}", flush=True)
     runner = NativeRunner(work, compiler, 10)
-    for start in range(0, len(cases), 4):
-        runner.cases(cases[start : start + 4])
+    runner.cases(cases)
     for rejection in rejections:
         runner.rejection(rejection)
     print(f"PASS volatile file: {len(cases)} generated-code cases, {len(rejections)} source rejections", flush=True)

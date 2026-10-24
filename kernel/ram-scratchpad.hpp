@@ -26,12 +26,14 @@ class Command final {
 public:
     enum class Operation : std::uint64_t {
         get = 0,
-        put = 1
+        put = 1,
+        append = 2
     };
     std::array<std::uint8_t, 64> bytes{};
     std::uint64_t count{}, operation{};
     [[nodiscard]] constexpr auto valid() const -> bool {
-        return operation <= 1 && (operation == 1 || count == 0) && payload(bytes, count);
+        return (operation == 0 || operation == 1 || operation == 2) && (operation != 0 || count == 0) &&
+               payload(bytes, count);
     }
 };
 class Result final {
@@ -52,11 +54,12 @@ public:
     // retirement. These are only the exhaustive copied/protocol terminal pairs.
     [[nodiscard]] constexpr auto
     terminal_for(std::uint64_t operation, std::uint64_t reply, std::uint64_t data_count) const -> bool {
-        if (!valid() || operation > 1 || data_count > 49)
+        if (!valid() || operation > 2 || data_count > 49)
             return false;
         return (operation == 0 && kind == 1 && reply == 3 && count == data_count) ||
                (operation == 0 && kind == 2 && reply == 4 && data_count == 0) ||
-               (operation == 1 && kind == 3 && reply == 5 && data_count == 0) || (kind == 4 && reply == 6);
+               ((operation == 1 || operation == 2) && kind == 3 && reply == 5 && data_count == 0) ||
+               (kind == 4 && reply == 6);
     }
 };
 class Submission final {
@@ -157,7 +160,7 @@ public:
                                       std::uint64_t count,
                                       Result &output) -> bool {
         scrub(output);
-        if (grant != 0 || !generation || operation > 1 || count > 49 || (operation == 0 && count != 0) ||
+        if (grant != 0 || !generation || operation > 2 || count > 49 || (operation == 0 && count != 0) ||
             word(bytes, prefix) != grant || word(bytes, prefix + 8) != generation ||
             word(bytes, command + 64) != count || word(bytes, command + 72) != operation)
             return false;

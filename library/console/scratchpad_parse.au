@@ -11,16 +11,28 @@ export namespace console {
             == 't') {
             return ScratchpadCommand(ScratchpadOperation::get, 0u64);
         }
-        if (length >= 3 && length <= 53 && line.submission_byte(0) == 'p' && line.submission_byte(1) == 'u'
-            && line.submission_byte(2) == 't') {
-            if (length == 3) {
-                return ScratchpadCommand(ScratchpadOperation::put, 0u64);
+        i64 start = 0;
+        ScratchpadOperation operation = ScratchpadOperation::put;
+        if (length >= 3 && line.submission_byte(0) == 'p' && line.submission_byte(1) == 'u' && line.submission_byte(2)
+            == 't') {
+            start = 3;
+        }
+        if (length >= 6 && line.submission_byte(0) == 'a' && line.submission_byte(1) == 'p' && line.submission_byte(2)
+            == 'p' && line.submission_byte(3) == 'e' && line.submission_byte(4) == 'n' && line.submission_byte(5)
+            == 'd') {
+            start = 6;
+            operation = ScratchpadOperation::append;
+        }
+        if (start != 0 && length <= start + 50) {
+            if (length == start) {
+                return ScratchpadCommand(operation, 0u64);
             }
-            if (line.submission_byte(3) == ' ') {
-                ScratchpadCommand command = ScratchpadCommand(ScratchpadOperation::put, u64(length - 4));
-                i64 index = 4;
+            if (line.submission_byte(start) == ' ') {
+                start = start + 1;
+                ScratchpadCommand command = ScratchpadCommand(operation, u64(length - start));
+                i64 index = start;
                 while (index < length) {
-                    if (!command.set(u64(index - 4), line.submission_byte(index))) {
+                    if (!command.set(u64(index - start), line.submission_byte(index))) {
                         return ScratchpadCommand(ScratchpadOperation::get, 64u64);
                     }
                     index = index + 1;
