@@ -14,106 +14,11 @@ import sys
 import tempfile
 
 import meson_toolchain
+import build_resources
 import bootstrap
 import kernel_profiles
 
 import compiler_contract as contract
-
-
-HOST_RESERVE_MIB = 2048
-# Sizing allowances, not limits: measured compiler peaks approach 1.7 GiB;
-# native-test child peaks approach 0.5 GiB and their compilers run sequentially.
-JOB_MEMORY_MIB = {"build": 2048, "test": 1024}
-
-
-def available_memory_mib():
-    try:
-        for line in Path("/proc/meminfo").read_text().splitlines():
-            fields = line.split()
-            if fields[:1] == ["MemAvailable:"] and fields[2:] == ["kB"]:
-                return max(0, int(fields[1]) // 1024)
-    except (OSError, ValueError):
-        pass
-    return None
-
-
-def cgroup_memory_mib():
-    """Read visible cgroup-v2 headroom, including bounded ancestors; set no limits."""
-    try:
-        membership = Path("/proc/self/cgroup").read_text().splitlines()
-        mounts = Path("/proc/self/mountinfo").read_text().splitlines()
-    except OSError:
-        return None
-    group = next((Path(line[3:]) for line in membership if line.startswith("0::/")), None)
-    if group is None:
-        return None
-    for line in mounts:
-        fields, separator, filesystem = line.partition(" - ")
-        fields = fields.split()
-        if not separator or filesystem.split()[:1] != ["cgroup2"] or len(fields) < 5:
-            continue
-        root, mount = (Path(re.sub(r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), p)) for p in fields[3:5])
-        try:
-            relative = group.relative_to(root)
-        except ValueError:
-            continue
-        if not mount.is_absolute() or ".." in relative.parts:
-            continue
-        current = mount / relative
-        limits = []
-        while True:
-            try:
-                maximum = (current / "memory.max").read_text().strip()
-            except FileNotFoundError:
-                maximum = "max"
-            except OSError:
-                return 0  # A visible but unreadable controller is not free headroom.
-            if maximum != "max":
-                try:
-                    limit = int(maximum)
-                    used = int((current / "memory.current").read_text())
-                    if min(limit, used) < 0:
-                        return 0
-                    limits.append(max(0, limit - used) // (1024 * 1024))
-                except (OSError, ValueError):
-                    return 0
-            if current == mount:
-                return min(limits, default=None)
-            current = current.parent
-    return None
-
-
-def admitted_jobs(phase, ceiling):
-    try:
-        cpus = max(1, len(os.sched_getaffinity(0)))
-    except (AttributeError, OSError):
-        cpus = 1
-    available = available_memory_mib()
-    cgroup = cgroup_memory_mib()
-    allowance = JOB_MEMORY_MIB[phase]
-    headroom = min((value for value in (available, cgroup) if value is not None), default=None)
-    if headroom is None:
-        jobs = 1
-        observation = "MemAvailable unavailable; serial fallback"
-    else:
-        usable = headroom - HOST_RESERVE_MIB
-        contract.require(
-            usable >= allowance,
-            f"Insufficient observed memory for {phase}: {headroom} MiB headroom; "
-            f"need {HOST_RESERVE_MIB} MiB host reserve plus {allowance} MiB per job",
-        )
-        jobs = min(ceiling, cpus, usable // allowance)
-        observation = f"MemAvailable={available} MiB, reserve={HOST_RESERVE_MIB} MiB, estimate={allowance} MiB/job"
-        if available is None:
-            jobs = 1
-            observation += "; host observation unavailable, serial fallback"
-    observation += f", cgroup-v2 headroom={cgroup} MiB" if cgroup is not None else ", no visible finite cgroup-v2 bound"
-    print(
-        f"Aurora {phase}: {jobs} jobs (CPU affinity={cpus}, ceiling={ceiling}; {observation}). "
-        "Sizing only, not an aggregate memory cap.",
-        file=sys.stderr,
-    )
-    return jobs
 
 
 def execute(root, scope, targets=(), output=None, *, build_only=False, tests=()):
@@ -236,20 +141,14 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
         "kernel_compiler": str(selected_compiler or ""),
         "uefi_ld": env.get("UEFI_LD", ""),
     }
-    build_selection = env.get("AURORA_BUILD_JOBS", "auto")
-    test_selection = env.get("AURORA_TEST_JOBS", "auto")
-    build_jobs = 64 if build_selection == "auto" else int(build_selection)
-    test_jobs = 64 if test_selection == "auto" else int(test_selection)
-    contract.require(
-        1 <= build_jobs <= 64 and 1 <= test_jobs <= 64,
-        "AURORA_BUILD_JOBS and AURORA_TEST_JOBS must be auto or between 1 and 64",
-    )
+    build_jobs = build_resources.jobs(env.get("AURORA_BUILD_JOBS", "auto"), "AURORA_BUILD_JOBS")
+    test_jobs = build_resources.jobs(env.get("AURORA_TEST_JOBS", "auto"), "AURORA_TEST_JOBS")
     for name in contract.MAKE_CONTROL:
         env.pop(name, None)
     env["CXX"] = cxx
 
     def run(*arguments, **kwargs):
-        return subprocess.run([meson, *map(str, arguments)], cwd=root, env=env, check=True, **kwargs)
+        return build_resources.run([meson, *map(str, arguments)], cwd=root, env=env, **kwargs)
 
     def introspect(option):
         return json.loads(subprocess.check_output([meson, "introspect", str(build), option], cwd=root, env=env))
@@ -342,7 +241,7 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
                 "-C",
                 build,
                 "-j",
-                admitted_jobs("build", build_jobs),
+                build_jobs,
                 "--ninja-args=build.ninja",
                 stdout=output,
             )
@@ -403,14 +302,14 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
                     "-C",
                     build,
                     "-j",
-                    admitted_jobs("build", build_jobs),
+                    build_jobs,
                     "--ninja-args=" + json.dumps(["--", *sorted(filenames)]),
                     stdout=output,
                 )
         else:
             # Complete suite selections retain their complete prerequisite target.
             build_targets = list(targets) if scope is None or build_only else ["--ninja-args=meson-test-prereq"]
-            run("compile", "-C", build, "-j", admitted_jobs("build", build_jobs), *build_targets, stdout=output)
+            run("compile", "-C", build, "-j", build_jobs, *build_targets, stdout=output)
         if scope is None or build_only:
             return build
         run(
@@ -420,7 +319,7 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
             *([] if tests else ["--suite", scope]),
             "--no-rebuild",
             "--num-processes",
-            admitted_jobs("test", test_jobs),
+            test_jobs,
             "--print-errorlogs",
             *tests,
         )
@@ -532,7 +431,7 @@ def main():
             )
             build = execute(
                 args.repo_root,
-                "compiler" if args.build_only or args.tests else args.suite or "full",
+                "compiler" if args.build_only or args.tests else args.suite or "merge",
                 args.build_only or (),
                 build_only=bool(args.build_only),
                 tests=args.tests or (),

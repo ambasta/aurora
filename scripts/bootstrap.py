@@ -23,6 +23,7 @@ import sys
 import time
 
 import meson_toolchain
+import build_resources
 
 ROOT = Path(__file__).resolve().parents[1]
 CHECKPOINT = ROOT / "compiler/checkpoint.json"
@@ -135,7 +136,10 @@ def tools():
 def run_logged(argv, log):
     started = time.monotonic()
     with log.open("w") as stream:
-        result = subprocess.run(argv, stdout=stream, stderr=subprocess.STDOUT)
+        try:
+            result = build_resources.run(argv, stdout=stream, stderr=subprocess.STDOUT)
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            raise ValueError(f"{error}; retained log: {log}") from error
     record = {"argv": argv, "returncode": result.returncode, "seconds": round(time.monotonic() - started, 1)}
     require(result.returncode == 0, f"command failed ({result.returncode}); retained log: {log}")
     return record
@@ -143,6 +147,7 @@ def run_logged(argv, log):
 
 def hop(args):
     """Build SOURCE with COMPILER, check C1/C2 and the oracle differential, record."""
+    jobs = str(build_resources.jobs(args.jobs, "--jobs"))
     source, output = args.source.resolve(), args.output.resolve()
     compiler = str(args.compiler.resolve())
     require(not output.is_relative_to(source), "build outside the source checkout; it must stay clean")
@@ -158,7 +163,6 @@ def hop(args):
     else:
         require(args.oracle, "--oracle is required to run the historical emitter differential")
         setup.append("-Dhistorical_oracle=" + str(args.oracle.resolve()))
-    jobs = str(args.jobs)
     commands = [
         setup,
         ["meson", "compile", "-C", str(build), "-j", jobs, "aurorac", "aurorac-stage2"],
@@ -205,7 +209,7 @@ def main():
     hopper.add_argument("--tree", required=True, help="`git rev-parse COMMIT^{tree}`")
     hopper.add_argument("--output", type=Path, required=True, help="new directory for the build and receipt")
     hopper.add_argument("--expect", help="require this checkpoint SHA256 (reproducing a pin)")
-    hopper.add_argument("--jobs", type=int, default=2)
+    hopper.add_argument("--jobs", default="auto", help="auto (nproc) or a positive job ceiling")
     args = parser.parse_args()
     if args.action == "select":
         print("\n".join(select(args.compiler, args.oracle)))

@@ -128,8 +128,8 @@ meson setup build/meson . "-Dbootstrap_compiler=$C0" \
   "-Dhistorical_oracle=$ORACLE" "-Duefi_ld=$UEFI_LD"
 meson setup build/meson-compiler . -Dkernel_images=false \
   "-Dbootstrap_compiler=$C0" "-Dhistorical_oracle=$ORACLE"
-meson compile -C build/meson-compiler -j 2 aurorac aurorac-stage2
-meson test -C build/meson-compiler --no-rebuild hosted-lexer-bootstrap
+MESON_BUILD_DIR=build/meson-compiler python3 -B scripts/meson_test.py \
+  --tests hosted-lexer-bootstrap
 ```
 
 `BOOTSTRAP_COMPILER` and `HISTORICAL_ORACLE` request a different selection for
@@ -262,8 +262,8 @@ against current C1/C2, in ordinary and closed profiles. To run these guarded tes
 directly:
 
 ```sh
-meson test -C build/meson-compiler --num-processes 2 --print-errorlogs \
-  emitter-differential-default emitter-differential-closed
+MESON_BUILD_DIR=build/meson-compiler python3 -B scripts/meson_test.py \
+  --tests emitter-differential-default emitter-differential-closed
 ```
 
 The evidence directory, kept after a failure and removed after a pass, holds

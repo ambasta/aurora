@@ -149,12 +149,13 @@ Use the checks appropriate to the change:
 ```sh
 meson setup build/gcc16 \
   "-Dbootstrap_compiler=$C0" "-Dhistorical_oracle=$ORACLE"
-meson compile -C build/gcc16 -j 4 --ninja-args=meson-test-prereq
-meson test -C build/gcc16 --suite dev --no-rebuild --num-processes 4
-meson test -C build/gcc16 --suite full --no-rebuild --num-processes 4
-./scripts/compiler-test.sh    # compiler-only Meson selection
-make test                    # alternative to direct Meson full above; no QEMU
-make smoke-all               # separate emulator matrix; QEMU and firmware required
+export MESON_BUILD_DIR=build/gcc16
+python3 -B scripts/meson_test.py --suite dev  # optional focused feedback
+make test                    # merge suite, nproc jobs with memory watchdog; no QEMU
+make run && make run-uefi     # normal BIOS/UEFI smokes; also run affected guest families
+# Releases and compiler bumps only:
+make test-release
+make smoke-all               # complete emulator matrix; QEMU and firmware required
 ```
 
 For direct Meson commands, configure a separate [build](docs/meson-bootstrap.md)
