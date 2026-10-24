@@ -66,8 +66,7 @@ The test tree still predates these rules: most of `full` is per-batch generated
 programs, Python reimplementation oracles, admission scripts and meta-tests, and
 it takes about 14 minutes. The release suite now holds the corpus emitter
 differential, IR mutation testing (`ir-exhaustive`), XFS mutation controls and
-the complete copies of subset tests (`borrowed-objects`, `json-string-write`,
-`package-*-full`); everything else is in merge until the rewrite replaces it
+the complete copy of a subset test (`borrowed-objects`); everything else is in merge until the rewrite replaces it
 with data-driven drivers. The test inventories, Meson-identity, developer-contract,
 artifact-budget, clean and emitter-selector meta-tests are deleted.
 
@@ -77,5 +76,14 @@ test (more only past the 1 MiB source limit, a per-graph compiler budget, or a
 differing import/module set), value cases run in one exec, each trap is one
 exec of the same binary selected by argv, and each rejection is one compile.
 Hosted owner programs use the same packing through `owned_bytes.Suite`
-(`deferred=True`). The library-behaviour runners still use the per-program
-compatibility entry points until they migrate.
+(`deferred=True`).
+
+Library-behaviour tests (`token-scan`, `utf8*`, `json-*`, `package-*`) compile one
+driver per library surface. `tests/compiler/runtime_records.py` checks the
+driver's record layout and entry ABI against aurorac's ABI facts, links it once
+with `runtime_records_host.cpp` and streams every case through one process as a
+fixed-size record; owned-bytes surfaces use `hosted_records.py`, which packs
+their fixtures into one module linked with the hosted byte runtime and streams
+runs as rows. Expected values come from Python's standard library (json, the
+UTF-8 codec, int/str) or from reviewed golden files in `tests/compiler/golden/`
+frozen from the former models; rejections are compiled one source each.

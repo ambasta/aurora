@@ -65,7 +65,9 @@ survive owner mutation and scope exit. Only std.array is imported. GNU assembler
 linker and Python remain host bootstrap/test dependencies, never target runtime.
 Tests are finite execution evidence, not a memory-safety or performance proof.
 
-Focused and full test routes use the shared development/qualification budget controls; those controls grant no package authority.
+Each module has one test (`package-identity`, `package-manifest`, `package-graph`) that
+streams its complete case corpus through one compiled driver against reviewed golden
+results in `tests/compiler/golden/`.
 
 ## Manifests
 

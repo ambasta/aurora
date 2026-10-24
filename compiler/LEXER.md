@@ -92,8 +92,8 @@ Build and test routes are intentionally distinct:
   ordinary output, and rejects invalid `--local-symbols` option combinations.
 - Historical `compiler_contract.py` receipts retain their original meaning and
   validation. New raw-seed/legacy executor runs reject with Meson migration
-  instructions. `std.token_scan` retains its test-only C++ reference oracle for
-  independent comparison.
+  instructions. `std.token_scan` is checked against reviewed golden reports
+  (`tests/compiler/golden/token_scan.jsonl`) through one compiled driver.
 
 This is an Aurora-written lexer participating in its own hosted rebuild. The
 statement/declaration grammar, semantic analysis and code generator remain C++. The

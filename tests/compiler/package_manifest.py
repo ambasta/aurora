@@ -1,290 +1,253 @@
 #!/usr/bin/env python3
-"""Independent grammar/integer oracle and bounded native package.manifest tests.
+"""package.manifest through one compiled driver fed every case as a record.
 
-The frozen grammar and this corpus precede inspection of the implementation.
-Native observations are complete little-endian u64 vectors, never exit codes.
-GNU as/ld plus a direct Linux write/exit entry are host bootstrap machinery only.
-Successful artifacts are losslessly archived and verified; failures stay intact.
+Inputs are generated here; expected results are the reviewed golden file
+golden/package_manifest.jsonl, frozen from the earlier independent line-grammar
+model after it reproduced the old test's ordered expectations exactly. Golden
+rows hold semantic results (a failure status, or identity tokens); `words`
+expands them into the driver's observation layout. Rejections compile once each.
 """
 
 from __future__ import annotations
+
 import argparse
-from dataclasses import dataclass
-import gzip
-import hashlib
-import io
-import json
-import os
 from pathlib import Path
 import random
-import re
-import shutil
-import struct
-import sys
-import tempfile
-import time
 
-sys.dont_write_bytecode = True
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "scripts"))
-from package_profiles import (
-    add_identity_arguments,
-    developer_artifacts,
-    finalize_selected_identity,
-    profile_record,
-    resolve_identity,
-    select_cases,
-    validate_identity_selection,
-)
-from package_native_runner import PackageRunner, finalize_report, safe_receipt
+import runtime_records as records
 
-CAP, MAX_CAP, FLOOR = 256 << 20, 1024 << 20, 1 << 30
-SOURCE_CAP, BATCH = 64 << 10, 128
+GOLDEN = Path(__file__).with_name("golden")
+require = records.require
 U32, U64 = (1 << 32) - 1, (1 << 64) - 1
-IMIN, IMAX = -(1 << 63), (1 << 63) - 1
+IMIN, IMAX = records.MIN, records.MAX
 COUNT_FALLBACK, INDEX_FALLBACK = IMIN + 123456789, -81985529216486896
 FALLBACKS = (U64, 1 << 63, 0xFEDCBA9876543210)
-PREFIX = "module manifest_oracle;import package.manifest;import package.identity;import std.array;\n"
-NAME = rb"[a-z][a-z0-9]*(?:-[a-z0-9]+)*"
-DECIMAL = rb"(?:0|[1-9][0-9]{0,9})"
-TOKEN = re.compile(rb"(" + NAME + rb")@(" + DECIMAL + rb")\.(" + DECIMAL + rb")\.(" + DECIMAL + rb")")
-GRAMMAR = re.compile(rb"aurora-package 1\npackage ([^\n]*)\n((?:depends [^\n]*\n){0,8})end\n")
-
-
-def require(ok, message):
-    if not ok:
-        raise AssertionError(message)
-
-
-def cap_self_test():
-    for mib in (256, 512, 513, 1023, 1024):
-        require(candidate_cap(mib) == mib << 20, "candidate cap boundary conversion")
-    for mib in (-1, 0, 255, 1025, 1 << 30, True, 512.0, "1024", None):
-        try:
-            candidate_cap(mib)
-        except AssertionError:
-            continue
-        raise AssertionError("invalid candidate cap accepted")
-
-
-def sha(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-
-
-def artifact_path(value):
-    raw = Path(value).absolute()
-    require(".." not in raw.parts, "artifact path traversal denied")
-    require(not any(p.is_symlink() for p in [raw, *raw.parents]), "symlink output root denied")
-    canonical = raw.resolve(strict=False)
-    require(canonical.is_relative_to(ROOT), "artifacts must stay within the candidate")
-    return canonical
-
-
-def candidate_cap(mib):
-    require(
-        type(mib) is int and 256 <= mib <= 1024,
-        "candidate cap must be an integer between 256 and 1024 MiB; increases require explicit aggregate admission",
-    )
-    return mib << 20
+IDENTITY = ("success", "malformed", "out_of_range")
+DEPENDENCY = ("success", "malformed", "out_of_range", "index_out_of_range")
+OPERATIONS = ("parse", "manifest", "dependency", "owned", "eager", "separate", "getters")
+SCALARS = (
+    "operation",
+    "length",
+    "offset",
+    "count",
+    "index",
+    "status",
+    "root_status",
+    "root_length",
+    "dep_status",
+    "dep_length",
+)
+VERSIONS = ("root_major", "root_minor", "root_patch", "dep_major", "dep_minor", "dep_patch")
+SPAN = "builtin::span<const u8>"
 
 
 def signed(value):
     return "(-9223372036854775807-1)" if value == IMIN else str(value)
 
 
-@dataclass(frozen=True)
-class Identity:
-    status: str = "malformed"
-    name: bytes = b""
-    version: tuple = (0, 0, 0)
-
-    def values(self):
-        good = self.status == "success"
-        return (
-            ("success", "malformed", "out_of_range").index(self.status) + 1,
-            len(self.name) if good else 0,
-            *(self.version if good else FALLBACKS),
-            *(self.name if good else b"").ljust(24, b"\0"),
-        )
-
-
-def identity_oracle(token):
-    match = TOKEN.fullmatch(token)
-    if match is None or len(match[1]) > 24:
-        return Identity()
-    version = tuple(int(x) for x in match.groups()[1:])
-    return Identity("success", match[1], version) if max(version) <= U32 else Identity()
-
-
-@dataclass(frozen=True)
-class Manifest:
-    status: str
-    root: Identity = Identity()
-    dependencies: tuple = ()
-
-    def values(self):
-        good = self.status == "success"
-        return (
-            ("success", "malformed", "out_of_range").index(self.status) + 1,
-            len(self.dependencies) if good else COUNT_FALLBACK & U64,
-            *(self.root if good else Identity()).values(),
-        )
-
-    def query(self, index):
-        status = self.status
-        if status == "success" and not 0 <= index < len(self.dependencies):
-            status = "index_out_of_range"
-        good = status == "success"
-        return (
-            ("success", "malformed", "out_of_range", "index_out_of_range").index(status) + 1,
-            len(self.dependencies) if good else COUNT_FALLBACK & U64,
-            index if good else INDEX_FALLBACK & U64,
-            *(self.root if good else Identity()).values(),
-            *(self.dependencies[index] if good else Identity()).values(),
-        )
-
-
-def parse_oracle(data, offset, count):
-    # Arbitrary precision addition and regex fullmatch intentionally differ from
-    # the production scanner and subtraction-first machine arithmetic.
-    if offset < 0 or count < 0 or offset + count > len(data):
-        return Manifest("out_of_range")
-    selected = data[offset : offset + count]
-    match = GRAMMAR.fullmatch(selected)
-    if match is None:
-        return Manifest("malformed")
-    root = identity_oracle(match[1])
-    deps = tuple(identity_oracle(line[8:]) for line in match[2].split(b"\n")[:-1])
-    identities = (root, *deps)
-    if any(x.status != "success" for x in identities) or len({x.name for x in identities}) != len(identities):
-        return Manifest("malformed")
-    return Manifest("success", root, deps)
-
-
-def manifest_constructor(status, root, count):
-    if status == "success" and (root.status != "success" or not 0 <= count <= 8):
-        status = "malformed"
-    good = status == "success"
-    return (
-        ("success", "malformed", "out_of_range").index(status) + 1,
-        count if good else COUNT_FALLBACK & U64,
-        *(root if good else Identity()).values(),
-    )
-
-
-def dependency_constructor(status, root, dep, count, index):
-    if status == "success" and (
-        root.status != "success"
-        or dep.status != "success"
-        or root.name == dep.name
-        or not 1 <= count <= 8
-        or not 0 <= index < count
-    ):
-        status = "malformed"
-    good = status == "success"
-    return (
-        ("success", "malformed", "out_of_range", "index_out_of_range").index(status) + 1,
-        count if good else COUNT_FALLBACK & U64,
-        index if good else INDEX_FALLBACK & U64,
-        *(root if good else Identity()).values(),
-        *(dep if good else Identity()).values(),
-    )
-
-
-@dataclass(frozen=True)
-class Case:
-    label: str
-    body: str
-    expected: tuple
-    helpers: str = ""
-    arguments: tuple = (0, 0)
-    runtime: tuple | None = None
-
-
-def array(name, data):
-    require(1 <= len(data) <= 4096, "supported input owner length")
-    return f"array<u8,{len(data)}> {name}={{" + ",".join(f"{x}u8" for x in data) + "};"
-
-
 def manifest(root=b"a@0.0.0", deps=()):
     return b"aurora-package 1\npackage " + root + b"\n" + b"".join(b"depends " + x + b"\n" for x in deps) + b"end\n"
 
 
-def parse_case(label, data, offset=0, count=None, index=0, mutation=None):
-    count = len(data) if count is None else count
-    owner = data or b"\0"
-    arguments = (0, 0)
-    body = array("owner", owner)
-    if mutation is not None:
-        position, value = mutation
-        model_data = owner[:position] + bytes([value]) + owner[position + 1 :]
-        body += "owner[argument1]=u8(argument2);"
-        arguments = mutation
-    else:
-        model_data = owner
-    model = parse_oracle(model_data, offset, count)
-    # Two independent calls each validate a complete original owner. Its overwrite
-    # occurs only after copied result construction and borrow end.
-    body += (
-        "if(slot<31){const package::ManifestResult parsed=package::parse_manifest("
-        f"borrow_bytes(owner),{signed(offset)},{signed(count)});"
-        "const package::ManifestResult r=parsed;"
-        f"i64 i=0;while(i<{len(owner)}){{owner[i]=255u8;i=i+1;}}"
-        "return observe_manifest(r,slot);}"
-        "const package::DependencyResult parsed=package::manifest_dependency("
-        f"borrow_bytes(owner),{signed(offset)},{signed(count)},{signed(index)});"
-        "const package::DependencyResult r=parsed;"
-        f"i64 i=0;while(i<{len(owner)}){{owner[i]=0u8;i=i+1;}}"
-        "return observe_dependency(r,slot-31);"
-    )
-    return Case(
-        label,
-        body,
-        model.values() + model.query(index),
-        arguments=arguments,
-        runtime=(model_data.hex(), offset, count, index),
+def split_token(token):
+    """Golden/input token spelling `name@major.minor.patch` as (name, version)."""
+    name, version = token.split("@") if isinstance(token, str) else token.decode("ascii").split("@")
+    return name.encode("ascii"), tuple(int(part) for part in version.split("."))
+
+
+def name_words(name):
+    """The 24 name bytes as three little-endian u64 words, as the driver packs them."""
+    name = name.ljust(24, b"\0")
+    return tuple(int.from_bytes(name[i : i + 8], "little") for i in range(0, 24, 8))
+
+
+def identity_words(token):
+    if token is None:
+        return (2, 0, *FALLBACKS, *name_words(b""))
+    name, version = split_token(token)
+    return (1, len(name), *version, *name_words(name))
+
+
+def manifest_words(status, count=0, root=None):
+    good = status == "success"
+    return (
+        IDENTITY.index(status) + 1,
+        count if good else COUNT_FALLBACK & U64,
+        *identity_words(root if good else None),
     )
 
 
-def shared():
-    source = (
+def dependency_words(status, count=0, index=0, root=None, dep=None):
+    good = status == "success"
+    return (
+        DEPENDENCY.index(status) + 1,
+        count if good else COUNT_FALLBACK & U64,
+        index if good else INDEX_FALLBACK & U64,
+        *identity_words(root if good else None),
+        *identity_words(dep if good else None),
+    )
+
+
+def parse_words(expected, index):
+    """A manifest is a failure status or [root, dependencies...] tokens."""
+    if isinstance(expected, str):
+        return manifest_words(expected) + dependency_words(expected)
+    root, deps = expected[0], expected[1:]
+    selected = 0 <= index < len(deps)
+    return manifest_words("success", len(deps), root) + (
+        dependency_words("success", len(deps), index, root, deps[index])
+        if selected
+        else dependency_words("index_out_of_range")
+    )
+
+
+def words(operation, values, expected):
+    if operation == "parse":
+        return list(parse_words(expected, values.get("index", 0)))
+    if operation == "manifest":
+        return list(manifest_words(*expected) if isinstance(expected, list) else manifest_words(expected))
+    if operation == "dependency":
+        return list(dependency_words(*expected) if isinstance(expected, list) else dependency_words(expected))
+    return list(expected)
+
+
+def driver_source():
+    declarations, initializers, reader = records.byte_fields()
+    source = "module manifest_driver;import package.manifest;import package.identity;import std.array;\n"
+    # Same-named private-helper shadows in the test module must not bind into
+    # the defining module; every case runs with them present.
+    source += (
+        "namespace package{auto manifest_name_equal(IdentityResult a,IdentityResult b)->bool{return false;}"
+        "auto manifest_literal(builtin::span<const u8> bytes,i64 offset,builtin::span<const u8> literal)"
+        "->bool{return true;}"
+        "auto manifest_line_end(builtin::span<const u8> bytes,i64 start,i64 end)->i64{return -1;}}\n"
+    )
+    source += (
         "auto bits(i64 value)->u64{if(value<0){return 9223372036854775808u64+"
         "u64(value-(-9223372036854775807-1));}return u64(value);}\n"
-        "auto observe_identity(package::IdentityResult r,i64 slot)->u64{\n"
+        "auto observe_identity(package::IdentityResult r,i64 slot)->u64{"
         "if(slot==0){if(r.status()==package::IdentityStatus::success){return 1u64;}"
-        "if(r.status()==package::IdentityStatus::malformed){return 2u64;}return 3u64;}\n"
-        "if(slot==1){return u64(r.name_size());}\n"
+        "if(r.status()==package::IdentityStatus::malformed){return 2u64;}return 3u64;}"
+        "if(slot==1){return u64(r.name_size());}"
     )
     for slot, (method, fallback) in enumerate(zip(("major_or", "minor_or", "patch_or"), FALLBACKS), 2):
         source += f"if(slot=={slot}){{return r.{method}({fallback}u64);}}"
+    # Every name byte is observed, eight to a word, lowest index in the low byte.
     source += (
-        "const std::array<u8,24> storage=r.name_bytes_or_zero();return u64(storage.at(slot-5));}\n"
-        "auto observe_manifest(package::ManifestResult r,i64 slot)->u64{\n"
+        "const std::array<u8,24> storage=r.name_bytes_or_zero();const i64 first=8*(slot-5);"
+        "u64 word=0u64;i64 i=7;while(i>=0){word=(word<<8)|u64(storage.at(first+i));i=i-1;}return word;}\n"
+        "auto observe_manifest(package::ManifestResult r,i64 slot)->u64{"
         "if(slot==0){if(r.status()==package::ManifestStatus::success){return 1u64;}"
-        "if(r.status()==package::ManifestStatus::malformed){return 2u64;}return 3u64;}\n"
-    )
-    source += f"if(slot==1){{return bits(r.dependency_count_or({signed(COUNT_FALLBACK)}));}}"
-    source += (
+        "if(r.status()==package::ManifestStatus::malformed){return 2u64;}return 3u64;}"
+        f"if(slot==1){{return bits(r.dependency_count_or({signed(COUNT_FALLBACK)}));}}"
         "const package::IdentityResult root=r.identity_or_error();return observe_identity(root,slot-2);}\n"
-        "auto observe_dependency(package::DependencyResult r,i64 slot)->u64{\n"
+        "auto observe_dependency(package::DependencyResult r,i64 slot)->u64{"
         "if(slot==0){if(r.status()==package::DependencyStatus::success){return 1u64;}"
         "if(r.status()==package::DependencyStatus::malformed){return 2u64;}"
-        "if(r.status()==package::DependencyStatus::out_of_range){return 3u64;}return 4u64;}\n"
+        "if(r.status()==package::DependencyStatus::out_of_range){return 3u64;}return 4u64;}"
+        f"if(slot==1){{return bits(r.dependency_count_or({signed(COUNT_FALLBACK)}));}}"
+        f"if(slot==2){{return bits(r.index_or({signed(INDEX_FALLBACK)}));}}"
+        "if(slot<11){const package::IdentityResult root=r.identity_or_error();return observe_identity(root,slot-3);}"
+        "const package::IdentityResult dep=r.dependency_or_error();return observe_identity(dep,slot-11);}\n"
+        "auto copy_manifest(package::ManifestResult r)->package::ManifestResult{return r;}\n"
+        "auto copy_dependency(package::DependencyResult r)->package::DependencyResult{return r;}\n"
+        "class Counter{i64 calls;public:Counter():calls(0){}"
+        "auto next()->i64{calls=calls+1;return -81985529216486896;}auto count()const->i64{return calls;}};\n"
     )
-    source += f"if(slot==1){{return bits(r.dependency_count_or({signed(COUNT_FALLBACK)}));}}"
-    source += f"if(slot==2){{return bits(r.index_or({signed(INDEX_FALLBACK)}));}}"
-    source += (
-        "if(slot<32){const package::IdentityResult root=r.identity_or_error();return observe_identity(root,slot-3);}\n"
-        "const package::IdentityResult dep=r.dependency_or_error();return observe_identity(dep,slot-32);}\n"
+    source += "class ManifestInput{" + declarations + "".join(f"i64 {name};" for name in SCALARS)
+    source += "".join(f"u64 {name};" for name in VERSIONS) + "public:ManifestInput():"
+    source += ",".join(initializers + [f"{name}(0)" for name in SCALARS] + [f"{name}(0u64)" for name in VERSIONS])
+    source += "{}" + reader
+    load = records.ZERO_OWNER + "i64 at=0;while(at<length){owner[at]=input_byte(at);at=at+1;}"
+    source += f"auto parse_view({SPAN} source)const->package::ManifestResult{{"
+    source += f"const {SPAN} view=source.subspan(0,length);"
+    source += "const package::ManifestResult result=package::parse_manifest(view,offset,count);return result;}"
+    source += f"auto dependency_view({SPAN} source)const->package::DependencyResult{{"
+    source += f"const {SPAN} view=source.subspan(0,length);"
+    source += "const package::DependencyResult result=package::manifest_dependency(view,offset,count,index);"
+    source += "return result;}"
+    # Owners local to these calls are destroyed before their copied results are used.
+    source += "auto make_manifest()const->package::ManifestResult{{" + load
+    source += "const package::ManifestResult r=parse_view(borrow_bytes(owner));return r;}}"
+    source += "auto make_dependency()const->package::DependencyResult{{" + load
+    source += "const package::DependencyResult r=dependency_view(borrow_bytes(owner));return r;}}"
+    for prefix in ("root", "dep"):
+        source += f"auto {prefix}_name()const->std::array<u8,24>{{std::array<u8,24> name=std::array<u8,24>();"
+        start = 0 if prefix == "root" else 24
+        source += f"i64 i=0;while(i<24){{name.set(i,input_byte({start}+i));i=i+1;}}return name;}}"
+        source += f"auto {prefix}_identity_status()const->package::IdentityStatus{{"
+        source += "".join(
+            f"if({prefix}_status=={n}){{return package::IdentityStatus::{name};}}" for n, name in enumerate(IDENTITY)
+        )
+        source += "return package::IdentityStatus::out_of_range;}"
+    source += "auto manifest_status()const->package::ManifestStatus{"
+    source += "".join(f"if(status=={n}){{return package::ManifestStatus::{name};}}" for n, name in enumerate(IDENTITY))
+    source += "return package::ManifestStatus::out_of_range;}"
+    source += "auto dependency_status()const->package::DependencyStatus{"
+    source += "".join(
+        f"if(status=={n}){{return package::DependencyStatus::{name};}}" for n, name in enumerate(DEPENDENCY)
     )
+    source += "return package::DependencyStatus::index_out_of_range;}"
+    source += "auto entry(i64 slot)const->u64{"
+    # Two independent calls each validate the complete original owner, which
+    # is overwritten only after the copied result exists and the borrow ended.
+    source += "if(operation==0){" + load
+    source += "if(slot<10){const package::ManifestResult parsed=parse_view(borrow_bytes(owner));"
+    source += "const package::ManifestResult r=parsed;"
+    source += "i64 i=0;while(i<length){owner[i]=255u8;i=i+1;}return observe_manifest(r,slot);}"
+    source += "const package::DependencyResult parsed=dependency_view(borrow_bytes(owner));"
+    source += "const package::DependencyResult r=parsed;"
+    source += "i64 i=0;while(i<length){owner[i]=0u8;i=i+1;}return observe_dependency(r,slot-10);}"
+    root = (
+        "std::array<u8,24> root_storage=root_name();const package::IdentityResult root=package::IdentityResult("
+        "root_identity_status(),root_storage,root_length,root_major,root_minor,root_patch);"
+    )
+    dep = (
+        "std::array<u8,24> dep_storage=dep_name();const package::IdentityResult dep=package::IdentityResult("
+        "dep_identity_status(),dep_storage,dep_length,dep_major,dep_minor,dep_patch);"
+    )
+    source += "if(operation==1){" + root
+    source += "const package::ManifestResult original=package::ManifestResult(manifest_status(),root,count);"
+    source += "const package::ManifestResult r=original;root_storage.set(0,255u8);return observe_manifest(r,slot);}"
+    source += "if(operation==2){" + root + dep
+    source += "const package::DependencyResult original="
+    source += "package::DependencyResult(dependency_status(),root,dep,count,index);"
+    source += "const package::DependencyResult r=original;root_storage.set(0,255u8);dep_storage.set(0,255u8);"
+    source += "return observe_dependency(r,slot);}"
+    source += "if(operation==3){if(slot<10){const package::ManifestResult a=make_manifest();"
+    source += "const package::ManifestResult r=copy_manifest(a);return observe_manifest(r,slot);}"
+    source += "const package::DependencyResult a=make_dependency();"
+    source += "const package::DependencyResult r=copy_dependency(a);return observe_dependency(r,slot-10);}"
+    # Fallback arguments are evaluated eagerly, exactly once per call.
+    source += "if(operation==4){const package::ManifestResult m=make_manifest();"
+    source += "const package::DependencyResult d=make_dependency();"
+    source += "Counter c=Counter();const i64 a=m.dependency_count_or(c.next());"
+    source += "const i64 b=d.dependency_count_or(c.next());const i64 i=d.index_or(c.next());"
+    source += "if(slot==0){return bits(c.count());}if(slot==1){return bits(a);}"
+    source += "if(slot==2){return bits(b);}return bits(i);}"
+    # Separate calls observe their own changed input; retained reports stay copied.
+    source += "if(operation==5){" + load
+    source += "const package::DependencyResult before=dependency_view(borrow_bytes(owner));owner[0]=0u8;"
+    source += "const package::DependencyResult after=dependency_view(borrow_bytes(owner));"
+    source += "if(slot<19){return observe_dependency(before,slot);}return observe_dependency(after,slot-19);}"
+    source += "const package::DependencyResult r=make_dependency();"
+    source += "const package::IdentityResult root=r.identity_or_error();"
+    source += "const package::IdentityResult dep=r.dependency_or_error();"
+    source += "std::array<u8,24> rn=root.name_bytes_or_zero();std::array<u8,24> dn=dep.name_bytes_or_zero();"
+    source += "i64 i=0;while(i<24){rn.set(i,255u8);dn.set(i,255u8);i=i+1;}return observe_dependency(r,slot);}};\n"
     return source
 
 
-def parsing_cases(*, exhaustive=True):
+def parsing_cases():
     cases = []
 
     def add(label, data, offset=0, count=None, index=0, mutation=None):
-        cases.append(parse_case(label, data, offset, count, index, mutation))
+        count = len(data) if count is None else count
+        data = data or b"\0"
+        if mutation is not None:
+            position, value = mutation
+            data = data[:position] + bytes([value]) + data[position + 1 :]
+        cases.append((label, "parse", dict(data=data, offset=offset, count=count, index=index)))
 
     maximum = b"z" * 24 + b"@4294967295.4294967295.4294967295"
     deps = tuple(bytes([97 + i]) + b"q" * 23 + b"@4294967295.4294967295.4294967295" for i in range(8))
@@ -293,20 +256,18 @@ def parsing_cases(*, exhaustive=True):
             add(f"canonical/{len(ds)}/{index}", manifest(root, ds), index=index)
     for count in range(11):
         ds = tuple(bytes([98 + i]) + b"@1.2.3" for i in range(count))
-        indices = (-1, 0, count - 1, count)
-        for index in indices if exhaustive else dict.fromkeys(indices):
+        for index in (-1, 0, count - 1, count):
             add(f"dependency-limit/{count}/{index}", manifest(deps=ds), index=index)
-    if exhaustive:
-        for token in (manifest(), manifest(b"a1-b2@12.34.56", (b"c3-d4@56.78.90",)), manifest(maximum, deps)):
-            for cut in range(len(token)):
-                add(f"truncation/{len(token)}/{cut}", token, count=cut)
-            # Every distinct starting boundary must not accidentally accept a suffix.
-            for cut in range(1, len(token) + 1):
-                add(f"suffix/{len(token)}/{cut}", token, offset=cut, count=len(token) - cut)
-        representative = manifest(b"a1-b2@12.34.56", (b"c3-d4@56.78.90",))
-        for position in range(len(representative)):
-            for value in range(256):
-                add(f"all-byte-substitution/{position}/{value}", representative, mutation=(position, value))
+    for token in (manifest(), manifest(b"a1-b2@12.34.56", (b"c3-d4@56.78.90",)), manifest(maximum, deps)):
+        for cut in range(len(token)):
+            add(f"truncation/{len(token)}/{cut}", token, count=cut)
+        # Every distinct starting boundary must not accidentally accept a suffix.
+        for cut in range(1, len(token) + 1):
+            add(f"suffix/{len(token)}/{cut}", token, offset=cut, count=len(token) - cut)
+    representative = manifest(b"a1-b2@12.34.56", (b"c3-d4@56.78.90",))
+    for position in range(len(representative)):
+        for value in range(256):
+            add(f"all-byte-substitution/{position}/{value}", representative, mutation=(position, value))
     for data in (
         b"",
         b"\0",
@@ -349,7 +310,7 @@ def parsing_cases(*, exhaustive=True):
         b"a_b@1.2.3",
         b"a/b@1.2.3",
         b"a\0b@1.2.3",
-        "caf\u00e9@1.2.3".encode(),
+        "café@1.2.3".encode(),
         b"a" * 25 + b"@1.2.3",
         b"a@1.2.3.4",
         b"a@1.2.3-pre",
@@ -366,7 +327,7 @@ def parsing_cases(*, exhaustive=True):
         b"1_0",
         b"4294967296",
         b"9999999999",
-        b"18446744073709551615",
+        str(U64).encode(),
     ):
         for component in range(3):
             parts = [b"1", b"2", b"3"]
@@ -407,43 +368,32 @@ def parsing_cases(*, exhaustive=True):
     for length in (616, 1024, 4096):
         add(f"large-owner/{length}", b"\xff" * (length - len(seed)) + seed, length - len(seed), len(seed))
         add(f"large-invalid/{length}", b"a" * length)
-    if exhaustive:
-        rng = random.Random(221004)
-        for i in range(80):
-            ds = []
-            for n in range(rng.randrange(9)):
-                name = bytes([98 + n]) + bytes(
-                    rng.choice(b"abcdefghijklmnopqrstuvwxyz0123456789") for _ in range(rng.randrange(24))
-                )
-                ds.append(name + b"@" + b".".join(str(rng.randrange(1 << 32)).encode() for _ in range(3)))
-            data = manifest(b"app@1.2.3", tuple(ds))
-            index = rng.randrange(-1, len(ds) + 1)
-            add(f"seed221004-valid/{i}", data, index=index)
-            add(f"seed221004-mutation/{i}", data, index=index, mutation=(rng.randrange(len(data)), rng.randrange(256)))
+    rng = random.Random(221004)
+    for i in range(80):
+        ds = []
+        for n in range(rng.randrange(9)):
+            name = bytes([98 + n]) + bytes(
+                rng.choice(b"abcdefghijklmnopqrstuvwxyz0123456789") for _ in range(rng.randrange(24))
+            )
+            ds.append(name + b"@" + b".".join(str(rng.randrange(1 << 32)).encode() for _ in range(3)))
+        data = manifest(b"app@1.2.3", tuple(ds))
+        index = rng.randrange(-1, len(ds) + 1)
+        add(f"seed221004-valid/{i}", data, index=index)
+        add(f"seed221004-mutation/{i}", data, index=index, mutation=(rng.randrange(len(data)), rng.randrange(256)))
     return cases
 
 
-def identity_source(name, token, status="success", poison=False):
-    identity = identity_oracle(token)
-    source = "std::array<u8,24> " + name + "_storage=std::array<u8,24>();"
-    for i, v in enumerate(identity.name):
-        source += f"{name}_storage.set({i},{v}u8);"
-    length = len(identity.name)
-    version = identity.version
+def identity_input(prefix, token, status="success", poison=False):
+    """Public IdentityResult constructor inputs; poison forges length, version and padding."""
+    name, version = split_token(token)
+    storage = bytearray(name.ljust(24, b"\0"))
+    length = len(name)
     if poison:
-        length = IMAX
-        version = (U64, U64, U64)
-        source += f"{name}_storage.set(23,255u8);"
-    source += (
-        f"const package::IdentityResult {name}="
-        f"package::IdentityResult(package::IdentityStatus::{status},{name}_storage,{signed(length)},"
-        + ",".join(f"{x}u64" for x in version)
-        + ");"
-    )
-    result = (
-        identity if status == "success" and not poison else Identity(status if status != "success" else "malformed")
-    )
-    return source, result
+        length, version = IMAX, (U64, U64, U64)
+        storage[23] = 255
+    values = {f"{prefix}_status": IDENTITY.index(status), f"{prefix}_length": length}
+    values.update({f"{prefix}_{part}": value for part, value in zip(("major", "minor", "patch"), version)})
+    return bytes(storage), values
 
 
 def construction_cases():
@@ -454,929 +404,90 @@ def construction_cases():
         (b"root@1.2.3", "malformed", False),
         (b"root@1.2.3", "out_of_range", True),
     )
-    for status in ("success", "malformed", "out_of_range"):
-        for rno, (rt, rs, rp) in enumerate(roots):
+    for status in IDENTITY:
+        for number, (token, root_status, poison) in enumerate(roots):
             for count in (IMIN, -1, 0, 1, 8, 9, IMAX):
-                src, r = identity_source("root", rt, rs, rp)
-                src += (
-                    f"const package::ManifestResult original="
-                    f"package::ManifestResult(package::ManifestStatus::{status},root,{signed(count)});"
-                )
-                src += (
-                    "const package::ManifestResult r=original;root_storage.set(0,255u8);"
-                    "return observe_manifest(r,slot);"
-                )
+                storage, values = identity_input("root", token, root_status, poison)
+                values.update(status=IDENTITY.index(status), count=count)
                 cases.append(
-                    Case(f"constructor-manifest/{status}/{rno}/{count}", src, manifest_constructor(status, r, count))
+                    (f"constructor-manifest/{status}/{number}/{count}", "manifest", dict(data=storage, **values))
                 )
-    for status in ("success", "malformed", "out_of_range", "index_out_of_range"):
+    root_storage, root_values = identity_input("root", b"root@4294967295.2147483648.17")
+    dep_storage, dep_values = identity_input("dep", b"dep@0.1.2")
+    for status in DEPENDENCY:
         for count in (IMIN, -1, 0, 1, 8, 9, IMAX):
             for index in (IMIN, -1, 0, 1, 7, 8, IMAX):
-                src, r = identity_source("root", b"root@4294967295.2147483648.17")
-                other, d = identity_source("dep", b"dep@0.1.2")
-                src += other
-                src += (
-                    f"const package::DependencyResult original=package::DependencyResult("
-                    f"package::DependencyStatus::{status},root,dep,{signed(count)},{signed(index)});"
-                )
-                src += (
-                    "const package::DependencyResult r=original;root_storage.set(0,255u8);"
-                    "dep_storage.set(0,255u8);return observe_dependency(r,slot);"
-                )
-                cases.append(
-                    Case(
-                        f"constructor-dependency/{status}/{count}/{index}",
-                        src,
-                        dependency_constructor(status, r, d, count, index),
-                    )
-                )
-    for status in ("success", "malformed", "out_of_range", "index_out_of_range"):
+                values = dict(root_values, **dep_values, status=DEPENDENCY.index(status), count=count, index=index)
+                label = f"constructor-dependency/{status}/{count}/{index}"
+                cases.append((label, "dependency", dict(data=root_storage + dep_storage, **values)))
+    for status in DEPENDENCY:
         for root_bad in (False, True):
-            for dep_status in ("success", "malformed", "out_of_range"):
+            for dep_status in IDENTITY:
                 for dep_poison in (False, True):
                     for same in (False, True):
-                        src, r = identity_source("root", b"root@1.2.3", "success", root_bad)
-                        other, d = identity_source(
-                            "dep", b"root@9.8.7" if same else b"dep@9.8.7", dep_status, dep_poison
-                        )
-                        src += other
-                        src += (
-                            f"const package::DependencyResult r="
-                            f"package::DependencyResult(package::DependencyStatus::{status},root,dep,8,7);"
-                            f"return observe_dependency(r,slot);"
-                        )
-                        cases.append(
-                            Case(
-                                f"constructor-local-invariants/{status}/{root_bad}/{dep_status}/{dep_poison}/{same}",
-                                src,
-                                dependency_constructor(status, r, d, 8, 7),
-                            )
-                        )
+                        root_storage, values = identity_input("root", b"root@1.2.3", "success", root_bad)
+                        dep_token = b"root@9.8.7" if same else b"dep@9.8.7"
+                        dep_storage, dep_values = identity_input("dep", dep_token, dep_status, dep_poison)
+                        values.update(dep_values, status=DEPENDENCY.index(status), count=8, index=7)
+                        label = f"constructor-local-invariants/{status}/{root_bad}/{dep_status}/{dep_poison}/{same}"
+                        cases.append((label, "dependency", dict(data=root_storage + dep_storage, **values)))
     return cases
 
 
 def ownership_cases():
     data = manifest(b"owned-root@4294967295.2147483648.17", (b"owned-dep@17.2147483648.4294967295",))
-    model = parse_oracle(data, 0, len(data))
-    helper = (
-        "auto make_manifest()->package::ManifestResult{{"
-        + array("local", data)
-        + f"const package::ManifestResult r=package::parse_manifest(borrow_bytes(local),0,{len(data)});return r;}}}}"
-        "auto make_dependency()->package::DependencyResult{{"
-        + array("local", data)
-        + f"const package::DependencyResult r="
-        f"package::manifest_dependency(borrow_bytes(local),0,{len(data)},0);return r;}}}}"
-        "auto copy_manifest(package::ManifestResult r)->package::ManifestResult{return r;}"
-        "auto copy_dependency(package::DependencyResult r)->package::DependencyResult{return r;}"
-    )
-    body = (
-        "if(slot<31){const package::ManifestResult a=make_manifest();"
-        "const package::ManifestResult r=copy_manifest(a);return observe_manifest(r,slot);}"
-        "const package::DependencyResult a=make_dependency();"
-        "const package::DependencyResult r=copy_dependency(a);return observe_dependency(r,slot-31);"
-    )
-    cases = [Case("ownership/function-and-nested-owner-scope-exit", body, model.values() + model.query(0), helper)]
-    helper = (
-        "class Counter{i64 calls;public:Counter():calls(0){}"
-        "auto next()->i64{calls=calls+1;return -81985529216486896;}auto count()const->i64{return calls;}};"
-    )
-    for good in (True, False):
-        selected = data if good else data[:-1]
-        body = (
-            array("owner", selected)
-            + f"const package::ManifestResult m=package::parse_manifest(borrow_bytes(owner),0,{len(selected)});"
-            f"const package::DependencyResult d=package::manifest_dependency(borrow_bytes(owner),0,{len(selected)},0);"
-        )
-        body += (
-            "Counter c=Counter();const i64 a=m.dependency_count_or(c.next());"
-            "const i64 b=d.dependency_count_or(c.next());const i64 i=d.index_or(c.next());"
-            "if(slot==0){return bits(c.count());}if(slot==1){return bits(a);}"
-            "if(slot==2){return bits(b);}return bits(i);"
-        )
-        cases.append(
-            Case(
-                f"eager-fallback/{good}",
-                body,
-                (3, 1, 1, 0) if good else (3, INDEX_FALLBACK & U64, INDEX_FALLBACK & U64, INDEX_FALLBACK & U64),
-                helper,
-            )
-        )
-    # Separate calls observe their own changed input; retained reports stay copied.
-    body = (
-        array("owner", data) + f"const package::DependencyResult before="
-        f"package::manifest_dependency(borrow_bytes(owner),0,{len(data)},0);owner[0]=0u8;"
-        f"const package::DependencyResult after=package::manifest_dependency(borrow_bytes(owner),0,{len(data)},0);"
-    )
-    body += "if(slot<61){return observe_dependency(before,slot);}return observe_dependency(after,slot-61);"
-    cases.append(Case("ownership/separate-call-observations", body, model.query(0) + Manifest("malformed").query(0)))
-    body = (
-        array("owner", data)
-        + f"const package::DependencyResult r=package::manifest_dependency(borrow_bytes(owner),0,{len(data)},0);"
-    )
-    body += (
-        "const package::IdentityResult root=r.identity_or_error();"
-        "const package::IdentityResult dep=r.dependency_or_error();"
-        "std::array<u8,24> rn=root.name_bytes_or_zero();std::array<u8,24> dn=dep.name_bytes_or_zero();"
-        "i64 i=0;while(i<24){rn.set(i,255u8);dn.set(i,255u8);i=i+1;}return observe_dependency(r,slot);"
-    )
-    cases.append(Case("ownership/getter-name-copies-isolated", body, model.query(0)))
-    return cases
-
-
-def negative_cases():
-    data = manifest(b"root@1.2.3", (b"dep@3.2.1",))
-    initial = array("bytes", data)
-    m = f"const package::ManifestResult m=package::parse_manifest(borrow_bytes(bytes),0,{len(data)});"
-    d = f"const package::DependencyResult d=package::manifest_dependency(borrow_bytes(bytes),0,{len(data)},0);"
-
-    def wrap(body, prefix=PREFIX):
-        return prefix + "auto answer()->u64{" + initial + body + "return 0u64;}"
-
-    cases = [
-        (
-            "live-span-owner-mutation",
-            wrap(
-                f"const builtin::span<const u8> v=borrow_bytes(bytes);"
-                f"const package::ManifestResult m=package::parse_manifest(v,0,{len(data)});bytes[0]=0u8;"
-            ),
-            "cannot mutate a byte array while a span is live",
-        ),
-        (
-            "live-reborrow-owner-mutation",
-            wrap(
-                f"const builtin::span<const u8> v=borrow_bytes(bytes);{{const builtin::span<const u8> c=v;"
-                f"const package::DependencyResult d=package::manifest_dependency(c,0,{len(data)},0);}}bytes[0]=0u8;"
-            ),
-            "cannot mutate a byte array while a span is live",
-        ),
-        (
-            "span-cannot-return",
-            PREFIX + "auto leak()->builtin::span<const u8>{" + initial + "return borrow_bytes(bytes);}",
-            "only scalar function results or scalar-field class values are supported (found '{')",
-        ),
-        (
-            "span-cannot-be-field",
-            PREFIX + "class Leak{builtin::span<const u8> value;};",
-            (
-                "unsupported class field type 'builtin::span<const u8>': class fields require scalar, class, pr"
-                "ivate fixed-array or private owned-byte storage"
-            ),
-        ),
-        (
-            "manifest-enum-no-conversion",
-            wrap("const u64 x=u64(package::ManifestStatus::success);"),
-            "expected distinct i64, u64 or u8 conversion types",
-        ),
-        (
-            "dependency-enum-no-conversion",
-            wrap("const u64 x=u64(package::DependencyStatus::success);"),
-            "expected distinct i64, u64 or u8 conversion types",
-        ),
-        (
-            "manifest-no-designated-construction",
-            wrap("const package::ManifestResult m=package::ManifestResult{};"),
-            "constructor-bearing class rejects designated initialization",
-        ),
-        (
-            "dependency-no-designated-construction",
-            wrap("const package::DependencyResult d=package::DependencyResult{};"),
-            "constructor-bearing class rejects designated initialization",
-        ),
-        (
-            "manifest-no-span-forgery",
-            wrap(m + "const builtin::span<const u8> v=borrow_bytes(m);"),
-            "borrow_bytes requires a named local byte array or owned bytes",
-        ),
-        (
-            "dependency-no-span-forgery",
-            wrap(d + "const builtin::span<const u8> v=borrow_bytes(d);"),
-            "borrow_bytes requires a named local byte array or owned bytes",
-        ),
-        (
-            "manifest-unsigned-offset",
-            wrap(f"const package::ManifestResult m=package::parse_manifest(borrow_bytes(bytes),0u64,{len(data)});"),
-            "expected i64, got u64",
-        ),
-        (
-            "manifest-unsigned-count",
-            wrap(f"const package::ManifestResult m=package::parse_manifest(borrow_bytes(bytes),0,{len(data)}u64);"),
-            "expected i64, got u64",
-        ),
-        (
-            "dependency-unsigned-index",
-            wrap(
-                f"const package::DependencyResult d="
-                f"package::manifest_dependency(borrow_bytes(bytes),0,{len(data)},0u64);"
-            ),
-            "expected i64, got u64",
-        ),
-        ("manifest-unsigned-fallback", wrap(m + "const i64 n=m.dependency_count_or(0u64);"), "expected i64, got u64"),
-        ("dependency-unsigned-fallback", wrap(d + "const i64 n=d.index_or(0u64);"), "expected i64, got u64"),
-        (
-            "returned-storage-const",
-            wrap(
-                d + "const package::IdentityResult id=d.dependency_or_error();"
-                "const std::array<u8,24> n=id.name_bytes_or_zero();n.set(0,0u8);"
-            ),
-            "mutable method requires a mutable receiver",
-        ),
-        (
-            "identity-import-required",
-            wrap(
-                m + "const package::IdentityResult id=m.identity_or_error();",
-                "module manifest_oracle;import package.manifest;import std.array;\n",
-            ),
-            "class type requires a direct visible import: package::ManifestResult",
-        ),
-        (
-            "array-import-required",
-            wrap(
-                m + "const package::IdentityResult id=m.identity_or_error();"
-                "const std::array<u8,24> n=id.name_bytes_or_zero();",
-                "module manifest_oracle;import package.manifest;import package.identity;\n",
-            ),
-            "unsupported type or unknown class template; expected a declared template: std::array",
-        ),
+    whole = dict(offset=0, count=len(data), index=0)
+    return [
+        ("ownership/function-and-nested-owner-scope-exit", "owned", dict(data=data, **whole)),
+        ("eager-fallback/True", "eager", dict(data=data, **whole)),
+        ("eager-fallback/False", "eager", dict(data=data[:-1], offset=0, count=len(data) - 1, index=0)),
+        ("ownership/separate-call-observations", "separate", dict(data=data, **whole)),
+        ("ownership/getter-name-copies-isolated", "getters", dict(data=data, **whole)),
     ]
-    for name in ("outcome", "stored_identity", "dependencies"):
-        expression = (
-            "if(m.outcome==package::ManifestStatus::success){return 1u64;}"
-            if name == "outcome"
-            else "const package::IdentityResult x=m.stored_identity;"
-            if name == "stored_identity"
-            else "const i64 x=m.dependencies;"
-        )
-        cases.append(("manifest-private-" + name, wrap(m + expression), "private class field is inaccessible"))
-    for name in ("outcome", "stored_identity", "stored_dependency", "dependencies", "selected_index"):
-        expression = (
-            "if(d.outcome==package::DependencyStatus::success){return 1u64;}"
-            if name == "outcome"
-            else "const package::IdentityResult x=d." + name + ";"
-            if name.startswith("stored_")
-            else "const i64 x=d." + name + ";"
-        )
-        cases.append(("dependency-private-" + name, wrap(d + expression), "private class field is inaccessible"))
-    cases.append(
-        (
-            "private-manifest-helper",
-            wrap("const package::IdentityResult x=package::manifest_identity_error();"),
-            "private function is not imported: package::manifest_identity_error",
-        )
-    )
-    cases.append(
-        (
-            "private-name-helper",
-            wrap(
-                m + "const package::IdentityResult x=m.identity_or_error();"
-                "if(package::manifest_name_equal(x,x)){return 1u64;}"
-            ),
-            "private function is not imported: package::manifest_name_equal",
-        )
-    )
-    cases.append(
-        (
-            "private-method-wrapper",
-            PREFIX + "class Sealed{package::ManifestResult report;"
-            "auto hidden()const->i64{return report.dependency_count_or(-1);}"
-            "public:Sealed(package::ManifestResult value):report(value){}};auto answer()->u64{"
-            + initial
-            + m
-            + "const Sealed s=Sealed(m);return u64(s.hidden());}",
-            "private method is inaccessible",
-        )
-    )
-    return cases
 
 
 def binding_cases():
-    helper = (
-        "namespace package{auto manifest_name_equal(IdentityResult a,IdentityResult b)->bool{return false;}"
-        "auto manifest_literal(builtin::span<const u8> bytes,i64 offset,builtin::span<const u8> literal)"
-        "->bool{return true;}"
-        "auto manifest_line_end(builtin::span<const u8> bytes,i64 start,i64 end)->i64{return -1;}}"
-    )
     cases = []
     for label, data in (
         ("valid", manifest(b"root@1.2.3", (b"dep@3.2.1",))),
         ("duplicate", manifest(b"root@1.2.3", (b"dep@3.2.1", b"dep@9.8.7"))),
         ("bad-header", b"X" + manifest()[1:]),
     ):
-        base = parse_case("defining-module-binding/" + label, data)
-        cases.append(Case(base.label, base.body, base.expected, helper))
+        cases.append(("defining-module-binding/" + label, "parse", dict(data=data, offset=0, count=len(data), index=0)))
     return cases
 
 
-def validate(output, expected, returncode=0):
-    require(returncode == 0, f"native exit {returncode}")
-    require(len(output) == 8 * len(expected), f"exact output length expected {8 * len(expected)}, got {len(output)}")
-    observed = tuple(int.from_bytes(output[i : i + 8], "little") for i in range(0, len(output), 8))
-    for i, (actual, wanted) in enumerate(zip(observed, expected)):
-        require(actual == wanted, f"observation {i}: expected {wanted}, got {actual}")
-    return observed
-
-
-def self_test(*, temporary_parent=None):
-    minimal = manifest()
-    require(len(minimal) == 37, "minimum length")
-    maximum = manifest(
-        b"z" * 24 + b"@4294967295.4294967295.4294967295",
-        tuple(bytes([97 + i]) + b"q" * 23 + b"@4294967295.4294967295.4294967295" for i in range(8)),
-    )
-    require(len(maximum) == 615 and parse_oracle(maximum, 0, 615).status == "success", "maximum length")
-    require(parse_oracle(minimal, 0, len(minimal)).status == "success", "minimum grammar")
-    require(
-        len(parse_oracle(minimal, 0, 37).values()) == 31 and len(parse_oracle(maximum, 0, 615).query(7)) == 61,
-        "complete vector sizes",
-    )
-    for invalid in (
-        minimal[:-1],
-        minimal + b"\n",
-        manifest(b"a@01.0.0"),
-        manifest(deps=(b"a@1.2.3",)),
-        manifest(deps=(b"b@0.0.0", b"b@1.2.3")),
-        manifest(deps=(b"b@1.2.3\r",)),
-    ):
-        require(parse_oracle(invalid, 0, len(invalid)).status == "malformed", "grammar invalid")
-        require(parse_oracle(invalid, 0, len(invalid)).query(IMIN)[0] == 2, "grammar before index")
-    require(parse_oracle(minimal, IMAX, IMAX).query(IMIN)[0] == 3, "window precedence")
-    require(parse_oracle(minimal, 0, 37).query(0)[0] == 4, "empty dependency selection")
-    validate(U64.to_bytes(8, "little"), (U64,))
-    for output, expected, code in (
-        (b"\xff" + bytes(7), (U64,), 0),
-        (bytes(7), (0,), 0),
-        (bytes(9), (0,), 0),
-        (bytes(8), (0,), -4),
-        (bytes(8), (0,), 1),
-    ):
-        try:
-            validate(output, expected, code)
-        except AssertionError:
-            pass
-        else:
-            raise AssertionError("observer accepted broken high-bit/length/exit control")
-    require(artifact_path(ROOT / "build" / "future-artifact") == ROOT / "build" / "future-artifact", "contained path")
-    for path in (ROOT / "build" / ".." / ".." / "escaped", ROOT / ".." / "escaped", ROOT.parent / "escaped"):
-        try:
-            artifact_path(path)
-        except AssertionError:
-            pass
-        else:
-            raise AssertionError("containment accepted traversal/outside path")
-    with tempfile.TemporaryDirectory(
-        prefix="manifest-path-control-", dir=temporary_parent or ROOT / "build"
-    ) as temporary:
-        link = Path(temporary) / "escape"
-        link.symlink_to(ROOT.parent, target_is_directory=True)
-        try:
-            artifact_path(link / "output")
-        except AssertionError as exc:
-            require(str(exc) == "symlink output root denied", "symlink control failed for the wrong reason")
-        else:
-            raise AssertionError("containment accepted symlink ancestor")
-    require(candidate_cap(256) == CAP and candidate_cap(1024) == MAX_CAP, "cap boundaries")
-    cap_self_test()
-
-
 def all_cases():
-    parse = parsing_cases()
-    construction = construction_cases()
-    ownership = ownership_cases()
-    binding = binding_cases()
-    return parse + construction + ownership + binding, dict(
-        parse_cases=len(parse),
-        constructor_cases=len(construction),
-        ownership_cases=len(ownership),
-        binding_cases=len(binding),
-    )
+    return parsing_cases() + construction_cases() + ownership_cases() + binding_cases()
 
 
-def freeze_corpus(directory):
-    require(not directory.exists(), "fresh oracle freeze directory required")
-    directory.mkdir()
-    cases, counts = all_cases()
-    with gzip.open(directory / "corpus.jsonl.gz", "wt", encoding="utf-8") as out:
-        for case in cases:
-            out.write(json.dumps(case.__dict__, sort_keys=True) + "\n")
-    shutil.copyfile(__file__, directory / "package_manifest.py")
-    report = dict(
-        status="revised-reference-after-independent-v1-freeze",
-        original_freeze="oracle-reference-v1/freeze.json",
-        revision_reason=(
-            "Exact LF model repair retained; safe failed-run finalization and verified tar.xz compaction; "
-            "expanded explicit-error constructor poisoning, copied getter isolation, different-version self-name "
-            "and symlink-path controls."
-        ),
-        oracle_sha256=sha(__file__),
-        corpus_sha256=sha(directory / "corpus.jsonl.gz"),
-        cases=len(cases),
-        observations=sum(len(x.expected) for x in cases),
-        counts=counts,
-        utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-    )
-    (directory / "freeze.json").write_text(json.dumps(report, indent=2) + "\n")
-    print(json.dumps(report, indent=2))
-
-
-def runtime_source():
-    code = PREFIX + shared() + "class ManifestInput{"
-    code += "".join(f"array<u8,512> bytes{i};" for i in range(8))
-    code += "i64 owner_length;i64 offset;i64 count;i64 dependency_index;public:ManifestInput():"
-    code += ",".join(f"bytes{i}{{}}" for i in range(8))
-    code += ",owner_length(0),offset(0),count(0),dependency_index(0){}"
-    code += "auto source_at(i64 index)const->u8{"
-    for i in range(7):
-        code += f"if(index<{(i + 1) * 512}){{return bytes{i}[index-{i * 512}];}}"
-    code += "return bytes7[index-3584];}"
-    for method, result, call in (
-        ("parse_view", "ManifestResult", "parse_manifest"),
-        ("dependency_view", "DependencyResult", "manifest_dependency"),
-    ):
-        arguments = ",dependency_index" if method == "dependency_view" else ""
-        code += f"auto {method}(builtin::span<const u8> source)const->package::{result}{{"
-        code += "const builtin::span<const u8> view=source.subspan(0,owner_length);"
-        code += f"const package::{result} result=package::{call}(view,offset,count{arguments});return result;}}"
-    code += "auto parse_entry(i64 slot)const->u64{"
-    code += array("owner", bytes(4096))
-    code += "i64 index=0;while(index<owner_length){owner[index]=source_at(index);index=index+1;}"
-    view = "borrow_bytes(owner)"
-    code += "if(slot<31){const package::ManifestResult parsed=parse_view(" + view + ");"
-    code += "const package::ManifestResult r=parsed;"
-    code += "i64 i=0;while(i<owner_length){owner[i]=255u8;i=i+1;}return observe_manifest(r,slot);}"
-    code += "const package::DependencyResult parsed=dependency_view(" + view + ");"
-    code += "const package::DependencyResult r=parsed;"
-    code += "i64 i=0;while(i<owner_length){owner[i]=0u8;i=i+1;}return observe_dependency(r,slot-31);}};"
-    return code
-
-
-def runtime_entry(symbol):
-    # Existing freestanding Linux transport, now reading fixed POD records.
-    # The receiver is plain host-owned storage; spans are constructed in Aurora.
-    return f"""
-.text
-.globl _start
-_start:
-    cmpq $2,(%rsp)
-    jne .Lfailed
-    movq 16(%rsp),%rdi
-    xorq %rsi,%rsi
-    xorq %rdx,%rdx
-    movq $2,%rax
-    syscall
-    testq %rax,%rax
-    js .Lfailed
-    movq %rax,input_fd(%rip)
-.Lrecord:
-    xorq %rax,%rax
-    movq input_fd(%rip),%rdi
-    leaq input(%rip),%rsi
-    movq $4128,%rdx
-    syscall
-    testq %rax,%rax
-    je .Ldone
-    cmpq $4128,%rax
-    jne .Lfailed
-    movq $0,slot(%rip)
-.Lslot:
-    leaq input(%rip),%r10
-    movq slot(%rip),%rdi
-    call {symbol}
-    movq slot(%rip),%rcx
-    leaq observations(%rip),%rdx
-    movq %rax,(%rdx,%rcx,8)
-    incq %rcx
-    movq %rcx,slot(%rip)
-    cmpq $92,%rcx
-    jne .Lslot
-    movq $1,%rax
-    movq $1,%rdi
-    leaq observations(%rip),%rsi
-    movq $736,%rdx
-    syscall
-    cmpq $736,%rax
-    jne .Lfailed
-    jmp .Lrecord
-.Ldone:
-    movq $3,%rax
-    movq input_fd(%rip),%rdi
-    syscall
-    testq %rax,%rax
-    jne .Lfailed
-    movq $60,%rax
-    xorq %rdi,%rdi
-    syscall
-.Lfailed:
-    movq $60,%rax
-    movq $91,%rdi
-    syscall
-.bss
-.align 8
-input: .zero 4128
-input_fd: .zero 8
-slot: .zero 8
-observations: .zero 736
-"""
-
-
-class Runner(PackageRunner):
-    def __init__(self, compiler, artifacts, cap=CAP):
-        super().__init__(
-            compiler,
-            artifacts,
-            cap,
-            root=ROOT,
-            prefix=PREFIX,
-            shared=shared,
-            validate=validate,
-            function_prefix="manifest_case",
-            sentinel=b"keep existing manifest output\n\x00\xff",
-        )
-
-    def prepare_runtime(self):
-        directory = self.artifacts / "parse-driver"
-        directory.mkdir()
-        source = runtime_source()
-        require(len(source.encode()) <= SOURCE_CAP, "64 KiB runtime source bound")
-        (directory / "input.au").write_text(source)
-        self.command(
-            [
-                self.compiler,
-                "--module-root",
-                ROOT / "library",
-                directory / "input.au",
-                "-o",
-                directory / "compiled.s",
-                "--abi-facts",
-                directory / "abi.json",
-            ],
-            directory,
-            "compiler",
-            compiler=True,
-            batch=True,
-        )
-        require((directory / "input.au").read_text() == source, "compiler must preserve source")
-        facts = json.loads((directory / "abi.json").read_text())
-        records = [(name, row) for name, row in facts["records"].items() if row["source_name"] == "ManifestInput"]
-        require(len(records) == 1, "manifest runtime input ABI")
-        receiver, record = records[0]
-        fields = [(f"bytes{i}", i * 512, 512, "u8", 512) for i in range(8)]
-        fields += [
-            (name, 4096 + i * 8, 8, "i64", 0)
-            for i, name in enumerate(("owner_length", "offset", "count", "dependency_index"))
-        ]
-        require(
-            record["size"] == record["reserved"] == 4128
-            and record["alignment"] == 8
-            and [(f["name"], f["offset"], f["bytes"], f["kind"], f.get("array_length", 0)) for f in record["fields"]]
-            == fields,
-            "manifest runtime receiver layout",
-        )
-        entries = [(name, row) for name, row in facts["functions"].items() if row["source_name"] == "parse_entry"]
-        require(len(entries) == 1, "manifest runtime entry ABI")
-        symbol, row = entries[0]
-        require(
-            row["receiver"] == receiver
-            and not row["receiver_mutable"]
-            and row["borrowed_root_count"] == 0
-            and row["parameter_bytes"] == 8
-            and row["parameters"] == [{"offset": 0, "bytes": 8, "kind": "i64"}]
-            and row["result"] == {"bytes": 8, "kind": "u64"},
-            "manifest runtime call ABI",
-        )
-        (directory / "program.s").write_text((directory / "compiled.s").read_text() + runtime_entry(symbol))
-        self.command(["as", "--64", directory / "program.s", "-o", directory / "program.o"], directory, "assemble")
-        self.command(["ld", "-o", directory / "program", directory / "program.o"], directory, "link")
-        _, undefined, _ = self.command(["nm", "-u", directory / "program"], directory, "undefined-symbols")
-        require(not undefined.strip(), "freestanding binary must have no unresolved symbols")
-        _, elf, _ = self.command(["readelf", "-l", "-d", directory / "program"], directory, "elf-linkage")
-        require(b"INTERP" not in elf and b"NEEDED" not in elf, "no ELF interpreter or runtime library dependencies")
-        self.runtime_directory = directory
-
-    def batch(self, number, cases):
-        if cases[0].runtime is None:
-            return super().batch(number, cases)
-        require(
-            1 <= len(cases) <= BATCH and all(case.runtime is not None and not case.helpers for case in cases),
-            "runtime batch case bound",
-        )
-        if not hasattr(self, "runtime_directory"):
-            self.prepare_runtime()
-        self.budget(24 << 20)
-        directory = self.artifacts / f"batch-{number:03d}"
-        directory.mkdir()
-        packets = []
-        for case in cases:
-            data, offset, count, index = case.runtime
-            owner = bytes.fromhex(data)
-            require(1 <= len(owner) <= 4096 and len(case.expected) == 92, "runtime case transport bounds")
-            packets.append(owner.ljust(4096, b"\0") + struct.pack("<qqqq", len(owner), offset, count, index))
-        (directory / "cases.bin").write_bytes(b"".join(packets))
-        receipt = dict(
-            status="running",
-            cases=len(cases),
-            driver="parse-driver",
-            executable_sha256=sha(self.runtime_directory / "program"),
-        )
-        try:
-            expected = tuple(value for case in cases for value in case.expected)
-            code, output, _ = self.command(
-                [self.runtime_directory / "program", directory / "cases.bin"], directory, "native", batch=True
-            )
-            observed = validate(output, expected, code)
-            receipt.update(
-                status="passed",
-                complete_u64_observations=len(expected),
-                native_output_sha256=sha(directory / "native.stdout"),
-                observations=[
-                    dict(
-                        label=case.label,
-                        arguments=case.arguments,
-                        expected=case.expected,
-                        observed=observed[i * 92 : (i + 1) * 92],
-                    )
-                    for i, case in enumerate(cases)
-                ],
-            )
-        except BaseException as error:
-            receipt.update(status="failed", error=str(error))
-            raise
-        finally:
-            safe_receipt(directory / "receipt.json", receipt)
-        self.compact(directory)
-
-    def finish_runtime(self):
-        if hasattr(self, "runtime_directory"):
-            self.compact(self.runtime_directory)
-
-
-def batches(cases):
-    current = []
-    bodies = set()
-    size = len(PREFIX + shared())
-    for case in cases:
-        extra = (
-            0
-            if case.runtime is not None
-            else (len(case.body) + 180 if case.body not in bodies else 0) + len(case.helpers)
-        )
-        if current and (
-            len(current) >= BATCH
-            or size + extra > SOURCE_CAP - 1024
-            or (current[0].runtime is None) != (case.runtime is None)
-        ):
-            yield current
-            current = []
-            bodies = set()
-            size = len(PREFIX + shared())
-            extra = 0 if case.runtime is not None else len(case.body) + 180 + len(case.helpers)
-        current.append(case)
-        bodies.add(case.body)
-        size += extra
-    if current:
-        yield current
-
-
-def developer_cases():
-    """Semantic framing, duplicate-name, selector and constructor boundaries."""
-    seed = manifest(b"app@1.2.3", (b"lib@3.2.1",))
-    parse = select_cases(
-        parsing_cases(exhaustive=False),
-        prefixes=("missing-or-script/", "leading/", "trailing/", "inside/", "grammar/"),
-        labels=(
-            *(f"canonical/{count}/{index}" for count, index in ((0, 0), (8, 0), (8, 7), (8, 8), (8, -1))),
-            *(f"dependency-limit/{count}/{index}" for count, index in ((1, 0), (1, 1), (9, 0))),
-            "dependency-only-crlf",
-            "self-name-different-version",
-            *(
-                f"global-name-rule/{kind}/{position}/{index}"
-                for kind in ("self", "same-version", "different-version")
-                for position in (0, 7)
-                for index in (-1, 0, 7, 8)
-            ),
-            *(
-                f"{family}/{component}/{number}"
-                for family in ("numeric-boundary", "numeric-dependency")
-                for component in range(3)
-                for number in (U32, U32 + 1)
-            ),
-            *(f"name-length/{length}" for length in (0, 1, 24, 25)),
-            *(
-                f"{family}/{token.hex()}" + ("/0" if family == "bad-late-dependency" else "")
-                for family in ("bad-root", "bad-late-dependency")
-                for token in (b"A@1.2.3", b"a--b@1.2.3", b"a@1.2.3.4", b"a@4294967296.2.3")
-            ),
-            "window/exact-delimited",
-            "window/0/0/0",
-            f"window/2/{len(seed)}/0",
-            "window/-1/37/0",
-            "window/2/-1/0",
-            f"window/{IMIN}/0/0",
-            f"window/2/{IMAX}/0",
-            f"window/{IMAX}/{IMAX}/0",
-            "large-owner/4096",
-            "large-invalid/616",
-        ),
-    )
-    # Explicit truncation points complement whole framing categories without
-    # generating every prefix, byte mutation or seeded-random manifest.
-    for label, count in (("empty", 0), ("header", 16), ("missing-final-lf", len(seed) - 1)):
-        parse.append(parse_case("dev-truncation/" + label, seed, count=count))
-    construction = select_cases(
-        construction_cases(),
-        labels=(
-            *(
-                f"constructor-manifest/{status}/{root}/{count}"
-                for status, root, count in (
-                    ("success", 0, 0),
-                    ("success", 0, 8),
-                    ("success", 0, 9),
-                    ("success", 0, -1),
-                    ("success", 1, 1),
-                    ("success", 2, 1),
-                    ("success", 3, 1),
-                    ("malformed", 1, 9),
-                    ("out_of_range", 1, 9),
-                )
-            ),
-            *(
-                f"constructor-dependency/success/{count}/{index}"
-                for count, index in ((1, 0), (8, 7), (0, 0), (9, 0), (8, -1), (8, 8), (IMIN, 0), (8, IMAX))
-            ),
-            *(
-                f"constructor-dependency/{status}/9/-1"
-                for status in ("malformed", "out_of_range", "index_out_of_range")
-            ),
-            *(
-                f"constructor-local-invariants/{status}/{root_bad}/{dep_status}/{poison}/{same}"
-                for status, root_bad, dep_status, poison, same in (
-                    ("success", False, "success", False, False),
-                    ("success", True, "success", False, False),
-                    ("success", False, "malformed", False, False),
-                    ("success", False, "out_of_range", False, False),
-                    ("success", False, "success", True, False),
-                    ("success", False, "success", False, True),
-                    ("malformed", True, "success", True, True),
-                    ("out_of_range", True, "success", True, True),
-                    ("index_out_of_range", True, "success", True, True),
-                )
-            ),
-        ),
-    )
-    ownership, binding = ownership_cases(), binding_cases()
-    require(
-        tuple(map(len, (parse, construction, ownership, binding))) == (120, 29, 5, 3),
-        "developer semantic group counts changed",
-    )
-    cases = parse + construction + ownership + binding
-    select_cases(cases, prefixes=("",))
-    return cases, dict(
-        parse_cases=len(parse),
-        constructor_cases=len(construction),
-        ownership_cases=len(ownership),
-        binding_cases=len(binding),
-    )
+def packet(program, operation, values):
+    values = dict(values)
+    data = values.pop("data")
+    return program.pack(data=data, operation=OPERATIONS.index(operation), length=len(data), **values)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("compiler", nargs="?", type=Path, default=ROOT / "build/aurorac")
-    parser.add_argument("--artifacts", "--artifact-root", dest="artifact_root", type=Path)
-    parser.add_argument(
-        "--quick", "--smoke", dest="smoke", action="store_true", help="development subset, not full acceptance"
-    )
-    parser.add_argument("--self-test-only", action="store_true")
-    parser.add_argument("--freeze-reference", type=Path)
-    parser.add_argument(
-        "--candidate-cap-mib",
-        type=int,
-        default=256,
-        help=(
-            "per-invocation owned-output cap 256..1024 MiB; default 256; increases require explicit aggregate admission"
-        ),
-    )
-    parser.add_argument(
-        "--check-cap-only",
-        action="store_true",
-        help="configuration-only cap checks; no compiler, native test or acceptance receipt",
-    )
-    add_identity_arguments(parser)
+    parser.add_argument("--compiler", type=Path, required=True)
     args = parser.parse_args()
-    diagnostic_only = args.self_test_only or args.freeze_reference is not None
-    validate_identity_selection(args, preflight=diagnostic_only or args.check_cap_only)
-    cap = candidate_cap(args.candidate_cap_mib)
-    if args.check_cap_only:
-        cap_self_test()
-        print(
-            json.dumps(
-                dict(
-                    status="configuration-only",
-                    native_executed=False,
-                    candidate_cap_mib=args.candidate_cap_mib,
-                    cap_bytes=cap,
-                    focused_default_mib=256,
-                    maximum_cap_mib=1024,
-                ),
-                sort_keys=True,
-            )
+    cases = all_cases()
+    golden = records.load_jsonl(GOLDEN / "package_manifest.jsonl")
+    require(len(golden) == len(cases), f"{len(cases)} generated cases, {len(golden)} golden rows")
+    for (label, _, _), row in zip(cases, golden):
+        require(row["label"] == label, f"golden row {row['label']!r} for case {label!r}")
+    with records.scratch("package-manifest") as scratch:
+        driver = records.Driver(args.compiler, scratch)
+        program = driver.build(driver_source(), "ManifestInput", kind="u64")
+        count, observed = program.check(
+            (
+                (label, packet(program, operation, values), words(operation, values, row["expected"]))
+                for (label, operation, values), row in zip(cases, golden)
+            ),
+            scratch,
         )
-        return
-    if not diagnostic_only:
-        compiler = args.compiler.resolve(strict=True)
-        identity = resolve_identity(args, compiler, ROOT)
-    self_test(
-        temporary_parent=Path(tempfile.gettempdir()) if args.profile == "dev" or args.meson_selected_compiler else None
-    )
-    if args.self_test_only:
-        print("PASS independent grammar/integer oracle and high-bit/length/exit/budget/path controls")
-        return
-    if args.freeze_reference:
-        freeze_corpus(artifact_path(args.freeze_reference))
-        return
-    artifacts = (
-        developer_artifacts(args, "manifest")
-        if args.profile == "dev" or args.meson_selected_compiler
-        else artifact_path(args.artifact_root or ROOT / f"build/package-manifest-{os.getpid()}")
-    )
-    require(artifacts.parent.is_dir() and not artifacts.exists(), "fresh artifact root with existing parent required")
-    runner = Runner(compiler, artifacts, cap)
-    runner.budget(65536)
-    artifacts.mkdir()
-    inputs = [
-        compiler,
-        ROOT / "library/package/manifest.au",
-        ROOT / "library/package/identity.au",
-        ROOT / "library/std/array.au",
-        Path(__file__).resolve(),
-        ROOT / "scripts/package_native_runner.py",
-        ROOT / "scripts/owned_outputs.py",
-        ROOT / "scripts/package_profiles.py",
-        ROOT / "scripts/compiler_contract.py",
-        Path(sys.executable).resolve(strict=True),
-        *runner.tools.values(),
-    ]
-    runner.pins = {p: sha(p) for p in inputs}
-    report = dict(
-        status="running",
-        compiler_identity=identity.record(),
-        pins={str(p): h for p, h in runner.pins.items()},
-        tool_paths={name: str(path) for name, path in runner.tools.items()},
-        command=sys.argv,
-        started_utc=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        cap_bytes=cap,
-        free_floor_bytes=FLOOR,
-        per_source_cap_bytes=SOURCE_CAP,
-        cases_per_batch=BATCH,
-        smoke_only=args.smoke,
-        model=(
-            "Independent Python line grammar fullmatch, canonical identity regex, "
-            "arbitrary precision integers and set uniqueness"
-        ),
-        native="GNU as/ld x86-64, direct Linux write/exit only, no target libc",
-        compaction=(
-            "Complete successful directories archived using tar.xz preset3; exact member count, bytes, modes "
-            "and SHA256 verified before removal; failed outputs preserved"
-        ),
-        limits="Bounded finite execution evidence, not a memory-safety or performance proof",
-    )
-    try:
-        for name, tool in {**runner.tools, "python": Path(sys.executable).resolve()}.items():
-            runner.command([tool, "--version"], artifacts, "version-" + name)
-        cases, counts = developer_cases() if args.profile == "dev" else all_cases()
-        report.update(counts)
-        if args.smoke:
-            cases = cases[:16] + construction_cases()[:8] + ownership_cases() + binding_cases()
-        report.update(profile_record(args, cases, negative_cases()))
-        report.update(
-            native_cases=len(cases),
-            complete_u64_observations=sum(len(c.expected) for c in cases),
-            rejection_cases=len(negative_cases()),
-        )
-        done = 0
-        for number, batch in enumerate(batches(cases)):
-            runner.batch(number, batch)
-            done += len(batch)
-            print(f"PASS package manifest {done}/{len(cases)} native cases", flush=True)
-        runner.finish_runtime()
-        for number, (label, source, message) in enumerate(negative_cases()):
-            runner.reject(number, label, source, message)
-        identity.verify()
-        report["compiler_identity"] = identity.record()
-        report["status"] = "passed"
-    except BaseException as exc:
-        report.update(status="failed", error=str(exc), exception_type=type(exc).__name__)
-        raise
-    finally:
-        original_error_active = sys.exc_info()[0] is not None
-        final_errors = finalize_selected_identity(identity, report)
-        final_errors += finalize_report(runner, report, compiler, artifacts)
-        if final_errors and not original_error_active:
-            raise AssertionError("run finalization failed: " + "; ".join(final_errors))
-    scope = " [partial dev]" if args.profile == "dev" else ""
-    print(
-        f"PASS package manifest{scope}: {len(cases)} native cases, "
-        f"{report['complete_u64_observations']} complete u64 observations, "
-        f"{2 * report['rejection_cases']} rejection runs; selected compiler identity unchanged",
-        flush=True,
-    )
+        rejections = driver.reject_all(GOLDEN / "package_manifest_rejections.jsonl")
+    print(f"PASS package manifest: {count} cases, {observed} u64 observations, {rejections} rejections")
 
 
 if __name__ == "__main__":

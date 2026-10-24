@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
-"""Transactional JSON decoding with real owners and independent exact-byte oracles.
+"""std.json_read: transactional string decoding into real hosted ByteBuffer owners.
 
-Reuse the existing hosted allocation adapter. Impractically large i64 overflow
-branches are source-reviewed, not claimed as runtime-covered.
+One packed driver (hosted_records.py) holds every program; each run is a row.
+Decoded bytes come from Python's json.loads and UTF-8 encoder; status and
+allocation expectations are the reviewed tables below. Rejections are
+golden/json_string_read_rejections.jsonl, one compile each. Impractically large
+i64 overflow branches are source-reviewed, not claimed as runtime-covered.
 """
 
 import argparse
 import json
 from pathlib import Path
-import shutil
-import tempfile
 
-from owned_bytes import ROOT, Suite
+import hosted_records
+import runtime_records as records
 
+GOLDEN = Path(__file__).with_name("golden")
 IMPORTS = """module json_read_test;
 import std.json_read;
 import std.byte_buffer;
@@ -32,7 +35,7 @@ def array(name, data):
     return f"const builtin::array<u8,{max(1, len(data))}> {name}={{{values}}};\n"
 
 
-def cases(suite):
+def cases(pack):
     samples = [
         b'"\\u0022"',
         b'""',
@@ -61,10 +64,10 @@ def cases(suite):
         return 42;
         """
         )
-        executable = suite.compile(f"exact-{index}", program(body))
+        executable = pack.program(f"exact-{index}", program(body))
         for capacity in (1, 128):
             grows = capacity < len(expected)
-            suite.run(
+            pack.run(
                 executable,
                 512,
                 capacity,
@@ -115,13 +118,13 @@ def cases(suite):
     return -3;
     """
     )
-    executable = suite.compile("invalid-before-allocation", program(body))
+    executable = pack.program("invalid-before-allocation", program(body))
     offset = 0
     for raw, status in invalid:
-        suite.run(executable, 512, offset, len(raw), status, 1, 1, attempted_sizes=[33])
+        pack.run(executable, 512, offset, len(raw), status, 1, 1, attempted_sizes=[33])
         offset += len(raw)
     for offset, count in [(-1, 1), (0, -1), (len(data) + 1, 0), (len(data), 1), (0, 2**63 - 1), (2**63 - 1, 1)]:
-        suite.run(executable, 512, offset, count, 3, 1, 1, attempted_sizes=[33])
+        pack.run(executable, 512, offset, count, 3, 1, 1, attempted_sizes=[33])
 
     body = (
         CREATE
@@ -146,9 +149,9 @@ def cases(suite):
     return 42;
     """
     )
-    executable = suite.compile("allocation-failure-retry", program(body))
-    suite.run(executable, 1, 1, 0, 42, 1, 1, attempted_sizes=[33])
-    suite.run(executable, 512, 1, 0, 42, 1, 1, fail_after=1, attempted_sizes=[33, 35])
+    executable = pack.program("allocation-failure-retry", program(body))
+    pack.run(executable, 1, 1, 0, 42, 1, 1, attempted_sizes=[33])
+    pack.run(executable, 512, 1, 0, 42, 1, 1, fail_after=1, attempted_sizes=[33, 35])
 
     body = (
         CREATE
@@ -162,10 +165,10 @@ def cases(suite):
     return -2;
     """
     )
-    executable = suite.compile("empty-and-inert", program(body))
-    suite.run(executable, 0, 0, 0, 42, 1, 1)
-    suite.run(executable, 0, 1, 0, 41, 0, 0)
-    suite.run(executable, 512, 0, 0, 41, 0, 0, fail_after=0)
+    executable = pack.program("empty-and-inert", program(body))
+    pack.run(executable, 0, 0, 0, 42, 1, 1)
+    pack.run(executable, 0, 1, 0, 41, 0, 0)
+    pack.run(executable, 512, 0, 0, 41, 0, 0, fail_after=0)
 
     body = """
     const std::JsonStringReadResult negative=std::JsonStringReadResult(std::JsonStringReadStatus::success,-1);
@@ -174,41 +177,22 @@ def cases(suite):
     if(failed.appended_bytes()!=0){return -2;}
     return 42;
     """
-    executable = suite.compile("copied-reports", program(body))
-    suite.run(executable, 0, 0, 0, 42, 0, 0)
-
-    view = "const builtin::span<const u8> input=output.bytes();"
-    for name, body in {
-        "self-direct": "std::append_decoded_json_string(output,output.bytes(),0,0);",
-        "self-named": view + "std::append_decoded_json_string(output,input,0,0);",
-        "self-subspan": view
-        + "const builtin::span<const u8> empty=input.subspan(0,0);std::append_decoded_json_string(output,empty,0,0);",
-        "const-output": "const std::ByteBuffer frozen=move(output);"
-        "const builtin::array<u8,2> data={34u8,34u8};"
-        "const builtin::span<const u8> input=borrow_bytes(data);"
-        "std::append_decoded_json_string(frozen,input,0,2);",
-        "live-view": view + "const builtin::array<u8,2> data={34u8,34u8};"
-        "const builtin::span<const u8> other=borrow_bytes(data);"
-        "std::append_decoded_json_string(output,other,0,2);return input.size();",
-        "private-report": "std::JsonStringReadResult result=std::JsonStringReadResult("
-        "std::JsonStringReadStatus::success,0);"
-        "return result.count;",
-    }.items():
-        suite.reject(name, program(CREATE + body + "return 0;"))
+    executable = pack.program("copied-reports", program(body))
+    pack.run(executable, 0, 0, 0, 42, 0, 0)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("compiler", type=Path)
+    parser.add_argument("--compiler", type=Path, required=True)
     args = parser.parse_args()
-    directory = Path(tempfile.mkdtemp(prefix="aurora-json-string-read-"))
-    print(f"Artifacts: {directory}", flush=True)
-    suite = Suite(args.compiler.resolve(), directory, ROOT / "library", entry_name="entry")
-    cases(suite)
-    print(
-        f"PASS JSON string read: {suite.programs} programs, {suite.native} native cases, {suite.rejections} rejections"
-    )
-    shutil.rmtree(directory)
+    with records.scratch("json-string-read") as scratch:
+        hosted = hosted_records.Hosted(args.compiler, scratch)
+        pack = hosted.pack()
+        cases(pack)
+        hosted.finish()
+        rejections = records.load_jsonl(GOLDEN / "json_string_read_rejections.jsonl")
+        hosted_records.reject_all(args.compiler, scratch, rejections)
+    print(f"PASS JSON string read: {len(pack.names)} programs, {hosted.rows} runs, {len(rejections)} rejections")
 
 
 if __name__ == "__main__":

@@ -226,17 +226,17 @@ package profiles are slow. `packages` selects both partial and full profiles.
 `make test` selects `merge`. `make test-exhaustive` selects the separate
 `exhaustive` suite through the same incremental wrapper and resource policy;
 direct Meson selection is `meson test -C BUILD --suite exhaustive`.
-Normal `utf8` and `utf8-encoding` registrations use `--profile full`, with
-documented boundary cases and fixed-seed scalar/two-byte samples. The separate
-`utf8-exhaustive` and `utf8-encoding-exhaustive` registrations use
-`--profile exhaustive` and preserve the whole scalar/byte spaces. They keep the
-same per-test timeouts, native result oracles and rejection families.
-The normal scalar set has 1,084 values per runner; decoding has 1,277 two-byte
-inputs. Seed 220104 supplements explicit transition boundaries. All 256
-single-byte inputs and 24,200 longer decoder boundary inputs remain in normal
-full, and encoding retains all 2,048 surrogate rejections. Exhaustive covers
-1,112,064 scalar values and all 65,536 decoder two-byte inputs. This changes
-enumeration scope, not a claim of fewer compilations or measured full-suite time.
+The `utf8` registration (decoding, validation and encoding of `std.utf8`)
+streams every case as a record through one compiled driver. Its normal profile
+keeps documented boundary cases and fixed-seed scalar/two-byte samples; the
+separate `utf8-exhaustive` registration uses `--profile exhaustive` and
+preserves the whole scalar/byte spaces with the same driver, oracles and
+rejection family. The normal scalar set has 1,084 values; decoding has 1,277
+two-byte inputs. Seed 220104 supplements explicit transition boundaries. All
+256 single-byte inputs, 24,200 longer decoder boundary inputs and all 2,048
+surrogate rejections remain in normal full. Exhaustive adds all 65,536 decoder
+two-byte inputs and a native sweep of every code point, whose encodings are
+compared with Python's strict encoder through per-plane fingerprints.
 Sector-window and XFS coverage remains complete in normal full after batching;
 IR safety, package and other complete regression families are not demoted.
 Run relevant whole sweeps when changing their algorithms, oracles or sampling

@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """Owned UTF-8 invariants, transactional failures and real JSON consumption.
 
-Uses the unchanged native ownership runner and independent Python UTF-8/JSON
-oracles. No new runtime adapter or allocation model.
+All programs are packed into one compiled, linked hosted binary (owned_bytes
+deferred mode); each invocation selects a program and supplies its case as
+arguments. Input samples are one table indexed by argument, not a program per
+sample. Scalar bytes, initialization status and JSON output come from Python's
+UTF-8 codec and json module. Rejections compile one source each.
 """
 
 import argparse
 import json
 from pathlib import Path
 import tempfile
-import shutil
 
 from owned_bytes import ROOT, Suite
 
@@ -26,15 +28,63 @@ CREATE = """
     builtin::OwnedBytes allocation = region.try_allocate(16);
     std::Utf8Text text = std::Utf8Text(region, move(allocation));
 """
+TEXT_STATUSES = (
+    "success",
+    "unavailable",
+    "not_empty",
+    "invalid_utf8",
+    "truncated",
+    "invalid_scalar",
+    "allocation_failed",
+)
+SAMPLES = (
+    b"",
+    b'A\0\n"\\',
+    "é€😀".encode(),
+    b"\x80",
+    b"\xc0\x80",
+    b"\xed\xa0\x80",
+    b"\xf4\x90\x80\x80",
+    b"\xe2\x82",
+    b"\xf0\x9f\x98",
+    b"\xff",
+)
+TRANSACTIONS = (("😀".encode(), "success"), (b"AAA\xff", "invalid_utf8"), (b"AAA\xe2\x82", "truncated"))
 
 
 def program(body, helpers=""):
     return IMPORTS + helpers + "auto entry(builtin::ByteRegion region,i64 n,i64 flag)->i64 {\n" + body + "\n}"
 
 
-def array(data):
-    values = ",".join(f"{byte}u8" for byte in data) or "0u8"
-    return f"const array<u8,{max(1, len(data))}> data={{{values}}};\n"
+def table(samples):
+    """One byte pool plus start/size tables; `input` is sample n as a subspan."""
+    pool = b"".join(samples) or b"\0"
+    starts, at = [], 0
+    for sample in samples:
+        starts.append(at)
+        at += len(sample)
+    return (
+        f"const array<u8,{len(pool)}> pool={{{','.join(f'{byte}u8' for byte in pool)}}};\n"
+        f"const array<i64,{len(samples)}> starts={{{','.join(map(str, starts))}}};\n"
+        f"const array<i64,{len(samples)}> sizes={{{','.join(str(len(s)) for s in samples)}}};\n"
+        "const builtin::span<const u8> all=borrow_bytes(pool);\n"
+        "const builtin::span<const u8> input=all.subspan(starts[n],sizes[n]);\n"
+    )
+
+
+def ordinal(name):
+    status = "i64 code=0;"
+    for number, value in enumerate(TEXT_STATUSES):
+        status += f"if({name}==std::Utf8TextStatus::{value}){{code={number};}}"
+    return status
+
+
+def strict_status(data):
+    try:
+        data.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as error:
+        return "truncated" if error.reason == "unexpected end of data" else "invalid_utf8"
+    return "success"
 
 
 def cases(suite):
@@ -64,53 +114,47 @@ def cases(suite):
     for value in (55296, 57343, 1114112, -1):
         suite.run(scalar, 128, value, 1, 42, 1, 1)
 
-    samples = (
-        b"",
-        b'A\0\n"\\',
-        "é€😀".encode(),
-        b"\x80",
-        b"\xc0\x80",
-        b"\xed\xa0\x80",
-        b"\xf4\x90\x80\x80",
-        b"\xe2\x82",
-        b"\xf0\x9f\x98",
-        b"\xff",
-    )
-    for index, data in enumerate(samples):
-        try:
-            decoded = data.decode("utf-8", errors="strict")
-            status = "success"
-        except UnicodeDecodeError as error:
-            status = "truncated" if error.reason == "unexpected end of data" else "invalid_utf8"
-        source = (
+    # Flag -2 reports the first initialization status (and, after success, a
+    # repeated initialization) and checks a failed one left the text unchanged;
+    # flag -1 is the JSON size and flag >= 0 one JSON byte.
+    samples = suite.compile(
+        "samples",
+        program(
             CREATE
-            + array(data)
-            + f"""
-            const builtin::span<const u8> all=borrow_bytes(data);
-            const builtin::span<const u8> input=all.subspan(0,{len(data)});
-            if(text.try_initialize(input)!=std::Utf8TextStatus::{status}){{return -1;}}
-        """
-        )
-        if status != "success":
-            source += "if(text.size()!=0 || text.capacity()!=16){return -2;} return 42;"
-            executable = suite.compile(f"invalid-{index}", program(source))
-            suite.run(executable, 128, 0, 0, 42, 1, 1)
-            continue
-        repeat = "success" if not data else "not_empty"
-        source += f"if(text.try_initialize(input)!=std::Utf8TextStatus::{repeat}){{return -8;}}\n"
-        expected = json.dumps(decoded, ensure_ascii=False).encode()
-        source += """
+            + table(SAMPLES)
+            + "const std::Utf8TextStatus first=text.try_initialize(input);"
+            + ordinal("first")
+            + """
+            if(first!=std::Utf8TextStatus::success){
+                if(text.size()!=0 || text.capacity()!=16){return -2;}
+                return code;
+            }
+            const i64 initial=code;
+            const std::Utf8TextStatus repeat=text.try_initialize(input);
+            """
+            + ordinal("repeat").replace("i64 code=0;", "code=0;")
+            + """
+            if(flag==-2){return initial+16*code;}
             builtin::OwnedBytes other=region.try_allocate(64);
             std::ByteBuffer output=std::ByteBuffer(region,move(other));
-            if(std::append_json_text(output,text)!=std::JsonStringAppendStatus::success){return -2;}
+            if(std::append_json_text(output,text)!=std::JsonStringAppendStatus::success){return -3;}
             const builtin::span<const u8> bytes=output.bytes();
-            if(flag<0){return bytes.size();}
+            if(flag==-1){return bytes.size();}
             return i64(bytes.at(flag));
         """
-        executable = suite.compile(f"json-{index}", program(source))
-        suite.run(executable, 128, 0, -1, len(expected), 2, 2)
+        ),
+    )
+    for index, data in enumerate(SAMPLES):
+        status = strict_status(data)
+        if status != "success":
+            suite.run(samples, 128, index, -2, TEXT_STATUSES.index(status), 1, 1)
+            continue
+        repeat = "success" if not data else "not_empty"
+        suite.run(samples, 128, index, -2, 16 * TEXT_STATUSES.index(repeat), 1, 1)
+        expected = json.dumps(data.decode("utf-8", "strict"), ensure_ascii=False).encode()
+        suite.run(samples, 128, index, -1, len(expected), 2, 2)
         for offset, byte in enumerate(expected):
-            suite.run(executable, 128, 0, offset, byte, 2, 2)
+            suite.run(samples, 128, index, offset, byte, 2, 2)
 
     failure = suite.compile(
         "allocation-transaction",
@@ -197,38 +241,42 @@ def cases(suite):
         ),
     )
     suite.run(unavailable, 0, 0, 0, 42, 1, 1)
-    for index, (data, status) in enumerate(
-        (("😀".encode(), "success"), (b"AAA\xff", "invalid_utf8"), (b"AAA\xe2\x82", "truncated"))
-    ):
-        body = (
+    # A one-byte allocation must grow for a valid sample and stay untouched for
+    # an invalid one. Returns the status, or 42 plus the copied-byte check.
+    transaction = suite.compile(
+        "initialization-transaction",
+        program(
             CREATE.replace("try_allocate(16)", "try_allocate(1)")
-            + array(data)
-            + f"""
-            const builtin::span<const u8> input=borrow_bytes(data);
-            if(text.try_initialize(input)!=std::Utf8TextStatus::{status}){{return -1;}}
+            + table([data for data, _ in TRANSACTIONS])
+            + "const std::Utf8TextStatus status=text.try_initialize(input);"
+            + ordinal("status")
+            + """
+            if(status!=std::Utf8TextStatus::success){
+                if(text.size()!=0 || text.capacity()!=1){return -2;}
+                return code;
+            }
+            const builtin::span<const u8> bytes=text.bytes();
+            if(bytes.size()!=input.size()){return -2;}
+            i64 index=0;
+            while(index<bytes.size()){if(bytes.at(index)!=input.at(index)){return -3;}index=index+1;}
+            return 42;
         """
-        )
-        if status == "success":
-            body += f"""
-                const builtin::span<const u8> bytes=text.bytes();
-                if(bytes.size()!={len(data)}){{return -2;}}
-                i64 index=0;
-                while(index<bytes.size()){{if(bytes.at(index)!=data[index]){{return -3;}}index=index+1;}}
-                return 42;
-            """
-        else:
-            body += "if(text.size()!=0 || text.capacity()!=1){return -2;}return 42;"
-        executable = suite.compile(f"initialization-transaction-{index}", program(body))
+        ),
+    )
+    for index, (data, status) in enumerate(TRANSACTIONS):
+        if strict_status(data) != status:
+            raise AssertionError(f"transaction sample {data!r} is not {status}")
         # The existing native adapter allocates a 32-byte header plus payload.
+        success = status == "success"
         suite.run(
-            executable,
+            transaction,
             128,
+            index,
             0,
-            0,
-            42,
-            2 if status == "success" else 1,
+            42 if success else TEXT_STATUSES.index(status),
+            2 if success else 1,
             1,
-            attempted_sizes=[33, 32 + len(data)] if status == "success" else [33],
+            attempted_sizes=[33, 32 + len(data)] if success else [33],
         )
     moved = suite.compile(
         "move-and-release",
@@ -272,14 +320,15 @@ def cases(suite):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("compiler", type=Path)
+    parser.add_argument("--compiler", type=Path, required=True)
     args = parser.parse_args()
-    directory = Path(tempfile.mkdtemp(prefix="aurora-utf8-text-"))
-    print(f"Artifacts: {directory}", flush=True)
-    suite = Suite(args.compiler.resolve(), directory, ROOT / "library", entry_name="entry")
-    cases(suite)
-    print(f"PASS UTF-8 text: {suite.programs} programs, {suite.native} native cases, {suite.rejections} rejections")
-    shutil.rmtree(directory)
+    with tempfile.TemporaryDirectory(prefix="aurora-utf8-text-") as directory:
+        suite = Suite(
+            args.compiler.resolve(strict=True), directory, ROOT / "library", entry_name="entry", deferred=True
+        )
+        cases(suite)
+        suite.finish()
+        print(f"PASS UTF-8 text: {suite.programs} programs, {suite.native} native cases, {suite.rejections} rejections")
 
 
 if __name__ == "__main__":

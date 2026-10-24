@@ -28,7 +28,8 @@ loader-stage steps remain, so this is not yet the few-test-images target. Each i
 build runs one compiler-fact stack check and one image/W^X/symbol-policy check
 in place of the former per-profile admission scripts.
 The compiler-semantics runners now compile one packed program per test through
-`tests/compiler/native_runner.py`; library-behaviour runners are not yet migrated.
+`tests/compiler/native_runner.py`; the token-scan, UTF-8, JSON and package library
+tests compile one driver per library surface and stream their cases as data.
 
 Next dependencies: [roadmap](roadmap.md). Required checks:
 [development and qualification](developer-test-contract.md).

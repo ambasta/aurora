@@ -30,19 +30,13 @@ foreach entry : [
     ['source-depth', 'modules/robustness.py', 'core'],
     ['byte-literals', 'compiler/byte_literals.py', 'bytes'],
     ['byte-buffer', 'compiler/byte_buffer.py', 'bytes'],
-    ['utf8-text', 'compiler/utf8_text.py', 'bytes'],
-    ['json-string-read', 'compiler/json_string_read.py', 'bytes'],
     ['method-spans', 'compiler/method_spans.py', 'bytes'],
     ['owned-spans', 'compiler/owned_spans.py', 'bytes'],
-    ['json-owned', 'compiler/json_owned.py', 'bytes'],
     ['packed-values', 'compiler/packed_values.py', 'bytes'],
     ['sector-values', 'compiler/sector_values.py', 'bytes'],
 ]
     feedback = 'dev'
     runner_args = ['-B', '-O', files(entry[1]), aurorac]
-    if entry[0] == 'json-owned'
-        runner_args = ['-B', artifact_adapter, python] + runner_args + ['--artifacts', '@ARTIFACTS@']
-    endif
     test(
         entry[0],
         python,
@@ -175,35 +169,7 @@ test('semantic-lint', python,
             aurora_fmt, aurorac, lint_fixture, '--artifacts', '@ARTIFACTS@'],
      depends: [aurora_fmt, aurorac, lint_fixture], suite: ['full', 'merge', 'dev', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
-test('json-codecs-owned', python,
-     args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/json_codecs_owned.py'),
-            aurorac, '--artifacts', '@ARTIFACTS@'],
-     depends: aurorac, suite: ['full', 'merge', 'slow', 'bytes', 'compiler'],
-     env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
 
-# Compiler-free semantic selection and authority controls for package profiles.
-test('package-profile-controls', python,
-     args: ['-B', files('test_package_profiles.py')],
-     suite: ['full', 'merge', 'dev', 'packages', 'compiler'], env: oracle_env,
-     workdir: meson.current_build_dir(), timeout: 60, is_parallel: true)
-
-# Named semantic selections, explicitly partial; Meson/Ninja builds aurorac.
-# Each family uses adapter-owned output beneath TMPDIR and gives every
-# subprocess a private, cap-accounted tmp subdirectory.
-foreach family : ['identity', 'manifest', 'graph']
-    test(
-        'package-' + family,
-        python,
-        args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/package_' + family + '.py'), aurorac,
-               '--profile', 'dev', '--developer-selected-compiler', '--artifact-root', '@ARTIFACTS@'],
-        depends: aurorac,
-        suite: ['full', 'merge', 'dev', 'packages'],
-        env: oracle_env,
-        workdir: meson.current_build_dir(),
-        timeout: 300,
-        is_parallel: true,
-    )
-endforeach
 
 # Runtime-owned bytes are a hosted bootstrap boundary, separate from freestanding core.
 owned_bytes_ir = executable(
@@ -254,15 +220,6 @@ foreach mode : ['standalone', 'receiver']
          args: span_kernel_args, depends: aurorac, suite: ['full', 'merge', 'dev', 'bytes', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 endforeach
-# Meson owns compiler dependencies; this records observed artifact stability only.
-test(
-    'json-profile', python,
-    args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/json_profile.py'),
-           aurorac, '--developer-selected-compiler', '--artifacts', '@ARTIFACTS@'],
-    depends: aurorac, suite: ['full', 'merge', 'slow', 'bytes', 'compiler'], env: oracle_env,
-    workdir: meson.current_build_dir(), timeout: 300, is_parallel: true,
-)
-
 logical_spans_abi = executable(
     'logical-spans-abi', 'compiler/logical_spans_abi.cpp',
     dependencies: hosted_frontend,
@@ -291,33 +248,6 @@ test('method-spans-abi', python,
             method_spans_abi, '--artifacts', '@ARTIFACTS@'],
      depends: method_spans_abi, suite: ['full', 'merge', 'slow', 'core', 'bytes', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
-# Single-scalar codecs retain their own independent oracle and hosted composition.
-test(
-    'json-codecs', python,
-    args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/json_codecs.py'),
-           aurorac, '--developer-selected-compiler', '--artifacts', '@ARTIFACTS@'],
-    depends: aurorac, suite: ['full', 'merge', 'slow', 'bytes', 'compiler'], env: oracle_env,
-    workdir: meson.current_build_dir(), timeout: 300, is_parallel: true,
-)
-
-# Exact integer spelling conversion and mathematically bounded decimal output.
-test(
-    'json-integers', python,
-    args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/json_integers.py'),
-           aurorac, '--developer-selected-compiler', '--artifacts', '@ARTIFACTS@'],
-    depends: aurorac, suite: ['full', 'merge', 'slow', 'bytes', 'compiler'], env: oracle_env,
-    workdir: meson.current_build_dir(), timeout: 300, is_parallel: true,
-)
-
-# Full-document validation precedes copied root member/index observations.
-test(
-    'json-lookup', python,
-    args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/json_lookup.py'),
-           aurorac, '--developer-selected-compiler', '--artifacts', '@ARTIFACTS@'],
-    depends: aurorac, suite: ['full', 'merge', 'slow', 'bytes', 'compiler'], env: oracle_env,
-    workdir: meson.current_build_dir(), timeout: 600, is_parallel: true,
-)
-
 # Keep routine borrowed-object feedback small; full owner/helper and literal ABI
 # sweeps remain explicit slow coverage. Full/unfiltered runs retain every gate.
 test('borrowed-objects-smoke', python,
@@ -344,17 +274,6 @@ test('borrowed-objects-abi', python,
             borrowed_objects_abi, '--artifacts', '@ARTIFACTS@'],
      depends: borrowed_objects_abi, suite: ['full', 'merge', 'slow', 'core', 'bytes', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
-
-# Complete native string transactions stay in slow; routine feedback uses an
-# explicitly partial manifest with the same byte and allocation assertions.
-test('json-string-write-smoke', python,
-     args: ['-B', '-O', files('compiler/json_string_write.py'), aurorac, '--smoke'],
-     depends: aurorac, suite: ['full', 'merge', 'dev', 'bytes', 'compiler'], env: oracle_env,
-     workdir: meson.current_build_dir(), timeout: 120, is_parallel: true)
-test('json-string-write', python,
-     args: ['-B', '-O', files('compiler/json_string_write.py'), aurorac],
-     depends: aurorac, suite: ['full', 'release', 'bytes', 'compiler'], env: oracle_env,
-     workdir: meson.current_build_dir(), timeout: 600, is_parallel: true)
 
 # Sealed service authority has its own independent verifier and host-grant model.
 # Shared hand-built service IR fixtures, compiled once for all service IR tests.
@@ -476,18 +395,10 @@ test('graphical-paging', graphical_paging, suite: ['full', 'merge', 'dev'], time
 foreach runner : [
   'templates', 'function_templates', 'function_overloads', 'fixed_containers',
   'composed_values', 'nested_values', 'decimal_values', 'enum_composition',
-  'method_values', 'u8_numeric', 'readonly_spans', 'utf8', 'utf8_encoding',
+  'method_values', 'u8_numeric', 'readonly_spans',
   'integer_oracle', 'unsigned_oracle',
 ]
   runner_args = ['-B', '-O', files('compiler/' + runner + '.py'), aurorac]
-  if runner in ['utf8', 'utf8_encoding']
-    runner_args = ['-B', artifact_adapter, python] + runner_args + ['--artifacts', '@ARTIFACTS@']
-    test(runner.replace('_', '-') + '-exhaustive', python,
-         args: runner_args + ['--profile', 'exhaustive'],
-         depends: aurorac, suite: ['exhaustive'], env: oracle_env,
-         workdir: meson.current_build_dir(), timeout: 900, is_parallel: true)
-    runner_args += ['--profile', 'full']
-  endif
   test(runner.replace('_', '-'), python,
        args: runner_args,
        depends: aurorac, suite: ['full', 'merge', 'slow', 'compiler'], env: oracle_env,
@@ -562,12 +473,33 @@ foreach family : ['readonly_windows', 'short_circuit']
          depends: compiler_fixtures[family + '_ir'], suite: ['full', 'merge', 'slow', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
 endforeach
-foreach family : ['utf8_range', 'utf8_lines', 'token_scan']
+# Library behaviour: one compiled driver per library, linked once with
+# compiler/runtime_records_host.cpp and fed every case as a data record.
+foreach family : ['token_scan', 'utf8', 'utf8_range', 'utf8_lines', 'utf8_text']
     test(family.replace('_', '-'), python,
-         args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/' + family + '.py'),
-                '--compiler', aurorac, '--meson-selected-compiler', '--artifacts', '@ARTIFACTS@'],
-         depends: aurorac, suite: ['full', 'merge', 'slow', 'compiler'],
-         env: oracle_env, workdir: meson.current_build_dir(), timeout: 600)
+         args: ['-B', files('compiler/' + family + '.py'), '--compiler', aurorac],
+         depends: aurorac, suite: ['full', 'merge', 'dev', 'compiler'],
+         env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
+endforeach
+# std.json, std.json_read and std.json_write: one compiled driver or packed
+# owned-bytes program per surface, every case streamed as a record or row.
+foreach family : ['json_library', 'json_owned', 'json_string_read', 'json_string_write']
+    test(family.replace('_', '-'), python,
+         args: ['-B', files('compiler/' + family + '.py'), '--compiler', aurorac],
+         depends: aurorac, suite: ['full', 'merge', 'dev', 'bytes', 'compiler'],
+         env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
+endforeach
+# Every two-byte input and a native sweep of all code points through the same driver.
+test('utf8-exhaustive', python,
+     args: ['-B', files('compiler/utf8.py'), '--compiler', aurorac, '--profile', 'exhaustive'],
+     depends: aurorac, suite: ['exhaustive'], env: oracle_env,
+     workdir: meson.current_build_dir(), timeout: 300)
+# Package identity, manifest and graph, each with its complete case corpus.
+foreach family : ['identity', 'manifest', 'graph']
+    test('package-' + family, python,
+         args: ['-B', files('compiler/package_' + family + '.py'), '--compiler', aurorac],
+         depends: aurorac, suite: ['full', 'merge', 'dev', 'packages', 'compiler'],
+         env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
 endforeach
 # Storage and filesystem libraries: one compiled driver per family over data cases,
 # compared with the golden file beside it (tests/compiler/storage).
@@ -590,17 +522,6 @@ foreach family : ['host_sources_tests', 'host_output_tests']
          args: ['-B', files('modules/host_sources.py'), host_fixture],
          depends: host_fixture, suite: ['full', 'merge', 'slow', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
-endforeach
-
-# Full package profiles supplement fast dev selections. All cases/rejections are
-# retained; the observed Meson artifact is never described as an external pin.
-foreach family : ['identity', 'manifest', 'graph']
-    test('package-' + family + '-full', python,
-         args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/package_' + family + '.py'),
-                aurorac, '--profile', 'full', '--meson-selected-compiler',
-                '--candidate-cap-mib', '1024', '--artifact-root', '@ARTIFACTS@'],
-         depends: aurorac, suite: ['full', 'release', 'packages'],
-         env: oracle_env, workdir: meson.current_build_dir(), timeout: 900)
 endforeach
 
 # Bootstrap tooling only matters when the route runs: at compiler bumps.

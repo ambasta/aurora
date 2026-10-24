@@ -27,8 +27,8 @@ Review version upgrades as their own changes because formatting can change.
 From the repository root, check or format explicitly selected files:
 
 ```sh
-python3 -B scripts/style.py check scripts/package_native_runner.py tests/compiler/package_graph.py
-python3 -B scripts/style.py format scripts/package_native_runner.py tests/compiler/package_graph.py
+python3 -B scripts/style.py check tests/compiler/runtime_records.py tests/compiler/package_graph.py
+python3 -B scripts/style.py format tests/compiler/runtime_records.py tests/compiler/package_graph.py
 python3 -B scripts/style.py check compiler/lexer.hpp compiler/parser.hpp
 ```
 
