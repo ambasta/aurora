@@ -1,0 +1,64 @@
+; CASE: packed call facts and outgoing record probes odd=0
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_caller.local_bytes 80
+; CHECK-JSON: functions.probe_caller.calls {"probe_target":80}
+; CHECK-JSON: functions.probe_target.local_bytes 48
+; RUN: emit
+; CHECK: probe_caller:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 48
+; CHECK:     subq $16, %rsp
+; CHECK-NEXT:     orq $0, (%rsp)
+; CHECK-NEXT: {{^(?!    subq \$)}}
+; RUN: emit
+; CHECK-DAG:     movq %rsp, %r11\n    leaq -16(%rbp), %r10\n
+; CHECK-DAG:     call probe_target\n    addq $16, %rsp\n
+layout Box [i64]
+function probe_target
+  result (class Box)
+  params [(class Box)]
+  frame 16
+  slot 8 i64
+  object 8 Box false
+    BindObjectParameter 0 8 Box
+    ReturnObject 8
+end
+function probe_caller
+  result i64
+  params [(class Box)]
+  frame 32
+  slot 8 i64
+  slot 16 i64
+  object 8 Box false
+  object 16 Box false
+    BindObjectParameter 0 8 Box
+    BeginObject 16
+    AggregateCall probe_target [8] 16
+    Load 16
+    Return
+end
+
+; CASE: packed call facts and outgoing record probes odd=1
+; BASE: packed call facts and outgoing record probes odd=0
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_caller.local_bytes 96
+; CHECK-JSON: functions.probe_caller.calls {"probe_target":96}
+; CHECK-JSON: functions.probe_target.local_bytes 48
+; RUN: emit
+; CHECK: probe_caller:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 48
+; CHECK:     subq $16, %rsp
+; CHECK-NEXT:     orq $0, (%rsp)
+; CHECK-NEXT: {{^(?!    subq \$)}}
+; RUN: emit
+; CHECK-DAG:     movq %rsp, %r11\n    leaq -16(%rbp), %r10\n
+; CHECK-DAG:     subq $8, %rsp\n    call probe_target\n    addq $8, %rsp\n    addq $16, %rsp\n
+; CHECK-DAG:     addq %rcx, %rax\n    jo .Laurora_overflow_trap\n
+@@ -20,0 +21,2 @@
++    Constant 1
++    Push
+@@ -22,0 +25 @@
++    BinaryValue

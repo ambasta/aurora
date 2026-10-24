@@ -1,0 +1,1045 @@
+; CASE: Port runtime ABI facts write=0
+; RUN: stack-facts
+; CHECK-JSON: functions.port_read.service_abi.calls.__au_runtime_port_read8 {"sysv_arguments":3,"result_max":255}
+enum __au_port_write_result 1
+function port_read
+  result u8
+  params [uart]
+  frame 48
+  service 16
+    BindServiceParameter 0 16 Port
+    Constant 5 u64
+    ServiceOperation 16 PortRead8 0 Port
+    Return
+end
+
+; CASE: accepted service graph 2
+; BASE: Port runtime ABI facts write=0
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+
+; CASE: rejected: hostile mutation 3
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-    ServiceOperation 16 PortRead8 0 Port
++    ServiceOperation 16 PortRead8 0 -1
+
+; CASE: rejected: hostile mutation 4
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-    ServiceOperation 16 PortRead8 0 Port
++    ServiceOperation 16 PortRead8
+
+; CASE: rejected: hostile mutation 5
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-    ServiceOperation 16 PortRead8 0 Port
++    ServiceOperation 16 PortRead8 0 Display
+
+; CASE: rejected: hostile mutation 6
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-    ServiceOperation 16 PortRead8 0 Port
++    ServiceOperation 16 PortRead8 0 IommuEvent
+
+; CASE: rejected: hostile mutation 7
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-    ServiceOperation 16 PortRead8 0 Port
++    ServiceOperation 16 PortRead8 0 Call
+
+; CASE: rejected: hostile mutation 8
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-    ServiceOperation 16 PortRead8 0 Port
++    ServiceOperation 16 PortRead8 0 Serve
+
+; CASE: rejected: hostile mutation 9
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-    ServiceOperation 16 PortRead8 0 Port
++    ServiceOperation 16 PortRead8 0 999
+
+; CASE: rejected: hostile mutation 10
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-    ServiceOperation 16 PortRead8 0 Port
++    ServiceOperation 16 -1 0 Port
+
+; CASE: rejected: hostile mutation 11
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-    ServiceOperation 16 PortRead8 0 Port
++    ServiceOperation 16 Next 0 Port
+
+; CASE: rejected: hostile mutation 12
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-    ServiceOperation 16 PortRead8 0 Port
++    ServiceOperation 16 Put 0 Port
+
+; CASE: rejected: hostile mutation 13
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-    ServiceOperation 16 PortRead8 0 Port
++    ServiceOperation 16 Pixel 0 Port
+
+; CASE: rejected: hostile mutation 14
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-    ServiceOperation 16 PortRead8 0 Port
++    ServiceOperation 16 IommuPoll 0 Port
+
+; CASE: rejected: hostile mutation 15
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-    ServiceOperation 16 PortRead8 0 Port
++    ServiceOperation 16 IommuAcknowledge 0 Port
+
+; CASE: rejected: hostile mutation 16
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-    ServiceOperation 16 PortRead8 0 Port
++    ServiceOperation 16 Call 0 Port
+
+; CASE: rejected: hostile mutation 17
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-    ServiceOperation 16 PortRead8 0 Port
++    ServiceOperation 16 ServeExchange 0 Port
+
+; CASE: rejected: hostile mutation 18
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-    ServiceOperation 16 PortRead8 0 Port
++    ServiceOperation 16 999 0 Port
+
+; CASE: rejected: hostile mutation 19
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-    ServiceOperation 16 PortRead8 0 Port
++    ServiceOperation 0 PortRead8 0 Port
+
+; CASE: rejected: hostile mutation 20
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-    ServiceOperation 16 PortRead8 0 Port
++    ServiceOperation 8 PortRead8 0 Port
+
+; CASE: rejected: hostile mutation 21
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-    ServiceOperation 16 PortRead8 0 Port
++    ServiceOperation 24 PortRead8 0 Port
+
+; CASE: rejected: hostile mutation 22
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-    ServiceOperation 16 PortRead8 0 Port
++    ServiceOperation 32 PortRead8 0 Port
+
+; CASE: rejected: hostile mutation 23
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-    ServiceOperation 16 PortRead8 0 Port
++    ServiceOperation 16 PortRead8 32 Port
+
+; CASE: rejected: hostile mutation 24
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -7 +6,0 @@
+-    BindServiceParameter 0 16 Port
+
+; CASE: rejected: hostile mutation 25
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -6 +5,0 @@
+-  service 16
+
+; CASE: rejected: hostile mutation 26
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -7 +7 @@
+-    BindServiceParameter 0 16 Port
++    BindServiceParameter 1 16 Port
+
+; CASE: rejected: hostile mutation 27
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -5,0 +6 @@
++  slot 8 u64
+
+; CASE: rejected: hostile mutation 28
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -0,0 +1 @@
++layout Alias [u64]
+@@ -5,0 +7,2 @@
++  slot 8 u64
++  object 8 Alias false
+
+; CASE: rejected: hostile mutation 29
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -5,0 +6 @@
++  slot 16 u64
+
+; CASE: rejected: hostile mutation 30
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -0,0 +1 @@
++layout Alias [u64]
+@@ -5,0 +7,2 @@
++  slot 16 u64
++  object 16 Alias false
+
+; CASE: rejected: hostile mutation 31
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -8 +8 @@
+-    Constant 5 u64
++    Constant 1
+
+; CASE: rejected: hostile mutation 32
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -8 +8 @@
+-    Constant 5 u64
++    Constant 1 u8
+
+; CASE: rejected: hostile mutation 33
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -8 +8 @@
+-    Constant 5 u64
++    Constant 1 bool
+
+; CASE: rejected: hostile mutation 34
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -3 +3 @@
+-  result u8
++  result u64
+
+; CASE: rejected: hostile mutation 35
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -7,0 +8 @@
++    AcquireServiceLoan 1 16 Port
+
+; CASE: rejected: hostile mutation 36
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -4 +4 @@
+-  params [uart]
++  params [uart console]
+
+; CASE: rejected: hostile mutation 37
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -4 +4 @@
+-  params [uart]
++  params [uart display]
+
+; CASE: rejected: hostile mutation 38
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -4 +4 @@
+-  params [uart]
++  params [uart iommu]
+
+; CASE: rejected: hostile mutation 39
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -4 +4 @@
+-  params [uart]
++  params [uart call]
+
+; CASE: rejected: hostile mutation 40
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -4 +4 @@
+-  params [uart]
++  params [uart uart]
+
+; CASE: Port runtime ABI facts write=1
+; RUN: stack-facts
+; CHECK-JSON: functions.port_write.service_abi.calls.__au_runtime_port_write8 {"sysv_arguments":4,"result_max":0}
+enum __au_port_write_result 1
+function port_write
+  result (enum __au_port_write_result display=builtin::PortWriteResult)
+  params [uart]
+  frame 48
+  service 16
+    BindServiceParameter 0 16 Port
+    Constant 0 u64
+    Push
+    Constant 255 u8
+    Push
+    ServiceOperation 16 PortWrite8 0 Port
+    Return
+end
+
+; CASE: accepted service graph 42
+; BASE: Port runtime ABI facts write=1
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+
+; CASE: rejected: hostile mutation 43
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-    ServiceOperation 16 PortWrite8 0 Port
++    ServiceOperation 16 PortWrite8 0 -1
+
+; CASE: rejected: hostile mutation 44
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-    ServiceOperation 16 PortWrite8 0 Port
++    ServiceOperation 16 PortWrite8
+
+; CASE: rejected: hostile mutation 45
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-    ServiceOperation 16 PortWrite8 0 Port
++    ServiceOperation 16 PortWrite8 0 Display
+
+; CASE: rejected: hostile mutation 46
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-    ServiceOperation 16 PortWrite8 0 Port
++    ServiceOperation 16 PortWrite8 0 IommuEvent
+
+; CASE: rejected: hostile mutation 47
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-    ServiceOperation 16 PortWrite8 0 Port
++    ServiceOperation 16 PortWrite8 0 Call
+
+; CASE: rejected: hostile mutation 48
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-    ServiceOperation 16 PortWrite8 0 Port
++    ServiceOperation 16 PortWrite8 0 Serve
+
+; CASE: rejected: hostile mutation 49
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-    ServiceOperation 16 PortWrite8 0 Port
++    ServiceOperation 16 PortWrite8 0 999
+
+; CASE: rejected: hostile mutation 50
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-    ServiceOperation 16 PortWrite8 0 Port
++    ServiceOperation 16 -1 0 Port
+
+; CASE: rejected: hostile mutation 51
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-    ServiceOperation 16 PortWrite8 0 Port
++    ServiceOperation 16 Next 0 Port
+
+; CASE: rejected: hostile mutation 52
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-    ServiceOperation 16 PortWrite8 0 Port
++    ServiceOperation 16 Put 0 Port
+
+; CASE: rejected: hostile mutation 53
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-    ServiceOperation 16 PortWrite8 0 Port
++    ServiceOperation 16 Pixel 0 Port
+
+; CASE: rejected: hostile mutation 54
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-    ServiceOperation 16 PortWrite8 0 Port
++    ServiceOperation 16 IommuPoll 0 Port
+
+; CASE: rejected: hostile mutation 55
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-    ServiceOperation 16 PortWrite8 0 Port
++    ServiceOperation 16 IommuAcknowledge 0 Port
+
+; CASE: rejected: hostile mutation 56
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-    ServiceOperation 16 PortWrite8 0 Port
++    ServiceOperation 16 Call 0 Port
+
+; CASE: rejected: hostile mutation 57
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-    ServiceOperation 16 PortWrite8 0 Port
++    ServiceOperation 16 ServeExchange 0 Port
+
+; CASE: rejected: hostile mutation 58
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-    ServiceOperation 16 PortWrite8 0 Port
++    ServiceOperation 16 999 0 Port
+
+; CASE: rejected: hostile mutation 59
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-    ServiceOperation 16 PortWrite8 0 Port
++    ServiceOperation 0 PortWrite8 0 Port
+
+; CASE: rejected: hostile mutation 60
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-    ServiceOperation 16 PortWrite8 0 Port
++    ServiceOperation 8 PortWrite8 0 Port
+
+; CASE: rejected: hostile mutation 61
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-    ServiceOperation 16 PortWrite8 0 Port
++    ServiceOperation 24 PortWrite8 0 Port
+
+; CASE: rejected: hostile mutation 62
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-    ServiceOperation 16 PortWrite8 0 Port
++    ServiceOperation 32 PortWrite8 0 Port
+
+; CASE: rejected: hostile mutation 63
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-    ServiceOperation 16 PortWrite8 0 Port
++    ServiceOperation 16 PortWrite8 32 Port
+
+; CASE: rejected: hostile mutation 64
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -7 +6,0 @@
+-    BindServiceParameter 0 16 Port
+
+; CASE: rejected: hostile mutation 65
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -6 +5,0 @@
+-  service 16
+
+; CASE: rejected: hostile mutation 66
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -7 +7 @@
+-    BindServiceParameter 0 16 Port
++    BindServiceParameter 1 16 Port
+
+; CASE: rejected: hostile mutation 67
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -5,0 +6 @@
++  slot 8 u64
+
+; CASE: rejected: hostile mutation 68
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -0,0 +1 @@
++layout Alias [u64]
+@@ -5,0 +7,2 @@
++  slot 8 u64
++  object 8 Alias false
+
+; CASE: rejected: hostile mutation 69
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -5,0 +6 @@
++  slot 16 u64
+
+; CASE: rejected: hostile mutation 70
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -0,0 +1 @@
++layout Alias [u64]
+@@ -5,0 +7,2 @@
++  slot 16 u64
++  object 16 Alias false
+
+; CASE: rejected: hostile mutation 71
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -8 +8 @@
+-    Constant 0 u64
++    Constant 1
+
+; CASE: rejected: hostile mutation 72
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -8 +8 @@
+-    Constant 0 u64
++    Constant 1 u8
+
+; CASE: rejected: hostile mutation 73
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -8 +8 @@
+-    Constant 0 u64
++    Constant 1 bool
+
+; CASE: rejected: hostile mutation 74
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -3 +3 @@
+-  result (enum __au_port_write_result display=builtin::PortWriteResult)
++  result u64
+
+; CASE: rejected: hostile mutation 75
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -7,0 +8 @@
++    AcquireServiceLoan 1 16 Port
+
+; CASE: rejected: hostile mutation 76
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -4 +4 @@
+-  params [uart]
++  params [uart console]
+
+; CASE: rejected: hostile mutation 77
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -4 +4 @@
+-  params [uart]
++  params [uart display]
+
+; CASE: rejected: hostile mutation 78
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -4 +4 @@
+-  params [uart]
++  params [uart iommu]
+
+; CASE: rejected: hostile mutation 79
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -4 +4 @@
+-  params [uart]
++  params [uart call]
+
+; CASE: rejected: hostile mutation 80
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -4 +4 @@
+-  params [uart]
++  params [uart uart]
+
+; CASE: rejected: hostile mutation 81
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -10 +10 @@
+-    Constant 255 u8
++    Constant 1 u64
+
+; CASE: rejected: hostile mutation 82
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -10 +10 @@
+-    Constant 255 u8
++    Constant 1
+
+; CASE: rejected: hostile mutation 83
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -10 +10 @@
+-    Constant 255 u8
++    Constant 1 bool
+
+; CASE: rejected: hostile mutation 84
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +8,0 @@
+-    Push
+
+; CASE: rejected: hostile mutation 85
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -11 +10,0 @@
+-    Push
+
+; CASE: rejected: hostile mutation 86
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -8 +8 @@
+-    Constant 5 u64
++    Constant 256 u8
+
+; CASE: rejected: hostile mutation 87
+; BASE: Port runtime ABI facts write=0
+; RUN: verify
+; EXPECT-ERROR:
+@@ -8,0 +9 @@
++    Push
+
+; CASE: rejected: hostile mutation 88
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -10 +10 @@
+-    Constant 255 u8
++    Constant 256 u8
+
+; CASE: rejected: hostile mutation 89
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -10 +10 @@
+-    Constant 255 u8
++    EnumConstant (enum __au_port_write_result display=builtin::PortWriteResult)
+
+; CASE: rejected: hostile mutation 90
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -8,5 +8 @@
+-    Constant 0 u64
+-    Push
+-    Constant 255 u8
+-    Push
+-    ServiceOperation 16 PortWrite8 0 Port
++    EnumConstant (enum __au_port_write_result display=builtin::PortWriteResult) 1
+
+; CASE: rejected: hostile mutation 91
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -1 +1 @@
+-enum __au_port_write_result 1
++enum __au_port_write_result 0
+
+; CASE: rejected: hostile mutation 92
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -1 +1 @@
+-enum __au_port_write_result 1
++enum __au_port_write_result 2
+
+; CASE: rejected: hostile mutation 93
+; BASE: Port runtime ABI facts write=1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -1 +1 @@
+-enum __au_port_write_result 1
++enum __au_port_write_result 256
+
+; CASE: accepted service graph 94
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+enum __au_port_write_result 1
+function port_read
+  result u8
+  params [uart]
+  frame 48
+  service 16
+    BindServiceParameter 0 16 Port
+    Constant 5 u64
+    ServiceOperation 16 PortRead8 0 Port
+    Return
+end
+function port_ir_entry
+  result i64
+  params [uart]
+  frame 48
+  service 16
+    BindServiceParameter 0 16 Port
+    AcquireServiceLoan 1 16 Port
+    ServiceCall port_read 1 0 [0] Port
+    ReleaseServiceLoan 1 Port
+    Constant 0 u64
+    Push
+    Constant 255 u8
+    Push
+    ServiceOperation 16 PortWrite8 0 Port
+    Constant 42
+    Return
+end
+
+; CASE: rejected: hostile mutation 95
+; BASE: accepted service graph 94
+; RUN: verify
+; EXPECT-ERROR:
+@@ -18 +17,0 @@
+-    AcquireServiceLoan 1 16 Port
+
+; CASE: rejected: hostile mutation 96
+; BASE: accepted service graph 94
+; RUN: verify
+; EXPECT-ERROR:
+@@ -20 +19,0 @@
+-    ReleaseServiceLoan 1 Port
+
+; CASE: rejected: hostile mutation 97
+; BASE: accepted service graph 94
+; RUN: verify
+; EXPECT-ERROR:
+@@ -19 +19 @@
+-    ServiceCall port_read 1 0 [0] Port
++    ServiceCall port_read 2 0 [0] Port
+
+; CASE: rejected: hostile mutation 98
+; BASE: accepted service graph 94
+; RUN: verify
+; EXPECT-ERROR:
+@@ -19 +19 @@
+-    ServiceCall port_read 1 0 [0] Port
++    ServiceCall port_read 1 0 [0] Call
+
+; CASE: rejected: hostile mutation 99
+; BASE: accepted service graph 94
+; RUN: verify
+; EXPECT-ERROR:
+@@ -19 +19 @@
+-    ServiceCall port_read 1 0 [0] Port
++    ServiceCall port_read 1 0 [16] Port
+
+; CASE: rejected: hostile mutation 100
+; BASE: accepted service graph 94
+; RUN: verify
+; EXPECT-ERROR:
+@@ -19 +19 @@
+-    ServiceCall port_read 1 0 [0] Port
++    Call port_read
+
+; CASE: rejected: hostile mutation 101
+; BASE: accepted service graph 94
+; RUN: verify
+; EXPECT-ERROR:
+@@ -19,0 +20 @@
++    ServiceCall port_read 1 0 [0] Port
+
+; CASE: accepted service graph 102
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+layout Packet [u8*64 i64 (enum __au_console_put_result display=builtin::ConsolePutResult)]
+layout __au_console_sample [bool u8 bool]
+fields Packet [(u8 0 64 true) (i64 64 1 false) ((enum __au_console_put_result display=builtin::ConsolePutResult) 65 1 false)]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_port_write_result 1
+function copied_caller
+  result (class Packet)
+  params [uart (class Packet) (class Packet)]
+  frame 512
+  slot 56 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 64 i64
+repeat 64
+  slot {65,1} u8
+endrepeat
+  slot 152 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 160 i64
+repeat 64
+  slot {161,1} u8
+endrepeat
+  slot 248 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 256 i64
+repeat 64
+  slot {257,1} u8
+endrepeat
+  slot 344 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 352 i64
+repeat 64
+  slot {353,1} u8
+endrepeat
+  slot 440 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 448 i64
+repeat 64
+  slot {449,1} u8
+endrepeat
+  object 128 Packet false
+  object 224 Packet false
+  object 320 Packet false
+  object 416 Packet false
+  object 512 Packet false
+  service 16
+    BindServiceParameter 0 16 Port
+    BindObjectParameter 1 128 Packet
+    BindObjectParameter 2 224 Packet
+    BeginObject 320
+    CopyObject 128 320
+    BeginObject 416
+    CopyObject 224 416
+    BeginObject 512
+    AcquireServiceLoan 1 16 Port
+    ServiceCall copied_helper 1 512 [0*3] Port [] [0 320 416]
+    ReleaseServiceLoan 1 Port
+    EndObject 416
+    EndObject 320
+    ReturnObject 512
+end
+function copied_helper
+  result (class Packet)
+  params [uart (class Packet) (class Packet)]
+  frame 224
+  slot 56 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 64 i64
+repeat 64
+  slot {65,1} u8
+endrepeat
+  slot 152 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 160 i64
+repeat 64
+  slot {161,1} u8
+endrepeat
+  object 128 Packet false
+  object 224 Packet false
+  service 16
+    BindServiceParameter 0 16 Port
+    BindObjectParameter 1 128 Packet
+    BindObjectParameter 2 224 Packet
+    ReturnObject 128
+end
+
+; CASE: rejected: hostile mutation 103
+; BASE: accepted service graph 102
+; RUN: verify
+; EXPECT-ERROR:
+@@ -52 +52 @@
+-    ServiceCall copied_helper 1 512 [0*3] Port [] [0 320 416]
++    ServiceCall copied_helper 1 16 [0*3] Port [] [0 320 416]
+
+; CASE: rejected: hostile mutation 104
+; BASE: accepted service graph 102
+; RUN: verify
+; EXPECT-ERROR:
+@@ -52 +52 @@
+-    ServiceCall copied_helper 1 512 [0*3] Port [] [0 320 416]
++    ServiceCall copied_helper 1 512 [0*3] Port [] [0 16 416]
+
+; CASE: accepted service graph 105
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+layout Packet []
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_port_write_result 1
+function copied_caller
+  result (class Packet)
+  params [uart (class Packet) (class Packet)]
+  frame 512
+  object 128 Packet false
+  object 224 Packet false
+  object 320 Packet false
+  object 416 Packet false
+  object 512 Packet false
+  service 16
+    BindServiceParameter 0 16 Port
+    BindObjectParameter 1 128 Packet
+    BindObjectParameter 2 224 Packet
+    BeginObject 320
+    CopyObject 128 320
+    BeginObject 416
+    CopyObject 224 416
+    BeginObject 512
+    AcquireServiceLoan 1 16 Port
+    ServiceCall copied_helper 1 512 [0*3] Port [] [0 320 416]
+    ReleaseServiceLoan 1 Port
+    EndObject 416
+    EndObject 320
+    ReturnObject 512
+end
+function copied_helper
+  result (class Packet)
+  params [uart (class Packet) (class Packet)]
+  frame 224
+  object 128 Packet false
+  object 224 Packet false
+  service 16
+    BindServiceParameter 0 16 Port
+    BindObjectParameter 1 128 Packet
+    BindObjectParameter 2 224 Packet
+    ReturnObject 128
+end
+
+; CASE: rejected: hostile mutation 106
+; BASE: accepted service graph 105
+; RUN: verify
+; EXPECT-ERROR:
+@@ -26 +26 @@
+-    ServiceCall copied_helper 1 512 [0*3] Port [] [0 320 416]
++    ServiceCall copied_helper 1 16 [0*3] Port [] [0 320 416]
+
+; CASE: rejected: hostile mutation 107
+; BASE: accepted service graph 105
+; RUN: verify
+; EXPECT-ERROR:
+@@ -26 +26 @@
+-    ServiceCall copied_helper 1 512 [0*3] Port [] [0 320 416]
++    ServiceCall copied_helper 1 512 [0*3] Port [] [0 16 416]
+
+; CASE: accepted service graph 108
+; BASE: accepted service graph 105
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+@@ -0,0 +1 @@
++layout Empty []
+@@ -2,0 +4 @@
++fields Packet [((class Empty) 0 0 false)]
+
+; CASE: rejected: hostile mutation 109
+; BASE: accepted service graph 105
+; RUN: verify
+; EXPECT-ERROR:
+@@ -0,0 +1 @@
++layout Empty []
+@@ -2,0 +4 @@
++fields Packet [((class Empty) 0 0 false)]
+@@ -26 +28 @@
+-    ServiceCall copied_helper 1 512 [0*3] Port [] [0 320 416]
++    ServiceCall copied_helper 1 16 [0*3] Port [] [0 320 416]
+
+; CASE: rejected: hostile mutation 110
+; BASE: accepted service graph 105
+; RUN: verify
+; EXPECT-ERROR:
+@@ -0,0 +1 @@
++layout Empty []
+@@ -2,0 +4 @@
++fields Packet [((class Empty) 0 0 false)]
+@@ -26 +28 @@
+-    ServiceCall copied_helper 1 512 [0*3] Port [] [0 320 416]
++    ServiceCall copied_helper 1 512 [0*3] Port [] [0 16 416]

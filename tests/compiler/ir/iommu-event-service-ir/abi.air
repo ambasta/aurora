@@ -1,0 +1,53 @@
+; CASE: executed
+; RUN: emit
+layout __au_console_sample [bool u8 bool]
+layout __au_iommu_event_sample [(enum __au_event_poll_result display=builtin::EventPollResult) u64*3]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_event_ack_result 3
+enum __au_event_intake_completion 7
+enum __au_event_poll_result 4
+function event_sample
+  result (class __au_iommu_event_sample display=builtin::IommuEventSample)
+  params [console iommu]
+  frame 64
+  slot 40 u64
+  slot 48 u64
+  slot 56 u64
+  slot 64 (enum __au_event_poll_result display=builtin::EventPollResult)
+  object 64 __au_iommu_event_sample false
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 IommuEvent
+    Constant 65 u8
+    ServiceOperation 16 Put
+    BeginObject 64
+    ServiceOperation 32 IommuPoll 64 IommuEvent
+    ReturnObject 64
+end
+function event_ir_entry
+  result u64
+  params [iommu console]
+  frame 64
+  slot 40 u64
+  slot 48 u64
+  slot 56 u64
+  slot 64 (enum __au_event_poll_result display=builtin::EventPollResult)
+  object 64 __au_iommu_event_sample false
+  service 16
+  service 32
+    BindServiceParameter 0 16 IommuEvent
+    BindServiceParameter 1 32
+    BeginObject 64
+    AcquireServiceLoan 1 16 IommuEvent
+    AcquireServiceLoan 2 32
+    ServiceCall event_sample 2 64 [0 0] Console [(1 IommuEvent)]
+    ReleaseServiceLoan 2
+    ReleaseServiceLoan 1 IommuEvent
+    Load 48 u64
+    EndObject 64
+    Return
+end

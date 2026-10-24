@@ -1,0 +1,108 @@
+; CASE: guard-fixtures
+; RUN: emit
+layout GuardBox [i64]
+function guard_frame_4080
+  result i64
+  frame 4080
+  slot 4080 i64
+    Constant 42
+    Store 4080
+    Load 4080
+    Return
+end
+function guard_frame_4096
+  result i64
+  frame 4096
+  slot 4096 i64
+    Constant 42
+    Store 4096
+    Load 4096
+    Return
+end
+function guard_frame_4112
+  result i64
+  frame 4112
+  slot 4112 i64
+    Constant 42
+    Store 4112
+    Load 4112
+    Return
+end
+function guard_frame_8192
+  result i64
+  frame 8192
+  slot 8192 i64
+    Constant 42
+    Store 8192
+    Load 8192
+    Return
+end
+function guard_frame_65536
+  result i64
+  frame 65536
+  slot 65536 i64
+    Constant 42
+    Store 65536
+    Load 65536
+    Return
+end
+function guard_target
+  result i64
+  params [(class GuardBox)]
+  frame 16
+  slot 8 i64
+  object 8 GuardBox false
+    BindObjectParameter 0 8 GuardBox
+    Load 8
+    Return
+end
+function guard_call_even
+  result i64
+  frame 32
+  slot 8 i64
+  object 8 GuardBox false
+    BeginObject 8
+    Constant 42
+    Store 8
+    AggregateCall guard_target [8]
+    Return
+end
+function guard_call_odd
+  result i64
+  frame 32
+  slot 8 i64
+  object 8 GuardBox false
+    BeginObject 8
+    Constant 42
+    Store 8
+    Constant 1
+    Push
+    AggregateCall guard_target [8]
+    BinaryValue
+    Return
+end
+function guard_recursive
+  result i64
+  params [i64]
+  frame 512
+  slot 8 i64
+  slot 512 i64
+    BindParameter 0 8
+    Constant 42
+    Store 512
+    Load 8
+    Push
+    Constant
+    Compare
+    BranchFalse 1
+    Constant 42
+    Return
+    Label 1
+    Load 8
+    Push
+    Constant 1
+    BinaryValue CheckedSubtract
+    Push
+    Call guard_recursive
+    Return
+end

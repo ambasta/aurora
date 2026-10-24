@@ -1,0 +1,133 @@
+; CASE: copied record facts: empty class
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.copied_record null
+layout Box []
+function probe_scalar
+  result (class Box)
+  params [(class Box)]
+  frame 32
+  object 32 Box false
+    BindObjectParameter 0 32 Box
+    ReturnObject 32
+end
+
+; CASE: copied record facts: one u8
+; BASE: copied record facts: empty class
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -1 +1 @@
+-layout Box []
++layout Box [u8]
+@@ -5,0 +6 @@
++  slot 32 u8
+
+; CASE: copied record facts: u8 then i64
+; BASE: copied record facts: empty class
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -1 +1 @@
+-layout Box []
++layout Box [u8 i64]
+@@ -5,0 +6,2 @@
++  slot 24 i64
++  slot 32 u8
+
+; CASE: copied record facts: i64 then u8
+; BASE: copied record facts: empty class
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -1 +1 @@
+-layout Box []
++layout Box [i64 u8]
+@@ -5,0 +6,2 @@
++  slot 24 u8
++  slot 32 i64
+
+; CASE: copied record facts: eight u8 leaves
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.copied_record {"parameter_bytes":[8],"result_bytes":8}
+layout Box [u8*8]
+function probe_scalar
+  result (class Box)
+  params [(class Box)]
+  frame 32
+  slot 25 u8
+  slot 26 u8
+  slot 27 u8
+  slot 28 u8
+  slot 29 u8
+  slot 30 u8
+  slot 31 u8
+  slot 32 u8
+  object 32 Box false
+    BindObjectParameter 0 32 Box
+    ReturnObject 32
+end
+
+; CASE: copied record facts: i64 parameter
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.copied_record {"parameter_bytes":[16,8],"result_bytes":16}
+layout Box [i64 i64]
+function probe_scalar
+  result (class Box)
+  params [(class Box) i64]
+  frame 32
+  slot 8 i64
+  slot 16 i64
+  slot 24 i64
+  object 16 Box false
+    BindObjectParameter 0 16 Box
+    BindParameter 1 24
+    ReturnObject 16
+end
+
+; CASE: copied record facts: u64 parameter
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.copied_record {"parameter_bytes":[16,8],"result_bytes":16}
+layout Box [i64 i64]
+function probe_scalar
+  result (class Box)
+  params [(class Box) u64]
+  frame 32
+  slot 8 i64
+  slot 16 i64
+  slot 24 u64
+  object 16 Box false
+    BindObjectParameter 0 16 Box
+    BindParameter 1 24 u64
+    ReturnObject 16
+end
+
+; CASE: copied record facts: bool parameter
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.copied_record {"parameter_bytes":[16,8],"result_bytes":16}
+layout Box [i64 i64]
+function probe_scalar
+  result (class Box)
+  params [(class Box) bool]
+  frame 32
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  object 16 Box false
+    BindObjectParameter 0 16 Box
+    BindParameter 1 24 bool
+    ReturnObject 16
+end
+
+; CASE: copied record facts: u8 parameter
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.copied_record null
+layout Box [i64 i64]
+function probe_scalar
+  result (class Box)
+  params [(class Box) u8]
+  frame 32
+  slot 8 i64
+  slot 16 i64
+  slot 24 u8
+  object 16 Box false
+    BindObjectParameter 0 16 Box
+    BindParameter 1 24 u8
+    ReturnObject 16
+end

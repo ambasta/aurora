@@ -1,0 +1,637 @@
+; CASE: mutable local root
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+function borrow_entry
+  result i64
+  params [region (class Buffer)]
+  frame 256
+  slot 16 i64
+  slot 56 i64
+  slot 96 i64
+  slot 104 i64
+  object 48 Buffer true
+  object 88 Buffer true
+  object 96 Word false
+  object 104 Word false
+  span 160
+  span 216
+  region 8
+  bytes 248 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 48 Buffer
+    AcquireObjectLoan 1 48 true
+    BorrowedCall borrow_buffer [(48 1 -1)]
+    ReleaseObjectLoan 1
+    EndObject 48
+    Return
+end
+function borrow_buffer
+  result i64
+  params [(class Buffer)]
+  frame 0
+  roots 1
+  firstmut 1
+    MethodCall write_buffer
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: shared local root
+; BASE: mutable local root
+; RUN: emit
+@@ -28 +28 @@
+-    AcquireObjectLoan 1 48 true
++    AcquireObjectLoan 1 48
+@@ -39,2 +39 @@
+-  firstmut 1
+-    MethodCall write_buffer
++    MethodCall read_buffer
+
+; CASE: shared loan of const local
+; BASE: mutable local root
+; RUN: emit
+@@ -19 +19 @@
+-  object 88 Buffer true
++  object 88 Buffer false
+@@ -28,2 +28,5 @@
+-    AcquireObjectLoan 1 48 true
+-    BorrowedCall borrow_buffer [(48 1 -1)]
++    BeginObject 88
++    MoveObject 48 88
++    EndObject 48
++    AcquireObjectLoan 1 88
++    BorrowedCall borrow_buffer [(88 1 -1)]
+@@ -31 +34 @@
+-    EndObject 48
++    EndObject 88
+@@ -39,2 +42 @@
+-  firstmut 1
+-    MethodCall write_buffer
++    MethodCall read_buffer
+
+; CASE: public owning constructor then synchronous borrow
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+function borrow_entry
+  result i64
+  params [region]
+  frame 256
+  slot 16 i64
+  slot 56 i64
+  slot 96 i64
+  slot 104 i64
+  object 48 Buffer true
+  object 88 Buffer true
+  object 96 Word false
+  object 104 Word false
+  span 160
+  span 216
+  region 8
+  bytes 248 true
+    BindRegionParameter 0 8
+    BeginBytes 248
+    Constant 1
+    AllocateBytes 8 248
+    BeginObject 48
+    ResourceCall construct_buffer 8 [0 248] 0 48
+    EndBytes 248
+    AcquireObjectLoan 1 48 true
+    BorrowedCall borrow_buffer [(48 1 -1)]
+    ReleaseObjectLoan 1
+    EndObject 48
+    Return
+end
+function borrow_buffer
+  result i64
+  params [(class Buffer)]
+  frame 0
+  roots 1
+  firstmut 1
+    MethodCall write_buffer
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+function construct_buffer
+  result i64
+  params [region bytes]
+  frame 48
+  receiver Buffer true true
+  region 8
+  bytes 40 true
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    InitializeBytesField 0 0 40
+    Constant 41
+    ReceiverStore 1
+    EndBytes 40
+    Constant
+    Return
+end
+
+; CASE: mutable formal forwards mutable loan
+; BASE: mutable local root
+; RUN: emit
+@@ -40 +40,3 @@
+-    MethodCall write_buffer
++    AcquireObjectLoan 2 0 true
++    BorrowedCall borrow_leaf [(0 2 -1)]
++    ReleaseObjectLoan 2
+@@ -58,0 +61,9 @@
++function borrow_leaf
++  result i64
++  params [(class Buffer)]
++  frame 0
++  roots 1
++  firstmut 1
++    MethodCall write_buffer
++    Return
++end
+
+; CASE: mutable formal forwards shared loan
+; BASE: mutable local root
+; RUN: emit
+@@ -40 +40,3 @@
+-    MethodCall write_buffer
++    AcquireObjectLoan 2
++    BorrowedCall borrow_leaf [(0 2 -1)]
++    ReleaseObjectLoan 2
+@@ -58,0 +61,8 @@
++function borrow_leaf
++  result i64
++  params [(class Buffer)]
++  frame 0
++  roots 1
++    MethodCall read_buffer
++    Return
++end
+
+; CASE: shared formal forwards shared loan
+; BASE: mutable local root
+; RUN: emit
+@@ -28 +28 @@
+-    AcquireObjectLoan 1 48 true
++    AcquireObjectLoan 1 48
+@@ -39,2 +39,3 @@
+-  firstmut 1
+-    MethodCall write_buffer
++    AcquireObjectLoan 2
++    BorrowedCall borrow_leaf [(0 2 -1)]
++    ReleaseObjectLoan 2
+@@ -58,0 +60,8 @@
++function borrow_leaf
++  result i64
++  params [(class Buffer)]
++  frame 0
++  roots 1
++    MethodCall read_buffer
++    Return
++end
+
+; CASE: five remaining scalar enum class span parameters and copied result
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+enum Mode 2
+function borrow_entry
+  result i64
+  params [region (class Buffer) (class Buffer)]
+  frame 256
+  slot 16 i64
+  slot 56 i64
+  slot 96 i64
+  slot 104 i64
+  object 48 Buffer true
+  object 88 Buffer true
+  object 96 Word false
+  object 104 Word false
+  span 160
+  span 216
+  region 8
+  bytes 248 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 48 Buffer
+    BindOwnedObjectParameter 2 88 Buffer
+    BeginObject 96
+    Constant 53
+    Store 96
+    BeginObject 104
+    BorrowOwnedSpan 88 0 160
+    AcquireObjectLoan 1 48 true
+    Constant 19
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 251 u8
+    Push
+    BorrowedCall borrow_buffer [(48 1 -1)] [0 0 96 0 0] 104 [0*3 160 0]
+    ReleaseObjectLoan 1
+    Load 104
+    EndSpan 160
+    EndObject 88
+    EndObject 96
+    EndObject 104
+    EndObject 48
+    Return
+end
+function borrow_buffer
+  result (class Word)
+  params [(class Buffer) i64 (enum Mode) (class Word) span u8]
+  frame 96
+  roots 1
+  firstmut 1
+  slot 8 i64
+  slot 16 (enum Mode)
+  slot 24 i64
+  slot 88 u8
+  object 24 Word false
+  span 80
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    BindObjectParameter 2 24 Word
+    BindSpanParameter 3 80
+    BindParameter 4 88 u8
+    MethodCall write_buffer
+    EndSpan 80
+    ReturnObject 24
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: call missing acquire
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires active loan
+@@ -28 +27,0 @@
+-    AcquireObjectLoan 1 48 true
+
+; CASE: call wrong loan identity
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires active loan
+@@ -29 +29 @@
+-    BorrowedCall borrow_buffer [(48 1 -1)]
++    BorrowedCall borrow_buffer [(48 2 -1)]
+
+; CASE: call rejects nonpositive loan identity 0
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires active loan
+@@ -29 +29 @@
+-    BorrowedCall borrow_buffer [(48 1 -1)]
++    BorrowedCall borrow_buffer [(48 0 -1)]
+
+; CASE: call rejects nonpositive loan identity -1
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires active loan
+@@ -29 +29 @@
+-    BorrowedCall borrow_buffer [(48 1 -1)]
++    BorrowedCall borrow_buffer [(48 -1 -1)]
+
+; CASE: call rejects invalid negative root selector
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: invalid borrowed object root
+@@ -29 +29 @@
+-    BorrowedCall borrow_buffer [(48 1 -1)]
++    BorrowedCall borrow_buffer [(-6 1 -1)]
+
+; CASE: call rejects unbound second root selector
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: borrowed object root is not bound
+@@ -29 +29 @@
+-    BorrowedCall borrow_buffer [(48 1 -1)]
++    BorrowedCall borrow_buffer [(-1 1 -1)]
+
+; CASE: invalid loan identity 0
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: invalid or duplicate object loan identity
+@@ -28 +28 @@
+-    AcquireObjectLoan 1 48 true
++    AcquireObjectLoan 0 48 true
+
+; CASE: invalid loan identity -1
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: invalid or duplicate object loan identity
+@@ -28 +28 @@
+-    AcquireObjectLoan 1 48 true
++    AcquireObjectLoan -1 48 true
+
+; CASE: duplicate loan identity
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: invalid or duplicate object loan identity
+@@ -27,0 +28 @@
++    AcquireObjectLoan 1 48 true
+
+; CASE: second mutable loan same root
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -28,0 +29 @@
++    AcquireObjectLoan 2 48 true
+
+; CASE: shared acquisition during mutable loan
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -28,0 +29 @@
++    AcquireObjectLoan 2 48
+
+; CASE: mutable acquisition during shared loan
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -28 +28,2 @@
+-    AcquireObjectLoan 1 48 true
++    AcquireObjectLoan 1 48
++    AcquireObjectLoan 2 48 true
+@@ -39,2 +40 @@
+-  firstmut 1
+-    MethodCall write_buffer
++    MethodCall read_buffer
+
+; CASE: negative root
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: invalid borrowed object root
+@@ -28 +28 @@
+-    AcquireObjectLoan 1 48 true
++    AcquireObjectLoan 1 -1 true
+
+; CASE: interior root
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: copy requires exact object slot
+@@ -28 +28 @@
+-    AcquireObjectLoan 1 48 true
++    AcquireObjectLoan 1 40 true
+
+; CASE: scalar leaf cannot be a root
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: copy requires exact object slot
+@@ -28 +28 @@
+-    AcquireObjectLoan 1 48 true
++    AcquireObjectLoan 1 16 true
+
+; CASE: unbound root zero
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: invalid borrowed object root
+@@ -28 +28 @@
+-    AcquireObjectLoan 1 48 true
++    AcquireObjectLoan 1 0 true
+
+; CASE: inactive root
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: copy object outside active lifetime
+@@ -28 +28 @@
+-    AcquireObjectLoan 1 48 true
++    AcquireObjectLoan 1 88 true
+
+; CASE: pristine root
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: copy source object not fully initialized
+@@ -28 +28,2 @@
+-    AcquireObjectLoan 1 48 true
++    BeginObject 88
++    AcquireObjectLoan 1 88 true
+
+; CASE: consumed root
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: owning object does not hold complete live ownership
+@@ -27,0 +28,2 @@
++    BeginObject 88
++    MoveObject 48 88
+
+; CASE: copyable root
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: object loan requires exact owning root
+@@ -28 +28,4 @@
+-    AcquireObjectLoan 1 48 true
++    BeginObject 96
++    Constant 1
++    Store 96
++    AcquireObjectLoan 1 96
+
+; CASE: const local cannot supply mutable loan
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: const object cannot supply mutable object loan
+@@ -19 +19 @@
+-  object 88 Buffer true
++  object 88 Buffer false
+@@ -28,2 +28,5 @@
+-    AcquireObjectLoan 1 48 true
+-    BorrowedCall borrow_buffer [(48 1 -1)]
++    BeginObject 88
++    MoveObject 48 88
++    EndObject 48
++    AcquireObjectLoan 1 88 true
++    BorrowedCall borrow_buffer [(88 1 -1)]
+@@ -31 +34 @@
+-    EndObject 48
++    EndObject 88
+@@ -39,2 +42 @@
+-  firstmut 1
+-    MethodCall write_buffer
++    MethodCall read_buffer
+
+; CASE: same-layout wrong nominal target
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, lifetime, nominal type or authority mismatch
+@@ -36 +36 @@
+-  params [(class Buffer)]
++  params [(class Other)]
+@@ -40 +40 @@
+-    MethodCall write_buffer
++    MethodCall write_other
+@@ -58,0 +59,9 @@
++function write_other
++  result i64
++  frame 0
++  receiver Other true false
++    Constant 41
++    ReceiverStore 1
++    ReceiverLoad 1
++    Return
++end
+
+; CASE: call substitutes different root
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, nominal type or authority mismatch
+@@ -29 +29 @@
+-    BorrowedCall borrow_buffer [(48 1 -1)]
++    BorrowedCall borrow_buffer [(88 1 -1)]
+
+; CASE: call substitutes interior root
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, lifetime, nominal type or authority mismatch
+@@ -29 +29 @@
+-    BorrowedCall borrow_buffer [(48 1 -1)]
++    BorrowedCall borrow_buffer [(40 1 -1)]
+
+; CASE: mutable loan cannot call shared target
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, nominal type or authority mismatch
+@@ -39,2 +39 @@
+-  firstmut 1
+-    MethodCall write_buffer
++    MethodCall read_buffer
+
+; CASE: shared loan cannot call mutable target
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, nominal type or authority mismatch
+@@ -28 +28 @@
+-    AcquireObjectLoan 1 48 true
++    AcquireObjectLoan 1 48
+@@ -40 +40 @@
+-    MethodCall write_buffer
++    MethodCall read_buffer
+
+; CASE: release before call
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: object loan release requires completed borrowed call
+@@ -28,0 +29 @@
++    ReleaseObjectLoan 1
+
+; CASE: release unknown identity
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: release requires active object loan
+@@ -30 +30 @@
+-    ReleaseObjectLoan 1
++    ReleaseObjectLoan 2
+
+; CASE: duplicate release
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: release requires active object loan
+@@ -30,0 +31 @@
++    ReleaseObjectLoan 1
+
+; CASE: loan used twice
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: object loan already used by a call
+@@ -28,0 +29 @@
++    BorrowedCall borrow_buffer [(48 1 -1)]
+
+; CASE: stale call after release
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires active loan
+@@ -30,0 +31 @@
++    BorrowedCall borrow_buffer [(48 1 -1)]
+
+; CASE: stale lifetime cannot restart while loan active
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -28,0 +29,2 @@
++    EndObject 48
++    BeginObject 48
+
+; CASE: shared formal cannot escalate acquisition
+; BASE: mutable local root
+; RUN: verify
+; EXPECT-ERROR: shared formal cannot supply mutable object loan
+@@ -28 +28 @@
+-    AcquireObjectLoan 1 48 true
++    AcquireObjectLoan 1 48
+@@ -39,2 +39,3 @@
+-  firstmut 1
+-    MethodCall write_buffer
++    AcquireObjectLoan 2 0 true
++    BorrowedCall borrow_leaf [(0 2 -1)]
++    ReleaseObjectLoan 2
+@@ -58,0 +60,8 @@
++function borrow_leaf
++  result i64
++  params [(class Buffer)]
++  frame 0
++  roots 1
++    MethodCall read_buffer
++    Return
++end

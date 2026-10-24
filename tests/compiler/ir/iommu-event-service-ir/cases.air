@@ -1,0 +1,1291 @@
+; CASE: accepted service graph 1
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+layout __au_console_sample [bool u8 bool]
+layout __au_iommu_event_sample [(enum __au_event_poll_result display=builtin::EventPollResult) u64*3]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_event_ack_result 3
+enum __au_event_intake_completion 7
+enum __au_event_poll_result 4
+function event_sample
+  result (class __au_iommu_event_sample display=builtin::IommuEventSample)
+  params [iommu]
+  frame 64
+  slot 40 u64
+  slot 48 u64
+  slot 56 u64
+  slot 64 (enum __au_event_poll_result display=builtin::EventPollResult)
+  object 64 __au_iommu_event_sample false
+  service 16
+    BindServiceParameter 0 16 IommuEvent
+    BeginObject 64
+    ServiceOperation 16 IommuPoll 64 IommuEvent
+    ReturnObject 64
+end
+
+; CASE: accepted service graph 2
+; BASE: accepted service graph 1
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+@@ -12 +12 @@
+-  params [iommu]
++  params [iommu console]
+@@ -19,0 +20 @@
++  service 32
+@@ -20,0 +22 @@
++    BindServiceParameter 1 32
+
+; CASE: accepted service graph 3
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+layout __au_console_sample [bool u8 bool]
+layout __au_iommu_event_sample [(enum __au_event_poll_result display=builtin::EventPollResult) u64*3]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_event_ack_result 3
+enum __au_event_intake_completion 7
+enum __au_event_poll_result 4
+function event_sample
+  result (class __au_iommu_event_sample display=builtin::IommuEventSample)
+  params [console iommu]
+  frame 64
+  slot 40 u64
+  slot 48 u64
+  slot 56 u64
+  slot 64 (enum __au_event_poll_result display=builtin::EventPollResult)
+  object 64 __au_iommu_event_sample false
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 IommuEvent
+    BeginObject 64
+    ServiceOperation 32 IommuPoll 64 IommuEvent
+    ReturnObject 64
+end
+
+; CASE: accepted service graph 4
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.event_acknowledge.service_abi.calls.__au_runtime_iommu_event_acknowledge {"sysv_arguments":2,"result_max":2}
+layout __au_console_sample [bool u8 bool]
+layout __au_iommu_event_sample [(enum __au_event_poll_result display=builtin::EventPollResult) u64*3]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_event_ack_result 3
+enum __au_event_intake_completion 7
+enum __au_event_poll_result 4
+function event_acknowledge
+  result (enum __au_event_ack_result display=builtin::EventAckResult)
+  params [iommu]
+  frame 64
+  service 16
+    BindServiceParameter 0 16 IommuEvent
+    ServiceOperation 16 IommuAcknowledge 0 IommuEvent
+    Return
+end
+
+; CASE: accepted service graph 5
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+layout __au_console_sample [bool u8 bool]
+layout __au_iommu_event_sample [(enum __au_event_poll_result display=builtin::EventPollResult) u64*3]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_event_ack_result 3
+enum __au_event_intake_completion 7
+enum __au_event_poll_result 4
+function event_sample
+  result (class __au_iommu_event_sample display=builtin::IommuEventSample)
+  params [iommu console]
+  frame 64
+  slot 40 u64
+  slot 48 u64
+  slot 56 u64
+  slot 64 (enum __au_event_poll_result display=builtin::EventPollResult)
+  object 64 __au_iommu_event_sample false
+  service 16
+  service 32
+    BindServiceParameter 0 16 IommuEvent
+    BindServiceParameter 1 32
+    BeginObject 64
+    ServiceOperation 16 IommuPoll 64 IommuEvent
+    ReturnObject 64
+end
+function event_ir_entry
+  result u64
+  params [iommu console]
+  frame 64
+  slot 40 u64
+  slot 48 u64
+  slot 56 u64
+  slot 64 (enum __au_event_poll_result display=builtin::EventPollResult)
+  object 64 __au_iommu_event_sample false
+  service 16
+  service 32
+    BindServiceParameter 0 16 IommuEvent
+    BindServiceParameter 1 32
+    BeginObject 64
+    AcquireServiceLoan 1 16 IommuEvent
+    AcquireServiceLoan 2 32
+    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
+    ReleaseServiceLoan 2
+    ReleaseServiceLoan 1 IommuEvent
+    Load 48 u64
+    EndObject 64
+    Return
+end
+
+; CASE: accepted service graph 6
+; BASE: accepted service graph 5
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+@@ -12 +12 @@
+-  params [iommu console]
++  params [console iommu]
+@@ -21,2 +21,2 @@
+-    BindServiceParameter 0 16 IommuEvent
+-    BindServiceParameter 1 32
++    BindServiceParameter 0 16
++    BindServiceParameter 1 32 IommuEvent
+@@ -24 +24 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 32 IommuPoll 64 IommuEvent
+@@ -43 +43 @@
+-    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
++    ServiceCall event_sample 2 64 [0 0] Console [(1 IommuEvent)]
+
+; CASE: accepted service graph 7
+; BASE: accepted service graph 5
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.event_ir_entry.service_abi.calls.__au_runtime_console_put {"sysv_arguments":3,"result_max":1}
+@@ -12 +12 @@
+-  params [iommu console]
++  params [iommu]
+@@ -20 +19,0 @@
+-  service 32
+@@ -22 +20,0 @@
+-    BindServiceParameter 1 32
+@@ -42,3 +40,3 @@
+-    AcquireServiceLoan 2 32
+-    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
+-    ReleaseServiceLoan 2
++    Constant 65 u8
++    ServiceOperation 32 Put
++    ServiceCall event_sample 1 64 [0] IommuEvent
+
+; CASE: accepted service graph 8
+; BASE: accepted service graph 5
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.event_sample.service_abi.calls.__au_runtime_console_put {"sysv_arguments":3,"result_max":1}
+@@ -12 +12 @@
+-  params [iommu console]
++  params [console iommu]
+@@ -21,2 +21,4 @@
+-    BindServiceParameter 0 16 IommuEvent
+-    BindServiceParameter 1 32
++    BindServiceParameter 0 16
++    BindServiceParameter 1 32 IommuEvent
++    Constant 65 u8
++    ServiceOperation 16 Put
+@@ -24 +26 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 32 IommuPoll 64 IommuEvent
+@@ -43 +45 @@
+-    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
++    ServiceCall event_sample 2 64 [0 0] Console [(1 IommuEvent)]
+
+; CASE: rejected: hostile mutation 9
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -22 +22 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 16 Next 64 IommuEvent
+
+; CASE: rejected: hostile mutation 10
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -22 +22 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 16 Put 64 IommuEvent
+
+; CASE: rejected: hostile mutation 11
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -22 +22 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 16 Pixel 64 IommuEvent
+
+; CASE: rejected: hostile mutation 12
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -22 +22 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 16 999 64 IommuEvent
+
+; CASE: rejected: hostile mutation 13
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -22 +22 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 16 IommuPoll 64
+
+; CASE: rejected: hostile mutation 14
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -22 +22 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 16 IommuPoll 64 Display
+
+; CASE: rejected: hostile mutation 15
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -22 +22 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 16 IommuPoll 64 999
+
+; CASE: rejected: hostile mutation 16
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -22 +22 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 0 IommuPoll 64 IommuEvent
+
+; CASE: rejected: hostile mutation 17
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -22 +22 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 8 IommuPoll 64 IommuEvent
+
+; CASE: rejected: hostile mutation 18
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -22 +22 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 32 IommuPoll 64 IommuEvent
+
+; CASE: rejected: hostile mutation 19
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -22 +22 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 56 IommuPoll 64 IommuEvent
+
+; CASE: rejected: hostile mutation 20
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -22 +22 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 16 IommuPoll 0 IommuEvent
+
+; CASE: rejected: hostile mutation 21
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -22 +22 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 16 IommuPoll 16 IommuEvent
+
+; CASE: rejected: hostile mutation 22
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -22 +22 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 16 IommuPoll 56 IommuEvent
+
+; CASE: rejected: hostile mutation 23
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -20 +19,0 @@
+-    BindServiceParameter 0 16 IommuEvent
+
+; CASE: rejected: hostile mutation 24
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -21 +20,0 @@
+-    BeginObject 64
+
+; CASE: rejected: hostile mutation 25
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -21,0 +22 @@
++    AcquireServiceLoan 1 16 IommuEvent
+
+; CASE: rejected: hostile mutation 26
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -22,0 +23 @@
++    ServiceOperation 16 IommuPoll 64 IommuEvent
+
+; CASE: rejected: hostile mutation 27
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -21,0 +22,2 @@
++    EnumConstant (enum __au_event_poll_result display=builtin::EventPollResult)
++    Store 64 (enum __au_event_poll_result display=builtin::EventPollResult)
+
+; CASE: rejected: hostile mutation 28
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -21,0 +22,2 @@
++    Constant 0 u64
++    Store 56 u64
+
+; CASE: rejected: hostile mutation 29
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -21,0 +22,2 @@
++    Constant 0 u64
++    Store 48 u64
+
+; CASE: rejected: hostile mutation 30
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -21,0 +22,2 @@
++    Constant 0 u64
++    Store 40 u64
+
+; CASE: rejected: hostile mutation 31
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -13,0 +14 @@
++  slot 16 u64
+
+; CASE: rejected: service observation requires exact pristine active copied sample object 32
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR: service observation requires exact pristine active copied sample object
+@@ -0,0 +1 @@
++layout OtherEventSample [(enum __au_event_poll_result display=builtin::EventPollResult) u64*3]
+@@ -2,0 +4 @@
++fields OtherEventSample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
+@@ -18 +20 @@
+-  object 64 __au_iommu_event_sample false
++  object 64 OtherEventSample false
+
+; CASE: rejected: hostile mutation 33
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -11 +11 @@
+-  result (class __au_iommu_event_sample display=builtin::IommuEventSample)
++  result (class __au_console_sample display=builtin::ConsoleSample)
+
+; CASE: rejected: hostile mutation 34
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-  params [iommu]
++  params [console]
+
+; CASE: rejected: hostile mutation 35
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-  params [iommu]
++  params [display]
+
+; CASE: rejected: hostile mutation 36
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-  params [iommu]
++  params [iommu display]
+@@ -19,0 +20 @@
++  service 32
+@@ -20,0 +22 @@
++    BindServiceParameter 1 32 Display
+
+; CASE: rejected: hostile mutation 37
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-  params [iommu]
++  params [iommu console display]
+@@ -19,0 +20 @@
++  service 32
+@@ -20,0 +22 @@
++    BindServiceParameter 1 32
+
+; CASE: rejected: hostile mutation 38
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -43 +43 @@
+-    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
++    ServiceCall event_sample 1 64 [0 0] Display [(2 Console)]
+
+; CASE: rejected: hostile mutation 39
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -43 +43 @@
+-    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
++    ServiceCall event_sample 1 64 [0 0] IommuEvent [(1 Console)]
+
+; CASE: rejected: hostile mutation 40
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -43 +43 @@
+-    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
++    ServiceCall event_sample 1 56 [0 0] IommuEvent [(2 Console)]
+
+; CASE: rejected: hostile mutation 41
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -43 +43 @@
+-    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
++    Call event_sample
+
+; CASE: rejected: hostile mutation 42
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -44 +43,0 @@
+-    ReleaseServiceLoan 2
+
+; CASE: rejected: hostile mutation 43
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -47,0 +48 @@
++    ReleaseServiceLoan 1 IommuEvent
+
+; CASE: rejected: hostile mutation 44
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -42,0 +43 @@
++    ServiceOperation 16 IommuAcknowledge 0 IommuEvent
+
+; CASE: rejected: service loan identity cannot change static root or kind 45
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR: service loan identity cannot change static root or kind
+@@ -47,0 +48 @@
++    AcquireServiceLoan 1 32
+
+; CASE: rejected: hostile mutation 46
+; BASE: accepted service graph 3
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-  params [console iommu]
++  params [display iommu]
+@@ -21 +21 @@
+-    BindServiceParameter 0 16
++    BindServiceParameter 0 16 Display
+
+; CASE: rejected: hostile mutation 47
+; BASE: accepted service graph 3
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-  params [console iommu]
++  params [console iommu display]
+
+; CASE: rejected: hostile mutation 48
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-  params [iommu console]
++  params [console iommu]
+@@ -21,2 +21,2 @@
+-    BindServiceParameter 0 16 IommuEvent
+-    BindServiceParameter 1 32
++    BindServiceParameter 0 16
++    BindServiceParameter 1 32 IommuEvent
+@@ -24 +24 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 32 IommuPoll 64 IommuEvent
+@@ -43 +43 @@
+-    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
++    ServiceCall event_sample 2 64 [0 0] Display [(1 IommuEvent)]
+
+; CASE: rejected: hostile mutation 49
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-  params [iommu console]
++  params [console iommu]
+@@ -21,2 +21,2 @@
+-    BindServiceParameter 0 16 IommuEvent
+-    BindServiceParameter 1 32
++    BindServiceParameter 0 16
++    BindServiceParameter 1 32 IommuEvent
+@@ -24 +24 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 32 IommuPoll 64 IommuEvent
+@@ -43 +43 @@
+-    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
++    ServiceCall event_sample 2 64 [0 0] Console [(2 IommuEvent)]
+
+; CASE: rejected: hostile mutation 50
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-  params [iommu console]
++  params [console iommu]
+@@ -21,2 +21,2 @@
+-    BindServiceParameter 0 16 IommuEvent
+-    BindServiceParameter 1 32
++    BindServiceParameter 0 16
++    BindServiceParameter 1 32 IommuEvent
+@@ -24 +24 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 32 IommuPoll 64 IommuEvent
+@@ -43 +43 @@
+-    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
++    ServiceCall event_sample 2 56 [0 0] Console [(1 IommuEvent)]
+
+; CASE: rejected: hostile mutation 51
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-  params [iommu console]
++  params [console iommu]
+@@ -21,2 +21,2 @@
+-    BindServiceParameter 0 16 IommuEvent
+-    BindServiceParameter 1 32
++    BindServiceParameter 0 16
++    BindServiceParameter 1 32 IommuEvent
+@@ -24 +24 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 32 IommuPoll 64 IommuEvent
+@@ -43 +43 @@
+-    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
++    Call event_sample
+
+; CASE: rejected: hostile mutation 52
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-  params [iommu console]
++  params [console iommu]
+@@ -21,2 +21,2 @@
+-    BindServiceParameter 0 16 IommuEvent
+-    BindServiceParameter 1 32
++    BindServiceParameter 0 16
++    BindServiceParameter 1 32 IommuEvent
+@@ -24 +24 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 32 IommuPoll 64 IommuEvent
+@@ -43,2 +43 @@
+-    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
+-    ReleaseServiceLoan 2
++    ServiceCall event_sample 2 64 [0 0] Console [(1 IommuEvent)]
+
+; CASE: rejected: hostile mutation 53
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-  params [iommu console]
++  params [console iommu]
+@@ -21,2 +21,2 @@
+-    BindServiceParameter 0 16 IommuEvent
+-    BindServiceParameter 1 32
++    BindServiceParameter 0 16
++    BindServiceParameter 1 32 IommuEvent
+@@ -24 +24 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 32 IommuPoll 64 IommuEvent
+@@ -43 +43 @@
+-    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
++    ServiceCall event_sample 2 64 [0 0] Console [(1 IommuEvent)]
+@@ -47,0 +48 @@
++    ReleaseServiceLoan 1 IommuEvent
+
+; CASE: rejected: hostile mutation 54
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-  params [iommu console]
++  params [console iommu]
+@@ -21,2 +21,2 @@
+-    BindServiceParameter 0 16 IommuEvent
+-    BindServiceParameter 1 32
++    BindServiceParameter 0 16
++    BindServiceParameter 1 32 IommuEvent
+@@ -24 +24 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 32 IommuPoll 64 IommuEvent
+@@ -43 +43,2 @@
+-    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
++    ServiceOperation 16 IommuAcknowledge 0 IommuEvent
++    ServiceCall event_sample 2 64 [0 0] Console [(1 IommuEvent)]
+
+; CASE: rejected: service loan identity cannot change static root or kind 55
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR: service loan identity cannot change static root or kind
+@@ -12 +12 @@
+-  params [iommu console]
++  params [console iommu]
+@@ -21,2 +21,2 @@
+-    BindServiceParameter 0 16 IommuEvent
+-    BindServiceParameter 1 32
++    BindServiceParameter 0 16
++    BindServiceParameter 1 32 IommuEvent
+@@ -24 +24 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 32 IommuPoll 64 IommuEvent
+@@ -43 +43 @@
+-    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
++    ServiceCall event_sample 2 64 [0 0] Console [(1 IommuEvent)]
+@@ -47,0 +48 @@
++    AcquireServiceLoan 1 32
+
+; CASE: rejected: hostile mutation 56
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -40,0 +41,2 @@
++    EnumConstant (enum __au_event_poll_result display=builtin::EventPollResult)
++    Store 64 (enum __au_event_poll_result display=builtin::EventPollResult)
+
+; CASE: rejected: hostile mutation 57
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -40,0 +41,2 @@
++    Constant 0 u64
++    Store 56 u64
+
+; CASE: rejected: hostile mutation 58
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -40,0 +41,2 @@
++    Constant 0 u64
++    Store 48 u64
+
+; CASE: rejected: hostile mutation 59
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -40,0 +41,2 @@
++    Constant 0 u64
++    Store 40 u64
+
+; CASE: rejected: hostile mutation 60
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -44 +44 @@
+-    ReleaseServiceLoan 2
++    ReleaseServiceLoan 2 Display
+
+; CASE: rejected: hostile mutation 61
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -41 +41 @@
+-    AcquireServiceLoan 1 16 IommuEvent
++    AcquireServiceLoan 1 32 IommuEvent
+
+; CASE: rejected: hostile mutation 62
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -42,0 +43 @@
++    ReleaseServiceLoan 1 IommuEvent
+
+; CASE: rejected: hostile mutation 63
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -43,0 +44 @@
++    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
+
+; CASE: rejected: hostile mutation 64
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -41,0 +42 @@
++    AcquireServiceLoan 1 16 IommuEvent
+
+; CASE: rejected: hostile mutation 65
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-  params [iommu console]
++  params [console iommu]
+@@ -21,2 +21,2 @@
+-    BindServiceParameter 0 16 IommuEvent
+-    BindServiceParameter 1 32
++    BindServiceParameter 0 16
++    BindServiceParameter 1 32 IommuEvent
+@@ -24 +24 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 32 IommuPoll 64 IommuEvent
+@@ -40,0 +41,2 @@
++    EnumConstant (enum __au_event_poll_result display=builtin::EventPollResult)
++    Store 64 (enum __au_event_poll_result display=builtin::EventPollResult)
+@@ -43 +45 @@
+-    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
++    ServiceCall event_sample 2 64 [0 0] Console [(1 IommuEvent)]
+
+; CASE: rejected: hostile mutation 66
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-  params [iommu console]
++  params [console iommu]
+@@ -21,2 +21,2 @@
+-    BindServiceParameter 0 16 IommuEvent
+-    BindServiceParameter 1 32
++    BindServiceParameter 0 16
++    BindServiceParameter 1 32 IommuEvent
+@@ -24 +24 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 32 IommuPoll 64 IommuEvent
+@@ -40,0 +41,2 @@
++    Constant 0 u64
++    Store 56 u64
+@@ -43 +45 @@
+-    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
++    ServiceCall event_sample 2 64 [0 0] Console [(1 IommuEvent)]
+
+; CASE: rejected: hostile mutation 67
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-  params [iommu console]
++  params [console iommu]
+@@ -21,2 +21,2 @@
+-    BindServiceParameter 0 16 IommuEvent
+-    BindServiceParameter 1 32
++    BindServiceParameter 0 16
++    BindServiceParameter 1 32 IommuEvent
+@@ -24 +24 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 32 IommuPoll 64 IommuEvent
+@@ -40,0 +41,2 @@
++    Constant 0 u64
++    Store 48 u64
+@@ -43 +45 @@
+-    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
++    ServiceCall event_sample 2 64 [0 0] Console [(1 IommuEvent)]
+
+; CASE: rejected: hostile mutation 68
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-  params [iommu console]
++  params [console iommu]
+@@ -21,2 +21,2 @@
+-    BindServiceParameter 0 16 IommuEvent
+-    BindServiceParameter 1 32
++    BindServiceParameter 0 16
++    BindServiceParameter 1 32 IommuEvent
+@@ -24 +24 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 32 IommuPoll 64 IommuEvent
+@@ -40,0 +41,2 @@
++    Constant 0 u64
++    Store 40 u64
+@@ -43 +45 @@
+-    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
++    ServiceCall event_sample 2 64 [0 0] Console [(1 IommuEvent)]
+
+; CASE: rejected: hostile mutation 69
+; BASE: accepted service graph 5
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-  params [iommu console]
++  params [console iommu]
+@@ -21,2 +21,2 @@
+-    BindServiceParameter 0 16 IommuEvent
+-    BindServiceParameter 1 32
++    BindServiceParameter 0 16
++    BindServiceParameter 1 32 IommuEvent
+@@ -24 +24 @@
+-    ServiceOperation 16 IommuPoll 64 IommuEvent
++    ServiceOperation 32 IommuPoll 64 IommuEvent
+@@ -43,2 +43,2 @@
+-    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
+-    ReleaseServiceLoan 2
++    ServiceCall event_sample 2 64 [0 0] Console [(1 IommuEvent)]
++    ReleaseServiceLoan 2 Display
+
+; CASE: rejected: hostile mutation 70
+; RUN: verify
+; EXPECT-ERROR:
+layout __au_console_sample [bool u8 bool]
+layout __au_iommu_event_sample [(enum __au_event_poll_result display=builtin::EventPollResult) u64*3]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_event_ack_result 3
+enum __au_event_intake_completion 7
+enum __au_event_poll_result 4
+function event_sample
+  result (class __au_iommu_event_sample display=builtin::IommuEventSample)
+  params [console iommu]
+  frame 64
+  slot 40 u64
+  slot 48 u64
+  slot 56 u64
+  slot 64 (enum __au_event_poll_result display=builtin::EventPollResult)
+  object 64 __au_iommu_event_sample false
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 IommuEvent
+    BeginObject 64
+    ServiceOperation 32 IommuPoll 64 IommuEvent
+    ReturnObject 64
+end
+function event_ir_entry
+  result u64
+  params [iommu console]
+  frame 64
+  slot 40 u64
+  slot 48 u64
+  slot 56 u64
+  slot 64 (enum __au_event_poll_result display=builtin::EventPollResult)
+  object 64 __au_iommu_event_sample false
+  service 16
+  service 32
+    BindServiceParameter 0 16 IommuEvent
+    BindServiceParameter 1 32
+    BeginObject 64
+    AcquireServiceLoan 1 32 IommuEvent
+    AcquireServiceLoan 2 32
+    ServiceCall event_sample 2 64 [0 0] Console [(1 IommuEvent)]
+    ReleaseServiceLoan 2
+    ReleaseServiceLoan 1 IommuEvent
+    Load 48 u64
+    EndObject 64
+    Return
+end
+
+; CASE: rejected: hostile mutation 71
+; BASE: rejected: hostile mutation 70
+; RUN: verify
+; EXPECT-ERROR:
+@@ -41 +41 @@
+-    AcquireServiceLoan 1 32 IommuEvent
++    AcquireServiceLoan 1 16 IommuEvent
+@@ -42,0 +43 @@
++    ReleaseServiceLoan 1 IommuEvent
+
+; CASE: rejected: hostile mutation 72
+; BASE: rejected: hostile mutation 70
+; RUN: verify
+; EXPECT-ERROR:
+@@ -41 +41 @@
+-    AcquireServiceLoan 1 32 IommuEvent
++    AcquireServiceLoan 1 16 IommuEvent
+@@ -42,0 +43 @@
++    ServiceCall event_sample 2 64 [0 0] Console [(1 IommuEvent)]
+
+; CASE: rejected: hostile mutation 73
+; BASE: rejected: hostile mutation 70
+; RUN: verify
+; EXPECT-ERROR:
+@@ -41 +41,2 @@
+-    AcquireServiceLoan 1 32 IommuEvent
++    AcquireServiceLoan 1 16 IommuEvent
++    AcquireServiceLoan 1 16 IommuEvent
+
+; CASE: rejected: hostile mutation 74
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +8,0 @@
+-enum __au_event_poll_result 4
+
+; CASE: rejected: acknowledge requires closed enum result and no object storage 75
+; BASE: accepted service graph 4
+; RUN: verify
+; EXPECT-ERROR: acknowledge requires closed enum result and no object storage
+@@ -7 +6,0 @@
+-enum __au_event_ack_result 3
+@@ -11 +10 @@
+-  result (enum __au_event_ack_result display=builtin::EventAckResult)
++  result i64
+
+; CASE: rejected: hostile mutation 76
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-  params [iommu]
++  params [iommu console]
+@@ -19,0 +20 @@
++  service 32
+@@ -20,0 +22 @@
++    BindServiceParameter 1 16
+
+; CASE: rejected: hostile mutation 77
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-  params [iommu]
++  params [iommu console]
+@@ -19,0 +20 @@
++  service 32
+@@ -20,0 +22 @@
++    BindServiceParameter 0 32
+
+; CASE: rejected: acknowledge requires closed enum result and no object storage 78
+; BASE: accepted service graph 4
+; RUN: verify
+; EXPECT-ERROR: acknowledge requires closed enum result and no object storage
+@@ -16 +16 @@
+-    ServiceOperation 16 IommuAcknowledge 0 IommuEvent
++    ServiceOperation 16 IommuAcknowledge 64 IommuEvent
+
+; CASE: rejected: hostile mutation 79
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -2 +2 @@
+-layout __au_iommu_event_sample [(enum __au_event_poll_result display=builtin::EventPollResult) u64*3]
++layout __au_iommu_event_sample [bool u64*3]
+
+; CASE: rejected: hostile mutation 80
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -4 +4 @@
+-fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
++fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 4 1 false) (u64 {1,1} 1 false)*3]
+
+; CASE: rejected: hostile mutation 81
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -4 +4 @@
+-fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
++fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 2 false) (u64 {1,1} 1 false)*3]
+
+; CASE: rejected: hostile mutation 82
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -4 +4 @@
+-fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
++fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 true) (u64 {1,1} 1 false)*3]
+
+; CASE: rejected: hostile mutation 83
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -2 +2 @@
+-layout __au_iommu_event_sample [(enum __au_event_poll_result display=builtin::EventPollResult) u64*3]
++layout __au_iommu_event_sample [(enum __au_event_poll_result display=builtin::EventPollResult) bool u64 u64]
+
+; CASE: rejected: hostile mutation 84
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -4 +4 @@
+-fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
++fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 4 1 false) (u64 2 1 false) (u64 3 1 false)]
+
+; CASE: rejected: hostile mutation 85
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -4 +4 @@
+-fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
++fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 1 2 false) (u64 2 1 false) (u64 3 1 false)]
+
+; CASE: rejected: hostile mutation 86
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -4 +4 @@
+-fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
++fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 1 1 true) (u64 2 1 false) (u64 3 1 false)]
+
+; CASE: rejected: hostile mutation 87
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -2 +2 @@
+-layout __au_iommu_event_sample [(enum __au_event_poll_result display=builtin::EventPollResult) u64*3]
++layout __au_iommu_event_sample [(enum __au_event_poll_result display=builtin::EventPollResult) u64 bool u64]
+
+; CASE: rejected: hostile mutation 88
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -4 +4 @@
+-fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
++fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 1 1 false) (u64 4 1 false) (u64 3 1 false)]
+
+; CASE: rejected: hostile mutation 89
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -4 +4 @@
+-fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
++fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 1 1 false) (u64 2 2 false) (u64 3 1 false)]
+
+; CASE: rejected: hostile mutation 90
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -4 +4 @@
+-fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
++fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 1 1 false) (u64 2 1 true) (u64 3 1 false)]
+
+; CASE: rejected: hostile mutation 91
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -2 +2 @@
+-layout __au_iommu_event_sample [(enum __au_event_poll_result display=builtin::EventPollResult) u64*3]
++layout __au_iommu_event_sample [(enum __au_event_poll_result display=builtin::EventPollResult) u64 u64 bool]
+
+; CASE: rejected: hostile mutation 92
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -4 +4 @@
+-fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
++fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 1 1 false) (u64 2 1 false) (u64 4 1 false)]
+
+; CASE: rejected: hostile mutation 93
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -4 +4 @@
+-fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
++fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 1 1 false) (u64 2 1 false) (u64 3 2 false)]
+
+; CASE: rejected: hostile mutation 94
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -4 +4 @@
+-fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
++fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 1 1 false) (u64 2 1 false) (u64 3 1 true)]
+
+; CASE: rejected: hostile mutation 95
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -4 +4 @@
+-fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
++fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 1 1 false) (u64 2 1 false)]
+
+; CASE: rejected: hostile mutation 96
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-enum __au_event_poll_result 4
++enum __au_event_poll_result 0
+
+; CASE: rejected: hostile mutation 97
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-enum __au_event_poll_result 4
++enum __au_event_poll_result 3
+
+; CASE: rejected: hostile mutation 98
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-enum __au_event_poll_result 4
++enum __au_event_poll_result 5
+
+; CASE: rejected: hostile mutation 99
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -22,0 +23 @@
++    EnumConstant (enum __au_event_poll_result) 4
+
+; CASE: rejected: hostile mutation 100
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -7 +7 @@
+-enum __au_event_ack_result 3
++enum __au_event_ack_result 0
+
+; CASE: rejected: hostile mutation 101
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -7 +7 @@
+-enum __au_event_ack_result 3
++enum __au_event_ack_result 2
+
+; CASE: rejected: hostile mutation 102
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -7 +7 @@
+-enum __au_event_ack_result 3
++enum __au_event_ack_result 4
+
+; CASE: rejected: hostile mutation 103
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -22,0 +23 @@
++    EnumConstant (enum __au_event_ack_result) 3
+
+; CASE: rejected: hostile mutation 104
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -8 +8 @@
+-enum __au_event_intake_completion 7
++enum __au_event_intake_completion 0
+
+; CASE: rejected: hostile mutation 105
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -8 +8 @@
+-enum __au_event_intake_completion 7
++enum __au_event_intake_completion 6
+
+; CASE: rejected: hostile mutation 106
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -8 +8 @@
+-enum __au_event_intake_completion 7
++enum __au_event_intake_completion 8
+
+; CASE: rejected: hostile mutation 107
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -22,0 +23 @@
++    EnumConstant (enum __au_event_intake_completion) 7
+
+; CASE: rejected: hostile mutation 108
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -10 +10 @@
+-function event_sample
++function __au_runtime_iommu_event_poll
+
+; CASE: rejected: hostile mutation 109
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -20,0 +21 @@
++    Call __au_runtime_iommu_event_poll
+
+; CASE: rejected: hostile mutation 110
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -10 +10 @@
+-function event_sample
++function __au_runtime_iommu_event_acknowledge
+
+; CASE: rejected: hostile mutation 111
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -20,0 +21 @@
++    Call __au_runtime_iommu_event_acknowledge
+
+; CASE: rejected: hostile mutation 112
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -10 +10 @@
+-function event_sample
++function __au_runtime_event_other
+
+; CASE: rejected: hostile mutation 113
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -20,0 +21 @@
++    Call __au_runtime_event_other
+
+; CASE: executed event emission
+; BASE: rejected: hostile mutation 70
+; RUN: emit
+@@ -22,0 +23,2 @@
++    Constant 65 u8
++    ServiceOperation 16 Put
+@@ -41 +43 @@
+-    AcquireServiceLoan 1 32 IommuEvent
++    AcquireServiceLoan 1 16 IommuEvent

@@ -1,0 +1,657 @@
+; CASE: copied class params and class result
+; RUN: emit
+layout Box [i64]
+layout Other [i64]
+function entry
+  result i64
+  frame 32
+  slot 8 i64
+  slot 16 i64
+  slot 24 i64
+  slot 32 i64
+  object 8 Box true
+  object 16 Box false
+  object 24 Box false
+  object 32 Box false
+    BeginObject 8
+    Constant 40
+    Store 8
+    BeginObject 16
+    Constant 1
+    Store 16
+    BeginObject 24
+    Constant 2
+    Store 24
+    BeginObject 32
+    Constant 3
+    Push
+    MethodCall take 8 [16 0 24] 32
+    Load 32
+    Return
+end
+function take
+  result (class Box)
+  params [(class Box) i64 (class Box)]
+  frame 32
+  receiver Box false false
+  slot 8 i64
+  slot 16 i64
+  slot 24 i64
+  object 8 Box false
+  object 24 Box false
+    BindObjectParameter 0 8 Box
+    BindParameter 1 16
+    BindObjectParameter 2 24 Box
+    ReturnObject 8
+end
+
+; CASE: copied class params and scalar result
+; BASE: copied class params and class result
+; RUN: emit
+@@ -26,2 +26 @@
+-    MethodCall take 8 [16 0 24] 32
+-    Load 32
++    MethodCall take 8 [16 0 24]
+@@ -31 +30 @@
+-  result (class Box)
++  result i64
+@@ -43 +42,2 @@
+-    ReturnObject 8
++    ReceiverLoad
++    Return
+
+; CASE: mutable receiver with readonly snapshots
+; BASE: copied class params and class result
+; RUN: emit
+@@ -34 +34 @@
+-  receiver Box false false
++  receiver Box true false
+
+; CASE: short argument vector
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: argument vector size mismatch
+@@ -26 +26 @@
+-    MethodCall take 8 [16 0 24] 32
++    MethodCall take 8 [16 0] 32
+
+; CASE: long argument vector
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: argument vector size mismatch
+@@ -26 +26 @@
+-    MethodCall take 8 [16 0 24] 32
++    MethodCall take 8 [16 0 24 0] 32
+
+; CASE: scalar position names object
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: cannot name object storage
+@@ -26 +26 @@
+-    MethodCall take 8 [16 0 24] 32
++    MethodCall take 8 [16 16 24] 32
+
+; CASE: class position zero
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: exact object slot
+@@ -26 +26 @@
+-    MethodCall take 8 [16 0 24] 32
++    MethodCall take 8 [0 0 24] 32
+
+; CASE: class position interior
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: exact object slot
+@@ -26 +26 @@
+-    MethodCall take 8 [16 0 24] 32
++    MethodCall take 8 [15 0 24] 32
+
+; CASE: mutable snapshot
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: snapshot must be readonly
+@@ -11 +11 @@
+-  object 16 Box false
++  object 16 Box true
+
+; CASE: incomplete snapshot
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: not fully initialized
+@@ -19 +18,0 @@
+-    Store 16
+
+; CASE: inactive snapshot
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: outside active lifetime
+@@ -22,0 +23 @@
++    EndObject 16
+
+; CASE: wrong nominal snapshot
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: nominal class mismatch
+@@ -11 +11 @@
+-  object 16 Box false
++  object 16 Other false
+
+; CASE: reused snapshot
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: snapshots must be distinct
+@@ -26 +26 @@
+-    MethodCall take 8 [16 0 24] 32
++    MethodCall take 8 [16 0 16] 32
+
+; CASE: snapshot aliases receiver
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: receiver aliases argument snapshot
+@@ -26 +26 @@
+-    MethodCall take 8 [16 0 24] 32
++    MethodCall take 8 [8 0 24] 32
+
+; CASE: result aliases snapshot
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: result aliases argument snapshot
+@@ -26 +26 @@
+-    MethodCall take 8 [16 0 24] 32
++    MethodCall take 8 [16 0 24] 16
+
+; CASE: result aliases receiver
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: result aliases receiver
+@@ -26 +26 @@
+-    MethodCall take 8 [16 0 24] 32
++    MethodCall take 8 [16 0 24] 8
+
+; CASE: result interior
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: exact object slot
+@@ -26 +26 @@
+-    MethodCall take 8 [16 0 24] 32
++    MethodCall take 8 [16 0 24] 31
+
+; CASE: result inactive
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: result outside active object lifetime
+@@ -23 +22,0 @@
+-    BeginObject 32
+
+; CASE: result nonpristine
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: requires uninitialized object
+@@ -23,0 +24,2 @@
++    Constant 9
++    Store 32
+
+; CASE: result wrong nominal
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: result nominal class mismatch
+@@ -13 +13 @@
+-  object 32 Box false
++  object 32 Other false
+
+; CASE: class result missing destination
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: exact object slot
+@@ -26 +26 @@
+-    MethodCall take 8 [16 0 24] 32
++    MethodCall take 8 [16 0 24]
+
+; CASE: scalar result forbids destination
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: scalar method result cannot name object storage
+@@ -27 +26,0 @@
+-    Load 32
+@@ -31 +30 @@
+-  result (class Box)
++  result i64
+@@ -43 +42,2 @@
+-    ReturnObject 8
++    ReceiverLoad
++    Return
+
+; CASE: wrong scalar stack type
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: method argument type mismatch
+@@ -24 +24 @@
+-    Constant 3
++    Constant 1 bool
+
+; CASE: missing scalar operand
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: value stack underflow
+@@ -25 +24,0 @@
+-    Push
+
+; CASE: method cannot use plain call
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: plain call cannot target receiver
+@@ -26 +26 @@
+-    MethodCall take 8 [16 0 24] 32
++    Call take
+
+; CASE: method cannot use ordinary aggregate call
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: aggregate call cannot target receiver
+@@ -26 +26 @@
+-    MethodCall take 8 [16 0 24] 32
++    AggregateCall take [16 0 24] 32
+
+; CASE: object binding prefix missing
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: object parameter bindings must form the entry prefix
+@@ -40 +40 @@
+-    BindObjectParameter 0 8 Box
++    Constant 1
+
+; CASE: object binding wrong index
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: entry prefix
+@@ -40 +40 @@
+-    BindObjectParameter 0 8 Box
++    BindObjectParameter 2 8 Box
+
+; CASE: late object binding
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: outside entry prefix
+@@ -42,0 +43 @@
++    BindObjectParameter 0 8 Box
+
+; CASE: overlapping bindings
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: bindings overlap
+@@ -42 +42 @@
+-    BindObjectParameter 2 24 Box
++    BindObjectParameter 2 8 Box
+
+; CASE: object binding wrong nominal
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: object parameter nominal class mismatch
+@@ -38 +38 @@
+-  object 8 Box false
++  object 8 Other false
+
+; CASE: object binding mutable
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: object parameter must be readonly
+@@ -38 +38 @@
+-  object 8 Box false
++  object 8 Box true
+
+; CASE: binding scalar into object
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: parameter cannot bind object field
+@@ -41 +41 @@
+-    BindParameter 1 16
++    BindParameter 1 8
+
+; CASE: bound object cannot restart
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: parameter lifetime cannot restart
+@@ -42,0 +43 @@
++    BeginObject 8
+
+; CASE: bound object cannot be assigned
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: write to initialized const object field
+@@ -42,0 +43,2 @@
++    Constant 1
++    Store 8
+
+; CASE: invalid method parameter own<i64>
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: receiver signature requires scalar, enum or class values
+@@ -32 +32 @@
+-  params [(class Box) i64 (class Box)]
++  params [own i64 (class Box)]
+
+; CASE: uncalled invalid method parameter own<i64>
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: receiver signature requires scalar, enum or class values
+; EXPECT-CODE: AU0000
+layout Box [i64]
+layout Other [i64]
+function take
+  result (class Box)
+  params [own i64 (class Box)]
+  frame 32
+  receiver Box false false
+  slot 8 i64
+  slot 16 i64
+  slot 24 i64
+  object 8 Box false
+  object 24 Box false
+    BindObjectParameter 0 8 Box
+    BindParameter 1 16
+    BindObjectParameter 2 24 Box
+    ReturnObject 8
+end
+
+; CASE: invalid method parameter ref<i64>
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: receiver signature requires scalar, enum or class values
+@@ -32 +32 @@
+-  params [(class Box) i64 (class Box)]
++  params [ref i64 (class Box)]
+
+; CASE: uncalled invalid method parameter ref<i64>
+; BASE: uncalled invalid method parameter own<i64>
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: receiver signature requires scalar, enum or class values
+; EXPECT-CODE: AU0000
+@@ -5 +5 @@
+-  params [own i64 (class Box)]
++  params [ref i64 (class Box)]
+
+; CASE: invalid method parameter mutref<i64>
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: receiver signature requires scalar, enum or class values
+@@ -32 +32 @@
+-  params [(class Box) i64 (class Box)]
++  params [mutref i64 (class Box)]
+
+; CASE: uncalled invalid method parameter mutref<i64>
+; BASE: uncalled invalid method parameter own<i64>
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: receiver signature requires scalar, enum or class values
+; EXPECT-CODE: AU0000
+@@ -5 +5 @@
+-  params [own i64 (class Box)]
++  params [mutref i64 (class Box)]
+
+; CASE: invalid method parameter array<u8, 2>
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: receiver signature requires scalar, enum or class values
+@@ -32 +32 @@
+-  params [(class Box) i64 (class Box)]
++  params [(array elem=u8 len=2) i64 (class Box)]
+
+; CASE: uncalled invalid method parameter array<u8, 2>
+; BASE: uncalled invalid method parameter own<i64>
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: receiver signature requires scalar, enum or class values
+; EXPECT-CODE: AU0000
+@@ -5 +5 @@
+-  params [own i64 (class Box)]
++  params [(array elem=u8 len=2) i64 (class Box)]
+
+; CASE: span method argument lacks capability vector
+; RUN: verify
+; EXPECT-ERROR: method span argument vector size mismatch
+layout Box [i64]
+layout Other [i64]
+function entry
+  result i64
+  frame 32
+  slot 8 i64
+  slot 16 i64
+  slot 24 i64
+  slot 32 i64
+  object 8 Box true
+  object 16 Box false
+  object 24 Box false
+  object 32 Box false
+    BeginObject 8
+    Constant 40
+    Store 8
+    BeginObject 16
+    Constant 1
+    Store 16
+    BeginObject 24
+    Constant 2
+    Store 24
+    BeginObject 32
+    Constant 3
+    Push
+    MethodCall take 8 [16 0 24] 32
+    Load 32
+    Return
+end
+function take
+  result (class Box)
+  params [span i64 (class Box)]
+  frame 96
+  receiver Box false false
+  slot 16 i64
+  slot 24 i64
+  object 24 Box false
+  span 88
+    BindSpanParameter 0 88
+    BindParameter 1 16
+    BindObjectParameter 2 24 Box
+    EndSpan 88
+    ReturnObject 24
+end
+
+; CASE: const receiver cannot mutate
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: write through const receiver
+@@ -42,0 +43,2 @@
++    Constant 1
++    ReceiverStore
+
+; CASE: const local cannot supply mutable receiver
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: const object cannot supply mutable receiver
+@@ -10 +10 @@
+-  object 8 Box true
++  object 8 Box false
+@@ -34 +34 @@
+-  receiver Box false false
++  receiver Box true false
+
+; CASE: forward without receiver
+; BASE: copied class params and class result
+; RUN: verify
+; EXPECT-ERROR: forwarding without bound receiver
+@@ -26 +26 @@
+-    MethodCall take 8 [16 0 24] 32
++    MethodCall take 0 [16 0 24] 32
+
+; CASE: forwarded receiver and copied arguments
+; RUN: emit
+layout Box [i64]
+layout Other [i64]
+function entry
+  result i64
+  frame 32
+  slot 8 i64
+  slot 16 i64
+  slot 24 i64
+  slot 32 i64
+  object 8 Box true
+  object 16 Box false
+  object 24 Box false
+  object 32 Box false
+    BeginObject 8
+    Constant 40
+    Store 8
+    BeginObject 16
+    Constant 1
+    Store 16
+    BeginObject 24
+    Constant 2
+    Store 24
+    BeginObject 32
+    Constant 3
+    Push
+    MethodCall take 8 [16 0 24] 32
+    Load 32
+    Return
+end
+function take
+  result (class Box)
+  params [(class Box) i64 (class Box)]
+  frame 32
+  receiver Box false false
+  slot 8 i64
+  slot 16 i64
+  slot 24 i64
+  slot 32 i64
+  object 8 Box false
+  object 24 Box false
+  object 32 Box false
+    BindObjectParameter 0 8 Box
+    BindParameter 1 16
+    BindObjectParameter 2 24 Box
+    BeginObject 32
+    Load 16
+    Push
+    MethodCall take_leaf 0 [8 0 24] 32
+    ReturnObject 32
+end
+function take_leaf
+  result (class Box)
+  params [(class Box) i64 (class Box)]
+  frame 32
+  receiver Box false false
+  slot 8 i64
+  slot 16 i64
+  slot 24 i64
+  object 8 Box false
+  object 24 Box false
+    BindObjectParameter 0 8 Box
+    BindParameter 1 16
+    BindObjectParameter 2 24 Box
+    ReturnObject 8
+end
+
+; CASE: forwarding const receiver to mutable method
+; BASE: forwarded receiver and copied arguments
+; RUN: verify
+; EXPECT-ERROR: const receiver cannot forward mutable capability
+@@ -48 +48 @@
+-    MethodCall take_leaf 0 [8 0 24] 32
++    MethodCall mutable_take 0 [8 0 24] 32
+@@ -65,0 +66,17 @@
++function mutable_take
++  result (class Box)
++  params [(class Box) i64 (class Box)]
++  frame 32
++  receiver Box true false
++  slot 8 i64
++  slot 16 i64
++  slot 24 i64
++  slot 32 i64
++  object 8 Box false
++  object 24 Box false
++  object 32 Box false
++    BindObjectParameter 0 8 Box
++    BindParameter 1 16
++    BindObjectParameter 2 24 Box
++    ReturnObject 8
++end
+
+; CASE: empty nested logical completion copied
+; RUN: emit
+layout Box [i64]
+layout Empty []
+layout Envelope []
+fields Envelope [((class Empty) 0 0 false)]
+function entry
+  result i64
+  frame 32
+  slot 8 i64
+  object 8 Box false
+  object 16 Empty false
+  object 24 Envelope false
+  object 32 Envelope false
+    BeginObject 8
+    Constant 40
+    Store 8
+    BeginObject 16
+    InitializeEmptyObject 16
+    BeginObject 24
+    MethodCall construct_env 24 [16]
+    BeginObject 32
+    MethodCall roundtrip_env 8 [24] 32
+    Constant 42
+    Return
+end
+function construct_env
+  result i64
+  params [(class Empty)]
+  frame 16
+  receiver Envelope true true
+  object 8 Empty false
+    BindObjectParameter 0 8 Empty
+    InitializeObjectField 0 0 8
+    Constant
+    Return
+end
+function roundtrip_env
+  result (class Envelope)
+  params [(class Envelope)]
+  frame 16
+  receiver Box false false
+  object 8 Envelope false
+    BindObjectParameter 0 8 Envelope
+    ReturnObject 8
+end
+
+; CASE: empty nested snapshot not logically complete
+; BASE: empty nested logical completion copied
+; RUN: verify
+; EXPECT-ERROR: nested class field not completely initialized
+@@ -19 +18,0 @@
+-    MethodCall construct_env 24 [16]
+
+; CASE: empty nested constructor incomplete
+; BASE: empty nested logical completion copied
+; RUN: verify
+; EXPECT-ERROR: constructor returns before all class fields initialized
+@@ -32 +31,0 @@
+-    InitializeObjectField 0 0 8
+
+; CASE: empty logical child initialized twice
+; BASE: empty nested logical completion copied
+; RUN: verify
+; EXPECT-ERROR: initialized more than once
+@@ -32,0 +33 @@
++    InitializeObjectField 0 0 8
+
+; CASE: empty class result reused
+; BASE: empty nested logical completion copied
+; RUN: verify
+; EXPECT-ERROR: already initialized
+@@ -20,0 +21 @@
++    MethodCall roundtrip_env 8 [24] 32
+
+; CASE: empty result aliases argument
+; BASE: empty nested logical completion copied
+; RUN: verify
+; EXPECT-ERROR: result aliases argument snapshot
+@@ -21 +21 @@
+-    MethodCall roundtrip_env 8 [24] 32
++    MethodCall roundtrip_env 8 [24] 24

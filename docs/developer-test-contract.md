@@ -97,3 +97,10 @@ rewrites it for a reviewed change). Policy observers print per-family digests
 and histograms of their full-width vector families (`tests/policy-vectors.hpp`).
 C++ test-configuration guards are one-line compile-fail cases in
 `tests/kernel-compile-fail.txt`.
+
+Hand-built IR is data: `.air` case files under `tests/compiler/ir`, one Meson
+test per directory, run by the single `aurora-ir-check` driver (format and
+directives in [tests/compiler/ir/README.md](../tests/compiler/ir/README.md)).
+A new verifier or emitter case is a few lines of module text with its expected
+diagnostic or CHECK lines, not a C++ translation unit. Only owner, view, writer
+and emitter-object API tests remain C++ (`tests/compiler/ir_api.cpp`).

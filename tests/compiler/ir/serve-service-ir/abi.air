@@ -1,0 +1,32 @@
+; CASE: forwarded
+; RUN: emit
+layout __au_serve_request [(enum __au_serve_status display=builtin::ServeStatus) u64]
+fields __au_serve_request [((enum __au_serve_status display=builtin::ServeStatus) 0 1 false) (u64 1 1 false)]
+enum __au_serve_status 2
+function serve_ir_operation
+  result u64
+  params [serve]
+  frame 48
+  slot 24 u64
+  slot 32 (enum __au_serve_status display=builtin::ServeStatus)
+  object 32 __au_serve_request false
+  service 16
+    BindServiceParameter 0 16 Serve
+    BeginObject 32
+    Constant 42 u64
+    ServiceOperation 16 ServeExchange 32 Serve
+    EndObject 32
+    Constant 42 u64
+    Return
+end
+function serve_ir_entry
+  result u64
+  params [serve]
+  frame 48
+  service 16
+    BindServiceParameter 0 16 Serve
+    AcquireServiceLoan 1 16 Serve
+    ServiceCall serve_ir_operation 1 0 [0] Serve
+    ReleaseServiceLoan 1 Serve
+    Return
+end

@@ -1,0 +1,1878 @@
+; CASE: valid-trivial
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":0}}
+function trivial
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+
+; CASE: literal-span-missing-spill-before-metrics
+; BASE: valid-trivial
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: literal span requires exact typed spill"},"metrics_started":false,"metrics":{"snapshots":1000000001,"peakOperandDepth":1000000002,"peakRetainedOperandFacts":1000000003,"peakRetainedValueFacts":1000000004,"peakRetainedInitializationPayloadBytes":1000000005}}
+@@ -1 +1 @@
+-function trivial
++function literal_preflight
+@@ -3,0 +4 @@
++    BorrowLiteralSpan "*" 56
+
+; CASE: uninitialized-scalar
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: load before initialization"},"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":16}}
+function uninitialized
+  result i64
+  frame 16
+  slot 8 i64
+    Load 8
+    Return
+end
+
+; CASE: declaration-order-load-first
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: load before initialization"},"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":16}}
+function z_declared_first
+  result i64
+  frame 16
+  slot 8 i64
+    Load 8
+    Return
+end
+function a_declared_second
+  result i64
+  frame 0
+    Pop
+    Return
+end
+
+; CASE: declaration-order-underflow-first
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: value stack underflow"},"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":0}}
+function z_declared_first
+  result i64
+  frame 0
+    Pop
+    Return
+end
+function a_declared_second
+  result i64
+  frame 16
+  slot 8 i64
+    Load 8
+    Return
+end
+
+; CASE: unused-declaration-load-first
+; BASE: declaration-order-load-first
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: load before initialization"},"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":16}}
+@@ -0,0 +1 @@
++views [(0 []) (1 [])]
+@@ -3,0 +5 @@
++  scope 1
+
+; CASE: unused-declaration-underflow-first
+; BASE: declaration-order-underflow-first
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: value stack underflow"},"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":0}}
+@@ -0,0 +1 @@
++views [(0 []) (1 [])]
+@@ -3,0 +5 @@
++  scope 1
+
+; CASE: unused-invalid-after-valid-root
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: load before initialization"},"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":16}}
+views [(0 []) (1 [])]
+function root
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+function unused
+  result i64
+  frame 16
+  scope 1
+  slot 8 i64
+    Load 8
+    Return
+end
+
+; CASE: target-before-fallthrough
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: load before initialization"},"metrics_started":true,"metrics":{"snapshots":3,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":48}}
+function branch_order
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 1 bool
+    BranchFalse 7
+    Pop
+    Return
+    Label 7
+    Load 8
+    Return
+end
+
+; CASE: duplicate-join
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":2,"peakOperandDepth":1,"peakRetainedOperandFacts":1,"peakRetainedValueFacts":1,"peakRetainedInitializationPayloadBytes":0}}
+function duplicate_join
+  result i64
+  frame 0
+    Constant 42
+    Push
+    Constant 1 bool
+    BranchFalse 7
+    Label 7
+    Pop
+    Return
+end
+
+; CASE: return-43-unbalanced
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: unbalanced stack at return"},"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":1,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":0}}
+function scalar_return
+  result i64
+  frame 0
+    Constant 42
+    Constant 7
+    Push
+    Return
+end
+
+; CASE: return-44-valid
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":16}}
+layout Word [i64]
+function copy_return
+  result (class Word)
+  params [(class Word)]
+  frame 16
+  slot 8 i64
+  object 8 Word false
+    BindObjectParameter 0 8 Word
+    ReturnObject 8
+end
+
+; CASE: return-44-unbalanced
+; BASE: return-44-valid
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: unbalanced stack at object return"},"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":1,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":16}}
+@@ -8,0 +9,2 @@
++    Constant 7
++    Push
+
+; CASE: return-53-valid
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":2,"peakRetainedInitializationPayloadBytes":16}}
+layout Only []
+fields Only [(bytes 0 0 false)]
+function span_return
+  result span
+  frame 64
+  receiver Only false false
+  spanfield 0
+  span 56
+    BorrowOwnedSpan 0 0 56
+    ReturnSpan 56
+end
+
+; CASE: return-53-unbalanced
+; BASE: return-53-valid
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: unbalanced stack at span return"},"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":1,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":2,"peakRetainedInitializationPayloadBytes":16}}
+@@ -9,0 +10,2 @@
++    Constant 7
++    Push
+
+; CASE: return-76-valid
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":0}}
+function bytes_return
+  result bytes
+  params [region bytes]
+  frame 48
+  region 8
+  bytes 40 true
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    ReturnBytes 40
+end
+
+; CASE: return-76-unbalanced
+; BASE: return-76-valid
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: unbalanced stack at owned byte return"},"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":1,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":0}}
+@@ -8,0 +9,2 @@
++    Constant 7
++    Push
+
+; CASE: return-80-valid
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":16}}
+layout Only []
+fields Only [(bytes 0 0 false)]
+function owning_return
+  result (class Only)
+  params [region (class Only)]
+  frame 48
+  object 40 Only true
+  region 8
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 40 Only
+    ReturnOwnedObject 40
+end
+
+; CASE: return-80-unbalanced
+; BASE: return-80-valid
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: unbalanced stack at owning object return"},"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":1,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":16}}
+@@ -10,0 +11,2 @@
++    Constant 7
++    Push
+
+; CASE: byte-operations-valid
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":4,"peakRetainedInitializationPayloadBytes":16}}
+layout Pair [u8 bool]
+function byte_op0
+  result u8
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    BinaryValue CheckedAdd u8
+    Return
+end
+function byte_op1
+  result u8
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    BinaryValue CheckedSubtract u8
+    Return
+end
+function byte_op2
+  result u8
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    BinaryValue CheckedMultiply u8
+    Return
+end
+function byte_op3
+  result u8
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    BinaryValue CheckedDivide u8
+    Return
+end
+function byte_op4
+  result u8
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    BinaryValue CheckedRemainder u8
+    Return
+end
+function byte_op5
+  result u8
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    BinaryValue BitAnd u8
+    Return
+end
+function byte_op6
+  result u8
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    BinaryValue BitOr u8
+    Return
+end
+function byte_op7
+  result u8
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    BinaryValue BitXor u8
+    Return
+end
+function byte_op8
+  result u8
+  params [u8 i64]
+  frame 16
+  slot 8 u8
+  slot 16 i64
+    BindParameter 0 8 u8
+    BindParameter 1 16
+    Load 8 u8
+    Push
+    Load 16
+    BinaryValue ShiftLeft u8
+    Return
+end
+function byte_op9
+  result u8
+  params [u8 i64]
+  frame 16
+  slot 8 u8
+  slot 16 i64
+    BindParameter 0 8 u8
+    BindParameter 1 16
+    Load 8 u8
+    Push
+    Load 16
+    BinaryValue ShiftRight u8
+    Return
+end
+function byte_compare0
+  result bool
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    Compare Equal u8
+    Return
+end
+function byte_compare1
+  result bool
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    Compare NotEqual u8
+    Return
+end
+function byte_compare2
+  result bool
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    Compare Less u8
+    Return
+end
+function byte_compare3
+  result bool
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    Compare Greater u8
+    Return
+end
+function byte_compare4
+  result bool
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    Compare LessEqual u8
+    Return
+end
+function byte_compare5
+  result bool
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    Compare GreaterEqual u8
+    Return
+end
+function byte_not
+  result u8
+  params [u8]
+  frame 16
+  slot 8 u8
+    BindParameter 0 8 u8
+    Load 8 u8
+    UnaryValue BitNot u8
+    Return
+end
+function u8_to_i64
+  result i64
+  params [u8]
+  frame 16
+  slot 8 u8
+    BindParameter 0 8 u8
+    Load 8 u8
+    Convert u8
+    Return
+end
+function i64_to_u8
+  result u8
+  params [i64]
+  frame 16
+  slot 8 i64
+    BindParameter 0 8
+    Load 8
+    Convert i64 u8
+    Return
+end
+function u8_to_u64
+  result u64
+  params [u8]
+  frame 16
+  slot 8 u8
+    BindParameter 0 8 u8
+    Load 8 u8
+    Convert u8 u64
+    Return
+end
+function u64_to_u8
+  result u8
+  params [u64]
+  frame 16
+  slot 8 u64
+    BindParameter 0 8 u64
+    Load 8 u64
+    Convert u64 u8
+    Return
+end
+function byte_local_array
+  result u8
+  frame 16
+  slot 15 u8
+  slot 16 u8
+    Constant 0 u8
+    Store 16 u8
+    Constant 1 u8
+    Store 15 u8
+    Constant 1
+    BoundsGuard 16 2 u8
+    Push
+    Constant 255 u8
+    IndexStore 16 2 u8
+    Constant 1
+    BoundsGuard 16 2 u8
+    IndexLoad 16 2 u8
+    Return
+end
+function byte_aggregate
+  result u8
+  frame 48
+  slot 8 bool
+  slot 16 u8
+  slot 24 bool
+  slot 32 u8
+  slot 40 bool
+  slot 48 u8
+  object 16 Pair false
+  object 32 Pair false
+  object 48 Pair false
+    BeginObject 16
+    Constant 12 u8
+    Store 16 u8
+    Constant 1 bool
+    Store 8 bool
+    BeginObject 32
+    Constant 20 u8
+    Store 32 u8
+    Constant 0 bool
+    Store 24 bool
+    Constant 10 u8
+    Push
+    Constant 1 bool
+    Push
+    BeginObject 48
+    AggregateCall copy_pair [16 0 32 0] 48
+    Load 48 u8
+    Return
+end
+function copy_pair
+  result (class Pair)
+  params [(class Pair) u8 (class Pair) bool]
+  frame 64
+  slot 8 bool
+  slot 16 u8
+  slot 24 u8
+  slot 32 bool
+  slot 40 u8
+  slot 48 bool
+  slot 56 bool
+  slot 64 u8
+  object 16 Pair false
+  object 40 Pair false
+  object 64 Pair false
+    BindObjectParameter 0 16 Pair
+    BindParameter 1 24 u8
+    BindObjectParameter 2 40 Pair
+    BindParameter 3 48 bool
+    BeginObject 64
+    Load 16 u8
+    Push
+    Load 24 u8
+    BinaryValue CheckedAdd u8
+    Push
+    Load 40 u8
+    BinaryValue CheckedAdd u8
+    Store 64 u8
+    Load 48 bool
+    Store 56 bool
+    ReturnObject 64
+end
+function byte_receiver
+  result u8
+  frame 16
+  slot 8 bool
+  slot 16 u8
+  object 16 Pair false
+    BeginObject 16
+    Constant 255 u8
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_pair 16
+    MethodCall relay_pair 16
+    Return
+end
+function construct_pair
+  result i64
+  params [u8 bool]
+  frame 16
+  receiver Pair true true
+  slot 8 u8
+  slot 16 bool
+    BindParameter 0 8 u8
+    BindParameter 1 16 bool
+    Load 8 u8
+    ReceiverStore 0 u8
+    Load 16 bool
+    ReceiverStore 1 bool
+    Constant
+    Return
+end
+function get_pair
+  result u8
+  frame 0
+  receiver Pair false false
+    ReceiverLoad 0 u8
+    Return
+end
+function relay_pair
+  result u8
+  frame 0
+  receiver Pair false false
+    MethodCall get_pair
+    Return
+end
+
+; CASE: enum-baseline-valid
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":16}}
+enum Mode 2
+enum OtherMode 2
+function test
+  result bool
+  frame 16
+  slot 8 (enum Mode)
+    EnumConstant (enum Mode) 1
+    Store 8 (enum Mode)
+    Load 8 (enum Mode)
+    Push
+    Call identity_mode
+    Push
+    EnumConstant (enum Mode) 1
+    Compare Equal (enum Mode)
+    Return
+end
+function identity_mode
+  result (enum Mode)
+  params [(enum Mode)]
+  frame 16
+  slot 8 (enum Mode)
+    BindParameter 0 8 (enum Mode)
+    Load 8 (enum Mode)
+    Return
+end
+
+; CASE: enum-cross-store
+; BASE: enum-baseline-valid
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: missing or mistyped current value"},"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":16}}
+@@ -7 +7 @@
+-    EnumConstant (enum Mode) 1
++    EnumConstant (enum OtherMode) 1
+
+; CASE: enum-cross-call
+; BASE: enum-baseline-valid
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: call argument type mismatch"},"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":1,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":16}}
+@@ -9 +9 @@
+-    Load 8 (enum Mode)
++    EnumConstant (enum OtherMode) 1
+
+; CASE: terminal-value-before-fallthrough
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: value stack underflow"},"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":16}}
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Pop
+end
+
+; CASE: unreachable-after-return
+; BASE: terminal-value-before-fallthrough
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: unreachable semantic instruction"},"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":16}}
+@@ -5 +5,3 @@
+-    Pop
++    Constant 42
++    Return
++    Constant
+
+; CASE: initialized-empty-valid
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":16}}
+layout Empty []
+function explicit_empty
+  result (class Empty)
+  frame 16
+  object 8 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    ReturnObject 8
+end
+
+; CASE: owning-copied-child-valid
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":4,"peakRetainedInitializationPayloadBytes":16}}
+layout Container [u8 u64 u8]
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Container [(bytes 0 0 false) ((class Copy) 0 2 false) (u8 2 1 false)]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Container [{32,8}*3] [0 32 48] 56 8 56
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_entry
+  result u64
+  params [region]
+  frame 416
+  slot 48 u8
+  slot 56 u64
+  slot 64 u8
+  slot 136 u8
+  slot 144 u64
+  slot 152 u8
+  slot 360 u64
+  slot 368 u8
+  slot 376 u64
+  slot 384 u8
+  object 96 Container true
+  object 184 Container true
+  object 368 Copy false
+  object 384 Copy true
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BeginBytes 304
+    Constant 3
+    AllocateBytes 8 304
+    BeginObject 368
+    Constant 17 u8
+    Store 368 u8
+    Constant 99 u64
+    Store 360 u64
+    BeginObject 96
+    ResourceCall copy_constructor 8 [0 304 368] 0 96
+    EndBytes 304
+    Constant 42 u64
+    Push
+    BeginObject 384
+    MethodCall copy_method 96 [368 0] 384
+    Load 376 u64
+    EndObject 384
+    EndObject 368
+    EndObject 96
+    Return
+end
+function copy_constructor
+  result i64
+  params [region bytes (class Copy)]
+  frame 64
+  receiver Container true true
+  slot 48 u64
+  slot 56 u8
+  object 56 Copy false
+  region 8
+  bytes 40 true
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BindObjectParameter 2 56 Copy
+    InitializeBytesField 0 0 40
+    InitializeObjectField 0 1 56
+    Constant 77 u8
+    ReceiverStore 2 u8
+    EndBytes 40
+    Constant
+    Return
+end
+function copy_method
+  result (class Copy)
+  params [(class Copy) u64]
+  frame 48
+  receiver Container true false
+  slot 8 u64
+  slot 16 u8
+  slot 24 u64
+  slot 40 u64
+  slot 48 u8
+  object 16 Copy false
+  object 48 Copy true
+    BindObjectParameter 0 16 Copy
+    BindParameter 1 24 u64
+    AssignObjectField 0 1 16
+    BeginObject 48
+    ObjectFieldCopy 0 1 48
+    Load 24 u64
+    Store 40 u64
+    ReturnObject 48
+end
+function child_method
+  result u64
+  frame 0
+  receiver Copy false false
+    ReceiverLoad 1 u64
+    Return
+end
+
+; CASE: class-array-local-valid
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":16}}
+layout Carrier [u8 u64 u8 u64]
+layout Child [u8 u64]
+layout Other [u8 u64]
+fields Carrier [((class Child) 0 4 true 2)]
+storage Carrier [{0,8}*4] [0] 32 8 32
+storage Child [0 8] [0 8] 16 8 16
+storage Other [0 8] [0 8] 16 8 16
+carrier Carrier
+function local
+  result (class Child)
+  params [(class Child) (class Child)]
+  frame 128
+repeat 7
+  slot {8,16} u64
+  slot {16,16} u8
+endrepeat
+  object 16 Child false
+  object 32 Child false
+  object 64 Carrier true
+  object 80 Child false
+  object 112 Carrier true
+    BindObjectParameter 0 16 Child
+    BindObjectParameter 1 32 Child
+    BeginObject 64
+    InitializeClassArray 64 0 [16 32]
+    BeginObject 112
+    CopyObject 64 112
+    Constant 1
+    ClassArrayBoundsGuard 64
+    ClassArrayAssign 64 0 16
+    Constant 1
+    ClassArrayBoundsGuard 64
+    BeginObject 80
+    ClassArrayCopy 64 0 80
+    ReturnObject 80
+end
+
+; CASE: receiver-array-valid
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":1,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":10,"peakRetainedInitializationPayloadBytes":16}}
+layout ArrayBox [i64*3 bool*3 i64 i64]
+fields ArrayBox [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
+function test
+  result i64
+  frame 64
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  object 64 ArrayBox true
+    BeginObject 64
+    MethodCall construct_array 64
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_array 64
+    Constant 1
+    Push
+    MethodCall get_array 64
+    Return
+end
+function construct_array
+  result i64
+  frame 0
+  receiver ArrayBox true true
+    Constant 7
+    ReceiverStore
+    ReceiverArrayZero 1
+    Constant 1 bool
+    ReceiverStore 2 bool
+    ReceiverArrayZero 3
+    ReceiverArrayZero 4
+    Constant
+    Return
+end
+function get_array
+  result i64
+  params [i64]
+  frame 16
+  receiver ArrayBox false false
+  slot 8 i64
+    BindParameter 0 8
+    Load 8
+    ReceiverBoundsGuard 1
+    ReceiverIndexLoad 1
+    Return
+end
+function set_array
+  result i64
+  params [i64 i64]
+  frame 16
+  receiver ArrayBox true false
+  slot 8 i64
+  slot 16 i64
+    BindParameter 0 8
+    BindParameter 1 16
+    Load 8
+    ReceiverBoundsGuard 1
+    Push
+    Load 16
+    ReceiverIndexStore 1
+    Constant
+    Return
+end
+
+; CASE: owned-values-valid
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":16}}
+layout ByteBox []
+layout Empty []
+layout Nested [u8 u64 u8]
+layout Other [u8 u64 u8]
+layout Record [u8 u64 u8]
+layout ValuesBox []
+fields ByteBox [(bytes 0 0 false)]
+fields Empty []
+fields Nested [((class Record) 0 3 false) ((class Empty) 3 0 false)]
+fields Other [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields Record [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields ValuesBox [((values Record) 0 0 false)]
+storage ByteBox [] [0] 32 8 32
+storage Empty [] [] 8 8 8
+storage Nested [{0,8}*3] [0 24] 24 8 24
+storage Other [{0,8}*3] [{0,8}*3] 24 8 24
+storage Record [{0,8}*3] [{0,8}*3] 24 8 24
+storage ValuesBox [] [0] 32 8 32
+enum Mode 2
+function typed_values
+  result i64
+  params [region]
+  frame 208
+  slot 144 u8
+  slot 152 u64
+  slot 160 u8
+  slot 168 u8
+  slot 176 u64
+  slot 184 u8
+  slot 192 u8
+  slot 200 u64
+  slot 208 u8
+  object 160 Record false
+  object 184 Record false
+  object 208 Record true
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+  values 40 Record
+  values 72 Record
+    BindRegionParameter 0 8
+    BeginObject 208
+    Constant 7 u8
+    Store 208 u8
+    Constant 42 u64
+    Store 200 u64
+    Constant 9 u8
+    Store 192 u8
+    BeginObject 160
+    CopyObject 208 160
+    EndObject 208
+    BeginBytes 40
+    Constant 2
+    AllocateValues 8 40 160
+    BeginObject 184
+    Constant
+    ValuesLoad 40 -1 184
+    Constant 1
+    ValuesStore 40 -1 184
+    Constant 5
+    ValuesResize 40 -1 160
+    BytesOk 40
+    BytesLength 40
+    EndObject 184
+    EndObject 160
+    EndBytes 40
+    Return
+end
+
+; CASE: owned-values-parameter-valid
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":0}}
+layout ByteBox []
+layout Empty []
+layout Nested [u8 u64 u8]
+layout Other [u8 u64 u8]
+layout Record [u8 u64 u8]
+layout ValuesBox []
+fields ByteBox [(bytes 0 0 false)]
+fields Empty []
+fields Nested [((class Record) 0 3 false) ((class Empty) 3 0 false)]
+fields Other [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields Record [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields ValuesBox [((values Record) 0 0 false)]
+storage ByteBox [] [0] 32 8 32
+storage Empty [] [] 8 8 8
+storage Nested [{0,8}*3] [0 24] 24 8 24
+storage Other [{0,8}*3] [{0,8}*3] 24 8 24
+storage Record [{0,8}*3] [{0,8}*3] 24 8 24
+storage ValuesBox [] [0] 32 8 32
+enum Mode 2
+function values_parameter
+  result (values Record)
+  params [region (values Record)]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+  values 40 Record
+  values 72 Record
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BeginBytes 72
+    MoveBytes 40 72
+    EndBytes 40
+    ReturnBytes 72
+end
+
+; CASE: readonly-owner-at-valid
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":0}}
+function bytes_entry
+  result u8
+  params [region]
+  frame 192
+  region 8
+  bytes 40 false
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    Constant
+    BytesLoad 40
+    EndBytes 40
+    Return
+end
+
+; CASE: owning-byte-store-valid
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":1,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":9,"peakRetainedInitializationPayloadBytes":16}}
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_method
+  result bool
+  frame 0
+  receiver Parcel true false
+    Constant
+    Push
+    Constant 42 u8
+    BytesStore 0 1
+    Return
+end
+
+; CASE: owned-bytes-resize-valid
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":0}}
+function bytes_resize
+  result bool
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    Constant 65
+    BytesResize 40
+    EndBytes 40
+    Return
+end
+
+; CASE: console-forwarded-valid
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":48}}
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+function caller
+  result (enum __au_console_put_result display=builtin::ConsolePutResult)
+  params [console]
+  frame 48
+  service 16
+    BindServiceParameter 0 16
+    AcquireServiceLoan 1 16
+    Constant 65 u8
+    Push
+    ServiceCall putter 1 0 [0 0]
+    ReleaseServiceLoan 1
+    Return
+end
+function putter
+  result (enum __au_console_put_result display=builtin::ConsolePutResult)
+  params [console u8]
+  frame 48
+  slot 24 u8
+  service 16
+    BindServiceParameter 0 16
+    BindParameter 1 24 u8
+    Load 24 u8
+    ServiceOperation 16 Put
+    Return
+end
+
+; CASE: short-circuit-span-metadata-valid
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":10,"peakOperandDepth":1,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":144,"peakRetainedInitializationPayloadBytes":160}}
+layout ProbeBox [i64 i64]
+descriptor 17 1 0
+descriptor 18 0 0
+views [(0 [17 18])]
+function sc_probe_scalar
+  result bool
+  params [bool]
+  frame 16
+  slot 8 bool
+    BindParameter 0 8 bool
+    Load 8 bool
+    Return
+end
+function sc_probe_method
+  result bool
+  params [bool]
+  frame 16
+  receiver ProbeBox true false
+  slot 8 bool
+    BindParameter 0 8 bool
+    Load 8 bool
+    Return
+end
+function sc_probe_aggregate
+  result bool
+  params [(class ProbeBox) bool]
+  frame 32
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  object 16 ProbeBox false
+    BindObjectParameter 0 16 ProbeBox
+    BindParameter 1 24 bool
+    Load 24 bool
+    Return
+end
+function sc_probe_method_value
+  result bool
+  params [(class ProbeBox) bool]
+  frame 32
+  receiver ProbeBox true false
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  object 16 ProbeBox false
+    BindObjectParameter 0 16 ProbeBox
+    BindParameter 1 24 bool
+    Load 24 bool
+    Return
+end
+function sc_probe_aggregate_result
+  result (class ProbeBox)
+  params [(class ProbeBox) bool]
+  frame 32
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  object 16 ProbeBox false
+    BindObjectParameter 0 16 ProbeBox
+    BindParameter 1 24 bool
+    ReturnObject 16
+end
+function sc_probe_method_result
+  result (class ProbeBox)
+  params [(class ProbeBox) bool]
+  frame 32
+  receiver ProbeBox true false
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  object 16 ProbeBox false
+    BindObjectParameter 0 16 ProbeBox
+    BindParameter 1 24 bool
+    ReturnObject 16
+end
+function sc_probe_span
+  result bool
+  params [span bool]
+  frame 128
+  slot 24 bool
+  span 120
+    BindSpanParameter 0 120
+    BindParameter 1 24 bool
+    Load 24 bool
+    EndSpan 120
+    Return
+end
+function sc_subspan_nested_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Load 8 bool
+    BranchFalse 1
+    Constant 1
+    Push
+    Constant 1
+    Subspan 176 232
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [232 0]
+    EndSpan 232
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Constant 1
+    Push
+    Constant 1
+    Subspan 176 232
+    Load 24 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [232 0]
+    EndSpan 232
+    Label 4
+    EndSpan 176
+    EndArray 64
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_metadata_and_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    BranchFalse 3
+    Constant 17
+    Jump 4
+    Label 3
+    Constant 18
+    Label 4
+    MetadataQuery
+    Push
+    Constant
+    Compare NotEqual
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    EndObject 56
+    EndObject 40
+    Return
+end
+
+; CASE: fixed-field-span-valid
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":16}}
+layout Fixed [i64 u8*4]
+fields Fixed [(i64 0 1 false) (u8 1 2 true) (u8 3 2 true)]
+function fixed_view
+  result span
+  frame 112
+  receiver Fixed false false
+  spanfield 1
+  span 56
+  span 112
+    BorrowReceiverArraySpan 1 56
+    ReborrowSpan 56 112
+    ReturnSpan 112
+end
+function fixed_caller
+  result i64
+  params [(class Fixed)]
+  frame 128
+  slot 5 u8
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  slot 16 i64
+  object 16 Fixed false
+  span 72
+  span 128
+    BindObjectParameter 0 16 Fixed
+    MethodCall fixed_view 16 [] 72
+    ReborrowSpan 72 128
+    SpanLength 128
+    EndSpan 128
+    EndSpan 72
+    EndObject 16
+    Return
+end
+
+; CASE: literal-window-valid
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":1,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":16}}
+function window_dynamic
+  result i64
+  params [i64*3]
+  frame 256
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  slot 56 i64
+  slot 64 i64
+  slot 72 i64
+  array 8 3
+  span 128
+  span 184
+    BindParameter 0 56
+    BindParameter 1 64
+    BindParameter 2 72
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BorrowLiteralSpan "\xff\xff\xff" 128
+    Load 56
+    Push
+    Load 64
+    Subspan 128 184
+    Load 72
+    SpanLoad 184
+    Convert u8
+    EndSpan 184
+    EndSpan 128
+    EndArray 8
+    Return
+end
+
+; CASE: borrowed-const-local-valid
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":4,"peakRetainedInitializationPayloadBytes":16}}
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+function borrow_entry
+  result i64
+  params [region (class Buffer)]
+  frame 256
+  slot 16 i64
+  slot 56 i64
+  slot 96 i64
+  slot 104 i64
+  object 48 Buffer true
+  object 88 Buffer false
+  object 96 Word false
+  object 104 Word false
+  span 160
+  span 216
+  region 8
+  bytes 248 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 48 Buffer
+    BeginObject 88
+    MoveObject 48 88
+    EndObject 48
+    AcquireObjectLoan 1 88
+    BorrowedCall borrow_buffer [(88 1 -1)]
+    ReleaseObjectLoan 1
+    EndObject 88
+    Return
+end
+function borrow_buffer
+  result i64
+  params [(class Buffer)]
+  frame 0
+  roots 1
+    MethodCall read_buffer
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: initialized-borrow-handle-valid
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":16}}
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    BorrowHandle 8 ref
+    Constant 42
+    Return
+end
+
+; CASE: typed-move-to-bytes
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: owner move nominal type mismatch"},"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":0}}
+layout ByteBox []
+layout Empty []
+layout Nested [u8 u64 u8]
+layout Other [u8 u64 u8]
+layout Record [u8 u64 u8]
+layout ValuesBox []
+fields ByteBox [(bytes 0 0 false)]
+fields Empty []
+fields Nested [((class Record) 0 3 false) ((class Empty) 3 0 false)]
+fields Other [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields Record [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields ValuesBox [((values Record) 0 0 false)]
+storage ByteBox [] [0] 32 8 32
+storage Empty [] [] 8 8 8
+storage Nested [{0,8}*3] [0 24] 24 8 24
+storage Other [{0,8}*3] [{0,8}*3] 24 8 24
+storage Record [{0,8}*3] [{0,8}*3] 24 8 24
+storage ValuesBox [] [0] 32 8 32
+enum Mode 2
+function values_parameter
+  result (values Record)
+  params [region (values Record)]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+  values 40 Record
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BeginBytes 72
+    MoveBytes 40 72
+    EndBytes 40
+    ReturnBytes 72
+end
+
+; CASE: typed-move-to-other
+; BASE: typed-move-to-bytes
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: owner move nominal type mismatch"},"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":0}}
+@@ -29,0 +30 @@
++  values 72 Other
+
+; CASE: typed-return-as-bytes
+; BASE: typed-move-to-bytes
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: owner return nominal type mismatch"},"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":0}}
+@@ -21 +21 @@
+-  result (values Record)
++  result bytes
+@@ -29,0 +30 @@
++  values 72 Record
+
+; CASE: typed-return-as-other
+; BASE: typed-move-to-bytes
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: owner return nominal type mismatch"},"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":0}}
+@@ -21 +21 @@
+-  result (values Record)
++  result (values Other)
+@@ -29,0 +30 @@
++  values 72 Record
+
+; CASE: range-missing-before-inactive
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: array element not initialized"},"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":16}}
+layout WordBox [i64]
+function test
+  result i64
+  frame 16
+  slot 8 i64
+  slot 16 i64
+  object 8 WordBox true
+  object 16 WordBox true
+    BeginObject 16
+    Constant
+    BoundsGuard 16 2
+    EndObject 16
+    Return
+end
+
+; CASE: range-inactive-before-missing
+; BASE: range-missing-before-inactive
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: object field access outside active lifetime"},"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":16}}
+@@ -9,0 +10,2 @@
++    Constant 1
++    Store 16
+
+; CASE: linear-depth-before-omitted
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: operand stack depth differs from linear emission order"},"metrics_started":true,"metrics":{"snapshots":3,"peakOperandDepth":1,"peakRetainedOperandFacts":1,"peakRetainedValueFacts":1,"peakRetainedInitializationPayloadBytes":48}}
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Push
+    Jump 1
+    Label 2
+    Return
+    Constant
+    Label 1
+    Pop
+    Jump 2
+end
+
+; CASE: omitted-before-linear-depth
+; BASE: linear-depth-before-omitted
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: unreachable semantic instruction"},"metrics_started":true,"metrics":{"snapshots":3,"peakOperandDepth":1,"peakRetainedOperandFacts":1,"peakRetainedValueFacts":1,"peakRetainedInitializationPayloadBytes":48}}
+@@ -7,0 +8,3 @@
++    Label 9
++    Jump 9
++    Constant
+
+; CASE: typed-entry-other-before-body
+; BASE: typed-move-to-bytes
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: owned byte parameter type mismatch"},"metrics_started":false,"metrics":{"snapshots":1000000001,"peakOperandDepth":1000000002,"peakRetainedOperandFacts":1000000003,"peakRetainedValueFacts":1000000004,"peakRetainedInitializationPayloadBytes":1000000005}}
+@@ -29 +29,2 @@
+-  values 40 Record
++  values 40 Other
++  values 72 Record
+
+; CASE: unused-static-storage-before-dynamic
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: slot type/layout mismatch"},"metrics_started":false,"metrics":{"snapshots":1000000001,"peakOperandDepth":1000000002,"peakRetainedOperandFacts":1000000003,"peakRetainedValueFacts":1000000004,"peakRetainedInitializationPayloadBytes":1000000005}}
+views [(0 []) (1 [])]
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Pop
+    Return
+end
+function unused_storage
+  result i64
+  frame 80
+  scope 1
+  slot 8 i64
+  span 72
+    Load 24
+    Return
+end
+
+; CASE: resource-operand-exact
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":4097,"peakOperandDepth":64,"peakRetainedOperandFacts":262144,"peakRetainedValueFacts":262144,"peakRetainedInitializationPayloadBytes":0}}
+function resource
+  result i64
+  frame 0
+    Constant 1
+repeat 64
+    Push
+endrepeat
+    Label
+repeat 4095
+    Label {1,1}
+endrepeat
+repeat 64
+    Pop
+endrepeat
+    Return
+end
+
+; CASE: resource-operand-over
+; BASE: resource-operand-exact
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: block-entry operand retention limit exceeds 262144"},"metrics_started":true,"metrics":{"snapshots":4097,"peakOperandDepth":64,"peakRetainedOperandFacts":262144,"peakRetainedValueFacts":262144,"peakRetainedInitializationPayloadBytes":0}}
+@@ -12 +12 @@
+-repeat 64
++repeat 63
+@@ -14,0 +15,2 @@
++    Label 4096
++    Pop
+
+; CASE: resource-state-exact
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":65536,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":0}}
+function resource
+  result i64
+  frame 0
+    Constant 1
+    Label
+repeat 65534
+    Label {1,1}
+endrepeat
+    Return
+end
+
+; CASE: resource-state-over
+; BASE: resource-state-exact
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: block-entry state retention limit exceeds 65536"},"metrics_started":true,"metrics":{"snapshots":65536,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":0,"peakRetainedInitializationPayloadBytes":0}}
+@@ -6 +6 @@
+-repeat 65534
++repeat 65535
+
+; CASE: resource-operand-exact-null-metrics
+; BASE: resource-operand-exact
+; RUN: metrics null
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":null,"metrics":null}
+
+; CASE: resource-operand-over-null-metrics
+; BASE: resource-operand-exact
+; RUN: metrics null
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: block-entry operand retention limit exceeds 262144"},"metrics_started":null,"metrics":null}
+@@ -12 +12 @@
+-repeat 64
++repeat 63
+@@ -14,0 +15,2 @@
++    Label 4096
++    Pop
+
+; CASE: resource-state-exact-null-metrics
+; BASE: resource-state-exact
+; RUN: metrics null
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":null,"metrics":null}
+
+; CASE: resource-state-over-null-metrics
+; BASE: resource-state-exact
+; RUN: metrics null
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: block-entry state retention limit exceeds 65536"},"metrics_started":null,"metrics":null}
+@@ -6 +6 @@
+-repeat 65534
++repeat 65535
+
+; CASE: resource-revisit-valid
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":4,"peakOperandDepth":64,"peakRetainedOperandFacts":192,"peakRetainedValueFacts":193,"peakRetainedInitializationPayloadBytes":64}}
+function resource
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 1
+repeat 64
+    Push
+endrepeat
+    Constant 1 bool
+    BranchFalse 1
+    Constant 7
+    Store 8
+    Jump 2
+    Label 1
+    Jump 2
+    Label 2
+repeat 64
+    Pop
+endrepeat
+    Return
+end
+
+; CASE: borrowed-bound-root-reborrow-valid
+; RUN: metrics
+; CHECK: "outcome":"accepted","diagnostic":null,"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":4,"peakRetainedInitializationPayloadBytes":16}}
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+function reborrow_buffer
+  result i64
+  params [(class Buffer)]
+  frame 0
+  roots 1
+  firstmut 1
+    AcquireObjectLoan 2 0 true
+    BorrowedCall borrow_buffer [(0 2 -1)]
+    ReleaseObjectLoan 2
+    Return
+end
+function borrow_buffer
+  result i64
+  params [(class Buffer)]
+  frame 0
+  roots 1
+  firstmut 1
+    MethodCall write_buffer
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: borrowed-bound-root-direct-field-denied
+; BASE: borrowed-bound-root-reborrow-valid
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: borrowed free formal grants no direct receiver field authority"},"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":4,"peakRetainedInitializationPayloadBytes":16}}
+@@ -16,3 +16 @@
+-    AcquireObjectLoan 2 0 true
+-    BorrowedCall borrow_buffer [(0 2 -1)]
+-    ReleaseObjectLoan 2
++    ReceiverLoad 1
+
+; CASE: borrowed-bound-root-nominal-mismatch
+; BASE: borrowed-bound-root-reborrow-valid
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: borrowed call root, lifetime, nominal type or authority mismatch"},"metrics_started":false,"metrics":{"snapshots":1000000001,"peakOperandDepth":1000000002,"peakRetainedOperandFacts":1000000003,"peakRetainedValueFacts":1000000004,"peakRetainedInitializationPayloadBytes":1000000005}}
+@@ -12 +12 @@
+-  params [(class Buffer)]
++  params [(class Other)]
+
+; CASE: borrowed-bound-root-unbound-selector
+; BASE: borrowed-bound-root-reborrow-valid
+; RUN: metrics
+; CHECK: "outcome":"rejected","diagnostic":{"code":0,"name":"AU0000","text":"invalid typed IR: invalid borrowed object root"},"metrics_started":true,"metrics":{"snapshots":1,"peakOperandDepth":0,"peakRetainedOperandFacts":0,"peakRetainedValueFacts":4,"peakRetainedInitializationPayloadBytes":16}}
+@@ -16 +16 @@
+-    AcquireObjectLoan 2 0 true
++    AcquireObjectLoan 2 -1 true

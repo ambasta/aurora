@@ -1,0 +1,431 @@
+; CASE: source-admitted scalar entry prefix
+; RUN: emit
+function entry_parameters
+  result i64
+  params [i64 i64]
+  frame 16
+  slot 8 i64
+  slot 16 i64
+    BindParameter 0 8
+    BindParameter 1 16
+    Load 8
+    Return
+end
+
+; CASE: source entry scalar missing final formal
+; BASE: source-admitted scalar entry prefix
+; RUN: verify
+; EXPECT-ERROR: parameter bindings must form the entry prefix
+@@ -8 +7,0 @@
+-    BindParameter 1 16
+
+; CASE: source entry scalar negative position
+; BASE: source-admitted scalar entry prefix
+; RUN: verify
+; EXPECT-ERROR: parameter bindings must form the entry prefix
+@@ -7 +7 @@
+-    BindParameter 0 8
++    BindParameter -1 8
+
+; CASE: source entry scalar swapped position
+; BASE: source-admitted scalar entry prefix
+; RUN: verify
+; EXPECT-ERROR: parameter bindings must form the entry prefix
+@@ -7 +7 @@
+-    BindParameter 0 8
++    BindParameter 1 8
+
+; CASE: source entry scalar wrong type
+; BASE: source-admitted scalar entry prefix
+; RUN: verify
+; EXPECT-ERROR: parameter type mismatch
+@@ -7 +7 @@
+-    BindParameter 0 8
++    BindParameter 0 8 u64
+
+; CASE: source entry scalar missing exact spill
+; BASE: source-admitted scalar entry prefix
+; RUN: verify
+; EXPECT-ERROR: slot type/layout mismatch
+@@ -7 +7 @@
+-    BindParameter 0 8
++    BindParameter 0 7
+
+; CASE: source entry scalar wrong spill type
+; BASE: source-admitted scalar entry prefix
+; RUN: verify
+; EXPECT-ERROR: slot type/layout mismatch
+@@ -5 +5 @@
+-  slot 8 i64
++  slot 8 u64
+
+; CASE: source entry scalar duplicate spill
+; BASE: source-admitted scalar entry prefix
+; RUN: verify
+; EXPECT-ERROR: scalar parameter bindings overlap
+@@ -8 +8 @@
+-    BindParameter 1 16
++    BindParameter 1 8
+
+; CASE: every binding form rejects outside the declared entry prefix
+; RUN: verify
+; EXPECT-ERROR: parameter binding outside entry prefix
+layout Empty []
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    BindParameter 0 8
+    Constant 42
+    Store 8
+    Load 8
+    Return
+end
+
+; CASE: every binding form rejects outside the declared entry prefix #2
+; BASE: every binding form rejects outside the declared entry prefix
+; RUN: verify
+; EXPECT-ERROR: parameter binding outside entry prefix
+@@ -6 +6 @@
+-    BindParameter 0 8
++    BindObjectParameter 0 8 Empty
+
+; CASE: every binding form rejects outside the declared entry prefix #3
+; BASE: every binding form rejects outside the declared entry prefix
+; RUN: verify
+; EXPECT-ERROR: parameter binding outside entry prefix
+@@ -6 +6 @@
+-    BindParameter 0 8
++    BindSpanParameter 0 8
+
+; CASE: every binding form rejects outside the declared entry prefix #4
+; BASE: every binding form rejects outside the declared entry prefix
+; RUN: verify
+; EXPECT-ERROR: parameter binding outside entry prefix
+@@ -6 +6 @@
+-    BindParameter 0 8
++    BindRegionParameter 0 8
+
+; CASE: every binding form rejects outside the declared entry prefix #5
+; BASE: every binding form rejects outside the declared entry prefix
+; RUN: verify
+; EXPECT-ERROR: parameter binding outside entry prefix
+@@ -6 +6 @@
+-    BindParameter 0 8
++    BindBytesParameter 0 8
+
+; CASE: every binding form rejects outside the declared entry prefix #6
+; BASE: every binding form rejects outside the declared entry prefix
+; RUN: verify
+; EXPECT-ERROR: parameter binding outside entry prefix
+@@ -6 +6 @@
+-    BindParameter 0 8
++    BindOwnedObjectParameter 0 8 Empty
+
+; CASE: every binding form rejects outside the declared entry prefix #7
+; BASE: every binding form rejects outside the declared entry prefix
+; RUN: verify
+; EXPECT-ERROR: parameter binding outside entry prefix
+@@ -6 +6 @@
+-    BindParameter 0 8
++    BindServiceParameter 0 8
+
+; CASE: source entry copied exact empty root
+; RUN: verify
+; EXPECT-ERROR: object parameter requires exact object slot
+layout Empty []
+function test
+  result i64
+  frame 16
+  object 8 Empty false
+  object 16 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 16
+    AggregateCall copy_empty [8] 16
+    Constant 42
+    Return
+end
+function copy_empty
+  result (class Empty)
+  params [(class Empty)]
+  frame 16
+  object 8 Empty false
+    BindObjectParameter 0 16 Empty
+    ReturnObject 8
+end
+function make_empty
+  result (class Empty)
+  frame 16
+  object 8 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    ReturnObject 8
+end
+
+; CASE: source entry copied readonly empty root
+; BASE: source entry copied exact empty root
+; RUN: verify
+; EXPECT-ERROR: object parameter must be readonly
+@@ -18,2 +18,2 @@
+-  object 8 Empty false
+-    BindObjectParameter 0 16 Empty
++  object 8 Empty true
++    BindObjectParameter 0 8 Empty
+
+; CASE: source entry copied nominal empty root
+; BASE: source entry copied exact empty root
+; RUN: verify
+; EXPECT-ERROR: object parameter nominal class mismatch
+@@ -1,0 +2 @@
++layout OtherEmpty []
+@@ -18,2 +19,2 @@
+-  object 8 Empty false
+-    BindObjectParameter 0 16 Empty
++  object 8 OtherEmpty false
++    BindObjectParameter 0 8 Empty
+
+; CASE: source entry rejects jump re-entry at formal 0
+; BASE: source-admitted scalar entry prefix
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: parameter bindings must form the entry prefix
+; EXPECT-CODE: AU0000
+@@ -6,0 +7 @@
++    Label 7
+@@ -9,0 +11,2 @@
++    Constant 1 bool
++    Jump 7
+
+; CASE: source entry rejects branch re-entry at formal 0
+; BASE: source-admitted scalar entry prefix
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: parameter bindings must form the entry prefix
+; EXPECT-CODE: AU0000
+@@ -6,0 +7 @@
++    Label 7
+@@ -9,0 +11,2 @@
++    Constant 1 bool
++    BranchFalse 7
+
+; CASE: source entry rejects jump re-entry at formal 1
+; BASE: source-admitted scalar entry prefix
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: parameter bindings must form the entry prefix
+; EXPECT-CODE: AU0000
+@@ -7,0 +8 @@
++    Label 7
+@@ -9,0 +11,2 @@
++    Constant 1 bool
++    Jump 7
+
+; CASE: source entry rejects branch re-entry at formal 1
+; BASE: source-admitted scalar entry prefix
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: parameter bindings must form the entry prefix
+; EXPECT-CODE: AU0000
+@@ -7,0 +8 @@
++    Label 7
+@@ -9,0 +11,2 @@
++    Constant 1 bool
++    BranchFalse 7
+
+; CASE: all-body CFG normalization precedes entry admission with stable instruction IDs
+; RUN: metadata
+; CHECK: body test 0
+; CHECK-NEXT: code test 0 
+; CHECK-NEXT: code test 1 
+; CHECK-NEXT: code test 2 
+; CHECK-NEXT: code test 3 
+; CHECK-NEXT: body entry_parameters 1
+; CHECK-NEXT: code entry_parameters 0 id 7 
+; CHECK-SAME: : BindParameter 0 
+; CHECK-NEXT: code entry_parameters 1 id 8 
+; CHECK-SAME: : BindParameter 1 
+; CHECK-NEXT: code entry_parameters 2 id 9 target 3 
+; CHECK-NEXT: code entry_parameters 3 id 12 
+; CHECK-NEXT: code entry_parameters 4 
+; CHECK-NEXT: code entry_parameters 5 
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Load 8
+    Return
+    Jump 7
+    Label 7
+end
+function entry_parameters
+  result i64
+  params [i64 i64]
+  frame 16
+  slot 8 i64
+  slot 16 i64
+    BindParameter 0 8
+    BindParameter 1 16
+    Jump 7
+    Label 6
+    Jump 7
+    Label 7
+    Load 8
+    Return
+end
+
+; CASE: module admission order: later CFG before earlier entry
+; RUN: verify
+; EXPECT-ERROR: unknown jump target
+function test
+  result i64
+  params [i64]
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Load 8
+    Return
+end
+function entry_parameters
+  result i64
+  params [i64 i64]
+  frame 16
+  slot 8 i64
+  slot 16 i64
+    BindParameter 0 8
+    BindParameter 1 16
+    Load 8
+    Return
+    Jump 99
+end
+
+; CASE: module admission order: later raw type before earlier entry
+; BASE: module admission order: later CFG before earlier entry
+; RUN: verify
+; EXPECT-ERROR: noncanonical instruction type payload
+@@ -17 +17 @@
+-    BindParameter 0 8
++    BindParameter 0 8 (i64 lparam=N)
+@@ -21 +20,0 @@
+-    Jump 99
+
+; CASE: module admission order: later entry before earlier dynamic state
+; RUN: verify
+; EXPECT-ERROR: parameter bindings must form the entry prefix
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Pop
+    Return
+end
+function entry_parameters
+  result i64
+  params [i64 i64]
+  frame 16
+  slot 8 i64
+  slot 16 i64
+    Constant 42
+    BindParameter 1 16
+    Load 8
+    Return
+end
+
+; CASE: module admission order: later entry type before earlier dynamic state
+; BASE: module admission order: later entry before earlier dynamic state
+; RUN: verify
+; EXPECT-ERROR: parameter type mismatch
+@@ -14 +14 @@
+-    Constant 42
++    BindParameter 0 8 u64
+
+; CASE: module admission order: later CFG before earlier static call
+; BASE: module admission order: later CFG before earlier entry
+; RUN: verify
+; EXPECT-ERROR: unknown jump target
+@@ -3 +2,0 @@
+-  params [i64]
+@@ -6,3 +5 @@
+-    Constant 42
+-    Store 8
+-    Load 8
++    Call missing
+
+; CASE: module admission order: later entry before earlier static call
+; BASE: module admission order: later entry before earlier dynamic state
+; RUN: verify
+; EXPECT-ERROR: parameter bindings must form the entry prefix
+@@ -5 +5 @@
+-    Pop
++    Call missing
+
+; CASE: module admission order: later static call before earlier dynamic state
+; BASE: module admission order: later entry before earlier dynamic state
+; RUN: verify
+; EXPECT-ERROR: unknown call target
+@@ -14 +14 @@
+-    Constant 42
++    BindParameter 0 8
+@@ -15,0 +16 @@
++    Call missing
+
+; CASE: module admission order: static call errors retain declaration order
+; RUN: verify
+; EXPECT-ERROR: unknown call target
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Call missing
+    Return
+end
+function alphabetically_first
+  result i64
+  params [i64 i64]
+  frame 16
+  slot 8 i64
+  slot 16 i64
+    BindParameter 0 8
+    BindParameter 1 16
+    MethodCall missing
+    Load 8
+    Return
+end
+
+; CASE: module admission order: entry errors retain declaration order
+; BASE: module admission order: later CFG before earlier entry
+; RUN: verify
+; EXPECT-ERROR: parameter bindings must form the entry prefix
+@@ -11 +11 @@
+-function entry_parameters
++function alphabetically_first
+@@ -17 +17 @@
+-    BindParameter 0 8
++    BindParameter 0 8 u64
+@@ -21 +20,0 @@
+-    Jump 99
+
+; CASE: module admission order: unused imported entry before pruning
+; RUN: verify
+; EXPECT-ERROR: parameter bindings must form the entry prefix
+views [(0 []) (1 [])]
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Load 8
+    Return
+end
+function entry_parameters
+  result i64
+  params [i64 i64]
+  frame 16
+  scope 1
+  slot 8 i64
+  slot 16 i64
+    Constant 42
+    BindParameter 1 16
+    Load 8
+    Return
+end

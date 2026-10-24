@@ -1,0 +1,2319 @@
+; CASE: accepted service graph 1
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.putter.service_abi.calls.__au_runtime_console_put {"sysv_arguments":3,"result_max":1}
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+function caller
+  result (enum __au_console_put_result display=builtin::ConsolePutResult)
+  params [console region]
+  frame 64
+  service 16
+  region 56
+    BindServiceParameter 0 16
+    BindRegionParameter 1 56
+    AcquireServiceLoan 1 16
+    Constant 65 u8
+    Push
+    ServiceCall putter 1 0 [0*3] Console [] [] 56
+    ReleaseServiceLoan 1
+    Return
+end
+function putter
+  result (enum __au_console_put_result display=builtin::ConsolePutResult)
+  params [console region u8]
+  frame 64
+  slot 24 u8
+  service 16
+  region 56
+    BindServiceParameter 0 16
+    BindRegionParameter 1 56
+    BindParameter 2 24 u8
+    Load 24 u8
+    ServiceOperation 16 Put
+    Return
+end
+
+; CASE: rejected: hostile mutation 2
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -16 +16 @@
+-    ServiceCall putter 1 0 [0*3] Console [] [] 56
++    ServiceCall putter 1 0 [0*3]
+
+; CASE: rejected: hostile mutation 3
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -16 +16 @@
+-    ServiceCall putter 1 0 [0*3] Console [] [] 56
++    ServiceCall putter 1 0 [0*3] Console [] [] 16
+
+; CASE: rejected: hostile mutation 4
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -16 +16 @@
+-    ServiceCall putter 1 0 [0*3] Console [] [] 56
++    ServiceCall putter 1 0 [0*3] Console [] [] 17
+
+; CASE: rejected: hostile mutation 5
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -16 +16 @@
+-    ServiceCall putter 1 0 [0*3] Console [] [] 56
++    ServiceCall putter 1 0 [0 16 0] Console [] [] 56
+
+; CASE: rejected: hostile mutation 6
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -7 +7 @@
+-  params [console region]
++  params [display region]
+
+; CASE: rejected: hostile mutation 7
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -8 +8 @@
+-  frame 64
++  frame 80
+@@ -10,0 +11 @@
++  region 80
+@@ -16 +17 @@
+-    ServiceCall putter 1 0 [0*3] Console [] [] 56
++    ServiceCall putter 1 0 [0*3] Console [] [] 80
+
+; CASE: mixed copied/span ABI keeps exact capability kinds
+; BASE: accepted service graph 1
+; RUN: abi-facts
+; ABI: function caller caller
+; ABI: function putter putter
+; CHECK-DAG: "type_name":"builtin::ConsoleSession"
+; CHECK-DAG: "type_name":"builtin::ByteRegion"
+
+; CASE: accepted service graph 9
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+layout Packet [u8*64 i64 (enum __au_console_put_result display=builtin::ConsolePutResult)]
+layout __au_console_sample [bool u8 bool]
+fields Packet [(u8 0 64 true) (i64 64 1 false) ((enum __au_console_put_result display=builtin::ConsolePutResult) 65 1 false)]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+function copied_caller
+  result (class Packet)
+  params [console region (class Packet) (class Packet)]
+  frame 528
+  slot 56 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 64 i64
+repeat 64
+  slot {65,1} u8
+endrepeat
+  slot 152 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 160 i64
+repeat 64
+  slot {161,1} u8
+endrepeat
+  slot 248 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 256 i64
+repeat 64
+  slot {257,1} u8
+endrepeat
+  slot 344 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 352 i64
+repeat 64
+  slot {353,1} u8
+endrepeat
+  slot 440 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 448 i64
+repeat 64
+  slot {449,1} u8
+endrepeat
+  object 128 Packet false
+  object 224 Packet false
+  object 320 Packet false
+  object 416 Packet false
+  object 512 Packet false
+  service 16
+  region 520
+    BindServiceParameter 0 16
+    BindRegionParameter 1 520
+    BindObjectParameter 2 128 Packet
+    BindObjectParameter 3 224 Packet
+    BeginObject 320
+    CopyObject 128 320
+    BeginObject 416
+    CopyObject 224 416
+    BeginObject 512
+    AcquireServiceLoan 1 16
+    ServiceCall copied_helper 1 512 [0*4] Console [] [0 0 320 416] 520
+    ReleaseServiceLoan 1
+    EndObject 416
+    EndObject 320
+    ReturnObject 512
+end
+function copied_helper
+  result (class Packet)
+  params [console region (class Packet) (class Packet)]
+  frame 240
+  slot 56 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 64 i64
+repeat 64
+  slot {65,1} u8
+endrepeat
+  slot 152 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 160 i64
+repeat 64
+  slot {161,1} u8
+endrepeat
+  object 128 Packet false
+  object 224 Packet false
+  service 16
+  region 232
+    BindServiceParameter 0 16
+    BindRegionParameter 1 232
+    BindObjectParameter 2 128 Packet
+    BindObjectParameter 3 224 Packet
+    ReturnObject 128
+end
+
+; CASE: rejected: hostile mutation 10
+; BASE: accepted service graph 9
+; RUN: verify
+; EXPECT-ERROR:
+@@ -53 +53 @@
+-    ServiceCall copied_helper 1 512 [0*4] Console [] [0 0 320 416] 520
++    ServiceCall copied_helper 1 512 [0*4] Console [] [0 0 320 416]
+
+; CASE: rejected: hostile mutation 11
+; BASE: accepted service graph 9
+; RUN: verify
+; EXPECT-ERROR:
+@@ -53 +53 @@
+-    ServiceCall copied_helper 1 512 [0*4] Console [] [0 0 320 416] 520
++    ServiceCall copied_helper 1 512 [0*4] Console [] [0 0 320 416] 16
+
+; CASE: rejected: hostile mutation 12
+; BASE: accepted service graph 9
+; RUN: verify
+; EXPECT-ERROR:
+@@ -53 +53 @@
+-    ServiceCall copied_helper 1 512 [0*4] Console [] [0 0 320 416] 520
++    ServiceCall copied_helper 1 512 [0*4] Console [] [0 0 320 416] 17
+
+; CASE: rejected: hostile mutation 13
+; BASE: accepted service graph 9
+; RUN: verify
+; EXPECT-ERROR:
+@@ -53 +53 @@
+-    ServiceCall copied_helper 1 512 [0*4] Console [] [0 0 320 416] 520
++    ServiceCall copied_helper 1 512 [0 16 0 0] Console [] [0 0 320 416] 520
+
+; CASE: rejected: hostile mutation 14
+; BASE: accepted service graph 9
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-  params [console region (class Packet) (class Packet)]
++  params [display region (class Packet) (class Packet)]
+
+; CASE: rejected: hostile mutation 15
+; BASE: accepted service graph 9
+; RUN: verify
+; EXPECT-ERROR:
+@@ -10 +10 @@
+-  frame 528
++  frame 544
+@@ -42,0 +43 @@
++  region 544
+@@ -53 +54 @@
+-    ServiceCall copied_helper 1 512 [0*4] Console [] [0 0 320 416] 520
++    ServiceCall copied_helper 1 512 [0*4] Console [] [0 0 320 416] 544
+
+; CASE: mixed copied/span ABI keeps exact capability kinds #2
+; BASE: accepted service graph 9
+; RUN: abi-facts
+; ABI: function copied_caller copied_caller
+; ABI: function copied_helper copied_helper
+; ABI: record Packet Packet bytes count kind
+; CHECK-DAG: "type_name":"builtin::ConsoleSession"
+; CHECK-DAG: "type_name":"builtin::ByteRegion"
+
+; CASE: accepted service graph 17
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+layout Packet [u8*64 i64 (enum __au_console_put_result display=builtin::ConsolePutResult)]
+layout __au_console_sample [bool u8 bool]
+fields Packet [(u8 0 64 true) (i64 64 1 false) ((enum __au_console_put_result display=builtin::ConsolePutResult) 65 1 false)]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+function copied_caller
+  result (class Packet)
+  params [console region (class Packet) (class Packet)]
+  frame 592
+  slot 56 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 64 i64
+repeat 64
+  slot {65,1} u8
+endrepeat
+  slot 152 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 160 i64
+repeat 64
+  slot {161,1} u8
+endrepeat
+  slot 248 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 256 i64
+repeat 64
+  slot {257,1} u8
+endrepeat
+  slot 344 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 352 i64
+repeat 64
+  slot {353,1} u8
+endrepeat
+  slot 440 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 448 i64
+repeat 64
+  slot {449,1} u8
+endrepeat
+  object 128 Packet false
+  object 224 Packet false
+  object 320 Packet false
+  object 416 Packet false
+  object 512 Packet false
+  span 576
+  service 16
+  region 584
+    BindServiceParameter 0 16
+    BindRegionParameter 1 584
+    BindObjectParameter 2 128 Packet
+    BindObjectParameter 3 224 Packet
+    BeginObject 320
+    CopyObject 128 320
+    BeginObject 416
+    CopyObject 224 416
+    BeginObject 512
+    BorrowLiteralSpan "A" 576
+    AcquireServiceLoan 1 16
+    ServiceCall copied_helper 1 512 [0*3 576] Console [] [0 0 320 0] 584
+    ReleaseServiceLoan 1
+    EndSpan 576
+    EndObject 416
+    EndObject 320
+    ReturnObject 512
+end
+function copied_helper
+  result (class Packet)
+  params [console region (class Packet) span]
+  frame 240
+  slot 56 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 64 i64
+repeat 64
+  slot {65,1} u8
+endrepeat
+  object 128 Packet false
+  span 224
+  service 16
+  region 232
+    BindServiceParameter 0 16
+    BindRegionParameter 1 232
+    BindObjectParameter 2 128 Packet
+    BindSpanParameter 3 224
+    EndSpan 224
+    ReturnObject 128
+end
+
+; CASE: rejected: hostile mutation 18
+; BASE: accepted service graph 17
+; RUN: verify
+; EXPECT-ERROR:
+@@ -55 +55 @@
+-    ServiceCall copied_helper 1 512 [0*3 576] Console [] [0 0 320 0] 584
++    ServiceCall copied_helper 1 512 [0*3 576] Console [] [0 0 320 0]
+
+; CASE: rejected: hostile mutation 19
+; BASE: accepted service graph 17
+; RUN: verify
+; EXPECT-ERROR:
+@@ -55 +55 @@
+-    ServiceCall copied_helper 1 512 [0*3 576] Console [] [0 0 320 0] 584
++    ServiceCall copied_helper 1 512 [0*3 576] Console [] [0 0 320 0] 16
+
+; CASE: rejected: hostile mutation 20
+; BASE: accepted service graph 17
+; RUN: verify
+; EXPECT-ERROR:
+@@ -55 +55 @@
+-    ServiceCall copied_helper 1 512 [0*3 576] Console [] [0 0 320 0] 584
++    ServiceCall copied_helper 1 512 [0*3 576] Console [] [0 0 320 0] 17
+
+; CASE: rejected: hostile mutation 21
+; BASE: accepted service graph 17
+; RUN: verify
+; EXPECT-ERROR:
+@@ -55 +55 @@
+-    ServiceCall copied_helper 1 512 [0*3 576] Console [] [0 0 320 0] 584
++    ServiceCall copied_helper 1 512 [0 16 0 576] Console [] [0 0 320 0] 584
+
+; CASE: rejected: hostile mutation 22
+; BASE: accepted service graph 17
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-  params [console region (class Packet) (class Packet)]
++  params [display region (class Packet) (class Packet)]
+
+; CASE: rejected: hostile mutation 23
+; BASE: accepted service graph 17
+; RUN: verify
+; EXPECT-ERROR:
+@@ -10 +10 @@
+-  frame 592
++  frame 608
+@@ -43,0 +44 @@
++  region 608
+@@ -55 +56 @@
+-    ServiceCall copied_helper 1 512 [0*3 576] Console [] [0 0 320 0] 584
++    ServiceCall copied_helper 1 512 [0*3 576] Console [] [0 0 320 0] 608
+
+; CASE: mixed copied/span ABI keeps exact capability kinds #3
+; BASE: accepted service graph 17
+; RUN: abi-facts
+; ABI: function copied_caller copied_caller
+; ABI: function copied_helper copied_helper
+; ABI: record Packet Packet bytes count kind
+; CHECK-DAG: "type_name":"builtin::ConsoleSession"
+; CHECK-DAG: "type_name":"builtin::ByteRegion"
+
+; CASE: rejected: hostile mutation 25
+; RUN: verify
+; EXPECT-ERROR:
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+function caller
+  result (enum __au_console_put_result display=builtin::ConsolePutResult)
+  params [console]
+  frame 48
+  service 16
+    BindServiceParameter 0 16
+    AcquireServiceLoan 1 16
+    Constant 65 u8
+    Push
+    ServiceCall putter 1 0 [0 0] Console [] [] 16
+    ReleaseServiceLoan 1
+    Return
+end
+function putter
+  result (enum __au_console_put_result display=builtin::ConsolePutResult)
+  params [console u8]
+  frame 48
+  slot 24 u8
+  service 16
+    BindServiceParameter 0 16
+    BindParameter 1 24 u8
+    Load 24 u8
+    ServiceOperation 16 Put
+    Return
+end
+
+; CASE: accepted service graph 26
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+function read_sample
+  result i64
+  params [console]
+  frame 48
+  slot 24 bool
+  slot 32 u8
+  slot 40 bool
+  object 40 __au_console_sample false
+  service 16
+    BindServiceParameter 0 16
+    BeginObject 40
+    ServiceOperation 16 Next 40
+    EndObject 40
+    Constant
+    Return
+end
+
+; CASE: accepted service graph 27
+; BASE: rejected: hostile mutation 25
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.putter.service_abi.calls.__au_runtime_console_put {"sysv_arguments":3,"result_max":1}
+@@ -14 +14 @@
+-    ServiceCall putter 1 0 [0 0] Console [] [] 16
++    ServiceCall putter 1 0 [0 0]
+
+; CASE: accepted service graph 28
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+layout Reply [u64 (enum __au_console_put_result display=builtin::ConsolePutResult) u8 u8 bool]
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+function caller
+  result (class Reply)
+  params [console]
+  frame 48
+  slot 24 bool
+  slot 31 u8
+  slot 32 u8
+  slot 40 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 48 u64
+  object 48 Reply false
+  service 16
+    BindServiceParameter 0 16
+    BeginObject 48
+    AcquireServiceLoan 1 16
+    ServiceCall reply 1 48 [0]
+    ReleaseServiceLoan 1
+    ReturnObject 48
+end
+function reply
+  result (class Reply)
+  params [console]
+  frame 48
+  slot 24 bool
+  slot 31 u8
+  slot 32 u8
+  slot 40 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 48 u64
+  object 48 Reply false
+  service 16
+    BindServiceParameter 0 16
+    BeginObject 48
+    Constant 2 u64
+    Store 48 u64
+    EnumConstant (enum __au_console_put_result display=builtin::ConsolePutResult)
+    Store 40 (enum __au_console_put_result display=builtin::ConsolePutResult)
+    Constant 65 u8
+    Store 32 u8
+    Constant 66 u8
+    Store 31 u8
+    Constant 1 bool
+    Store 24 bool
+    ReturnObject 48
+end
+
+; CASE: accepted service graph 29
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+layout Reply []
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+function caller
+  result (class Reply)
+  params [console]
+  frame 48
+  object 48 Reply false
+  service 16
+    BindServiceParameter 0 16
+    BeginObject 48
+    AcquireServiceLoan 1 16
+    ServiceCall reply 1 48 [0]
+    ReleaseServiceLoan 1
+    ReturnObject 48
+end
+function reply
+  result (class Reply)
+  params [console]
+  frame 48
+  object 48 Reply false
+  service 16
+    BindServiceParameter 0 16
+    BeginObject 48
+    InitializeEmptyObject 48
+    ReturnObject 48
+end
+
+; CASE: accepted service graph 30
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+layout Packet [u8*64 i64 (enum __au_console_put_result display=builtin::ConsolePutResult)]
+layout __au_console_sample [bool u8 bool]
+fields Packet [(u8 0 64 true) (i64 64 1 false) ((enum __au_console_put_result display=builtin::ConsolePutResult) 65 1 false)]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+function copied_caller
+  result (class Packet)
+  params [console (class Packet) (class Packet)]
+  frame 512
+  slot 56 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 64 i64
+repeat 64
+  slot {65,1} u8
+endrepeat
+  slot 152 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 160 i64
+repeat 64
+  slot {161,1} u8
+endrepeat
+  slot 248 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 256 i64
+repeat 64
+  slot {257,1} u8
+endrepeat
+  slot 344 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 352 i64
+repeat 64
+  slot {353,1} u8
+endrepeat
+  slot 440 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 448 i64
+repeat 64
+  slot {449,1} u8
+endrepeat
+  object 128 Packet false
+  object 224 Packet false
+  object 320 Packet false
+  object 416 Packet false
+  object 512 Packet false
+  service 16
+    BindServiceParameter 0 16
+    BindObjectParameter 1 128 Packet
+    BindObjectParameter 2 224 Packet
+    BeginObject 320
+    CopyObject 128 320
+    BeginObject 416
+    CopyObject 224 416
+    BeginObject 512
+    AcquireServiceLoan 1 16
+    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
+    ReleaseServiceLoan 1
+    EndObject 416
+    EndObject 320
+    ReturnObject 512
+end
+function copied_helper
+  result (class Packet)
+  params [console (class Packet) (class Packet)]
+  frame 224
+  slot 56 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 64 i64
+repeat 64
+  slot {65,1} u8
+endrepeat
+  slot 152 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 160 i64
+repeat 64
+  slot {161,1} u8
+endrepeat
+  object 128 Packet false
+  object 224 Packet false
+  service 16
+    BindServiceParameter 0 16
+    BindObjectParameter 1 128 Packet
+    BindObjectParameter 2 224 Packet
+    ReturnObject 128
+end
+
+; CASE: accepted service graph 31
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+layout Packet [u8*64 i64 (enum __au_console_put_result display=builtin::ConsolePutResult)]
+layout __au_console_sample [bool u8 bool]
+fields Packet [(u8 0 64 true) (i64 64 1 false) ((enum __au_console_put_result display=builtin::ConsolePutResult) 65 1 false)]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_display_completion 2
+enum __au_display_put_result 2
+function copied_caller
+  result (class Packet)
+  params [console display (class Packet) (class Packet)]
+  frame 512
+  slot 56 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 64 i64
+repeat 64
+  slot {65,1} u8
+endrepeat
+  slot 152 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 160 i64
+repeat 64
+  slot {161,1} u8
+endrepeat
+  slot 248 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 256 i64
+repeat 64
+  slot {257,1} u8
+endrepeat
+  slot 344 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 352 i64
+repeat 64
+  slot {353,1} u8
+endrepeat
+  slot 440 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 448 i64
+repeat 64
+  slot {449,1} u8
+endrepeat
+  object 128 Packet false
+  object 224 Packet false
+  object 320 Packet false
+  object 416 Packet false
+  object 512 Packet false
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 Display
+    BindObjectParameter 2 128 Packet
+    BindObjectParameter 3 224 Packet
+    BeginObject 320
+    CopyObject 128 320
+    BeginObject 416
+    CopyObject 224 416
+    BeginObject 512
+    AcquireServiceLoan 1 16
+    AcquireServiceLoan 2 32 Display
+    ServiceCall copied_helper 1 512 [0*4] Console [(2 Display)] [0 0 320 416]
+    ReleaseServiceLoan 2 Display
+    ReleaseServiceLoan 1
+    EndObject 416
+    EndObject 320
+    ReturnObject 512
+end
+function copied_helper
+  result (class Packet)
+  params [console display (class Packet) (class Packet)]
+  frame 224
+  slot 56 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 64 i64
+repeat 64
+  slot {65,1} u8
+endrepeat
+  slot 152 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 160 i64
+repeat 64
+  slot {161,1} u8
+endrepeat
+  object 128 Packet false
+  object 224 Packet false
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 Display
+    BindObjectParameter 2 128 Packet
+    BindObjectParameter 3 224 Packet
+    ReturnObject 128
+end
+
+; CASE: accepted service graph 32
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+layout Packet []
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+function copied_caller
+  result (class Packet)
+  params [console (class Packet) (class Packet)]
+  frame 512
+  object 128 Packet false
+  object 224 Packet false
+  object 320 Packet false
+  object 416 Packet false
+  object 512 Packet false
+  service 16
+    BindServiceParameter 0 16
+    BindObjectParameter 1 128 Packet
+    BindObjectParameter 2 224 Packet
+    BeginObject 320
+    CopyObject 128 320
+    BeginObject 416
+    CopyObject 224 416
+    BeginObject 512
+    AcquireServiceLoan 1 16
+    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
+    ReleaseServiceLoan 1
+    EndObject 416
+    EndObject 320
+    ReturnObject 512
+end
+function copied_helper
+  result (class Packet)
+  params [console (class Packet) (class Packet)]
+  frame 224
+  object 128 Packet false
+  object 224 Packet false
+  service 16
+    BindServiceParameter 0 16
+    BindObjectParameter 1 128 Packet
+    BindObjectParameter 2 224 Packet
+    ReturnObject 128
+end
+
+; CASE: accepted service graph 33
+; BASE: accepted service graph 32
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+@@ -0,0 +1 @@
++layout Empty []
+@@ -2,0 +4 @@
++fields Packet [((class Empty) 0 0 false)]
+
+; CASE: accepted service graph 34
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+layout Packet [u8*64 i64 (enum __au_console_put_result display=builtin::ConsolePutResult)]
+layout __au_console_sample [bool u8 bool]
+fields Packet [(u8 0 64 true) (i64 64 1 false) ((enum __au_console_put_result display=builtin::ConsolePutResult) 65 1 false)]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+function copied_caller
+  result (class Packet)
+  params [console (class Packet) (class Packet)]
+  frame 576
+  slot 56 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 64 i64
+repeat 64
+  slot {65,1} u8
+endrepeat
+  slot 152 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 160 i64
+repeat 64
+  slot {161,1} u8
+endrepeat
+  slot 248 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 256 i64
+repeat 64
+  slot {257,1} u8
+endrepeat
+  slot 344 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 352 i64
+repeat 64
+  slot {353,1} u8
+endrepeat
+  slot 440 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 448 i64
+repeat 64
+  slot {449,1} u8
+endrepeat
+  object 128 Packet false
+  object 224 Packet false
+  object 320 Packet false
+  object 416 Packet false
+  object 512 Packet false
+  span 576
+  service 16
+    BindServiceParameter 0 16
+    BindObjectParameter 1 128 Packet
+    BindObjectParameter 2 224 Packet
+    BeginObject 320
+    CopyObject 128 320
+    BeginObject 416
+    CopyObject 224 416
+    BeginObject 512
+    BorrowLiteralSpan "A" 576
+    AcquireServiceLoan 1 16
+    ServiceCall copied_helper 1 512 [0 0 576] Console [] [0 320 0]
+    ReleaseServiceLoan 1
+    EndSpan 576
+    EndObject 416
+    EndObject 320
+    ReturnObject 512
+end
+function copied_helper
+  result (class Packet)
+  params [console (class Packet) span]
+  frame 224
+  slot 56 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 64 i64
+repeat 64
+  slot {65,1} u8
+endrepeat
+  object 128 Packet false
+  span 224
+  service 16
+    BindServiceParameter 0 16
+    BindObjectParameter 1 128 Packet
+    BindSpanParameter 2 224
+    EndSpan 224
+    ReturnObject 128
+end
+
+; CASE: accepted service graph 35
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+layout Packet [u8 i64]
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_display_completion 2
+enum __au_display_put_result 2
+function mixed_entry
+  result bool
+  params [console display u8 span (class Packet) bool]
+  frame 144
+  slot 40 u8
+  slot 120 i64
+  slot 128 u8
+  slot 136 bool
+  object 128 Packet false
+  span 104
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 Display
+    BindParameter 2 40 u8
+    BindSpanParameter 3 104
+    BindObjectParameter 4 128 Packet
+    BindParameter 5 136 bool
+    Load 40 u8
+    Load 128 u8
+    EndSpan 104
+    Load 136 bool
+    Return
+end
+
+; CASE: accepted service graph 36
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+layout Packet [u8 i64]
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_display_completion 2
+enum __au_display_put_result 2
+function mixed_entry
+  result bool
+  params [console display u8 span (class Packet) bool]
+  frame 144
+  slot 40 u8
+  slot 120 i64
+  slot 128 u8
+  slot 136 bool
+  object 128 Packet false
+  span 104
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 Display
+    BindParameter 2 40 u8
+    BindSpanParameter 3 104
+    BindObjectParameter 4 128 Packet
+    BindParameter 5 136 bool
+    Load 40 u8
+    Load 128 u8
+    EndSpan 104
+    Load 136 bool
+    Return
+end
+function mixed_caller
+  result bool
+  params [console display u8 span (class Packet) bool]
+  frame 144
+  slot 40 u8
+  slot 120 i64
+  slot 128 u8
+  slot 136 bool
+  object 128 Packet false
+  span 104
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 Display
+    BindParameter 2 40 u8
+    BindSpanParameter 3 104
+    BindObjectParameter 4 128 Packet
+    BindParameter 5 136 bool
+    AcquireServiceLoan 1 16
+    AcquireServiceLoan 2 32 Display
+    Load 40 u8
+    Push
+    Load 136 bool
+    Push
+    ServiceCall mixed_entry 1 0 [0*3 104 0 0] Console [(2 Display)] [0*4 128 0]
+    ReleaseServiceLoan 2 Display
+    ReleaseServiceLoan 1
+    EndSpan 104
+    Return
+end
+
+; CASE: rejected: service bindings must form the leading entry group 37
+; BASE: accepted service graph 35
+; RUN: verify
+; EXPECT-ERROR: service bindings must form the leading entry group
+@@ -20 +19,0 @@
+-    BindServiceParameter 0 16
+
+; CASE: rejected: service bindings must form the leading entry group 38
+; BASE: accepted service graph 35
+; RUN: verify
+; EXPECT-ERROR: service bindings must form the leading entry group
+@@ -21 +20,0 @@
+-    BindServiceParameter 1 32 Display
+
+; CASE: rejected: parameter bindings must form the entry prefix 39
+; BASE: accepted service graph 35
+; RUN: verify
+; EXPECT-ERROR: parameter bindings must form the entry prefix
+@@ -22 +21,0 @@
+-    BindParameter 2 40 u8
+
+; CASE: rejected: span parameter bindings must form the entry prefix 40
+; BASE: accepted service graph 35
+; RUN: verify
+; EXPECT-ERROR: span parameter bindings must form the entry prefix
+@@ -23 +22,0 @@
+-    BindSpanParameter 3 104
+
+; CASE: rejected: object parameter bindings must form the entry prefix 41
+; BASE: accepted service graph 35
+; RUN: verify
+; EXPECT-ERROR: object parameter bindings must form the entry prefix
+@@ -24 +23,0 @@
+-    BindObjectParameter 4 128 Packet
+
+; CASE: rejected: parameter bindings must form the entry prefix 42
+; BASE: accepted service graph 35
+; RUN: verify
+; EXPECT-ERROR: parameter bindings must form the entry prefix
+@@ -25 +24,0 @@
+-    BindParameter 5 136 bool
+
+; CASE: rejected: service binding requires exact authorized leading parameter 43
+; BASE: accepted service graph 35
+; RUN: verify
+; EXPECT-ERROR: service binding requires exact authorized leading parameter
+@@ -21 +21 @@
+-    BindServiceParameter 1 32 Display
++    BindServiceParameter 1 32
+
+; CASE: rejected: service parameter bindings overlap 44
+; BASE: accepted service graph 35
+; RUN: verify
+; EXPECT-ERROR: service parameter bindings overlap
+@@ -21 +21 @@
+-    BindServiceParameter 1 32 Display
++    BindServiceParameter 1 16 Display
+
+; CASE: rejected: span parameter requires exact typed spill 45
+; BASE: accepted service graph 35
+; RUN: verify
+; EXPECT-ERROR: span parameter requires exact typed spill
+@@ -23 +23 @@
+-    BindSpanParameter 3 104
++    BindSpanParameter 3 40
+
+; CASE: rejected: object parameter must be readonly 46
+; BASE: accepted service graph 35
+; RUN: verify
+; EXPECT-ERROR: object parameter must be readonly
+@@ -16 +16 @@
+-  object 128 Packet false
++  object 128 Packet true
+
+; CASE: rejected: parameter cannot bind byte array origin storage 47
+; BASE: accepted service graph 35
+; RUN: verify
+; EXPECT-ERROR: parameter cannot bind byte array origin storage
+@@ -16,0 +17 @@
++  array 40 1
+
+; CASE: copied service ABI records and stack facts paired=0
+; BASE: accepted service graph 30
+; RUN: abi-facts
+; ABI: record Packet Packet bytes count kind
+; ABI: function copied_helper copied_helper
+; CHECK-DAG: "size":80,"alignment":8,"reserved":80
+; CHECK-DAG: "parameter_bytes":176
+; CHECK-DAG: "offset":16,"bytes":80,"kind":"class","type_name":"Packet"
+; CHECK-DAG: "offset":96,"bytes":80,"kind":"class","type_name":"Packet"
+; RUN: stack-facts
+; CHECK-JSON: functions.copied_caller.service_abi <missing>
+; CHECK-JSON: functions.copied_helper.service_abi <missing>
+; CHECK-JSON: functions.copied_caller.calls.copied_helper 720
+; CHECK-JSON: functions.copied_caller.local_bytes 744
+@@ -8 +8 @@
+-  result (class Packet)
++  result bool
+@@ -49 +48,0 @@
+-    BeginObject 512
+@@ -51 +50 @@
+-    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
++    ServiceCall copied_helper 1 0 [0*3] Console [] [0 320 416]
+@@ -55 +54,2 @@
+-    ReturnObject 512
++    Constant 1 bool
++    Return
+@@ -58 +58 @@
+-  result (class Packet)
++  result bool
+@@ -77 +77,2 @@
+-    ReturnObject 128
++    Constant 1 bool
++    Return
+
+; CASE: copied service ABI records and stack facts paired=1
+; BASE: accepted service graph 31
+; RUN: abi-facts
+; ABI: record Packet Packet bytes count kind
+; ABI: function copied_helper copied_helper
+; CHECK-DAG: "size":80,"alignment":8,"reserved":80
+; CHECK-DAG: "parameter_bytes":192
+; CHECK-DAG: "offset":32,"bytes":80,"kind":"class","type_name":"Packet"
+; CHECK-DAG: "offset":112,"bytes":80,"kind":"class","type_name":"Packet"
+; RUN: stack-facts
+; CHECK-JSON: functions.copied_caller.service_abi <missing>
+; CHECK-JSON: functions.copied_helper.service_abi <missing>
+; CHECK-JSON: functions.copied_caller.calls.copied_helper 736
+; CHECK-JSON: functions.copied_caller.local_bytes 760
+@@ -10 +10 @@
+-  result (class Packet)
++  result bool
+@@ -53 +52,0 @@
+-    BeginObject 512
+@@ -56 +55 @@
+-    ServiceCall copied_helper 1 512 [0*4] Console [(2 Display)] [0 0 320 416]
++    ServiceCall copied_helper 1 0 [0*4] Console [(2 Display)] [0 0 320 416]
+@@ -61 +60,2 @@
+-    ReturnObject 512
++    Constant 1 bool
++    Return
+@@ -64 +64 @@
+-  result (class Packet)
++  result bool
+@@ -85 +85,2 @@
+-    ReturnObject 128
++    Constant 1 bool
++    Return
+
+; CASE: rejected: hostile mutation 50
+; BASE: accepted service graph 30
+; RUN: verify
+; EXPECT-ERROR:
+@@ -51 +51 @@
+-    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
++    ServiceCall copied_helper 1 512 [0*3]
+
+; CASE: rejected: hostile mutation 51
+; BASE: accepted service graph 30
+; RUN: verify
+; EXPECT-ERROR:
+@@ -51 +51 @@
+-    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
++    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320]
+
+; CASE: rejected: hostile mutation 52
+; BASE: accepted service graph 30
+; RUN: verify
+; EXPECT-ERROR:
+@@ -51 +51 @@
+-    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
++    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416 0]
+
+; CASE: rejected: hostile mutation 53
+; BASE: accepted service graph 30
+; RUN: verify
+; EXPECT-ERROR:
+@@ -51 +51 @@
+-    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
++    ServiceCall copied_helper 1 512 [0*3] Console [] [320 320 416]
+
+; CASE: rejected: hostile mutation 54
+; BASE: accepted service graph 30
+; RUN: verify
+; EXPECT-ERROR:
+@@ -51 +51 @@
+-    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
++    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 320]
+
+; CASE: rejected: hostile mutation 55
+; BASE: accepted service graph 30
+; RUN: verify
+; EXPECT-ERROR:
+@@ -51 +51 @@
+-    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
++    ServiceCall copied_helper 1 512 [0*3] Console [] [0 16 416]
+
+; CASE: rejected: hostile mutation 56
+; BASE: accepted service graph 30
+; RUN: verify
+; EXPECT-ERROR:
+@@ -51 +51 @@
+-    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
++    ServiceCall copied_helper 1 512 [0*3] Console [] [0 319 416]
+
+; CASE: rejected: hostile mutation 57
+; BASE: accepted service graph 30
+; RUN: verify
+; EXPECT-ERROR:
+@@ -38 +38 @@
+-  object 320 Packet false
++  object 320 Packet true
+
+; CASE: rejected: hostile mutation 58
+; BASE: accepted service graph 30
+; RUN: verify
+; EXPECT-ERROR:
+@@ -0,0 +1 @@
++layout Other [u8*64 i64 (enum __au_console_put_result display=builtin::ConsolePutResult)]
+@@ -2,0 +4 @@
++fields Other [(u8 0 64 true) (i64 64 1 false) ((enum __au_console_put_result display=builtin::ConsolePutResult) 65 1 false)]
+@@ -9 +11 @@
+-  params [console (class Packet) (class Packet)]
++  params [console (class Packet) (class Other)]
+@@ -37 +39 @@
+-  object 224 Packet false
++  object 224 Other false
+@@ -39 +41 @@
+-  object 416 Packet false
++  object 416 Other false
+@@ -44 +46 @@
+-    BindObjectParameter 2 224 Packet
++    BindObjectParameter 2 224 Other
+
+; CASE: rejected: hostile mutation 59
+; BASE: accepted service graph 30
+; RUN: verify
+; EXPECT-ERROR:
+@@ -46 +45,0 @@
+-    CopyObject 128 320
+
+; CASE: rejected: hostile mutation 60
+; BASE: accepted service graph 30
+; RUN: verify
+; EXPECT-ERROR:
+@@ -50,0 +51 @@
++    EndObject 320
+
+; CASE: rejected: hostile mutation 61
+; BASE: accepted service graph 30
+; RUN: verify
+; EXPECT-ERROR:
+@@ -51 +51 @@
+-    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
++    ServiceCall copied_helper 1 320 [0*3] Console [] [0 320 416]
+
+; CASE: rejected: hostile mutation 62
+; BASE: accepted service graph 32
+; RUN: verify
+; EXPECT-ERROR:
+@@ -20 +19,0 @@
+-    CopyObject 128 320
+
+; CASE: rejected: hostile mutation 63
+; BASE: accepted service graph 32
+; RUN: verify
+; EXPECT-ERROR:
+@@ -24,0 +25 @@
++    EndObject 320
+
+; CASE: rejected: hostile mutation 64
+; BASE: accepted service graph 32
+; RUN: verify
+; EXPECT-ERROR:
+@@ -25 +25 @@
+-    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
++    ServiceCall copied_helper 1 320 [0*3] Console [] [0 320 416]
+
+; CASE: rejected: hostile mutation 65
+; BASE: accepted service graph 32
+; RUN: verify
+; EXPECT-ERROR:
+@@ -0,0 +1 @@
++layout Empty []
+@@ -2,0 +4 @@
++fields Packet [((class Empty) 0 0 false)]
+@@ -20 +21,0 @@
+-    CopyObject 128 320
+
+; CASE: rejected: hostile mutation 66
+; BASE: accepted service graph 32
+; RUN: verify
+; EXPECT-ERROR:
+@@ -0,0 +1 @@
++layout Empty []
+@@ -2,0 +4 @@
++fields Packet [((class Empty) 0 0 false)]
+@@ -24,0 +27 @@
++    EndObject 320
+
+; CASE: rejected: hostile mutation 67
+; BASE: accepted service graph 32
+; RUN: verify
+; EXPECT-ERROR:
+@@ -0,0 +1 @@
++layout Empty []
+@@ -2,0 +4 @@
++fields Packet [((class Empty) 0 0 false)]
+@@ -25 +27 @@
+-    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
++    ServiceCall copied_helper 1 320 [0*3] Console [] [0 320 416]
+
+; CASE: rejected: hostile mutation 68
+; BASE: accepted service graph 30
+; RUN: verify
+; EXPECT-ERROR:
+@@ -51 +51 @@
+-    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
++    ServiceCall copied_helper 1 512 [0 320 0] Console [] [0 320 416]
+
+; CASE: rejected: hostile mutation 69
+; BASE: accepted service graph 34
+; RUN: verify
+; EXPECT-ERROR:
+@@ -53 +53 @@
+-    ServiceCall copied_helper 1 512 [0 0 576] Console [] [0 320 0]
++    ServiceCall copied_helper 1 512 [0 0 576] Console [] [0 320 416]
+
+; CASE: rejected: hostile mutation 70
+; BASE: accepted service graph 31
+; RUN: verify
+; EXPECT-ERROR:
+@@ -56 +56 @@
+-    ServiceCall copied_helper 1 512 [0*4] Console [(2 Display)] [0 0 320 416]
++    ServiceCall copied_helper 1 512 [0*4] Console [(2 Display)] [0 416 320 416]
+
+; CASE: rejected: hostile mutation 71
+; BASE: accepted service graph 31
+; RUN: verify
+; EXPECT-ERROR:
+@@ -56 +56 @@
+-    ServiceCall copied_helper 1 512 [0*4] Console [(2 Display)] [0 0 320 416]
++    ServiceCall copied_helper 1 512 [0*4] Console [(2 Console)] [0 0 320 416]
+
+; CASE: rejected: hostile mutation 72
+; BASE: accepted service graph 30
+; RUN: verify
+; EXPECT-ERROR:
+@@ -3 +3 @@
+-fields Packet [(u8 0 64 true) (i64 64 1 false) ((enum __au_console_put_result display=builtin::ConsolePutResult) 65 1 false)]
++fields Packet [(u8 0 64 true) (i64 64 1 false) ((enum __au_console_put_result display=builtin::ConsolePutResult) 65 1 false) (console 66 0 false)]
+
+; CASE: rejected: hostile mutation 73
+; BASE: accepted service graph 30
+; RUN: verify
+; EXPECT-ERROR:
+@@ -3 +3 @@
+-fields Packet [(u8 0 64 true) (i64 64 1 false) ((enum __au_console_put_result display=builtin::ConsolePutResult) 65 1 false)]
++fields Packet [(u8 0 64 true) (i64 64 1 false) ((enum __au_console_put_result display=builtin::ConsolePutResult) 65 1 false) (span 66 0 false)]
+
+; CASE: rejected: hostile mutation 74
+; BASE: accepted service graph 30
+; RUN: verify
+; EXPECT-ERROR:
+@@ -3 +3 @@
+-fields Packet [(u8 0 64 true) (i64 64 1 false) ((enum __au_console_put_result display=builtin::ConsolePutResult) 65 1 false)]
++fields Packet [(u8 0 64 true) (i64 64 1 false) ((enum __au_console_put_result display=builtin::ConsolePutResult) 65 1 false) (bytes 66 0 false)]
+
+; CASE: rejected: hostile mutation 75
+; BASE: accepted service graph 30
+; RUN: verify
+; EXPECT-ERROR:
+@@ -3 +3 @@
+-fields Packet [(u8 0 64 true) (i64 64 1 false) ((enum __au_console_put_result display=builtin::ConsolePutResult) 65 1 false)]
++fields Packet [(u8 0 64 true) (i64 64 1 false) ((enum __au_console_put_result display=builtin::ConsolePutResult) 65 1 false) (region 66 0 false)]
+
+; CASE: rejected: hostile mutation 76
+; BASE: accepted service graph 30
+; RUN: verify
+; EXPECT-ERROR:
+@@ -59 +59 @@
+-  params [console (class Packet) (class Packet)]
++  params [console (class Packet) (class Packet) i64*4]
+
+; CASE: rejected: hostile mutation 77
+; BASE: accepted service graph 30
+; RUN: verify
+; EXPECT-ERROR:
+@@ -51 +51 @@
+-    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
++    Call copied_helper
+
+; CASE: rejected: hostile mutation 78
+; BASE: accepted service graph 30
+; RUN: verify
+; EXPECT-ERROR:
+@@ -51 +51 @@
+-    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
++    AggregateCall copied_helper [0 320 416] 512
+
+; CASE: rejected: hostile mutation 79
+; BASE: accepted service graph 30
+; RUN: verify
+; EXPECT-ERROR:
+@@ -50 +49,0 @@
+-    AcquireServiceLoan 1 16
+
+; CASE: rejected: hostile mutation 80
+; BASE: accepted service graph 30
+; RUN: verify
+; EXPECT-ERROR:
+@@ -50,0 +51,2 @@
++    Constant 65 u8
++    ServiceOperation 16 Put
+
+; CASE: accepted service graph 81
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.putter.service_abi.calls.__au_runtime_console_put {"sysv_arguments":3,"result_max":1}
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+function caller
+  result (enum __au_console_put_result display=builtin::ConsolePutResult)
+  params [console]
+  frame 48
+  service 16
+    BindServiceParameter 0 16
+    AcquireServiceLoan 1 16
+    Constant 65 u8
+    Push
+    ServiceCall putter 1 0 [0 0] Console [] [0 0]
+    ReleaseServiceLoan 1
+    Return
+end
+function putter
+  result (enum __au_console_put_result display=builtin::ConsolePutResult)
+  params [console u8]
+  frame 48
+  slot 24 u8
+  service 16
+    BindServiceParameter 0 16
+    BindParameter 1 24 u8
+    Load 24 u8
+    ServiceOperation 16 Put
+    Return
+end
+
+; CASE: rejected: hostile mutation 82
+; BASE: accepted service graph 81
+; RUN: verify
+; EXPECT-ERROR:
+@@ -14 +14 @@
+-    ServiceCall putter 1 0 [0 0] Console [] [0 0]
++    ServiceCall putter 1 0 [0 0] Console [] [0 24]
+
+; CASE: rejected: hostile mutation 83
+; RUN: verify
+; EXPECT-ERROR:
+layout Reply [u64 (enum __au_console_put_result display=builtin::ConsolePutResult) u8 u8 bool]
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+function caller
+  result (class Reply)
+  params [console]
+  frame 48
+  slot 24 bool
+  slot 31 u8
+  slot 32 u8
+  slot 40 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 48 u64
+  object 48 Reply false
+  service 16
+    BindServiceParameter 0 16
+    BeginObject 48
+    AcquireServiceLoan 1 16
+    ServiceCall reply 1 0 [0]
+    ReleaseServiceLoan 1
+    ReturnObject 48
+end
+function reply
+  result (class Reply)
+  params [console]
+  frame 48
+  slot 24 bool
+  slot 31 u8
+  slot 32 u8
+  slot 40 (enum __au_console_put_result display=builtin::ConsolePutResult)
+  slot 48 u64
+  object 48 Reply false
+  service 16
+    BindServiceParameter 0 16
+    BeginObject 48
+    Constant 2 u64
+    Store 48 u64
+    EnumConstant (enum __au_console_put_result display=builtin::ConsolePutResult)
+    Store 40 (enum __au_console_put_result display=builtin::ConsolePutResult)
+    Constant 65 u8
+    Store 32 u8
+    Constant 66 u8
+    Store 31 u8
+    Constant 1 bool
+    Store 24 bool
+    ReturnObject 48
+end
+
+; CASE: rejected: hostile mutation 84
+; BASE: rejected: hostile mutation 83
+; RUN: verify
+; EXPECT-ERROR:
+@@ -20 +20 @@
+-    ServiceCall reply 1 0 [0]
++    ServiceCall reply 1 16 [0]
+
+; CASE: rejected: hostile mutation 85
+; BASE: rejected: hostile mutation 83
+; RUN: verify
+; EXPECT-ERROR:
+@@ -20 +20 @@
+-    ServiceCall reply 1 0 [0]
++    ServiceCall reply 1 40 [0]
+
+; CASE: rejected: hostile mutation 86
+; BASE: rejected: hostile mutation 83
+; RUN: verify
+; EXPECT-ERROR:
+@@ -0,0 +1 @@
++layout Other [u64 (enum __au_console_put_result display=builtin::ConsolePutResult) u8 u8 bool]
+@@ -15 +16 @@
+-  object 48 Reply false
++  object 48 Other false
+@@ -20 +21 @@
+-    ServiceCall reply 1 0 [0]
++    ServiceCall reply 1 48 [0]
+
+; CASE: rejected: hostile mutation 87
+; BASE: rejected: hostile mutation 83
+; RUN: verify
+; EXPECT-ERROR:
+@@ -16,2 +16,2 @@
+-  service 16
+-    BindServiceParameter 0 16
++  service 32
++    BindServiceParameter 0 32
+@@ -19,2 +19,2 @@
+-    AcquireServiceLoan 1 16
+-    ServiceCall reply 1 0 [0]
++    AcquireServiceLoan 1 32
++    ServiceCall reply 1 48 [0]
+
+; CASE: rejected: hostile mutation 88
+; BASE: rejected: hostile mutation 83
+; RUN: verify
+; EXPECT-ERROR:
+@@ -11 +11 @@
+-  slot 31 u8
++  slot 31 bool
+@@ -20 +20 @@
+-    ServiceCall reply 1 0 [0]
++    ServiceCall reply 1 48 [0]
+
+; CASE: rejected: hostile mutation 89
+; BASE: rejected: hostile mutation 83
+; RUN: verify
+; EXPECT-ERROR:
+@@ -20 +20,3 @@
+-    ServiceCall reply 1 0 [0]
++    Constant 0 bool
++    Store 24 bool
++    ServiceCall reply 1 48 [0]
+
+; CASE: rejected: hostile mutation 90
+; BASE: rejected: hostile mutation 83
+; RUN: verify
+; EXPECT-ERROR:
+@@ -20 +20,4 @@
+-    ServiceCall reply 1 0 [0]
++    ServiceCall reply 1 48 [0]
++    ReleaseServiceLoan 1
++    AcquireServiceLoan 1 16
++    ServiceCall reply 1 48 [0]
+
+; CASE: rejected: hostile mutation 91
+; BASE: rejected: hostile mutation 83
+; RUN: verify
+; EXPECT-ERROR:
+@@ -20 +20 @@
+-    ServiceCall reply 1 0 [0]
++    ServiceCall reply 1 48 [0]
+@@ -46 +45,0 @@
+-    Store 24 bool
+
+; CASE: rejected: hostile mutation 92
+; RUN: verify
+; EXPECT-ERROR:
+layout Reply []
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+function caller
+  result (class Reply)
+  params [console]
+  frame 48
+  object 48 Reply false
+  service 16
+    BindServiceParameter 0 16
+    BeginObject 48
+    AcquireServiceLoan 1 16
+    ServiceCall reply 1 48 [0]
+    ReleaseServiceLoan 1
+    AcquireServiceLoan 1 16
+    ServiceCall reply 1 48 [0]
+    ReleaseServiceLoan 1
+    ReturnObject 48
+end
+function reply
+  result (class Reply)
+  params [console]
+  frame 48
+  object 48 Reply false
+  service 16
+    BindServiceParameter 0 16
+    BeginObject 48
+    InitializeEmptyObject 48
+    ReturnObject 48
+end
+
+; CASE: rejected: hostile mutation 93
+; BASE: rejected: hostile mutation 92
+; RUN: verify
+; EXPECT-ERROR:
+@@ -17,3 +16,0 @@
+-    AcquireServiceLoan 1 16
+-    ServiceCall reply 1 48 [0]
+-    ReleaseServiceLoan 1
+@@ -30 +26,0 @@
+-    InitializeEmptyObject 48
+
+; CASE: rejected: hostile mutation 94
+; BASE: rejected: hostile mutation 83
+; RUN: verify
+; EXPECT-ERROR:
+@@ -20 +20 @@
+-    ServiceCall reply 1 0 [0]
++    ServiceCall reply 1 48 [0]
+@@ -25 +25 @@
+-  result (class Reply)
++  result console
+
+; CASE: rejected: hostile mutation 95
+; BASE: rejected: hostile mutation 83
+; RUN: verify
+; EXPECT-ERROR:
+@@ -20 +20 @@
+-    ServiceCall reply 1 0 [0]
++    ServiceCall reply 1 48 [0]
+@@ -25 +25 @@
+-  result (class Reply)
++  result span
+
+; CASE: rejected: hostile mutation 96
+; BASE: rejected: hostile mutation 83
+; RUN: verify
+; EXPECT-ERROR:
+@@ -20 +20 @@
+-    ServiceCall reply 1 0 [0]
++    ServiceCall reply 1 48 [0]
+@@ -25 +25 @@
+-  result (class Reply)
++  result bytes
+
+; CASE: rejected: hostile mutation 97
+; BASE: rejected: hostile mutation 83
+; RUN: verify
+; EXPECT-ERROR:
+@@ -20 +20 @@
+-    ServiceCall reply 1 0 [0]
++    ServiceCall reply 1 48 [0]
+@@ -25 +25 @@
+-  result (class Reply)
++  result ref
+
+; CASE: rejected: hostile mutation 98
+; BASE: rejected: hostile mutation 83
+; RUN: verify
+; EXPECT-ERROR:
+@@ -2,0 +3 @@
++fields Reply [(u64 0 1 false) ((enum __au_console_put_result display=builtin::ConsolePutResult) 1 1 false) (u8 2 1 false) (u8 3 1 false) (bool 4 1 false) (bytes 5 0 false)]
+@@ -20 +21 @@
+-    ServiceCall reply 1 0 [0]
++    ServiceCall reply 1 48 [0]
+
+; CASE: rejected: hostile mutation 99
+; BASE: rejected: hostile mutation 83
+; RUN: verify
+; EXPECT-ERROR:
+@@ -20 +20 @@
+-    ServiceCall reply 1 0 [0]
++    AggregateCall reply [0] 48
+
+; CASE: rejected: hostile mutation 100
+; BASE: rejected: hostile mutation 83
+; RUN: verify
+; EXPECT-ERROR:
+@@ -20,2 +20 @@
+-    ServiceCall reply 1 0 [0]
+-    ReleaseServiceLoan 1
++    ServiceCall reply 1 48 [0]
+
+; CASE: rejected: hostile mutation 101
+; BASE: rejected: hostile mutation 83
+; RUN: verify
+; EXPECT-ERROR:
+@@ -20 +20,3 @@
+-    ServiceCall reply 1 0 [0]
++    Constant 65 u8
++    ServiceOperation 16 Put
++    ServiceCall reply 1 48 [0]
+
+; CASE: rejected: hostile mutation 102
+; BASE: rejected: hostile mutation 83
+; RUN: verify
+; EXPECT-ERROR:
+@@ -19,3 +19 @@
+-    AcquireServiceLoan 1 16
+-    ServiceCall reply 1 0 [0]
+-    ReleaseServiceLoan 1
++    ServiceOperation 16 Next 48
+
+; CASE: rejected: service observation requires exact pristine active copied sample object 103
+; RUN: verify
+; EXPECT-ERROR: service observation requires exact pristine active copied sample object
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+function read_sample
+  result i64
+  params [console]
+  frame 48
+  slot 24 bool
+  slot 32 u8
+  slot 40 bool
+  object 40 __au_console_sample false
+  service 16
+    BindServiceParameter 0 16
+    ServiceOperation 16 Next 40
+    EndObject 40
+    Constant
+    Return
+end
+
+; CASE: rejected: service observation requires exact pristine active copied sample object 104
+; BASE: rejected: service observation requires exact pristine active copied sample object 103
+; RUN: verify
+; EXPECT-ERROR: service observation requires exact pristine active copied sample object
+@@ -14,0 +15,2 @@
++    BeginObject 40
++    EndObject 40
+
+; CASE: rejected: service observation cannot overwrite initialized sample storage 105
+; BASE: rejected: service observation requires exact pristine active copied sample object 103
+; RUN: verify
+; EXPECT-ERROR: service observation cannot overwrite initialized sample storage
+@@ -14,0 +15,3 @@
++    BeginObject 40
++    Constant 0 bool
++    Store 40 bool
+
+; CASE: rejected: service observation requires exact pristine active copied sample object 106
+; RUN: verify
+; EXPECT-ERROR: service observation requires exact pristine active copied sample object
+layout OtherSample [bool u8 bool]
+layout __au_console_sample [bool u8 bool]
+fields OtherSample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+function read_sample
+  result i64
+  params [console]
+  frame 48
+  slot 24 bool
+  slot 32 u8
+  slot 40 bool
+  object 40 OtherSample false
+  service 16
+    BindServiceParameter 0 16
+    BeginObject 40
+    ServiceOperation 16 Next 40
+    EndObject 40
+    Constant
+    Return
+end
+
+; CASE: rejected: put requires closed enum result and no object storage 107
+; BASE: rejected: service observation requires exact pristine active copied sample object 103
+; RUN: verify
+; EXPECT-ERROR: put requires closed enum result and no object storage
+@@ -4 +3,0 @@
+-enum __au_console_put_result 2
+@@ -15 +14,2 @@
+-    ServiceOperation 16 Next 40
++    BeginObject 40
++    ServiceOperation 16 Put
+
+; CASE: rejected: missing or mistyped current value 108
+; BASE: rejected: service observation requires exact pristine active copied sample object 103
+; RUN: verify
+; EXPECT-ERROR: missing or mistyped current value
+@@ -15 +15,2 @@
+-    ServiceOperation 16 Next 40
++    BeginObject 40
++    ServiceOperation 16 Put
+
+; CASE: rejected: service operation requires active unsuspended capability provenance 109
+; RUN: verify
+; EXPECT-ERROR: service operation requires active unsuspended capability provenance
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+function read_sample
+  result i64
+  params [console]
+  frame 64
+  slot 24 bool
+  slot 32 u8
+  slot 40 bool
+  object 40 __au_console_sample false
+  service 16
+  service 64
+    BindServiceParameter 0 16
+    BeginObject 40
+    ServiceOperation 64 Next 40
+    EndObject 40
+    Constant
+    Return
+end
+
+; CASE: rejected: service loan requires unsuspended parameter authority 110
+; RUN: verify
+; EXPECT-ERROR: service loan requires unsuspended parameter authority
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+function caller
+  result (enum __au_console_put_result display=builtin::ConsolePutResult)
+  params [console]
+  frame 64
+  service 16
+  service 64
+    BindServiceParameter 0 16
+    AcquireServiceLoan 1 64
+    Constant 65 u8
+    Push
+    ServiceCall putter 1 0 [0 0]
+    ReleaseServiceLoan 1
+    Return
+end
+function putter
+  result (enum __au_console_put_result display=builtin::ConsolePutResult)
+  params [console u8]
+  frame 48
+  slot 24 u8
+  service 16
+    BindServiceParameter 0 16
+    BindParameter 1 24 u8
+    Load 24 u8
+    ServiceOperation 16 Put
+    Return
+end
+
+; CASE: rejected: service loan identity cannot change static root or kind 111
+; BASE: rejected: service loan requires unsuspended parameter authority 110
+; RUN: verify
+; EXPECT-ERROR: service loan identity cannot change static root or kind
+@@ -8 +8 @@
+-  frame 64
++  frame 48
+@@ -10 +9,0 @@
+-  service 64
+@@ -12 +11 @@
+-    AcquireServiceLoan 1 64
++    AcquireServiceLoan -1 16
+
+; CASE: rejected: service release requires exactly one completed helper call 112
+; RUN: verify
+; EXPECT-ERROR: service release requires exactly one completed helper call
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+function caller
+  result (enum __au_console_put_result display=builtin::ConsolePutResult)
+  params [console]
+  frame 48
+  service 16
+    BindServiceParameter 0 16
+    AcquireServiceLoan 1 16
+    Constant 65 u8
+    Push
+    ServiceCall putter 1 0 [0 0]
+    ReleaseServiceLoan -1
+    Return
+end
+function putter
+  result (enum __au_console_put_result display=builtin::ConsolePutResult)
+  params [console u8]
+  frame 48
+  slot 24 u8
+  service 16
+    BindServiceParameter 0 16
+    BindParameter 1 24 u8
+    Load 24 u8
+    ServiceOperation 16 Put
+    Return
+end
+
+; CASE: rejected: service loan identity cannot change static root or kind 113
+; BASE: rejected: service release requires exactly one completed helper call 112
+; RUN: verify
+; EXPECT-ERROR: service loan identity cannot change static root or kind
+@@ -11 +11 @@
+-    AcquireServiceLoan 1 16
++    AcquireServiceLoan 0 16
+@@ -15 +15 @@
+-    ReleaseServiceLoan -1
++    ReleaseServiceLoan 1
+
+; CASE: rejected: service release requires exactly one completed helper call 114
+; BASE: rejected: service release requires exactly one completed helper call 112
+; RUN: verify
+; EXPECT-ERROR: service release requires exactly one completed helper call
+@@ -15 +15 @@
+-    ReleaseServiceLoan -1
++    ReleaseServiceLoan
+
+; CASE: rejected: service release requires exactly one completed helper call 115
+; BASE: rejected: service release requires exactly one completed helper call 112
+; RUN: verify
+; EXPECT-ERROR: service release requires exactly one completed helper call
+@@ -15 +15 @@
+-    ReleaseServiceLoan -1
++    ReleaseServiceLoan 1 -1
+
+; CASE: rejected: service release requires exactly one completed helper call 116
+; BASE: rejected: service release requires exactly one completed helper call 112
+; RUN: verify
+; EXPECT-ERROR: service release requires exactly one completed helper call
+@@ -15 +15 @@
+-    ReleaseServiceLoan -1
++    ReleaseServiceLoan 1 999
+
+; CASE: rejected: service loan requires unsuspended parameter authority 117
+; BASE: rejected: service release requires exactly one completed helper call 112
+; RUN: verify
+; EXPECT-ERROR: service loan requires unsuspended parameter authority
+@@ -11,0 +12 @@
++    AcquireServiceLoan 1 16
+@@ -15 +16 @@
+-    ReleaseServiceLoan -1
++    ReleaseServiceLoan 1
+
+; CASE: rejected: put requires closed enum result and no object storage 118
+; BASE: rejected: service release requires exactly one completed helper call 112
+; RUN: verify
+; EXPECT-ERROR: put requires closed enum result and no object storage
+@@ -11,0 +12 @@
++    AcquireServiceLoan 1 16
+@@ -15 +16 @@
+-    ReleaseServiceLoan -1
++    ReleaseServiceLoan 1
+@@ -27 +28 @@
+-    ServiceOperation 16 Put
++    ServiceOperation 16 Put 24
+
+; CASE: accepted service graph 119
+; BASE: rejected: service release requires exactly one completed helper call 112
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.putter.service_abi.calls.__au_runtime_console_put {"sysv_arguments":3,"result_max":1}
+@@ -15 +15,6 @@
+-    ReleaseServiceLoan -1
++    ReleaseServiceLoan 1
++    AcquireServiceLoan 1 16
++    Constant 66 u8
++    Push
++    ServiceCall putter 1 0 [0 0]
++    ReleaseServiceLoan 1
+
+; CASE: accepted service graph 120
+; BASE: rejected: service release requires exactly one completed helper call 112
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.putter.service_abi.calls.__au_runtime_console_put {"sysv_arguments":3,"result_max":1}
+@@ -10,0 +11 @@
++    Label 1
+@@ -15 +16,6 @@
+-    ReleaseServiceLoan -1
++    ReleaseServiceLoan 1
++    Constant 0 bool
++    BranchFalse 2
++    Jump 1
++    Label 2
++    EnumConstant (enum __au_console_put_result display=builtin::ConsolePutResult)
+
+; CASE: rejected: hostile mutation 121
+; BASE: rejected: service release requires exactly one completed helper call 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -10,0 +11 @@
++    Label 1
+@@ -15 +16,5 @@
+-    ReleaseServiceLoan -1
++    Constant 0 bool
++    BranchFalse 2
++    Jump 1
++    Label 2
++    EnumConstant (enum __au_console_put_result display=builtin::ConsolePutResult)
+
+; CASE: rejected: hostile mutation 122
+; BASE: rejected: service release requires exactly one completed helper call 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -10,0 +11 @@
++    Label 1
+@@ -15 +16,7 @@
+-    ReleaseServiceLoan -1
++    ReleaseServiceLoan 1
++    Constant 0 bool
++    BranchFalse 2
++    AcquireServiceLoan 2 16
++    Jump 1
++    Label 2
++    EnumConstant (enum __au_console_put_result display=builtin::ConsolePutResult)
+
+; CASE: rejected: hostile mutation 123
+; BASE: rejected: service observation requires exact pristine active copied sample object 103
+; RUN: verify
+; EXPECT-ERROR:
+@@ -14 +14 @@
+-    BindServiceParameter 0 16
++    BeginObject 40
+
+; CASE: rejected: hostile mutation 124
+; BASE: rejected: service observation requires exact pristine active copied sample object 103
+; RUN: verify
+; EXPECT-ERROR:
+@@ -14 +14,2 @@
+-    BindServiceParameter 0 16
++    BindServiceParameter 0 16 999
++    BeginObject 40
+
+; CASE: rejected: hostile mutation 125
+; BASE: rejected: service observation requires exact pristine active copied sample object 103
+; RUN: verify
+; EXPECT-ERROR:
+@@ -14 +14,2 @@
+-    BindServiceParameter 0 16
++    BindServiceParameter 0 8
++    BeginObject 40
+
+; CASE: rejected: hostile mutation 126
+; BASE: rejected: service observation requires exact pristine active copied sample object 103
+; RUN: verify
+; EXPECT-ERROR:
+@@ -7 +6,0 @@
+-  params [console]
+@@ -14,0 +14 @@
++    BeginObject 40
+
+; CASE: rejected: hostile mutation 127
+; BASE: rejected: service observation requires exact pristine active copied sample object 103
+; RUN: verify
+; EXPECT-ERROR:
+@@ -8,0 +9 @@
++  slot 16 u64
+@@ -14,0 +16 @@
++    BeginObject 40
+
+; CASE: rejected: hostile mutation 128
+; BASE: rejected: service observation requires exact pristine active copied sample object 103
+; RUN: verify
+; EXPECT-ERROR:
+@@ -8 +8 @@
+-  frame 48
++  frame 64
+@@ -12,0 +13 @@
++  span 56
+@@ -14,0 +16 @@
++    BeginObject 40
+
+; CASE: rejected: hostile mutation 129
+; BASE: rejected: service observation requires exact pristine active copied sample object 103
+; RUN: verify
+; EXPECT-ERROR:
+@@ -13,0 +14 @@
++  bytes 32 true
+@@ -14,0 +16 @@
++    BeginObject 40
+
+; CASE: rejected: hostile mutation 130
+; BASE: rejected: service observation requires exact pristine active copied sample object 103
+; RUN: verify
+; EXPECT-ERROR:
+@@ -13,0 +14 @@
++  service 24
+@@ -14,0 +16 @@
++    BeginObject 40
+
+; CASE: rejected: service operation requires active unsuspended capability provenance 131
+; BASE: rejected: service observation requires exact pristine active copied sample object 103
+; RUN: verify
+; EXPECT-ERROR: service operation requires active unsuspended capability provenance
+@@ -15 +15,2 @@
+-    ServiceOperation 16 Next 40
++    BeginObject 40
++    ServiceOperation 32 Next 40
+
+; CASE: rejected: unknown sealed service operation 132
+; BASE: rejected: service observation requires exact pristine active copied sample object 103
+; RUN: verify
+; EXPECT-ERROR: unknown sealed service operation
+@@ -15 +15,2 @@
+-    ServiceOperation 16 Next 40
++    BeginObject 40
++    ServiceOperation 16 999 40
+
+; CASE: rejected: service observation requires exact pristine active copied sample object 133
+; BASE: rejected: service observation requires exact pristine active copied sample object 103
+; RUN: verify
+; EXPECT-ERROR: service observation requires exact pristine active copied sample object
+@@ -15 +15,2 @@
+-    ServiceOperation 16 Next 40
++    BeginObject 40
++    ServiceOperation 16 Next 32
+
+; CASE: rejected: service observation requires exact pristine active copied sample object 134
+; BASE: rejected: service observation requires exact pristine active copied sample object 103
+; RUN: verify
+; EXPECT-ERROR: service observation requires exact pristine active copied sample object
+@@ -14,0 +15,2 @@
++    BeginObject 40
++    ServiceOperation 16 Next 40
+
+; CASE: rejected: service operation requires active unsuspended capability provenance 135
+; BASE: rejected: service observation requires exact pristine active copied sample object 103
+; RUN: verify
+; EXPECT-ERROR: service operation requires active unsuspended capability provenance
+@@ -14,0 +15,2 @@
++    BeginObject 40
++    AcquireServiceLoan 1 16
+
+; CASE: rejected: hostile mutation 136
+; BASE: rejected: service observation requires exact pristine active copied sample object 103
+; RUN: verify
+; EXPECT-ERROR:
+@@ -1 +1 @@
+-layout __au_console_sample [bool u8 bool]
++layout __au_console_sample [u64 u8 bool]
+@@ -14,0 +15 @@
++    BeginObject 40
+
+; CASE: rejected: hostile mutation 137
+; BASE: rejected: service observation requires exact pristine active copied sample object 103
+; RUN: verify
+; EXPECT-ERROR:
+@@ -4 +4 @@
+-enum __au_console_put_result 2
++enum __au_console_put_result 3
+@@ -14,0 +15 @@
++    BeginObject 40
+
+; CASE: rejected: hostile mutation 138
+; BASE: rejected: service observation requires exact pristine active copied sample object 103
+; RUN: verify
+; EXPECT-ERROR:
+@@ -5 +5 @@
+-function read_sample
++function __au_runtime_console_next
+@@ -14,0 +15 @@
++    BeginObject 40
+
+; CASE: rejected: hostile mutation 139
+; BASE: rejected: service observation requires exact pristine active copied sample object 103
+; RUN: verify
+; EXPECT-ERROR:
+@@ -14,0 +15 @@
++    BeginObject 40
+@@ -17,0 +19 @@
++    Load 16 u64
+
+; CASE: rejected: hostile mutation 140
+; BASE: rejected: service release requires exactly one completed helper call 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -14,2 +14,2 @@
+-    ServiceCall putter 1 0 [0 0]
+-    ReleaseServiceLoan -1
++    Call putter
++    ReleaseServiceLoan 1
+
+; CASE: rejected: hostile mutation 141
+; BASE: rejected: service release requires exactly one completed helper call 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -14,2 +14,2 @@
+-    ServiceCall putter 1 0 [0 0]
+-    ReleaseServiceLoan -1
++    AggregateCall putter [0 0]
++    ReleaseServiceLoan 1
+
+; CASE: rejected: service helper requires distinct acquired loans in leading positions 142
+; BASE: rejected: service release requires exactly one completed helper call 112
+; RUN: verify
+; EXPECT-ERROR: service helper requires distinct acquired loans in leading positions
+@@ -11 +10,0 @@
+-    AcquireServiceLoan 1 16
+@@ -15 +14 @@
+-    ReleaseServiceLoan -1
++    ReleaseServiceLoan 1
+
+; CASE: rejected: hostile mutation 143
+; BASE: rejected: service release requires exactly one completed helper call 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +14,0 @@
+-    ReleaseServiceLoan -1
+
+; CASE: rejected: service release requires exactly one completed helper call 144
+; BASE: rejected: service release requires exactly one completed helper call 112
+; RUN: verify
+; EXPECT-ERROR: service release requires exactly one completed helper call
+@@ -11,0 +12 @@
++    ReleaseServiceLoan 1
+@@ -15 +16 @@
+-    ReleaseServiceLoan -1
++    ReleaseServiceLoan 1
+
+; CASE: rejected: service helper requires an unused loan with exact provenance 145
+; BASE: rejected: service release requires exactly one completed helper call 112
+; RUN: verify
+; EXPECT-ERROR: service helper requires an unused loan with exact provenance
+@@ -15 +15,2 @@
+-    ReleaseServiceLoan -1
++    ServiceCall putter 1 0 [0 0]
++    ReleaseServiceLoan 1
+
+; CASE: rejected: service helper requires distinct acquired loans in leading positions 146
+; BASE: rejected: service release requires exactly one completed helper call 112
+; RUN: verify
+; EXPECT-ERROR: service helper requires distinct acquired loans in leading positions
+@@ -14,2 +14,2 @@
+-    ServiceCall putter 1 0 [0 0]
+-    ReleaseServiceLoan -1
++    ServiceCall putter 2 0 [0 0]
++    ReleaseServiceLoan 1
+
+; CASE: rejected: hostile mutation 147
+; BASE: rejected: service release requires exactly one completed helper call 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -14,2 +14,2 @@
+-    ServiceCall putter 1 0 [0 0]
+-    ReleaseServiceLoan -1
++    ServiceCall putter 1 0 [16 0]
++    ReleaseServiceLoan 1
+
+; CASE: rejected: service scalar argument mismatch 148
+; BASE: rejected: service release requires exactly one completed helper call 112
+; RUN: verify
+; EXPECT-ERROR: service scalar argument mismatch
+@@ -12 +12 @@
+-    Constant 65 u8
++    Constant 65
+@@ -15 +15 @@
+-    ReleaseServiceLoan -1
++    ReleaseServiceLoan 1
+
+; CASE: rejected: service helper requires distinct acquired loans in leading positions 149
+; BASE: rejected: service release requires exactly one completed helper call 112
+; RUN: verify
+; EXPECT-ERROR: service helper requires distinct acquired loans in leading positions
+@@ -11,2 +11 @@
+-    AcquireServiceLoan 1 16
+-    Constant 65 u8
++    Constant 65
+@@ -15 +14 @@
+-    ReleaseServiceLoan -1
++    ReleaseServiceLoan 1
+
+; CASE: rejected: service helper requires an unused loan with exact provenance 150
+; BASE: rejected: service release requires exactly one completed helper call 112
+; RUN: verify
+; EXPECT-ERROR: service helper requires an unused loan with exact provenance
+@@ -15 +15,4 @@
+-    ReleaseServiceLoan -1
++    Constant 65
++    Push
++    ServiceCall putter 1 0 [0 0]
++    ReleaseServiceLoan 1
+
+; CASE: rejected: hostile mutation 151
+; BASE: rejected: service release requires exactly one completed helper call 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -11,0 +12,4 @@
++    Constant 1 bool
++    BranchFalse 99
++    AcquireServiceLoan 2 16
++    Label 99
+@@ -15 +19 @@
+-    ReleaseServiceLoan -1
++    ReleaseServiceLoan 1
+
+; CASE: rejected: hostile mutation 152
+; BASE: rejected: service release requires exactly one completed helper call 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12,4 +12,2 @@
+-    Constant 65 u8
+-    Push
+-    ServiceCall putter 1 0 [0 0]
+-    ReleaseServiceLoan -1
++    ServiceCall caller 1 0 [0]
++    ReleaseServiceLoan 1

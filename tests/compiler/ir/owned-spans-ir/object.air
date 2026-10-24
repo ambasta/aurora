@@ -1,0 +1,263 @@
+; CASE: direct field nested empty view
+; RUN: verify
+; EXPECT-OK
+layout Empty []
+layout Pair [u8]
+fields Empty []
+fields Pair [(bytes 0 0 false) (u8 0 1 false) (bytes 1 0 false)]
+storage Empty [] [] 8 8 8
+storage Pair [32] [0 32 40] 72 8 72
+function caller
+  result i64
+  params [region (class Pair)]
+  frame 336
+  slot 48 u8
+  slot 128 u8
+  object 80 Pair true
+  object 160 Pair true
+  span 216
+  span 272
+  span 328
+  region 8
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 80 Pair
+    BorrowOwnedSpan 80 0 216
+    ReborrowSpan 216 272
+    Constant
+    Push
+    Constant
+    Subspan 272 328
+    SpanLength 328
+    EndSpan 328
+    EndSpan 272
+    EndSpan 216
+    EndObject 80
+    Return
+end
+function view
+  result span
+  frame 176
+  receiver Pair false false
+  spanfield 0
+  span 56
+  span 112
+  span 168
+    BorrowOwnedSpan 0 0 56
+    ReborrowSpan 56 112
+    Constant
+    Push
+    Constant
+    Subspan 112 168
+    ReturnSpan 168
+end
+function read
+  result i64
+  frame 0
+  receiver Pair false false
+    BytesLength 0 0
+    Return
+end
+function mutate
+  result i64
+  frame 0
+  receiver Pair true false
+    BytesLength 0 0
+    Return
+end
+
+; CASE: caller derives returned authority from own root
+; BASE: direct field nested empty view
+; RUN: verify
+; EXPECT-OK
+@@ -21 +21 @@
+-    BorrowOwnedSpan 80 0 216
++    MethodCall view 80 [] 216
+
+; CASE: same field write blocked direct
+; BASE: direct field nested empty view
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+@@ -26,0 +27,4 @@
++    Constant
++    Push
++    Constant 1 u8
++    BytesStore 80 0
+
+; CASE: same field resize blocked direct
+; BASE: direct field nested empty view
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+@@ -26,0 +27,2 @@
++    Constant
++    BytesResize 80 0
+
+; CASE: root drop blocked direct
+; BASE: direct field nested empty view
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+@@ -26,0 +27 @@
++    EndObject 80
+
+; CASE: root move blocked direct
+; BASE: direct field nested empty view
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+@@ -26,0 +27,2 @@
++    BeginObject 160
++    MoveObject 80 160
+
+; CASE: mutable method freezes whole root direct
+; BASE: direct field nested empty view
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+@@ -26,0 +27 @@
++    MethodCall mutate 80
+
+; CASE: direct view permits sibling direct writes
+; BASE: direct field nested empty view
+; RUN: verify
+; EXPECT-OK
+@@ -26,0 +27,5 @@
++    Constant
++    BytesResize 80 2
++    Constant 91 u8
++    Store 48 u8
++    MethodCall read 80
+
+; CASE: released direct view restores mutable root
+; BASE: direct field nested empty view
+; RUN: verify
+; EXPECT-OK
+@@ -30,0 +31 @@
++    MethodCall mutate 80
+
+; CASE: same field write blocked returned
+; BASE: direct field nested empty view
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+@@ -21 +21 @@
+-    BorrowOwnedSpan 80 0 216
++    MethodCall view 80 [] 216
+@@ -26,0 +27,4 @@
++    Constant
++    Push
++    Constant 1 u8
++    BytesStore 80 0
+
+; CASE: same field resize blocked returned
+; BASE: direct field nested empty view
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+@@ -21 +21 @@
+-    BorrowOwnedSpan 80 0 216
++    MethodCall view 80 [] 216
+@@ -26,0 +27,2 @@
++    Constant
++    BytesResize 80 0
+
+; CASE: root drop blocked returned
+; BASE: direct field nested empty view
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+@@ -21 +21 @@
+-    BorrowOwnedSpan 80 0 216
++    MethodCall view 80 [] 216
+@@ -26,0 +27 @@
++    EndObject 80
+
+; CASE: root move blocked returned
+; BASE: direct field nested empty view
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+@@ -21 +21 @@
+-    BorrowOwnedSpan 80 0 216
++    MethodCall view 80 [] 216
+@@ -26,0 +27,2 @@
++    BeginObject 160
++    MoveObject 80 160
+
+; CASE: mutable method freezes whole root returned
+; BASE: direct field nested empty view
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+@@ -21 +21 @@
+-    BorrowOwnedSpan 80 0 216
++    MethodCall view 80 [] 216
+@@ -26,0 +27 @@
++    MethodCall mutate 80
+
+; CASE: returned view permits sibling direct writes
+; BASE: direct field nested empty view
+; RUN: verify
+; EXPECT-OK
+@@ -21 +21 @@
+-    BorrowOwnedSpan 80 0 216
++    MethodCall view 80 [] 216
+@@ -26,0 +27,5 @@
++    Constant
++    BytesResize 80 2
++    Constant 91 u8
++    Store 48 u8
++    MethodCall read 80
+
+; CASE: released result restores mutable root
+; BASE: direct field nested empty view
+; RUN: verify
+; EXPECT-OK
+@@ -21 +21 @@
+-    BorrowOwnedSpan 80 0 216
++    MethodCall view 80 [] 216
+@@ -30,0 +31 @@
++    MethodCall mutate 80
+
+; CASE: scalar field is not owner
+; BASE: direct field nested empty view
+; RUN: verify
+; EXPECT-ERROR: direct resource field
+@@ -21 +21 @@
+-    BorrowOwnedSpan 80 0 216
++    BorrowOwnedSpan 80 1 216
+
+; CASE: out of range field
+; BASE: direct field nested empty view
+; RUN: verify
+; EXPECT-ERROR: direct resource field
+@@ -21 +21 @@
+-    BorrowOwnedSpan 80 0 216
++    BorrowOwnedSpan 80 3 216
+
+; CASE: owning object interior not root
+; BASE: direct field nested empty view
+; RUN: verify
+; EXPECT-ERROR: exact object slot
+@@ -21 +21 @@
+-    BorrowOwnedSpan 80 0 216
++    BorrowOwnedSpan 72 0 216
+
+; CASE: method result cannot overwrite live span
+; BASE: direct field nested empty view
+; RUN: verify
+; EXPECT-ERROR: span spill is already active
+@@ -21 +21,2 @@
+-    BorrowOwnedSpan 80 0 216
++    MethodCall view 80 [] 216
++    MethodCall view 80 [] 216
+
+; CASE: method result requires typed destination
+; BASE: direct field nested empty view
+; RUN: verify
+; EXPECT-ERROR: exact typed spill
+@@ -21 +21 @@
+-    BorrowOwnedSpan 80 0 216
++    MethodCall view 80
+
+; CASE: method summary cannot forge other owning field
+; BASE: direct field nested empty view
+; RUN: verify
+; EXPECT-ERROR: span return does not match receiver field summary and token
+@@ -21 +21 @@
+-    BorrowOwnedSpan 80 0 216
++    MethodCall view 80 [] 216
+@@ -38 +38 @@
+-  spanfield 0
++  spanfield 2

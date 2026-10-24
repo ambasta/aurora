@@ -1,0 +1,84 @@
+; CASE: reachable imports and root bridges are retained, unused imports pruned
+; RUN: metadata
+; CHECK: retained fixed_view fixed_caller unused_private_root\n
+layout Fixed [i64 u8*4]
+fields Fixed [(i64 0 1 false) (u8 1 2 true) (u8 3 2 true)]
+views [(0 []) (1 [])]
+function fixed_view
+  result span
+  frame 112
+  scope 1
+  receiver Fixed false false
+  spanfield 1
+  span 56
+  span 112
+    BorrowReceiverArraySpan 1 56
+    ReborrowSpan 56 112
+    ReturnSpan 112
+end
+function fixed_caller
+  result i64
+  params [(class Fixed)]
+  frame 128
+  slot 5 u8
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  slot 16 i64
+  object 16 Fixed false
+  span 72
+  span 128
+    BindObjectParameter 0 16 Fixed
+    MethodCall fixed_view 16 [] 72
+    ReborrowSpan 72 128
+    SpanLength 128
+    EndSpan 128
+    EndSpan 72
+    EndObject 16
+    Return
+end
+function unused_private_root
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+function unused_import
+  result i64
+  frame 0
+  scope 1
+    Constant 42
+    Return
+end
+
+; CASE: unused imported IR still receives complete validation
+; BASE: reachable imports and root bridges are retained, unused imports pruned
+; RUN: verify
+; EXPECT-ERROR: noncanonical u8
+@@ -47 +47 @@
+-    Constant 42
++    Constant 300 u8
+
+; CASE: unused imported receiver cycles still reject
+; RUN: verify
+; EXPECT-ERROR: recursive receiver call cycle
+layout Fixed [i64 u8*4]
+fields Fixed [(i64 0 1 false) (u8 1 2 true) (u8 3 2 true)]
+views [(0 []) (1 [])]
+function fixed_view
+  result span
+  frame 112
+  scope 1
+  receiver Fixed false false
+  spanfield 1
+  span 56
+  span 112
+    MethodCall fixed_view 0 [] 56
+    ReturnSpan 56
+end
+function unused_private_root
+  result i64
+  frame 0
+    Constant 42
+    Return
+end

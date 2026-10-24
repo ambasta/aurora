@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Literal-layout handwritten owning-class boundaries with the real hosted adapter.
 
-The direct-IR fixture is compiled separately. This runner checks handwritten
+The direct IR comes from textual IR cases. This runner checks handwritten
 entry records, transferred descriptor clearing, padding/canaries, callee-saved
 registers, runtime-helper alignment, mixed positions and exact release order.
 Resize cases also check literal field addresses, preserved prefixes, zero extension,
@@ -20,6 +20,9 @@ import subprocess
 import tempfile
 
 from unsigned_oracle import require
+
+# Verified textual IR cases; the aurora-ir-check driver prints their assembly.
+AIR = Path(__file__).resolve().parent / "ir" / "owning-classes-ir" / "abi.air"
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -160,7 +163,7 @@ HANDWRITTEN = {
 
 def boundary(fixture, driver, cxx, directory, mode, handwritten):
     """Link one emitted (or handwritten-target) boundary with the hosted driver and run it."""
-    candidate = command([fixture, "--emit-abi", mode]).decode()
+    candidate = command([fixture, "--output", AIR, mode]).decode()
     if handwritten:
         symbol, body = HANDWRITTEN[mode]
         pattern = rf"(?m)^{symbol}:\n[\s\S]*?^\.size {symbol},[^\n]*\n"

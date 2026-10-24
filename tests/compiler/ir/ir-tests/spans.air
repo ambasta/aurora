@@ -1,0 +1,1400 @@
+; CASE: readonly local byte span and reborrow
+; RUN: emit
+function span_local
+  result u8
+  frame 640
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  array 8 3
+  span 256
+  span 320
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BorrowSpan 8 256
+    ReborrowSpan 256 320
+    Constant 1
+    SpanLoad 320
+    EndSpan 320
+    EndSpan 256
+    EndArray 8
+    Return
+end
+
+; CASE: frame array and span observations
+; BASE: readonly local byte span and reborrow
+; RUN: metadata
+; CHECK: callable 0 span_local scope 0 result u8 frame 640
+; CHECK: slot span_local 6 u8
+; CHECK-NOT: array span_local
+; CHECK: array span_local 8 3
+; CHECK-NEXT: span span_local 256
+; CHECK-NEXT: span span_local 320
+; CHECK-NEXT: origin span_local
+
+; CASE: readonly span forwarding and six mixed argument positions
+; RUN: emit
+layout SpanPacket [u8 i64 u8]
+function span_local
+  result u8
+  frame 640
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  array 8 3
+  span 256
+  span 320
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BorrowSpan 8 256
+    ReborrowSpan 256 320
+    Constant 1
+    SpanLoad 320
+    EndSpan 320
+    EndSpan 256
+    EndArray 8
+    Return
+end
+function span_length
+  result i64
+  frame 640
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  array 8 3
+  span 256
+  span 320
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BorrowSpan 8 256
+    ReborrowSpan 256 320
+    SpanLength 256
+    EndSpan 320
+    EndSpan 256
+    EndArray 8
+    Return
+end
+function span_preserve_current
+  result u8
+  frame 640
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  array 8 3
+  span 256
+  span 320
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BorrowSpan 8 256
+    ReborrowSpan 256 320
+    EndSpan 320
+    EndSpan 256
+    EndArray 8
+    Return
+end
+function span_read
+  result u8
+  params [span i64]
+  frame 640
+  slot 8 i64
+  span 256
+    BindSpanParameter 0 256
+    BindParameter 1 8
+    Load 8
+    SpanLoad 256
+    EndSpan 256
+    Return
+end
+function span_forward
+  result u8
+  params [span i64]
+  frame 640
+  slot 8 i64
+  span 256
+  span 320
+    BindSpanParameter 0 256
+    BindParameter 1 8
+    ReborrowSpan 256 320
+    Load 8
+    Push
+    AggregateCall span_read [0 0] 0 [320 0]
+    EndSpan 320
+    EndSpan 256
+    Return
+end
+function span_dynamic
+  result u8
+  params [i64]
+  frame 640
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  slot 56 i64
+  array 8 3
+  span 256
+  span 320
+    BindParameter 0 56
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BorrowSpan 8 256
+    Load 56
+    Push
+    AggregateCall span_forward [0 0] 0 [256 0]
+    EndSpan 256
+    EndArray 8
+    Return
+end
+function span_mixed_callee
+  result (class SpanPacket)
+  params [u8 span (class SpanPacket) i64 span bool]
+  frame 640
+  slot 1 u8
+  slot 40 u8
+  slot 48 i64
+  slot 56 u8
+  slot 64 i64
+  slot 96 bool
+  slot 112 u8
+  slot 120 i64
+  slot 128 u8
+  slot 136 i64
+  object 56 SpanPacket false
+  object 128 SpanPacket false
+  span 256
+  span 384
+    BindParameter 0 1 u8
+    BindSpanParameter 1 256
+    BindObjectParameter 2 56 SpanPacket
+    BindParameter 3 64
+    BindSpanParameter 4 384
+    BindParameter 5 96 bool
+    BeginObject 128
+    Constant
+    Push
+    AggregateCall span_forward [0 0] 0 [256 0]
+    Convert u8
+    Push
+    Load 48
+    BinaryValue
+    Push
+    Load 64
+    BinaryValue
+    Push
+    Constant 2
+    Push
+    AggregateCall span_forward [0 0] 0 [384 0]
+    Convert u8
+    BinaryValue
+    Store 136
+    Load 96 bool
+    BranchFalse 1
+    Load 136
+    Push
+    Constant 1
+    BinaryValue
+    Store 136
+    Label 1
+    Load 136
+    Store 120
+    Load 1 u8
+    Store 128 u8
+    Load 40 u8
+    Store 112 u8
+    EndSpan 384
+    EndSpan 256
+    ReturnObject 128
+end
+function span_mixed_forward
+  result (class SpanPacket)
+  params [u8 span (class SpanPacket) i64 span bool]
+  frame 640
+  slot 1 u8
+  slot 40 u8
+  slot 48 i64
+  slot 56 u8
+  slot 64 i64
+  slot 96 bool
+  slot 112 u8
+  slot 120 i64
+  slot 128 u8
+  slot 136 i64
+  object 56 SpanPacket false
+  object 128 SpanPacket false
+  span 256
+  span 384
+  span 448
+  span 512
+    BindParameter 0 1 u8
+    BindSpanParameter 1 256
+    BindObjectParameter 2 56 SpanPacket
+    BindParameter 3 64
+    BindSpanParameter 4 384
+    BindParameter 5 96 bool
+    BeginObject 128
+    ReborrowSpan 256 448
+    ReborrowSpan 384 512
+    Load 1 u8
+    Push
+    Load 64
+    Push
+    Load 96 bool
+    Push
+    AggregateCall span_mixed_callee [0 0 56 0*3] 128 [0 448 0 0 512 0]
+    EndSpan 512
+    EndSpan 448
+    EndSpan 384
+    EndSpan 256
+    ReturnObject 128
+end
+function span_mixed_sum
+  result i64
+  frame 640
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  slot 30 u8
+  slot 31 u8
+  slot 32 u8
+  slot 40 u8
+  slot 48 i64
+  slot 56 u8
+  slot 96 u8
+  slot 104 i64
+  slot 112 u8
+  object 56 SpanPacket false
+  object 112 SpanPacket false
+  array 8 3
+  array 32 3
+  span 256
+  span 576
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BeginArray 32
+    Constant 100 u8
+    Store 32 u8
+    Constant 200 u8
+    Store 31 u8
+    Constant 255 u8
+    Store 30 u8
+    BeginObject 56
+    Constant 42 u8
+    Store 56 u8
+    Constant 13
+    Store 48
+    Constant 77 u8
+    Store 40 u8
+    BorrowSpan 8 256
+    BorrowSpan 32 576
+    BeginObject 112
+    Constant 31 u8
+    Push
+    Constant 19
+    Push
+    Constant 1 bool
+    Push
+    AggregateCall span_mixed_forward [0 0 56 0*3] 112 [0 256 0 0 576 0]
+    EndSpan 576
+    EndSpan 256
+    EndArray 32
+    EndArray 8
+    Load 104
+    Return
+end
+function span_mixed_first
+  result u8
+  frame 640
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  slot 30 u8
+  slot 31 u8
+  slot 32 u8
+  slot 40 u8
+  slot 48 i64
+  slot 56 u8
+  slot 96 u8
+  slot 104 i64
+  slot 112 u8
+  object 56 SpanPacket false
+  object 112 SpanPacket false
+  array 8 3
+  array 32 3
+  span 256
+  span 576
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BeginArray 32
+    Constant 100 u8
+    Store 32 u8
+    Constant 200 u8
+    Store 31 u8
+    Constant 255 u8
+    Store 30 u8
+    BeginObject 56
+    Constant 42 u8
+    Store 56 u8
+    Constant 13
+    Store 48
+    Constant 77 u8
+    Store 40 u8
+    BorrowSpan 8 256
+    BorrowSpan 32 576
+    BeginObject 112
+    Constant 31 u8
+    Push
+    Constant 19
+    Push
+    Constant 1 bool
+    Push
+    AggregateCall span_mixed_forward [0 0 56 0*3] 112 [0 256 0 0 576 0]
+    EndSpan 576
+    EndSpan 256
+    EndArray 32
+    EndArray 8
+    Load 112 u8
+    Return
+end
+function span_mixed_last
+  result u8
+  frame 640
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  slot 30 u8
+  slot 31 u8
+  slot 32 u8
+  slot 40 u8
+  slot 48 i64
+  slot 56 u8
+  slot 96 u8
+  slot 104 i64
+  slot 112 u8
+  object 56 SpanPacket false
+  object 112 SpanPacket false
+  array 8 3
+  array 32 3
+  span 256
+  span 576
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BeginArray 32
+    Constant 100 u8
+    Store 32 u8
+    Constant 200 u8
+    Store 31 u8
+    Constant 255 u8
+    Store 30 u8
+    BeginObject 56
+    Constant 42 u8
+    Store 56 u8
+    Constant 13
+    Store 48
+    Constant 77 u8
+    Store 40 u8
+    BorrowSpan 8 256
+    BorrowSpan 32 576
+    BeginObject 112
+    Constant 31 u8
+    Push
+    Constant 19
+    Push
+    Constant 1 bool
+    Push
+    AggregateCall span_mixed_forward [0 0 56 0*3] 112 [0 256 0 0 576 0]
+    EndSpan 576
+    EndSpan 256
+    EndArray 32
+    EndArray 8
+    Load 96 u8
+    Return
+end
+function span_mixed_saved_operand
+  result i64
+  frame 640
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  slot 30 u8
+  slot 31 u8
+  slot 32 u8
+  slot 40 u8
+  slot 48 i64
+  slot 56 u8
+  slot 96 u8
+  slot 104 i64
+  slot 112 u8
+  object 56 SpanPacket false
+  object 112 SpanPacket false
+  array 8 3
+  array 32 3
+  span 256
+  span 576
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BeginArray 32
+    Constant 100 u8
+    Store 32 u8
+    Constant 200 u8
+    Store 31 u8
+    Constant 255 u8
+    Store 30 u8
+    BeginObject 56
+    Constant 42 u8
+    Store 56 u8
+    Constant 13
+    Store 48
+    Constant 77 u8
+    Store 40 u8
+    BorrowSpan 8 256
+    BorrowSpan 32 576
+    BeginObject 112
+    Constant 1000
+    Push
+    Constant 31 u8
+    Push
+    Constant 19
+    Push
+    Constant 1 bool
+    Push
+    AggregateCall span_mixed_forward [0 0 56 0*3] 112 [0 256 0 0 576 0]
+    EndSpan 576
+    EndSpan 256
+    EndArray 32
+    EndArray 8
+    Load 104
+    BinaryValue
+    Return
+end
+
+; CASE: invalid span spill -1
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: span spill
+@@ -7,0 +8 @@
++  span -1
+
+; CASE: invalid span spill 0
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: span spill
+@@ -7,0 +8 @@
++  span 0
+
+; CASE: invalid span spill 8
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: span spill
+@@ -7,0 +8 @@
++  span 8
+
+; CASE: invalid span spill 15
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: span spill
+@@ -7,0 +8 @@
++  span 15
+
+; CASE: invalid span spill 17
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: span spill
+@@ -7,0 +8 @@
++  span 17
+
+; CASE: invalid span spill 56
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: span spill
+@@ -7,0 +8 @@
++  span 56
+
+; CASE: overlapping span spills
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: overlapping span spills
+@@ -8,0 +9 @@
++  span 264
+
+; CASE: span overlaps byte scalar
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -6,0 +7 @@
++  slot 212 u8
+
+; CASE: span overlaps wide scalar interior
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -6,0 +7 @@
++  slot 208 i64
+
+; CASE: invalid byte origin extent -1
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: byte array origin extent
+@@ -7 +7 @@
+-  array 8 3
++  array 8 -1
+
+; CASE: invalid byte origin extent 0
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: byte array origin extent
+@@ -7 +7 @@
+-  array 8 3
++  array 8 0
+
+; CASE: invalid byte origin extent 9
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: byte array origin extent
+@@ -7 +7 @@
+-  array 8 3
++  array 8 9
+
+; CASE: invalid byte origin extent 4097
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: byte array origin extent
+@@ -7 +7 @@
+-  array 8 3
++  array 8 4097
+
+; CASE: origin past frame
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: origin extent
+@@ -7,0 +8 @@
++  array 648 1
+
+; CASE: overlapping byte origins
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: overlapping byte array origins
+@@ -6,0 +7 @@
++  array 7 2
+
+; CASE: missing byte origin element
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: exact u8 element slots
+@@ -5 +4,0 @@
+-  slot 7 u8
+
+; CASE: wrong byte origin element type
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: overlapping scalar slot
+@@ -6 +6 @@
+-  slot 8 u8
++  slot 8 i64
+
+; CASE: span spill scalar payload
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: invalid slot payload type
+@@ -6,0 +7 @@
++  slot 48 span
+
+; CASE: missing byte origin declaration
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: exact byte array origin
+@@ -7 +6,0 @@
+-  array 8 3
+
+; CASE: borrow scalar origin
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: exact local byte array origin
+@@ -17 +17 @@
+-    BorrowSpan 8 256
++    BorrowSpan 7 256
+
+; CASE: borrow origin outside frame
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: exact local byte array origin
+@@ -17 +17 @@
+-    BorrowSpan 8 256
++    BorrowSpan 64 256
+
+; CASE: borrow requires typed spill
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: exact typed spill
+@@ -17 +17 @@
+-    BorrowSpan 8 256
++    BorrowSpan 8 32
+
+; CASE: array write before lifetime
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: array element access outside active lifetime
+@@ -10 +9,0 @@
+-    BeginArray 8
+
+; CASE: array read after lifetime
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: array element access outside active lifetime
+@@ -24 +24 @@
+-    Return
++    Load 8 u8
+
+; CASE: array begin twice
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: array lifetime already active
+@@ -17 +17 @@
+-    BorrowSpan 8 256
++    BeginArray 8
+
+; CASE: array end unknown origin
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: exact byte array origin
+@@ -23 +23 @@
+-    EndArray 8
++    EndArray 7
+
+; CASE: array end twice
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: array lifetime is not active
+@@ -24 +24 @@
+-    Return
++    EndArray 8
+
+; CASE: array end with direct borrow
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: array lifetime ends with live readonly span
+@@ -18 +18 @@
+-    ReborrowSpan 256 320
++    EndArray 8
+
+; CASE: array end with derived borrow
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: array lifetime ends with live readonly span
+@@ -21 +21 @@
+-    EndSpan 320
++    EndArray 8
+
+; CASE: partial byte array initialization
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: array element not initialized
+@@ -16 +15,0 @@
+-    Store 6 u8
+
+; CASE: borrow ended array
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: active byte array origin
+@@ -16,0 +17 @@
++    EndArray 8
+
+; CASE: borrow after rebegin needs new initialization
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: array element not initialized
+@@ -16,0 +17,2 @@
++    EndArray 8
++    BeginArray 8
+
+; CASE: overwrite live span
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: span spill is already active
+@@ -18 +18 @@
+-    ReborrowSpan 256 320
++    BorrowSpan 8 256
+
+; CASE: reborrow self
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: span spill is already active
+@@ -18 +18 @@
+-    ReborrowSpan 256 320
++    ReborrowSpan 256 256
+
+; CASE: reborrow unknown spill
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: exact typed spill
+@@ -18 +18 @@
+-    ReborrowSpan 256 320
++    ReborrowSpan 32 320
+
+; CASE: reborrow inactive spill
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: span capability is not active
+@@ -18 +18 @@
+-    ReborrowSpan 256 320
++    ReborrowSpan 320 256
+
+; CASE: end parent before child
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: live child reborrow
+@@ -21 +21 @@
+-    EndSpan 320
++    EndSpan 256
+
+; CASE: end span twice
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: span capability is not active
+@@ -22 +22 @@
+-    EndSpan 256
++    EndSpan 320
+
+; CASE: end unknown spill
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: exact typed spill
+@@ -21 +21 @@
+-    EndSpan 320
++    EndSpan 32
+
+; CASE: load inactive span
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: span capability is not active
+@@ -17 +17 @@
+-    BorrowSpan 8 256
++    SpanLoad 256
+
+; CASE: length inactive span
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: span capability is not active
+@@ -17 +17 @@
+-    BorrowSpan 8 256
++    SpanLength 256
+
+; CASE: load after end span
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: span capability is not active
+@@ -23 +23 @@
+-    EndArray 8
++    SpanLoad 320
+
+; CASE: load span with unsigned index
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: mistyped current value
+@@ -19 +19 @@
+-    Constant 1
++    Constant 1 u64
+
+; CASE: load span with byte index
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: mistyped current value
+@@ -19 +19 @@
+-    Constant 1
++    Constant 1 u8
+
+; CASE: load span with bool index
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: mistyped current value
+@@ -19 +19 @@
+-    Constant 1
++    Constant 1 bool
+
+; CASE: write owner with direct span
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: write to byte array with live readonly span
+@@ -18 +18 @@
+-    ReborrowSpan 256 320
++    Store 8 u8
+
+; CASE: write owner with derived span
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: write to byte array with live readonly span
+@@ -21 +21 @@
+-    EndSpan 320
++    Store 7 u8
+
+; CASE: indexed write owner with span
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: write to byte array with live readonly span
+@@ -18,0 +19,5 @@
++    Constant
++    BoundsGuard 8 3 u8
++    Push
++    Constant 22 u8
++    IndexStore 8 3 u8
+
+; CASE: indexed subrange write owner with span
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: write to byte array with live readonly span
+@@ -18,0 +19,5 @@
++    Constant
++    BoundsGuard 7 2 u8
++    Push
++    Constant 22 u8
++    IndexStore 7 2 u8
+
+; CASE: return with active child span
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: return with active span or byte array lifetime
+@@ -21 +21 @@
+-    EndSpan 320
++    Return
+
+; CASE: return with active parent span
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: return with active span or byte array lifetime
+@@ -22 +22 @@
+-    EndSpan 256
++    Return
+
+; CASE: return with active byte origin
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: return with active span or byte array lifetime
+@@ -23 +23 @@
+-    EndArray 8
++    Return
+
+; CASE: active lifetime precedes omitted semantic instruction
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: return with active span or byte array lifetime
+; EXPECT-CODE: AU0000
+@@ -21 +21 @@
+-    EndSpan 320
++    Return
+
+; CASE: scalar load cannot expose span pointer
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: slot type/layout mismatch
+@@ -19 +19 @@
+-    Constant 1
++    Load 24
+
+; CASE: scalar store cannot overwrite span length
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: slot type/layout mismatch
+@@ -20 +20 @@
+-    SpanLoad 320
++    Store 16
+
+; CASE: span constant cannot mint capability
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: invalid constant type
+@@ -19 +19 @@
+-    Constant 1
++    Constant 0 span
+
+; CASE: span cannot become scalar through conversion
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -19 +19 @@
+-    Constant 1
++    Convert span
+
+; CASE: scalar cannot become span through conversion
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -20 +20 @@
+-    SpanLoad 320
++    Convert i64 span
+
+; CASE: span cannot use scalar comparison
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: non-scalar comparison
+@@ -20 +20 @@
+-    SpanLoad 320
++    Compare Equal span
+
+; CASE: span cannot be function result
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: readonly span boundary
+@@ -2 +2 @@
+-  result u8
++  result span
+
+; CASE: bind span outside entry
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: parameter binding outside entry prefix
+@@ -17 +17 @@
+-    BorrowSpan 8 256
++    BindSpanParameter 0 256
+
+; CASE: span branch lifetime mismatch
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: incompatible active span capabilities
+@@ -18,0 +19,4 @@
++    Constant 1 bool
++    BranchFalse 7
++    EndSpan 320
++    Label 7
+
+; CASE: span branch origin mismatch
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: incompatible active span capabilities
+@@ -18,0 +19,5 @@
++    Constant 1 bool
++    BranchFalse 7
++    EndSpan 320
++    BorrowSpan 8 320
++    Label 7
+
+; CASE: span backedge lifetime mismatch
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: incompatible active span capabilities
+@@ -17,0 +18,3 @@
++    Label 7
++    ReborrowSpan 256 320
++    Jump 7
+
+; CASE: array branch lifetime mismatch
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: incompatible active array lifetimes
+@@ -23,0 +24,5 @@
++    Constant 1 bool
++    BranchFalse 7
++    BeginArray 8
++    Label 7
++    Constant 128 u8
+
+; CASE: plain call cannot supply span
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: plain call cannot target aggregate signature
+@@ -126 +126 @@
+-    AggregateCall span_forward [0 0] 0 [256 0]
++    Call span_forward
+
+; CASE: missing positional span arguments
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: span call argument vector size mismatch
+@@ -126 +126 @@
+-    AggregateCall span_forward [0 0] 0 [256 0]
++    AggregateCall span_forward [0 0]
+
+; CASE: short positional span arguments
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: span call argument vector size mismatch
+@@ -126 +126 @@
+-    AggregateCall span_forward [0 0] 0 [256 0]
++    AggregateCall span_forward [0 0] 0 [256]
+
+; CASE: long positional span arguments
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: span call argument vector size mismatch
+@@ -126 +126 @@
+-    AggregateCall span_forward [0 0] 0 [256 0]
++    AggregateCall span_forward [0 0] 0 [256 0 0]
+
+; CASE: missing positional object arguments for span call
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: aggregate call argument vector size mismatch
+@@ -126 +126 @@
+-    AggregateCall span_forward [0 0] 0 [256 0]
++    AggregateCall span_forward [] 0 [256 0]
+
+; CASE: span argument cannot borrow ordinary scalar slot
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: exact typed spill
+@@ -126 +126 @@
+-    AggregateCall span_forward [0 0] 0 [256 0]
++    AggregateCall span_forward [0 0] 0 [56 0]
+
+; CASE: span argument cannot use inactive spill
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: span capability is not active
+@@ -126 +126 @@
+-    AggregateCall span_forward [0 0] 0 [256 0]
++    AggregateCall span_forward [0 0] 0 [320 0]
+
+; CASE: scalar argument cannot also name capability
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: non-span argument cannot name span storage
+@@ -126 +126 @@
+-    AggregateCall span_forward [0 0] 0 [256 0]
++    AggregateCall span_forward [0 0] 0 [256 256]
+
+; CASE: span argument cannot also name object
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: span argument cannot name object storage
+@@ -126 +126 @@
+-    AggregateCall span_forward [0 0] 0 [256 0]
++    AggregateCall span_forward [8 0] 0 [256 0]
+
+; CASE: ended capability cannot cross call
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: span capability is not active
+@@ -125,0 +126 @@
++    EndSpan 256
+
+; CASE: owner write between borrow and call
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: write to byte array with live readonly span
+@@ -123,0 +124 @@
++    Store 8 u8
+
+; CASE: span parameter missing canonical prefix
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: span parameter bindings must form the entry prefix
+@@ -80 +80 @@
+-    BindSpanParameter 0 256
++    BeginArray 8
+
+; CASE: span parameter wrong source position
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: span parameter bindings must form the entry prefix
+@@ -80 +80 @@
+-    BindSpanParameter 0 256
++    BindSpanParameter 1 256
+
+; CASE: span parameter cannot use scalar binding
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: span parameter bindings must form the entry prefix
+@@ -80 +80 @@
+-    BindSpanParameter 0 256
++    BindParameter 0 24 span
+
+; CASE: scalar parameter cannot use span binding
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: parameter bindings must form the entry prefix
+@@ -81 +81 @@
+-    BindParameter 1 8
++    BindSpanParameter 1 256
+
+; CASE: span parameter cannot bind scalar storage
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: span parameter requires exact typed spill
+@@ -80 +80 @@
+-    BindSpanParameter 0 256
++    BindSpanParameter 0 8
+
+; CASE: span parameter cannot be rebound
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: live child reborrow
+@@ -99,0 +100 @@
++    EndSpan 256
+
+; CASE: span parameter rebinding after end
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: span parameter cannot be rebound
+@@ -154,0 +155,2 @@
++    EndSpan 256
++    ReborrowSpan 384 256
+
+; CASE: ordinary span call cannot target receiver
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: aggregate call cannot target receiver function
+@@ -77,0 +78 @@
++  receiver SpanPacket false false
+
+; CASE: constructor span parameter prohibited
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: readonly span boundary
+@@ -75 +75 @@
+-  result u8
++  result i64
+@@ -77,0 +78 @@
++  receiver SpanPacket true true
+
+; CASE: class field cannot contain span
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: non-scalar class layout field
+@@ -0,0 +1 @@
++layout Bad [span]
+
+; CASE: span spill overlaps object reservation padding
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -1,0 +2 @@
++layout Tiny [u8]
+@@ -7,0 +9,2 @@
++  slot 216 u8
++  object 216 Tiny false
+
+; CASE: object leaf cannot mint local byte origin
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: byte array origin overlaps object storage
+@@ -251,0 +252 @@
++  array 56 1
+
+; CASE: scalar parameter cannot mint byte origin
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: parameter cannot bind byte array origin storage
+@@ -146,0 +147 @@
++  array 1 1
+
+; CASE: class return requires span cleanup
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: return with active span or byte array lifetime
+@@ -188 +187,0 @@
+-    EndSpan 256
+
+; CASE: two span parameters cannot bind same spill
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: verify
+; EXPECT-ERROR: span parameter bindings overlap
+@@ -153 +153 @@
+-    BindSpanParameter 4 384
++    BindSpanParameter 4 256
+
+; CASE: owner write after every span ends
+; BASE: readonly local byte span and reborrow
+; RUN: emit
+@@ -22,0 +23,2 @@
++    Constant 42 u8
++    Store 8 u8
+
+; CASE: owner read with live readonly span
+; BASE: readonly local byte span and reborrow
+; RUN: emit
+@@ -18,0 +19 @@
++    Load 8 u8
+
+; CASE: ended local span spill can begin a later lifetime
+; BASE: readonly local byte span and reborrow
+; RUN: emit
+@@ -22,0 +23,2 @@
++    BorrowSpan 8 256
++    EndSpan 256
+
+; CASE: unchanged readonly span capabilities across loop
+; BASE: readonly local byte span and reborrow
+; RUN: emit
+@@ -18,0 +19,5 @@
++    Label 7
++    Constant 0 bool
++    BranchFalse 8
++    Jump 7
++    Label 8
+
+; CASE: span reborrow lifetime closes on backedge
+; BASE: readonly local byte span and reborrow
+; RUN: emit
+@@ -16,0 +17,7 @@
++    Label 7
++    BorrowSpan 8 256
++    EndSpan 256
++    Constant 0 bool
++    BranchFalse 8
++    Jump 7
++    Label 8
+
+; CASE: restarted array and span lifetimes cannot join previous lifetimes
+; RUN: verify
+; EXPECT-ERROR: incompatible active array lifetimes
+function span_local
+  result u8
+  frame 640
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  array 8 3
+  span 256
+  span 320
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BorrowSpan 8 256
+    ReborrowSpan 256 320
+    Constant 1 bool
+    BranchFalse 7
+    EndSpan 320
+    EndSpan 256
+    EndArray 8
+    BeginArray 8
+    Constant 43 u8
+    Store 8 u8
+    Store 7 u8
+    Store 6 u8
+    BorrowSpan 8 256
+    ReborrowSpan 256 320
+    Label 7
+    Constant 1
+    SpanLoad 320
+    EndSpan 320
+    EndSpan 256
+    EndArray 8
+    Return
+end
+
+; CASE: restarted child span cannot join previous lifetime in same spill
+; BASE: readonly local byte span and reborrow
+; RUN: verify
+; EXPECT-ERROR: incompatible active span capabilities
+@@ -18,0 +19,5 @@
++    Constant 1 bool
++    BranchFalse 7
++    EndSpan 320
++    ReborrowSpan 256 320
++    Label 7
+
+; CASE: restarted parent authority cannot join previous reborrow tree
+; BASE: restarted array and span lifetimes cannot join previous lifetimes
+; RUN: verify
+; EXPECT-ERROR: incompatible active span capabilities
+@@ -23,6 +22,0 @@
+-    EndArray 8
+-    BeginArray 8
+-    Constant 43 u8
+-    Store 8 u8
+-    Store 7 u8
+-    Store 6 u8
+
+; CASE: fully ended array and span sites can be reused on loop backedge
+; RUN: emit
+function span_local
+  result u8
+  frame 640
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  array 8 3
+  span 256
+  span 320
+    Label 7
+    BeginArray 8
+    Constant 43 u8
+    Store 8 u8
+    Store 7 u8
+    Store 6 u8
+    BorrowSpan 8 256
+    ReborrowSpan 256 320
+    EndSpan 320
+    EndSpan 256
+    EndArray 8
+    Constant 0 bool
+    BranchFalse 8
+    Jump 7
+    Label 8
+    Constant 42 u8
+    Return
+end
+
+; CASE: fully ended child reborrow site can be reused with live parent
+; BASE: readonly local byte span and reborrow
+; RUN: emit
+@@ -17,0 +18,7 @@
++    Label 7
++    ReborrowSpan 256 320
++    EndSpan 320
++    Constant 0 bool
++    BranchFalse 8
++    Jump 7
++    Label 8
+
+; CASE: span signatures are local and bounds precede pointer and payload loads
+; BASE: readonly span forwarding and six mixed argument positions
+; RUN: emit
+; CHECK-DAG: .local span_read\n
+; CHECK-DAG: .local span_forward\n
+; CHECK-DAG: .local span_mixed_callee\n
+; CHECK-DAG: .local span_mixed_forward\n
+; RUN: emit
+; CHECK: cmpq -272(%rbp), %rax
+; CHECK-NOT: movq -312(%rbp), %rcx
+; CHECK-NOT: movzbq (%rcx,%rax,1), %rax
+; CHECK: jae .Laurora_bounds_trap
+; CHECK-NOT: movzbq (%rcx,%rax,1), %rax
+; CHECK: movq -312(%rbp), %rcx
+; CHECK: movzbq (%rcx,%rax,1), %rax

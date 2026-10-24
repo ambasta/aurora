@@ -18,7 +18,8 @@ The mechanism follows the page-step/immediate-touch approach documented by
 
 ## Boundary and oracle
 
-`tests/compiler/stack_probes.cpp --emit-guard-fixtures` emits validated direct IR.
+`aurora-ir-check --output tests/compiler/ir/stack-probes/abi.air guard-fixtures`
+emits validated direct IR.
 `sector_values_abi.py --stack-guards` selects only the compact guard corpus. It
 checks literal frame/record reservations, immediate real endpoint probes and
 bottom-slot stores before adding global labels at probe instructions. Stripping
@@ -84,13 +85,9 @@ From the repository root, with a fresh output directory managed by the existing
 native controller:
 
 ```sh
-g++ -std=c++23 -O2 -Wall -Wextra -Wpedantic -Werror -Icompiler \
-  tests/compiler/stack_probes.cpp -o "$OUT/stack-probe-tests"
-"$OUT/stack-probe-tests"
-python3 -B tests/compiler/sector_values_abi.py "$OUT/stack-probe-tests" \
+meson test -C build/meson stack-probes stack-guards
+python3 -B tests/compiler/sector_values_abi.py build/meson/tests/aurora-ir-check \
   --stack-guards --work-dir "$OUT/guards-normal"
-python3 -B -O tests/compiler/sector_values_abi.py "$OUT/stack-probe-tests" \
-  --stack-guards --work-dir "$OUT/guards-optimized"
 ```
 
 The Python runner compiles the small C/assembly adapter with GCC, emits one
@@ -138,8 +135,9 @@ the retained linear emission order, including control-flow joins; the emitter
 checks that operand and outgoing reservations balance at each function's end.
 Facts contain only the actual emitted function/reflection symbol set.
 
-`stack_probes.cpp` now also checks literal fact expectations alongside its real
-assembly assertions for page-boundary frames, private ABI modes, even/odd packed
+The `tests/compiler/ir/stack-probes/` cases check literal fact expectations
+alongside their assembly assertions (`CHECK-PROBES` checks the page-stepped
+reservation property itself) for page-boundary frames, private ABI modes, even/odd packed
 calls, branches/loops, service records, seventh host arguments, resource runtime
 calls, reflection leaves, pruning and emitter reuse. A malformed unused imported
 body still rejects. The existing diagnostics CLI gate checks JSON shape, ordinary

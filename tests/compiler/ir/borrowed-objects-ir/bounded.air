@@ -1,0 +1,1842 @@
+; CASE: bounded roots 1 first 0 scalar enum tail 0
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+enum Mode 2
+function bounded_forward
+  result (enum Mode)
+  params [(class Buffer)]
+  frame 0
+  roots 1
+    AcquireObjectLoan 1
+    BorrowedCall bounded_leaf [(0 1 -1)]
+    ReleaseObjectLoan 1
+    Return
+end
+function bounded_leaf
+  result (enum Mode)
+  params [(class Buffer)]
+  frame 0
+  roots 1
+    MethodCall read_buffer
+    EnumConstant (enum Mode) 1
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: bounded roots 1 first 0 scalar enum tail 1
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+enum Mode 2
+function bounded_forward
+  result (enum Mode)
+  params [(class Buffer) i64]
+  frame 16
+  roots 1
+  slot 8 i64
+    BindParameter 0 8
+    AcquireObjectLoan 1
+    Load 8
+    Push
+    BorrowedCall bounded_leaf [(0 1 -1)]
+    ReleaseObjectLoan 1
+    Return
+end
+function bounded_leaf
+  result (enum Mode)
+  params [(class Buffer) i64]
+  frame 16
+  roots 1
+  slot 8 i64
+    BindParameter 0 8
+    MethodCall read_buffer
+    EnumConstant (enum Mode) 1
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: bounded roots 1 first 0 scalar enum tail 2
+; BASE: bounded roots 1 first 0 scalar enum tail 1
+; RUN: emit
+@@ -13 +13 @@
+-  params [(class Buffer) i64]
++  params [(class Buffer) i64 (enum Mode)]
+@@ -16,0 +17 @@
++  slot 16 (enum Mode)
+@@ -17,0 +19 @@
++    BindParameter 1 16 (enum Mode)
+@@ -19,0 +22,2 @@
++    Push
++    Load 16 (enum Mode)
+@@ -27 +31 @@
+-  params [(class Buffer) i64]
++  params [(class Buffer) i64 (enum Mode)]
+@@ -30,0 +35 @@
++  slot 16 (enum Mode)
+@@ -31,0 +37 @@
++    BindParameter 1 16 (enum Mode)
+
+; CASE: bounded roots 1 first 0 scalar enum tail 3
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+enum Mode 2
+function bounded_forward
+  result (enum Mode)
+  params [(class Buffer) i64 (enum Mode) i64]
+  frame 32
+  roots 1
+  slot 8 i64
+  slot 16 (enum Mode)
+  slot 24 i64
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    BindParameter 2 24
+    AcquireObjectLoan 1
+    Load 8
+    Push
+    Load 16 (enum Mode)
+    Push
+    Load 24
+    Push
+    BorrowedCall bounded_leaf [(0 1 -1)]
+    ReleaseObjectLoan 1
+    Return
+end
+function bounded_leaf
+  result (enum Mode)
+  params [(class Buffer) i64 (enum Mode) i64]
+  frame 32
+  roots 1
+  slot 8 i64
+  slot 16 (enum Mode)
+  slot 24 i64
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    BindParameter 2 24
+    MethodCall read_buffer
+    EnumConstant (enum Mode) 1
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: bounded roots 1 first 0 scalar enum tail 4
+; BASE: bounded roots 1 first 0 scalar enum tail 3
+; RUN: emit
+@@ -13 +13 @@
+-  params [(class Buffer) i64 (enum Mode) i64]
++  params [(class Buffer) i64 (enum Mode) i64 (enum Mode)]
+@@ -18,0 +19 @@
++  slot 32 (enum Mode)
+@@ -21,0 +23 @@
++    BindParameter 3 32 (enum Mode)
+@@ -28,0 +31,2 @@
++    Load 32 (enum Mode)
++    Push
+@@ -35 +39 @@
+-  params [(class Buffer) i64 (enum Mode) i64]
++  params [(class Buffer) i64 (enum Mode) i64 (enum Mode)]
+@@ -40,0 +45 @@
++  slot 32 (enum Mode)
+@@ -43,0 +49 @@
++    BindParameter 3 32 (enum Mode)
+
+; CASE: bounded roots 1 first 0 scalar enum tail 5
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+enum Mode 2
+function bounded_forward
+  result (enum Mode)
+  params [(class Buffer) i64 (enum Mode) i64 (enum Mode) i64]
+  frame 48
+  roots 1
+  slot 8 i64
+  slot 16 (enum Mode)
+  slot 24 i64
+  slot 32 (enum Mode)
+  slot 40 i64
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    BindParameter 2 24
+    BindParameter 3 32 (enum Mode)
+    BindParameter 4 40
+    AcquireObjectLoan 1
+    Load 8
+    Push
+    Load 16 (enum Mode)
+    Push
+    Load 24
+    Push
+    Load 32 (enum Mode)
+    Push
+    Load 40
+    Push
+    BorrowedCall bounded_leaf [(0 1 -1)]
+    ReleaseObjectLoan 1
+    Return
+end
+function bounded_leaf
+  result (enum Mode)
+  params [(class Buffer) i64 (enum Mode) i64 (enum Mode) i64]
+  frame 48
+  roots 1
+  slot 8 i64
+  slot 16 (enum Mode)
+  slot 24 i64
+  slot 32 (enum Mode)
+  slot 40 i64
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    BindParameter 2 24
+    BindParameter 3 32 (enum Mode)
+    BindParameter 4 40
+    MethodCall read_buffer
+    EnumConstant (enum Mode) 1
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: bounded roots 1 first 1 scalar enum tail 0
+; BASE: bounded roots 1 first 0 scalar enum tail 0
+; RUN: emit
+@@ -16 +16,2 @@
+-    AcquireObjectLoan 1
++  firstmut 1
++    AcquireObjectLoan 1 0 true
+@@ -26 +27,2 @@
+-    MethodCall read_buffer
++  firstmut 1
++    MethodCall write_buffer
+
+; CASE: bounded roots 1 first 1 scalar enum tail 1
+; BASE: bounded roots 1 first 0 scalar enum tail 1
+; RUN: emit
+@@ -15,0 +16 @@
++  firstmut 1
+@@ -18 +19 @@
+-    AcquireObjectLoan 1
++    AcquireObjectLoan 1 0 true
+@@ -29,0 +31 @@
++  firstmut 1
+@@ -32 +34 @@
+-    MethodCall read_buffer
++    MethodCall write_buffer
+
+; CASE: bounded roots 1 first 1 scalar enum tail 2
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+enum Mode 2
+function bounded_forward
+  result (enum Mode)
+  params [(class Buffer) i64 (enum Mode)]
+  frame 16
+  roots 1
+  firstmut 1
+  slot 8 i64
+  slot 16 (enum Mode)
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    AcquireObjectLoan 1 0 true
+    Load 8
+    Push
+    Load 16 (enum Mode)
+    Push
+    BorrowedCall bounded_leaf [(0 1 -1)]
+    ReleaseObjectLoan 1
+    Return
+end
+function bounded_leaf
+  result (enum Mode)
+  params [(class Buffer) i64 (enum Mode)]
+  frame 16
+  roots 1
+  firstmut 1
+  slot 8 i64
+  slot 16 (enum Mode)
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    MethodCall write_buffer
+    EnumConstant (enum Mode) 1
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: bounded roots 1 first 1 scalar enum tail 3
+; BASE: bounded roots 1 first 0 scalar enum tail 3
+; RUN: emit
+@@ -15,0 +16 @@
++  firstmut 1
+@@ -22 +23 @@
+-    AcquireObjectLoan 1
++    AcquireObjectLoan 1 0 true
+@@ -37,0 +39 @@
++  firstmut 1
+@@ -44 +46 @@
+-    MethodCall read_buffer
++    MethodCall write_buffer
+
+; CASE: bounded roots 1 first 1 scalar enum tail 4
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+enum Mode 2
+function bounded_forward
+  result (enum Mode)
+  params [(class Buffer) i64 (enum Mode) i64 (enum Mode)]
+  frame 32
+  roots 1
+  firstmut 1
+  slot 8 i64
+  slot 16 (enum Mode)
+  slot 24 i64
+  slot 32 (enum Mode)
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    BindParameter 2 24
+    BindParameter 3 32 (enum Mode)
+    AcquireObjectLoan 1 0 true
+    Load 8
+    Push
+    Load 16 (enum Mode)
+    Push
+    Load 24
+    Push
+    Load 32 (enum Mode)
+    Push
+    BorrowedCall bounded_leaf [(0 1 -1)]
+    ReleaseObjectLoan 1
+    Return
+end
+function bounded_leaf
+  result (enum Mode)
+  params [(class Buffer) i64 (enum Mode) i64 (enum Mode)]
+  frame 32
+  roots 1
+  firstmut 1
+  slot 8 i64
+  slot 16 (enum Mode)
+  slot 24 i64
+  slot 32 (enum Mode)
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    BindParameter 2 24
+    BindParameter 3 32 (enum Mode)
+    MethodCall write_buffer
+    EnumConstant (enum Mode) 1
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: bounded roots 1 first 1 scalar enum tail 5
+; BASE: bounded roots 1 first 0 scalar enum tail 5
+; RUN: emit
+@@ -15,0 +16 @@
++  firstmut 1
+@@ -26 +27 @@
+-    AcquireObjectLoan 1
++    AcquireObjectLoan 1 0 true
+@@ -45,0 +47 @@
++  firstmut 1
+@@ -56 +58 @@
+-    MethodCall read_buffer
++    MethodCall write_buffer
+
+; CASE: missing acquired loan lane 1/0
+; BASE: bounded roots 1 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires active loan
+@@ -16 +15,0 @@
+-    AcquireObjectLoan 1
+
+; CASE: nonpositive loan lane 1/0
+; BASE: bounded roots 1 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires active loan
+@@ -17 +17 @@
+-    BorrowedCall bounded_leaf [(0 1 -1)]
++    BorrowedCall bounded_leaf [(0 -1 -1)]
+
+; CASE: exact nominal type every lane 1/0
+; BASE: bounded roots 1 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, lifetime, nominal type or authority mismatch
+@@ -23 +23 @@
+-  params [(class Buffer)]
++  params [(class Other)]
+@@ -26,2 +26 @@
+-    MethodCall read_buffer
+-    EnumConstant (enum Mode) 1
++    EnumConstant (enum Mode)
+
+; CASE: missing root lane 1/0
+; BASE: bounded roots 1 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -17 +17 @@
+-    BorrowedCall bounded_leaf [(0 1 -1)]
++    BorrowedCall bounded_leaf
+
+; CASE: selector bounded before negation 1/0/-6
+; BASE: bounded roots 1 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: invalid borrowed object root
+@@ -17 +17 @@
+-    BorrowedCall bounded_leaf [(0 1 -1)]
++    BorrowedCall bounded_leaf [(-6 1 -1)]
+
+; CASE: selector bounded before negation 1/0/-2147483648
+; BASE: bounded roots 1 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: invalid borrowed object root
+@@ -17 +17 @@
+-    BorrowedCall bounded_leaf [(0 1 -1)]
++    BorrowedCall bounded_leaf [(-2147483648 1 -1)]
+
+; CASE: extra root lane 1
+; BASE: bounded roots 1 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -17 +17 @@
+-    BorrowedCall bounded_leaf [(0 1 -1)]
++    BorrowedCall bounded_leaf [(0 1 -1) (48 7 -1)]
+
+; CASE: bounded roots 2 first 0 scalar enum tail 0
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+enum Mode 2
+function bounded_forward
+  result (enum Mode)
+  params [(class Buffer) (class Buffer)]
+  frame 0
+  roots 2
+    AcquireObjectLoan 1
+    AcquireObjectLoan 2 -1
+    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
+    ReleaseObjectLoan 2
+    ReleaseObjectLoan 1
+    Return
+end
+function bounded_leaf
+  result (enum Mode)
+  params [(class Buffer) (class Buffer)]
+  frame 0
+  roots 2
+    MethodCall read_buffer
+    MethodCall read_buffer -1
+    EnumConstant (enum Mode) 1
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: bounded roots 2 first 0 scalar enum tail 1
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+enum Mode 2
+function bounded_forward
+  result (enum Mode)
+  params [(class Buffer) (class Buffer) i64]
+  frame 16
+  roots 2
+  slot 8 i64
+    BindParameter 0 8
+    AcquireObjectLoan 1
+    AcquireObjectLoan 2 -1
+    Load 8
+    Push
+    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
+    ReleaseObjectLoan 2
+    ReleaseObjectLoan 1
+    Return
+end
+function bounded_leaf
+  result (enum Mode)
+  params [(class Buffer) (class Buffer) i64]
+  frame 16
+  roots 2
+  slot 8 i64
+    BindParameter 0 8
+    MethodCall read_buffer
+    MethodCall read_buffer -1
+    EnumConstant (enum Mode) 1
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: bounded roots 2 first 0 scalar enum tail 2
+; BASE: bounded roots 2 first 0 scalar enum tail 1
+; RUN: emit
+@@ -13 +13 @@
+-  params [(class Buffer) (class Buffer) i64]
++  params [(class Buffer) (class Buffer) i64 (enum Mode)]
+@@ -16,0 +17 @@
++  slot 16 (enum Mode)
+@@ -17,0 +19 @@
++    BindParameter 1 16 (enum Mode)
+@@ -20,0 +23,2 @@
++    Push
++    Load 16 (enum Mode)
+@@ -29 +33 @@
+-  params [(class Buffer) (class Buffer) i64]
++  params [(class Buffer) (class Buffer) i64 (enum Mode)]
+@@ -32,0 +37 @@
++  slot 16 (enum Mode)
+@@ -33,0 +39 @@
++    BindParameter 1 16 (enum Mode)
+
+; CASE: bounded roots 2 first 0 scalar enum tail 3
+; BASE: bounded roots 1 first 0 scalar enum tail 3
+; RUN: emit
+@@ -13 +13 @@
+-  params [(class Buffer) i64 (enum Mode) i64]
++  params [(class Buffer) (class Buffer) i64 (enum Mode) i64]
+@@ -15 +15 @@
+-  roots 1
++  roots 2
+@@ -22,0 +23 @@
++    AcquireObjectLoan 2 -1
+@@ -29 +30,2 @@
+-    BorrowedCall bounded_leaf [(0 1 -1)]
++    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
++    ReleaseObjectLoan 2
+@@ -35 +37 @@
+-  params [(class Buffer) i64 (enum Mode) i64]
++  params [(class Buffer) (class Buffer) i64 (enum Mode) i64]
+@@ -37 +39 @@
+-  roots 1
++  roots 2
+@@ -44,0 +47 @@
++    MethodCall read_buffer -1
+
+; CASE: bounded roots 2 first 0 scalar enum tail 4
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+enum Mode 2
+function bounded_forward
+  result (enum Mode)
+  params [(class Buffer) (class Buffer) i64 (enum Mode) i64 (enum Mode)]
+  frame 32
+  roots 2
+  slot 8 i64
+  slot 16 (enum Mode)
+  slot 24 i64
+  slot 32 (enum Mode)
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    BindParameter 2 24
+    BindParameter 3 32 (enum Mode)
+    AcquireObjectLoan 1
+    AcquireObjectLoan 2 -1
+    Load 8
+    Push
+    Load 16 (enum Mode)
+    Push
+    Load 24
+    Push
+    Load 32 (enum Mode)
+    Push
+    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
+    ReleaseObjectLoan 2
+    ReleaseObjectLoan 1
+    Return
+end
+function bounded_leaf
+  result (enum Mode)
+  params [(class Buffer) (class Buffer) i64 (enum Mode) i64 (enum Mode)]
+  frame 32
+  roots 2
+  slot 8 i64
+  slot 16 (enum Mode)
+  slot 24 i64
+  slot 32 (enum Mode)
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    BindParameter 2 24
+    BindParameter 3 32 (enum Mode)
+    MethodCall read_buffer
+    MethodCall read_buffer -1
+    EnumConstant (enum Mode) 1
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: bounded roots 2 first 1 scalar enum tail 0
+; BASE: bounded roots 2 first 0 scalar enum tail 0
+; RUN: emit
+@@ -16 +16,2 @@
+-    AcquireObjectLoan 1
++  firstmut 1
++    AcquireObjectLoan 1 0 true
+@@ -28 +29,2 @@
+-    MethodCall read_buffer
++  firstmut 1
++    MethodCall write_buffer
+
+; CASE: bounded roots 2 first 1 scalar enum tail 1
+; BASE: bounded roots 2 first 0 scalar enum tail 1
+; RUN: emit
+@@ -15,0 +16 @@
++  firstmut 1
+@@ -18 +19 @@
+-    AcquireObjectLoan 1
++    AcquireObjectLoan 1 0 true
+@@ -31,0 +33 @@
++  firstmut 1
+@@ -34 +36 @@
+-    MethodCall read_buffer
++    MethodCall write_buffer
+
+; CASE: bounded roots 2 first 1 scalar enum tail 2
+; BASE: bounded roots 1 first 1 scalar enum tail 2
+; RUN: emit
+@@ -13 +13 @@
+-  params [(class Buffer) i64 (enum Mode)]
++  params [(class Buffer) (class Buffer) i64 (enum Mode)]
+@@ -15 +15 @@
+-  roots 1
++  roots 2
+@@ -21,0 +22 @@
++    AcquireObjectLoan 2 -1
+@@ -26 +27,2 @@
+-    BorrowedCall bounded_leaf [(0 1 -1)]
++    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
++    ReleaseObjectLoan 2
+@@ -32 +34 @@
+-  params [(class Buffer) i64 (enum Mode)]
++  params [(class Buffer) (class Buffer) i64 (enum Mode)]
+@@ -34 +36 @@
+-  roots 1
++  roots 2
+@@ -40,0 +43 @@
++    MethodCall read_buffer -1
+
+; CASE: bounded roots 2 first 1 scalar enum tail 3
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+enum Mode 2
+function bounded_forward
+  result (enum Mode)
+  params [(class Buffer) (class Buffer) i64 (enum Mode) i64]
+  frame 32
+  roots 2
+  firstmut 1
+  slot 8 i64
+  slot 16 (enum Mode)
+  slot 24 i64
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    BindParameter 2 24
+    AcquireObjectLoan 1 0 true
+    AcquireObjectLoan 2 -1
+    Load 8
+    Push
+    Load 16 (enum Mode)
+    Push
+    Load 24
+    Push
+    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
+    ReleaseObjectLoan 2
+    ReleaseObjectLoan 1
+    Return
+end
+function bounded_leaf
+  result (enum Mode)
+  params [(class Buffer) (class Buffer) i64 (enum Mode) i64]
+  frame 32
+  roots 2
+  firstmut 1
+  slot 8 i64
+  slot 16 (enum Mode)
+  slot 24 i64
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    BindParameter 2 24
+    MethodCall write_buffer
+    MethodCall read_buffer -1
+    EnumConstant (enum Mode) 1
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: bounded roots 2 first 1 scalar enum tail 4
+; BASE: bounded roots 2 first 0 scalar enum tail 4
+; RUN: emit
+@@ -15,0 +16 @@
++  firstmut 1
+@@ -24 +25 @@
+-    AcquireObjectLoan 1
++    AcquireObjectLoan 1 0 true
+@@ -43,0 +45 @@
++  firstmut 1
+@@ -52 +54 @@
+-    MethodCall read_buffer
++    MethodCall write_buffer
+
+; CASE: readonly alias every pair 2/0/1
+; BASE: bounded roots 2 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -18 +18 @@
+-    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
++    BorrowedCall bounded_leaf [(0 1 -1) (0 2 -1)]
+
+; CASE: duplicate loan every pair 2/0/1
+; BASE: bounded roots 2 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -18 +18 @@
+-    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
++    BorrowedCall bounded_leaf [(0 1 -1) (-1 1 -1)]
+
+; CASE: distinct swapped loans deny mismatched provenance 2/0/1
+; BASE: bounded roots 2 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, nominal type or authority mismatch
+@@ -18 +18 @@
+-    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
++    BorrowedCall bounded_leaf [(0 2 -1) (-1 1 -1)]
+
+; CASE: missing acquired loan lane 2/0
+; BASE: bounded roots 2 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires active loan
+@@ -16 +15,0 @@
+-    AcquireObjectLoan 1
+
+; CASE: nonpositive loan lane 2/0
+; BASE: bounded roots 2 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires active loan
+@@ -18 +18 @@
+-    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
++    BorrowedCall bounded_leaf [(0 -1 -1) (-1 2 -1)]
+
+; CASE: exact nominal type every lane 2/0
+; BASE: bounded roots 2 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, lifetime, nominal type or authority mismatch
+@@ -25 +25 @@
+-  params [(class Buffer) (class Buffer)]
++  params [(class Other) (class Buffer)]
+@@ -28,3 +28 @@
+-    MethodCall read_buffer
+-    MethodCall read_buffer -1
+-    EnumConstant (enum Mode) 1
++    EnumConstant (enum Mode)
+
+; CASE: missing root lane 2/0
+; BASE: bounded roots 2 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -18 +18 @@
+-    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
++    BorrowedCall bounded_leaf [(-1 2 -1)]
+
+; CASE: selector bounded before negation 2/0/-6
+; BASE: bounded roots 2 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: invalid borrowed object root
+@@ -18 +18 @@
+-    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
++    BorrowedCall bounded_leaf [(-6 1 -1) (-1 2 -1)]
+
+; CASE: selector bounded before negation 2/0/-2147483648
+; BASE: bounded roots 2 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: invalid borrowed object root
+@@ -18 +18 @@
+-    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
++    BorrowedCall bounded_leaf [(-2147483648 1 -1) (-1 2 -1)]
+
+; CASE: every bound root denies span production 2/0
+; RUN: verify
+; EXPECT-ERROR: multiple borrowed roots cannot produce span results
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+enum Mode 2
+function bounded_forward
+  result (enum Mode)
+  params [(class Buffer) (class Buffer)]
+  frame 0
+  roots 2
+    AcquireObjectLoan 1
+    AcquireObjectLoan 2 -1
+    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
+    ReleaseObjectLoan 2
+    ReleaseObjectLoan 1
+    Return
+end
+function bounded_leaf
+  result (enum Mode)
+  params [(class Buffer) (class Buffer)]
+  frame 64
+  roots 2
+  span 56
+    MethodCall view_buffer 0 [] 56
+    EndSpan 56
+    EnumConstant (enum Mode)
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+function view_buffer
+  result span
+  frame 64
+  receiver Buffer false false
+  spanfield 0
+  span 56
+    BorrowOwnedSpan 0 0 56
+    ReturnSpan 56
+end
+
+; CASE: missing acquired loan lane 2/1
+; BASE: bounded roots 2 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires active loan
+@@ -17 +16,0 @@
+-    AcquireObjectLoan 2 -1
+
+; CASE: nonpositive loan lane 2/1
+; BASE: bounded roots 2 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires active loan
+@@ -18 +18 @@
+-    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
++    BorrowedCall bounded_leaf [(0 1 -1) (-1 -1 -1)]
+
+; CASE: exact nominal type every lane 2/1
+; BASE: bounded roots 2 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, lifetime, nominal type or authority mismatch
+@@ -25 +25 @@
+-  params [(class Buffer) (class Buffer)]
++  params [(class Buffer) (class Other)]
+@@ -28,3 +28 @@
+-    MethodCall read_buffer
+-    MethodCall read_buffer -1
+-    EnumConstant (enum Mode) 1
++    EnumConstant (enum Mode)
+
+; CASE: missing root lane 2/1
+; BASE: bounded roots 2 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -18 +18 @@
+-    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
++    BorrowedCall bounded_leaf [(0 1 -1)]
+
+; CASE: selector bounded before negation 2/1/-6
+; BASE: bounded roots 2 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: invalid borrowed object root
+@@ -18 +18 @@
+-    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
++    BorrowedCall bounded_leaf [(0 1 -1) (-6 2 -1)]
+
+; CASE: selector bounded before negation 2/1/-2147483648
+; BASE: bounded roots 2 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: invalid borrowed object root
+@@ -18 +18 @@
+-    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
++    BorrowedCall bounded_leaf [(0 1 -1) (-2147483648 2 -1)]
+
+; CASE: later formal cannot acquire mutable loan 2/1
+; BASE: bounded roots 2 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: shared formal cannot supply mutable object loan
+@@ -16,2 +16,3 @@
+-    AcquireObjectLoan 1
+-    AcquireObjectLoan 2 -1
++  firstmut 1
++    AcquireObjectLoan 1 0 true
++    AcquireObjectLoan 2 -1 true
+@@ -28 +29,2 @@
+-    MethodCall read_buffer
++  firstmut 1
++    MethodCall write_buffer
+
+; CASE: every bound root denies span production 2/1
+; BASE: every bound root denies span production 2/0
+; RUN: verify
+; EXPECT-ERROR: multiple borrowed roots cannot produce span results
+@@ -29 +29 @@
+-    MethodCall view_buffer 0 [] 56
++    MethodCall view_buffer -1 [] 56
+
+; CASE: extra root lane 2
+; BASE: bounded roots 2 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -18 +18 @@
+-    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
++    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1) (48 7 -1)]
+
+; CASE: multi-root payload lanes stay canonical 2/0
+; BASE: bounded roots 2 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -18 +18 @@
+-    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
++    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)] [0]
+
+; CASE: multi-root payload lanes stay canonical 2/1
+; BASE: bounded roots 2 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -18 +18 @@
+-    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
++    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)] [] 0 [0]
+
+; CASE: multi-root payload lanes stay canonical 2/2
+; BASE: bounded roots 2 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -18 +18 @@
+-    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
++    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)] [] 8
+
+; CASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+enum Mode 2
+function bounded_forward
+  result (enum Mode)
+  params [(class Buffer)*3]
+  frame 0
+  roots 3
+    AcquireObjectLoan 1
+    AcquireObjectLoan 2 -1
+    AcquireObjectLoan 3 -2
+    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
+    ReleaseObjectLoan 3
+    ReleaseObjectLoan 2
+    ReleaseObjectLoan 1
+    Return
+end
+function bounded_leaf
+  result (enum Mode)
+  params [(class Buffer)*3]
+  frame 0
+  roots 3
+    MethodCall read_buffer
+    MethodCall read_buffer -1
+    MethodCall read_buffer -2
+    EnumConstant (enum Mode) 1
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: bounded roots 3 first 0 scalar enum tail 1
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: emit
+@@ -13,2 +13,2 @@
+-  params [(class Buffer)*3]
+-  frame 0
++  params [(class Buffer)*3 i64]
++  frame 16
+@@ -15,0 +16,2 @@
++  slot 8 i64
++    BindParameter 0 8
+@@ -18,0 +21,2 @@
++    Load 8
++    Push
+@@ -27,2 +31,2 @@
+-  params [(class Buffer)*3]
+-  frame 0
++  params [(class Buffer)*3 i64]
++  frame 16
+@@ -29,0 +34,2 @@
++  slot 8 i64
++    BindParameter 0 8
+
+; CASE: bounded roots 3 first 0 scalar enum tail 2
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+enum Mode 2
+function bounded_forward
+  result (enum Mode)
+  params [(class Buffer)*3 i64 (enum Mode)]
+  frame 16
+  roots 3
+  slot 8 i64
+  slot 16 (enum Mode)
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    AcquireObjectLoan 1
+    AcquireObjectLoan 2 -1
+    AcquireObjectLoan 3 -2
+    Load 8
+    Push
+    Load 16 (enum Mode)
+    Push
+    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
+    ReleaseObjectLoan 3
+    ReleaseObjectLoan 2
+    ReleaseObjectLoan 1
+    Return
+end
+function bounded_leaf
+  result (enum Mode)
+  params [(class Buffer)*3 i64 (enum Mode)]
+  frame 16
+  roots 3
+  slot 8 i64
+  slot 16 (enum Mode)
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    MethodCall read_buffer
+    MethodCall read_buffer -1
+    MethodCall read_buffer -2
+    EnumConstant (enum Mode) 1
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: bounded roots 3 first 0 scalar enum tail 3
+; BASE: bounded roots 3 first 0 scalar enum tail 2
+; RUN: emit
+@@ -13,2 +13,2 @@
+-  params [(class Buffer)*3 i64 (enum Mode)]
+-  frame 16
++  params [(class Buffer)*3 i64 (enum Mode) i64]
++  frame 32
+@@ -17,0 +18 @@
++  slot 24 i64
+@@ -19,0 +21 @@
++    BindParameter 2 24
+@@ -25,0 +28,2 @@
++    Push
++    Load 24
+@@ -35,2 +39,2 @@
+-  params [(class Buffer)*3 i64 (enum Mode)]
+-  frame 16
++  params [(class Buffer)*3 i64 (enum Mode) i64]
++  frame 32
+@@ -39,0 +44 @@
++  slot 24 i64
+@@ -41,0 +47 @@
++    BindParameter 2 24
+
+; CASE: bounded roots 3 first 1 scalar enum tail 0
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: emit
+@@ -16 +16,2 @@
+-    AcquireObjectLoan 1
++  firstmut 1
++    AcquireObjectLoan 1 0 true
+@@ -30 +31,2 @@
+-    MethodCall read_buffer
++  firstmut 1
++    MethodCall write_buffer
+
+; CASE: bounded roots 3 first 1 scalar enum tail 1
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+enum Mode 2
+function bounded_forward
+  result (enum Mode)
+  params [(class Buffer)*3 i64]
+  frame 16
+  roots 3
+  firstmut 1
+  slot 8 i64
+    BindParameter 0 8
+    AcquireObjectLoan 1 0 true
+    AcquireObjectLoan 2 -1
+    AcquireObjectLoan 3 -2
+    Load 8
+    Push
+    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
+    ReleaseObjectLoan 3
+    ReleaseObjectLoan 2
+    ReleaseObjectLoan 1
+    Return
+end
+function bounded_leaf
+  result (enum Mode)
+  params [(class Buffer)*3 i64]
+  frame 16
+  roots 3
+  firstmut 1
+  slot 8 i64
+    BindParameter 0 8
+    MethodCall write_buffer
+    MethodCall read_buffer -1
+    MethodCall read_buffer -2
+    EnumConstant (enum Mode) 1
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: bounded roots 3 first 1 scalar enum tail 2
+; BASE: bounded roots 3 first 0 scalar enum tail 2
+; RUN: emit
+@@ -15,0 +16 @@
++  firstmut 1
+@@ -20 +21 @@
+-    AcquireObjectLoan 1
++    AcquireObjectLoan 1 0 true
+@@ -37,0 +39 @@
++  firstmut 1
+@@ -42 +44 @@
+-    MethodCall read_buffer
++    MethodCall write_buffer
+
+; CASE: bounded roots 3 first 1 scalar enum tail 3
+; BASE: bounded roots 2 first 1 scalar enum tail 3
+; RUN: emit
+@@ -13 +13 @@
+-  params [(class Buffer) (class Buffer) i64 (enum Mode) i64]
++  params [(class Buffer)*3 i64 (enum Mode) i64]
+@@ -15 +15 @@
+-  roots 2
++  roots 3
+@@ -24,0 +25 @@
++    AcquireObjectLoan 3 -2
+@@ -31 +32,2 @@
+-    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
++    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    ReleaseObjectLoan 3
+@@ -38 +40 @@
+-  params [(class Buffer) (class Buffer) i64 (enum Mode) i64]
++  params [(class Buffer)*3 i64 (enum Mode) i64]
+@@ -40 +42 @@
+-  roots 2
++  roots 3
+@@ -49,0 +52 @@
++    MethodCall read_buffer -2
+
+; CASE: readonly alias every pair 3/0/1
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [(0 1 -1) (0 2 -1) (-2 3 -1)]
+
+; CASE: duplicate loan every pair 3/0/1
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [(0 1 -1) (-1 1 -1) (-2 3 -1)]
+
+; CASE: distinct swapped loans deny mismatched provenance 3/0/1
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, nominal type or authority mismatch
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [(0 2 -1) (-1 1 -1) (-2 3 -1)]
+
+; CASE: readonly alias every pair 3/0/2
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1) (0 3 -1)]
+
+; CASE: duplicate loan every pair 3/0/2
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1) (-2 1 -1)]
+
+; CASE: distinct swapped loans deny mismatched provenance 3/0/2
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, nominal type or authority mismatch
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [({0,-1} {3,-1} -1)*3]
+
+; CASE: readonly alias every pair 3/1/2
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1) (-1 3 -1)]
+
+; CASE: duplicate loan every pair 3/1/2
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1) (-2 2 -1)]
+
+; CASE: distinct swapped loans deny mismatched provenance 3/1/2
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, nominal type or authority mismatch
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [(0 1 -1) (-1 3 -1) (-2 2 -1)]
+
+; CASE: missing acquired loan lane 3/0
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires active loan
+@@ -16 +15,0 @@
+-    AcquireObjectLoan 1
+
+; CASE: nonpositive loan lane 3/0
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires active loan
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [(0 -1 -1) (-1 2 -1) (-2 3 -1)]
+
+; CASE: exact nominal type every lane 3/0
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, lifetime, nominal type or authority mismatch
+@@ -27 +27 @@
+-  params [(class Buffer)*3]
++  params [(class Other) (class Buffer) (class Buffer)]
+@@ -30,4 +30 @@
+-    MethodCall read_buffer
+-    MethodCall read_buffer -1
+-    MethodCall read_buffer -2
+-    EnumConstant (enum Mode) 1
++    EnumConstant (enum Mode)
+
+; CASE: missing root lane 3/0
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [(-1 2 -1) (-2 3 -1)]
+
+; CASE: selector bounded before negation 3/0/-6
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: invalid borrowed object root
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [(-6 1 -1) (-1 2 -1) (-2 3 -1)]
+
+; CASE: selector bounded before negation 3/0/-2147483648
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: invalid borrowed object root
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [(-2147483648 1 -1) (-1 2 -1) (-2 3 -1)]
+
+; CASE: every bound root denies span production 3/0
+; BASE: every bound root denies span production 2/0
+; RUN: verify
+; EXPECT-ERROR: multiple borrowed roots cannot produce span results
+@@ -13 +13 @@
+-  params [(class Buffer) (class Buffer)]
++  params [(class Buffer)*3]
+@@ -15 +15 @@
+-  roots 2
++  roots 3
+@@ -18 +18,3 @@
+-    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
++    AcquireObjectLoan 3 -2
++    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    ReleaseObjectLoan 3
+@@ -25 +27 @@
+-  params [(class Buffer) (class Buffer)]
++  params [(class Buffer)*3]
+@@ -27 +29 @@
+-  roots 2
++  roots 3
+
+; CASE: missing acquired loan lane 3/1
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires active loan
+@@ -17 +16,0 @@
+-    AcquireObjectLoan 2 -1
+
+; CASE: nonpositive loan lane 3/1
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires active loan
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [(0 1 -1) (-1 -1 -1) (-2 3 -1)]
+
+; CASE: exact nominal type every lane 3/1
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, lifetime, nominal type or authority mismatch
+@@ -27 +27 @@
+-  params [(class Buffer)*3]
++  params [(class Buffer) (class Other) (class Buffer)]
+@@ -30,4 +30 @@
+-    MethodCall read_buffer
+-    MethodCall read_buffer -1
+-    MethodCall read_buffer -2
+-    EnumConstant (enum Mode) 1
++    EnumConstant (enum Mode)
+
+; CASE: missing root lane 3/1
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [(0 1 -1) (-2 3 -1)]
+
+; CASE: selector bounded before negation 3/1/-6
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: invalid borrowed object root
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [(0 1 -1) (-6 2 -1) (-2 3 -1)]
+
+; CASE: selector bounded before negation 3/1/-2147483648
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: invalid borrowed object root
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [(0 1 -1) (-2147483648 2 -1) (-2 3 -1)]
+
+; CASE: later formal cannot acquire mutable loan 3/1
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: shared formal cannot supply mutable object loan
+@@ -16,2 +16,3 @@
+-    AcquireObjectLoan 1
+-    AcquireObjectLoan 2 -1
++  firstmut 1
++    AcquireObjectLoan 1 0 true
++    AcquireObjectLoan 2 -1 true
+@@ -30 +31,2 @@
+-    MethodCall read_buffer
++  firstmut 1
++    MethodCall write_buffer
+
+; CASE: every bound root denies span production 3/1
+; BASE: every bound root denies span production 2/0
+; RUN: verify
+; EXPECT-ERROR: multiple borrowed roots cannot produce span results
+@@ -13 +13 @@
+-  params [(class Buffer) (class Buffer)]
++  params [(class Buffer)*3]
+@@ -15 +15 @@
+-  roots 2
++  roots 3
+@@ -18 +18,3 @@
+-    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
++    AcquireObjectLoan 3 -2
++    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    ReleaseObjectLoan 3
+@@ -25 +27 @@
+-  params [(class Buffer) (class Buffer)]
++  params [(class Buffer)*3]
+@@ -27 +29 @@
+-  roots 2
++  roots 3
+@@ -29 +31 @@
+-    MethodCall view_buffer 0 [] 56
++    MethodCall view_buffer -1 [] 56
+
+; CASE: missing acquired loan lane 3/2
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires active loan
+@@ -18 +17,0 @@
+-    AcquireObjectLoan 3 -2
+
+; CASE: nonpositive loan lane 3/2
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires active loan
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1) (-2 -1 -1)]
+
+; CASE: exact nominal type every lane 3/2
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, lifetime, nominal type or authority mismatch
+@@ -27 +27 @@
+-  params [(class Buffer)*3]
++  params [(class Buffer) (class Buffer) (class Other)]
+@@ -30,4 +30 @@
+-    MethodCall read_buffer
+-    MethodCall read_buffer -1
+-    MethodCall read_buffer -2
+-    EnumConstant (enum Mode) 1
++    EnumConstant (enum Mode)
+
+; CASE: missing root lane 3/2
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
+
+; CASE: selector bounded before negation 3/2/-6
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: invalid borrowed object root
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1) (-6 3 -1)]
+
+; CASE: selector bounded before negation 3/2/-2147483648
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: invalid borrowed object root
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1) (-2147483648 3 -1)]
+
+; CASE: later formal cannot acquire mutable loan 3/2
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: shared formal cannot supply mutable object loan
+@@ -16 +16,2 @@
+-    AcquireObjectLoan 1
++  firstmut 1
++    AcquireObjectLoan 1 0 true
+@@ -18 +19 @@
+-    AcquireObjectLoan 3 -2
++    AcquireObjectLoan 3 -2 true
+@@ -30 +31,2 @@
+-    MethodCall read_buffer
++  firstmut 1
++    MethodCall write_buffer
+
+; CASE: every bound root denies span production 3/2
+; BASE: every bound root denies span production 2/0
+; RUN: verify
+; EXPECT-ERROR: multiple borrowed roots cannot produce span results
+@@ -13 +13 @@
+-  params [(class Buffer) (class Buffer)]
++  params [(class Buffer)*3]
+@@ -15 +15 @@
+-  roots 2
++  roots 3
+@@ -18 +18,3 @@
+-    BorrowedCall bounded_leaf [(0 1 -1) (-1 2 -1)]
++    AcquireObjectLoan 3 -2
++    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    ReleaseObjectLoan 3
+@@ -25 +27 @@
+-  params [(class Buffer) (class Buffer)]
++  params [(class Buffer)*3]
+@@ -27 +29 @@
+-  roots 2
++  roots 3
+@@ -29 +31 @@
+-    MethodCall view_buffer 0 [] 56
++    MethodCall view_buffer -2 [] 56
+
+; CASE: extra root lane 3
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3 (48 7 -1)]
+
+; CASE: multi-root payload lanes stay canonical 3/0
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3] [0]
+
+; CASE: multi-root payload lanes stay canonical 3/1
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3] [] 0 [0]
+
+; CASE: multi-root payload lanes stay canonical 3/2
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -19 +19 @@
+-    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3]
++    BorrowedCall bounded_leaf [({0,-1} {1,1} -1)*3] [] 8
+
+; CASE: raw root count stays hostile -1
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: invalid hosted IR metadata transport
+@@ -15 +15 @@
+-  roots 3
++  roots -1
+
+; CASE: raw root count stays hostile 4
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: invalid hosted IR metadata transport
+@@ -15 +15 @@
+-  roots 3
++  roots 4
+
+; CASE: raw root count stays hostile -9223372036854775808
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: invalid hosted IR metadata transport
+@@ -15 +15 @@
+-  roots 3
++  roots -9223372036854775808
+
+; CASE: raw first mutability stays hostile -1
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: invalid hosted IR metadata transport
+@@ -15,0 +16 @@
++  firstmut -1
+
+; CASE: raw first mutability stays hostile 2
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: invalid hosted IR metadata transport
+@@ -15,0 +16 @@
++  firstmut 2
+
+; CASE: raw first mutability stays hostile 9223372036854775807
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: invalid hosted IR metadata transport
+@@ -15,0 +16 @@
++  firstmut 9223372036854775807
+
+; CASE: readonly first cannot escalate while forwarding
+; BASE: bounded roots 3 first 0 scalar enum tail 0
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, lifetime, nominal type or authority mismatch
+@@ -29,0 +30 @@
++  firstmut 1

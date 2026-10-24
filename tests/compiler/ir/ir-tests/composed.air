@@ -1,0 +1,1233 @@
+; CASE: composed nominal copies and mixed constructor record
+; RUN: emit
+layout Empty []
+layout Leaf [i64 bool]
+layout Other [i64 bool]
+layout Outer [i64 i64 bool]
+fields Outer [(i64 0 1 false) ((class Leaf) 1 2 false) ((class Empty) 3 0 false)]
+function test
+  result i64
+  frame 160
+  slot 8 bool
+  slot 16 i64
+  slot 24 bool
+  slot 32 i64
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 bool
+  slot 72 i64
+  slot 80 bool
+  slot 88 i64
+  slot 96 i64
+  slot 112 bool
+  slot 120 i64
+  slot 128 i64
+  slot 136 bool
+  slot 144 i64
+  slot 152 i64
+  object 16 Leaf true
+  object 32 Leaf false
+  object 56 Outer false
+  object 72 Leaf true
+  object 96 Outer false
+  object 104 Empty false
+  object 128 Outer false
+  object 152 Outer false
+    BeginObject 16
+    Constant 42
+    Store 16
+    Constant 1 bool
+    Store 8 bool
+    BeginObject 32
+    CopyObject 16 32
+    Constant 9
+    Store 16
+    BeginObject 104
+    InitializeEmptyObject 104
+    BeginObject 56
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 56 [0 32 104 0]
+    BeginObject 96
+    CopyObject 56 96
+    BeginObject 128
+    AggregateCall copy_outer [96] 128
+    BeginObject 72
+    ObjectFieldCopy 128 1 72
+    Load 72
+    Return
+end
+function construct_outer
+  result i64
+  params [i64 (class Leaf) (class Empty) i64]
+  frame 48
+  receiver Outer true true
+  slot 8 i64
+  slot 16 bool
+  slot 24 i64
+  slot 40 i64
+  object 24 Leaf false
+  object 32 Empty false
+    BindParameter 0 8
+    BindObjectParameter 1 24 Leaf
+    BindObjectParameter 2 32 Empty
+    BindParameter 3 40
+    Load 8
+    Push
+    Load 40
+    BinaryValue
+    ReceiverStore
+    InitializeObjectField 0 1 24
+    InitializeObjectField 0 2 32
+    Constant
+    Return
+end
+function copy_outer
+  result (class Outer)
+  params [(class Outer)]
+  frame 32
+  slot 8 bool
+  slot 16 i64
+  slot 24 i64
+  object 24 Outer false
+    BindObjectParameter 0 24 Outer
+    ReturnObject 24
+end
+function get_outer
+  result i64
+  frame 16
+  receiver Outer false false
+  slot 8 bool
+  slot 16 i64
+  object 16 Leaf true
+    BeginObject 16
+    ObjectFieldCopy 0 1 16
+    Load 16
+    Return
+end
+
+; CASE: composed empty class has logical initialization
+; RUN: emit
+layout Empty []
+layout OuterEmpty []
+fields OuterEmpty [((class Empty) 0 0 false)]
+function test
+  result i64
+  frame 32
+  object 8 Empty false
+  object 16 OuterEmpty false
+  object 24 Empty false
+  object 32 OuterEmpty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 16
+    MethodCall construct_empty_outer 16 [8]
+    BeginObject 24
+    ObjectFieldCopy 16 0 24
+    BeginObject 32
+    CopyObject 16 32
+    Constant 42
+    Return
+end
+function construct_empty_outer
+  result i64
+  params [(class Empty)]
+  frame 16
+  receiver OuterEmpty true true
+  object 8 Empty false
+    BindObjectParameter 0 8 Empty
+    InitializeObjectField 0 0 8
+    Constant
+    Return
+end
+
+; CASE: composed receiver and ordinary call native fixtures
+; RUN: emit
+layout Empty []
+layout Leaf [i64 bool]
+layout Other [i64 bool]
+layout Outer [i64 i64 bool]
+layout OuterEmpty []
+fields Outer [(i64 0 1 false) ((class Leaf) 1 2 false) ((class Empty) 3 0 false)]
+fields OuterEmpty [((class Empty) 0 0 false)]
+function test
+  result i64
+  frame 160
+  slot 8 bool
+  slot 16 i64
+  slot 24 bool
+  slot 32 i64
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 bool
+  slot 72 i64
+  slot 80 bool
+  slot 88 i64
+  slot 96 i64
+  slot 112 bool
+  slot 120 i64
+  slot 128 i64
+  slot 136 bool
+  slot 144 i64
+  slot 152 i64
+  object 16 Leaf true
+  object 32 Leaf false
+  object 56 Outer false
+  object 72 Leaf true
+  object 96 Outer false
+  object 104 Empty false
+  object 128 Outer false
+  object 152 Outer false
+    BeginObject 16
+    Constant 42
+    Store 16
+    Constant 1 bool
+    Store 8 bool
+    BeginObject 32
+    CopyObject 16 32
+    Constant 9
+    Store 16
+    BeginObject 104
+    InitializeEmptyObject 104
+    BeginObject 56
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 56 [0 32 104 0]
+    BeginObject 96
+    CopyObject 56 96
+    BeginObject 128
+    AggregateCall copy_outer [96] 128
+    BeginObject 72
+    ObjectFieldCopy 128 1 72
+    Load 72
+    Return
+end
+function construct_outer
+  result i64
+  params [i64 (class Leaf) (class Empty) i64]
+  frame 48
+  receiver Outer true true
+  slot 8 i64
+  slot 16 bool
+  slot 24 i64
+  slot 40 i64
+  object 24 Leaf false
+  object 32 Empty false
+    BindParameter 0 8
+    BindObjectParameter 1 24 Leaf
+    BindObjectParameter 2 32 Empty
+    BindParameter 3 40
+    Load 8
+    Push
+    Load 40
+    BinaryValue
+    ReceiverStore
+    InitializeObjectField 0 1 24
+    InitializeObjectField 0 2 32
+    Constant
+    Return
+end
+function copy_outer
+  result (class Outer)
+  params [(class Outer)]
+  frame 32
+  slot 8 bool
+  slot 16 i64
+  slot 24 i64
+  object 24 Outer false
+    BindObjectParameter 0 24 Outer
+    ReturnObject 24
+end
+function get_outer
+  result i64
+  frame 16
+  receiver Outer false false
+  slot 8 bool
+  slot 16 i64
+  object 16 Leaf true
+    BeginObject 16
+    ObjectFieldCopy 0 1 16
+    Load 16
+    Return
+end
+function nested_receiver_projection
+  result i64
+  frame 160
+  slot 8 bool
+  slot 16 i64
+  slot 24 bool
+  slot 32 i64
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 bool
+  slot 72 i64
+  slot 80 bool
+  slot 88 i64
+  slot 96 i64
+  slot 112 bool
+  slot 120 i64
+  slot 128 i64
+  slot 136 bool
+  slot 144 i64
+  slot 152 i64
+  object 16 Leaf true
+  object 32 Leaf false
+  object 56 Outer false
+  object 72 Leaf true
+  object 96 Outer false
+  object 104 Empty false
+  object 128 Outer false
+  object 152 Outer false
+    BeginObject 16
+    Constant 42
+    Store 16
+    Constant 1 bool
+    Store 8 bool
+    BeginObject 32
+    CopyObject 16 32
+    Constant 9
+    Store 16
+    BeginObject 104
+    InitializeEmptyObject 104
+    BeginObject 56
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 56 [0 32 104 0]
+    MethodCall get_outer 56
+    Return
+end
+function nested_scalar_mapping
+  result i64
+  frame 160
+  slot 8 bool
+  slot 16 i64
+  slot 24 bool
+  slot 32 i64
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 bool
+  slot 72 i64
+  slot 80 bool
+  slot 88 i64
+  slot 96 i64
+  slot 112 bool
+  slot 120 i64
+  slot 128 i64
+  slot 136 bool
+  slot 144 i64
+  slot 152 i64
+  object 16 Leaf true
+  object 32 Leaf false
+  object 56 Outer false
+  object 72 Leaf true
+  object 96 Outer false
+  object 104 Empty false
+  object 128 Outer false
+  object 152 Outer false
+    BeginObject 16
+    Constant 42
+    Store 16
+    Constant 1 bool
+    Store 8 bool
+    BeginObject 32
+    CopyObject 16 32
+    Constant 9
+    Store 16
+    BeginObject 104
+    InitializeEmptyObject 104
+    BeginObject 56
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 56 [0 32 104 0]
+    Load 56
+    Return
+end
+function nested_snapshot_independence
+  result i64
+  frame 160
+  slot 8 bool
+  slot 16 i64
+  slot 24 bool
+  slot 32 i64
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 bool
+  slot 72 i64
+  slot 80 bool
+  slot 88 i64
+  slot 96 i64
+  slot 112 bool
+  slot 120 i64
+  slot 128 i64
+  slot 136 bool
+  slot 144 i64
+  slot 152 i64
+  object 16 Leaf true
+  object 32 Leaf false
+  object 56 Outer false
+  object 72 Leaf true
+  object 96 Outer false
+  object 104 Empty false
+  object 128 Outer false
+  object 152 Outer false
+    BeginObject 16
+    Constant 42
+    Store 16
+    Constant 1 bool
+    Store 8 bool
+    BeginObject 32
+    CopyObject 16 32
+    Constant 9
+    Store 16
+    BeginObject 104
+    InitializeEmptyObject 104
+    BeginObject 56
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 56 [0 32 104 0]
+    Load 16
+    Return
+end
+function nested_projection_independence
+  result i64
+  frame 160
+  slot 8 bool
+  slot 16 i64
+  slot 24 bool
+  slot 32 i64
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 bool
+  slot 72 i64
+  slot 80 bool
+  slot 88 i64
+  slot 96 i64
+  slot 112 bool
+  slot 120 i64
+  slot 128 i64
+  slot 136 bool
+  slot 144 i64
+  slot 152 i64
+  object 16 Leaf true
+  object 32 Leaf false
+  object 56 Outer false
+  object 72 Leaf true
+  object 96 Outer false
+  object 104 Empty false
+  object 128 Outer false
+  object 152 Outer false
+    BeginObject 16
+    Constant 42
+    Store 16
+    Constant 1 bool
+    Store 8 bool
+    BeginObject 32
+    CopyObject 16 32
+    Constant 9
+    Store 16
+    BeginObject 104
+    InitializeEmptyObject 104
+    BeginObject 56
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 56 [0 32 104 0]
+    BeginObject 96
+    CopyObject 56 96
+    BeginObject 128
+    AggregateCall copy_outer [96] 128
+    BeginObject 72
+    ObjectFieldCopy 128 1 72
+    Constant 99
+    Store 72
+    MethodCall get_outer 128
+    Return
+end
+function nested_bool_mapping
+  result bool
+  frame 160
+  slot 8 bool
+  slot 16 i64
+  slot 24 bool
+  slot 32 i64
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 bool
+  slot 72 i64
+  slot 80 bool
+  slot 88 i64
+  slot 96 i64
+  slot 112 bool
+  slot 120 i64
+  slot 128 i64
+  slot 136 bool
+  slot 144 i64
+  slot 152 i64
+  object 16 Leaf true
+  object 32 Leaf false
+  object 56 Outer false
+  object 72 Leaf true
+  object 96 Outer false
+  object 104 Empty false
+  object 128 Outer false
+  object 152 Outer false
+    BeginObject 16
+    Constant 42
+    Store 16
+    Constant 1 bool
+    Store 8 bool
+    BeginObject 32
+    CopyObject 16 32
+    Constant 9
+    Store 16
+    BeginObject 104
+    InitializeEmptyObject 104
+    BeginObject 56
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 56 [0 32 104 0]
+    BeginObject 96
+    CopyObject 56 96
+    BeginObject 128
+    AggregateCall copy_outer [96] 128
+    BeginObject 72
+    ObjectFieldCopy 128 1 72
+    Load 64 bool
+    Return
+end
+function nested_receiver_constructor
+  result i64
+  frame 64
+  receiver Outer false false
+  slot 8 bool
+  slot 16 i64
+  slot 32 bool
+  slot 40 i64
+  slot 48 i64
+  object 16 Leaf false
+  object 24 Empty false
+  object 48 Outer false
+    BeginObject 16
+    ObjectFieldCopy 0 1 16
+    BeginObject 24
+    ObjectFieldCopy 0 2 24
+    BeginObject 48
+    Constant 11
+    Push
+    Constant 13
+    Push
+    MethodCall construct_outer 48 [0 16 24 0]
+    ReceiverLoad
+    Push
+    Load 48
+    BinaryValue
+    Return
+end
+function nested_distinct_receiver_record
+  result i64
+  frame 160
+  slot 8 bool
+  slot 16 i64
+  slot 24 bool
+  slot 32 i64
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 bool
+  slot 72 i64
+  slot 80 bool
+  slot 88 i64
+  slot 96 i64
+  slot 112 bool
+  slot 120 i64
+  slot 128 i64
+  slot 136 bool
+  slot 144 i64
+  slot 152 i64
+  object 16 Leaf true
+  object 32 Leaf false
+  object 56 Outer false
+  object 72 Leaf true
+  object 96 Outer false
+  object 104 Empty false
+  object 128 Outer false
+  object 152 Outer false
+    BeginObject 16
+    Constant 42
+    Store 16
+    Constant 1 bool
+    Store 8 bool
+    BeginObject 32
+    CopyObject 16 32
+    Constant 9
+    Store 16
+    BeginObject 104
+    InitializeEmptyObject 104
+    BeginObject 56
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 56 [0 32 104 0]
+    MethodCall nested_receiver_constructor 56
+    Return
+end
+function nested_empty_copy
+  result i64
+  frame 32
+  object 8 Empty false
+  object 16 OuterEmpty false
+  object 24 Empty false
+  object 32 OuterEmpty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 16
+    MethodCall construct_empty_outer 16 [8]
+    BeginObject 24
+    ObjectFieldCopy 16 0 24
+    BeginObject 32
+    CopyObject 16 32
+    Constant 42
+    Return
+end
+function construct_empty_outer
+  result i64
+  params [(class Empty)]
+  frame 16
+  receiver OuterEmpty true true
+  object 8 Empty false
+    BindObjectParameter 0 8 Empty
+    InitializeObjectField 0 0 8
+    Constant
+    Return
+end
+
+; CASE: projection invalid logical index -1
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: logical field index
+@@ -57 +57 @@
+-    ObjectFieldCopy 128 1 72
++    ObjectFieldCopy 128 -1 72
+
+; CASE: projection invalid logical index 3
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: logical field index
+@@ -57 +57 @@
+-    ObjectFieldCopy 128 1 72
++    ObjectFieldCopy 128 3 72
+
+; CASE: projection invalid logical index 99
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: logical field index
+@@ -57 +57 @@
+-    ObjectFieldCopy 128 1 72
++    ObjectFieldCopy 128 99 72
+
+; CASE: projection scalar field rejected
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: projection requires class field
+@@ -57 +57 @@
+-    ObjectFieldCopy 128 1 72
++    ObjectFieldCopy 128 0 72
+
+; CASE: projection wrong nominal child
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: copy nominal class mismatch
+@@ -30 +30 @@
+-  object 72 Leaf true
++  object 72 Other true
+
+; CASE: whole copy equal-byte nominal forgery
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: copy nominal class mismatch
+@@ -28 +28 @@
+-  object 32 Leaf false
++  object 32 Other false
+@@ -42,17 +42 @@
+-    Constant 9
+-    Store 16
+-    BeginObject 104
+-    InitializeEmptyObject 104
+-    BeginObject 56
+-    Constant 7
+-    Push
+-    Constant 5
+-    Push
+-    MethodCall construct_outer 56 [0 32 104 0]
+-    BeginObject 96
+-    CopyObject 56 96
+-    BeginObject 128
+-    AggregateCall copy_outer [96] 128
+-    BeginObject 72
+-    ObjectFieldCopy 128 1 72
+-    Load 72
++    Constant
+
+; CASE: projection interior source
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: exact object slot
+@@ -57 +57 @@
+-    ObjectFieldCopy 128 1 72
++    ObjectFieldCopy 120 1 72
+
+; CASE: projection interior result
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: exact object slot
+@@ -57 +57 @@
+-    ObjectFieldCopy 128 1 72
++    ObjectFieldCopy 128 1 64
+
+; CASE: projection aliases owner
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: projection source aliases result
+@@ -57 +57 @@
+-    ObjectFieldCopy 128 1 72
++    ObjectFieldCopy 128 1 128
+
+; CASE: whole copy aliases source
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: copy source aliases result
+@@ -41 +41 @@
+-    CopyObject 16 32
++    CopyObject 16 16
+
+; CASE: copy inactive source
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: outside active lifetime
+@@ -40,0 +41 @@
++    EndObject 16
+
+; CASE: copy inactive result
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: outside active lifetime
+@@ -40 +39,0 @@
+-    BeginObject 32
+
+; CASE: copy partially initialized source
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: not fully initialized
+@@ -39 +38,0 @@
+-    Store 8 bool
+
+; CASE: copy partially initialized result
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: pristine result
+@@ -40,0 +41,2 @@
++    Constant
++    Store 32
+
+; CASE: copy initialized result
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: already initialized
+@@ -40,0 +41 @@
++    CopyObject 16 32
+
+; CASE: copy stale current register rejected
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: missing or mistyped current value
+@@ -41,0 +42 @@
++    Store 8 bool
+
+; CASE: nested direct scalar initialization rejected
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: scalar store cannot write nested class field
+@@ -50,0 +51,2 @@
++    Constant 3
++    Store 48
+
+; CASE: nested direct scalar mutation rejected
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: scalar store cannot write nested class field
+@@ -29 +29 @@
+-  object 56 Outer false
++  object 56 Outer true
+@@ -51,0 +52,2 @@
++    Constant 3
++    Store 48
+
+; CASE: nested direct indexed mutation rejected
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: scalar array operation cannot address nested class field
+@@ -29 +29 @@
+-  object 56 Outer false
++  object 56 Outer true
+@@ -51,0 +52,5 @@
++    Constant
++    BoundsGuard 48 1
++    Push
++    Constant 3
++    IndexStore 48 1
+
+; CASE: class receiver scalar store forgery
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: receiver field type/layout mismatch
+@@ -81 +81 @@
+-    InitializeObjectField 0 1 24
++    ReceiverStore 1
+
+; CASE: constructor class field absent
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: returns before all fields initialized
+@@ -81 +80,0 @@
+-    InitializeObjectField 0 1 24
+
+; CASE: constructor empty class field absent
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: returns before all class fields initialized
+@@ -82 +81,0 @@
+-    InitializeObjectField 0 2 32
+
+; CASE: constructor repeated logical field 1
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: class field initialized more than once
+@@ -82,0 +83 @@
++    InitializeObjectField 0 1 24
+
+; CASE: constructor repeated logical field 2
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: class field initialized more than once
+@@ -82,0 +83 @@
++    InitializeObjectField 0 2 32
+
+; CASE: class initialization local receiver unsupported
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: requires bound constructor receiver
+@@ -81 +81 @@
+-    InitializeObjectField 0 1 24
++    InitializeObjectField 24 1 24
+
+; CASE: class initialization scalar logical field rejected
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: requires class field
+@@ -81 +81 @@
+-    InitializeObjectField 0 1 24
++    InitializeObjectField 0 0 24
+
+; CASE: class initialization wrong nominal child
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: initializer nominal class mismatch
+@@ -5 +5,2 @@
+-fields Outer [(i64 0 1 false) ((class Leaf) 1 2 false) ((class Empty) 3 0 false)]
++fields Other [((class Leaf) 0 2 false)]
++fields Outer [(i64 0 1 false) ((class Other) 1 2 false) ((class Empty) 3 0 false)]
+@@ -30 +31 @@
+-  object 72 Leaf true
++  object 72 Other true
+@@ -103 +104 @@
+-  object 16 Leaf true
++  object 16 Other true
+
+; CASE: constructor receiver projection rejected
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: cannot project receiver
+@@ -81 +81 @@
+-    InitializeObjectField 0 1 24
++    ObjectFieldCopy 0 1 24
+
+; CASE: constructor argument missing vector
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: argument vector size mismatch
+@@ -51 +51 @@
+-    MethodCall construct_outer 56 [0 32 104 0]
++    MethodCall construct_outer 56
+
+; CASE: constructor scalar argument object forgery
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: scalar constructor argument
+@@ -51 +51 @@
+-    MethodCall construct_outer 56 [0 32 104 0]
++    MethodCall construct_outer 56 [0 32 104 104]
+
+; CASE: constructor argument mutable snapshot
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: snapshot must be readonly
+@@ -28 +28 @@
+-  object 32 Leaf false
++  object 32 Leaf true
+
+; CASE: constructor argument aliases receiver
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: receiver aliases argument snapshot
+@@ -51 +51 @@
+-    MethodCall construct_outer 56 [0 32 104 0]
++    MethodCall construct_outer 56 [0 56 104 0]
+
+; CASE: constructor argument reused snapshot
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: argument snapshots must be distinct
+@@ -51 +51 @@
+-    MethodCall construct_outer 56 [0 32 104 0]
++    MethodCall construct_outer 56 [0 104 104 0]
+
+; CASE: constructor argument wrong nominal class
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: argument nominal class mismatch
+@@ -3 +3 @@
+-layout Other [i64 bool]
++layout Other []
+@@ -32 +32 @@
+-  object 104 Empty false
++  object 104 Other false
+
+; CASE: constructor argument incomplete snapshot
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: not fully initialized
+@@ -41 +40,0 @@
+-    CopyObject 16 32
+
+; CASE: constructor argument scalar operand missing
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: value stack underflow
+@@ -50 +49,0 @@
+-    Push
+
+; CASE: constructor parameter mutable rejected
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: object parameter must be readonly
+@@ -70 +70 @@
+-  object 24 Leaf false
++  object 24 Leaf true
+
+; CASE: ordinary method copied arguments require complete receiver
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: method receiver object not fully initialized
+@@ -65 +65 @@
+-  receiver Outer true true
++  receiver Outer false false
+
+; CASE: constructor class result rejected
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: receiver signature requires scalar, enum or class values
+@@ -62 +62 @@
+-  result i64
++  result (class Outer)
+
+; CASE: uncalled constructor class result rejected
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: receiver signature requires scalar, enum or class values
+; EXPECT-CODE: AU0000
+layout Empty []
+layout Leaf [i64 bool]
+layout Other [i64 bool]
+layout Outer [i64 i64 bool]
+fields Outer [(i64 0 1 false) ((class Leaf) 1 2 false) ((class Empty) 3 0 false)]
+function construct_outer
+  result (class Outer)
+  params [i64 (class Leaf) (class Empty) i64]
+  frame 48
+  receiver Outer true true
+  slot 8 i64
+  slot 16 bool
+  slot 24 i64
+  slot 40 i64
+  object 24 Leaf false
+  object 32 Empty false
+    BindParameter 0 8
+    BindObjectParameter 1 24 Leaf
+    BindObjectParameter 2 32 Empty
+    BindParameter 3 40
+    Load 8
+    Push
+    Load 40
+    BinaryValue
+    ReceiverStore
+    InitializeObjectField 0 1 24
+    InitializeObjectField 0 2 32
+    Constant
+    Return
+end
+function copy_outer
+  result (class Outer)
+  params [(class Outer)]
+  frame 32
+  slot 8 bool
+  slot 16 i64
+  slot 24 i64
+  object 24 Outer false
+    BindObjectParameter 0 24 Outer
+    ReturnObject 24
+end
+function get_outer
+  result i64
+  frame 16
+  receiver Outer false false
+  slot 8 bool
+  slot 16 i64
+  object 16 Leaf true
+    BeginObject 16
+    ObjectFieldCopy 0 1 16
+    Load 16
+    Return
+end
+
+; CASE: nested metadata wrong flattened length
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: nested class field length mismatch
+@@ -5 +5 @@
+-fields Outer [(i64 0 1 false) ((class Leaf) 1 2 false) ((class Empty) 3 0 false)]
++fields Outer [(i64 0 1 false) ((class Leaf) 1 1 false) ((class Empty) 3 0 false)]
+
+; CASE: nested metadata wrong leaf type
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: nested class field leaf type mismatch
+@@ -2 +2 @@
+-layout Leaf [i64 bool]
++layout Leaf [u64 bool]
+
+; CASE: nested metadata missing class
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: invalid nominal nested class field
+@@ -5 +5 @@
+-fields Outer [(i64 0 1 false) ((class Leaf) 1 2 false) ((class Empty) 3 0 false)]
++fields Outer [(i64 0 1 false) ((class Missing) 1 2 false) ((class Empty) 3 0 false)]
+
+; CASE: scalar class-field projection cannot reinterpret class array
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: projection requires class field
+@@ -5 +5 @@
+-fields Outer [(i64 0 1 false) ((class Leaf) 1 2 false) ((class Empty) 3 0 false)]
++fields Outer [(i64 0 1 false) ((class Leaf) 1 2 true) ((class Empty) 3 0 false)]
+
+; CASE: nested metadata unresolved specialization
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: invalid nominal nested class field
+@@ -5 +5 @@
+-fields Outer [(i64 0 1 false) ((class Leaf) 1 2 false) ((class Empty) 3 0 false)]
++fields Outer [(i64 0 1 false) ((class Leaf targs=[(type i64)]) 1 2 false) ((class Empty) 3 0 false)]
+
+; CASE: nested metadata overlap
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: invalid logical class field shape
+@@ -5 +5 @@
+-fields Outer [(i64 0 1 false) ((class Leaf) 1 2 false) ((class Empty) 3 0 false)]
++fields Outer [(i64 0 1 false) ((class Leaf) 0 2 false) ((class Empty) 3 0 false)]
+
+; CASE: nested metadata negative length
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: nested class field length mismatch
+@@ -5 +5 @@
+-fields Outer [(i64 0 1 false) ((class Leaf) 1 2 false) ((class Empty) 3 0 false)]
++fields Outer [(i64 0 1 false) ((class Leaf) 1 2 false) ((class Empty) 3 -1 false)]
+
+; CASE: nested metadata nonvalue ref<i64>
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: invalid logical class field shape
+@@ -5 +5 @@
+-fields Outer [(i64 0 1 false) ((class Leaf) 1 2 false) ((class Empty) 3 0 false)]
++fields Outer [(i64 0 1 false) (ref 1 2 false) ((class Empty) 3 0 false)]
+
+; CASE: nested metadata nonvalue mutref<i64>
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: invalid logical class field shape
+@@ -5 +5 @@
+-fields Outer [(i64 0 1 false) ((class Leaf) 1 2 false) ((class Empty) 3 0 false)]
++fields Outer [(i64 0 1 false) (mutref 1 2 false) ((class Empty) 3 0 false)]
+
+; CASE: nested metadata nonvalue own<i64>
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: invalid logical class field shape
+@@ -5 +5 @@
+-fields Outer [(i64 0 1 false) ((class Leaf) 1 2 false) ((class Empty) 3 0 false)]
++fields Outer [(i64 0 1 false) (own 1 2 false) ((class Empty) 3 0 false)]
+
+; CASE: empty nested self cycle
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: cyclic nested class layout
+@@ -4,0 +5 @@
++fields Empty [((class Empty) 0 0 false)]
+
+; CASE: empty nested indirect cycle
+; BASE: composed nominal copies and mixed constructor record
+; RUN: verify
+; EXPECT-ERROR: cyclic nested class layout
+@@ -0,0 +1 @@
++layout AnotherEmpty []
+@@ -4,0 +6,2 @@
++fields AnotherEmpty [((class Empty) 0 0 false)]
++fields Empty [((class AnotherEmpty) 0 0 false)]
+
+; CASE: nested depth exactly four
+; RUN: emit
+layout D1 [i64]
+layout D2 [i64]
+layout D3 [i64]
+layout D4 [i64]
+fields D2 [((class D1) 0 1 false)]
+fields D3 [((class D2) 0 1 false)]
+fields D4 [((class D3) 0 1 false)]
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Load 8
+    Return
+end
+
+; CASE: nested depth five rejected
+; BASE: nested depth exactly four
+; RUN: verify
+; EXPECT-ERROR: exceeds depth 4
+@@ -4,0 +5 @@
++layout D5 [i64]
+@@ -7,0 +9 @@
++fields D5 [((class D4) 0 1 false)]
+
+; CASE: composed capacity exactly 64 scalar leaves
+; RUN: emit
+layout Child [i64*64]
+layout Parent [i64*64]
+fields Parent [((class Child) 0 64 false)]
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Load 8
+    Return
+end
+
+; CASE: composed capacity 65 leaves rejected
+; BASE: composed capacity exactly 64 scalar leaves
+; RUN: verify
+; EXPECT-ERROR: exceeds 64 scalar leaves
+@@ -2,2 +2,2 @@
+-layout Parent [i64*64]
+-fields Parent [((class Child) 0 64 false)]
++layout Parent [i64*65]
++fields Parent [((class Child) 0 64 false) (i64 64 1 false)]
+
+; CASE: empty nested copy cannot forge initialization
+; BASE: composed empty class has logical initialization
+; RUN: verify
+; EXPECT-ERROR: nested class field not completely initialized
+@@ -14 +13,0 @@
+-    MethodCall construct_empty_outer 16 [8]
+
+; CASE: empty nested constructor missing logical initialization
+; BASE: composed empty class has logical initialization
+; RUN: verify
+; EXPECT-ERROR: returns before all class fields initialized
+@@ -29 +28,0 @@
+-    InitializeObjectField 0 0 8
+
+; CASE: empty nested destination still owns one storage word
+; BASE: composed empty class has logical initialization
+; RUN: verify
+; EXPECT-ERROR: scalar slot overlaps empty object
+@@ -6,0 +7 @@
++  slot 16 i64
+
+; CASE: empty nested duplicate whole copy rejected
+; BASE: composed empty class has logical initialization
+; RUN: verify
+; EXPECT-ERROR: already initialized
+@@ -18,0 +19 @@
++    CopyObject 16 32
+
+; CASE: empty nested missing init on one branch
+; BASE: composed empty class has logical initialization
+; RUN: verify
+; EXPECT-ERROR: returns before all class fields initialized
+@@ -28,0 +29,2 @@
++    Constant 1 bool
++    BranchFalse 1
+@@ -29,0 +32 @@
++    Label 1
+
+; CASE: empty nested duplicate init through backedge
+; BASE: composed empty class has logical initialization
+; RUN: verify
+; EXPECT-ERROR: class field initialized more than once
+@@ -28,0 +29 @@
++    Label 1
+@@ -29,0 +31,2 @@
++    Constant 1 bool
++    BranchFalse 1
+
+; CASE: empty nested logical completion reset by lifetime
+; BASE: composed empty class has logical initialization
+; RUN: verify
+; EXPECT-ERROR: nested class field not completely initialized
+@@ -14,0 +15,2 @@
++    EndObject 16
++    BeginObject 16
+
+; CASE: constructor receiver and packed argument record use private storage
+; BASE: composed nominal copies and mixed constructor record
+; RUN: emit
+; CHECK: construct_outer:\n
+; CHECK-DAG: movq %r10, -56(%rbp)
+; CHECK-DAG: movq %r11, -64(%rbp)

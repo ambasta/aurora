@@ -1,0 +1,827 @@
+; CASE: complete empty child replacement and mutable receiver
+; RUN: emit
+layout Empty []
+layout Envelope [u64]
+fields Envelope [((class Empty) 0 0 false) (u64 0 1 false)]
+function empty_entry
+  result u64
+  params [(class Envelope)]
+  frame 32
+  slot 16 u64
+  slot 32 u64
+  object 8 Empty false
+  object 16 Envelope false
+  object 32 Envelope true
+    BindObjectParameter 0 16 Envelope
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 32
+    CopyObject 16 32
+    AssignObjectField 32 0 8
+    MethodCall empty_answer 32 [] 0 0
+    Return
+end
+function empty_answer
+  result u64
+  frame 0
+  receiver Empty true false
+    Constant 42 u64
+    Return
+end
+
+; CASE: empty logical completion cannot be minted by assignment
+; BASE: complete empty child replacement and mutable receiver
+; RUN: verify
+; EXPECT-ERROR: nested class field not completely initialized
+@@ -17 +17,2 @@
+-    CopyObject 16 32
++    Constant 7 u64
++    Store 32 u64
+
+; CASE: empty logical completion required before nested receiver
+; BASE: complete empty child replacement and mutable receiver
+; RUN: verify
+; EXPECT-ERROR: nested class field not completely initialized
+@@ -17,2 +17,2 @@
+-    CopyObject 16 32
+-    AssignObjectField 32 0 8
++    Constant 7 u64
++    Store 32 u64
+
+; CASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: emit
+layout Child [u8 u64]
+layout Holder [u8 u8 u64 u8]
+layout Other [u8 u64]
+fields Holder [(u8 0 1 false) ((class Child) 1 2 false) (u8 3 1 false)]
+storage Child [0 8] [0 8] 16 8 16
+storage Holder [{0,8}*4] [0 8 24] 32 8 32
+storage Other [0 8] [0 8] 16 8 16
+function local_entry
+  result u64
+  params [(class Holder) (class Child)]
+  frame 128
+repeat 5
+  slot {8,24} u8
+  slot {16,24} u64
+  slot {24,24} u8
+endrepeat
+  slot 128 u8
+  object 32 Holder false
+  object 48 Child false
+  object 80 Holder true
+  object 96 Child false
+  object 128 Holder false
+    BindObjectParameter 0 32 Holder
+    BindObjectParameter 1 48 Child
+    BeginObject 80
+    CopyObject 32 80
+    AssignObjectField 80 1 48
+    Constant 42 u64
+    Push
+    MethodCall set_word 80 [] 0 1
+    Return
+end
+function set_word
+  result u64
+  params [u64]
+  frame 16
+  receiver Child true false
+  slot 8 u64
+    BindParameter 0 8 u64
+    Load 8 u64
+    ReceiverStore 1 u64
+    ReceiverLoad 1 u64
+    Return
+end
+function copy_child
+  result (class Child)
+  params [u64]
+  frame 32
+  receiver Child false false
+  slot 8 u64
+  slot 24 u64
+  slot 32 u8
+  object 32 Child false
+    BindParameter 0 8 u64
+    BeginObject 32
+    ReceiverLoad 0 u8
+    Store 32 u8
+    Load 8 u64
+    Store 24 u64
+    ReturnObject 32
+end
+function combined
+  result (class Child)
+  params [(class Holder) u64 (class Child)]
+  frame 64
+  receiver Child true false
+  slot 8 u8
+  slot 16 u64
+  slot 24 u8
+  slot 32 u8
+  slot 40 u64
+  slot 56 u64
+  slot 64 u8
+  object 32 Holder false
+  object 64 Child false
+    BindObjectParameter 0 32 Holder
+    BindParameter 1 40 u64
+    BindObjectParameter 2 64 Child
+    Load 40 u64
+    ReceiverStore 1 u64
+    ReturnObject 64
+end
+
+; CASE: local/implicit root scalar/scalar-result/combined-result #2
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: emit
+@@ -9 +9 @@
+-  result u64
++  result (class Child)
+@@ -30,2 +30,3 @@
+-    MethodCall set_word 80 [] 0 1
+-    Return
++    BeginObject 96
++    MethodCall copy_child 80 [] 96 1
++    ReturnObject 96
+
+; CASE: local/implicit root scalar/scalar-result/combined-result #3
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: emit
+@@ -9 +9 @@
+-  result u64
++  result (class Child)
+@@ -27,0 +28,2 @@
++    BeginObject 128
++    CopyObject 32 128
+@@ -30,2 +32,3 @@
+-    MethodCall set_word 80 [] 0 1
+-    Return
++    BeginObject 96
++    MethodCall combined 80 [128 0 48] 96 1
++    ReturnObject 96
+
+; CASE: readonly root supplies const nested receiver
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: emit
+@@ -9 +9 @@
+-  result u64
++  result (class Child)
+@@ -20 +20 @@
+-  object 80 Holder true
++  object 80 Holder false
+@@ -27 +26,0 @@
+-    AssignObjectField 80 1 48
+@@ -30,2 +29,3 @@
+-    MethodCall set_word 80 [] 0 1
+-    Return
++    BeginObject 96
++    MethodCall copy_child 80 [] 96 1
++    ReturnObject 96
+
+; CASE: readonly root assignment
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: const
+@@ -20 +20 @@
+-  object 80 Holder true
++  object 80 Holder false
+
+; CASE: negative assignment root
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: root offset
+@@ -27 +27 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField -1 1 48
+
+; CASE: invalid logical field
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: index out of range
+@@ -27 +27 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 80 8 48
+
+; CASE: negative logical field
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: index out of range
+@@ -27 +27 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 80 -1 48
+
+; CASE: scalar logical field
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: requires class field
+@@ -27 +27 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 80 0 48
+
+; CASE: inactive assignment source
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: outside active lifetime
+@@ -26,0 +27 @@
++    EndObject 48
+
+; CASE: active but incomplete assignment source
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: not fully initialized
+@@ -27 +27,2 @@
+-    AssignObjectField 80 1 48
++    BeginObject 96
++    AssignObjectField 80 1 96
+
+; CASE: source interior offset
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: exact object slot
+@@ -27 +27 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 80 1 40
+
+; CASE: nominal mismatch despite equal layout
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: nominal class mismatch
+@@ -10 +10 @@
+-  params [(class Holder) (class Child)]
++  params [(class Holder) (class Other)]
+@@ -19 +19 @@
+-  object 48 Child false
++  object 48 Other false
+@@ -24 +24 @@
+-    BindObjectParameter 1 48 Child
++    BindObjectParameter 1 48 Other
+
+; CASE: source equals root
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: aliases root
+@@ -27 +27 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 80 1 80
+
+; CASE: invalid receiver field sentinel
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: field index
+@@ -30 +30 @@
+-    MethodCall set_word 80 [] 0 1
++    MethodCall set_word 80 [] 0 -2
+
+; CASE: receiver uses byte offset as logical index
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: index out of range
+@@ -30 +30 @@
+-    MethodCall set_word 80 [] 0 1
++    MethodCall set_word 80 [] 0 8
+
+; CASE: receiver nominal mismatch
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: nominal class mismatch
+@@ -37 +37 @@
+-  receiver Child true false
++  receiver Other true false
+
+; CASE: nested constructor forbidden
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: nested receiver cannot call constructor
+@@ -37 +37 @@
+-  receiver Child true false
++  receiver Child true true
+
+; CASE: readonly mutable call
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: const
+@@ -20 +20 @@
+-  object 80 Holder true
++  object 80 Holder false
+@@ -27 +26,0 @@
+-    AssignObjectField 80 1 48
+
+; CASE: result aliases whole root
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: result aliases receiver
+@@ -9 +9 @@
+-  result u64
++  result (class Child)
+@@ -30,2 +30,3 @@
+-    MethodCall set_word 80 [] 0 1
+-    Return
++    BeginObject 96
++    MethodCall copy_child 80 [] 80 1
++    ReturnObject 96
+
+; CASE: result aliases readonly argument
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: result aliases argument
+@@ -9 +9 @@
+-  result u64
++  result (class Child)
+@@ -27,0 +28,2 @@
++    BeginObject 128
++    CopyObject 32 128
+@@ -30,2 +32,3 @@
+-    MethodCall set_word 80 [] 0 1
+-    Return
++    BeginObject 96
++    MethodCall combined 80 [128 0 48] 48 1
++    ReturnObject 96
+
+; CASE: argument aliases receiver root
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: receiver aliases argument
+@@ -9 +9 @@
+-  result u64
++  result (class Child)
+@@ -27,0 +28,2 @@
++    BeginObject 128
++    CopyObject 32 128
+@@ -30,2 +32,3 @@
+-    MethodCall set_word 80 [] 0 1
+-    Return
++    BeginObject 96
++    MethodCall combined 80 [80 0 48] 96 1
++    ReturnObject 96
+
+; CASE: local/implicit root scalar/scalar-result/combined-result #4
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: emit
+@@ -8 +8 @@
+-function local_entry
++function implicit_entry
+@@ -11,0 +12 @@
++  receiver Holder true false
+@@ -27 +28 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 0 1 48
+@@ -30 +31 @@
+-    MethodCall set_word 80 [] 0 1
++    MethodCall set_word 0 [] 0 1
+
+; CASE: local/implicit root scalar/scalar-result/combined-result #5
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: emit
+@@ -8,2 +8,2 @@
+-function local_entry
+-  result u64
++function implicit_entry
++  result (class Child)
+@@ -11,0 +12 @@
++  receiver Holder true false
+@@ -27 +28 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 0 1 48
+@@ -30,2 +31,3 @@
+-    MethodCall set_word 80 [] 0 1
+-    Return
++    BeginObject 96
++    MethodCall copy_child 0 [] 96 1
++    ReturnObject 96
+
+; CASE: local/implicit root scalar/scalar-result/combined-result #6
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: emit
+@@ -8,2 +8,2 @@
+-function local_entry
+-  result u64
++function implicit_entry
++  result (class Child)
+@@ -11,0 +12 @@
++  receiver Holder true false
+@@ -27 +28,3 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 0 1 48
++    BeginObject 128
++    CopyObject 32 128
+@@ -30,2 +33,3 @@
+-    MethodCall set_word 80 [] 0 1
+-    Return
++    BeginObject 96
++    MethodCall combined 0 [128 0 48] 96 1
++    ReturnObject 96
+
+; CASE: readonly root supplies const nested receiver #2
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: emit
+@@ -8,2 +8,2 @@
+-function local_entry
+-  result u64
++function implicit_entry
++  result (class Child)
+@@ -11,0 +12 @@
++  receiver Holder false false
+@@ -27 +27,0 @@
+-    AssignObjectField 80 1 48
+@@ -30,2 +30,3 @@
+-    MethodCall set_word 80 [] 0 1
+-    Return
++    BeginObject 96
++    MethodCall copy_child 0 [] 96 1
++    ReturnObject 96
+
+; CASE: readonly root assignment #2
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: const
+@@ -8 +8 @@
+-function local_entry
++function implicit_entry
+@@ -11,0 +12 @@
++  receiver Holder false false
+@@ -27 +28 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 0 1 48
+@@ -30 +31 @@
+-    MethodCall set_word 80 [] 0 1
++    MethodCall set_word 0 [] 0 1
+
+; CASE: negative assignment root #2
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: root offset
+@@ -8 +8 @@
+-function local_entry
++function implicit_entry
+@@ -11,0 +12 @@
++  receiver Holder true false
+@@ -27 +28 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField -1 1 48
+@@ -30 +31 @@
+-    MethodCall set_word 80 [] 0 1
++    MethodCall set_word 0 [] 0 1
+
+; CASE: invalid logical field #2
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: layout mismatch
+@@ -8 +8 @@
+-function local_entry
++function implicit_entry
+@@ -11,0 +12 @@
++  receiver Holder true false
+@@ -27 +28 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 0 8 48
+@@ -30 +31 @@
+-    MethodCall set_word 80 [] 0 1
++    MethodCall set_word 0 [] 0 1
+
+; CASE: negative logical field #2
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: layout mismatch
+@@ -8 +8 @@
+-function local_entry
++function implicit_entry
+@@ -11,0 +12 @@
++  receiver Holder true false
+@@ -27 +28 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 0 -1 48
+@@ -30 +31 @@
+-    MethodCall set_word 80 [] 0 1
++    MethodCall set_word 0 [] 0 1
+
+; CASE: scalar logical field #2
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: not initialized
+@@ -8 +8 @@
+-function local_entry
++function implicit_entry
+@@ -11,0 +12 @@
++  receiver Holder true false
+@@ -27 +28 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 0 0 48
+@@ -30 +31 @@
+-    MethodCall set_word 80 [] 0 1
++    MethodCall set_word 0 [] 0 1
+
+; CASE: inactive assignment source #2
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: outside active lifetime
+@@ -8 +8 @@
+-function local_entry
++function implicit_entry
+@@ -11,0 +12 @@
++  receiver Holder true false
+@@ -27 +28,2 @@
+-    AssignObjectField 80 1 48
++    EndObject 48
++    AssignObjectField 0 1 48
+@@ -30 +32 @@
+-    MethodCall set_word 80 [] 0 1
++    MethodCall set_word 0 [] 0 1
+
+; CASE: active but incomplete assignment source #2
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: not fully initialized
+@@ -8 +8 @@
+-function local_entry
++function implicit_entry
+@@ -11,0 +12 @@
++  receiver Holder true false
+@@ -27 +28,2 @@
+-    AssignObjectField 80 1 48
++    BeginObject 96
++    AssignObjectField 0 1 96
+@@ -30 +32 @@
+-    MethodCall set_word 80 [] 0 1
++    MethodCall set_word 0 [] 0 1
+
+; CASE: source interior offset #2
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: exact object slot
+@@ -8 +8 @@
+-function local_entry
++function implicit_entry
+@@ -11,0 +12 @@
++  receiver Holder true false
+@@ -27 +28 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 0 1 40
+@@ -30 +31 @@
+-    MethodCall set_word 80 [] 0 1
++    MethodCall set_word 0 [] 0 1
+
+; CASE: nominal mismatch despite equal layout #2
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: nominal class mismatch
+@@ -8 +8 @@
+-function local_entry
++function implicit_entry
+@@ -10 +10 @@
+-  params [(class Holder) (class Child)]
++  params [(class Holder) (class Other)]
+@@ -11,0 +12 @@
++  receiver Holder true false
+@@ -19 +20 @@
+-  object 48 Child false
++  object 48 Other false
+@@ -24 +25 @@
+-    BindObjectParameter 1 48 Child
++    BindObjectParameter 1 48 Other
+@@ -27 +28 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 0 1 48
+@@ -30 +31 @@
+-    MethodCall set_word 80 [] 0 1
++    MethodCall set_word 0 [] 0 1
+
+; CASE: source equals root #2
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: aliases root
+@@ -8 +8 @@
+-function local_entry
++function implicit_entry
+@@ -11,0 +12 @@
++  receiver Holder true false
+@@ -27 +28 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 0 1
+@@ -30 +31 @@
+-    MethodCall set_word 80 [] 0 1
++    MethodCall set_word 0 [] 0 1
+
+; CASE: invalid receiver field sentinel #2
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: field index
+@@ -8 +8 @@
+-function local_entry
++function implicit_entry
+@@ -11,0 +12 @@
++  receiver Holder true false
+@@ -27 +28 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 0 1 48
+@@ -30 +31 @@
+-    MethodCall set_word 80 [] 0 1
++    MethodCall set_word 0 [] 0 -2
+
+; CASE: receiver uses byte offset as logical index #2
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: layout mismatch
+@@ -8 +8 @@
+-function local_entry
++function implicit_entry
+@@ -11,0 +12 @@
++  receiver Holder true false
+@@ -27 +28 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 0 1 48
+@@ -30 +31 @@
+-    MethodCall set_word 80 [] 0 1
++    MethodCall set_word 0 [] 0 8
+
+; CASE: receiver nominal mismatch #2
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: nominal class mismatch
+@@ -8 +8 @@
+-function local_entry
++function implicit_entry
+@@ -11,0 +12 @@
++  receiver Holder true false
+@@ -27 +28 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 0 1 48
+@@ -30 +31 @@
+-    MethodCall set_word 80 [] 0 1
++    MethodCall set_word 0 [] 0 1
+@@ -37 +38 @@
+-  receiver Child true false
++  receiver Other true false
+
+; CASE: nested constructor forbidden #2
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: nested receiver cannot call constructor
+@@ -8 +8 @@
+-function local_entry
++function implicit_entry
+@@ -11,0 +12 @@
++  receiver Holder true false
+@@ -27 +28 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 0 1 48
+@@ -30 +31 @@
+-    MethodCall set_word 80 [] 0 1
++    MethodCall set_word 0 [] 0 1
+@@ -37 +38 @@
+-  receiver Child true false
++  receiver Child true true
+
+; CASE: readonly mutable call #2
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: const
+@@ -8 +8 @@
+-function local_entry
++function implicit_entry
+@@ -11,0 +12 @@
++  receiver Holder false false
+@@ -27 +27,0 @@
+-    AssignObjectField 80 1 48
+@@ -30 +30 @@
+-    MethodCall set_word 80 [] 0 1
++    MethodCall set_word 0 [] 0 1
+
+; CASE: result aliases whole root #2
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: result aliases receiver
+@@ -8,2 +8,2 @@
+-function local_entry
+-  result u64
++function implicit_entry
++  result (class Child)
+@@ -11,0 +12 @@
++  receiver Holder true false
+@@ -27 +28 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 0 1 48
+@@ -30,2 +31,3 @@
+-    MethodCall set_word 80 [] 0 1
+-    Return
++    BeginObject 96
++    MethodCall copy_child 0 [] 0 1
++    ReturnObject 96
+
+; CASE: result aliases readonly argument #2
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: result aliases argument
+@@ -8,2 +8,2 @@
+-function local_entry
+-  result u64
++function implicit_entry
++  result (class Child)
+@@ -11,0 +12 @@
++  receiver Holder true false
+@@ -27 +28,3 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 0 1 48
++    BeginObject 128
++    CopyObject 32 128
+@@ -30,2 +33,3 @@
+-    MethodCall set_word 80 [] 0 1
+-    Return
++    BeginObject 96
++    MethodCall combined 0 [128 0 48] 48 1
++    ReturnObject 96
+
+; CASE: argument aliases receiver root #2
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: receiver aliases argument
+@@ -8,2 +8,2 @@
+-function local_entry
+-  result u64
++function implicit_entry
++  result (class Child)
+@@ -11,0 +12 @@
++  receiver Holder true false
+@@ -27 +28,3 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 0 1 48
++    BeginObject 128
++    CopyObject 32 128
+@@ -30,2 +33,3 @@
+-    MethodCall set_word 80 [] 0 1
+-    Return
++    BeginObject 96
++    MethodCall combined 0 [0 0 48] 96 1
++    ReturnObject 96
+
+; CASE: inactive root
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: outside active lifetime
+@@ -26,0 +27 @@
++    EndObject 80
+
+; CASE: incomplete whole root
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: not fully initialized
+@@ -26 +25,0 @@
+-    CopyObject 32 80
+
+; CASE: method-only inactive root
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: outside active lifetime
+@@ -27 +27 @@
+-    AssignObjectField 80 1 48
++    EndObject 80
+
+; CASE: method-only incomplete root
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: not fully initialized
+@@ -26,2 +25,0 @@
+-    CopyObject 32 80
+-    AssignObjectField 80 1 48
+
+; CASE: constructor cannot replace nested initialized state
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: during initialization
+@@ -8,2 +8,2 @@
+-function local_entry
+-  result u64
++function implicit_entry
++  result i64
+@@ -11,0 +12 @@
++  receiver Holder true true
+@@ -27 +28 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 0 1 48
+@@ -30 +31 @@
+-    MethodCall set_word 80 [] 0 1
++    MethodCall set_word 0 [] 0 1
+
+; CASE: nested scalar stores remain forbidden
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: scalar store cannot write nested class field
+@@ -26,0 +27,2 @@
++    Constant 7 u64
++    Store 64 u64
+
+; CASE: overlapping subobject object slot forbidden
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: overlapping object layouts
+@@ -19,0 +20 @@
++  object 72 Child true
+
+; CASE: forged canonical field offset
+; BASE: local/implicit root scalar/scalar-result/combined-result
+; RUN: verify
+; EXPECT-ERROR: storage
+@@ -6 +6 @@
+-storage Holder [{0,8}*4] [0 8 24] 32 8 32
++storage Holder [{0,8}*4] [0 16 24] 32 8 32

@@ -8,6 +8,9 @@ import tempfile
 
 from integer_oracle import NativeRunner, command, require, validate_values
 
+# Verified textual IR cases; the aurora-ir-check driver prints their assembly.
+AIR = Path(__file__).resolve().parent / "ir" / "owned-mutation-ir" / "abi.air"
+
 
 WORD = 0xFEDCBA9876543210
 ORIGINAL = bytes([197]) + bytes([0xAB]) * 7 + bytes([17]) + bytes([0xAB]) * 7
@@ -112,7 +115,7 @@ def main():
         for implicit in (False, True):
             for mode in (0, 1, 2):
                 assembly = command(
-                    [args.fixture.resolve(), "--emit-abi", "implicit" if implicit else "local", str(mode)]
+                    [args.fixture.resolve(), "--output", AIR, f"{'implicit' if implicit else 'local'}-{mode}"]
                 ).stdout.decode()
                 for handwritten in (False, True):
                     candidate = assembly

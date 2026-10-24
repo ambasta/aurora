@@ -1,0 +1,189 @@
+; CASE: unused imported scalar admission precedes earlier dynamic state
+; RUN: verify
+; EXPECT-ERROR: noncanonical bool
+views [(0 []) (1 [])]
+enum Mode 2
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Pop
+    Return
+end
+function unused_scalar
+  result i64
+  frame 16
+  scope 1
+  slot 8 i64
+    Constant 2 bool
+    Return
+end
+
+; CASE: unused imported scalar admission precedes earlier dynamic state #2
+; BASE: unused imported scalar admission precedes earlier dynamic state
+; RUN: verify
+; EXPECT-ERROR: not a declared case
+@@ -15 +15 @@
+-    Constant 2 bool
++    EnumConstant (enum Mode) 2
+
+; CASE: unused imported scalar admission precedes earlier dynamic state #3
+; BASE: unused imported scalar admission precedes earlier dynamic state
+; RUN: verify
+; EXPECT-ERROR: invalid unary operation
+@@ -15 +15 @@
+-    Constant 2 bool
++    UnaryValue 99
+
+; CASE: unused imported scalar admission precedes earlier dynamic state #4
+; BASE: unused imported scalar admission precedes earlier dynamic state
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -15 +15 @@
+-    Constant 2 bool
++    BinaryValue BitAnd
+
+; CASE: unused imported scalar admission precedes earlier dynamic state #5
+; BASE: unused imported scalar admission precedes earlier dynamic state
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -15 +15 @@
+-    Constant 2 bool
++    Convert u8 u8
+
+; CASE: unused imported scalar admission precedes earlier dynamic state #6
+; BASE: unused imported scalar admission precedes earlier dynamic state
+; RUN: verify
+; EXPECT-ERROR: ordered bool comparison or enum comparison
+@@ -15 +15 @@
+-    Constant 2 bool
++    Compare Less (enum Mode)
+
+; CASE: earlier admission phases precede earlier-body scalar failure
+; RUN: verify
+; EXPECT-ERROR: unknown jump target
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 2 bool
+    Return
+end
+function later_phase
+  result i64
+  frame 16
+  slot 8 i64
+    Jump 99
+    Return
+end
+
+; CASE: earlier admission phases precede earlier-body scalar failure #2
+; BASE: earlier admission phases precede earlier-body scalar failure
+; RUN: verify
+; EXPECT-ERROR: outside entry prefix
+@@ -12 +12 @@
+-    Jump 99
++    BindParameter 0 8
+
+; CASE: earlier admission phases precede earlier-body scalar failure #3
+; BASE: earlier admission phases precede earlier-body scalar failure
+; RUN: verify
+; EXPECT-ERROR: unknown call target
+@@ -12 +12 @@
+-    Jump 99
++    Call missing
+
+; CASE: earlier admission phases precede earlier-body scalar failure #4
+; BASE: earlier admission phases precede earlier-body scalar failure
+; RUN: verify
+; EXPECT-ERROR: slot type/layout mismatch
+@@ -12 +12 @@
+-    Jump 99
++    Load 24
+
+; CASE: scalar errors retain declaration and instruction order
+; BASE: earlier admission phases precede earlier-body scalar failure
+; RUN: verify
+; EXPECT-ERROR: noncanonical u8
+@@ -4,0 +5 @@
++    Constant 256 u8
+@@ -8 +9 @@
+-function later_phase
++function alphabetically_first
+@@ -12 +13 @@
+-    Jump 99
++    UnaryValue 99
+
+; CASE: admitted scalar operation still requires current value
+; RUN: verify
+; EXPECT-ERROR: missing or mistyped current value
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    UnaryValue
+    Return
+end
+
+; CASE: admitted scalar operation still requires current value #2
+; BASE: admitted scalar operation still requires current value
+; RUN: verify
+; EXPECT-ERROR: missing or mistyped current value
+@@ -5 +5 @@
+-    UnaryValue
++    BinaryValue
+
+; CASE: admitted scalar operation still requires current value #3
+; BASE: admitted scalar operation still requires current value
+; RUN: verify
+; EXPECT-ERROR: missing or mistyped current value
+@@ -5 +5 @@
+-    UnaryValue
++    Convert i64 u8
+
+; CASE: admitted scalar operation still requires current value #4
+; BASE: admitted scalar operation still requires current value
+; RUN: verify
+; EXPECT-ERROR: missing or mistyped current value
+@@ -5 +5 @@
+-    UnaryValue
++    Compare
+
+; CASE: admitted comparison still requires saved left operand
+; BASE: admitted scalar operation still requires current value
+; RUN: verify
+; EXPECT-ERROR: value stack underflow
+@@ -5 +5,2 @@
+-    UnaryValue
++    Constant
++    Compare
+
+; CASE: admitted arithmetic cannot preserve local bounds token
+; BASE: admitted scalar operation still requires current value
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -4,0 +5,4 @@
++    Constant 42
++    Store 8
++    Constant
++    BoundsGuard 8 1
+@@ -5,0 +10 @@
++    IndexLoad 8 1
+
+; CASE: admitted arithmetic cannot preserve local bounds token #2
+; RUN: verify
+; EXPECT-ERROR: bounds token
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Constant
+    BoundsGuard 8 1
+    Push
+    Constant
+    BinaryValue
+    IndexLoad 8 1
+    Return
+end

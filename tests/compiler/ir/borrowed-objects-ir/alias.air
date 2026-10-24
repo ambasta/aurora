@@ -1,0 +1,599 @@
+; CASE: mutable loan excludes later scalar read
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+function borrow_entry
+  result i64
+  params [region (class Buffer)]
+  frame 256
+  slot 16 i64
+  slot 56 i64
+  slot 96 i64
+  slot 104 i64
+  object 48 Buffer true
+  object 88 Buffer true
+  object 96 Word false
+  object 104 Word false
+  span 160
+  span 216
+  region 8
+  bytes 248 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 48 Buffer
+    AcquireObjectLoan 1 48 true
+    Load 16
+    BorrowedCall borrow_buffer [(48 1 -1)]
+    ReleaseObjectLoan 1
+    EndObject 48
+    Return
+end
+function borrow_buffer
+  result i64
+  params [(class Buffer)]
+  frame 0
+  roots 1
+  firstmut 1
+    MethodCall write_buffer
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: mutable loan excludes later byte status
+; BASE: mutable loan excludes later scalar read
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -29 +29 @@
+-    Load 16
++    BytesOk 48 0
+
+; CASE: mutable loan excludes later byte length
+; BASE: mutable loan excludes later scalar read
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -29 +29 @@
+-    Load 16
++    BytesLength 48 0
+
+; CASE: mutable loan excludes later byte load
+; BASE: mutable loan excludes later scalar read
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -29 +29,2 @@
+-    Load 16
++    Constant
++    BytesLoad 48 0
+
+; CASE: mutable loan excludes later readonly method
+; BASE: mutable loan excludes later scalar read
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -29 +29 @@
+-    Load 16
++    MethodCall read_buffer 48
+
+; CASE: mutable loan excludes later new readonly span
+; BASE: mutable loan excludes later scalar read
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -29 +29 @@
+-    Load 16
++    BorrowOwnedSpan 48 0 160
+
+; CASE: shared loan excludes later scalar write
+; BASE: mutable loan excludes later scalar read
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -28,2 +28,3 @@
+-    AcquireObjectLoan 1 48 true
+-    Load 16
++    AcquireObjectLoan 1 48
++    Constant 7
++    Store 16
+@@ -40,2 +41 @@
+-  firstmut 1
+-    MethodCall write_buffer
++    MethodCall read_buffer
+
+; CASE: shared loan excludes later byte write
+; BASE: mutable loan excludes later scalar read
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -28,2 +28,5 @@
+-    AcquireObjectLoan 1 48 true
+-    Load 16
++    AcquireObjectLoan 1 48
++    Constant
++    Push
++    Constant 7 u8
++    BytesStore 48 0
+@@ -40,2 +43 @@
+-  firstmut 1
+-    MethodCall write_buffer
++    MethodCall read_buffer
+
+; CASE: shared loan excludes later byte resize
+; BASE: mutable loan excludes later scalar read
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -28,2 +28,3 @@
+-    AcquireObjectLoan 1 48 true
+-    Load 16
++    AcquireObjectLoan 1 48
++    Constant 65
++    BytesResize 48 0
+@@ -40,2 +41 @@
+-  firstmut 1
+-    MethodCall write_buffer
++    MethodCall read_buffer
+
+; CASE: shared loan excludes later mutable method
+; BASE: mutable loan excludes later scalar read
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -28,2 +28,2 @@
+-    AcquireObjectLoan 1 48 true
+-    Load 16
++    AcquireObjectLoan 1 48
++    MethodCall write_buffer 48
+@@ -40,2 +40 @@
+-  firstmut 1
+-    MethodCall write_buffer
++    MethodCall read_buffer
+
+; CASE: shared loan excludes later move
+; BASE: mutable loan excludes later scalar read
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -28,2 +28,3 @@
+-    AcquireObjectLoan 1 48 true
+-    Load 16
++    AcquireObjectLoan 1 48
++    BeginObject 88
++    MoveObject 48 88
+@@ -40,2 +41 @@
+-  firstmut 1
+-    MethodCall write_buffer
++    MethodCall read_buffer
+
+; CASE: shared loan excludes later drop
+; BASE: mutable loan excludes later scalar read
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -28,2 +28,2 @@
+-    AcquireObjectLoan 1 48 true
+-    Load 16
++    AcquireObjectLoan 1 48
++    EndObject 48
+@@ -40,2 +40 @@
+-  firstmut 1
+-    MethodCall write_buffer
++    MethodCall read_buffer
+
+; CASE: mutable loan excludes later scalar write
+; BASE: mutable loan excludes later scalar read
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -29 +29,2 @@
+-    Load 16
++    Constant 7
++    Store 16
+
+; CASE: mutable loan excludes later byte write
+; BASE: mutable loan excludes later scalar read
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -29 +29,4 @@
+-    Load 16
++    Constant
++    Push
++    Constant 7 u8
++    BytesStore 48 0
+
+; CASE: mutable loan excludes later byte resize
+; BASE: mutable loan excludes later scalar read
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -29 +29,2 @@
+-    Load 16
++    Constant 65
++    BytesResize 48 0
+
+; CASE: mutable loan excludes later mutable method
+; BASE: mutable loan excludes later scalar read
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -29 +29 @@
+-    Load 16
++    MethodCall write_buffer 48
+
+; CASE: mutable loan excludes later move
+; BASE: mutable loan excludes later scalar read
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -29 +29,2 @@
+-    Load 16
++    BeginObject 88
++    MoveObject 48 88
+
+; CASE: mutable loan excludes later drop
+; BASE: mutable loan excludes later scalar read
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -29 +29 @@
+-    Load 16
++    EndObject 48
+
+; CASE: shared loan excludes indexed scalar write
+; BASE: mutable loan excludes later scalar read
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -28,2 +28,6 @@
+-    AcquireObjectLoan 1 48 true
+-    Load 16
++    Constant
++    BoundsGuard 16 1
++    Push
++    AcquireObjectLoan 1 48
++    Constant 7
++    IndexStore 16 1
+@@ -40,2 +44 @@
+-  firstmut 1
+-    MethodCall write_buffer
++    MethodCall read_buffer
+
+; CASE: shared owning root with copied child
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) ((class Word) 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+function borrow_entry
+  result i64
+  params [region (class Buffer)]
+  frame 256
+  slot 16 i64
+  slot 56 i64
+  slot 96 i64
+  slot 104 i64
+  object 48 Buffer true
+  object 88 Buffer true
+  object 96 Word false
+  object 104 Word false
+  span 160
+  span 216
+  region 8
+  bytes 248 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 48 Buffer
+    BeginObject 96
+    Constant 53
+    Store 96
+    AcquireObjectLoan 1 48
+    BorrowedCall borrow_buffer [(48 1 -1)]
+    ReleaseObjectLoan 1
+    EndObject 96
+    EndObject 48
+    Return
+end
+function borrow_buffer
+  result i64
+  params [(class Buffer)]
+  frame 0
+  roots 1
+    MethodCall read_buffer
+    Return
+end
+function read_buffer
+  result i64
+  frame 16
+  receiver Buffer false false
+  slot 8 i64
+  object 8 Word false
+    BeginObject 8
+    ObjectFieldCopy 0 1 8
+    Load 8
+    EndObject 8
+    Return
+end
+function write_buffer
+  result i64
+  frame 16
+  receiver Buffer true false
+  slot 8 i64
+  object 8 Word false
+    BeginObject 8
+    Constant 41
+    Store 8
+    AssignObjectField 0 1 8
+    Load 8
+    EndObject 8
+    Return
+end
+
+; CASE: shared loan excludes copied child replacement
+; BASE: shared owning root with copied child
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -31,0 +32 @@
++    AssignObjectField 48 1 96
+
+; CASE: shared loan excludes ResourceCall consumption
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+function borrow_entry
+  result i64
+  params [region (class Buffer)]
+  frame 256
+  slot 16 i64
+  slot 56 i64
+  slot 96 i64
+  slot 104 i64
+  object 48 Buffer true
+  object 88 Buffer true
+  object 96 Word false
+  object 104 Word false
+  span 160
+  span 216
+  region 8
+  bytes 248 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 48 Buffer
+    AcquireObjectLoan 1 48
+    ResourceCall consume_buffer 8 [0 48]
+    BorrowedCall borrow_buffer [(48 1 -1)]
+    ReleaseObjectLoan 1
+    EndObject 48
+    Return
+end
+function borrow_buffer
+  result i64
+  params [(class Buffer)]
+  frame 0
+  roots 1
+    MethodCall read_buffer
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+function consume_buffer
+  result i64
+  params [region (class Buffer)]
+  frame 256
+  slot 16 i64
+  slot 56 i64
+  slot 96 i64
+  slot 104 i64
+  object 48 Buffer true
+  object 88 Buffer true
+  object 96 Word false
+  object 104 Word false
+  span 160
+  span 216
+  region 8
+  bytes 248 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 48 Buffer
+    EndObject 48
+    Constant
+    Return
+end
+
+; CASE: mutable loan excludes indexed scalar write
+; BASE: mutable loan excludes later scalar read
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -27,0 +28,3 @@
++    Constant
++    BoundsGuard 16 1
++    Push
+@@ -29 +32,2 @@
+-    Load 16
++    Constant 7
++    IndexStore 16 1
+
+; CASE: mutable owning root with copied child
+; BASE: shared owning root with copied child
+; RUN: emit
+@@ -31 +31 @@
+-    AcquireObjectLoan 1 48
++    AcquireObjectLoan 1 48 true
+@@ -43 +43,2 @@
+-    MethodCall read_buffer
++  firstmut 1
++    MethodCall write_buffer
+
+; CASE: mutable loan excludes copied child replacement
+; BASE: shared owning root with copied child
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -31 +31,2 @@
+-    AcquireObjectLoan 1 48
++    AcquireObjectLoan 1 48 true
++    AssignObjectField 48 1 96
+@@ -43 +44,2 @@
+-    MethodCall read_buffer
++  firstmut 1
++    MethodCall write_buffer
+
+; CASE: mutable loan excludes ResourceCall consumption
+; BASE: shared loan excludes ResourceCall consumption
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -28 +28 @@
+-    AcquireObjectLoan 1 48
++    AcquireObjectLoan 1 48 true
+@@ -40 +40,2 @@
+-    MethodCall read_buffer
++  firstmut 1
++    MethodCall write_buffer
+
+; CASE: shared self-derived later view survives synchronous call
+; BASE: mutable loan excludes later scalar read
+; RUN: emit
+@@ -28,2 +28,2 @@
+-    AcquireObjectLoan 1 48 true
+-    Load 16
++    AcquireObjectLoan 1 48
++    BorrowOwnedSpan 48 0 160
+@@ -31,0 +32,2 @@
++    SpanLength 160
++    EndSpan 160
+@@ -40,2 +42 @@
+-  firstmut 1
+-    MethodCall write_buffer
++    MethodCall read_buffer
+
+; CASE: shared loan allows later scalar resource and method reads
+; BASE: mutable loan excludes later scalar read
+; RUN: emit
+@@ -28 +28 @@
+-    AcquireObjectLoan 1 48 true
++    AcquireObjectLoan 1 48
+@@ -29,0 +30,2 @@
++    BytesLength 48 0
++    MethodCall read_buffer 48
+@@ -40,2 +42 @@
+-  firstmut 1
+-    MethodCall write_buffer
++    MethodCall read_buffer
+
+; CASE: later mutation of independent root
+; BASE: mutable loan excludes later scalar read
+; RUN: emit
+@@ -12 +12 @@
+-  params [region (class Buffer)]
++  params [region (class Buffer) (class Buffer)]
+@@ -27,0 +28 @@
++    BindOwnedObjectParameter 2 88 Buffer
+@@ -29 +30,2 @@
+-    Load 16
++    MethodCall write_buffer 88
++    BytesLength 88 0
+@@ -31,0 +34 @@
++    EndObject 88
+
+; CASE: shared loan coexists with exact existing readonly view
+; BASE: mutable loan excludes later scalar read
+; RUN: emit
+@@ -28,2 +28,3 @@
+-    AcquireObjectLoan 1 48 true
+-    Load 16
++    BorrowOwnedSpan 48 0 160
++    AcquireObjectLoan 1 48
++    SpanLength 160
+@@ -31,0 +33 @@
++    EndSpan 160
+@@ -40,2 +42 @@
+-  firstmut 1
+-    MethodCall write_buffer
++    MethodCall read_buffer
+
+; CASE: mutable acquisition conflicts with existing view
+; BASE: mutable loan excludes later scalar read
+; RUN: verify
+; EXPECT-ERROR: owned byte or root mutation with live readonly span
+@@ -27,0 +28 @@
++    BorrowOwnedSpan 48 0 160
+@@ -29 +29,0 @@
+-    Load 16
+
+; CASE: overlapping shared loans each consumed once
+; BASE: mutable loan excludes later scalar read
+; RUN: emit
+@@ -28,2 +28,2 @@
+-    AcquireObjectLoan 1 48 true
+-    Load 16
++    AcquireObjectLoan 1 48
++    AcquireObjectLoan 2 48
+@@ -31,0 +32,2 @@
++    BorrowedCall borrow_buffer [(48 2 -1)]
++    ReleaseObjectLoan 2
+@@ -40,2 +42 @@
+-  firstmut 1
+-    MethodCall write_buffer
++    MethodCall read_buffer
+
+; CASE: released identity can name a new synchronous interval
+; BASE: mutable loan excludes later scalar read
+; RUN: emit
+@@ -29 +29,3 @@
+-    Load 16
++    BorrowedCall borrow_buffer [(48 1 -1)]
++    ReleaseObjectLoan 1
++    AcquireObjectLoan 1 48 true
+
+; CASE: call before acquisition in text follows CFG and reuses released identity
+; BASE: mutable loan excludes later scalar read
+; RUN: emit
+@@ -27,0 +28,6 @@
++    Jump 10
++    Label 20
++    BorrowedCall borrow_buffer [(48 1 -1)]
++    ReleaseObjectLoan 1
++    Jump 30
++    Label 10
+@@ -29 +35,3 @@
+-    Load 16
++    Jump 20
++    Label 30
++    AcquireObjectLoan 1 48 true
+
+; CASE: completed call still protects root until release
+; BASE: mutable loan excludes later scalar read
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -29 +28,0 @@
+-    Load 16
+@@ -30,0 +30 @@
++    MethodCall read_buffer 48

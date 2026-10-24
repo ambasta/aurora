@@ -1,0 +1,2034 @@
+; CASE: enum constant store call and equality
+; RUN: emit
+enum Mode 2
+enum OtherMode 2
+function test
+  result bool
+  frame 16
+  slot 8 (enum Mode)
+    EnumConstant (enum Mode) 1
+    Store 8 (enum Mode)
+    Load 8 (enum Mode)
+    Push
+    Call identity_mode
+    Push
+    EnumConstant (enum Mode) 1
+    Compare Equal (enum Mode)
+    Return
+end
+function identity_mode
+  result (enum Mode)
+  params [(enum Mode)]
+  frame 16
+  slot 8 (enum Mode)
+    BindParameter 0 8 (enum Mode)
+    Load 8 (enum Mode)
+    Return
+end
+
+; CASE: enum undeclared case -1
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: not a declared case
+@@ -7 +7 @@
+-    EnumConstant (enum Mode) 1
++    EnumConstant (enum Mode) -1
+
+; CASE: enum undeclared case 2
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: not a declared case
+@@ -7 +7 @@
+-    EnumConstant (enum Mode) 1
++    EnumConstant (enum Mode) 2
+
+; CASE: enum undeclared case 256
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: not a declared case
+@@ -7 +7 @@
+-    EnumConstant (enum Mode) 1
++    EnumConstant (enum Mode) 256
+
+; CASE: enum constant wrong type i64
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: invalid enum constant type
+@@ -7 +7 @@
+-    EnumConstant (enum Mode) 1
++    EnumConstant i64 1
+
+; CASE: enum constant wrong type bool
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: invalid enum constant type
+@@ -7 +7 @@
+-    EnumConstant (enum Mode) 1
++    EnumConstant bool 1
+
+; CASE: enum constant wrong type Mode
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: invalid enum constant type
+@@ -7 +7 @@
+-    EnumConstant (enum Mode) 1
++    EnumConstant (class Mode) 1
+
+; CASE: enum constant wrong type Unknown
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: invalid enum constant type
+@@ -7 +7 @@
+-    EnumConstant (enum Mode) 1
++    EnumConstant (enum Unknown) 1
+
+; CASE: enum constant malformed metadata
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: noncanonical instruction type payload
+@@ -7 +7 @@
+-    EnumConstant (enum Mode) 1
++    EnumConstant (enum Mode len=1) 1
+
+; CASE: integer constant cannot forge enum
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: invalid constant type
+@@ -7 +7 @@
+-    EnumConstant (enum Mode) 1
++    Constant 1 (enum Mode)
+
+; CASE: cross enum store rejected
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: mistyped current value
+@@ -7 +7 @@
+-    EnumConstant (enum Mode) 1
++    EnumConstant (enum OtherMode) 1
+
+; CASE: cross enum call rejected
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: call argument type mismatch
+@@ -9 +9 @@
+-    Load 8 (enum Mode)
++    EnumConstant (enum OtherMode) 1
+
+; CASE: cross enum comparison rejected
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: mistyped current value
+@@ -13 +13 @@
+-    EnumConstant (enum Mode) 1
++    EnumConstant (enum OtherMode) 1
+
+; CASE: cross enum comparison stack rejected
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: comparison type mismatch
+@@ -13,2 +13,2 @@
+-    EnumConstant (enum Mode) 1
+-    Compare Equal (enum Mode)
++    EnumConstant (enum OtherMode) 1
++    Compare Equal (enum OtherMode)
+
+; CASE: enum ordering rejected 2
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: ordered bool comparison or enum comparison
+@@ -14 +14 @@
+-    Compare Equal (enum Mode)
++    Compare Less (enum Mode)
+
+; CASE: enum ordering rejected 3
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: ordered bool comparison or enum comparison
+@@ -14 +14 @@
+-    Compare Equal (enum Mode)
++    Compare Greater (enum Mode)
+
+; CASE: enum ordering rejected 4
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: ordered bool comparison or enum comparison
+@@ -14 +14 @@
+-    Compare Equal (enum Mode)
++    Compare LessEqual (enum Mode)
+
+; CASE: enum ordering rejected 5
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: ordered bool comparison or enum comparison
+@@ -14 +14 @@
+-    Compare Equal (enum Mode)
++    Compare GreaterEqual (enum Mode)
+
+; CASE: enum arithmetic rejected
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -14 +14 @@
+-    Compare Equal (enum Mode)
++    BinaryValue CheckedAdd (enum Mode)
+
+; CASE: enum local arrays rejected
+; RUN: verify
+; EXPECT-ERROR: invalid array shape
+enum Mode 2
+enum OtherMode 2
+function test
+  result bool
+  frame 16
+  slot 8 (enum Mode)
+    EnumConstant (enum Mode) 1
+    Store 8 (enum Mode)
+    Constant
+    BoundsGuard 8 1 (enum Mode)
+    IndexLoad 8 1 (enum Mode)
+    Return
+end
+function identity_mode
+  result (enum Mode)
+  params [(enum Mode)]
+  frame 16
+  slot 8 (enum Mode)
+    BindParameter 0 8 (enum Mode)
+    Load 8 (enum Mode)
+    Return
+end
+
+; CASE: unknown enum slot rejected
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: invalid slot payload type
+@@ -6 +6 @@
+-  slot 8 (enum Mode)
++  slot 8 (enum Unknown)
+
+; CASE: unknown enum boundary rejected
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: invalid value boundary type
+@@ -4 +4 @@
+-  result bool
++  result (enum Unknown)
+
+; CASE: enum case count bound 0
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: invalid nominal enum declaration
+@@ -1 +1 @@
+-enum Mode 2
++enum Mode 0
+
+; CASE: enum case count bound -1
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: invalid nominal enum declaration
+@@ -1 +1 @@
+-enum Mode 2
++enum Mode -1
+
+; CASE: enum case count bound 257
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: invalid nominal enum declaration
+@@ -1 +1 @@
+-enum Mode 2
++enum Mode 257
+
+; CASE: enum name bounds
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: invalid nominal enum declaration
+@@ -0,0 +1 @@
++enum "" 1
+
+; CASE: enum name bounds #2
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: invalid nominal enum declaration
+@@ -0,0 +1 @@
++enum EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE 1
+
+; CASE: enum declaration count cap
+; RUN: verify
+; EXPECT-ERROR: too many enum declarations
+enum E0 1
+enum E1 1
+enum E10 1
+enum E11 1
+enum E12 1
+enum E13 1
+enum E14 1
+enum E15 1
+enum E16 1
+enum E17 1
+enum E18 1
+enum E19 1
+enum E2 1
+enum E20 1
+enum E21 1
+enum E22 1
+enum E23 1
+enum E24 1
+enum E25 1
+enum E26 1
+enum E27 1
+enum E28 1
+enum E29 1
+enum E3 1
+enum E30 1
+enum E31 1
+enum E32 1
+enum E33 1
+enum E34 1
+enum E35 1
+enum E36 1
+enum E37 1
+enum E38 1
+enum E39 1
+enum E4 1
+enum E40 1
+enum E41 1
+enum E42 1
+enum E43 1
+enum E44 1
+enum E45 1
+enum E46 1
+enum E47 1
+enum E48 1
+enum E49 1
+enum E5 1
+enum E50 1
+enum E51 1
+enum E52 1
+enum E53 1
+enum E54 1
+enum E55 1
+enum E56 1
+enum E57 1
+enum E58 1
+enum E59 1
+enum E6 1
+enum E60 1
+enum E61 1
+enum E62 1
+enum E7 1
+enum E8 1
+enum E9 1
+enum Mode 2
+enum OtherMode 2
+function test
+  result bool
+  frame 16
+  slot 8 (enum Mode)
+    EnumConstant (enum Mode) 1
+    Store 8 (enum Mode)
+    Load 8 (enum Mode)
+    Push
+    Call identity_mode
+    Push
+    EnumConstant (enum Mode) 1
+    Compare Equal (enum Mode)
+    Return
+end
+function identity_mode
+  result (enum Mode)
+  params [(enum Mode)]
+  frame 16
+  slot 8 (enum Mode)
+    BindParameter 0 8 (enum Mode)
+    Load 8 (enum Mode)
+    Return
+end
+
+; CASE: enum class nominal name collision
+; BASE: enum constant store call and equality
+; RUN: verify
+; EXPECT-ERROR: class and enum nominal names overlap
+@@ -0,0 +1 @@
++layout Mode []
+
+; CASE: enum exact declaration and case limits
+; BASE: enum declaration count cap
+; RUN: emit
+@@ -60 +59,0 @@
+-enum E62 1
+@@ -64 +63 @@
+-enum Mode 2
++enum Mode 256
+@@ -70 +69 @@
+-    EnumConstant (enum Mode) 1
++    EnumConstant (enum Mode) 255
+
+; CASE: method result with composed enum array empty descendants
+; RUN: emit
+layout Empty []
+layout Leaf [(enum Mode) i64 i64 bool]
+layout Outer [i64 (enum Mode) i64 i64 bool]
+fields Leaf [((enum Mode) 0 1 false) (i64 1 2 true) (bool 3 1 false) ((class Empty) 4 0 false)]
+fields Outer [(i64 0 1 false) ((class Leaf) 1 4 false) ((class Empty) 5 0 false)]
+enum Mode 2
+enum OtherMode 2
+function test
+  result i64
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 168
+    Return
+end
+function construct_leaf
+  result i64
+  params [(enum Mode) bool (class Empty)]
+  frame 32
+  receiver Leaf true true
+  slot 8 (enum Mode)
+  slot 16 bool
+  object 24 Empty false
+    BindParameter 0 8 (enum Mode)
+    BindParameter 1 16 bool
+    BindObjectParameter 2 24 Empty
+    Load 8 (enum Mode)
+    ReceiverStore 0 (enum Mode)
+    Load 16 bool
+    ReceiverStore 2 bool
+    ReceiverArrayZero 1
+    InitializeObjectField 0 3 24
+    Constant
+    Return
+end
+function construct_outer
+  result i64
+  params [i64 (class Leaf) (class Empty) i64]
+  frame 64
+  receiver Outer true true
+  slot 8 i64
+  slot 16 bool
+  slot 24 i64
+  slot 32 i64
+  slot 40 (enum Mode)
+  slot 56 i64
+  object 40 Leaf false
+  object 48 Empty false
+    BindParameter 0 8
+    BindObjectParameter 1 40 Leaf
+    BindObjectParameter 2 48 Empty
+    BindParameter 3 56
+    Load 8
+    Push
+    Load 56
+    BinaryValue
+    ReceiverStore
+    InitializeObjectField 0 1 40
+    InitializeObjectField 0 2 48
+    Constant
+    Return
+end
+function set_leaf
+  result i64
+  params [i64 i64]
+  frame 16
+  receiver Leaf true false
+  slot 8 i64
+  slot 16 i64
+    BindParameter 0 8
+    BindParameter 1 16
+    Load 8
+    ReceiverBoundsGuard 1
+    Push
+    Load 16
+    ReceiverIndexStore 1
+    Constant
+    Return
+end
+function get_outer_header
+  result i64
+  frame 0
+  receiver Outer false false
+    ReceiverLoad
+    Return
+end
+function copy_outer
+  result (class Outer)
+  params [(class Outer)]
+  frame 48
+  slot 8 bool
+  slot 16 i64
+  slot 24 i64
+  slot 32 (enum Mode)
+  slot 40 i64
+  object 40 Outer false
+    BindObjectParameter 0 40 Outer
+    ReturnObject 40
+end
+function clobber_scalar
+  result i64
+  frame 0
+    Constant 81
+    Push
+    Constant 9
+    BinaryValue CheckedDivide
+    Return
+end
+function identity_mode
+  result (enum Mode)
+  params [(enum Mode)]
+  frame 16
+  slot 8 (enum Mode)
+    BindParameter 0 8 (enum Mode)
+    Load 8 (enum Mode)
+    Return
+end
+function snapshot_outer
+  result (class Outer)
+  params [i64 (enum Mode)]
+  frame 160
+  receiver Outer false false
+  slot 8 i64
+  slot 16 (enum Mode)
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 (enum Mode)
+  slot 64 bool
+  slot 72 i64
+  slot 80 i64
+  slot 88 (enum Mode)
+  slot 96 i64
+  slot 104 bool
+  slot 112 i64
+  slot 120 i64
+  slot 128 (enum Mode)
+  slot 136 i64
+  slot 144 bool
+  object 48 Leaf false
+  object 56 Empty false
+  object 96 Outer false
+  object 136 Outer true
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    BeginObject 48
+    ObjectFieldCopy 0 1 48
+    BeginObject 56
+    ObjectFieldCopy 0 2 56
+    Load 16 (enum Mode)
+    Push
+    Call identity_mode
+    Push
+    Load 48 (enum Mode)
+    Compare Equal (enum Mode)
+    Store 144 bool
+    Call clobber_scalar
+    BeginObject 96
+    Load 8
+    Push
+    ReceiverLoad
+    Push
+    MethodCall construct_outer 96 [0 48 56 0]
+    BeginObject 136
+    AggregateCall copy_outer [96] 136
+    MethodCall get_outer_header
+    Push
+    Load 136
+    BinaryValue
+    Store 136
+    Load 144 bool
+    BranchFalse 1
+    ReturnObject 136
+    Label 1
+    Constant 1
+    Push
+    Constant
+    BinaryValue CheckedDivide
+    ReturnObject 136
+end
+function relay_outer
+  result (class Outer)
+  params [i64 (enum Mode)]
+  frame 64
+  receiver Outer false false
+  slot 8 i64
+  slot 16 (enum Mode)
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 (enum Mode)
+  slot 56 i64
+  object 56 Outer false
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    BeginObject 56
+    Load 8
+    Push
+    Load 16 (enum Mode)
+    Push
+    MethodCall snapshot_outer 0 [] 56
+    ReturnObject 56
+end
+function snapshot_empty
+  result (class Empty)
+  frame 16
+  receiver Outer false false
+  object 8 Empty false
+    BeginObject 8
+    ObjectFieldCopy 0 2 8
+    Call clobber_scalar
+    ReturnObject 8
+end
+function get_leaf_mode
+  result (enum Mode)
+  frame 0
+  receiver Leaf false false
+    ReceiverLoad 0 (enum Mode)
+    Return
+end
+
+; CASE: method result native combined fixtures
+; RUN: emit
+layout Empty []
+layout Leaf [(enum Mode) i64 i64 bool]
+layout Outer [i64 (enum Mode) i64 i64 bool]
+fields Leaf [((enum Mode) 0 1 false) (i64 1 2 true) (bool 3 1 false) ((class Empty) 4 0 false)]
+fields Outer [(i64 0 1 false) ((class Leaf) 1 4 false) ((class Empty) 5 0 false)]
+enum Mode 2
+enum OtherMode 2
+function test
+  result i64
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 168
+    Return
+end
+function construct_leaf
+  result i64
+  params [(enum Mode) bool (class Empty)]
+  frame 32
+  receiver Leaf true true
+  slot 8 (enum Mode)
+  slot 16 bool
+  object 24 Empty false
+    BindParameter 0 8 (enum Mode)
+    BindParameter 1 16 bool
+    BindObjectParameter 2 24 Empty
+    Load 8 (enum Mode)
+    ReceiverStore 0 (enum Mode)
+    Load 16 bool
+    ReceiverStore 2 bool
+    ReceiverArrayZero 1
+    InitializeObjectField 0 3 24
+    Constant
+    Return
+end
+function construct_outer
+  result i64
+  params [i64 (class Leaf) (class Empty) i64]
+  frame 64
+  receiver Outer true true
+  slot 8 i64
+  slot 16 bool
+  slot 24 i64
+  slot 32 i64
+  slot 40 (enum Mode)
+  slot 56 i64
+  object 40 Leaf false
+  object 48 Empty false
+    BindParameter 0 8
+    BindObjectParameter 1 40 Leaf
+    BindObjectParameter 2 48 Empty
+    BindParameter 3 56
+    Load 8
+    Push
+    Load 56
+    BinaryValue
+    ReceiverStore
+    InitializeObjectField 0 1 40
+    InitializeObjectField 0 2 48
+    Constant
+    Return
+end
+function set_leaf
+  result i64
+  params [i64 i64]
+  frame 16
+  receiver Leaf true false
+  slot 8 i64
+  slot 16 i64
+    BindParameter 0 8
+    BindParameter 1 16
+    Load 8
+    ReceiverBoundsGuard 1
+    Push
+    Load 16
+    ReceiverIndexStore 1
+    Constant
+    Return
+end
+function get_outer_header
+  result i64
+  frame 0
+  receiver Outer false false
+    ReceiverLoad
+    Return
+end
+function copy_outer
+  result (class Outer)
+  params [(class Outer)]
+  frame 48
+  slot 8 bool
+  slot 16 i64
+  slot 24 i64
+  slot 32 (enum Mode)
+  slot 40 i64
+  object 40 Outer false
+    BindObjectParameter 0 40 Outer
+    ReturnObject 40
+end
+function clobber_scalar
+  result i64
+  frame 0
+    Constant 81
+    Push
+    Constant 9
+    BinaryValue CheckedDivide
+    Return
+end
+function identity_mode
+  result (enum Mode)
+  params [(enum Mode)]
+  frame 16
+  slot 8 (enum Mode)
+    BindParameter 0 8 (enum Mode)
+    Load 8 (enum Mode)
+    Return
+end
+function snapshot_outer
+  result (class Outer)
+  params [i64 (enum Mode)]
+  frame 160
+  receiver Outer false false
+  slot 8 i64
+  slot 16 (enum Mode)
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 (enum Mode)
+  slot 64 bool
+  slot 72 i64
+  slot 80 i64
+  slot 88 (enum Mode)
+  slot 96 i64
+  slot 104 bool
+  slot 112 i64
+  slot 120 i64
+  slot 128 (enum Mode)
+  slot 136 i64
+  slot 144 bool
+  object 48 Leaf false
+  object 56 Empty false
+  object 96 Outer false
+  object 136 Outer true
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    BeginObject 48
+    ObjectFieldCopy 0 1 48
+    BeginObject 56
+    ObjectFieldCopy 0 2 56
+    Load 16 (enum Mode)
+    Push
+    Call identity_mode
+    Push
+    Load 48 (enum Mode)
+    Compare Equal (enum Mode)
+    Store 144 bool
+    Call clobber_scalar
+    BeginObject 96
+    Load 8
+    Push
+    ReceiverLoad
+    Push
+    MethodCall construct_outer 96 [0 48 56 0]
+    BeginObject 136
+    AggregateCall copy_outer [96] 136
+    MethodCall get_outer_header
+    Push
+    Load 136
+    BinaryValue
+    Store 136
+    Load 144 bool
+    BranchFalse 1
+    ReturnObject 136
+    Label 1
+    Constant 1
+    Push
+    Constant
+    BinaryValue CheckedDivide
+    ReturnObject 136
+end
+function relay_outer
+  result (class Outer)
+  params [i64 (enum Mode)]
+  frame 64
+  receiver Outer false false
+  slot 8 i64
+  slot 16 (enum Mode)
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 (enum Mode)
+  slot 56 i64
+  object 56 Outer false
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    BeginObject 56
+    Load 8
+    Push
+    Load 16 (enum Mode)
+    Push
+    MethodCall snapshot_outer 0 [] 56
+    ReturnObject 56
+end
+function snapshot_empty
+  result (class Empty)
+  frame 16
+  receiver Outer false false
+  object 8 Empty false
+    BeginObject 8
+    ObjectFieldCopy 0 2 8
+    Call clobber_scalar
+    ReturnObject 8
+end
+function get_leaf_mode
+  result (enum Mode)
+  frame 0
+  receiver Leaf false false
+    ReceiverLoad 0 (enum Mode)
+    Return
+end
+function method_result_header
+  result i64
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 152
+    Return
+end
+function method_result_first_array
+  result i64
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 176
+    Return
+end
+function method_result_enum
+  result (enum Mode)
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 184 (enum Mode)
+    Return
+end
+function method_result_bool
+  result bool
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 160 bool
+    Return
+end
+function method_source_snapshot
+  result i64
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 24
+    Return
+end
+function method_source_header
+  result i64
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 112
+    Return
+end
+function method_result_independence
+  result i64
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Constant 1
+    Push
+    Constant -13
+    Push
+    MethodCall set_leaf 184
+    Load 128
+    Return
+end
+function method_forwarded_result
+  result i64
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall relay_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 152
+    Return
+end
+function method_empty_result
+  result i64
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    BeginObject 192
+    MethodCall snapshot_empty 112 [] 192
+    Constant 42
+    Return
+end
+function method_empty_from_result
+  result i64
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    BeginObject 192
+    MethodCall snapshot_empty 152 [] 192
+    Constant 42
+    Return
+end
+function method_enum_receiver_read
+  result (enum Mode)
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    MethodCall get_leaf_mode 184
+    Return
+end
+function method_result_saved_operand
+  result i64
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    Constant 3
+    Push
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 168
+    BinaryValue
+    Return
+end
+
+; CASE: method result exact destination 0
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: method result requires exact object slot
+@@ -70 +70 @@
+-    MethodCall snapshot_outer 112 [] 152
++    MethodCall snapshot_outer 112
+
+; CASE: method result exact destination 144
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: method result requires exact object slot
+@@ -70 +70 @@
+-    MethodCall snapshot_outer 112 [] 152
++    MethodCall snapshot_outer 112 [] 144
+
+; CASE: method result exact destination -152
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: method result requires exact object slot
+@@ -70 +70 @@
+-    MethodCall snapshot_outer 112 [] 152
++    MethodCall snapshot_outer 112 [] -152
+
+; CASE: method result exact destination 200
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: method result requires exact object slot
+@@ -70 +70 @@
+-    MethodCall snapshot_outer 112 [] 152
++    MethodCall snapshot_outer 112 [] 200
+
+; CASE: method result aliases receiver
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: method result aliases receiver
+@@ -70 +70 @@
+-    MethodCall snapshot_outer 112 [] 152
++    MethodCall snapshot_outer 112 [] 112
+
+; CASE: method result physical overlap
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: overlapping object layouts
+@@ -1,0 +2 @@
++layout EnumLeaf [(enum Mode)]
+@@ -30,0 +32 @@
++  object 144 EnumLeaf false
+
+; CASE: method result inactive destination
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: method result outside active object lifetime
+@@ -65 +64,0 @@
+-    BeginObject 152
+
+; CASE: method result partial destination
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: method result requires uninitialized object
+@@ -65,0 +66,2 @@
++    Constant
++    Store 152
+
+; CASE: method result complete destination
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: method result object already initialized
+@@ -65,0 +66 @@
++    CopyObject 112 152
+
+; CASE: method result conditional partial destination
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: method result requires uninitialized object
+@@ -65,0 +66,5 @@
++    Constant 1 bool
++    BranchFalse 7
++    Constant
++    Store 152
++    Label 7
+
+; CASE: method result scalar call destination forbidden
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: scalar method result cannot name object storage
+@@ -64 +64 @@
+-    MethodCall construct_outer 112 [0 72 8 0]
++    MethodCall construct_outer 112 [0 72 8 0] 152
+
+; CASE: method result const receiver blocks mutable method
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: const object cannot supply mutable receiver
+@@ -182 +182 @@
+-  receiver Outer false false
++  receiver Outer true false
+
+; CASE: method result forwarding const receiver blocks mutable method
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: const receiver cannot forward mutable capability
+@@ -30 +30 @@
+-  object 112 Outer false
++  object 112 Outer true
+@@ -182 +182 @@
+-  receiver Outer false false
++  receiver Outer true false
+
+; CASE: method result recursive nominal shape mismatch
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: method result nominal class mismatch
+@@ -2,0 +3,2 @@
++layout OtherLeaf [(enum Mode) i64 i64 bool]
++layout OtherOuter [i64 (enum Mode) i64 i64 bool]
+@@ -4,0 +7,2 @@
++fields OtherLeaf [((enum Mode) 0 1 false) (i64 1 2 true) (bool 3 1 false) ((class Empty) 4 0 false)]
++fields OtherOuter [(i64 0 1 false) ((class OtherLeaf) 1 4 false) ((class Empty) 5 0 false)]
+@@ -31 +35 @@
+-  object 152 Outer false
++  object 152 OtherOuter false
+
+; CASE: method result enum nominal field mismatch
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: nested class field leaf type mismatch
+@@ -2 +2 @@
+-layout Leaf [(enum Mode) i64 i64 bool]
++layout Leaf [(enum OtherMode) i64 i64 bool]
+@@ -4 +4 @@
+-fields Leaf [((enum Mode) 0 1 false) (i64 1 2 true) (bool 3 1 false) ((class Empty) 4 0 false)]
++fields Leaf [((enum OtherMode) 0 1 false) (i64 1 2 true) (bool 3 1 false) ((class Empty) 4 0 false)]
+
+; CASE: method result enum arrays remain forbidden
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: invalid logical class field shape
+@@ -4 +4 @@
+-fields Leaf [((enum Mode) 0 1 false) (i64 1 2 true) (bool 3 1 false) ((class Empty) 4 0 false)]
++fields Leaf [((enum Mode) 0 1 true) (i64 1 2 true) (bool 3 1 false) ((class Empty) 4 0 false)]
+
+; CASE: method result unknown enum layout leaf
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: non-scalar class layout field
+@@ -2 +2 @@
+-layout Leaf [(enum Mode) i64 i64 bool]
++layout Leaf [(enum Missing) i64 i64 bool]
+
+; CASE: method result cannot omit empty constructor child
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: constructor returns before all class fields initialized
+@@ -92 +91,0 @@
+-    InitializeObjectField 0 3 24
+
+; CASE: method result wrong enum scalar argument
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: method argument type mismatch
+@@ -68 +68 @@
+-    EnumConstant (enum Mode) 1
++    EnumConstant (enum OtherMode) 1
+
+; CASE: constructor record wrong enum argument
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: method argument type mismatch
+@@ -37 +37 @@
+-    EnumConstant (enum Mode) 1
++    EnumConstant (enum OtherMode) 1
+
+; CASE: method class argument requires snapshot vector
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: object argument vector size mismatch
+@@ -180 +180 @@
+-  params [i64 (enum Mode)]
++  params [i64 (class Empty)]
+@@ -184 +183,0 @@
+-  slot 16 (enum Mode)
+@@ -199,0 +199 @@
++  object 16 Empty false
+@@ -205 +205 @@
+-    BindParameter 1 16 (enum Mode)
++    BindObjectParameter 1 16 Empty
+@@ -210 +210 @@
+-    Load 16 (enum Mode)
++    EnumConstant (enum Mode)
+
+; CASE: method object-argument vector not repurposed as result
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: receiver object argument vector size mismatch
+@@ -70 +70 @@
+-    MethodCall snapshot_outer 112 [] 152
++    MethodCall snapshot_outer 112 [152] 152
+
+; CASE: method result cannot expose scalar current value
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: push without current value
+@@ -70,0 +71 @@
++    Push
+
+; CASE: method enum receiver field nominal mismatch
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: receiver field type/layout mismatch
+@@ -278,3 +278,3 @@
+-    ReceiverLoad 0 (enum Mode)
+-    Return
+-end
++    ReceiverLoad 0 (enum OtherMode)
++    Return
++end
+
+; CASE: constructor enum receiver store nominal mismatch
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: mistyped current value
+@@ -87 +87 @@
+-    Load 8 (enum Mode)
++    EnumConstant (enum OtherMode) 1
+
+; CASE: method enum return nominal mismatch
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: mistyped current value
+@@ -275 +275 @@
+-  result (enum Mode)
++  result (enum OtherMode)
+
+; CASE: method empty result already complete
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: method result object already initialized
+@@ -72,0 +73,3 @@
++    BeginObject 192
++    MethodCall snapshot_empty 112 [] 192
++    MethodCall snapshot_empty 112 [] 192
+
+; CASE: method aggregate result cannot use scalar return
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: scalar return cannot return class value
+@@ -272 +272 @@
+-    ReturnObject 8
++    Return
+
+; CASE: method result source partial object
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: load before initialization
+@@ -225 +225 @@
+-    AggregateCall copy_outer [96] 136
++    Constant
+
+; CASE: method result cannot hide receiver recursion
+; BASE: method result with composed enum array empty descendants
+; RUN: verify
+; EXPECT-ERROR: recursive receiver call cycle
+@@ -261 +261 @@
+-    MethodCall snapshot_outer 0 [] 56
++    MethodCall relay_outer 0 [] 56
+
+; CASE: method result ABI emission
+; BASE: method result with composed enum array empty descendants
+; RUN: emit
+; CHECK-DAG: movq %r10, -168(%rbp)
+; CHECK-DAG: movq %r11, -176(%rbp)
+; CHECK-DAG: leaq -152(%rbp), %r11
+; CHECK-DAG: movq %rdi, -8(%rbp)
+; CHECK-DAG: movq %rsi, -16(%rbp)

@@ -34,6 +34,8 @@ Kernel policy, graphical console, display renderer, IOMMU event, protected
 note/snapshot, pin/NVMe/dormant and executable-semantics tests build once in Meson
 and compare golden results; their Python reimplementation oracles, mutant controls
 and receipts are gone.
+Hand-built verifier/emitter IR cases are textual IR data (`tests/compiler/ir`,
+one `aurora-ir-check` driver) instead of 24 C++ fixture translation units.
 
 Next dependencies: [roadmap](roadmap.md). Required checks:
 [development and qualification](developer-test-contract.md).

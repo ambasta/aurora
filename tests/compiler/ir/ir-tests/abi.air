@@ -1,0 +1,4053 @@
+; CASE: spans
+; RUN: emit
+layout SpanPacket [u8 i64 u8]
+function span_local
+  result u8
+  frame 640
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  array 8 3
+  span 256
+  span 320
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BorrowSpan 8 256
+    ReborrowSpan 256 320
+    Constant 1
+    SpanLoad 320
+    EndSpan 320
+    EndSpan 256
+    EndArray 8
+    Return
+end
+function span_length
+  result i64
+  frame 640
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  array 8 3
+  span 256
+  span 320
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BorrowSpan 8 256
+    ReborrowSpan 256 320
+    SpanLength 256
+    EndSpan 320
+    EndSpan 256
+    EndArray 8
+    Return
+end
+function span_preserve_current
+  result u8
+  frame 640
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  array 8 3
+  span 256
+  span 320
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BorrowSpan 8 256
+    ReborrowSpan 256 320
+    EndSpan 320
+    EndSpan 256
+    EndArray 8
+    Return
+end
+function span_read
+  result u8
+  params [span i64]
+  frame 640
+  slot 8 i64
+  span 256
+    BindSpanParameter 0 256
+    BindParameter 1 8
+    Load 8
+    SpanLoad 256
+    EndSpan 256
+    Return
+end
+function span_forward
+  result u8
+  params [span i64]
+  frame 640
+  slot 8 i64
+  span 256
+  span 320
+    BindSpanParameter 0 256
+    BindParameter 1 8
+    ReborrowSpan 256 320
+    Load 8
+    Push
+    AggregateCall span_read [0 0] 0 [320 0]
+    EndSpan 320
+    EndSpan 256
+    Return
+end
+function span_dynamic
+  result u8
+  params [i64]
+  frame 640
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  slot 56 i64
+  array 8 3
+  span 256
+  span 320
+    BindParameter 0 56
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BorrowSpan 8 256
+    Load 56
+    Push
+    AggregateCall span_forward [0 0] 0 [256 0]
+    EndSpan 256
+    EndArray 8
+    Return
+end
+function span_mixed_callee
+  result (class SpanPacket)
+  params [u8 span (class SpanPacket) i64 span bool]
+  frame 640
+  slot 1 u8
+  slot 40 u8
+  slot 48 i64
+  slot 56 u8
+  slot 64 i64
+  slot 96 bool
+  slot 112 u8
+  slot 120 i64
+  slot 128 u8
+  slot 136 i64
+  object 56 SpanPacket false
+  object 128 SpanPacket false
+  span 256
+  span 384
+    BindParameter 0 1 u8
+    BindSpanParameter 1 256
+    BindObjectParameter 2 56 SpanPacket
+    BindParameter 3 64
+    BindSpanParameter 4 384
+    BindParameter 5 96 bool
+    BeginObject 128
+    Constant
+    Push
+    AggregateCall span_forward [0 0] 0 [256 0]
+    Convert u8
+    Push
+    Load 48
+    BinaryValue
+    Push
+    Load 64
+    BinaryValue
+    Push
+    Constant 2
+    Push
+    AggregateCall span_forward [0 0] 0 [384 0]
+    Convert u8
+    BinaryValue
+    Store 136
+    Load 96 bool
+    BranchFalse 1
+    Load 136
+    Push
+    Constant 1
+    BinaryValue
+    Store 136
+    Label 1
+    Load 136
+    Store 120
+    Load 1 u8
+    Store 128 u8
+    Load 40 u8
+    Store 112 u8
+    EndSpan 384
+    EndSpan 256
+    ReturnObject 128
+end
+function span_mixed_forward
+  result (class SpanPacket)
+  params [u8 span (class SpanPacket) i64 span bool]
+  frame 640
+  slot 1 u8
+  slot 40 u8
+  slot 48 i64
+  slot 56 u8
+  slot 64 i64
+  slot 96 bool
+  slot 112 u8
+  slot 120 i64
+  slot 128 u8
+  slot 136 i64
+  object 56 SpanPacket false
+  object 128 SpanPacket false
+  span 256
+  span 384
+  span 448
+  span 512
+    BindParameter 0 1 u8
+    BindSpanParameter 1 256
+    BindObjectParameter 2 56 SpanPacket
+    BindParameter 3 64
+    BindSpanParameter 4 384
+    BindParameter 5 96 bool
+    BeginObject 128
+    ReborrowSpan 256 448
+    ReborrowSpan 384 512
+    Load 1 u8
+    Push
+    Load 64
+    Push
+    Load 96 bool
+    Push
+    AggregateCall span_mixed_callee [0 0 56 0*3] 128 [0 448 0 0 512 0]
+    EndSpan 512
+    EndSpan 448
+    EndSpan 384
+    EndSpan 256
+    ReturnObject 128
+end
+function span_mixed_sum
+  result i64
+  frame 640
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  slot 30 u8
+  slot 31 u8
+  slot 32 u8
+  slot 40 u8
+  slot 48 i64
+  slot 56 u8
+  slot 96 u8
+  slot 104 i64
+  slot 112 u8
+  object 56 SpanPacket false
+  object 112 SpanPacket false
+  array 8 3
+  array 32 3
+  span 256
+  span 576
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BeginArray 32
+    Constant 100 u8
+    Store 32 u8
+    Constant 200 u8
+    Store 31 u8
+    Constant 255 u8
+    Store 30 u8
+    BeginObject 56
+    Constant 42 u8
+    Store 56 u8
+    Constant 13
+    Store 48
+    Constant 77 u8
+    Store 40 u8
+    BorrowSpan 8 256
+    BorrowSpan 32 576
+    BeginObject 112
+    Constant 31 u8
+    Push
+    Constant 19
+    Push
+    Constant 1 bool
+    Push
+    AggregateCall span_mixed_forward [0 0 56 0*3] 112 [0 256 0 0 576 0]
+    EndSpan 576
+    EndSpan 256
+    EndArray 32
+    EndArray 8
+    Load 104
+    Return
+end
+function span_mixed_first
+  result u8
+  frame 640
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  slot 30 u8
+  slot 31 u8
+  slot 32 u8
+  slot 40 u8
+  slot 48 i64
+  slot 56 u8
+  slot 96 u8
+  slot 104 i64
+  slot 112 u8
+  object 56 SpanPacket false
+  object 112 SpanPacket false
+  array 8 3
+  array 32 3
+  span 256
+  span 576
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BeginArray 32
+    Constant 100 u8
+    Store 32 u8
+    Constant 200 u8
+    Store 31 u8
+    Constant 255 u8
+    Store 30 u8
+    BeginObject 56
+    Constant 42 u8
+    Store 56 u8
+    Constant 13
+    Store 48
+    Constant 77 u8
+    Store 40 u8
+    BorrowSpan 8 256
+    BorrowSpan 32 576
+    BeginObject 112
+    Constant 31 u8
+    Push
+    Constant 19
+    Push
+    Constant 1 bool
+    Push
+    AggregateCall span_mixed_forward [0 0 56 0*3] 112 [0 256 0 0 576 0]
+    EndSpan 576
+    EndSpan 256
+    EndArray 32
+    EndArray 8
+    Load 112 u8
+    Return
+end
+function span_mixed_last
+  result u8
+  frame 640
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  slot 30 u8
+  slot 31 u8
+  slot 32 u8
+  slot 40 u8
+  slot 48 i64
+  slot 56 u8
+  slot 96 u8
+  slot 104 i64
+  slot 112 u8
+  object 56 SpanPacket false
+  object 112 SpanPacket false
+  array 8 3
+  array 32 3
+  span 256
+  span 576
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BeginArray 32
+    Constant 100 u8
+    Store 32 u8
+    Constant 200 u8
+    Store 31 u8
+    Constant 255 u8
+    Store 30 u8
+    BeginObject 56
+    Constant 42 u8
+    Store 56 u8
+    Constant 13
+    Store 48
+    Constant 77 u8
+    Store 40 u8
+    BorrowSpan 8 256
+    BorrowSpan 32 576
+    BeginObject 112
+    Constant 31 u8
+    Push
+    Constant 19
+    Push
+    Constant 1 bool
+    Push
+    AggregateCall span_mixed_forward [0 0 56 0*3] 112 [0 256 0 0 576 0]
+    EndSpan 576
+    EndSpan 256
+    EndArray 32
+    EndArray 8
+    Load 96 u8
+    Return
+end
+function span_mixed_saved_operand
+  result i64
+  frame 640
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  slot 30 u8
+  slot 31 u8
+  slot 32 u8
+  slot 40 u8
+  slot 48 i64
+  slot 56 u8
+  slot 96 u8
+  slot 104 i64
+  slot 112 u8
+  object 56 SpanPacket false
+  object 112 SpanPacket false
+  array 8 3
+  array 32 3
+  span 256
+  span 576
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BeginArray 32
+    Constant 100 u8
+    Store 32 u8
+    Constant 200 u8
+    Store 31 u8
+    Constant 255 u8
+    Store 30 u8
+    BeginObject 56
+    Constant 42 u8
+    Store 56 u8
+    Constant 13
+    Store 48
+    Constant 77 u8
+    Store 40 u8
+    BorrowSpan 8 256
+    BorrowSpan 32 576
+    BeginObject 112
+    Constant 1000
+    Push
+    Constant 31 u8
+    Push
+    Constant 19
+    Push
+    Constant 1 bool
+    Push
+    AggregateCall span_mixed_forward [0 0 56 0*3] 112 [0 256 0 0 576 0]
+    EndSpan 576
+    EndSpan 256
+    EndArray 32
+    EndArray 8
+    Load 104
+    BinaryValue
+    Return
+end
+
+; CASE: value-abi
+; RUN: emit
+layout Pair [i64 bool]
+function test
+  result i64
+  frame 48
+  slot 8 bool
+  slot 16 i64
+  slot 24 bool
+  slot 32 i64
+  slot 40 bool
+  slot 48 i64
+  object 16 Pair false
+  object 32 Pair false
+  object 48 Pair false
+    BeginObject 16
+    Constant 12
+    Store 16
+    Constant 1 bool
+    Store 8 bool
+    BeginObject 32
+    Constant 20
+    Store 32
+    Constant 0 bool
+    Store 24 bool
+    Constant 10
+    Push
+    Constant 1 bool
+    Push
+    BeginObject 48
+    AggregateCall copy_pair [16 0 32 0] 48
+    Load 48
+    Return
+end
+function copy_pair
+  result (class Pair)
+  params [(class Pair) i64 (class Pair) bool]
+  frame 64
+  slot 8 bool
+  slot 16 i64
+  slot 24 i64
+  slot 32 bool
+  slot 40 i64
+  slot 48 bool
+  slot 56 bool
+  slot 64 i64
+  object 16 Pair false
+  object 40 Pair false
+  object 64 Pair false
+    BindObjectParameter 0 16 Pair
+    BindParameter 1 24
+    BindObjectParameter 2 40 Pair
+    BindParameter 3 48 bool
+    BeginObject 64
+    Load 16
+    Push
+    Load 24
+    BinaryValue
+    Push
+    Load 40
+    BinaryValue
+    Store 64
+    Load 48 bool
+    Store 56 bool
+    ReturnObject 64
+end
+
+; CASE: packed-methods
+; RUN: emit
+layout Empty []
+layout Leaf [(enum Mode) u8 u8 bool]
+layout Outer [i64 (enum Mode) u8 u8 bool]
+layout Tiny [u8*3]
+fields Empty []
+fields Leaf [((enum Mode) 0 1 false) (u8 1 2 true) (bool 3 1 false) ((class Empty) 4 0 false)]
+fields Outer [(i64 0 1 false) ((class Leaf) 1 4 false) ((class Empty) 5 0 false)]
+fields Tiny [(u8 0 3 true)]
+enum Mode 2
+enum OtherMode 2
+function packed_result_array
+  result u8
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 175 u8
+    Return
+end
+function construct_leaf
+  result i64
+  params [(enum Mode) bool (class Empty)]
+  frame 32
+  receiver Leaf true true
+  slot 8 (enum Mode)
+  slot 16 bool
+  object 24 Empty false
+    BindParameter 0 8 (enum Mode)
+    BindParameter 1 16 bool
+    BindObjectParameter 2 24 Empty
+    Load 8 (enum Mode)
+    ReceiverStore 0 (enum Mode)
+    Load 16 bool
+    ReceiverStore 2 bool
+    ReceiverArrayZero 1
+    InitializeObjectField 0 3 24
+    Constant
+    Return
+end
+function construct_outer
+  result i64
+  params [i64 (class Leaf) (class Empty) i64]
+  frame 64
+  receiver Outer true true
+  slot 8 i64
+  slot 24 bool
+  slot 31 u8
+  slot 32 u8
+  slot 40 (enum Mode)
+  slot 56 i64
+  object 40 Leaf false
+  object 48 Empty false
+    BindParameter 0 8
+    BindObjectParameter 1 40 Leaf
+    BindObjectParameter 2 48 Empty
+    BindParameter 3 56
+    Load 8
+    Push
+    Load 56
+    BinaryValue
+    ReceiverStore
+    InitializeObjectField 0 1 40
+    InitializeObjectField 0 2 48
+    Constant
+    Return
+end
+function set_leaf
+  result i64
+  params [i64 u8]
+  frame 16
+  receiver Leaf true false
+  slot 8 i64
+  slot 16 u8
+    BindParameter 0 8
+    BindParameter 1 16 u8
+    Load 8
+    ReceiverBoundsGuard 1
+    Push
+    Load 16 u8
+    ReceiverIndexStore 1
+    Constant
+    Return
+end
+function get_outer_header
+  result i64
+  frame 0
+  receiver Outer false false
+    ReceiverLoad
+    Return
+end
+function copy_outer
+  result (class Outer)
+  params [(class Outer)]
+  frame 48
+  slot 16 bool
+  slot 23 u8
+  slot 24 u8
+  slot 32 (enum Mode)
+  slot 40 i64
+  object 40 Outer false
+    BindObjectParameter 0 40 Outer
+    ReturnObject 40
+end
+function clobber_scalar
+  result i64
+  frame 0
+    Constant 81
+    Push
+    Constant 9
+    BinaryValue CheckedDivide
+    Return
+end
+function identity_mode
+  result (enum Mode)
+  params [(enum Mode)]
+  frame 16
+  slot 8 (enum Mode)
+    BindParameter 0 8 (enum Mode)
+    Load 8 (enum Mode)
+    Return
+end
+function snapshot_outer
+  result (class Outer)
+  params [i64 (enum Mode)]
+  frame 160
+  receiver Outer false false
+  slot 8 i64
+  slot 16 (enum Mode)
+  slot 32 bool
+  slot 39 u8
+  slot 40 u8
+  slot 48 (enum Mode)
+  slot 72 bool
+  slot 79 u8
+  slot 80 u8
+  slot 88 (enum Mode)
+  slot 96 i64
+  slot 112 bool
+  slot 119 u8
+  slot 120 u8
+  slot 128 (enum Mode)
+  slot 136 i64
+  slot 144 bool
+  object 48 Leaf false
+  object 56 Empty false
+  object 96 Outer false
+  object 136 Outer true
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    BeginObject 48
+    ObjectFieldCopy 0 1 48
+    BeginObject 56
+    ObjectFieldCopy 0 2 56
+    Load 16 (enum Mode)
+    Push
+    Call identity_mode
+    Push
+    Load 48 (enum Mode)
+    Compare Equal (enum Mode)
+    Store 144 bool
+    Call clobber_scalar
+    BeginObject 96
+    Load 8
+    Push
+    ReceiverLoad
+    Push
+    MethodCall construct_outer 96 [0 48 56 0]
+    BeginObject 136
+    AggregateCall copy_outer [96] 136
+    MethodCall get_outer_header
+    Push
+    Load 136
+    BinaryValue
+    Store 136
+    Load 144 bool
+    BranchFalse 1
+    ReturnObject 136
+    Label 1
+    Constant 1
+    Push
+    Constant
+    BinaryValue CheckedDivide
+    ReturnObject 136
+end
+function relay_outer
+  result (class Outer)
+  params [i64 (enum Mode)]
+  frame 64
+  receiver Outer false false
+  slot 8 i64
+  slot 16 (enum Mode)
+  slot 32 bool
+  slot 39 u8
+  slot 40 u8
+  slot 48 (enum Mode)
+  slot 56 i64
+  object 56 Outer false
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    BeginObject 56
+    Load 8
+    Push
+    Load 16 (enum Mode)
+    Push
+    MethodCall snapshot_outer 0 [] 56
+    ReturnObject 56
+end
+function snapshot_empty
+  result (class Empty)
+  frame 16
+  receiver Outer false false
+  object 8 Empty false
+    BeginObject 8
+    ObjectFieldCopy 0 2 8
+    Call clobber_scalar
+    ReturnObject 8
+end
+function get_leaf_mode
+  result (enum Mode)
+  frame 0
+  receiver Leaf false false
+    ReceiverLoad 0 (enum Mode)
+    Return
+end
+function packed_result_header
+  result i64
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 152
+    Return
+end
+function packed_result_first
+  result u8
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 176 u8
+    Return
+end
+function packed_result_enum
+  result (enum Mode)
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 184 (enum Mode)
+    Return
+end
+function packed_result_bool
+  result bool
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 168 bool
+    Return
+end
+function packed_source_array
+  result u8
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 31 u8
+    Return
+end
+function packed_source_header
+  result i64
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 112
+    Return
+end
+function packed_result_independence
+  result u8
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Constant 1
+    Push
+    Constant 255 u8
+    Push
+    MethodCall set_leaf 184
+    Load 135 u8
+    Return
+end
+function packed_forwarded_result
+  result i64
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall relay_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 152
+    Return
+end
+function packed_empty_result
+  result i64
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    BeginObject 192
+    MethodCall snapshot_empty 152 [] 192
+    Constant 42
+    Return
+end
+function packed_copy_tiny
+  result (class Tiny)
+  params [(class Tiny)]
+  frame 16
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  object 8 Tiny false
+    BindObjectParameter 0 8 Tiny
+    ReturnObject 8
+end
+function packed_tiny_roundtrip
+  result u8
+  frame 16
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  slot 14 u8
+  slot 15 u8
+  slot 16 u8
+  object 8 Tiny false
+  object 16 Tiny false
+    BeginObject 8
+    Constant 7 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BeginObject 16
+    AggregateCall packed_copy_tiny [8] 16
+    Load 15 u8
+    Return
+end
+
+; CASE: u8
+; RUN: emit
+layout Pair [u8 bool]
+function byte_op0
+  result u8
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    BinaryValue CheckedAdd u8
+    Return
+end
+function byte_op1
+  result u8
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    BinaryValue CheckedSubtract u8
+    Return
+end
+function byte_op2
+  result u8
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    BinaryValue CheckedMultiply u8
+    Return
+end
+function byte_op3
+  result u8
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    BinaryValue CheckedDivide u8
+    Return
+end
+function byte_op4
+  result u8
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    BinaryValue CheckedRemainder u8
+    Return
+end
+function byte_op5
+  result u8
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    BinaryValue BitAnd u8
+    Return
+end
+function byte_op6
+  result u8
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    BinaryValue BitOr u8
+    Return
+end
+function byte_op7
+  result u8
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    BinaryValue BitXor u8
+    Return
+end
+function byte_op8
+  result u8
+  params [u8 i64]
+  frame 16
+  slot 8 u8
+  slot 16 i64
+    BindParameter 0 8 u8
+    BindParameter 1 16
+    Load 8 u8
+    Push
+    Load 16
+    BinaryValue ShiftLeft u8
+    Return
+end
+function byte_op9
+  result u8
+  params [u8 i64]
+  frame 16
+  slot 8 u8
+  slot 16 i64
+    BindParameter 0 8 u8
+    BindParameter 1 16
+    Load 8 u8
+    Push
+    Load 16
+    BinaryValue ShiftRight u8
+    Return
+end
+function byte_compare0
+  result bool
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    Compare Equal u8
+    Return
+end
+function byte_compare1
+  result bool
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    Compare NotEqual u8
+    Return
+end
+function byte_compare2
+  result bool
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    Compare Less u8
+    Return
+end
+function byte_compare3
+  result bool
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    Compare Greater u8
+    Return
+end
+function byte_compare4
+  result bool
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    Compare LessEqual u8
+    Return
+end
+function byte_compare5
+  result bool
+  params [u8 u8]
+  frame 16
+  slot 8 u8
+  slot 16 u8
+    BindParameter 0 8 u8
+    BindParameter 1 16 u8
+    Load 8 u8
+    Push
+    Load 16 u8
+    Compare GreaterEqual u8
+    Return
+end
+function byte_not
+  result u8
+  params [u8]
+  frame 16
+  slot 8 u8
+    BindParameter 0 8 u8
+    Load 8 u8
+    UnaryValue BitNot u8
+    Return
+end
+function u8_to_i64
+  result i64
+  params [u8]
+  frame 16
+  slot 8 u8
+    BindParameter 0 8 u8
+    Load 8 u8
+    Convert u8
+    Return
+end
+function i64_to_u8
+  result u8
+  params [i64]
+  frame 16
+  slot 8 i64
+    BindParameter 0 8
+    Load 8
+    Convert i64 u8
+    Return
+end
+function u8_to_u64
+  result u64
+  params [u8]
+  frame 16
+  slot 8 u8
+    BindParameter 0 8 u8
+    Load 8 u8
+    Convert u8 u64
+    Return
+end
+function u64_to_u8
+  result u8
+  params [u64]
+  frame 16
+  slot 8 u64
+    BindParameter 0 8 u64
+    Load 8 u64
+    Convert u64 u8
+    Return
+end
+function byte_local_array
+  result u8
+  frame 16
+  slot 15 u8
+  slot 16 u8
+    Constant 0 u8
+    Store 16 u8
+    Constant 1 u8
+    Store 15 u8
+    Constant 1
+    BoundsGuard 16 2 u8
+    Push
+    Constant 255 u8
+    IndexStore 16 2 u8
+    Constant 1
+    BoundsGuard 16 2 u8
+    IndexLoad 16 2 u8
+    Return
+end
+function byte_aggregate
+  result u8
+  frame 48
+  slot 8 bool
+  slot 16 u8
+  slot 24 bool
+  slot 32 u8
+  slot 40 bool
+  slot 48 u8
+  object 16 Pair false
+  object 32 Pair false
+  object 48 Pair false
+    BeginObject 16
+    Constant 12 u8
+    Store 16 u8
+    Constant 1 bool
+    Store 8 bool
+    BeginObject 32
+    Constant 20 u8
+    Store 32 u8
+    Constant 0 bool
+    Store 24 bool
+    Constant 10 u8
+    Push
+    Constant 1 bool
+    Push
+    BeginObject 48
+    AggregateCall copy_pair [16 0 32 0] 48
+    Load 48 u8
+    Return
+end
+function copy_pair
+  result (class Pair)
+  params [(class Pair) u8 (class Pair) bool]
+  frame 64
+  slot 8 bool
+  slot 16 u8
+  slot 24 u8
+  slot 32 bool
+  slot 40 u8
+  slot 48 bool
+  slot 56 bool
+  slot 64 u8
+  object 16 Pair false
+  object 40 Pair false
+  object 64 Pair false
+    BindObjectParameter 0 16 Pair
+    BindParameter 1 24 u8
+    BindObjectParameter 2 40 Pair
+    BindParameter 3 48 bool
+    BeginObject 64
+    Load 16 u8
+    Push
+    Load 24 u8
+    BinaryValue CheckedAdd u8
+    Push
+    Load 40 u8
+    BinaryValue CheckedAdd u8
+    Store 64 u8
+    Load 48 bool
+    Store 56 bool
+    ReturnObject 64
+end
+function byte_receiver
+  result u8
+  frame 16
+  slot 8 bool
+  slot 16 u8
+  object 16 Pair false
+    BeginObject 16
+    Constant 255 u8
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_pair 16
+    MethodCall relay_pair 16
+    Return
+end
+function construct_pair
+  result i64
+  params [u8 bool]
+  frame 16
+  receiver Pair true true
+  slot 8 u8
+  slot 16 bool
+    BindParameter 0 8 u8
+    BindParameter 1 16 bool
+    Load 8 u8
+    ReceiverStore 0 u8
+    Load 16 bool
+    ReceiverStore 1 bool
+    Constant
+    Return
+end
+function get_pair
+  result u8
+  frame 0
+  receiver Pair false false
+    ReceiverLoad 0 u8
+    Return
+end
+function relay_pair
+  result u8
+  frame 0
+  receiver Pair false false
+    MethodCall get_pair
+    Return
+end
+
+; CASE: u64
+; RUN: emit
+function unsigned_op0
+  result u64
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    BinaryValue CheckedAdd u64
+    Return
+end
+function unsigned_op1
+  result u64
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    BinaryValue CheckedSubtract u64
+    Return
+end
+function unsigned_op2
+  result u64
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    BinaryValue CheckedMultiply u64
+    Return
+end
+function unsigned_op3
+  result u64
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    BinaryValue CheckedDivide u64
+    Return
+end
+function unsigned_op4
+  result u64
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    BinaryValue CheckedRemainder u64
+    Return
+end
+function unsigned_op5
+  result u64
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    BinaryValue BitAnd u64
+    Return
+end
+function unsigned_op6
+  result u64
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    BinaryValue BitOr u64
+    Return
+end
+function unsigned_op7
+  result u64
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    BinaryValue BitXor u64
+    Return
+end
+function unsigned_op8
+  result u64
+  params [u64 i64]
+  frame 16
+  slot 8 u64
+  slot 16 i64
+    BindParameter 0 8 u64
+    BindParameter 1 16
+    Load 8 u64
+    Push
+    Load 16
+    BinaryValue ShiftLeft u64
+    Return
+end
+function unsigned_op9
+  result u64
+  params [u64 i64]
+  frame 16
+  slot 8 u64
+  slot 16 i64
+    BindParameter 0 8 u64
+    BindParameter 1 16
+    Load 8 u64
+    Push
+    Load 16
+    BinaryValue ShiftRight u64
+    Return
+end
+function unsigned_compare0
+  result bool
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    Compare Equal u64
+    Return
+end
+function unsigned_compare1
+  result bool
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    Compare NotEqual u64
+    Return
+end
+function unsigned_compare2
+  result bool
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    Compare Less u64
+    Return
+end
+function unsigned_compare3
+  result bool
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    Compare Greater u64
+    Return
+end
+function unsigned_compare4
+  result bool
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    Compare LessEqual u64
+    Return
+end
+function unsigned_compare5
+  result bool
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    Compare GreaterEqual u64
+    Return
+end
+function unsigned_not
+  result u64
+  params [u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    Load 8 u64
+    UnaryValue BitNot u64
+    Return
+end
+function signed_to_unsigned
+  result u64
+  params [i64]
+  frame 16
+  slot 8 i64
+    BindParameter 0 8
+    Load 8
+    Convert i64 u64
+    Return
+end
+function unsigned_to_signed
+  result i64
+  params [u64]
+  frame 16
+  slot 8 u64
+    BindParameter 0 8 u64
+    Load 8 u64
+    Convert u64
+    Return
+end
+
+; CASE: array-fields
+; RUN: emit
+layout ArrayBox [i64*3 bool*3 i64 i64]
+fields ArrayBox [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
+function test
+  result i64
+  frame 64
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  object 64 ArrayBox true
+    BeginObject 64
+    MethodCall construct_array 64
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_array 64
+    Constant 1
+    Push
+    MethodCall get_array 64
+    Return
+end
+function construct_array
+  result i64
+  frame 0
+  receiver ArrayBox true true
+    Constant 7
+    ReceiverStore
+    ReceiverArrayZero 1
+    Constant 1 bool
+    ReceiverStore 2 bool
+    ReceiverArrayZero 3
+    ReceiverArrayZero 4
+    Constant
+    Return
+end
+function get_array
+  result i64
+  params [i64]
+  frame 16
+  receiver ArrayBox false false
+  slot 8 i64
+    BindParameter 0 8
+    Load 8
+    ReceiverBoundsGuard 1
+    ReceiverIndexLoad 1
+    Return
+end
+function set_array
+  result i64
+  params [i64 i64]
+  frame 16
+  receiver ArrayBox true false
+  slot 8 i64
+  slot 16 i64
+    BindParameter 0 8
+    BindParameter 1 16
+    Load 8
+    ReceiverBoundsGuard 1
+    Push
+    Load 16
+    ReceiverIndexStore 1
+    Constant
+    Return
+end
+function array_scalar_getter
+  result i64
+  frame 16
+  receiver ArrayBox false false
+  slot 8 i64
+    ReceiverLoad
+    Return
+end
+function array_bool_getter
+  result bool
+  frame 16
+  receiver ArrayBox false false
+  slot 8 i64
+    ReceiverLoad 2 bool
+    Return
+end
+function array_bool_index_getter
+  result bool
+  frame 16
+  receiver ArrayBox false false
+  slot 8 i64
+    Constant 1
+    ReceiverBoundsGuard 3
+    ReceiverIndexLoad 3
+    Return
+end
+function array_bool_setter
+  result i64
+  frame 16
+  receiver ArrayBox true false
+  slot 8 i64
+    Constant 1
+    ReceiverBoundsGuard 3
+    Push
+    Constant 1 bool
+    ReceiverIndexStore 3
+    Constant
+    Return
+end
+function array_scalar_mapping
+  result i64
+  frame 64
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  object 64 ArrayBox true
+    BeginObject 64
+    MethodCall construct_array 64
+    MethodCall array_scalar_getter 64
+    Return
+end
+function array_bool_mapping
+  result bool
+  frame 64
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  object 64 ArrayBox true
+    BeginObject 64
+    MethodCall construct_array 64
+    MethodCall array_bool_getter 64
+    Return
+end
+function array_bool_zero
+  result bool
+  frame 64
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  object 64 ArrayBox true
+    BeginObject 64
+    MethodCall construct_array 64
+    MethodCall array_bool_index_getter 64
+    Return
+end
+function array_bool_store
+  result bool
+  frame 64
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  object 64 ArrayBox true
+    BeginObject 64
+    MethodCall construct_array 64
+    MethodCall array_bool_setter 64
+    MethodCall array_bool_index_getter 64
+    Return
+end
+function array_dynamic
+  result i64
+  params [i64]
+  frame 80
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  slot 72 i64
+  object 64 ArrayBox true
+    BindParameter 0 72
+    BeginObject 64
+    MethodCall construct_array 64
+    Load 72
+    Push
+    MethodCall get_array 64
+    Return
+end
+function array_explosive_setter
+  result i64
+  params [i64 i64]
+  frame 16
+  receiver ArrayBox true false
+  slot 8 i64
+  slot 16 i64
+    BindParameter 0 8
+    BindParameter 1 16
+    Load 8
+    ReceiverBoundsGuard 1
+    Push
+    Call array_explosive_rhs
+    ReceiverIndexStore 1
+    Constant
+    Return
+end
+function array_explosive_rhs
+  result i64
+  frame 16
+  slot 8 i64
+  slot 16 i64
+    Constant 1
+    Push
+    Constant
+    BinaryValue CheckedDivide
+    Return
+end
+function array_store_dynamic
+  result i64
+  params [i64]
+  frame 80
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  slot 72 i64
+  object 64 ArrayBox true
+    BindParameter 0 72
+    BeginObject 64
+    MethodCall construct_array 64
+    Load 72
+    Push
+    Constant 42
+    Push
+    MethodCall array_explosive_setter 64
+    Return
+end
+function copy_array_box
+  result (class ArrayBox)
+  params [(class ArrayBox)]
+  frame 64
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  object 64 ArrayBox false
+    BindObjectParameter 0 64 ArrayBox
+    ReturnObject 64
+end
+function array_copy
+  result i64
+  frame 192
+repeat 3
+  slot {8,64} i64
+  slot {16,64} i64
+  slot {24,64} bool
+  slot {32,64} bool
+  slot {40,64} bool
+  slot {48,64} i64
+  slot {56,64} i64
+  slot {64,64} i64
+endrepeat
+  object 64 ArrayBox true
+  object 128 ArrayBox false
+  object 192 ArrayBox false
+    BeginObject 64
+    MethodCall construct_array 64
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_array 64
+    BeginObject 128
+    Load 64
+    Store 128
+    Load 56
+    Store 120
+    Load 48
+    Store 112
+    Load 40 bool
+    Store 104 bool
+    Load 32 bool
+    Store 96 bool
+    Load 24 bool
+    Store 88 bool
+    Load 16
+    Store 80
+    Load 8
+    Store 72
+    BeginObject 192
+    AggregateCall copy_array_box [128] 192
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_array 64
+    Constant 1
+    Push
+    MethodCall get_array 192
+    Return
+end
+
+; CASE: composed-fields
+; RUN: emit
+layout Empty []
+layout Leaf [i64 bool]
+layout Other [i64 bool]
+layout Outer [i64 i64 bool]
+layout OuterEmpty []
+fields Outer [(i64 0 1 false) ((class Leaf) 1 2 false) ((class Empty) 3 0 false)]
+fields OuterEmpty [((class Empty) 0 0 false)]
+function test
+  result i64
+  frame 160
+  slot 8 bool
+  slot 16 i64
+  slot 24 bool
+  slot 32 i64
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 bool
+  slot 72 i64
+  slot 80 bool
+  slot 88 i64
+  slot 96 i64
+  slot 112 bool
+  slot 120 i64
+  slot 128 i64
+  slot 136 bool
+  slot 144 i64
+  slot 152 i64
+  object 16 Leaf true
+  object 32 Leaf false
+  object 56 Outer false
+  object 72 Leaf true
+  object 96 Outer false
+  object 104 Empty false
+  object 128 Outer false
+  object 152 Outer false
+    BeginObject 16
+    Constant 42
+    Store 16
+    Constant 1 bool
+    Store 8 bool
+    BeginObject 32
+    CopyObject 16 32
+    Constant 9
+    Store 16
+    BeginObject 104
+    InitializeEmptyObject 104
+    BeginObject 56
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 56 [0 32 104 0]
+    BeginObject 96
+    CopyObject 56 96
+    BeginObject 128
+    AggregateCall copy_outer [96] 128
+    BeginObject 72
+    ObjectFieldCopy 128 1 72
+    Load 72
+    Return
+end
+function construct_outer
+  result i64
+  params [i64 (class Leaf) (class Empty) i64]
+  frame 48
+  receiver Outer true true
+  slot 8 i64
+  slot 16 bool
+  slot 24 i64
+  slot 40 i64
+  object 24 Leaf false
+  object 32 Empty false
+    BindParameter 0 8
+    BindObjectParameter 1 24 Leaf
+    BindObjectParameter 2 32 Empty
+    BindParameter 3 40
+    Load 8
+    Push
+    Load 40
+    BinaryValue
+    ReceiverStore
+    InitializeObjectField 0 1 24
+    InitializeObjectField 0 2 32
+    Constant
+    Return
+end
+function copy_outer
+  result (class Outer)
+  params [(class Outer)]
+  frame 32
+  slot 8 bool
+  slot 16 i64
+  slot 24 i64
+  object 24 Outer false
+    BindObjectParameter 0 24 Outer
+    ReturnObject 24
+end
+function get_outer
+  result i64
+  frame 16
+  receiver Outer false false
+  slot 8 bool
+  slot 16 i64
+  object 16 Leaf true
+    BeginObject 16
+    ObjectFieldCopy 0 1 16
+    Load 16
+    Return
+end
+function nested_receiver_projection
+  result i64
+  frame 160
+  slot 8 bool
+  slot 16 i64
+  slot 24 bool
+  slot 32 i64
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 bool
+  slot 72 i64
+  slot 80 bool
+  slot 88 i64
+  slot 96 i64
+  slot 112 bool
+  slot 120 i64
+  slot 128 i64
+  slot 136 bool
+  slot 144 i64
+  slot 152 i64
+  object 16 Leaf true
+  object 32 Leaf false
+  object 56 Outer false
+  object 72 Leaf true
+  object 96 Outer false
+  object 104 Empty false
+  object 128 Outer false
+  object 152 Outer false
+    BeginObject 16
+    Constant 42
+    Store 16
+    Constant 1 bool
+    Store 8 bool
+    BeginObject 32
+    CopyObject 16 32
+    Constant 9
+    Store 16
+    BeginObject 104
+    InitializeEmptyObject 104
+    BeginObject 56
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 56 [0 32 104 0]
+    MethodCall get_outer 56
+    Return
+end
+function nested_scalar_mapping
+  result i64
+  frame 160
+  slot 8 bool
+  slot 16 i64
+  slot 24 bool
+  slot 32 i64
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 bool
+  slot 72 i64
+  slot 80 bool
+  slot 88 i64
+  slot 96 i64
+  slot 112 bool
+  slot 120 i64
+  slot 128 i64
+  slot 136 bool
+  slot 144 i64
+  slot 152 i64
+  object 16 Leaf true
+  object 32 Leaf false
+  object 56 Outer false
+  object 72 Leaf true
+  object 96 Outer false
+  object 104 Empty false
+  object 128 Outer false
+  object 152 Outer false
+    BeginObject 16
+    Constant 42
+    Store 16
+    Constant 1 bool
+    Store 8 bool
+    BeginObject 32
+    CopyObject 16 32
+    Constant 9
+    Store 16
+    BeginObject 104
+    InitializeEmptyObject 104
+    BeginObject 56
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 56 [0 32 104 0]
+    Load 56
+    Return
+end
+function nested_snapshot_independence
+  result i64
+  frame 160
+  slot 8 bool
+  slot 16 i64
+  slot 24 bool
+  slot 32 i64
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 bool
+  slot 72 i64
+  slot 80 bool
+  slot 88 i64
+  slot 96 i64
+  slot 112 bool
+  slot 120 i64
+  slot 128 i64
+  slot 136 bool
+  slot 144 i64
+  slot 152 i64
+  object 16 Leaf true
+  object 32 Leaf false
+  object 56 Outer false
+  object 72 Leaf true
+  object 96 Outer false
+  object 104 Empty false
+  object 128 Outer false
+  object 152 Outer false
+    BeginObject 16
+    Constant 42
+    Store 16
+    Constant 1 bool
+    Store 8 bool
+    BeginObject 32
+    CopyObject 16 32
+    Constant 9
+    Store 16
+    BeginObject 104
+    InitializeEmptyObject 104
+    BeginObject 56
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 56 [0 32 104 0]
+    Load 16
+    Return
+end
+function nested_projection_independence
+  result i64
+  frame 160
+  slot 8 bool
+  slot 16 i64
+  slot 24 bool
+  slot 32 i64
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 bool
+  slot 72 i64
+  slot 80 bool
+  slot 88 i64
+  slot 96 i64
+  slot 112 bool
+  slot 120 i64
+  slot 128 i64
+  slot 136 bool
+  slot 144 i64
+  slot 152 i64
+  object 16 Leaf true
+  object 32 Leaf false
+  object 56 Outer false
+  object 72 Leaf true
+  object 96 Outer false
+  object 104 Empty false
+  object 128 Outer false
+  object 152 Outer false
+    BeginObject 16
+    Constant 42
+    Store 16
+    Constant 1 bool
+    Store 8 bool
+    BeginObject 32
+    CopyObject 16 32
+    Constant 9
+    Store 16
+    BeginObject 104
+    InitializeEmptyObject 104
+    BeginObject 56
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 56 [0 32 104 0]
+    BeginObject 96
+    CopyObject 56 96
+    BeginObject 128
+    AggregateCall copy_outer [96] 128
+    BeginObject 72
+    ObjectFieldCopy 128 1 72
+    Constant 99
+    Store 72
+    MethodCall get_outer 128
+    Return
+end
+function nested_bool_mapping
+  result bool
+  frame 160
+  slot 8 bool
+  slot 16 i64
+  slot 24 bool
+  slot 32 i64
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 bool
+  slot 72 i64
+  slot 80 bool
+  slot 88 i64
+  slot 96 i64
+  slot 112 bool
+  slot 120 i64
+  slot 128 i64
+  slot 136 bool
+  slot 144 i64
+  slot 152 i64
+  object 16 Leaf true
+  object 32 Leaf false
+  object 56 Outer false
+  object 72 Leaf true
+  object 96 Outer false
+  object 104 Empty false
+  object 128 Outer false
+  object 152 Outer false
+    BeginObject 16
+    Constant 42
+    Store 16
+    Constant 1 bool
+    Store 8 bool
+    BeginObject 32
+    CopyObject 16 32
+    Constant 9
+    Store 16
+    BeginObject 104
+    InitializeEmptyObject 104
+    BeginObject 56
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 56 [0 32 104 0]
+    BeginObject 96
+    CopyObject 56 96
+    BeginObject 128
+    AggregateCall copy_outer [96] 128
+    BeginObject 72
+    ObjectFieldCopy 128 1 72
+    Load 64 bool
+    Return
+end
+function nested_receiver_constructor
+  result i64
+  frame 64
+  receiver Outer false false
+  slot 8 bool
+  slot 16 i64
+  slot 32 bool
+  slot 40 i64
+  slot 48 i64
+  object 16 Leaf false
+  object 24 Empty false
+  object 48 Outer false
+    BeginObject 16
+    ObjectFieldCopy 0 1 16
+    BeginObject 24
+    ObjectFieldCopy 0 2 24
+    BeginObject 48
+    Constant 11
+    Push
+    Constant 13
+    Push
+    MethodCall construct_outer 48 [0 16 24 0]
+    ReceiverLoad
+    Push
+    Load 48
+    BinaryValue
+    Return
+end
+function nested_distinct_receiver_record
+  result i64
+  frame 160
+  slot 8 bool
+  slot 16 i64
+  slot 24 bool
+  slot 32 i64
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 bool
+  slot 72 i64
+  slot 80 bool
+  slot 88 i64
+  slot 96 i64
+  slot 112 bool
+  slot 120 i64
+  slot 128 i64
+  slot 136 bool
+  slot 144 i64
+  slot 152 i64
+  object 16 Leaf true
+  object 32 Leaf false
+  object 56 Outer false
+  object 72 Leaf true
+  object 96 Outer false
+  object 104 Empty false
+  object 128 Outer false
+  object 152 Outer false
+    BeginObject 16
+    Constant 42
+    Store 16
+    Constant 1 bool
+    Store 8 bool
+    BeginObject 32
+    CopyObject 16 32
+    Constant 9
+    Store 16
+    BeginObject 104
+    InitializeEmptyObject 104
+    BeginObject 56
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 56 [0 32 104 0]
+    MethodCall nested_receiver_constructor 56
+    Return
+end
+function nested_empty_copy
+  result i64
+  frame 32
+  object 8 Empty false
+  object 16 OuterEmpty false
+  object 24 Empty false
+  object 32 OuterEmpty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 16
+    MethodCall construct_empty_outer 16 [8]
+    BeginObject 24
+    ObjectFieldCopy 16 0 24
+    BeginObject 32
+    CopyObject 16 32
+    Constant 42
+    Return
+end
+function construct_empty_outer
+  result i64
+  params [(class Empty)]
+  frame 16
+  receiver OuterEmpty true true
+  object 8 Empty false
+    BindObjectParameter 0 8 Empty
+    InitializeObjectField 0 0 8
+    Constant
+    Return
+end
+
+; CASE: method-results
+; RUN: emit
+layout Empty []
+layout Leaf [(enum Mode) i64 i64 bool]
+layout Outer [i64 (enum Mode) i64 i64 bool]
+fields Leaf [((enum Mode) 0 1 false) (i64 1 2 true) (bool 3 1 false) ((class Empty) 4 0 false)]
+fields Outer [(i64 0 1 false) ((class Leaf) 1 4 false) ((class Empty) 5 0 false)]
+enum Mode 2
+enum OtherMode 2
+function test
+  result i64
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 168
+    Return
+end
+function construct_leaf
+  result i64
+  params [(enum Mode) bool (class Empty)]
+  frame 32
+  receiver Leaf true true
+  slot 8 (enum Mode)
+  slot 16 bool
+  object 24 Empty false
+    BindParameter 0 8 (enum Mode)
+    BindParameter 1 16 bool
+    BindObjectParameter 2 24 Empty
+    Load 8 (enum Mode)
+    ReceiverStore 0 (enum Mode)
+    Load 16 bool
+    ReceiverStore 2 bool
+    ReceiverArrayZero 1
+    InitializeObjectField 0 3 24
+    Constant
+    Return
+end
+function construct_outer
+  result i64
+  params [i64 (class Leaf) (class Empty) i64]
+  frame 64
+  receiver Outer true true
+  slot 8 i64
+  slot 16 bool
+  slot 24 i64
+  slot 32 i64
+  slot 40 (enum Mode)
+  slot 56 i64
+  object 40 Leaf false
+  object 48 Empty false
+    BindParameter 0 8
+    BindObjectParameter 1 40 Leaf
+    BindObjectParameter 2 48 Empty
+    BindParameter 3 56
+    Load 8
+    Push
+    Load 56
+    BinaryValue
+    ReceiverStore
+    InitializeObjectField 0 1 40
+    InitializeObjectField 0 2 48
+    Constant
+    Return
+end
+function set_leaf
+  result i64
+  params [i64 i64]
+  frame 16
+  receiver Leaf true false
+  slot 8 i64
+  slot 16 i64
+    BindParameter 0 8
+    BindParameter 1 16
+    Load 8
+    ReceiverBoundsGuard 1
+    Push
+    Load 16
+    ReceiverIndexStore 1
+    Constant
+    Return
+end
+function get_outer_header
+  result i64
+  frame 0
+  receiver Outer false false
+    ReceiverLoad
+    Return
+end
+function copy_outer
+  result (class Outer)
+  params [(class Outer)]
+  frame 48
+  slot 8 bool
+  slot 16 i64
+  slot 24 i64
+  slot 32 (enum Mode)
+  slot 40 i64
+  object 40 Outer false
+    BindObjectParameter 0 40 Outer
+    ReturnObject 40
+end
+function clobber_scalar
+  result i64
+  frame 0
+    Constant 81
+    Push
+    Constant 9
+    BinaryValue CheckedDivide
+    Return
+end
+function identity_mode
+  result (enum Mode)
+  params [(enum Mode)]
+  frame 16
+  slot 8 (enum Mode)
+    BindParameter 0 8 (enum Mode)
+    Load 8 (enum Mode)
+    Return
+end
+function snapshot_outer
+  result (class Outer)
+  params [i64 (enum Mode)]
+  frame 160
+  receiver Outer false false
+  slot 8 i64
+  slot 16 (enum Mode)
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 (enum Mode)
+  slot 64 bool
+  slot 72 i64
+  slot 80 i64
+  slot 88 (enum Mode)
+  slot 96 i64
+  slot 104 bool
+  slot 112 i64
+  slot 120 i64
+  slot 128 (enum Mode)
+  slot 136 i64
+  slot 144 bool
+  object 48 Leaf false
+  object 56 Empty false
+  object 96 Outer false
+  object 136 Outer true
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    BeginObject 48
+    ObjectFieldCopy 0 1 48
+    BeginObject 56
+    ObjectFieldCopy 0 2 56
+    Load 16 (enum Mode)
+    Push
+    Call identity_mode
+    Push
+    Load 48 (enum Mode)
+    Compare Equal (enum Mode)
+    Store 144 bool
+    Call clobber_scalar
+    BeginObject 96
+    Load 8
+    Push
+    ReceiverLoad
+    Push
+    MethodCall construct_outer 96 [0 48 56 0]
+    BeginObject 136
+    AggregateCall copy_outer [96] 136
+    MethodCall get_outer_header
+    Push
+    Load 136
+    BinaryValue
+    Store 136
+    Load 144 bool
+    BranchFalse 1
+    ReturnObject 136
+    Label 1
+    Constant 1
+    Push
+    Constant
+    BinaryValue CheckedDivide
+    ReturnObject 136
+end
+function relay_outer
+  result (class Outer)
+  params [i64 (enum Mode)]
+  frame 64
+  receiver Outer false false
+  slot 8 i64
+  slot 16 (enum Mode)
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 (enum Mode)
+  slot 56 i64
+  object 56 Outer false
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    BeginObject 56
+    Load 8
+    Push
+    Load 16 (enum Mode)
+    Push
+    MethodCall snapshot_outer 0 [] 56
+    ReturnObject 56
+end
+function snapshot_empty
+  result (class Empty)
+  frame 16
+  receiver Outer false false
+  object 8 Empty false
+    BeginObject 8
+    ObjectFieldCopy 0 2 8
+    Call clobber_scalar
+    ReturnObject 8
+end
+function get_leaf_mode
+  result (enum Mode)
+  frame 0
+  receiver Leaf false false
+    ReceiverLoad 0 (enum Mode)
+    Return
+end
+function method_result_header
+  result i64
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 152
+    Return
+end
+function method_result_first_array
+  result i64
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 176
+    Return
+end
+function method_result_enum
+  result (enum Mode)
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 184 (enum Mode)
+    Return
+end
+function method_result_bool
+  result bool
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 160 bool
+    Return
+end
+function method_source_snapshot
+  result i64
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 24
+    Return
+end
+function method_source_header
+  result i64
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 112
+    Return
+end
+function method_result_independence
+  result i64
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Constant 1
+    Push
+    Constant -13
+    Push
+    MethodCall set_leaf 184
+    Load 128
+    Return
+end
+function method_forwarded_result
+  result i64
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall relay_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 152
+    Return
+end
+function method_empty_result
+  result i64
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    BeginObject 192
+    MethodCall snapshot_empty 112 [] 192
+    Constant 42
+    Return
+end
+function method_empty_from_result
+  result i64
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    BeginObject 192
+    MethodCall snapshot_empty 152 [] 192
+    Constant 42
+    Return
+end
+function method_enum_receiver_read
+  result (enum Mode)
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    MethodCall get_leaf_mode 184
+    Return
+end
+function method_result_saved_operand
+  result i64
+  frame 192
+repeat 3
+  slot {16,32} bool
+  slot {24,32} i64
+  slot {32,32} i64
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 120 bool
+  slot 128 i64
+  slot 136 i64
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 160 bool
+  slot 168 i64
+  slot 176 i64
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    Constant 3
+    Push
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 168
+    BinaryValue
+    Return
+end

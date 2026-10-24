@@ -2,7 +2,7 @@
 """Independent native tests for the NEW M022 hidden method ABI and old controls.
 
 Usage: method_values_abi.py path/to/prebuilt-method-values-ir [--work-dir DIR]
-The C++ fixture constructs IR directly, without source lowering. One boundary
+A textual IR case supplies the IR directly, without source lowering. One boundary
 side is replaced by independently authored assembly in every execution. Expected
 records/offsets are literal protocol oracles, never obtained from emitter/layout
 helpers. Private local symbols stay local in the same assembly translation unit;
@@ -17,6 +17,9 @@ import resource
 import shutil
 import subprocess
 import tempfile
+
+# Verified textual IR cases; the aurora-ir-check driver prints their assembly.
+AIR = Path(__file__).resolve().parent / "ir" / "method-values-ir" / "abi.air"
 
 
 def require(ok, message):
@@ -510,7 +513,7 @@ if __name__ == "__main__":
     print(f"fixture sha256={hashlib.sha256(fixture.read_bytes()).hexdigest()}", flush=True)
     print(f"work directory: {WORK}", flush=True)
     try:
-        assembly = run([fixture, "--emit-abi"]).decode()
+        assembly = run([fixture, "--output", AIR, "abi"]).decode()
         (WORK / "fixture.s").write_text(assembly)
         # Freeze hidden-slot ownership as well as observable behavior. These
         # numeric offsets are independently specified from each fixture frame.

@@ -1,0 +1,406 @@
+; CASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-OK
+layout Box [i64]
+layout Receiver [i64]
+fields Box [(i64 0 1 false)]
+fields Receiver [(i64 0 1 false) (bytes 1 0 false)]
+storage Box [0] [0] 8 8 8
+storage Receiver [0] [0 8] 40 8 40
+function caller
+  result i64
+  params [span]
+  frame 192
+  receiver Receiver true false
+  slot 176 i64
+  object 176 Box false
+  span 56
+  span 112
+  span 168
+    BindSpanParameter 0 56
+    ReborrowSpan 56 112
+    Constant
+    Push
+    Constant
+    Subspan 112 168
+    BeginObject 176
+    Constant 71
+    Store 176
+    Constant 33
+    Push
+    MethodCall target 0 [0 0 176] 0 -1 [0 168 0]
+    EndObject 176
+    EndSpan 168
+    EndSpan 112
+    EndSpan 56
+    Return
+end
+function target
+  result i64
+  params [i64 span (class Box)]
+  frame 80
+  receiver Receiver false false
+  slot 8 i64
+  slot 72 i64
+  object 72 Box false
+  span 64
+    BindParameter 0 8
+    BindSpanParameter 1 64
+    BindObjectParameter 2 72 Box
+    SpanLength 64
+    EndSpan 64
+    EndObject 72
+    Return
+end
+
+; CASE: mutable receiver accepts unrelated incoming capability
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-OK
+@@ -39 +39 @@
+-  receiver Receiver false false
++  receiver Receiver true false
+
+; CASE: span vector size
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-ERROR: span argument vector size mismatch
+@@ -28 +28 @@
+-    MethodCall target 0 [0 0 176] 0 -1 [0 168 0]
++    MethodCall target 0 [0 0 176]
+
+; CASE: span vector size #2
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-ERROR: span argument vector size mismatch
+@@ -28 +28 @@
+-    MethodCall target 0 [0 0 176] 0 -1 [0 168 0]
++    MethodCall target 0 [0 0 176] 0 -1 [168]
+
+; CASE: span vector size #3
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-ERROR: span argument vector size mismatch
+@@ -28 +28 @@
+-    MethodCall target 0 [0 0 176] 0 -1 [0 168 0]
++    MethodCall target 0 [0 0 176] 0 -1 [0 168]
+
+; CASE: span vector size #4
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-ERROR: span argument vector size mismatch
+@@ -28 +28 @@
+-    MethodCall target 0 [0 0 176] 0 -1 [0 168 0]
++    MethodCall target 0 [0 0 176] 0 -1 [0 168 0 0]
+
+; CASE: object vector size
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-ERROR: object argument vector size mismatch
+@@ -28 +28 @@
+-    MethodCall target 0 [0 0 176] 0 -1 [0 168 0]
++    MethodCall target 0 [] 0 -1 [0 168 0]
+
+; CASE: object vector size #2
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-ERROR: object argument vector size mismatch
+@@ -28 +28 @@
+-    MethodCall target 0 [0 0 176] 0 -1 [0 168 0]
++    MethodCall target 0 [0] 0 -1 [0 168 0]
+
+; CASE: object vector size #3
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-ERROR: object argument vector size mismatch
+@@ -28 +28 @@
+-    MethodCall target 0 [0 0 176] 0 -1 [0 168 0]
++    MethodCall target 0 [0 0] 0 -1 [0 168 0]
+
+; CASE: object vector size #4
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-ERROR: object argument vector size mismatch
+@@ -28 +28 @@
+-    MethodCall target 0 [0 0 176] 0 -1 [0 168 0]
++    MethodCall target 0 [0 0 176 0] 0 -1 [0 168 0]
+
+; CASE: capability requires exact live spill
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-ERROR: exact typed spill
+@@ -28 +28 @@
+-    MethodCall target 0 [0 0 176] 0 -1 [0 168 0]
++    MethodCall target 0 [0 0 176] 0 -1 [0*3]
+
+; CASE: capability requires exact live spill #2
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-ERROR: exact typed spill
+@@ -28 +28 @@
+-    MethodCall target 0 [0 0 176] 0 -1 [0 168 0]
++    MethodCall target 0 [0 0 176] 0 -1 [0 -1 0]
+
+; CASE: capability requires exact live spill #3
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-ERROR: exact typed spill
+@@ -28 +28 @@
+-    MethodCall target 0 [0 0 176] 0 -1 [0 168 0]
++    MethodCall target 0 [0 0 176] 0 -1 [0 160 0]
+
+; CASE: capability requires exact live spill #4
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-ERROR: exact typed spill
+@@ -28 +28 @@
+-    MethodCall target 0 [0 0 176] 0 -1 [0 168 0]
++    MethodCall target 0 [0 0 176] 0 -1 [0 184 0]
+
+; CASE: nonspan position rejects capability
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-ERROR: non-span method argument cannot name span storage
+@@ -28 +28 @@
+-    MethodCall target 0 [0 0 176] 0 -1 [0 168 0]
++    MethodCall target 0 [0 0 176] 0 -1 [168 168 0]
+
+; CASE: nonspan position rejects capability #2
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-ERROR: non-span method argument cannot name span storage
+@@ -28 +28 @@
+-    MethodCall target 0 [0 0 176] 0 -1 [0 168 0]
++    MethodCall target 0 [0 0 176] 0 -1 [0 168 168]
+
+; CASE: span position rejects object
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-ERROR: span method argument cannot name object storage
+@@ -28 +28 @@
+-    MethodCall target 0 [0 0 176] 0 -1 [0 168 0]
++    MethodCall target 0 [0 176 176] 0 -1 [0 168 0]
+
+; CASE: ended argument rejects
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-ERROR: span capability is not active
+@@ -27,0 +28 @@
++    EndSpan 168
+
+; CASE: parent ends while empty child live
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-ERROR: live child reborrow
+@@ -27,0 +28 @@
++    EndSpan 112
+
+; CASE: branch capability lifetime mismatch
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-ERROR: incompatible active span capabilities
+@@ -27,0 +28,4 @@
++    Constant 1 bool
++    BranchFalse 1
++    EndSpan 168
++    Label 1
+
+; CASE: scalar result cannot alias argument spill
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-ERROR: scalar method result cannot name object storage
+@@ -28 +28 @@
+-    MethodCall target 0 [0 0 176] 0 -1 [0 168 0]
++    MethodCall target 0 [0 0 176] 168 -1 [0 168 0]
+
+; CASE: constructor parameter forbidden
+; RUN: verify
+; EXPECT-ERROR: readonly span boundary
+layout Box [i64]
+layout Receiver [i64]
+fields Box [(i64 0 1 false)]
+fields Receiver [(i64 0 1 false) (bytes 1 0 false)]
+storage Box [0] [0] 8 8 8
+storage Receiver [0] [0 8] 40 8 40
+function target
+  result i64
+  params [i64 span (class Box)]
+  frame 80
+  receiver Box true true
+  slot 8 i64
+  slot 72 i64
+  object 72 Box false
+  span 64
+    BindParameter 0 8
+    BindSpanParameter 1 64
+    BindObjectParameter 2 72 Box
+    SpanLength 64
+    EndSpan 64
+    EndObject 72
+    Return
+end
+
+; CASE: const self call direct alias
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-OK
+@@ -9 +8,0 @@
+-  params [span]
+@@ -17 +16 @@
+-    BindSpanParameter 0 56
++    BorrowOwnedSpan 0 1 56
+@@ -28 +27 @@
+-    MethodCall target 0 [0 0 176] 0 -1 [0 168 0]
++    MethodCall target 0 [0 0 176] 0 -1 [0 56 0]
+
+; CASE: mutable self call direct alias
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+@@ -9 +8,0 @@
+-  params [span]
+@@ -17 +16 @@
+-    BindSpanParameter 0 56
++    BorrowOwnedSpan 0 1 56
+@@ -28 +27 @@
+-    MethodCall target 0 [0 0 176] 0 -1 [0 168 0]
++    MethodCall target 0 [0 0 176] 0 -1 [0 56 0]
+@@ -39 +38 @@
+-  receiver Receiver false false
++  receiver Receiver true false
+
+; CASE: self field resize with active argument
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+@@ -9 +8,0 @@
+-  params [span]
+@@ -17 +16 @@
+-    BindSpanParameter 0 56
++    BorrowOwnedSpan 0 1 56
+@@ -28 +27,3 @@
+-    MethodCall target 0 [0 0 176] 0 -1 [0 168 0]
++    Constant
++    BytesResize 0 1
++    MethodCall target 0 [0 0 176] 0 -1 [0 56 0]
+
+; CASE: const self call empty alias
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-OK
+@@ -9 +8,0 @@
+-  params [span]
+@@ -17 +16 @@
+-    BindSpanParameter 0 56
++    BorrowOwnedSpan 0 1 56
+
+; CASE: mutable self call empty alias
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+@@ -9 +8,0 @@
+-  params [span]
+@@ -17 +16 @@
+-    BindSpanParameter 0 56
++    BorrowOwnedSpan 0 1 56
+@@ -39 +38 @@
+-  receiver Receiver false false
++  receiver Receiver true false
+
+; CASE: self field resize with active argument #2
+; BASE: bound receiver forwards empty descendant with scalar/class neighbors
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+@@ -9 +8,0 @@
+-  params [span]
+@@ -17 +16 @@
+-    BindSpanParameter 0 56
++    BorrowOwnedSpan 0 1 56
+@@ -27,0 +27,2 @@
++    Constant
++    BytesResize 0 1
+
+; CASE: result authority derives from receiver not argument
+; RUN: verify
+; EXPECT-OK
+layout Box [i64]
+layout Receiver [i64]
+fields Box [(i64 0 1 false)]
+fields Receiver [(i64 0 1 false) (bytes 1 0 false)]
+storage Box [0] [0] 8 8 8
+storage Receiver [0] [0 8] 40 8 40
+function caller
+  result i64
+  params [span]
+  frame 240
+  receiver Receiver true false
+  slot 176 i64
+  object 176 Box false
+  span 56
+  span 112
+  span 168
+  span 232
+    BindSpanParameter 0 56
+    ReborrowSpan 56 112
+    Constant
+    Push
+    Constant
+    Subspan 112 168
+    BeginObject 176
+    Constant 71
+    Store 176
+    Constant 33
+    Push
+    MethodCall target 0 [0 0 176] 232 -1 [0 168 0]
+    SpanLength 232
+    EndSpan 232
+    EndObject 176
+    EndSpan 168
+    EndSpan 112
+    EndSpan 56
+    Return
+end
+function target
+  result span
+  params [i64 span (class Box)]
+  frame 144
+  receiver Receiver false false
+  spanfield 1
+  slot 8 i64
+  slot 72 i64
+  object 72 Box false
+  span 64
+  span 136
+    BindParameter 0 8
+    BindSpanParameter 1 64
+    BindObjectParameter 2 72 Box
+    EndObject 72
+    EndSpan 64
+    BorrowOwnedSpan 0 1 136
+    ReturnSpan 136
+end
+
+; CASE: result cannot overwrite active argument
+; BASE: result authority derives from receiver not argument
+; RUN: verify
+; EXPECT-ERROR: span spill is already active
+@@ -29 +29 @@
+-    MethodCall target 0 [0 0 176] 232 -1 [0 168 0]
++    MethodCall target 0 [0 0 176] 168 -1 [0 168 0]
+
+; CASE: parameter cannot escape as receiver result
+; BASE: result authority derives from receiver not argument
+; RUN: verify
+; EXPECT-ERROR: span return does not match receiver field summary and token
+@@ -53,3 +53 @@
+-    EndSpan 64
+-    BorrowOwnedSpan 0 1 136
+-    ReturnSpan 136
++    ReturnSpan 64
+
+; CASE: unrelated argument must end before receiver result
+; BASE: result authority derives from receiver not argument
+; RUN: verify
+; EXPECT-ERROR: unrelated active span lifetime
+@@ -53 +52,0 @@
+-    EndSpan 64

@@ -1,0 +1,170 @@
+; CASE: local-0
+; RUN: emit
+layout Child [u8 u64]
+layout Holder [u8 u8 u64 u8]
+layout Other [u8 u64]
+fields Holder [(u8 0 1 false) ((class Child) 1 2 false) (u8 3 1 false)]
+storage Child [0 8] [0 8] 16 8 16
+storage Holder [{0,8}*4] [0 8 24] 32 8 32
+storage Other [0 8] [0 8] 16 8 16
+function local_entry
+  result u64
+  params [(class Holder) (class Child)]
+  frame 128
+repeat 5
+  slot {8,24} u8
+  slot {16,24} u64
+  slot {24,24} u8
+endrepeat
+  slot 128 u8
+  object 32 Holder false
+  object 48 Child false
+  object 80 Holder true
+  object 96 Child false
+  object 128 Holder false
+    BindObjectParameter 0 32 Holder
+    BindObjectParameter 1 48 Child
+    BeginObject 80
+    CopyObject 32 80
+    AssignObjectField 80 1 48
+    Constant 42 u64
+    Push
+    MethodCall set_word 80 [] 0 1
+    Return
+end
+function set_word
+  result u64
+  params [u64]
+  frame 16
+  receiver Child true false
+  slot 8 u64
+    BindParameter 0 8 u64
+    Load 8 u64
+    ReceiverStore 1 u64
+    ReceiverLoad 1 u64
+    Return
+end
+function copy_child
+  result (class Child)
+  params [u64]
+  frame 32
+  receiver Child false false
+  slot 8 u64
+  slot 24 u64
+  slot 32 u8
+  object 32 Child false
+    BindParameter 0 8 u64
+    BeginObject 32
+    ReceiverLoad 0 u8
+    Store 32 u8
+    Load 8 u64
+    Store 24 u64
+    ReturnObject 32
+end
+function combined
+  result (class Child)
+  params [(class Holder) u64 (class Child)]
+  frame 64
+  receiver Child true false
+  slot 8 u8
+  slot 16 u64
+  slot 24 u8
+  slot 32 u8
+  slot 40 u64
+  slot 56 u64
+  slot 64 u8
+  object 32 Holder false
+  object 64 Child false
+    BindObjectParameter 0 32 Holder
+    BindParameter 1 40 u64
+    BindObjectParameter 2 64 Child
+    Load 40 u64
+    ReceiverStore 1 u64
+    ReturnObject 64
+end
+
+; CASE: local-1
+; BASE: local-0
+; RUN: emit
+@@ -9 +9 @@
+-  result u64
++  result (class Child)
+@@ -30,2 +30,3 @@
+-    MethodCall set_word 80 [] 0 1
+-    Return
++    BeginObject 96
++    MethodCall copy_child 80 [] 96 1
++    ReturnObject 96
+
+; CASE: local-2
+; BASE: local-0
+; RUN: emit
+@@ -9 +9 @@
+-  result u64
++  result (class Child)
+@@ -27,0 +28,2 @@
++    BeginObject 128
++    CopyObject 32 128
+@@ -30,2 +32,3 @@
+-    MethodCall set_word 80 [] 0 1
+-    Return
++    BeginObject 96
++    MethodCall combined 80 [128 0 48] 96 1
++    ReturnObject 96
+
+; CASE: implicit-0
+; BASE: local-0
+; RUN: emit
+@@ -8 +8 @@
+-function local_entry
++function implicit_entry
+@@ -11,0 +12 @@
++  receiver Holder true false
+@@ -27 +28 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 0 1 48
+@@ -30 +31 @@
+-    MethodCall set_word 80 [] 0 1
++    MethodCall set_word 0 [] 0 1
+
+; CASE: implicit-1
+; BASE: local-0
+; RUN: emit
+@@ -8,2 +8,2 @@
+-function local_entry
+-  result u64
++function implicit_entry
++  result (class Child)
+@@ -11,0 +12 @@
++  receiver Holder true false
+@@ -27 +28 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 0 1 48
+@@ -30,2 +31,3 @@
+-    MethodCall set_word 80 [] 0 1
+-    Return
++    BeginObject 96
++    MethodCall copy_child 0 [] 96 1
++    ReturnObject 96
+
+; CASE: implicit-2
+; BASE: local-0
+; RUN: emit
+@@ -8,2 +8,2 @@
+-function local_entry
+-  result u64
++function implicit_entry
++  result (class Child)
+@@ -11,0 +12 @@
++  receiver Holder true false
+@@ -27 +28,3 @@
+-    AssignObjectField 80 1 48
++    AssignObjectField 0 1 48
++    BeginObject 128
++    CopyObject 32 128
+@@ -30,2 +33,3 @@
+-    MethodCall set_word 80 [] 0 1
+-    Return
++    BeginObject 96
++    MethodCall combined 0 [128 0 48] 96 1
++    ReturnObject 96

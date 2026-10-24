@@ -1,0 +1,30 @@
+; CASE: forwarded
+; RUN: emit
+enum __au_port_write_result 1
+function port_read
+  result u8
+  params [uart]
+  frame 48
+  service 16
+    BindServiceParameter 0 16 Port
+    Constant 5 u64
+    ServiceOperation 16 PortRead8 0 Port
+    Return
+end
+function port_ir_entry
+  result i64
+  params [uart]
+  frame 48
+  service 16
+    BindServiceParameter 0 16 Port
+    AcquireServiceLoan 1 16 Port
+    ServiceCall port_read 1 0 [0] Port
+    ReleaseServiceLoan 1 Port
+    Constant 0 u64
+    Push
+    Constant 255 u8
+    Push
+    ServiceOperation 16 PortWrite8 0 Port
+    Constant 42
+    Return
+end

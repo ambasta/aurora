@@ -1,0 +1,849 @@
+; CASE: abi
+; RUN: emit
+layout Composed [u8 u8 (enum Mode) u8]
+layout Empty []
+layout Pack [u8 i64 u8]
+layout Receiver [i64]
+layout Tiny [u8 u8]
+layout Wide [i64*64]
+fields Composed [((class Tiny) 0 2 false) ((class Empty) 2 0 false) ((enum Mode) 2 1 false) (u8 3 1 false)]
+enum Mode 2
+function abi_clobber
+  result i64
+  frame 0
+    Constant
+    Return
+end
+function abi_receiver_probe
+  result i64
+  frame 0
+  receiver Receiver false false
+    Constant
+    Return
+end
+function abi_nested_probe
+  result i64
+  params [(class Tiny)]
+  frame 16
+  receiver Receiver false false
+  slot 7 u8
+  slot 8 u8
+  object 8 Tiny false
+    BindObjectParameter 0 8 Tiny
+    Constant
+    Return
+end
+function abi_in_scalar
+  result i64
+  params [(class Tiny) u8 (class Empty) (enum Mode) (class Pack) i64]
+  frame 96
+  receiver Receiver false false
+  slot 7 u8
+  slot 8 u8
+  slot 16 u8
+  slot 32 (enum Mode)
+  slot 40 u8
+  slot 48 i64
+  slot 56 u8
+  slot 64 i64
+  slot 72 u8
+  slot 80 i64
+  slot 88 u8
+  object 8 Tiny false
+  object 24 Empty false
+  object 56 Pack false
+  object 88 Pack false
+    BindObjectParameter 0 8 Tiny
+    BindParameter 1 16 u8
+    BindObjectParameter 2 24 Empty
+    BindParameter 3 32 (enum Mode)
+    BindObjectParameter 4 56 Pack
+    BindParameter 5 64
+    Constant 84
+    Push
+    Constant 2
+    BinaryValue CheckedDivide
+    Constant 1 u64
+    Push
+    Constant 3
+    BinaryValue ShiftLeft u64
+    Call abi_clobber
+    MethodCall abi_receiver_probe
+    MethodCall abi_nested_probe 0 [8]
+    Load 32 (enum Mode)
+    Push
+    EnumConstant (enum Mode) 1
+    Compare Equal (enum Mode)
+    BranchFalse 1
+    ReceiverLoad
+    Push
+    Load 8 u8
+    Convert u8
+    BinaryValue
+    Push
+    Load 7 u8
+    Convert u8
+    BinaryValue
+    Push
+    Load 16 u8
+    Convert u8
+    BinaryValue
+    Push
+    Load 56 u8
+    Convert u8
+    BinaryValue
+    Push
+    Load 48
+    BinaryValue
+    Push
+    Load 40 u8
+    Convert u8
+    BinaryValue
+    Push
+    Load 64
+    BinaryValue
+    Return
+    Label 1
+    Constant -1
+    Return
+end
+function abi_out_target_scalar
+  result i64
+  params [(class Tiny) u8 (class Empty) (enum Mode) (class Pack) i64]
+  frame 96
+  receiver Receiver false false
+  slot 7 u8
+  slot 8 u8
+  slot 16 u8
+  slot 32 (enum Mode)
+  slot 40 u8
+  slot 48 i64
+  slot 56 u8
+  slot 64 i64
+  slot 72 u8
+  slot 80 i64
+  slot 88 u8
+  object 8 Tiny false
+  object 24 Empty false
+  object 56 Pack false
+  object 88 Pack false
+    BindObjectParameter 0 8 Tiny
+    BindParameter 1 16 u8
+    BindObjectParameter 2 24 Empty
+    BindParameter 3 32 (enum Mode)
+    BindObjectParameter 4 56 Pack
+    BindParameter 5 64
+    Constant 84
+    Push
+    Constant 2
+    BinaryValue CheckedDivide
+    Constant 1 u64
+    Push
+    Constant 3
+    BinaryValue ShiftLeft u64
+    Call abi_clobber
+    MethodCall abi_receiver_probe
+    MethodCall abi_nested_probe 0 [8]
+    Load 32 (enum Mode)
+    Push
+    EnumConstant (enum Mode) 1
+    Compare Equal (enum Mode)
+    BranchFalse 1
+    ReceiverLoad
+    Push
+    Load 8 u8
+    Convert u8
+    BinaryValue
+    Push
+    Load 7 u8
+    Convert u8
+    BinaryValue
+    Push
+    Load 16 u8
+    Convert u8
+    BinaryValue
+    Push
+    Load 56 u8
+    Convert u8
+    BinaryValue
+    Push
+    Load 48
+    BinaryValue
+    Push
+    Load 40 u8
+    Convert u8
+    BinaryValue
+    Push
+    Load 64
+    BinaryValue
+    Return
+    Label 1
+    Constant -1
+    Return
+end
+function abi_out_scalar
+  result i64
+  frame 96
+  slot 8 i64
+  slot 15 u8
+  slot 16 u8
+  slot 32 u8
+  slot 40 i64
+  slot 48 u8
+  slot 56 u8
+  slot 64 i64
+  slot 72 u8
+  object 8 Receiver true
+  object 16 Tiny false
+  object 24 Empty false
+  object 48 Pack false
+  object 72 Pack false
+    BeginObject 8
+    Constant 1000
+    Store 8
+    BeginObject 16
+    Constant 3 u8
+    Store 16 u8
+    Constant 5 u8
+    Store 15 u8
+    BeginObject 24
+    InitializeEmptyObject 24
+    BeginObject 48
+    Constant 11 u8
+    Store 48 u8
+    Constant 13
+    Store 40
+    Constant 17 u8
+    Store 32 u8
+    Constant 1
+    Push
+    Constant 7 u8
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 19
+    Push
+    MethodCall abi_out_target_scalar 8 [16 0 24 0 48 0]
+    BinaryValue
+    Return
+end
+function abi_in_result
+  result (class Pack)
+  params [(class Tiny) u8 (class Empty) (enum Mode) (class Pack) i64]
+  frame 96
+  receiver Receiver false false
+  slot 7 u8
+  slot 8 u8
+  slot 16 u8
+  slot 32 (enum Mode)
+  slot 40 u8
+  slot 48 i64
+  slot 56 u8
+  slot 64 i64
+  slot 72 u8
+  slot 80 i64
+  slot 88 u8
+  object 8 Tiny false
+  object 24 Empty false
+  object 56 Pack false
+  object 88 Pack false
+    BindObjectParameter 0 8 Tiny
+    BindParameter 1 16 u8
+    BindObjectParameter 2 24 Empty
+    BindParameter 3 32 (enum Mode)
+    BindObjectParameter 4 56 Pack
+    BindParameter 5 64
+    Constant 84
+    Push
+    Constant 2
+    BinaryValue CheckedDivide
+    Constant 1 u64
+    Push
+    Constant 3
+    BinaryValue ShiftLeft u64
+    Call abi_clobber
+    MethodCall abi_receiver_probe
+    MethodCall abi_nested_probe 0 [8]
+    Load 32 (enum Mode)
+    Push
+    EnumConstant (enum Mode) 1
+    Compare Equal (enum Mode)
+    BranchFalse 1
+    BeginObject 88
+    ReceiverLoad
+    Push
+    Load 8 u8
+    Convert u8
+    BinaryValue
+    Push
+    Load 7 u8
+    Convert u8
+    BinaryValue
+    Push
+    Load 16 u8
+    Convert u8
+    BinaryValue
+    Push
+    Load 56 u8
+    Convert u8
+    BinaryValue
+    Push
+    Load 48
+    BinaryValue
+    Push
+    Load 40 u8
+    Convert u8
+    BinaryValue
+    Push
+    Load 64
+    BinaryValue
+    Store 80
+    Load 8 u8
+    Store 88 u8
+    Load 40 u8
+    Store 72 u8
+    ReturnObject 88
+    Label 1
+    ReturnObject 56
+end
+function abi_out_target_result
+  result (class Pack)
+  params [(class Tiny) u8 (class Empty) (enum Mode) (class Pack) i64]
+  frame 96
+  receiver Receiver false false
+  slot 7 u8
+  slot 8 u8
+  slot 16 u8
+  slot 32 (enum Mode)
+  slot 40 u8
+  slot 48 i64
+  slot 56 u8
+  slot 64 i64
+  slot 72 u8
+  slot 80 i64
+  slot 88 u8
+  object 8 Tiny false
+  object 24 Empty false
+  object 56 Pack false
+  object 88 Pack false
+    BindObjectParameter 0 8 Tiny
+    BindParameter 1 16 u8
+    BindObjectParameter 2 24 Empty
+    BindParameter 3 32 (enum Mode)
+    BindObjectParameter 4 56 Pack
+    BindParameter 5 64
+    Constant 84
+    Push
+    Constant 2
+    BinaryValue CheckedDivide
+    Constant 1 u64
+    Push
+    Constant 3
+    BinaryValue ShiftLeft u64
+    Call abi_clobber
+    MethodCall abi_receiver_probe
+    MethodCall abi_nested_probe 0 [8]
+    Load 32 (enum Mode)
+    Push
+    EnumConstant (enum Mode) 1
+    Compare Equal (enum Mode)
+    BranchFalse 1
+    BeginObject 88
+    ReceiverLoad
+    Push
+    Load 8 u8
+    Convert u8
+    BinaryValue
+    Push
+    Load 7 u8
+    Convert u8
+    BinaryValue
+    Push
+    Load 16 u8
+    Convert u8
+    BinaryValue
+    Push
+    Load 56 u8
+    Convert u8
+    BinaryValue
+    Push
+    Load 48
+    BinaryValue
+    Push
+    Load 40 u8
+    Convert u8
+    BinaryValue
+    Push
+    Load 64
+    BinaryValue
+    Store 80
+    Load 8 u8
+    Store 88 u8
+    Load 40 u8
+    Store 72 u8
+    ReturnObject 88
+    Label 1
+    ReturnObject 56
+end
+function abi_out_result
+  result i64
+  frame 96
+  slot 8 i64
+  slot 15 u8
+  slot 16 u8
+  slot 32 u8
+  slot 40 i64
+  slot 48 u8
+  slot 56 u8
+  slot 64 i64
+  slot 72 u8
+  object 8 Receiver true
+  object 16 Tiny false
+  object 24 Empty false
+  object 48 Pack false
+  object 72 Pack false
+    BeginObject 8
+    Constant 1000
+    Store 8
+    BeginObject 16
+    Constant 3 u8
+    Store 16 u8
+    Constant 5 u8
+    Store 15 u8
+    BeginObject 24
+    InitializeEmptyObject 24
+    BeginObject 48
+    Constant 11 u8
+    Store 48 u8
+    Constant 13
+    Store 40
+    Constant 17 u8
+    Store 32 u8
+    Constant 1
+    Push
+    Constant 7 u8
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 19
+    Push
+    BeginObject 72
+    MethodCall abi_out_target_result 8 [16 0 24 0 48 0] 72
+    Load 64
+    BinaryValue
+    Return
+end
+function abi_composed
+  result (class Composed)
+  params [(class Composed)]
+  frame 32
+  receiver Receiver false false
+  slot 8 u8
+  slot 16 (enum Mode)
+  slot 23 u8
+  slot 24 u8
+  object 24 Composed false
+    BindObjectParameter 0 24 Composed
+    ReturnObject 24
+end
+function abi_old_ordinary
+  result (class Pack)
+  params [(class Pack)]
+  frame 32
+  slot 8 u8
+  slot 16 i64
+  slot 24 u8
+  object 24 Pack false
+    BindObjectParameter 0 24 Pack
+    ReturnObject 24
+end
+function abi_old_result_method
+  result (class Pack)
+  params [i64]
+  frame 32
+  receiver Receiver false false
+  slot 8 u8
+  slot 16 i64
+  slot 24 u8
+  slot 32 i64
+  object 24 Pack false
+    BindParameter 0 32
+    BeginObject 24
+    Constant 11 u8
+    Store 24 u8
+    Load 32
+    Store 16
+    Constant 17 u8
+    Store 8 u8
+    ReturnObject 24
+end
+function abi_old_scalar_method
+  result i64
+  params [i64]
+  frame 32
+  receiver Receiver false false
+  slot 8 u8
+  slot 16 i64
+  slot 24 u8
+  slot 32 i64
+  object 24 Pack false
+    BindParameter 0 32
+    ReceiverLoad
+    Push
+    Load 32
+    BinaryValue
+    Return
+end
+function abi_old_constructor
+  result i64
+  params [(class Pack)]
+  frame 32
+  receiver Pack true true
+  slot 8 u8
+  slot 16 i64
+  slot 24 u8
+  slot 32 i64
+  object 24 Pack false
+    BindObjectParameter 0 24 Pack
+    Load 24 u8
+    ReceiverStore 0 u8
+    Load 16
+    ReceiverStore 1
+    Load 8 u8
+    ReceiverStore 2 u8
+    Constant
+    Return
+end
+function abi_max_scalar
+  result i64
+  params [(class Wide)*6]
+  frame 3072
+  receiver Receiver false false
+repeat 384
+  slot {8,8} i64
+endrepeat
+  object 512 Wide false
+  object 1024 Wide false
+  object 1536 Wide false
+  object 2048 Wide false
+  object 2560 Wide false
+  object 3072 Wide false
+    BindObjectParameter 0 512 Wide
+    BindObjectParameter 1 1024 Wide
+    BindObjectParameter 2 1536 Wide
+    BindObjectParameter 3 2048 Wide
+    BindObjectParameter 4 2560 Wide
+    BindObjectParameter 5 3072 Wide
+    ReceiverLoad
+repeat 6
+    Push
+    Load {512,512}
+    BinaryValue
+    Push
+    Load {8,512}
+    BinaryValue
+endrepeat
+    Return
+end
+function abi_out_max_scalar
+  result i64
+  frame 3600
+repeat 385
+  slot {8,8} i64
+endrepeat
+  object 8 Receiver false
+  object 520 Wide false
+  object 1032 Wide false
+  object 1544 Wide false
+  object 2056 Wide false
+  object 2568 Wide false
+  object 3080 Wide false
+    BeginObject 8
+    Constant 1000
+    Store 8
+    BeginObject 520
+repeat 64
+    Constant {1,1}
+    Store {520,-8}
+endrepeat
+    BeginObject 1032
+repeat 64
+    Constant {65,1}
+    Store {1032,-8}
+endrepeat
+    BeginObject 1544
+repeat 64
+    Constant {129,1}
+    Store {1544,-8}
+endrepeat
+    BeginObject 2056
+repeat 64
+    Constant {193,1}
+    Store {2056,-8}
+endrepeat
+    BeginObject 2568
+repeat 64
+    Constant {257,1}
+    Store {2568,-8}
+endrepeat
+    BeginObject 3080
+repeat 64
+    Constant {321,1}
+    Store {3080,-8}
+endrepeat
+    Constant 1
+    Push
+    MethodCall abi_max_scalar 8 [{520,512}*6]
+    BinaryValue
+    Return
+end
+function abi_max_result
+  result (class Wide)
+  params [(class Wide)*6]
+  frame 3072
+  receiver Receiver false false
+repeat 384
+  slot {8,8} i64
+endrepeat
+  object 512 Wide false
+  object 1024 Wide false
+  object 1536 Wide false
+  object 2048 Wide false
+  object 2560 Wide false
+  object 3072 Wide false
+    BindObjectParameter 0 512 Wide
+    BindObjectParameter 1 1024 Wide
+    BindObjectParameter 2 1536 Wide
+    BindObjectParameter 3 2048 Wide
+    BindObjectParameter 4 2560 Wide
+    BindObjectParameter 5 3072 Wide
+    ReturnObject 3072
+end
+function abi_out_max_result
+  result i64
+  frame 3600
+repeat 449
+  slot {8,8} i64
+endrepeat
+  object 8 Receiver false
+  object 520 Wide false
+  object 1032 Wide false
+  object 1544 Wide false
+  object 2056 Wide false
+  object 2568 Wide false
+  object 3080 Wide false
+  object 3592 Wide false
+    BeginObject 8
+    Constant 1000
+    Store 8
+    BeginObject 520
+repeat 64
+    Constant {1,1}
+    Store {520,-8}
+endrepeat
+    BeginObject 1032
+repeat 64
+    Constant {65,1}
+    Store {1032,-8}
+endrepeat
+    BeginObject 1544
+repeat 64
+    Constant {129,1}
+    Store {1544,-8}
+endrepeat
+    BeginObject 2056
+repeat 64
+    Constant {193,1}
+    Store {2056,-8}
+endrepeat
+    BeginObject 2568
+repeat 64
+    Constant {257,1}
+    Store {2568,-8}
+endrepeat
+    BeginObject 3080
+repeat 64
+    Constant {321,1}
+    Store {3080,-8}
+endrepeat
+    Constant 1
+    Push
+    BeginObject 3592
+    MethodCall abi_max_result 8 [{520,512}*6] 3592
+    Load 3592
+repeat 63
+    Push
+    Load {3584,-8}
+    BinaryValue
+endrepeat
+    BinaryValue
+    Return
+end
+function abi_relay_composed
+  result (class Composed)
+  params [(class Composed)]
+  frame 64
+  receiver Receiver false false
+  slot 8 u8
+  slot 16 (enum Mode)
+  slot 23 u8
+  slot 24 u8
+  slot 32 u8
+  slot 40 (enum Mode)
+  slot 47 u8
+  slot 48 u8
+  object 24 Composed false
+  object 48 Composed false
+    BindObjectParameter 0 24 Composed
+    BeginObject 48
+    MethodCall abi_composed 0 [24] 48
+    ReturnObject 48
+end
+function abi_empty
+  result (class Empty)
+  params [(class Empty)]
+  frame 16
+  receiver Receiver false false
+  object 8 Empty false
+    BindObjectParameter 0 8 Empty
+    ReturnObject 8
+end
+function abi_relay_empty
+  result (class Empty)
+  params [(class Empty)]
+  frame 16
+  receiver Receiver false false
+  object 8 Empty false
+  object 16 Empty false
+    BindObjectParameter 0 8 Empty
+    BeginObject 16
+    MethodCall abi_empty 0 [8] 16
+    ReturnObject 16
+end
+function abi_out_old_ordinary
+  result i64
+  frame 64
+  slot 8 i64
+  slot 16 u8
+  slot 24 i64
+  slot 32 u8
+  slot 40 u8
+  slot 48 i64
+  slot 56 u8
+  object 8 Receiver false
+  object 32 Pack false
+  object 56 Pack false
+    BeginObject 8
+    Constant 1000
+    Store 8
+    BeginObject 32
+    Constant 11 u8
+    Store 32 u8
+    Constant 13
+    Store 24
+    Constant 17 u8
+    Store 16 u8
+    BeginObject 56
+    Constant 1
+    Push
+    AggregateCall abi_old_ordinary [32] 56
+    Load 48
+    BinaryValue
+    Return
+end
+function abi_out_old_result_method
+  result i64
+  frame 64
+  slot 8 i64
+  slot 16 u8
+  slot 24 i64
+  slot 32 u8
+  slot 40 u8
+  slot 48 i64
+  slot 56 u8
+  object 8 Receiver false
+  object 32 Pack false
+  object 56 Pack false
+    BeginObject 8
+    Constant 1000
+    Store 8
+    BeginObject 32
+    Constant 11 u8
+    Store 32 u8
+    Constant 13
+    Store 24
+    Constant 17 u8
+    Store 16 u8
+    BeginObject 56
+    Constant 1
+    Push
+    Constant 13
+    Push
+    MethodCall abi_old_result_method 8 [] 56
+    Load 48
+    BinaryValue
+    Return
+end
+function abi_out_old_scalar_method
+  result i64
+  frame 64
+  slot 8 i64
+  slot 16 u8
+  slot 24 i64
+  slot 32 u8
+  slot 40 u8
+  slot 48 i64
+  slot 56 u8
+  object 8 Receiver false
+  object 32 Pack false
+  object 56 Pack false
+    BeginObject 8
+    Constant 1000
+    Store 8
+    BeginObject 32
+    Constant 11 u8
+    Store 32 u8
+    Constant 13
+    Store 24
+    Constant 17 u8
+    Store 16 u8
+    BeginObject 56
+    Constant 1
+    Push
+    Constant 13
+    Push
+    MethodCall abi_old_scalar_method 8
+    BinaryValue
+    Return
+end
+function abi_out_old_constructor
+  result i64
+  frame 64
+  slot 8 i64
+  slot 16 u8
+  slot 24 i64
+  slot 32 u8
+  slot 40 u8
+  slot 48 i64
+  slot 56 u8
+  object 8 Receiver false
+  object 32 Pack false
+  object 56 Pack false
+    BeginObject 8
+    Constant 1000
+    Store 8
+    BeginObject 32
+    Constant 11 u8
+    Store 32 u8
+    Constant 13
+    Store 24
+    Constant 17 u8
+    Store 16 u8
+    BeginObject 56
+    Constant 1
+    Push
+    MethodCall abi_old_constructor 56 [32]
+    Load 48
+    BinaryValue
+    Return
+end

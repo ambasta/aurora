@@ -1,0 +1,1290 @@
+; CASE: fully initialized aggregate supplies receiver
+; RUN: emit
+layout Pair [i64 bool]
+function test
+  result i64
+  frame 16
+  slot 8 bool
+  slot 16 i64
+  object 16 Pair false
+    BeginObject 16
+    Constant 42
+    Store 16
+    Constant 1 bool
+    Store 8 bool
+    MethodCall get_pair 16
+    Return
+end
+function construct_pair
+  result i64
+  params [i64 bool]
+  frame 16
+  receiver Pair true true
+  slot 8 i64
+  slot 16 bool
+    BindParameter 0 8
+    BindParameter 1 16 bool
+    Load 8
+    ReceiverStore
+    Load 16 bool
+    ReceiverStore 1 bool
+    Constant
+    Return
+end
+function get_pair
+  result i64
+  frame 0
+  receiver Pair false false
+    ReceiverLoad
+    Return
+end
+function relay_pair
+  result i64
+  frame 0
+  receiver Pair false false
+    MethodCall get_pair
+    Return
+end
+
+; CASE: mutable receiver reborrow downgrades and returns
+; RUN: emit
+layout Pair [i64 bool]
+function test
+  result i64
+  frame 16
+  slot 8 bool
+  slot 16 i64
+  object 16 Pair true
+    BeginObject 16
+    Constant 42
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_pair 16
+    MethodCall relay_pair 16
+    Return
+end
+function construct_pair
+  result i64
+  params [i64 bool]
+  frame 16
+  receiver Pair true true
+  slot 8 i64
+  slot 16 bool
+    BindParameter 0 8
+    BindParameter 1 16 bool
+    Load 8
+    ReceiverStore
+    Load 16 bool
+    ReceiverStore 1 bool
+    Constant
+    Return
+end
+function get_pair
+  result i64
+  frame 0
+  receiver Pair false false
+    ReceiverLoad
+    Return
+end
+function relay_pair
+  result i64
+  frame 0
+  receiver Pair true false
+    Constant 41
+    ReceiverStore
+    Constant 42
+    ReceiverStore
+    MethodCall get_pair
+    Return
+end
+
+; CASE: receiver function ordinary scalar helper
+; RUN: emit
+layout Pair [i64 bool]
+function test
+  result i64
+  frame 16
+  slot 8 bool
+  slot 16 i64
+  object 16 Pair false
+    BeginObject 16
+    Constant 42
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_pair 16
+    MethodCall relay_pair 16
+    Return
+end
+function construct_pair
+  result i64
+  params [i64 bool]
+  frame 16
+  receiver Pair true true
+  slot 8 i64
+  slot 16 bool
+    BindParameter 0 8
+    BindParameter 1 16 bool
+    Load 8
+    ReceiverStore
+    Load 16 bool
+    ReceiverStore 1 bool
+    Constant
+    Return
+end
+function get_pair
+  result i64
+  frame 0
+  receiver Pair false false
+    Call helper
+    ReceiverLoad
+    Return
+end
+function relay_pair
+  result i64
+  frame 0
+  receiver Pair false false
+    MethodCall get_pair
+    Return
+end
+function helper
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Load 8
+    Return
+end
+
+; CASE: pure scalar recursion stays supported
+; RUN: emit
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Call test
+    Constant 42
+    Store 8
+    Load 8
+    Return
+end
+
+; CASE: constructor disjoint branch initialization
+; RUN: emit
+layout Pair [i64 bool]
+function test
+  result i64
+  frame 16
+  slot 8 bool
+  slot 16 i64
+  object 16 Pair false
+    BeginObject 16
+    Constant 42
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_pair 16
+    MethodCall relay_pair 16
+    Return
+end
+function construct_pair
+  result i64
+  params [i64 bool]
+  frame 16
+  receiver Pair true true
+  slot 8 i64
+  slot 16 bool
+    BindParameter 0 8
+    BindParameter 1 16 bool
+    Constant 1 bool
+    BranchFalse 1
+    Constant 42
+    ReceiverStore
+    Jump 2
+    Label 1
+    Constant 42
+    ReceiverStore
+    Label 2
+    Constant 1 bool
+    ReceiverStore 1 bool
+    Constant
+    Return
+end
+function get_pair
+  result i64
+  frame 0
+  receiver Pair false false
+    ReceiverLoad
+    Return
+end
+function relay_pair
+  result i64
+  frame 0
+  receiver Pair false false
+    MethodCall get_pair
+    Return
+end
+
+; CASE: empty object reserves private receiver storage
+; RUN: emit
+layout Pair []
+function test
+  result i64
+  frame 16
+  object 16 Pair false
+    BeginObject 16
+    Constant 42
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_pair 16
+    MethodCall relay_pair 16
+    Return
+end
+function construct_pair
+  result i64
+  params [i64 bool]
+  frame 16
+  receiver Pair true true
+  slot 8 i64
+  slot 16 bool
+    BindParameter 0 8
+    BindParameter 1 16 bool
+    Constant
+    Return
+end
+function get_pair
+  result i64
+  frame 0
+  receiver Pair false false
+    Constant 42
+    Return
+end
+function relay_pair
+  result i64
+  frame 0
+  receiver Pair false false
+    MethodCall get_pair
+    Return
+end
+
+; CASE: empty object constructor cannot repeat
+; BASE: empty object reserves private receiver storage
+; RUN: verify
+; EXPECT-ERROR: constructor called more than once
+@@ -6,0 +7,5 @@
++    Constant 42
++    Push
++    Constant 1 bool
++    Push
++    MethodCall construct_pair 16
+
+; CASE: empty object cannot alias scalar slot
+; BASE: empty object reserves private receiver storage
+; RUN: verify
+; EXPECT-ERROR: scalar slot overlaps empty object
+@@ -4,0 +5 @@
++  slot 16 i64
+
+; CASE: object method before lifetime begin
+; BASE: fully initialized aggregate supplies receiver
+; RUN: verify
+; EXPECT-ERROR: outside active object lifetime
+@@ -8 +7,0 @@
+-    BeginObject 16
+@@ -10 +9 @@
+-    Store 16
++    Push
+@@ -12,2 +11,3 @@
+-    Store 8 bool
+-    MethodCall get_pair 16
++    Push
++    MethodCall construct_pair 16
++    MethodCall relay_pair 16
+
+; CASE: object field store before lifetime begin
+; BASE: fully initialized aggregate supplies receiver
+; RUN: verify
+; EXPECT-ERROR: outside active lifetime
+@@ -8 +7,0 @@
+-    BeginObject 16
+@@ -11,3 +9,0 @@
+-    Constant 1 bool
+-    Store 8 bool
+-    MethodCall get_pair 16
+
+; CASE: object field load after lifetime end
+; BASE: fully initialized aggregate supplies receiver
+; RUN: verify
+; EXPECT-ERROR: outside active lifetime
+@@ -10 +10 @@
+-    Store 16
++    Push
+@@ -12,2 +12,5 @@
+-    Store 8 bool
+-    MethodCall get_pair 16
++    Push
++    MethodCall construct_pair 16
++    EndObject 16
++    Load 16
++    MethodCall relay_pair 16
+
+; CASE: object indexed access after lifetime end
+; BASE: fully initialized aggregate supplies receiver
+; RUN: verify
+; EXPECT-ERROR: outside active lifetime
+@@ -10 +10 @@
+-    Store 16
++    Push
+@@ -12,2 +12,6 @@
+-    Store 8 bool
+-    MethodCall get_pair 16
++    Push
++    MethodCall construct_pair 16
++    EndObject 16
++    Constant
++    BoundsGuard 16 1
++    MethodCall relay_pair 16
+
+; CASE: object method after lifetime end
+; BASE: fully initialized aggregate supplies receiver
+; RUN: verify
+; EXPECT-ERROR: outside active object lifetime
+@@ -10 +10 @@
+-    Store 16
++    Push
+@@ -12,2 +12,4 @@
+-    Store 8 bool
+-    MethodCall get_pair 16
++    Push
++    MethodCall construct_pair 16
++    EndObject 16
++    MethodCall relay_pair 16
+
+; CASE: object double begin
+; BASE: fully initialized aggregate supplies receiver
+; RUN: verify
+; EXPECT-ERROR: lifetime already active
+@@ -8,0 +9 @@
++    BeginObject 16
+@@ -10 +11 @@
+-    Store 16
++    Push
+@@ -12,2 +13,3 @@
+-    Store 8 bool
+-    MethodCall get_pair 16
++    Push
++    MethodCall construct_pair 16
++    MethodCall relay_pair 16
+
+; CASE: object end before begin
+; BASE: fully initialized aggregate supplies receiver
+; RUN: verify
+; EXPECT-ERROR: lifetime is not active
+@@ -7,0 +8 @@
++    EndObject 16
+@@ -10 +11 @@
+-    Store 16
++    Push
+@@ -12,2 +13,3 @@
+-    Store 8 bool
+-    MethodCall get_pair 16
++    Push
++    MethodCall construct_pair 16
++    MethodCall relay_pair 16
+
+; CASE: object double end
+; BASE: fully initialized aggregate supplies receiver
+; RUN: verify
+; EXPECT-ERROR: lifetime is not active
+@@ -10 +10 @@
+-    Store 16
++    Push
+@@ -12,2 +12,5 @@
+-    Store 8 bool
+-    MethodCall get_pair 16
++    Push
++    MethodCall construct_pair 16
++    EndObject 16
++    EndObject 16
++    MethodCall relay_pair 16
+
+; CASE: object begin requires exact base
+; BASE: fully initialized aggregate supplies receiver
+; RUN: verify
+; EXPECT-ERROR: lifetime operation requires exact object slot
+@@ -8 +8 @@
+-    BeginObject 16
++    BeginObject 8
+@@ -10 +10 @@
+-    Store 16
++    Push
+@@ -12,2 +12,3 @@
+-    Store 8 bool
+-    MethodCall get_pair 16
++    Push
++    MethodCall construct_pair 16
++    MethodCall relay_pair 16
+
+; CASE: object end requires exact base
+; BASE: fully initialized aggregate supplies receiver
+; RUN: verify
+; EXPECT-ERROR: lifetime operation requires exact object slot
+@@ -10 +10 @@
+-    Store 16
++    Push
+@@ -12,2 +12,4 @@
+-    Store 8 bool
+-    MethodCall get_pair 16
++    Push
++    MethodCall construct_pair 16
++    EndObject 8
++    MethodCall relay_pair 16
+
+; CASE: new lifetime cannot inherit initialized fields
+; BASE: fully initialized aggregate supplies receiver
+; RUN: verify
+; EXPECT-ERROR: object not fully initialized
+@@ -10 +10 @@
+-    Store 16
++    Push
+@@ -12,2 +12,5 @@
+-    Store 8 bool
+-    MethodCall get_pair 16
++    Push
++    MethodCall construct_pair 16
++    EndObject 16
++    BeginObject 16
++    MethodCall relay_pair 16
+
+; CASE: branch cannot skip lifetime end
+; BASE: fully initialized aggregate supplies receiver
+; RUN: verify
+; EXPECT-ERROR: incompatible active object lifetimes
+@@ -10 +10 @@
+-    Store 16
++    Push
+@@ -12,2 +12,8 @@
+-    Store 8 bool
+-    MethodCall get_pair 16
++    Push
++    MethodCall construct_pair 16
++    MethodCall relay_pair 16
++    Constant 1 bool
++    BranchFalse 1
++    EndObject 16
++    Label 1
++    Constant 42
+
+; CASE: branch cannot skip lifetime begin
+; BASE: fully initialized aggregate supplies receiver
+; RUN: verify
+; EXPECT-ERROR: incompatible active object lifetimes
+@@ -7,0 +8,6 @@
++    Constant 1 bool
++    BranchFalse 1
++    Jump 2
++    Label 1
++    BeginObject 16
++    Label 2
+@@ -10 +16 @@
+-    Store 16
++    Push
+@@ -12,2 +18,3 @@
+-    Store 8 bool
+-    MethodCall get_pair 16
++    Push
++    MethodCall construct_pair 16
++    MethodCall relay_pair 16
+
+; CASE: loop cannot silently restart active object
+; BASE: fully initialized aggregate supplies receiver
+; RUN: verify
+; EXPECT-ERROR: incompatible active object lifetimes
+@@ -7,0 +8 @@
++    Label 1
+@@ -10 +11 @@
+-    Store 16
++    Push
+@@ -12,2 +13,6 @@
+-    Store 8 bool
+-    MethodCall get_pair 16
++    Push
++    MethodCall construct_pair 16
++    MethodCall relay_pair 16
++    Constant 1 bool
++    BranchFalse 1
++    Constant 42
+
+; CASE: new lifetime permits constructing same storage again
+; BASE: fully initialized aggregate supplies receiver
+; RUN: emit
+@@ -10 +10 @@
+-    Store 16
++    Push
+@@ -12,2 +12,10 @@
+-    Store 8 bool
+-    MethodCall get_pair 16
++    Push
++    MethodCall construct_pair 16
++    EndObject 16
++    BeginObject 16
++    Constant 42
++    Push
++    Constant 1 bool
++    Push
++    MethodCall construct_pair 16
++    MethodCall relay_pair 16
+
+; CASE: const constructor object lifetime ends before loop backedge
+; BASE: fully initialized aggregate supplies receiver
+; RUN: emit
+@@ -7,0 +8 @@
++    Label 1
+@@ -10 +11 @@
+-    Store 16
++    Push
+@@ -12,2 +13,7 @@
+-    Store 8 bool
+-    MethodCall get_pair 16
++    Push
++    MethodCall construct_pair 16
++    MethodCall relay_pair 16
++    EndObject 16
++    Constant 1 bool
++    BranchFalse 1
++    Constant 42
+
+; CASE: const aggregate object lifetime ends before loop backedge
+; BASE: fully initialized aggregate supplies receiver
+; RUN: emit
+@@ -7,0 +8 @@
++    Label 1
+@@ -13,0 +15,4 @@
++    EndObject 16
++    Constant 1 bool
++    BranchFalse 1
++    Constant 42
+
+; CASE: six scalar method arguments with odd live operand depth
+; RUN: emit
+layout Pair [i64 bool]
+function test
+  result i64
+  frame 16
+  slot 8 bool
+  slot 16 i64
+  object 16 Pair false
+    BeginObject 16
+    Constant 42
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_pair 16
+    Constant 99
+repeat 6
+    Push
+    Constant {1,1}
+endrepeat
+    Push
+    MethodCall relay_pair 16
+    Pop
+    Return
+end
+function construct_pair
+  result i64
+  params [i64 bool]
+  frame 16
+  receiver Pair true true
+  slot 8 i64
+  slot 16 bool
+    BindParameter 0 8
+    BindParameter 1 16 bool
+    Load 8
+    ReceiverStore
+    Load 16 bool
+    ReceiverStore 1 bool
+    Constant
+    Return
+end
+function get_pair
+  result i64
+  frame 0
+  receiver Pair false false
+    ReceiverLoad
+    Return
+end
+function relay_pair
+  result i64
+  params [i64*6]
+  frame 48
+  receiver Pair false false
+  slot 8 i64
+  slot 16 i64
+  slot 24 i64
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+    BindParameter 0 8
+    BindParameter 1 16
+    BindParameter 2 24
+    BindParameter 3 32
+    BindParameter 4 40
+    BindParameter 5 48
+    MethodCall get_pair
+    Return
+end
+
+; CASE: private receiver ABI frame and field layout
+; BASE: mutable receiver reborrow downgrades and returns
+; RUN: emit
+; CHECK-DAG: .local construct_pair
+; CHECK-DAG: movq %r10, -24(%rbp)
+; CHECK-DAG: movq -8(%rbp), %r10
+; CHECK-DAG: leaq -16(%rbp), %r10
+; CHECK-DAG: movq %rax, 8(%r10)
+@@ -7 +7 @@
+-  object 16 Pair true
++  object 16 Pair false
+@@ -43,5 +43 @@
+-  receiver Pair true false
+-    Constant 41
+-    ReceiverStore
+-    Constant 42
+-    ReceiverStore
++  receiver Pair false false
+
+; CASE: deep receiver-to-scalar call graph uses iterative verification
+; RUN: emit
+layout Pair [i64 bool]
+function test
+  result i64
+  frame 16
+  slot 8 bool
+  slot 16 i64
+  object 16 Pair false
+    BeginObject 16
+    Constant 42
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_pair 16
+    MethodCall relay_pair 16
+    Return
+end
+function construct_pair
+  result i64
+  params [i64 bool]
+  frame 16
+  receiver Pair true true
+  slot 8 i64
+  slot 16 bool
+    BindParameter 0 8
+    BindParameter 1 16 bool
+    Load 8
+    ReceiverStore
+    Load 16 bool
+    ReceiverStore 1 bool
+    Constant
+    Return
+end
+function get_pair
+  result i64
+  frame 0
+  receiver Pair false false
+    Call deep_helper0
+    Return
+end
+function relay_pair
+  result i64
+  frame 0
+  receiver Pair false false
+    MethodCall get_pair
+repeat 4095
+    Return
+end
+function deep_helper{0,1}
+  result i64
+  frame 0
+    Call deep_helper{1,1}
+endrepeat
+    Return
+end
+function deep_helper4095
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+
+; CASE: deep scalar bridge cannot hide receiver cycle
+; BASE: deep receiver-to-scalar call graph uses iterative verification
+; RUN: verify
+; EXPECT-ERROR: recursive receiver call cycle
+@@ -57 +57,5 @@
+-  frame 0
++  frame 16
++  slot 8 bool
++  slot 16 i64
++  object 16 Pair false
++    BeginObject 16
+@@ -58,0 +63,5 @@
++    Push
++    Constant 1 bool
++    Push
++    MethodCall construct_pair 16
++    MethodCall relay_pair 16
+
+; CASE: receiver may call a pure scalar recursive component
+; BASE: deep receiver-to-scalar call graph uses iterative verification
+; RUN: emit
+@@ -58 +58 @@
+-    Constant 42
++    Call deep_helper0
+
+; CASE: class arguments and result use independent value storage
+; RUN: emit
+layout Pair [i64 bool]
+function test
+  result i64
+  frame 48
+  slot 8 bool
+  slot 16 i64
+  slot 24 bool
+  slot 32 i64
+  slot 40 bool
+  slot 48 i64
+  object 16 Pair false
+  object 32 Pair false
+  object 48 Pair false
+    BeginObject 16
+    Constant 12
+    Store 16
+    Constant 1 bool
+    Store 8 bool
+    BeginObject 32
+    Constant 20
+    Store 32
+    Constant 0 bool
+    Store 24 bool
+    Constant 10
+    Push
+    Constant 1 bool
+    Push
+    BeginObject 48
+    AggregateCall copy_pair [16 0 32 0] 48
+    Load 48
+    Return
+end
+function copy_pair
+  result (class Pair)
+  params [(class Pair) i64 (class Pair) bool]
+  frame 64
+  slot 8 bool
+  slot 16 i64
+  slot 24 i64
+  slot 32 bool
+  slot 40 i64
+  slot 48 bool
+  slot 56 bool
+  slot 64 i64
+  object 16 Pair false
+  object 40 Pair false
+  object 64 Pair false
+    BindObjectParameter 0 16 Pair
+    BindParameter 1 24
+    BindObjectParameter 2 40 Pair
+    BindParameter 3 48 bool
+    BeginObject 64
+    Load 16
+    Push
+    Load 24
+    BinaryValue
+    Push
+    Load 40
+    BinaryValue
+    Store 64
+    Load 48 bool
+    Store 56 bool
+    ReturnObject 64
+end
+
+; CASE: unknown value call
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: unknown aggregate call
+@@ -29 +29 @@
+-    AggregateCall copy_pair [16 0 32 0] 48
++    AggregateCall missing [16 0 32 0] 48
+
+; CASE: missing value argument vector
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: vector size
+@@ -29 +29 @@
+-    AggregateCall copy_pair [16 0 32 0] 48
++    AggregateCall copy_pair [] 48
+
+; CASE: extra value argument vector entry
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: vector size
+@@ -29 +29 @@
+-    AggregateCall copy_pair [16 0 32 0] 48
++    AggregateCall copy_pair [16 0 32 0 0] 48
+
+; CASE: scalar argument cannot contain object base
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: scalar argument cannot
+@@ -29 +29 @@
+-    AggregateCall copy_pair [16 0 32 0] 48
++    AggregateCall copy_pair [16 16 32 0] 48
+
+; CASE: class argument cannot be scalar zero
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: exact object slot
+@@ -29 +29 @@
+-    AggregateCall copy_pair [16 0 32 0] 48
++    AggregateCall copy_pair [0 0 32 0] 48
+
+; CASE: class argument cannot be negative
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: exact object slot
+@@ -29 +29 @@
+-    AggregateCall copy_pair [16 0 32 0] 48
++    AggregateCall copy_pair [-16 0 32 0] 48
+
+; CASE: class argument requires exact base
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: exact object slot
+@@ -29 +29 @@
+-    AggregateCall copy_pair [16 0 32 0] 48
++    AggregateCall copy_pair [8 0 32 0] 48
+
+; CASE: argument snapshots cannot alias
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: snapshots must be distinct
+@@ -29 +29 @@
+-    AggregateCall copy_pair [16 0 32 0] 48
++    AggregateCall copy_pair [16 0 16 0] 48
+
+; CASE: argument nominal class identity
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: argument nominal class
+@@ -0,0 +1 @@
++layout Other [i64 bool]
+@@ -11 +12 @@
+-  object 16 Pair false
++  object 16 Other false
+
+; CASE: argument snapshot readonly
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: snapshot must be readonly
+@@ -11 +11 @@
+-  object 16 Pair false
++  object 16 Pair true
+
+; CASE: argument snapshot inactive
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: aggregate argument outside active object lifetime
+; EXPECT-CODE: AU0000
+@@ -28,0 +29 @@
++    EndObject 16
+
+; CASE: argument snapshot partially initialized
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: argument object not fully
+@@ -18 +17,0 @@
+-    Store 8 bool
+
+; CASE: argument snapshot uninitialized
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: argument object not fully
+@@ -15,4 +14,0 @@
+-    Constant 12
+-    Store 16
+-    Constant 1 bool
+-    Store 8 bool
+
+; CASE: argument scalar type mismatch
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: scalar argument type
+@@ -26 +26 @@
+-    Constant 1 bool
++    Constant 1
+
+; CASE: argument missing scalar operand
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: scalar argument type
+@@ -27 +26,0 @@
+-    Push
+
+; CASE: result cannot be zero
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: result requires exact
+@@ -29 +29 @@
+-    AggregateCall copy_pair [16 0 32 0] 48
++    AggregateCall copy_pair [16 0 32 0]
+
+; CASE: result cannot be negative
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: result requires exact
+@@ -29 +29 @@
+-    AggregateCall copy_pair [16 0 32 0] 48
++    AggregateCall copy_pair [16 0 32 0] -48
+
+; CASE: result cannot be interior field
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: result requires exact
+@@ -29 +29 @@
+-    AggregateCall copy_pair [16 0 32 0] 48
++    AggregateCall copy_pair [16 0 32 0] 40
+
+; CASE: result cannot alias snapshot
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: result aliases argument
+@@ -29 +29 @@
+-    AggregateCall copy_pair [16 0 32 0] 48
++    AggregateCall copy_pair [16 0 32 0] 16
+
+; CASE: result nominal class identity
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: result nominal class
+@@ -0,0 +1 @@
++layout Other [i64 bool]
+@@ -13 +14 @@
+-  object 48 Pair false
++  object 48 Other false
+
+; CASE: result lifetime required
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: result outside active
+@@ -28 +27,0 @@
+-    BeginObject 48
+
+; CASE: result pristine field requirement
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: result requires uninitialized
+@@ -28,0 +29,2 @@
++    Constant
++    Store 48
+
+; CASE: result cannot initialize twice
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: result object already initialized
+@@ -28,0 +29,5 @@
++    AggregateCall copy_pair [16 0 32 0] 48
++    Constant 10
++    Push
++    Constant 1 bool
++    Push
+
+; CASE: result cannot conditionally initialize twice
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: result object already initialized
+@@ -28,0 +29,10 @@
++    AggregateCall copy_pair [16 0 32 0] 48
++    Constant 1 bool
++    BranchFalse 1
++    EndObject 48
++    BeginObject 48
++    Label 1
++    Constant 10
++    Push
++    Constant 1 bool
++    Push
+
+; CASE: result scalar current cannot carry class capability
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -30 +29,0 @@
+-    Load 48
+
+; CASE: plain call cannot bypass value ABI
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: plain call cannot target aggregate
+@@ -29 +29 @@
+-    AggregateCall copy_pair [16 0 32 0] 48
++    Call copy_pair
+
+; CASE: object return exact slot
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: return requires exact
+@@ -63 +63 @@
+-    ReturnObject 64
++    ReturnObject 56
+
+; CASE: object return nominal identity
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: return nominal class
+@@ -0,0 +1 @@
++layout Other [i64 bool]
+@@ -47 +48 @@
+-  object 64 Pair false
++  object 64 Other false
+
+; CASE: object return active lifetime
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: return outside active
+@@ -62,0 +63 @@
++    EndObject 64
+
+; CASE: object return complete initialization
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: returned object not fully
+@@ -62 +61,0 @@
+-    Store 56 bool
+
+; CASE: object return balanced scalar stack
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: unbalanced stack at object return
+@@ -62,0 +63 @@
++    Push
+
+; CASE: scalar return cannot bypass value ABI
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: scalar return cannot return class
+@@ -63 +63 @@
+-    ReturnObject 64
++    Return
+
+; CASE: object return cannot bypass scalar result
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: object return requires class
+@@ -31 +31 @@
+-    Return
++    ReturnObject 48
+
+; CASE: object bind cannot use scalar instruction
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: entry prefix
+@@ -48 +48 @@
+-    BindObjectParameter 0 16 Pair
++    BindParameter 0 16 (class Pair)
+
+; CASE: scalar bind cannot use object instruction
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: entry prefix
+@@ -49 +49 @@
+-    BindParameter 1 24
++    BindObjectParameter 1 16 Pair
+
+; CASE: object bind wrong index
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: entry prefix
+@@ -48 +48 @@
+-    BindObjectParameter 0 16 Pair
++    BindObjectParameter 1 16 Pair
+
+; CASE: object bind wrong declared class
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: object parameter type
+@@ -48 +48 @@
+-    BindObjectParameter 0 16 Pair
++    BindObjectParameter 0 16 Other
+
+; CASE: object bind wrong slot class
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: object parameter nominal
+@@ -0,0 +1 @@
++layout Other [i64 bool]
+@@ -45 +46 @@
+-  object 16 Pair false
++  object 16 Other false
+
+; CASE: object bind requires exact slot
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: object parameter requires exact
+@@ -48 +48 @@
+-    BindObjectParameter 0 16 Pair
++    BindObjectParameter 0 8 Pair
+
+; CASE: object bind readonly requirement
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: object parameter must be readonly
+@@ -45 +45 @@
+-  object 16 Pair false
++  object 16 Pair true
+
+; CASE: object parameters cannot alias
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: object parameter bindings overlap
+@@ -50 +50 @@
+-    BindObjectParameter 2 40 Pair
++    BindObjectParameter 2 16 Pair
+
+; CASE: object bind outside prefix
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: outside entry prefix
+@@ -51,0 +52 @@
++    BindObjectParameter 0 16 Pair
+
+; CASE: object parameter cannot restart lifetime
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: parameter lifetime cannot restart
+@@ -51,0 +52,2 @@
++    EndObject 16
++    BeginObject 16
+
+; CASE: object parameter cannot overwrite field
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: write to initialized const
+@@ -51,0 +52,2 @@
++    Constant 9
++    Store 16
+
+; CASE: scalar value-call parameter immutable
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: immutable scalar parameter
+@@ -51,0 +52,2 @@
++    Constant 9
++    Store 24
+
+; CASE: scalar value-call parameter indexed immutable
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: indexed write to immutable scalar
+@@ -51,0 +52,5 @@
++    Constant
++    BoundsGuard 24 1
++    Push
++    Constant 9
++    IndexStore 24 1
+
+; CASE: method aggregate result signature denied
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: aggregate call cannot target receiver
+@@ -36,0 +37 @@
++  receiver Pair false false
+
+; CASE: value-call hidden frame slot inaccessible
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: invalid slot offset
+@@ -44,0 +45 @@
++  slot 72 i64
+
+; CASE: value-call class capabilities are not scalar slots
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: invalid slot payload
+@@ -38 +38 @@
+-  slot 16 i64
++  slot 16 (class Pair)
+
+; CASE: value signature cannot contain reference
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: invalid value boundary type
+@@ -3,0 +4 @@
++  params [ref]
+
+; CASE: value signature cannot contain mutable reference
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: invalid value boundary type
+@@ -3 +3 @@
+-  result i64
++  result mutref
+
+; CASE: value signature cannot contain owner
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: invalid value boundary type
+@@ -3 +3 @@
+-  result i64
++  result own
+
+; CASE: value signature cannot contain array
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: invalid value boundary type
+@@ -3 +3 @@
+-  result i64
++  result (array len=1)
+
+; CASE: value signature unknown nominal type
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: unknown value boundary class
+@@ -3 +3 @@
+-  result i64
++  result (class Missing)
+
+; CASE: value signature malformed class payload
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: invalid value boundary type
+@@ -3 +3 @@
+-  result i64
++  result (class Pair len=1)
+
+; CASE: value signature at most six parameters
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: too many parameters
+@@ -3,0 +4 @@
++  params [(class Pair)*7]
+
+; CASE: value boundary at most 64 fields
+; BASE: class arguments and result use independent value storage
+; RUN: verify
+; EXPECT-ERROR: exceeds 64 scalar fields
+@@ -0,0 +1 @@
++layout Large [i64*65]
+@@ -3 +4 @@
+-  result i64
++  result (class Large)
+
+; CASE: aggregate call cannot replace scalar call
+; BASE: pure scalar recursion stays supported
+; RUN: verify
+; EXPECT-ERROR: requires aggregate signature
+@@ -5 +5 @@
+-    Call test
++    AggregateCall test

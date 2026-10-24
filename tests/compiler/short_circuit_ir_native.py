@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Independent direct-IR short-circuit and private-ABI native acceptance.
 
-The C++ fixture supplies verified IR and emitted instructions, never expectations.
+A textual IR case supplies verified IR and emitted instructions, never expectations.
 Handwritten assembly replaces only probe bodies and metadata helper bodies. It
 checks actual entry RSP modulo 16, record payloads, receiver authority, span
 bounds/data and class-result storage. Each executed probe counts an effect;
@@ -25,6 +25,9 @@ import tempfile
 
 from native_runner import Freestanding, check_trap, check_words, command, freestanding_glue, observe, require, run
 from native_runner import symbols_of
+
+# Verified textual IR cases; the aurora-ir-check driver prints their assembly.
+AIR = Path(__file__).resolve().parent / "ir" / "short-circuit-ir" / "abi.air"
 
 
 class ProbeTrap(Enum):
@@ -234,7 +237,7 @@ def main():
     parser.add_argument("ir_tests", type=Path)
     parser.add_argument("--artifacts", type=Path, help="scratch directory for the linked program")
     arguments = parser.parse_args()
-    raw = command([arguments.ir_tests.resolve(), "--emit-native"], timeout=30).stdout.decode()
+    raw = command([arguments.ir_tests.resolve(), "--output", AIR, "native"], timeout=30).stdout.decode()
     require("validated typed IR" in raw, "fixture did not emit validated assembly")
     tests = cases()
     names = [name for _, _, _, name in tests]

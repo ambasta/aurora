@@ -1,0 +1,1309 @@
+; CASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: emit
+layout Empty []
+layout Leaf [(enum Mode) u8 u8 bool]
+layout Outer [i64 (enum Mode) u8 u8 bool]
+layout Tiny [u8*3]
+fields Empty []
+fields Leaf [((enum Mode) 0 1 false) (u8 1 2 true) (bool 3 1 false) ((class Empty) 4 0 false)]
+fields Outer [(i64 0 1 false) ((class Leaf) 1 4 false) ((class Empty) 5 0 false)]
+fields Tiny [(u8 0 3 true)]
+enum Mode 2
+enum OtherMode 2
+function packed_result_array
+  result u8
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 175 u8
+    Return
+end
+function construct_leaf
+  result i64
+  params [(enum Mode) bool (class Empty)]
+  frame 32
+  receiver Leaf true true
+  slot 8 (enum Mode)
+  slot 16 bool
+  object 24 Empty false
+    BindParameter 0 8 (enum Mode)
+    BindParameter 1 16 bool
+    BindObjectParameter 2 24 Empty
+    Load 8 (enum Mode)
+    ReceiverStore 0 (enum Mode)
+    Load 16 bool
+    ReceiverStore 2 bool
+    ReceiverArrayZero 1
+    InitializeObjectField 0 3 24
+    Constant
+    Return
+end
+function construct_outer
+  result i64
+  params [i64 (class Leaf) (class Empty) i64]
+  frame 64
+  receiver Outer true true
+  slot 8 i64
+  slot 24 bool
+  slot 31 u8
+  slot 32 u8
+  slot 40 (enum Mode)
+  slot 56 i64
+  object 40 Leaf false
+  object 48 Empty false
+    BindParameter 0 8
+    BindObjectParameter 1 40 Leaf
+    BindObjectParameter 2 48 Empty
+    BindParameter 3 56
+    Load 8
+    Push
+    Load 56
+    BinaryValue
+    ReceiverStore
+    InitializeObjectField 0 1 40
+    InitializeObjectField 0 2 48
+    Constant
+    Return
+end
+function set_leaf
+  result i64
+  params [i64 u8]
+  frame 16
+  receiver Leaf true false
+  slot 8 i64
+  slot 16 u8
+    BindParameter 0 8
+    BindParameter 1 16 u8
+    Load 8
+    ReceiverBoundsGuard 1
+    Push
+    Load 16 u8
+    ReceiverIndexStore 1
+    Constant
+    Return
+end
+function get_outer_header
+  result i64
+  frame 0
+  receiver Outer false false
+    ReceiverLoad
+    Return
+end
+function copy_outer
+  result (class Outer)
+  params [(class Outer)]
+  frame 48
+  slot 16 bool
+  slot 23 u8
+  slot 24 u8
+  slot 32 (enum Mode)
+  slot 40 i64
+  object 40 Outer false
+    BindObjectParameter 0 40 Outer
+    ReturnObject 40
+end
+function clobber_scalar
+  result i64
+  frame 0
+    Constant 81
+    Push
+    Constant 9
+    BinaryValue CheckedDivide
+    Return
+end
+function identity_mode
+  result (enum Mode)
+  params [(enum Mode)]
+  frame 16
+  slot 8 (enum Mode)
+    BindParameter 0 8 (enum Mode)
+    Load 8 (enum Mode)
+    Return
+end
+function snapshot_outer
+  result (class Outer)
+  params [i64 (enum Mode)]
+  frame 160
+  receiver Outer false false
+  slot 8 i64
+  slot 16 (enum Mode)
+  slot 32 bool
+  slot 39 u8
+  slot 40 u8
+  slot 48 (enum Mode)
+  slot 72 bool
+  slot 79 u8
+  slot 80 u8
+  slot 88 (enum Mode)
+  slot 96 i64
+  slot 112 bool
+  slot 119 u8
+  slot 120 u8
+  slot 128 (enum Mode)
+  slot 136 i64
+  slot 144 bool
+  object 48 Leaf false
+  object 56 Empty false
+  object 96 Outer false
+  object 136 Outer true
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    BeginObject 48
+    ObjectFieldCopy 0 1 48
+    BeginObject 56
+    ObjectFieldCopy 0 2 56
+    Load 16 (enum Mode)
+    Push
+    Call identity_mode
+    Push
+    Load 48 (enum Mode)
+    Compare Equal (enum Mode)
+    Store 144 bool
+    Call clobber_scalar
+    BeginObject 96
+    Load 8
+    Push
+    ReceiverLoad
+    Push
+    MethodCall construct_outer 96 [0 48 56 0]
+    BeginObject 136
+    AggregateCall copy_outer [96] 136
+    MethodCall get_outer_header
+    Push
+    Load 136
+    BinaryValue
+    Store 136
+    Load 144 bool
+    BranchFalse 1
+    ReturnObject 136
+    Label 1
+    Constant 1
+    Push
+    Constant
+    BinaryValue CheckedDivide
+    ReturnObject 136
+end
+function relay_outer
+  result (class Outer)
+  params [i64 (enum Mode)]
+  frame 64
+  receiver Outer false false
+  slot 8 i64
+  slot 16 (enum Mode)
+  slot 32 bool
+  slot 39 u8
+  slot 40 u8
+  slot 48 (enum Mode)
+  slot 56 i64
+  object 56 Outer false
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    BeginObject 56
+    Load 8
+    Push
+    Load 16 (enum Mode)
+    Push
+    MethodCall snapshot_outer 0 [] 56
+    ReturnObject 56
+end
+function snapshot_empty
+  result (class Empty)
+  frame 16
+  receiver Outer false false
+  object 8 Empty false
+    BeginObject 8
+    ObjectFieldCopy 0 2 8
+    Call clobber_scalar
+    ReturnObject 8
+end
+function get_leaf_mode
+  result (enum Mode)
+  frame 0
+  receiver Leaf false false
+    ReceiverLoad 0 (enum Mode)
+    Return
+end
+function packed_result_header
+  result i64
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 152
+    Return
+end
+function packed_result_first
+  result u8
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 176 u8
+    Return
+end
+function packed_result_enum
+  result (enum Mode)
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 184 (enum Mode)
+    Return
+end
+function packed_result_bool
+  result bool
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 168 bool
+    Return
+end
+function packed_source_array
+  result u8
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 31 u8
+    Return
+end
+function packed_source_header
+  result i64
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 112
+    Return
+end
+function packed_result_independence
+  result u8
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Constant 1
+    Push
+    Constant 255 u8
+    Push
+    MethodCall set_leaf 184
+    Load 135 u8
+    Return
+end
+function packed_forwarded_result
+  result i64
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall relay_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 152
+    Return
+end
+function packed_empty_result
+  result i64
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    BeginObject 192
+    MethodCall snapshot_empty 152 [] 192
+    Constant 42
+    Return
+end
+function packed_copy_tiny
+  result (class Tiny)
+  params [(class Tiny)]
+  frame 16
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  object 8 Tiny false
+    BindObjectParameter 0 8 Tiny
+    ReturnObject 8
+end
+function packed_tiny_roundtrip
+  result u8
+  frame 16
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  slot 14 u8
+  slot 15 u8
+  slot 16 u8
+  object 8 Tiny false
+  object 16 Tiny false
+    BeginObject 8
+    Constant 7 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BeginObject 16
+    AggregateCall packed_copy_tiny [8] 16
+    Load 15 u8
+    Return
+end
+
+; CASE: canonical mixed/nested/empty/tiny class byte layout
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: metadata
+; CHECK-NOT: class 
+; CHECK: class Empty storage [] [] 8 8 8
+; CHECK-NEXT: class Leaf storage [0 8 9 16] [0 8 16 24] 24 8 24
+; CHECK-NEXT: class Outer storage [0 8 16 17 24] [0 8 32] 32 8 32
+; CHECK-NEXT: class Tiny storage [0 1 2] [0] 3 1 8
+; CHECK-NEXT: enum 
+
+; CASE: explicit canonical class storage metadata
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: emit
+@@ -8,0 +9,4 @@
++storage Empty [] [] 8 8 8
++storage Leaf [0 8 9 16] [{0,8}*4] 24 8 24
++storage Outer [{0,8}*3 17 24] [0 8 32] 32 8 32
++storage Tiny [{0,1}*3] [0] 3 1 8
+
+; CASE: forged class physical extent Empty
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage metadata
+@@ -8,0 +9,4 @@
++storage Empty [] [] 9 8 8
++storage Leaf [0 8 9 16] [{0,8}*4] 24 8 24
++storage Outer [{0,8}*3 17 24] [0 8 32] 32 8 32
++storage Tiny [{0,1}*3] [0] 3 1 8
+
+; CASE: forged class physical extent Empty #2
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage metadata
+@@ -8,0 +9,4 @@
++storage Empty [] [] 8 9 8
++storage Leaf [0 8 9 16] [{0,8}*4] 24 8 24
++storage Outer [{0,8}*3 17 24] [0 8 32] 32 8 32
++storage Tiny [{0,1}*3] [0] 3 1 8
+
+; CASE: forged class physical extent Empty #3
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage metadata
+@@ -8,0 +9,4 @@
++storage Empty [] [] 8 8 9
++storage Leaf [0 8 9 16] [{0,8}*4] 24 8 24
++storage Outer [{0,8}*3 17 24] [0 8 32] 32 8 32
++storage Tiny [{0,1}*3] [0] 3 1 8
+
+; CASE: missing class physical metadata Empty
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage metadata
+@@ -8,0 +9,3 @@
++storage Leaf [0 8 9 16] [{0,8}*4] 24 8 24
++storage Outer [{0,8}*3 17 24] [0 8 32] 32 8 32
++storage Tiny [{0,1}*3] [0] 3 1 8
+
+; CASE: forged class physical extent Leaf
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage metadata
+@@ -8,0 +9,4 @@
++storage Empty [] [] 8 8 8
++storage Leaf [0 8 9 16] [{0,8}*4] 25 8 24
++storage Outer [{0,8}*3 17 24] [0 8 32] 32 8 32
++storage Tiny [{0,1}*3] [0] 3 1 8
+
+; CASE: forged class physical extent Leaf #2
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage metadata
+@@ -8,0 +9,4 @@
++storage Empty [] [] 8 8 8
++storage Leaf [0 8 9 16] [{0,8}*4] 24 9 24
++storage Outer [{0,8}*3 17 24] [0 8 32] 32 8 32
++storage Tiny [{0,1}*3] [0] 3 1 8
+
+; CASE: forged class physical extent Leaf #3
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage metadata
+@@ -8,0 +9,4 @@
++storage Empty [] [] 8 8 8
++storage Leaf [0 8 9 16] [{0,8}*4] 24 8 25
++storage Outer [{0,8}*3 17 24] [0 8 32] 32 8 32
++storage Tiny [{0,1}*3] [0] 3 1 8
+
+; CASE: missing class physical metadata Leaf
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage metadata
+@@ -8,0 +9,3 @@
++storage Empty [] [] 8 8 8
++storage Outer [{0,8}*3 17 24] [0 8 32] 32 8 32
++storage Tiny [{0,1}*3] [0] 3 1 8
+
+; CASE: forged class physical extent Outer
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage metadata
+@@ -8,0 +9,4 @@
++storage Empty [] [] 8 8 8
++storage Leaf [0 8 9 16] [{0,8}*4] 24 8 24
++storage Outer [{0,8}*3 17 24] [0 8 32] 33 8 32
++storage Tiny [{0,1}*3] [0] 3 1 8
+
+; CASE: forged class physical extent Outer #2
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage metadata
+@@ -8,0 +9,4 @@
++storage Empty [] [] 8 8 8
++storage Leaf [0 8 9 16] [{0,8}*4] 24 8 24
++storage Outer [{0,8}*3 17 24] [0 8 32] 32 9 32
++storage Tiny [{0,1}*3] [0] 3 1 8
+
+; CASE: forged class physical extent Outer #3
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage metadata
+@@ -8,0 +9,4 @@
++storage Empty [] [] 8 8 8
++storage Leaf [0 8 9 16] [{0,8}*4] 24 8 24
++storage Outer [{0,8}*3 17 24] [0 8 32] 32 8 33
++storage Tiny [{0,1}*3] [0] 3 1 8
+
+; CASE: missing class physical metadata Outer
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage metadata
+@@ -8,0 +9,3 @@
++storage Empty [] [] 8 8 8
++storage Leaf [0 8 9 16] [{0,8}*4] 24 8 24
++storage Tiny [{0,1}*3] [0] 3 1 8
+
+; CASE: forged class physical extent Tiny
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage metadata
+@@ -8,0 +9,4 @@
++storage Empty [] [] 8 8 8
++storage Leaf [0 8 9 16] [{0,8}*4] 24 8 24
++storage Outer [{0,8}*3 17 24] [0 8 32] 32 8 32
++storage Tiny [{0,1}*3] [0] 4 1 8
+
+; CASE: forged class physical extent Tiny #2
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage metadata
+@@ -8,0 +9,4 @@
++storage Empty [] [] 8 8 8
++storage Leaf [0 8 9 16] [{0,8}*4] 24 8 24
++storage Outer [{0,8}*3 17 24] [0 8 32] 32 8 32
++storage Tiny [{0,1}*3] [0] 3 2 8
+
+; CASE: forged class physical extent Tiny #3
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage metadata
+@@ -8,0 +9,4 @@
++storage Empty [] [] 8 8 8
++storage Leaf [0 8 9 16] [{0,8}*4] 24 8 24
++storage Outer [{0,8}*3 17 24] [0 8 32] 32 8 32
++storage Tiny [{0,1}*3] [0] 3 1 9
+
+; CASE: missing class physical metadata Tiny
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage metadata
+@@ -8,0 +9,3 @@
++storage Empty [] [] 8 8 8
++storage Leaf [0 8 9 16] [{0,8}*4] 24 8 24
++storage Outer [{0,8}*3 17 24] [0 8 32] 32 8 32
+
+; CASE: forged packed leaf offset -1
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage metadata
+@@ -8,0 +9,4 @@
++storage Empty [] [] 8 8 8
++storage Leaf [0 8 -1 16] [{0,8}*4] 24 8 24
++storage Outer [{0,8}*3 17 24] [0 8 32] 32 8 32
++storage Tiny [{0,1}*3] [0] 3 1 8
+
+; CASE: forged packed leaf offset 0
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage metadata
+@@ -8,0 +9,4 @@
++storage Empty [] [] 8 8 8
++storage Leaf [0 8 0 16] [{0,8}*4] 24 8 24
++storage Outer [{0,8}*3 17 24] [0 8 32] 32 8 32
++storage Tiny [{0,1}*3] [0] 3 1 8
+
+; CASE: forged packed leaf offset 7
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage metadata
+@@ -8,0 +9,4 @@
++storage Empty [] [] 8 8 8
++storage Leaf [0 8 7 16] [{0,8}*4] 24 8 24
++storage Outer [{0,8}*3 17 24] [0 8 32] 32 8 32
++storage Tiny [{0,1}*3] [0] 3 1 8
+
+; CASE: forged packed leaf offset 16
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage metadata
+@@ -8,0 +9,4 @@
++storage Empty [] [] 8 8 8
++storage Leaf [{0,8}*3 16] [{0,8}*4] 24 8 24
++storage Outer [{0,8}*3 17 24] [0 8 32] 32 8 32
++storage Tiny [{0,1}*3] [0] 3 1 8
+
+; CASE: forged packed leaf offset 65536
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage metadata
+@@ -8,0 +9,4 @@
++storage Empty [] [] 8 8 8
++storage Leaf [0 8 65536 16] [{0,8}*4] 24 8 24
++storage Outer [{0,8}*3 17 24] [0 8 32] 32 8 32
++storage Tiny [{0,1}*3] [0] 3 1 8
+
+; CASE: forged logical field physical offset
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage metadata
+@@ -8,0 +9,4 @@
++storage Empty [] [] 8 8 8
++storage Leaf [0 8 9 16] [{0,8}*4] 24 8 24
++storage Outer [{0,8}*3 17 24] [0 1 32] 32 8 32
++storage Tiny [{0,1}*3] [0] 3 1 8
+
+; CASE: forged extra physical class
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage metadata
+@@ -8,0 +9,5 @@
++storage Empty [] [] 8 8 8
++storage Leaf [0 8 9 16] [{0,8}*4] 24 8 24
++storage Outer [{0,8}*3 17 24] [0 8 32] 32 8 32
++storage Tiny [{0,1}*3] [0] 3 1 8
++storage Unknown [] [] 8 8 8
+
+; CASE: packed byte overlaps wide slot
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: overlapping scalar slot storage
+@@ -25,0 +26 @@
++  slot 167 u8
+
+; CASE: packed byte cannot occupy object padding
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: scalar slot overlaps empty object or padding
+@@ -26,0 +27 @@
++  slot 174 u8
+
+; CASE: packed leaf must use canonical offset
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: object field slot type/layout mismatch
+@@ -27 +27 @@
+-  slot 175 u8
++  slot 174 u8
+
+; CASE: tiny rounded reservation padding cannot be a scalar
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: scalar slot overlaps empty object or padding
+@@ -916,0 +917 @@
++  slot 5 u8
+
+; CASE: object extent cache refreshes before a different-width candidate
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: emit
+@@ -936,0 +937,16 @@
++function packed_extent_cache
++  result i64
++  frame 48
++  slot 6 u8
++  slot 7 u8
++  slot 8 u8
++  slot 16 i64
++  slot 24 bool
++  slot 31 u8
++  slot 32 u8
++  slot 40 (enum Mode)
++  object 8 Tiny false
++  object 40 Leaf false
++    Constant 42
++    Return
++end
+
+; CASE: cached object extent still rejects later padding
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: scalar slot overlaps empty object or padding
+; EXPECT-CODE: AU0000
+@@ -936,0 +937,17 @@
++function packed_extent_cache
++  result i64
++  frame 48
++  slot 6 u8
++  slot 7 u8
++  slot 8 u8
++  slot 16 i64
++  slot 24 bool
++  slot 30 u8
++  slot 31 u8
++  slot 32 u8
++  slot 40 (enum Mode)
++  object 8 Tiny false
++  object 40 Leaf false
++    Constant 42
++    Return
++end
+
+; CASE: packed object invalid minimum offset
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: invalid object layout offset
+@@ -29,0 +30 @@
++  object -2147483648 Outer false
+
+; CASE: u8 slot zero offset
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: invalid slot offset
+@@ -13,0 +14 @@
++  slot 0 u8
+
+; CASE: u8 slot exceeds frame
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: verify
+; EXPECT-ERROR: invalid slot offset
+@@ -29,0 +30 @@
++  slot 193 u8
+
+; CASE: zero-leaf descendants retain logical shape without byte payload
+; BASE: packed bytes preserve composed receiver/results and tiny aggregate
+; RUN: metadata
+; CHECK-DAG: class ByteEmpty storage [0 1] [0 0 1 1 2] 2 1 8
+; CHECK-DAG: origin zero_leaf_neighbors 8 object 8 
+; CHECK-DAG: origin zero_leaf_neighbors 7 object 8 
+; CHECK-DAG: origin zero_leaf_neighbors 6 object - 
+@@ -0,0 +1 @@
++layout ByteEmpty [u8 u8]
+@@ -1,0 +3 @@
++layout EmptyShell []
+@@ -4,0 +7 @@
++fields ByteEmpty [((class EmptyShell) 0 0 false) (u8 0 1 false) ((class EmptyShell) 1 0 false) (u8 1 1 false) ((class EmptyShell) 2 0 false)]
+@@ -5,0 +9 @@
++fields EmptyShell [((class Empty) 0 0 false)]
+@@ -936,0 +941,13 @@
++function zero_leaf_neighbors
++  result u8
++  frame 16
++  slot 7 u8
++  slot 8 u8
++  object 8 ByteEmpty false
++    BeginObject 8
++    Constant 7 u8
++    Store 8 u8
++    Store 7 u8
++    Load 7 u8
++    Return
++end

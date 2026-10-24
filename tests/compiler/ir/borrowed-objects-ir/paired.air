@@ -1,0 +1,625 @@
+; CASE: paired distinct nominal roots
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+function borrow_entry
+  result i64
+  params [region (class Buffer) (class Other)]
+  frame 256
+  slot 16 i64
+  slot 56 i64
+  slot 96 i64
+  slot 104 i64
+  object 48 Buffer true
+  object 88 Other true
+  object 96 Word false
+  object 104 Word false
+  span 160
+  span 216
+  region 8
+  bytes 248 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 48 Buffer
+    BindOwnedObjectParameter 2 88 Other
+    AcquireObjectLoan 1 48 true
+    AcquireObjectLoan 2 88
+    BorrowedCall borrow_pair [(48 1 -1) (88 2 -1)]
+    ReleaseObjectLoan 2
+    ReleaseObjectLoan 1
+    EndObject 88
+    EndObject 48
+    Return
+end
+function borrow_pair
+  result i64
+  params [(class Buffer) (class Other)]
+  frame 0
+  roots 2
+  firstmut 1
+    MethodCall write_buffer
+    MethodCall read_second -1
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+function read_second
+  result i64
+  frame 0
+  receiver Other false false
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: paired distinct roots with identical nominal class
+; BASE: paired distinct nominal roots
+; RUN: emit
+@@ -12 +12 @@
+-  params [region (class Buffer) (class Other)]
++  params [region (class Buffer) (class Buffer)]
+@@ -19 +19 @@
+-  object 88 Other true
++  object 88 Buffer true
+@@ -28 +28 @@
+-    BindOwnedObjectParameter 2 88 Other
++    BindOwnedObjectParameter 2 88 Buffer
+@@ -40 +40 @@
+-  params [(class Buffer) (class Other)]
++  params [(class Buffer) (class Buffer)]
+@@ -67 +67 @@
+-  receiver Other false false
++  receiver Buffer false false
+
+; CASE: paired bound roots forward independently
+; BASE: paired distinct nominal roots
+; RUN: emit
+@@ -44,2 +44,5 @@
+-    MethodCall write_buffer
+-    MethodCall read_second -1
++    AcquireObjectLoan 3 0 true
++    AcquireObjectLoan 4 -1
++    BorrowedCall pair_leaf [(0 3 -1) (-1 4 -1)]
++    ReleaseObjectLoan 4
++    ReleaseObjectLoan 3
+@@ -70,0 +74,10 @@
++function pair_leaf
++  result i64
++  params [(class Buffer) (class Other)]
++  frame 0
++  roots 2
++  firstmut 1
++    MethodCall write_buffer
++    MethodCall read_second -1
++    Return
++end
+
+; CASE: paired second root survives copied getter and first-root call
+; BASE: paired distinct nominal roots
+; RUN: emit
+@@ -41 +41 @@
+-  frame 0
++  frame 16
+@@ -43,0 +44,4 @@
++  slot 8 i64
++  object 8 Word false
++    BeginObject 8
++    MethodCall copy_second -1 [] 8
+@@ -44,0 +49,2 @@
++    Load 8
++    EndObject 8
+@@ -70,0 +77,11 @@
++function copy_second
++  result (class Word)
++  frame 16
++  receiver Other false false
++  slot 8 i64
++  object 8 Word false
++    BeginObject 8
++    ReceiverLoad 1
++    Store 8
++    ReturnObject 8
++end
+
+; CASE: paired second root forwards through unchanged single-root ABI
+; BASE: paired distinct nominal roots
+; RUN: emit
+@@ -44,2 +44,3 @@
+-    MethodCall write_buffer
+-    MethodCall read_second -1
++    AcquireObjectLoan 3 -1
++    BorrowedCall shared_second [(-1 3 -1)]
++    ReleaseObjectLoan 3
+@@ -70,0 +72,8 @@
++function shared_second
++  result i64
++  params [(class Other)]
++  frame 0
++  roots 1
++    MethodCall read_second
++    Return
++end
+
+; CASE: pair requires second loan
+; BASE: paired distinct nominal roots
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires active loan
+@@ -30 +29,0 @@
+-    AcquireObjectLoan 2 88
+
+; CASE: pair requires distinct loan identities
+; BASE: paired distinct nominal roots
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -31 +31 @@
+-    BorrowedCall borrow_pair [(48 1 -1) (88 2 -1)]
++    BorrowedCall borrow_pair [(48 1 -1) (88 1 -1)]
+
+; CASE: pair rejects aliased root selectors
+; BASE: paired distinct nominal roots
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -31 +31 @@
+-    BorrowedCall borrow_pair [(48 1 -1) (88 2 -1)]
++    BorrowedCall borrow_pair [(48 1 -1) (48 2 -1)]
+
+; CASE: pair checks second nominal class
+; BASE: paired distinct nominal roots
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, lifetime, nominal type or authority mismatch
+@@ -40 +40 @@
+-  params [(class Buffer) (class Other)]
++  params [(class Buffer) (class Buffer)]
+@@ -45 +45 @@
+-    MethodCall read_second -1
++    MethodCall read_buffer -1
+
+; CASE: pair checks second loan mutability
+; BASE: paired distinct nominal roots
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, nominal type or authority mismatch
+@@ -30 +30 @@
+-    AcquireObjectLoan 2 88
++    AcquireObjectLoan 2 88 true
+
+; CASE: pair second root cannot end during prepared loan
+; BASE: paired distinct nominal roots
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -30,0 +31 @@
++    EndObject 88
+
+; CASE: pair second root cannot be incomplete
+; BASE: paired distinct nominal roots
+; RUN: verify
+; EXPECT-ERROR: copy source object not fully initialized
+@@ -12 +12 @@
+-  params [region (class Buffer) (class Other)]
++  params [region (class Buffer)]
+@@ -28 +28 @@
+-    BindOwnedObjectParameter 2 88 Other
++    BeginObject 88
+
+; CASE: pair releases both completed loans
+; BASE: paired distinct nominal roots
+; RUN: verify
+; EXPECT-ERROR: return with active synchronous object loan
+@@ -44,2 +44,4 @@
+-    MethodCall write_buffer
+-    MethodCall read_second -1
++    AcquireObjectLoan 3 0 true
++    AcquireObjectLoan 4 -1
++    BorrowedCall pair_leaf [(0 3 -1) (-1 4 -1)]
++    ReleaseObjectLoan 3
+@@ -70,0 +73,10 @@
++function pair_leaf
++  result i64
++  params [(class Buffer) (class Other)]
++  frame 0
++  roots 2
++  firstmut 1
++    MethodCall write_buffer
++    MethodCall read_second -1
++    Return
++end
+
+; CASE: pair rejects nonselector negative root -6
+; BASE: paired distinct nominal roots
+; RUN: verify
+; EXPECT-ERROR: invalid method receiver offset
+@@ -45 +45 @@
+-    MethodCall read_second -1
++    MethodCall read_second -6
+
+; CASE: pair rejects nonselector negative root -2147483648
+; BASE: paired distinct nominal roots
+; RUN: verify
+; EXPECT-ERROR: invalid method receiver offset
+@@ -45 +45 @@
+-    MethodCall read_second -1
++    MethodCall read_second -2147483648
+
+; CASE: pair rejects unbound selector -2
+; BASE: paired distinct nominal roots
+; RUN: verify
+; EXPECT-ERROR: invalid method receiver offset
+@@ -45 +45 @@
+-    MethodCall read_second -1
++    MethodCall read_second -2
+
+; CASE: pair rejects unbound selector -5
+; BASE: paired distinct nominal roots
+; RUN: verify
+; EXPECT-ERROR: invalid method receiver offset
+@@ -45 +45 @@
+-    MethodCall read_second -1
++    MethodCall read_second -5
+
+; CASE: pair second cannot obtain mutable method authority
+; BASE: paired distinct nominal roots
+; RUN: verify
+; EXPECT-ERROR: const receiver cannot forward mutable capability
+@@ -45 +45 @@
+-    MethodCall read_second -1
++    MethodCall write_second -1
+@@ -70,0 +71,7 @@
++function write_second
++  result i64
++  frame 0
++  receiver Other true false
++    ReceiverLoad 1
++    Return
++end
+
+; CASE: pair second private method remains inaccessible
+; BASE: paired distinct nominal roots
+; RUN: verify
+; EXPECT-ERROR: private method requires lexical class authority
+@@ -67 +67 @@
+-  receiver Other false false
++  receiver Other false false false
+
+; CASE: pair second cannot expose direct field capability
+; BASE: paired distinct nominal roots
+; RUN: verify
+; EXPECT-ERROR: invalid owned byte object root
+@@ -44,2 +44 @@
+-    MethodCall write_buffer
+-    MethodCall read_second -1
++    BytesLength -1 0
+
+; CASE: paired bound root cannot produce span 0
+; BASE: paired distinct nominal roots
+; RUN: verify
+; EXPECT-ERROR: multiple borrowed roots cannot produce span results
+@@ -41 +41 @@
+-  frame 0
++  frame 64
+@@ -44,2 +44,4 @@
+-    MethodCall write_buffer
+-    MethodCall read_second -1
++  span 56
++    MethodCall view_buffer 0 [] 56
++    EndSpan 56
++    Constant
+@@ -70,0 +73,9 @@
++function view_buffer
++  result span
++  frame 64
++  receiver Buffer false false
++  spanfield 0
++  span 56
++    BorrowOwnedSpan 0 0 56
++    ReturnSpan 56
++end
+
+; CASE: paired bound root cannot produce span -1
+; BASE: paired distinct nominal roots
+; RUN: verify
+; EXPECT-ERROR: multiple borrowed roots cannot produce span results
+@@ -41 +41 @@
+-  frame 0
++  frame 64
+@@ -44,2 +44,4 @@
+-    MethodCall write_buffer
+-    MethodCall read_second -1
++  span 56
++    MethodCall view_buffer -1 [] 56
++    EndSpan 56
++    Constant
+@@ -70,0 +73,9 @@
++function view_buffer
++  result span
++  frame 64
++  receiver Other false false
++  spanfield 0
++  span 56
++    BorrowOwnedSpan 0 0 56
++    ReturnSpan 56
++end
+
+; CASE: legacy target rejects nondefault second selector
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+function borrow_entry
+  result i64
+  params [region (class Buffer)]
+  frame 256
+  slot 16 i64
+  slot 56 i64
+  slot 96 i64
+  slot 104 i64
+  object 48 Buffer true
+  object 88 Buffer true
+  object 96 Word false
+  object 104 Word false
+  span 160
+  span 216
+  region 8
+  bytes 248 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 48 Buffer
+    AcquireObjectLoan 1 48 true
+    BorrowedCall borrow_buffer [(48 1 -1) (-1 2 -1)]
+    ReleaseObjectLoan 1
+    EndObject 48
+    Return
+end
+function borrow_buffer
+  result i64
+  params [(class Buffer)]
+  frame 0
+  roots 1
+  firstmut 1
+    MethodCall write_buffer
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: legacy target rejects extra second loan
+; BASE: legacy target rejects nondefault second selector
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -29 +29 @@
+-    BorrowedCall borrow_buffer [(48 1 -1) (-1 2 -1)]
++    BorrowedCall borrow_buffer [(48 1 -1) (88 2 -1)]
+
+; CASE: pair requires borrowed free function identity
+; RUN: verify
+; EXPECT-ERROR: borrowed roots require a free-function signature
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+function borrow_pair
+  result i64
+  params [(class Buffer) (class Other)]
+  frame 0
+  receiver Buffer true false
+  roots 2
+  firstmut 1
+    MethodCall write_buffer
+    MethodCall read_second -1
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+function read_second
+  result i64
+  frame 0
+  receiver Other false false
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: pair first mutability must be canonical
+; BASE: pair requires borrowed free function identity
+; RUN: verify
+; EXPECT-ERROR: invalid hosted IR metadata transport
+@@ -14 +13,0 @@
+-  receiver Buffer true false
+@@ -16 +15 @@
+-  firstmut 1
++  firstmut 2
+
+; CASE: pair cannot have constructor receiver
+; BASE: pair requires borrowed free function identity
+; RUN: verify
+; EXPECT-ERROR: borrowed roots require a free-function signature
+@@ -14 +14 @@
+-  receiver Buffer true false
++  receiver Buffer true true
+
+; CASE: pair second must own resources
+; BASE: pair requires borrowed free function identity
+; RUN: verify
+; EXPECT-ERROR: borrowed root requires a complete concrete owning class
+@@ -12 +12 @@
+-  params [(class Buffer) (class Other)]
++  params [(class Buffer) (class Word)]
+@@ -14 +13,0 @@
+-  receiver Buffer true false
+
+; CASE: pair counts both roots toward limit
+; BASE: pair requires borrowed free function identity
+; RUN: verify
+; EXPECT-ERROR: borrowed roots count toward six parameters
+@@ -12 +12 @@
+-  params [(class Buffer) (class Other)]
++  params [(class Buffer) (class Other) i64*5]
+@@ -14 +13,0 @@
+-  receiver Buffer true false
+
+; CASE: pair rejects copied parameters
+; BASE: pair requires borrowed free function identity
+; RUN: verify
+; EXPECT-ERROR: multi-root borrowed signature requires scalar or enum values
+@@ -12 +12 @@
+-  params [(class Buffer) (class Other)]
++  params [(class Buffer) (class Other) (class Word)]
+@@ -14 +13,0 @@
+-  receiver Buffer true false
+
+; CASE: pair rejects copied result
+; BASE: pair requires borrowed free function identity
+; RUN: verify
+; EXPECT-ERROR: multi-root borrowed signature requires scalar or enum values
+@@ -11 +11 @@
+-  result i64
++  result (class Word)
+@@ -14 +13,0 @@
+-  receiver Buffer true false
+
+; CASE: both paired loans survive equal CFG join
+; BASE: paired distinct nominal roots
+; RUN: emit
+@@ -44,2 +44,10 @@
+-    MethodCall write_buffer
+-    MethodCall read_second -1
++    AcquireObjectLoan 3 0 true
++    AcquireObjectLoan 4 -1
++    Constant 1 bool
++    BranchFalse 1
++    Jump 2
++    Label 1
++    Label 2
++    BorrowedCall pair_leaf [(0 3 -1) (-1 4 -1)]
++    ReleaseObjectLoan 4
++    ReleaseObjectLoan 3
+@@ -70,0 +79,10 @@
++function pair_leaf
++  result i64
++  params [(class Buffer) (class Other)]
++  frame 0
++  roots 2
++  firstmut 1
++    MethodCall write_buffer
++    MethodCall read_second -1
++    Return
++end
+
+; CASE: join tracks second loan independently
+; BASE: paired distinct nominal roots
+; RUN: verify
+; EXPECT-ERROR: incompatible object loans at control-flow join
+@@ -44,2 +44,10 @@
+-    MethodCall write_buffer
+-    MethodCall read_second -1
++    AcquireObjectLoan 3 0 true
++    Constant 1 bool
++    BranchFalse 1
++    AcquireObjectLoan 4 -1
++    Jump 2
++    Label 1
++    Label 2
++    BorrowedCall pair_leaf [(0 3 -1) (-1 4 -1)]
++    ReleaseObjectLoan 4
++    ReleaseObjectLoan 3
+@@ -70,0 +79,10 @@
++function pair_leaf
++  result i64
++  params [(class Buffer) (class Other)]
++  frame 0
++  roots 2
++  firstmut 1
++    MethodCall write_buffer
++    MethodCall read_second -1
++    Return
++end
+
+; CASE: paired borrowed roots: stack facts, saved selector and ABI facts
+; BASE: paired distinct nominal roots
+; RUN: stack-facts
+; CHECK-JSON: functions.borrow_pair.local_bytes 48
+; CHECK-JSON: functions.borrow_pair.calls.pair_leaf 48
+; RUN: emit
+; CHECK-DAG: movq 8(%r10), %r11\n    movq %r11, -16(%rbp)
+; CHECK-DAG: movq -16(%rbp), %r10
+; RUN: emit
+; CHECK-NOT: --1(%rbp)
+; RUN: abi-facts
+; ABI: function borrow_pair fixture::pair
+; ABI: function read_second fixture::single
+; CHECK-DAG: "borrow_pair":{"source_name":"fixture::pair","receiver":null,"receiver_mutable":null,"borrowed_root_count":2,"borrowed_roots":[{"ordinal":0,"selector":0,"type_name":"Buffer","mutable":true},{"ordinal":1,"selector":-1,"type_name":"Other","mutable":false}],"borrowed_root_abi":{"kind":"tuple","register":"r10","tuple_payload_bytes":16,"tuple_reserved_bytes":16,"saved_root_reserved_bytes":16},"parameter_bytes":0,"parameters":[],"result":{"bytes":8,"kind":"i64"}
+; CHECK-DAG: "read_second":{"source_name":"fixture::single","receiver":"Other","receiver_mutable":false,"borrowed_root_count":0,"borrowed_roots":[],"borrowed_root_abi":{"kind":"none","register":null,"tuple_payload_bytes":0,"tuple_reserved_bytes":0,"saved_root_reserved_bytes":0}
+@@ -44,2 +44,5 @@
+-    MethodCall write_buffer
+-    MethodCall read_second -1
++    AcquireObjectLoan 3 0 true
++    AcquireObjectLoan 4 -1
++    BorrowedCall pair_leaf [(0 3 -1) (-1 4 -1)]
++    ReleaseObjectLoan 4
++    ReleaseObjectLoan 3
+@@ -70,0 +74,10 @@
++function pair_leaf
++  result i64
++  params [(class Buffer) (class Other)]
++  frame 0
++  roots 2
++  firstmut 1
++    MethodCall write_buffer
++    MethodCall read_second -1
++    Return
++end

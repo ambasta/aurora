@@ -1,0 +1,2326 @@
+; CASE: accepted service graph 1
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.pixel_entry.service_abi.calls.__au_runtime_display_pixel {"sysv_arguments":7,"result_max":1}
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_display_completion 2
+enum __au_display_put_result 2
+function pixel_entry
+  result (enum __au_display_put_result display=builtin::DisplayPutResult)
+  params [display]
+  frame 48
+  service 16
+    BindServiceParameter 0 16 Display
+    Constant 7 u64
+    Push
+    Constant 9 u64
+    Push
+    Constant 11 u8
+    Push
+    Constant 13 u8
+    Push
+    Constant 17 u8
+    Push
+    ServiceOperation 16 Pixel 0 Display
+    Return
+end
+
+; CASE: accepted service graph 2
+; BASE: accepted service graph 1
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.pixel_entry.service_abi.calls.__au_runtime_display_pixel {"sysv_arguments":7,"result_max":1}
+@@ -25,0 +26,11 @@
++function display_caller
++  result (enum __au_display_put_result display=builtin::DisplayPutResult)
++  params [display]
++  frame 48
++  service 16
++    BindServiceParameter 0 16 Display
++    AcquireServiceLoan 1 16 Display
++    ServiceCall pixel_entry 1 0 [0] Display
++    ReleaseServiceLoan 1 Display
++    Return
++end
+
+; CASE: rejected: hostile mutation 3
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +12 @@
+-    BindServiceParameter 0 16 Display
++    BindServiceParameter 0 16
+
+; CASE: rejected: hostile mutation 4
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-  params [display]
++  params [console]
+
+; CASE: rejected: service operation kind does not match active capability 5
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR: service operation kind does not match active capability
+@@ -23 +23 @@
+-    ServiceOperation 16 Pixel 0 Display
++    ServiceOperation 16 Pixel
+
+; CASE: rejected: hostile mutation 6
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -23 +23 @@
+-    ServiceOperation 16 Pixel 0 Display
++    ServiceOperation 16 Put 0 Display
+
+; CASE: rejected: hostile mutation 7
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -23 +23 @@
+-    ServiceOperation 16 Pixel 0 Display
++    ServiceOperation 16 Next 0 Display
+
+; CASE: rejected: pixel requires closed enum result and no object storage 8
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR: pixel requires closed enum result and no object storage
+@@ -23 +23 @@
+-    ServiceOperation 16 Pixel 0 Display
++    ServiceOperation 16 Pixel 24 Display
+
+; CASE: rejected: hostile mutation 9
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -8 +8 @@
+-  result (enum __au_display_put_result display=builtin::DisplayPutResult)
++  result (enum __au_console_put_result display=builtin::ConsolePutResult)
+
+; CASE: rejected: pixel argument type mismatch 10
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR: pixel argument type mismatch
+@@ -13 +13 @@
+-    Constant 7 u64
++    Constant 7
+
+; CASE: rejected: pixel argument type mismatch 11
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR: pixel argument type mismatch
+@@ -21 +21 @@
+-    Constant 17 u8
++    Constant 17 u64
+
+; CASE: rejected: hostile mutation 12
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -22 +21,0 @@
+-    Push
+
+; CASE: rejected: hostile mutation 13
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -10,0 +11 @@
++  slot 8 u64
+
+; CASE: rejected: hostile mutation 14
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -10,0 +11 @@
++  span 32
+
+; CASE: rejected: hostile mutation 15
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -11,0 +12 @@
++  service 24
+
+; CASE: rejected: hostile mutation 16
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-  params [display]
++  params [display console]
+
+; CASE: rejected: hostile mutation 17
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-  params [display]
++  params [display display]
+
+; CASE: rejected: hostile mutation 18
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-  params [display]
++  params [display region]
+
+; CASE: rejected: hostile mutation 19
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-  params [display]
++  params [display bytes]
+
+; CASE: rejected: hostile mutation 20
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-  params [display]
++  params [display span]
+
+; CASE: rejected: hostile mutation 21
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -6 +6 @@
+-enum __au_display_put_result 2
++enum __au_display_put_result 3
+
+; CASE: rejected: hostile mutation 22
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -5 +5 @@
+-enum __au_display_completion 2
++enum __au_display_completion 1
+
+; CASE: rejected: pixel requires closed enum result and no object storage 23
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR: pixel requires closed enum result and no object storage
+@@ -6 +5,0 @@
+-enum __au_display_put_result 2
+@@ -8 +7 @@
+-  result (enum __au_display_put_result display=builtin::DisplayPutResult)
++  result i64
+
+; CASE: rejected: service loan requires unsuspended parameter authority 24
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR: service loan requires unsuspended parameter authority
+@@ -25,0 +26,11 @@
++function display_caller
++  result (enum __au_display_put_result display=builtin::DisplayPutResult)
++  params [display]
++  frame 48
++  service 16
++    BindServiceParameter 0 16 Display
++    AcquireServiceLoan 1 16
++    ServiceCall pixel_entry 1 0 [0] Display
++    ReleaseServiceLoan 1 Display
++    Return
++end
+
+; CASE: rejected: hostile mutation 25
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -25,0 +26,11 @@
++function display_caller
++  result (enum __au_display_put_result display=builtin::DisplayPutResult)
++  params [display]
++  frame 48
++  service 16
++    BindServiceParameter 0 16 Display
++    AcquireServiceLoan 1 16 Display
++    ServiceCall pixel_entry 1 0 [0]
++    ReleaseServiceLoan 1 Display
++    Return
++end
+
+; CASE: rejected: service release requires exactly one completed helper call 26
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR: service release requires exactly one completed helper call
+@@ -25,0 +26,11 @@
++function display_caller
++  result (enum __au_display_put_result display=builtin::DisplayPutResult)
++  params [display]
++  frame 48
++  service 16
++    BindServiceParameter 0 16 Display
++    AcquireServiceLoan 1 16 Display
++    ServiceCall pixel_entry 1 0 [0] Display
++    ReleaseServiceLoan 1
++    Return
++end
+
+; CASE: rejected: hostile mutation 27
+; RUN: verify
+; EXPECT-ERROR:
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_display_completion 2
+enum __au_display_put_result 2
+function pixel_entry
+  result (enum __au_display_put_result display=builtin::DisplayPutResult)
+  params [console]
+  frame 48
+  service 16
+    BindServiceParameter 0 16
+    Constant 7 u64
+    Push
+    Constant 9 u64
+    Push
+    Constant 11 u8
+    Push
+    Constant 13 u8
+    Push
+    Constant 17 u8
+    Push
+    ServiceOperation 16 Pixel 0 Display
+    Return
+end
+function display_caller
+  result (enum __au_display_put_result display=builtin::DisplayPutResult)
+  params [display]
+  frame 48
+  service 16
+    BindServiceParameter 0 16 Display
+    AcquireServiceLoan 1 16 Display
+    ServiceCall pixel_entry 1 0 [0] Display
+    ReleaseServiceLoan 1 Display
+    Return
+end
+
+; CASE: rejected: hostile mutation 28
+; RUN: verify
+; EXPECT-ERROR:
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+function read_sample
+  result i64
+  params [console]
+  frame 48
+  slot 24 bool
+  slot 32 u8
+  slot 40 bool
+  object 40 __au_console_sample false
+  service 16
+    BindServiceParameter 0 16 Display
+    BeginObject 40
+    ServiceOperation 16 Next 40
+    EndObject 40
+    Constant
+    Return
+end
+
+; CASE: rejected: hostile mutation 29
+; BASE: rejected: hostile mutation 28
+; RUN: verify
+; EXPECT-ERROR:
+@@ -14 +14 @@
+-    BindServiceParameter 0 16 Display
++    BindServiceParameter 0 16
+@@ -16 +16 @@
+-    ServiceOperation 16 Next 40
++    ServiceOperation 16 Pixel 40
+
+; CASE: rejected: hostile mutation 30
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -7 +7 @@
+-function pixel_entry
++function __au_runtime_display_pixel
+
+; CASE: rejected: hostile mutation 31
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12,0 +13 @@
++    Call __au_runtime_display_pixel
+
+; CASE: rejected: hostile mutation 32
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -7 +7 @@
+-function pixel_entry
++function __au_runtime_display_entry
+
+; CASE: rejected: hostile mutation 33
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12,0 +13 @@
++    Call __au_runtime_display_entry
+
+; CASE: rejected: hostile mutation 34
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -7 +7 @@
+-function pixel_entry
++function __au_runtime_console_next
+
+; CASE: rejected: hostile mutation 35
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12,0 +13 @@
++    Call __au_runtime_console_next
+
+; CASE: rejected: hostile mutation 36
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -7 +7 @@
+-function pixel_entry
++function __au_runtime_console_put
+
+; CASE: rejected: hostile mutation 37
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12,0 +13 @@
++    Call __au_runtime_console_put
+
+; CASE: accepted service graph 38
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.call_result.service_abi.calls.__au_runtime_call {"sysv_arguments":3,"result_max":2}
+layout __au_call_result [(enum __au_call_status display=builtin::CallStatus) u64]
+fields __au_call_result [((enum __au_call_status display=builtin::CallStatus) 0 1 false) (u64 1 1 false)]
+enum __au_call_status 3
+function call_result
+  result (class __au_call_result display=builtin::CallResult)
+  params [call]
+  frame 48
+  slot 32 u64
+  slot 40 (enum __au_call_status display=builtin::CallStatus)
+  object 40 __au_call_result false
+  service 16
+    BindServiceParameter 0 16 Call
+    BeginObject 40
+    Constant 42 u64
+    ServiceOperation 16 Call 40 Call
+    ReturnObject 40
+end
+
+; CASE: rejected: hostile mutation 39
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 Call 40 Call
++    ServiceOperation 16 Call 40
+
+; CASE: rejected: hostile mutation 40
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 Call 40 Call
++    ServiceOperation 16 Call 40 Display
+
+; CASE: rejected: hostile mutation 41
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 Call 40 Call
++    ServiceOperation 16 Call 40 IommuEvent
+
+; CASE: rejected: hostile mutation 42
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 Call 40 Call
++    ServiceOperation 16 Call 40 Port
+
+; CASE: rejected: hostile mutation 43
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 Call 40 Call
++    ServiceOperation 16 Call 40 -1
+
+; CASE: rejected: hostile mutation 44
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 Call 40 Call
++    ServiceOperation 16 -1 40 Call
+
+; CASE: rejected: hostile mutation 45
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 Call 40 Call
++    ServiceOperation 16 Next 40 Call
+
+; CASE: rejected: hostile mutation 46
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 Call 40 Call
++    ServiceOperation 16 Put 40 Call
+
+; CASE: rejected: hostile mutation 47
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 Call 40 Call
++    ServiceOperation 16 Pixel 40 Call
+
+; CASE: rejected: hostile mutation 48
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 Call 40 Call
++    ServiceOperation 16 IommuPoll 40 Call
+
+; CASE: rejected: hostile mutation 49
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 Call 40 Call
++    ServiceOperation 16 IommuAcknowledge 40 Call
+
+; CASE: rejected: hostile mutation 50
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 Call 40 Call
++    ServiceOperation 16 PortRead8 40 Call
+
+; CASE: rejected: hostile mutation 51
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 Call 40 Call
++    ServiceOperation 16 999 40 Call
+
+; CASE: rejected: hostile mutation 52
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -14 +14 @@
+-    Constant 42 u64
++    Constant 1
+
+; CASE: rejected: hostile mutation 53
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -14 +14 @@
+-    Constant 42 u64
++    Constant 1 u8
+
+; CASE: rejected: hostile mutation 54
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -14 +14 @@
+-    Constant 42 u64
++    Constant 1 bool
+
+; CASE: rejected: hostile mutation 55
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 Call 40 Call
++    ServiceOperation 16 Call 0 Call
+
+; CASE: rejected: hostile mutation 56
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 Call 40 Call
++    ServiceOperation 16 Call 8 Call
+
+; CASE: rejected: hostile mutation 57
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 Call 40 Call
++    ServiceOperation 16 Call 16 Call
+
+; CASE: rejected: hostile mutation 58
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 Call 40 Call
++    ServiceOperation 16 Call 32 Call
+
+; CASE: rejected: hostile mutation 59
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 Call 40 Call
++    ServiceOperation 16 Call 48 Call
+
+; CASE: rejected: hostile mutation 60
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -6 +6 @@
+-  params [call]
++  params [console]
+
+; CASE: rejected: hostile mutation 61
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -6 +6 @@
+-  params [call]
++  params [display]
+
+; CASE: rejected: hostile mutation 62
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -6 +6 @@
+-  params [call]
++  params [iommu]
+
+; CASE: rejected: hostile mutation 63
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -6 +6 @@
+-  params [call]
++  params [values]
+
+; CASE: rejected: hostile mutation 64
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -6 +6 @@
+-  params [call]
++  params [call console]
+
+; CASE: rejected: hostile mutation 65
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -6 +6 @@
+-  params [call]
++  params [call display]
+
+; CASE: rejected: hostile mutation 66
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -6 +6 @@
+-  params [call]
++  params [call iommu]
+
+; CASE: rejected: hostile mutation 67
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -6 +6 @@
+-  params [call]
++  params [call call]
+
+; CASE: rejected: hostile mutation 68
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -3 +3 @@
+-enum __au_call_status 3
++enum __au_call_status 0
+
+; CASE: rejected: hostile mutation 69
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -3 +3 @@
+-enum __au_call_status 3
++enum __au_call_status 1
+
+; CASE: rejected: hostile mutation 70
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -3 +3 @@
+-enum __au_call_status 3
++enum __au_call_status 2
+
+; CASE: rejected: hostile mutation 71
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -3 +3 @@
+-enum __au_call_status 3
++enum __au_call_status 4
+
+; CASE: rejected: hostile mutation 72
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -1 +1 @@
+-layout __au_call_result [(enum __au_call_status display=builtin::CallStatus) u64]
++layout __au_call_result [u64 u64]
+
+; CASE: rejected: hostile mutation 73
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -2 +2 @@
+-fields __au_call_result [((enum __au_call_status display=builtin::CallStatus) 0 1 false) (u64 1 1 false)]
++fields __au_call_result [((enum __au_call_status display=builtin::CallStatus) 0 1 false) (u64 1 1 true)]
+
+; CASE: rejected: hostile mutation 74
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -0,0 +1 @@
++layout Fake [(enum __au_call_status display=builtin::CallStatus) u64]
+@@ -1,0 +3 @@
++fields Fake [((enum __au_call_status display=builtin::CallStatus) 0 1 false) (u64 1 1 false)]
+@@ -10 +12 @@
+-  object 40 __au_call_result false
++  object 40 Fake false
+
+; CASE: rejected: hostile mutation 75
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -13 +12,0 @@
+-    BeginObject 40
+
+; CASE: rejected: hostile mutation 76
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -13,0 +14,2 @@
++    Constant 0 u64
++    Store 32 u64
+
+; CASE: rejected: hostile mutation 77
+; BASE: accepted service graph 38
+; RUN: verify
+; EXPECT-ERROR:
+@@ -13,0 +14 @@
++    AcquireServiceLoan 1 16 Call
+
+; CASE: accepted service graph 78
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.call_result.service_abi.calls.__au_runtime_call {"sysv_arguments":3,"result_max":2}
+layout __au_call_result [(enum __au_call_status display=builtin::CallStatus) u64]
+fields __au_call_result [((enum __au_call_status display=builtin::CallStatus) 0 1 false) (u64 1 1 false)]
+enum __au_call_status 3
+function call_result
+  result (class __au_call_result display=builtin::CallResult)
+  params [call]
+  frame 48
+  slot 32 u64
+  slot 40 (enum __au_call_status display=builtin::CallStatus)
+  object 40 __au_call_result false
+  service 16
+    BindServiceParameter 0 16 Call
+    BeginObject 40
+    Constant 42 u64
+    ServiceOperation 16 Call 40 Call
+    ReturnObject 40
+end
+function call_forward
+  result (class __au_call_result display=builtin::CallResult)
+  params [call]
+  frame 48
+  slot 32 u64
+  slot 40 (enum __au_call_status display=builtin::CallStatus)
+  object 40 __au_call_result false
+  service 16
+    BindServiceParameter 0 16 Call
+    BeginObject 40
+    AcquireServiceLoan 1 16 Call
+    ServiceCall call_result 1 40 [0] Call
+    ReleaseServiceLoan 1 Call
+    ReturnObject 40
+end
+
+; CASE: rejected: hostile mutation 79
+; BASE: accepted service graph 78
+; RUN: verify
+; EXPECT-ERROR:
+@@ -30 +29,0 @@
+-    ReleaseServiceLoan 1 Call
+
+; CASE: accepted service graph 80
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.group_leaf.service_abi.calls.__au_runtime_console_put {"sysv_arguments":3,"result_max":1}
+; CHECK-JSON: functions.group_leaf.service_abi.calls.__au_runtime_display_pixel {"sysv_arguments":7,"result_max":1}
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_display_completion 2
+enum __au_display_put_result 2
+function group_leaf
+  result i64
+  params [console display]
+  frame 48
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 Display
+    Constant 65 u8
+    ServiceOperation 16 Put
+    Constant 7 u64
+    Push
+    Constant 9 u64
+    Push
+    Constant 11 u8
+    Push
+    Constant 13 u8
+    Push
+    Constant 17 u8
+    Push
+    ServiceOperation 32 Pixel 0 Display
+    Constant
+    Return
+end
+
+; CASE: accepted service graph 81
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.group_leaf.service_abi.calls.__au_runtime_console_put {"sysv_arguments":3,"result_max":1}
+; CHECK-JSON: functions.group_leaf.service_abi.calls.__au_runtime_display_pixel {"sysv_arguments":7,"result_max":1}
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_display_completion 2
+enum __au_display_put_result 2
+function group_leaf
+  result i64
+  params [display console]
+  frame 48
+  service 16
+  service 32
+    BindServiceParameter 0 16 Display
+    BindServiceParameter 1 32
+    Constant 65 u8
+    ServiceOperation 32 Put
+    Constant 7 u64
+    Push
+    Constant 9 u64
+    Push
+    Constant 11 u8
+    Push
+    Constant 13 u8
+    Push
+    Constant 17 u8
+    Push
+    ServiceOperation 16 Pixel 0 Display
+    Constant
+    Return
+end
+
+; CASE: accepted service graph 82
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.group_leaf.service_abi.calls.__au_runtime_console_put {"sysv_arguments":3,"result_max":1}
+; CHECK-JSON: functions.group_leaf.service_abi.calls.__au_runtime_display_pixel {"sysv_arguments":7,"result_max":1}
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_display_completion 2
+enum __au_display_put_result 2
+function group_leaf
+  result i64
+  params [console display]
+  frame 48
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 Display
+    Constant 65 u8
+    ServiceOperation 16 Put
+    Constant 7 u64
+    Push
+    Constant 9 u64
+    Push
+    Constant 11 u8
+    Push
+    Constant 13 u8
+    Push
+    Constant 17 u8
+    Push
+    ServiceOperation 32 Pixel 0 Display
+    Constant
+    Return
+end
+function group_caller
+  result i64
+  params [console display]
+  frame 48
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 Display
+    AcquireServiceLoan 1 16
+    AcquireServiceLoan 2 32 Display
+    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+    ReleaseServiceLoan 2 Display
+    ReleaseServiceLoan 1
+    Return
+end
+
+; CASE: accepted service graph 83
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.group_leaf.service_abi.calls.__au_runtime_console_put {"sysv_arguments":3,"result_max":1}
+; CHECK-JSON: functions.group_leaf.service_abi.calls.__au_runtime_display_pixel {"sysv_arguments":7,"result_max":1}
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_display_completion 2
+enum __au_display_put_result 2
+function group_leaf
+  result i64
+  params [display console]
+  frame 48
+  service 16
+  service 32
+    BindServiceParameter 0 16 Display
+    BindServiceParameter 1 32
+    Constant 65 u8
+    ServiceOperation 32 Put
+    Constant 7 u64
+    Push
+    Constant 9 u64
+    Push
+    Constant 11 u8
+    Push
+    Constant 13 u8
+    Push
+    Constant 17 u8
+    Push
+    ServiceOperation 16 Pixel 0 Display
+    Constant
+    Return
+end
+function group_caller
+  result i64
+  params [console display]
+  frame 48
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 Display
+    AcquireServiceLoan 1 16
+    AcquireServiceLoan 2 32 Display
+    ServiceCall group_leaf 2 0 [0 0] Display [(1 Console)]
+    ReleaseServiceLoan 2 Display
+    ReleaseServiceLoan 1
+    Return
+end
+
+; CASE: accepted service graph 84
+; BASE: accepted service graph 82
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.group_leaf.service_abi.calls.__au_runtime_console_put {"sysv_arguments":3,"result_max":1}
+; CHECK-JSON: functions.group_leaf.service_abi.calls.__au_runtime_display_pixel {"sysv_arguments":7,"result_max":1}
+@@ -38,0 +39,2 @@
++    Constant 1 bool
++    BranchFalse 20
+@@ -40,0 +43,5 @@
++    Jump 30
++    Label 20
++    AcquireServiceLoan 2 32 Display
++    AcquireServiceLoan 1 16
++    Label 30
+
+; CASE: rejected: incompatible service provenance or loans at control-flow join 85
+; BASE: accepted service graph 82
+; RUN: verify
+; EXPECT-ERROR: incompatible service provenance or loans at control-flow join
+@@ -38,0 +39,2 @@
++    Constant 1 bool
++    BranchFalse 20
+@@ -40,0 +43,6 @@
++    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
++    Jump 30
++    Label 20
++    AcquireServiceLoan 2 32 Display
++    AcquireServiceLoan 1 16
++    Label 30
+
+; CASE: accepted service graph 86
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.pixel_entry.service_abi.calls.__au_runtime_display_pixel {"sysv_arguments":7,"result_max":1}
+; CHECK-JSON: functions.putter.service_abi.calls.__au_runtime_console_put {"sysv_arguments":3,"result_max":1}
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_display_completion 2
+enum __au_display_put_result 2
+function pixel_entry
+  result (enum __au_display_put_result display=builtin::DisplayPutResult)
+  params [display]
+  frame 48
+  service 16
+    BindServiceParameter 0 16 Display
+    Constant 7 u64
+    Push
+    Constant 9 u64
+    Push
+    Constant 11 u8
+    Push
+    Constant 13 u8
+    Push
+    Constant 17 u8
+    Push
+    ServiceOperation 16 Pixel 0 Display
+    Return
+end
+function putter
+  result (enum __au_console_put_result display=builtin::ConsolePutResult)
+  params [console u8]
+  frame 48
+  slot 24 u8
+  service 16
+    BindServiceParameter 0 16
+    BindParameter 1 24 u8
+    Load 24 u8
+    ServiceOperation 16 Put
+    Return
+end
+function subset_caller
+  result i64
+  params [console display]
+  frame 48
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 Display
+    AcquireServiceLoan 1 16
+    AcquireServiceLoan 2 32 Display
+    ServiceCall pixel_entry 2 0 [0] Display
+    ReleaseServiceLoan 2 Display
+    Constant 65 u8
+    Push
+    ServiceCall putter 1 0 [0 0]
+    ReleaseServiceLoan 1
+    Constant
+    Return
+end
+
+; CASE: accepted service graph 87
+; BASE: accepted service graph 86
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.pixel_entry.service_abi.calls.__au_runtime_display_pixel {"sysv_arguments":7,"result_max":1}
+; CHECK-JSON: functions.putter.service_abi.calls.__au_runtime_console_put {"sysv_arguments":3,"result_max":1}
+; CHECK-JSON: functions.subset_caller.service_abi.calls.__au_runtime_display_pixel {"sysv_arguments":7,"result_max":1}
+@@ -47,3 +47,11 @@
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall pixel_entry 2 0 [0] Display
+-    ReleaseServiceLoan 2 Display
++    Constant 7 u64
++    Push
++    Constant 9 u64
++    Push
++    Constant 11 u8
++    Push
++    Constant 13 u8
++    Push
++    Constant 17 u8
++    Push
++    ServiceOperation 32 Pixel 0 Display
+
+; CASE: accepted service graph 88
+; BASE: accepted service graph 86
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.pixel_entry.service_abi.calls.__au_runtime_display_pixel {"sysv_arguments":7,"result_max":1}
+; CHECK-JSON: functions.putter.service_abi.calls.__au_runtime_console_put {"sysv_arguments":3,"result_max":1}
+@@ -38 +38 @@
+-function subset_caller
++function console_subset_caller
+@@ -45,0 +46 @@
++    AcquireServiceLoan 2 32 Display
+@@ -47,3 +47,0 @@
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall pixel_entry 2 0 [0] Display
+-    ReleaseServiceLoan 2 Display
+@@ -53,0 +52,2 @@
++    ServiceCall pixel_entry 2 0 [0] Display
++    ReleaseServiceLoan 2 Display
+
+; CASE: accepted service graph 89
+; BASE: accepted service graph 86
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.console_subset_caller.service_abi.calls.__au_runtime_console_put {"sysv_arguments":3,"result_max":1}
+; CHECK-JSON: functions.pixel_entry.service_abi.calls.__au_runtime_display_pixel {"sysv_arguments":7,"result_max":1}
+; CHECK-JSON: functions.putter.service_abi.calls.__au_runtime_console_put {"sysv_arguments":3,"result_max":1}
+@@ -38 +38 @@
+-function subset_caller
++function console_subset_caller
+@@ -46 +45,0 @@
+-    AcquireServiceLoan 1 16
+@@ -47,0 +47,2 @@
++    Constant 65 u8
++    ServiceOperation 16 Put
+@@ -50,4 +50,0 @@
+-    Constant 65 u8
+-    Push
+-    ServiceCall putter 1 0 [0 0]
+-    ReleaseServiceLoan 1
+
+; CASE: accepted service graph 90
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_display_completion 2
+enum __au_display_put_result 2
+function group_sample
+  result (class __au_console_sample display=builtin::ConsoleSample)
+  params [console display]
+  frame 64
+  slot 48 bool
+  slot 56 u8
+  slot 64 bool
+  object 64 __au_console_sample false
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 Display
+    BeginObject 64
+    ServiceOperation 16 Next 64
+    ReturnObject 64
+end
+
+; CASE: accepted service graph 91
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_display_completion 2
+enum __au_display_put_result 2
+function group_sample
+  result (class __au_console_sample display=builtin::ConsoleSample)
+  params [display console]
+  frame 64
+  slot 48 bool
+  slot 56 u8
+  slot 64 bool
+  object 64 __au_console_sample false
+  service 16
+  service 32
+    BindServiceParameter 0 16 Display
+    BindServiceParameter 1 32
+    BeginObject 64
+    ServiceOperation 32 Next 64
+    ReturnObject 64
+end
+
+; CASE: accepted service graph 92
+; BASE: accepted service graph 83
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.group_leaf.service_abi.calls.__au_runtime_console_put {"sysv_arguments":3,"result_max":1}
+; CHECK-JSON: functions.group_leaf.service_abi.calls.__au_runtime_display_pixel {"sysv_arguments":7,"result_max":1}
+@@ -38,0 +39,11 @@
++    Jump 10
++    Label 20
++    ServiceCall group_leaf 2 0 [0 0] Display [(1 Console)]
++    ReleaseServiceLoan 2 Display
++    ReleaseServiceLoan 1
++    Jump 30
++    Label 10
++    AcquireServiceLoan 1 16
++    AcquireServiceLoan 2 32 Display
++    Jump 20
++    Label 30
+
+; CASE: service snapshots retain only dynamic loans
+; BASE: accepted service graph 83
+; RUN: metrics
+; CHECK-JSON: metrics.snapshots 4
+; CHECK-JSON: metrics.peakRetainedValueFacts 2
+@@ -38,0 +39,11 @@
++    Jump 10
++    Label 20
++    ServiceCall group_leaf 2 0 [0 0] Display [(1 Console)]
++    ReleaseServiceLoan 2 Display
++    ReleaseServiceLoan 1
++    Jump 30
++    Label 10
++    AcquireServiceLoan 1 16
++    AcquireServiceLoan 2 32 Display
++    Jump 20
++    Label 30
+
+; CASE: accepted service graph 94
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_display_completion 2
+enum __au_display_put_result 2
+function group_sample
+  result (class __au_console_sample display=builtin::ConsoleSample)
+  params [console display]
+  frame 64
+  slot 48 bool
+  slot 56 u8
+  slot 64 bool
+  object 64 __au_console_sample false
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 Display
+    BeginObject 64
+    ServiceOperation 16 Next 64
+    ReturnObject 64
+end
+function group_sample_caller
+  result i64
+  params [console display]
+  frame 64
+  slot 48 bool
+  slot 56 u8
+  slot 64 bool
+  object 64 __au_console_sample false
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 Display
+    BeginObject 64
+    AcquireServiceLoan 1 16
+    AcquireServiceLoan 2 32 Display
+    ServiceCall group_sample 1 64 [0 0] Console [(2 Display)]
+    ReleaseServiceLoan 2 Display
+    ReleaseServiceLoan 1
+    Load 56 u8
+    EndObject 64
+    Constant
+    Return
+end
+
+; CASE: rejected: hostile mutation 95
+; BASE: accepted service graph 94
+; RUN: verify
+; EXPECT-ERROR:
+@@ -38 +38 @@
+-    ServiceCall group_sample 1 64 [0 0] Console [(2 Display)]
++    ServiceCall group_sample 1 0 [0 0] Console [(2 Display)]
+
+; CASE: rejected: hostile mutation 96
+; BASE: accepted service graph 94
+; RUN: verify
+; EXPECT-ERROR:
+@@ -38 +38 @@
+-    ServiceCall group_sample 1 64 [0 0] Console [(2 Display)]
++    ServiceCall group_sample 1 56 [0 0] Console [(2 Display)]
+
+; CASE: rejected: hostile mutation 97
+; BASE: accepted service graph 94
+; RUN: verify
+; EXPECT-ERROR:
+@@ -35 +34,0 @@
+-    BeginObject 64
+
+; CASE: rejected: hostile mutation 98
+; BASE: accepted service graph 94
+; RUN: verify
+; EXPECT-ERROR:
+@@ -35,0 +36,2 @@
++    Constant 0 bool
++    Store 64 bool
+
+; CASE: rejected: hostile mutation 99
+; BASE: accepted service graph 94
+; RUN: verify
+; EXPECT-ERROR:
+@@ -35,0 +36,2 @@
++    Constant 0 u8
++    Store 56 u8
+
+; CASE: rejected: hostile mutation 100
+; BASE: accepted service graph 94
+; RUN: verify
+; EXPECT-ERROR:
+@@ -35,0 +36,2 @@
++    Constant 0 bool
++    Store 48 bool
+
+; CASE: rejected: hostile mutation 101
+; BASE: accepted service graph 94
+; RUN: verify
+; EXPECT-ERROR:
+@@ -35,0 +36 @@
++    ServiceOperation 16 Next 64
+
+; CASE: rejected: hostile mutation 102
+; BASE: accepted service graph 94
+; RUN: verify
+; EXPECT-ERROR:
+@@ -0,0 +1 @@
++layout OtherSample [bool u8 bool]
+@@ -1,0 +3 @@
++fields OtherSample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+@@ -30 +32 @@
+-  object 64 __au_console_sample false
++  object 64 OtherSample false
+
+; CASE: accepted service graph 103
+; BASE: accepted service graph 94
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+@@ -9 +9 @@
+-  params [console display]
++  params [display console]
+@@ -17,2 +17,2 @@
+-    BindServiceParameter 0 16
+-    BindServiceParameter 1 32 Display
++    BindServiceParameter 0 16 Display
++    BindServiceParameter 1 32
+@@ -20 +20 @@
+-    ServiceOperation 16 Next 64
++    ServiceOperation 32 Next 64
+@@ -38 +38 @@
+-    ServiceCall group_sample 1 64 [0 0] Console [(2 Display)]
++    ServiceCall group_sample 2 64 [0 0] Display [(1 Console)]
+
+; CASE: rejected: hostile mutation 104
+; BASE: accepted service graph 94
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-  params [console display]
++  params [display console]
+@@ -17,2 +17,2 @@
+-    BindServiceParameter 0 16
+-    BindServiceParameter 1 32 Display
++    BindServiceParameter 0 16 Display
++    BindServiceParameter 1 32
+@@ -20 +20 @@
+-    ServiceOperation 16 Next 64
++    ServiceOperation 32 Next 64
+@@ -38 +38 @@
+-    ServiceCall group_sample 1 64 [0 0] Console [(2 Display)]
++    ServiceCall group_sample 2 0 [0 0] Display [(1 Console)]
+
+; CASE: rejected: hostile mutation 105
+; BASE: accepted service graph 94
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-  params [console display]
++  params [display console]
+@@ -17,2 +17,2 @@
+-    BindServiceParameter 0 16
+-    BindServiceParameter 1 32 Display
++    BindServiceParameter 0 16 Display
++    BindServiceParameter 1 32
+@@ -20 +20 @@
+-    ServiceOperation 16 Next 64
++    ServiceOperation 32 Next 64
+@@ -38 +38 @@
+-    ServiceCall group_sample 1 64 [0 0] Console [(2 Display)]
++    ServiceCall group_sample 2 56 [0 0] Display [(1 Console)]
+
+; CASE: rejected: hostile mutation 106
+; RUN: verify
+; EXPECT-ERROR:
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_display_completion 2
+enum __au_display_put_result 2
+function group_sample
+  result (class __au_console_sample display=builtin::ConsoleSample)
+  params [display console]
+  frame 64
+  slot 48 bool
+  slot 56 u8
+  slot 64 bool
+  object 64 __au_console_sample false
+  service 16
+  service 32
+    BindServiceParameter 0 16 Display
+    BindServiceParameter 1 32
+    BeginObject 64
+    ServiceOperation 32 Next 64
+    ReturnObject 64
+end
+function group_sample_caller
+  result i64
+  params [console display]
+  frame 64
+  slot 48 bool
+  slot 56 u8
+  slot 64 bool
+  object 64 __au_console_sample false
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 Display
+    AcquireServiceLoan 1 16
+    AcquireServiceLoan 2 32 Display
+    ServiceCall group_sample 2 64 [0 0] Display [(1 Console)]
+    ReleaseServiceLoan 2 Display
+    ReleaseServiceLoan 1
+    Load 56 u8
+    EndObject 64
+    Constant
+    Return
+end
+
+; CASE: rejected: hostile mutation 107
+; BASE: rejected: hostile mutation 106
+; RUN: verify
+; EXPECT-ERROR:
+@@ -34,0 +35,3 @@
++    BeginObject 64
++    Constant 0 bool
++    Store 64 bool
+
+; CASE: rejected: hostile mutation 108
+; BASE: rejected: hostile mutation 106
+; RUN: verify
+; EXPECT-ERROR:
+@@ -34,0 +35,3 @@
++    BeginObject 64
++    Constant 0 u8
++    Store 56 u8
+
+; CASE: rejected: hostile mutation 109
+; BASE: rejected: hostile mutation 106
+; RUN: verify
+; EXPECT-ERROR:
+@@ -34,0 +35,3 @@
++    BeginObject 64
++    Constant 0 bool
++    Store 48 bool
+
+; CASE: rejected: hostile mutation 110
+; BASE: rejected: hostile mutation 106
+; RUN: verify
+; EXPECT-ERROR:
+@@ -34,0 +35,2 @@
++    BeginObject 64
++    ServiceOperation 16 Next 64
+
+; CASE: rejected: hostile mutation 111
+; BASE: rejected: hostile mutation 106
+; RUN: verify
+; EXPECT-ERROR:
+@@ -0,0 +1 @@
++layout OtherSample [bool u8 bool]
+@@ -1,0 +3 @@
++fields OtherSample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+@@ -30 +32 @@
+-  object 64 __au_console_sample false
++  object 64 OtherSample false
+@@ -34,0 +37 @@
++    BeginObject 64
+
+; CASE: accepted service graph 112
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.group_leaf.service_abi.calls.__au_runtime_console_put {"sysv_arguments":3,"result_max":1}
+; CHECK-JSON: functions.group_leaf.service_abi.calls.__au_runtime_display_pixel {"sysv_arguments":7,"result_max":1}
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_display_completion 2
+enum __au_display_put_result 2
+function group_leaf
+  result i64
+  params [console display]
+  frame 48
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 Display
+    Constant 65 u8
+    ServiceOperation 16 Put
+    Constant 7 u64
+    Push
+    Constant 9 u64
+    Push
+    Constant 11 u8
+    Push
+    Constant 13 u8
+    Push
+    Constant 17 u8
+    Push
+    ServiceOperation 32 Pixel 0 Display
+    Constant
+    Return
+end
+function group_caller
+  result i64
+  params [console display]
+  frame 48
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 Display
+    AcquireServiceLoan 1 16
+    AcquireServiceLoan 2 32 Display
+    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+    ReleaseServiceLoan 2 Display
+    ReleaseServiceLoan 1
+    AcquireServiceLoan 1 16
+    AcquireServiceLoan 2 32 Display
+    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+    ReleaseServiceLoan 2 Display
+    ReleaseServiceLoan 1
+    Return
+end
+
+; CASE: accepted service graph 113
+; BASE: accepted service graph 112
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.group_leaf.service_abi.calls.__au_runtime_console_put {"sysv_arguments":3,"result_max":1}
+; CHECK-JSON: functions.group_leaf.service_abi.calls.__au_runtime_display_pixel {"sysv_arguments":7,"result_max":1}
+@@ -39,7 +39,2 @@
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
++    Jump 10
++    Label 20
+@@ -49,0 +45,4 @@
++    Label 10
++    AcquireServiceLoan 1 16
++    AcquireServiceLoan 2 32 Display
++    Jump 20
+
+; CASE: accepted service graph 114
+; BASE: accepted service graph 112
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+; CHECK-JSON: functions.group_leaf.service_abi.calls.__au_runtime_console_put {"sysv_arguments":3,"result_max":1}
+; CHECK-JSON: functions.group_leaf.service_abi.calls.__au_runtime_display_pixel {"sysv_arguments":7,"result_max":1}
+@@ -38,0 +39 @@
++    Label 1
+@@ -44,5 +45,5 @@
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
++    Constant 0 bool
++    BranchFalse 2
++    Jump 1
++    Label 2
++    Constant
+
+; CASE: rejected: hostile mutation 115
+; RUN: verify
+; EXPECT-ERROR:
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_display_completion 2
+enum __au_display_put_result 2
+function group_leaf
+  result i64
+  params [console console]
+  frame 48
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 Display
+    Constant 65 u8
+    ServiceOperation 16 Put
+    Constant 7 u64
+    Push
+    Constant 9 u64
+    Push
+    Constant 11 u8
+    Push
+    Constant 13 u8
+    Push
+    Constant 17 u8
+    Push
+    ServiceOperation 32 Pixel 0 Display
+    Constant
+    Return
+end
+
+; CASE: rejected: hostile mutation 116
+; BASE: rejected: hostile mutation 115
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-  params [console console]
++  params [console display]
+@@ -14 +14 @@
+-    BindServiceParameter 1 32 Display
++    BindServiceParameter 0 32 Display
+
+; CASE: rejected: hostile mutation 117
+; BASE: rejected: hostile mutation 115
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-  params [console console]
++  params [console display]
+@@ -14 +14 @@
+-    BindServiceParameter 1 32 Display
++    BindServiceParameter 1 32
+
+; CASE: rejected: hostile mutation 118
+; BASE: rejected: hostile mutation 115
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-  params [console console]
++  params [console display]
+@@ -14 +14 @@
+-    BindServiceParameter 1 32 Display
++    BindServiceParameter 1 32 999
+
+; CASE: rejected: hostile mutation 119
+; BASE: rejected: hostile mutation 115
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-  params [console console]
++  params [console display]
+@@ -14 +14 @@
+-    BindServiceParameter 1 32 Display
++    BindServiceParameter 1 16 Display
+
+; CASE: rejected: hostile mutation 120
+; BASE: rejected: hostile mutation 115
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-  params [console console]
++  params [console display]
+@@ -14 +13,0 @@
+-    BindServiceParameter 1 32 Display
+
+; CASE: rejected: hostile mutation 121
+; BASE: rejected: hostile mutation 115
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-  params [console console]
++  params [console display]
+@@ -13,0 +14 @@
++    Constant
+
+; CASE: rejected: parameter binding outside entry prefix 122
+; BASE: rejected: hostile mutation 115
+; RUN: verify
+; EXPECT-ERROR: parameter binding outside entry prefix
+@@ -9 +9 @@
+-  params [console console]
++  params [console display]
+@@ -28,0 +29 @@
++    BindServiceParameter 0 16
+
+; CASE: rejected: parameter binding outside entry prefix 123
+; RUN: verify
+; EXPECT-ERROR: parameter binding outside entry prefix
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_display_completion 2
+enum __au_display_put_result 2
+function group_leaf
+  result i64
+  params [display console]
+  frame 48
+  service 16
+  service 32
+    BindServiceParameter 0 16 Display
+    BindServiceParameter 1 32
+    Constant 65 u8
+    ServiceOperation 32 Put
+    Constant 7 u64
+    Push
+    Constant 9 u64
+    Push
+    Constant 11 u8
+    Push
+    Constant 13 u8
+    Push
+    Constant 17 u8
+    Push
+    ServiceOperation 16 Pixel 0 Display
+    Constant
+    BindServiceParameter 0 16 Display
+    Return
+end
+
+; CASE: rejected: hostile mutation 124
+; BASE: rejected: hostile mutation 115
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-  params [console console]
++  params [console i64 display]
+
+; CASE: rejected: hostile mutation 125
+; BASE: rejected: hostile mutation 115
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-  params [console console]
++  params [console display console]
+
+; CASE: rejected: hostile mutation 126
+; BASE: rejected: hostile mutation 115
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-  params [console console]
++  params [console display]
+@@ -12 +11,0 @@
+-  service 32
+
+; CASE: rejected: hostile mutation 127
+; BASE: rejected: hostile mutation 115
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-  params [console console]
++  params [console display]
+@@ -10,0 +11 @@
++  slot 24 u64
+
+; CASE: rejected: hostile mutation 128
+; BASE: rejected: hostile mutation 115
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-  params [console console]
++  params [console display]
+@@ -10,0 +11 @@
++  slot 32 u64
+
+; CASE: rejected: hostile mutation 129
+; BASE: rejected: hostile mutation 115
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-  params [console console]
++  params [console display]
+@@ -11,0 +12 @@
++  service 24
+
+; CASE: rejected: hostile mutation 130
+; BASE: rejected: hostile mutation 115
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-  params [console console]
++  params [console display]
+@@ -28,0 +29 @@
++    Load 32 u64
+
+; CASE: rejected: hostile mutation 131
+; BASE: rejected: hostile mutation 115
+; RUN: verify
+; EXPECT-ERROR:
+@@ -9 +9 @@
+-  params [console console]
++  params [console display]
+@@ -16 +16 @@
+-    ServiceOperation 16 Put
++    ServiceOperation 32 Put
+
+; CASE: rejected: service helper argument vector mismatch 132
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR: service helper argument vector mismatch
+@@ -41,6 +41 @@
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
++    ServiceCall group_leaf 1 0 [0 0]
+
+; CASE: rejected: service helper argument vector mismatch 133
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR: service helper argument vector mismatch
+@@ -41,6 +41 @@
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
++    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display) (2 Display)]
+
+; CASE: rejected: hostile mutation 134
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -41,6 +41 @@
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
++    ServiceCall group_leaf 1 0 [0 0] Console [(0 Display)]
+
+; CASE: rejected: hostile mutation 135
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -41,6 +41 @@
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
++    ServiceCall group_leaf 1 0 [0 0] Console [(1 Display)]
+
+; CASE: rejected: hostile mutation 136
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -41,6 +41 @@
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
++    ServiceCall group_leaf 1 0 [0 0] Console [(3 Display)]
+
+; CASE: rejected: hostile mutation 137
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -41,6 +41 @@
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
++    ServiceCall group_leaf 1 0 [0 0] Console [(2 Console)]
+
+; CASE: rejected: hostile mutation 138
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -41,6 +41 @@
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
++    ServiceCall group_leaf 1 0 [0 0] Console [(2 999)]
+
+; CASE: rejected: hostile mutation 139
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -41,6 +41 @@
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
++    ServiceCall group_leaf 2 0 [0 0] Console [(2 Display)]
+
+; CASE: rejected: hostile mutation 140
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -41,6 +41 @@
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
++    ServiceCall group_leaf 1 0 [0 0] Display [(2 Display)]
+
+; CASE: rejected: hostile mutation 141
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -41,6 +41 @@
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
++    ServiceCall group_leaf 1 0 [0 32] Console [(2 Display)]
+
+; CASE: rejected: hostile mutation 142
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -41,6 +41 @@
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
++    ServiceCall group_leaf 1 0 [0] Console [(2 Display)]
+
+; CASE: rejected: hostile mutation 143
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -40,6 +39,0 @@
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
+
+; CASE: rejected: service loan identity cannot change static root or kind 144
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR: service loan identity cannot change static root or kind
+@@ -40,6 +40 @@
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
++    AcquireServiceLoan 1 32 Display
+
+; CASE: rejected: service loan requires unsuspended parameter authority 145
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR: service loan requires unsuspended parameter authority
+@@ -40,6 +40 @@
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
++    AcquireServiceLoan 2 16 Display
+
+; CASE: rejected: service loan requires unsuspended parameter authority 146
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR: service loan requires unsuspended parameter authority
+@@ -40,6 +40 @@
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
++    AcquireServiceLoan 2 32
+
+; CASE: rejected: service loan requires unsuspended parameter authority 147
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR: service loan requires unsuspended parameter authority
+@@ -41,5 +41 @@
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
++    AcquireServiceLoan 3 32 Display
+
+; CASE: rejected: hostile mutation 148
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -41,6 +41 @@
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
++    Call group_leaf
+
+; CASE: rejected: hostile mutation 149
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -41,6 +41 @@
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
++    AggregateCall group_leaf [0 0]
+
+; CASE: rejected: hostile mutation 150
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -41,6 +41 @@
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
++    ServiceCall group_caller 1 0 [0 0] Console [(2 Display)]
+
+; CASE: rejected: service loan identity cannot change static root or kind 151
+; RUN: verify
+; EXPECT-ERROR: service loan identity cannot change static root or kind
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_display_completion 2
+enum __au_display_put_result 2
+function group_leaf
+  result i64
+  params [console display]
+  frame 48
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 Display
+    Constant 65 u8
+    ServiceOperation 16 Put
+    Constant 7 u64
+    Push
+    Constant 9 u64
+    Push
+    Constant 11 u8
+    Push
+    Constant 13 u8
+    Push
+    Constant 17 u8
+    Push
+    ServiceOperation 32 Pixel 0 Display
+    Constant
+    Return
+end
+function group_caller
+  result i64
+  params [console display]
+  frame 48
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 Display
+    AcquireServiceLoan 1 16
+    AcquireServiceLoan 2 32 Display
+    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+    ReleaseServiceLoan 2 Display
+    ReleaseServiceLoan 1
+    AcquireServiceLoan 1 32 Display
+    ServiceCall pixel_entry 1 0 [0] Display
+    ReleaseServiceLoan 1 Display
+    Constant
+    Return
+end
+function pixel_entry
+  result (enum __au_display_put_result display=builtin::DisplayPutResult)
+  params [display]
+  frame 48
+  service 16
+    BindServiceParameter 0 16 Display
+    Constant 7 u64
+    Push
+    Constant 9 u64
+    Push
+    Constant 11 u8
+    Push
+    Constant 13 u8
+    Push
+    Constant 17 u8
+    Push
+    ServiceOperation 16 Pixel 0 Display
+    Return
+end
+
+; CASE: rejected: hostile mutation 152
+; RUN: verify
+; EXPECT-ERROR:
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_display_completion 2
+enum __au_display_put_result 2
+function pixel_entry
+  result (enum __au_display_put_result display=builtin::DisplayPutResult)
+  params [display]
+  frame 48
+  service 16
+    BindServiceParameter 0 16 Display
+    Constant 7 u64
+    Push
+    Constant 9 u64
+    Push
+    Constant 11 u8
+    Push
+    Constant 13 u8
+    Push
+    Constant 17 u8
+    Push
+    ServiceOperation 16 Pixel 0 Display
+    Return
+end
+function putter
+  result (enum __au_console_put_result display=builtin::ConsolePutResult)
+  params [console u8]
+  frame 48
+  slot 24 u8
+  service 16
+    BindServiceParameter 0 16
+    BindParameter 1 24 u8
+    Load 24 u8
+    ServiceOperation 16 Put
+    Return
+end
+function subset_caller
+  result i64
+  params [console display]
+  frame 48
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 Display
+    AcquireServiceLoan 1 16
+    Constant 65 u8
+    ServiceOperation 16 Put
+    Constant 7 u64
+    Push
+    Constant 9 u64
+    Push
+    Constant 11 u8
+    Push
+    Constant 13 u8
+    Push
+    Constant 17 u8
+    Push
+    ServiceOperation 32 Pixel 0 Display
+    Constant 65 u8
+    Push
+    ServiceCall putter 1 0 [0 0]
+    ReleaseServiceLoan 1
+    Constant
+    Return
+end
+
+; CASE: rejected: hostile mutation 153
+; BASE: rejected: hostile mutation 152
+; RUN: verify
+; EXPECT-ERROR:
+@@ -38 +38 @@
+-function subset_caller
++function console_subset_caller
+@@ -46,3 +46 @@
+-    AcquireServiceLoan 1 16
+-    Constant 65 u8
+-    ServiceOperation 16 Put
++    AcquireServiceLoan 2 32 Display
+@@ -61,3 +59,3 @@
+-    Push
+-    ServiceCall putter 1 0 [0 0]
+-    ReleaseServiceLoan 1
++    ServiceOperation 16 Put
++    ServiceCall pixel_entry 2 0 [0] Display
++    ReleaseServiceLoan 2 Display
+
+; CASE: rejected: hostile mutation 154
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -41 +40,0 @@
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+@@ -43,3 +41,0 @@
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
+
+; CASE: rejected: hostile mutation 155
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -42,4 +41,0 @@
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
+
+; CASE: rejected: hostile mutation 156
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -42,6 +42 @@
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+-    ReleaseServiceLoan 2 Display
++    ReleaseServiceLoan 2
+
+; CASE: rejected: hostile mutation 157
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -42,6 +41,0 @@
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+-    ReleaseServiceLoan 2 Display
+
+; CASE: rejected: hostile mutation 158
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -44,3 +43,0 @@
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+@@ -48 +44,0 @@
+-    ReleaseServiceLoan 1
+
+; CASE: rejected: hostile mutation 159
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -40,0 +41,2 @@
++    Constant 0 bool
++    BranchFalse 99
+@@ -42,5 +44 @@
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
++    Label 99
+
+; CASE: rejected: hostile mutation 160
+; BASE: accepted service graph 112
+; RUN: verify
+; EXPECT-ERROR:
+@@ -38,0 +39 @@
++    Label 1
+@@ -42 +42,0 @@
+-    ReleaseServiceLoan 2 Display
+@@ -44,5 +44,5 @@
+-    AcquireServiceLoan 1 16
+-    AcquireServiceLoan 2 32 Display
+-    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
+-    ReleaseServiceLoan 2 Display
+-    ReleaseServiceLoan 1
++    Constant 0 bool
++    BranchFalse 2
++    Jump 1
++    Label 2
++    Constant

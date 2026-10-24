@@ -1,0 +1,606 @@
+; CASE: unchanged prepared loan survives control-flow join
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+function borrow_entry
+  result i64
+  params [region (class Buffer)]
+  frame 256
+  slot 16 i64
+  slot 56 i64
+  slot 96 i64
+  slot 104 i64
+  object 48 Buffer true
+  object 88 Buffer true
+  object 96 Word false
+  object 104 Word false
+  span 160
+  span 216
+  region 8
+  bytes 248 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 48 Buffer
+    AcquireObjectLoan 1 48 true
+    BorrowedCall borrow_buffer [(48 1 -1)]
+    ReleaseObjectLoan 1
+    EndObject 48
+    Return
+end
+function borrow_buffer
+  result i64
+  params [(class Buffer)]
+  frame 0
+  roots 1
+  firstmut 1
+    AcquireObjectLoan 2 0 true
+    Constant 1 bool
+    BranchFalse 1
+    Constant 7
+    Jump 2
+    Label 1
+    Constant 8
+    Label 2
+    BorrowedCall borrow_leaf [(0 2 -1)]
+    ReleaseObjectLoan 2
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+function borrow_leaf
+  result i64
+  params [(class Buffer)]
+  frame 0
+  roots 1
+  firstmut 1
+    MethodCall write_buffer
+    Return
+end
+
+; CASE: equal root and authority loans acquired on both predecessors
+; BASE: unchanged prepared loan survives control-flow join
+; RUN: emit
+@@ -40 +39,0 @@
+-    AcquireObjectLoan 2 0 true
+@@ -43,0 +43 @@
++    AcquireObjectLoan 2 0 true
+@@ -46,0 +47 @@
++    AcquireObjectLoan 2 0 true
+
+; CASE: join rejects loan on only one predecessor
+; BASE: unchanged prepared loan survives control-flow join
+; RUN: verify
+; EXPECT-ERROR: incompatible object loans at control-flow join
+@@ -40 +39,0 @@
+-    AcquireObjectLoan 2 0 true
+@@ -43,0 +43 @@
++    AcquireObjectLoan 2 0 true
+
+; CASE: join rejects different loan identities
+; BASE: unchanged prepared loan survives control-flow join
+; RUN: verify
+; EXPECT-ERROR: incompatible object loans at control-flow join
+@@ -40 +39,0 @@
+-    AcquireObjectLoan 2 0 true
+@@ -43,0 +43 @@
++    AcquireObjectLoan 2 0 true
+@@ -46,0 +47 @@
++    AcquireObjectLoan 3 0 true
+
+; CASE: join rejects called versus uncalled loan
+; BASE: unchanged prepared loan survives control-flow join
+; RUN: verify
+; EXPECT-ERROR: incompatible object loans at control-flow join
+@@ -43,0 +44 @@
++    BorrowedCall borrow_leaf [(0 2 -1)]
+
+; CASE: closed synchronous loans permit loop backedge
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+function borrow_entry
+  result i64
+  params [region (class Buffer)]
+  frame 256
+  slot 16 i64
+  slot 56 i64
+  slot 96 i64
+  slot 104 i64
+  object 48 Buffer true
+  object 88 Buffer true
+  object 96 Word false
+  object 104 Word false
+  span 160
+  span 216
+  region 8
+  bytes 248 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 48 Buffer
+    Label 1
+    AcquireObjectLoan 1 48 true
+    BorrowedCall borrow_buffer [(48 1 -1)]
+    ReleaseObjectLoan 1
+    Constant 0 bool
+    BranchFalse 2
+    Jump 1
+    Label 2
+    Constant 41
+    EndObject 48
+    Return
+end
+function borrow_buffer
+  result i64
+  params [(class Buffer)]
+  frame 0
+  roots 1
+  firstmut 1
+    MethodCall write_buffer
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: loop backedge cannot carry completed loan
+; BASE: unchanged prepared loan survives control-flow join
+; RUN: verify
+; EXPECT-ERROR: incompatible object loans at control-flow join
+@@ -39,0 +40 @@
++    Label 1
+@@ -41,7 +41,0 @@
+-    Constant 1 bool
+-    BranchFalse 1
+-    Constant 7
+-    Jump 2
+-    Label 1
+-    Constant 8
+-    Label 2
+@@ -49,2 +43 @@
+-    ReleaseObjectLoan 2
+-    Return
++    Jump 1
+
+; CASE: scalar return cannot retain uncalled loan
+; BASE: unchanged prepared loan survives control-flow join
+; RUN: verify
+; EXPECT-ERROR: return with active synchronous object loan
+@@ -41,9 +41 @@
+-    Constant 1 bool
+-    BranchFalse 1
+-    Constant 7
+-    Jump 2
+-    Label 1
+-    Constant 8
+-    Label 2
+-    BorrowedCall borrow_leaf [(0 2 -1)]
+-    ReleaseObjectLoan 2
++    Constant
+
+; CASE: scalar return cannot retain completed loan
+; BASE: unchanged prepared loan survives control-flow join
+; RUN: verify
+; EXPECT-ERROR: return with active synchronous object loan
+@@ -41,7 +40,0 @@
+-    Constant 1 bool
+-    BranchFalse 1
+-    Constant 7
+-    Jump 2
+-    Label 1
+-    Constant 8
+-    Label 2
+@@ -49 +41,0 @@
+-    ReleaseObjectLoan 2
+
+; CASE: copied return cannot retain completed loan
+; RUN: verify
+; EXPECT-ERROR: return with active synchronous object loan
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+function borrow_buffer
+  result (class Word)
+  params [(class Buffer)]
+  frame 16
+  roots 1
+  firstmut 1
+  slot 8 i64
+  object 8 Word false
+    BeginObject 8
+    Constant 1
+    Store 8
+    AcquireObjectLoan 2 0 true
+    BorrowedCall borrow_leaf [(0 2 -1)]
+    ReturnObject 8
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+function borrow_leaf
+  result i64
+  params [(class Buffer)]
+  frame 0
+  roots 1
+  firstmut 1
+    MethodCall write_buffer
+    Return
+end
+
+; CASE: released loan permits same-slot new lifetime and fresh loan
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+function borrow_entry
+  result i64
+  params [region]
+  frame 256
+  slot 16 i64
+  slot 56 i64
+  slot 96 i64
+  slot 104 i64
+  object 48 Buffer true
+  object 88 Buffer true
+  object 96 Word false
+  object 104 Word false
+  span 160
+  span 216
+  region 8
+  bytes 248 true
+    BindRegionParameter 0 8
+    BeginBytes 248
+    Constant 1
+    AllocateBytes 8 248
+    BeginObject 48
+    ResourceCall construct_buffer 8 [0 248] 0 48
+    EndBytes 248
+    AcquireObjectLoan 1 48 true
+    BorrowedCall borrow_buffer [(48 1 -1)]
+    ReleaseObjectLoan 1
+    EndObject 48
+    BeginBytes 248
+    Constant 1
+    AllocateBytes 8 248
+    BeginObject 48
+    ResourceCall construct_buffer 8 [0 248] 0 48
+    EndBytes 248
+    AcquireObjectLoan 1 48 true
+    BorrowedCall borrow_buffer [(48 1 -1)]
+    ReleaseObjectLoan 1
+    EndObject 48
+    Return
+end
+function borrow_buffer
+  result i64
+  params [(class Buffer)]
+  frame 0
+  roots 1
+  firstmut 1
+    MethodCall write_buffer
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+function construct_buffer
+  result i64
+  params [region bytes]
+  frame 48
+  receiver Buffer true true
+  region 8
+  bytes 40 true
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    InitializeBytesField 0 0 40
+    Constant 41
+    ReceiverStore 1
+    EndBytes 40
+    Constant
+    Return
+end
+
+; CASE: same-slot new lifetime does not revive old loan
+; BASE: released loan permits same-slot new lifetime and fresh loan
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires active loan
+@@ -43 +42,0 @@
+-    AcquireObjectLoan 1 48 true
+
+; CASE: join rejects same root at different lifetime sites
+; BASE: released loan permits same-slot new lifetime and fresh loan
+; RUN: verify
+; EXPECT-ERROR: incompatible active object lifetimes at control-flow join
+@@ -32,0 +33,2 @@
++    Constant 1 bool
++    BranchFalse 1
+@@ -34,2 +36,2 @@
+-    BorrowedCall borrow_buffer [(48 1 -1)]
+-    ReleaseObjectLoan 1
++    Jump 2
++    Label 1
+@@ -43,0 +46 @@
++    Label 2
+
+; CASE: direct borrowed recursion
+; BASE: unchanged prepared loan survives control-flow join
+; RUN: verify
+; EXPECT-ERROR: recursive receiver call cycle
+@@ -41,8 +41 @@
+-    Constant 1 bool
+-    BranchFalse 1
+-    Constant 7
+-    Jump 2
+-    Label 1
+-    Constant 8
+-    Label 2
+-    BorrowedCall borrow_leaf [(0 2 -1)]
++    BorrowedCall borrow_buffer [(0 2 -1)]
+
+; CASE: indirect borrowed recursion
+; BASE: unchanged prepared loan survives control-flow join
+; RUN: verify
+; EXPECT-ERROR: recursive receiver call cycle
+@@ -41,7 +40,0 @@
+-    Constant 1 bool
+-    BranchFalse 1
+-    Constant 7
+-    Jump 2
+-    Label 1
+-    Constant 8
+-    Label 2
+@@ -74 +67,3 @@
+-    MethodCall write_buffer
++    AcquireObjectLoan 3 0 true
++    BorrowedCall borrow_buffer [(0 3 -1)]
++    ReleaseObjectLoan 3
+
+; CASE: scalar helpers cannot hide reachable receiver recursion
+; RUN: verify
+; EXPECT-ERROR: recursive receiver call cycle
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+function borrow_entry
+  result i64
+  params [region (class Buffer)]
+  frame 256
+  slot 16 i64
+  slot 56 i64
+  slot 96 i64
+  slot 104 i64
+  object 48 Buffer true
+  object 88 Buffer true
+  object 96 Word false
+  object 104 Word false
+  span 160
+  span 216
+  region 8
+  bytes 248 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 48 Buffer
+    AcquireObjectLoan 1 48 true
+    BorrowedCall borrow_buffer [(48 1 -1)]
+    ReleaseObjectLoan 1
+    EndObject 48
+    Return
+end
+function borrow_buffer
+  result i64
+  params [(class Buffer)]
+  frame 0
+  roots 1
+  firstmut 1
+    MethodCall write_buffer
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Call scalar_helper
+    Return
+end
+function scalar_helper
+  result i64
+  frame 16
+  slot 8 i64
+  object 8 Word false
+    BeginObject 8
+    Constant 1
+    Store 8
+    MethodCall word_bridge 8
+    EndObject 8
+    Return
+end
+function word_bridge
+  result i64
+  frame 0
+  receiver Word false false
+    Call scalar_helper
+    Return
+end
+
+; CASE: private lexical graph cycle remains rejected
+; RUN: verify
+; EXPECT-ERROR: recursive receiver call cycle
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+function borrow_entry
+  result i64
+  params [region (class Buffer)]
+  frame 256
+  slot 16 i64
+  slot 56 i64
+  slot 96 i64
+  slot 104 i64
+  object 48 Buffer true
+  object 88 Buffer true
+  object 96 Word false
+  object 104 Word false
+  span 160
+  span 216
+  region 8
+  bytes 248 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 48 Buffer
+    AcquireObjectLoan 1 48 true
+    BorrowedCall borrow_buffer [(48 1 -1)]
+    ReleaseObjectLoan 1
+    EndObject 48
+    Return
+end
+function borrow_buffer
+  result i64
+  params [(class Buffer)]
+  frame 0
+  roots 1
+  firstmut 1
+    MethodCall write_buffer
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    MethodCall private_a
+    Return
+end
+function private_a
+  result i64
+  frame 0
+  receiver Buffer true false false
+    MethodCall private_b
+    Return
+end
+function private_b
+  result i64
+  frame 0
+  receiver Buffer true false false
+    MethodCall private_a
+    Return
+end
+
+; CASE: nested owning layout stays unsupported
+; BASE: closed synchronous loans permit loop backedge
+; RUN: verify
+; EXPECT-ERROR: nested owning class field is unsupported
+@@ -1,0 +2 @@
++layout Nested [i64]
+@@ -4,0 +6 @@
++fields Nested [((class Buffer) 0 1 false)]
+@@ -7,3 +8,0 @@
+-storage Buffer [32] [0 32] 40 8 40
+-storage Other [32] [0 32] 40 8 40
+-storage Word [0] [0] 8 8 8
+@@ -28 +26,0 @@
+-    Label 1
+@@ -32,5 +29,0 @@
+-    Constant 0 bool
+-    BranchFalse 2
+-    Jump 1
+-    Label 2
+-    Constant 41

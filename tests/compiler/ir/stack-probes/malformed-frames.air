@@ -1,0 +1,25 @@
+; CASE: malformed frame -16
+; RUN: verify
+; EXPECT-ERROR: invalid frame size
+function probe_scalar
+  result i64
+  frame -16
+    Constant 42
+    Return
+end
+
+; CASE: malformed frame 8
+; BASE: malformed frame -16
+; RUN: verify
+; EXPECT-ERROR: invalid frame size
+@@ -3 +3 @@
+-  frame -16
++  frame 8
+
+; CASE: malformed frame 65552
+; BASE: malformed frame -16
+; RUN: verify
+; EXPECT-ERROR: invalid frame size
+@@ -3 +3 @@
+-  frame -16
++  frame 65552

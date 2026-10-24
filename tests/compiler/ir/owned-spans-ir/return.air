@@ -1,0 +1,356 @@
+; CASE: const receiver returns exact derived field
+; RUN: verify
+; EXPECT-OK
+layout Empty []
+layout Pair [u8]
+fields Empty []
+fields Pair [(bytes 0 0 false) (u8 0 1 false) (bytes 1 0 false)]
+storage Empty [] [] 8 8 8
+storage Pair [32] [0 32 40] 72 8 72
+function view
+  result span
+  frame 176
+  receiver Pair false false
+  spanfield 0
+  span 56
+  span 112
+  span 168
+    BorrowOwnedSpan 0 0 56
+    ReborrowSpan 56 112
+    Constant
+    Push
+    Constant
+    Subspan 112 168
+    ReturnSpan 168
+end
+function read
+  result i64
+  frame 0
+  receiver Pair false false
+    BytesLength 0 0
+    Return
+end
+function mutate
+  result i64
+  frame 0
+  receiver Pair true false
+    BytesLength 0 0
+    Return
+end
+
+; CASE: span result needs summary
+; BASE: const receiver returns exact derived field
+; RUN: verify
+; EXPECT-ERROR: readonly span boundary
+@@ -11 +10,0 @@
+-  spanfield 0
+
+; CASE: mutable receiver cannot return view
+; BASE: const receiver returns exact derived field
+; RUN: verify
+; EXPECT-ERROR: readonly span boundary
+@@ -10 +10 @@
+-  receiver Pair false false
++  receiver Pair true false
+
+; CASE: ordinary function cannot claim receiver summary
+; BASE: const receiver returns exact derived field
+; RUN: verify
+; EXPECT-ERROR: readonly span boundary
+@@ -10 +9,0 @@
+-  receiver Pair false false
+
+; CASE: scalar summary field rejected
+; BASE: const receiver returns exact derived field
+; RUN: verify
+; EXPECT-ERROR: exact direct byte-storage field
+@@ -11 +11 @@
+-  spanfield 0
++  spanfield 1
+
+; CASE: bad summary ordinal -1
+; BASE: const receiver returns exact derived field
+; RUN: verify
+; EXPECT-ERROR: exact direct byte-storage field
+@@ -11 +11 @@
+-  spanfield 0
++  spanfield -1
+
+; CASE: bad summary ordinal 3
+; BASE: const receiver returns exact derived field
+; RUN: verify
+; EXPECT-ERROR: exact direct byte-storage field
+@@ -11 +11 @@
+-  spanfield 0
++  spanfield 3
+
+; CASE: bad summary ordinal 2147483647
+; BASE: const receiver returns exact derived field
+; RUN: verify
+; EXPECT-ERROR: exact direct byte-storage field
+@@ -11 +11 @@
+-  spanfield 0
++  spanfield 2147483647
+
+; CASE: wrong returned field rejected
+; BASE: const receiver returns exact derived field
+; RUN: verify
+; EXPECT-ERROR: span return does not match receiver field summary and token
+@@ -15 +15 @@
+-    BorrowOwnedSpan 0 0 56
++    BorrowOwnedSpan 0 2 56
+
+; CASE: ended returned capability rejected
+; BASE: const receiver returns exact derived field
+; RUN: verify
+; EXPECT-ERROR: span capability is not active
+@@ -20,0 +21 @@
++    EndSpan 168
+
+; CASE: return from untyped spill rejected
+; BASE: const receiver returns exact derived field
+; RUN: verify
+; EXPECT-ERROR: exact typed spill
+@@ -21 +21 @@
+-    ReturnSpan 168
++    ReturnSpan 160
+
+; CASE: ordinary scalar return cannot replace span return
+; BASE: const receiver returns exact derived field
+; RUN: verify
+; EXPECT-ERROR: scalar return cannot return class value or resource value
+@@ -21 +21 @@
+-    ReturnSpan 168
++    Return
+
+; CASE: span return cannot leak operand
+; BASE: const receiver returns exact derived field
+; RUN: verify
+; EXPECT-ERROR: unbalanced stack at span return
+@@ -20,0 +21,2 @@
++    Constant
++    Push
+
+; CASE: local array cannot be returned
+; RUN: verify
+; EXPECT-ERROR: span return does not match receiver field summary and token
+layout Empty []
+layout Pair [u8]
+fields Empty []
+fields Pair [(bytes 0 0 false) (u8 0 1 false) (bytes 1 0 false)]
+storage Empty [] [] 8 8 8
+storage Pair [32] [0 32 40] 72 8 72
+function view
+  result span
+  frame 192
+  receiver Pair false false
+  spanfield 0
+  slot 176 u8
+  array 176 1
+  span 56
+  span 112
+  span 168
+    BeginArray 176
+    Constant 1 u8
+    Store 176 u8
+    BorrowSpan 176 56
+    ReturnSpan 56
+end
+function read
+  result i64
+  frame 0
+  receiver Pair false false
+    BytesLength 0 0
+    Return
+end
+function mutate
+  result i64
+  frame 0
+  receiver Pair true false
+    BytesLength 0 0
+    Return
+end
+
+; CASE: unrelated live array cannot hide behind result
+; BASE: const receiver returns exact derived field
+; RUN: verify
+; EXPECT-ERROR: unrelated active local lifetime
+@@ -9 +9 @@
+-  frame 176
++  frame 192
+@@ -11,0 +12,2 @@
++  slot 176 u8
++  array 176 1
+@@ -20,0 +23 @@
++    BeginArray 176
+
+; CASE: unrelated pristine owner cannot hide behind result
+; BASE: const receiver returns exact derived field
+; RUN: verify
+; EXPECT-ERROR: unrelated active local lifetime
+@@ -9 +9 @@
+-  frame 176
++  frame 208
+@@ -14,0 +15 @@
++  bytes 208 true
+@@ -20,0 +22 @@
++    BeginBytes 208
+
+; CASE: every reachable return is checked
+; RUN: verify
+; EXPECT-ERROR: span return does not match receiver field summary and token
+layout Empty []
+layout Pair [u8]
+fields Empty []
+fields Pair [(bytes 0 0 false) (u8 0 1 false) (bytes 1 0 false)]
+storage Empty [] [] 8 8 8
+storage Pair [32] [0 32 40] 72 8 72
+function view
+  result span
+  frame 176
+  receiver Pair false false
+  spanfield 0
+  span 56
+  span 112
+  span 168
+    Constant 1 bool
+    BranchFalse 1
+    BorrowOwnedSpan 0 0 56
+    ReturnSpan 56
+    Label 1
+    BorrowOwnedSpan 0 2 112
+    ReturnSpan 112
+end
+function read
+  result i64
+  frame 0
+  receiver Pair false false
+    BytesLength 0 0
+    Return
+end
+function mutate
+  result i64
+  frame 0
+  receiver Pair true false
+    BytesLength 0 0
+    Return
+end
+
+; CASE: unrelated receiver view must be closed
+; BASE: const receiver returns exact derived field
+; RUN: verify
+; EXPECT-ERROR: unrelated active span lifetime
+@@ -16,6 +16,2 @@
+-    ReborrowSpan 56 112
+-    Constant
+-    Push
+-    Constant
+-    Subspan 112 168
+-    ReturnSpan 168
++    BorrowOwnedSpan 0 2 112
++    ReturnSpan 56
+
+; CASE: sibling view of same field must be closed
+; BASE: const receiver returns exact derived field
+; RUN: verify
+; EXPECT-ERROR: unrelated active span lifetime
+@@ -17,5 +17,2 @@
+-    Constant
+-    Push
+-    Constant
+-    Subspan 112 168
+-    ReturnSpan 168
++    ReborrowSpan 56 168
++    ReturnSpan 112
+
+; CASE: ended copied class parameter permits receiver return
+; BASE: const receiver returns exact derived field
+; RUN: verify
+; EXPECT-OK
+@@ -9 +9,2 @@
+-  frame 176
++  params [(class Empty)]
++  frame 192
+@@ -11,0 +13 @@
++  object 176 Empty false
+@@ -14,0 +17 @@
++    BindObjectParameter 0 176 Empty
+@@ -20,0 +24 @@
++    EndObject 176
+
+; CASE: copied parameter must be explicitly closed
+; BASE: const receiver returns exact derived field
+; RUN: verify
+; EXPECT-ERROR: unrelated active local lifetime
+@@ -9 +9,2 @@
+-  frame 176
++  params [(class Empty)]
++  frame 192
+@@ -11,0 +13 @@
++  object 176 Empty false
+@@ -14,0 +17 @@
++    BindObjectParameter 0 176 Empty
+
+; CASE: all reachable return arms match exact summary
+; BASE: every reachable return is checked
+; RUN: verify
+; EXPECT-OK
+@@ -20 +20 @@
+-    BorrowOwnedSpan 0 2 112
++    BorrowOwnedSpan 0 0 112
+
+; CASE: forwarded receiver retains invocation token
+; BASE: const receiver returns exact derived field
+; RUN: verify
+; EXPECT-OK
+@@ -36,0 +37,12 @@
++function forward
++  result span
++  frame 176
++  receiver Pair false false
++  spanfield 0
++  span 56
++  span 112
++  span 168
++    MethodCall view 0 [] 56
++    ReborrowSpan 56 112
++    ReturnSpan 112
++end
+
+; CASE: bound receiver forwarding remains frozen
+; BASE: const receiver returns exact derived field
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+@@ -6,0 +7,12 @@
++function mutable_borrow
++  result i64
++  frame 176
++  receiver Pair true false
++  span 56
++  span 112
++  span 168
++    BorrowOwnedSpan 0 0 56
++    MethodCall mutate
++    EndSpan 56
++    Return
++end
+
+; CASE: bound receiver sibling field remains independent
+; BASE: const receiver returns exact derived field
+; RUN: verify
+; EXPECT-OK
+@@ -6,0 +7,14 @@
++function mutable_borrow
++  result i64
++  frame 176
++  receiver Pair true false
++  span 56
++  span 112
++  span 168
++    BorrowOwnedSpan 0 0 56
++    Constant
++    BytesResize 0 2
++    EndSpan 56
++    Constant
++    Return
++end

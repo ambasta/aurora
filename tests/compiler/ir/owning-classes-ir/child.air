@@ -1,0 +1,182 @@
+; CASE: copyable constructor snapshot and borrowed method result
+; RUN: emit
+layout Container [u8 u64 u8]
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Container [(bytes 0 0 false) ((class Copy) 0 2 false) (u8 2 1 false)]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Container [{32,8}*3] [0 32 48] 56 8 56
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_entry
+  result u64
+  params [region]
+  frame 416
+  slot 48 u8
+  slot 56 u64
+  slot 64 u8
+  slot 136 u8
+  slot 144 u64
+  slot 152 u8
+  slot 360 u64
+  slot 368 u8
+  slot 376 u64
+  slot 384 u8
+  object 96 Container true
+  object 184 Container true
+  object 368 Copy false
+  object 384 Copy true
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BeginBytes 304
+    Constant 3
+    AllocateBytes 8 304
+    BeginObject 368
+    Constant 17 u8
+    Store 368 u8
+    Constant 99 u64
+    Store 360 u64
+    BeginObject 96
+    ResourceCall copy_constructor 8 [0 304 368] 0 96
+    EndBytes 304
+    Constant 42 u64
+    Push
+    BeginObject 384
+    MethodCall copy_method 96 [368 0] 384
+    Load 376 u64
+    EndObject 384
+    EndObject 368
+    EndObject 96
+    Return
+end
+function copy_constructor
+  result i64
+  params [region bytes (class Copy)]
+  frame 64
+  receiver Container true true
+  slot 48 u64
+  slot 56 u8
+  object 56 Copy false
+  region 8
+  bytes 40 true
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BindObjectParameter 2 56 Copy
+    InitializeBytesField 0 0 40
+    InitializeObjectField 0 1 56
+    Constant 77 u8
+    ReceiverStore 2 u8
+    EndBytes 40
+    Constant
+    Return
+end
+function copy_method
+  result (class Copy)
+  params [(class Copy) u64]
+  frame 48
+  receiver Container true false
+  slot 8 u64
+  slot 16 u8
+  slot 24 u64
+  slot 40 u64
+  slot 48 u8
+  object 16 Copy false
+  object 48 Copy true
+    BindObjectParameter 0 16 Copy
+    BindParameter 1 24 u64
+    AssignObjectField 0 1 16
+    BeginObject 48
+    ObjectFieldCopy 0 1 48
+    Load 24 u64
+    Store 40 u64
+    ReturnObject 48
+end
+function child_method
+  result u64
+  frame 0
+  receiver Copy false false
+    ReceiverLoad 1 u64
+    Return
+end
+
+; CASE: direct copied-child receiver through owning root
+; BASE: copyable constructor snapshot and borrowed method result
+; RUN: emit
+@@ -57,0 +58 @@
++    MethodCall child_method 96 [] 0 1
+
+; CASE: nested child receiver cannot borrow consumed root
+; BASE: copyable constructor snapshot and borrowed method result
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -57,0 +58,3 @@
++    BeginObject 184
++    MoveObject 96 184
++    MethodCall child_method 96 [] 0 1
+
+; CASE: child projection cannot read consumed root
+; BASE: copyable constructor snapshot and borrowed method result
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -55,0 +56,3 @@
++    BeginObject 184
++    MoveObject 96 184
++    ObjectFieldCopy 96 1 384
+
+; CASE: constructor copied snapshot cannot alias receiver
+; BASE: copyable constructor snapshot and borrowed method result
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -51 +51 @@
+-    ResourceCall copy_constructor 8 [0 304 368] 0 96
++    ResourceCall copy_constructor 8 [0 304 96] 0 96
+
+; CASE: constructor copied snapshot must be readonly
+; BASE: copyable constructor snapshot and borrowed method result
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -35 +35 @@
+-  object 368 Copy false
++  object 368 Copy true
+
+; CASE: constructor copied snapshot must be complete
+; BASE: copyable constructor snapshot and borrowed method result
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -49 +48,0 @@
+-    Store 360 u64
+
+; CASE: constructor copied snapshot cannot be consumed
+; BASE: copyable constructor snapshot and borrowed method result
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -50,0 +51 @@
++    EndObject 368
+
+; CASE: owning constructor cannot take owning class
+; BASE: copyable constructor snapshot and borrowed method result
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -65 +65 @@
+-  params [region bytes (class Copy)]
++  params [region bytes (class Only)]
+
+; CASE: ordinary resource cannot take copied class
+; BASE: copyable constructor snapshot and borrowed method result
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -67 +66,0 @@
+-  receiver Container true true

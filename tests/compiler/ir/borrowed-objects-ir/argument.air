@@ -1,0 +1,251 @@
+; CASE: copied result cannot overlap borrowed root
+; RUN: verify
+; EXPECT-ERROR: method result aliases receiver
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+enum Mode 2
+function borrow_entry
+  result i64
+  params [region (class Buffer) (class Buffer)]
+  frame 256
+  slot 16 i64
+  slot 56 i64
+  slot 96 i64
+  slot 104 i64
+  object 48 Buffer true
+  object 88 Buffer true
+  object 96 Word false
+  object 104 Word false
+  span 160
+  span 216
+  region 8
+  bytes 248 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 48 Buffer
+    BindOwnedObjectParameter 2 88 Buffer
+    BeginObject 96
+    Constant 53
+    Store 96
+    BeginObject 104
+    BorrowOwnedSpan 88 0 160
+    AcquireObjectLoan 1 48 true
+    Constant 19
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 251 u8
+    Push
+    BorrowedCall borrow_buffer [(48 1 -1)] [0 0 96 0 0] 48 [0*3 160 0]
+    ReleaseObjectLoan 1
+    Load 104
+    EndSpan 160
+    EndObject 88
+    EndObject 96
+    EndObject 104
+    EndObject 48
+    Return
+end
+function borrow_buffer
+  result (class Word)
+  params [(class Buffer) i64 (enum Mode) (class Word) span u8]
+  frame 96
+  roots 1
+  firstmut 1
+  slot 8 i64
+  slot 16 (enum Mode)
+  slot 24 i64
+  slot 88 u8
+  object 24 Word false
+  span 80
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    BindObjectParameter 2 24 Word
+    BindSpanParameter 3 80
+    BindParameter 4 88 u8
+    MethodCall write_buffer
+    EndSpan 80
+    ReturnObject 24
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: copied result cannot overlap copied argument
+; BASE: copied result cannot overlap borrowed root
+; RUN: verify
+; EXPECT-ERROR: method result aliases argument snapshot
+@@ -42 +42 @@
+-    BorrowedCall borrow_buffer [(48 1 -1)] [0 0 96 0 0] 48 [0*3 160 0]
++    BorrowedCall borrow_buffer [(48 1 -1)] [0 0 96 0 0] 96 [0*3 160 0]
+
+; CASE: copied result must have exact storage
+; BASE: copied result cannot overlap borrowed root
+; RUN: verify
+; EXPECT-ERROR: method result requires exact object slot
+@@ -42 +42 @@
+-    BorrowedCall borrow_buffer [(48 1 -1)] [0 0 96 0 0] 48 [0*3 160 0]
++    BorrowedCall borrow_buffer [(48 1 -1)] [0 0 96 0 0] 103 [0*3 160 0]
+
+; CASE: copied result must be pristine
+; BASE: copied result cannot overlap borrowed root
+; RUN: verify
+; EXPECT-ERROR: method result requires uninitialized object
+@@ -34,0 +35,2 @@
++    Constant 1
++    Store 104
+@@ -42 +44 @@
+-    BorrowedCall borrow_buffer [(48 1 -1)] [0 0 96 0 0] 48 [0*3 160 0]
++    BorrowedCall borrow_buffer [(48 1 -1)] [0 0 96 0 0] 104 [0*3 160 0]
+
+; CASE: short copied argument vector
+; BASE: copied result cannot overlap borrowed root
+; RUN: verify
+; EXPECT-ERROR: receiver object argument vector size mismatch
+@@ -42 +42 @@
+-    BorrowedCall borrow_buffer [(48 1 -1)] [0 0 96 0 0] 48 [0*3 160 0]
++    BorrowedCall borrow_buffer [(48 1 -1)] [0 0 96 0] 104 [0*3 160 0]
+
+; CASE: missing span vector
+; BASE: copied result cannot overlap borrowed root
+; RUN: verify
+; EXPECT-ERROR: method span argument vector size mismatch
+@@ -42 +42 @@
+-    BorrowedCall borrow_buffer [(48 1 -1)] [0 0 96 0 0] 48 [0*3 160 0]
++    BorrowedCall borrow_buffer [(48 1 -1)] [0 0 96 0 0] 104
+
+; CASE: scalar parameter cannot name storage
+; BASE: copied result cannot overlap borrowed root
+; RUN: verify
+; EXPECT-ERROR: scalar receiver argument cannot name object storage
+@@ -42 +42 @@
+-    BorrowedCall borrow_buffer [(48 1 -1)] [0 0 96 0 0] 48 [0*3 160 0]
++    BorrowedCall borrow_buffer [(48 1 -1)] [96 0 96 0 0] 104 [0*3 160 0]
+
+; CASE: span parameter cannot name object
+; BASE: copied result cannot overlap borrowed root
+; RUN: verify
+; EXPECT-ERROR: span method argument cannot name object storage
+@@ -42 +42 @@
+-    BorrowedCall borrow_buffer [(48 1 -1)] [0 0 96 0 0] 48 [0*3 160 0]
++    BorrowedCall borrow_buffer [(48 1 -1)] [0 0 96 96 0] 104 [0*3 160 0]
+
+; CASE: copied argument cannot alias receiver
+; BASE: copied result cannot overlap borrowed root
+; RUN: verify
+; EXPECT-ERROR: receiver aliases argument snapshot
+@@ -42 +42 @@
+-    BorrowedCall borrow_buffer [(48 1 -1)] [0 0 96 0 0] 48 [0*3 160 0]
++    BorrowedCall borrow_buffer [(48 1 -1)] [0 0 48 0 0] 104 [0*3 160 0]
+
+; CASE: copied argument must be readonly snapshot
+; BASE: copied result cannot overlap borrowed root
+; RUN: verify
+; EXPECT-ERROR: receiver argument snapshot must be readonly
+@@ -21 +21 @@
+-  object 96 Word false
++  object 96 Word true
+@@ -42 +42 @@
+-    BorrowedCall borrow_buffer [(48 1 -1)] [0 0 96 0 0] 48 [0*3 160 0]
++    BorrowedCall borrow_buffer [(48 1 -1)] [0 0 96 0 0] 104 [0*3 160 0]
+
+; CASE: span argument must remain active
+; BASE: copied result cannot overlap borrowed root
+; RUN: verify
+; EXPECT-ERROR: span capability is not active
+@@ -42 +42,2 @@
+-    BorrowedCall borrow_buffer [(48 1 -1)] [0 0 96 0 0] 48 [0*3 160 0]
++    EndSpan 160
++    BorrowedCall borrow_buffer [(48 1 -1)] [0 0 96 0 0] 104 [0*3 160 0]
+
+; CASE: wrong scalar stack type
+; BASE: copied result cannot overlap borrowed root
+; RUN: verify
+; EXPECT-ERROR: method argument type mismatch
+@@ -40 +40 @@
+-    Constant 251 u8
++    Constant 251
+@@ -42 +42 @@
+-    BorrowedCall borrow_buffer [(48 1 -1)] [0 0 96 0 0] 48 [0*3 160 0]
++    BorrowedCall borrow_buffer [(48 1 -1)] [0 0 96 0 0] 104 [0*3 160 0]
+
+; CASE: scalar result cannot name object storage
+; RUN: verify
+; EXPECT-ERROR: scalar method result cannot name object storage
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+function borrow_entry
+  result i64
+  params [region (class Buffer)]
+  frame 256
+  slot 16 i64
+  slot 56 i64
+  slot 96 i64
+  slot 104 i64
+  object 48 Buffer true
+  object 88 Buffer true
+  object 96 Word false
+  object 104 Word false
+  span 160
+  span 216
+  region 8
+  bytes 248 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 48 Buffer
+    AcquireObjectLoan 1 48 true
+    BorrowedCall borrow_buffer [(48 1 -1)] [] 104
+    ReleaseObjectLoan 1
+    EndObject 48
+    Return
+end
+function borrow_buffer
+  result i64
+  params [(class Buffer)]
+  frame 0
+  roots 1
+  firstmut 1
+    MethodCall write_buffer
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end

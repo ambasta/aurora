@@ -1,0 +1,351 @@
+; CASE: transitive graph retention preserves order and stable callable IDs
+; RUN: metadata
+; CHECK-DAG: callable 0 leaf 
+; CHECK-DAG: callable 1 unused 
+; CHECK-DAG: callable 2 bridge 
+; CHECK-DAG: callable 3 root 
+; CHECK-DAG: callable 4 other_root 
+; CHECK-DAG: retained leaf bridge root other_root
+
+; CHECK: body root 3
+; CHECK-NEXT: code root 0 id 7 
+; CHECK-SAME: {{: Call bridge$}}
+; CHECK-NEXT: code root 1 id 8 
+; CHECK-SAME: {{: Call bridge$}}
+; CHECK-NEXT: code root 2 id 9 
+; CHECK-NEXT: body other_root 4
+; RUN: abi-facts
+; ABI: function unused ignored_pruned_function ignored_member
+; CHECK-NOT: ignored
+views [(0 []) (1 [])]
+function leaf
+  result i64
+  frame 0
+  scope 1
+    Constant 42
+    Return
+end
+function unused
+  result i64
+  frame 0
+  scope 1
+    Constant 42
+    Return
+end
+function bridge
+  result i64
+  frame 0
+  scope 1
+    Call leaf
+    Return
+end
+function root
+  result i64
+  frame 0
+    Call bridge
+    Call bridge
+    Return
+    Jump 1
+    Label 1
+end
+function other_root
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+
+; CASE: graph retention by name
+; BASE: transitive graph retention preserves order and stable callable IDs
+; RUN: metadata
+; CHECK: retained leaf bridge root other_root
+
+
+; CASE: unused imported call cannot hide missing target unknown call target
+; BASE: transitive graph retention preserves order and stable callable IDs
+; RUN: verify
+; EXPECT-ERROR: unknown call target
+@@ -13 +13 @@
+-    Constant 42
++    Call missing
+
+; CASE: unused imported call cannot hide missing target unknown method call target
+; BASE: transitive graph retention preserves order and stable callable IDs
+; RUN: verify
+; EXPECT-ERROR: unknown method call target
+@@ -13 +13 @@
+-    Constant 42
++    MethodCall missing
+
+; CASE: unused imported call cannot hide missing target unknown method call target #2
+; BASE: transitive graph retention preserves order and stable callable IDs
+; RUN: verify
+; EXPECT-ERROR: unknown method call target
+@@ -13 +13 @@
+-    Constant 42
++    BorrowedCall missing [(0 1 -1)]
+
+; CASE: unused imported call cannot hide missing target unknown aggregate call target
+; BASE: transitive graph retention preserves order and stable callable IDs
+; RUN: verify
+; EXPECT-ERROR: unknown aggregate call target
+@@ -13 +13 @@
+-    Constant 42
++    AggregateCall missing
+
+; CASE: unused imported call cannot hide missing target unknown service helper target
+; BASE: transitive graph retention preserves order and stable callable IDs
+; RUN: verify
+; EXPECT-ERROR: unknown service helper target
+@@ -13 +13 @@
+-    Constant 42
++    ServiceCall missing 1
+
+; CASE: unused imported call cannot hide missing target unknown resource call target
+; BASE: transitive graph retention preserves order and stable callable IDs
+; RUN: verify
+; EXPECT-ERROR: unknown resource call target
+@@ -13 +13 @@
+-    Constant 42
++    ResourceCall missing
+
+; CASE: unused imported call mode precedes earlier dynamic state: plain call cannot target receiver function
+; RUN: verify
+; EXPECT-ERROR: plain call cannot target receiver function
+layout CallReceiver [i64]
+views [(0 []) (1 [])]
+function leaf
+  result i64
+  frame 0
+  scope 1
+    Pop
+    Return
+end
+function unused
+  result i64
+  frame 0
+  scope 1
+    Call receiver_target
+    Return
+end
+function bridge
+  result i64
+  frame 0
+  scope 1
+    Call leaf
+    Return
+end
+function root
+  result i64
+  frame 0
+    Call bridge
+    Call bridge
+    Return
+    Jump 1
+    Label 1
+end
+function other_root
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+function receiver_target
+  result i64
+  frame 0
+  scope 1
+  receiver CallReceiver false false
+    ReceiverLoad
+    Return
+end
+
+; CASE: unused imported call mode precedes earlier dynamic state: aggregate call requires aggregate signature
+; BASE: unused imported call mode precedes earlier dynamic state: plain call cannot target receiver function
+; RUN: verify
+; EXPECT-ERROR: aggregate call requires aggregate signature
+@@ -14 +14 @@
+-    Call receiver_target
++    AggregateCall leaf
+
+; CASE: unused imported call mode precedes earlier dynamic state: resource call requires ordinary resource signature or owning constructor
+; BASE: unused imported call mode precedes earlier dynamic state: plain call cannot target receiver function
+; RUN: verify
+; EXPECT-ERROR: resource call requires ordinary resource signature or owning constructor
+@@ -14 +14 @@
+-    Call receiver_target
++    ResourceCall leaf
+
+; CASE: unused imported call mode precedes earlier dynamic state: method call requires receiver target
+; BASE: unused imported call mode precedes earlier dynamic state: plain call cannot target receiver function
+; RUN: verify
+; EXPECT-ERROR: method call requires receiver target
+@@ -14 +14 @@
+-    Call receiver_target
++    MethodCall leaf
+
+; CASE: unused imported call mode precedes earlier dynamic state: borrowed call requires borrowed formal target
+; BASE: unused imported call mode precedes earlier dynamic state: plain call cannot target receiver function
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires borrowed formal target
+@@ -14 +14 @@
+-    Call receiver_target
++    BorrowedCall leaf [(0 1 -1)]
+
+; CASE: unused imported call mode precedes earlier dynamic state: service helper requires service target and acquired loans
+; BASE: unused imported call mode precedes earlier dynamic state: plain call cannot target receiver function
+; RUN: verify
+; EXPECT-ERROR: service helper requires service target and acquired loans
+@@ -14 +14 @@
+-    Call receiver_target
++    ServiceCall leaf 1
+
+; CASE: unreachable call rejects before graph retention
+; BASE: transitive graph retention preserves order and stable callable IDs
+; RUN: verify
+; EXPECT-ERROR: unreachable semantic instruction
+@@ -14,0 +15 @@
++    Call unused
+
+; CASE: rootless graph retains no imported implementation
+; BASE: transitive graph retention preserves order and stable callable IDs
+; RUN: metadata
+; CHECK: retained
+
+@@ -25,0 +26 @@
++  scope 1
+@@ -34,0 +36 @@
++  scope 1
+
+; CASE: unused acyclic receiver component is pruned
+; RUN: metadata
+; CHECK: retained root
+
+layout Pair [i64 bool]
+views [(0 []) (1 [])]
+function test
+  result i64
+  frame 16
+  scope 1
+  slot 8 bool
+  slot 16 i64
+  object 16 Pair false
+    BeginObject 16
+    Constant 42
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_pair 16
+    MethodCall relay_pair 16
+    Return
+end
+function construct_pair
+  result i64
+  params [i64 bool]
+  frame 16
+  scope 1
+  receiver Pair true true
+  slot 8 i64
+  slot 16 bool
+    BindParameter 0 8
+    BindParameter 1 16 bool
+    Load 8
+    ReceiverStore
+    Load 16 bool
+    ReceiverStore 1 bool
+    Constant
+    Return
+end
+function get_pair
+  result i64
+  frame 0
+  scope 1
+  receiver Pair false false
+    ReceiverLoad
+    Return
+end
+function relay_pair
+  result i64
+  frame 0
+  scope 1
+  receiver Pair false false
+    MethodCall get_pair
+    Return
+end
+function root
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+
+; CASE: unused imported receiver cycle is checked before pruning
+; BASE: unused acyclic receiver component is pruned
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR: recursive receiver call cycle
+@@ -41 +41 @@
+-    ReceiverLoad
++    MethodCall relay_pair
+
+; CASE: service forwarding retains scalar descendants and permits unrelated scalar cycles
+; RUN: metadata
+; CHECK: retained leaf service_helper service_root
+
+views [(0 []) (1 [])]
+function leaf
+  result i64
+  frame 0
+  scope 1
+    Constant 42
+    Return
+end
+function cycle_a
+  result i64
+  frame 0
+  scope 1
+    Call cycle_b
+    Return
+end
+function service_helper
+  result i64
+  params [console]
+  frame 16
+  scope 1
+  service 16
+    BindServiceParameter 0 16
+    Call leaf
+    Return
+end
+function cycle_b
+  result i64
+  frame 0
+  scope 1
+    Call cycle_a
+    Return
+end
+function service_root
+  result i64
+  params [console]
+  frame 16
+  service 16
+    BindServiceParameter 0 16
+    AcquireServiceLoan 1 16
+    ServiceCall service_helper 1 0 [0]
+    ReleaseServiceLoan 1
+    Return
+end
+
+; CASE: service-reachable scalar SCC rejects through transitive helpers
+; BASE: service forwarding retains scalar descendants and permits unrelated scalar cycles
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR: recursive receiver call cycle
+@@ -6 +6 @@
+-    Constant 42
++    Call cycle_a
+
+; CASE: service-reachable scalar self edge rejects
+; BASE: service forwarding retains scalar descendants and permits unrelated scalar cycles
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR: recursive receiver call cycle
+@@ -6 +6 @@
+-    Constant 42
++    Call leaf

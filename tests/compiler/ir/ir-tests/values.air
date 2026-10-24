@@ -1,0 +1,901 @@
+; CASE: value arguments with scalar result
+; RUN: emit
+layout Pair [i64 bool]
+function test
+  result i64
+  frame 48
+  slot 8 bool
+  slot 16 i64
+  slot 24 bool
+  slot 32 i64
+  slot 40 bool
+  slot 48 i64
+  object 16 Pair false
+  object 32 Pair false
+  object 48 Pair false
+    BeginObject 16
+    Constant 12
+    Store 16
+    Constant 1 bool
+    Store 8 bool
+    BeginObject 32
+    Constant 20
+    Store 32
+    Constant 0 bool
+    Store 24 bool
+    Constant 10
+    Push
+    Constant 1 bool
+    Push
+    BeginObject 48
+    AggregateCall copy_pair [16 0 32 0]
+    Return
+end
+function copy_pair
+  result i64
+  params [(class Pair) i64 (class Pair) bool]
+  frame 64
+  slot 8 bool
+  slot 16 i64
+  slot 24 i64
+  slot 32 bool
+  slot 40 i64
+  slot 48 bool
+  slot 56 bool
+  slot 64 i64
+  object 16 Pair false
+  object 40 Pair false
+  object 64 Pair false
+    BindObjectParameter 0 16 Pair
+    BindParameter 1 24
+    BindObjectParameter 2 40 Pair
+    BindParameter 3 48 bool
+    BeginObject 64
+    Load 16
+    Push
+    Load 24
+    BinaryValue
+    Push
+    Load 40
+    BinaryValue
+    Store 64
+    Load 48 bool
+    Store 56 bool
+    Load 64
+    Return
+end
+
+; CASE: scalar result rejects object result storage
+; BASE: value arguments with scalar result
+; RUN: verify
+; EXPECT-ERROR: scalar result cannot name
+@@ -29 +29 @@
+-    AggregateCall copy_pair [16 0 32 0]
++    AggregateCall copy_pair [16 0 32 0] 48
+
+; CASE: result storage reused only after lifetime transition
+; BASE: value arguments with scalar result
+; RUN: emit
+@@ -29 +29,9 @@
+-    AggregateCall copy_pair [16 0 32 0]
++    AggregateCall copy_pair [16 0 32 0] 48
++    EndObject 48
++    BeginObject 48
++    Constant 10
++    Push
++    Constant 1 bool
++    Push
++    AggregateCall copy_pair [16 0 32 0] 48
++    Load 48
+@@ -33 +41 @@
+-  result i64
++  result (class Pair)
+@@ -62,2 +70 @@
+-    Load 64
+-    Return
++    ReturnObject 64
+
+; CASE: returned value has caller-selected mutability
+; BASE: value arguments with scalar result
+; RUN: emit
+@@ -13 +13 @@
+-  object 48 Pair false
++  object 48 Pair true
+@@ -29 +29,4 @@
+-    AggregateCall copy_pair [16 0 32 0]
++    AggregateCall copy_pair [16 0 32 0] 48
++    Constant 43
++    Store 48
++    Load 48
+@@ -33 +36 @@
+-  result i64
++  result (class Pair)
+@@ -62,2 +65 @@
+-    Load 64
+-    Return
++    ReturnObject 64
+
+; CASE: saved bounds token survives value call
+; BASE: value arguments with scalar result
+; RUN: emit
+@@ -23,0 +24,3 @@
++    Constant
++    BoundsGuard 16 1
++    Push
+@@ -29 +32,4 @@
+-    AggregateCall copy_pair [16 0 32 0]
++    AggregateCall copy_pair [16 0 32 0] 48
++    Load 48
++    Pop
++    IndexLoad 16 1
+@@ -33 +39 @@
+-  result i64
++  result (class Pair)
+@@ -62,2 +68 @@
+-    Load 64
+-    Return
++    ReturnObject 64
+
+; CASE: class parameter returned through independent caller result
+; RUN: emit
+layout Pair [i64 bool]
+function test
+  result i64
+  frame 48
+  slot 8 bool
+  slot 16 i64
+  slot 24 bool
+  slot 32 i64
+  slot 40 bool
+  slot 48 i64
+  object 16 Pair false
+  object 32 Pair false
+  object 48 Pair false
+    BeginObject 16
+    Constant 12
+    Store 16
+    Constant 1 bool
+    Store 8 bool
+    BeginObject 32
+    Constant 20
+    Store 32
+    Constant 0 bool
+    Store 24 bool
+    Constant 10
+    Push
+    Constant 1 bool
+    Push
+    BeginObject 48
+    AggregateCall copy_pair [16 0 32 0] 48
+    Load 48
+    Return
+end
+function copy_pair
+  result (class Pair)
+  params [(class Pair) i64 (class Pair) bool]
+  frame 64
+  slot 8 bool
+  slot 16 i64
+  slot 24 i64
+  slot 32 bool
+  slot 40 i64
+  slot 48 bool
+  slot 56 bool
+  slot 64 i64
+  object 16 Pair false
+  object 40 Pair false
+  object 64 Pair false
+    BindObjectParameter 0 16 Pair
+    BindParameter 1 24
+    BindObjectParameter 2 40 Pair
+    BindParameter 3 48 bool
+    ReturnObject 16
+end
+
+; CASE: empty values use reserved distinct storage
+; RUN: emit
+layout Empty []
+function test
+  result i64
+  frame 16
+  object 8 Empty false
+  object 16 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 16
+    AggregateCall copy_empty [8] 16
+    Constant 42
+    Return
+end
+function copy_empty
+  result (class Empty)
+  params [(class Empty)]
+  frame 16
+  object 8 Empty false
+    BindObjectParameter 0 8 Empty
+    ReturnObject 8
+end
+function make_empty
+  result (class Empty)
+  frame 16
+  object 8 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    ReturnObject 8
+end
+
+; CASE: empty value result cannot initialize twice
+; BASE: empty values use reserved distinct storage
+; RUN: verify
+; EXPECT-ERROR: result object already initialized
+@@ -9,0 +10 @@
++    AggregateCall copy_empty [8] 16
+
+; CASE: empty parameter cannot become result target
+; BASE: empty values use reserved distinct storage
+; RUN: verify
+; EXPECT-ERROR: result object already initialized
+@@ -19,0 +20 @@
++    AggregateCall make_empty [] 8
+
+; CASE: empty result cannot alias empty argument
+; BASE: empty values use reserved distinct storage
+; RUN: verify
+; EXPECT-ERROR: result aliases argument
+@@ -10 +10 @@
+-    AggregateCall copy_empty [8] 16
++    AggregateCall copy_empty [8] 8
+
+; CASE: 64-field value boundary accepted
+; RUN: emit
+layout Empty [i64*64]
+function test
+  result i64
+  frame 1024
+repeat 128
+  slot {8,8} i64
+endrepeat
+  object 512 Empty false
+  object 1024 Empty false
+    BeginObject 512
+    Constant 42
+repeat 64
+    Store {512,-8}
+endrepeat
+    BeginObject 1024
+    AggregateCall copy_empty [512] 1024
+    Load 520
+    Return
+end
+function copy_empty
+  result (class Empty)
+  params [(class Empty)]
+  frame 512
+repeat 64
+  slot {8,8} i64
+endrepeat
+  object 512 Empty false
+    BindObjectParameter 0 512 Empty
+    ReturnObject 512
+end
+
+; CASE: compact copies preserve registers and report transient stack peak
+; BASE: 64-field value boundary accepted
+; RUN: emit
+; CHECK-NOT: copy_empty:\n
+; CHECK: leaq 0(%rsp), %rax\n    pushq %rsi\n    pushq %rdi\n    pushq %rcx
+; RUN: emit
+; CHECK: copy_empty:\n
+; CHECK-NOT: .size copy_empty,
+; CHECK: pushq %rsi\n    pushq %rdi\n    pushq %rcx
+; RUN: emit
+; CHECK: copy_empty:\n
+; CHECK-NOT: .size copy_empty,
+; CHECK: movq $512, %rcx\n    cld\n    rep movsb\n    popq %rcx\n    popq %rdi\n    popq %rsi
+; RUN: emit
+; CHECK: copy_empty:\n
+; CHECK-NOT: .size copy_empty,
+; CHECK: rep movsb
+; CHECK-NOT: .size copy_empty,
+; CHECK: rep movsb
+; CHECK-NOT: rep movsb
+; CHECK: .size copy_empty,
+; RUN: stack-facts
+; CHECK-JSON: functions.copy_empty.local_bytes 568
+; CHECK-JSON: functions.test.local_bytes 1576
+; CHECK-JSON: functions.test.calls.copy_empty 1552
+
+; CASE: aggregate edge cannot conceal receiver recursion
+; RUN: verify
+; EXPECT-ERROR: recursive receiver call cycle
+layout Pair [i64 bool]
+function test
+  result i64
+  frame 16
+  slot 8 bool
+  slot 16 i64
+  object 16 Pair false
+    BeginObject 16
+    Constant 42
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_pair 16
+    MethodCall relay_pair 16
+    Return
+end
+function construct_pair
+  result i64
+  params [i64 bool]
+  frame 16
+  receiver Pair true true
+  slot 8 i64
+  slot 16 bool
+    BindParameter 0 8
+    BindParameter 1 16 bool
+    Load 8
+    ReceiverStore
+    Load 16 bool
+    ReceiverStore 1 bool
+    Constant
+    Return
+end
+function get_pair
+  result i64
+  frame 16
+  receiver Pair false false
+  slot 8 bool
+  slot 16 i64
+  object 16 Pair false
+    BeginObject 16
+    ReceiverLoad
+    Store 16
+    ReceiverLoad 1 bool
+    Store 8 bool
+    AggregateCall value_bridge [16]
+    Return
+end
+function relay_pair
+  result i64
+  frame 0
+  receiver Pair false false
+    MethodCall get_pair
+    Return
+end
+function value_bridge
+  result i64
+  params [(class Pair)]
+  frame 16
+  slot 8 bool
+  slot 16 i64
+  object 16 Pair false
+    BindObjectParameter 0 16 Pair
+    MethodCall get_pair 16
+    Return
+end
+
+; CASE: receiver may call acyclic ordinary value helper
+; BASE: aggregate edge cannot conceal receiver recursion
+; RUN: emit
+@@ -63 +63 @@
+-    MethodCall get_pair 16
++    Load 16
+
+; CASE: receiver aggregate parameter requires explicit snapshot vector
+; BASE: aggregate edge cannot conceal receiver recursion
+; RUN: verify
+; EXPECT-ERROR: receiver object argument vector size mismatch
+@@ -45 +45 @@
+-    AggregateCall value_bridge [16]
++    MethodCall value_bridge 16
+@@ -58,0 +59 @@
++  receiver Pair false false
+@@ -63 +64 @@
+-    MethodCall get_pair 16
++    Load 16
+
+; CASE: private value ABI uses packed record and hidden result slot
+; BASE: value arguments with scalar result
+; RUN: emit
+; CHECK-DAG: .local copy_pair
+; CHECK-DAG: movq %r11, -72(%rbp)
+; CHECK-DAG: movq %r10, -80(%rbp)
+; CHECK-DAG: movq %rsp, %r11
+; CHECK-DAG: leaq -48(%rbp), %r10
+; CHECK-DAG: movq 40(%r11), %rax
+; CHECK-DAG: movq %rax, 8(%r10)
+@@ -29 +29,2 @@
+-    AggregateCall copy_pair [16 0 32 0]
++    AggregateCall copy_pair [16 0 32 0] 48
++    Load 48
+@@ -33 +34 @@
+-  result i64
++  result (class Pair)
+@@ -62,2 +63 @@
+-    Load 64
+-    Return
++    ReturnObject 64
+
+; CASE: bounded maximum initializer
+; RUN: metrics
+; CHECK-JSON: metrics.snapshots 1
+; CHECK-JSON: metrics.peakOperandDepth 4096
+; CHECK-JSON: metrics.peakRetainedOperandFacts 0
+; CHECK-JSON: metrics.peakRetainedValueFacts 0
+; CHECK-JSON: metrics.peakRetainedInitializationPayloadBytes 1024
+function test
+  result i64
+  frame 32768
+repeat 4096
+  slot {8,8} i64
+endrepeat
+repeat 4096
+    Constant 1
+    Push
+endrepeat
+repeat 4096
+    Pop
+    Store {8,8}
+endrepeat
+    Constant 4095
+    BoundsGuard 32768 4096
+    IndexLoad 32768 4096
+    Return
+end
+
+; CASE: query cannot change module view
+; RUN: verify
+; EXPECT-ERROR: changes defining-module scope
+views [(0 []) (1 [])]
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Load 8
+    MetadataQuery Size 1
+    Return
+end
+
+; CASE: unknown function module view
+; BASE: query cannot change module view
+; RUN: verify
+; EXPECT-ERROR: unknown function module scope
+@@ -1 +0,0 @@
+-views [(0 []) (1 [])]
+@@ -4,0 +4 @@
++  scope 1
+@@ -9 +8,0 @@
+-    MetadataQuery Size 1
+
+; CASE: view cannot name missing descriptor
+; BASE: query cannot change module view
+; RUN: verify
+; EXPECT-ERROR: missing descriptor
+@@ -1 +1 @@
+-views [(0 []) (1 [])]
++views [(0 [999])]
+@@ -9 +8,0 @@
+-    MetadataQuery Size 1
+
+; CASE: module view scope cap
+; BASE: query cannot change module view
+; RUN: verify
+; EXPECT-ERROR: invalid reflection scope
+@@ -1 +1 @@
+-views [(0 []) (1 [])]
++views [(0 []) (64 [])]
+@@ -9 +8,0 @@
+-    MetadataQuery Size 1
+
+; CASE: scoped helper name reserved
+; BASE: query cannot change module view
+; RUN: verify
+; EXPECT-ERROR: function symbol
+@@ -1,2 +1 @@
+-views [(0 []) (1 [])]
+-function test
++function __au_reflect_s1_size
+@@ -9 +7,0 @@
+-    MetadataQuery Size 1
+
+; CASE: saved guard survives RHS query
+; RUN: emit
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Load 8
+    Constant
+    BoundsGuard 8 1
+    Push
+    Constant 42
+    MetadataQuery
+    IndexStore 8 1
+    Return
+end
+
+; CASE: unreachable structural cleanup
+; BASE: query cannot change module view
+; RUN: metadata
+; CHECK: body test 0
+; CHECK-NEXT: code test 0 
+; CHECK-NEXT: code test 1 
+; CHECK-NEXT: code test 2 
+; CHECK-NEXT: code test 3 
+; CHECK-NOT: code test 4 
+@@ -1 +0,0 @@
+-views [(0 []) (1 [])]
+@@ -9 +7,0 @@
+-    MetadataQuery Size 1
+@@ -10,0 +9,2 @@
++    Jump 1
++    Label 1
+
+; CASE: unsubstituted template parameter result
+; BASE: query cannot change module view
+; RUN: verify
+; EXPECT-ERROR: invalid value boundary type
+@@ -1 +0,0 @@
+-views [(0 []) (1 [])]
+@@ -3 +2 @@
+-  result i64
++  result param
+@@ -9 +7,0 @@
+-    MetadataQuery Size 1
+
+; CASE: unsubstituted template parameter slot
+; BASE: query cannot change module view
+; RUN: verify
+; EXPECT-ERROR: invalid slot payload type
+@@ -1 +0,0 @@
+-views [(0 []) (1 [])]
+@@ -5 +4 @@
+-  slot 8 i64
++  slot 8 param
+@@ -9 +7,0 @@
+-    MetadataQuery Size 1
+
+; CASE: unsubstituted template parameter constant
+; BASE: query cannot change module view
+; RUN: verify
+; EXPECT-ERROR: invalid constant type
+@@ -1 +0,0 @@
+-views [(0 []) (1 [])]
+@@ -6 +5 @@
+-    Constant 42
++    Constant 42 param
+@@ -9 +7,0 @@
+-    MetadataQuery Size 1
+
+; CASE: unresolved specialization arguments on result
+; RUN: verify
+; EXPECT-ERROR: invalid value boundary type
+layout Pair [i64 bool]
+function test
+  result i64
+  frame 48
+  slot 8 bool
+  slot 16 i64
+  slot 24 bool
+  slot 32 i64
+  slot 40 bool
+  slot 48 i64
+  object 16 Pair false
+  object 32 Pair false
+  object 48 Pair false
+    BeginObject 16
+    Constant 12
+    Store 16
+    Constant 1 bool
+    Store 8 bool
+    BeginObject 32
+    Constant 20
+    Store 32
+    Constant 0 bool
+    Store 24 bool
+    Constant 10
+    Push
+    Constant 1 bool
+    Push
+    BeginObject 48
+    AggregateCall copy_pair [16 0 32 0] 48
+    Load 48
+    Return
+end
+function copy_pair
+  result (class Pair targs=[(type i64)])
+  params [(class Pair) i64 (class Pair) bool]
+  frame 64
+  slot 8 bool
+  slot 16 i64
+  slot 24 i64
+  slot 32 bool
+  slot 40 i64
+  slot 48 bool
+  slot 56 bool
+  slot 64 i64
+  object 16 Pair false
+  object 40 Pair false
+  object 64 Pair false
+    BindObjectParameter 0 16 Pair
+    BindParameter 1 24
+    BindObjectParameter 2 40 Pair
+    BindParameter 3 48 bool
+    BeginObject 64
+    Load 16
+    Push
+    Load 24
+    BinaryValue
+    Push
+    Load 40
+    BinaryValue
+    Store 64
+    Load 48 bool
+    Store 56 bool
+    ReturnObject 64
+end
+
+; CASE: unresolved specialization arguments on parameter
+; BASE: unresolved specialization arguments on result
+; RUN: verify
+; EXPECT-ERROR: invalid value boundary type
+@@ -34,2 +34,2 @@
+-  result (class Pair targs=[(type i64)])
+-  params [(class Pair) i64 (class Pair) bool]
++  result (class Pair)
++  params [(class Pair targs=[(type i64)]) i64 (class Pair) bool]
+
+; CASE: unresolved nested specialization result
+; BASE: unresolved specialization arguments on result
+; RUN: verify
+; EXPECT-ERROR: invalid value boundary type
+@@ -34 +34 @@
+-  result (class Pair targs=[(type i64)])
++  result (class Pair targs=[(type class name=Outer targs=[(type class name=Inner targs=[(type u8) (value 16)]) (type i64)])])
+
+; CASE: unresolved nested specialization parameter
+; BASE: unresolved specialization arguments on result
+; RUN: verify
+; EXPECT-ERROR: invalid value boundary type
+@@ -34,2 +34,2 @@
+-  result (class Pair targs=[(type i64)])
+-  params [(class Pair) i64 (class Pair) bool]
++  result (class Pair)
++  params [(class Pair targs=[(type class name=Outer targs=[(type class name=Inner targs=[(type u8) (value 16)]) (type i64)])]) i64 (class Pair) bool]
+
+; CASE: unresolved nested specialization scalar slot
+; BASE: query cannot change module view
+; RUN: verify
+; EXPECT-ERROR: invalid slot payload type
+@@ -1 +0,0 @@
+-views [(0 []) (1 [])]
+@@ -5 +4 @@
+-  slot 8 i64
++  slot 8 (i64 targs=[(type class name=Outer targs=[(type class name=Inner targs=[(type u8) (value 16)]) (type i64)])])
+@@ -9 +7,0 @@
+-    MetadataQuery Size 1
+
+; CASE: unresolved nested specialization scalar constant
+; BASE: query cannot change module view
+; RUN: verify
+; EXPECT-ERROR: noncanonical instruction type payload
+@@ -1 +0,0 @@
+-views [(0 []) (1 [])]
+@@ -6 +5 @@
+-    Constant 42
++    Constant 42 (i64 targs=[(type class name=Outer targs=[(type class name=Inner targs=[(type u8) (value 16)]) (type i64)])])
+@@ -9 +7,0 @@
+-    MetadataQuery Size 1
+
+; CASE: same-layout specialization argument forgery
+; BASE: unresolved specialization arguments on result
+; RUN: verify
+; EXPECT-ERROR: argument nominal class
+@@ -0,0 +1 @@
++layout OtherSpecialization [i64 bool]
+@@ -11 +12 @@
+-  object 16 Pair false
++  object 16 OtherSpecialization false
+@@ -34 +35 @@
+-  result (class Pair targs=[(type i64)])
++  result (class Pair)
+
+; CASE: same-layout specialization result forgery
+; BASE: unresolved specialization arguments on result
+; RUN: verify
+; EXPECT-ERROR: result nominal class
+@@ -0,0 +1 @@
++layout OtherSpecialization [i64 bool]
+@@ -13 +14 @@
+-  object 48 Pair false
++  object 48 OtherSpecialization false
+@@ -34 +35 @@
+-  result (class Pair targs=[(type i64)])
++  result (class Pair)
+
+; CASE: same-layout specialization receiver forgery
+; RUN: verify
+; EXPECT-ERROR: forwarded receiver nominal class mismatch
+layout OtherSpecialization [i64 bool]
+layout Pair [i64 bool]
+function test
+  result i64
+  frame 16
+  slot 8 bool
+  slot 16 i64
+  object 16 Pair false
+    BeginObject 16
+    Constant 42
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_pair 16
+    MethodCall relay_pair 16
+    Return
+end
+function construct_pair
+  result i64
+  params [i64 bool]
+  frame 16
+  receiver Pair true true
+  slot 8 i64
+  slot 16 bool
+    BindParameter 0 8
+    BindParameter 1 16 bool
+    Load 8
+    ReceiverStore
+    Load 16 bool
+    ReceiverStore 1 bool
+    Constant
+    Return
+end
+function get_pair
+  result i64
+  frame 0
+  receiver OtherSpecialization false false
+    ReceiverLoad
+    Return
+end
+function relay_pair
+  result i64
+  frame 0
+  receiver Pair false false
+    MethodCall get_pair
+    Return
+end
+
+; CASE: function-template unresolved value parameter
+; BASE: unresolved specialization arguments on result
+; RUN: verify
+; EXPECT-ERROR: invalid aggregate parameter type
+@@ -34,2 +34,2 @@
+-  result (class Pair targs=[(type i64)])
+-  params [(class Pair) i64 (class Pair) bool]
++  result (class Pair)
++  params [param i64 (class Pair) bool]
+
+; CASE: function-template unresolved scalar parameter
+; BASE: unresolved specialization arguments on result
+; RUN: verify
+; EXPECT-ERROR: invalid aggregate parameter type
+@@ -34,2 +34,2 @@
+-  result (class Pair targs=[(type i64)])
+-  params [(class Pair) i64 (class Pair) bool]
++  result (class Pair)
++  params [(class Pair) param (class Pair) bool]
+
+; CASE: uncalled aggregate header rejects unresolved parameter 0
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: invalid aggregate parameter type
+; EXPECT-CODE: AU0000
+layout Pair [i64 bool]
+function copy_pair
+  result (class Pair)
+  params [param i64 (class Pair) bool]
+  frame 64
+  slot 8 bool
+  slot 16 i64
+  slot 24 i64
+  slot 32 bool
+  slot 40 i64
+  slot 48 bool
+  slot 56 bool
+  slot 64 i64
+  object 16 Pair false
+  object 40 Pair false
+  object 64 Pair false
+    BindObjectParameter 0 16 Pair
+    BindParameter 1 24
+    BindObjectParameter 2 40 Pair
+    BindParameter 3 48 bool
+    BeginObject 64
+    Load 16
+    Push
+    Load 24
+    BinaryValue
+    Push
+    Load 40
+    BinaryValue
+    Store 64
+    Load 48 bool
+    Store 56 bool
+    ReturnObject 64
+end
+
+; CASE: uncalled aggregate header rejects unresolved parameter 1
+; BASE: uncalled aggregate header rejects unresolved parameter 0
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: invalid aggregate parameter type
+; EXPECT-CODE: AU0000
+@@ -4 +4 @@
+-  params [param i64 (class Pair) bool]
++  params [(class Pair) param (class Pair) bool]
+
+; CASE: scalar-only header keeps generic unresolved parameter diagnostic
+; BASE: query cannot change module view
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: invalid value boundary type
+; EXPECT-CODE: AU0000
+@@ -1 +0,0 @@
+-views [(0 []) (1 [])]
+@@ -3,0 +3 @@
++  params [param]
+@@ -9 +8,0 @@
+-    MetadataQuery Size 1
+
+; CASE: aggregate parameter shape selects header diagnostic Pair
+; BASE: query cannot change module view
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: invalid aggregate parameter type
+; EXPECT-CODE: AU0000
+@@ -1 +1 @@
+-views [(0 []) (1 [])]
++layout Pair [i64]
+@@ -3,0 +4 @@
++  params [(class Pair) param]
+@@ -9 +9,0 @@
+-    MetadataQuery Size 1
+
+; CASE: aggregate parameter shape selects header diagnostic builtin::span<const u8>
+; BASE: query cannot change module view
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: invalid aggregate parameter type
+; EXPECT-CODE: AU0000
+@@ -1 +1 @@
+-views [(0 []) (1 [])]
++layout Pair [i64]
+@@ -3,0 +4 @@
++  params [span param]
+@@ -9 +9,0 @@
+-    MetadataQuery Size 1
+
+; CASE: uncalled aggregate header keeps malformed class diagnostic
+; BASE: uncalled aggregate header rejects unresolved parameter 0
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: invalid value boundary type
+; EXPECT-CODE: AU0000
+@@ -4 +4 @@
+-  params [param i64 (class Pair) bool]
++  params [(class Pair len=1) i64 (class Pair) bool]
+
+; CASE: function-template dependent class result metadata
+; BASE: unresolved specialization arguments on result
+; RUN: verify
+; EXPECT-ERROR: invalid value boundary type
+@@ -34 +34 @@
+-  result (class Pair targs=[(type i64)])
++  result (class Pair targs=[(type param name=T)])
+
+; CASE: function-template substituted identity cannot retain argument metadata
+; BASE: unresolved specialization arguments on result
+; RUN: verify
+; EXPECT-ERROR: invalid value boundary type
+@@ -34,2 +34,2 @@
+-  result (class Pair targs=[(type i64)])
+-  params [(class Pair) i64 (class Pair) bool]
++  result (class Pair)
++  params [(class Pair targs=[(type class name=Pair resolved=true)]) i64 (class Pair) bool]

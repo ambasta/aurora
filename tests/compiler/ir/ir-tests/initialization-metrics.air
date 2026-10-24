@@ -1,0 +1,154 @@
+; CASE: current-only loop join converges with prefix 0
+; RUN: metrics
+; CHECK-JSON: metrics.snapshots 1
+; CHECK-JSON: metrics.peakOperandDepth 0
+; CHECK-JSON: metrics.peakRetainedOperandFacts 0
+; CHECK-JSON: metrics.peakRetainedValueFacts 0
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Label 1
+    Constant 1
+    Jump 1
+end
+
+; CASE: current-only loop join converges with prefix 1
+; BASE: current-only loop join converges with prefix 0
+; RUN: metrics
+; CHECK-JSON: metrics.snapshots 2
+; CHECK-JSON: metrics.peakOperandDepth 0
+; CHECK-JSON: metrics.peakRetainedOperandFacts 0
+; CHECK-JSON: metrics.peakRetainedValueFacts 0
+@@ -4,0 +5 @@
++    Constant 1
+
+; CASE: current-only loop join converges with prefix 2
+; BASE: current-only loop join converges with prefix 0
+; RUN: metrics
+; CHECK-JSON: metrics.snapshots 2
+; CHECK-JSON: metrics.peakOperandDepth 0
+; CHECK-JSON: metrics.peakRetainedOperandFacts 0
+; CHECK-JSON: metrics.peakRetainedValueFacts 0
+@@ -4,0 +5 @@
++    Constant 1 bool
+
+; CASE: initialization payload for 0 slots
+; RUN: metrics
+; CHECK-JSON: metrics.snapshots 7
+; CHECK-JSON: metrics.peakOperandDepth 0
+; CHECK-JSON: metrics.peakRetainedValueFacts 0
+; CHECK-JSON: metrics.peakRetainedInitializationPayloadBytes 0
+function initialization_payload
+  result i64
+  frame 0
+    Constant 1 u8
+    Constant 1 bool
+    BranchFalse
+    Constant 1
+    Jump 1
+    Label
+    Constant 2
+    Label 1
+    Constant 1 bool
+    BranchFalse 2
+    Constant 1
+    Jump 3
+    Label 2
+    Constant 2
+    Label 3
+    Return
+end
+
+; CASE: initialization payload for 1 slots
+; BASE: initialization payload for 0 slots
+; RUN: metrics
+; CHECK-JSON: metrics.snapshots 7
+; CHECK-JSON: metrics.peakOperandDepth 0
+; CHECK-JSON: metrics.peakRetainedValueFacts 12
+; CHECK-JSON: metrics.peakRetainedInitializationPayloadBytes 112
+@@ -3 +3,2 @@
+-  frame 0
++  frame 16
++  slot 1 u8
+@@ -4,0 +6 @@
++    Store 1 u8
+
+; CASE: initialization payload for 63 slots
+; RUN: metrics
+; CHECK-JSON: metrics.snapshots 7
+; CHECK-JSON: metrics.peakOperandDepth 0
+; CHECK-JSON: metrics.peakRetainedValueFacts 756
+; CHECK-JSON: metrics.peakRetainedInitializationPayloadBytes 112
+function initialization_payload
+  result i64
+  frame 64
+repeat 63
+  slot {1,1} u8
+endrepeat
+    Constant 1 u8
+repeat 63
+    Store {1,1} u8
+endrepeat
+    Constant 1 bool
+    BranchFalse
+    Constant 1
+    Jump 1
+    Label
+    Constant 2
+    Label 1
+    Constant 1 bool
+    BranchFalse 2
+    Constant 1
+    Jump 3
+    Label 2
+    Constant 2
+    Label 3
+    Return
+end
+
+; CASE: initialization payload for 64 slots
+; BASE: initialization payload for 63 slots
+; RUN: metrics
+; CHECK-JSON: metrics.snapshots 7
+; CHECK-JSON: metrics.peakOperandDepth 0
+; CHECK-JSON: metrics.peakRetainedValueFacts 768
+; CHECK-JSON: metrics.peakRetainedInitializationPayloadBytes 112
+@@ -4 +4 @@
+-repeat 63
++repeat 64
+@@ -8 +8 @@
+-repeat 63
++repeat 64
+
+; CASE: initialization payload for 65 slots
+; BASE: initialization payload for 63 slots
+; RUN: metrics
+; CHECK-JSON: metrics.snapshots 7
+; CHECK-JSON: metrics.peakOperandDepth 0
+; CHECK-JSON: metrics.peakRetainedValueFacts 780
+; CHECK-JSON: metrics.peakRetainedInitializationPayloadBytes 224
+@@ -3,2 +3,2 @@
+-  frame 64
+-repeat 63
++  frame 80
++repeat 65
+@@ -8 +8 @@
+-repeat 63
++repeat 65
+
+; CASE: initialization payload for 65536 slots
+; BASE: initialization payload for 63 slots
+; RUN: metrics
+; CHECK-JSON: metrics.snapshots 7
+; CHECK-JSON: metrics.peakOperandDepth 0
+; CHECK-JSON: metrics.peakRetainedValueFacts 786432
+; CHECK-JSON: metrics.peakRetainedInitializationPayloadBytes 114688
+@@ -3,2 +3,2 @@
+-  frame 64
+-repeat 63
++  frame 65536
++repeat 65536
+@@ -8 +8 @@
+-repeat 63
++repeat 65536

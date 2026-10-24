@@ -1,0 +1,120 @@
+; CASE: new object lifetime clears must and may facts
+; RUN: emit
+layout ByteBox [u8]
+function direct
+  result i64
+  frame 16
+  slot 8 u8
+  object 8 ByteBox false
+    BeginObject 8
+    Constant 1 u8
+    Store 8 u8
+    EndObject 8
+    BeginObject 8
+    Constant 2 u8
+    Store 8 u8
+    EndObject 8
+    Constant
+    Return
+end
+
+; CASE: new object lifetime cannot read old initialized leaf
+; BASE: new object lifetime clears must and may facts
+; RUN: verify
+; EXPECT-ERROR: load before initialization
+@@ -12,2 +12 @@
+-    Constant 2 u8
+-    Store 8 u8
++    Load 8 u8
+
+; CASE: initialization-only backedge revisits immutable write
+; RUN: verify
+; EXPECT-ERROR: write to initialized const object field
+layout ByteBox [u8]
+function direct
+  result i64
+  frame 16
+  slot 8 u8
+  object 8 ByteBox false
+    BeginObject 8
+    Label 1
+    Constant 1 u8
+    Store 8 u8
+    Constant 1 bool
+    BranchFalse 2
+    Jump 1
+    Label 2
+    EndObject 8
+    Constant
+    Return
+end
+
+; CASE: zero scalar domain still needs logical object completion
+; RUN: verify
+; EXPECT-ERROR: empty object not completely initialized
+layout Empty []
+function direct
+  result (class Empty)
+  frame 16
+  object 8 Empty false
+    BeginObject 8
+    Constant 1 bool
+    BranchFalse 1
+    InitializeEmptyObject 8
+    Label 1
+    ReturnObject 8
+end
+
+; CASE: zero scalar domain explicitly completes empty object
+; BASE: zero scalar domain still needs logical object completion
+; RUN: emit
+@@ -7,2 +6,0 @@
+-    Constant 1 bool
+-    BranchFalse 1
+@@ -10 +7,0 @@
+-    Label 1
+
+; CASE: new array lifetime cannot read old initialized element
+; RUN: verify
+; EXPECT-ERROR: load before initialization
+function direct
+  result i64
+  frame 16
+  slot 8 u8
+  array 8 1
+    BeginArray 8
+    Constant 1 u8
+    Store 8 u8
+    EndArray 8
+    BeginArray 8
+    Load 8 u8
+    EndArray 8
+    Constant
+    Return
+end
+
+; CASE: first missing element precedes later inactive object
+; RUN: verify
+; EXPECT-ERROR: array element not initialized
+layout WordBox [i64]
+function direct
+  result i64
+  frame 16
+  slot 8 i64
+  slot 16 i64
+  object 8 WordBox true
+  object 16 WordBox true
+    BeginObject 16
+    Constant
+    BoundsGuard 16 2
+    EndObject 16
+    Return
+end
+
+; CASE: inactive missing element reports its lifetime first
+; BASE: first missing element precedes later inactive object
+; RUN: verify
+; EXPECT-ERROR: object field access outside active lifetime
+@@ -9,0 +10,2 @@
++    Constant 1
++    Store 16

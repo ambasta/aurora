@@ -1,0 +1,663 @@
+; CASE: borrowed call cannot target ordinary method
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires borrowed formal target
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+function borrow_entry
+  result i64
+  params [region (class Buffer)]
+  frame 256
+  slot 16 i64
+  slot 56 i64
+  slot 96 i64
+  slot 104 i64
+  object 48 Buffer true
+  object 88 Buffer true
+  object 96 Word false
+  object 104 Word false
+  span 160
+  span 216
+  region 8
+  bytes 248 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 48 Buffer
+    AcquireObjectLoan 1 48 true
+    BorrowedCall write_buffer [(48 1 -1)]
+    ReleaseObjectLoan 1
+    EndObject 48
+    Return
+end
+function borrow_buffer
+  result i64
+  params [(class Buffer)]
+  frame 0
+  roots 1
+  firstmut 1
+    MethodCall write_buffer
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: regular method call cannot bypass acquisition
+; BASE: borrowed call cannot target ordinary method
+; RUN: verify
+; EXPECT-ERROR: method call cannot target borrowed free function
+@@ -29 +29 @@
+-    BorrowedCall write_buffer [(48 1 -1)]
++    MethodCall borrow_buffer 48
+
+; CASE: plain call cannot bypass hidden formal
+; BASE: borrowed call cannot target ordinary method
+; RUN: verify
+; EXPECT-ERROR: plain call cannot target receiver
+@@ -29 +29 @@
+-    BorrowedCall write_buffer [(48 1 -1)]
++    Call borrow_buffer
+
+; CASE: aggregate call cannot bypass hidden formal
+; BASE: borrowed call cannot target ordinary method
+; RUN: verify
+; EXPECT-ERROR: aggregate call cannot target receiver
+@@ -29 +29 @@
+-    BorrowedCall write_buffer [(48 1 -1)]
++    AggregateCall borrow_buffer
+
+; CASE: resource call cannot bypass hidden formal
+; BASE: borrowed call cannot target ordinary method
+; RUN: verify
+; EXPECT-ERROR: resource call requires ordinary resource signature or owning constructor
+@@ -29 +29 @@
+-    BorrowedCall write_buffer [(48 1 -1)]
++    ResourceCall borrow_buffer 8
+
+; CASE: source-free call cannot invoke private owning constructor
+; RUN: verify
+; EXPECT-ERROR: private constructor requires lexical class authority
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+function borrow_entry
+  result i64
+  params [region]
+  frame 256
+  slot 16 i64
+  slot 56 i64
+  slot 96 i64
+  slot 104 i64
+  object 48 Buffer true
+  object 88 Buffer true
+  object 96 Word false
+  object 104 Word false
+  span 160
+  span 216
+  region 8
+  bytes 248 true
+    BindRegionParameter 0 8
+    BeginBytes 248
+    Constant 1
+    AllocateBytes 8 248
+    BeginObject 48
+    ResourceCall construct_buffer 8 [0 248] 0 48
+    EndBytes 248
+    AcquireObjectLoan 1 48 true
+    BorrowedCall borrow_buffer [(48 1 -1)]
+    ReleaseObjectLoan 1
+    EndObject 48
+    Return
+end
+function borrow_buffer
+  result i64
+  params [(class Buffer)]
+  frame 0
+  roots 1
+  firstmut 1
+    MethodCall write_buffer
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+function construct_buffer
+  result i64
+  params [region bytes]
+  frame 48
+  receiver Buffer true true false
+  region 8
+  bytes 40 true
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    InitializeBytesField 0 0 40
+    Constant 41
+    ReceiverStore 1
+    EndBytes 40
+    Constant
+    Return
+end
+
+; CASE: borrowed formal can use verified public readonly view
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+function borrow_entry
+  result i64
+  params [region (class Buffer)]
+  frame 256
+  slot 16 i64
+  slot 56 i64
+  slot 96 i64
+  slot 104 i64
+  object 48 Buffer true
+  object 88 Buffer true
+  object 96 Word false
+  object 104 Word false
+  span 160
+  span 216
+  region 8
+  bytes 248 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 48 Buffer
+    AcquireObjectLoan 1 48
+    BorrowedCall borrow_buffer [(48 1 -1)]
+    ReleaseObjectLoan 1
+    EndObject 48
+    Return
+end
+function borrow_buffer
+  result i64
+  params [(class Buffer)]
+  frame 64
+  roots 1
+  span 56
+    MethodCall view_buffer 0 [] 56
+    SpanLength 56
+    EndSpan 56
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+function view_buffer
+  result span
+  frame 64
+  receiver Buffer false false
+  spanfield 0
+  span 56
+    BorrowOwnedSpan 0 0 56
+    ReturnSpan 56
+end
+
+; CASE: live public view blocks forwarding mutable formal
+; BASE: borrowed formal can use verified public readonly view
+; RUN: verify
+; EXPECT-ERROR: owned byte or root mutation with live readonly span
+@@ -28 +28 @@
+-    AcquireObjectLoan 1 48
++    AcquireObjectLoan 1 48 true
+@@ -38,0 +39 @@
++  firstmut 1
+@@ -41 +42,3 @@
+-    SpanLength 56
++    AcquireObjectLoan 2 0 true
++    BorrowedCall borrow_leaf [(0 2 -1)]
++    ReleaseObjectLoan 2
+@@ -60,0 +64,9 @@
++function borrow_leaf
++  result i64
++  params [(class Buffer)]
++  frame 0
++  roots 1
++  firstmut 1
++    MethodCall write_buffer
++    Return
++end
+
+; CASE: borrowed free body cannot call private method
+; BASE: borrowed call cannot target ordinary method
+; RUN: verify
+; EXPECT-ERROR: private method requires lexical class authority
+@@ -29 +29 @@
+-    BorrowedCall write_buffer [(48 1 -1)]
++    BorrowedCall borrow_buffer [(48 1 -1)]
+@@ -53 +53 @@
+-  receiver Buffer true false
++  receiver Buffer true false false
+
+; CASE: public lexical wrapper may call private implementation
+; BASE: borrowed call cannot target ordinary method
+; RUN: emit
+@@ -29 +29 @@
+-    BorrowedCall write_buffer [(48 1 -1)]
++    BorrowedCall borrow_buffer [(48 1 -1)]
+@@ -53,0 +54,7 @@
++    MethodCall private_write
++    Return
++end
++function private_write
++  result i64
++  frame 0
++  receiver Buffer true false false
+
+; CASE: free caller cannot use private local-root method
+; BASE: borrowed call cannot target ordinary method
+; RUN: verify
+; EXPECT-ERROR: private method requires lexical class authority
+@@ -27,0 +28 @@
++    MethodCall read_buffer 48
+@@ -29 +30 @@
+-    BorrowedCall write_buffer [(48 1 -1)]
++    BorrowedCall borrow_buffer [(48 1 -1)]
+@@ -46 +47 @@
+-  receiver Buffer false false
++  receiver Buffer false false false
+
+; CASE: borrowed free formal denies direct scalar load
+; BASE: borrowed call cannot target ordinary method
+; RUN: verify
+; EXPECT-ERROR: borrowed free formal grants no direct receiver field authority
+@@ -29 +29 @@
+-    BorrowedCall write_buffer [(48 1 -1)]
++    BorrowedCall borrow_buffer [(48 1 -1)]
+@@ -37 +37 @@
+-  frame 0
++  frame 64
+@@ -40 +40,2 @@
+-    MethodCall write_buffer
++  span 56
++    ReceiverLoad 1
+
+; CASE: borrowed free formal denies direct scalar store
+; BASE: borrowed call cannot target ordinary method
+; RUN: verify
+; EXPECT-ERROR: borrowed free formal grants no direct receiver field authority
+@@ -29 +29 @@
+-    BorrowedCall write_buffer [(48 1 -1)]
++    BorrowedCall borrow_buffer [(48 1 -1)]
+@@ -37 +37 @@
+-  frame 0
++  frame 64
+@@ -40 +40,3 @@
+-    MethodCall write_buffer
++  span 56
++    Constant 1
++    ReceiverStore 1
+
+; CASE: borrowed free formal denies direct resource length
+; BASE: borrowed call cannot target ordinary method
+; RUN: verify
+; EXPECT-ERROR: borrowed free formal grants no direct receiver field authority
+@@ -29 +29 @@
+-    BorrowedCall write_buffer [(48 1 -1)]
++    BorrowedCall borrow_buffer [(48 1 -1)]
+@@ -37 +37 @@
+-  frame 0
++  frame 64
+@@ -40 +40,2 @@
+-    MethodCall write_buffer
++  span 56
++    BytesLength 0 0
+
+; CASE: borrowed free formal denies direct resource status
+; BASE: borrowed call cannot target ordinary method
+; RUN: verify
+; EXPECT-ERROR: borrowed free formal grants no direct receiver field authority
+@@ -29 +29 @@
+-    BorrowedCall write_buffer [(48 1 -1)]
++    BorrowedCall borrow_buffer [(48 1 -1)]
+@@ -37 +37 @@
+-  frame 0
++  frame 64
+@@ -40 +40,3 @@
+-    MethodCall write_buffer
++  span 56
++    BytesOk 0 0
++    Constant
+
+; CASE: borrowed free formal denies direct resource read
+; BASE: borrowed call cannot target ordinary method
+; RUN: verify
+; EXPECT-ERROR: borrowed free formal grants no direct receiver field authority
+@@ -29 +29 @@
+-    BorrowedCall write_buffer [(48 1 -1)]
++    BorrowedCall borrow_buffer [(48 1 -1)]
+@@ -37 +37 @@
+-  frame 0
++  frame 64
+@@ -40 +40,4 @@
+-    MethodCall write_buffer
++  span 56
++    Constant
++    BytesLoad 0 0
++    Constant
+
+; CASE: borrowed free formal denies direct resource write
+; BASE: borrowed call cannot target ordinary method
+; RUN: verify
+; EXPECT-ERROR: borrowed free formal grants no direct receiver field authority
+@@ -29 +29 @@
+-    BorrowedCall write_buffer [(48 1 -1)]
++    BorrowedCall borrow_buffer [(48 1 -1)]
+@@ -37 +37 @@
+-  frame 0
++  frame 64
+@@ -40 +40,6 @@
+-    MethodCall write_buffer
++  span 56
++    Constant
++    Push
++    Constant 7 u8
++    BytesStore 0 0
++    Constant
+
+; CASE: borrowed free formal denies direct resource resize
+; BASE: borrowed call cannot target ordinary method
+; RUN: verify
+; EXPECT-ERROR: borrowed free formal grants no direct receiver field authority
+@@ -29 +29 @@
+-    BorrowedCall write_buffer [(48 1 -1)]
++    BorrowedCall borrow_buffer [(48 1 -1)]
+@@ -37 +37 @@
+-  frame 0
++  frame 64
+@@ -40 +40,4 @@
+-    MethodCall write_buffer
++  span 56
++    Constant 65
++    BytesResize 0 0
++    Constant
+
+; CASE: borrowed free formal denies direct raw view
+; BASE: borrowed call cannot target ordinary method
+; RUN: verify
+; EXPECT-ERROR: borrowed free formal grants no direct receiver field authority
+@@ -29 +29 @@
+-    BorrowedCall write_buffer [(48 1 -1)]
++    BorrowedCall borrow_buffer [(48 1 -1)]
+@@ -37 +37 @@
+-  frame 0
++  frame 64
+@@ -40 +40,4 @@
+-    MethodCall write_buffer
++  span 56
++    BorrowOwnedSpan 0 0 56
++    SpanLength 56
++    EndSpan 56
+
+; CASE: borrowed free formal denies direct nested projection
+; BASE: borrowed call cannot target ordinary method
+; RUN: verify
+; EXPECT-ERROR: borrowed free formal grants no direct receiver field authority
+@@ -29 +29 @@
+-    BorrowedCall write_buffer [(48 1 -1)]
++    BorrowedCall borrow_buffer [(48 1 -1)]
+@@ -37 +37 @@
+-  frame 0
++  frame 64
+@@ -40 +40,3 @@
+-    MethodCall write_buffer
++  span 56
++    ObjectFieldCopy 0 1 8
++    Constant
+
+; CASE: borrowed free formal denies direct array access
+; BASE: borrowed call cannot target ordinary method
+; RUN: verify
+; EXPECT-ERROR: borrowed free formal grants no direct receiver field authority
+@@ -29 +29 @@
+-    BorrowedCall write_buffer [(48 1 -1)]
++    BorrowedCall borrow_buffer [(48 1 -1)]
+@@ -37 +37 @@
+-  frame 0
++  frame 64
+@@ -40 +40,3 @@
+-    MethodCall write_buffer
++  span 56
++    Constant
++    ReceiverBoundsGuard 1
+
+; CASE: borrowed free formal denies direct array write
+; BASE: borrowed call cannot target ordinary method
+; RUN: verify
+; EXPECT-ERROR: borrowed free formal grants no direct receiver field authority
+@@ -29 +29 @@
+-    BorrowedCall write_buffer [(48 1 -1)]
++    BorrowedCall borrow_buffer [(48 1 -1)]
+@@ -37 +37 @@
+-  frame 0
++  frame 64
+@@ -40 +40,3 @@
+-    MethodCall write_buffer
++  span 56
++    Constant 7
++    ReceiverIndexStore 1
+
+; CASE: borrowed free formal denies direct copied child assignment
+; BASE: borrowed call cannot target ordinary method
+; RUN: verify
+; EXPECT-ERROR: borrowed free formal grants no direct receiver field authority
+@@ -29 +29 @@
+-    BorrowedCall write_buffer [(48 1 -1)]
++    BorrowedCall borrow_buffer [(48 1 -1)]
+@@ -37 +37 @@
+-  frame 0
++  frame 64
+@@ -40 +40,3 @@
+-    MethodCall write_buffer
++  span 56
++    AssignObjectField 0 1 8
++    Constant
+
+; CASE: borrowed free formal denies direct copied child initialization
+; BASE: borrowed call cannot target ordinary method
+; RUN: verify
+; EXPECT-ERROR: borrowed free formal grants no direct receiver field authority
+@@ -29 +29 @@
+-    BorrowedCall write_buffer [(48 1 -1)]
++    BorrowedCall borrow_buffer [(48 1 -1)]
+@@ -37 +37 @@
+-  frame 0
++  frame 64
+@@ -40 +40,3 @@
+-    MethodCall write_buffer
++  span 56
++    InitializeObjectField 0 1 8
++    Constant
+
+; CASE: shared free formal cannot call mutable public method
+; BASE: borrowed call cannot target ordinary method
+; RUN: verify
+; EXPECT-ERROR: const receiver cannot forward mutable capability
+@@ -28,2 +28,2 @@
+-    AcquireObjectLoan 1 48 true
+-    BorrowedCall write_buffer [(48 1 -1)]
++    AcquireObjectLoan 1 48
++    BorrowedCall borrow_buffer [(48 1 -1)]
+@@ -39 +38,0 @@
+-  firstmut 1
+
+; CASE: ordinary lexical method cannot mint named-formal loan
+; BASE: borrowed call cannot target ordinary method
+; RUN: verify
+; EXPECT-ERROR: bound root loan requires named borrowed formal
+@@ -29 +29 @@
+-    BorrowedCall write_buffer [(48 1 -1)]
++    BorrowedCall borrow_buffer [(48 1 -1)]
+@@ -53,0 +54 @@
++    AcquireObjectLoan 2 0 true
+
+; CASE: borrowed formal cannot be missing root metadata
+; RUN: verify
+; EXPECT-ERROR: invalid hosted IR metadata transport
+layout Buffer [i64]
+layout Other [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage Word [0] [0] 8 8 8
+function borrow_buffer
+  result i64
+  frame 0
+  roots 1
+  firstmut 1
+    MethodCall write_buffer
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: borrowed formal cannot have constructor metadata
+; BASE: borrowed formal cannot be missing root metadata
+; RUN: verify
+; EXPECT-ERROR: borrowed roots require a free-function signature
+@@ -11,0 +12 @@
++  params [(class Buffer)]
+@@ -12,0 +14 @@
++  receiver Buffer true true
+
+; CASE: borrowed formal cannot name copyable class
+; BASE: borrowed formal cannot be missing root metadata
+; RUN: verify
+; EXPECT-ERROR: borrowed root requires a complete concrete owning class
+@@ -11,0 +12 @@
++  params [(class Word)]
+
+; CASE: borrowed formal cannot return builtin::OwnedBytes
+; BASE: borrowed formal cannot be missing root metadata
+; RUN: verify
+; EXPECT-ERROR: borrowed formal cannot have resource or borrowed result
+@@ -11 +11,2 @@
+-  result i64
++  result bytes
++  params [(class Buffer)]
+
+; CASE: borrowed formal cannot return Buffer
+; BASE: borrowed formal cannot be missing root metadata
+; RUN: verify
+; EXPECT-ERROR: borrowed formal cannot have resource or borrowed result
+@@ -11 +11,2 @@
+-  result i64
++  result (class Buffer)
++  params [(class Buffer)]
+
+; CASE: borrowed formal cannot return builtin::span<const u8>
+; BASE: borrowed formal cannot be missing root metadata
+; RUN: verify
+; EXPECT-ERROR: borrowed formal cannot have resource or borrowed result
+@@ -11 +11,2 @@
+-  result i64
++  result span
++  params [(class Buffer)]
+
+; CASE: borrowed formal cannot take extra builtin::ByteRegion
+; BASE: borrowed formal cannot be missing root metadata
+; RUN: verify
+; EXPECT-ERROR: borrowed formal cannot have resource or borrowed result
+@@ -11,0 +12 @@
++  params [(class Buffer) region]
+
+; CASE: borrowed formal cannot take extra builtin::OwnedBytes
+; BASE: borrowed formal cannot be missing root metadata
+; RUN: verify
+; EXPECT-ERROR: borrowed formal cannot have resource or borrowed result
+@@ -11,0 +12 @@
++  params [(class Buffer) bytes]
+
+; CASE: borrowed formal cannot take extra Buffer
+; BASE: borrowed formal cannot be missing root metadata
+; RUN: verify
+; EXPECT-ERROR: borrowed formal cannot have resource or borrowed result
+@@ -11,0 +12 @@
++  params [(class Buffer) (class Buffer)]
+
+; CASE: hidden formal counts toward six-parameter limit
+; BASE: borrowed formal cannot be missing root metadata
+; RUN: verify
+; EXPECT-ERROR: borrowed roots count toward six parameters
+@@ -11,0 +12 @@
++  params [(class Buffer) i64*6]
+
+; CASE: borrowed formal cannot claim escaping field summary
+; BASE: borrowed formal cannot be missing root metadata
+; RUN: verify
+; EXPECT-ERROR: borrowed formal cannot have resource or borrowed result
+@@ -11,0 +12 @@
++  params [(class Buffer)]
+@@ -14,0 +16 @@
++  spanfield 0

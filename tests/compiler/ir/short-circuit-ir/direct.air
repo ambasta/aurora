@@ -1,0 +1,8627 @@
+; CASE: nested native fixtures and every call shape
+; RUN: emit
+layout ProbeBits [bool bool]
+layout ProbeBox [i64 i64]
+fields ProbeBits [(bool 0 2 true)]
+descriptor 17 1 0
+descriptor 18 0 0
+views [(0 [17 18])]
+function sc_probe_scalar
+  result bool
+  params [bool]
+  frame 16
+  slot 8 bool
+    BindParameter 0 8 bool
+    Load 8 bool
+    Return
+end
+function sc_probe_method
+  result bool
+  params [bool]
+  frame 16
+  receiver ProbeBox true false
+  slot 8 bool
+    BindParameter 0 8 bool
+    Load 8 bool
+    Return
+end
+function sc_probe_aggregate
+  result bool
+  params [(class ProbeBox) bool]
+  frame 32
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  object 16 ProbeBox false
+    BindObjectParameter 0 16 ProbeBox
+    BindParameter 1 24 bool
+    Load 24 bool
+    Return
+end
+function sc_probe_method_value
+  result bool
+  params [(class ProbeBox) bool]
+  frame 32
+  receiver ProbeBox true false
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  object 16 ProbeBox false
+    BindObjectParameter 0 16 ProbeBox
+    BindParameter 1 24 bool
+    Load 24 bool
+    Return
+end
+function sc_probe_aggregate_result
+  result (class ProbeBox)
+  params [(class ProbeBox) bool]
+  frame 32
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  object 16 ProbeBox false
+    BindObjectParameter 0 16 ProbeBox
+    BindParameter 1 24 bool
+    ReturnObject 16
+end
+function sc_probe_method_result
+  result (class ProbeBox)
+  params [(class ProbeBox) bool]
+  frame 32
+  receiver ProbeBox true false
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  object 16 ProbeBox false
+    BindObjectParameter 0 16 ProbeBox
+    BindParameter 1 24 bool
+    ReturnObject 16
+end
+function sc_probe_span
+  result bool
+  params [span bool]
+  frame 128
+  slot 24 bool
+  span 120
+    BindSpanParameter 0 120
+    BindParameter 1 24 bool
+    Load 24 bool
+    EndSpan 120
+    Return
+end
+function sc_scalar_and_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    Call sc_probe_scalar
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_scalar_and_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    Call sc_probe_scalar
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_scalar_and_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    Call sc_probe_scalar
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_scalar_and_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    Call sc_probe_scalar
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_scalar_or_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    Call sc_probe_scalar
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_scalar_or_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    Call sc_probe_scalar
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_scalar_or_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    Call sc_probe_scalar
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_scalar_or_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    Call sc_probe_scalar
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_scalar_nested_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    Call sc_probe_scalar
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    Call sc_probe_scalar
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_scalar_nested_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    Call sc_probe_scalar
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    Call sc_probe_scalar
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_scalar_nested_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    Call sc_probe_scalar
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    Call sc_probe_scalar
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_scalar_nested_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    Call sc_probe_scalar
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    Call sc_probe_scalar
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_aggregate_and_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_aggregate [40 0]
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_aggregate_and_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_aggregate [40 0]
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_aggregate_and_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_aggregate [40 0]
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_aggregate_and_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_aggregate [40 0]
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_aggregate_or_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_aggregate [40 0]
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_aggregate_or_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_aggregate [40 0]
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_aggregate_or_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_aggregate [40 0]
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_aggregate_or_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_aggregate [40 0]
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_aggregate_nested_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_aggregate [40 0]
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    AggregateCall sc_probe_aggregate [40 0]
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_aggregate_nested_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_aggregate [40 0]
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    AggregateCall sc_probe_aggregate [40 0]
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_aggregate_nested_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_aggregate [40 0]
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    AggregateCall sc_probe_aggregate [40 0]
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_aggregate_nested_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_aggregate [40 0]
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    AggregateCall sc_probe_aggregate [40 0]
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_aggregate_result_and_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    BeginObject 112
+    AggregateCall sc_probe_aggregate_result [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_aggregate_result_and_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    BeginObject 112
+    AggregateCall sc_probe_aggregate_result [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_aggregate_result_and_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    BeginObject 112
+    AggregateCall sc_probe_aggregate_result [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_aggregate_result_and_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    BeginObject 112
+    AggregateCall sc_probe_aggregate_result [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_aggregate_result_or_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    BeginObject 112
+    AggregateCall sc_probe_aggregate_result [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_aggregate_result_or_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    BeginObject 112
+    AggregateCall sc_probe_aggregate_result [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_aggregate_result_or_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    BeginObject 112
+    AggregateCall sc_probe_aggregate_result [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_aggregate_result_or_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    BeginObject 112
+    AggregateCall sc_probe_aggregate_result [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_aggregate_result_nested_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    BeginObject 112
+    AggregateCall sc_probe_aggregate_result [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    BeginObject 112
+    AggregateCall sc_probe_aggregate_result [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_aggregate_result_nested_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    BeginObject 112
+    AggregateCall sc_probe_aggregate_result [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    BeginObject 112
+    AggregateCall sc_probe_aggregate_result [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_aggregate_result_nested_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    BeginObject 112
+    AggregateCall sc_probe_aggregate_result [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    BeginObject 112
+    AggregateCall sc_probe_aggregate_result [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_aggregate_result_nested_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    BeginObject 112
+    AggregateCall sc_probe_aggregate_result [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    BeginObject 112
+    AggregateCall sc_probe_aggregate_result [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_and_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    MethodCall sc_probe_method 56
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_and_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    MethodCall sc_probe_method 56
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_and_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    MethodCall sc_probe_method 56
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_and_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    MethodCall sc_probe_method 56
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_or_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    MethodCall sc_probe_method 56
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_or_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    MethodCall sc_probe_method 56
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_or_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    MethodCall sc_probe_method 56
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_or_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    MethodCall sc_probe_method 56
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_nested_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    MethodCall sc_probe_method 56
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    MethodCall sc_probe_method 56
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_nested_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    MethodCall sc_probe_method 56
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    MethodCall sc_probe_method 56
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_nested_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    MethodCall sc_probe_method 56
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    MethodCall sc_probe_method 56
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_nested_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    MethodCall sc_probe_method 56
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    MethodCall sc_probe_method 56
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_value_and_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    MethodCall sc_probe_method_value 56 [40 0]
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_value_and_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    MethodCall sc_probe_method_value 56 [40 0]
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_value_and_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    MethodCall sc_probe_method_value 56 [40 0]
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_value_and_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    MethodCall sc_probe_method_value 56 [40 0]
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_value_or_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    MethodCall sc_probe_method_value 56 [40 0]
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_value_or_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    MethodCall sc_probe_method_value 56 [40 0]
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_value_or_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    MethodCall sc_probe_method_value 56 [40 0]
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_value_or_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    MethodCall sc_probe_method_value 56 [40 0]
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_value_nested_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    MethodCall sc_probe_method_value 56 [40 0]
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    MethodCall sc_probe_method_value 56 [40 0]
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_value_nested_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    MethodCall sc_probe_method_value 56 [40 0]
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    MethodCall sc_probe_method_value 56 [40 0]
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_value_nested_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    MethodCall sc_probe_method_value 56 [40 0]
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    MethodCall sc_probe_method_value 56 [40 0]
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_value_nested_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    MethodCall sc_probe_method_value 56 [40 0]
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    MethodCall sc_probe_method_value 56 [40 0]
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_result_and_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    BeginObject 112
+    MethodCall sc_probe_method_result 56 [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_result_and_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    BeginObject 112
+    MethodCall sc_probe_method_result 56 [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_result_and_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    BeginObject 112
+    MethodCall sc_probe_method_result 56 [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_result_and_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    BeginObject 112
+    MethodCall sc_probe_method_result 56 [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_result_or_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    BeginObject 112
+    MethodCall sc_probe_method_result 56 [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_result_or_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    BeginObject 112
+    MethodCall sc_probe_method_result 56 [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_result_or_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    BeginObject 112
+    MethodCall sc_probe_method_result 56 [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_result_or_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    BeginObject 112
+    MethodCall sc_probe_method_result 56 [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_result_nested_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    BeginObject 112
+    MethodCall sc_probe_method_result 56 [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    BeginObject 112
+    MethodCall sc_probe_method_result 56 [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_result_nested_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    BeginObject 112
+    MethodCall sc_probe_method_result 56 [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    BeginObject 112
+    MethodCall sc_probe_method_result 56 [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_result_nested_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    BeginObject 112
+    MethodCall sc_probe_method_result 56 [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    BeginObject 112
+    MethodCall sc_probe_method_result 56 [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_method_result_nested_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    BeginObject 112
+    MethodCall sc_probe_method_result 56 [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    BeginObject 112
+    MethodCall sc_probe_method_result 56 [40 0] 112
+    Load 112
+    Push
+    Constant
+    Compare NotEqual
+    EndObject 112
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    Push
+    Load 48
+    Push
+    Constant 100
+    BinaryValue CheckedMultiply
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_metadata_and_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    BranchFalse 3
+    Constant 17
+    Jump 4
+    Label 3
+    Constant 18
+    Label 4
+    MetadataQuery
+    Push
+    Constant
+    Compare NotEqual
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_metadata_and_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    BranchFalse 3
+    Constant 17
+    Jump 4
+    Label 3
+    Constant 18
+    Label 4
+    MetadataQuery
+    Push
+    Constant
+    Compare NotEqual
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_metadata_and_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    BranchFalse 3
+    Constant 17
+    Jump 4
+    Label 3
+    Constant 18
+    Label 4
+    MetadataQuery
+    Push
+    Constant
+    Compare NotEqual
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_metadata_and_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    BranchFalse 3
+    Constant 17
+    Jump 4
+    Label 3
+    Constant 18
+    Label 4
+    MetadataQuery
+    Push
+    Constant
+    Compare NotEqual
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_metadata_or_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    BranchFalse 3
+    Constant 17
+    Jump 4
+    Label 3
+    Constant 18
+    Label 4
+    MetadataQuery
+    Push
+    Constant
+    Compare NotEqual
+    Label 2
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_metadata_or_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    BranchFalse 3
+    Constant 17
+    Jump 4
+    Label 3
+    Constant 18
+    Label 4
+    MetadataQuery
+    Push
+    Constant
+    Compare NotEqual
+    Label 2
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_metadata_or_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    BranchFalse 3
+    Constant 17
+    Jump 4
+    Label 3
+    Constant 18
+    Label 4
+    MetadataQuery
+    Push
+    Constant
+    Compare NotEqual
+    Label 2
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_metadata_or_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    BranchFalse 3
+    Constant 17
+    Jump 4
+    Label 3
+    Constant 18
+    Label 4
+    MetadataQuery
+    Push
+    Constant
+    Compare NotEqual
+    Label 2
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_metadata_nested_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    BranchFalse 3
+    Constant 17
+    Jump 4
+    Label 3
+    Constant 18
+    Label 4
+    MetadataQuery
+    Push
+    Constant
+    Compare NotEqual
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 5
+    Constant 1 bool
+    Jump 6
+    Label 5
+    Load 24 bool
+    BranchFalse 7
+    Constant 17
+    Jump 8
+    Label 7
+    Constant 18
+    Label 8
+    MetadataQuery
+    Push
+    Constant
+    Compare NotEqual
+    Label 6
+    BranchFalse 9
+    Constant 1
+    Jump 10
+    Label 9
+    Constant
+    Label 10
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_metadata_nested_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    BranchFalse 3
+    Constant 17
+    Jump 4
+    Label 3
+    Constant 18
+    Label 4
+    MetadataQuery
+    Push
+    Constant
+    Compare NotEqual
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 5
+    Constant 1 bool
+    Jump 6
+    Label 5
+    Load 24 bool
+    BranchFalse 7
+    Constant 17
+    Jump 8
+    Label 7
+    Constant 18
+    Label 8
+    MetadataQuery
+    Push
+    Constant
+    Compare NotEqual
+    Label 6
+    BranchFalse 9
+    Constant 1
+    Jump 10
+    Label 9
+    Constant
+    Label 10
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_metadata_nested_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    BranchFalse 3
+    Constant 17
+    Jump 4
+    Label 3
+    Constant 18
+    Label 4
+    MetadataQuery
+    Push
+    Constant
+    Compare NotEqual
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 5
+    Constant 1 bool
+    Jump 6
+    Label 5
+    Load 24 bool
+    BranchFalse 7
+    Constant 17
+    Jump 8
+    Label 7
+    Constant 18
+    Label 8
+    MetadataQuery
+    Push
+    Constant
+    Compare NotEqual
+    Label 6
+    BranchFalse 9
+    Constant 1
+    Jump 10
+    Label 9
+    Constant
+    Label 10
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_metadata_nested_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    BranchFalse 3
+    Constant 17
+    Jump 4
+    Label 3
+    Constant 18
+    Label 4
+    MetadataQuery
+    Push
+    Constant
+    Compare NotEqual
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 5
+    Constant 1 bool
+    Jump 6
+    Label 5
+    Load 24 bool
+    BranchFalse 7
+    Constant 17
+    Jump 8
+    Label 7
+    Constant 18
+    Label 8
+    MetadataQuery
+    Push
+    Constant
+    Compare NotEqual
+    Label 6
+    BranchFalse 9
+    Constant 1
+    Jump 10
+    Label 9
+    Constant
+    Label 10
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_span_and_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [176 0]
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    EndSpan 176
+    EndArray 64
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_span_and_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [176 0]
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    EndSpan 176
+    EndArray 64
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_span_and_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [176 0]
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    EndSpan 176
+    EndArray 64
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_span_and_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [176 0]
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    EndSpan 176
+    EndArray 64
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_span_or_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [176 0]
+    Label 2
+    EndSpan 176
+    EndArray 64
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_span_or_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [176 0]
+    Label 2
+    EndSpan 176
+    EndArray 64
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_span_or_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [176 0]
+    Label 2
+    EndSpan 176
+    EndArray 64
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_span_or_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [176 0]
+    Label 2
+    EndSpan 176
+    EndArray 64
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_span_nested_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [176 0]
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [176 0]
+    Label 4
+    EndSpan 176
+    EndArray 64
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_span_nested_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [176 0]
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [176 0]
+    Label 4
+    EndSpan 176
+    EndArray 64
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_span_nested_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [176 0]
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [176 0]
+    Label 4
+    EndSpan 176
+    EndArray 64
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_span_nested_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [176 0]
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [176 0]
+    Label 4
+    EndSpan 176
+    EndArray 64
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_subspan_and_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Load 8 bool
+    BranchFalse 1
+    Constant 1
+    Push
+    Constant 1
+    Subspan 176 232
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [232 0]
+    EndSpan 232
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    EndSpan 176
+    EndArray 64
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_subspan_and_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1
+    Push
+    Constant 1
+    Subspan 176 232
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [232 0]
+    EndSpan 232
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    EndSpan 176
+    EndArray 64
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_subspan_and_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1
+    Push
+    Constant 1
+    Subspan 176 232
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [232 0]
+    EndSpan 232
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    EndSpan 176
+    EndArray 64
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_subspan_and_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1
+    Push
+    Constant 1
+    Subspan 176 232
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [232 0]
+    EndSpan 232
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    EndSpan 176
+    EndArray 64
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_subspan_or_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Constant 1
+    Push
+    Constant 1
+    Subspan 176 232
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [232 0]
+    EndSpan 232
+    Label 2
+    EndSpan 176
+    EndArray 64
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_subspan_or_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Constant 1
+    Push
+    Constant 1
+    Subspan 176 232
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [232 0]
+    EndSpan 232
+    Label 2
+    EndSpan 176
+    EndArray 64
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_subspan_or_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Constant 1
+    Push
+    Constant 1
+    Subspan 176 232
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [232 0]
+    EndSpan 232
+    Label 2
+    EndSpan 176
+    EndArray 64
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_subspan_or_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Constant 1
+    Push
+    Constant 1
+    Subspan 176 232
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [232 0]
+    EndSpan 232
+    Label 2
+    EndSpan 176
+    EndArray 64
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_subspan_nested_0
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Load 8 bool
+    BranchFalse 1
+    Constant 1
+    Push
+    Constant 1
+    Subspan 176 232
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [232 0]
+    EndSpan 232
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Constant 1
+    Push
+    Constant 1
+    Subspan 176 232
+    Load 24 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [232 0]
+    EndSpan 232
+    Label 4
+    EndSpan 176
+    EndArray 64
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_subspan_nested_1
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1
+    Push
+    Constant 1
+    Subspan 176 232
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [232 0]
+    EndSpan 232
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Constant 1
+    Push
+    Constant 1
+    Subspan 176 232
+    Load 24 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [232 0]
+    EndSpan 232
+    Label 4
+    EndSpan 176
+    EndArray 64
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_subspan_nested_2
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1
+    Push
+    Constant 1
+    Subspan 176 232
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [232 0]
+    EndSpan 232
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Constant 1
+    Push
+    Constant 1
+    Subspan 176 232
+    Load 24 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [232 0]
+    EndSpan 232
+    Label 4
+    EndSpan 176
+    EndArray 64
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_subspan_nested_3
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 17
+    Store 40
+    Constant 19
+    Store 32
+    BeginObject 56
+    Constant 23
+    Store 56
+    Constant 29
+    Store 48
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1
+    Push
+    Constant 1
+    Subspan 176 232
+    Load 16 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [232 0]
+    EndSpan 232
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Constant 1
+    Push
+    Constant 1
+    Subspan 176 232
+    Load 24 bool
+    Push
+    AggregateCall sc_probe_span [0 0] 0 [232 0]
+    EndSpan 232
+    Label 4
+    EndSpan 176
+    EndArray 64
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndObject 56
+    EndObject 40
+    Return
+end
+function sc_guarded_store
+  result i64
+  params [bool*3]
+  frame 48
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    Constant 0 bool
+    Store 40 bool
+    Store 32 bool
+    Constant 1
+    BoundsGuard 40 2 bool
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    Call sc_probe_scalar
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    Call sc_probe_scalar
+    Label 4
+    IndexStore 40 2 bool
+    Load 32 bool
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    Return
+end
+function sc_window_count
+  result i64
+  params [bool*3]
+  frame 240
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+  slot 56 i64
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 104 i64
+  slot 112 i64
+  object 40 ProbeBox false
+  object 56 ProbeBox true
+  object 112 ProbeBox false
+  array 64 3
+  span 176
+  span 232
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginArray 64
+    Constant 11 u8
+    Store 64 u8
+    Constant 22 u8
+    Store 63 u8
+    Constant 33 u8
+    Store 62 u8
+    BorrowSpan 64 176
+    Constant 1
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    Call sc_probe_scalar
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    Call sc_probe_scalar
+    Label 4
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    Subspan 176 232
+    SpanLength 232
+    EndSpan 232
+    EndSpan 176
+    EndArray 64
+    Return
+end
+function sc_receiver_guard_method
+  result i64
+  params [bool*3]
+  frame 48
+  receiver ProbeBits true false
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    Constant 1
+    ReceiverBoundsGuard
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Load 16 bool
+    Push
+    Call sc_probe_scalar
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1 bool
+    Jump 4
+    Label 3
+    Load 24 bool
+    Push
+    Call sc_probe_scalar
+    Label 4
+    ReceiverIndexStore
+    BranchFalse 5
+    Constant 1
+    Jump 6
+    Label 5
+    Constant
+    Label 6
+    Return
+end
+function sc_receiver_guarded_store
+  result i64
+  params [bool*3]
+  frame 48
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  object 40 ProbeBits true
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    BeginObject 40
+    Constant 0 bool
+    Store 40 bool
+    Store 32 bool
+    Load 8 bool
+    Push
+    Load 16 bool
+    Push
+    Load 24 bool
+    Push
+    MethodCall sc_receiver_guard_method 40
+    Load 32 bool
+    BranchFalse 1
+    Constant 1
+    Jump 2
+    Label 1
+    Constant
+    Label 2
+    EndObject 40
+    Return
+end
+function sc_trap_bounds_and_1
+  result i64
+  params [bool*3]
+  frame 48
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 40 i64
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    Constant 7
+    Store 40
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1
+    BoundsGuard 40 1
+    IndexLoad 40 1
+    Push
+    Constant
+    Compare NotEqual
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    Return
+end
+function sc_trap_bounds_and_2
+  result i64
+  params [bool*3]
+  frame 48
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 40 i64
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    Constant 7
+    Store 40
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1
+    BoundsGuard 40 1
+    IndexLoad 40 1
+    Push
+    Constant
+    Compare NotEqual
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    Return
+end
+function sc_trap_bounds_or_1
+  result i64
+  params [bool*3]
+  frame 48
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 40 i64
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    Constant 7
+    Store 40
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Constant 1
+    BoundsGuard 40 1
+    IndexLoad 40 1
+    Push
+    Constant
+    Compare NotEqual
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    Return
+end
+function sc_trap_bounds_or_2
+  result i64
+  params [bool*3]
+  frame 48
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 40 i64
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    Constant 7
+    Store 40
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Constant 1
+    BoundsGuard 40 1
+    IndexLoad 40 1
+    Push
+    Constant
+    Compare NotEqual
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    Return
+end
+function sc_trap_overflow_and_1
+  result i64
+  params [bool*3]
+  frame 48
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 40 i64
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    Constant 7
+    Store 40
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 9223372036854775807
+    Push
+    Constant 1
+    BinaryValue
+    Push
+    Constant
+    Compare NotEqual
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    Return
+end
+function sc_trap_overflow_and_2
+  result i64
+  params [bool*3]
+  frame 48
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 40 i64
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    Constant 7
+    Store 40
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 9223372036854775807
+    Push
+    Constant 1
+    BinaryValue
+    Push
+    Constant
+    Compare NotEqual
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    Return
+end
+function sc_trap_overflow_or_1
+  result i64
+  params [bool*3]
+  frame 48
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 40 i64
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    Constant 7
+    Store 40
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Constant 9223372036854775807
+    Push
+    Constant 1
+    BinaryValue
+    Push
+    Constant
+    Compare NotEqual
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    Return
+end
+function sc_trap_overflow_or_2
+  result i64
+  params [bool*3]
+  frame 48
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 40 i64
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    Constant 7
+    Store 40
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Constant 9223372036854775807
+    Push
+    Constant 1
+    BinaryValue
+    Push
+    Constant
+    Compare NotEqual
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    Return
+end
+function sc_trap_zero_and_1
+  result i64
+  params [bool*3]
+  frame 48
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 40 i64
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    Constant 7
+    Store 40
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 42
+    Push
+    Constant
+    BinaryValue CheckedDivide
+    Push
+    Constant
+    Compare NotEqual
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    Return
+end
+function sc_trap_zero_and_2
+  result i64
+  params [bool*3]
+  frame 48
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 40 i64
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    Constant 7
+    Store 40
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 42
+    Push
+    Constant
+    BinaryValue CheckedDivide
+    Push
+    Constant
+    Compare NotEqual
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    Return
+end
+function sc_trap_zero_or_1
+  result i64
+  params [bool*3]
+  frame 48
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 40 i64
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    Constant 7
+    Store 40
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Constant 42
+    Push
+    Constant
+    BinaryValue CheckedDivide
+    Push
+    Constant
+    Compare NotEqual
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    Return
+end
+function sc_trap_zero_or_2
+  result i64
+  params [bool*3]
+  frame 48
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 40 i64
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    Constant 7
+    Store 40
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Constant 42
+    Push
+    Constant
+    BinaryValue CheckedDivide
+    Push
+    Constant
+    Compare NotEqual
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    Return
+end
+function sc_trap_shift_and_1
+  result i64
+  params [bool*3]
+  frame 48
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 40 i64
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    Constant 7
+    Store 40
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 u64
+    Push
+    Constant 64
+    BinaryValue ShiftLeft u64
+    Convert u64
+    Push
+    Constant
+    Compare NotEqual
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    Return
+end
+function sc_trap_shift_and_2
+  result i64
+  params [bool*3]
+  frame 48
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 40 i64
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    Constant 7
+    Store 40
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 u64
+    Push
+    Constant 64
+    BinaryValue ShiftLeft u64
+    Convert u64
+    Push
+    Constant
+    Compare NotEqual
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    Return
+end
+function sc_trap_shift_or_1
+  result i64
+  params [bool*3]
+  frame 48
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 40 i64
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    Constant 7
+    Store 40
+    Constant 1099511627793
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Constant 1 u64
+    Push
+    Constant 64
+    BinaryValue ShiftLeft u64
+    Convert u64
+    Push
+    Constant
+    Compare NotEqual
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    Return
+end
+function sc_trap_shift_or_2
+  result i64
+  params [bool*3]
+  frame 48
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 40 i64
+    BindParameter 0 8 bool
+    BindParameter 1 16 bool
+    BindParameter 2 24 bool
+    Constant 7
+    Store 40
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Load 8 bool
+    BranchFalse 1
+    Constant 1 bool
+    Jump 2
+    Label 1
+    Constant 1 u64
+    Push
+    Constant 64
+    BinaryValue ShiftLeft u64
+    Convert u64
+    Push
+    Constant
+    Compare NotEqual
+    Label 2
+    BranchFalse 3
+    Constant 1
+    Jump 4
+    Label 3
+    Constant
+    Label 4
+    BinaryValue
+    BinaryValue
+    Return
+end
+
+; CASE: preserved local bounds evidence
+; RUN: emit
+function direct
+  result bool
+  frame 32
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 bool
+    Constant 0 bool
+    Store 8 bool
+    Store 16 bool
+    Store 24 bool
+    Store 32 bool
+    Constant
+    BoundsGuard 16 2 bool
+    Push
+    Constant 1 bool
+    BranchFalse 1
+    Constant 0 bool
+    Jump 2
+    Label 1
+    Constant 1 bool
+    Label 2
+    IndexStore 16 2 bool
+    Return
+end
+
+; CASE: preserved receiver bounds evidence
+; RUN: emit
+layout Bits [bool*4]
+fields Bits [(bool 0 2 true) (bool 2 2 true)]
+function direct
+  result bool
+  frame 32
+  receiver Bits true false
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 bool
+    Constant 0 bool
+    Store 8 bool
+    Store 16 bool
+    Store 24 bool
+    Store 32 bool
+    Constant
+    ReceiverBoundsGuard
+    Push
+    Constant 1 bool
+    BranchFalse 1
+    Constant 0 bool
+    Jump 2
+    Label 1
+    Constant 1 bool
+    Label 2
+    ReceiverIndexStore
+    Return
+end
+
+; CASE: nonempty stack through closed loop
+; RUN: emit
+function direct
+  result i64
+  frame 0
+    Constant 99
+    Push
+    Label 1
+    Constant 0 bool
+    BranchFalse 2
+    Jump 1
+    Label 2
+    Pop
+    Return
+end
+
+; CASE: unreachable structural artifacts filtered
+; RUN: emit
+function direct
+  result i64
+  frame 0
+    Constant 1
+    Push
+    Jump 2
+    Label 1
+    Jump 2
+    Label 2
+    Pop
+    Return
+end
+
+; CASE: sparse maximum label identity
+; RUN: emit
+function direct
+  result i64
+  frame 0
+    Jump 2147483647
+    Label 2147483647
+    Constant 1
+    Return
+end
+
+; CASE: nonmonotone sparse labels resolve after sorting
+; RUN: emit
+function direct
+  result i64
+  frame 0
+    Jump 500000
+    Label 2147483647
+    Jump
+    Label 500000
+    Jump 17
+    Label
+    Constant 1
+    Return
+    Label 17
+    Jump 2147483647
+end
+
+; CASE: nonadjacent duplicate label after sorting
+; BASE: sparse maximum label identity
+; RUN: verify
+; EXPECT-ERROR: duplicate or invalid label
+@@ -4 +4,4 @@
+-    Jump 2147483647
++    Label 2147483647
++    Label
++    Label 500000
++    Label 17
+
+; CASE: return-free label jump cycle
+; BASE: sparse maximum label identity
+; RUN: emit
+@@ -3,0 +4 @@
++    Label 2147483647
+@@ -5,3 +5,0 @@
+-    Label 2147483647
+-    Constant 1
+-    Return
+
+; CASE: unreachable final label has no fallthrough
+; BASE: sparse maximum label identity
+; RUN: emit
+@@ -4,2 +3,0 @@
+-    Jump 2147483647
+-    Label 2147483647
+@@ -7,0 +6 @@
++    Label 2147483647
+
+; CASE: stable IDs and backward target remapping
+; BASE: sparse maximum label identity
+; RUN: metadata
+; CHECK: body direct 0
+; CHECK-NEXT: code direct 0 id 1 target 1 
+; CHECK-NOT: falls
+; CHECK-NEXT: code direct 1 id 4 
+; CHECK-SAME: falls entry
+; CHECK-NEXT: code direct 2 id 5 target 1 
+; CHECK-NOT: falls
+; CHECK-NOT: code direct 3 
+@@ -4,0 +5,2 @@
++    Label 7
++    Jump 2147483647
+@@ -6,2 +8 @@
+-    Constant 1
+-    Return
++    Jump 2147483647
+
+; CASE: branch target equals fallthrough
+; BASE: sparse maximum label identity
+; RUN: metadata
+; CHECK: body direct 0
+; CHECK: code direct 1 id 
+; CHECK-SAME: target 2 falls
+; CHECK: code direct 2 id 
+; CHECK-SAME: entry
+; CHECK: code direct 4 id 
+; CHECK-NOT: target
+; CHECK-NOT: falls
+; CHECK: : Return
+@@ -4 +4,2 @@
+-    Jump 2147483647
++    Constant 0 bool
++    BranchFalse 2147483647
+
+; CASE: label IDs are body-local
+; RUN: emit
+function direct
+  result i64
+  frame 0
+    Jump 2147483647
+    Label 2147483647
+    Constant 1
+    Return
+end
+function second_body
+  result i64
+  frame 0
+    Jump 2147483647
+    Label 2147483647
+    Constant 1
+    Return
+end
+
+; CASE: target cannot resolve in another body
+; BASE: label IDs are body-local
+; RUN: verify
+; EXPECT-ERROR: unknown jump target
+@@ -5,3 +4,0 @@
+-    Label 2147483647
+-    Constant 1
+-    Return
+
+; CASE: final conditional still has a fallthrough edge
+; BASE: sparse maximum label identity
+; RUN: verify
+; EXPECT-ERROR: reachable fallthrough without return
+@@ -4 +3,0 @@
+-    Jump 2147483647
+@@ -6,2 +5,2 @@
+-    Constant 1
+-    Return
++    Constant 0 bool
++    BranchFalse 2147483647
+
+; CASE: empty body precedes native state
+; BASE: sparse maximum label identity
+; RUN: verify
+; EXPECT-ERROR: empty function body
+@@ -4,4 +3,0 @@
+-    Jump 2147483647
+-    Label 2147483647
+-    Constant 1
+-    Return
+
+; CASE: negative label identity
+; BASE: sparse maximum label identity
+; RUN: verify
+; EXPECT-ERROR: duplicate or invalid label
+@@ -4,2 +4 @@
+-    Jump 2147483647
+-    Label 2147483647
++    Label -1
+
+; CASE: reachable return precedes omitted semantic instruction: missing or mistyped current value
+; BASE: sparse maximum label identity
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: missing or mistyped current value
+; EXPECT-CODE: AU0000
+@@ -4,3 +3,0 @@
+-    Jump 2147483647
+-    Label 2147483647
+-    Constant 1
+@@ -7,0 +5 @@
++    Push
+
+; CASE: reachable return precedes omitted semantic instruction: object return requires class result; owning classes require an explicit move return
+; BASE: sparse maximum label identity
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: object return requires class result; owning classes require an explicit move return
+; EXPECT-CODE: AU0000
+@@ -4,4 +4,2 @@
+-    Jump 2147483647
+-    Label 2147483647
+-    Constant 1
+-    Return
++    ReturnObject 8
++    Push
+
+; CASE: reachable return precedes omitted semantic instruction: span return requires const owning receiver field summary
+; BASE: sparse maximum label identity
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: span return requires const owning receiver field summary
+; EXPECT-CODE: AU0000
+@@ -4,4 +4,2 @@
+-    Jump 2147483647
+-    Label 2147483647
+-    Constant 1
+-    Return
++    ReturnSpan 56
++    Push
+
+; CASE: reachable return precedes omitted semantic instruction: owner return nominal type mismatch
+; BASE: sparse maximum label identity
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: owner return nominal type mismatch
+; EXPECT-CODE: AU0000
+@@ -4,4 +4,2 @@
+-    Jump 2147483647
+-    Label 2147483647
+-    Constant 1
+-    Return
++    ReturnBytes 40
++    Push
+
+; CASE: reachable return precedes omitted semantic instruction: owning object return requires ordinary owning class result
+; BASE: sparse maximum label identity
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: owning object return requires ordinary owning class result
+; EXPECT-CODE: AU0000
+@@ -4,4 +4,2 @@
+-    Jump 2147483647
+-    Label 2147483647
+-    Constant 1
+-    Return
++    ReturnOwnedObject 40
++    Push
+
+; CASE: later body structure precedes earlier native value state
+; RUN: verify
+; EXPECT-ERROR: unknown branch target
+function direct
+  result i64
+  frame 0
+    Pop
+    Return
+end
+function second_body
+  result i64
+  frame 0
+    Constant 0 bool
+    BranchFalse 99
+    Constant 1
+    Return
+end
+
+; CASE: different stack lengths
+; RUN: verify
+; EXPECT-ERROR: incompatible value/guard stacks
+function direct
+  result i64
+  frame 0
+    Constant 7
+    Push
+    Constant 1 bool
+    BranchFalse 1
+    Pop
+    Label 1
+    Pop
+    Return
+end
+
+; CASE: different stack types
+; BASE: different stack lengths
+; RUN: verify
+; EXPECT-ERROR: incompatible value/guard stacks
+@@ -8,0 +9,2 @@
++    Constant 1 u64
++    Push
+@@ -10,0 +13 @@
++    Constant
+
+; CASE: ordered stack types cannot be permuted
+; RUN: verify
+; EXPECT-ERROR: incompatible value/guard stacks
+function direct
+  result i64
+  frame 0
+    Constant 1
+    Push
+    Constant 1 bool
+    Push
+    BranchFalse 1
+    Pop
+    Pop
+    Constant 1 bool
+    Push
+    Constant 1
+    Push
+    Label 1
+    Pop
+    Pop
+    Constant
+    Return
+end
+
+; CASE: local guard mismatch 0
+; RUN: verify
+; EXPECT-ERROR: incompatible value/guard stacks
+function direct
+  result bool
+  frame 32
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 bool
+    Constant 0 bool
+    Store 8 bool
+    Store 16 bool
+    Store 24 bool
+    Store 32 bool
+    Constant
+    BoundsGuard 16 2 bool
+    Push
+    Constant 1 bool
+    BranchFalse 1
+    Pop
+    Constant
+    Push
+    Constant 0 bool
+    Jump 2
+    Label 1
+    Constant 1 bool
+    Label 2
+    IndexStore 16 2 bool
+    Return
+end
+
+; CASE: local guard mismatch 1
+; BASE: local guard mismatch 0
+; RUN: verify
+; EXPECT-ERROR: incompatible value/guard stacks
+@@ -19,0 +20 @@
++    BoundsGuard 32 2 bool
+
+; CASE: local guard mismatch 2
+; BASE: local guard mismatch 0
+; RUN: verify
+; EXPECT-ERROR: incompatible value/guard stacks
+@@ -19,0 +20 @@
++    BoundsGuard 16 1 bool
+
+; CASE: receiver guard mismatch 0
+; RUN: verify
+; EXPECT-ERROR: incompatible value/guard stacks
+layout Bits [bool*4]
+fields Bits [(bool 0 2 true) (bool 2 2 true)]
+function direct
+  result bool
+  frame 32
+  receiver Bits true false
+  slot 8 bool
+  slot 16 bool
+  slot 24 bool
+  slot 32 bool
+    Constant 0 bool
+    Store 8 bool
+    Store 16 bool
+    Store 24 bool
+    Store 32 bool
+    Constant
+    ReceiverBoundsGuard
+    Push
+    Constant 1 bool
+    BranchFalse 1
+    Pop
+    Constant
+    ReceiverBoundsGuard 1
+    Push
+    Constant 0 bool
+    Jump 2
+    Label 1
+    Constant 1 bool
+    Label 2
+    ReceiverIndexStore
+    Return
+end
+
+; CASE: receiver guard mismatch 1
+; BASE: receiver guard mismatch 0
+; RUN: verify
+; EXPECT-ERROR: incompatible value/guard stacks
+@@ -23 +23 @@
+-    ReceiverBoundsGuard 1
++    BoundsGuard 16 2 bool
+
+; CASE: conditional store is not definite initialization
+; RUN: verify
+; EXPECT-ERROR: load before initialization
+function direct
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 5
+    Push
+    Constant 1 bool
+    BranchFalse 1
+    Constant 9
+    Store 8
+    Label 1
+    Pop
+    Load 8
+    Return
+end
+
+; CASE: conditional store retains may-initialization
+; BASE: conditional store is not definite initialization
+; RUN: verify
+; EXPECT-ERROR: write to initialized const object field
+@@ -0,0 +1 @@
++layout Box [i64]
+@@ -4,0 +6,2 @@
++  object 8 Box false
++    BeginObject 8
+@@ -12,0 +16 @@
++    Store 8
+
+; CASE: conditional object lifetime end
+; RUN: verify
+; EXPECT-ERROR: incompatible active object
+layout Box [i64]
+function direct
+  result i64
+  frame 192
+  slot 8 u8
+  slot 16 u8
+  slot 24 i64
+  object 24 Box false
+  array 8 1
+  array 16 1
+  span 80
+  span 136
+  span 192
+    BeginObject 24
+    Constant 7
+    Push
+    Constant 1 bool
+    BranchFalse 1
+    EndObject 24
+    Label 1
+    Pop
+    Return
+end
+
+; CASE: conditional array lifetime end
+; RUN: verify
+; EXPECT-ERROR: incompatible active array
+layout Box [i64]
+function direct
+  result i64
+  frame 192
+  slot 8 u8
+  slot 16 u8
+  slot 24 i64
+  object 24 Box false
+  array 8 1
+  array 16 1
+  span 80
+  span 136
+  span 192
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    Constant 7
+    Push
+    Constant 1 bool
+    BranchFalse 1
+    EndArray 8
+    Label 1
+    Pop
+    EndArray 8
+    Return
+end
+
+; CASE: conditional span lifetime end
+; BASE: conditional array lifetime end
+; RUN: verify
+; EXPECT-ERROR: incompatible active span
+@@ -16,0 +17 @@
++    BorrowSpan 8 80
+@@ -21 +22 @@
+-    EndArray 8
++    EndSpan 80
+@@ -23,0 +25 @@
++    EndSpan 80
+
+; CASE: same array storage different lifetime site
+; BASE: conditional array lifetime end
+; RUN: verify
+; EXPECT-ERROR: incompatible active array lifetimes
+@@ -21,0 +22,3 @@
++    BeginArray 8
++    Constant 11 u8
++    Store 8 u8
+
+; CASE: different span creation sites
+; RUN: verify
+; EXPECT-ERROR: incompatible active span capabilities
+layout Box [i64]
+function direct
+  result i64
+  frame 192
+  slot 8 u8
+  slot 16 u8
+  slot 24 i64
+  object 24 Box false
+  array 8 1
+  array 16 1
+  span 80
+  span 136
+  span 192
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    BeginArray 16
+    Constant 22 u8
+    Store 16 u8
+    Constant 7
+    Push
+    Constant 1 bool
+    BranchFalse 1
+    BorrowSpan 8 80
+    Jump 2
+    Label 1
+    BorrowSpan 8 80
+    Label 2
+    Pop
+    EndSpan 80
+    EndArray 16
+    EndArray 8
+    Return
+end
+
+; CASE: different span root origins
+; BASE: different span creation sites
+; RUN: verify
+; EXPECT-ERROR: incompatible active span capabilities
+@@ -27 +27 @@
+-    BorrowSpan 8 80
++    BorrowSpan 16 80
+
+; CASE: conditional stale parent cannot escape
+; BASE: conditional array lifetime end
+; RUN: verify
+; EXPECT-ERROR: live child reborrow
+@@ -16,0 +17,2 @@
++    BorrowSpan 8 80
++    ReborrowSpan 80 136
+@@ -21 +23 @@
+-    EndArray 8
++    EndSpan 80
+@@ -23,0 +26,2 @@
++    EndSpan 136
++    EndSpan 80
+
+; CASE: scalar return with saved operands
+; RUN: verify
+; EXPECT-ERROR: unbalanced stack at return
+function direct
+  result i64
+  frame 0
+    Constant 1
+    Push
+    Constant 1 bool
+    BranchFalse 1
+    Label 1
+    Constant
+    Return
+end
+
+; CASE: object return with saved operands
+; RUN: verify
+; EXPECT-ERROR: unbalanced stack at object return
+layout Box [i64]
+function direct
+  result (class Box)
+  frame 192
+  slot 8 u8
+  slot 16 u8
+  slot 24 i64
+  object 24 Box false
+  array 8 1
+  array 16 1
+  span 80
+  span 136
+  span 192
+    BeginObject 24
+    Constant 1
+    Store 24
+    Push
+    Constant 1 bool
+    BranchFalse 1
+    Label 1
+    ReturnObject 24
+end
+
+; CASE: loop backedge changes stack depth
+; RUN: verify
+; EXPECT-ERROR: incompatible value/guard stacks
+function direct
+  result i64
+  frame 0
+    Constant 1
+    Push
+    Label 1
+    Constant 0 bool
+    BranchFalse 2
+    Pop
+    Jump 1
+    Label 2
+    Pop
+    Return
+end
+
+; CASE: unknown branch target
+; RUN: verify
+; EXPECT-ERROR: unknown branch target
+function direct
+  result i64
+  frame 0
+    Constant 0 bool
+    BranchFalse 99
+    Constant 1
+    Return
+end
+
+; CASE: unknown unreachable jump target
+; BASE: unknown branch target
+; RUN: verify
+; EXPECT-ERROR: unknown jump target
+@@ -4,2 +3,0 @@
+-    Constant 0 bool
+-    BranchFalse 99
+@@ -7,0 +6 @@
++    Jump 99
+
+; CASE: duplicate label
+; BASE: unknown branch target
+; RUN: verify
+; EXPECT-ERROR: duplicate or invalid label
+@@ -4,2 +4,2 @@
+-    Constant 0 bool
+-    BranchFalse 99
++    Label 1
++    Label 1
+
+; CASE: unreachable semantic operation
+; BASE: unknown branch target
+; RUN: verify
+; EXPECT-ERROR: unreachable semantic instruction
+@@ -4,2 +3,0 @@
+-    Constant 0 bool
+-    BranchFalse 99
+@@ -7,0 +6 @@
++    Push
+
+; CASE: unreachable branch is semantic
+; BASE: unknown branch target
+; RUN: verify
+; EXPECT-ERROR: unreachable semantic instruction
+@@ -4,2 +3,0 @@
+-    Constant 0 bool
+-    BranchFalse 99
+@@ -7,0 +6,3 @@
++    Label 1
++    Constant 0 bool
++    BranchFalse 1
+
+; CASE: missing bool at branch
+; BASE: scalar return with saved operands
+; RUN: verify
+; EXPECT-ERROR: missing or mistyped current value
+@@ -6 +5,0 @@
+-    Constant 1 bool
+@@ -9 +8 @@
+-    Constant
++    Pop
+
+; CASE: CFG-valid but nonlinear two-arm push
+; RUN: verify
+; EXPECT-ERROR: operand stack depth differs from linear emission order
+function direct
+  result i64
+  frame 0
+    Constant 1 bool
+    BranchFalse 1
+    Constant 7
+    Push
+    Jump 2
+    Label 1
+    Constant 9
+    Push
+    Label 2
+    Pop
+    Return
+end

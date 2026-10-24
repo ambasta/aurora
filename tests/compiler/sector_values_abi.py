@@ -21,6 +21,9 @@ import shutil
 import subprocess
 import tempfile
 
+# Verified textual IR cases; the aurora-ir-check driver prints their assembly.
+AIR = Path(__file__).resolve().parent / "ir" / "sector-values-ir" / "abi.air"
+
 
 def require(condition, message):
     if not condition:
@@ -495,7 +498,7 @@ def stack_guard_cases(fixture, work):
         platform.system() == "Linux" and platform.machine() == "x86_64" and os.sysconf("SC_PAGE_SIZE") == 4096,
         "stack guards require x86-64 Linux with 4096-byte pages",
     )
-    assembly = run([fixture, "--emit-guard-fixtures"]).decode()
+    assembly = run([fixture, "--output", AIR.parent.parent / "stack-probes" / "abi.air", "guard-fixtures"]).decode()
     require(0 < len(assembly.encode()) < 128 * 1024, "unexpected guard-fixture assembly extent")
     (work / "guard-emitted.s").write_text(assembly)
     (work / "guard-labeled.s").write_text(label_guard_probes(assembly))
@@ -552,7 +555,7 @@ def stack_guard_cases(fixture, work):
 
 
 def sector_abi_cases(fixture, work):
-    assembly = run([fixture, "--emit-abi"]).decode()
+    assembly = run([fixture, "--output", AIR, "abi"]).decode()
     (work / "fixture.s").write_text(assembly)
     measurements = measure_stack(assembly)
     (work / "stack-measurements.json").write_text(json.dumps(measurements, indent=2) + "\n")

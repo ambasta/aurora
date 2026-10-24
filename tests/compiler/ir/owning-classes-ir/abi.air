@@ -1,0 +1,689 @@
+; CASE: construct
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_entry
+  result i64
+  params [region]
+  frame 416
+  slot 16 u8
+  slot 56 u64
+  slot 96 u8
+  slot 104 u8
+  slot 144 u64
+  slot 184 u8
+  slot 192 u8
+  slot 232 u64
+  slot 272 u8
+  object 96 Parcel true
+  object 184 Parcel true
+  object 272 Parcel true
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BeginBytes 304
+    Constant 3
+    AllocateBytes 8 304
+    BeginBytes 336
+    Constant 5
+    AllocateBytes 8 336
+    Constant 197 u8
+    Push
+    Constant 123456789 u64
+    Push
+    Constant 223 u8
+    Push
+    BeginObject 96
+    ResourceCall owning_constructor 8 [0 304 0 336 0 0] 0 96
+    EndBytes 336
+    EndBytes 304
+    BytesLength 96 1
+    Push
+    BytesLength 96 3
+    BinaryValue
+    EndObject 96
+    Return
+end
+function owning_constructor
+  result i64
+  params [region bytes u8 bytes u64 u8]
+  frame 96
+  receiver Parcel true true
+  slot 48 u8
+  slot 88 u64
+  slot 96 u8
+  region 8
+  bytes 40 true
+  bytes 80 true
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BindParameter 2 48 u8
+    BindBytesParameter 3 80
+    BindParameter 4 88 u64
+    BindParameter 5 96 u8
+    Load 48 u8
+    ReceiverStore 0 u8
+    InitializeBytesField 0 1 40
+    Load 88 u64
+    ReceiverStore 2 u64
+    InitializeBytesField 0 3 80
+    Load 96 u8
+    ReceiverStore 4 u8
+    EndBytes 80
+    EndBytes 40
+    Constant
+    Return
+end
+
+; CASE: six
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_entry
+  result (class Parcel)
+  params [region (class Parcel) (class Parcel)]
+  frame 416
+  slot 16 u8
+  slot 56 u64
+  slot 96 u8
+  slot 104 u8
+  slot 144 u64
+  slot 184 u8
+  slot 192 u8
+  slot 232 u64
+  slot 272 u8
+  object 96 Parcel true
+  object 184 Parcel true
+  object 272 Parcel true
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 96 Parcel
+    BindOwnedObjectParameter 2 184 Parcel
+    BeginBytes 304
+    Constant 7
+    AllocateBytes 8 304
+    Constant 201 u8
+    Push
+    Constant 4886718345 u64
+    Push
+    BeginObject 272
+    ResourceCall owning_six 8 [0 96 0 304 0 184] 272
+    EndObject 184
+    EndBytes 304
+    EndObject 96
+    ReturnOwnedObject 272
+end
+function owning_six
+  result (class Parcel)
+  params [region (class Parcel) u8 bytes u64 (class Parcel)]
+  frame 416
+  slot 16 u8
+  slot 56 u64
+  slot 96 u8
+  slot 104 u8
+  slot 144 u64
+  slot 184 u8
+  slot 192 u8
+  slot 232 u64
+  slot 272 u8
+  slot 344 u8
+  slot 352 u64
+  object 96 Parcel true
+  object 184 Parcel true
+  object 272 Parcel true
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 96 Parcel
+    BindParameter 2 344 u8
+    BindBytesParameter 3 304
+    BindParameter 4 352 u64
+    BindOwnedObjectParameter 5 184 Parcel
+    BytesLength 304
+    EndBytes 304
+    EndObject 184
+    ReturnOwnedObject 96
+end
+
+; CASE: method
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_method
+  result bool
+  frame 0
+  receiver Parcel true false
+    Constant
+    Push
+    Constant 42 u8
+    BytesStore 0 1
+    Return
+end
+
+; CASE: copied
+; RUN: emit
+layout Container [u8 u64 u8]
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Container [(bytes 0 0 false) ((class Copy) 0 2 false) (u8 2 1 false)]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Container [{32,8}*3] [0 32 48] 56 8 56
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_entry
+  result u64
+  params [region]
+  frame 416
+  slot 48 u8
+  slot 56 u64
+  slot 64 u8
+  slot 136 u8
+  slot 144 u64
+  slot 152 u8
+  slot 360 u64
+  slot 368 u8
+  slot 376 u64
+  slot 384 u8
+  object 96 Container true
+  object 184 Container true
+  object 368 Copy false
+  object 384 Copy true
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BeginBytes 304
+    Constant 3
+    AllocateBytes 8 304
+    BeginObject 368
+    Constant 17 u8
+    Store 368 u8
+    Constant 99 u64
+    Store 360 u64
+    BeginObject 96
+    ResourceCall copy_constructor 8 [0 304 368] 0 96
+    EndBytes 304
+    Constant 42 u64
+    Push
+    BeginObject 384
+    MethodCall copy_method 96 [368 0] 384
+    Load 376 u64
+    EndObject 384
+    EndObject 368
+    EndObject 96
+    Return
+end
+function copy_constructor
+  result i64
+  params [region bytes (class Copy)]
+  frame 64
+  receiver Container true true
+  slot 48 u64
+  slot 56 u8
+  object 56 Copy false
+  region 8
+  bytes 40 true
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BindObjectParameter 2 56 Copy
+    InitializeBytesField 0 0 40
+    InitializeObjectField 0 1 56
+    Constant 77 u8
+    ReceiverStore 2 u8
+    EndBytes 40
+    Constant
+    Return
+end
+function copy_method
+  result (class Copy)
+  params [(class Copy) u64]
+  frame 48
+  receiver Container true false
+  slot 8 u64
+  slot 16 u8
+  slot 24 u64
+  slot 40 u64
+  slot 48 u8
+  object 16 Copy false
+  object 48 Copy true
+    BindObjectParameter 0 16 Copy
+    BindParameter 1 24 u64
+    AssignObjectField 0 1 16
+    BeginObject 48
+    ObjectFieldCopy 0 1 48
+    Load 24 u64
+    Store 40 u64
+    ReturnObject 48
+end
+function child_method
+  result u64
+  frame 0
+  receiver Copy false false
+    ReceiverLoad 1 u64
+    Return
+end
+
+; CASE: move
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_entry
+  result (class Parcel)
+  params [region (class Parcel)]
+  frame 416
+  slot 16 u8
+  slot 56 u64
+  slot 96 u8
+  slot 104 u8
+  slot 144 u64
+  slot 184 u8
+  slot 192 u8
+  slot 232 u64
+  slot 272 u8
+  object 96 Parcel true
+  object 184 Parcel true
+  object 272 Parcel true
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 96 Parcel
+    BeginObject 184
+    MoveObject 96 184
+    EndObject 96
+    ReturnOwnedObject 184
+end
+
+; CASE: construct-odd
+; BASE: construct
+; RUN: emit
+@@ -36,0 +37,2 @@
++    Constant 34
++    Push
+@@ -57,0 +60 @@
++    BinaryValue
+
+; CASE: construct-even
+; BASE: construct
+; RUN: emit
+@@ -36,0 +37,4 @@
++    Constant 17
++    Push
++    Constant 17
++    Push
+@@ -57,0 +62,2 @@
++    BinaryValue
++    BinaryValue
+
+; CASE: resize-first
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_resize_method
+  result i64
+  frame 0
+  receiver Parcel true false
+    Constant 65
+    BytesResize 0 1
+    BranchFalse 1
+    BytesLength 0 1
+    Jump 2
+    Label 1
+    Constant -1000
+    Label 2
+    Return
+end
+
+; CASE: resize-odd
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_resize_method
+  result i64
+  frame 0
+  receiver Parcel true false
+    Constant 4294967313
+    Push
+    Constant 65
+    BytesResize 0 3
+    BranchFalse 1
+    BytesLength 0 3
+    Jump 2
+    Label 1
+    Constant -1000
+    Label 2
+    BinaryValue
+    Return
+end
+
+; CASE: resize-even
+; BASE: resize-odd
+; RUN: emit
+@@ -21,0 +22,2 @@
++    Constant 4294967314
++    Push
+@@ -30,0 +33 @@
++    BinaryValue
+
+; CASE: resize-failed
+; BASE: resize-first
+; RUN: emit
+@@ -20 +20 @@
+-    Constant 65
++    Constant 2048
+
+; CASE: resize-move
+; BASE: move
+; RUN: emit
+@@ -38,0 +39,2 @@
++    Constant 65
++    BytesResize 96 1
+
+; CASE: copied-resource
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_entry
+  result (class Copy)
+  params [region (class Parcel) (class Parcel)]
+  frame 416
+  slot 16 u8
+  slot 56 u64
+  slot 96 u8
+  slot 104 u8
+  slot 144 u64
+  slot 184 u8
+  slot 192 u8
+  slot 232 u64
+  slot 272 u8
+  slot 360 u64
+  slot 368 u8
+  object 96 Parcel true
+  object 184 Parcel true
+  object 272 Parcel true
+  object 368 Copy false
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 96 Parcel
+    BindOwnedObjectParameter 2 184 Parcel
+    BeginBytes 304
+    Constant 7
+    AllocateBytes 8 304
+    Constant 201 u8
+    Push
+    Constant 4886718345 u64
+    Push
+    BeginObject 368
+    ResourceCall owning_six 8 [0 96 0 304 0 184] 368
+    EndObject 184
+    EndBytes 304
+    EndObject 96
+    ReturnObject 368
+end
+function owning_six
+  result (class Copy)
+  params [region (class Parcel) u8 bytes u64 (class Parcel)]
+  frame 416
+  slot 16 u8
+  slot 56 u64
+  slot 96 u8
+  slot 104 u8
+  slot 144 u64
+  slot 184 u8
+  slot 192 u8
+  slot 232 u64
+  slot 272 u8
+  slot 344 u8
+  slot 352 u64
+  slot 360 u64
+  slot 368 u8
+  object 96 Parcel true
+  object 184 Parcel true
+  object 272 Parcel true
+  object 368 Copy false
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 96 Parcel
+    BindParameter 2 344 u8
+    BindBytesParameter 3 304
+    BindParameter 4 352 u64
+    BindOwnedObjectParameter 5 184 Parcel
+    BeginObject 368
+    Load 344 u8
+    Store 368 u8
+    Load 352 u64
+    Store 360 u64
+    BytesLength 304
+    EndBytes 304
+    EndObject 184
+    EndObject 96
+    ReturnObject 368
+end
+
+; CASE: construct-produced
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_entry
+  result i64
+  params [region]
+  frame 416
+  slot 16 u8
+  slot 56 u64
+  slot 96 u8
+  slot 104 u8
+  slot 144 u64
+  slot 184 u8
+  slot 192 u8
+  slot 232 u64
+  slot 272 u8
+  object 96 Parcel true
+  object 184 Parcel true
+  object 272 Parcel true
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BeginObject 96
+    ResourceCall owning_constructor 8 [0] 0 96
+    BytesLength 96 1
+    Push
+    BytesLength 96 3
+    BinaryValue
+    EndObject 96
+    Return
+end
+function owning_constructor
+  result i64
+  params [region]
+  frame 96
+  receiver Parcel true true
+  region 8
+  bytes 40 true
+  bytes 80 true
+    BindRegionParameter 0 8
+    Constant 197 u8
+    ReceiverStore 0 u8
+    BeginBytes 40
+    Constant 3
+    AllocateBytes 8 40
+    InitializeBytesField 0 1 40
+    Constant 123456789 u64
+    ReceiverStore 2 u64
+    BeginBytes 80
+    Constant 5
+    Push
+    ResourceCall owner_factory 8 [0 0] 80
+    InitializeBytesField 0 3 80
+    Constant 223 u8
+    ReceiverStore 4 u8
+    EndBytes 80
+    EndBytes 40
+    Constant
+    Return
+end
+function owner_factory
+  result bytes
+  params [region i64]
+  frame 48
+  slot 16 i64
+  region 8
+  bytes 48 true
+    BindRegionParameter 0 8
+    BindParameter 1 16
+    BeginBytes 48
+    Load 16
+    AllocateBytes 8 48
+    ReturnBytes 48
+end
+
+; CASE: construct-produced-odd
+; BASE: construct-produced
+; RUN: emit
+@@ -36,0 +37,2 @@
++    Constant 34
++    Push
+@@ -43,0 +46 @@
++    BinaryValue
+
+; CASE: construct-produced-even
+; BASE: construct-produced
+; RUN: emit
+@@ -36,0 +37,4 @@
++    Constant 17
++    Push
++    Constant 17
++    Push
+@@ -43,0 +48,2 @@
++    BinaryValue
++    BinaryValue

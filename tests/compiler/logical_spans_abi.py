@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Independent literal-layout native oracle for readonly logical span boundaries.
 
-The prebuilt C++ fixture constructs verified IR without parsing source. Handwritten
+Textual IR cases supply verified IR without parsing source. Handwritten
 assembly supplies every incoming record and observes every outgoing record. Seven
 literal words, including the entire immutable owner descriptor, are checked; no
 production ABI/layout helper supplies expectations. Runtime stubs intentionally
@@ -21,6 +21,9 @@ import re
 import resource
 import subprocess
 import tempfile
+
+# Verified textual IR cases; the aurora-ir-check driver prints their assembly.
+AIR = Path(__file__).resolve().parent / "ir" / "owned-spans-ir" / "abi.air"
 
 REGION = 0x1122334455667788
 ALLOCATION = 0x2132435465768798
@@ -444,7 +447,7 @@ def main():
         args.artifacts.mkdir(parents=True, exist_ok=False)
     raw = {}
     for graph in ("array", "owner"):
-        raw[graph] = command([args.ir_tests.resolve(), "--emit-" + graph]).stdout.decode()
+        raw[graph] = command([args.ir_tests.resolve(), "--output", AIR, "logical-spans-" + graph]).stdout.decode()
         require("validated typed IR" in raw[graph], "verified backend output required")
         (args.artifacts / (graph + "-generated.s")).write_text(raw[graph])
     require("__au_runtime_bytes_" not in raw["array"], "complete array-only graph has zero owner-runtime references")

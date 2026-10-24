@@ -1,0 +1,166 @@
+; CASE: retained operands: blocks=16
+; RUN: metrics
+; CHECK-JSON: metrics.snapshots 17
+; CHECK-JSON: metrics.peakOperandDepth 64
+; CHECK-JSON: metrics.peakRetainedOperandFacts 1024
+function resource
+  result i64
+  frame 0
+    Constant 1
+repeat 64
+    Push
+endrepeat
+    Label
+repeat 15
+    Label {1,1}
+endrepeat
+repeat 64
+    Pop
+endrepeat
+    Return
+end
+
+; CASE: retained operands: blocks=64
+; BASE: retained operands: blocks=16
+; RUN: metrics
+; CHECK-JSON: metrics.snapshots 65
+; CHECK-JSON: metrics.peakOperandDepth 64
+; CHECK-JSON: metrics.peakRetainedOperandFacts 4096
+@@ -9 +9 @@
+-repeat 15
++repeat 63
+
+; CASE: retained operands: blocks=256
+; BASE: retained operands: blocks=16
+; RUN: metrics
+; CHECK-JSON: metrics.snapshots 257
+; CHECK-JSON: metrics.peakOperandDepth 64
+; CHECK-JSON: metrics.peakRetainedOperandFacts 16384
+@@ -9 +9 @@
+-repeat 15
++repeat 255
+
+; CASE: retained operands: blocks=4096
+; BASE: retained operands: blocks=16
+; RUN: metrics
+; CHECK-JSON: metrics.snapshots 4097
+; CHECK-JSON: metrics.peakOperandDepth 64
+; CHECK-JSON: metrics.peakRetainedOperandFacts 262144
+@@ -9 +9 @@
+-repeat 15
++repeat 4095
+
+; CASE: real verifier operand cap 0
+; RUN: verify
+; EXPECT-ERROR: operand retention limit
+function resource
+  result i64
+  frame 0
+    Constant 1
+repeat 64
+    Push
+endrepeat
+    Label
+repeat 4095
+    Label {1,1}
+endrepeat
+repeat 63
+    Pop
+endrepeat
+    Label 4096
+    Pop
+    Return
+end
+
+; CASE: real verifier operand cap 1
+; BASE: real verifier operand cap 0
+; RUN: metrics
+; CHECK: "outcome":"rejected"
+; CHECK: operand retention limit
+; CHECK-JSON: metrics.snapshots 4097
+; CHECK-JSON: metrics.peakOperandDepth 64
+; CHECK-JSON: metrics.peakRetainedOperandFacts 262144
+; CHECK-JSON: metrics.peakRetainedValueFacts 262144
+; CHECK-JSON: metrics.peakRetainedInitializationPayloadBytes 0
+
+; CASE: exact retained state accounting
+; RUN: metrics
+; CHECK-JSON: metrics.snapshots 65536
+; CHECK-JSON: metrics.peakRetainedOperandFacts 0
+; CHECK-JSON: metrics.peakRetainedInitializationPayloadBytes 0
+function resource
+  result i64
+  frame 0
+    Constant 1
+    Label
+repeat 65534
+    Label {1,1}
+endrepeat
+    Return
+end
+
+; CASE: real verifier state cap 0
+; BASE: exact retained state accounting
+; RUN: verify
+; EXPECT-ERROR: state retention limit
+@@ -6 +6 @@
+-repeat 65534
++repeat 65535
+
+; CASE: real verifier state cap 1
+; BASE: exact retained state accounting
+; RUN: metrics
+; CHECK: "outcome":"rejected"
+; CHECK: state retention limit
+; CHECK-JSON: metrics.snapshots 65536
+; CHECK-JSON: metrics.peakOperandDepth 0
+; CHECK-JSON: metrics.peakRetainedOperandFacts 0
+; CHECK-JSON: metrics.peakRetainedValueFacts 0
+; CHECK-JSON: metrics.peakRetainedInitializationPayloadBytes 0
+@@ -6 +6 @@
+-repeat 65534
++repeat 65535
+
+; CASE: straight-line stack is not retained
+; RUN: metrics
+; CHECK-JSON: metrics.snapshots 1
+; CHECK-JSON: metrics.peakOperandDepth 4096
+; CHECK-JSON: metrics.peakRetainedOperandFacts 0
+function resource
+  result i64
+  frame 0
+    Constant 1
+repeat 4096
+    Push
+endrepeat
+repeat 4096
+    Pop
+endrepeat
+    Return
+end
+
+; CASE: worklist revisit does not recharge retained operands
+; RUN: metrics
+; CHECK-JSON: metrics.snapshots 4
+; CHECK-JSON: metrics.peakRetainedOperandFacts 192
+function resource
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 1
+repeat 64
+    Push
+endrepeat
+    Constant 1 bool
+    BranchFalse 1
+    Constant 7
+    Store 8
+    Jump 2
+    Label 1
+    Jump 2
+    Label 2
+repeat 64
+    Pop
+endrepeat
+    Return
+end

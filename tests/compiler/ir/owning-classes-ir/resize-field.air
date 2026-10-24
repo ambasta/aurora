@@ -1,0 +1,1674 @@
+; CASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_resize
+  result bool
+  params [region (class Parcel)]
+  frame 416
+  slot 16 u8
+  slot 56 u64
+  slot 96 u8
+  slot 104 u8
+  slot 144 u64
+  slot 184 u8
+  slot 192 u8
+  slot 232 u64
+  slot 272 u8
+  object 96 Parcel true
+  object 184 Parcel true
+  object 272 Parcel true
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 96 Parcel
+    Constant -9223372036854775808
+    BytesResize 96 1
+    EndObject 96
+    Return
+end
+
+; CASE: owning parameter resize retains direct field 1 for request -1
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: emit
+@@ -38 +38 @@
+-    Constant -9223372036854775808
++    Constant -1
+
+; CASE: owning parameter resize retains direct field 1 for request 0
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: emit
+@@ -38 +38 @@
+-    Constant -9223372036854775808
++    Constant
+
+; CASE: owning parameter resize retains direct field 1 for request 65
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: emit
+@@ -38 +38 @@
+-    Constant -9223372036854775808
++    Constant 65
+
+; CASE: owning parameter resize retains direct field 1 for request 9223372036854775807
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: emit
+@@ -38 +38 @@
+-    Constant -9223372036854775808
++    Constant 9223372036854775807
+
+; CASE: owning parameter resize retains direct field 3 for request -9223372036854775808
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: emit
+@@ -39 +39 @@
+-    BytesResize 96 1
++    BytesResize 96 3
+
+; CASE: owning parameter resize retains direct field 3 for request -1
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: emit
+@@ -38,2 +38,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 96 1
++    Constant -1
++    BytesResize 96 3
+
+; CASE: owning parameter resize retains direct field 3 for request 0
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: emit
+@@ -38,2 +38,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 96 1
++    Constant
++    BytesResize 96 3
+
+; CASE: owning parameter resize retains direct field 3 for request 65
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: emit
+@@ -38,2 +38,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 96 1
++    Constant 65
++    BytesResize 96 3
+
+; CASE: owning parameter resize retains direct field 3 for request 9223372036854775807
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: emit
+@@ -38,2 +38,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 96 1
++    Constant 9223372036854775807
++    BytesResize 96 3
+
+; CASE: owning parameter resize rejects const root
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -29 +29 @@
+-  object 96 Parcel true
++  object 96 Parcel false
+@@ -38 +38 @@
+-    Constant -9223372036854775808
++    Constant 65
+
+; CASE: owning parameter resize rejects nonresource selector -2
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -38,2 +38,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 96 1
++    Constant 65
++    BytesResize 96 -2
+
+; CASE: owning parameter resize rejects nonresource selector -1
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -38,2 +38,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 96 1
++    Constant 65
++    BytesResize 96
+
+; CASE: owning parameter resize rejects nonresource selector 0
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -38,2 +38,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 96 1
++    Constant 65
++    BytesResize 96 0
+
+; CASE: owning parameter resize rejects nonresource selector 2
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -38,2 +38,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 96 1
++    Constant 65
++    BytesResize 96 2
+
+; CASE: owning parameter resize rejects nonresource selector 4
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -38,2 +38,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 96 1
++    Constant 65
++    BytesResize 96 4
+
+; CASE: owning parameter resize rejects nonresource selector 5
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -38,2 +38,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 96 1
++    Constant 65
++    BytesResize 96 5
+
+; CASE: owning parameter resize rejects nonresource selector 2147483647
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -38,2 +38,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 96 1
++    Constant 65
++    BytesResize 96 2147483647
+
+; CASE: owning parameter resize rejects negative root
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -38,2 +38,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 96 1
++    Constant 65
++    BytesResize -8 1
+
+; CASE: owning parameter resize requires current i64 rather than bool
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -38 +38 @@
+-    Constant -9223372036854775808
++    Constant 1 bool
+
+; CASE: owning parameter resize requires current i64 rather than u8
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -38 +38 @@
+-    Constant -9223372036854775808
++    Constant 1 u8
+
+; CASE: owning parameter resize requires current i64 rather than u64
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -38 +38 @@
+-    Constant -9223372036854775808
++    Constant 1 u64
+
+; CASE: owning parameter resize rejects nominal enum length
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -15,0 +16 @@
++enum Length 1
+@@ -38 +39 @@
+-    Constant -9223372036854775808
++    EnumConstant (enum Length)
+
+; CASE: owning parameter resize requires a current length
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -38 +37,0 @@
+-    Constant -9223372036854775808
+
+; CASE: owning parameter resize bool cannot be another length
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -38 +38,2 @@
+-    Constant -9223372036854775808
++    Constant 65
++    BytesResize 96 1
+
+; CASE: owning parameter resize result is bool
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -17 +17 @@
+-  result bool
++  result i64
+@@ -38 +38 @@
+-    Constant -9223372036854775808
++    Constant 65
+
+; CASE: owning parameter resize does not consume saved length
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -38 +38,2 @@
+-    Constant -9223372036854775808
++    Constant 65
++    Push
+
+; CASE: owning parameter resize does not create a saved operand
+; BASE: owning parameter resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -38 +38 @@
+-    Constant -9223372036854775808
++    Constant 65
+@@ -40,0 +41 @@
++    Pop
+
+; CASE: owning parameter resize preserves exact heterogeneous operand stack
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_resize
+  result bool
+  params [region (class Parcel)]
+  frame 416
+  slot 16 u8
+  slot 56 u64
+  slot 96 u8
+  slot 104 u8
+  slot 144 u64
+  slot 184 u8
+  slot 192 u8
+  slot 232 u64
+  slot 272 u8
+  slot 344 i64
+  slot 352 u64
+  slot 360 u8
+  slot 368 bool
+  slot 376 bool
+  object 96 Parcel true
+  object 184 Parcel true
+  object 272 Parcel true
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 96 Parcel
+    Constant 65
+    Push
+    Constant 7 u64
+    Push
+    Constant 255 u8
+    Push
+    Constant 1 bool
+    Push
+    Constant 513
+    BytesResize 96 1
+    EndObject 96
+    Store 376 bool
+    Pop
+    Store 368 bool
+    Pop
+    Store 360 u8
+    Pop
+    Store 352 u64
+    Pop
+    Store 344
+    Load 376 bool
+    Return
+end
+
+; CASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_resize_method
+  result bool
+  frame 0
+  receiver Parcel true false
+    Constant -9223372036854775808
+    BytesResize 0 1
+    Return
+end
+
+; CASE: borrowed receiver resize retains direct field 1 for request -1
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: emit
+@@ -20 +20 @@
+-    Constant -9223372036854775808
++    Constant -1
+
+; CASE: borrowed receiver resize retains direct field 1 for request 0
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: emit
+@@ -20 +20 @@
+-    Constant -9223372036854775808
++    Constant
+
+; CASE: borrowed receiver resize retains direct field 1 for request 65
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: emit
+@@ -20 +20 @@
+-    Constant -9223372036854775808
++    Constant 65
+
+; CASE: borrowed receiver resize retains direct field 1 for request 9223372036854775807
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: emit
+@@ -20 +20 @@
+-    Constant -9223372036854775808
++    Constant 9223372036854775807
+
+; CASE: borrowed receiver resize retains direct field 3 for request -9223372036854775808
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: emit
+@@ -21 +21 @@
+-    BytesResize 0 1
++    BytesResize 0 3
+
+; CASE: borrowed receiver resize retains direct field 3 for request -1
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: emit
+@@ -20,2 +20,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 0 1
++    Constant -1
++    BytesResize 0 3
+
+; CASE: borrowed receiver resize retains direct field 3 for request 0
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: emit
+@@ -20,2 +20,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 0 1
++    Constant
++    BytesResize 0 3
+
+; CASE: borrowed receiver resize retains direct field 3 for request 65
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: emit
+@@ -20,2 +20,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 0 1
++    Constant 65
++    BytesResize 0 3
+
+; CASE: borrowed receiver resize retains direct field 3 for request 9223372036854775807
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: emit
+@@ -20,2 +20,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 0 1
++    Constant 9223372036854775807
++    BytesResize 0 3
+
+; CASE: borrowed receiver resize rejects const root
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -19,2 +19,2 @@
+-  receiver Parcel true false
+-    Constant -9223372036854775808
++  receiver Parcel false false
++    Constant 65
+
+; CASE: borrowed receiver resize rejects nonresource selector -2
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -20,2 +20,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 0 1
++    Constant 65
++    BytesResize 0 -2
+
+; CASE: borrowed receiver resize rejects nonresource selector -1
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -20,2 +20,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 0 1
++    Constant 65
++    BytesResize
+
+; CASE: borrowed receiver resize rejects nonresource selector 0
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -20,2 +20,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 0 1
++    Constant 65
++    BytesResize 0 0
+
+; CASE: borrowed receiver resize rejects nonresource selector 2
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -20,2 +20,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 0 1
++    Constant 65
++    BytesResize 0 2
+
+; CASE: borrowed receiver resize rejects nonresource selector 4
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -20,2 +20,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 0 1
++    Constant 65
++    BytesResize 0 4
+
+; CASE: borrowed receiver resize rejects nonresource selector 5
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -20,2 +20,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 0 1
++    Constant 65
++    BytesResize 0 5
+
+; CASE: borrowed receiver resize rejects nonresource selector 2147483647
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -20,2 +20,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 0 1
++    Constant 65
++    BytesResize 0 2147483647
+
+; CASE: borrowed receiver resize rejects negative root
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -20,2 +20,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 0 1
++    Constant 65
++    BytesResize -8 1
+
+; CASE: borrowed receiver resize requires current i64 rather than bool
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -20 +20 @@
+-    Constant -9223372036854775808
++    Constant 1 bool
+
+; CASE: borrowed receiver resize requires current i64 rather than u8
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -20 +20 @@
+-    Constant -9223372036854775808
++    Constant 1 u8
+
+; CASE: borrowed receiver resize requires current i64 rather than u64
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -20 +20 @@
+-    Constant -9223372036854775808
++    Constant 1 u64
+
+; CASE: borrowed receiver resize rejects nominal enum length
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -15,0 +16 @@
++enum Length 1
+@@ -20 +21 @@
+-    Constant -9223372036854775808
++    EnumConstant (enum Length)
+
+; CASE: borrowed receiver resize requires a current length
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -20 +19,0 @@
+-    Constant -9223372036854775808
+
+; CASE: borrowed receiver resize bool cannot be another length
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -20 +20,2 @@
+-    Constant -9223372036854775808
++    Constant 65
++    BytesResize 0 1
+
+; CASE: borrowed receiver resize result is bool
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -17 +17 @@
+-  result bool
++  result i64
+@@ -20 +20 @@
+-    Constant -9223372036854775808
++    Constant 65
+
+; CASE: borrowed receiver resize does not consume saved length
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -20 +20,2 @@
+-    Constant -9223372036854775808
++    Constant 65
++    Push
+
+; CASE: borrowed receiver resize does not create a saved operand
+; BASE: borrowed receiver resize retains direct field 1 for request -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -20 +20 @@
+-    Constant -9223372036854775808
++    Constant 65
+@@ -21,0 +22 @@
++    Pop
+
+; CASE: borrowed receiver resize preserves exact heterogeneous operand stack
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_resize_method
+  result bool
+  frame 416
+  receiver Parcel true false
+  slot 344 i64
+  slot 352 u64
+  slot 360 u8
+  slot 368 bool
+  slot 376 bool
+    Constant 65
+    Push
+    Constant 7 u64
+    Push
+    Constant 255 u8
+    Push
+    Constant 1 bool
+    Push
+    Constant 513
+    BytesResize 0 1
+    Store 376 bool
+    Pop
+    Store 368 bool
+    Pop
+    Store 360 u8
+    Pop
+    Store 352 u64
+    Pop
+    Store 344
+    Load 376 bool
+    Return
+end
+
+; CASE: constructed local can resize both descriptors and remain queryable
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_entry
+  result i64
+  params [region]
+  frame 416
+  slot 16 u8
+  slot 56 u64
+  slot 96 u8
+  slot 104 u8
+  slot 144 u64
+  slot 184 u8
+  slot 192 u8
+  slot 232 u64
+  slot 272 u8
+  object 96 Parcel true
+  object 184 Parcel true
+  object 272 Parcel true
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BeginBytes 304
+    Constant 3
+    AllocateBytes 8 304
+    BeginBytes 336
+    Constant 5
+    AllocateBytes 8 336
+    Constant 197 u8
+    Push
+    Constant 123456789 u64
+    Push
+    Constant 223 u8
+    Push
+    BeginObject 96
+    ResourceCall owning_constructor 8 [0 304 0 336 0 0] 0 96
+    EndBytes 336
+    EndBytes 304
+    Constant 65
+    BytesResize 96 1
+    Constant
+    BytesResize 96 3
+    BytesLength 96 1
+    Push
+    BytesLength 96 3
+    BinaryValue
+    EndObject 96
+    Return
+end
+function owning_constructor
+  result i64
+  params [region bytes u8 bytes u64 u8]
+  frame 96
+  receiver Parcel true true
+  slot 48 u8
+  slot 88 u64
+  slot 96 u8
+  region 8
+  bytes 40 true
+  bytes 80 true
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BindParameter 2 48 u8
+    BindBytesParameter 3 80
+    BindParameter 4 88 u64
+    BindParameter 5 96 u8
+    Load 48 u8
+    ReceiverStore 0 u8
+    InitializeBytesField 0 1 40
+    Load 88 u64
+    ReceiverStore 2 u64
+    InitializeBytesField 0 3 80
+    Load 96 u8
+    ReceiverStore 4 u8
+    EndBytes 80
+    EndBytes 40
+    Constant
+    Return
+end
+
+; CASE: moved destination can resize and retain both descriptors
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_entry
+  result i64
+  params [region (class Parcel)]
+  frame 416
+  slot 16 u8
+  slot 56 u64
+  slot 96 u8
+  slot 104 u8
+  slot 144 u64
+  slot 184 u8
+  slot 192 u8
+  slot 232 u64
+  slot 272 u8
+  object 96 Parcel true
+  object 184 Parcel true
+  object 272 Parcel true
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 96 Parcel
+    BeginObject 184
+    MoveObject 96 184
+    EndObject 96
+    Constant 65
+    BytesResize 184 3
+    BytesLength 184 1
+    Push
+    BytesLength 184 3
+    BinaryValue
+    EndObject 184
+    Return
+end
+
+; CASE: resized field retains whole-object return authority
+; BASE: moved destination can resize and retain both descriptors
+; RUN: emit
+@@ -17 +17 @@
+-  result i64
++  result (class Parcel)
+@@ -42,7 +42,2 @@
+-    BytesResize 184 3
+-    BytesLength 184 1
+-    Push
+-    BytesLength 184 3
+-    BinaryValue
+-    EndObject 184
+-    Return
++    BytesResize 184 1
++    ReturnOwnedObject 184
+
+; CASE: resized field retains resource-call authority and staged arguments
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_entry
+  result (class Parcel)
+  params [region (class Parcel) (class Parcel)]
+  frame 416
+  slot 16 u8
+  slot 56 u64
+  slot 96 u8
+  slot 104 u8
+  slot 144 u64
+  slot 184 u8
+  slot 192 u8
+  slot 232 u64
+  slot 272 u8
+  object 96 Parcel true
+  object 184 Parcel true
+  object 272 Parcel true
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 96 Parcel
+    BindOwnedObjectParameter 2 184 Parcel
+    BeginBytes 304
+    Constant 7
+    AllocateBytes 8 304
+    Constant 201 u8
+    Push
+    Constant 4886718345 u64
+    Push
+    BeginObject 272
+    Constant 65
+    BytesResize 96 1
+    ResourceCall owning_six 8 [0 96 0 304 0 184] 272
+    EndObject 184
+    EndBytes 304
+    EndObject 96
+    ReturnOwnedObject 272
+end
+function owning_six
+  result (class Parcel)
+  params [region (class Parcel) u8 bytes u64 (class Parcel)]
+  frame 416
+  slot 16 u8
+  slot 56 u64
+  slot 96 u8
+  slot 104 u8
+  slot 144 u64
+  slot 184 u8
+  slot 192 u8
+  slot 232 u64
+  slot 272 u8
+  slot 344 u8
+  slot 352 u64
+  object 96 Parcel true
+  object 184 Parcel true
+  object 272 Parcel true
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 96 Parcel
+    BindParameter 2 344 u8
+    BindBytesParameter 3 304
+    BindParameter 4 352 u64
+    BindOwnedObjectParameter 5 184 Parcel
+    BytesLength 304
+    EndBytes 304
+    EndObject 184
+    ReturnOwnedObject 96
+end
+
+; CASE: resource-call result can resize before whole-object return
+; BASE: resized field retains resource-call authority and staged arguments
+; RUN: emit
+@@ -52,0 +53,2 @@
++    Constant
++    BytesResize 272 3
+
+; CASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_resize
+  result bool
+  params [region (class Parcel)]
+  frame 416
+  slot 16 u8
+  slot 56 u64
+  slot 96 u8
+  slot 104 u8
+  slot 144 u64
+  slot 184 u8
+  slot 192 u8
+  slot 232 u64
+  slot 272 u8
+  object 96 Parcel true
+  object 184 Parcel true
+  object 272 Parcel true
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 96 Parcel
+    Constant 65
+    BytesResize 0 1
+    EndObject 96
+    Return
+end
+
+; CASE: field resize requires exact live root 8
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39 @@
+-    BytesResize 0 1
++    BytesResize 8 1
+
+; CASE: field resize requires exact live root 16
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39 @@
+-    BytesResize 0 1
++    BytesResize 16 1
+
+; CASE: field resize requires exact live root 40
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39 @@
+-    BytesResize 0 1
++    BytesResize 40 1
+
+; CASE: field resize requires exact live root 48
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39 @@
+-    BytesResize 0 1
++    BytesResize 48 1
+
+; CASE: field resize requires exact live root 56
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39 @@
+-    BytesResize 0 1
++    BytesResize 56 1
+
+; CASE: field resize requires exact live root 64
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39 @@
+-    BytesResize 0 1
++    BytesResize 64 1
+
+; CASE: field resize requires exact live root 72
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39 @@
+-    BytesResize 0 1
++    BytesResize 72 1
+
+; CASE: field resize requires exact live root 80
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39 @@
+-    BytesResize 0 1
++    BytesResize 80 1
+
+; CASE: field resize requires exact live root 88
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39 @@
+-    BytesResize 0 1
++    BytesResize 88 1
+
+; CASE: field resize requires exact live root 95
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39 @@
+-    BytesResize 0 1
++    BytesResize 95 1
+
+; CASE: field resize requires exact live root 97
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39 @@
+-    BytesResize 0 1
++    BytesResize 97 1
+
+; CASE: field resize requires exact live root 176
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39 @@
+-    BytesResize 0 1
++    BytesResize 176 1
+
+; CASE: field resize requires exact live root 184
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39 @@
+-    BytesResize 0 1
++    BytesResize 184 1
+
+; CASE: field resize requires exact live root 272
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39 @@
+-    BytesResize 0 1
++    BytesResize 272 1
+
+; CASE: field resize requires exact live root 304
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39 @@
+-    BytesResize 0 1
++    BytesResize 304 1
+
+; CASE: field resize requires exact live root 416
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39 @@
+-    BytesResize 0 1
++    BytesResize 416 1
+
+; CASE: field resize cannot bypass inactive object lifetime
+; BASE: constructed local can resize both descriptors and remain queryable
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -48,0 +49,2 @@
++    Constant 65
++    BytesResize 96 1
+@@ -53,4 +54,0 @@
+-    Constant 65
+-    BytesResize 96 1
+-    Constant
+-    BytesResize 96 3
+
+; CASE: field resize cannot initialize pristine root
+; BASE: constructed local can resize both descriptors and remain queryable
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -49,0 +50,2 @@
++    Constant 65
++    BytesResize 96 1
+@@ -53,4 +54,0 @@
+-    Constant 65
+-    BytesResize 96 1
+-    Constant
+-    BytesResize 96 3
+
+; CASE: field resize cannot use consumed root
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39,3 @@
+-    BytesResize 0 1
++    BeginObject 184
++    MoveObject 96 184
++    BytesResize 96 1
+
+; CASE: field resize cannot use ended root
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39,2 @@
+-    BytesResize 0 1
++    EndObject 96
++    BytesResize 96 1
+
+; CASE: field resize cannot revive consumed root after destination cleanup
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39,4 @@
+-    BytesResize 0 1
++    BeginObject 184
++    MoveObject 96 184
++    EndObject 184
++    BytesResize 96 1
+
+; CASE: field resize cannot revive restarted pristine local
+; BASE: constructed local can resize both descriptors and remain queryable
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -53,0 +54,2 @@
++    EndObject 96
++    BeginObject 96
+
+; CASE: field resize cannot bypass resource-call consumption
+; BASE: resized field retains resource-call authority and staged arguments
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -17 +17 @@
+-  result (class Parcel)
++  result i64
+@@ -46 +46 @@
+-    BeginObject 272
++    ResourceCall owning_six 8 [0 96 0 304 0 184]
+@@ -49 +48,0 @@
+-    ResourceCall owning_six 8 [0 96 0 304 0 184] 272
+@@ -53 +52 @@
+-    ReturnOwnedObject 272
++    Return
+@@ -56 +55 @@
+-  result (class Parcel)
++  result i64
+@@ -86 +85,2 @@
+-    ReturnOwnedObject 96
++    EndObject 96
++    Return
+
+; CASE: field resize retains cleanup obligation for request -1
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -38,3 +38,2 @@
+-    Constant 65
+-    BytesResize 0 1
+-    EndObject 96
++    Constant -1
++    BytesResize 96 1
+
+; CASE: field resize retains cleanup obligation for request 0
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -38,3 +38,2 @@
+-    Constant 65
+-    BytesResize 0 1
+-    EndObject 96
++    Constant
++    BytesResize 96 1
+
+; CASE: field resize retains cleanup obligation for request 65
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39,2 +39 @@
+-    BytesResize 0 1
+-    EndObject 96
++    BytesResize 96 1
+
+; CASE: constructor cannot resize uninitialized field
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_constructor
+  result i64
+  params [region bytes u8 bytes u64 u8]
+  frame 96
+  receiver Parcel true true
+  slot 48 u8
+  slot 88 u64
+  slot 96 u8
+  region 8
+  bytes 40 true
+  bytes 80 true
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BindParameter 2 48 u8
+    BindBytesParameter 3 80
+    BindParameter 4 88 u64
+    BindParameter 5 96 u8
+    Load 48 u8
+    ReceiverStore 0 u8
+    Constant 65
+    BytesResize 0 1
+    InitializeBytesField 0 1 40
+    Load 88 u64
+    ReceiverStore 2 u64
+    InitializeBytesField 0 3 80
+    Load 96 u8
+    ReceiverStore 4 u8
+    EndBytes 80
+    EndBytes 40
+    Constant
+    Return
+end
+
+; CASE: constructor cannot resize initialized field in partial root
+; BASE: constructor cannot resize uninitialized field
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -35,2 +34,0 @@
+-    Constant 65
+-    BytesResize 0 1
+@@ -39,0 +38,2 @@
++    Constant 65
++    BytesResize 0 1
+
+; CASE: constructor cannot resize receiver before constructor returns
+; BASE: constructor cannot resize uninitialized field
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -35,2 +34,0 @@
+-    Constant 65
+-    BytesResize 0 1
+@@ -42,0 +41,2 @@
++    Constant 65
++    BytesResize 0 1
+
+; CASE: copied child cannot impersonate resize descriptor
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+layout Container [u8 u64 u8]
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Container [(bytes 0 0 false) ((class Copy) 0 2 false) (u8 2 1 false)]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Container [{32,8}*3] [0 32 48] 56 8 56
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_entry
+  result u64
+  params [region]
+  frame 416
+  slot 48 u8
+  slot 56 u64
+  slot 64 u8
+  slot 136 u8
+  slot 144 u64
+  slot 152 u8
+  slot 360 u64
+  slot 368 u8
+  slot 376 u64
+  slot 384 u8
+  object 96 Container true
+  object 184 Container true
+  object 368 Copy false
+  object 384 Copy true
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BeginBytes 304
+    Constant 3
+    AllocateBytes 8 304
+    BeginObject 368
+    Constant 17 u8
+    Store 368 u8
+    Constant 99 u64
+    Store 360 u64
+    BeginObject 96
+    ResourceCall copy_constructor 8 [0 304 368] 0 96
+    EndBytes 304
+    Constant 42 u64
+    Push
+    BeginObject 384
+    Constant 65
+    BytesResize 96 1
+    MethodCall copy_method 96 [368 0] 384
+    Load 376 u64
+    EndObject 384
+    EndObject 368
+    EndObject 96
+    Return
+end
+function copy_constructor
+  result i64
+  params [region bytes (class Copy)]
+  frame 64
+  receiver Container true true
+  slot 48 u64
+  slot 56 u8
+  object 56 Copy false
+  region 8
+  bytes 40 true
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BindObjectParameter 2 56 Copy
+    InitializeBytesField 0 0 40
+    InitializeObjectField 0 1 56
+    Constant 77 u8
+    ReceiverStore 2 u8
+    EndBytes 40
+    Constant
+    Return
+end
+function copy_method
+  result (class Copy)
+  params [(class Copy) u64]
+  frame 48
+  receiver Container true false
+  slot 8 u64
+  slot 16 u8
+  slot 24 u64
+  slot 40 u64
+  slot 48 u8
+  object 16 Copy false
+  object 48 Copy true
+    BindObjectParameter 0 16 Copy
+    BindParameter 1 24 u64
+    AssignObjectField 0 1 16
+    BeginObject 48
+    ObjectFieldCopy 0 1 48
+    Load 24 u64
+    Store 40 u64
+    ReturnObject 48
+end
+function child_method
+  result u64
+  frame 0
+  receiver Copy false false
+    ReceiverLoad 1 u64
+    Return
+end
+
+; CASE: copyable object cannot become resize owner
+; BASE: copied child cannot impersonate resize descriptor
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -57 +57 @@
+-    BytesResize 96 1
++    BytesResize 368 0
+
+; CASE: resize cannot make owning root copyable
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39,3 @@
+-    BytesResize 0 1
++    BytesResize 96 1
++    BeginObject 184
++    CopyObject 96 184
+
+; CASE: resize cannot permit copied owning return
+; BASE: moved destination can resize and retain both descriptors
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -17 +17 @@
+-  result i64
++  result (class Parcel)
+@@ -42,7 +42,2 @@
+-    BytesResize 184 3
+-    BytesLength 184 1
+-    Push
+-    BytesLength 184 3
+-    BinaryValue
+-    EndObject 184
+-    Return
++    BytesResize 184 1
++    ReturnObject 184
+
+; CASE: resize cannot extract field with standalone move
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39,3 @@
+-    BytesResize 0 1
++    BytesResize 96 1
++    BeginBytes 304
++    MoveBytes 88 304
+
+; CASE: borrowed resize cannot extract receiver as owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_resize_method
+  result bool
+  frame 0
+  receiver Parcel true false
+    Constant 65
+    BytesResize 0 1
+    ReturnBytes
+    Return
+end
+
+; CASE: borrowed resize cannot extract field via scalar load
+; BASE: borrowed resize cannot extract receiver as owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -22 +22 @@
+-    ReturnBytes
++    ReceiverLoad 1 u64
+
+; CASE: conditional field resize preserves every ownership token at join
+; BASE: field resize requires exact live root 0
+; RUN: emit
+@@ -37,0 +38,2 @@
++    BytesOk 96 1
++    BranchFalse 1
+@@ -39 +41,5 @@
+-    BytesResize 0 1
++    BytesResize 96 1
++    Jump 2
++    Label 1
++    Constant 0 bool
++    Label 2
+
+; CASE: distinct field resize sites preserve whole-root ownership at join
+; BASE: field resize requires exact live root 0
+; RUN: emit
+@@ -37,0 +38,2 @@
++    BytesOk 96 1
++    BranchFalse 1
+@@ -39 +41,7 @@
+-    BytesResize 0 1
++    BytesResize 96 1
++    Jump 2
++    Label 1
++    Constant
++    BytesResize 96 3
++    Constant 0 bool
++    Label 2
+
+; CASE: conditional field resize cannot hide root consumption
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -37,0 +38,2 @@
++    BytesOk 96 1
++    BranchFalse 1
+@@ -39 +41,8 @@
+-    BytesResize 0 1
++    BytesResize 96 1
++    BeginObject 184
++    MoveObject 96 184
++    EndObject 184
++    Jump 2
++    Label 1
++    Constant 0 bool
++    Label 2
+
+; CASE: field resize false does not discharge cleanup
+; BASE: field resize requires exact live root 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -37,0 +38,2 @@
++    BytesOk 96 1
++    BranchFalse 1
+@@ -39 +41,6 @@
+-    BytesResize 0 1
++    BytesResize 96 1
++    Jump 2
++    Label 1
++    Constant 0 bool
++    Label 2
++    BranchFalse 3
+@@ -40,0 +48,4 @@
++    Constant 1 bool
++    Return
++    Label 3
++    Constant 0 bool
+
+; CASE: loop resize of two fields preserves original ownership across backedge
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_entry
+  result i64
+  params [region]
+  frame 416
+  slot 16 u8
+  slot 56 u64
+  slot 96 u8
+  slot 104 u8
+  slot 144 u64
+  slot 184 u8
+  slot 192 u8
+  slot 232 u64
+  slot 272 u8
+  object 96 Parcel true
+  object 184 Parcel true
+  object 272 Parcel true
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BeginBytes 304
+    Constant 3
+    AllocateBytes 8 304
+    BeginBytes 336
+    Constant 5
+    AllocateBytes 8 336
+    Constant 197 u8
+    Push
+    Constant 123456789 u64
+    Push
+    Constant 223 u8
+    Push
+    BeginObject 96
+    ResourceCall owning_constructor 8 [0 304 0 336 0 0] 0 96
+    EndBytes 336
+    EndBytes 304
+    Label 1
+    Constant 65
+    BytesResize 96 1
+    BranchFalse 2
+    Constant
+    BytesResize 96 3
+    Jump 1
+    Label 2
+    BytesLength 96 1
+    Push
+    BytesLength 96 3
+    BinaryValue
+    EndObject 96
+    Return
+end
+function owning_constructor
+  result i64
+  params [region bytes u8 bytes u64 u8]
+  frame 96
+  receiver Parcel true true
+  slot 48 u8
+  slot 88 u64
+  slot 96 u8
+  region 8
+  bytes 40 true
+  bytes 80 true
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BindParameter 2 48 u8
+    BindBytesParameter 3 80
+    BindParameter 4 88 u64
+    BindParameter 5 96 u8
+    Load 48 u8
+    ReceiverStore 0 u8
+    InitializeBytesField 0 1 40
+    Load 88 u64
+    ReceiverStore 2 u64
+    InitializeBytesField 0 3 80
+    Load 96 u8
+    ReceiverStore 4 u8
+    EndBytes 80
+    EndBytes 40
+    Constant
+    Return
+end
+
+; CASE: loop field resize cannot hide root consumption
+; BASE: loop resize of two fields preserves original ownership across backedge
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -58,0 +59,3 @@
++    BeginObject 184
++    MoveObject 96 184
++    EndObject 184

@@ -75,7 +75,7 @@ frontend_host_sources = files('compiler/hosted_lexer.cpp', 'compiler/hosted_pars
                               'compiler/hosted_resolver.cpp', 'compiler/hosted_lowering.cpp',
                               'compiler/hosted_lowering_diagnostics.cpp', 'compiler/hosted_graph.cpp',
                               'compiler/hosted_ir_metadata.cpp', 'compiler/hosted_ir_instructions.cpp',
-                              'compiler/hosted_x86.cpp', 'compiler/ir_verify.cpp',
+                              'compiler/hosted_x86.cpp', 'compiler/ir_verify.cpp', 'compiler/ir_text.cpp',
                               'runtime/hosted_bytes.cpp')
 frontend_library = static_library(
   'hosted-frontend', [frontend_host_sources, frontend_object, frontend_assembly[3]],

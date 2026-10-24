@@ -14,6 +14,9 @@ from native_runner import Freestanding, check_trap, check_words, command, freest
 from native_runner import symbols_of, worker_count
 from readonly_spans import Trap, MIN_I64, MAX_I64
 
+# Verified textual IR cases; the aurora-ir-check driver prints their assembly.
+AIR = Path(__file__).resolve().parent / "ir" / "readonly-windows-ir" / "abi.air"
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -23,7 +26,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="aurora-window-ir-") as temporary:
         directory = args.artifacts.resolve() if args.artifacts else Path(temporary)
         directory.mkdir(parents=True, exist_ok=True)
-        assembly = command([args.ir_tests.resolve(), "--emit-native"]).stdout.decode()
+        assembly = command([args.ir_tests.resolve(), "--output", AIR, "native"]).stdout.decode()
         values = [11, 128, 255]
         names, expected, wrappers = [], [], []
         for offset in (MIN_I64, -1, 0, 1, 2, 3, 4, MAX_I64):

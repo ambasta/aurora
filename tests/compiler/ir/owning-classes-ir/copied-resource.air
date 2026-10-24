@@ -1,0 +1,515 @@
+; CASE: copied resource result after mixed owner cleanup
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_entry
+  result (class Copy)
+  params [region (class Parcel) (class Parcel)]
+  frame 416
+  slot 16 u8
+  slot 56 u64
+  slot 96 u8
+  slot 104 u8
+  slot 144 u64
+  slot 184 u8
+  slot 192 u8
+  slot 232 u64
+  slot 272 u8
+  slot 360 u64
+  slot 368 u8
+  object 96 Parcel true
+  object 184 Parcel true
+  object 272 Parcel true
+  object 368 Copy false
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 96 Parcel
+    BindOwnedObjectParameter 2 184 Parcel
+    BeginBytes 304
+    Constant 7
+    AllocateBytes 8 304
+    Constant 201 u8
+    Push
+    Constant 4886718345 u64
+    Push
+    BeginObject 368
+    ResourceCall owning_six 8 [0 96 0 304 0 184] 368
+    EndObject 184
+    EndBytes 304
+    EndObject 96
+    ReturnObject 368
+end
+function owning_six
+  result (class Copy)
+  params [region (class Parcel) u8 bytes u64 (class Parcel)]
+  frame 416
+  slot 16 u8
+  slot 56 u64
+  slot 96 u8
+  slot 104 u8
+  slot 144 u64
+  slot 184 u8
+  slot 192 u8
+  slot 232 u64
+  slot 272 u8
+  slot 344 u8
+  slot 352 u64
+  slot 360 u64
+  slot 368 u8
+  object 96 Parcel true
+  object 184 Parcel true
+  object 272 Parcel true
+  object 368 Copy false
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 96 Parcel
+    BindParameter 2 344 u8
+    BindBytesParameter 3 304
+    BindParameter 4 352 u64
+    BindOwnedObjectParameter 5 184 Parcel
+    BeginObject 368
+    Load 344 u8
+    Store 368 u8
+    Load 352 u64
+    Store 360 u64
+    BytesLength 304
+    EndBytes 304
+    EndObject 184
+    EndObject 96
+    ReturnObject 368
+end
+
+; CASE: copied resource result carries no owning provenance
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function copied_caller
+  result (class Copy)
+  params [region]
+  frame 80
+  slot 24 u64
+  slot 32 u8
+  slot 40 u64
+  slot 48 u8
+  object 32 Copy false
+  object 48 Copy false
+  region 8
+    BindRegionParameter 0 8
+    BeginObject 32
+    ResourceCall copied_factory 8 [0] 32
+    ReturnObject 32
+end
+function copied_factory
+  result (class Copy)
+  params [region]
+  frame 80
+  slot 24 u64
+  slot 32 u8
+  slot 40 u64
+  slot 48 u8
+  object 32 Copy false
+  object 48 Copy false
+  region 8
+    BindRegionParameter 0 8
+    BeginObject 32
+    Constant 201 u8
+    Store 32 u8
+    Constant 4886718345 u64
+    Store 24 u64
+    ReturnObject 32
+end
+
+; CASE: empty resource result retains completion marker
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function copied_caller
+  result (class Empty)
+  params [region]
+  frame 80
+  object 32 Empty false
+  object 48 Empty false
+  region 8
+    BindRegionParameter 0 8
+    BeginObject 32
+    ResourceCall copied_factory 8 [0] 32
+    ReturnObject 32
+end
+function copied_factory
+  result (class Empty)
+  params [region]
+  frame 80
+  object 32 Empty false
+  object 48 Empty false
+  region 8
+    BindRegionParameter 0 8
+    BeginObject 32
+    MethodCall empty_constructor 32
+    ReturnObject 32
+end
+function empty_constructor
+  result i64
+  frame 0
+  receiver Empty true true
+    Constant
+    Return
+end
+
+; CASE: empty resource return cannot be bare lifetime
+; BASE: empty resource result retains completion marker
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -37 +36,0 @@
+-    MethodCall empty_constructor 32
+
+; CASE: empty copied source cannot launder bare lifetime
+; BASE: empty resource result retains completion marker
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -37,2 +37,3 @@
+-    MethodCall empty_constructor 32
+-    ReturnObject 32
++    BeginObject 48
++    CopyObject 32 48
++    ReturnObject 48
+
+; CASE: empty copied completion must dominate join
+; BASE: empty resource result retains completion marker
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -36,0 +37,2 @@
++    Constant 1 bool
++    BranchFalse 1
+@@ -38 +40,4 @@
+-    ReturnObject 32
++    Label 1
++    BeginObject 48
++    CopyObject 32 48
++    ReturnObject 48
+
+; CASE: nested resource result establishes logical completion
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Nested [u8 u64]
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Nested [((class Copy) 0 2 false) ((class Empty) 2 0 false)]
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Nested [0 8] [0 16] 16 8 16
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function copied_caller
+  result (class Nested)
+  params [region]
+  frame 80
+  slot 24 u64
+  slot 32 u8
+  slot 40 u64
+  slot 48 u8
+  object 32 Nested false
+  object 48 Nested false
+  region 8
+    BindRegionParameter 0 8
+    BeginObject 32
+    ResourceCall copied_factory 8 [0] 32
+    ReturnObject 32
+end
+function copied_factory
+  result (class Nested)
+  params [region]
+  frame 80
+  slot 24 u64
+  slot 32 u8
+  slot 40 u64
+  slot 48 u8
+  slot 56 u64
+  slot 64 u8
+  object 32 Nested false
+  object 48 Nested false
+  object 64 Copy false
+  object 72 Empty false
+  region 8
+    BindRegionParameter 0 8
+    BeginObject 32
+    BeginObject 64
+    Constant 201 u8
+    Store 64 u8
+    Constant 4886718345 u64
+    Store 56 u64
+    BeginObject 72
+    MethodCall empty_constructor 72
+    MethodCall nested_constructor 32 [64 72]
+    EndObject 72
+    EndObject 64
+    ReturnObject 32
+end
+function nested_constructor
+  result i64
+  params [(class Copy) (class Empty)]
+  frame 32
+  receiver Nested true true
+  slot 8 u64
+  slot 16 u8
+  object 16 Copy false
+  object 24 Empty false
+    BindObjectParameter 0 16 Copy
+    BindObjectParameter 1 24 Empty
+    InitializeObjectField 0 0 16
+    InitializeObjectField 0 1 24
+    Constant
+    Return
+end
+function empty_constructor
+  result i64
+  frame 0
+  receiver Empty true true
+    Constant
+    Return
+end
+
+; CASE: copied result requires exact root
+; BASE: copied resource result carries no owning provenance
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -29 +29 @@
+-    ResourceCall copied_factory 8 [0] 32
++    ResourceCall copied_factory 8 [0] 24
+
+; CASE: copied result cannot alias owning argument
+; BASE: copied resource result after mixed owner cleanup
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -50 +50 @@
+-    ResourceCall owning_six 8 [0 96 0 304 0 184] 368
++    ResourceCall owning_six 8 [0 96 0 304 0 184] 96
+
+; CASE: copied result cannot overlap region spill
+; BASE: copied resource result carries no owning provenance
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -26,0 +27 @@
++  region 24
+
+; CASE: copied result cannot overlap owner spill
+; BASE: copied resource result carries no owning provenance
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -26,0 +27 @@
++  bytes 48 true
+
+; CASE: copied result layout metadata must be canonical
+; BASE: copied resource result carries no owning provenance
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -11 +11 @@
+-storage Copy [0 8] [0 8] 16 8 16
++storage Copy [0 1] [0 8] 16 8 16
+
+; CASE: copied result requires exact nominal type
+; BASE: copied resource result carries no owning provenance
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -3,0 +4 @@
++layout Other [u8 u64]
+@@ -8,0 +10 @@
++fields Other [(u8 0 1 false) (u64 1 1 false)]
+@@ -13,0 +16 @@
++storage Other [0 8] [0 8] 16 8 16
+@@ -24 +27 @@
+-  object 32 Copy false
++  object 32 Other false
+
+; CASE: copied result requires active lifetime
+; BASE: copied resource result carries no owning provenance
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -28 +27,0 @@
+-    BeginObject 32
+
+; CASE: copied result cannot reuse ended lifetime
+; BASE: copied resource result carries no owning provenance
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -28,0 +29 @@
++    EndObject 32
+
+; CASE: copied result cannot overwrite partial initialization
+; BASE: copied resource result carries no owning provenance
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -28,0 +29,2 @@
++    Constant 0 u8
++    Store 32 u8
+
+; CASE: copied result cannot initialize twice
+; BASE: copied resource result carries no owning provenance
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -29,0 +30 @@
++    ResourceCall copied_factory 8 [0] 32
+
+; CASE: copied result may restart a closed lifetime
+; BASE: copied resource result carries no owning provenance
+; RUN: emit
+@@ -29,0 +30,3 @@
++    EndObject 32
++    BeginObject 32
++    ResourceCall copied_factory 8 [0] 32
+
+; CASE: copied result cannot initialize twice #2
+; BASE: empty resource result retains completion marker
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -25,0 +26 @@
++    ResourceCall copied_factory 8 [0] 32
+
+; CASE: copied result may restart a closed lifetime #2
+; BASE: empty resource result retains completion marker
+; RUN: emit
+@@ -25,0 +26,3 @@
++    EndObject 32
++    BeginObject 32
++    ResourceCall copied_factory 8 [0] 32
+
+; CASE: conditional copied initialization cannot be overwritten
+; BASE: copied resource result carries no owning provenance
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -28,0 +29,4 @@
++    Constant 1 bool
++    BranchFalse 1
++    ResourceCall copied_factory 8 [0] 32
++    Label 1
+
+; CASE: resource copied result cannot be scalar operand
+; BASE: copied resource result carries no owning provenance
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -29,0 +30 @@
++    Push
+
+; CASE: ordinary aggregate call cannot bypass region grant
+; BASE: copied resource result carries no owning provenance
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -29 +29 @@
+-    ResourceCall copied_factory 8 [0] 32
++    AggregateCall copied_factory [0] 32
+
+; CASE: copied result cannot be moved as owner
+; BASE: copied resource result carries no owning provenance
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -29,0 +30,2 @@
++    BeginObject 48
++    MoveObject 32 48
+
+; CASE: copied return cannot retain byte owner
+; BASE: copied resource result after mixed owner cleanup
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -93 +92,0 @@
+-    EndBytes 304
+
+; CASE: copied return cannot retain owning root
+; BASE: copied resource result after mixed owner cleanup
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -94 +93,0 @@
+-    EndObject 184
+
+; CASE: copied return cannot retain byte view
+; BASE: copied resource result after mixed owner cleanup
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -59 +59 @@
+-  frame 416
++  frame 480
+@@ -76,0 +77 @@
++  span 480
+@@ -92,0 +94 @@
++    BorrowOwnedSpan 304 -1 480
+
+; CASE: resource result cannot carry region authority
+; BASE: copied resource result carries no owning provenance
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-fields Copy [(u8 0 1 false) (u64 1 1 false)]
++fields Copy [(region 0 1 false) (u64 1 1 false)]
+
+; CASE: resource result cannot carry span capability
+; BASE: copied resource result carries no owning provenance
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-fields Copy [(u8 0 1 false) (u64 1 1 false)]
++fields Copy [(span 0 1 false) (u64 1 1 false)]
+
+; CASE: resource copied return must be complete
+; BASE: copied resource result carries no owning provenance
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -48 +47,0 @@
+-    Store 24 u64
+
+; CASE: nested resource return needs empty child completion
+; BASE: nested resource result establishes logical completion
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -76 +75,0 @@
+-    InitializeObjectField 0 1 24

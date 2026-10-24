@@ -1,0 +1,72 @@
+; CASE: native
+; RUN: emit
+function window_dynamic
+  result i64
+  params [i64*3]
+  frame 256
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  slot 56 i64
+  slot 64 i64
+  slot 72 i64
+  array 8 3
+  span 128
+  span 184
+    BindParameter 0 56
+    BindParameter 1 64
+    BindParameter 2 72
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BorrowSpan 8 128
+    Load 56
+    Push
+    Load 64
+    Subspan 128 184
+    Load 72
+    SpanLoad 184
+    Convert u8
+    EndSpan 184
+    EndSpan 128
+    EndArray 8
+    Return
+end
+function window_size
+  result i64
+  params [i64*3]
+  frame 256
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  slot 56 i64
+  slot 64 i64
+  slot 72 i64
+  array 8 3
+  span 128
+  span 184
+    BindParameter 0 56
+    BindParameter 1 64
+    BindParameter 2 72
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BorrowSpan 8 128
+    Load 56
+    Push
+    Load 64
+    Subspan 128 184
+    SpanLength 184
+    EndSpan 184
+    EndSpan 128
+    EndArray 8
+    Return
+end

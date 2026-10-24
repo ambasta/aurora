@@ -1,0 +1,69 @@
+; CASE: service record and seventh pixel argument odd=0
+; RUN: stack-facts
+; CHECK-JSON: functions.pixel.copied_record null
+; CHECK-JSON: functions.pixel_caller.copied_record null
+; CHECK-JSON: functions.pixel.service_abi.record {"parameters":[["builtin::DisplaySession",16]],"result_bytes":8}
+; CHECK-JSON: functions.pixel_caller.service_abi.record {"parameters":[["builtin::DisplaySession",16]],"result_bytes":8}
+; CHECK-JSON: functions.pixel_caller.service_abi.calls {}
+; CHECK-JSON: functions.pixel.service_abi.calls {"__au_runtime_display_pixel":{"sysv_arguments":7,"result_max":1}}
+; CHECK-JSON: functions.pixel.service_abi {"record":{"parameters":[["builtin::DisplaySession",16]],"result_bytes":8},"calls":{"__au_runtime_display_pixel":{"sysv_arguments":7,"result_max":1}}}
+; CHECK-JSON: functions.pixel.local_bytes 120
+; CHECK-JSON: functions.pixel.calls {"__au_runtime_display_pixel":96}
+; CHECK-JSON: functions.pixel_caller.local_bytes 64
+; CHECK-JSON: functions.pixel_caller.calls {"pixel":64}
+; RUN: emit
+; CHECK-DAG:     subq $16, %rsp\n    movq %r10, (%rsp)\n    call __au_runtime_display_pixel\n
+enum __au_display_put_result 2
+function pixel_caller
+  result i64
+  params [display]
+  frame 16
+  service 16
+    BindServiceParameter 0 16 Display
+    AcquireServiceLoan 1 16 Display
+    ServiceCall pixel 1 0 [0] Display
+    ReleaseServiceLoan 1 Display
+    Return
+end
+function pixel
+  result i64
+  params [display]
+  frame 48
+  service 16
+    BindServiceParameter 0 16 Display
+    Constant 7 u64
+    Push
+    Constant 9 u64
+    Push
+    Constant 11 u8
+    Push
+    Constant 13 u8
+    Push
+    Constant 17 u8
+    Push
+    ServiceOperation 16 Pixel 0 Display
+    Constant 42
+    Return
+end
+
+; CASE: service record and seventh pixel argument odd=1
+; BASE: service record and seventh pixel argument odd=0
+; RUN: stack-facts
+; CHECK-JSON: functions.pixel.copied_record null
+; CHECK-JSON: functions.pixel_caller.copied_record null
+; CHECK-JSON: functions.pixel.service_abi.record {"parameters":[["builtin::DisplaySession",16]],"result_bytes":8}
+; CHECK-JSON: functions.pixel_caller.service_abi.record {"parameters":[["builtin::DisplaySession",16]],"result_bytes":8}
+; CHECK-JSON: functions.pixel_caller.service_abi.calls {}
+; CHECK-JSON: functions.pixel.service_abi.calls {"__au_runtime_display_pixel":{"sysv_arguments":7,"result_max":1}}
+; CHECK-JSON: functions.pixel.service_abi {"record":{"parameters":[["builtin::DisplaySession",16]],"result_bytes":8},"calls":{"__au_runtime_display_pixel":{"sysv_arguments":7,"result_max":1}}}
+; CHECK-JSON: functions.pixel.local_bytes 128
+; CHECK-JSON: functions.pixel.calls {"__au_runtime_display_pixel":96}
+; CHECK-JSON: functions.pixel_caller.local_bytes 64
+; CHECK-JSON: functions.pixel_caller.calls {"pixel":64}
+; RUN: emit
+; CHECK-DAG:     subq $8, %rsp\n    movq %r10, (%rsp)\n    call __au_runtime_display_pixel\n
+@@ -18,0 +19,2 @@
++    Constant 42
++    Push
+@@ -29,0 +32 @@
++    Pop

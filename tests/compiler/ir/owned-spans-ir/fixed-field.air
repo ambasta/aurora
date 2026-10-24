@@ -1,0 +1,188 @@
+; CASE: fixed field view uses exact copied receiver lifetime
+; RUN: verify
+; EXPECT-OK
+layout Fixed [i64 u8*4]
+fields Fixed [(i64 0 1 false) (u8 1 2 true) (u8 3 2 true)]
+function fixed_view
+  result span
+  frame 112
+  receiver Fixed false false
+  spanfield 1
+  span 56
+  span 112
+    BorrowReceiverArraySpan 1 56
+    ReborrowSpan 56 112
+    ReturnSpan 112
+end
+function fixed_caller
+  result i64
+  params [(class Fixed)]
+  frame 128
+  slot 5 u8
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  slot 16 i64
+  object 16 Fixed false
+  span 72
+  span 128
+    BindObjectParameter 0 16 Fixed
+    MethodCall fixed_view 16 [] 72
+    ReborrowSpan 72 128
+    SpanLength 128
+    EndSpan 128
+    EndSpan 72
+    EndObject 16
+    Return
+end
+
+; CASE: fixed field wrong summary
+; BASE: fixed field view uses exact copied receiver lifetime
+; RUN: verify
+; EXPECT-ERROR: does not match receiver field summary
+@@ -7 +7 @@
+-  spanfield 1
++  spanfield 2
+
+; CASE: fixed field scalar origin
+; BASE: fixed field view uses exact copied receiver lifetime
+; RUN: verify
+; EXPECT-ERROR: requires direct u8 array field
+@@ -10 +10 @@
+-    BorrowReceiverArraySpan 1 56
++    BorrowReceiverArraySpan 0 56
+
+; CASE: fixed field outside shape
+; BASE: fixed field view uses exact copied receiver lifetime
+; RUN: verify
+; EXPECT-ERROR: receiver field type/layout mismatch
+@@ -10 +10 @@
+-    BorrowReceiverArraySpan 1 56
++    BorrowReceiverArraySpan 3 56
+
+; CASE: fixed field spill interior
+; BASE: fixed field view uses exact copied receiver lifetime
+; RUN: verify
+; EXPECT-ERROR: exact typed spill
+@@ -10 +10 @@
+-    BorrowReceiverArraySpan 1 56
++    BorrowReceiverArraySpan 1 48
+
+; CASE: fixed field parent ends first
+; BASE: fixed field view uses exact copied receiver lifetime
+; RUN: verify
+; EXPECT-ERROR: live child reborrow
+@@ -28,0 +29 @@
++    EndSpan 72
+
+; CASE: fixed field object ends first
+; BASE: fixed field view uses exact copied receiver lifetime
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+@@ -28,0 +29 @@
++    EndObject 16
+
+; CASE: fixed field scalar mutation cannot bypass borrow
+; BASE: fixed field view uses exact copied receiver lifetime
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+@@ -28,0 +29,2 @@
++    Constant 1 u8
++    Store 8 u8
+
+; CASE: fixed field indexed mutation cannot bypass borrow
+; BASE: fixed field view uses exact copied receiver lifetime
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+@@ -28,0 +29,5 @@
++    Constant
++    BoundsGuard 8 2 u8
++    Push
++    Constant 1 u8
++    IndexStore 8 2 u8
+
+; CASE: fixed receiver indexed mutation cannot bypass borrow
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+layout Fixed [i64 u8*4]
+fields Fixed [(i64 0 1 false) (u8 1 2 true) (u8 3 2 true)]
+function fixed_view
+  result i64
+  frame 112
+  receiver Fixed true false
+  span 56
+  span 112
+    BorrowReceiverArraySpan 1 56
+    Constant
+    ReceiverBoundsGuard 1
+    Push
+    Constant 1 u8
+    ReceiverIndexStore 1
+    EndSpan 56
+    Constant
+    Return
+end
+
+; CASE: fixed receiver sibling array stays independent
+; BASE: fixed receiver indexed mutation cannot bypass borrow
+; RUN: verify
+; EXPECT-OK
+@@ -11 +11 @@
+-    ReceiverBoundsGuard 1
++    ReceiverBoundsGuard 2
+@@ -14 +14 @@
+-    ReceiverIndexStore 1
++    ReceiverIndexStore 2
+
+; CASE: fixed root restart cannot join retained lifetime
+; RUN: verify
+; EXPECT-ERROR: active object lifetimes
+layout Fixed [i64 u8*4]
+fields Fixed [(i64 0 1 false) (u8 1 2 true) (u8 3 2 true)]
+function fixed_view
+  result span
+  frame 112
+  receiver Fixed false false
+  spanfield 1
+  span 56
+  span 112
+    BorrowReceiverArraySpan 1 56
+    ReborrowSpan 56 112
+    ReturnSpan 112
+end
+function fixed_restart
+  result i64
+  frame 80
+  slot 5 u8
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  slot 16 i64
+  object 16 Fixed true
+  span 72
+    BeginObject 16
+    Constant
+    Store 16
+    Constant 0 u8
+    Store 8 u8
+    Store 7 u8
+    Store 6 u8
+    Store 5 u8
+    Constant 1 bool
+    BranchFalse 1
+    EndObject 16
+    BeginObject 16
+    Constant
+    Store 16
+    Constant 0 u8
+    Store 8 u8
+    Store 7 u8
+    Store 6 u8
+    Store 5 u8
+    Label 1
+    MethodCall fixed_view 16 [] 72
+    SpanLength 72
+    EndSpan 72
+    EndObject 16
+    Return
+end

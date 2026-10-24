@@ -1,0 +1,1336 @@
+; CASE: typed checked division
+; RUN: emit
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 84
+    Push
+    Constant 2
+    BinaryValue CheckedDivide
+    Return
+end
+
+; CASE: division bool right operand
+; BASE: typed checked division
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -7 +7 @@
+-    Constant 2
++    Constant 1 bool
+
+; CASE: division bool left operand
+; BASE: typed checked division
+; RUN: verify
+; EXPECT-ERROR: noninteger left operand
+@@ -5 +5 @@
+-    Constant 84
++    Constant 1 bool
+
+; CASE: division missing left operand
+; BASE: typed checked division
+; RUN: verify
+; EXPECT-ERROR: stack underflow
+@@ -6 +5,0 @@
+-    Push
+
+; CASE: division guard ordering
+; BASE: typed checked division
+; RUN: emit
+; CHECK-NOT: cmpq $-1, %r11
+; CHECK-NOT: idivq %r11
+; CHECK: jz .Laurora_division_zero_trap
+; CHECK-NOT: idivq %r11
+; CHECK: cmpq $-1, %r11
+; CHECK: idivq %r11
+
+; CASE: typed checked remainder
+; BASE: typed checked division
+; RUN: emit
+@@ -8 +8 @@
+-    BinaryValue CheckedDivide
++    BinaryValue CheckedRemainder
+
+; CASE: remainder bool right operand
+; BASE: typed checked division
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -7,2 +7,2 @@
+-    Constant 2
+-    BinaryValue CheckedDivide
++    Constant 1 bool
++    BinaryValue CheckedRemainder
+
+; CASE: remainder bool left operand
+; BASE: typed checked division
+; RUN: verify
+; EXPECT-ERROR: noninteger left operand
+@@ -5 +5 @@
+-    Constant 84
++    Constant 1 bool
+@@ -8 +8 @@
+-    BinaryValue CheckedDivide
++    BinaryValue CheckedRemainder
+
+; CASE: remainder missing left operand
+; BASE: typed checked division
+; RUN: verify
+; EXPECT-ERROR: stack underflow
+@@ -6 +5,0 @@
+-    Push
+@@ -8 +7 @@
+-    BinaryValue CheckedDivide
++    BinaryValue CheckedRemainder
+
+; CASE: remainder guard ordering
+; BASE: typed checked division
+; RUN: emit
+; CHECK-NOT: cmpq $-1, %r11
+; CHECK-NOT: idivq %r11
+; CHECK: jz .Laurora_division_zero_trap
+; CHECK-NOT: idivq %r11
+; CHECK: cmpq $-1, %r11
+; CHECK: idivq %r11
+@@ -8 +8 @@
+-    BinaryValue CheckedDivide
++    BinaryValue CheckedRemainder
+
+; CASE: typed load/store
+; BASE: typed checked division
+; RUN: emit
+@@ -5,4 +5,3 @@
+-    Constant 84
+-    Push
+-    Constant 2
+-    BinaryValue CheckedDivide
++    Constant 42
++    Store 8
++    Load 8
+
+; CASE: empty module
+; RUN: verify
+; EXPECT-ERROR: empty module
+
+
+; CASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: function symbol
+function "x:\n.include \"bad\""
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Load 8
+    Return
+end
+
+; CASE: reserved symbol
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: function symbol
+@@ -1 +1 @@
+-function "x:\n.include \"bad\""
++function aurora_reflect_size
+
+; CASE: duplicate function
+; RUN: verify
+; EXPECT-ERROR: duplicate function
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Load 8
+    Return
+end
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Load 8
+    Return
+end
+
+; CASE: bad frame
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: frame size
+@@ -1 +1 @@
+-function "x:\n.include \"bad\""
++function test
+@@ -3 +3 @@
+-  frame 16
++  frame 8
+
+; CASE: oversized frame
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: frame size
+@@ -1 +1 @@
+-function "x:\n.include \"bad\""
++function test
+@@ -3 +3 @@
+-  frame 16
++  frame 65552
+
+; CASE: bad slot
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: slot offset
+@@ -1 +1 @@
+-function "x:\n.include \"bad\""
++function test
+@@ -3,0 +4 @@
++  slot 7 i64
+
+; CASE: slot past frame
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: slot offset
+@@ -1 +1 @@
+-function "x:\n.include \"bad\""
++function test
+@@ -4,0 +5 @@
++  slot 24 i64
+
+; CASE: noncanonical bool
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: noncanonical bool
+@@ -1 +1 @@
+-function "x:\n.include \"bad\""
++function test
+@@ -5 +5 @@
+-    Constant 42
++    Constant 2 bool
+
+; CASE: load uninitialized
+; BASE: typed checked division
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: load before initialization
+; EXPECT-CODE: AU0000
+@@ -5,4 +5 @@
+-    Constant 84
+-    Push
+-    Constant 2
+-    BinaryValue CheckedDivide
++    Load 8
+
+; CASE: load wrong type
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: slot type/layout
+@@ -1 +1 @@
+-function "x:\n.include \"bad\""
++function test
+@@ -7 +7 @@
+-    Load 8
++    Load 8 bool
+
+; CASE: store wrong type
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -1 +1 @@
+-function "x:\n.include \"bad\""
++function test
+@@ -5 +5 @@
+-    Constant 42
++    Constant 1 bool
+
+; CASE: stack underflow
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: stack underflow
+@@ -1 +1 @@
+-function "x:\n.include \"bad\""
++function test
+@@ -4,0 +5 @@
++    Pop
+
+; CASE: push undefined
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: push without
+@@ -1 +1 @@
+-function "x:\n.include \"bad\""
++function test
+@@ -4,0 +5 @@
++    Push
+
+; CASE: unbalanced return
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: unbalanced stack
+@@ -1 +1 @@
+-function "x:\n.include \"bad\""
++function test
+@@ -7,0 +8 @@
++    Push
+
+; CASE: wrong return
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -1,2 +1,2 @@
+-function "x:\n.include \"bad\""
+-  result i64
++function test
++  result bool
+
+; CASE: fallthrough
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: fallthrough
+@@ -1 +1 @@
+-function "x:\n.include \"bad\""
++function test
+@@ -8 +7,0 @@
+-    Return
+
+; CASE: valid terminal instruction still rejects fallthrough
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: reachable fallthrough without return
+; EXPECT-CODE: AU0000
+@@ -1 +1 @@
+-function "x:\n.include \"bad\""
++function test
+@@ -8 +7,0 @@
+-    Return
+
+; CASE: terminal value error precedes fallthrough
+; BASE: typed checked division
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: value stack underflow
+; EXPECT-CODE: AU0000
+@@ -5,5 +5 @@
+-    Constant 84
+-    Push
+-    Constant 2
+-    BinaryValue CheckedDivide
+-    Return
++    Pop
+
+; CASE: terminal conditional still rejects fallthrough
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: reachable fallthrough without return
+; EXPECT-CODE: AU0000
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Label 1
+    Constant 1 bool
+    BranchFalse 1
+end
+
+; CASE: reachable value error precedes omitted semantic instruction
+; BASE: terminal conditional still rejects fallthrough
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: value stack underflow
+; EXPECT-CODE: AU0000
+@@ -4,0 +5,2 @@
++    Jump 1
++    Constant
+@@ -6,2 +8 @@
+-    Constant 1 bool
+-    BranchFalse 1
++    Pop
+
+; CASE: terminal fallthrough precedes omitted semantic instruction
+; BASE: terminal conditional still rejects fallthrough
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: reachable fallthrough without return
+; EXPECT-CODE: AU0000
+@@ -4,0 +5,3 @@
++    Constant 42
++    Jump 1
++    Constant
+@@ -6,2 +8,0 @@
+-    Constant 1 bool
+-    BranchFalse 1
+
+; CASE: valid reachable return still rejects omitted semantic instruction
+; BASE: terminal conditional still rejects fallthrough
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: unreachable semantic instruction
+; EXPECT-CODE: AU0000
+@@ -5,3 +5,3 @@
+-    Label 1
+-    Constant 1 bool
+-    BranchFalse 1
++    Constant 42
++    Return
++    Constant
+
+; CASE: linear depth error precedes later omitted semantic instruction
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: operand stack depth differs from linear emission order
+; EXPECT-CODE: AU0000
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Push
+    Jump 1
+    Label 2
+    Return
+    Constant
+    Label 1
+    Pop
+    Jump 2
+end
+
+; CASE: first omitted semantic instruction precedes later linear depth error
+; BASE: linear depth error precedes later omitted semantic instruction
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: unreachable semantic instruction
+; EXPECT-CODE: AU0000
+@@ -7,0 +8,3 @@
++    Label 9
++    Jump 9
++    Constant
+
+; CASE: unknown jump
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: unknown jump
+@@ -1 +1 @@
+-function "x:\n.include \"bad\""
++function test
+@@ -8,0 +9 @@
++    Jump 99
+
+; CASE: duplicate label
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: duplicate or invalid label
+@@ -1 +1 @@
+-function "x:\n.include \"bad\""
++function test
+@@ -4,0 +5,2 @@
++    Label 1
++    Label 1
+
+; CASE: unreachable operation
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: unreachable semantic
+@@ -1 +1 @@
+-function "x:\n.include \"bad\""
++function test
+@@ -8,0 +9 @@
++    Constant
+
+; CASE: unreachable bad parameter
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: unreachable semantic instruction
+@@ -1 +1 @@
+-function "x:\n.include \"bad\""
++function test
+@@ -8,0 +9 @@
++    BindParameter 999 8
+
+; CASE: jump over stack effect
+; RUN: verify
+; EXPECT-ERROR: unreachable semantic
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Jump 1
+    Push
+    Label 1
+    MetadataQuery
+    Return
+end
+
+; CASE: missing parameter prefix
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: entry prefix
+@@ -1 +1 @@
+-function "x:\n.include \"bad\""
++function test
+@@ -2,0 +3 @@
++  params [i64]
+
+; CASE: parameter rebound after call
+; RUN: verify
+; EXPECT-ERROR: outside entry prefix
+function test
+  result i64
+  params [bool]
+  frame 16
+  slot 8 bool
+    BindParameter 0 8 bool
+    Constant 42
+    MetadataQuery
+    BindParameter 0 8 bool
+    Constant 42
+    Return
+end
+
+; CASE: unknown call
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: unknown call
+@@ -1 +1 @@
+-function "x:\n.include \"bad\""
++function test
+@@ -4,0 +5 @@
++    Call missing
+
+; CASE: bad unary enum
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: invalid unary
+@@ -1 +1 @@
+-function "x:\n.include \"bad\""
++function test
+@@ -7,0 +8 @@
++    UnaryValue 99
+
+; CASE: bad binary enum
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: invalid binary
+@@ -1 +1 @@
+-function "x:\n.include \"bad\""
++function test
+@@ -7,0 +8 @@
++    BinaryValue 99
+
+; CASE: bad query enum
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: unknown metadata
+@@ -1 +1 @@
+-function "x:\n.include \"bad\""
++function test
+@@ -7,0 +8 @@
++    MetadataQuery 99
+
+; CASE: bad descriptor
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: invalid metadata
+@@ -1 +1,2 @@
+-function "x:\n.include \"bad\""
++descriptor -1 8 0
++function test
+
+; CASE: borrow uninitialized payload
+; BASE: terminal conditional still rejects fallthrough
+; RUN: verify
+; EXPECT-ERROR: uninitialized payload
+@@ -5,3 +5,3 @@
+-    Label 1
+-    Constant 1 bool
+-    BranchFalse 1
++    BorrowHandle 8 ref
++    Constant 42
++    Return
+
+; CASE: unchecked index
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -1 +1 @@
+-function "x:\n.include \"bad\""
++function test
+@@ -7,0 +8 @@
++    IndexLoad 8 1
+
+; CASE: guard invalidated by value change
+; BASE: symbol injection
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -1 +1 @@
+-function "x:\n.include \"bad\""
++function test
+@@ -7,0 +8,4 @@
++    Constant
++    BoundsGuard 8 1
++    Constant 1
++    IndexLoad 8 1
+
+; CASE: guard wrong length
+; RUN: verify
+; EXPECT-ERROR: bounds token
+function test
+  result i64
+  frame 16
+  slot 8 i64
+  slot 16 i64
+    Constant 42
+    Store 8
+    Store 16
+    Constant
+    BoundsGuard 16 2
+    IndexLoad 16 1
+    Return
+end
+
+; CASE: guard wrong base
+; BASE: guard wrong length
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -10,2 +10,2 @@
+-    BoundsGuard 16 2
+-    IndexLoad 16 1
++    BoundsGuard 16 1
++    IndexLoad 8 1
+
+; CASE: guard bypass through branch
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Constant 1 bool
+    BranchFalse 1
+    Constant
+    BoundsGuard 8 1
+    Jump 2
+    Label 1
+    Constant
+    Label 2
+    IndexLoad 8 1
+    Return
+end
+
+; CASE: partial array initialization
+; BASE: guard wrong length
+; RUN: verify
+; EXPECT-ERROR: array element not initialized
+@@ -8 +7,0 @@
+-    Store 16
+@@ -11 +10 @@
+-    IndexLoad 16 1
++    IndexLoad 16 2
+
+; CASE: array layout underflow
+; BASE: jump over stack effect
+; RUN: verify
+; EXPECT-ERROR: layout underflow
+@@ -6,4 +6,3 @@
+-    Jump 1
+-    Push
+-    Label 1
+-    MetadataQuery
++    Store 8
++    Load 8
++    BoundsGuard 8 2
+
+; CASE: store without checked index
+; BASE: jump over stack effect
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -6 +6,2 @@
+-    Jump 1
++    Store 8
++    Load 8
+@@ -8,2 +9 @@
+-    Label 1
+-    MetadataQuery
++    IndexStore 8 1
+
+; CASE: initialization missing branch
+; BASE: terminal conditional still rejects fallthrough
+; RUN: verify
+; EXPECT-ERROR: load before initialization
+@@ -5 +4,0 @@
+-    Label 1
+@@ -7,0 +7,5 @@
++    Constant 42
++    Store 8
++    Label 1
++    Load 8
++    Return
+
+; CASE: loop backedge loses current guard
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Constant
+    BoundsGuard 8 1
+    Label 1
+    IndexLoad 8 1
+    Constant
+    Jump 1
+end
+
+; CASE: late predecessor removes initialization
+; RUN: verify
+; EXPECT-ERROR: load before initialization
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 1 bool
+    BranchFalse 1
+    Label 2
+    Jump 4
+    Label 1
+    Constant 42
+    Store 8
+    Jump 3
+    Label 4
+    Jump 3
+    Label 3
+    Load 8
+    Return
+end
+
+; CASE: identical guards join safely
+; BASE: guard bypass through branch
+; RUN: emit
+@@ -13,0 +14 @@
++    BoundsGuard 8 1
+
+; CASE: constructor, const object and receiver forwarding
+; RUN: emit
+layout Pair [i64 bool]
+function test
+  result i64
+  frame 16
+  slot 8 bool
+  slot 16 i64
+  object 16 Pair false
+    BeginObject 16
+    Constant 42
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_pair 16
+    MethodCall relay_pair 16
+    Return
+end
+function construct_pair
+  result i64
+  params [i64 bool]
+  frame 16
+  receiver Pair true true
+  slot 8 i64
+  slot 16 bool
+    BindParameter 0 8
+    BindParameter 1 16 bool
+    Load 8
+    ReceiverStore
+    Load 16 bool
+    ReceiverStore 1 bool
+    Constant
+    Return
+end
+function get_pair
+  result i64
+  frame 0
+  receiver Pair false false
+    ReceiverLoad
+    Return
+end
+function relay_pair
+  result i64
+  frame 0
+  receiver Pair false false
+    MethodCall get_pair
+    Return
+end
+
+; CASE: direct constructor result uses complete active object
+; BASE: constructor, const object and receiver forwarding
+; RUN: emit
+@@ -3 +3 @@
+-  result i64
++  result (class Pair)
+@@ -14,2 +14 @@
+-    MethodCall relay_pair 16
+-    Return
++    ReturnObject 16
+
+; CASE: direct composed empty result ends argument snapshot
+; RUN: emit
+layout Empty []
+layout OuterEmpty []
+fields OuterEmpty [((class Empty) 0 0 false)]
+function test
+  result (class OuterEmpty)
+  frame 32
+  object 8 Empty false
+  object 16 OuterEmpty false
+  object 24 Empty false
+  object 32 OuterEmpty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 16
+    MethodCall construct_empty_outer 16 [8]
+    EndObject 8
+    ReturnObject 16
+end
+function construct_empty_outer
+  result i64
+  params [(class Empty)]
+  frame 16
+  receiver OuterEmpty true true
+  object 8 Empty false
+    BindObjectParameter 0 8 Empty
+    InitializeObjectField 0 0 8
+    Constant
+    Return
+end
+
+; CASE: direct composed empty result cannot omit logical initialization
+; BASE: direct composed empty result ends argument snapshot
+; RUN: verify
+; EXPECT-ERROR: nested class field not completely initialized
+@@ -14 +13,0 @@
+-    MethodCall construct_empty_outer 16 [8]
+
+; CASE: direct constructor result lifetime ended
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: return outside active lifetime
+@@ -3 +3 @@
+-  result i64
++  result (class Pair)
+@@ -14,2 +14,2 @@
+-    MethodCall relay_pair 16
+-    Return
++    EndObject 16
++    ReturnObject 16
+
+; CASE: direct constructor result initialization omitted
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: returned object not fully initialized
+@@ -3 +3 @@
+-  result i64
++  result (class Pair)
+@@ -9,7 +9 @@
+-    Constant 42
+-    Push
+-    Constant 1 bool
+-    Push
+-    MethodCall construct_pair 16
+-    MethodCall relay_pair 16
+-    Return
++    ReturnObject 16
+
+; CASE: direct constructor result nominal mismatch
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: object return nominal class mismatch
+@@ -0,0 +1 @@
++layout Other [i64 bool]
+@@ -3 +4 @@
+-  result i64
++  result (class Other)
+@@ -14,2 +15 @@
+-    MethodCall relay_pair 16
+-    Return
++    ReturnObject 16
+
+; CASE: direct constructor result retains no operand stack
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: unbalanced stack at object return
+@@ -3 +3 @@
+-  result i64
++  result (class Pair)
+@@ -14,2 +14,2 @@
+-    MethodCall relay_pair 16
+-    Return
++    Push
++    ReturnObject 16
+
+; CASE: direct constructor result cannot hide incomplete constructor
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: returns before all fields initialized
+@@ -3 +3 @@
+-  result i64
++  result (class Pair)
+@@ -14,2 +14 @@
+-    MethodCall relay_pair 16
+-    Return
++    ReturnObject 16
+@@ -29 +27,0 @@
+-    ReceiverStore 1 bool
+
+; CASE: missing class layout
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: unknown receiver class
+@@ -1 +0,0 @@
+-layout Pair [i64 bool]
+
+; CASE: isolated unknown object class
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: unknown object class
+; EXPECT-CODE: AU0000
+function test
+  result i64
+  frame 16
+  slot 8 i64
+  object 8 Missing false
+    Constant 42
+    Store 8
+    Load 8
+    Return
+end
+
+; CASE: isolated unknown receiver class
+; BASE: isolated unknown object class
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: unknown receiver class
+; EXPECT-CODE: AU0000
+@@ -3,0 +4 @@
++  receiver Missing false false
+@@ -5 +5,0 @@
+-  object 8 Missing false
+
+; CASE: non-scalar class layout
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: non-scalar class layout
+@@ -1 +1 @@
+-layout Pair [i64 bool]
++layout Pair [ref bool]
+
+; CASE: unknown bound receiver nominal type
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: unknown receiver class
+@@ -36 +36 @@
+-  receiver Pair false false
++  receiver Unknown false false
+
+; CASE: forged object type
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: nominal class mismatch
+@@ -0,0 +1 @@
++layout Other [i64 bool]
+@@ -7 +8 @@
+-  object 16 Pair false
++  object 16 Other false
+
+; CASE: forged object scalar layout
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: object field slot type/layout mismatch
+@@ -5 +5 @@
+-  slot 8 bool
++  slot 8 i64
+
+; CASE: missing object field slot
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: object field slot type/layout mismatch
+@@ -5 +4,0 @@
+-  slot 8 bool
+
+; CASE: overlapping object layouts
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: overlapping object layouts
+@@ -1,0 +2 @@
++layout Small [bool]
+@@ -6,0 +8 @@
++  object 8 Small true
+
+; CASE: object base underflows layout
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: invalid object layout offset
+@@ -7 +7 @@
+-  object 16 Pair false
++  object 8 Pair true
+
+; CASE: object base outside frame
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: invalid object layout offset
+@@ -7,0 +8 @@
++  object 24 Pair true
+
+; CASE: receiver load without bound receiver
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: without bound receiver
+@@ -7,0 +8 @@
++    ReceiverLoad
+
+; CASE: receiver store without bound receiver
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: without bound receiver
+@@ -9,0 +10 @@
++    ReceiverStore
+
+; CASE: negative receiver field
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: receiver field type/layout
+@@ -37 +37 @@
+-    ReceiverLoad
++    ReceiverLoad -1
+
+; CASE: receiver field past layout
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: receiver field type/layout
+@@ -37 +37 @@
+-    ReceiverLoad
++    ReceiverLoad 2
+
+; CASE: receiver field type forged
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: receiver field type/layout
+@@ -37 +37 @@
+-    ReceiverLoad
++    ReceiverLoad 1
+
+; CASE: receiver cannot become scalar
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: receiver field type/layout
+@@ -37 +37 @@
+-    ReceiverLoad
++    ReceiverLoad 0 ref
+
+; CASE: receiver write through readonly capability
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: write through const receiver
+@@ -37 +37,2 @@
+-    ReceiverLoad
++    Constant 42
++    ReceiverStore
+
+; CASE: scalar call receiver bypass
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: plain call cannot target receiver
+@@ -14 +14 @@
+-    MethodCall relay_pair 16
++    Call get_pair
+
+; CASE: method call scalar target
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: method call requires receiver target
+@@ -14 +14 @@
+-    MethodCall relay_pair 16
++    MethodCall test 16
+
+; CASE: unknown method
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: unknown method call target
+@@ -14 +14 @@
+-    MethodCall relay_pair 16
++    MethodCall missing 16
+
+; CASE: method requires exact object base
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: not an object slot
+@@ -14 +14 @@
+-    MethodCall relay_pair 16
++    MethodCall get_pair 8
+
+; CASE: method rejects negative base
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: invalid method receiver offset
+@@ -14 +14 @@
+-    MethodCall relay_pair 16
++    MethodCall get_pair -16
+
+; CASE: receiver cannot alias arbitrary scalar
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: not an object slot
+@@ -7,2 +6,0 @@
+-  object 16 Pair false
+-    BeginObject 16
+
+; CASE: forwarding requires receiver
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: forwarding without bound receiver
+@@ -14 +14 @@
+-    MethodCall relay_pair 16
++    MethodCall get_pair
+
+; CASE: forwarding preserves nominal identity
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: forwarded receiver nominal class mismatch
+@@ -0,0 +1 @@
++layout Other [i64 bool]
+@@ -36 +37 @@
+-  receiver Pair false false
++  receiver Other false false
+
+; CASE: const receiver cannot forward exclusively
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: const receiver cannot forward mutable
+@@ -36 +36 @@
+-  receiver Pair false false
++  receiver Pair true false
+
+; CASE: const local cannot supply mutable receiver
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: const object cannot supply mutable
+@@ -43 +43 @@
+-  receiver Pair false false
++  receiver Pair true false
+
+; CASE: constructor requires mutable receiver
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: invalid constructor receiver signature
+@@ -21 +21 @@
+-  receiver Pair true true
++  receiver Pair false true
+
+; CASE: constructor requires i64 internal result
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: invalid constructor receiver signature
+@@ -18 +18 @@
+-  result i64
++  result bool
+
+; CASE: constructor missing field
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: before all fields initialized
+@@ -28,2 +27,0 @@
+-    Load 16 bool
+-    ReceiverStore 1 bool
+
+; CASE: constructor duplicate field
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: field initialized more than once
+@@ -27,0 +28 @@
++    ReceiverStore
+
+; CASE: constructor receiver read even after final write
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: constructor cannot read receiver
+@@ -30 +30 @@
+-    Constant
++    ReceiverLoad
+
+; CASE: constructor cannot forward receiver
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: constructor cannot forward receiver
+@@ -30 +30 @@
+-    Constant
++    MethodCall get_pair
+
+; CASE: ordinary method cannot forward as constructor
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: constructor cannot forward receiver
+@@ -44 +44,5 @@
+-    MethodCall get_pair
++    Constant 42
++    Push
++    Constant 1 bool
++    Push
++    MethodCall construct_pair
+
+; CASE: method requires full object initialization
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: object not fully initialized
+@@ -10,5 +10,2 @@
+-    Push
+-    Constant 1 bool
+-    Push
+-    MethodCall construct_pair 16
+-    MethodCall relay_pair 16
++    Store 16
++    MethodCall get_pair 16
+
+; CASE: constructor rejects partially initialized object
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: requires uninitialized object
+@@ -9,0 +10 @@
++    Store 16
+
+; CASE: constructor cannot run twice
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: constructor called more than once
+@@ -8,0 +9,5 @@
++    Constant 42
++    Push
++    Constant 1 bool
++    Push
++    MethodCall construct_pair 16
+
+; CASE: constructor argument type
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: method argument type mismatch
+@@ -11 +11 @@
+-    Constant 1 bool
++    Constant 1
+
+; CASE: constructor argument underflow
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: method argument type mismatch
+@@ -12 +11,0 @@
+-    Push
+
+; CASE: const object field direct overwrite
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: write to initialized const object
+@@ -13,0 +14 @@
++    Store 16
+
+; CASE: const object field indexed overwrite
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: indexed write to const object
+@@ -13,0 +14,5 @@
++    Constant
++    BoundsGuard 16 1
++    Push
++    Constant 1
++    IndexStore 16 1
+
+; CASE: object cannot forge scalar borrow capability
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: object field cannot become a scalar borrow handle
+@@ -13,0 +14 @@
++    BorrowHandle 16 ref
+
+; CASE: parameter cannot alias object
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: parameter cannot bind object field
+@@ -3,0 +4 @@
++  params [i64]
+@@ -7,0 +9 @@
++    BindParameter 0 16
+
+; CASE: self-recursive receiver
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: recursive receiver call cycle
+@@ -37 +37 @@
+-    ReceiverLoad
++    MethodCall get_pair
+
+; CASE: mutually recursive receivers
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: recursive receiver call cycle
+@@ -37 +37 @@
+-    ReceiverLoad
++    MethodCall relay_pair
+
+; CASE: receiver recursion through scalar intermediary
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: recursive receiver call cycle
+@@ -37 +37 @@
+-    ReceiverLoad
++    Call test
+
+; CASE: unreachable receiver instruction
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: unreachable semantic instruction
+@@ -38,0 +39 @@
++    ReceiverStore
+
+; CASE: constructor conditional field omitted
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: before all fields initialized
+@@ -26 +26,3 @@
+-    Load 8
++    Constant 1 bool
++    BranchFalse 1
++    Constant 42
+@@ -28 +30,2 @@
+-    Load 16 bool
++    Label 1
++    Constant 1 bool
+
+; CASE: constructor conditional duplicate field
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: field initialized more than once
+@@ -26 +26,3 @@
+-    Load 8
++    Constant 1 bool
++    BranchFalse 1
++    Constant 42
+@@ -28 +30,4 @@
+-    Load 16 bool
++    Label 1
++    Constant 42
++    ReceiverStore
++    Constant 1 bool
+
+; CASE: constructor loop duplicate field
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: field initialized more than once
+@@ -26 +26,2 @@
+-    Load 8
++    Label 1
++    Constant 42
+@@ -28 +29,2 @@
+-    Load 16 bool
++    Constant 1 bool
++    BranchFalse 1
+
+; CASE: conditional object initialization before construction
+; BASE: constructor, const object and receiver forwarding
+; RUN: verify
+; EXPECT-ERROR: requires uninitialized object
+@@ -7 +7 @@
+-  object 16 Pair false
++  object 16 Pair true
+@@ -8,0 +9,5 @@
++    Constant 1 bool
++    BranchFalse 1
++    Constant 42
++    Store 16
++    Label 1

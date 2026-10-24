@@ -111,60 +111,60 @@ test(
 )
 
 
-# Frozen independent oracle rows are expectations, not a final-source receipt.
-verifier_contract = executable('verifier-contract', 'compiler/verifier_contract.cpp',
+# Textual IR cases (.air) run through one driver; each top-level directory of
+# tests/compiler/ir is one test. See tests/compiler/ir/README.md.
+aurora_ir_check = executable('aurora-ir-check', 'tools/aurora_ir_check.cpp',
     dependencies: hosted_frontend, include_directories: include_directories('../compiler'),
     native: true, override_options: fixture_options, install: false)
-test('verifier-contract', python,
-    args: ['-B', artifact_adapter, python, '-B', files('compiler/verifier_contract.py'),
-           verifier_contract, files('compiler/verifier_contract.expected.jsonl'), '--artifacts', '@ARTIFACTS@'],
-    depends: verifier_contract, suite: ['full', 'merge', 'dev', 'core', 'compiler'],
-    env: oracle_env, workdir: meson.current_build_dir(), timeout: 120)
+air_lit = files('tools/air_lit.py')
+foreach entry : [
+    ['verifier-contract', ['full', 'merge', 'dev', 'core', 'compiler']],
+    ['class-arrays-ir', ['full', 'merge', 'dev', 'core', 'compiler']],
+    ['owned-mutation-ir', ['full', 'merge', 'dev', 'core', 'compiler']],
+    ['sector-values-ir', ['full', 'merge', 'dev', 'bytes', 'compiler']],
+    ['owned-bytes-ir', ['full', 'merge', 'dev', 'core', 'compiler']],
+    ['owning-classes-ir', ['full', 'merge', 'dev', 'core', 'compiler']],
+    ['owned-spans-ir', ['full', 'merge', 'dev', 'core', 'bytes', 'compiler']],
+    ['method-spans-ir', ['full', 'merge', 'dev', 'core', 'bytes', 'compiler']],
+    ['borrowed-objects-ir', ['full', 'merge', 'dev', 'core', 'bytes', 'compiler']],
+    ['console-service-ir', ['full', 'merge', 'dev', 'core', 'compiler']],
+    ['display-service-ir', ['full', 'merge', 'dev', 'core', 'compiler']],
+    ['port-service-ir', ['full', 'merge', 'dev', 'core', 'compiler']],
+    ['serve-service-ir', ['full', 'merge', 'dev', 'core', 'compiler']],
+    ['iommu-event-service-ir', ['full', 'merge', 'dev', 'core', 'compiler']],
+    ['ir-tests', ['full', 'merge', 'slow', 'compiler']],
+    ['stack-probes', ['full', 'merge', 'slow', 'compiler']],
+    ['method-values-ir', ['full', 'merge', 'slow', 'compiler']],
+    ['readonly-windows-ir', ['full', 'merge', 'slow', 'compiler']],
+    ['short-circuit-ir', ['full', 'merge', 'slow', 'compiler']],
+]
+    test(entry[0], python,
+         args: ['-B', air_lit, aurora_ir_check, meson.current_source_dir() / 'compiler' / 'ir' / entry[0]],
+         depends: aurora_ir_check, suite: entry[1], timeout: 120)
+endforeach
+# Owner, view, writer and emitter API unit tests over modules from the same cases.
+ir_api = executable('ir-api', 'compiler/ir_api.cpp',
+    dependencies: hosted_frontend, include_directories: include_directories('../compiler'),
+    native: true, override_options: fixture_options, install: false)
+test('ir-api', ir_api, args: [meson.current_source_dir() / 'compiler' / 'ir'],
+     suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
 
-class_arrays_ir = executable(
-    'class-arrays-ir',
-    'compiler/class_arrays_ir.cpp',
-    dependencies: hosted_frontend,
-    include_directories: include_directories('../compiler'),
-    native: true, override_options: fixture_options,
-    install: false,
-)
-test('class-arrays-ir', class_arrays_ir, suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
-
-owned_mutation_ir = executable(
-    'owned-mutation-ir',
-    'compiler/owned_mutation_ir.cpp',
-    dependencies: hosted_frontend,
-    include_directories: include_directories('../compiler'),
-    native: true, override_options: fixture_options,
-    install: false,
-)
-test('owned-mutation-ir', owned_mutation_ir, suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
 test(
     'owned-mutation-abi',
     python,
-    args: ['-B', '-O', files('compiler/owned_mutation_abi.py'), owned_mutation_ir],
-    depends: owned_mutation_ir,
+    args: ['-B', '-O', files('compiler/owned_mutation_abi.py'), aurora_ir_check],
+    depends: aurora_ir_check,
     suite: ['full', 'merge', 'dev', 'core', 'compiler'],
     env: oracle_env,
     workdir: meson.current_build_dir(),
     timeout: 180,
 )
 
-sector_values_ir = executable(
-    'sector-values-ir',
-    'compiler/sector_values_ir.cpp',
-    dependencies: hosted_frontend,
-    include_directories: include_directories('../compiler'),
-    native: true, override_options: fixture_options,
-    install: false,
-)
-test('sector-values-ir', sector_values_ir, suite: ['full', 'merge', 'dev', 'bytes', 'compiler'], timeout: 120)
 test(
     'sector-values-abi',
     python,
-    args: ['-B', '-O', files('compiler/sector_values_abi.py'), sector_values_ir],
-    depends: sector_values_ir,
+    args: ['-B', '-O', files('compiler/sector_values_abi.py'), aurora_ir_check],
+    depends: aurora_ir_check,
     suite: ['full', 'merge', 'dev', 'bytes', 'compiler'],
     env: oracle_env,
     workdir: meson.current_build_dir(),
@@ -185,12 +185,6 @@ test('semantic-lint', python,
 
 
 # Runtime-owned bytes are a hosted bootstrap boundary, separate from freestanding core.
-owned_bytes_ir = executable(
-    'owned-bytes-ir', 'compiler/owned_bytes_ir.cpp',
-    dependencies: hosted_frontend,
-    include_directories: include_directories('../compiler'), native: true, override_options: fixture_options, install: false,
-)
-test('owned-bytes-ir', owned_bytes_ir, suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
 owned_bytes_host = executable(
     'owned-bytes-host', ['compiler/owned_bytes_host.cpp', '../runtime/hosted_bytes.cpp'],
     cpp_args: ['-DAURORA_HOSTED_BYTES_TESTING'], native: true, override_options: fixture_options, install: false,
@@ -198,30 +192,18 @@ owned_bytes_host = executable(
 test('owned-bytes-host', owned_bytes_host, suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
 
 # Direct owning classes reuse the hosted byte adapter and private value ABI.
-owning_classes_ir = executable(
-    'owning-classes-ir', 'compiler/owning_classes_ir.cpp',
-    dependencies: hosted_frontend,
-    include_directories: include_directories('../compiler'), native: true, override_options: fixture_options, install: false,
-)
-test('owning-classes-ir', owning_classes_ir, suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
 owning_classes_abi_driver = static_library(
     'owning-classes-abi-driver', ['compiler/owning_classes_abi_driver.cpp', '../runtime/hosted_bytes.cpp'],
     include_directories: include_directories('..'), native: true, override_options: fixture_options, install: false,
 )
 test(
     'owning-classes-abi', python,
-    args: ['-B', '-O', files('compiler/owning_classes_abi.py'), owning_classes_ir, owning_classes_abi_driver.full_path()],
-    depends: [owning_classes_ir, owning_classes_abi_driver], suite: ['full', 'merge', 'dev', 'core', 'compiler'],
+    args: ['-B', '-O', files('compiler/owning_classes_abi.py'), aurora_ir_check, owning_classes_abi_driver.full_path()],
+    depends: [aurora_ir_check, owning_classes_abi_driver], suite: ['full', 'merge', 'dev', 'core', 'compiler'],
     env: oracle_env, workdir: meson.current_build_dir(), timeout: 180,
 )
 
 # Logical owner views share the established readonly-span source type.
-owned_spans_ir = executable(
-    'owned-spans-ir', 'compiler/owned_spans_ir.cpp',
-    dependencies: hosted_frontend,
-    include_directories: include_directories('../compiler'), native: true, override_options: fixture_options, install: false,
-)
-test('owned-spans-ir', owned_spans_ir, suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'], timeout: 120)
 test('owned-spans-source', python,
      args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/owned_spans_source.py'), aurorac,
             '--artifacts', '@ARTIFACTS@'],
@@ -237,33 +219,17 @@ foreach mode : ['standalone', 'receiver']
          args: span_kernel_args, depends: aurorac, suite: ['full', 'merge', 'dev', 'bytes', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 endforeach
-logical_spans_abi = executable(
-    'logical-spans-abi', 'compiler/logical_spans_abi.cpp',
-    dependencies: hosted_frontend,
-    include_directories: include_directories('../compiler'), native: true, override_options: fixture_options, install: false,
-)
 test('logical-spans-abi', python,
      args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/logical_spans_abi.py'),
-            logical_spans_abi, '--artifacts', '@ARTIFACTS@'],
-     depends: logical_spans_abi, suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'],
+            aurora_ir_check, '--artifacts', '@ARTIFACTS@'],
+     depends: aurora_ir_check, suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 
 # Synchronous method capabilities retain independent IR and literal-layout ABI gates.
-method_spans_ir = executable(
-    'method-spans-ir', 'compiler/method_spans_ir.cpp',
-    dependencies: hosted_frontend,
-    include_directories: include_directories('../compiler'), native: true, override_options: fixture_options, install: false,
-)
-test('method-spans-ir', method_spans_ir, suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'], timeout: 120)
-method_spans_abi = executable(
-    'method-spans-abi', 'compiler/method_spans_abi.cpp',
-    dependencies: hosted_frontend,
-    include_directories: include_directories('../compiler'), native: true, override_options: fixture_options, install: false,
-)
 test('method-spans-abi', python,
      args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/method_spans_abi.py'),
-            method_spans_abi, '--artifacts', '@ARTIFACTS@'],
-     depends: method_spans_abi, suite: ['full', 'merge', 'slow', 'core', 'bytes', 'compiler'],
+            aurora_ir_check, '--artifacts', '@ARTIFACTS@'],
+     depends: aurora_ir_check, suite: ['full', 'merge', 'slow', 'core', 'bytes', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 # Keep routine borrowed-object feedback small; full owner/helper and literal ABI
 # sweeps remain explicit slow coverage. Full/unfiltered runs retain every gate.
@@ -275,36 +241,13 @@ test('borrowed-objects', python,
      args: ['-B', '-O', files('compiler/borrowed_objects.py'), aurorac],
      depends: aurorac, suite: ['full', 'release', 'bytes', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300, is_parallel: true)
-borrowed_objects_ir = executable(
-    'borrowed-objects-ir', 'compiler/borrowed_objects_ir.cpp',
-    dependencies: hosted_frontend,
-    include_directories: include_directories('../compiler'), native: true, override_options: fixture_options, install: false,
-)
-test('borrowed-objects-ir', borrowed_objects_ir, suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'], timeout: 120)
-borrowed_objects_abi = executable(
-    'borrowed-objects-abi', 'compiler/borrowed_objects_abi.cpp',
-    dependencies: hosted_frontend,
-    include_directories: include_directories('../compiler'), native: true, override_options: fixture_options, install: false,
-)
 test('borrowed-objects-abi', python,
      args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/borrowed_objects_abi.py'),
-            borrowed_objects_abi, '--artifacts', '@ARTIFACTS@'],
-     depends: borrowed_objects_abi, suite: ['full', 'merge', 'slow', 'core', 'bytes', 'compiler'],
+            aurora_ir_check, '--artifacts', '@ARTIFACTS@'],
+     depends: aurora_ir_check, suite: ['full', 'merge', 'slow', 'core', 'bytes', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 
 # Sealed service authority has its own independent verifier and host-grant model.
-# Shared hand-built service IR fixtures, compiled once for all service IR tests.
-service_ir_common = static_library(
-    'service-ir-common', 'compiler/service_ir_common.cpp',
-    dependencies: hosted_frontend,
-    include_directories: include_directories('../compiler'), native: true, override_options: fixture_options, install: false,
-)
-console_service_ir = executable(
-    'console-service-ir', 'compiler/console_service_ir.cpp', link_with: service_ir_common,
-    dependencies: hosted_frontend,
-    include_directories: include_directories('../compiler'), native: true, override_options: fixture_options, install: false,
-)
-test('console-service-ir', console_service_ir, suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
 console_session = executable('console-session', 'kernel-console-session.cpp', native: true, override_options: fixture_options, install: false)
 test('console-session', console_session, suite: ['full', 'merge', 'dev'], timeout: 120)
 # Hosts for the console service runner, built once; it links each generated root.
@@ -332,15 +275,10 @@ test('console-service-source-native', python,
      workdir: meson.current_build_dir(), timeout: 300)
 
 # Second sealed kind reuses the service verifier and private bridge.
-display_service_ir = executable(
-    'display-service-ir', ['compiler/service_group_ir.cpp', 'compiler/display_service_ir.cpp'], link_with: service_ir_common,
-    dependencies: hosted_frontend,
-    include_directories: include_directories('../compiler'), native: true, override_options: fixture_options, install: false,
-)
-test('display-service-ir', python,
+test('display-service-abi', python,
      args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/service_group_ir_abi.py'),
-            display_service_ir.full_path(), '--artifacts', '@ARTIFACTS@'],
-     depends: display_service_ir, suite: ['full', 'merge', 'dev', 'core', 'compiler'], env: oracle_env, timeout: 120)
+            aurora_ir_check.full_path(), '--artifacts', '@ARTIFACTS@'],
+     depends: aurora_ir_check, suite: ['full', 'merge', 'dev', 'core', 'compiler'], env: oracle_env, timeout: 120)
 test('display-service-source-native', python,
      args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/display_service.py'), aurorac,
             '--artifacts', '@ARTIFACTS@'],
@@ -348,41 +286,25 @@ test('display-service-source-native', python,
      workdir: meson.current_build_dir(), timeout: 300)
 
 # Port remains a sealed singleton with fixed hosted mocks, never native I/O.
-port_service_ir = executable(
-    'port-service-ir', 'compiler/port_service_ir.cpp', link_with: service_ir_common,
-    dependencies: hosted_frontend,
-    include_directories: include_directories('../compiler'), native: true, override_options: fixture_options, install: false,
-)
-test('port-service-ir', port_service_ir, suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
 test('port-service-source-native', python,
      args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/port_service.py'), aurorac,
-            port_service_ir.full_path(), '--artifacts', '@ARTIFACTS@'],
-     depends: [aurorac, port_service_ir], suite: ['full', 'merge', 'slow', 'core', 'compiler'], env: oracle_env,
+            aurora_ir_check.full_path(), '--artifacts', '@ARTIFACTS@'],
+     depends: [aurorac, aurora_ir_check], suite: ['full', 'merge', 'slow', 'core', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
 
 # Serve keeps an exact copied two-register result and singleton grant.
-serve_service_ir = executable(
-    'serve-service-ir', 'compiler/serve_service_ir.cpp', link_with: service_ir_common,
-    dependencies: hosted_frontend,
-    include_directories: include_directories('../compiler'), native: true, override_options: fixture_options, install: false,
-)
-test('serve-service-ir', serve_service_ir, suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
 test('serve-service-source-native', python,
      args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/serve_service.py'), aurorac,
-            serve_service_ir.full_path(), '--artifacts', '@ARTIFACTS@'],
-     depends: [aurorac, serve_service_ir], suite: ['full', 'merge', 'slow', 'core', 'compiler'], env: oracle_env,
+            aurora_ir_check.full_path(), '--artifacts', '@ARTIFACTS@'],
+     depends: [aurorac, aurora_ir_check], suite: ['full', 'merge', 'slow', 'core', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
 
 # Event intake retains the existing service loan graph and executes the real
 # Aurora consumer against bounded hosted observations; no guest is run here.
-iommu_event_ir = executable(
-    'iommu-event-service-ir', 'compiler/iommu_event_service_ir.cpp', link_with: service_ir_common,
-    dependencies: hosted_frontend,
-    include_directories: include_directories('../compiler'), native: true, override_options: fixture_options, install: false,
-)
-test('iommu-event-service-ir', iommu_event_ir, suite: ['full', 'merge', 'slow', 'core', 'compiler'], timeout: 60)
+# The independent IR program comes from its textual IR case, printed once.
 iommu_event_ir_assembly = custom_target('iommu-event-ir-assembly', output: 'iommu-event-ir.s',
-    command: [iommu_event_ir, '@OUTPUT@'], capture: false)
+    input: files('compiler/ir/iommu-event-service-ir/abi.air'),
+    command: [aurora_ir_check, '--output', '@INPUT@', 'executed', '@OUTPUT@'])
 iommu_event_ir_object = custom_target('iommu-event-ir-object', input: iommu_event_ir_assembly,
     output: 'iommu-event-ir.o',
     command: [find_program('as', native: true), '--64', '@INPUT@', files('compiler/iommu_event_ir_bridge.S'),
@@ -507,8 +429,7 @@ test('iommu-diagnostics-optimized', python, args: ['-B', '-O', files('iommu-diag
 # hidden inside each test invocation; Ninja tracks C++ header dependencies.
 compiler_fixtures = {}
 foreach fixture : [
-    'diagnostics', 'lexer_trivia', 'source_overlays', 'ir_tests', 'stack_probes',
-    'method_values_ir', 'readonly_windows_ir', 'short_circuit_ir',
+    'diagnostics', 'lexer_trivia', 'source_overlays',
 ]
     compiler_fixtures += {fixture: executable(
         fixture.replace('_', '-') + '-fixture', 'compiler/' + fixture + '.cpp',
@@ -530,29 +451,25 @@ test('lexer-trivia', python,
      args: ['-B', files('meson_lexer_inputs.py'), compiler_fixtures['lexer_trivia'], meson.project_source_root()],
      depends: compiler_fixtures['lexer_trivia'], suite: ['full', 'merge', 'slow', 'compiler'],
      env: oracle_env, timeout: 180)
-foreach fixture : ['ir_tests', 'stack_probes', 'method_values_ir', 'readonly_windows_ir', 'short_circuit_ir']
-    test(fixture.replace('_', '-'), compiler_fixtures[fixture],
-         suite: ['full', 'merge', 'slow', 'compiler'], env: oracle_env, timeout: 180)
-endforeach
 # Reuse the real CLI entry object for alternate-emitter mutation probes.
 # No duplicate compiler/IR translation unit or production entry is added.
 emitter_probe_main = static_library('emitter-probe-main',
     objects: aurorac.extract_all_objects(recursive: false), native: true, build_by_default: false)
 test('ir-exhaustive', python,
-     args: ['-B', artifact_adapter, python, '-B', files('compiler/ir_exhaustive.py'), compiler_fixtures['ir_tests'],
+     args: ['-B', artifact_adapter, python, '-B', files('compiler/ir_exhaustive.py'), aurora_ir_check,
             '--abi-header', frontend_assembly[3], '--abi-facts', frontend_assembly[2],
             '--compiler', aurorac, '--frontend-library', frontend_library,
             '--main-library', emitter_probe_main, '--artifacts', '@ARTIFACTS@'],
-     depends: [compiler_fixtures['ir_tests'], frontend_assembly, frontend_library, aurorac, emitter_probe_main], suite: ['full', 'release', 'compiler'],
+     depends: [aurora_ir_check, frontend_assembly, frontend_library, aurorac, emitter_probe_main], suite: ['full', 'release', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 600, is_parallel: false)
 test('stack-guards', python,
-     args: ['-B', '-O', files('compiler/sector_values_abi.py'), compiler_fixtures['stack_probes'], '--stack-guards'],
-     depends: compiler_fixtures['stack_probes'], suite: ['full', 'merge', 'slow', 'compiler'],
+     args: ['-B', '-O', files('compiler/sector_values_abi.py'), aurora_ir_check, '--stack-guards'],
+     depends: aurora_ir_check, suite: ['full', 'merge', 'slow', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 test('method-values-abi', python,
      args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/method_values_abi.py'),
-            compiler_fixtures['method_values_ir'], '--work-dir', '@ARTIFACTS@'],
-     depends: compiler_fixtures['method_values_ir'], suite: ['full', 'merge', 'slow', 'compiler'],
+            aurora_ir_check, '--work-dir', '@ARTIFACTS@'],
+     depends: aurora_ir_check, suite: ['full', 'merge', 'slow', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 foreach family : ['readonly_windows', 'short_circuit']
     test(family.replace('_', '-'), python,
@@ -562,8 +479,8 @@ foreach family : ['readonly_windows', 'short_circuit']
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
     test(family.replace('_', '-') + '-ir-native', python,
          args: ['-B', artifact_adapter, python, '-B', '-O', files('compiler/' + family + '_ir_native.py'),
-                compiler_fixtures[family + '_ir'], '--artifacts', '@ARTIFACTS@'],
-         depends: compiler_fixtures[family + '_ir'], suite: ['full', 'merge', 'slow', 'compiler'],
+                aurora_ir_check, '--artifacts', '@ARTIFACTS@'],
+         depends: aurora_ir_check, suite: ['full', 'merge', 'slow', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
 endforeach
 # Library behaviour: one compiled driver per library, linked once with

@@ -1,0 +1,6609 @@
+; CASE: explicit zero-field completion returns independent value
+; RUN: verify
+; EXPECT-OK
+layout Empty []
+function explicit_empty
+  result (class Empty)
+  frame 16
+  object 8 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    ReturnObject 8
+end
+
+; CASE: empty marker requires begun storage
+; BASE: explicit zero-field completion returns independent value
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +5,0 @@
+-    BeginObject 8
+
+; CASE: empty marker requires exact object slot
+; BASE: explicit zero-field completion returns independent value
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -7 +7 @@
+-    InitializeEmptyObject 8
++    InitializeEmptyObject
+
+; CASE: empty marker cannot complete twice
+; BASE: explicit zero-field completion returns independent value
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -7,0 +8 @@
++    InitializeEmptyObject 8
+
+; CASE: empty marker cannot complete ended storage
+; BASE: explicit zero-field completion returns independent value
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6,0 +7 @@
++    EndObject 8
+
+; CASE: empty marker cannot complete scalar fields
+; BASE: explicit zero-field completion returns independent value
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -1 +1 @@
+-layout Empty []
++layout Empty [i64]
+@@ -4,0 +5 @@
++  slot 8 i64
+
+; CASE: empty marker cannot bypass nested empty field
+; BASE: explicit zero-field completion returns independent value
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -0,0 +1 @@
++layout Child []
+@@ -1,0 +3 @@
++fields Empty [((class Child) 0 0 false)]
+
+; CASE: empty marker cannot initialize class array carrier
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+layout Child []
+layout Empty []
+fields Empty [((class Child) 0 0 true 2)]
+carrier Empty
+function explicit_empty
+  result i64
+  frame 16
+  object 8 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    Constant
+    Return
+end
+
+; CASE: conditional empty marker cannot establish completion
+; BASE: explicit zero-field completion returns independent value
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6,0 +7,2 @@
++    Constant 1 bool
++    BranchFalse 1
+@@ -7,0 +10 @@
++    Label 1
+
+; CASE: both branches explicitly complete empty value
+; BASE: explicit zero-field completion returns independent value
+; RUN: verify
+; EXPECT-OK
+@@ -6,0 +7,2 @@
++    Constant 1 bool
++    BranchFalse 1
+@@ -7,0 +10,4 @@
++    Jump 2
++    Label 1
++    InitializeEmptyObject 8
++    Label 2
+
+; CASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-OK
+layout ByteBox []
+layout Empty []
+layout Nested [u8 u64 u8]
+layout Other [u8 u64 u8]
+layout Record [u8 u64 u8]
+layout ValuesBox []
+fields ByteBox [(bytes 0 0 false)]
+fields Empty []
+fields Nested [((class Record) 0 3 false) ((class Empty) 3 0 false)]
+fields Other [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields Record [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields ValuesBox [((values Record) 0 0 false)]
+storage ByteBox [] [0] 32 8 32
+storage Empty [] [] 8 8 8
+storage Nested [{0,8}*3] [0 24] 24 8 24
+storage Other [{0,8}*3] [{0,8}*3] 24 8 24
+storage Record [{0,8}*3] [{0,8}*3] 24 8 24
+storage ValuesBox [] [0] 32 8 32
+enum Mode 2
+function borrowed_values
+  result i64
+  params [(values Record) (class Record) i64]
+  frame 64
+  roots 1
+  firstmut 1
+  slot 8 u8
+  slot 16 u64
+  slot 24 u8
+  slot 32 u8
+  slot 40 u64
+  slot 48 u8
+  slot 56 i64
+  object 24 Record false
+  object 48 Record false
+    BindObjectParameter 0 24 Record
+    BindParameter 1 56
+    BeginObject 48
+    Constant
+    ValuesLoad 0 -1 48
+    Constant
+    ValuesStore 0 -1 48
+    Load 56
+    ValuesResize 0 -1 24
+    BytesOk
+    BytesLength
+    EndObject 48
+    EndObject 24
+    Return
+end
+
+; CASE: borrowed typed owner requires mutable formal
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -25 +24,0 @@
+-  firstmut 1
+
+; CASE: borrowed typed owner rejects raw byte formal
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -22 +22 @@
+-  params [(values Record) (class Record) i64]
++  params [bytes (class Record) i64]
+
+; CASE: borrowed typed owner rejects equal-layout foreign element
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -22 +22 @@
+-  params [(values Record) (class Record) i64]
++  params [(values Other) (class Record) i64]
+
+; CASE: borrowed typed owner rejects unbound negative root
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39 @@
+-    ValuesLoad 0 -1 48
++    ValuesLoad -1 -1 48
+
+; CASE: borrowed typed owner rejects receiver field projection
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39 @@
+-    ValuesLoad 0 -1 48
++    ValuesLoad 0 0 48
+
+; CASE: borrowed typed owner rejects malformed field selector
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39 @@
+-    ValuesLoad 0 -1 48
++    ValuesLoad 0 -2 48
+
+; CASE: borrowed typed owner requires copied snapshot completion
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +38,0 @@
+-    ValuesLoad 0 -1 48
+
+; CASE: borrowed typed owner requires readonly copied fill
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -33 +33 @@
+-  object 24 Record false
++  object 24 Record true
+
+; CASE: borrowed typed owner rejects byte mutation opcode
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -42,0 +43 @@
++    BytesResize
+
+; CASE: borrowed typed owner cannot return builtin::OwnedBytes
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -21 +21 @@
+-  result i64
++  result bytes
+
+; CASE: borrowed typed owner cannot return builtin::OwnedValues<Record>
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -21 +21 @@
+-  result i64
++  result (values Record)
+
+; CASE: borrowed typed owner cannot return Record
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -21 +21 @@
+-  result i64
++  result (class Record)
+
+; CASE: borrowed typed owner cannot return builtin::span<const u8>
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -21 +21 @@
+-  result i64
++  result span
+
+; CASE: borrowed typed owner rejects tail builtin::ByteRegion
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -22 +22 @@
+-  params [(values Record) (class Record) i64]
++  params [(values Record) (class Record) i64 region]
+
+; CASE: borrowed typed owner rejects tail builtin::OwnedBytes
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -22 +22 @@
+-  params [(values Record) (class Record) i64]
++  params [(values Record) (class Record) i64 bytes]
+
+; CASE: borrowed typed owner rejects tail builtin::OwnedValues<Record>
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -22 +22 @@
+-  params [(values Record) (class Record) i64]
++  params [(values Record) (class Record) i64 (values Record)]
+
+; CASE: borrowed typed owner rejects tail ValuesBox
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -22 +22 @@
+-  params [(values Record) (class Record) i64]
++  params [(values Record) (class Record) i64 (class ValuesBox)]
+
+; CASE: borrowed typed owner rejects tail builtin::span<const u8>
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -22 +22 @@
+-  params [(values Record) (class Record) i64]
++  params [(values Record) (class Record) i64 span]
+
+; CASE: borrowed typed owner rejects second borrowed root
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -22 +22 @@
+-  params [(values Record) (class Record) i64]
++  params [(values Record) (values Record) i64]
+@@ -24 +24 @@
+-  roots 1
++  roots 2
+
+; CASE: borrowed typed owner rejects receiver identity
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -23,0 +24 @@
++  receiver ValuesBox true false
+
+; CASE: borrowed typed owner rejects escaping span summary
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -25,0 +26 @@
++  spanfield 0
+
+; CASE: borrowed typed owner denies owning lifetime restart
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -23 +23 @@
+-  frame 64
++  frame 112
+@@ -34,0 +35,2 @@
++  bytes 112 true
++  values 112 Record
+@@ -36,0 +39 @@
++    BeginBytes
+
+; CASE: borrowed typed owner denies owning cleanup
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -23 +23 @@
+-  frame 64
++  frame 112
+@@ -34,0 +35,2 @@
++  bytes 112 true
++  values 112 Record
+@@ -36,0 +39 @@
++    EndBytes
+
+; CASE: borrowed typed owner denies owning return
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -23 +23 @@
+-  frame 64
++  frame 112
+@@ -34,0 +35,2 @@
++  bytes 112 true
++  values 112 Record
+@@ -36,0 +39 @@
++    ReturnBytes
+
+; CASE: borrowed typed owner denies owning move
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -23 +23 @@
+-  frame 64
++  frame 112
+@@ -34,0 +35,2 @@
++  bytes 112 true
++  values 112 Record
+@@ -36,0 +39 @@
++    MoveBytes 0 112
+
+; CASE: borrowed typed owner denies owning bind
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -23 +23 @@
+-  frame 64
++  frame 112
+@@ -34,0 +35,2 @@
++  bytes 112 true
++  values 112 Record
+@@ -36,0 +39 @@
++    BindBytesParameter 0 112
+
+; CASE: borrowed typed owner cannot expose byte span
+; BASE: borrowed typed owner reads writes resizes and cleans copied tails
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -23 +23 @@
+-  frame 64
++  frame 112
+@@ -34,0 +35 @@
++  span 112
+@@ -36,0 +38 @@
++    BorrowOwnedSpan 0 -1 112
+
+; CASE: typed owner frame views
+; RUN: metadata
+; CHECK: callable 0 typed_values 
+; CHECK-SAME: frame 208
+; CHECK: region typed_values 8
+; CHECK-NEXT: bytes typed_values 
+; CHECK-NEXT: bytes typed_values 
+; CHECK-NEXT: bytes typed_values 
+; CHECK-NEXT: bytes typed_values 
+; CHECK-NEXT: values typed_values 40 Record
+; CHECK-NEXT: values typed_values 72 Record
+; CHECK-NEXT: origin typed_values 
+; RUN: metadata
+; CHECK-DAG: bytes typed_values 40 mutable
+; CHECK-DAG: bytes typed_values 72 mutable
+layout ByteBox []
+layout Empty []
+layout Nested [u8 u64 u8]
+layout Other [u8 u64 u8]
+layout Record [u8 u64 u8]
+layout ValuesBox []
+fields ByteBox [(bytes 0 0 false)]
+fields Empty []
+fields Nested [((class Record) 0 3 false) ((class Empty) 3 0 false)]
+fields Other [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields Record [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields ValuesBox [((values Record) 0 0 false)]
+storage ByteBox [] [0] 32 8 32
+storage Empty [] [] 8 8 8
+storage Nested [{0,8}*3] [0 24] 24 8 24
+storage Other [{0,8}*3] [{0,8}*3] 24 8 24
+storage Record [{0,8}*3] [{0,8}*3] 24 8 24
+storage ValuesBox [] [0] 32 8 32
+enum Mode 2
+function typed_values
+  result i64
+  params [region]
+  frame 208
+  slot 144 u8
+  slot 152 u64
+  slot 160 u8
+  slot 168 u8
+  slot 176 u64
+  slot 184 u8
+  slot 192 u8
+  slot 200 u64
+  slot 208 u8
+  object 160 Record false
+  object 184 Record false
+  object 208 Record true
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+  values 40 Record
+  values 72 Record
+    BindRegionParameter 0 8
+    BeginObject 208
+    Constant 7 u8
+    Store 208 u8
+    Constant 42 u64
+    Store 200 u64
+    Constant 9 u8
+    Store 192 u8
+    BeginObject 160
+    CopyObject 208 160
+    EndObject 208
+    BeginBytes 40
+    Constant 2
+    AllocateValues 8 40 160
+    BeginObject 184
+    Constant
+    ValuesLoad 40 -1 184
+    Constant 1
+    ValuesStore 40 -1 184
+    Constant 5
+    ValuesResize 40 -1 160
+    BytesOk 40
+    BytesLength 40
+    EndObject 184
+    EndObject 160
+    EndBytes 40
+    Return
+end
+
+; CASE: typed allocate copy load store resize and cleanup
+; BASE: typed owner frame views
+; RUN: verify
+; EXPECT-OK
+
+; CASE: typed empty elements retain copied completion
+; RUN: verify
+; EXPECT-OK
+layout ByteBox []
+layout Empty []
+layout Nested [u8 u64 u8]
+layout Other [u8 u64 u8]
+layout Record [u8 u64 u8]
+layout ValuesBox []
+fields ByteBox [(bytes 0 0 false)]
+fields Empty []
+fields Nested [((class Record) 0 3 false) ((class Empty) 3 0 false)]
+fields Other [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields Record [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields ValuesBox [((values Record) 0 0 false)]
+storage ByteBox [] [0] 32 8 32
+storage Empty [] [] 8 8 8
+storage Nested [{0,8}*3] [0 24] 24 8 24
+storage Other [{0,8}*3] [{0,8}*3] 24 8 24
+storage Record [{0,8}*3] [{0,8}*3] 24 8 24
+storage ValuesBox [] [0] 32 8 32
+enum Mode 2
+function empty_values
+  result i64
+  params [region (values Empty)]
+  frame 192
+  object 144 Empty false
+  object 152 Empty false
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+  values 40 Empty
+  values 72 Empty
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BeginObject 144
+    Constant
+    ValuesLoad 40 -1 144
+    BeginBytes 72
+    Constant 3
+    AllocateValues 8 72 144
+    BeginObject 152
+    Constant
+    ValuesLoad 72 -1 152
+    Constant
+    ValuesStore 40 -1 152
+    Constant 6
+    ValuesResize 40 -1 144
+    BytesLength 40
+    EndObject 152
+    EndObject 144
+    EndBytes 72
+    EndBytes 40
+    Return
+end
+
+; CASE: typed nested get establishes all logical fields
+; RUN: verify
+; EXPECT-OK
+layout ByteBox []
+layout Empty []
+layout Nested [u8 u64 u8]
+layout Other [u8 u64 u8]
+layout Record [u8 u64 u8]
+layout ValuesBox []
+fields ByteBox [(bytes 0 0 false)]
+fields Empty []
+fields Nested [((class Record) 0 3 false) ((class Empty) 3 0 false)]
+fields Other [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields Record [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields ValuesBox [((values Record) 0 0 false)]
+storage ByteBox [] [0] 32 8 32
+storage Empty [] [] 8 8 8
+storage Nested [{0,8}*3] [0 24] 24 8 24
+storage Other [{0,8}*3] [{0,8}*3] 24 8 24
+storage Record [{0,8}*3] [{0,8}*3] 24 8 24
+storage ValuesBox [] [0] 32 8 32
+enum Mode 2
+function nested_values
+  result i64
+  params [region (values Nested)]
+  frame 192
+  slot 144 u8
+  slot 152 u64
+  slot 160 u8
+  object 160 Nested false
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+  values 40 Nested
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BeginObject 160
+    Constant
+    ValuesLoad 40 -1 160
+    Constant 6
+    ValuesResize 40 -1 160
+    BytesLength 40
+    EndObject 160
+    EndBytes 40
+    Return
+end
+
+; CASE: typed empty fill cannot be bare lifetime
+; BASE: typed empty elements retain copied completion
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -37 +36,0 @@
+-    ValuesLoad 40 -1 144
+
+; CASE: typed empty fill completion must dominate join
+; BASE: typed empty elements retain copied completion
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -36,0 +37,3 @@
++    Constant 1 bool
++    BranchFalse 1
++    Constant
+@@ -37,0 +41 @@
++    Label 1
+
+; CASE: typed empty load cannot reinitialize result
+; BASE: typed empty elements retain copied completion
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -43 +43 @@
+-    ValuesLoad 72 -1 152
++    ValuesLoad 72 -1 144
+
+; CASE: typed fill requires copied snapshot completion
+; BASE: typed owner frame views
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -52 +52 @@
+-    CopyObject 208 160
++    Constant 7 u8
+@@ -54,0 +55,7 @@
++    Constant 2
++    Constant 7 u8
++    Store 160 u8
++    Constant 42 u64
++    Store 152 u64
++    Constant 9 u8
++    Store 144 u8
+
+; CASE: typed owner parameter move and return
+; RUN: verify
+; EXPECT-OK
+layout ByteBox []
+layout Empty []
+layout Nested [u8 u64 u8]
+layout Other [u8 u64 u8]
+layout Record [u8 u64 u8]
+layout ValuesBox []
+fields ByteBox [(bytes 0 0 false)]
+fields Empty []
+fields Nested [((class Record) 0 3 false) ((class Empty) 3 0 false)]
+fields Other [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields Record [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields ValuesBox [((values Record) 0 0 false)]
+storage ByteBox [] [0] 32 8 32
+storage Empty [] [] 8 8 8
+storage Nested [{0,8}*3] [0 24] 24 8 24
+storage Other [{0,8}*3] [{0,8}*3] 24 8 24
+storage Record [{0,8}*3] [{0,8}*3] 24 8 24
+storage ValuesBox [] [0] 32 8 32
+enum Mode 2
+function values_parameter
+  result (values Record)
+  params [region (values Record)]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+  values 40 Record
+  values 72 Record
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BeginBytes 72
+    MoveBytes 40 72
+    EndBytes 40
+    ReturnBytes 72
+end
+
+; CASE: typed owner resource call
+; RUN: verify
+; EXPECT-OK
+layout ByteBox []
+layout Empty []
+layout Nested [u8 u64 u8]
+layout Other [u8 u64 u8]
+layout Record [u8 u64 u8]
+layout ValuesBox []
+fields ByteBox [(bytes 0 0 false)]
+fields Empty []
+fields Nested [((class Record) 0 3 false) ((class Empty) 3 0 false)]
+fields Other [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields Record [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields ValuesBox [((values Record) 0 0 false)]
+storage ByteBox [] [0] 32 8 32
+storage Empty [] [] 8 8 8
+storage Nested [{0,8}*3] [0 24] 24 8 24
+storage Other [{0,8}*3] [{0,8}*3] 24 8 24
+storage Record [{0,8}*3] [{0,8}*3] 24 8 24
+storage ValuesBox [] [0] 32 8 32
+enum Mode 2
+function values_caller
+  result (values Record)
+  params [region (values Record)]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+  values 40 Record
+  values 72 Record
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BeginBytes 72
+    ResourceCall values_parameter 8 [0 40] 72
+    EndBytes 40
+    ReturnBytes 72
+end
+function values_parameter
+  result (values Record)
+  params [region (values Record)]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+  values 40 Record
+  values 72 Record
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BeginBytes 72
+    MoveBytes 40 72
+    EndBytes 40
+    ReturnBytes 72
+end
+
+; CASE: typed owner constructor field
+; RUN: verify
+; EXPECT-OK
+layout ByteBox []
+layout Empty []
+layout Nested [u8 u64 u8]
+layout Other [u8 u64 u8]
+layout Record [u8 u64 u8]
+layout ValuesBox []
+fields ByteBox [(bytes 0 0 false)]
+fields Empty []
+fields Nested [((class Record) 0 3 false) ((class Empty) 3 0 false)]
+fields Other [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields Record [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields ValuesBox [((values Record) 0 0 false)]
+storage ByteBox [] [0] 32 8 32
+storage Empty [] [] 8 8 8
+storage Nested [{0,8}*3] [0 24] 24 8 24
+storage Other [{0,8}*3] [{0,8}*3] 24 8 24
+storage Record [{0,8}*3] [{0,8}*3] 24 8 24
+storage ValuesBox [] [0] 32 8 32
+enum Mode 2
+function values_constructor
+  result i64
+  params [region (values Record)]
+  frame 192
+  receiver ValuesBox true true
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+  values 40 Record
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    InitializeBytesField 0 0 40
+    EndBytes 40
+    Constant
+    Return
+end
+
+; CASE: typed owner mutable receiver field
+; RUN: verify
+; EXPECT-OK
+layout ByteBox []
+layout Empty []
+layout Nested [u8 u64 u8]
+layout Other [u8 u64 u8]
+layout Record [u8 u64 u8]
+layout ValuesBox []
+fields ByteBox [(bytes 0 0 false)]
+fields Empty []
+fields Nested [((class Record) 0 3 false) ((class Empty) 3 0 false)]
+fields Other [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields Record [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields ValuesBox [((values Record) 0 0 false)]
+storage ByteBox [] [0] 32 8 32
+storage Empty [] [] 8 8 8
+storage Nested [{0,8}*3] [0 24] 24 8 24
+storage Other [{0,8}*3] [{0,8}*3] 24 8 24
+storage Record [{0,8}*3] [{0,8}*3] 24 8 24
+storage ValuesBox [] [0] 32 8 32
+enum Mode 2
+function values_method
+  result bool
+  params [(class Record)]
+  frame 64
+  receiver ValuesBox true false
+  slot 8 u8
+  slot 16 u64
+  slot 24 u8
+  slot 32 u8
+  slot 40 u64
+  slot 48 u8
+  object 24 Record false
+  object 48 Record false
+    BindObjectParameter 0 24 Record
+    BeginObject 48
+    Constant
+    ValuesLoad 0 0 48
+    EndObject 48
+    Constant 3
+    ValuesResize 0 0 24
+    Return
+end
+
+; CASE: typed owner readonly receiver copy
+; BASE: typed owner mutable receiver field
+; RUN: verify
+; EXPECT-OK
+@@ -21 +21 @@
+-  result bool
++  result i64
+@@ -24 +24 @@
+-  receiver ValuesBox true false
++  receiver ValuesBox false false
+@@ -38,2 +38 @@
+-    Constant 3
+-    ValuesResize 0 0 24
++    BytesLength 0 0
+
+; CASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+layout ByteBox []
+layout Empty []
+layout Nested [u8 u64 u8]
+layout Other [u8 u64 u8]
+layout Record [u8 u64 u8]
+layout ValuesBox []
+fields ByteBox [(bytes 0 0 false)]
+fields Empty []
+fields Nested [((class Record) 0 3 false) ((class Empty) 3 0 false)]
+fields Other [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields Record [(u8 0 1 false) (u64 1 1 false) (u8 2 1 false)]
+fields ValuesBox [((values Record) 0 0 false)]
+storage ByteBox [] [0] 32 8 32
+storage Empty [] [] 8 8 8
+storage Nested [{0,8}*3] [0 24] 24 8 24
+storage Other [{0,8}*3] [{0,8}*3] 24 8 24
+storage Record [{0,8}*3] [{0,8}*3] 24 8 24
+storage ValuesBox [] [0] 32 8 32
+enum Mode 2
+function typed_values
+  result i64
+  params [region]
+  frame 208
+  slot 144 u8
+  slot 152 u64
+  slot 160 u8
+  slot 168 u8
+  slot 176 u64
+  slot 184 u8
+  slot 192 u8
+  slot 200 u64
+  slot 208 u8
+  object 160 Record false
+  object 184 Record false
+  object 208 Record true
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+  values 40 Record
+  values 72 Record
+  values 160 Record
+    BindRegionParameter 0 8
+    BeginObject 208
+    Constant 7 u8
+    Store 208 u8
+    Constant 42 u64
+    Store 200 u64
+    Constant 9 u8
+    Store 192 u8
+    BeginObject 160
+    CopyObject 208 160
+    EndObject 208
+    BeginBytes 40
+    Constant 2
+    AllocateValues 8 40 160
+    BeginObject 184
+    Constant
+    ValuesLoad 40 -1 184
+    Constant 1
+    ValuesStore 40 -1 184
+    Constant 5
+    ValuesResize 40 -1 160
+    BytesOk 40
+    BytesLength 40
+    EndObject 184
+    EndObject 160
+    EndBytes 40
+    Return
+end
+
+; CASE: typed metadata cannot name unknown class
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -42,2 +42 @@
+-  values 72 Record
+-  values 160 Record
++  values 72 Absent
+
+; CASE: typed metadata cannot use owning element
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -42,2 +42 @@
+-  values 72 Record
+-  values 160 Record
++  values 72 ByteBox
+
+; CASE: typed metadata cannot use typed owning element
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -42,2 +42 @@
+-  values 72 Record
+-  values 160 Record
++  values 72 ValuesBox
+
+; CASE: typed metadata cannot use nominal enum
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -42,2 +42 @@
+-  values 72 Record
+-  values 160 Record
++  values 72 Mode
+
+; CASE: typed metadata cannot use carrier element
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -1,0 +2 @@
++layout Carrier [u8 u64 u8]
+@@ -7,0 +9 @@
++fields Carrier [((class Record) 0 3 true)]
+@@ -13,6 +15 @@
+-storage ByteBox [] [0] 32 8 32
+-storage Empty [] [] 8 8 8
+-storage Nested [{0,8}*3] [0 24] 24 8 24
+-storage Other [{0,8}*3] [{0,8}*3] 24 8 24
+-storage Record [{0,8}*3] [{0,8}*3] 24 8 24
+-storage ValuesBox [] [0] 32 8 32
++carrier Carrier
+@@ -42,2 +39 @@
+-  values 72 Record
+-  values 160 Record
++  values 72 Carrier
+
+; CASE: typed metadata checks inactive element leaf limits
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -5,0 +6 @@
++layout TooMany [i64*65]
+@@ -13,6 +13,0 @@
+-storage ByteBox [] [0] 32 8 32
+-storage Empty [] [] 8 8 8
+-storage Nested [{0,8}*3] [0 24] 24 8 24
+-storage Other [{0,8}*3] [{0,8}*3] 24 8 24
+-storage Record [{0,8}*3] [{0,8}*3] 24 8 24
+-storage ValuesBox [] [0] 32 8 32
+@@ -42,2 +37 @@
+-  values 72 Record
+-  values 160 Record
++  values 72 TooMany
+
+; CASE: typed metadata checks inactive element physical size
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -5,0 +6 @@
++layout TooWide [i64*64 u8*9]
+@@ -13,6 +13,0 @@
+-storage ByteBox [] [0] 32 8 32
+-storage Empty [] [] 8 8 8
+-storage Nested [{0,8}*3] [0 24] 24 8 24
+-storage Other [{0,8}*3] [{0,8}*3] 24 8 24
+-storage Record [{0,8}*3] [{0,8}*3] 24 8 24
+-storage ValuesBox [] [0] 32 8 32
+@@ -42,2 +37 @@
+-  values 72 Record
+-  values 160 Record
++  values 72 TooWide
+
+; CASE: typed field requires canonical element type
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -12 +12 @@
+-fields ValuesBox [((values Record) 0 0 false)]
++fields ValuesBox [((values Record lparam=N) 0 0 false)]
+@@ -43 +42,0 @@
+-  values 160 Record
+
+; CASE: typed field rejects unresolved template arguments
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -12 +12 @@
+-fields ValuesBox [((values Record) 0 0 false)]
++fields ValuesBox [((values Record targs=[(type i64)]) 0 0 false)]
+@@ -43 +42,0 @@
+-  values 160 Record
+
+; CASE: typed field rejects absent element layout
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -12 +12 @@
+-fields ValuesBox [((values Record) 0 0 false)]
++fields ValuesBox [((values Absent) 0 0 false)]
+@@ -43 +42,0 @@
+-  values 160 Record
+
+; CASE: typed field rejects resource element
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -12 +12 @@
+-fields ValuesBox [((values Record) 0 0 false)]
++fields ValuesBox [((values ByteBox) 0 0 false)]
+@@ -43 +42,0 @@
+-  values 160 Record
+
+; CASE: unused typed field rejects carrier element
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: owned value element must be a copied class, not an owner or carrier
+; EXPECT-CODE: AU0000
+@@ -1,0 +2 @@
++layout Carrier [u8 u64 u8]
+@@ -7,0 +9 @@
++fields Carrier [((class Record) 0 3 true)]
+@@ -12,7 +14,2 @@
+-fields ValuesBox [((values Record) 0 0 false)]
+-storage ByteBox [] [0] 32 8 32
+-storage Empty [] [] 8 8 8
+-storage Nested [{0,8}*3] [0 24] 24 8 24
+-storage Other [{0,8}*3] [{0,8}*3] 24 8 24
+-storage Record [{0,8}*3] [{0,8}*3] 24 8 24
+-storage ValuesBox [] [0] 32 8 32
++fields ValuesBox [((values Carrier) 0 0 false)]
++carrier Carrier
+@@ -43 +39,0 @@
+-  values 160 Record
+
+; CASE: unused typed field checks element leaf limits
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: owned value element exceeds copied class leaf limits
+; EXPECT-CODE: AU0000
+@@ -5,0 +6 @@
++layout TooMany [i64*65]
+@@ -12,7 +13 @@
+-fields ValuesBox [((values Record) 0 0 false)]
+-storage ByteBox [] [0] 32 8 32
+-storage Empty [] [] 8 8 8
+-storage Nested [{0,8}*3] [0 24] 24 8 24
+-storage Other [{0,8}*3] [{0,8}*3] 24 8 24
+-storage Record [{0,8}*3] [{0,8}*3] 24 8 24
+-storage ValuesBox [] [0] 32 8 32
++fields ValuesBox [((values TooMany) 0 0 false)]
+@@ -43 +37,0 @@
+-  values 160 Record
+
+; CASE: unused typed field checks element physical size
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: owned value element storage exceeds 520 bytes
+; EXPECT-CODE: AU0000
+@@ -5,0 +6 @@
++layout TooWide [i64*64 u8*9]
+@@ -12,7 +13 @@
+-fields ValuesBox [((values Record) 0 0 false)]
+-storage ByteBox [] [0] 32 8 32
+-storage Empty [] [] 8 8 8
+-storage Nested [{0,8}*3] [0 24] 24 8 24
+-storage Other [{0,8}*3] [{0,8}*3] 24 8 24
+-storage Record [{0,8}*3] [{0,8}*3] 24 8 24
+-storage ValuesBox [] [0] 32 8 32
++fields ValuesBox [((values TooWide) 0 0 false)]
+@@ -43 +37,0 @@
+-  values 160 Record
+
+; CASE: typed field rejects array descriptor
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -12 +12 @@
+-fields ValuesBox [((values Record) 0 0 false)]
++fields ValuesBox [((values Record) 0 0 true)]
+@@ -43 +42,0 @@
+-  values 160 Record
+
+; CASE: typed field rejects scalar payload leaves
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -12 +12 @@
+-fields ValuesBox [((values Record) 0 0 false)]
++fields ValuesBox [((values Record) 0 1 false)]
+@@ -43 +42,0 @@
+-  values 160 Record
+
+; CASE: typed canonical stride cannot be forged
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -17 +17 @@
+-storage Record [{0,8}*3] [{0,8}*3] 24 8 24
++storage Record [{0,8}*3] [{0,8}*3] 17 8 24
+@@ -43 +42,0 @@
+-  values 160 Record
+
+; CASE: typed allocation cannot target bytes
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -41 +40,0 @@
+-  values 40 Record
+@@ -43 +41,0 @@
+-  values 160 Record
+
+; CASE: byte allocation cannot target typed owner
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -43 +42,0 @@
+-  values 160 Record
+@@ -57 +56 @@
+-    AllocateValues 8 40 160
++    AllocateBytes 8 40
+
+; CASE: typed payload opcode cannot access byte owner
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -41 +40,0 @@
+-  values 40 Record
+@@ -43 +41,0 @@
+-  values 160 Record
+@@ -57 +55 @@
+-    AllocateValues 8 40 160
++    AllocateBytes 8 40
+
+; CASE: typed payload opcode cannot access byte owner #2
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -41 +40,0 @@
+-  values 40 Record
+@@ -43 +41,0 @@
+-  values 160 Record
+@@ -57 +55 @@
+-    AllocateValues 8 40 160
++    AllocateBytes 8 40
+@@ -60 +58 @@
+-    ValuesLoad 40 -1 184
++    CopyObject 160 184
+
+; CASE: typed payload opcode cannot access byte owner #3
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -41 +40,0 @@
+-  values 40 Record
+@@ -43 +41,0 @@
+-  values 160 Record
+@@ -57 +55 @@
+-    AllocateValues 8 40 160
++    AllocateBytes 8 40
+@@ -60 +58 @@
+-    ValuesLoad 40 -1 184
++    CopyObject 160 184
+@@ -62 +60 @@
+-    ValuesStore 40 -1 184
++    Constant 1 bool
+
+; CASE: typed allocation needs i64 count
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -43 +42,0 @@
+-  values 160 Record
+@@ -56 +55 @@
+-    Constant 2
++    Constant 2 u64
+
+; CASE: typed allocation needs readonly fill snapshot
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -33 +33 @@
+-  object 160 Record false
++  object 160 Record true
+@@ -43 +42,0 @@
+-  values 160 Record
+
+; CASE: typed allocation needs complete fill snapshot
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -43 +42,0 @@
+-  values 160 Record
+@@ -51 +49,0 @@
+-    Store 192 u8
+
+; CASE: typed allocation needs active fill snapshot
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -43 +42,0 @@
+-  values 160 Record
+@@ -56,0 +56 @@
++    EndObject 160
+
+; CASE: typed allocation rejects equal-layout foreign fill
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -33 +33 @@
+-  object 160 Record false
++  object 160 Other false
+@@ -43 +42,0 @@
+-  values 160 Record
+
+; CASE: typed allocation rejects owner fill alias
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -43 +42,0 @@
+-  values 160 Record
+@@ -57 +56 @@
+-    AllocateValues 8 40 160
++    AllocateValues 8 40 40
+
+; CASE: typed allocation rejects overwriting live owner
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -43 +42,0 @@
+-  values 160 Record
+@@ -59,0 +59,2 @@
++    Constant 1
++    AllocateValues 8 40 160
+
+; CASE: typed load needs i64 index
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -43 +42,0 @@
+-  values 160 Record
+@@ -59 +58 @@
+-    Constant
++    Constant 0 u8
+
+; CASE: typed load needs pristine result
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -43 +42,0 @@
+-  values 160 Record
+@@ -60 +59 @@
+-    ValuesLoad 40 -1 184
++    ValuesLoad 40 -1 160
+
+; CASE: typed load needs exact nominal result
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -34 +34 @@
+-  object 184 Record false
++  object 184 Other false
+@@ -43 +42,0 @@
+-  values 160 Record
+
+; CASE: typed load cannot alias owning root
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -43 +42,0 @@
+-  values 160 Record
+@@ -60 +59 @@
+-    ValuesLoad 40 -1 184
++    ValuesLoad 40 -1 40
+
+; CASE: typed load needs active result
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -43 +42,0 @@
+-  values 160 Record
+@@ -58 +56,0 @@
+-    BeginObject 184
+
+; CASE: typed load cannot use invalid field selector
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -43 +42,0 @@
+-  values 160 Record
+@@ -60 +59 @@
+-    ValuesLoad 40 -1 184
++    ValuesLoad 40 -2 184
+
+; CASE: typed store needs readonly snapshot
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -34 +34 @@
+-  object 184 Record false
++  object 184 Record true
+@@ -43 +42,0 @@
+-  values 160 Record
+
+; CASE: typed store needs active snapshot
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -43 +42,0 @@
+-  values 160 Record
+@@ -61,0 +61 @@
++    EndObject 184
+
+; CASE: typed store needs i64 index
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -43 +42,0 @@
+-  values 160 Record
+@@ -61 +60 @@
+-    Constant 1
++    Constant 1 u8
+
+; CASE: typed resize needs i64 count
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -43 +42,0 @@
+-  values 160 Record
+@@ -63 +62 @@
+-    Constant 5
++    Constant 5 u64
+
+; CASE: typed resize needs active fill
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -43 +42,0 @@
+-  values 160 Record
+@@ -63,0 +63 @@
++    EndObject 160
+
+; CASE: typed resize rejects owner fill alias
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -43 +42,0 @@
+-  values 160 Record
+@@ -64 +63 @@
+-    ValuesResize 40 -1 160
++    ValuesResize 40 -1 40
+
+; CASE: typed mutation rejects const owner
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -37 +37 @@
+-  bytes 40 true
++  bytes 40 false
+@@ -43 +42,0 @@
+-  values 160 Record
+
+; CASE: typed access rejects ended owner
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -43 +42,0 @@
+-  values 160 Record
+@@ -59,0 +59 @@
++    EndBytes 40
+
+; CASE: typed access rejects consumed owner
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -43 +42,0 @@
+-  values 160 Record
+@@ -59,0 +59,2 @@
++    BeginBytes 72
++    MoveBytes 40 72
+
+; CASE: typed owner rejects byte payload opcode
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -43 +42,0 @@
+-  values 160 Record
+@@ -59,0 +59 @@
++    BytesLoad 40
+
+; CASE: typed owner rejects byte payload opcode #2
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -43 +42,0 @@
+-  values 160 Record
+@@ -59,0 +59 @@
++    BytesStore 40
+
+; CASE: typed owner rejects byte payload opcode #3
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -43 +42,0 @@
+-  values 160 Record
+@@ -59,0 +59 @@
++    BytesResize 40
+
+; CASE: typed owner rejects byte span
+; BASE: typed metadata must name owner spill
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -23 +23 @@
+-  frame 208
++  frame 272
+@@ -35,0 +36 @@
++  span 264
+@@ -43 +43,0 @@
+-  values 160 Record
+@@ -59,0 +60 @@
++    BorrowOwnedSpan 40 -1 264
+
+; CASE: typed move rejects bytes destination
+; BASE: typed owner parameter move and return
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +29,0 @@
+-  values 72 Record
+
+; CASE: typed move rejects foreign nominal destination
+; BASE: typed owner parameter move and return
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-  values 72 Record
++  values 72 Other
+
+; CASE: typed parameter requires metadata
+; BASE: typed owner parameter move and return
+; RUN: verify
+; EXPECT-ERROR: owned byte parameter type mismatch
+@@ -29 +28,0 @@
+-  values 40 Record
+
+; CASE: byte parameter rejects typed metadata
+; BASE: typed owner parameter move and return
+; RUN: verify
+; EXPECT-ERROR: owned byte parameter type mismatch
+@@ -22 +22 @@
+-  params [region (values Record)]
++  params [region bytes]
+
+; CASE: source typed entry nominal element mismatch
+; BASE: typed owner parameter move and return
+; RUN: verify
+; EXPECT-ERROR: owned byte parameter type mismatch
+@@ -29 +29 @@
+-  values 40 Record
++  values 40 Other
+
+; CASE: source typed entry exact owner spill
+; BASE: typed owner parameter move and return
+; RUN: verify
+; EXPECT-ERROR: owned byte parameter requires exact typed spill
+@@ -32 +32 @@
+-    BindBytesParameter 1 40
++    BindBytesParameter 1 32
+
+; CASE: source typed entry mutable owner spill
+; BASE: typed owner parameter move and return
+; RUN: verify
+; EXPECT-ERROR: owned byte parameter must be mutable
+@@ -25 +25 @@
+-  bytes 40 true
++  bytes 40 false
+
+; CASE: source typed entry distinct owner spill
+; BASE: typed owner parameter move and return
+; RUN: verify
+; EXPECT-ERROR: owned byte parameter bindings overlap
+@@ -22 +22 @@
+-  params [region (values Record)]
++  params [region (values Record) (values Record)]
+@@ -32,0 +33 @@
++    BindBytesParameter 2 40
+
+; CASE: typed parameter rejects dependent metadata
+; BASE: typed owner parameter move and return
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -22 +22 @@
+-  params [region (values Record)]
++  params [region (values Record lparam=N)]
+
+; CASE: typed return rejects byte boundary
+; BASE: typed owner parameter move and return
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -21 +21 @@
+-  result (values Record)
++  result bytes
+
+; CASE: typed return rejects foreign nominal boundary
+; BASE: typed owner parameter move and return
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -21 +21 @@
+-  result (values Record)
++  result (values Other)
+
+; CASE: resource call rejects foreign typed argument
+; BASE: typed owner resource call
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39,2 +39,2 @@
+-  result (values Record)
+-  params [region (values Record)]
++  result (values Other)
++  params [region (values Other)]
+@@ -47,2 +47,2 @@
+-  values 40 Record
+-  values 72 Record
++  values 40 Other
++  values 72 Other
+
+; CASE: resource call rejects foreign typed result
+; BASE: typed owner resource call
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -21 +21 @@
+-  result (values Record)
++  result (values Other)
+@@ -30 +30 @@
+-  values 72 Record
++  values 72 Other
+
+; CASE: resource call rejects owner argument result alias
+; BASE: typed owner resource call
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -34 +34 @@
+-    ResourceCall values_parameter 8 [0 40] 72
++    ResourceCall values_parameter 8 [0 40] 40
+
+; CASE: constructor field rejects foreign owner
+; BASE: typed owner constructor field
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -12 +12 @@
+-fields ValuesBox [((values Record) 0 0 false)]
++fields ValuesBox [((values Other) 0 0 false)]
+
+; CASE: constructor field rejects byte owner
+; BASE: typed owner constructor field
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -12 +12 @@
+-fields ValuesBox [((values Record) 0 0 false)]
++fields ValuesBox [(bytes 0 0 false)]
+
+; CASE: typed receiver mutation requires mutable receiver
+; BASE: typed owner mutable receiver field
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -24 +24 @@
+-  receiver ValuesBox true false
++  receiver ValuesBox false false
+
+; CASE: typed receiver field rejects byte access
+; BASE: typed owner mutable receiver field
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -38,0 +39 @@
++    BytesResize 0 0
+
+; CASE: typed receiver field rejects byte span summary
+; BASE: typed owner mutable receiver field
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -21 +21 @@
+-  result bool
++  result span
+@@ -24 +24,2 @@
+-  receiver ValuesBox true false
++  receiver ValuesBox false false
++  spanfield 0
+@@ -38,2 +39 @@
+-    Constant 3
+-    ValuesResize 0 0 24
++    BytesLength 0 0
+
+; CASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-OK
+function bytes_entry
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    BytesLength 40
+    EndBytes 40
+    Return
+end
+
+; CASE: mutable owning parameter and scalar return
+; RUN: verify
+; EXPECT-OK
+function bytes_parameter
+  result i64
+  params [region bytes]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BytesLength 40
+    EndBytes 40
+    Return
+end
+
+; CASE: owning parameter transfer return
+; BASE: mutable owning parameter and scalar return
+; RUN: verify
+; EXPECT-OK
+@@ -2 +2 @@
+-  result i64
++  result bytes
+@@ -12,3 +12 @@
+-    BytesLength 40
+-    EndBytes 40
+-    Return
++    ReturnBytes 40
+
+; CASE: local owner transfer without scalar current
+; RUN: verify
+; EXPECT-OK
+function bytes_return
+  result bytes
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    ReturnBytes 40
+end
+
+; CASE: six mixed parameters and returned owner
+; RUN: verify
+; EXPECT-OK
+function bytes_caller
+  result i64
+  params [region i64 bool u8]
+  frame 192
+  slot 144 i64
+  slot 152 bool
+  slot 160 u8
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BindParameter 1 144
+    BindParameter 2 152 bool
+    BindParameter 3 160 u8
+    BeginBytes 40
+    Load 144
+    AllocateBytes 8 40
+    BeginBytes 72
+    Load 144
+    AllocateBytes 8 72
+    Load 144
+    Push
+    Load 152 bool
+    Push
+    Load 160 u8
+    Push
+    BeginBytes 104
+    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
+    EndBytes 40
+    EndBytes 72
+    BytesLength 104
+    EndBytes 104
+    Return
+end
+function bytes_callee
+  result bytes
+  params [region i64 bytes bool bytes u8]
+  frame 192
+  slot 144 i64
+  slot 152 bool
+  slot 160 u8
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BindParameter 1 144
+    BindBytesParameter 2 40
+    BindParameter 3 152 bool
+    BindBytesParameter 4 72
+    BindParameter 5 160 u8
+    EndBytes 72
+    ReturnBytes 40
+end
+
+; CASE: six mixed parameters and scalar result
+; BASE: six mixed parameters and returned owner
+; RUN: verify
+; EXPECT-OK
+@@ -29,2 +29 @@
+-    BeginBytes 104
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 8 [0 0 40 0 72 0]
+@@ -33,2 +31,0 @@
+-    BytesLength 104
+-    EndBytes 104
+@@ -38 +35 @@
+-  result bytes
++  result i64
+@@ -54,0 +52,2 @@
++    BytesLength 40
++    EndBytes 40
+@@ -56 +55 @@
+-    ReturnBytes 40
++    Return
+
+; CASE: nominal enum remains an ordinary scalar boundary
+; RUN: verify
+; EXPECT-OK
+enum Status 2
+function resource_enum
+  result (enum Status)
+  params [region (enum Status)]
+  frame 192
+  slot 144 (enum Status)
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BindParameter 1 144 (enum Status)
+    Load 144 (enum Status)
+    Return
+end
+
+; CASE: owner signature lacks region
+; BASE: mutable owning parameter and scalar return
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -3 +3 @@
+-  params [region bytes]
++  params [bytes]
+
+; CASE: owner result lacks region
+; BASE: local owner transfer without scalar current
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -3 +2,0 @@
+-  params [region]
+
+; CASE: region must be first
+; BASE: mutable owning parameter and scalar return
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -3 +3 @@
+-  params [region bytes]
++  params [bytes region]
+
+; CASE: second region forbidden
+; BASE: mutable owning parameter and scalar return
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -3 +3 @@
+-  params [region bytes]
++  params [region region]
+
+; CASE: seventh resource parameter forbidden
+; BASE: six mixed parameters and returned owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -39 +39 @@
+-  params [region i64 bytes bool bytes u8]
++  params [region i64 bytes bool bytes u8 i64]
+
+; CASE: region cannot be returned
+; BASE: local owner transfer without scalar current
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -2 +2 @@
+-  result bytes
++  result region
+
+; CASE: resource parameter cannot mix builtin::span<const u8>
+; BASE: mutable owning parameter and scalar return
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -0,0 +1 @@
++layout Box [i64]
+@@ -3 +4 @@
+-  params [region bytes]
++  params [region span]
+
+; CASE: resource result cannot mix builtin::span<const u8>
+; BASE: local owner transfer without scalar current
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -0,0 +1 @@
++layout Box [i64]
+@@ -2 +3 @@
+-  result bytes
++  result span
+
+; CASE: resource parameter cannot mix own<i64>
+; BASE: mutable owning parameter and scalar return
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -0,0 +1 @@
++layout Box [i64]
+@@ -3 +4 @@
+-  params [region bytes]
++  params [region own]
+
+; CASE: resource result cannot mix own<i64>
+; BASE: local owner transfer without scalar current
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -0,0 +1 @@
++layout Box [i64]
+@@ -2 +3 @@
+-  result bytes
++  result own
+
+; CASE: resource parameter cannot mix ref<i64>
+; BASE: mutable owning parameter and scalar return
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -0,0 +1 @@
++layout Box [i64]
+@@ -3 +4 @@
+-  params [region bytes]
++  params [region ref]
+
+; CASE: resource result cannot mix ref<i64>
+; BASE: local owner transfer without scalar current
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -0,0 +1 @@
++layout Box [i64]
+@@ -2 +3 @@
+-  result bytes
++  result ref
+
+; CASE: resource parameter cannot mix mutref<i64>
+; BASE: mutable owning parameter and scalar return
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -0,0 +1 @@
++layout Box [i64]
+@@ -3 +4 @@
+-  params [region bytes]
++  params [region mutref]
+
+; CASE: resource result cannot mix mutref<i64>
+; BASE: local owner transfer without scalar current
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -0,0 +1 @@
++layout Box [i64]
+@@ -2 +3 @@
+-  result bytes
++  result mutref
+
+; CASE: resource parameter cannot mix array<u8, 3>
+; BASE: mutable owning parameter and scalar return
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -0,0 +1 @@
++layout Box [i64]
+@@ -3 +4 @@
+-  params [region bytes]
++  params [region (array elem=u8 len=3)]
+
+; CASE: resource result cannot mix array<u8, 3>
+; BASE: local owner transfer without scalar current
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -0,0 +1 @@
++layout Box [i64]
+@@ -2 +3 @@
+-  result bytes
++  result (array elem=u8 len=3)
+
+; CASE: ordinary resource parameter cannot be copied class
+; BASE: mutable owning parameter and scalar return
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -0,0 +1 @@
++layout Box [i64]
+@@ -3 +4 @@
+-  params [region bytes]
++  params [region (class Box)]
+
+; CASE: copied resource result cannot use owning return
+; BASE: local owner transfer without scalar current
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -0,0 +1 @@
++layout Box [i64]
+@@ -2 +3 @@
+-  result bytes
++  result (class Box)
+
+; CASE: resource receiver forbidden
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -0,0 +1 @@
++layout Box [i64]
+@@ -4,0 +6 @@
++  receiver Box true false
+
+; CASE: decorated resource parameter is not canonical
+; BASE: mutable owning parameter and scalar return
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -3 +3 @@
+-  params [region bytes]
++  params [region (bytes forged)]
+
+; CASE: resource array metadata is not canonical
+; BASE: mutable owning parameter and scalar return
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -3 +3 @@
+-  params [region bytes]
++  params [region (bytes len=1)]
+
+; CASE: decorated resource parameter is not canonical #2
+; BASE: mutable owning parameter and scalar return
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -3 +3 @@
+-  params [region bytes]
++  params [(region forged) bytes]
+
+; CASE: resource array metadata is not canonical #2
+; BASE: mutable owning parameter and scalar return
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -3 +3 @@
+-  params [region bytes]
++  params [(region len=1) bytes]
+
+; CASE: decorated owner result is not canonical
+; BASE: local owner transfer without scalar current
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -2 +2 @@
+-  result bytes
++  result (bytes targs=[(type i64)])
+
+; CASE: reserved runtime helper name __au_runtime_bytes_
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -1 +1 @@
+-function bytes_entry
++function __au_runtime_bytes_
+
+; CASE: reserved runtime helper name __au_runtime_bytes_allocate
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -1 +1 @@
+-function bytes_entry
++function __au_runtime_bytes_allocate
+
+; CASE: reserved runtime helper name __au_runtime_bytes_at
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -1 +1 @@
+-function bytes_entry
++function __au_runtime_bytes_at
+
+; CASE: reserved runtime helper name __au_runtime_bytes_set
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -1 +1 @@
+-function bytes_entry
++function __au_runtime_bytes_set
+
+; CASE: reserved runtime helper name __au_runtime_bytes_resize
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -1 +1 @@
+-function bytes_entry
++function __au_runtime_bytes_resize
+
+; CASE: reserved runtime helper name __au_runtime_bytes_drop
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -1 +1 @@
+-function bytes_entry
++function __au_runtime_bytes_drop
+
+; CASE: reserved runtime helper name __au_runtime_bytes_end
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -1 +1 @@
+-function bytes_entry
++function __au_runtime_bytes_end
+
+; CASE: reserved runtime helper name __au_runtime_bytes_test_bridge
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -1 +1 @@
+-function bytes_entry
++function __au_runtime_bytes_test_bridge
+
+; CASE: reserved runtime helper name __au_runtime_bytes_test_entry
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -1 +1 @@
+-function bytes_entry
++function __au_runtime_bytes_test_entry
+
+; CASE: reserved runtime helper name __au_runtime_bytes_test_bounds
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -1 +1 @@
+-function bytes_entry
++function __au_runtime_bytes_test_bounds
+
+; CASE: scalar-only function remains accepted
+; RUN: verify
+; EXPECT-OK
+function ordinary_scalar
+  result i64
+  frame 192
+    Constant 42
+    Return
+end
+
+; CASE: reserved helper names also reject scalar-only signatures
+; BASE: scalar-only function remains accepted
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -1 +1 @@
+-function ordinary_scalar
++function __au_runtime_bytes_fake
+
+; CASE: reserved test bridge cannot be supplied as scalar function __au_runtime_bytes_test_bridge
+; BASE: scalar-only function remains accepted
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -1 +1 @@
+-function ordinary_scalar
++function __au_runtime_bytes_test_bridge
+
+; CASE: reserved test bridge cannot be supplied as scalar function __au_runtime_bytes_test_entry
+; BASE: scalar-only function remains accepted
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -1 +1 @@
+-function ordinary_scalar
++function __au_runtime_bytes_test_entry
+
+; CASE: reserved test bridge cannot be supplied as scalar function __au_runtime_bytes_test_bounds
+; BASE: scalar-only function remains accepted
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -1 +1 @@
+-function ordinary_scalar
++function __au_runtime_bytes_test_bounds
+
+; CASE: literal 8-byte region and 32-byte owner extents are disjoint
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-OK
+@@ -4,0 +5,2 @@
++  slot 137 u8
++  slot 152 i64
+
+; CASE: invalid region extent -8
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -4,0 +5 @@
++  region -8
+
+; CASE: invalid region extent 0
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -4,0 +5 @@
++  region 0
+
+; CASE: invalid region extent 7
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -4,0 +5 @@
++  region 7
+
+; CASE: invalid region extent 9
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -5,0 +6 @@
++  region 9
+
+; CASE: invalid region extent 200
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -5,0 +6 @@
++  region 200
+
+; CASE: invalid owner extent -32
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -5,0 +6 @@
++  bytes -32 true
+
+; CASE: invalid owner extent 0
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -5,0 +6 @@
++  bytes 0 true
+
+; CASE: invalid owner extent 24
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -5,0 +6 @@
++  bytes 24 true
+
+; CASE: invalid owner extent 39
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -5,0 +6 @@
++  bytes 39 true
+
+; CASE: invalid owner extent 200
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++  bytes 200 true
+
+; CASE: region overlaps an owner
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -5,0 +6 @@
++  region 16
+
+; CASE: owners overlap by one aligned word
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6,0 +7 @@
++  bytes 64 true
+
+; CASE: u8 scalar overlaps private resource byte 1
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -4,0 +5 @@
++  slot 1 u8
+
+; CASE: u8 scalar overlaps private resource byte 8
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -4,0 +5 @@
++  slot 8 u8
+
+; CASE: u8 scalar overlaps private resource byte 9
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -4,0 +5 @@
++  slot 9 u8
+
+; CASE: u8 scalar overlaps private resource byte 16
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -4,0 +5 @@
++  slot 16 u8
+
+; CASE: u8 scalar overlaps private resource byte 39
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -4,0 +5 @@
++  slot 39 u8
+
+; CASE: u8 scalar overlaps private resource byte 40
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -4,0 +5 @@
++  slot 40 u8
+
+; CASE: u8 scalar overlaps private resource byte 41
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -4,0 +5 @@
++  slot 41 u8
+
+; CASE: u8 scalar overlaps private resource byte 72
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -4,0 +5 @@
++  slot 72 u8
+
+; CASE: u8 scalar overlaps private resource byte 104
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -4,0 +5 @@
++  slot 104 u8
+
+; CASE: u8 scalar overlaps private resource byte 136
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -4,0 +5 @@
++  slot 136 u8
+
+; CASE: wide scalar overlaps region spill
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -4,0 +5 @@
++  slot 8 i64
+
+; CASE: wide scalar overlaps owner spill
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -4,0 +5 @@
++  slot 40 u64
+
+; CASE: empty object reservation overlaps resource
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -0,0 +1 @@
++layout Empty []
+@@ -4,0 +6 @@
++  object 24 Empty false
+
+; CASE: span reservation overlaps region and owner
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -4,0 +5 @@
++  span 16
+
+; CASE: inactive owner reservation still excludes span
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -4,0 +5 @@
++  span 104
+
+; CASE: byte array cannot supply owner descriptor storage
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -4,0 +5,3 @@
++  slot 39 u8
++  slot 40 u8
++  array 40 2
+
+; CASE: resource cannot be scalar slot payload builtin::ByteRegion
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -4,0 +5 @@
++  slot 144 region
+
+; CASE: resource cannot be class payload builtin::ByteRegion
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -0,0 +1 @@
++layout Forged [region]
+
+; CASE: resource cannot be scalar slot payload builtin::OwnedBytes
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -4,0 +5 @@
++  slot 144 bytes
+
+; CASE: resource cannot be class payload builtin::OwnedBytes
+; BASE: canonical authority and local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -0,0 +1 @@
++layout Forged [bytes]
+
+; CASE: immutable region authority does not occupy CFG snapshots
+; RUN: metrics
+; CHECK-JSON: metrics.snapshots 4
+; CHECK-JSON: metrics.peakRetainedValueFacts 0
+function region_snapshot
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    Constant 1 bool
+    BranchFalse 1
+    Jump 2
+    Label 1
+    Label 2
+    Constant
+    Return
+end
+
+; CASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+function bytes_entry
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    BytesLength 40
+    EndBytes 40
+    Return
+end
+
+; CASE: region binding after ordinary instruction
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10,2 @@
++    Constant 1
++    BindRegionParameter 0 8
+
+; CASE: region binding index mismatch
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++    BindRegionParameter 1 8
+
+; CASE: region binding negative index
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++    BindRegionParameter -1 8
+
+; CASE: region binding requires exact declared spill
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++    BindRegionParameter 0 7
+
+; CASE: region cannot bind owner storage
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++    BindRegionParameter 0 40
+
+; CASE: scalar binding cannot mint region
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++    BindParameter 0 8 region
+
+; CASE: duplicate region binding after prefix
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10,2 @@
++    BindRegionParameter 0 8
++    BindRegionParameter 0 8
+
+; CASE: unreachable late binding remains malformed
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -15,0 +17 @@
++    BindRegionParameter 0 8
+
+; CASE: owning parameter must be mutable
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+function bytes_parameter
+  result i64
+  params [region bytes]
+  frame 192
+  region 8
+  bytes 40 false
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BytesLength 40
+    EndBytes 40
+    Return
+end
+
+; CASE: owning parameter binding is missing
+; BASE: owning parameter must be mutable
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-  bytes 40 false
++  bytes 40 true
+@@ -11 +10,0 @@
+-    BindBytesParameter 1 40
+
+; CASE: owning parameter uses wrong index
+; BASE: owning parameter must be mutable
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-  bytes 40 false
++  bytes 40 true
+@@ -11 +11 @@
+-    BindBytesParameter 1 40
++    BindBytesParameter 0 40
+
+; CASE: owning parameter requires exact spill
+; BASE: owning parameter must be mutable
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-  bytes 40 false
++  bytes 40 true
+@@ -11 +11 @@
+-    BindBytesParameter 1 40
++    BindBytesParameter 1 32
+
+; CASE: scalar binding cannot mint owner
+; BASE: owning parameter must be mutable
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-  bytes 40 false
++  bytes 40 true
+@@ -11 +11 @@
+-    BindBytesParameter 1 40
++    BindParameter 1 40 bytes
+
+; CASE: owning binding outside prefix
+; BASE: owning parameter must be mutable
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-  bytes 40 false
++  bytes 40 true
+@@ -11,0 +12 @@
++    BindBytesParameter 1 72
+
+; CASE: two owning parameters cannot share spill
+; BASE: six mixed parameters and returned owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -53 +53 @@
+-    BindBytesParameter 4 72
++    BindBytesParameter 4 40
+
+; CASE: bound parameter cannot begin while live
+; BASE: owning parameter must be mutable
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-  bytes 40 false
++  bytes 40 true
+@@ -11,0 +12 @@
++    BeginBytes 40
+
+; CASE: bound parameter cannot restart after end
+; BASE: owning parameter must be mutable
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-  bytes 40 false
++  bytes 40 true
+@@ -13,0 +14,2 @@
++    BeginBytes 40
++    EndBytes 40
+
+; CASE: bound parameter cannot restart after transfer and end
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+function bytes_parameter
+  result bytes
+  params [region bytes]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BeginBytes 72
+    MoveBytes 40 72
+    EndBytes 40
+    BeginBytes 40
+    EndBytes 40
+    ReturnBytes 72
+end
+
+; CASE: runtime allocation request remains statically live -1
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-OK
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -11 +12 @@
+-    Constant 17
++    Constant -1
+
+; CASE: runtime allocation request remains statically live 0
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-OK
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -11 +12 @@
+-    Constant 17
++    Constant
+
+; CASE: runtime allocation request remains statically live 1
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-OK
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -11 +12 @@
+-    Constant 17
++    Constant 1
+
+; CASE: runtime allocation request remains statically live 65
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-OK
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -11 +12 @@
+-    Constant 17
++    Constant 65
+
+; CASE: runtime allocation request remains statically live 513
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-OK
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -11 +12 @@
+-    Constant 17
++    Constant 513
+
+; CASE: runtime allocation request remains statically live 4097
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-OK
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -11 +12 @@
+-    Constant 17
++    Constant 4097
+
+; CASE: runtime allocation request remains statically live 9223372036854775807
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-OK
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -11 +12 @@
+-    Constant 17
++    Constant 9223372036854775807
+
+; CASE: allocation may initialize readonly owner
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-OK
+@@ -6 +6 @@
+-  bytes 40 true
++  bytes 40 false
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+
+; CASE: pristine lifetime can close without allocation
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-OK
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -11,3 +12 @@
+-    Constant 17
+-    AllocateBytes 8 40
+-    BytesLength 40
++    Constant 42
+
+; CASE: ended local storage may begin a new lifetime
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-OK
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -14,0 +16,5 @@
++    BeginBytes 40
++    Constant 1
++    AllocateBytes 8 40
++    BytesLength 40
++    EndBytes 40
+
+; CASE: begin requires declared exact owner
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -10 +10,2 @@
+-    BeginBytes 40
++    BindRegionParameter 0 8
++    BeginBytes 32
+
+; CASE: begin cannot target region
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -10 +10,2 @@
+-    BeginBytes 40
++    BindRegionParameter 0 8
++    BeginBytes 8
+
+; CASE: begin cannot overwrite pristine lifetime
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10,2 @@
++    BindRegionParameter 0 8
++    BeginBytes 40
+
+; CASE: begin cannot overwrite live lifetime
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -12,0 +14 @@
++    BeginBytes 40
+
+; CASE: allocation requires begun destination
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -10 +10 @@
+-    BeginBytes 40
++    BindRegionParameter 0 8
+
+; CASE: allocation requires pristine destination
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -11,0 +13,2 @@
++    AllocateBytes 8 40
++    Constant 1
+
+; CASE: allocation cannot reuse consumed destination
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+function bytes_entry
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    BeginBytes 72
+    Constant 42
+    MoveBytes 40 72
+    Constant 1
+    AllocateBytes 8 40
+    EndBytes 40
+    EndBytes 72
+    Return
+end
+
+; CASE: allocation cannot revive ended destination
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -14,0 +16,2 @@
++    Constant 1
++    AllocateBytes 8 40
+
+; CASE: allocation region must be exact active authority 0
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -12 +13 @@
+-    AllocateBytes 8 40
++    AllocateBytes 0 40
+
+; CASE: allocation region must be exact active authority 7
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -12 +13 @@
+-    AllocateBytes 8 40
++    AllocateBytes 7 40
+
+; CASE: allocation region must be exact active authority 40
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -12 +13 @@
+-    AllocateBytes 8 40
++    AllocateBytes 40 40
+
+; CASE: allocation region must be exact active authority 176
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -12 +13 @@
+-    AllocateBytes 8 40
++    AllocateBytes 176 40
+
+; CASE: declared but unbound region is not authority
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -5,0 +6 @@
++  region 176
+@@ -9,0 +11 @@
++    BindRegionParameter 0 8
+@@ -12 +14 @@
+-    AllocateBytes 8 40
++    AllocateBytes 176 40
+
+; CASE: allocation result requires exact owner 0
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -12 +13 @@
+-    AllocateBytes 8 40
++    AllocateBytes 8
+
+; CASE: allocation result requires exact owner 8
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -12 +13 @@
+-    AllocateBytes 8 40
++    AllocateBytes 8 8
+
+; CASE: allocation result requires exact owner 32
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -12 +13 @@
+-    AllocateBytes 8 40
++    AllocateBytes 8 32
+
+; CASE: allocation result requires exact owner 176
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -12 +13 @@
+-    AllocateBytes 8 40
++    AllocateBytes 8 176
+
+; CASE: allocation length cannot be u8
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -11 +12 @@
+-    Constant 17
++    Constant 1 u8
+
+; CASE: allocation length cannot be u64
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -11 +12 @@
+-    Constant 17
++    Constant 1 u64
+
+; CASE: allocation length cannot be bool
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -11 +12 @@
+-    Constant 17
++    Constant 1 bool
+
+; CASE: allocation requires current length
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -11 +11,0 @@
+-    Constant 17
+
+; CASE: allocation clears scalar current
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -12,0 +14 @@
++    Push
+
+; CASE: failed request still needs cleanup
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -11 +12 @@
+-    Constant 17
++    Constant -1
+@@ -14 +14,0 @@
+-    EndBytes 40
+
+; CASE: both success and failure paths close the same static owner
+; RUN: verify
+; EXPECT-OK
+function bytes_entry
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant -1
+    AllocateBytes 8 40
+    BytesOk 40
+    BranchFalse 1
+    EndBytes 40
+    Constant 1
+    Return
+    Label 1
+    BytesLength 40
+    EndBytes 40
+    Return
+end
+
+; CASE: false ok path does not implicitly end owner
+; BASE: both success and failure paths close the same static owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -21 +20,0 @@
+-    EndBytes 40
+
+; CASE: move preserves scalar current and closes consumed source
+; BASE: allocation cannot reuse consumed destination
+; RUN: verify
+; EXPECT-OK
+@@ -17,2 +16,0 @@
+-    Constant 1
+-    AllocateBytes 8 40
+
+; CASE: move may initialize readonly destination
+; BASE: allocation cannot reuse consumed destination
+; RUN: verify
+; EXPECT-OK
+@@ -7 +7 @@
+-  bytes 72 true
++  bytes 72 false
+@@ -17,2 +16,0 @@
+-    Constant 1
+-    AllocateBytes 8 40
+
+; CASE: readonly owner cannot move
+; BASE: allocation cannot reuse consumed destination
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-  bytes 40 true
++  bytes 40 false
+@@ -17,2 +16,0 @@
+-    Constant 1
+-    AllocateBytes 8 40
+
+; CASE: move cannot target its source
+; BASE: allocation cannot reuse consumed destination
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -16,3 +16 @@
+-    MoveBytes 40 72
+-    Constant 1
+-    AllocateBytes 8 40
++    MoveBytes 40 40
+
+; CASE: move needs active destination
+; BASE: allocation cannot reuse consumed destination
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14 +13,0 @@
+-    BeginBytes 72
+@@ -17,2 +15,0 @@
+-    Constant 1
+-    AllocateBytes 8 40
+
+; CASE: move cannot overwrite live destination
+; BASE: allocation cannot reuse consumed destination
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -15,0 +16,2 @@
++    Constant 1
++    AllocateBytes 8 72
+@@ -17,2 +18,0 @@
+-    Constant 1
+-    AllocateBytes 8 40
+
+; CASE: move cannot overwrite consumed destination
+; BASE: allocation cannot reuse consumed destination
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -17,2 +17 @@
+-    Constant 1
+-    AllocateBytes 8 40
++    MoveBytes 72 40
+
+; CASE: move cannot repeat consumed source
+; BASE: allocation cannot reuse consumed destination
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -17,2 +17,2 @@
+-    Constant 1
+-    AllocateBytes 8 40
++    BeginBytes 104
++    MoveBytes 40 104
+
+; CASE: move cannot read pristine source
+; BASE: allocation cannot reuse consumed destination
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -13 +12,0 @@
+-    AllocateBytes 8 40
+@@ -17,2 +15,0 @@
+-    Constant 1
+-    AllocateBytes 8 40
+
+; CASE: move cannot read ended source
+; BASE: allocation cannot reuse consumed destination
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -15,0 +16 @@
++    EndBytes 40
+@@ -17,2 +17,0 @@
+-    Constant 1
+-    AllocateBytes 8 40
+
+; CASE: move cannot read inactive source
+; BASE: allocation cannot reuse consumed destination
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -16,3 +16 @@
+-    MoveBytes 40 72
+-    Constant 1
+-    AllocateBytes 8 40
++    MoveBytes 104 72
+
+; CASE: move source must be exact owner
+; BASE: allocation cannot reuse consumed destination
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -16,3 +16 @@
+-    MoveBytes 40 72
+-    Constant 1
+-    AllocateBytes 8 40
++    MoveBytes 32 72
+
+; CASE: move result must be exact owner
+; BASE: allocation cannot reuse consumed destination
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -16,3 +16 @@
+-    MoveBytes 40 72
+-    Constant 1
+-    AllocateBytes 8 40
++    MoveBytes 40 64
+
+; CASE: readonly live owner permits copied ok
+; RUN: verify
+; EXPECT-OK
+function bytes_entry
+  result bool
+  params [region]
+  frame 192
+  region 8
+  bytes 40 false
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    BytesOk 40
+    EndBytes 40
+    Return
+end
+
+; CASE: ok rejects pristine owner
+; BASE: readonly live owner permits copied ok
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -13 +12,0 @@
+-    AllocateBytes 8 40
+
+; CASE: ok rejects ended owner
+; BASE: readonly live owner permits copied ok
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -13,0 +14 @@
++    EndBytes 40
+
+; CASE: ok rejects consumed owner
+; BASE: readonly live owner permits copied ok
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-  bytes 40 false
++  bytes 40 true
+@@ -13,0 +14,2 @@
++    BeginBytes 72
++    MoveBytes 40 72
+
+; CASE: readonly live owner permits copied size
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-OK
+@@ -6 +6 @@
+-  bytes 40 true
++  bytes 40 false
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+
+; CASE: size rejects pristine owner
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-  bytes 40 true
++  bytes 40 false
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -12 +12,0 @@
+-    AllocateBytes 8 40
+
+; CASE: size rejects ended owner
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-  bytes 40 true
++  bytes 40 false
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -12,0 +14 @@
++    EndBytes 40
+
+; CASE: size rejects consumed owner
+; BASE: missing region entry binding
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9,0 +10 @@
++    BindRegionParameter 0 8
+@@ -12,0 +14,2 @@
++    BeginBytes 72
++    MoveBytes 40 72
+
+; CASE: readonly live owner permits copied at
+; BASE: readonly live owner permits copied ok
+; RUN: verify
+; EXPECT-OK
+@@ -2 +2 @@
+-  result bool
++  result u8
+@@ -14 +14,2 @@
+-    BytesOk 40
++    Constant
++    BytesLoad 40
+
+; CASE: at rejects pristine owner
+; BASE: readonly live owner permits copied ok
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -2 +2 @@
+-  result bool
++  result u8
+@@ -13,2 +13,2 @@
+-    AllocateBytes 8 40
+-    BytesOk 40
++    Constant
++    BytesLoad 40
+
+; CASE: at rejects ended owner
+; BASE: readonly live owner permits copied ok
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -2 +2 @@
+-  result bool
++  result u8
+@@ -14 +14,3 @@
+-    BytesOk 40
++    EndBytes 40
++    Constant
++    BytesLoad 40
+
+; CASE: at rejects consumed owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+function bytes_entry
+  result u8
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    BeginBytes 72
+    MoveBytes 40 72
+    Constant
+    BytesLoad 40
+    EndBytes 40
+    Return
+end
+
+; CASE: byte load requires i64 index
+; BASE: at rejects consumed owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -2 +2 @@
+-  result u8
++  result i64
+@@ -14,3 +14 @@
+-    BeginBytes 72
+-    MoveBytes 40 72
+-    Constant
++    Constant 0 u64
+
+; CASE: byte load requires current index
+; BASE: at rejects consumed owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -2 +2 @@
+-  result u8
++  result i64
+@@ -14,3 +13,0 @@
+-    BeginBytes 72
+-    MoveBytes 40 72
+-    Constant
+
+; CASE: byte query cannot read region
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+function bytes_entry
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    BytesLength 8
+    EndBytes 40
+    Return
+end
+
+; CASE: byte query cannot read interior descriptor
+; BASE: byte query cannot read region
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14 +14 @@
+-    BytesLength 8
++    BytesLength 32
+
+; CASE: byte query cannot read inactive owner
+; BASE: byte query cannot read region
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14 +14 @@
+-    BytesLength 8
++    BytesLength 72
+
+; CASE: set consumes saved i64 and current u8 and produces bool
+; RUN: verify
+; EXPECT-OK
+function bytes_entry
+  result bool
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    Constant
+    Push
+    Constant 255 u8
+    BytesStore 40
+    EndBytes 40
+    Return
+end
+
+; CASE: set requires mutable owner
+; BASE: set consumes saved i64 and current u8 and produces bool
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-  bytes 40 true
++  bytes 40 false
+
+; CASE: set requires saved index
+; BASE: set consumes saved i64 and current u8 and produces bool
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -15 +14,0 @@
+-    Push
+
+; CASE: set saved index cannot be bool
+; BASE: set consumes saved i64 and current u8 and produces bool
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14 +14 @@
+-    Constant
++    Constant 0 bool
+
+; CASE: set saved index cannot be u8
+; BASE: set consumes saved i64 and current u8 and produces bool
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14 +14 @@
+-    Constant
++    Constant 0 u8
+
+; CASE: set saved index cannot be u64
+; BASE: set consumes saved i64 and current u8 and produces bool
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14 +14 @@
+-    Constant
++    Constant 0 u64
+
+; CASE: set current value cannot be bool
+; BASE: set consumes saved i64 and current u8 and produces bool
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -16 +16 @@
+-    Constant 255 u8
++    Constant 1 bool
+
+; CASE: set current value cannot be i64
+; BASE: set consumes saved i64 and current u8 and produces bool
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -16 +16 @@
+-    Constant 255 u8
++    Constant 1
+
+; CASE: set current value cannot be u64
+; BASE: set consumes saved i64 and current u8 and produces bool
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -16 +16 @@
+-    Constant 255 u8
++    Constant 1 u64
+
+; CASE: set cannot use consumed receiver after operand evaluation
+; BASE: set consumes saved i64 and current u8 and produces bool
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -16,0 +17,2 @@
++    BeginBytes 72
++    MoveBytes 40 72
+
+; CASE: set cannot use ended receiver after operand evaluation
+; BASE: set consumes saved i64 and current u8 and produces bool
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -16,0 +17 @@
++    EndBytes 40
+
+; CASE: set cannot use pristine receiver
+; BASE: set consumes saved i64 and current u8 and produces bool
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -13 +12,0 @@
+-    AllocateBytes 8 40
+
+; CASE: set result is bool rather than u8
+; BASE: set consumes saved i64 and current u8 and produces bool
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -2 +2 @@
+-  result bool
++  result u8
+
+; CASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-OK
+function bytes_resize
+  result bool
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    Constant -9223372036854775808
+    BytesResize 40
+    EndBytes 40
+    Return
+end
+
+; CASE: resize keeps runtime request statically live -1
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-OK
+@@ -14 +14 @@
+-    Constant -9223372036854775808
++    Constant -1
+
+; CASE: resize keeps runtime request statically live 0
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-OK
+@@ -14 +14 @@
+-    Constant -9223372036854775808
++    Constant
+
+; CASE: resize keeps runtime request statically live 1
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-OK
+@@ -14 +14 @@
+-    Constant -9223372036854775808
++    Constant 1
+
+; CASE: resize keeps runtime request statically live 17
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-OK
+@@ -14 +14 @@
+-    Constant -9223372036854775808
++    Constant 17
+
+; CASE: resize keeps runtime request statically live 65
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-OK
+@@ -14 +14 @@
+-    Constant -9223372036854775808
++    Constant 65
+
+; CASE: resize keeps runtime request statically live 513
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-OK
+@@ -14 +14 @@
+-    Constant -9223372036854775808
++    Constant 513
+
+; CASE: resize keeps runtime request statically live 4097
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-OK
+@@ -14 +14 @@
+-    Constant -9223372036854775808
++    Constant 4097
+
+; CASE: resize keeps runtime request statically live 9223372036854775807
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-OK
+@@ -14 +14 @@
+-    Constant -9223372036854775808
++    Constant 9223372036854775807
+
+; CASE: resize of canonical failed allocation remains a live binding
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-OK
+@@ -12 +12 @@
+-    Constant 17
++    Constant -1
+@@ -14 +14 @@
+-    Constant -9223372036854775808
++    Constant 1
+
+; CASE: resize of successful empty owner remains a live binding
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-OK
+@@ -12 +12 @@
+-    Constant 17
++    Constant
+@@ -14 +14 @@
+-    Constant -9223372036854775808
++    Constant 65
+
+; CASE: mutable owning parameter can resize and remain queryable
+; RUN: verify
+; EXPECT-OK
+function bytes_parameter
+  result i64
+  params [region bytes]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    Constant 65
+    BytesResize 40
+    BytesLength 40
+    EndBytes 40
+    Return
+end
+
+; CASE: resized owner retains authority for an owning return
+; RUN: verify
+; EXPECT-OK
+function bytes_return
+  result bytes
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    Constant 65
+    BytesResize 40
+    ReturnBytes 40
+end
+
+; CASE: resized owner retains authority for an explicit move
+; RUN: verify
+; EXPECT-OK
+function bytes_entry
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    BeginBytes 72
+    Constant 42
+    Constant 65
+    BytesResize 40
+    Constant 42
+    MoveBytes 40 72
+    EndBytes 40
+    EndBytes 72
+    Return
+end
+
+; CASE: resize preserves origin authority and pre-staged scalar call arguments
+; RUN: verify
+; EXPECT-OK
+function bytes_caller
+  result i64
+  params [region i64 bool u8]
+  frame 192
+  slot 144 i64
+  slot 152 bool
+  slot 160 u8
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BindParameter 1 144
+    BindParameter 2 152 bool
+    BindParameter 3 160 u8
+    BeginBytes 40
+    Load 144
+    AllocateBytes 8 40
+    BeginBytes 72
+    Load 144
+    AllocateBytes 8 72
+    Load 144
+    Push
+    Load 152 bool
+    Push
+    Load 160 u8
+    Push
+    BeginBytes 104
+    Constant 65
+    BytesResize 40
+    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
+    EndBytes 40
+    EndBytes 72
+    BytesLength 104
+    EndBytes 104
+    Return
+end
+function bytes_callee
+  result bytes
+  params [region i64 bytes bool bytes u8]
+  frame 192
+  slot 144 i64
+  slot 152 bool
+  slot 160 u8
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BindParameter 1 144
+    BindBytesParameter 2 40
+    BindParameter 3 152 bool
+    BindBytesParameter 4 72
+    BindParameter 5 160 u8
+    EndBytes 72
+    ReturnBytes 40
+end
+
+; CASE: owner received from resource call can resize
+; RUN: verify
+; EXPECT-OK
+function bytes_factory_caller
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    ResourceCall bytes_factory 8 [0] 40
+    Constant 65
+    BytesResize 40
+    BytesLength 40
+    EndBytes 40
+    Return
+end
+function bytes_factory
+  result bytes
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    ReturnBytes 40
+end
+
+; CASE: resize requires mutable receiver
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-  bytes 40 true
++  bytes 40 false
+@@ -14 +14 @@
+-    Constant -9223372036854775808
++    Constant 65
+
+; CASE: even same-size resize cannot use readonly receiver
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-  bytes 40 true
++  bytes 40 false
+@@ -14 +14 @@
+-    Constant -9223372036854775808
++    Constant 17
+
+; CASE: resize requires active receiver lifetime
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14,2 +14,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 40
++    Constant 65
++    BytesResize 72
+
+; CASE: resize cannot fabricate ownership in pristine lifetime
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -13,2 +13 @@
+-    AllocateBytes 8 40
+-    Constant -9223372036854775808
++    Constant 65
+
+; CASE: resize cannot revive ended owner
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14 +14,2 @@
+-    Constant -9223372036854775808
++    Constant 65
++    EndBytes 40
+
+; CASE: resize cannot use consumed receiver after size evaluation
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14 +14,3 @@
+-    Constant -9223372036854775808
++    Constant 65
++    BeginBytes 72
++    MoveBytes 40 72
+
+; CASE: resize cannot revive a moved owner after destination cleanup
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14 +14,4 @@
+-    Constant -9223372036854775808
++    Constant 65
++    BeginBytes 72
++    MoveBytes 40 72
++    EndBytes 72
+
+; CASE: resize cannot revive a recreated pristine binding
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14 +14,3 @@
+-    Constant -9223372036854775808
++    Constant 65
++    EndBytes 40
++    BeginBytes 40
+
+; CASE: resize cannot bypass resource call argument consumption
+; BASE: resize preserves origin authority and pre-staged scalar call arguments
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -29 +29 @@
+-    BeginBytes 104
++    ResourceCall bytes_callee 8 [0 0 40 0 72 0]
+@@ -32 +31,0 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
+@@ -35,2 +33,0 @@
+-    BytesLength 104
+-    EndBytes 104
+@@ -40 +37 @@
+-  result bytes
++  result i64
+@@ -56,0 +54,2 @@
++    BytesLength 40
++    EndBytes 40
+@@ -58 +57 @@
+-    ReturnBytes 40
++    Return
+
+; CASE: resize requires exact owner spill -8
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14,2 +14,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 40
++    Constant 65
++    BytesResize -8
+
+; CASE: resize requires exact owner spill 0
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14,2 +14,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 40
++    Constant 65
++    BytesResize
+
+; CASE: resize requires exact owner spill 8
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14,2 +14,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 40
++    Constant 65
++    BytesResize 8
+
+; CASE: resize requires exact owner spill 16
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14,2 +14,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 40
++    Constant 65
++    BytesResize 16
+
+; CASE: resize requires exact owner spill 24
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14,2 +14,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 40
++    Constant 65
++    BytesResize 24
+
+; CASE: resize requires exact owner spill 32
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14,2 +14,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 40
++    Constant 65
++    BytesResize 32
+
+; CASE: resize requires exact owner spill 39
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14,2 +14,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 40
++    Constant 65
++    BytesResize 39
+
+; CASE: resize requires exact owner spill 41
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14,2 +14,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 40
++    Constant 65
++    BytesResize 41
+
+; CASE: resize requires exact owner spill 176
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14,2 +14,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 40
++    Constant 65
++    BytesResize 176
+
+; CASE: standalone resize cannot forge a field selector -2
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14,2 +14,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 40
++    Constant 65
++    BytesResize 40 -2
+
+; CASE: standalone resize cannot forge a field selector 0
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14,2 +14,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 40
++    Constant 65
++    BytesResize 40 0
+
+; CASE: standalone resize cannot forge a field selector 1
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14,2 +14,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 40
++    Constant 65
++    BytesResize 40 1
+
+; CASE: standalone resize cannot forge a field selector 3
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14,2 +14,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 40
++    Constant 65
++    BytesResize 40 3
+
+; CASE: standalone resize cannot forge a field selector 2147483647
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14,2 +14,2 @@
+-    Constant -9223372036854775808
+-    BytesResize 40
++    Constant 65
++    BytesResize 40 2147483647
+
+; CASE: initialized ordinary scalar is not resize authority
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -4,0 +5 @@
++  slot 144 i64
+@@ -14,2 +15,3 @@
+-    Constant -9223372036854775808
+-    BytesResize 40
++    Constant 65
++    Store 144
++    BytesResize 144
+
+; CASE: resize length cannot be bool
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14 +14 @@
+-    Constant -9223372036854775808
++    Constant 1 bool
+
+; CASE: resize length cannot be u8
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14 +14 @@
+-    Constant -9223372036854775808
++    Constant 1 u8
+
+; CASE: resize length cannot be u64
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14 +14 @@
+-    Constant -9223372036854775808
++    Constant 1 u64
+
+; CASE: resize length cannot be a nominal enum
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -0,0 +1 @@
++enum Length 1
+@@ -14 +15 @@
+-    Constant -9223372036854775808
++    EnumConstant (enum Length)
+
+; CASE: resize requires current length rather than stale allocation operand
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14 +13,0 @@
+-    Constant -9223372036854775808
+
+; CASE: resize saved i64 cannot substitute for current length
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14 +14,3 @@
+-    Constant -9223372036854775808
++    Constant 65
++    Push
++    Constant 1 bool
+
+; CASE: resize bool result cannot act as the next resize length
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14 +14,2 @@
+-    Constant -9223372036854775808
++    Constant 65
++    BytesResize 40
+
+; CASE: resize result is bool rather than i64
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -2 +2 @@
+-  result bool
++  result i64
+@@ -14 +14 @@
+-    Constant -9223372036854775808
++    Constant 65
+
+; CASE: resize result is bool rather than u8
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -2 +2 @@
+-  result bool
++  result u8
+@@ -14 +14 @@
+-    Constant -9223372036854775808
++    Constant 65
+
+; CASE: resize result is bool rather than u64
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -2 +2 @@
+-  result bool
++  result u64
+@@ -14 +14 @@
+-    Constant -9223372036854775808
++    Constant 65
+
+; CASE: resize cannot erase the owner cleanup obligation
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14 +14 @@
+-    Constant -9223372036854775808
++    Constant 65
+@@ -16 +15,0 @@
+-    EndBytes 40
+
+; CASE: failed resize request cannot erase cleanup obligation
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14 +14 @@
+-    Constant -9223372036854775808
++    Constant -1
+@@ -16 +15,0 @@
+-    EndBytes 40
+
+; CASE: resize does not make its owner a pristine allocation destination
+; BASE: resize keeps runtime request statically live -9223372036854775808
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14 +14 @@
+-    Constant -9223372036854775808
++    Constant 65
+@@ -15,0 +16,2 @@
++    Constant 1
++    AllocateBytes 8 40
+
+; CASE: resize does not make its owner a pristine move destination
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+function bytes_resize
+  result bool
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    Constant 65
+    BeginBytes 72
+    Constant 1
+    AllocateBytes 8 72
+    Constant 65
+    BytesResize 40
+    MoveBytes 72 40
+    EndBytes 40
+    Return
+end
+
+; CASE: resize preserves pending operand depth 0
+; RUN: verify
+; EXPECT-OK
+function bytes_resize
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    Constant 65
+    BytesResize 40
+    BytesLength 40
+    EndBytes 40
+    Return
+end
+
+; CASE: resize preserves pending operand depth 1
+; BASE: resize preserves pending operand depth 0
+; RUN: verify
+; EXPECT-OK
+@@ -13,0 +14,2 @@
++    Constant 1099511627793
++    Push
+@@ -16,0 +19 @@
++    BinaryValue
+
+; CASE: resize preserves pending operand depth 2
+; BASE: resize preserves pending operand depth 0
+; RUN: verify
+; EXPECT-OK
+@@ -13,0 +14,4 @@
++    Constant 1099511627794
++    Push
++    Constant 1099511627793
++    Push
+@@ -16,0 +21,2 @@
++    BinaryValue
++    BinaryValue
+
+; CASE: resize preserves pending operand depth 3
+; RUN: verify
+; EXPECT-OK
+function bytes_resize
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    Constant 1099511627795
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627793
+    Push
+    Constant 65
+    BytesResize 40
+    BytesLength 40
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    EndBytes 40
+    Return
+end
+
+; CASE: resize preserves pending operand depth 4
+; BASE: resize preserves pending operand depth 3
+; RUN: verify
+; EXPECT-OK
+@@ -13,0 +14,2 @@
++    Constant 1099511627796
++    Push
+@@ -25,0 +28 @@
++    BinaryValue
+
+; CASE: resize preserves exact heterogeneous operand stack and produces current bool
+; RUN: verify
+; EXPECT-OK
+function bytes_resize
+  result bool
+  params [region]
+  frame 192
+  slot 144 i64
+  slot 152 u64
+  slot 160 u8
+  slot 168 bool
+  slot 176 bool
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    Constant 65
+    Push
+    Constant 7 u64
+    Push
+    Constant 255 u8
+    Push
+    Constant 1 bool
+    Push
+    Constant 513
+    BytesResize 40
+    Store 176 bool
+    Pop
+    Store 168 bool
+    Pop
+    Store 160 u8
+    Pop
+    Store 152 u64
+    Pop
+    Store 144
+    Load 176 bool
+    EndBytes 40
+    Return
+end
+
+; CASE: resize does not secretly consume a saved operand
+; BASE: resize preserves pending operand depth 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -2 +2 @@
+-  result i64
++  result bool
+@@ -14,0 +15 @@
++    Push
+@@ -16 +16,0 @@
+-    BytesLength 40
+
+; CASE: resize does not secretly create a saved operand
+; BASE: resize preserves pending operand depth 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -2 +2 @@
+-  result i64
++  result bool
+@@ -16 +16 @@
+-    BytesLength 40
++    Pop
+
+; CASE: short-circuit resize preserves exactly the original ownership token at join
+; RUN: verify
+; EXPECT-OK
+function bytes_resize
+  result bool
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    BytesOk 40
+    BranchFalse 1
+    Constant 65
+    BytesResize 40
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    EndBytes 40
+    Return
+end
+
+; CASE: distinct resize sites preserve one shared ownership token
+; BASE: short-circuit resize preserves exactly the original ownership token at join
+; RUN: verify
+; EXPECT-OK
+@@ -19,0 +20,2 @@
++    Constant
++    BytesResize 40
+
+; CASE: conditional resize cannot hide conditional owner consumption
+; BASE: short-circuit resize preserves exactly the original ownership token at join
+; RUN: verify
+; EXPECT-ERROR: control-flow join
+@@ -17,0 +18,3 @@
++    BeginBytes 72
++    MoveBytes 40 72
++    EndBytes 72
+
+; CASE: conditional resize cannot hide conditional owner lifetime restart
+; BASE: short-circuit resize preserves exactly the original ownership token at join
+; RUN: verify
+; EXPECT-ERROR: control-flow join
+@@ -17,0 +18,5 @@
++    EndBytes 40
++    BeginBytes 40
++    Constant 17
++    AllocateBytes 8 40
++    Constant 1 bool
+
+; CASE: resize result false does not discharge the original owner
+; BASE: short-circuit resize preserves exactly the original ownership token at join
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -21,0 +22 @@
++    BranchFalse 3
+@@ -22,0 +24,4 @@
++    Constant 1 bool
++    Return
++    Label 3
++    Constant 0 bool
+
+; CASE: resize in loop condition and body preserves outer owner across backedge
+; RUN: verify
+; EXPECT-OK
+function bytes_entry
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    Label 1
+    Constant 65
+    BytesResize 40
+    BranchFalse 2
+    Constant
+    BytesResize 40
+    Jump 1
+    Label 2
+    BytesLength 40
+    EndBytes 40
+    Return
+end
+
+; CASE: loop resize does not permit conditional outer ownership transfer
+; BASE: resize in loop condition and body preserves outer owner across backedge
+; RUN: verify
+; EXPECT-ERROR: control-flow join
+@@ -19,0 +20,3 @@
++    BeginBytes 72
++    MoveBytes 40 72
++    EndBytes 72
+
+; CASE: cleanup preserves current and saved operand depth 0
+; RUN: verify
+; EXPECT-OK
+function bytes_entry
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 104
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    BeginBytes 72
+    Constant 42
+    Constant 42
+    MoveBytes 40 72
+    EndBytes 40
+    EndBytes 72
+    EndBytes 104
+    Return
+end
+
+; CASE: cleanup preserves current and saved operand depth 1
+; BASE: cleanup preserves current and saved operand depth 0
+; RUN: verify
+; EXPECT-OK
+@@ -16,0 +17,2 @@
++    Constant 1099511627793
++    Push
+@@ -21,0 +24 @@
++    BinaryValue
+
+; CASE: cleanup preserves current and saved operand depth 2
+; BASE: cleanup preserves current and saved operand depth 0
+; RUN: verify
+; EXPECT-OK
+@@ -16,0 +17,4 @@
++    Constant 1099511627793
++    Push
++    Constant 1099511627794
++    Push
+@@ -21,0 +26,2 @@
++    BinaryValue
++    BinaryValue
+
+; CASE: cleanup preserves current and saved operand depth 3
+; RUN: verify
+; EXPECT-OK
+function bytes_entry
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 104
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    BeginBytes 72
+    Constant 42
+    Constant 1099511627793
+    Push
+    Constant 1099511627794
+    Push
+    Constant 1099511627795
+    Push
+    Constant 42
+    MoveBytes 40 72
+    EndBytes 40
+    EndBytes 72
+    EndBytes 104
+    BinaryValue
+    BinaryValue
+    BinaryValue
+    Return
+end
+
+; CASE: cleanup preserves current and saved operand depth 4
+; BASE: cleanup preserves current and saved operand depth 3
+; RUN: verify
+; EXPECT-OK
+@@ -22,0 +23,2 @@
++    Constant 1099511627796
++    Push
+@@ -30,0 +33 @@
++    BinaryValue
+
+; CASE: end cannot close inactive owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+function bytes_entry
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    BytesLength 40
+    EndBytes 72
+    Return
+end
+
+; CASE: end requires exact owner
+; BASE: end cannot close inactive owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -15 +15 @@
+-    EndBytes 72
++    EndBytes 32
+
+; CASE: end cannot close region
+; BASE: end cannot close inactive owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -15 +15 @@
+-    EndBytes 72
++    EndBytes 8
+
+; CASE: double cleanup is malformed
+; BASE: end cannot close inactive owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -15 +15,2 @@
+-    EndBytes 72
++    EndBytes 40
++    EndBytes 40
+
+; CASE: scalar return cannot leak live owner
+; BASE: end cannot close inactive owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -15 +14,0 @@
+-    EndBytes 72
+
+; CASE: scalar return cannot leak pristine owner
+; BASE: end cannot close inactive owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -15 +15,2 @@
+-    EndBytes 72
++    EndBytes 40
++    BeginBytes 72
+
+; CASE: scalar return cannot leak consumed lifetime
+; BASE: end cannot close inactive owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -14 +14,3 @@
+-    BytesLength 40
++    BeginBytes 72
++    Constant 42
++    MoveBytes 40 72
+
+; CASE: scalar return cannot leak owning parameter
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+function bytes_parameter
+  result i64
+  params [region bytes]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BytesLength 40
+    Return
+end
+
+; CASE: scalar return still requires empty expression stack
+; BASE: end cannot close inactive owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -15 +15,2 @@
+-    EndBytes 72
++    EndBytes 40
++    Push
+
+; CASE: owner return requires mutable source
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+function bytes_return
+  result bytes
+  params [region]
+  frame 192
+  region 8
+  bytes 40 false
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    ReturnBytes 40
+end
+
+; CASE: owner return requires live source
+; BASE: owner return requires mutable source
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-  bytes 40 false
++  bytes 40 true
+@@ -13 +12,0 @@
+-    AllocateBytes 8 40
+
+; CASE: owner return cannot read consumed source
+; BASE: owner return requires mutable source
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-  bytes 40 false
++  bytes 40 true
+@@ -13,0 +14,3 @@
++    BeginBytes 72
++    MoveBytes 40 72
++    EndBytes 72
+
+; CASE: owner return cannot read ended source
+; BASE: owner return requires mutable source
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-  bytes 40 false
++  bytes 40 true
+@@ -13,0 +14 @@
++    EndBytes 40
+
+; CASE: owner return cannot read inactive source
+; BASE: owner return requires mutable source
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-  bytes 40 false
++  bytes 40 true
+@@ -14 +14 @@
+-    ReturnBytes 40
++    ReturnBytes 72
+
+; CASE: owner return requires exact owner
+; BASE: owner return requires mutable source
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-  bytes 40 false
++  bytes 40 true
+@@ -14 +14 @@
+-    ReturnBytes 40
++    ReturnBytes 32
+
+; CASE: owner return cannot return region
+; BASE: owner return requires mutable source
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-  bytes 40 false
++  bytes 40 true
+@@ -14 +14 @@
+-    ReturnBytes 40
++    ReturnBytes 8
+
+; CASE: owner return cannot leak other pristine binding
+; BASE: owner return requires mutable source
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-  bytes 40 false
++  bytes 40 true
+@@ -13,0 +14 @@
++    BeginBytes 72
+
+; CASE: owner return cannot leak other live binding
+; BASE: owner return requires mutable source
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-  bytes 40 false
++  bytes 40 true
+@@ -13,0 +14,3 @@
++    BeginBytes 72
++    Constant 1
++    AllocateBytes 8 72
+
+; CASE: owner return cannot leak consumed binding
+; BASE: owner return requires mutable source
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-  bytes 40 false
++  bytes 40 true
+@@ -14 +14,3 @@
+-    ReturnBytes 40
++    BeginBytes 72
++    MoveBytes 40 72
++    ReturnBytes 72
+
+; CASE: owner return requires empty expression stack
+; BASE: owner return requires mutable source
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -6 +6 @@
+-  bytes 40 false
++  bytes 40 true
+@@ -13,0 +14,2 @@
++    Constant 42
++    Push
+
+; CASE: owner return cannot substitute for scalar return
+; BASE: end cannot close inactive owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -15,2 +15 @@
+-    EndBytes 72
+-    Return
++    ReturnBytes 40
+
+; CASE: scalar return cannot substitute for owner transfer
+; BASE: end cannot close inactive owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -1,2 +1,2 @@
+-function bytes_entry
+-  result i64
++function bytes_return
++  result bytes
+@@ -15 +15 @@
+-    EndBytes 72
++    EndBytes 40
+
+; CASE: return moves one token after consumed source lifetime closes
+; RUN: verify
+; EXPECT-OK
+function bytes_return
+  result bytes
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    BeginBytes 72
+    MoveBytes 40 72
+    EndBytes 40
+    ReturnBytes 72
+end
+
+; CASE: owner return permits fully ended pristine sibling
+; BASE: owner return requires mutable source
+; RUN: verify
+; EXPECT-OK
+@@ -6 +6 @@
+-  bytes 40 false
++  bytes 40 true
+@@ -13,0 +14,2 @@
++    BeginBytes 72
++    EndBytes 72
+
+; CASE: object return permits inactive declared owner storage
+; RUN: verify
+; EXPECT-OK
+layout Box [i64]
+function object_return_with_private_spill
+  result (class Box)
+  frame 192
+  slot 144 i64
+  object 144 Box true
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BeginObject 144
+    Constant 42
+    Store 144
+    ReturnObject 144
+end
+
+; CASE: object return cannot leak pristine owner lifetime
+; BASE: object return permits inactive declared owner storage
+; RUN: verify
+; EXPECT-ERROR: owned byte lifetime
+@@ -13,0 +14 @@
++    BeginBytes 40
+
+; CASE: owner return follows complete local array cleanup
+; RUN: verify
+; EXPECT-OK
+function bytes_return
+  result bytes
+  params [region]
+  frame 192
+  slot 143 u8
+  slot 144 u8
+  array 144 2
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    BeginArray 144
+    Constant 7 u8
+    Store 144 u8
+    Store 143 u8
+    EndArray 144
+    ReturnBytes 40
+end
+
+; CASE: owner return cannot leak active array lifetime
+; BASE: owner return follows complete local array cleanup
+; RUN: verify
+; EXPECT-ERROR: span or byte array lifetime
+@@ -21 +20,0 @@
+-    EndArray 144
+
+; CASE: owner return follows complete span and array cleanup
+; BASE: owner return follows complete local array cleanup
+; RUN: verify
+; EXPECT-OK
+@@ -4 +4 @@
+-  frame 192
++  frame 208
+@@ -7,0 +8 @@
++  span 200
+@@ -20,0 +22,2 @@
++    BorrowSpan 144 200
++    EndSpan 200
+
+; CASE: owner return cannot leak active span and origin
+; BASE: owner return follows complete local array cleanup
+; RUN: verify
+; EXPECT-ERROR: span or byte array lifetime
+@@ -4 +4 @@
+-  frame 192
++  frame 208
+@@ -7,0 +8 @@
++  span 200
+@@ -21 +22 @@
+-    EndArray 144
++    BorrowSpan 144 200
+
+; CASE: region-only call may create new returned ownership
+; RUN: verify
+; EXPECT-OK
+function bytes_factory_caller
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    ResourceCall bytes_factory 8 [0] 40
+    BytesLength 40
+    EndBytes 40
+    Return
+end
+function bytes_factory
+  result bytes
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    ReturnBytes 40
+end
+
+; CASE: region-only call may return scalar without owners
+; RUN: verify
+; EXPECT-OK
+function bytes_factory_caller
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    ResourceCall bytes_factory 8 [0]
+    Return
+end
+function bytes_factory
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    Constant 42
+    Return
+end
+
+; CASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-OK
+function bytes_caller
+  result i64
+  params [region i64 bool u8]
+  frame 192
+  slot 144 i64
+  slot 152 bool
+  slot 160 u8
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BindParameter 1 144
+    BindParameter 2 152 bool
+    BindParameter 3 160 u8
+    BeginBytes 40
+    Load 144
+    AllocateBytes 8 40
+    BeginBytes 72
+    Load 144
+    AllocateBytes 8 72
+    Load 144
+    Push
+    Load 152 bool
+    Push
+    Load 160 u8
+    Push
+    BeginBytes 104
+    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
+    EndBytes 40
+    EndBytes 72
+    BytesLength 104
+    EndBytes 104
+    Return
+end
+function bytes_callee
+  result bytes
+  params [region i64 bytes bool bytes u8]
+  frame 192
+  slot 144 i64
+  slot 152 bool
+  slot 160 u8
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BindParameter 1 144
+    BindBytesParameter 2 40
+    BindParameter 3 152 bool
+    BindBytesParameter 4 72
+    BindParameter 5 160 u8
+    EndBytes 72
+    ReturnBytes 40
+end
+
+; CASE: scalar result call preserves saved operands 0
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-OK
+@@ -29,2 +29 @@
+-    BeginBytes 104
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 8 [0 0 40 0 72 0]
+@@ -33,2 +31,0 @@
+-    BytesLength 104
+-    EndBytes 104
+@@ -38 +35 @@
+-  result bytes
++  result i64
+@@ -54,0 +52,2 @@
++    BytesLength 40
++    EndBytes 40
+@@ -56 +55 @@
+-    ReturnBytes 40
++    Return
+
+; CASE: owner result call preserves saved operands 1
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-OK
+@@ -22,0 +23,2 @@
++    Constant 1099511627793
++    Push
+@@ -34,0 +37 @@
++    BinaryValue
+
+; CASE: scalar result call preserves saved operands 1
+; RUN: verify
+; EXPECT-OK
+function bytes_caller
+  result i64
+  params [region i64 bool u8]
+  frame 192
+  slot 144 i64
+  slot 152 bool
+  slot 160 u8
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BindParameter 1 144
+    BindParameter 2 152 bool
+    BindParameter 3 160 u8
+    BeginBytes 40
+    Load 144
+    AllocateBytes 8 40
+    BeginBytes 72
+    Load 144
+    AllocateBytes 8 72
+    Constant 1099511627793
+    Push
+    Load 144
+    Push
+    Load 152 bool
+    Push
+    Load 160 u8
+    Push
+    ResourceCall bytes_callee 8 [0 0 40 0 72 0]
+    EndBytes 40
+    EndBytes 72
+    BinaryValue
+    Return
+end
+function bytes_callee
+  result i64
+  params [region i64 bytes bool bytes u8]
+  frame 192
+  slot 144 i64
+  slot 152 bool
+  slot 160 u8
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BindParameter 1 144
+    BindBytesParameter 2 40
+    BindParameter 3 152 bool
+    BindBytesParameter 4 72
+    BindParameter 5 160 u8
+    BytesLength 40
+    EndBytes 40
+    EndBytes 72
+    Return
+end
+
+; CASE: owner result call preserves saved operands 2
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-OK
+@@ -22,0 +23,4 @@
++    Constant 1099511627793
++    Push
++    Constant 1099511627794
++    Push
+@@ -34,0 +39,2 @@
++    BinaryValue
++    BinaryValue
+
+; CASE: scalar result call preserves saved operands 2
+; BASE: scalar result call preserves saved operands 1
+; RUN: verify
+; EXPECT-OK
+@@ -24,0 +25,2 @@
++    Constant 1099511627794
++    Push
+@@ -33,0 +36 @@
++    BinaryValue
+
+; CASE: owner result call preserves saved operands 3
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-OK
+@@ -22,0 +23,6 @@
++    Constant 1099511627793
++    Push
++    Constant 1099511627794
++    Push
++    Constant 1099511627795
++    Push
+@@ -34,0 +41,3 @@
++    BinaryValue
++    BinaryValue
++    BinaryValue
+
+; CASE: scalar result call preserves saved operands 3
+; BASE: scalar result call preserves saved operands 1
+; RUN: verify
+; EXPECT-OK
+@@ -24,0 +25,4 @@
++    Constant 1099511627794
++    Push
++    Constant 1099511627795
++    Push
+@@ -33,0 +38,2 @@
++    BinaryValue
++    BinaryValue
+
+; CASE: owner call may initialize readonly result
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-OK
+@@ -11 +11 @@
+-  bytes 104 true
++  bytes 104 false
+
+; CASE: resource call target must exist
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall unknown 8 [0 0 40 0 72 0] 104
+
+; CASE: ordinary scalar target is not resource-aware
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+function bytes_caller
+  result i64
+  params [region i64 bool u8]
+  frame 192
+  slot 144 i64
+  slot 152 bool
+  slot 160 u8
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BindParameter 1 144
+    BindParameter 2 152 bool
+    BindParameter 3 160 u8
+    BeginBytes 40
+    Load 144
+    AllocateBytes 8 40
+    BeginBytes 72
+    Load 144
+    AllocateBytes 8 72
+    Load 144
+    Push
+    Load 152 bool
+    Push
+    Load 160 u8
+    Push
+    BeginBytes 104
+    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
+    EndBytes 40
+    EndBytes 72
+    BytesLength 104
+    EndBytes 104
+    Return
+end
+function bytes_callee
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+
+; CASE: resource call requires active exact region 0
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 0 [0 0 40 0 72 0] 104
+
+; CASE: resource call requires active exact region 7
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 7 [0 0 40 0 72 0] 104
+
+; CASE: resource call requires active exact region 40
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 40 [0 0 40 0 72 0] 104
+
+; CASE: resource call requires active exact region 176
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 176 [0 0 40 0 72 0] 104
+
+; CASE: unbound second region cannot transport owner
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: region authority is not active
+@@ -8,0 +9 @@
++  region 176
+@@ -30 +31 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 176 [0 0 40 0 72 0] 104
+
+; CASE: resource argument vector cannot omit region position
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 8 [0 40 0 72 0] 104
+
+; CASE: resource argument vector cannot add positions
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 8 [0 0 40 0 72 0 0] 104
+
+; CASE: resource argument vector cannot be absent
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 8 [] 104
+
+; CASE: non-owner argument position must be zero 0
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 8 [40 0 40 0 72 0] 104
+
+; CASE: non-owner argument position must be zero 1
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 8 [0 40 40 0 72 0] 104
+
+; CASE: non-owner argument position must be zero 3
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 8 [0 0 40 40 72 0] 104
+
+; CASE: non-owner argument position must be zero 5
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 8 [0 0 40 0 72 40] 104
+
+; CASE: owner argument requires exact live owner 0
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 8 [0*4 72 0] 104
+
+; CASE: owner argument requires exact live owner 8
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 8 [0 0 8 0 72 0] 104
+
+; CASE: owner argument requires exact live owner 32
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 8 [0 0 32 0 72 0] 104
+
+; CASE: owner argument requires exact live owner 136
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 8 [0 0 136 0 72 0] 104
+
+; CASE: owner argument requires exact live owner 176
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 8 [0 0 176 0 72 0] 104
+
+; CASE: one owner cannot supply two arguments
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 8 [0 0 40 0 40 0] 104
+
+; CASE: readonly owner cannot supply moved argument
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -9 +9 @@
+-  bytes 40 true
++  bytes 40 false
+
+; CASE: pristine owner cannot supply argument
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: owned byte binding does not hold live ownership
+@@ -19 +18,0 @@
+-    AllocateBytes 8 40
+
+; CASE: consumed owner cannot supply argument
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: owned byte binding does not hold live ownership
+@@ -29,0 +30,2 @@
++    BeginBytes 136
++    MoveBytes 40 136
+
+; CASE: ended owner cannot supply argument
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: owned byte lifetime is not active
+@@ -29,0 +30 @@
++    EndBytes 40
+
+; CASE: resource call consumes every argument
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30,0 +31 @@
++    BytesLength 72
+
+; CASE: resource call cannot move an argument twice
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30,0 +31,2 @@
++    BeginBytes 136
++    MoveBytes 40 136
+
+; CASE: resource call result must have begun lifetime
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: owned byte lifetime is not active
+@@ -29 +28,0 @@
+-    BeginBytes 104
+
+; CASE: resource call result must be pristine
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: owned byte result requires pristine binding
+@@ -29,0 +30,2 @@
++    Constant 1
++    AllocateBytes 8 104
+
+; CASE: resource result cannot alias moved argument
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 40
+
+; CASE: owner call result requires exact owner 0
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 8 [0 0 40 0 72 0]
+
+; CASE: owner call result requires exact owner 8
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 8
+
+; CASE: owner call result requires exact owner 96
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 96
+
+; CASE: owner call result requires exact owner 176
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 176
+
+; CASE: scalar call result requires zero spill
+; BASE: scalar result call preserves saved operands 1
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -23,2 +22,0 @@
+-    Constant 1099511627793
+-    Push
+@@ -31 +29 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0]
++    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
+@@ -34 +31,0 @@
+-    BinaryValue
+
+; CASE: owner call result clears scalar current
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30,0 +31 @@
++    Push
+
+; CASE: resource call requires scalar argument stack
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: resource call scalar argument type mismatch
+@@ -28 +27,0 @@
+-    Push
+
+; CASE: resource call checks scalar argument type
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: resource call scalar argument type mismatch
+@@ -27 +27 @@
+-    Load 160 u8
++    Constant 1
+
+; CASE: scalar Call cannot target resource signature
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    Call bytes_callee
+
+; CASE: AggregateCall cannot target resource signature
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
++    AggregateCall bytes_callee [0*6] 0 [0*6]
+
+; CASE: consumed call arguments still require lexical cleanup
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -31 +30,0 @@
+-    EndBytes 40
+
+; CASE: returned call owner still requires cleanup
+; BASE: owner result call preserves saved operands 0
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -34 +33,0 @@
+-    EndBytes 104
+
+; CASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+function bytes_entry
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    Constant 0 region
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    BytesLength 40
+    EndBytes 40
+    Return
+end
+
+; CASE: enum constant cannot fabricate builtin::ByteRegion
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -11 +11 @@
+-    Constant 0 region
++    EnumConstant region
+
+; CASE: load cannot expose builtin::ByteRegion
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -11 +10,0 @@
+-    Constant 0 region
+@@ -14,0 +14 @@
++    Load 8 region
+
+; CASE: store cannot fabricate builtin::ByteRegion
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -11 +10,0 @@
+-    Constant 0 region
+@@ -14,0 +14 @@
++    Store 8 region
+
+; CASE: checked conversion cannot produce builtin::ByteRegion
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -11 +10,0 @@
+-    Constant 0 region
+@@ -13,0 +13 @@
++    Convert i64 region
+
+; CASE: checked conversion cannot consume builtin::ByteRegion
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -11 +10,0 @@
+-    Constant 0 region
+@@ -13,0 +13 @@
++    Convert region
+
+; CASE: binary operation cannot fabricate builtin::ByteRegion
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -11 +10,0 @@
+-    Constant 0 region
+@@ -13,0 +13,2 @@
++    Push
++    BinaryValue CheckedAdd region
+
+; CASE: comparison cannot interpret builtin::ByteRegion
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -11 +10,0 @@
+-    Constant 0 region
+@@ -13,0 +13,2 @@
++    Push
++    Compare Equal region
+
+; CASE: constant cannot fabricate builtin::OwnedBytes
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -11 +11 @@
+-    Constant 0 region
++    Constant 0 bytes
+
+; CASE: enum constant cannot fabricate builtin::OwnedBytes
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -11 +11 @@
+-    Constant 0 region
++    EnumConstant bytes
+
+; CASE: load cannot expose builtin::OwnedBytes
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -11 +10,0 @@
+-    Constant 0 region
+@@ -14,0 +14 @@
++    Load 40 bytes
+
+; CASE: store cannot fabricate builtin::OwnedBytes
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -11 +10,0 @@
+-    Constant 0 region
+@@ -14,0 +14 @@
++    Store 40 bytes
+
+; CASE: checked conversion cannot produce builtin::OwnedBytes
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -11 +10,0 @@
+-    Constant 0 region
+@@ -13,0 +13 @@
++    Convert i64 bytes
+
+; CASE: checked conversion cannot consume builtin::OwnedBytes
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -11 +10,0 @@
+-    Constant 0 region
+@@ -13,0 +13 @@
++    Convert bytes
+
+; CASE: binary operation cannot fabricate builtin::OwnedBytes
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -11 +10,0 @@
+-    Constant 0 region
+@@ -13,0 +13,2 @@
++    Push
++    BinaryValue CheckedAdd bytes
+
+; CASE: comparison cannot interpret builtin::OwnedBytes
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -11 +10,0 @@
+-    Constant 0 region
+@@ -13,0 +13,2 @@
++    Push
++    Compare Equal bytes
+
+; CASE: scalar load cannot inspect private resource word 8
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: slot type/layout mismatch
+@@ -11 +10,0 @@
+-    Constant 0 region
+@@ -14,0 +14 @@
++    Load 8
+
+; CASE: scalar store cannot overwrite private resource word 8
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: slot type/layout mismatch
+@@ -11 +10,0 @@
+-    Constant 0 region
+@@ -14,0 +14,2 @@
++    Constant
++    Store 8
+
+; CASE: scalar load cannot inspect private resource word 16
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: slot type/layout mismatch
+@@ -11 +10,0 @@
+-    Constant 0 region
+@@ -14,0 +14 @@
++    Load 16
+
+; CASE: scalar store cannot overwrite private resource word 16
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: slot type/layout mismatch
+@@ -11 +10,0 @@
+-    Constant 0 region
+@@ -14,0 +14,2 @@
++    Constant
++    Store 16
+
+; CASE: scalar load cannot inspect private resource word 24
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: slot type/layout mismatch
+@@ -11 +10,0 @@
+-    Constant 0 region
+@@ -14,0 +14 @@
++    Load 24
+
+; CASE: scalar store cannot overwrite private resource word 24
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: slot type/layout mismatch
+@@ -11 +10,0 @@
+-    Constant 0 region
+@@ -14,0 +14,2 @@
++    Constant
++    Store 24
+
+; CASE: scalar load cannot inspect private resource word 32
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: slot type/layout mismatch
+@@ -11 +10,0 @@
+-    Constant 0 region
+@@ -14,0 +14 @@
++    Load 32
+
+; CASE: scalar store cannot overwrite private resource word 32
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: slot type/layout mismatch
+@@ -11 +10,0 @@
+-    Constant 0 region
+@@ -14,0 +14,2 @@
++    Constant
++    Store 32
+
+; CASE: scalar load cannot inspect private resource word 40
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: slot type/layout mismatch
+@@ -11 +10,0 @@
+-    Constant 0 region
+@@ -14,0 +14 @@
++    Load 40
+
+; CASE: scalar store cannot overwrite private resource word 40
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: slot type/layout mismatch
+@@ -11 +10,0 @@
+-    Constant 0 region
+@@ -14,0 +14,2 @@
++    Constant
++    Store 40
+
+; CASE: legacy own handle cannot expose private owner
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -11 +10,0 @@
+-    Constant 0 region
+@@ -14,0 +14 @@
++    BorrowHandle 40 ref
+
+; CASE: fixed-array scalar load cannot expose private descriptor
+; BASE: constant cannot fabricate builtin::ByteRegion
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -11 +10,0 @@
+-    Constant 0 region
+@@ -14,0 +14,3 @@
++    Constant
++    BoundsGuard 40 4
++    IndexLoad 40 4
+
+; CASE: different move sites preserve the same unique token at join
+; RUN: verify
+; EXPECT-OK
+function bytes_entry
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    BeginBytes 72
+    BytesOk 40
+    BranchFalse 1
+    MoveBytes 40 72
+    Constant 42
+    Jump 2
+    Label 1
+    MoveBytes 40 72
+    Constant 42
+    Label 2
+    EndBytes 40
+    EndBytes 72
+    Return
+end
+
+; CASE: both branches completely close owner before join
+; RUN: verify
+; EXPECT-OK
+function bytes_entry
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 1
+    AllocateBytes 8 40
+    BytesOk 40
+    BranchFalse 1
+    EndBytes 40
+    Constant 42
+    Jump 2
+    Label 1
+    EndBytes 40
+    Constant 42
+    Label 2
+    Return
+end
+
+; CASE: early return and continuing branch each close owner
+; BASE: both branches completely close owner before join
+; RUN: verify
+; EXPECT-OK
+@@ -18 +18 @@
+-    Jump 2
++    Return
+
+; CASE: one branch leaves owner live
+; BASE: both branches completely close owner before join
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -16 +15,0 @@
+-    EndBytes 40
+
+; CASE: one branch leaves consumed source lifetime open
+; BASE: different move sites preserve the same unique token at join
+; RUN: verify
+; EXPECT-ERROR: control-flow join
+@@ -18,0 +19 @@
++    EndBytes 40
+
+; CASE: move cannot occur only on one continuing branch
+; BASE: different move sites preserve the same unique token at join
+; RUN: verify
+; EXPECT-ERROR: control-flow join
+@@ -17 +16,0 @@
+-    MoveBytes 40 72
+
+; CASE: token cannot occupy different slots at join
+; BASE: different move sites preserve the same unique token at join
+; RUN: verify
+; EXPECT-ERROR: control-flow join
+@@ -14,0 +15 @@
++    BeginBytes 104
+@@ -21 +22 @@
+-    MoveBytes 40 72
++    MoveBytes 40 104
+@@ -25,0 +27 @@
++    EndBytes 104
+
+; CASE: pristine bindings created at distinct sites cannot merge
+; RUN: verify
+; EXPECT-ERROR: control-flow join
+function bytes_entry
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    Constant 1 bool
+    BranchFalse 1
+    BeginBytes 40
+    Constant 42
+    Jump 2
+    Label 1
+    BeginBytes 40
+    Constant 42
+    Label 2
+    EndBytes 40
+    Return
+end
+
+; CASE: allocations created at distinct sites cannot merge
+; RUN: verify
+; EXPECT-ERROR: control-flow join
+function bytes_entry
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 1 bool
+    BranchFalse 1
+    Constant 1
+    AllocateBytes 8 40
+    Constant 42
+    Jump 2
+    Label 1
+    Constant 1
+    AllocateBytes 8 40
+    Constant 42
+    Label 2
+    EndBytes 40
+    Return
+end
+
+; CASE: consumed tokens clear authority but retain the same binding lifetime
+; BASE: allocations created at distinct sites cannot merge
+; RUN: verify
+; EXPECT-OK
+@@ -12,0 +13 @@
++    BeginBytes 72
+@@ -16,0 +18,2 @@
++    MoveBytes 40 72
++    EndBytes 72
+@@ -21,0 +25,2 @@
++    MoveBytes 40 72
++    EndBytes 72
+
+; CASE: one branch cannot restart an outer owner lifetime
+; RUN: verify
+; EXPECT-ERROR: control-flow join
+function bytes_entry
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    BytesOk 40
+    BranchFalse 1
+    EndBytes 40
+    BeginBytes 40
+    Constant 1
+    AllocateBytes 8 40
+    Jump 2
+    Label 1
+    Label 2
+    BytesLength 40
+    EndBytes 40
+    Return
+end
+
+; CASE: pristine lifetime cannot disappear on only one branch
+; BASE: both branches completely close owner before join
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -12,3 +12 @@
+-    Constant 1
+-    AllocateBytes 8 40
+-    BytesOk 40
++    Constant 1 bool
+@@ -20 +17,0 @@
+-    EndBytes 40
+
+; CASE: mutually exclusive returns each transfer the live owner
+; RUN: verify
+; EXPECT-OK
+function bytes_return
+  result bytes
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    BytesOk 40
+    BranchFalse 1
+    ReturnBytes 40
+    Label 1
+    ReturnBytes 40
+end
+
+; CASE: one return path cannot transfer a consumed owner
+; BASE: mutually exclusive returns each transfer the live owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -17,0 +18,3 @@
++    BeginBytes 72
++    MoveBytes 40 72
++    EndBytes 72
+
+; CASE: loop allocation site may repeat after every lifetime closes
+; RUN: verify
+; EXPECT-OK
+function bytes_entry
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    Label 1
+    BeginBytes 72
+    Constant 1
+    AllocateBytes 8 72
+    EndBytes 72
+    BytesOk 40
+    BranchFalse 2
+    Jump 1
+    Label 2
+    BytesLength 40
+    EndBytes 40
+    Return
+end
+
+; CASE: backedge cannot retain an iteration owner
+; BASE: loop allocation site may repeat after every lifetime closes
+; RUN: verify
+; EXPECT-ERROR: control-flow join
+@@ -18 +17,0 @@
+-    EndBytes 72
+@@ -24,0 +24 @@
++    EndBytes 72
+
+; CASE: backedge cannot leave outer owner consumed
+; BASE: loop allocation site may repeat after every lifetime closes
+; RUN: verify
+; EXPECT-ERROR: control-flow join
+@@ -20,0 +21,3 @@
++    BeginBytes 104
++    MoveBytes 40 104
++    EndBytes 104
+
+; CASE: backedge cannot restart outer owner at new site
+; BASE: loop allocation site may repeat after every lifetime closes
+; RUN: verify
+; EXPECT-ERROR: control-flow join
+@@ -20,0 +21,4 @@
++    EndBytes 40
++    BeginBytes 40
++    Constant 1
++    AllocateBytes 8 40
+
+; CASE: same allocation site cannot mint again while previous token lives
+; BASE: loop allocation site may repeat after every lifetime closes
+; RUN: verify
+; EXPECT-ERROR: control-flow join
+@@ -17,0 +18,2 @@
++    BeginBytes 104
++    MoveBytes 72 104
+@@ -24,0 +27 @@
++    EndBytes 104
+
+; CASE: restarted old slot cannot hide its token moved across backedge
+; BASE: loop allocation site may repeat after every lifetime closes
+; RUN: verify
+; EXPECT-ERROR: control-flow join
+@@ -17,0 +18,2 @@
++    BeginBytes 104
++    MoveBytes 72 104
+@@ -18,0 +21 @@
++    BeginBytes 72
+@@ -24,0 +28,2 @@
++    EndBytes 72
++    EndBytes 104
+
+; CASE: call result creation site may repeat after its lifetime closes
+; RUN: verify
+; EXPECT-OK
+function bytes_factory_caller
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    Label 1
+    BeginBytes 40
+    ResourceCall bytes_factory 8 [0] 40
+    EndBytes 40
+    Constant 0 bool
+    BranchFalse 2
+    Jump 1
+    Label 2
+    Constant 42
+    Return
+end
+function bytes_factory
+  result bytes
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    ReturnBytes 40
+end
+
+; CASE: same call site cannot mint again while previous result token lives
+; BASE: call result creation site may repeat after its lifetime closes
+; RUN: verify
+; EXPECT-ERROR: control-flow join
+@@ -13,0 +14,2 @@
++    BeginBytes 72
++    MoveBytes 40 72
+@@ -19,0 +22 @@
++    EndBytes 72
+
+; CASE: content-only loop condition and body preserve outer ownership
+; RUN: verify
+; EXPECT-OK
+function bytes_entry
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    Label 1
+    BytesOk 40
+    BranchFalse 2
+    Constant
+    BytesLoad 40
+    Constant
+    Push
+    Constant 42 u8
+    BytesStore 40
+    Jump 1
+    Label 2
+    BytesLength 40
+    EndBytes 40
+    Return
+end
+
+; CASE: unchanged pristine lifetime may cross backedge
+; RUN: verify
+; EXPECT-OK
+function bytes_entry
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    BeginBytes 72
+    Label 1
+    BytesOk 40
+    BranchFalse 2
+    Jump 1
+    Label 2
+    EndBytes 72
+    BytesLength 40
+    EndBytes 40
+    Return
+end
+
+; CASE: pristine lifetime cannot be conditionally recreated in loop
+; BASE: unchanged pristine lifetime may cross backedge
+; RUN: verify
+; EXPECT-ERROR: control-flow join
+@@ -17,0 +18,2 @@
++    EndBytes 72
++    BeginBytes 72
+
+; CASE: short-circuit copied mutation has identical owner state
+; RUN: verify
+; EXPECT-OK
+function bytes_entry
+  result bool
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    BytesOk 40
+    BranchFalse 1
+    Constant
+    Push
+    Constant 255 u8
+    BytesStore 40
+    Jump 2
+    Label 1
+    Constant 0 bool
+    Label 2
+    EndBytes 40
+    Return
+end
+
+; CASE: short-circuit right operand cannot consume outer owner
+; BASE: short-circuit copied mutation has identical owner state
+; RUN: verify
+; EXPECT-ERROR: control-flow join
+@@ -19,0 +20,3 @@
++    BeginBytes 72
++    MoveBytes 40 72
++    EndBytes 72
+
+; CASE: short-circuit right operand cannot leave pristine local
+; BASE: short-circuit copied mutation has identical owner state
+; RUN: verify
+; EXPECT-ERROR: control-flow join
+@@ -19,0 +20 @@
++    BeginBytes 72
+
+; CASE: short-circuit right operand cannot close outer owner
+; BASE: short-circuit copied mutation has identical owner state
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -19,0 +20 @@
++    EndBytes 40
+
+; CASE: distinct returned-call token sites cannot merge
+; RUN: verify
+; EXPECT-ERROR: control-flow join
+function bytes_caller
+  result i64
+  params [region i64 bool u8]
+  frame 192
+  slot 144 i64
+  slot 152 bool
+  slot 160 u8
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BindParameter 1 144
+    BindParameter 2 152 bool
+    BindParameter 3 160 u8
+    BeginBytes 40
+    Load 144
+    AllocateBytes 8 40
+    BeginBytes 72
+    Load 144
+    AllocateBytes 8 72
+    BeginBytes 104
+    Constant 1 bool
+    BranchFalse 1
+    Load 144
+    Push
+    Load 152 bool
+    Push
+    Load 160 u8
+    Push
+    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
+    Jump 2
+    Label 1
+    Load 144
+    Push
+    Load 152 bool
+    Push
+    Load 160 u8
+    Push
+    ResourceCall bytes_callee 8 [0 0 40 0 72 0] 104
+    Label 2
+    EndBytes 40
+    EndBytes 72
+    BytesLength 104
+    EndBytes 104
+    Return
+end
+function bytes_callee
+  result bytes
+  params [region i64 bytes bool bytes u8]
+  frame 192
+  slot 144 i64
+  slot 152 bool
+  slot 160 u8
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BindParameter 1 144
+    BindBytesParameter 2 40
+    BindParameter 3 152 bool
+    BindBytesParameter 4 72
+    BindParameter 5 160 u8
+    EndBytes 72
+    ReturnBytes 40
+end
+
+; CASE: owned byte graph keeps every Aurora helper local
+; RUN: emit
+; CHECK-DAG: \n.local bytes_factory_caller\n
+; CHECK-DAG: \n.local bytes_factory\n
+; CHECK-DAG: \n.local malloc\n
+; CHECK-DAG: \n.local free\n
+; CHECK-DAG: \n.local memcpy\n
+; CHECK-DAG: \n.local memset\n
+; CHECK-DAG: \n.local abort\n
+; CHECK-DAG: \n.local fputs\n
+; CHECK-DAG: \n.local fflush\n
+; CHECK-DAG: \n.local printf\n
+; RUN: emit
+; CHECK-NOT: \n.globl bytes_factory_caller\n
+; CHECK-NOT: \n.globl bytes_factory\n
+; CHECK-NOT: \n.globl malloc\n
+; CHECK-NOT: \n.globl free\n
+; CHECK-NOT: \n.globl memcpy\n
+; CHECK-NOT: \n.globl memset\n
+; CHECK-NOT: \n.globl abort\n
+; CHECK-NOT: \n.globl fputs\n
+; CHECK-NOT: \n.globl fflush\n
+; CHECK-NOT: \n.globl printf\n
+function bytes_factory_caller
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    ResourceCall bytes_factory 8 [0] 40
+    BytesLength 40
+    EndBytes 40
+    Call malloc
+    Call free
+    Call memcpy
+    Call memset
+    Call abort
+    Call fputs
+    Call fflush
+    Call printf
+    Return
+end
+function bytes_factory
+  result bytes
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 17
+    AllocateBytes 8 40
+    ReturnBytes 40
+end
+function malloc
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+function free
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+function memcpy
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+function memset
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+function abort
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+function fputs
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+function fflush
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+function printf
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+
+; CASE: region signature alone makes the whole graph private
+; RUN: emit
+; CHECK-DAG: \n.local region_only_entry\n
+; CHECK-DAG: \n.local malloc\n
+; CHECK-DAG: \n.local free\n
+; CHECK-DAG: \n.local memcpy\n
+; CHECK-DAG: \n.local memset\n
+; CHECK-DAG: \n.local abort\n
+; CHECK-DAG: \n.local fputs\n
+; CHECK-DAG: \n.local fflush\n
+; CHECK-DAG: \n.local printf\n
+; RUN: emit
+; CHECK-NOT: \n.globl region_only_entry\n
+; CHECK-NOT: \n.globl malloc\n
+; CHECK-NOT: \n.globl free\n
+; CHECK-NOT: \n.globl memcpy\n
+; CHECK-NOT: \n.globl memset\n
+; CHECK-NOT: \n.globl abort\n
+; CHECK-NOT: \n.globl fputs\n
+; CHECK-NOT: \n.globl fflush\n
+; CHECK-NOT: \n.globl printf\n
+function region_only_entry
+  result i64
+  params [region]
+  frame 192
+  region 8
+  bytes 40 true
+  bytes 72 true
+  bytes 104 true
+  bytes 136 true
+    BindRegionParameter 0 8
+    Constant 42
+    Call malloc
+    Call free
+    Call memcpy
+    Call memset
+    Call abort
+    Call fputs
+    Call fflush
+    Call printf
+    Return
+end
+function malloc
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+function free
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+function memcpy
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+function memset
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+function abort
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+function fputs
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+function fflush
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+function printf
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+
+; CASE: owner lifetime alone makes the whole graph private
+; BASE: region signature alone makes the whole graph private
+; RUN: emit
+; CHECK-DAG: \n.local lifetime_only_entry\n
+; CHECK-DAG: \n.local malloc\n
+; CHECK-DAG: \n.local free\n
+; CHECK-DAG: \n.local memcpy\n
+; CHECK-DAG: \n.local memset\n
+; CHECK-DAG: \n.local abort\n
+; CHECK-DAG: \n.local fputs\n
+; CHECK-DAG: \n.local fflush\n
+; CHECK-DAG: \n.local printf\n
+; RUN: emit
+; CHECK-NOT: \n.globl lifetime_only_entry\n
+; CHECK-NOT: \n.globl malloc\n
+; CHECK-NOT: \n.globl free\n
+; CHECK-NOT: \n.globl memcpy\n
+; CHECK-NOT: \n.globl memset\n
+; CHECK-NOT: \n.globl abort\n
+; CHECK-NOT: \n.globl fputs\n
+; CHECK-NOT: \n.globl fflush\n
+; CHECK-NOT: \n.globl printf\n
+@@ -1 +1 @@
+-function region_only_entry
++function lifetime_only_entry
+@@ -3 +2,0 @@
+-  params [region]
+@@ -5 +3,0 @@
+-  region 8
+@@ -10 +8 @@
+-    BindRegionParameter 0 8
++    BeginBytes 40
+@@ -11,0 +10 @@
++    EndBytes 40
+
+; CASE: scalar-only graph preserves legacy global entry points
+; BASE: region signature alone makes the whole graph private
+; RUN: emit
+; CHECK-DAG: \n.globl scalar_only_entry\n
+; CHECK-DAG: \n.globl malloc\n
+; CHECK-DAG: \n.globl free\n
+; CHECK-DAG: \n.globl memcpy\n
+; CHECK-DAG: \n.globl memset\n
+; CHECK-DAG: \n.globl abort\n
+; CHECK-DAG: \n.globl fputs\n
+; CHECK-DAG: \n.globl fflush\n
+; CHECK-DAG: \n.globl printf\n
+; RUN: emit
+; CHECK-NOT: \n.local scalar_only_entry\n
+; CHECK-NOT: \n.local malloc\n
+; CHECK-NOT: \n.local free\n
+; CHECK-NOT: \n.local memcpy\n
+; CHECK-NOT: \n.local memset\n
+; CHECK-NOT: \n.local abort\n
+; CHECK-NOT: \n.local fputs\n
+; CHECK-NOT: \n.local fflush\n
+; CHECK-NOT: \n.local printf\n
+; CHECK-NOT: __au_runtime_bytes_
+@@ -1 +1 @@
+-function region_only_entry
++function scalar_only_entry
+@@ -3,8 +3 @@
+-  params [region]
+-  frame 192
+-  region 8
+-  bytes 40 true
+-  bytes 72 true
+-  bytes 104 true
+-  bytes 136 true
+-    BindRegionParameter 0 8
++  frame 0

@@ -1,0 +1,1367 @@
+; CASE: absent storage origins in scalar and empty frames
+; RUN: metadata
+; CHECK-DAG: origin test 1 object - byte -
+; CHECK-DAG: origin test 8 object - byte -
+; CHECK-DAG: origin test 16 object - byte -
+; CHECK-DAG: origin empty_frame 1 object - byte -
+; CHECK-DAG: origin empty_frame 8 object - byte -
+; CHECK-DAG: origin empty_frame 16 object - byte -
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Load 8
+    Return
+end
+function empty_frame
+  result i64
+  frame 16
+    Constant 42
+    Return
+end
+
+; CASE: absent storage origins reject later-kind groups
+; RUN: metadata
+; CHECK-DAG: origin span_local 6 object - byte 8
+; CHECK-DAG: origin span_local 8 object - byte 8
+; CHECK-DAG: origin span_local 9 object - byte -
+; CHECK-DAG: origin span_local 256 object - byte -
+function span_local
+  result u8
+  frame 640
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  array 8 3
+  span 256
+  span 320
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BorrowSpan 8 256
+    ReborrowSpan 256 320
+    Constant 1
+    SpanLoad 320
+    EndSpan 320
+    EndSpan 256
+    EndArray 8
+    Return
+end
+
+; CASE: exact packed object leaf origins exclude padding and empty reservations
+; RUN: metadata
+; CHECK-DAG: origin packed_result_array 40 object 40 byte -
+; CHECK-DAG: origin packed_result_array 32 object 40 byte -
+; CHECK-DAG: origin packed_result_array 31 object 40 byte -
+; CHECK-DAG: origin packed_result_array 24 object 40 byte -
+; CHECK-DAG: origin packed_result_array 112 object 112 byte -
+; CHECK-DAG: origin packed_result_array 104 object 112 byte -
+; CHECK-DAG: origin packed_result_array 96 object 112 byte -
+; CHECK-DAG: origin packed_result_array 95 object 112 byte -
+; CHECK-DAG: origin packed_result_array 88 object 112 byte -
+; CHECK-DAG: origin packed_result_array 184 object 184 byte -
+; CHECK-DAG: origin packed_result_array 176 object 184 byte -
+; CHECK-DAG: origin packed_result_array 175 object 184 byte -
+; CHECK-DAG: origin packed_result_array 168 object 184 byte -
+; CHECK-DAG: origin packed_result_array -2147483648 object - byte -
+; CHECK-DAG: origin packed_result_array -1 object - byte -
+; CHECK-DAG: origin packed_result_array 0 object - byte -
+; CHECK-DAG: origin packed_result_array 1 object - byte -
+; CHECK-DAG: origin packed_result_array 8 object - byte -
+; CHECK-DAG: origin packed_result_array 23 object - byte -
+; CHECK-DAG: origin packed_result_array 25 object - byte -
+; CHECK-DAG: origin packed_result_array 30 object - byte -
+; CHECK-DAG: origin packed_result_array 33 object - byte -
+; CHECK-DAG: origin packed_result_array 39 object - byte -
+; CHECK-DAG: origin packed_result_array 80 object - byte -
+; CHECK-DAG: origin packed_result_array 94 object - byte -
+; CHECK-DAG: origin packed_result_array 97 object - byte -
+; CHECK-DAG: origin packed_result_array 174 object - byte -
+; CHECK-DAG: origin packed_result_array 192 object - byte -
+; CHECK-DAG: origin packed_result_array 193 object - byte -
+; CHECK-DAG: origin packed_result_array 2147483647 object - byte -
+; CHECK-DAG: origin packed_tiny_roundtrip 8 object 8 byte -
+; CHECK-DAG: origin packed_tiny_roundtrip 7 object 8 byte -
+; CHECK-DAG: origin packed_tiny_roundtrip 6 object 8 byte -
+; CHECK-DAG: origin packed_tiny_roundtrip 16 object 16 byte -
+; CHECK-DAG: origin packed_tiny_roundtrip 15 object 16 byte -
+; CHECK-DAG: origin packed_tiny_roundtrip 14 object 16 byte -
+; CHECK-DAG: origin packed_tiny_roundtrip 1 object - 
+; CHECK-DAG: origin packed_tiny_roundtrip 5 object - 
+; CHECK-DAG: origin packed_tiny_roundtrip 9 object - 
+; CHECK-DAG: origin packed_tiny_roundtrip 13 object - 
+; CHECK-DAG: origin packed_tiny_roundtrip 17 object - 
+layout Empty []
+layout Leaf [(enum Mode) u8 u8 bool]
+layout Outer [i64 (enum Mode) u8 u8 bool]
+layout Tiny [u8*3]
+fields Empty []
+fields Leaf [((enum Mode) 0 1 false) (u8 1 2 true) (bool 3 1 false) ((class Empty) 4 0 false)]
+fields Outer [(i64 0 1 false) ((class Leaf) 1 4 false) ((class Empty) 5 0 false)]
+fields Tiny [(u8 0 3 true)]
+enum Mode 2
+enum OtherMode 2
+function packed_result_array
+  result u8
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 175 u8
+    Return
+end
+function construct_leaf
+  result i64
+  params [(enum Mode) bool (class Empty)]
+  frame 32
+  receiver Leaf true true
+  slot 8 (enum Mode)
+  slot 16 bool
+  object 24 Empty false
+    BindParameter 0 8 (enum Mode)
+    BindParameter 1 16 bool
+    BindObjectParameter 2 24 Empty
+    Load 8 (enum Mode)
+    ReceiverStore 0 (enum Mode)
+    Load 16 bool
+    ReceiverStore 2 bool
+    ReceiverArrayZero 1
+    InitializeObjectField 0 3 24
+    Constant
+    Return
+end
+function construct_outer
+  result i64
+  params [i64 (class Leaf) (class Empty) i64]
+  frame 64
+  receiver Outer true true
+  slot 8 i64
+  slot 24 bool
+  slot 31 u8
+  slot 32 u8
+  slot 40 (enum Mode)
+  slot 56 i64
+  object 40 Leaf false
+  object 48 Empty false
+    BindParameter 0 8
+    BindObjectParameter 1 40 Leaf
+    BindObjectParameter 2 48 Empty
+    BindParameter 3 56
+    Load 8
+    Push
+    Load 56
+    BinaryValue
+    ReceiverStore
+    InitializeObjectField 0 1 40
+    InitializeObjectField 0 2 48
+    Constant
+    Return
+end
+function set_leaf
+  result i64
+  params [i64 u8]
+  frame 16
+  receiver Leaf true false
+  slot 8 i64
+  slot 16 u8
+    BindParameter 0 8
+    BindParameter 1 16 u8
+    Load 8
+    ReceiverBoundsGuard 1
+    Push
+    Load 16 u8
+    ReceiverIndexStore 1
+    Constant
+    Return
+end
+function get_outer_header
+  result i64
+  frame 0
+  receiver Outer false false
+    ReceiverLoad
+    Return
+end
+function copy_outer
+  result (class Outer)
+  params [(class Outer)]
+  frame 48
+  slot 16 bool
+  slot 23 u8
+  slot 24 u8
+  slot 32 (enum Mode)
+  slot 40 i64
+  object 40 Outer false
+    BindObjectParameter 0 40 Outer
+    ReturnObject 40
+end
+function clobber_scalar
+  result i64
+  frame 0
+    Constant 81
+    Push
+    Constant 9
+    BinaryValue CheckedDivide
+    Return
+end
+function identity_mode
+  result (enum Mode)
+  params [(enum Mode)]
+  frame 16
+  slot 8 (enum Mode)
+    BindParameter 0 8 (enum Mode)
+    Load 8 (enum Mode)
+    Return
+end
+function snapshot_outer
+  result (class Outer)
+  params [i64 (enum Mode)]
+  frame 160
+  receiver Outer false false
+  slot 8 i64
+  slot 16 (enum Mode)
+  slot 32 bool
+  slot 39 u8
+  slot 40 u8
+  slot 48 (enum Mode)
+  slot 72 bool
+  slot 79 u8
+  slot 80 u8
+  slot 88 (enum Mode)
+  slot 96 i64
+  slot 112 bool
+  slot 119 u8
+  slot 120 u8
+  slot 128 (enum Mode)
+  slot 136 i64
+  slot 144 bool
+  object 48 Leaf false
+  object 56 Empty false
+  object 96 Outer false
+  object 136 Outer true
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    BeginObject 48
+    ObjectFieldCopy 0 1 48
+    BeginObject 56
+    ObjectFieldCopy 0 2 56
+    Load 16 (enum Mode)
+    Push
+    Call identity_mode
+    Push
+    Load 48 (enum Mode)
+    Compare Equal (enum Mode)
+    Store 144 bool
+    Call clobber_scalar
+    BeginObject 96
+    Load 8
+    Push
+    ReceiverLoad
+    Push
+    MethodCall construct_outer 96 [0 48 56 0]
+    BeginObject 136
+    AggregateCall copy_outer [96] 136
+    MethodCall get_outer_header
+    Push
+    Load 136
+    BinaryValue
+    Store 136
+    Load 144 bool
+    BranchFalse 1
+    ReturnObject 136
+    Label 1
+    Constant 1
+    Push
+    Constant
+    BinaryValue CheckedDivide
+    ReturnObject 136
+end
+function relay_outer
+  result (class Outer)
+  params [i64 (enum Mode)]
+  frame 64
+  receiver Outer false false
+  slot 8 i64
+  slot 16 (enum Mode)
+  slot 32 bool
+  slot 39 u8
+  slot 40 u8
+  slot 48 (enum Mode)
+  slot 56 i64
+  object 56 Outer false
+    BindParameter 0 8
+    BindParameter 1 16 (enum Mode)
+    BeginObject 56
+    Load 8
+    Push
+    Load 16 (enum Mode)
+    Push
+    MethodCall snapshot_outer 0 [] 56
+    ReturnObject 56
+end
+function snapshot_empty
+  result (class Empty)
+  frame 16
+  receiver Outer false false
+  object 8 Empty false
+    BeginObject 8
+    ObjectFieldCopy 0 2 8
+    Call clobber_scalar
+    ReturnObject 8
+end
+function get_leaf_mode
+  result (enum Mode)
+  frame 0
+  receiver Leaf false false
+    ReceiverLoad 0 (enum Mode)
+    Return
+end
+function packed_result_header
+  result i64
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 152
+    Return
+end
+function packed_result_first
+  result u8
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 176 u8
+    Return
+end
+function packed_result_enum
+  result (enum Mode)
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 184 (enum Mode)
+    Return
+end
+function packed_result_bool
+  result bool
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 168 bool
+    Return
+end
+function packed_source_array
+  result u8
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 31 u8
+    Return
+end
+function packed_source_header
+  result i64
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 112
+    Return
+end
+function packed_result_independence
+  result u8
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Constant 1
+    Push
+    Constant 255 u8
+    Push
+    MethodCall set_leaf 184
+    Load 135 u8
+    Return
+end
+function packed_forwarded_result
+  result i64
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall relay_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    Load 152
+    Return
+end
+function packed_empty_result
+  result i64
+  frame 192
+repeat 3
+  slot {24,32} bool
+  slot {31,32} u8
+  slot {32,32} u8
+  slot {40,32} (enum Mode)
+endrepeat
+  slot 112 i64
+  slot 128 bool
+  slot 135 u8
+  slot 136 u8
+  slot 144 (enum Mode)
+  slot 152 i64
+  slot 168 bool
+  slot 175 u8
+  slot 176 u8
+  slot 184 (enum Mode)
+  object 8 Empty false
+  object 40 Leaf true
+  object 72 Leaf false
+  object 112 Outer false
+  object 152 Outer false
+  object 184 Leaf true
+  object 192 Empty false
+    BeginObject 8
+    InitializeEmptyObject 8
+    BeginObject 40
+    EnumConstant (enum Mode) 1
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_leaf 40 [0 0 8]
+    Constant
+    Push
+    Constant 11 u8
+    Push
+    MethodCall set_leaf 40
+    Constant 1
+    Push
+    Constant 42 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 72
+    CopyObject 40 72
+    Constant 1
+    Push
+    Constant 99 u8
+    Push
+    MethodCall set_leaf 40
+    BeginObject 112
+    Constant 7
+    Push
+    Constant 5
+    Push
+    MethodCall construct_outer 112 [0 72 8 0]
+    BeginObject 152
+    Constant 5
+    Push
+    EnumConstant (enum Mode) 1
+    Push
+    MethodCall snapshot_outer 112 [] 152
+    BeginObject 184
+    ObjectFieldCopy 152 1 184
+    BeginObject 192
+    MethodCall snapshot_empty 152 [] 192
+    Constant 42
+    Return
+end
+function packed_copy_tiny
+  result (class Tiny)
+  params [(class Tiny)]
+  frame 16
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  object 8 Tiny false
+    BindObjectParameter 0 8 Tiny
+    ReturnObject 8
+end
+function packed_tiny_roundtrip
+  result u8
+  frame 16
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  slot 14 u8
+  slot 15 u8
+  slot 16 u8
+  object 8 Tiny false
+  object 16 Tiny false
+    BeginObject 8
+    Constant 7 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BeginObject 16
+    AggregateCall packed_copy_tiny [8] 16
+    Load 15 u8
+    Return
+end
+
+; CASE: exact byte origins exclude scalars, descriptors and invalid offsets
+; BASE: absent storage origins reject later-kind groups
+; RUN: metadata
+; CHECK-DAG: origin span_local 8 object - byte 8
+; CHECK-DAG: origin span_local 7 object - byte 8
+; CHECK-DAG: origin span_local 6 object - byte 8
+; CHECK-DAG: origin span_local 5 object - byte 5
+; CHECK-DAG: origin span_local 4 object - byte 5
+; CHECK-DAG: origin span_local -2147483648 object - byte -
+; CHECK-DAG: origin span_local -1 object - byte -
+; CHECK-DAG: origin span_local 0 object - byte -
+; CHECK-DAG: origin span_local 3 object - byte -
+; CHECK-DAG: origin span_local 9 object - byte -
+; CHECK-DAG: origin span_local 33 object - byte -
+; CHECK-DAG: origin span_local 39 object - byte -
+; CHECK-DAG: origin span_local 41 object - byte -
+; CHECK-DAG: origin span_local 48 object - byte -
+; CHECK-DAG: origin span_local 65 object - byte -
+; CHECK-DAG: origin span_local 71 object - byte -
+; CHECK-DAG: origin span_local 72 object - byte -
+; CHECK-DAG: origin span_local 256 object - byte -
+; CHECK-DAG: origin span_local 320 object - byte -
+; CHECK-DAG: origin span_local 640 object - byte -
+; CHECK-DAG: origin span_local 641 object - byte -
+; CHECK-DAG: origin span_local 2147483647 object - byte -
+; CHECK-DAG: origin span_local 40 object 72 byte -
+@@ -0,0 +1,2 @@
++layout DescriptorAndByte [u8]
++fields DescriptorAndByte [(bytes 0 0 false) (u8 0 1 false)]
+@@ -3,0 +6,3 @@
++  slot 3 u8
++  slot 4 u8
++  slot 5 u8
+@@ -6,0 +12,3 @@
++  slot 40 u8
++  object 72 DescriptorAndByte true
++  array 5 2
+
+; CASE: unused imported storage admission precedes earlier dynamic state
+; RUN: verify
+; EXPECT-ERROR: slot type/layout mismatch
+views [(0 []) (1 [])]
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Pop
+    Return
+end
+function unused_storage
+  result i64
+  frame 80
+  scope 1
+  slot 8 i64
+  span 72
+    Load 24
+    Return
+end
+
+; CASE: unused imported storage admission precedes earlier dynamic state #2
+; BASE: unused imported storage admission precedes earlier dynamic state
+; RUN: verify
+; EXPECT-ERROR: slot type/layout mismatch
+@@ -15 +15 @@
+-    Load 24
++    Store 24
+
+; CASE: unused imported storage admission precedes earlier dynamic state #3
+; BASE: unused imported storage admission precedes earlier dynamic state
+; RUN: verify
+; EXPECT-ERROR: slot type/layout mismatch
+@@ -15 +15 @@
+-    Load 24
++    BorrowHandle 24 ref
+
+; CASE: unused imported storage admission precedes earlier dynamic state #4
+; BASE: unused imported storage admission precedes earlier dynamic state
+; RUN: verify
+; EXPECT-ERROR: invalid borrow-handle type
+@@ -15 +15 @@
+-    Load 24
++    BorrowHandle 8
+
+; CASE: unused imported storage admission precedes earlier dynamic state #5
+; BASE: unused imported storage admission precedes earlier dynamic state
+; RUN: verify
+; EXPECT-ERROR: invalid array shape
+@@ -15 +15 @@
+-    Load 24
++    BoundsGuard 8
+
+; CASE: unused imported storage admission precedes earlier dynamic state #6
+; BASE: unused imported storage admission precedes earlier dynamic state
+; RUN: verify
+; EXPECT-ERROR: array layout underflow
+@@ -15 +15 @@
+-    Load 24
++    BoundsGuard 8 2
+
+; CASE: unused imported storage admission precedes earlier dynamic state #7
+; BASE: unused imported storage admission precedes earlier dynamic state
+; RUN: verify
+; EXPECT-ERROR: array layout underflow
+@@ -15 +15 @@
+-    Load 24
++    IndexLoad 8 2
+
+; CASE: unused imported storage admission precedes earlier dynamic state #8
+; BASE: unused imported storage admission precedes earlier dynamic state
+; RUN: verify
+; EXPECT-ERROR: invalid array shape
+@@ -15 +15 @@
+-    Load 24
++    IndexStore 8 4097
+
+; CASE: unused imported storage admission precedes earlier dynamic state #9
+; BASE: unused imported storage admission precedes earlier dynamic state
+; RUN: verify
+; EXPECT-ERROR: array layout underflow
+@@ -15 +15 @@
+-    Load 24
++    IndexStore 8 2
+
+; CASE: unused imported storage admission precedes earlier dynamic state #10
+; BASE: unused imported storage admission precedes earlier dynamic state
+; RUN: verify
+; EXPECT-ERROR: array lifetime requires exact byte array origin
+@@ -15 +15 @@
+-    Load 24
++    BeginArray 8
+
+; CASE: unused imported storage admission precedes earlier dynamic state #11
+; BASE: unused imported storage admission precedes earlier dynamic state
+; RUN: verify
+; EXPECT-ERROR: array lifetime requires exact byte array origin
+@@ -15 +15 @@
+-    Load 24
++    EndArray 8
+
+; CASE: unused imported storage admission precedes earlier dynamic state #12
+; BASE: unused imported storage admission precedes earlier dynamic state
+; RUN: verify
+; EXPECT-ERROR: span borrow requires exact local byte array origin
+@@ -15 +15 @@
+-    Load 24
++    BorrowSpan 8 72
+
+; CASE: CFG entry and call phases precede earlier-body storage admission
+; RUN: verify
+; EXPECT-ERROR: unknown jump
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Load 24
+    Return
+end
+function later_phase
+  result i64
+  frame 16
+  slot 8 i64
+    Jump 99
+    Return
+end
+
+; CASE: CFG entry and call phases precede earlier-body storage admission #2
+; BASE: CFG entry and call phases precede earlier-body storage admission
+; RUN: verify
+; EXPECT-ERROR: outside entry prefix
+@@ -12 +12 @@
+-    Jump 99
++    BindParameter 0 8
+
+; CASE: CFG entry and call phases precede earlier-body storage admission #3
+; BASE: CFG entry and call phases precede earlier-body storage admission
+; RUN: verify
+; EXPECT-ERROR: unknown call target
+@@ -12 +12 @@
+-    Jump 99
++    Call missing
+
+; CASE: contiguous i64 indexed loads and stores need no byte-array declaration
+; RUN: emit
+function test
+  result i64
+  frame 16
+  slot 8 i64
+  slot 16 i64
+    Constant 42
+    Store 8
+    Store 16
+    Constant
+    BoundsGuard 16 2
+    Push
+    Constant 43
+    IndexStore 16 2
+    Constant 1
+    BoundsGuard 16 2
+    IndexLoad 16 2
+    Return
+end
+
+; CASE: indexed store lifetime precedes mistyped current
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: array element access outside active lifetime
+; EXPECT-CODE: AU0000
+function test
+  result i64
+  frame 16
+  slot 8 u8
+  array 8 1
+    Constant
+    Push
+    Constant
+    IndexStore 8 1 u8
+    Constant 42
+    Return
+end
+
+; CASE: indexed store initialization precedes missing bounds token
+; BASE: indexed store lifetime precedes mistyped current
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: array element not initialized
+; EXPECT-CODE: AU0000
+@@ -5,0 +6 @@
++    BeginArray 8
+@@ -8 +9 @@
+-    Constant
++    Constant 7 u8
+@@ -9,0 +11 @@
++    EndArray 8
+
+; CASE: indexed store later initialization precedes earlier write conflict
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: array element not initialized
+; EXPECT-CODE: AU0000
+function test
+  result i64
+  frame 96
+  slot 7 u8
+  slot 8 u8
+  array 7 1
+  array 8 1
+  span 80
+    BeginArray 8
+    BeginArray 7
+    Constant 7 u8
+    Store 8 u8
+    Store 7 u8
+    Constant
+    BoundsGuard 8 2 u8
+    Push
+    BorrowSpan 8 80
+    EndArray 7
+    BeginArray 7
+    Constant 7 u8
+    IndexStore 8 2 u8
+    EndSpan 80
+    EndArray 7
+    EndArray 8
+    Constant 42
+    Return
+end
+
+; CASE: indexed store mistyped current precedes write conflict
+; BASE: indexed store later initialization precedes earlier write conflict
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: missing or mistyped current value
+; EXPECT-CODE: AU0000
+@@ -18,3 +18 @@
+-    EndArray 7
+-    BeginArray 7
+-    Constant 7 u8
++    Constant
+
+; CASE: indexed parameter write checks current value before immutability
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: missing or mistyped current value
+; EXPECT-CODE: AU0000
+function test
+  result i64
+  params [i64]
+  frame 16
+  slot 8 i64
+    BindParameter 0 8
+    Constant
+    BoundsGuard 8 1
+    Push
+    Constant 1 bool
+    IndexStore 8 1
+    Return
+end
+
+; CASE: indexed parameter write still rejects immutability
+; BASE: indexed parameter write checks current value before immutability
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: indexed write to immutable scalar parameter
+; EXPECT-CODE: AU0000
+@@ -10 +10 @@
+-    Constant 1 bool
++    Constant 1
+
+; CASE: indexed const object write checks current value before mutability
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: missing or mistyped current value
+; EXPECT-CODE: AU0000
+layout Cell [i64]
+function test
+  result i64
+  frame 16
+  slot 8 i64
+  object 8 Cell false
+    BeginObject 8
+    Constant 42
+    Store 8
+    Constant
+    BoundsGuard 8 1
+    Push
+    Constant 1 bool
+    IndexStore 8 1
+    Return
+end
+
+; CASE: indexed const object write still rejects mutability
+; BASE: indexed const object write checks current value before mutability
+; RUN: verify
+; EXPECT-MESSAGE: invalid typed IR: indexed write to const object field
+; EXPECT-CODE: AU0000
+@@ -13 +13 @@
+-    Constant 1 bool
++    Constant 1

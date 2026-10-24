@@ -1,0 +1,971 @@
+; CASE: scalar frame of 0 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 0
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 16
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+function probe_scalar
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+
+; CASE: scalar frame of 16 bytes is probed page by page
+; BASE: scalar frame of 0 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 16
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 32
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -3 +3 @@
+-  frame 0
++  frame 16
+
+; CASE: scalar frame of 4080 bytes is probed page by page
+; BASE: scalar frame of 0 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 4080
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 4096
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -3 +3 @@
+-  frame 0
++  frame 4080
+
+; CASE: scalar frame of 4096 bytes is probed page by page
+; BASE: scalar frame of 0 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 4096
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 4112
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -3 +3 @@
+-  frame 0
++  frame 4096
+
+; CASE: scalar frame of 4112 bytes is probed page by page
+; BASE: scalar frame of 0 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 4112
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 4128
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -3 +3 @@
+-  frame 0
++  frame 4112
+
+; CASE: scalar frame of 8192 bytes is probed page by page
+; BASE: scalar frame of 0 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 8192
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 8208
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -3 +3 @@
+-  frame 0
++  frame 8192
+
+; CASE: scalar frame of 8208 bytes is probed page by page
+; BASE: scalar frame of 0 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 8208
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 8224
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -3 +3 @@
+-  frame 0
++  frame 8208
+
+; CASE: scalar frame of 65520 bytes is probed page by page
+; BASE: scalar frame of 0 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 65520
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 65536
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -3 +3 @@
+-  frame 0
++  frame 65520
+
+; CASE: scalar frame of 65536 bytes is probed page by page
+; BASE: scalar frame of 0 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 65536
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 65552
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -3 +3 @@
+-  frame 0
++  frame 65536
+
+; CASE: receiver frame of 0 bytes is probed page by page
+; BASE: scalar frame of 0 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 16
+; CHECK-NEXT:     movq %r10, -8(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 32
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -0,0 +1 @@
++layout Box [i64]
+@@ -4 +5,2 @@
+-    Constant 42
++  receiver Box false false
++    ReceiverLoad
+
+; CASE: receiver frame of 16 bytes is probed page by page
+; BASE: scalar frame of 0 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 32
+; CHECK-NEXT:     movq %r10, -24(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 48
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -0,0 +1 @@
++layout Box [i64]
+@@ -3,2 +4,3 @@
+-  frame 0
+-    Constant 42
++  frame 16
++  receiver Box false false
++    ReceiverLoad
+
+; CASE: receiver frame of 4080 bytes is probed page by page
+; BASE: scalar frame of 0 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 4096
+; CHECK-NEXT:     movq %r10, -4088(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 4112
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -0,0 +1 @@
++layout Box [i64]
+@@ -3,2 +4,3 @@
+-  frame 0
+-    Constant 42
++  frame 4080
++  receiver Box false false
++    ReceiverLoad
+
+; CASE: receiver frame of 4096 bytes is probed page by page
+; BASE: scalar frame of 0 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 4112
+; CHECK-NEXT:     movq %r10, -4104(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 4128
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -0,0 +1 @@
++layout Box [i64]
+@@ -3,2 +4,3 @@
+-  frame 0
+-    Constant 42
++  frame 4096
++  receiver Box false false
++    ReceiverLoad
+
+; CASE: receiver frame of 4112 bytes is probed page by page
+; BASE: scalar frame of 0 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 4128
+; CHECK-NEXT:     movq %r10, -4120(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 4144
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -0,0 +1 @@
++layout Box [i64]
+@@ -3,2 +4,3 @@
+-  frame 0
+-    Constant 42
++  frame 4112
++  receiver Box false false
++    ReceiverLoad
+
+; CASE: receiver frame of 8192 bytes is probed page by page
+; BASE: scalar frame of 0 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 8208
+; CHECK-NEXT:     movq %r10, -8200(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 8224
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -0,0 +1 @@
++layout Box [i64]
+@@ -3,2 +4,3 @@
+-  frame 0
+-    Constant 42
++  frame 8192
++  receiver Box false false
++    ReceiverLoad
+
+; CASE: receiver frame of 8208 bytes is probed page by page
+; BASE: scalar frame of 0 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 8224
+; CHECK-NEXT:     movq %r10, -8216(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 8240
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -0,0 +1 @@
++layout Box [i64]
+@@ -3,2 +4,3 @@
+-  frame 0
+-    Constant 42
++  frame 8208
++  receiver Box false false
++    ReceiverLoad
+
+; CASE: receiver frame of 65520 bytes is probed page by page
+; BASE: scalar frame of 0 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 65536
+; CHECK-NEXT:     movq %r10, -65528(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 65552
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -0,0 +1 @@
++layout Box [i64]
+@@ -3,2 +4,3 @@
+-  frame 0
+-    Constant 42
++  frame 65520
++  receiver Box false false
++    ReceiverLoad
+
+; CASE: receiver frame of 65536 bytes is probed page by page
+; BASE: scalar frame of 0 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 65552
+; CHECK-NEXT:     movq %r10, -65544(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 65568
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -0,0 +1 @@
++layout Box [i64]
+@@ -3,2 +4,3 @@
+-  frame 0
+-    Constant 42
++  frame 65536
++  receiver Box false false
++    ReceiverLoad
+
+; CASE: aggregate frame of 16 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 32
+; CHECK-NEXT:     movq %r11, -24(%rbp)
+; CHECK-NEXT:     movq %r10, -32(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 48
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record {"parameter_bytes":[8],"result_bytes":8}
+layout Box [i64]
+function probe_scalar
+  result (class Box)
+  params [(class Box)]
+  frame 16
+  slot 8 i64
+  object 8 Box false
+    BindObjectParameter 0 8 Box
+    ReturnObject 8
+end
+
+; CASE: aggregate frame of 4080 bytes is probed page by page
+; BASE: aggregate frame of 16 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 4096
+; CHECK-NEXT:     movq %r11, -4088(%rbp)
+; CHECK-NEXT:     movq %r10, -4096(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 4112
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record {"parameter_bytes":[8],"result_bytes":8}
+@@ -5 +5 @@
+-  frame 16
++  frame 4080
+
+; CASE: aggregate frame of 4096 bytes is probed page by page
+; BASE: aggregate frame of 16 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 4112
+; CHECK-NEXT:     movq %r11, -4104(%rbp)
+; CHECK-NEXT:     movq %r10, -4112(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 4128
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record {"parameter_bytes":[8],"result_bytes":8}
+@@ -5 +5 @@
+-  frame 16
++  frame 4096
+
+; CASE: aggregate frame of 4112 bytes is probed page by page
+; BASE: aggregate frame of 16 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 4128
+; CHECK-NEXT:     movq %r11, -4120(%rbp)
+; CHECK-NEXT:     movq %r10, -4128(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 4144
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record {"parameter_bytes":[8],"result_bytes":8}
+@@ -5 +5 @@
+-  frame 16
++  frame 4112
+
+; CASE: aggregate frame of 8192 bytes is probed page by page
+; BASE: aggregate frame of 16 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 8208
+; CHECK-NEXT:     movq %r11, -8200(%rbp)
+; CHECK-NEXT:     movq %r10, -8208(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 8224
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record {"parameter_bytes":[8],"result_bytes":8}
+@@ -5 +5 @@
+-  frame 16
++  frame 8192
+
+; CASE: aggregate frame of 8208 bytes is probed page by page
+; BASE: aggregate frame of 16 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 8224
+; CHECK-NEXT:     movq %r11, -8216(%rbp)
+; CHECK-NEXT:     movq %r10, -8224(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 8240
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record {"parameter_bytes":[8],"result_bytes":8}
+@@ -5 +5 @@
+-  frame 16
++  frame 8208
+
+; CASE: aggregate frame of 65520 bytes is probed page by page
+; BASE: aggregate frame of 16 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 65536
+; CHECK-NEXT:     movq %r11, -65528(%rbp)
+; CHECK-NEXT:     movq %r10, -65536(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 65552
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record {"parameter_bytes":[8],"result_bytes":8}
+@@ -5 +5 @@
+-  frame 16
++  frame 65520
+
+; CASE: aggregate frame of 65536 bytes is probed page by page
+; BASE: aggregate frame of 16 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 65552
+; CHECK-NEXT:     movq %r11, -65544(%rbp)
+; CHECK-NEXT:     movq %r10, -65552(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 65568
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record {"parameter_bytes":[8],"result_bytes":8}
+@@ -5 +5 @@
+-  frame 16
++  frame 65536
+
+; CASE: constructor frame of 16 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 32
+; CHECK-NEXT:     movq %r10, -24(%rbp)
+; CHECK-NEXT:     movq %r11, -32(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 48
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+layout Box [i64]
+function probe_scalar
+  result i64
+  params [(class Box)]
+  frame 16
+  receiver Box true true
+  slot 8 i64
+  object 8 Box false
+    BindObjectParameter 0 8 Box
+    Load 8
+    ReceiverStore
+    Constant
+    Return
+end
+
+; CASE: constructor frame of 4080 bytes is probed page by page
+; BASE: constructor frame of 16 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 4096
+; CHECK-NEXT:     movq %r10, -4088(%rbp)
+; CHECK-NEXT:     movq %r11, -4096(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 4112
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -5 +5 @@
+-  frame 16
++  frame 4080
+
+; CASE: constructor frame of 4096 bytes is probed page by page
+; BASE: constructor frame of 16 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 4112
+; CHECK-NEXT:     movq %r10, -4104(%rbp)
+; CHECK-NEXT:     movq %r11, -4112(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 4128
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -5 +5 @@
+-  frame 16
++  frame 4096
+
+; CASE: constructor frame of 4112 bytes is probed page by page
+; BASE: constructor frame of 16 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 4128
+; CHECK-NEXT:     movq %r10, -4120(%rbp)
+; CHECK-NEXT:     movq %r11, -4128(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 4144
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -5 +5 @@
+-  frame 16
++  frame 4112
+
+; CASE: constructor frame of 8192 bytes is probed page by page
+; BASE: constructor frame of 16 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 8208
+; CHECK-NEXT:     movq %r10, -8200(%rbp)
+; CHECK-NEXT:     movq %r11, -8208(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 8224
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -5 +5 @@
+-  frame 16
++  frame 8192
+
+; CASE: constructor frame of 8208 bytes is probed page by page
+; BASE: constructor frame of 16 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 8224
+; CHECK-NEXT:     movq %r10, -8216(%rbp)
+; CHECK-NEXT:     movq %r11, -8224(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 8240
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -5 +5 @@
+-  frame 16
++  frame 8208
+
+; CASE: constructor frame of 65520 bytes is probed page by page
+; BASE: constructor frame of 16 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 65536
+; CHECK-NEXT:     movq %r10, -65528(%rbp)
+; CHECK-NEXT:     movq %r11, -65536(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 65552
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -5 +5 @@
+-  frame 16
++  frame 65520
+
+; CASE: constructor frame of 65536 bytes is probed page by page
+; BASE: constructor frame of 16 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 65552
+; CHECK-NEXT:     movq %r10, -65544(%rbp)
+; CHECK-NEXT:     movq %r11, -65552(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 65568
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -5 +5 @@
+-  frame 16
++  frame 65536
+
+; CASE: combined frame of 16 bytes is probed page by page
+; BASE: aggregate frame of 16 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 48
+; CHECK-NEXT:     movq %r10, -24(%rbp)
+; CHECK-NEXT:     movq %r11, -32(%rbp)
+; CHECK-NEXT:     movq %rax, -40(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 64
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -5,0 +6 @@
++  receiver Box false false
+
+; CASE: combined frame of 4080 bytes is probed page by page
+; BASE: aggregate frame of 16 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 4112
+; CHECK-NEXT:     movq %r10, -4088(%rbp)
+; CHECK-NEXT:     movq %r11, -4096(%rbp)
+; CHECK-NEXT:     movq %rax, -4104(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 4128
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -5 +5,2 @@
+-  frame 16
++  frame 4080
++  receiver Box false false
+
+; CASE: combined frame of 4096 bytes is probed page by page
+; BASE: aggregate frame of 16 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 4128
+; CHECK-NEXT:     movq %r10, -4104(%rbp)
+; CHECK-NEXT:     movq %r11, -4112(%rbp)
+; CHECK-NEXT:     movq %rax, -4120(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 4144
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -5 +5,2 @@
+-  frame 16
++  frame 4096
++  receiver Box false false
+
+; CASE: combined frame of 4112 bytes is probed page by page
+; BASE: aggregate frame of 16 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 4144
+; CHECK-NEXT:     movq %r10, -4120(%rbp)
+; CHECK-NEXT:     movq %r11, -4128(%rbp)
+; CHECK-NEXT:     movq %rax, -4136(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 4160
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -5 +5,2 @@
+-  frame 16
++  frame 4112
++  receiver Box false false
+
+; CASE: combined frame of 8192 bytes is probed page by page
+; BASE: aggregate frame of 16 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 8224
+; CHECK-NEXT:     movq %r10, -8200(%rbp)
+; CHECK-NEXT:     movq %r11, -8208(%rbp)
+; CHECK-NEXT:     movq %rax, -8216(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 8240
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -5 +5,2 @@
+-  frame 16
++  frame 8192
++  receiver Box false false
+
+; CASE: combined frame of 8208 bytes is probed page by page
+; BASE: aggregate frame of 16 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 8240
+; CHECK-NEXT:     movq %r10, -8216(%rbp)
+; CHECK-NEXT:     movq %r11, -8224(%rbp)
+; CHECK-NEXT:     movq %rax, -8232(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 8256
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -5 +5,2 @@
+-  frame 16
++  frame 8208
++  receiver Box false false
+
+; CASE: combined frame of 65520 bytes is probed page by page
+; BASE: aggregate frame of 16 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 65552
+; CHECK-NEXT:     movq %r10, -65528(%rbp)
+; CHECK-NEXT:     movq %r11, -65536(%rbp)
+; CHECK-NEXT:     movq %rax, -65544(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 65568
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -5 +5,2 @@
+-  frame 16
++  frame 65520
++  receiver Box false false
+
+; CASE: combined frame of 65536 bytes is probed page by page
+; BASE: aggregate frame of 16 bytes is probed page by page
+; RUN: emit
+; CHECK: probe_scalar:
+; CHECK-NEXT:     pushq %rbp
+; CHECK-NEXT:     movq %rsp, %rbp
+; CHECK-PROBES: 65568
+; CHECK-NEXT:     movq %r10, -65544(%rbp)
+; CHECK-NEXT:     movq %r11, -65552(%rbp)
+; CHECK-NEXT:     movq %rax, -65560(%rbp)
+; RUN: emit
+; CHECK-DAG: .Laurora_bounds_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_overflow_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_division_zero_trap:\n    ud2\n
+; CHECK-DAG: .Laurora_shift_count_trap:\n    ud2\n
+; RUN: stack-facts
+; CHECK-JSON: functions.probe_scalar.local_bytes 65584
+; CHECK-JSON: functions.probe_scalar.calls {}
+; CHECK-JSON: functions.probe_scalar.copied_record null
+@@ -5 +5,2 @@
+-  frame 16
++  frame 65536
++  receiver Box false false

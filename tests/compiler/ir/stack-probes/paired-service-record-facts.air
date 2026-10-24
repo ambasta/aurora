@@ -1,0 +1,29 @@
+; CASE: paired service record order and scalar widths
+; RUN: stack-facts
+; CHECK-JSON: functions.paired.service_abi.record {"parameters":[["builtin::ConsoleSession",16],["builtin::DisplaySession",16],["scalar",8],["scalar",8]],"result_bytes":8}
+; RUN: emit
+; CHECK-DAG: movq 32(%r11), %rax
+; CHECK-DAG: movq 40(%r11), %rax
+function paired
+  result i64
+  params [console display u64 u64]
+  frame 64
+  slot 40 u64
+  slot 48 u64
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 Display
+    BindParameter 2 40 u64
+    BindParameter 3 48 u64
+    Constant 42
+    Return
+end
+
+; CASE: wrong service role
+; BASE: paired service record order and scalar widths
+; RUN: verify
+; EXPECT-ERROR:
+@@ -3 +3 @@
+-  params [console display u64 u64]
++  params [display display u64 u64]

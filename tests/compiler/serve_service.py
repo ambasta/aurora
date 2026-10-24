@@ -12,6 +12,9 @@ import signal
 import subprocess
 import tempfile
 
+# Verified textual IR cases; the aurora-ir-check driver prints their assembly.
+AIR = Path(__file__).resolve().parent / "ir" / "serve-service-ir" / "abi.air"
+
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = """module serve_probe;
 auto exchange_reply(builtin::ServeSession& session,u64 reply)->builtin::ServeRequest {
@@ -98,7 +101,7 @@ def main():
         result = run(
             [compiler, source, "-o", assembly, "--abi-facts", abi_path, "--stack-facts", stack_path]
             if name == "source"
-            else [ir, assembly]
+            else [ir, "--output", AIR, "forwarded", assembly]
         )
         need(result.returncode == 0, result.stderr.decode())
         if name == "source":

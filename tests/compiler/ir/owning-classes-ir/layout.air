@@ -1,0 +1,288 @@
+; CASE: literal two-descriptor layout
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_entry
+  result i64
+  params [region (class Parcel)]
+  frame 416
+  slot 16 u8
+  slot 56 u64
+  slot 96 u8
+  slot 104 u8
+  slot 144 u64
+  slot 184 u8
+  slot 192 u8
+  slot 232 u64
+  slot 272 u8
+  object 96 Parcel true
+  object 184 Parcel true
+  object 272 Parcel true
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 96 Parcel
+    BeginObject 184
+    MoveObject 96 184
+    EndObject 96
+    BytesLength 184 1
+    Push
+    BytesLength 184 3
+    BinaryValue
+    EndObject 184
+    Return
+end
+
+; CASE: descriptor-only class is not empty
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_only
+  result i64
+  params [region (class Only)]
+  frame 416
+  object 96 Only true
+  object 184 Only false
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 96 Only
+    BeginObject 184
+    MoveObject 96 184
+    EndObject 96
+    BytesLength 184 0
+    EndObject 184
+    Return
+end
+
+; CASE: two descriptor-only fields are distinct
+; BASE: descriptor-only class is not empty
+; RUN: emit
+@@ -18 +18 @@
+-  params [region (class Only)]
++  params [region (class Pair)]
+@@ -20,2 +20,2 @@
+-  object 96 Only true
+-  object 184 Only false
++  object 96 Pair true
++  object 184 Pair false
+@@ -27 +27 @@
+-    BindOwnedObjectParameter 1 96 Only
++    BindOwnedObjectParameter 1 96 Pair
+
+; CASE: inferred layout matches the literal storage oracle
+; BASE: literal two-descriptor layout
+; RUN: metadata
+; CHECK-NOT: class 
+; CHECK: class Copy storage [0 8] [0 8] 16 8 16
+; CHECK-NEXT: class Empty storage [] [] 8 8 8
+; CHECK-NEXT: class Only storage [] [0] 32 8 32
+; CHECK-NEXT: class Pair storage [] [0 32] 64 8 64
+; CHECK-NEXT: class Parcel storage [0 40 80] [0 8 40 48 80] 88 8 88
+; CHECK-NOT: class 
+; CHECK: callable 0 
+@@ -11,5 +10,0 @@
+-storage Copy [0 8] [0 8] 16 8 16
+-storage Empty [] [] 8 8 8
+-storage Only [] [0] 32 8 32
+-storage Pair [] [0 32] 64 8 64
+-storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+
+; CASE: descriptor overlaps scalar payload
+; BASE: literal two-descriptor layout
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -15 +15 @@
+-storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
++storage Parcel [{0,40}*3] [0 0 40 48 80] 88 8 88
+
+; CASE: descriptor is not scalar leaf
+; BASE: literal two-descriptor layout
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -10 +10 @@
+-fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
++fields Parcel [(u8 0 1 false) (bytes 1 1 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+
+; CASE: descriptor cannot be an array
+; BASE: literal two-descriptor layout
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -10 +10 @@
+-fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
++fields Parcel [(u8 0 1 false) (bytes 1 0 true) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+
+; CASE: descriptor overlaps scalar payload #2
+; BASE: literal two-descriptor layout
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -15 +15 @@
+-storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
++storage Parcel [{0,40}*3] [0 8 40 0 80] 88 8 88
+
+; CASE: descriptor is not scalar leaf #2
+; BASE: literal two-descriptor layout
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -10 +10 @@
+-fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
++fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 1 false) (u8 2 1 false)]
+
+; CASE: descriptor cannot be an array #2
+; BASE: literal two-descriptor layout
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -10 +10 @@
+-fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
++fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 true) (u8 2 1 false)]
+
+; CASE: descriptor words unavailable to scalar slots
+; BASE: literal two-descriptor layout
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -21,0 +22 @@
++  slot 88 u64
+
+; CASE: descriptor words unavailable to scalar slots #2
+; BASE: literal two-descriptor layout
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -21,0 +22 @@
++  slot 80 u64
+
+; CASE: descriptor words unavailable to scalar slots #3
+; BASE: literal two-descriptor layout
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -21,0 +22 @@
++  slot 72 u64
+
+; CASE: descriptor words unavailable to scalar slots #4
+; BASE: literal two-descriptor layout
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -21,0 +22 @@
++  slot 64 u64
+
+; CASE: descriptor words unavailable to scalar slots #5
+; BASE: literal two-descriptor layout
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -20,0 +21 @@
++  slot 48 u64
+
+; CASE: descriptor words unavailable to scalar slots #6
+; BASE: literal two-descriptor layout
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -20,0 +21 @@
++  slot 40 u64
+
+; CASE: descriptor words unavailable to scalar slots #7
+; BASE: literal two-descriptor layout
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -20,0 +21 @@
++  slot 32 u64
+
+; CASE: descriptor words unavailable to scalar slots #8
+; BASE: literal two-descriptor layout
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -20,0 +21 @@
++  slot 24 u64
+
+; CASE: descriptor unavailable as standalone owner
+; BASE: literal two-descriptor layout
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -33,0 +34 @@
++  bytes 88 true
+
+; CASE: descriptor unavailable as authority
+; BASE: literal two-descriptor layout
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -32,0 +33 @@
++  region 88
+
+; CASE: descriptor unavailable as span
+; BASE: literal two-descriptor layout
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -31,0 +32 @@
++  span 88
+
+; CASE: descriptor unavailable as nested object
+; BASE: literal two-descriptor layout
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -28,0 +29 @@
++  object 88 Only true
+
+; CASE: zero-leaf owning child remains prohibited
+; BASE: literal two-descriptor layout
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -10,6 +10 @@
+-fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+-storage Copy [0 8] [0 8] 16 8 16
+-storage Empty [] [] 8 8 8
+-storage Only [] [0] 32 8 32
+-storage Pair [] [0 32] 64 8 64
+-storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
++fields Parcel [(u8 0 1 false) ((class Only) 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+
+; CASE: descriptor-only storage cannot collapse
+; BASE: descriptor-only class is not empty
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -13 +13 @@
+-storage Only [] [0] 32 8 32
++storage Only [] [0] 8 8 8
+
+; CASE: descriptor alignment cannot weaken
+; BASE: literal two-descriptor layout
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -15 +15 @@
+-storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
++storage Parcel [{0,40}*3] [0 8 40 48 80] 88 1 88
+
+; CASE: owner shape cannot be hidden in scalar leaves
+; BASE: literal two-descriptor layout
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -5 +5 @@
+-layout Parcel [u8 u64 u8]
++layout Parcel [bytes u64 u8]

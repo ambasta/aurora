@@ -1,0 +1,423 @@
+; CASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: invalid nominal class layout
+layout "" []
+layout A []
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Load 8
+    Return
+end
+
+; CASE: metadata raw leaf unknown kind
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: non-scalar class layout field
+@@ -1,2 +1 @@
+-layout "" []
+-layout A []
++layout Leaf [99]
+
+; CASE: metadata raw scalar slot unknown kind
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: invalid slot payload type
+@@ -1,2 +0,0 @@
+-layout "" []
+-layout A []
+@@ -6 +4 @@
+-  slot 8 i64
++  slot 8 99
+
+; CASE: metadata raw logical field unknown kind
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: invalid logical class field shape
+@@ -1,2 +1,2 @@
+-layout "" []
+-layout A []
++layout Leaf [i64]
++fields Leaf [(99 0 1 false)]
+
+; CASE: metadata raw leaf unknown element kind
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: non-scalar class layout field
+@@ -1,2 +1 @@
+-layout "" []
+-layout A []
++layout Leaf [(i64 elem=99)]
+
+; CASE: metadata raw scalar slot unknown element kind
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: invalid slot payload type
+@@ -1,2 +0,0 @@
+-layout "" []
+-layout A []
+@@ -6 +4 @@
+-  slot 8 i64
++  slot 8 (i64 elem=99)
+
+; CASE: metadata raw logical field unknown element kind
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: invalid logical class field shape
+@@ -1,2 +1,2 @@
+-layout "" []
+-layout A []
++layout Leaf [i64]
++fields Leaf [((i64 elem=99) 0 1 false)]
+
+; CASE: metadata raw leaf length
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: non-scalar class layout field
+@@ -1,2 +1 @@
+-layout "" []
+-layout A []
++layout Leaf [(i64 len=1)]
+
+; CASE: metadata raw scalar slot length
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: invalid slot payload type
+@@ -1,2 +0,0 @@
+-layout "" []
+-layout A []
+@@ -6 +4 @@
+-  slot 8 i64
++  slot 8 (i64 len=1)
+
+; CASE: metadata raw logical field length
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: invalid logical class field shape
+@@ -1,2 +1,2 @@
+-layout "" []
+-layout A []
++layout Leaf [i64]
++fields Leaf [((i64 len=1) 0 1 false)]
+
+; CASE: metadata raw leaf element parameter
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: non-scalar class layout field
+@@ -1,2 +1 @@
+-layout "" []
+-layout A []
++layout Leaf [(i64 eparam=T)]
+
+; CASE: metadata raw scalar slot element parameter
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: invalid slot payload type
+@@ -1,2 +0,0 @@
+-layout "" []
+-layout A []
+@@ -6 +4 @@
+-  slot 8 i64
++  slot 8 (i64 eparam=T)
+
+; CASE: metadata raw logical field element parameter
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: invalid logical class field shape
+@@ -1,2 +1,2 @@
+-layout "" []
+-layout A []
++layout Leaf [i64]
++fields Leaf [((i64 eparam=T) 0 1 false)]
+
+; CASE: metadata raw leaf length parameter
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: non-scalar class layout field
+@@ -1,2 +1 @@
+-layout "" []
+-layout A []
++layout Leaf [(i64 lparam=N)]
+
+; CASE: metadata raw scalar slot length parameter
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: invalid slot payload type
+@@ -1,2 +0,0 @@
+-layout "" []
+-layout A []
+@@ -6 +4 @@
+-  slot 8 i64
++  slot 8 (i64 lparam=N)
+
+; CASE: metadata raw logical field length parameter
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: invalid logical class field shape
+@@ -1,2 +1,2 @@
+-layout "" []
+-layout A []
++layout Leaf [i64]
++fields Leaf [((i64 lparam=N) 0 1 false)]
+
+; CASE: metadata raw leaf template arguments
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: non-scalar class layout field
+@@ -1,2 +1 @@
+-layout "" []
+-layout A []
++layout Leaf [(i64 targs=[(type i64)])]
+
+; CASE: metadata raw scalar slot template arguments
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: invalid slot payload type
+@@ -1,2 +0,0 @@
+-layout "" []
+-layout A []
+@@ -6 +4 @@
+-  slot 8 i64
++  slot 8 (i64 targs=[(type i64)])
+
+; CASE: metadata raw logical field template arguments
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: invalid logical class field shape
+@@ -1,2 +1,2 @@
+-layout "" []
+-layout A []
++layout Leaf [i64]
++fields Leaf [((i64 targs=[(type i64)]) 0 1 false)]
+
+; CASE: metadata raw leaf scalar nominal tail
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: non-scalar class layout field
+@@ -1,2 +1 @@
+-layout "" []
+-layout A []
++layout Leaf [(i64 Unexpected)]
+
+; CASE: metadata raw scalar slot scalar nominal tail
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: invalid slot payload type
+@@ -1,2 +0,0 @@
+-layout "" []
+-layout A []
+@@ -6 +4 @@
+-  slot 8 i64
++  slot 8 (i64 Unexpected)
+
+; CASE: metadata raw logical field scalar nominal tail
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: invalid logical class field shape
+@@ -1,2 +1,2 @@
+-layout "" []
+-layout A []
++layout Leaf [i64]
++fields Leaf [((i64 Unexpected) 0 1 false)]
+
+; CASE: metadata ignores nonsemantic Type display and provenance
+; BASE: metadata empty class name precedes nonempty name
+; RUN: emit
+@@ -1,2 +1 @@
+-layout "" []
+-layout A []
++layout Leaf [(u8 display="diagnostic spelling" resolved=true)]
+
+; CASE: metadata descriptor precedes raw type tail
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: invalid metadata descriptor
+@@ -1,2 +1,2 @@
+-layout "" []
+-layout A []
++layout Leaf [(i64 lparam=N)]
++descriptor 0 0 0
+
+; CASE: metadata root scope precedes invalid enum
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: missing root reflection scope
+@@ -1,2 +1,2 @@
+-layout "" []
+-layout A []
++views []
++enum "" 0
+
+; CASE: metadata enum limit precedes invalid enum shape
+; RUN: verify
+; EXPECT-ERROR: too many enum declarations
+enum "" 0
+enum E0 1
+enum E1 1
+enum E10 1
+enum E11 1
+enum E12 1
+enum E13 1
+enum E14 1
+enum E15 1
+enum E16 1
+enum E17 1
+enum E18 1
+enum E19 1
+enum E2 1
+enum E20 1
+enum E21 1
+enum E22 1
+enum E23 1
+enum E24 1
+enum E25 1
+enum E26 1
+enum E27 1
+enum E28 1
+enum E29 1
+enum E3 1
+enum E30 1
+enum E31 1
+enum E32 1
+enum E33 1
+enum E34 1
+enum E35 1
+enum E36 1
+enum E37 1
+enum E38 1
+enum E39 1
+enum E4 1
+enum E40 1
+enum E41 1
+enum E42 1
+enum E43 1
+enum E44 1
+enum E45 1
+enum E46 1
+enum E47 1
+enum E48 1
+enum E49 1
+enum E5 1
+enum E50 1
+enum E51 1
+enum E52 1
+enum E53 1
+enum E54 1
+enum E55 1
+enum E56 1
+enum E57 1
+enum E58 1
+enum E59 1
+enum E6 1
+enum E60 1
+enum E61 1
+enum E62 1
+enum E63 1
+enum E7 1
+enum E8 1
+enum E9 1
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Load 8
+    Return
+end
+
+; CASE: metadata unknown logical key precedes field normalization
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: logical fields reference unknown class layout
+@@ -1,2 +1,2 @@
+-layout "" []
+-layout A []
++layout A [i64]
++fields Z []
+
+; CASE: metadata nested carrier precedes field shape and raw tail
+; RUN: verify
+; EXPECT-ERROR: class array carrier cannot be nested element type
+layout AParent []
+layout Empty []
+layout ZCarrier []
+fields AParent [((class ZCarrier len=1) 1 0 false)]
+fields ZCarrier [((class Empty) 0 0 true)]
+carrier ZCarrier
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Load 8
+    Return
+end
+
+; CASE: metadata owning child precedes nested canonical type
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: nested owning class field is unsupported
+@@ -1,2 +1,4 @@
+-layout "" []
+-layout A []
++layout AParent []
++layout ZOwner []
++fields AParent [((class ZOwner targs=[(type i64)]) 0 0 false)]
++fields ZOwner [(bytes 0 0 false)]
+
+; CASE: metadata cycle precedes fifth-level depth error
+; RUN: verify
+; EXPECT-ERROR: cyclic nested class layout
+layout A []
+layout B []
+layout C []
+layout D []
+fields A [((class B) 0 0 false)]
+fields B [((class C) 0 0 false)]
+fields C [((class D) 0 0 false)]
+fields D [((class A) 0 0 false)]
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Load 8
+    Return
+end
+
+; CASE: metadata sealed shape precedes supplied physical map
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: noncanonical sealed ConsoleSample field shape
+@@ -1,2 +1,3 @@
+-layout "" []
+-layout A []
++layout __au_console_sample [bool u8 bool]
++fields __au_console_sample [(bool 0 1 true) (u8 1 1 false) (bool 2 1 false)]
++storage Unknown [] [] 0 1 0
+
+; CASE: metadata owning storage limit precedes supplied physical map
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: composed or owning class storage exceeds 520 bytes
+@@ -1,2 +1,3 @@
+-layout "" []
+-layout A []
++layout Owner []
++fields Owner [(bytes 0 0 false)*17]
++storage Unknown [] [] 0 1 0
+
+; CASE: metadata standalone supplied key survives union import
+; BASE: metadata empty class name precedes nonempty name
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage metadata
+@@ -1,2 +1 @@
+-layout "" []
+-layout A []
++storage Unknown [] [] 8 8 8

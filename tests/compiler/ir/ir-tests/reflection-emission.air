@@ -1,0 +1,74 @@
+; CASE: referenced reflection retains referenced helper bodies and facts
+; RUN: emit referenced
+; CHECK-DAG: aurora_reflect_size:\n    cmpq $1, %rdi\n    je .Lscope0_size1\n    cmpq $100, %rdi\n    je .Lscope0_size100\n    cmpq $101, %rdi\n    je .Lscope0_size101\n    xorq %rax, %rax\n    ret\n.Lscope0_size1:\n    movq $8, %rax\n    ret\n.Lscope0_size100:\n    movq $16, %rax\n    ret\n.Lscope0_size101:\n    movq $0, %rax\n    ret\n.size aurora_reflect_size,
+; CHECK-DAG: __au_reflect_s1_field_count:\n    cmpq $1, %rdi\n    je .Lscope1_field_count1\n    cmpq $100, %rdi\n    je .Lscope1_field_count100\n    xorq %rax, %rax\n    ret\n.Lscope1_field_count1:\n    movq $0, %rax\n    ret\n.Lscope1_field_count100:\n    movq $1, %rax\n    ret\n.size __au_reflect_s1_field_count,
+; RUN: emit referenced
+; CHECK-NOT: aurora_reflect_field_count:\n
+; CHECK-NOT: __au_reflect_s1_size:\n
+; CHECK-NOT: __au_reflect_s2_size:\n
+; CHECK-NOT: __au_reflect_s2_field_count:\n
+; RUN: emit
+; CHECK-DAG: aurora_reflect_size:\n    cmpq $1, %rdi\n    je .Lscope0_size1\n    cmpq $100, %rdi\n    je .Lscope0_size100\n    cmpq $101, %rdi\n    je .Lscope0_size101\n    xorq %rax, %rax\n    ret\n.Lscope0_size1:\n    movq $8, %rax\n    ret\n.Lscope0_size100:\n    movq $16, %rax\n    ret\n.Lscope0_size101:\n    movq $0, %rax\n    ret\n.size aurora_reflect_size,
+; CHECK-DAG: __au_reflect_s1_field_count:\n    cmpq $1, %rdi\n    je .Lscope1_field_count1\n    cmpq $100, %rdi\n    je .Lscope1_field_count100\n    xorq %rax, %rax\n    ret\n.Lscope1_field_count1:\n    movq $0, %rax\n    ret\n.Lscope1_field_count100:\n    movq $1, %rax\n    ret\n.size __au_reflect_s1_field_count,
+; RUN: stack-facts referenced
+; CHECK-JSON-COUNT: functions 4
+; CHECK-JSON: functions.test.calls.aurora_reflect_size 32
+; CHECK-JSON: functions.scoped.calls.__au_reflect_s1_field_count 32
+; CHECK-JSON: functions.aurora_reflect_field_count <missing>
+; CHECK-JSON: functions.__au_reflect_s1_size <missing>
+; CHECK-JSON: functions.__au_reflect_s2_size <missing>
+; CHECK-JSON: functions.__au_reflect_s2_field_count <missing>
+descriptor 1 8 0
+descriptor 100 16 1
+descriptor 101 0 0
+views [(0 [1 100 101]) (1 [1 100]) (2 [101])]
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 100
+    MetadataQuery
+    Store 8
+    Call scoped
+    Load 8
+    Return
+end
+function scoped
+  result i64
+  frame 16
+  scope 1
+  slot 8 i64
+    Constant 100
+    MetadataQuery PublicFieldCount 1
+    Return
+end
+function unused
+  result i64
+  frame 16
+  scope 2
+  slot 8 i64
+    Constant 101
+    MetadataQuery Size 2
+    Return
+end
+
+; CASE: query-free closed output retains no reflection helpers
+; RUN: emit referenced
+; CHECK-NOT: aurora_reflect_
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Load 8
+    Return
+end
+
+; CASE: unreferenced invalid query still rejects
+; BASE: referenced reflection retains referenced helper bodies and facts
+; RUN: verify
+; EXPECT-ERROR: changes defining-module scope
+@@ -31 +31 @@
+-    MetadataQuery Size 2
++    MetadataQuery Size 1

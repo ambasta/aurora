@@ -1,0 +1,2008 @@
+; CASE: unsigned operation callable fixture
+; RUN: emit
+function unsigned_op0
+  result u64
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    BinaryValue CheckedAdd u64
+    Return
+end
+function unsigned_op1
+  result u64
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    BinaryValue CheckedSubtract u64
+    Return
+end
+function unsigned_op2
+  result u64
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    BinaryValue CheckedMultiply u64
+    Return
+end
+function unsigned_op3
+  result u64
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    BinaryValue CheckedDivide u64
+    Return
+end
+function unsigned_op4
+  result u64
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    BinaryValue CheckedRemainder u64
+    Return
+end
+function unsigned_op5
+  result u64
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    BinaryValue BitAnd u64
+    Return
+end
+function unsigned_op6
+  result u64
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    BinaryValue BitOr u64
+    Return
+end
+function unsigned_op7
+  result u64
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    BinaryValue BitXor u64
+    Return
+end
+function unsigned_op8
+  result u64
+  params [u64 i64]
+  frame 16
+  slot 8 u64
+  slot 16 i64
+    BindParameter 0 8 u64
+    BindParameter 1 16
+    Load 8 u64
+    Push
+    Load 16
+    BinaryValue ShiftLeft u64
+    Return
+end
+function unsigned_op9
+  result u64
+  params [u64 i64]
+  frame 16
+  slot 8 u64
+  slot 16 i64
+    BindParameter 0 8 u64
+    BindParameter 1 16
+    Load 8 u64
+    Push
+    Load 16
+    BinaryValue ShiftRight u64
+    Return
+end
+function unsigned_compare0
+  result bool
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    Compare Equal u64
+    Return
+end
+function unsigned_compare1
+  result bool
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    Compare NotEqual u64
+    Return
+end
+function unsigned_compare2
+  result bool
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    Compare Less u64
+    Return
+end
+function unsigned_compare3
+  result bool
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    Compare Greater u64
+    Return
+end
+function unsigned_compare4
+  result bool
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    Compare LessEqual u64
+    Return
+end
+function unsigned_compare5
+  result bool
+  params [u64 u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    BindParameter 1 16 u64
+    Load 8 u64
+    Push
+    Load 16 u64
+    Compare GreaterEqual u64
+    Return
+end
+function unsigned_not
+  result u64
+  params [u64]
+  frame 16
+  slot 8 u64
+  slot 16 u64
+    BindParameter 0 8 u64
+    Load 8 u64
+    UnaryValue BitNot u64
+    Return
+end
+function signed_to_unsigned
+  result u64
+  params [i64]
+  frame 16
+  slot 8 i64
+    BindParameter 0 8
+    Load 8
+    Convert i64 u64
+    Return
+end
+function unsigned_to_signed
+  result i64
+  params [u64]
+  frame 16
+  slot 8 u64
+    BindParameter 0 8 u64
+    Load 8 u64
+    Convert u64
+    Return
+end
+
+; CASE: u64 binary 0
+; RUN: emit
+function test
+  result u64
+  frame 16
+  slot 8 i64
+    Constant -1 u64
+    Push
+    Constant 1 u64
+    BinaryValue CheckedAdd u64
+    Return
+end
+
+; CASE: u64 binary 0 signed left
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: left operand
+@@ -5 +5 @@
+-    Constant -1 u64
++    Constant -1
+
+; CASE: u64 binary 0 bool right
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -7 +7 @@
+-    Constant 1 u64
++    Constant 1 bool
+
+; CASE: u64 binary 0 missing left
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: stack underflow
+@@ -6 +5,0 @@
+-    Push
+
+; CASE: u64 binary 0 bool operation type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedAdd bool
+
+; CASE: u64 binary 0 invalid operation
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operation
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue -1 u64
+
+; CASE: u64 binary 0 forged scalar type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedAdd (u64 X)
+
+; CASE: u64 binary 0 wrong right signedness
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -7 +7 @@
+-    Constant 1 u64
++    Constant 1
+
+; CASE: u64 CheckedAdd emission
+; BASE: u64 binary 0
+; RUN: emit
+
+; CASE: u64 binary 1
+; BASE: u64 binary 0
+; RUN: emit
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedSubtract u64
+
+; CASE: u64 binary 1 signed left
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: left operand
+@@ -5 +5 @@
+-    Constant -1 u64
++    Constant -1
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedSubtract u64
+
+; CASE: u64 binary 1 bool right
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 1 bool
++    BinaryValue CheckedSubtract u64
+
+; CASE: u64 binary 1 missing left
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: stack underflow
+@@ -6 +5,0 @@
+-    Push
+@@ -8 +7 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedSubtract u64
+
+; CASE: u64 binary 1 bool operation type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedSubtract bool
+
+; CASE: u64 binary 1 invalid operation
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operation
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue -1 u64
+
+; CASE: u64 binary 1 forged scalar type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedSubtract (u64 X)
+
+; CASE: u64 binary 1 wrong right signedness
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 1
++    BinaryValue CheckedSubtract u64
+
+; CASE: u64 CheckedSubtract emission
+; BASE: u64 binary 0
+; RUN: emit
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedSubtract u64
+
+; CASE: u64 binary 2
+; BASE: u64 binary 0
+; RUN: emit
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedMultiply u64
+
+; CASE: u64 binary 2 signed left
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: left operand
+@@ -5 +5 @@
+-    Constant -1 u64
++    Constant -1
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedMultiply u64
+
+; CASE: u64 binary 2 bool right
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 1 bool
++    BinaryValue CheckedMultiply u64
+
+; CASE: u64 binary 2 missing left
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: stack underflow
+@@ -6 +5,0 @@
+-    Push
+@@ -8 +7 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedMultiply u64
+
+; CASE: u64 binary 2 bool operation type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedMultiply bool
+
+; CASE: u64 binary 2 invalid operation
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operation
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue -1 u64
+
+; CASE: u64 binary 2 forged scalar type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedMultiply (u64 X)
+
+; CASE: u64 binary 2 wrong right signedness
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 1
++    BinaryValue CheckedMultiply u64
+
+; CASE: u64 CheckedMultiply emission
+; BASE: u64 binary 0
+; RUN: emit
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedMultiply u64
+
+; CASE: u64 binary 3
+; BASE: u64 binary 0
+; RUN: emit
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedDivide u64
+
+; CASE: u64 binary 3 signed left
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: left operand
+@@ -5 +5 @@
+-    Constant -1 u64
++    Constant -1
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedDivide u64
+
+; CASE: u64 binary 3 bool right
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 1 bool
++    BinaryValue CheckedDivide u64
+
+; CASE: u64 binary 3 missing left
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: stack underflow
+@@ -6 +5,0 @@
+-    Push
+@@ -8 +7 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedDivide u64
+
+; CASE: u64 binary 3 bool operation type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedDivide bool
+
+; CASE: u64 binary 3 invalid operation
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operation
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue -1 u64
+
+; CASE: u64 binary 3 forged scalar type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedDivide (u64 X)
+
+; CASE: u64 binary 3 wrong right signedness
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 1
++    BinaryValue CheckedDivide u64
+
+; CASE: u64 CheckedDivide native division guard
+; BASE: u64 binary 0
+; RUN: emit
+; CHECK-NOT: divq %r11
+; CHECK: jz .Laurora_division_zero_trap
+; CHECK: divq %r11
+; RUN: emit
+; CHECK-DAG: xorq %rdx, %rdx\n    divq %r11
+; RUN: emit
+; CHECK-NOT: idivq
+; CHECK-NOT: cmpq $-1, %r11
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedDivide u64
+
+; CASE: u64 binary 4
+; BASE: u64 binary 0
+; RUN: emit
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedRemainder u64
+
+; CASE: u64 binary 4 signed left
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: left operand
+@@ -5 +5 @@
+-    Constant -1 u64
++    Constant -1
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedRemainder u64
+
+; CASE: u64 binary 4 bool right
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 1 bool
++    BinaryValue CheckedRemainder u64
+
+; CASE: u64 binary 4 missing left
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: stack underflow
+@@ -6 +5,0 @@
+-    Push
+@@ -8 +7 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedRemainder u64
+
+; CASE: u64 binary 4 bool operation type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedRemainder bool
+
+; CASE: u64 binary 4 invalid operation
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operation
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue -1 u64
+
+; CASE: u64 binary 4 forged scalar type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedRemainder (u64 X)
+
+; CASE: u64 binary 4 wrong right signedness
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 1
++    BinaryValue CheckedRemainder u64
+
+; CASE: u64 CheckedRemainder native division guard
+; BASE: u64 binary 0
+; RUN: emit
+; CHECK-NOT: divq %r11
+; CHECK: jz .Laurora_division_zero_trap
+; CHECK: divq %r11
+; RUN: emit
+; CHECK-DAG: xorq %rdx, %rdx\n    divq %r11
+; RUN: emit
+; CHECK-NOT: idivq
+; CHECK-NOT: cmpq $-1, %r11
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue CheckedRemainder u64
+
+; CASE: u64 binary 5
+; BASE: u64 binary 0
+; RUN: emit
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue BitAnd u64
+
+; CASE: u64 binary 5 signed left
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: left operand
+@@ -5 +5 @@
+-    Constant -1 u64
++    Constant -1
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue BitAnd u64
+
+; CASE: u64 binary 5 bool right
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 1 bool
++    BinaryValue BitAnd u64
+
+; CASE: u64 binary 5 missing left
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: stack underflow
+@@ -6 +5,0 @@
+-    Push
+@@ -8 +7 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue BitAnd u64
+
+; CASE: u64 binary 5 bool operation type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue BitAnd bool
+
+; CASE: u64 binary 5 invalid operation
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operation
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue -1 u64
+
+; CASE: u64 binary 5 forged scalar type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue BitAnd (u64 X)
+
+; CASE: u64 binary 5 wrong right signedness
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 1
++    BinaryValue BitAnd u64
+
+; CASE: u64 binary 5 signed operation type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue BitAnd
+
+; CASE: u64 BitAnd emission
+; BASE: u64 binary 0
+; RUN: emit
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue BitAnd u64
+
+; CASE: u64 binary 6
+; BASE: u64 binary 0
+; RUN: emit
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue BitOr u64
+
+; CASE: u64 binary 6 signed left
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: left operand
+@@ -5 +5 @@
+-    Constant -1 u64
++    Constant -1
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue BitOr u64
+
+; CASE: u64 binary 6 bool right
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 1 bool
++    BinaryValue BitOr u64
+
+; CASE: u64 binary 6 missing left
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: stack underflow
+@@ -6 +5,0 @@
+-    Push
+@@ -8 +7 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue BitOr u64
+
+; CASE: u64 binary 6 bool operation type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue BitOr bool
+
+; CASE: u64 binary 6 invalid operation
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operation
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue -1 u64
+
+; CASE: u64 binary 6 forged scalar type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue BitOr (u64 X)
+
+; CASE: u64 binary 6 wrong right signedness
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 1
++    BinaryValue BitOr u64
+
+; CASE: u64 binary 6 signed operation type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue BitOr
+
+; CASE: u64 BitOr emission
+; BASE: u64 binary 0
+; RUN: emit
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue BitOr u64
+
+; CASE: u64 binary 7
+; BASE: u64 binary 0
+; RUN: emit
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue BitXor u64
+
+; CASE: u64 binary 7 signed left
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: left operand
+@@ -5 +5 @@
+-    Constant -1 u64
++    Constant -1
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue BitXor u64
+
+; CASE: u64 binary 7 bool right
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 1 bool
++    BinaryValue BitXor u64
+
+; CASE: u64 binary 7 missing left
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: stack underflow
+@@ -6 +5,0 @@
+-    Push
+@@ -8 +7 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue BitXor u64
+
+; CASE: u64 binary 7 bool operation type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue BitXor bool
+
+; CASE: u64 binary 7 invalid operation
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operation
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue -1 u64
+
+; CASE: u64 binary 7 forged scalar type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue BitXor (u64 X)
+
+; CASE: u64 binary 7 wrong right signedness
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 1
++    BinaryValue BitXor u64
+
+; CASE: u64 binary 7 signed operation type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue BitXor
+
+; CASE: u64 BitXor emission
+; BASE: u64 binary 0
+; RUN: emit
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    BinaryValue BitXor u64
+
+; CASE: u64 binary 8
+; BASE: u64 binary 0
+; RUN: emit
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant
++    BinaryValue ShiftLeft u64
+
+; CASE: u64 binary 8 signed left
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: left operand
+@@ -5 +5 @@
+-    Constant -1 u64
++    Constant -1
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant
++    BinaryValue ShiftLeft u64
+
+; CASE: u64 binary 8 bool right
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 1 bool
++    BinaryValue ShiftLeft u64
+
+; CASE: u64 binary 8 missing left
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: stack underflow
+@@ -6,3 +6,2 @@
+-    Push
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant
++    BinaryValue ShiftLeft u64
+
+; CASE: u64 binary 8 bool operation type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant
++    BinaryValue ShiftLeft bool
+
+; CASE: u64 binary 8 invalid operation
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operation
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant
++    BinaryValue -1 u64
+
+; CASE: u64 binary 8 forged scalar type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant
++    BinaryValue ShiftLeft (u64 X)
+
+; CASE: u64 binary 8 wrong right signedness
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 0 u64
++    BinaryValue ShiftLeft u64
+
+; CASE: u64 binary 8 signed operation type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant
++    BinaryValue ShiftLeft
+
+; CASE: u64 ShiftLeft native guard order
+; BASE: u64 binary 0
+; RUN: emit
+; CHECK-NOT: shlq %cl, %rax
+; CHECK: ja .Laurora_shift_count_trap
+; CHECK: shlq %cl, %rax
+; RUN: emit
+; CHECK-DAG: cmpq %rdx, %r11\n    jne .Laurora_overflow_trap
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant
++    BinaryValue ShiftLeft u64
+
+; CASE: u64 binary 9
+; BASE: u64 binary 0
+; RUN: emit
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant
++    BinaryValue ShiftRight u64
+
+; CASE: u64 binary 9 signed left
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: left operand
+@@ -5 +5 @@
+-    Constant -1 u64
++    Constant -1
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant
++    BinaryValue ShiftRight u64
+
+; CASE: u64 binary 9 bool right
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 1 bool
++    BinaryValue ShiftRight u64
+
+; CASE: u64 binary 9 missing left
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: stack underflow
+@@ -6,3 +6,2 @@
+-    Push
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant
++    BinaryValue ShiftRight u64
+
+; CASE: u64 binary 9 bool operation type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant
++    BinaryValue ShiftRight bool
+
+; CASE: u64 binary 9 invalid operation
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operation
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant
++    BinaryValue -1 u64
+
+; CASE: u64 binary 9 forged scalar type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant
++    BinaryValue ShiftRight (u64 X)
+
+; CASE: u64 binary 9 wrong right signedness
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 0 u64
++    BinaryValue ShiftRight u64
+
+; CASE: u64 binary 9 signed operation type
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid binary operand type
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant
++    BinaryValue ShiftRight
+
+; CASE: u64 ShiftRight native guard order
+; BASE: u64 binary 0
+; RUN: emit
+; CHECK-NOT: shrq %cl, %rax
+; CHECK: ja .Laurora_shift_count_trap
+; CHECK: shrq %cl, %rax
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant
++    BinaryValue ShiftRight u64
+
+; CASE: i64 checked conversion
+; BASE: u64 binary 0
+; RUN: emit
+@@ -5,4 +5,2 @@
+-    Constant -1 u64
+-    Push
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 42
++    Convert i64 u64
+
+; CASE: i64 checked conversion wrong source value
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -5,4 +5,2 @@
+-    Constant -1 u64
+-    Push
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 42 u64
++    Convert i64 u64
+
+; CASE: i64 checked conversion invalid target bool
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -5,4 +5,2 @@
+-    Constant -1 u64
+-    Push
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 42
++    Convert i64 bool
+
+; CASE: i64 checked conversion invalid source bool
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -5,4 +5,2 @@
+-    Constant -1 u64
+-    Push
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 42
++    Convert bool u64
+
+; CASE: i64 checked conversion invalid target ref<i64>
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -5,4 +5,2 @@
+-    Constant -1 u64
+-    Push
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 42
++    Convert i64 ref
+
+; CASE: i64 checked conversion invalid source ref<i64>
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -5,4 +5,2 @@
+-    Constant -1 u64
+-    Push
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 42
++    Convert ref u64
+
+; CASE: i64 checked conversion invalid target mutref<i64>
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -5,4 +5,2 @@
+-    Constant -1 u64
+-    Push
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 42
++    Convert i64 mutref
+
+; CASE: i64 checked conversion invalid source mutref<i64>
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -5,4 +5,2 @@
+-    Constant -1 u64
+-    Push
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 42
++    Convert mutref u64
+
+; CASE: i64 checked conversion invalid target own<i64>
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -5,4 +5,2 @@
+-    Constant -1 u64
+-    Push
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 42
++    Convert i64 own
+
+; CASE: i64 checked conversion invalid source own<i64>
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -5,4 +5,2 @@
+-    Constant -1 u64
+-    Push
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 42
++    Convert own u64
+
+; CASE: i64 checked conversion invalid target Pair
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -5,4 +5,2 @@
+-    Constant -1 u64
+-    Push
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 42
++    Convert i64 (class Pair)
+
+; CASE: i64 checked conversion invalid source Pair
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -5,4 +5,2 @@
+-    Constant -1 u64
+-    Push
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 42
++    Convert (class Pair) u64
+
+; CASE: i64 checked conversion invalid target array<u64, 1>
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: noncanonical instruction type payload
+@@ -5,4 +5,2 @@
+-    Constant -1 u64
+-    Push
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 42
++    Convert i64 (array elem=u64 len=1)
+
+; CASE: i64 checked conversion invalid source array<u64, 1>
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: noncanonical instruction type payload
+@@ -5,4 +5,2 @@
+-    Constant -1 u64
+-    Push
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 42
++    Convert (array elem=u64 len=1) u64
+
+; CASE: i64 checked conversion invalid target ?
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -5,4 +5,2 @@
+-    Constant -1 u64
+-    Push
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 42
++    Convert i64 99
+
+; CASE: i64 checked conversion invalid source ?
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -5,4 +5,2 @@
+-    Constant -1 u64
+-    Push
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 42
++    Convert 99 u64
+
+; CASE: i64 checked conversion identity rejected
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -5,4 +5,2 @@
+-    Constant -1 u64
+-    Push
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 42
++    Convert
+
+; CASE: u64 checked conversion
+; RUN: emit
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42 u64
+    Convert u64
+    Return
+end
+
+; CASE: u64 checked conversion wrong source value
+; BASE: u64 checked conversion
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -5 +5 @@
+-    Constant 42 u64
++    Constant 42
+
+; CASE: u64 checked conversion invalid target bool
+; BASE: u64 checked conversion
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -6 +6 @@
+-    Convert u64
++    Convert u64 bool
+
+; CASE: u64 checked conversion invalid source bool
+; BASE: u64 checked conversion
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -6 +6 @@
+-    Convert u64
++    Convert bool
+
+; CASE: u64 checked conversion invalid target ref<i64>
+; BASE: u64 checked conversion
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -6 +6 @@
+-    Convert u64
++    Convert u64 ref
+
+; CASE: u64 checked conversion invalid source ref<i64>
+; BASE: u64 checked conversion
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -6 +6 @@
+-    Convert u64
++    Convert ref
+
+; CASE: u64 checked conversion invalid target mutref<i64>
+; BASE: u64 checked conversion
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -6 +6 @@
+-    Convert u64
++    Convert u64 mutref
+
+; CASE: u64 checked conversion invalid source mutref<i64>
+; BASE: u64 checked conversion
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -6 +6 @@
+-    Convert u64
++    Convert mutref
+
+; CASE: u64 checked conversion invalid target own<i64>
+; BASE: u64 checked conversion
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -6 +6 @@
+-    Convert u64
++    Convert u64 own
+
+; CASE: u64 checked conversion invalid source own<i64>
+; BASE: u64 checked conversion
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -6 +6 @@
+-    Convert u64
++    Convert own
+
+; CASE: u64 checked conversion invalid target Pair
+; BASE: u64 checked conversion
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -6 +6 @@
+-    Convert u64
++    Convert u64 (class Pair)
+
+; CASE: u64 checked conversion invalid source Pair
+; BASE: u64 checked conversion
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -6 +6 @@
+-    Convert u64
++    Convert (class Pair)
+
+; CASE: u64 checked conversion invalid target array<u64, 1>
+; BASE: u64 checked conversion
+; RUN: verify
+; EXPECT-ERROR: noncanonical instruction type payload
+@@ -6 +6 @@
+-    Convert u64
++    Convert u64 (array elem=u64 len=1)
+
+; CASE: u64 checked conversion invalid source array<u64, 1>
+; BASE: u64 checked conversion
+; RUN: verify
+; EXPECT-ERROR: noncanonical instruction type payload
+@@ -6 +6 @@
+-    Convert u64
++    Convert (array elem=u64 len=1)
+
+; CASE: u64 checked conversion invalid target ?
+; BASE: u64 checked conversion
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -6 +6 @@
+-    Convert u64
++    Convert u64 99
+
+; CASE: u64 checked conversion invalid source ?
+; BASE: u64 checked conversion
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -6 +6 @@
+-    Convert u64
++    Convert 99
+
+; CASE: u64 checked conversion identity rejected
+; BASE: u64 checked conversion
+; RUN: verify
+; EXPECT-ERROR: invalid checked conversion types
+@@ -6 +6 @@
+-    Convert u64
++    Convert u64 u64
+
+; CASE: unary signed or bool operation on u64
+; BASE: u64 checked conversion
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -5,2 +5,2 @@
+-    Constant 42 u64
+-    Convert u64
++    Constant 1 u64
++    UnaryValue
+
+; CASE: unary signed or bool operation on u64 #2
+; BASE: u64 checked conversion
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -5,2 +5,2 @@
+-    Constant 42 u64
+-    Convert u64
++    Constant 1 u64
++    UnaryValue LogicalNot bool
+
+; CASE: bitwise not requires u64 i64
+; BASE: u64 checked conversion
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -5,2 +5,2 @@
+-    Constant 42 u64
+-    Convert u64
++    Constant 1
++    UnaryValue BitNot u64
+
+; CASE: bitwise not requires u64 bool
+; BASE: u64 checked conversion
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -5,2 +5,2 @@
+-    Constant 42 u64
+-    Convert u64
++    Constant 1 bool
++    UnaryValue BitNot u64
+
+; CASE: u64 comparison 0
+; BASE: u64 binary 0
+; RUN: emit
+@@ -2 +2 @@
+-  result u64
++  result bool
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    Compare Equal u64
+
+; CASE: u64 comparison 0 signed left
+; RUN: verify
+; EXPECT-ERROR: comparison type mismatch
+function test
+  result bool
+  frame 16
+  slot 8 i64
+    Constant -1
+    Push
+    Constant 1 u64
+    Compare Equal u64
+    Return
+end
+
+; CASE: u64 comparison 0 signed right
+; BASE: u64 comparison 0 signed left
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -5 +5 @@
+-    Constant -1
++    Constant -1 u64
+@@ -7 +7 @@
+-    Constant 1 u64
++    Constant 1
+
+; CASE: u64 comparison 0 invalid enum
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid comparison
+@@ -2 +2 @@
+-  result u64
++  result bool
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    Compare -1 u64
+
+; CASE: u64 comparison 0 reference forgery
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: non-scalar comparison
+@@ -2 +2 @@
+-  result u64
++  result bool
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    Compare Equal ref
+
+; CASE: u64 comparison 1
+; BASE: u64 binary 0
+; RUN: emit
+@@ -2 +2 @@
+-  result u64
++  result bool
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    Compare NotEqual u64
+
+; CASE: u64 comparison 1 signed left
+; BASE: u64 comparison 0 signed left
+; RUN: verify
+; EXPECT-ERROR: comparison type mismatch
+@@ -8 +8 @@
+-    Compare Equal u64
++    Compare NotEqual u64
+
+; CASE: u64 comparison 1 signed right
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -2 +2 @@
+-  result u64
++  result bool
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 1
++    Compare NotEqual u64
+
+; CASE: u64 comparison 1 invalid enum
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid comparison
+@@ -2 +2 @@
+-  result u64
++  result bool
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    Compare -1 u64
+
+; CASE: u64 comparison 1 reference forgery
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: non-scalar comparison
+@@ -2 +2 @@
+-  result u64
++  result bool
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    Compare NotEqual ref
+
+; CASE: u64 comparison 2
+; BASE: u64 binary 0
+; RUN: emit
+@@ -2 +2 @@
+-  result u64
++  result bool
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    Compare Less u64
+
+; CASE: u64 comparison 2 signed left
+; BASE: u64 comparison 0 signed left
+; RUN: verify
+; EXPECT-ERROR: comparison type mismatch
+@@ -8 +8 @@
+-    Compare Equal u64
++    Compare Less u64
+
+; CASE: u64 comparison 2 signed right
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -2 +2 @@
+-  result u64
++  result bool
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 1
++    Compare Less u64
+
+; CASE: u64 comparison 2 invalid enum
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid comparison
+@@ -2 +2 @@
+-  result u64
++  result bool
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    Compare -1 u64
+
+; CASE: u64 comparison 2 reference forgery
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: non-scalar comparison
+@@ -2 +2 @@
+-  result u64
++  result bool
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    Compare Less ref
+
+; CASE: u64 comparison 3
+; BASE: u64 binary 0
+; RUN: emit
+@@ -2 +2 @@
+-  result u64
++  result bool
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    Compare Greater u64
+
+; CASE: u64 comparison 3 signed left
+; BASE: u64 comparison 0 signed left
+; RUN: verify
+; EXPECT-ERROR: comparison type mismatch
+@@ -8 +8 @@
+-    Compare Equal u64
++    Compare Greater u64
+
+; CASE: u64 comparison 3 signed right
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -2 +2 @@
+-  result u64
++  result bool
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 1
++    Compare Greater u64
+
+; CASE: u64 comparison 3 invalid enum
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid comparison
+@@ -2 +2 @@
+-  result u64
++  result bool
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    Compare -1 u64
+
+; CASE: u64 comparison 3 reference forgery
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: non-scalar comparison
+@@ -2 +2 @@
+-  result u64
++  result bool
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    Compare Greater ref
+
+; CASE: u64 comparison 4
+; BASE: u64 binary 0
+; RUN: emit
+@@ -2 +2 @@
+-  result u64
++  result bool
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    Compare LessEqual u64
+
+; CASE: u64 comparison 4 signed left
+; BASE: u64 comparison 0 signed left
+; RUN: verify
+; EXPECT-ERROR: comparison type mismatch
+@@ -8 +8 @@
+-    Compare Equal u64
++    Compare LessEqual u64
+
+; CASE: u64 comparison 4 signed right
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -2 +2 @@
+-  result u64
++  result bool
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 1
++    Compare LessEqual u64
+
+; CASE: u64 comparison 4 invalid enum
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid comparison
+@@ -2 +2 @@
+-  result u64
++  result bool
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    Compare -1 u64
+
+; CASE: u64 comparison 4 reference forgery
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: non-scalar comparison
+@@ -2 +2 @@
+-  result u64
++  result bool
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    Compare LessEqual ref
+
+; CASE: u64 comparison 5
+; BASE: u64 binary 0
+; RUN: emit
+@@ -2 +2 @@
+-  result u64
++  result bool
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    Compare GreaterEqual u64
+
+; CASE: u64 comparison 5 signed left
+; BASE: u64 comparison 0 signed left
+; RUN: verify
+; EXPECT-ERROR: comparison type mismatch
+@@ -8 +8 @@
+-    Compare Equal u64
++    Compare GreaterEqual u64
+
+; CASE: u64 comparison 5 signed right
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -2 +2 @@
+-  result u64
++  result bool
+@@ -7,2 +7,2 @@
+-    Constant 1 u64
+-    BinaryValue CheckedAdd u64
++    Constant 1
++    Compare GreaterEqual u64
+
+; CASE: u64 comparison 5 invalid enum
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: invalid comparison
+@@ -2 +2 @@
+-  result u64
++  result bool
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    Compare -1 u64
+
+; CASE: u64 comparison 5 reference forgery
+; BASE: u64 binary 0
+; RUN: verify
+; EXPECT-ERROR: non-scalar comparison
+@@ -2 +2 @@
+-  result u64
++  result bool
+@@ -8 +8 @@
+-    BinaryValue CheckedAdd u64
++    Compare GreaterEqual ref
+
+; CASE: u64 scalar call boundary
+; BASE: unsigned operation callable fixture
+; RUN: emit
+@@ -255,0 +256,11 @@
++function test
++  result u64
++  frame 16
++  slot 8 i64
++    Constant -1 u64
++    Push
++    Constant 0 u64
++    Push
++    Call unsigned_op0
++    Return
++end
+
+; CASE: signed argument cannot cross u64 scalar call boundary
+; BASE: unsigned operation callable fixture
+; RUN: verify
+; EXPECT-ERROR: call argument type mismatch
+@@ -255,0 +256,11 @@
++function test
++  result u64
++  frame 16
++  slot 8 i64
++    Constant -1
++    Push
++    Constant 0 u64
++    Push
++    Call unsigned_op0
++    Return
++end
+
+; CASE: u64 nominal receiver construction and forwarding
+; RUN: emit
+layout Pair [u64 bool]
+function test
+  result u64
+  frame 16
+  slot 8 bool
+  slot 16 u64
+  object 16 Pair false
+    BeginObject 16
+    Constant -1 u64
+    Push
+    Constant 1 bool
+    Push
+    MethodCall construct_pair 16
+    MethodCall relay_pair 16
+    Return
+end
+function construct_pair
+  result i64
+  params [u64 bool]
+  frame 16
+  receiver Pair true true
+  slot 8 u64
+  slot 16 bool
+    BindParameter 0 8 u64
+    BindParameter 1 16 bool
+    Load 8 u64
+    ReceiverStore 0 u64
+    Load 16 bool
+    ReceiverStore 1 bool
+    Constant
+    Return
+end
+function get_pair
+  result u64
+  frame 0
+  receiver Pair false false
+    ReceiverLoad 0 u64
+    Return
+end
+function relay_pair
+  result u64
+  frame 0
+  receiver Pair false false
+    MethodCall get_pair
+    Return
+end
+
+; CASE: u64 receiver field cannot be loaded as signed
+; BASE: u64 nominal receiver construction and forwarding
+; RUN: verify
+; EXPECT-ERROR: receiver field type/layout mismatch
+@@ -37 +37 @@
+-    ReceiverLoad 0 u64
++    ReceiverLoad
+
+; CASE: conversion roundtrip cannot preserve bounds token
+; RUN: verify
+; EXPECT-ERROR: bounds token
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Constant
+    BoundsGuard 8 1
+    Convert i64 u64
+    Convert u64
+    IndexLoad 8 1
+    Return
+end
+
+; CASE: u64 array guarded load
+; RUN: emit
+function test
+  result u64
+  frame 16
+  slot 8 u64
+    Constant -1 u64
+    Store 8 u64
+    Constant
+    BoundsGuard 8 1 u64
+    IndexLoad 8 1 u64
+    Return
+end
+
+; CASE: u64 array guarded store
+; RUN: emit
+function test
+  result u64
+  frame 16
+  slot 8 u64
+    Constant 0 u64
+    Store 8 u64
+    Constant
+    BoundsGuard 8 1 u64
+    Push
+    Constant -1 u64
+    IndexStore 8 1 u64
+    Load 8 u64
+    Return
+end
+
+; CASE: u64 array store requires matching token
+; BASE: u64 array guarded store
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -8 +8 @@
+-    BoundsGuard 8 1 u64
++    Constant
+
+; CASE: u64 array index cannot be u64
+; BASE: u64 array guarded load
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -7 +7 @@
+-    Constant
++    Constant 0 u64
+
+; CASE: u64 array token cannot alias signed layout
+; BASE: u64 array guarded load
+; RUN: verify
+; EXPECT-ERROR: slot type/layout
+@@ -9 +9 @@
+-    IndexLoad 8 1 u64
++    IndexLoad 8 1
+
+; CASE: u64 payload cannot mint borrow capability
+; BASE: u64 array guarded load
+; RUN: verify
+; EXPECT-ERROR: slot type/layout
+@@ -9 +9 @@
+-    IndexLoad 8 1 u64
++    BorrowHandle 8 ref

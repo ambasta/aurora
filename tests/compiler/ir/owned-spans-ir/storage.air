@@ -1,0 +1,707 @@
+; CASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+function owned_span
+  result i64
+  params [region bytes]
+  frame 256
+  slot 81 u8
+  span 136
+  span 192
+  span 248
+  region 8
+  bytes 40 true
+  bytes 72 true
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BorrowOwnedSpan 40 -1 136
+    ReborrowSpan 136 192
+    Constant
+    Push
+    Constant
+    Subspan 192 248
+    SpanLength 248
+    EndSpan 248
+    EndSpan 192
+    EndSpan 136
+    EndBytes 40
+    Return
+end
+
+; CASE: record byte cannot become scalar 82
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 82 u8
+
+; CASE: record byte cannot become scalar 83
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 83 u8
+
+; CASE: record byte cannot become scalar 84
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 84 u8
+
+; CASE: record byte cannot become scalar 85
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 85 u8
+
+; CASE: record byte cannot become scalar 86
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 86 u8
+
+; CASE: record byte cannot become scalar 87
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 87 u8
+
+; CASE: record byte cannot become scalar 88
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 88 u8
+
+; CASE: record byte cannot become scalar 89
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 89 u8
+
+; CASE: record byte cannot become scalar 90
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 90 u8
+
+; CASE: record byte cannot become scalar 91
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 91 u8
+
+; CASE: record byte cannot become scalar 92
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 92 u8
+
+; CASE: record byte cannot become scalar 93
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 93 u8
+
+; CASE: record byte cannot become scalar 94
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 94 u8
+
+; CASE: record byte cannot become scalar 95
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 95 u8
+
+; CASE: record byte cannot become scalar 96
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 96 u8
+
+; CASE: record byte cannot become scalar 97
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 97 u8
+
+; CASE: record byte cannot become scalar 98
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 98 u8
+
+; CASE: record byte cannot become scalar 99
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 99 u8
+
+; CASE: record byte cannot become scalar 100
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 100 u8
+
+; CASE: record byte cannot become scalar 101
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 101 u8
+
+; CASE: record byte cannot become scalar 102
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 102 u8
+
+; CASE: record byte cannot become scalar 103
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 103 u8
+
+; CASE: record byte cannot become scalar 104
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 104 u8
+
+; CASE: record byte cannot become scalar 105
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 105 u8
+
+; CASE: record byte cannot become scalar 106
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 106 u8
+
+; CASE: record byte cannot become scalar 107
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 107 u8
+
+; CASE: record byte cannot become scalar 108
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 108 u8
+
+; CASE: record byte cannot become scalar 109
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 109 u8
+
+; CASE: record byte cannot become scalar 110
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 110 u8
+
+; CASE: record byte cannot become scalar 111
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 111 u8
+
+; CASE: record byte cannot become scalar 112
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 112 u8
+
+; CASE: record byte cannot become scalar 113
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 113 u8
+
+; CASE: record byte cannot become scalar 114
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 114 u8
+
+; CASE: record byte cannot become scalar 115
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 115 u8
+
+; CASE: record byte cannot become scalar 116
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 116 u8
+
+; CASE: record byte cannot become scalar 117
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 117 u8
+
+; CASE: record byte cannot become scalar 118
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 118 u8
+
+; CASE: record byte cannot become scalar 119
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 119 u8
+
+; CASE: record byte cannot become scalar 120
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 120 u8
+
+; CASE: record byte cannot become scalar 121
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 121 u8
+
+; CASE: record byte cannot become scalar 122
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 122 u8
+
+; CASE: record byte cannot become scalar 123
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 123 u8
+
+; CASE: record byte cannot become scalar 124
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 124 u8
+
+; CASE: record byte cannot become scalar 125
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 125 u8
+
+; CASE: record byte cannot become scalar 126
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 126 u8
+
+; CASE: record byte cannot become scalar 127
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 127 u8
+
+; CASE: record byte cannot become scalar 128
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 128 u8
+
+; CASE: record byte cannot become scalar 129
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 129 u8
+
+; CASE: record byte cannot become scalar 130
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 130 u8
+
+; CASE: record byte cannot become scalar 131
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 131 u8
+
+; CASE: record byte cannot become scalar 132
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 132 u8
+
+; CASE: record byte cannot become scalar 133
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 133 u8
+
+; CASE: record byte cannot become scalar 134
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 134 u8
+
+; CASE: record byte cannot become scalar 135
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 135 u8
+
+; CASE: record byte cannot become scalar 136
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5 @@
+-  slot 81 u8
++  slot 136 u8
+
+; CASE: bad record extent 0
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill
+@@ -5 +5 @@
+-  slot 81 u8
++  span 0
+
+; CASE: bad record extent 8
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill
+@@ -5 +5 @@
+-  slot 81 u8
++  span 8
+
+; CASE: bad record extent 16
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill
+@@ -5 +5 @@
+-  slot 81 u8
++  span 16
+
+; CASE: bad record extent 48
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill
+@@ -5 +5 @@
+-  slot 81 u8
++  span 48
+
+; CASE: bad record extent 55
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill
+@@ -5 +5 @@
+-  slot 81 u8
++  span 55
+
+; CASE: bad record extent 57
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill
+@@ -5 +5 @@
+-  slot 81 u8
++  span 57
+
+; CASE: bad record extent 257
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill
+@@ -5 +4,0 @@
+-  slot 81 u8
+@@ -8,0 +8 @@
++  span 257
+
+; CASE: bad record extent 264
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill
+@@ -5 +4,0 @@
+-  slot 81 u8
+@@ -8,0 +8 @@
++  span 264
+
+; CASE: record overlap 88
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: overlapping span spills
+@@ -5 +5 @@
+-  slot 81 u8
++  span 88
+
+; CASE: record overlap 96
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: overlapping span spills
+@@ -5 +5 @@
+-  slot 81 u8
++  span 96
+
+; CASE: record overlap 104
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: overlapping span spills
+@@ -5 +5 @@
+-  slot 81 u8
++  span 104
+
+; CASE: record overlap 112
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: overlapping span spills
+@@ -5 +5 @@
+-  slot 81 u8
++  span 112
+
+; CASE: record overlap 120
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: overlapping span spills
+@@ -5 +5 @@
+-  slot 81 u8
++  span 120
+
+; CASE: record overlap 128
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: overlapping span spills
+@@ -5 +5 @@
+-  slot 81 u8
++  span 128
+
+; CASE: record overlap 144
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: overlapping span spills
+@@ -5 +4,0 @@
+-  slot 81 u8
+@@ -6,0 +6 @@
++  span 144
+
+; CASE: record overlap 152
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: overlapping span spills
+@@ -5 +4,0 @@
+-  slot 81 u8
+@@ -6,0 +6 @@
++  span 152
+
+; CASE: record overlap 160
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: overlapping span spills
+@@ -5 +4,0 @@
+-  slot 81 u8
+@@ -6,0 +6 @@
++  span 160
+
+; CASE: record overlap 168
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: overlapping span spills
+@@ -5 +4,0 @@
+-  slot 81 u8
+@@ -6,0 +6 @@
++  span 168
+
+; CASE: record overlap 176
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: overlapping span spills
+@@ -5 +4,0 @@
+-  slot 81 u8
+@@ -6,0 +6 @@
++  span 176
+
+; CASE: record overlap 184
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: overlapping span spills
+@@ -5 +4,0 @@
+-  slot 81 u8
+@@ -6,0 +6 @@
++  span 184
+
+; CASE: region overlaps tail
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: overlaps scalar, object, array or span
+@@ -5 +4,0 @@
+-  slot 81 u8
+@@ -9,0 +9 @@
++  region 88
+
+; CASE: owner overlaps record
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: overlaps scalar, object, array or span
+@@ -5 +4,0 @@
+-  slot 81 u8
+@@ -11,0 +11 @@
++  bytes 112 true
+
+; CASE: array overlaps payload
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -5 +5,2 @@
+-  slot 81 u8
++  slot 100 u8
++  array 100 1
+
+; CASE: empty object overlaps payload
+; BASE: record byte cannot become scalar 81
+; RUN: verify
+; EXPECT-ERROR: span spill overlaps
+@@ -0,0 +1 @@
++layout Empty []
+@@ -5 +6 @@
+-  slot 81 u8
++  object 104 Empty false
+
+; CASE: exact minimum aligned record
+; RUN: verify
+; EXPECT-OK
+layout Empty []
+layout Pair [u8]
+fields Empty []
+fields Pair [(bytes 0 0 false) (u8 0 1 false) (bytes 1 0 false)]
+storage Empty [] [] 8 8 8
+storage Pair [32] [0 32 40] 72 8 72
+function view
+  result span
+  frame 64
+  receiver Pair false false
+  spanfield 0
+  span 56
+    BorrowOwnedSpan 0 0 56
+    ReturnSpan 56
+end
+function read
+  result i64
+  frame 0
+  receiver Pair false false
+    BytesLength 0 0
+    Return
+end
+function mutate
+  result i64
+  frame 0
+  receiver Pair true false
+    BytesLength 0 0
+    Return
+end

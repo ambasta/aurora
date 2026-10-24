@@ -1,0 +1,1454 @@
+; CASE: 512 byte leaves remain supported
+; RUN: verify
+; EXPECT-OK
+layout SizedCarrier [u8*512]
+layout SizedChild [u8*256]
+fields SizedCarrier [((class SizedChild) 0 512 true 2)]
+carrier SizedCarrier
+function shape_entry
+  result i64
+  frame 0
+    Constant
+    Return
+end
+
+; CASE: 64 nonbyte leaves remain supported
+; BASE: 512 byte leaves remain supported
+; RUN: verify
+; EXPECT-OK
+@@ -1,3 +1,3 @@
+-layout SizedCarrier [u8*512]
+-layout SizedChild [u8*256]
+-fields SizedCarrier [((class SizedChild) 0 512 true 2)]
++layout SizedCarrier [u64*64]
++layout SizedChild [u64]
++fields SizedCarrier [((class SizedChild) 0 64 true 64)]
+
+; CASE: packed canonical storage under byte cap
+; BASE: 512 byte leaves remain supported
+; RUN: verify
+; EXPECT-OK
+@@ -1,3 +1,3 @@
+-layout SizedCarrier [u8*512]
+-layout SizedChild [u8*256]
+-fields SizedCarrier [((class SizedChild) 0 512 true 2)]
++layout SizedCarrier [u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64]
++layout SizedChild [u8 u64]
++fields SizedCarrier [((class SizedChild) 0 64 true 32)]
+
+; CASE: four class levels including carrier
+; RUN: verify
+; EXPECT-OK
+layout Depth0 []
+layout Depth1 []
+layout Depth2 []
+layout DepthCarrier []
+fields Depth0 []
+fields Depth1 [((class Depth0) 0 0 false)]
+fields Depth2 [((class Depth1) 0 0 false)]
+fields DepthCarrier [((class Depth2) 0 0 true 2)]
+carrier DepthCarrier
+function shape_entry
+  result i64
+  frame 0
+    Constant
+    Return
+end
+
+; CASE: byte leaf cap preserved
+; BASE: 512 byte leaves remain supported
+; RUN: verify
+; EXPECT-ERROR: 512 u8
+@@ -1,3 +1,3 @@
+-layout SizedCarrier [u8*512]
+-layout SizedChild [u8*256]
+-fields SizedCarrier [((class SizedChild) 0 512 true 2)]
++layout SizedCarrier [u8*513]
++layout SizedChild [u8*171]
++fields SizedCarrier [((class SizedChild) 0 513 true 3)]
+
+; CASE: nonbyte leaf cap preserved
+; BASE: 512 byte leaves remain supported
+; RUN: verify
+; EXPECT-ERROR: 64 scalar
+@@ -1,3 +1,3 @@
+-layout SizedCarrier [u8*512]
+-layout SizedChild [u8*256]
+-fields SizedCarrier [((class SizedChild) 0 512 true 2)]
++layout SizedCarrier [u64*66]
++layout SizedChild [u64 u64]
++fields SizedCarrier [((class SizedChild) 0 66 true 33)]
+
+; CASE: storage byte cap preserved
+; BASE: 512 byte leaves remain supported
+; RUN: verify
+; EXPECT-ERROR: 520 bytes
+@@ -1,3 +1,3 @@
+-layout SizedCarrier [u8*512]
+-layout SizedChild [u8*256]
+-fields SizedCarrier [((class SizedChild) 0 512 true 2)]
++layout SizedCarrier [u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64 u8 u64]
++layout SizedChild [u8 u64]
++fields SizedCarrier [((class SizedChild) 0 66 true 33)]
+
+; CASE: fifth class level including carrier
+; BASE: four class levels including carrier
+; RUN: verify
+; EXPECT-ERROR: depth 4
+@@ -3,0 +4 @@
++layout Depth3 []
+@@ -8 +9,2 @@
+-fields DepthCarrier [((class Depth2) 0 0 true 2)]
++fields Depth3 [((class Depth2) 0 0 false)]
++fields DepthCarrier [((class Depth3) 0 0 true 2)]
+
+; CASE: empty cycle through class array
+; RUN: verify
+; EXPECT-ERROR: cyclic
+layout Carrier []
+layout Child []
+layout Other []
+fields Carrier [((class Child) 0 0 true 2)]
+fields Child [((class Child) 0 0 true 2)]
+storage Carrier [] [0] 8 8 8
+storage Child [] [] 8 8 8
+storage Other [] [] 8 8 8
+function shape_entry
+  result i64
+  frame 0
+    Constant
+    Return
+end
+
+; CASE: owning class array elements
+; BASE: empty cycle through class array
+; RUN: verify
+; EXPECT-ERROR: nested owning
+@@ -5 +5 @@
+-fields Child [((class Child) 0 0 true 2)]
++fields Child [(bytes 0 0 false)]
+@@ -8,0 +9 @@
++carrier Carrier
+
+; CASE: local checked copy and replacement
+; RUN: verify
+; EXPECT-OK
+layout Carrier [u8 u64 u8 u64]
+layout Child [u8 u64]
+layout Other [u8 u64]
+fields Carrier [((class Child) 0 4 true 2)]
+storage Carrier [{0,8}*4] [0] 32 8 32
+storage Child [0 8] [0 8] 16 8 16
+storage Other [0 8] [0 8] 16 8 16
+carrier Carrier
+function local
+  result (class Child)
+  params [(class Child) (class Child)]
+  frame 128
+repeat 7
+  slot {8,16} u64
+  slot {16,16} u8
+endrepeat
+  object 16 Child false
+  object 32 Child false
+  object 64 Carrier true
+  object 80 Child false
+  object 112 Carrier true
+    BindObjectParameter 0 16 Child
+    BindObjectParameter 1 32 Child
+    BeginObject 64
+    InitializeClassArray 64 0 [16 32]
+    BeginObject 112
+    CopyObject 64 112
+    Constant 1
+    ClassArrayBoundsGuard 64
+    ClassArrayAssign 64 0 16
+    Constant 1
+    ClassArrayBoundsGuard 64
+    BeginObject 80
+    ClassArrayCopy 64 0 80
+    ReturnObject 80
+end
+
+; CASE: packed three-byte stride
+; RUN: verify
+; EXPECT-OK
+layout Carrier [u8*6]
+layout Child [u8*3]
+layout Other [u8*3]
+fields Carrier [((class Child) 0 6 true 2)]
+storage Carrier [{0,1}*6] [0] 6 1 8
+storage Child [{0,1}*3] [{0,1}*3] 3 1 8
+storage Other [{0,1}*3] [{0,1}*3] 3 1 8
+carrier Carrier
+function local
+  result (class Child)
+  params [(class Child) (class Child)]
+  frame 128
+  slot 14 u8
+  slot 15 u8
+  slot 16 u8
+  slot 30 u8
+  slot 31 u8
+  slot 32 u8
+  slot 59 u8
+  slot 60 u8
+  slot 61 u8
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 78 u8
+  slot 79 u8
+  slot 80 u8
+  slot 107 u8
+  slot 108 u8
+  slot 109 u8
+  slot 110 u8
+  slot 111 u8
+  slot 112 u8
+  object 16 Child false
+  object 32 Child false
+  object 64 Carrier true
+  object 80 Child false
+  object 112 Carrier true
+    BindObjectParameter 0 16 Child
+    BindObjectParameter 1 32 Child
+    BeginObject 64
+    InitializeClassArray 64 0 [16 32]
+    BeginObject 112
+    CopyObject 64 112
+    Constant 1
+    ClassArrayBoundsGuard 64
+    ClassArrayAssign 64 0 16
+    Constant 1
+    ClassArrayBoundsGuard 64
+    BeginObject 80
+    ClassArrayCopy 64 0 80
+    ReturnObject 80
+end
+
+; CASE: empty local completion
+; RUN: verify
+; EXPECT-OK
+layout Carrier []
+layout Child []
+layout Other []
+fields Carrier [((class Child) 0 0 true 2)]
+storage Carrier [] [0] 8 8 8
+storage Child [] [] 8 8 8
+storage Other [] [] 8 8 8
+carrier Carrier
+function local
+  result (class Child)
+  params [(class Child) (class Child)]
+  frame 128
+  object 16 Child false
+  object 32 Child false
+  object 64 Carrier true
+  object 80 Child false
+  object 112 Carrier true
+    BindObjectParameter 0 16 Child
+    BindObjectParameter 1 32 Child
+    BeginObject 64
+    InitializeClassArray 64 0 [16 32]
+    BeginObject 112
+    CopyObject 64 112
+    Constant 1
+    ClassArrayBoundsGuard 64
+    ClassArrayAssign 64 0 16
+    Constant 1
+    ClassArrayBoundsGuard 64
+    BeginObject 80
+    ClassArrayCopy 64 0 80
+    ReturnObject 80
+end
+
+; CASE: standalone empty sources require explicit completion
+; BASE: empty local completion
+; RUN: verify
+; EXPECT-ERROR: empty object not completely initialized
+@@ -19,0 +20 @@
++    BeginObject 80
+@@ -21 +22 @@
+-    InitializeClassArray 64 0 [16 32]
++    InitializeClassArray 64 0 [80 80]
+@@ -26 +27 @@
+-    ClassArrayAssign 64 0 16
++    ClassArrayAssign 64 0 80
+@@ -28,0 +30 @@
++    EndObject 80
+
+; CASE: standalone empty sources retain copied completion
+; BASE: empty local completion
+; RUN: verify
+; EXPECT-OK
+@@ -19,0 +20,2 @@
++    BeginObject 80
++    CopyObject 16 80
+@@ -21 +23 @@
+-    InitializeClassArray 64 0 [16 32]
++    InitializeClassArray 64 0 [80 80]
+@@ -26 +28 @@
+-    ClassArrayAssign 64 0 16
++    ClassArrayAssign 64 0 80
+@@ -28,0 +31 @@
++    EndObject 80
+
+; CASE: empty class array source cannot launder through copy
+; RUN: verify
+; EXPECT-ERROR: empty object not completely initialized
+layout Carrier []
+layout Child []
+layout Other []
+fields Carrier [((class Child) 0 0 true 2)]
+storage Carrier [] [0] 8 8 8
+storage Child [] [] 8 8 8
+storage Other [] [] 8 8 8
+carrier Carrier
+function local
+  result (class Child)
+  params [(class Child) (class Child)]
+  frame 144
+  object 16 Child false
+  object 32 Child false
+  object 64 Carrier true
+  object 80 Child false
+  object 112 Carrier true
+  object 136 Child false
+    BindObjectParameter 0 16 Child
+    BindObjectParameter 1 32 Child
+    BeginObject 80
+    BeginObject 136
+    CopyObject 80 136
+    BeginObject 64
+    InitializeClassArray 64 0 [80 80]
+    BeginObject 112
+    CopyObject 64 112
+    Constant 1
+    ClassArrayBoundsGuard 64
+    ClassArrayAssign 64 0 80
+    Constant 1
+    ClassArrayBoundsGuard 64
+    EndObject 80
+    BeginObject 80
+    ClassArrayCopy 64 0 80
+    ReturnObject 80
+end
+
+; CASE: receiver checked copy and replacement
+; RUN: verify
+; EXPECT-OK
+layout Carrier [u8 u64 u8 u64]
+layout Child [u8 u64]
+layout Holder [u8 u64 u8 u64 u8 u64 u8 u64]
+layout Other [u8 u64]
+fields Carrier [((class Child) 0 4 true 2)]
+fields Holder [((class Child) 0 4 true 2) ((class Child) 4 4 true 2)]
+storage Carrier [{0,8}*4] [0] 32 8 32
+storage Child [0 8] [0 8] 16 8 16
+storage Holder [{0,8}*8] [0 32] 64 8 64
+storage Other [0 8] [0 8] 16 8 16
+function local
+  result (class Child)
+  params [(class Child) (class Child)]
+  frame 128
+  receiver Holder true false
+  slot 8 u64
+  slot 16 u8
+  slot 24 u64
+  slot 32 u8
+  slot 72 u64
+  slot 80 u8
+  object 16 Child false
+  object 32 Child false
+  object 80 Child false
+    BindObjectParameter 0 16 Child
+    BindObjectParameter 1 32 Child
+    Constant 1
+    ClassArrayBoundsGuard
+    ClassArrayAssign 0 0 16
+    Constant
+    ClassArrayBoundsGuard
+    BeginObject 80
+    ClassArrayCopy 0 0 80
+    ReturnObject 80
+end
+
+; CASE: complete field constructor
+; RUN: verify
+; EXPECT-OK
+layout Carrier [u8 u64 u8 u64]
+layout Child [u8 u64]
+layout Holder [u8 u64 u8 u64 u8 u64 u8 u64]
+layout Other [u8 u64]
+fields Carrier [((class Child) 0 4 true 2)]
+fields Holder [((class Child) 0 4 true 2) ((class Child) 4 4 true 2)]
+storage Carrier [{0,8}*4] [0] 32 8 32
+storage Child [0 8] [0 8] 16 8 16
+storage Holder [{0,8}*8] [0 32] 64 8 64
+storage Other [0 8] [0 8] 16 8 16
+function local
+  result i64
+  params [(class Child) (class Child)]
+  frame 128
+  receiver Holder true true
+  slot 8 u64
+  slot 16 u8
+  slot 24 u64
+  slot 32 u8
+  slot 72 u64
+  slot 80 u8
+  object 16 Child false
+  object 32 Child false
+  object 80 Child false
+    BindObjectParameter 0 16 Child
+    BindObjectParameter 1 32 Child
+    InitializeClassArray 0 0 [16 32]
+    InitializeClassArray 0 1 [16 16]
+    Constant
+    Return
+end
+
+; CASE: empty complete field constructor
+; RUN: verify
+; EXPECT-OK
+layout Carrier []
+layout Child []
+layout Holder []
+layout Other []
+fields Carrier [((class Child) 0 0 true 2)]
+fields Holder [((class Child) 0 0 true 2) ((class Child) 0 0 true 2)]
+storage Carrier [] [0] 8 8 8
+storage Child [] [] 8 8 8
+storage Holder [] [0 0] 8 8 8
+storage Other [] [] 8 8 8
+function local
+  result i64
+  params [(class Child) (class Child)]
+  frame 128
+  receiver Holder true true
+  object 16 Child false
+  object 32 Child false
+  object 80 Child false
+    BindObjectParameter 0 16 Child
+    BindObjectParameter 1 32 Child
+    InitializeClassArray 0 0 [16 32]
+    InitializeClassArray 0 1 [16 16]
+    Constant
+    Return
+end
+
+; CASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-OK
+layout Carrier [u8 u64 u8 u64]
+layout Child [u8 u64]
+layout Other [u8 u64]
+fields Carrier [((class Child) 0 4 true 2)]
+storage Carrier [{0,8}*4] [0] 32 8 32
+storage Child [0 8] [0 8] 16 8 16
+storage Other [0 8] [0 8] 16 8 16
+carrier Carrier
+function local
+  result (class Child)
+  params [(class Child) (class Child)]
+  frame 128
+repeat 7
+  slot {8,16} u64
+  slot {16,16} u8
+endrepeat
+  object 16 Child false
+  object 32 Child false
+  object 64 Carrier true
+  object 80 Child false
+  object 112 Carrier true
+    BindObjectParameter 0 16 Child
+    BindObjectParameter 1 32 Child
+    BeginObject 64
+    InitializeClassArray 64 0 [16 16]
+    BeginObject 112
+    CopyObject 64 112
+    Constant 1
+    ClassArrayBoundsGuard 64
+    ClassArrayAssign 64 0 16
+    Constant 1
+    ClassArrayBoundsGuard 64
+    BeginObject 80
+    ClassArrayCopy 64 0 80
+    ReturnObject 80
+end
+
+; CASE: unchanged saved guard
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-OK
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+@@ -33,0 +34,3 @@
++    Push
++    Constant 99
++    Pop
+
+; CASE: readonly receiver projection
+; BASE: receiver checked copy and replacement
+; RUN: verify
+; EXPECT-OK
+@@ -15 +15 @@
+-  receiver Holder true false
++  receiver Holder false false
+@@ -27,3 +26,0 @@
+-    Constant 1
+-    ClassArrayBoundsGuard
+-    ClassArrayAssign 0 0 16
+
+; CASE: guard cannot merge with unguarded branch
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR:
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+@@ -30,0 +31,2 @@
++    Constant 0 bool
++    BranchFalse 1
+@@ -32,0 +35,4 @@
++    Jump 2
++    Label 1
++    Constant 1
++    Label 2
+
+; CASE: empty constructor maybe-initialization survives branch
+; BASE: empty complete field constructor
+; RUN: verify
+; EXPECT-ERROR: more than once
+@@ -20,0 +21,2 @@
++    Constant 0 bool
++    BranchFalse 1
+@@ -22 +24,3 @@
+-    InitializeClassArray 0 1 [16 16]
++    Label 1
++    InitializeClassArray 0 0 [16 32]
++    InitializeClassArray 0 1 [16 32]
+
+; CASE: empty constructor maybe-initialization survives backedge
+; BASE: empty complete field constructor
+; RUN: verify
+; EXPECT-ERROR: more than once
+@@ -20,0 +21 @@
++    Label 1
+@@ -22 +23,5 @@
+-    InitializeClassArray 0 1 [16 16]
++    Constant 0 bool
++    BranchFalse 2
++    Jump 1
++    Label 2
++    InitializeClassArray 0 1 [16 32]
+
+; CASE: scalar array guard cannot reclassify class-array payload
+; RUN: verify
+; EXPECT-ERROR: scalar array operation cannot address nested class field
+layout Carrier [u8 u64 u8 u64]
+layout Child [u8 u64]
+layout Other [u8 u64]
+fields Carrier [((class Child) 0 4 true 2)]
+storage Carrier [{0,8}*4] [0] 32 8 32
+storage Child [0 8] [0 8] 16 8 16
+storage Other [0 8] [0 8] 16 8 16
+carrier Carrier
+function local
+  result u8
+  params [(class Child) (class Child)]
+  frame 128
+repeat 7
+  slot {8,16} u64
+  slot {16,16} u8
+endrepeat
+  object 16 Child false
+  object 32 Child false
+  object 64 Carrier true
+  object 80 Child false
+  object 112 Carrier true
+    BindObjectParameter 0 16 Child
+    BindObjectParameter 1 32 Child
+    BeginObject 64
+    InitializeClassArray 64 0 [16 32]
+    BeginObject 112
+    CopyObject 64 112
+    Constant
+    BoundsGuard 64 1 u8
+    IndexLoad 64 1 u8
+    Return
+end
+
+; CASE: scalar array guard cannot reclassify class-array payload #2
+; RUN: verify
+; EXPECT-ERROR: scalar array operation cannot address nested class field
+layout Carrier [u8*6]
+layout Child [u8*3]
+layout Other [u8*3]
+fields Carrier [((class Child) 0 6 true 2)]
+storage Carrier [{0,1}*6] [0] 6 1 8
+storage Child [{0,1}*3] [{0,1}*3] 3 1 8
+storage Other [{0,1}*3] [{0,1}*3] 3 1 8
+carrier Carrier
+function local
+  result u8
+  params [(class Child) (class Child)]
+  frame 128
+  slot 14 u8
+  slot 15 u8
+  slot 16 u8
+  slot 30 u8
+  slot 31 u8
+  slot 32 u8
+  slot 59 u8
+  slot 60 u8
+  slot 61 u8
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 78 u8
+  slot 79 u8
+  slot 80 u8
+  slot 107 u8
+  slot 108 u8
+  slot 109 u8
+  slot 110 u8
+  slot 111 u8
+  slot 112 u8
+  object 16 Child false
+  object 32 Child false
+  object 64 Carrier true
+  object 80 Child false
+  object 112 Carrier true
+    BindObjectParameter 0 16 Child
+    BindObjectParameter 1 32 Child
+    BeginObject 64
+    InitializeClassArray 64 0 [16 32]
+    BeginObject 112
+    CopyObject 64 112
+    Constant 5
+    BoundsGuard 64 6 u8
+    IndexLoad 64 6 u8
+    Return
+end
+
+; CASE: missing guard
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+@@ -32 +32 @@
+-    ClassArrayBoundsGuard 64
++    Constant 1
+
+; CASE: forged root guard
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+@@ -32 +32 @@
+-    ClassArrayBoundsGuard 64
++    ClassArrayBoundsGuard 112
+
+; CASE: guard destroyed by constant
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+@@ -33,0 +34 @@
++    Constant 1
+
+; CASE: guard destroyed by conversion
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+@@ -33,0 +34,2 @@
++    Convert i64 u64
++    Convert u64
+
+; CASE: guard for wrong receiver field
+; BASE: receiver checked copy and replacement
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -31 +31 @@
+-    ClassArrayBoundsGuard
++    ClassArrayBoundsGuard 0 1
+
+; CASE: scalar guard cannot authorize class copy
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+@@ -32 +32 @@
+-    ClassArrayBoundsGuard 64
++    BoundsGuard 32 1 u8
+
+; CASE: class guard cannot authorize scalar load
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+@@ -34 +34 @@
+-    ClassArrayCopy 64 0 80
++    IndexLoad 32 1 u8
+
+; CASE: negative root
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: root offset
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+@@ -32 +32 @@
+-    ClassArrayBoundsGuard 64
++    ClassArrayBoundsGuard -1
+
+; CASE: interior root
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: exact object slot
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+@@ -32 +32 @@
+-    ClassArrayBoundsGuard 64
++    ClassArrayBoundsGuard 56
+
+; CASE: negative field
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: index out of range
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+@@ -32 +32 @@
+-    ClassArrayBoundsGuard 64
++    ClassArrayBoundsGuard 64 -1
+
+; CASE: past field
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: index out of range
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+@@ -32 +32 @@
+-    ClassArrayBoundsGuard 64
++    ClassArrayBoundsGuard 64 1
+
+; CASE: mistyped index
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+@@ -31 +31 @@
+-    Constant 1
++    Constant 1 u64
+
+; CASE: inactive root
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: outside active lifetime
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+@@ -30,0 +31 @@
++    EndObject 64
+
+; CASE: stale current lifetime guard
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR:
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+@@ -33,0 +34,3 @@
++    EndObject 64
++    BeginObject 64
++    CopyObject 112 64
+
+; CASE: stale saved lifetime guard
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+@@ -33,0 +34,5 @@
++    Push
++    EndObject 64
++    BeginObject 64
++    CopyObject 112 64
++    Pop
+
+; CASE: incomplete local root
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: not fully initialized
+@@ -25 +24,0 @@
+-    InitializeClassArray 64 0 [16 16]
+
+; CASE: empty incomplete local root
+; RUN: verify
+; EXPECT-ERROR: not completely initialized
+layout Carrier []
+layout Child []
+layout Other []
+fields Carrier [((class Child) 0 0 true 2)]
+storage Carrier [] [0] 8 8 8
+storage Child [] [] 8 8 8
+storage Other [] [] 8 8 8
+carrier Carrier
+function local
+  result (class Child)
+  params [(class Child) (class Child)]
+  frame 128
+  object 16 Child false
+  object 32 Child false
+  object 64 Carrier true
+  object 80 Child false
+  object 112 Carrier true
+    BindObjectParameter 0 16 Child
+    BindObjectParameter 1 32 Child
+    BeginObject 64
+    BeginObject 112
+    CopyObject 64 112
+    Constant 1
+    ClassArrayBoundsGuard 64
+    ClassArrayAssign 64 0 16
+    Constant 1
+    ClassArrayBoundsGuard 64
+    BeginObject 80
+    ClassArrayCopy 64 0 80
+    ReturnObject 80
+end
+
+; CASE: const local replacement
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: const object
+@@ -19 +19 @@
+-  object 64 Carrier true
++  object 64 Carrier false
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+
+; CASE: const receiver replacement
+; RUN: verify
+; EXPECT-ERROR: const receiver
+layout Carrier [u8 u64 u8 u64]
+layout Child [u8 u64]
+layout Holder [u8 u64 u8 u64 u8 u64 u8 u64]
+layout Other [u8 u64]
+fields Carrier [((class Child) 0 4 true 2)]
+fields Holder [((class Child) 0 4 true 2) ((class Child) 4 4 true 2)]
+storage Carrier [{0,8}*4] [0] 32 8 32
+storage Child [0 8] [0 8] 16 8 16
+storage Holder [{0,8}*8] [0 32] 64 8 64
+storage Other [0 8] [0 8] 16 8 16
+function local
+  result (class Child)
+  params [(class Child) (class Child)]
+  frame 128
+  receiver Holder false false
+  slot 8 u64
+  slot 16 u8
+  slot 24 u64
+  slot 32 u8
+  slot 72 u64
+  slot 80 u8
+  object 16 Child false
+  object 32 Child false
+  object 80 Child false
+    BindObjectParameter 0 16 Child
+    BindObjectParameter 1 32 Child
+    Constant 1
+    ClassArrayBoundsGuard
+    ClassArrayAssign 0 0 16
+    Constant
+    ClassArrayBoundsGuard
+    BeginObject 80
+    ClassArrayCopy 0 0 80
+    ReturnObject 80
+end
+
+; CASE: constructor indexing
+; BASE: const receiver replacement
+; RUN: verify
+; EXPECT-ERROR: during initialization
+@@ -12 +12 @@
+-  result (class Child)
++  result i64
+@@ -15 +15 @@
+-  receiver Holder false false
++  receiver Holder true true
+
+; CASE: copy result nominal mismatch
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: nominal class mismatch
+@@ -20 +20 @@
+-  object 80 Child false
++  object 80 Other false
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+
+; CASE: copy aliases root
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: aliases result
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+@@ -34 +34 @@
+-    ClassArrayCopy 64 0 80
++    ClassArrayCopy 64 0 64
+
+; CASE: copy result interior
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: exact object slot
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+@@ -34 +34 @@
+-    ClassArrayCopy 64 0 80
++    ClassArrayCopy 64 0 72
+
+; CASE: copy result inactive
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: outside active lifetime
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+@@ -33 +32,0 @@
+-    BeginObject 80
+
+; CASE: copy result already initialized
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: already initialized
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+@@ -33,0 +34,3 @@
++    Push
++    CopyObject 16 80
++    Pop
+
+; CASE: assignment source aliases root
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: aliases root
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+@@ -30 +30 @@
+-    ClassArrayAssign 64 0 16
++    ClassArrayAssign 64 0 64
+
+; CASE: assignment source incomplete
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: outside active lifetime
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+@@ -30 +30 @@
+-    ClassArrayAssign 64 0 16
++    ClassArrayAssign 64 0 80
+
+; CASE: assignment source wrong nominal
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: assignment nominal
+@@ -11 +11 @@
+-  params [(class Child) (class Child)]
++  params [(class Other) (class Child)]
+@@ -17 +17 @@
+-  object 16 Child false
++  object 16 Other false
+@@ -22 +22 @@
+-    BindObjectParameter 0 16 Child
++    BindObjectParameter 0 16 Other
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [32 32]
+
+; CASE: initializer too short
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: element count mismatch
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16]
+
+; CASE: initializer too long
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: element count mismatch
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32 16]
+
+; CASE: initializer root interior
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: exact object slot
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 56 0 [16 32]
+
+; CASE: initializer undeclared carrier
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: declared carrier
+@@ -8 +7,0 @@
+-carrier Carrier
+@@ -25 +24 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
+
+; CASE: initializer wrong carrier field
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: declared carrier
+@@ -25 +25 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 1 [16 32]
+
+; CASE: initializer repeated local
+; BASE: repeated source creates independent elements
+; RUN: verify
+; EXPECT-ERROR: already initialized
+@@ -25 +25,2 @@
+-    InitializeClassArray 64 0 [16 16]
++    InitializeClassArray 64 0 [16 32]
++    InitializeClassArray 64 0 [16 32]
+
+; CASE: initializer repeated empty local
+; BASE: empty incomplete local root
+; RUN: verify
+; EXPECT-ERROR: already initialized
+@@ -20,0 +21,2 @@
++    InitializeClassArray 64 0 [16 32]
++    InitializeClassArray 64 0 [16 32]
+
+; CASE: initializer outside constructor
+; BASE: const receiver replacement
+; RUN: verify
+; EXPECT-ERROR: constructor receiver
+@@ -15 +15 @@
+-  receiver Holder false false
++  receiver Holder true false
+@@ -27 +27 @@
+-    Constant 1
++    InitializeClassArray 0 0 [16 32]
+
+; CASE: initializer repeated receiver
+; RUN: verify
+; EXPECT-ERROR: more than once
+layout Carrier [u8 u64 u8 u64]
+layout Child [u8 u64]
+layout Holder [u8 u64 u8 u64 u8 u64 u8 u64]
+layout Other [u8 u64]
+fields Carrier [((class Child) 0 4 true 2)]
+fields Holder [((class Child) 0 4 true 2) ((class Child) 4 4 true 2)]
+storage Carrier [{0,8}*4] [0] 32 8 32
+storage Child [0 8] [0 8] 16 8 16
+storage Holder [{0,8}*8] [0 32] 64 8 64
+storage Other [0 8] [0 8] 16 8 16
+function local
+  result i64
+  params [(class Child) (class Child)]
+  frame 128
+  receiver Holder true true
+  slot 8 u64
+  slot 16 u8
+  slot 24 u64
+  slot 32 u8
+  slot 72 u64
+  slot 80 u8
+  object 16 Child false
+  object 32 Child false
+  object 80 Child false
+    BindObjectParameter 0 16 Child
+    BindObjectParameter 1 32 Child
+    InitializeClassArray 0 0 [16 32]
+    InitializeClassArray 0 0 [16 32]
+    Constant
+    Return
+end
+
+; CASE: initializer repeated empty receiver
+; RUN: verify
+; EXPECT-ERROR: more than once
+layout Carrier []
+layout Child []
+layout Holder []
+layout Other []
+fields Carrier [((class Child) 0 0 true 2)]
+fields Holder [((class Child) 0 0 true 2) ((class Child) 0 0 true 2)]
+storage Carrier [] [0] 8 8 8
+storage Child [] [] 8 8 8
+storage Holder [] [0 0] 8 8 8
+storage Other [] [] 8 8 8
+function local
+  result i64
+  params [(class Child) (class Child)]
+  frame 128
+  receiver Holder true true
+  object 16 Child false
+  object 32 Child false
+  object 80 Child false
+    BindObjectParameter 0 16 Child
+    BindObjectParameter 1 32 Child
+    InitializeClassArray 0 0 [16 32]
+    InitializeClassArray 0 0 [16 32]
+    Constant
+    Return
+end
+
+; CASE: missing empty receiver initialization
+; BASE: initializer repeated empty receiver
+; RUN: verify
+; EXPECT-ERROR: initialized
+@@ -22 +21,0 @@
+-    InitializeClassArray 0 0 [16 32]
+
+; CASE: scalar receiver operation cannot reinterpret class array
+; BASE: const receiver replacement
+; RUN: verify
+; EXPECT-ERROR: scalar array field
+@@ -15 +15 @@
+-  receiver Holder false false
++  receiver Holder true false
+@@ -28 +28 @@
+-    ClassArrayBoundsGuard
++    ReceiverArrayZero
+
+; CASE: scalar receiver operation cannot reinterpret class array #2
+; BASE: const receiver replacement
+; RUN: verify
+; EXPECT-ERROR: scalar array field
+@@ -15 +15 @@
+-  receiver Holder false false
++  receiver Holder true false
+@@ -28 +28 @@
+-    ClassArrayBoundsGuard
++    ReceiverBoundsGuard
+
+; CASE: scalar receiver operation cannot reinterpret class array #3
+; BASE: const receiver replacement
+; RUN: verify
+; EXPECT-ERROR: scalar array field
+@@ -15 +15 @@
+-  receiver Holder false false
++  receiver Holder true false
+@@ -28 +28 @@
+-    ClassArrayBoundsGuard
++    ReceiverIndexLoad
+
+; CASE: scalar receiver operation cannot reinterpret class array #4
+; BASE: const receiver replacement
+; RUN: verify
+; EXPECT-ERROR: scalar array field
+@@ -15 +15 @@
+-  receiver Holder false false
++  receiver Holder true false
+@@ -28 +28 @@
+-    ClassArrayBoundsGuard
++    ReceiverIndexStore
+
+; CASE: scalar leaf stores cannot initialize element
+; RUN: verify
+; EXPECT-ERROR: nested class field
+layout Carrier [u8 u64 u8 u64]
+layout Child [u8 u64]
+layout Other [u8 u64]
+fields Carrier [((class Child) 0 4 true 2)]
+storage Carrier [{0,8}*4] [0] 32 8 32
+storage Child [0 8] [0 8] 16 8 16
+storage Other [0 8] [0 8] 16 8 16
+carrier Carrier
+function local
+  result (class Child)
+  params [(class Child) (class Child)]
+  frame 128
+repeat 7
+  slot {8,16} u64
+  slot {16,16} u8
+endrepeat
+  object 16 Child false
+  object 32 Child false
+  object 64 Carrier true
+  object 80 Child false
+  object 112 Carrier true
+    BindObjectParameter 0 16 Child
+    BindObjectParameter 1 32 Child
+    BeginObject 64
+    Constant 1 u8
+    Store 64 u8
+    BeginObject 112
+    CopyObject 64 112
+    Constant 1
+    ClassArrayBoundsGuard 64
+    ClassArrayAssign 64 0 16
+    Constant 1
+    ClassArrayBoundsGuard 64
+    BeginObject 80
+    ClassArrayCopy 64 0 80
+    ReturnObject 80
+end
+
+; CASE: overlapping forged element object
+; BASE: scalar leaf stores cannot initialize element
+; RUN: verify
+; EXPECT-ERROR: overlapping object
+@@ -18,0 +19 @@
++  object 48 Child true
+@@ -25,2 +26 @@
+-    Constant 1 u8
+-    Store 64 u8
++    InitializeClassArray 64 0 [16 32]
+
+; CASE: zero element count
+; BASE: scalar leaf stores cannot initialize element
+; RUN: verify
+; EXPECT-ERROR: 1..64
+@@ -4 +4 @@
+-fields Carrier [((class Child) 0 4 true 2)]
++fields Carrier [((class Child) 0 4 true 0)]
+@@ -25,2 +25 @@
+-    Constant 1 u8
+-    Store 64 u8
++    InitializeClassArray 64 0 [16 32]
+
+; CASE: excess element count
+; BASE: scalar leaf stores cannot initialize element
+; RUN: verify
+; EXPECT-ERROR: 1..64
+@@ -4 +4 @@
+-fields Carrier [((class Child) 0 4 true 2)]
++fields Carrier [((class Child) 0 4 true 65)]
+@@ -25,2 +25 @@
+-    Constant 1 u8
+-    Store 64 u8
++    InitializeClassArray 64 0 [16 32]
+
+; CASE: leaf count mismatch
+; BASE: scalar leaf stores cannot initialize element
+; RUN: verify
+; EXPECT-ERROR: length mismatch
+@@ -4 +4 @@
+-fields Carrier [((class Child) 0 4 true 2)]
++fields Carrier [((class Child) 0 2 true 2)]
+@@ -25,2 +25 @@
+-    Constant 1 u8
+-    Store 64 u8
++    InitializeClassArray 64 0 [16 32]
+
+; CASE: leaf order mismatch
+; BASE: scalar leaf stores cannot initialize element
+; RUN: verify
+; EXPECT-ERROR: leaf type mismatch
+@@ -1 +1 @@
+-layout Carrier [u8 u64 u8 u64]
++layout Carrier [u8 u64*3]
+@@ -25,2 +25 @@
+-    Constant 1 u8
+-    Store 64 u8
++    InitializeClassArray 64 0 [16 32]
+
+; CASE: ordinary field count metadata
+; BASE: scalar leaf stores cannot initialize element
+; RUN: verify
+; EXPECT-ERROR: noncanonical
+@@ -4,0 +5 @@
++fields Child [(u8 0 1 false 2) (u64 1 1 false)]
+@@ -25,2 +26 @@
+-    Constant 1 u8
+-    Store 64 u8
++    InitializeClassArray 64 0 [16 32]
+
+; CASE: forged packed stride
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage
+layout Carrier [u8*6]
+layout Child [u8*3]
+layout Other [u8*3]
+fields Carrier [((class Child) 0 6 true 2)]
+storage Carrier [{0,1}*3 8 4 5] [0] 6 1 8
+storage Child [{0,1}*3] [{0,1}*3] 3 1 8
+storage Other [{0,1}*3] [{0,1}*3] 3 1 8
+carrier Carrier
+function local
+  result (class Child)
+  params [(class Child) (class Child)]
+  frame 128
+  slot 14 u8
+  slot 15 u8
+  slot 16 u8
+  slot 30 u8
+  slot 31 u8
+  slot 32 u8
+  slot 59 u8
+  slot 60 u8
+  slot 61 u8
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 78 u8
+  slot 79 u8
+  slot 80 u8
+  slot 107 u8
+  slot 108 u8
+  slot 109 u8
+  slot 110 u8
+  slot 111 u8
+  slot 112 u8
+  object 16 Child false
+  object 32 Child false
+  object 64 Carrier true
+  object 80 Child false
+  object 112 Carrier true
+    BindObjectParameter 0 16 Child
+    BindObjectParameter 1 32 Child
+    BeginObject 64
+    InitializeClassArray 64 0 [16 32]
+    BeginObject 112
+    CopyObject 64 112
+    Constant 1
+    ClassArrayBoundsGuard 64
+    ClassArrayAssign 64 0 16
+    Constant 1
+    ClassArrayBoundsGuard 64
+    BeginObject 80
+    ClassArrayCopy 64 0 80
+    ReturnObject 80
+end
+
+; CASE: forged field offset
+; BASE: scalar leaf stores cannot initialize element
+; RUN: verify
+; EXPECT-ERROR: noncanonical class storage
+@@ -5 +5 @@
+-storage Carrier [{0,8}*4] [0] 32 8 32
++storage Carrier [{0,8}*4] [8] 32 8 32
+@@ -25,2 +25 @@
+-    Constant 1 u8
+-    Store 64 u8
++    InitializeClassArray 64 0 [16 32]
+
+; CASE: unknown carrier
+; BASE: scalar leaf stores cannot initialize element
+; RUN: verify
+; EXPECT-ERROR: unknown class array carrier
+@@ -8,0 +9 @@
++carrier Missing
+@@ -25,2 +26 @@
+-    Constant 1 u8
+-    Store 64 u8
++    InitializeClassArray 64 0 [16 32]
+
+; CASE: ordinary class marked carrier
+; BASE: scalar leaf stores cannot initialize element
+; RUN: verify
+; EXPECT-ERROR: exactly one class array field
+@@ -8,0 +9 @@
++carrier Other
+@@ -25,2 +26 @@
+-    Constant 1 u8
+-    Store 64 u8
++    InitializeClassArray 64 0 [16 32]
+
+; CASE: carrier parameter
+; BASE: scalar leaf stores cannot initialize element
+; RUN: verify
+; EXPECT-ERROR: cannot cross value boundary
+@@ -11 +11 @@
+-  params [(class Child) (class Child)]
++  params [(class Carrier) (class Child)]
+@@ -25,2 +25 @@
+-    Constant 1 u8
+-    Store 64 u8
++    InitializeClassArray 64 0 [16 32]
+
+; CASE: carrier result
+; BASE: scalar leaf stores cannot initialize element
+; RUN: verify
+; EXPECT-ERROR: cannot cross value boundary
+@@ -10 +10 @@
+-  result (class Child)
++  result (class Carrier)
+@@ -25,2 +25 @@
+-    Constant 1 u8
+-    Store 64 u8
++    InitializeClassArray 64 0 [16 32]
+
+; CASE: carrier receiver
+; BASE: scalar leaf stores cannot initialize element
+; RUN: verify
+; EXPECT-ERROR: cannot be receiver
+@@ -12,0 +13 @@
++  receiver Carrier true false
+@@ -25,2 +26 @@
+-    Constant 1 u8
+-    Store 64 u8
++    InitializeClassArray 64 0 [16 32]
+
+; CASE: carrier used as array element
+; BASE: scalar leaf stores cannot initialize element
+; RUN: verify
+; EXPECT-ERROR: cannot be nested
+@@ -4 +4 @@
+-fields Carrier [((class Child) 0 4 true 2)]
++fields Carrier [((class Carrier) 0 4 true 2)]
+@@ -25,2 +25 @@
+-    Constant 1 u8
+-    Store 64 u8
++    InitializeClassArray 64 0 [16 32]
+
+; CASE: owner array elements
+; BASE: scalar leaf stores cannot initialize element
+; RUN: verify
+; EXPECT-ERROR: noncanonical
+@@ -4 +4 @@
+-fields Carrier [((class Child) 0 4 true 2)]
++fields Carrier [(bytes 0 4 true 2)]
+@@ -25,2 +25 @@
+-    Constant 1 u8
+-    Store 64 u8
++    InitializeClassArray 64 0 [16 32]
+
+; CASE: capability array elements
+; BASE: scalar leaf stores cannot initialize element
+; RUN: verify
+; EXPECT-ERROR: noncanonical
+@@ -4 +4 @@
+-fields Carrier [((class Child) 0 4 true 2)]
++fields Carrier [(span 0 4 true 2)]
+@@ -25,2 +25 @@
+-    Constant 1 u8
+-    Store 64 u8
++    InitializeClassArray 64 0 [16 32]

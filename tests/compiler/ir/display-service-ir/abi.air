@@ -1,0 +1,58 @@
+; CASE: executed
+; RUN: emit
+layout __au_console_sample [bool u8 bool]
+fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
+enum __au_console_completion 2
+enum __au_console_put_result 2
+enum __au_display_completion 2
+enum __au_display_put_result 2
+function group_leaf
+  result i64
+  params [display console]
+  frame 48
+  service 16
+  service 32
+    BindServiceParameter 0 16 Display
+    BindServiceParameter 1 32
+    Constant 65 u8
+    ServiceOperation 32 Put
+    Constant 7 u64
+    Push
+    Constant 9 u64
+    Push
+    Constant 11 u8
+    Push
+    Constant 13 u8
+    Push
+    Constant 17 u8
+    Push
+    ServiceOperation 16 Pixel 0 Display
+    Constant
+    Return
+end
+function group_caller
+  result i64
+  params [console display]
+  frame 48
+  service 16
+  service 32
+    BindServiceParameter 0 16
+    BindServiceParameter 1 32 Display
+    Jump 10
+    Label 20
+    ServiceCall group_leaf 2 0 [0 0] Display [(1 Console)]
+    ReleaseServiceLoan 2 Display
+    ReleaseServiceLoan 1
+    Jump 30
+    Label 10
+    AcquireServiceLoan 1 16
+    AcquireServiceLoan 2 32 Display
+    Jump 20
+    Label 30
+    AcquireServiceLoan 1 16
+    AcquireServiceLoan 2 32 Display
+    ServiceCall group_leaf 2 0 [0 0] Display [(1 Console)]
+    ReleaseServiceLoan 2 Display
+    ReleaseServiceLoan 1
+    Return
+end

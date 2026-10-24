@@ -1,0 +1,84 @@
+; CASE: branch and loop call maxima, reflection edges and pruned imports
+; RUN: stack-facts
+; CHECK-JSON: functions.branches.local_bytes 32
+; CHECK-JSON: functions.branches.calls {"aurora_reflect_size":16,"leaf":32}
+; CHECK-JSON: functions.unused_import <missing>
+; CHECK-JSON: functions.leaf {"local_bytes":16,"calls":{},"copied_record":null}
+; CHECK-JSON-COUNT: functions 6
+; CHECK-JSON: functions.aurora_reflect_size.local_bytes 8
+; CHECK-JSON: functions.aurora_reflect_size.calls {}
+; CHECK-JSON: functions.aurora_reflect_field_count.local_bytes 8
+; CHECK-JSON: functions.aurora_reflect_field_count.calls {}
+; CHECK-JSON: functions.__au_reflect_s1_size.local_bytes 8
+; CHECK-JSON: functions.__au_reflect_s1_size.calls {}
+; CHECK-JSON: functions.__au_reflect_s1_field_count.local_bytes 8
+; CHECK-JSON: functions.__au_reflect_s1_field_count.calls {}
+; RUN: emit
+; CHECK-NOT: unused_import:
+; RUN: emit local
+; CHECK-NOT: .globl 
+; RUN: stack-facts local
+; CHECK: {"version":2,"functions":{"__au_reflect_s1_field_count":{"local_bytes":8,"calls":{},"copied_record":null},"__au_reflect_s1_size":{"local_bytes":8,"calls":{},"copied_record":null},"aurora_reflect_field_count":{"local_bytes":8,"calls":{},"copied_record":null},"aurora_reflect_size":{"local_bytes":8,"calls":{},"copied_record":null},"branches":{"local_bytes":32,"calls":{"aurora_reflect_size":16,"leaf":32},"copied_record":null},"leaf":{"local_bytes":16,"calls":{},"copied_record":null}}}
+views [(0 []) (1 [])]
+function branches
+  result i64
+  frame 0
+    Constant 1
+    Push
+    Call leaf
+    Pop
+    Constant 1 bool
+    BranchFalse 1
+    Call leaf
+    Jump 2
+    Label 1
+    Constant 2
+    Push
+    Call leaf
+    Pop
+    Label 2
+    Label 3
+    Constant 0 bool
+    BranchFalse 4
+    Call leaf
+    Jump 3
+    Label 4
+    Constant
+    MetadataQuery
+    Return
+end
+function leaf
+  result i64
+  frame 0
+  scope 1
+    Constant 42
+    Return
+end
+function unused_import
+  result i64
+  frame 0
+  scope 1
+    Constant 42
+    Return
+end
+
+; CASE: invalid dead imported body still fails verification
+; BASE: branch and loop call maxima, reflection edges and pruned imports
+; RUN: verify
+; EXPECT-ERROR: invalid frame size
+@@ -38 +38 @@
+-  frame 0
++  frame -16
+
+; CASE: compact deterministic stack facts
+; RUN: stack-facts
+; CHECK-JSON-COUNT: functions 3
+; CHECK-JSON: functions.branches <missing>
+; CHECK-JSON: functions.probe_scalar.service_abi <missing>
+; CHECK: {"version":2,"functions":{"aurora_reflect_field_count":{"local_bytes":8,"calls":{},"copied_record":null},"aurora_reflect_size":{"local_bytes":8,"calls":{},"copied_record":null},"probe_scalar":{"local_bytes":16,"calls":{},"copied_record":null}}}\n
+function probe_scalar
+  result i64
+  frame 0
+    Constant 42
+    Return
+end

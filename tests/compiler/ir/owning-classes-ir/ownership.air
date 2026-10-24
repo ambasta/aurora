@@ -1,0 +1,799 @@
+; CASE: owning return transfers exactly one root
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_entry
+  result (class Parcel)
+  params [region (class Parcel)]
+  frame 416
+  slot 16 u8
+  slot 56 u64
+  slot 96 u8
+  slot 104 u8
+  slot 144 u64
+  slot 184 u8
+  slot 192 u8
+  slot 232 u64
+  slot 272 u8
+  object 96 Parcel true
+  object 184 Parcel true
+  object 272 Parcel true
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 96 Parcel
+    BeginObject 184
+    MoveObject 96 184
+    EndObject 96
+    ReturnOwnedObject 184
+end
+
+; CASE: six mixed resource inputs and owning result
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_entry
+  result (class Parcel)
+  params [region (class Parcel) (class Parcel)]
+  frame 416
+  slot 16 u8
+  slot 56 u64
+  slot 96 u8
+  slot 104 u8
+  slot 144 u64
+  slot 184 u8
+  slot 192 u8
+  slot 232 u64
+  slot 272 u8
+  object 96 Parcel true
+  object 184 Parcel true
+  object 272 Parcel true
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 96 Parcel
+    BindOwnedObjectParameter 2 184 Parcel
+    BeginBytes 304
+    Constant 7
+    AllocateBytes 8 304
+    Constant 201 u8
+    Push
+    Constant 4886718345 u64
+    Push
+    BeginObject 272
+    ResourceCall owning_six 8 [0 96 0 304 0 184] 272
+    EndObject 184
+    EndBytes 304
+    EndObject 96
+    ReturnOwnedObject 272
+end
+function owning_six
+  result (class Parcel)
+  params [region (class Parcel) u8 bytes u64 (class Parcel)]
+  frame 416
+  slot 16 u8
+  slot 56 u64
+  slot 96 u8
+  slot 104 u8
+  slot 144 u64
+  slot 184 u8
+  slot 192 u8
+  slot 232 u64
+  slot 272 u8
+  slot 344 u8
+  slot 352 u64
+  object 96 Parcel true
+  object 184 Parcel true
+  object 272 Parcel true
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 96 Parcel
+    BindParameter 2 344 u8
+    BindBytesParameter 3 304
+    BindParameter 4 352 u64
+    BindOwnedObjectParameter 5 184 Parcel
+    BytesLength 304
+    EndBytes 304
+    EndObject 184
+    ReturnOwnedObject 96
+end
+
+; CASE: six mixed resource inputs and scalar result
+; BASE: six mixed resource inputs and owning result
+; RUN: emit
+@@ -17 +17 @@
+-  result (class Parcel)
++  result i64
+@@ -46,2 +46 @@
+-    BeginObject 272
+-    ResourceCall owning_six 8 [0 96 0 304 0 184] 272
++    ResourceCall owning_six 8 [0 96 0 304 0 184]
+@@ -51 +50 @@
+-    ReturnOwnedObject 272
++    Return
+@@ -54 +53 @@
+-  result (class Parcel)
++  result i64
+@@ -84 +83,2 @@
+-    ReturnOwnedObject 96
++    EndObject 96
++    Return
+
+; CASE: owning receiver readonly borrowed access
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_method
+  result i64
+  frame 0
+  receiver Parcel false false
+    BytesLength 0 1
+    Push
+    BytesLength 0 3
+    BinaryValue
+    Return
+end
+
+; CASE: owning receiver mutable borrowed access
+; RUN: emit
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_method
+  result bool
+  frame 0
+  receiver Parcel true false
+    Constant
+    Push
+    Constant 42 u8
+    BytesStore 0 1
+    Return
+end
+
+; CASE: copy object cannot clone resource
+; BASE: owning return transfers exactly one root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -17 +17 @@
+-  result (class Parcel)
++  result i64
+@@ -39 +39 @@
+-    MoveObject 96 184
++    CopyObject 96 184
+@@ -41 +41,6 @@
+-    ReturnOwnedObject 184
++    BytesLength 184 1
++    Push
++    BytesLength 184 3
++    BinaryValue
++    EndObject 184
++    Return
+
+; CASE: copied bind cannot clone resource
+; BASE: owning return transfers exactly one root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -17 +17 @@
+-  result (class Parcel)
++  result i64
+@@ -37 +37 @@
+-    BindOwnedObjectParameter 1 96 Parcel
++    BindObjectParameter 1 96 Parcel
+@@ -41 +41,6 @@
+-    ReturnOwnedObject 184
++    BytesLength 184 1
++    Push
++    BytesLength 184 3
++    BinaryValue
++    EndObject 184
++    Return
+
+; CASE: copied return cannot clone resource
+; BASE: owning return transfers exactly one root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -41 +41 @@
+-    ReturnOwnedObject 184
++    ReturnObject 184
+
+; CASE: aggregate call cannot bypass ownership
+; BASE: six mixed resource inputs and owning result
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -47 +47 @@
+-    ResourceCall owning_six 8 [0 96 0 304 0 184] 272
++    AggregateCall owning_six [0 96 0 304 0 184] 272
+
+; CASE: ordinary call cannot bypass ownership
+; BASE: six mixed resource inputs and owning result
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -47 +47 @@
+-    ResourceCall owning_six 8 [0 96 0 304 0 184] 272
++    Call owning_six
+
+; CASE: move source aliases destination
+; BASE: owning return transfers exactly one root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -17 +17 @@
+-  result (class Parcel)
++  result i64
+@@ -39 +39 @@
+-    MoveObject 96 184
++    MoveObject 96 96
+@@ -41 +41,6 @@
+-    ReturnOwnedObject 184
++    BytesLength 184 1
++    Push
++    BytesLength 184 3
++    BinaryValue
++    EndObject 184
++    Return
+
+; CASE: move const root
+; BASE: owning return transfers exactly one root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -17 +17 @@
+-  result (class Parcel)
++  result i64
+@@ -29 +29 @@
+-  object 96 Parcel true
++  object 96 Parcel false
+@@ -41 +41,6 @@
+-    ReturnOwnedObject 184
++    BytesLength 184 1
++    Push
++    BytesLength 184 3
++    BinaryValue
++    EndObject 184
++    Return
+
+; CASE: move already-initialized distinct root
+; BASE: six mixed resource inputs and owning result
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -46,0 +47 @@
++    MoveObject 96 184
+
+; CASE: move from initialized const local root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_entry
+  result i64
+  params [region (class Parcel)]
+  frame 416
+  slot 16 u8
+  slot 56 u64
+  slot 96 u8
+  slot 104 u8
+  slot 144 u64
+  slot 184 u8
+  slot 192 u8
+  slot 232 u64
+  slot 272 u8
+  object 96 Parcel true
+  object 184 Parcel false
+  object 272 Parcel true
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 96 Parcel
+    BeginObject 184
+    MoveObject 96 184
+    BeginObject 272
+    MoveObject 184 272
+    EndObject 96
+    BytesLength 184 1
+    Push
+    BytesLength 184 3
+    BinaryValue
+    EndObject 184
+    Return
+end
+
+; CASE: mutate descriptor through const local root
+; BASE: move from initialized const local root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -40,2 +40,4 @@
+-    BeginObject 272
+-    MoveObject 184 272
++    Constant
++    Push
++    Constant 7 u8
++    BytesStore 184 1
+
+; CASE: descriptor-only pristine object cannot become complete from zero leaves
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+layout Copy [u8 u64]
+layout Empty []
+layout Only []
+layout Pair []
+layout Parcel [u8 u64 u8]
+fields Copy [(u8 0 1 false) (u64 1 1 false)]
+fields Empty []
+fields Only [(bytes 0 0 false)]
+fields Pair [(bytes 0 0 false) (bytes 0 0 false)]
+fields Parcel [(u8 0 1 false) (bytes 1 0 false) (u64 1 1 false) (bytes 2 0 false) (u8 2 1 false)]
+storage Copy [0 8] [0 8] 16 8 16
+storage Empty [] [] 8 8 8
+storage Only [] [0] 32 8 32
+storage Pair [] [0 32] 64 8 64
+storage Parcel [{0,40}*3] [0 8 40 48 80] 88 8 88
+function owning_only
+  result i64
+  params [region (class Only)]
+  frame 416
+  object 96 Only true
+  object 184 Only false
+  region 8
+  region 416
+  bytes 304 true
+  bytes 336 true
+    BindRegionParameter 0 8
+    BindOwnedObjectParameter 1 96 Only
+    BeginObject 184
+    EndObject 96
+    BytesLength 184 0
+    EndObject 184
+    Return
+end
+
+; CASE: move twice
+; BASE: move from initialized const local root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-  object 184 Parcel false
++  object 184 Parcel true
+@@ -41 +41 @@
+-    MoveObject 184 272
++    MoveObject 96 272
+
+; CASE: move into live root
+; BASE: move from initialized const local root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-  object 184 Parcel false
++  object 184 Parcel true
+@@ -40,2 +40 @@
+-    BeginObject 272
+-    MoveObject 184 272
++    MoveObject 184 184
+
+; CASE: move into unbegun root
+; BASE: move from initialized const local root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-  object 184 Parcel false
++  object 184 Parcel true
+@@ -38 +37,0 @@
+-    BeginObject 184
+@@ -40,2 +38,0 @@
+-    BeginObject 272
+-    MoveObject 184 272
+
+; CASE: return consumed root
+; BASE: owning return transfers exactly one root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -41 +41 @@
+-    ReturnOwnedObject 184
++    ReturnOwnedObject 96
+
+; CASE: return const root
+; BASE: owning return transfers exactly one root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-  object 184 Parcel true
++  object 184 Parcel false
+
+; CASE: return leaks consumed binding
+; BASE: owning return transfers exactly one root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -40 +39,0 @@
+-    EndObject 96
+
+; CASE: scalar return leaks live owner
+; BASE: move from initialized const local root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-  object 184 Parcel false
++  object 184 Parcel true
+@@ -40,2 +39,0 @@
+-    BeginObject 272
+-    MoveObject 184 272
+@@ -47 +44,0 @@
+-    EndObject 184
+
+; CASE: return owning with a second owner leaks
+; BASE: six mixed resource inputs and owning result
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -48 +47,0 @@
+-    EndObject 184
+
+; CASE: end owner twice
+; BASE: move from initialized const local root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-  object 184 Parcel false
++  object 184 Parcel true
+@@ -40,2 +39,0 @@
+-    BeginObject 272
+-    MoveObject 184 272
+@@ -47,0 +46 @@
++    EndObject 184
+
+; CASE: end unbegun root
+; BASE: move from initialized const local root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-  object 184 Parcel false
++  object 184 Parcel true
+@@ -37,0 +38 @@
++    EndObject 184
+@@ -40,2 +40,0 @@
+-    BeginObject 272
+-    MoveObject 184 272
+
+; CASE: restart owning parameter lifetime
+; BASE: move from initialized const local root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-  object 184 Parcel false
++  object 184 Parcel true
+@@ -40,2 +39,0 @@
+-    BeginObject 272
+-    MoveObject 184 272
+@@ -47,0 +46,2 @@
++    BeginObject 96
++    EndObject 96
+
+; CASE: scalar load from moved root
+; BASE: move from initialized const local root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-  object 184 Parcel false
++  object 184 Parcel true
+@@ -40,2 +40 @@
+-    BeginObject 272
+-    MoveObject 184 272
++    Load 96 u8
+
+; CASE: scalar store into moved root
+; BASE: move from initialized const local root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-  object 184 Parcel false
++  object 184 Parcel true
+@@ -40,2 +40,2 @@
+-    BeginObject 272
+-    MoveObject 184 272
++    Constant 7 u8
++    Store 96 u8
+
+; CASE: byte read from moved root
+; BASE: move from initialized const local root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-  object 184 Parcel false
++  object 184 Parcel true
+@@ -40,2 +40 @@
+-    BeginObject 272
+-    MoveObject 184 272
++    BytesLength 96 1
+
+; CASE: unclosed pristine root
+; BASE: move from initialized const local root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -30 +30 @@
+-  object 184 Parcel false
++  object 184 Parcel true
+@@ -40,2 +39,0 @@
+-    BeginObject 272
+-    MoveObject 184 272
+@@ -47,0 +46 @@
++    BeginObject 272
+
+; CASE: whole-result wrong nominal class
+; BASE: owning return transfers exactly one root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -17 +17 @@
+-  result (class Parcel)
++  result (class Only)
+
+; CASE: resource result aliases owning argument
+; BASE: six mixed resource inputs and owning result
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -47 +47 @@
+-    ResourceCall owning_six 8 [0 96 0 304 0 184] 272
++    ResourceCall owning_six 8 [0 96 0 304 0 184] 96
+
+; CASE: duplicate owning positional arguments
+; BASE: six mixed resource inputs and owning result
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -47 +47 @@
+-    ResourceCall owning_six 8 [0 96 0 304 0 184] 272
++    ResourceCall owning_six 8 [0 96 0 304 0 96] 272
+
+; CASE: inactive authority cannot replace owner provenance
+; BASE: six mixed resource inputs and owning result
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+; EXPECT-ERROR: region authority is not active
+@@ -47 +47 @@
+-    ResourceCall owning_six 8 [0 96 0 304 0 184] 272
++    ResourceCall owning_six 416 [0 96 0 304 0 184] 272
+
+; CASE: scalar argument cannot name owner
+; BASE: six mixed resource inputs and owning result
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -47 +47 @@
+-    ResourceCall owning_six 8 [0 96 0 304 0 184] 272
++    ResourceCall owning_six 8 [0 96 96 304 0 184] 272
+
+; CASE: ordinary resource call cannot carry receiver
+; BASE: six mixed resource inputs and owning result
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -47 +47 @@
+-    ResourceCall owning_six 8 [0 96 0 304 0 184] 272
++    ResourceCall owning_six 8 [0 96 0 304 0 184] 272 96
+
+; CASE: resource call exact positional count
+; BASE: six mixed resource inputs and owning result
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -47 +47 @@
+-    ResourceCall owning_six 8 [0 96 0 304 0 184] 272
++    ResourceCall owning_six 8 [0 96 0 304 0] 272
+
+; CASE: wrong owning parameter nominal identity
+; BASE: move from initialized const local root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+; EXPECT-ERROR: owning class parameter type mismatch
+@@ -30 +30 @@
+-  object 184 Parcel false
++  object 184 Parcel true
+@@ -37 +37 @@
+-    BindOwnedObjectParameter 1 96 Parcel
++    BindOwnedObjectParameter 1 96 Only
+@@ -40,2 +39,0 @@
+-    BeginObject 272
+-    MoveObject 184 272
+
+; CASE: source entry exact owning root
+; BASE: move from initialized const local root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+; EXPECT-ERROR: owning class parameter requires exact nominal object slot
+@@ -30 +30 @@
+-  object 184 Parcel false
++  object 184 Parcel true
+@@ -37 +37 @@
+-    BindOwnedObjectParameter 1 96 Parcel
++    BindOwnedObjectParameter 1 88 Parcel
+@@ -40,2 +39,0 @@
+-    BeginObject 272
+-    MoveObject 184 272
+
+; CASE: source entry nominal owning root
+; BASE: move from initialized const local root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+; EXPECT-ERROR: owning class parameter requires exact nominal object slot
+@@ -18 +18 @@
+-  params [region (class Parcel)]
++  params [region (class Only)]
+@@ -30 +30 @@
+-  object 184 Parcel false
++  object 184 Parcel true
+@@ -37 +37 @@
+-    BindOwnedObjectParameter 1 96 Parcel
++    BindOwnedObjectParameter 1 96 Only
+@@ -40,2 +39,0 @@
+-    BeginObject 272
+-    MoveObject 184 272
+
+; CASE: source entry mutable owning root
+; BASE: move from initialized const local root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+; EXPECT-ERROR: owning class parameter must be mutable
+@@ -29,2 +29,2 @@
+-  object 96 Parcel true
+-  object 184 Parcel false
++  object 96 Parcel false
++  object 184 Parcel true
+@@ -40,2 +39,0 @@
+-    BeginObject 272
+-    MoveObject 184 272
+
+; CASE: source entry distinct owning roots
+; BASE: move from initialized const local root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+; EXPECT-ERROR: owning class parameter bindings overlap
+@@ -18 +18 @@
+-  params [region (class Parcel)]
++  params [region (class Parcel) (class Parcel)]
+@@ -30 +30 @@
+-  object 184 Parcel false
++  object 184 Parcel true
+@@ -37,0 +38 @@
++    BindOwnedObjectParameter 2 96 Parcel
+@@ -40,2 +40,0 @@
+-    BeginObject 272
+-    MoveObject 184 272
+
+; CASE: owning class requires first region
+; BASE: move from initialized const local root
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -18 +18 @@
+-  params [region (class Parcel)]
++  params [i64 (class Parcel)]
+@@ -30 +30 @@
+-  object 184 Parcel false
++  object 184 Parcel true
+@@ -40,2 +39,0 @@
+-    BeginObject 272
+-    MoveObject 184 272
+
+; CASE: owning method result unsupported
+; BASE: owning receiver readonly borrowed access
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -17 +17 @@
+-  result i64
++  result (class Parcel)
+
+; CASE: owning method parameter unsupported
+; BASE: owning receiver readonly borrowed access
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -17,0 +18 @@
++  params [(class Parcel)]
+
+; CASE: const receiver mutation
+; BASE: owning receiver mutable borrowed access
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -19 +19 @@
+-  receiver Parcel true false
++  receiver Parcel false false
+
+; CASE: negative field selector
+; BASE: owning receiver readonly borrowed access
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -20 +20 @@
+-    BytesLength 0 1
++    BytesLength 0 -2
+
+; CASE: scalar field cannot impersonate descriptor
+; BASE: owning receiver readonly borrowed access
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -20 +20 @@
+-    BytesLength 0 1
++    BytesLength 0 2
+
+; CASE: field selector beyond layout
+; BASE: owning receiver readonly borrowed access
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -20 +20 @@
+-    BytesLength 0 1
++    BytesLength 0 5
+
+; CASE: negative root cannot borrow descriptor
+; BASE: owning receiver readonly borrowed access
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -20 +20 @@
+-    BytesLength 0 1
++    BytesLength -8 1
+
+; CASE: borrowed receiver cannot extract owner
+; BASE: owning receiver readonly borrowed access
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -23,0 +24 @@
++    ReturnBytes

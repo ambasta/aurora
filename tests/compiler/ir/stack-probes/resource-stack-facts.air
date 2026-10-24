@@ -1,0 +1,35 @@
+; CASE: resource call, hidden allocation and cleanup facts
+; RUN: stack-facts
+; CHECK-JSON: functions.resource_caller.copied_record null
+; CHECK-JSON: functions.resource_callee.copied_record null
+; CHECK-JSON: functions.resource_caller.local_bytes 128
+; CHECK-JSON: functions.resource_caller.calls {"__au_runtime_bytes_allocate":80,"__au_runtime_bytes_drop":96,"resource_callee":128}
+; CHECK-JSON: functions.resource_callee.local_bytes 96
+; CHECK-JSON: functions.resource_callee.calls {"__au_runtime_bytes_drop":96}
+function resource_caller
+  result i64
+  params [region]
+  frame 48
+  region 8
+  bytes 40 true
+    BindRegionParameter 0 8
+    BeginBytes 40
+    Constant 1
+    AllocateBytes 8 40
+    ResourceCall resource_callee 8 [0 40]
+    EndBytes 40
+    Constant 42
+    Return
+end
+function resource_callee
+  result i64
+  params [region bytes]
+  frame 48
+  region 8
+  bytes 40 true
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BytesLength 40
+    EndBytes 40
+    Return
+end

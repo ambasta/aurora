@@ -1,0 +1,467 @@
+; CASE: builtin typed local owner
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout ValuesBox [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields ValuesBox [((values Word) 0 0 false) (bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage ValuesBox [64] [{0,32}*3] 72 8 72
+storage Word [0] [0] 8 8 8
+function values_entry
+  result i64
+  params [region (values Word)]
+  frame 208
+  slot 16 i64
+  object 80 ValuesBox true
+  span 208
+  region 8
+  bytes 112 true
+  bytes 144 true
+  values 112 Word
+  values 144 Word
+    BindRegionParameter 0 8
+    BindBytesParameter 1 112
+    AcquireObjectLoan 1 112 true
+    BorrowedCall borrow_values [(112 1 -1)]
+    ReleaseObjectLoan 1
+    EndBytes 112
+    Return
+end
+function borrow_values
+  result i64
+  params [(values Word)]
+  frame 0
+  roots 1
+  firstmut 1
+    BytesLength
+    Return
+end
+
+; CASE: builtin typed field cannot gain private authority from free caller
+; BASE: builtin typed local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -15 +15 @@
+-  params [region (values Word)]
++  params [region (class ValuesBox)]
+@@ -26,3 +26,3 @@
+-    BindBytesParameter 1 112
+-    AcquireObjectLoan 1 112 true
+-    BorrowedCall borrow_values [(112 1 -1)]
++    BindOwnedObjectParameter 1 80 ValuesBox
++    AcquireObjectLoan 1 80 true 0
++    BorrowedCall borrow_values [(80 1 0)]
+@@ -30 +30 @@
+-    EndBytes 112
++    EndObject 80
+
+; CASE: builtin typed lexical receiver field
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout ValuesBox [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields ValuesBox [((values Word) 0 0 false) (bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage ValuesBox [64] [{0,32}*3] 72 8 72
+storage Word [0] [0] 8 8 8
+function values_entry
+  result i64
+  frame 64
+  receiver ValuesBox true false
+  span 56
+    AcquireObjectLoan 1 0 true 0
+    BorrowedCall borrow_values [(0 1 0)]
+    ReleaseObjectLoan 1
+    Return
+end
+function borrow_values
+  result i64
+  params [(values Word)]
+  frame 0
+  roots 1
+  firstmut 1
+    BytesLength
+    Return
+end
+
+; CASE: builtin typed formal forwards and remains live
+; BASE: builtin typed local owner
+; RUN: emit
+@@ -38,0 +39,3 @@
++    AcquireObjectLoan 2 0 true
++    BorrowedCall borrow_values_leaf [(0 2 -1)]
++    ReleaseObjectLoan 2
+@@ -41,0 +45,9 @@
++function borrow_values_leaf
++  result i64
++  params [(values Word)]
++  frame 0
++  roots 1
++  firstmut 1
++    BytesLength
++    Return
++end
+
+; CASE: builtin typed copied and scalar tails
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+layout ValuesBox [i64]
+layout Word [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+fields ValuesBox [((values Word) 0 0 false) (bytes 0 0 false) (i64 0 1 false)]
+fields Word [(i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+storage ValuesBox [64] [{0,32}*3] 72 8 72
+storage Word [0] [0] 8 8 8
+function values_entry
+  result i64
+  params [region (values Word)]
+  frame 208
+  slot 16 i64
+  slot 152 i64
+  object 80 ValuesBox true
+  object 152 Word false
+  span 208
+  region 8
+  bytes 112 true
+  bytes 144 true
+  values 112 Word
+  values 144 Word
+    BindRegionParameter 0 8
+    BindBytesParameter 1 112
+    BeginObject 152
+    Constant 7
+    Store 152
+    AcquireObjectLoan 1 112 true
+    Constant 3
+    Push
+    BorrowedCall borrow_values [(112 1 -1)] [152 0]
+    ReleaseObjectLoan 1
+    EndObject 152
+    EndBytes 112
+    Return
+end
+function borrow_values
+  result i64
+  params [(values Word) (class Word) i64]
+  frame 16
+  roots 1
+  firstmut 1
+  slot 8 i64
+  slot 16 i64
+  object 8 Word false
+    BindObjectParameter 0 8 Word
+    BindParameter 1 16
+    BytesLength
+    EndObject 8
+    Return
+end
+
+; CASE: builtin typed loan requires acquire
+; BASE: builtin typed local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -27 +26,0 @@
+-    AcquireObjectLoan 1 112 true
+
+; CASE: builtin typed loan requires release
+; BASE: builtin typed local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -29 +28,0 @@
+-    ReleaseObjectLoan 1
+
+; CASE: builtin typed loan cannot release before call
+; BASE: builtin typed local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -27,0 +28 @@
++    ReleaseObjectLoan 1
+
+; CASE: builtin typed loan cannot reuse completed loan
+; BASE: builtin typed local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -28,0 +29 @@
++    BorrowedCall borrow_values [(112 1 -1)]
+
+; CASE: builtin typed loan requires exact loan identity
+; BASE: builtin typed local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -28 +28 @@
+-    BorrowedCall borrow_values [(112 1 -1)]
++    BorrowedCall borrow_values [(112 2 -1)]
+
+; CASE: builtin typed loan requires exact owner root
+; BASE: builtin typed local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -28 +28 @@
+-    BorrowedCall borrow_values [(112 1 -1)]
++    BorrowedCall borrow_values [(144 1 -1)]
+
+; CASE: builtin typed loan requires exact field lane
+; BASE: builtin typed local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -28 +28 @@
+-    BorrowedCall borrow_values [(112 1 -1)]
++    BorrowedCall borrow_values [(112 1 0)]
+
+; CASE: builtin typed loan requires exact nominal element
+; BASE: builtin typed local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -1,0 +2 @@
++layout ForeignWord [i64]
+@@ -35 +36 @@
+-  params [(values Word)]
++  params [(values ForeignWord)]
+
+; CASE: builtin typed loan cannot borrow raw bytes
+; BASE: builtin typed local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -15 +15 @@
+-  params [region (values Word)]
++  params [region bytes]
+@@ -23 +22,0 @@
+-  values 112 Word
+
+; CASE: builtin typed loan cannot acquire shared builtin owner
+; BASE: builtin typed local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -27 +27 @@
+-    AcquireObjectLoan 1 112 true
++    AcquireObjectLoan 1 112
+
+; CASE: builtin typed loan cannot borrow ended lifetime
+; BASE: builtin typed local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -26,0 +27 @@
++    EndBytes 112
+
+; CASE: builtin typed loan cannot borrow consumed owner
+; BASE: builtin typed local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -26,0 +27,2 @@
++    BeginBytes 144
++    MoveBytes 112 144
+
+; CASE: builtin typed loan cannot borrow moved const owner
+; BASE: builtin typed local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -22 +22 @@
+-  bytes 144 true
++  bytes 144 false
+@@ -27,2 +27,5 @@
+-    AcquireObjectLoan 1 112 true
+-    BorrowedCall borrow_values [(112 1 -1)]
++    BeginBytes 144
++    MoveBytes 112 144
++    EndBytes 112
++    AcquireObjectLoan 1 144 true
++    BorrowedCall borrow_values [(144 1 -1)]
+@@ -30 +33 @@
+-    EndBytes 112
++    EndBytes 144
+
+; CASE: builtin typed loan end while acquired
+; BASE: builtin typed local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -27,0 +28 @@
++    EndBytes 112
+
+; CASE: builtin typed loan move while acquired
+; BASE: builtin typed local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -27,0 +28,2 @@
++    BeginBytes 144
++    MoveBytes 112 144
+
+; CASE: builtin typed loan read while acquired
+; BASE: builtin typed local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -27,0 +28 @@
++    BytesLength 112
+
+; CASE: builtin typed loan aliasing second loan
+; BASE: builtin typed local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -27,0 +28 @@
++    AcquireObjectLoan 2 112 true
+
+; CASE: builtin typed loan rejects local field selector -2
+; BASE: builtin typed local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -27 +27 @@
+-    AcquireObjectLoan 1 112 true
++    AcquireObjectLoan 1 112 true -2
+
+; CASE: builtin typed loan rejects local field selector 0
+; BASE: builtin typed local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -27 +27 @@
+-    AcquireObjectLoan 1 112 true
++    AcquireObjectLoan 1 112 true 0
+
+; CASE: builtin typed loan rejects local field selector 2147483647
+; BASE: builtin typed local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -27 +27 @@
+-    AcquireObjectLoan 1 112 true
++    AcquireObjectLoan 1 112 true 2147483647
+
+; CASE: builtin typed field rejects non-typed owner field 1
+; BASE: builtin typed lexical receiver field
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -18,2 +18,2 @@
+-    AcquireObjectLoan 1 0 true 0
+-    BorrowedCall borrow_values [(0 1 0)]
++    AcquireObjectLoan 1 0 true 1
++    BorrowedCall borrow_values [(0 1 1)]
+
+; CASE: builtin typed field rejects non-typed owner field 2
+; BASE: builtin typed lexical receiver field
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -18,2 +18,2 @@
+-    AcquireObjectLoan 1 0 true 0
+-    BorrowedCall borrow_values [(0 1 0)]
++    AcquireObjectLoan 1 0 true 2
++    BorrowedCall borrow_values [(0 1 2)]
+
+; CASE: builtin typed field rejects non-typed owner field 3
+; BASE: builtin typed lexical receiver field
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -18,2 +18,2 @@
+-    AcquireObjectLoan 1 0 true 0
+-    BorrowedCall borrow_values [(0 1 0)]
++    AcquireObjectLoan 1 0 true 3
++    BorrowedCall borrow_values [(0 1 3)]
+
+; CASE: builtin typed field matches acquired field exactly
+; BASE: builtin typed lexical receiver field
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -19 +19 @@
+-    BorrowedCall borrow_values [(0 1 0)]
++    BorrowedCall borrow_values [(0 1 1)]
+
+; CASE: builtin typed field cannot end receiver lifetime
+; BASE: builtin typed lexical receiver field
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -18,0 +19 @@
++    EndObject
+
+; CASE: builtin typed field locks scalar sibling read
+; BASE: builtin typed lexical receiver field
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -18,0 +19 @@
++    ReceiverLoad 2
+
+; CASE: builtin typed field locks scalar sibling write
+; BASE: builtin typed lexical receiver field
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -18,0 +19,2 @@
++    Constant 3
++    ReceiverStore 2
+
+; CASE: builtin typed field locks owner sibling read
+; BASE: builtin typed lexical receiver field
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -18,0 +19 @@
++    BytesLength 0 1
+
+; CASE: builtin typed field rejects outstanding sibling view
+; BASE: builtin typed lexical receiver field
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -17,0 +18 @@
++    BorrowOwnedSpan 0 1 56
+
+; CASE: builtin typed field rejects sibling owner loan
+; BASE: builtin typed lexical receiver field
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -7 +7 @@
+-fields ValuesBox [((values Word) 0 0 false) (bytes 0 0 false) (i64 0 1 false)]
++fields ValuesBox [((values Word) 0 0 false) ((values Word) 0 0 false) (i64 0 1 false)]
+@@ -18,0 +19 @@
++    AcquireObjectLoan 2 0 true 1
+
+; CASE: builtin typed field rejects const receiver
+; BASE: builtin typed lexical receiver field
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -16 +16 @@
+-  receiver ValuesBox true false
++  receiver ValuesBox false false
+
+; CASE: builtin typed forward cannot leak loan
+; BASE: builtin typed local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -38,0 +39,2 @@
++    AcquireObjectLoan 2 0 true
++    BorrowedCall borrow_values_leaf [(0 2 -1)]
+@@ -41,0 +44,9 @@
++function borrow_values_leaf
++  result i64
++  params [(values Word)]
++  frame 0
++  roots 1
++  firstmut 1
++    BytesLength
++    Return
++end
+
+; CASE: builtin typed formal cannot mint receiver field authority
+; BASE: builtin typed local owner
+; RUN: verify
+; EXPECT-ERROR: invalid typed IR
+@@ -38,0 +39,3 @@
++    AcquireObjectLoan 2 0 true 0
++    BorrowedCall borrow_values_leaf [(0 2 -1)]
++    ReleaseObjectLoan 2
+@@ -41,0 +45,9 @@
++function borrow_values_leaf
++  result i64
++  params [(values Word)]
++  frame 0
++  roots 1
++  firstmut 1
++    BytesLength
++    Return
++end

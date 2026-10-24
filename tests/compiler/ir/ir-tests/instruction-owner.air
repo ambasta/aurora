@@ -1,0 +1,54 @@
+; CASE: instruction ingress preserves unresolved raw type tails
+; RUN: verify
+; EXPECT-ERROR: noncanonical instruction type payload
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42 (i64 elem=u8)
+    Store 8
+    Load 8
+    Return
+end
+
+; CASE: instruction ingress preserves unresolved raw type tails #2
+; BASE: instruction ingress preserves unresolved raw type tails
+; RUN: verify
+; EXPECT-ERROR: noncanonical instruction type payload
+@@ -5 +5 @@
+-    Constant 42 (i64 elem=u8)
++    Constant 42 (i64 len=1)
+
+; CASE: instruction ingress preserves unresolved raw type tails #3
+; BASE: instruction ingress preserves unresolved raw type tails
+; RUN: verify
+; EXPECT-ERROR: noncanonical instruction type payload
+@@ -5 +5 @@
+-    Constant 42 (i64 elem=u8)
++    Constant 42 (i64 eparam=T)
+
+; CASE: instruction ingress preserves unresolved raw type tails #4
+; BASE: instruction ingress preserves unresolved raw type tails
+; RUN: verify
+; EXPECT-ERROR: noncanonical instruction type payload
+@@ -5 +5 @@
+-    Constant 42 (i64 elem=u8)
++    Constant 42 (i64 lparam=N)
+
+; CASE: instruction ingress preserves unresolved raw type tails #5
+; BASE: instruction ingress preserves unresolved raw type tails
+; RUN: verify
+; EXPECT-ERROR: noncanonical instruction type payload
+@@ -5 +5 @@
+-    Constant 42 (i64 elem=u8)
++    Constant 42 (i64 targs=[(type i64)])
+
+; CASE: declaration admission precedes malformed instruction tail
+; BASE: instruction ingress preserves unresolved raw type tails
+; RUN: verify
+; EXPECT-ERROR: invalid slot payload type
+@@ -4,2 +4,2 @@
+-  slot 8 i64
+-    Constant 42 (i64 elem=u8)
++  slot 8 (i64 lparam=N)
++    Constant 42 (i64 lparam=N)

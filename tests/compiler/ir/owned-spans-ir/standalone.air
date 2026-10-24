@@ -1,0 +1,327 @@
+; CASE: standalone nested empty owned view
+; RUN: verify
+; EXPECT-OK
+function owned_span
+  result i64
+  params [region bytes]
+  frame 256
+  span 136
+  span 192
+  span 248
+  region 8
+  bytes 40 true
+  bytes 72 true
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BorrowOwnedSpan 40 -1 136
+    ReborrowSpan 136 192
+    Constant
+    Push
+    Constant
+    Subspan 192 248
+    SpanLength 248
+    EndSpan 248
+    EndSpan 192
+    EndSpan 136
+    EndBytes 40
+    Return
+end
+
+; CASE: borrow inactive owner
+; BASE: standalone nested empty owned view
+; RUN: verify
+; EXPECT-ERROR: lifetime is not active
+@@ -13 +13 @@
+-    BorrowOwnedSpan 40 -1 136
++    BorrowOwnedSpan 72 -1 136
+
+; CASE: borrow owner interior
+; BASE: standalone nested empty owned view
+; RUN: verify
+; EXPECT-ERROR: exact typed spill
+@@ -13 +13 @@
+-    BorrowOwnedSpan 40 -1 136
++    BorrowOwnedSpan 39 -1 136
+
+; CASE: borrow arbitrary selector
+; BASE: standalone nested empty owned view
+; RUN: verify
+; EXPECT-ERROR: field selector
+@@ -13 +13 @@
+-    BorrowOwnedSpan 40 -1 136
++    BorrowOwnedSpan 40 -2 136
+
+; CASE: standalone cannot pretend to be object
+; BASE: standalone nested empty owned view
+; RUN: verify
+; EXPECT-ERROR: exact object slot
+@@ -13 +13 @@
+-    BorrowOwnedSpan 40 -1 136
++    BorrowOwnedSpan 40 0 136
+
+; CASE: borrow untyped destination
+; BASE: standalone nested empty owned view
+; RUN: verify
+; EXPECT-ERROR: exact typed spill
+@@ -13 +13 @@
+-    BorrowOwnedSpan 40 -1 136
++    BorrowOwnedSpan 40 -1 128
+
+; CASE: borrow consumed owner
+; BASE: standalone nested empty owned view
+; RUN: verify
+; EXPECT-ERROR: live ownership
+@@ -12,0 +13,2 @@
++    BeginBytes 72
++    MoveBytes 40 72
+
+; CASE: borrow pristine owner
+; BASE: standalone nested empty owned view
+; RUN: verify
+; EXPECT-ERROR: live ownership
+@@ -13 +13,2 @@
+-    BorrowOwnedSpan 40 -1 136
++    BeginBytes 72
++    BorrowOwnedSpan 72 -1 136
+
+; CASE: write freezes exact standalone owner
+; BASE: standalone nested empty owned view
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+@@ -18,0 +19,4 @@
++    Constant
++    Push
++    Constant 1 u8
++    BytesStore 40
+
+; CASE: resize freezes exact standalone owner
+; BASE: standalone nested empty owned view
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+@@ -18,0 +19,2 @@
++    Constant
++    BytesResize 40
+
+; CASE: move freezes exact standalone owner
+; BASE: standalone nested empty owned view
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+@@ -18,0 +19,2 @@
++    BeginBytes 72
++    MoveBytes 40 72
+
+; CASE: drop freezes exact standalone owner
+; BASE: standalone nested empty owned view
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+@@ -18,0 +19 @@
++    EndBytes 40
+
+; CASE: parent cannot end before empty descendant
+; BASE: standalone nested empty owned view
+; RUN: verify
+; EXPECT-ERROR: live child reborrow
+@@ -18,0 +19 @@
++    EndSpan 192
+
+; CASE: root cannot end before descendants
+; BASE: standalone nested empty owned view
+; RUN: verify
+; EXPECT-ERROR: live child reborrow
+@@ -18,0 +19 @@
++    EndSpan 136
+
+; CASE: return cannot implicitly end local owner
+; RUN: verify
+; EXPECT-ERROR: active owned byte lifetime
+function owned_span
+  result i64
+  params [region bytes]
+  frame 256
+  span 136
+  span 192
+  span 248
+  region 8
+  bytes 40 true
+  bytes 72 true
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BorrowOwnedSpan 40 -1 136
+    Constant
+    Return
+end
+
+; CASE: ordinary span return rejected
+; BASE: standalone nested empty owned view
+; RUN: verify
+; EXPECT-ERROR: resource signature requires scalar
+@@ -2 +2 @@
+-  result i64
++  result span
+
+; CASE: forged summary on scalar result
+; BASE: standalone nested empty owned view
+; RUN: verify
+; EXPECT-ERROR: summary requires span result
+@@ -4,0 +5 @@
++  spanfield 0
+
+; CASE: branch loses capability
+; BASE: standalone nested empty owned view
+; RUN: verify
+; EXPECT-ERROR: incompatible active span capabilities
+@@ -18,0 +19,4 @@
++    Constant 1 bool
++    BranchFalse 1
++    EndSpan 248
++    Label 1
+
+; CASE: branch reuses spill with another site
+; BASE: standalone nested empty owned view
+; RUN: verify
+; EXPECT-ERROR: incompatible active span capabilities
+@@ -18,0 +19,5 @@
++    Constant 1 bool
++    BranchFalse 1
++    EndSpan 248
++    ReborrowSpan 192 248
++    Label 1
+
+; CASE: copied reads coexist with owned view
+; BASE: standalone nested empty owned view
+; RUN: verify
+; EXPECT-OK
+@@ -18,0 +19,4 @@
++    BytesLength 40
++    BytesOk 40
++    Constant
++    BytesLoad 40
+
+; CASE: independent standalone owner remains writable
+; BASE: standalone nested empty owned view
+; RUN: verify
+; EXPECT-OK
+@@ -12,0 +13,3 @@
++    BeginBytes 72
++    Constant 3
++    AllocateBytes 8 72
+@@ -18,0 +22,3 @@
++    Constant
++    BytesResize 72
++    EndBytes 72
+
+; CASE: write restored only after every descendant ends
+; BASE: standalone nested empty owned view
+; RUN: verify
+; EXPECT-OK
+@@ -22,0 +23,3 @@
++    Constant 1
++    BytesResize 40
++    Constant
+
+; CASE: closed child site can restart across loop
+; BASE: standalone nested empty owned view
+; RUN: verify
+; EXPECT-OK
+@@ -13,0 +14,7 @@
++    Label 1
++    ReborrowSpan 136 192
++    EndSpan 192
++    Constant 0 bool
++    BranchFalse 2
++    Jump 1
++    Label 2
+
+; CASE: temporary argument survives readonly call
+; RUN: verify
+; EXPECT-OK
+function owned_span
+  result i64
+  params [region bytes]
+  frame 256
+  span 136
+  span 192
+  span 248
+  region 8
+  bytes 40 true
+  bytes 72 true
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BorrowOwnedSpan 40 -1 136
+    ReborrowSpan 136 192
+    Constant
+    Push
+    Constant
+    Subspan 192 248
+    Constant 1 bool
+    Push
+    AggregateCall read_args [0 0] 0 [248 0]
+    SpanLength 248
+    EndSpan 248
+    EndSpan 192
+    EndSpan 136
+    EndBytes 40
+    Return
+end
+function read_args
+  result i64
+  params [span bool]
+  frame 64
+  slot 64 bool
+  span 56
+    BindSpanParameter 0 56
+    BindParameter 1 64 bool
+    SpanLength 56
+    EndSpan 56
+    Return
+end
+
+; CASE: later argument cannot resize earlier view owner
+; BASE: temporary argument survives readonly call
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+@@ -20,0 +21,2 @@
++    Constant
++    BytesResize 40
+
+; CASE: consuming call cannot invalidate view
+; RUN: verify
+; EXPECT-ERROR: live readonly span
+function owned_span
+  result i64
+  params [region bytes]
+  frame 256
+  span 136
+  span 192
+  span 248
+  region 8
+  bytes 40 true
+  bytes 72 true
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    BorrowOwnedSpan 40 -1 136
+    ReborrowSpan 136 192
+    Constant
+    Push
+    Constant
+    Subspan 192 248
+    ResourceCall consume 8 [0 40]
+    SpanLength 248
+    EndSpan 248
+    EndSpan 192
+    EndSpan 136
+    EndBytes 40
+    Return
+end
+function consume
+  result i64
+  params [region bytes]
+  frame 48
+  region 8
+  bytes 40 true
+    BindRegionParameter 0 8
+    BindBytesParameter 1 40
+    EndBytes 40
+    Constant
+    Return
+end

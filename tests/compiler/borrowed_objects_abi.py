@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Adapted literal-layout, handwritten borrowed-object ABI oracle (no compiler invocation).
 
-The separate C++ IR producer is supplied prebuilt. The older logical-span oracle
+The direct IR is a textual IR case (aurora-ir-check prints its assembly). The older logical-span oracle
 provides assembly execution/canary plumbing only; parameter shapes, records,
 method registers and results below are independently stated.
 """
@@ -10,6 +10,9 @@ import argparse
 from pathlib import Path
 import tempfile
 import logical_spans_abi as abi
+
+# Verified textual IR cases; the aurora-ir-check driver prints their assembly.
+AIR = Path(__file__).resolve().parent / "ir" / "borrowed-objects-ir" / "abi.air"
 
 
 def shapes():
@@ -263,7 +266,7 @@ def main():
         return result
 
     abi.command = checked_command
-    raw = abi.command([args.ir_tests.resolve()]).stdout.decode()
+    raw = abi.command([args.ir_tests.resolve(), "--output", AIR, "borrowed-objects-abi"]).stdout.decode()
     (args.artifacts / "generated.s").write_text(raw)
     extra = abi.blob("method_hidden", [0])
     observed = raw

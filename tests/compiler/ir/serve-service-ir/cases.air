@@ -1,0 +1,539 @@
+; CASE: accepted service graph 1
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+layout __au_serve_request [(enum __au_serve_status display=builtin::ServeStatus) u64]
+fields __au_serve_request [((enum __au_serve_status display=builtin::ServeStatus) 0 1 false) (u64 1 1 false)]
+enum __au_serve_status 2
+function serve_ir_operation
+  result u64
+  params [serve]
+  frame 48
+  slot 24 u64
+  slot 32 (enum __au_serve_status display=builtin::ServeStatus)
+  object 32 __au_serve_request false
+  service 16
+    BindServiceParameter 0 16 Serve
+    BeginObject 32
+    Constant 42 u64
+    ServiceOperation 16 ServeExchange 32 Serve
+    EndObject 32
+    Constant 42 u64
+    Return
+end
+
+; CASE: accepted service graph 2
+; RUN: emit
+; CHECK-NOT: __au_runtime_bytes_
+; CHECK-NOT: .globl caller
+; RUN: stack-facts
+layout __au_serve_request [(enum __au_serve_status display=builtin::ServeStatus) u64]
+fields __au_serve_request [((enum __au_serve_status display=builtin::ServeStatus) 0 1 false) (u64 1 1 false)]
+enum __au_serve_status 2
+function serve_ir_operation
+  result u64
+  params [serve]
+  frame 48
+  slot 24 u64
+  slot 32 (enum __au_serve_status display=builtin::ServeStatus)
+  object 32 __au_serve_request false
+  service 16
+    BindServiceParameter 0 16 Serve
+    BeginObject 32
+    Constant 42 u64
+    ServiceOperation 16 ServeExchange 32 Serve
+    EndObject 32
+    Constant 42 u64
+    Return
+end
+function serve_ir_entry
+  result u64
+  params [serve]
+  frame 48
+  service 16
+    BindServiceParameter 0 16 Serve
+    AcquireServiceLoan 1 16 Serve
+    ServiceCall serve_ir_operation 1 0 [0] Serve
+    ReleaseServiceLoan 1 Serve
+    Return
+end
+
+; CASE: Serve runtime and singleton entry facts
+; BASE: accepted service graph 1
+; RUN: stack-facts
+; CHECK-JSON: functions.serve_ir_operation.service_abi.calls.__au_runtime_serve_exchange {"sysv_arguments":3,"result_max":1}
+; CHECK-JSON: functions.serve_ir_operation.service_abi.record {"parameters":[["builtin::ServeSession",16]],"result_bytes":8}
+
+; CASE: rejected: hostile mutation 4
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 16 ServeExchange 32 -1
+
+; CASE: rejected: hostile mutation 5
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 16 ServeExchange 32
+
+; CASE: rejected: hostile mutation 6
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 16 ServeExchange 32 Display
+
+; CASE: rejected: hostile mutation 7
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 16 ServeExchange 32 IommuEvent
+
+; CASE: rejected: hostile mutation 8
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 16 ServeExchange 32 Call
+
+; CASE: rejected: hostile mutation 9
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 16 ServeExchange 32 Port
+
+; CASE: rejected: hostile mutation 10
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 16 ServeExchange 32 6
+
+; CASE: rejected: hostile mutation 11
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 16 ServeExchange 32 999
+
+; CASE: rejected: hostile mutation 12
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 16 -1 32 Serve
+
+; CASE: rejected: hostile mutation 13
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 16 Next 32 Serve
+
+; CASE: rejected: hostile mutation 14
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 16 Put 32 Serve
+
+; CASE: rejected: hostile mutation 15
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 16 Pixel 32 Serve
+
+; CASE: rejected: hostile mutation 16
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 16 IommuPoll 32 Serve
+
+; CASE: rejected: hostile mutation 17
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 16 IommuAcknowledge 32 Serve
+
+; CASE: rejected: hostile mutation 18
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 16 Call 32 Serve
+
+; CASE: rejected: hostile mutation 19
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 16 PortRead8 32 Serve
+
+; CASE: rejected: hostile mutation 20
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 16 PortWrite8 32 Serve
+
+; CASE: rejected: hostile mutation 21
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 16 9 32 Serve
+
+; CASE: rejected: hostile mutation 22
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 16 999 32 Serve
+
+; CASE: rejected: hostile mutation 23
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 0 ServeExchange 32 Serve
+
+; CASE: rejected: hostile mutation 24
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 8 ServeExchange 32 Serve
+
+; CASE: rejected: hostile mutation 25
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 24 ServeExchange 32 Serve
+
+; CASE: rejected: hostile mutation 26
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 32 ServeExchange 32 Serve
+
+; CASE: rejected: hostile mutation 27
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 16 ServeExchange 0 Serve
+
+; CASE: rejected: hostile mutation 28
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 16 ServeExchange 8 Serve
+
+; CASE: rejected: hostile mutation 29
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 16 ServeExchange 16 Serve
+
+; CASE: rejected: hostile mutation 30
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 16 ServeExchange 24 Serve
+
+; CASE: rejected: hostile mutation 31
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -15 +15 @@
+-    ServiceOperation 16 ServeExchange 32 Serve
++    ServiceOperation 16 ServeExchange 40 Serve
+
+; CASE: rejected: hostile mutation 32
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -14 +14 @@
+-    Constant 42 u64
++    Constant 1
+
+; CASE: rejected: hostile mutation 33
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -14 +14 @@
+-    Constant 42 u64
++    Constant 1 u8
+
+; CASE: rejected: hostile mutation 34
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -14 +14 @@
+-    Constant 42 u64
++    Constant 1 bool
+
+; CASE: rejected: hostile mutation 35
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -6 +6 @@
+-  params [serve]
++  params [serve console]
+
+; CASE: rejected: hostile mutation 36
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -6 +6 @@
+-  params [serve]
++  params [serve display]
+
+; CASE: rejected: hostile mutation 37
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -6 +6 @@
+-  params [serve]
++  params [serve iommu]
+
+; CASE: rejected: hostile mutation 38
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -6 +6 @@
+-  params [serve]
++  params [serve call]
+
+; CASE: rejected: hostile mutation 39
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -6 +6 @@
+-  params [serve]
++  params [serve uart]
+
+; CASE: rejected: hostile mutation 40
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -6 +6 @@
+-  params [serve]
++  params [serve serve]
+
+; CASE: rejected: hostile mutation 41
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -6 +6 @@
+-  params [serve]
++  params [serve region]
+
+; CASE: rejected: hostile mutation 42
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -6 +6 @@
+-  params [serve]
++  params [(serve forged)]
+
+; CASE: rejected: hostile mutation 43
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -6 +6 @@
+-  params [serve]
++  params [(serve len=1)]
+
+; CASE: rejected: hostile mutation 44
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -5 +5 @@
+-  result u64
++  result serve
+
+; CASE: rejected: hostile mutation 45
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -0,0 +1 @@
++layout Forged [serve]
+@@ -1,0 +3 @@
++fields Forged [(serve 0 1 false)]
+
+; CASE: rejected: hostile mutation 46
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -11 +10,0 @@
+-  service 16
+
+; CASE: rejected: hostile mutation 47
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -12 +11,0 @@
+-    BindServiceParameter 0 16 Serve
+
+; CASE: rejected: hostile mutation 48
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -14,0 +15 @@
++    AcquireServiceLoan 1 16 Serve
+
+; CASE: rejected: hostile mutation 49
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -3 +3 @@
+-enum __au_serve_status 2
++enum __au_serve_status 0
+
+; CASE: rejected: hostile mutation 50
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -3 +3 @@
+-enum __au_serve_status 2
++enum __au_serve_status 1
+
+; CASE: rejected: hostile mutation 51
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -3 +3 @@
+-enum __au_serve_status 2
++enum __au_serve_status 3
+
+; CASE: rejected: hostile mutation 52
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -3 +3 @@
+-enum __au_serve_status 2
++enum __au_serve_status 256
+
+; CASE: rejected: hostile mutation 53
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -1 +1 @@
+-layout __au_serve_request [(enum __au_serve_status display=builtin::ServeStatus) u64]
++layout __au_serve_request [i64 u64]
+@@ -2,0 +3 @@
++enum __au_call_status 3
+
+; CASE: rejected: hostile mutation 54
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -1 +1 @@
+-layout __au_serve_request [(enum __au_serve_status display=builtin::ServeStatus) u64]
++layout __au_serve_request [u64 u64]
+@@ -2,0 +3 @@
++enum __au_call_status 3
+
+; CASE: rejected: hostile mutation 55
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -1 +1 @@
+-layout __au_serve_request [(enum __au_serve_status display=builtin::ServeStatus) u64]
++layout __au_serve_request [(enum __au_call_status display=builtin::CallStatus) u64]
+@@ -2,0 +3 @@
++enum __au_call_status 3
+
+; CASE: rejected: hostile mutation 56
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -1 +1 @@
+-layout __au_serve_request [(enum __au_serve_status display=builtin::ServeStatus) u64]
++layout __au_serve_request [(enum __au_serve_status display=builtin::ServeStatus) i64]
+
+; CASE: rejected: hostile mutation 57
+; BASE: accepted service graph 1
+; RUN: verify
+; EXPECT-ERROR:
+@@ -2 +2 @@
+-fields __au_serve_request [((enum __au_serve_status display=builtin::ServeStatus) 0 1 false) (u64 1 1 false)]
++fields __au_serve_request [((enum __au_serve_status display=builtin::ServeStatus) 0 1 false) (u64 0 1 false)]
+
+; CASE: rejected: hostile mutation 58
+; BASE: accepted service graph 2
+; RUN: verify
+; EXPECT-ERROR:
+@@ -27 +27 @@
+-    ServiceCall serve_ir_operation 1 0 [0] Serve
++    ServiceCall serve_ir_operation 1 0 [0] Call
+
+; CASE: rejected: hostile mutation 59
+; BASE: accepted service graph 2
+; RUN: verify
+; EXPECT-ERROR:
+@@ -27 +27 @@
+-    ServiceCall serve_ir_operation 1 0 [0] Serve
++    Call serve_ir_operation
+
+; CASE: rejected: hostile mutation 60
+; BASE: accepted service graph 2
+; RUN: verify
+; EXPECT-ERROR:
+@@ -27,0 +28 @@
++    ServiceCall serve_ir_operation 1 0 [0] Serve
+
+; CASE: rejected: hostile mutation 61
+; BASE: accepted service graph 2
+; RUN: verify
+; EXPECT-ERROR:
+@@ -26 +25,0 @@
+-    AcquireServiceLoan 1 16 Serve
+
+; CASE: rejected: hostile mutation 62
+; BASE: accepted service graph 2
+; RUN: verify
+; EXPECT-ERROR:
+@@ -28 +27,0 @@
+-    ReleaseServiceLoan 1 Serve

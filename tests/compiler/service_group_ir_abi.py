@@ -7,6 +7,9 @@ from pathlib import Path
 import subprocess
 import tempfile
 
+# Verified textual IR cases; the aurora-ir-check driver prints their assembly.
+AIR = Path(__file__).resolve().parent / "ir" / "display-service-ir" / "abi.air"
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -32,7 +35,7 @@ def main():
         (ROOT / "build").mkdir(exist_ok=True)
         work = Path(tempfile.mkdtemp(prefix="service-group-ir-abi-", dir=ROOT / "build"))
     assembly = work / "nonlexical.s"
-    result = run([binary, assembly])
+    result = run([binary, "--output", AIR, "executed", assembly])
     print(result.stdout.decode(), end="")
     text = assembly.read_text()
     if ".local group_caller" not in text:

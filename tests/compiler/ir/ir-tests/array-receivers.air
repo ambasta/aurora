@@ -1,0 +1,1565 @@
+; CASE: logical array fields constructor and checked methods
+; RUN: emit
+layout ArrayBox [i64*3 bool*3 i64 i64]
+fields ArrayBox [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
+function test
+  result i64
+  frame 64
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  object 64 ArrayBox true
+    BeginObject 64
+    MethodCall construct_array 64
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_array 64
+    Constant 1
+    Push
+    MethodCall get_array 64
+    Return
+end
+function construct_array
+  result i64
+  frame 0
+  receiver ArrayBox true true
+    Constant 7
+    ReceiverStore
+    ReceiverArrayZero 1
+    Constant 1 bool
+    ReceiverStore 2 bool
+    ReceiverArrayZero 3
+    ReceiverArrayZero 4
+    Constant
+    Return
+end
+function get_array
+  result i64
+  params [i64]
+  frame 16
+  receiver ArrayBox false false
+  slot 8 i64
+    BindParameter 0 8
+    Load 8
+    ReceiverBoundsGuard 1
+    ReceiverIndexLoad 1
+    Return
+end
+function set_array
+  result i64
+  params [i64 i64]
+  frame 16
+  receiver ArrayBox true false
+  slot 8 i64
+  slot 16 i64
+    BindParameter 0 8
+    BindParameter 1 16
+    Load 8
+    ReceiverBoundsGuard 1
+    Push
+    Load 16
+    ReceiverIndexStore 1
+    Constant
+    Return
+end
+
+; CASE: array fields copied through complete private value ABI
+; RUN: emit
+layout ArrayBox [i64*3 bool*3 i64 i64]
+fields ArrayBox [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
+function test
+  result i64
+  frame 64
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  object 64 ArrayBox true
+    BeginObject 64
+    MethodCall construct_array 64
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_array 64
+    Constant 1
+    Push
+    MethodCall get_array 64
+    Return
+end
+function construct_array
+  result i64
+  frame 0
+  receiver ArrayBox true true
+    Constant 7
+    ReceiverStore
+    ReceiverArrayZero 1
+    Constant 1 bool
+    ReceiverStore 2 bool
+    ReceiverArrayZero 3
+    ReceiverArrayZero 4
+    Constant
+    Return
+end
+function get_array
+  result i64
+  params [i64]
+  frame 16
+  receiver ArrayBox false false
+  slot 8 i64
+    BindParameter 0 8
+    Load 8
+    ReceiverBoundsGuard 1
+    ReceiverIndexLoad 1
+    Return
+end
+function set_array
+  result i64
+  params [i64 i64]
+  frame 16
+  receiver ArrayBox true false
+  slot 8 i64
+  slot 16 i64
+    BindParameter 0 8
+    BindParameter 1 16
+    Load 8
+    ReceiverBoundsGuard 1
+    Push
+    Load 16
+    ReceiverIndexStore 1
+    Constant
+    Return
+end
+function array_scalar_getter
+  result i64
+  frame 16
+  receiver ArrayBox false false
+  slot 8 i64
+    ReceiverLoad
+    Return
+end
+function array_bool_getter
+  result bool
+  frame 16
+  receiver ArrayBox false false
+  slot 8 i64
+    ReceiverLoad 2 bool
+    Return
+end
+function array_bool_index_getter
+  result bool
+  frame 16
+  receiver ArrayBox false false
+  slot 8 i64
+    Constant 1
+    ReceiverBoundsGuard 3
+    ReceiverIndexLoad 3
+    Return
+end
+function array_bool_setter
+  result i64
+  frame 16
+  receiver ArrayBox true false
+  slot 8 i64
+    Constant 1
+    ReceiverBoundsGuard 3
+    Push
+    Constant 1 bool
+    ReceiverIndexStore 3
+    Constant
+    Return
+end
+function array_scalar_mapping
+  result i64
+  frame 64
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  object 64 ArrayBox true
+    BeginObject 64
+    MethodCall construct_array 64
+    MethodCall array_scalar_getter 64
+    Return
+end
+function array_bool_mapping
+  result bool
+  frame 64
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  object 64 ArrayBox true
+    BeginObject 64
+    MethodCall construct_array 64
+    MethodCall array_bool_getter 64
+    Return
+end
+function array_bool_zero
+  result bool
+  frame 64
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  object 64 ArrayBox true
+    BeginObject 64
+    MethodCall construct_array 64
+    MethodCall array_bool_index_getter 64
+    Return
+end
+function array_bool_store
+  result bool
+  frame 64
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  object 64 ArrayBox true
+    BeginObject 64
+    MethodCall construct_array 64
+    MethodCall array_bool_setter 64
+    MethodCall array_bool_index_getter 64
+    Return
+end
+function array_dynamic
+  result i64
+  params [i64]
+  frame 80
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  slot 72 i64
+  object 64 ArrayBox true
+    BindParameter 0 72
+    BeginObject 64
+    MethodCall construct_array 64
+    Load 72
+    Push
+    MethodCall get_array 64
+    Return
+end
+function array_explosive_setter
+  result i64
+  params [i64 i64]
+  frame 16
+  receiver ArrayBox true false
+  slot 8 i64
+  slot 16 i64
+    BindParameter 0 8
+    BindParameter 1 16
+    Load 8
+    ReceiverBoundsGuard 1
+    Push
+    Call array_explosive_rhs
+    ReceiverIndexStore 1
+    Constant
+    Return
+end
+function array_explosive_rhs
+  result i64
+  frame 16
+  slot 8 i64
+  slot 16 i64
+    Constant 1
+    Push
+    Constant
+    BinaryValue CheckedDivide
+    Return
+end
+function array_store_dynamic
+  result i64
+  params [i64]
+  frame 80
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  slot 72 i64
+  object 64 ArrayBox true
+    BindParameter 0 72
+    BeginObject 64
+    MethodCall construct_array 64
+    Load 72
+    Push
+    Constant 42
+    Push
+    MethodCall array_explosive_setter 64
+    Return
+end
+function copy_array_box
+  result (class ArrayBox)
+  params [(class ArrayBox)]
+  frame 64
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  object 64 ArrayBox false
+    BindObjectParameter 0 64 ArrayBox
+    ReturnObject 64
+end
+function array_copy
+  result i64
+  frame 192
+repeat 3
+  slot {8,64} i64
+  slot {16,64} i64
+  slot {24,64} bool
+  slot {32,64} bool
+  slot {40,64} bool
+  slot {48,64} i64
+  slot {56,64} i64
+  slot {64,64} i64
+endrepeat
+  object 64 ArrayBox true
+  object 128 ArrayBox false
+  object 192 ArrayBox false
+    BeginObject 64
+    MethodCall construct_array 64
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_array 64
+    BeginObject 128
+    Load 64
+    Store 128
+    Load 56
+    Store 120
+    Load 48
+    Store 112
+    Load 40 bool
+    Store 104 bool
+    Load 32 bool
+    Store 96 bool
+    Load 24 bool
+    Store 88 bool
+    Load 16
+    Store 80
+    Load 8
+    Store 72
+    BeginObject 192
+    AggregateCall copy_array_box [128] 192
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_array 64
+    Constant 1
+    Push
+    MethodCall get_array 192
+    Return
+end
+
+; CASE: logical fields unknown nominal layout
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: unknown class layout
+@@ -2,0 +3 @@
++fields Unknown [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
+
+; CASE: logical array range offset -1
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: invalid logical class field shape
+@@ -2 +2 @@
+-fields ArrayBox [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
++fields ArrayBox [(i64 0 1 false) (i64 -1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
+
+; CASE: logical array range offset 0
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: invalid logical class field shape
+@@ -2 +2 @@
+-fields ArrayBox [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
++fields ArrayBox [(i64 0 1 false) (i64 0 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
+
+; CASE: logical array range offset 2
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: invalid logical class field shape
+@@ -2 +2 @@
+-fields ArrayBox [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
++fields ArrayBox [(i64 0 1 false) (i64 2 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
+
+; CASE: logical array range offset 8192
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: invalid logical class field shape
+@@ -2 +2 @@
+-fields ArrayBox [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
++fields ArrayBox [(i64 0 1 false) (i64 8192 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
+
+; CASE: logical array length -1
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: invalid logical class field shape
+@@ -2 +2 @@
+-fields ArrayBox [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
++fields ArrayBox [(i64 0 1 false) (i64 1 -1 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
+
+; CASE: logical array length 0
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: invalid logical class field shape
+@@ -2 +2 @@
+-fields ArrayBox [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
++fields ArrayBox [(i64 0 1 false) (i64 1 0 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
+
+; CASE: logical array length 65
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: invalid logical class field shape
+@@ -2 +2 @@
+-fields ArrayBox [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
++fields ArrayBox [(i64 0 1 false) (i64 1 65 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
+
+; CASE: logical scalar range cannot hide array
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: invalid logical class field shape
+@@ -2 +2 @@
+-fields ArrayBox [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
++fields ArrayBox [(i64 0 1 false) (i64 1 2 false) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
+
+; CASE: logical arrays require scalar leaves
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: invalid logical class field shape
+@@ -2 +2 @@
+-fields ArrayBox [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
++fields ArrayBox [(i64 0 1 false) (own 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
+
+; CASE: logical array leaf payload matches layout
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: leaf type mismatch
+@@ -1 +1 @@
+-layout ArrayBox [i64*3 bool*3 i64 i64]
++layout ArrayBox [i64 i64 u64 bool*3 i64 i64]
+
+; CASE: logical array range cannot escape layout
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: range exceeds layout
+@@ -2 +2 @@
+-fields ArrayBox [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
++fields ArrayBox [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 3 true)]
+
+; CASE: logical fields cover every leaf
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: do not cover complete layout
+@@ -2 +2 @@
+-fields ArrayBox [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
++fields ArrayBox [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true)]
+
+; CASE: explicit empty shape cannot hide payload
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: do not cover complete layout
+@@ -2 +2 @@
+-fields ArrayBox [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
++fields ArrayBox []
+
+; CASE: absent shape cannot forge array access
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: requires array field
+@@ -2 +1,0 @@
+-fields ArrayBox [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
+
+; CASE: scalar receiver load cannot access array
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: receiver field type/layout
+@@ -49 +49 @@
+-    ReceiverBoundsGuard 1
++    ReceiverLoad 1
+
+; CASE: scalar receiver init cannot partially initialize array
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: receiver field type/layout
+@@ -33 +33 @@
+-    ReceiverArrayZero 1
++    ReceiverStore 1
+
+; CASE: array constructor must initialize every field
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: before all fields initialized
+@@ -36 +35,0 @@
+-    ReceiverArrayZero 3
+
+; CASE: array constructor rejects repeated zero
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: array initialized more than once
+@@ -32,0 +33 @@
++    ReceiverArrayZero 1
+
+; CASE: array constructor conditional missing zero
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: before all fields initialized
+@@ -32,0 +33,2 @@
++    Constant 1 bool
++    BranchFalse 1
+@@ -33,0 +36 @@
++    Label 1
+
+; CASE: array constructor conditional duplicate zero
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: array initialized more than once
+@@ -33,0 +34,4 @@
++    Constant 1 bool
++    BranchFalse 1
++    ReceiverArrayZero 1
++    Label 1
+
+; CASE: array constructor loop cannot repeat initialization
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: array initialized more than once
+@@ -32,0 +33 @@
++    Label 1
+@@ -33,0 +35,4 @@
++    Constant 1 bool
++    BranchFalse 2
++    Jump 1
++    Label 2
+
+; CASE: array zero requires constructor
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: zero requires constructor
+@@ -49 +49 @@
+-    ReceiverBoundsGuard 1
++    ReceiverArrayZero 1
+
+; CASE: array write requires mutable receiver
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: write through const receiver
+@@ -57 +57 @@
+-  receiver ArrayBox true false
++  receiver ArrayBox false false
+
+; CASE: array zero requires receiver
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: without bound receiver
+@@ -14,0 +15 @@
++    ReceiverArrayZero 1
+
+; CASE: array guard requires receiver
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: without bound receiver
+@@ -14,0 +15 @@
++    ReceiverBoundsGuard 1
+
+; CASE: array load requires receiver
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: without bound receiver
+@@ -14,0 +15 @@
++    ReceiverIndexLoad 1
+
+; CASE: array store requires receiver
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: without bound receiver
+@@ -14,0 +15 @@
++    ReceiverIndexStore 1
+
+; CASE: array operation rejects scalar or invalid zero
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: requires array field
+@@ -49 +49 @@
+-    ReceiverBoundsGuard 1
++    ReceiverArrayZero
+
+; CASE: array operation rejects scalar or invalid guard
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: requires array field
+@@ -49 +49 @@
+-    ReceiverBoundsGuard 1
++    ReceiverBoundsGuard
+
+; CASE: array operation rejects scalar or invalid load
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: requires array field
+@@ -49 +49 @@
+-    ReceiverBoundsGuard 1
++    ReceiverIndexLoad
+
+; CASE: array operation rejects scalar or invalid store
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: requires array field
+@@ -49 +49 @@
+-    ReceiverBoundsGuard 1
++    ReceiverIndexStore
+
+; CASE: array operation rejects scalar or invalid guard negative field
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: field type/layout
+@@ -49 +49 @@
+-    ReceiverBoundsGuard 1
++    ReceiverBoundsGuard -1
+
+; CASE: array operation rejects scalar or invalid guard past field
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: field type/layout
+@@ -49 +49 @@
+-    ReceiverBoundsGuard 1
++    ReceiverBoundsGuard 5
+
+; CASE: constructor cannot use indexed guard
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: constructor cannot access receiver array
+@@ -38,0 +39 @@
++    ReceiverBoundsGuard 1
+
+; CASE: constructor cannot use indexed load
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: constructor cannot access receiver array
+@@ -38,0 +39 @@
++    ReceiverIndexLoad 1
+
+; CASE: constructor cannot use indexed store
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: constructor cannot access receiver array
+@@ -38,0 +39 @@
++    ReceiverIndexStore 1
+
+; CASE: receiver index requires signed i64
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -48 +48 @@
+-    Load 8
++    Constant 0 u64
+
+; CASE: receiver load requires bounds evidence
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -49 +49 @@
+-    ReceiverBoundsGuard 1
++    Constant
+
+; CASE: receiver store requires saved evidence
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -63 +63 @@
+-    ReceiverBoundsGuard 1
++    Constant
+
+; CASE: same shape other field cannot reuse load token
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -50 +50 @@
+-    ReceiverIndexLoad 1
++    ReceiverIndexLoad 4
+
+; CASE: same shape other field cannot reuse store token
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -66 +66 @@
+-    ReceiverIndexStore 1
++    ReceiverIndexStore 4
+
+; CASE: bool array store rejects integer payload
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -63 +63 @@
+-    ReceiverBoundsGuard 1
++    ReceiverBoundsGuard 3
+@@ -66 +66 @@
+-    ReceiverIndexStore 1
++    ReceiverIndexStore 3
+
+; CASE: scalar arithmetic cannot retain receiver bounds
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -49,0 +50 @@
++    UnaryValue
+
+; CASE: conversion roundtrip cannot retain receiver bounds
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -49,0 +50,2 @@
++    Convert i64 u64
++    Convert u64
+
+; CASE: unguarded pop cannot forge receiver bounds
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -48,0 +49 @@
++    Push
+@@ -49,0 +51 @@
++    Pop
+
+; CASE: slot reload cannot retain receiver bounds
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -46,0 +47 @@
++  slot 16 i64
+@@ -49,0 +51,2 @@
++    Store 16
++    Load 16
+
+; CASE: local token cannot authorize receiver access
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -49 +49 @@
+-    ReceiverBoundsGuard 1
++    BoundsGuard 8 1
+
+; CASE: receiver token cannot authorize local access
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -50 +50 @@
+-    ReceiverIndexLoad 1
++    IndexLoad 8 1
+
+; CASE: array receiver nominal mismatch rejected
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: nominal class mismatch
+@@ -1,0 +2 @@
++layout OtherBox [i64*3 bool*3 i64 i64]
+@@ -2,0 +4 @@
++fields OtherBox [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
+@@ -45 +47 @@
+-  receiver ArrayBox false false
++  receiver OtherBox false false
+
+; CASE: saved receiver token survives scalar RHS call
+; BASE: logical array fields constructor and checked methods
+; RUN: emit
+@@ -65 +65 @@
+-    Load 16
++    Call array_rhs
+@@ -69,0 +70,6 @@
++function array_rhs
++  result i64
++  frame 0
++    Constant 42
++    Return
++end
+
+; CASE: saved receiver token survives mutable receiver reborrow
+; BASE: logical array fields constructor and checked methods
+; RUN: emit
+@@ -65 +65 @@
+-    Load 16
++    MethodCall array_rhs_method
+@@ -69,0 +70,17 @@
++function array_rhs
++  result i64
++  frame 0
++    Constant 42
++    Return
++end
++function array_rhs_method
++  result i64
++  frame 0
++  receiver ArrayBox true false
++    Constant 1
++    ReceiverBoundsGuard 4
++    Push
++    Constant 42
++    ReceiverIndexStore 4
++    Return
++end
+
+; CASE: returned scalar cannot forge receiver token
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: bounds token
+@@ -49 +49 @@
+-    ReceiverBoundsGuard 1
++    Call array_rhs
+@@ -65 +65 @@
+-    Load 16
++    MethodCall array_rhs_method
+@@ -69,0 +70,17 @@
++function array_rhs
++  result i64
++  frame 0
++    Constant 42
++    Return
++end
++function array_rhs_method
++  result i64
++  frame 0
++  receiver ArrayBox true false
++    Constant 1
++    ReceiverBoundsGuard 4
++    Push
++    Constant 42
++    ReceiverIndexStore 4
++    Return
++end
+
+; CASE: unchanged receiver token survives push and pop
+; BASE: logical array fields constructor and checked methods
+; RUN: emit
+@@ -49,0 +50,3 @@
++    Push
++    Constant 99
++    Pop
+
+; CASE: same receiver field bounds evidence survives CFG join
+; BASE: logical array fields constructor and checked methods
+; RUN: emit
+@@ -47,0 +48,2 @@
++    Constant 1 bool
++    BranchFalse 1
+@@ -49,0 +52,5 @@
++    Jump 2
++    Label 1
++    Load 8
++    ReceiverBoundsGuard 1
++    Label 2
+
+; CASE: cross-field bounds evidence cannot survive CFG join
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -47,0 +48,2 @@
++    Constant 1 bool
++    BranchFalse 1
+@@ -49,0 +52,5 @@
++    Jump 2
++    Label 1
++    Load 8
++    ReceiverBoundsGuard 4
++    Label 2
+
+; CASE: branch cannot bypass receiver bounds check
+; BASE: logical array fields constructor and checked methods
+; RUN: verify
+; EXPECT-ERROR: mistyped current
+@@ -47,0 +48,2 @@
++    Constant 1 bool
++    BranchFalse 1
+@@ -49,0 +52,5 @@
++    Jump 2
++    Label 1
++    Load 8
++    Constant
++    Label 2
+
+; CASE: i64 array 64-leaf boundary
+; RUN: emit
+layout Capacity [i64*64]
+fields Capacity [(i64 0 64 true)]
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Load 8
+    Return
+end
+function capacity_ctor
+  result i64
+  frame 0
+  receiver Capacity true true
+    ReceiverArrayZero
+    Constant
+    Return
+end
+function capacity_copy
+  result (class Capacity)
+  params [(class Capacity)]
+  frame 512
+repeat 64
+  slot {8,8} i64
+endrepeat
+  object 512 Capacity false
+    BindObjectParameter 0 512 Capacity
+    ReturnObject 512
+end
+
+; CASE: i64 array plus scalar exceeds boundary
+; BASE: i64 array 64-leaf boundary
+; RUN: verify
+; EXPECT-ERROR: exceeds 64 scalar fields
+@@ -1,2 +1,2 @@
+-layout Capacity [i64*64]
+-fields Capacity [(i64 0 64 true)]
++layout Capacity [i64*65]
++fields Capacity [(i64 0 64 true) (i64 64 1 false)]
+@@ -17,0 +18,2 @@
++    ReceiverStore 1
++    Constant
+
+; CASE: i64 local class may exceed boundary leaf cap
+; RUN: emit
+layout Capacity [i64*65]
+fields Capacity [(i64 0 64 true) (i64 64 1 false)]
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Load 8
+    Return
+end
+function capacity_ctor
+  result i64
+  frame 0
+  receiver Capacity true true
+    ReceiverArrayZero
+    Constant
+    ReceiverStore 1
+    Constant
+    Return
+end
+
+; CASE: u64 array 64-leaf boundary
+; BASE: i64 array 64-leaf boundary
+; RUN: emit
+@@ -1,2 +1,2 @@
+-layout Capacity [i64*64]
+-fields Capacity [(i64 0 64 true)]
++layout Capacity [u64*64]
++fields Capacity [(u64 0 64 true)]
+@@ -25 +25 @@
+-  slot {8,8} i64
++  slot {8,8} u64
+
+; CASE: u64 array plus scalar exceeds boundary
+; RUN: verify
+; EXPECT-ERROR: exceeds 64 scalar fields
+layout Capacity [u64*65]
+fields Capacity [(u64 0 64 true) (u64 64 1 false)]
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Load 8
+    Return
+end
+function capacity_ctor
+  result i64
+  frame 0
+  receiver Capacity true true
+    ReceiverArrayZero
+    Constant 0 u64
+    ReceiverStore 1 u64
+    Constant
+    Return
+end
+function capacity_copy
+  result (class Capacity)
+  params [(class Capacity)]
+  frame 512
+repeat 64
+  slot {8,8} u64
+endrepeat
+  object 512 Capacity false
+    BindObjectParameter 0 512 Capacity
+    ReturnObject 512
+end
+
+; CASE: u64 local class may exceed boundary leaf cap
+; RUN: emit
+layout Capacity [u64*65]
+fields Capacity [(u64 0 64 true) (u64 64 1 false)]
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Load 8
+    Return
+end
+function capacity_ctor
+  result i64
+  frame 0
+  receiver Capacity true true
+    ReceiverArrayZero
+    Constant 0 u64
+    ReceiverStore 1 u64
+    Constant
+    Return
+end
+
+; CASE: bool array 64-leaf boundary
+; BASE: i64 array 64-leaf boundary
+; RUN: emit
+@@ -1,2 +1,2 @@
+-layout Capacity [i64*64]
+-fields Capacity [(i64 0 64 true)]
++layout Capacity [bool*64]
++fields Capacity [(bool 0 64 true)]
+@@ -25 +25 @@
+-  slot {8,8} i64
++  slot {8,8} bool
+
+; CASE: bool array plus scalar exceeds boundary
+; RUN: verify
+; EXPECT-ERROR: exceeds 64 scalar fields
+layout Capacity [bool*65]
+fields Capacity [(bool 0 64 true) (bool 64 1 false)]
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Load 8
+    Return
+end
+function capacity_ctor
+  result i64
+  frame 0
+  receiver Capacity true true
+    ReceiverArrayZero
+    Constant 0 bool
+    ReceiverStore 1 bool
+    Constant
+    Return
+end
+function capacity_copy
+  result (class Capacity)
+  params [(class Capacity)]
+  frame 512
+repeat 64
+  slot {8,8} bool
+endrepeat
+  object 512 Capacity false
+    BindObjectParameter 0 512 Capacity
+    ReturnObject 512
+end
+
+; CASE: bool local class may exceed boundary leaf cap
+; RUN: emit
+layout Capacity [bool*65]
+fields Capacity [(bool 0 64 true) (bool 64 1 false)]
+function test
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 42
+    Store 8
+    Load 8
+    Return
+end
+function capacity_ctor
+  result i64
+  frame 0
+  receiver Capacity true true
+    ReceiverArrayZero
+    Constant 0 bool
+    ReceiverStore 1 bool
+    Constant
+    Return
+end
+
+; CASE: array zero, scalar mapping, bool stride and checked index emission
+; RUN: emit
+; CHECK-DAG: movq $0, 8(%r10)
+; CHECK-DAG: movq $0, 16(%r10)
+; CHECK-DAG: movq %rax, 24(%r10)
+; CHECK-DAG: movq $0, 32(%r10)
+; CHECK-DAG: movq $0, 40(%r10)
+; CHECK-DAG: movq $0, 48(%r10)
+; CHECK-DAG: movq $0, 56(%r10)
+; CHECK-DAG: cmpq $2, %rax\n    jae .Laurora_bounds_trap
+; CHECK-DAG: movq 8(%r10,%rax,8), %rax
+; CHECK-DAG: movq %rax, 8(%r10,%rcx,8)
+; CHECK-DAG: movq 32(%r10,%rax,8), %rax
+; CHECK-DAG: movq %rax, 32(%r10,%rcx,8)
+layout ArrayBox [i64*3 bool*3 i64 i64]
+fields ArrayBox [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
+function test
+  result i64
+  frame 64
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  object 64 ArrayBox true
+    BeginObject 64
+    MethodCall construct_array 64
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_array 64
+    Constant 1
+    Push
+    MethodCall get_array 64
+    Return
+end
+function construct_array
+  result i64
+  frame 0
+  receiver ArrayBox true true
+    Constant 7
+    ReceiverStore
+    ReceiverArrayZero 1
+    Constant 1 bool
+    ReceiverStore 2 bool
+    ReceiverArrayZero 3
+    ReceiverArrayZero 4
+    Constant
+    Return
+end
+function get_array
+  result i64
+  params [i64]
+  frame 16
+  receiver ArrayBox false false
+  slot 8 i64
+    BindParameter 0 8
+    Load 8
+    ReceiverBoundsGuard 1
+    ReceiverIndexLoad 1
+    Return
+end
+function set_array
+  result i64
+  params [i64 i64]
+  frame 16
+  receiver ArrayBox true false
+  slot 8 i64
+  slot 16 i64
+    BindParameter 0 8
+    BindParameter 1 16
+    Load 8
+    ReceiverBoundsGuard 1
+    Push
+    Load 16
+    ReceiverIndexStore 1
+    Constant
+    Return
+end
+function array_scalar_getter
+  result i64
+  frame 16
+  receiver ArrayBox false false
+  slot 8 i64
+    ReceiverLoad
+    Return
+end
+function array_bool_getter
+  result bool
+  frame 16
+  receiver ArrayBox false false
+  slot 8 i64
+    ReceiverLoad 2 bool
+    Return
+end
+function array_bool_index_getter
+  result bool
+  frame 16
+  receiver ArrayBox false false
+  slot 8 i64
+    Constant 1
+    ReceiverBoundsGuard 3
+    ReceiverIndexLoad 3
+    Return
+end
+function array_bool_setter
+  result i64
+  frame 16
+  receiver ArrayBox true false
+  slot 8 i64
+    Constant 1
+    ReceiverBoundsGuard 3
+    Push
+    Constant 1 bool
+    ReceiverIndexStore 3
+    Constant
+    Return
+end
+function array_scalar_mapping
+  result i64
+  frame 64
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  object 64 ArrayBox true
+    BeginObject 64
+    MethodCall construct_array 64
+    MethodCall array_scalar_getter 64
+    Return
+end
+function array_bool_mapping
+  result bool
+  frame 64
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  object 64 ArrayBox true
+    BeginObject 64
+    MethodCall construct_array 64
+    MethodCall array_bool_getter 64
+    Return
+end
+function array_bool_zero
+  result bool
+  frame 64
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  object 64 ArrayBox true
+    BeginObject 64
+    MethodCall construct_array 64
+    MethodCall array_bool_index_getter 64
+    Return
+end
+function array_bool_store
+  result bool
+  frame 64
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  object 64 ArrayBox true
+    BeginObject 64
+    MethodCall construct_array 64
+    MethodCall array_bool_setter 64
+    MethodCall array_bool_index_getter 64
+    Return
+end
+function array_dynamic
+  result i64
+  params [i64]
+  frame 80
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  slot 72 i64
+  object 64 ArrayBox true
+    BindParameter 0 72
+    BeginObject 64
+    MethodCall construct_array 64
+    Load 72
+    Push
+    MethodCall get_array 64
+    Return
+end
+function array_explosive_setter
+  result i64
+  params [i64 i64]
+  frame 16
+  receiver ArrayBox true false
+  slot 8 i64
+  slot 16 i64
+    BindParameter 0 8
+    BindParameter 1 16
+    Load 8
+    ReceiverBoundsGuard 1
+    Push
+    Call array_explosive_rhs
+    ReceiverIndexStore 1
+    Constant
+    Return
+end
+function array_explosive_rhs
+  result i64
+  frame 16
+  slot 8 i64
+  slot 16 i64
+    Constant 1
+    Push
+    Constant
+    BinaryValue CheckedDivide
+    Return
+end
+function array_store_dynamic
+  result i64
+  params [i64]
+  frame 80
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  slot 72 i64
+  object 64 ArrayBox true
+    BindParameter 0 72
+    BeginObject 64
+    MethodCall construct_array 64
+    Load 72
+    Push
+    Constant 42
+    Push
+    MethodCall array_explosive_setter 64
+    Return
+end
+function copy_array_box
+  result (class ArrayBox)
+  params [(class ArrayBox)]
+  frame 64
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  object 64 ArrayBox false
+    BindObjectParameter 0 64 ArrayBox
+    ReturnObject 64
+end
+function array_copy
+  result i64
+  frame 192
+repeat 3
+  slot {8,64} i64
+  slot {16,64} i64
+  slot {24,64} bool
+  slot {32,64} bool
+  slot {40,64} bool
+  slot {48,64} i64
+  slot {56,64} i64
+  slot {64,64} i64
+endrepeat
+  object 64 ArrayBox true
+  object 128 ArrayBox false
+  object 192 ArrayBox false
+    BeginObject 64
+    MethodCall construct_array 64
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_array 64
+    BeginObject 128
+    Load 64
+    Store 128
+    Load 56
+    Store 120
+    Load 48
+    Store 112
+    Load 40 bool
+    Store 104 bool
+    Load 32 bool
+    Store 96 bool
+    Load 24 bool
+    Store 88 bool
+    Load 16
+    Store 80
+    Load 8
+    Store 72
+    BeginObject 192
+    AggregateCall copy_array_box [128] 192
+    Constant 1
+    Push
+    Constant 99
+    Push
+    MethodCall set_array 64
+    Constant 1
+    Push
+    MethodCall get_array 192
+    Return
+end
+
+; CASE: receiver store guard precedes RHS and receiver reload follows call
+; RUN: emit
+; CHECK: set_array:
+; CHECK-NOT: call array_rhs_method
+; CHECK-NOT: movq %rax, 8(%r10,%rcx,8)
+; CHECK: jae .Laurora_bounds_trap
+; CHECK-NOT: movq %rax, 8(%r10,%rcx,8)
+; CHECK: call array_rhs_method
+; CHECK: movq %rax, 8(%r10,%rcx,8)
+; RUN: emit
+; CHECK: set_array:
+; CHECK: call array_rhs_method
+; CHECK-NOT: movq %rax, 8(%r10,%rcx,8)
+; CHECK: movq -24(%rbp), %r10
+layout ArrayBox [i64*3 bool*3 i64 i64]
+fields ArrayBox [(i64 0 1 false) (i64 1 2 true) (bool 3 1 false) (bool 4 2 true) (i64 6 2 true)]
+function test
+  result i64
+  frame 64
+  slot 8 i64
+  slot 16 i64
+  slot 24 bool
+  slot 32 bool
+  slot 40 bool
+  slot 48 i64
+  slot 56 i64
+  slot 64 i64
+  object 64 ArrayBox true
+    BeginObject 64
+    MethodCall construct_array 64
+    Constant 1
+    Push
+    Constant 42
+    Push
+    MethodCall set_array 64
+    Constant 1
+    Push
+    MethodCall get_array 64
+    Return
+end
+function construct_array
+  result i64
+  frame 0
+  receiver ArrayBox true true
+    Constant 7
+    ReceiverStore
+    ReceiverArrayZero 1
+    Constant 1 bool
+    ReceiverStore 2 bool
+    ReceiverArrayZero 3
+    ReceiverArrayZero 4
+    Constant
+    Return
+end
+function get_array
+  result i64
+  params [i64]
+  frame 16
+  receiver ArrayBox false false
+  slot 8 i64
+    BindParameter 0 8
+    Load 8
+    ReceiverBoundsGuard 1
+    ReceiverIndexLoad 1
+    Return
+end
+function set_array
+  result i64
+  params [i64 i64]
+  frame 16
+  receiver ArrayBox true false
+  slot 8 i64
+  slot 16 i64
+    BindParameter 0 8
+    BindParameter 1 16
+    Load 8
+    ReceiverBoundsGuard 1
+    Push
+    MethodCall array_rhs_method
+    ReceiverIndexStore 1
+    Constant
+    Return
+end
+function array_rhs
+  result i64
+  frame 0
+    Constant 42
+    Return
+end
+function array_rhs_method
+  result i64
+  frame 0
+  receiver ArrayBox true false
+    Constant 1
+    ReceiverBoundsGuard 4
+    Push
+    Constant 42
+    ReceiverIndexStore 4
+    Return
+end

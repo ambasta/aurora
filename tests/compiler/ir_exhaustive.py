@@ -5,7 +5,7 @@ Temporary copies inject unknown variants/forms into the instruction codec,
 then exercise the actual Aurora verifier and emitter with hostile observations
 and removed handlers. Source dispatch has runtime rejection, not C++ compile-time
 exhaustiveness.
-The direct-IR executable also supplies separate native ABI and exact-trap checks.
+The textual IR cases also supply separate native ABI and exact-trap checks.
 """
 
 from pathlib import Path
@@ -39,6 +39,8 @@ HEADERS = (
     "byte_literal.hpp",
 )
 GENERATED_HEADERS = ("hosted_frontend_abi.hpp",)
+# Verified textual IR cases; the aurora-ir-check driver prints their assembly.
+AIR = ROOT / "tests/compiler/ir/ir-tests/abi.air"
 
 
 def compile_codec_probe(directory):
@@ -498,7 +500,7 @@ if args.ir_tests is not None:
 
     with tempfile.TemporaryDirectory(prefix="aurora-ir-array-native-") as temporary:
         directory = Path(temporary)
-        assembly = command([args.ir_tests.resolve(), "--emit-array-fields"]).stdout.decode()
+        assembly = command([args.ir_tests.resolve(), "--output", AIR, "array-fields"]).stdout.decode()
         runner = NativeRunner(directory, None, 5)
         names = [
             "test",
@@ -538,7 +540,7 @@ if args.ir_tests is not None:
 
     with tempfile.TemporaryDirectory(prefix="aurora-ir-composed-native-") as temporary:
         directory = Path(temporary)
-        assembly = command([args.ir_tests.resolve(), "--emit-composed-fields"]).stdout.decode()
+        assembly = command([args.ir_tests.resolve(), "--output", AIR, "composed-fields"]).stdout.decode()
         runner = NativeRunner(directory, None, 5)
         names = [
             "test",
@@ -560,7 +562,7 @@ if args.ir_tests is not None:
 
     with tempfile.TemporaryDirectory(prefix="aurora-ir-method-results-native-") as temporary:
         directory = Path(temporary)
-        assembly = command([args.ir_tests.resolve(), "--emit-method-results"]).stdout.decode()
+        assembly = command([args.ir_tests.resolve(), "--output", AIR, "method-results"]).stdout.decode()
         runner = NativeRunner(directory, None, 5)
         names = [
             "test",
@@ -595,7 +597,7 @@ if args.ir_tests is not None:
     # ABI's canonical-u8 contract; wide-to-byte conversions accept wide inputs.
     with tempfile.TemporaryDirectory(prefix="aurora-ir-u8-native-") as temporary:
         directory = Path(temporary)
-        assembly = command([args.ir_tests.resolve(), "--emit-u8"]).stdout.decode()
+        assembly = command([args.ir_tests.resolve(), "--output", AIR, "u8"]).stdout.decode()
         runner = NativeRunner(directory, None, 5)
         cases = [("byte_aggregate", (), 42), ("byte_receiver", (), 255), ("byte_local_array", (), 255)]
         edges = (0, 1, 2, 15, 16, 127, 128, 254, 255)
@@ -667,7 +669,7 @@ if args.ir_tests is not None:
 
     with tempfile.TemporaryDirectory(prefix="aurora-ir-packed-method-native-") as temporary:
         directory = Path(temporary)
-        assembly = command([args.ir_tests.resolve(), "--emit-packed-methods"]).stdout.decode()
+        assembly = command([args.ir_tests.resolve(), "--output", AIR, "packed-methods"]).stdout.decode()
         runner = NativeRunner(directory, None, 5)
         names = [
             "packed_result_array",
@@ -711,7 +713,7 @@ if args.ir_tests is not None:
 
     with tempfile.TemporaryDirectory(prefix="aurora-ir-span-native-") as temporary:
         directory = Path(temporary)
-        assembly = command([args.ir_tests.resolve(), "--emit-spans"]).stdout.decode()
+        assembly = command([args.ir_tests.resolve(), "--output", AIR, "spans"]).stdout.decode()
         runner = NativeRunner(directory, None, 5)
         names = [
             "span_local",
