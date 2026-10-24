@@ -55,16 +55,16 @@ make run                     # actual normal BIOS boot
 make run-uefi                 # actual normal UEFI boot
 make capture-framebuffer     # output-only PNG preview, not qualification
 ./scripts/compiler-test.sh   # compiler-only Meson suite
-make test                    # normal native Meson full; does not start QEMU
+make test                    # native Meson merge suite; does not start QEMU
 make test-exhaustive         # separate whole-space library enumeration
 ```
 
 Use `MESON_BUILD_DIR=build/gcc16` to select a stable configuration.
 `AURORA_BUILD_JOBS` and `AURORA_TEST_JOBS` separately cap compilation and test
-concurrency. The wrapper also sizes jobs from observed CPU/memory headroom;
-see the [sizing policy and its containment limits](meson-bootstrap.md).
+concurrency below the `nproc` default. A running MemAvailable watchdog stops
+owned commands on low memory; see the [watchdog policy and its limits](meson-bootstrap.md).
 The [Meson guide](meson-bootstrap.md) specifies native targets, setup options,
-profile selection, dependency tracking and full-suite coverage.
+profile selection, dependency tracking and merge/release coverage.
 
 Run/compiler wrappers accept `--help` and work from another working directory.
 They are standalone entrypoints: inherited `AURORA_TEST_CONTEXT` is rejected.

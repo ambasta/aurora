@@ -19,15 +19,16 @@ runner invokes bare `gcc`. Keep one stable build directory per toolchain/configu
 # compiler/checkpoint.json. PATH must already select the matching GCC 16 pair.
 CXX=g++ meson setup build/gcc16 --backend=ninja -Dlsp=false \
   "-Dbootstrap_compiler=$C0" "-Dhistorical_oracle=$ORACLE"
-meson compile -C build/gcc16 -j 3
+export MESON_BUILD_DIR=build/gcc16
 # Optional quick feedback while developing; merge below includes these tests.
-meson test -C build/gcc16 --suite dev --no-rebuild --num-processes 4 --print-errorlogs
-meson test -C build/gcc16 --suite merge --num-processes 4 --print-errorlogs
-meson test -C build/gcc16 --suite release --num-processes 4 --print-errorlogs  # opt-in
+python3 -B scripts/meson_test.py --suite dev
+make test
+make test-release  # opt-in: releases and compiler bumps
 ```
 
-Three compile jobs and four test workers are initial configurable choices, not a
-scaling guarantee. Measure peak memory before raising worker counts; do not mutate an image profile while its artifacts are in use.
+These commands build prerequisites and run tests at `nproc` concurrency under
+the memory watchdog described below. Do not mutate an image profile while its
+artifacts are in use.
 
 Ninja tracks C++ headers and Aurora fixture imports. Unchanged compiler/fixture
 builds are reused, but test outcomes are not cached. A different toolchain or flag
@@ -78,27 +79,31 @@ meson test -C build/meson-compiler --list
 ```
 
 `make clean` still preserves configuration.
-The convenience wrapper sizes jobs separately before compilation and tests from
-CPU affinity and observed host `MemAvailable`, clamped by visible cgroup-v2
-`memory.max - memory.current` headroom for the current group and mounted ancestors,
-reserving 2 GiB. It does not configure cgroups or establish containment.
-It estimates 2 GiB per build job and 1 GiB per test job; these exceed retained
-single-child peaks of roughly 1.7 GiB and 0.5 GiB respectively. Missing host-memory
-or CPU observations fall back to one job; observed memory below one job plus
-reserve, or unreadable visible cgroup limits, refuses launch.
-`AURORA_BUILD_JOBS` and `AURORA_TEST_JOBS` accept `auto` (the default, with a
-ceiling of 64) or independent numeric ceilings (1–64), never requests to exceed
-that admission calculation. To explicitly replace inherited fixed settings after
-sourcing the tool environment once, use
+The convenience wrapper and `scripts/bootstrap.py hop` default to `nproc` jobs,
+not a fixed per-job memory estimate. `AURORA_BUILD_JOBS` and `AURORA_TEST_JOBS`
+accept `auto` (the default) or positive numeric ceilings, capped at `nproc`;
+bootstrap's `--jobs` accepts the same values. Invalid values or unavailable
+`nproc` fail clearly. Selected counts are printed before work starts.
+To replace inherited fixed settings, use
 `AURORA_BUILD_JOBS=auto AURORA_TEST_JOBS=auto make test`.
-Numeric settings remain real ceilings. The selected counts and sizing inputs are
-printed before each phase.
-This is conservative sizing, not memory containment or a reservation against
-other processes. Host observations may not expose a container's memory or CPU
-quota; use lower explicit ceilings where necessary. No cgroup is created, and a
-child's address-space limit is not an aggregate process-tree memory cap. Existing
-exclusive tests and watchdogs are unchanged. Direct Meson commands retain their
-own explicit job selection.
+
+For each setup/build/test command they launch, the wrappers check host
+`MemAvailable` and visible finite cgroup-v2 `memory.max - memory.current`
+headroom (including mounted ancestors) before launch and every 250 ms while
+running. Headroom at or below the 2 GiB reserve, missing `MemAvailable`, or
+unreadable visible finite cgroup limits stops the command with an error.
+Each command owns a separate process group. Memory failure, interruption or
+command failure terminates that group, then kills survivors after a bounded
+500 ms grace period and reaps the command. Interrupted/failed runs never count
+as passing tests; inspect retained logs and retry only when resources allow.
+
+This is a best-effort watchdog, not memory containment or a reservation: other
+processes can consume memory between samples, container limits may not all be
+visible, and descendants that leave the process group are not contained.
+No cgroups or host limits are changed. Direct Meson/Ninja commands do not use
+this watchdog; prefer the guarded convenience routes for build/test runs.
+Use `-j "$(nproc)"` / `--num-processes "$(nproc)"` if running Meson directly
+under your own memory watchdog. Existing exclusive tests are unchanged.
 The container wrapper forwards these two controls and `MESON_BUILD_DIR` when set;
 use checkout-relative build paths, since the checkout is mounted at `/workspace`.
 `SANITIZE` and nondefault `CPPFLAGS`/`LDFLAGS` are not silently accepted by the
@@ -117,11 +122,10 @@ The independent BIOS and UEFI image tests read those outputs without rebuilding
 or rewriting them; all existing negative image controls remain active.
 
 ```sh
-meson compile -C build/gcc16 -j 3 kernel-bios-normal kernel-uefi-normal
-meson test -C build/gcc16 native-bios-image native-uefi-normal-image --no-rebuild --print-errorlogs
-# Equivalent standalone convenience routes, sharing the configuration driver:
 MESON_BUILD_DIR=build/gcc16 make kernel
 MESON_BUILD_DIR=build/gcc16 make kernel-uefi
+MESON_BUILD_DIR=build/gcc16 python3 -B scripts/meson_test.py \
+  --tests native-bios-image native-uefi-normal-image
 ```
 
 `make` / `make all` builds the Meson compiler once through the BIOS image graph
@@ -139,7 +143,7 @@ The configuration driver accepts `--kernel bios|uefi --profile NAME
 graph. `compile_commands.json` covers each native C++ profile. Qualification
 workflows that require a final normal guest boot still boot the separate normal
 image and retain fresh logs. Registration and source routing do not establish
-final combined local GCC 16 full or affected guest qualification.
+final-source pinned-container GCC 16 merge or affected guest qualification.
 
 Kernel flags remain fixed to the admitted freestanding GCC profile. Global
 `cpp_args`, `CXXFLAGS` or `CPPFLAGS` are rejected in image-enabled configurations rather than silently adding
@@ -199,7 +203,7 @@ This implementation is not fresh-build, incremental, image, guest or full-suite
 qualification. The acceptance gate is a fresh GCC 16 build, exact argv/object
 review, no-op and changed-header/import/membership/linker-script/embedded-binary
 rebuild checks, parallel sibling isolation, declared-output deletion and failed
-build controls, followed by final-source `full`, normal guests and independent
+build controls, followed by final-source `merge`, normal and affected guests and independent
 review. Source-only helper controls establish only their stated boundaries.
 
 ## Coverage and limits

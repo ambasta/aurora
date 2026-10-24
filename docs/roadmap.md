@@ -96,19 +96,22 @@ An explicitly selected, source-built predecessor emits the imported frontend;
 current C1/C2 stages verify convergence. Aurora owns existing module grammar,
 unresolved declaration admission, module/template resolution and resolved semantic/
 ownership analysis through typed IR. Independent metadata, callable, frame and
-call-graph checks also live in Aurora, alongside durable instruction storage and
-structural CFG normalization and static entry, call, local-storage and scalar admission,
-awaiting final-source qualification. Local scalar initialization, object completion,
-constructor/receiver-field initialization and synchronous service-loan lifecycle
-share a source-owned workspace; resource and object-loan provenance remain native.
-Bounded multi-owner borrowing enables the emitter workspace to read instruction
-and metadata owners together. The formatter now shares append through exclusive
-mutable typed-buffer borrows; its replacement sixth bootstrap checkpoint retains
-the native C++ emitter oracle without adding a stage. Qualification requires the
-[source-bootstrap gates](../compiler/README.md#source-bootstrap), final integrated-source
-`full` and applicable boot/emulator gates.
-Remaining value/provenance state and worklist ownership are next, alongside host
-record projection and source loading; x86 text emission already runs in Aurora.
+call-graph checks also live in Aurora, alongside durable instruction storage,
+structural CFG normalization and static entry, call, local-storage and scalar
+admission. The source-owned whole-function verifier owns current values,
+operand stacks, initialization, synchronous service loans, resource and
+object-loan provenance, bounds evidence and the bounded FIFO worklist, with no
+native semantic fallback. Bounded multi-owner borrowing enables the emitter
+workspace to read instruction and metadata owners together; the formatter
+shares append through exclusive mutable typed-buffer borrows.
+One pinned checkpoint builds current C1/C2 with convergence; the historical
+C++ emitter remains a separate differential oracle, not a production fallback.
+Qualification requires final-source pinned-container `merge`, normal BIOS/UEFI
+and affected guest gates; releases and compiler bumps also run `release` and
+every guest family, including the
+[source-bootstrap gates](../compiler/README.md#source-bootstrap) for bumps.
+Host record projection, conversion, quota/report transport and source loading
+remain native dependencies; x86 text emission already runs in Aurora.
 Native assembler/linker and host runtime/file/process services remain separate
 self-hosting dependencies.
 
