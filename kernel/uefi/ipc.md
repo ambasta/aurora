@@ -21,8 +21,9 @@ The conditional IPC wrapper reserves the record before saving its envelope and
 restores exact RSP before the existing INT0x81. The source record and wrapper are
 assembled together to keep the aggregate entry local.
 
-`UEFI_MODE=snapshot` composes only the existing ACPI/PCI discovery, protected IPC
-runtime and a closed-region copied producer. It keeps the allocator and protected
+The `snapshot` rows of `storage-fixture` run only the existing ACPI/PCI discovery,
+protected IPC runtime and a closed-region copied producer; their row never admits the
+image's service timer or its CPL3 `INT 0x82` gate. It keeps the allocator and protected
 stack pools separate. After authenticated receive and complete stack scrubbing,
 the runtime verifies the retained final stack PageLease and its exact user and
 supervisor mappings, then copies only the fixed record through the supervisor
@@ -34,8 +35,8 @@ each actual returned byte and supplies the next offset; malformed or incorrect
 actual replies fail closed. Explicit output-buffer, retained-slot and lease
 clearing does not promise erasure of all compiler-created supervisor stack copies.
 Finite fault/cancel/restart, foreign owner, stale/revoked generation, producer
-selector/quota/page failure and actual malformed/wrong-byte reply image variants
-are selected with `snapshot-*` modes in `scripts/kernel-uefi-build.sh`.
+selector/quota/page failure and actual malformed/wrong-byte reply cases are
+`storage-fixture` rows selected with `snapshot-*` modes.
 
 Every image variant requires exact private bridge/user-wrapper, image and combined native/Aurora stack admission. The supervisor normal path plus 512-byte fault reserve must fit 15,360 bytes of the 16 KiB stack; current bounds must be recalculated after every rebuild. Native/transcript tests belong to full/slow/integration. Actual snapshot guests use the original clock, strict ordered transcripts and normal restoration. Focused/previous runs do not qualify a changed image.
 

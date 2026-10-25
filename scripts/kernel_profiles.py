@@ -34,11 +34,13 @@ FIXTURE_MODES = {
 # These images read their selector from a QEMU fw_cfg file instead of a serial
 # byte. The loader fixture images read it at loader entry, echo it and hand it
 # over in one handoff word: platform-fixture's loader cases inject before
-# ExitBootServices, while firmware owns the UART, and the display and device
-# images co-host subsystems that each need their row from the first phase,
-# including interactive console sessions no harness can send a byte to. The
-# Event harness writes serial output to a file.
-LOADER_FIXTURE_IMAGES = frozenset(("platform-fixture", "display-fixture", "device-fixture"))
+# ExitBootServices, while firmware owns the UART, and the display, device,
+# storage and text images co-host subsystems that each need their row from the
+# first phase, including interactive console sessions no harness can send a
+# byte to. The Event harness writes serial output to a file.
+LOADER_FIXTURE_IMAGES = frozenset(
+    ("platform-fixture", "display-fixture", "device-fixture", "storage-fixture", "text-fixture")
+)
 FW_CFG_IMAGES = LOADER_FIXTURE_IMAGES | {"iommu-event"}
 BIOS_FIXTURE_MODES = {
     mode: (image, value) for name, (mode, image, value) in FIXTURES.items() if name.startswith("bios_")
@@ -46,37 +48,6 @@ BIOS_FIXTURE_MODES = {
 
 # Base flags plus bounded variants mirror the existing admitted profiles.
 UEFI_FAMILIES = [
-    (
-        [
-            "-DAURORA_UEFI_ACPI",
-            "-DAURORA_UEFI_PCI",
-            "-DAURORA_UEFI_RUNTIME",
-            "-DAURORA_UEFI_IPC",
-            "-DAURORA_UEFI_SERVICE_BUDGET",
-            "-DAURORA_UEFI_USER_BUDGET",
-            "-DAURORA_RAM_FILE",
-        ],
-        {
-            "ram-scratchpad-console": ["-DAURORA_RAM_SCRATCHPAD_CONSOLE"],
-            "ram-scratchpad-console-fixture": ["-DAURORA_RAM_SCRATCHPAD_CONSOLE", "-DAURORA_SCRATCHPAD_FIXTURE"],
-            "user-ram-file": [],
-            "user-ram-file-fixture": ["-DAURORA_RUNTIME_FIXTURE"],
-        },
-    ),
-    (
-        [
-            "-DAURORA_UEFI_ACPI",
-            "-DAURORA_UEFI_PCI",
-            "-DAURORA_UEFI_RUNTIME",
-            "-DAURORA_UEFI_IPC",
-            "-DAURORA_UEFI_SERVICE_BUDGET",
-            "-DAURORA_UEFI_USER_BUDGET",
-            "-DAURORA_BLOCKING_CALL",
-        ],
-        {
-            "user-call-fixture": ["-DAURORA_RUNTIME_FIXTURE"],
-        },
-    ),
     ([], {"normal": []}),
     (
         ["-maccumulate-outgoing-args", "-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI", "-DAURORA_UEFI_IOMMU_EVENT"],
@@ -111,31 +82,6 @@ UEFI_FAMILIES = [
             "-DAURORA_UEFI_ACPI",
             "-DAURORA_UEFI_PCI",
             "-DAURORA_UEFI_RUNTIME",
-            "-DAURORA_UEFI_SERVICE_BUDGET",
-            "-DAURORA_OWNED_TEXT",
-        ],
-        {
-            "runtime-console-region-fixture": ["-DAURORA_CONSOLE_REGION", "-DAURORA_RUNTIME_FIXTURE"],
-            "runtime-owned-text-fixture": ["-DAURORA_RUNTIME_FIXTURE"],
-        },
-    ),
-    (
-        [
-            "-DAURORA_UEFI_SNAPSHOT",
-            "-DAURORA_UEFI_ACPI",
-            "-DAURORA_UEFI_PCI",
-            "-DAURORA_UEFI_RUNTIME",
-            "-DAURORA_UEFI_IPC",
-        ],
-        {
-            "snapshot-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_SNAPSHOT_FIXTURE"],
-        },
-    ),
-    (
-        [
-            "-DAURORA_UEFI_ACPI",
-            "-DAURORA_UEFI_PCI",
-            "-DAURORA_UEFI_RUNTIME",
             "-DAURORA_UEFI_IPC",
             "-DAURORA_UEFI_SERVICE_BUDGET",
             "-DAURORA_UEFI_USER_BUDGET",
@@ -147,8 +93,49 @@ UEFI_FAMILIES = [
             # selector, test hook or capture handshake.
             "production": ["-DAURORA_PRODUCTION", "-DAURORA_UEFI_GRAPHICAL_TERMINAL"],
             "program-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_PROGRAM_FIXTURE"],
-            "program-file-call": ["-DAURORA_BLOCKING_CALL", "-DAURORA_FILE_CALL"],
-            "program-file-call-fixture": ["-DAURORA_BLOCKING_CALL", "-DAURORA_FILE_CALL", "-DAURORA_RUNTIME_FIXTURE"],
+        },
+    ),
+    # The protected file-call console and the owned-text and console-region
+    # applications, selected by a fw_cfg row read at loader entry; each row runs
+    # its former image's user images (TEXT_ROWS) from one packed bank.
+    (
+        [
+            "-DAURORA_UEFI_ACPI",
+            "-DAURORA_UEFI_PCI",
+            "-DAURORA_UEFI_RUNTIME",
+            "-DAURORA_UEFI_IPC",
+            "-DAURORA_UEFI_SERVICE_BUDGET",
+            "-DAURORA_UEFI_USER_BUDGET",
+            "-DAURORA_UEFI_PROGRAM_CONSOLE",
+            "-DAURORA_BLOCKING_CALL",
+            "-DAURORA_FILE_CALL",
+            "-DAURORA_OWNED_TEXT",
+            "-DAURORA_CONSOLE_REGION",
+        ],
+        {"text-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_TEXT_FIXTURE"]},
+    ),
+    # The RAM file service, the RAM scratchpad console, the blocking snapshot
+    # call and the snapshot producer, selected likewise (STORAGE_ROWS).
+    (
+        [
+            "-DAURORA_UEFI_ACPI",
+            "-DAURORA_UEFI_PCI",
+            "-DAURORA_UEFI_RUNTIME",
+            "-DAURORA_UEFI_IPC",
+            "-DAURORA_UEFI_SERVICE_BUDGET",
+            "-DAURORA_UEFI_USER_BUDGET",
+            "-DAURORA_RAM_FILE",
+            "-DAURORA_RAM_SCRATCHPAD_CONSOLE",
+            "-DAURORA_BLOCKING_CALL",
+            "-DAURORA_UEFI_SNAPSHOT",
+        ],
+        {
+            "storage-fixture": [
+                "-DAURORA_RUNTIME_FIXTURE",
+                "-DAURORA_SCRATCHPAD_FIXTURE",
+                "-DAURORA_SNAPSHOT_FIXTURE",
+                "-DAURORA_STORAGE_FIXTURE",
+            ]
         },
     ),
     # The IPC, service-budget, dispatcher, user-run and resume compositions, each
@@ -206,6 +193,68 @@ UEFI_FAMILIES = [
         {"platform-fixture": ["-DAURORA_PLATFORM_FIXTURE"]},
     ),
 ]
+
+_RAM = [
+    "-DAURORA_UEFI_ACPI",
+    "-DAURORA_UEFI_PCI",
+    "-DAURORA_UEFI_RUNTIME",
+    "-DAURORA_UEFI_IPC",
+    "-DAURORA_UEFI_SERVICE_BUDGET",
+    "-DAURORA_UEFI_USER_BUDGET",
+    "-DAURORA_RAM_FILE",
+]
+_CALL = _RAM[:-1] + ["-DAURORA_BLOCKING_CALL"]
+_TEXT = ["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI", "-DAURORA_UEFI_RUNTIME", "-DAURORA_UEFI_SERVICE_BUDGET"]
+_FILE = _RAM[:-1] + ["-DAURORA_UEFI_PROGRAM_CONSOLE", "-DAURORA_BLOCKING_CALL", "-DAURORA_FILE_CALL"]
+# The separate images the packed test images replaced, as build data only: each
+# one's user image recipes, metadata and page policy are what its rows still run.
+FORMER_IMAGES = {
+    "user-ram-file": _RAM,
+    "user-ram-file-fixture": _RAM + ["-DAURORA_RUNTIME_FIXTURE"],
+    "ram-scratchpad-console": _RAM + ["-DAURORA_RAM_SCRATCHPAD_CONSOLE"],
+    "ram-scratchpad-console-fixture": _RAM + ["-DAURORA_RAM_SCRATCHPAD_CONSOLE", "-DAURORA_SCRATCHPAD_FIXTURE"],
+    "user-call-fixture": _CALL + ["-DAURORA_RUNTIME_FIXTURE"],
+    "snapshot-fixture": [
+        "-DAURORA_UEFI_SNAPSHOT",
+        "-DAURORA_UEFI_ACPI",
+        "-DAURORA_UEFI_PCI",
+        "-DAURORA_UEFI_RUNTIME",
+        "-DAURORA_UEFI_IPC",
+        "-DAURORA_RUNTIME_FIXTURE",
+        "-DAURORA_SNAPSHOT_FIXTURE",
+    ],
+    "runtime-owned-text-fixture": _TEXT + ["-DAURORA_OWNED_TEXT", "-DAURORA_RUNTIME_FIXTURE"],
+    "runtime-console-region-fixture": _TEXT
+    + ["-DAURORA_OWNED_TEXT", "-DAURORA_CONSOLE_REGION", "-DAURORA_RUNTIME_FIXTURE"],
+    "program-file-call": _FILE,
+    "program-file-call-fixture": _FILE + ["-DAURORA_RUNTIME_FIXTURE"],
+}
+# Packed test image -> row name (exact, or a prefix ending in "_") -> former image.
+PACKED_ROWS = {
+    "storage-fixture": {
+        "ram_baseline": "user-ram-file",
+        "ram_": "user-ram-file-fixture",
+        "scratchpad_baseline": "ram-scratchpad-console",
+        "scratchpad_fixture": "ram-scratchpad-console-fixture",
+        "call_": "user-call-fixture",
+        "snapshot_": "snapshot-fixture",
+    },
+    "text-fixture": {
+        "text_": "runtime-owned-text-fixture",
+        "console_": "runtime-console-region-fixture",
+        "file_baseline": "program-file-call",
+        "file_": "program-file-call-fixture",
+    },
+}
+
+
+def former_image(image, row):
+    """The former image whose users and page policy one packed row runs."""
+    rows = PACKED_ROWS[image]
+    if row in rows:
+        return rows[row]
+    return next(former for prefix, former in rows.items() if prefix.endswith("_") and row.startswith(prefix))
+
 
 # BIOS profiles: the smoke image, the interactive console and one test image whose
 # fault, program-set and scheduler cases are selected at boot (runtime-fixtures.inc).
@@ -408,6 +457,10 @@ def bios_profile(mode):
             entry="kernel/program-entry.S",
             entry_flags=[value for define in defines for value in ("--defsym", define + "=1")],
             combined=False,
+            reflection_only=False,
+            local_symbols=False,
+            abi=False,
+            byte_stubs=False,
         )
         for index, (name, source, defines) in enumerate(programs)
     }
@@ -467,11 +520,110 @@ def bios_profile(mode):
         ]
         + (["serial-input", "kernel-interactive-console", "kernel-uart"] if console else []),
         closed=False,
+        sealed=False,
+        optimization="2",
         languages={},
     )
 
 
+OWNED_USER_MODES = ("owned-text", "console-region", "console-region-fixture")
+
+
+def packed_users(image, formers):
+    """One packed bank of every former image's user images, deduplicated by recipe."""
+    users, sets = {}, []
+    for row, (mode, owner, value) in FIXTURES.items():
+        if owner != image:
+            continue
+        chosen = []
+        for name, user in formers[former_image(image, row)]["users"].items():
+            slot = Path(user["source"]).stem
+            if users.setdefault(slot, user) != user:
+                raise ValueError(f"{image}: two {slot} user images with different recipes")
+            chosen.append(slot)
+        sets.append((mode, value, chosen))
+    return users, sets
+
+
+def packed_profile(image, flags):
+    """A test image co-hosting former images' compositions, each run by its rows."""
+    formers = {name: uefi_profile(name, FORMER_IMAGES[name]) for name in dict.fromkeys(PACKED_ROWS[image].values())}
+    users, sets = packed_users(image, formers)
+    # The kernel admits, per row, its former image's page policy; the widest
+    # bounds the layout and each slot keeps its image's own link-time cap.
+    policies = {
+        next(flag.split("=", 1)[1] for flag in profile["flags"] if flag.startswith("-DAURORA_RUNTIME_IMAGE_POLICY="))
+        for profile in formers.values()
+    }
+    widest = min(
+        (
+            name
+            for name, pages in IMAGE_POLICIES.items()
+            if all(all(a >= b for a, b in zip(pages, IMAGE_POLICIES[other])) for other in policies)
+        ),
+        key=lambda name: sum(IMAGE_POLICIES[name]),
+    )
+    flags = [
+        *flags,
+        "-DAURORA_RUNTIME_IMAGE_POLICY=" + widest,
+        "-DAURORA_RUNTIME_ROW_POLICY",
+        f"-DAURORA_RUNTIME_IMAGE_BANK={len(users)}",
+        f"-DAURORA_RUNTIME_BANK_PAGES={sum(user['max_pages'] for user in users.values())}",
+    ]
+    user_options = ["--service-budget"]
+    for name, user in users.items():
+        role = (user["base"] - LAYOUT.user_code) // LAYOUT.code_stride
+        extra = [key for key in ("budget", "owned", "console") if user[key]]
+        user_options += ["--image", ":".join([name, str(role), *extra, f"pages={user['max_pages']}"])]
+    for mode, value, chosen in sets:
+        user_options += ["--set", f"{mode}:{value}:{','.join(chosen)}"]
+    union = lambda key: {name: item for profile in formers.values() for name, item in profile[key].items()}
+    assembly = union("assembly")
+    for name in ("runtime-entry", "runtime-exceptions"):
+        words = [profile["assembly"][name]["flags"] for profile in formers.values()]
+        defines = dict.fromkeys(w[i + 1] for w in words for i in range(len(w)) if w[i] == "--defsym")
+        assembly[name] = dict(
+            assembly[name], flags=["--64"] + [word for define in defines for word in ("--defsym", define)]
+        )
+    primary = formers["ram-scratchpad-console" if image == "storage-fixture" else "program-file-call"]
+    languages = {}
+    if image == "storage-fixture":
+        # The snapshot producer is a second closed Aurora object with its own
+        # bridge, local symbols and import policy; the scratchpad object exports
+        # the kernel policies every row calls.
+        languages["producer"] = dict(
+            source="examples/kernel-snapshot.au",
+            bridge="kernel/uefi/snapshot-producer-entry.S",
+            roots=["kernel/policies", "library"],
+        )
+    owned_objects = list(dict.fromkeys(name for profile in formers.values() for name in profile["owned_objects"]))
+    link = ["payload-entry", "memory", "payload", "acpi", "pci", "runtime", "runtime-entry", "runtime-exceptions"]
+    return dict(
+        platform="uefi",
+        mode=image,
+        flags=flags,
+        language=primary["language"],
+        roots=["kernel/policies", "library"],
+        bridge=primary["bridge"],
+        cpp=union("cpp"),
+        assembly=assembly,
+        users=users,
+        user_kind="ipc",
+        user_mode="bank",
+        user_options=user_options,
+        user_metadata_options=[],
+        link=link + ["language"] + list(languages) + owned_objects,
+        closed=primary["closed"],
+        sealed=True,
+        optimization="s",
+        languages=languages,
+        owned_objects=owned_objects,
+    )
+
+
 def uefi_profile(profile_mode, flags):
+    if profile_mode in PACKED_ROWS:
+        return packed_profile(profile_mode, flags)
     # The production image composes exactly the protected program console and,
     # as a second closed Aurora object, the graphical terminal that renders it.
     mode = "program-console" if profile_mode == "production" else profile_mode
@@ -565,9 +717,24 @@ def uefi_profile(profile_mode, flags):
         else "one_page"
     )
     flags = [*flags, "-DAURORA_RUNTIME_IMAGE_POLICY=" + image_policy]
-    for index, image in enumerate(users.values()):
+    owned_users = user_mode in OWNED_USER_MODES
+    for index, (name, image) in enumerate(users.items()):
         if "max_pages" not in image:
             image["max_pages"] = IMAGE_POLICIES[image_policy][index]
+        # Per-image compiler options: closed callers, owned text and RAM file
+        # images have independently checked linked graphs (ABI facts).
+        owned = owned_users and name == "clean"
+        call_client = image["combined"] and blocking_call
+        image.update(
+            reflection_only=(call_client and name == "clean") or owned or ram_file,
+            local_symbols=owned,
+            abi=program or call_client or owned or ram_file,
+            byte_stubs=owned,
+            # Kernel-read metadata: service-timer ranges, owned-byte and Console sites.
+            budget=budget and not owned_text,
+            owned=owned,
+            console=owned and user_mode.startswith("console-region"),
+        )
     if user_mode == "fixture":
         # The kernel admits multipage's three pages for image 0 and 1 of every
         # row; each bank image keeps its own build-time page cap.
@@ -681,7 +848,12 @@ def uefi_profile(profile_mode, flags):
         + (["framebuffer"] if framebuffer else [])
         + (["event-intake"] if event else []),
         closed=program,
+        # Closed objects keep local symbols and referenced reflection only.
+        sealed=program or scratchpad,
+        # The closed supervisor and the scratchpad keep the protected Console size recipe.
+        optimization="s" if program or scratchpad else "2",
         languages=languages,
+        owned_objects=owned_objects,
     )
 
 

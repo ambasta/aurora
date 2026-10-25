@@ -15,15 +15,14 @@
 [[nodiscard, gnu::noinline]] auto text_trap(U64 frame) -> U64 {
     require(text_active(), "text active authority");
     auto *words = reinterpret_cast<U64 *>(frame);
-#if defined(AURORA_RUNTIME_FIXTURE) && !defined(AURORA_CONSOLE_REGION)
     text_fixture_entry(words);
-#endif
-    constexpr std::array<U64, 6> sites{images::clean_bytes_allocate_pc,
-                                       images::clean_bytes_borrow_length_pc,
-                                       images::clean_bytes_at_pc,
-                                       images::clean_bytes_set_pc,
-                                       images::clean_bytes_resize_pc,
-                                       images::clean_bytes_drop_pc};
+    const auto image = image_sites(0);
+    const std::array<U64, 6> sites{image.bytes_allocate_pc,
+                                   image.bytes_borrow_length_pc,
+                                   image.bytes_at_pc,
+                                   image.bytes_set_pc,
+                                   image.bytes_resize_pc,
+                                   image.bytes_drop_pc};
     std::size_t operation = sites.size();
     for (std::size_t i = 0; i < sites.size(); ++i)
         if (words[17] == sites[i])
@@ -39,9 +38,7 @@
     require(operation == 0 ? words[6] == text_region.id()
                            : owner.region == text_region.id() || (operation == 5 && pristine),
             "text private region binding");
-#if defined(AURORA_RUNTIME_FIXTURE) && !defined(AURORA_CONSOLE_REGION)
     text_fixture_owner(operation, owner);
-#endif
     U64 result = 0;
     if (operation == 0)
         __au_runtime_bytes_allocate(words[6], static_cast<std::int64_t>(words[7]), &owner);
@@ -72,11 +69,8 @@ extern "C" [[noreturn]] void __au_runtime_bytes_kernel_fault(std::uint64_t reaso
     stop("owned text allocator invariant");
 }
 
-#ifndef AURORA_CONSOLE_REGION
 auto run_owned_text(memory::PhysicalPages &pool) -> void {
-#if defined(AURORA_RUNTIME_FIXTURE) && !defined(AURORA_CONSOLE_REGION)
     select_fixture(Fixture::text_baseline, Fixture::text_stale);
-#endif
     require(pool.used() == 0, "text exclusive backing pool");
     constexpr std::array<U64, 5> scalars{0x1f642, 0xd800, 1114114, 1114112, 1114113};
     for (const auto scalar : scalars) {
@@ -133,5 +127,3 @@ auto run_owned_text(memory::PhysicalPages &pool) -> void {
     }
     Serial::text("AURORA_OWNED_TEXT_OK\r\n");
 }
-
-#endif

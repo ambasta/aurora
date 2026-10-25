@@ -115,7 +115,7 @@ PYMETA
         python3 tests/kernel-uefi-budget-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
     fi
 elif [[ "$mode" == snapshot* ]]; then
-    cp "$image_dir/user-images.json" "$output_dir/$mode.metadata.json"
+    cp "$output_dir/$mode.images.json" "$output_dir/$mode.metadata.json"
     python3 tests/kernel-snapshot-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
 elif [[ "$mode" == ipc* ]]; then
     python3 tests/kernel-uefi-ipc-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.images.json"

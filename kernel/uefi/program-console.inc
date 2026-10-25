@@ -22,12 +22,26 @@ bool command_owned{};
 #ifndef AURORA_FILE_CALL
 bool console_probe_used{};
 #endif
+#ifdef AURORA_TEXT_FIXTURE
+// The console-region rows' poll wait (console-region.inc) shares the one
+// wake mechanism; owned-text rows never wait. The file-call rows keep their own.
+[[nodiscard]] auto program_poll_policy() -> bool {
+    if (owned_rows())
+        return console_rows() && console_poll_policy();
+    return !command_owned && !run_authority;
+}
+[[nodiscard]] auto program_boundary() -> bool {
+    if (owned_rows())
+        return console_rows() && console_boundary();
+    const auto current_stack = stack();
+#else
 #include "console-wait.inc"
 [[nodiscard]] auto program_poll_policy() -> bool {
     return !command_owned && !run_authority;
 }
 [[nodiscard]] auto program_boundary() -> bool {
     const auto current_stack = stack();
+#endif
     return current_stack % 8 == 0 &&
            current_stack >=
                arena + Handoff::stack_bottom + ConsoleWakeContext::handler_reserve + ConsoleWakeContext::byte_count &&

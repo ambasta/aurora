@@ -20,7 +20,8 @@ import tty
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from kernel_layout import LAYOUT
-from kernel_profiles import FIXTURE_MODES
+from kernel_profiles import FIXTURE_MODES, serial_fixture_byte
+from kernel_uefi_oracle import loader_selection
 
 import qemu_transport as transport
 
@@ -446,6 +447,10 @@ def validate_wc(text, plans, images, timer, *, checksum=False):
 
 
 def validate_file_call(text, mode, expected, service_results, images, timer):
+    # Every file-call mode, the baseline included, boots text-fixture: its loader
+    # echoes the mode's fw_cfg row before any other record (PTY startup may
+    # duplicate CR before the first prompt).
+    loader_selection(text.replace("\r", ""), mode)
     validate_retained_service(text, final=True)
     need(mode.startswith("program-file-call"), "Exact file-call profile")
     need("FAIL" not in text and text.count("AURORA_FILE_CALL_READY:") == 1, "File-call startup/failure")
@@ -600,6 +605,7 @@ def validate_file_call(text, mode, expected, service_results, images, timer):
 def validate(
     text, mode, expected_outputs, commands, images, timer, expected_reads=None, expected_saves=None, expected_files=None
 ):
+    loader_selection(text.replace("\r", ""), mode)
     selected = mode in FIXTURE_MODES and FIXTURE_MODES[mode][0] == "program-fixture"
     need(
         text.count("AURORA_FIXTURE_READY") == int(selected)
@@ -885,8 +891,13 @@ def main():
     )
     need(args.mode.startswith("program-"), "Expected a protected program-console profile")
     build = args.build_dir.resolve()
+    user_images = json.loads((build / "user-images.json").read_text())
+    if (build / "user-sets.json").exists():
+        # A packed bank: the images this mode's row runs, by role.
+        chosen = json.loads((build / "user-sets.json").read_text())[args.mode]
+        user_images = {role: user_images[name] for role, name in chosen.items()}
     admitted = dict(
-        user_images=json.loads((build / "user-images.json").read_text()),
+        user_images=user_images,
         timer=json.loads((build / "service-timer-metadata.json").read_text()),
     )
     evidence_root = ROOT / "build/program-console-evidence"
@@ -1082,7 +1093,7 @@ def main():
                     need("output> " + expected + "\r\n" in part, "Actual protected file contents differ")
                     expected_outputs.append(expected)
 
-            if args.mode in FIXTURE_MODES:
+            if serial_fixture_byte(args.mode):
                 receive(b"AURORA_FIXTURE_READY", 0)
                 send(bytes([FIXTURE_MODES[args.mode][1]]))
             receive(b"aurora> ", 0)

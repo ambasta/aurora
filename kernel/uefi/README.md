@@ -134,8 +134,10 @@ from the QEMU fw_cfg file `opt/aurora/fixture` at entry (before ExitBootServices
 while OVMF still owns the UART), echoes it as `AURORA_FIXTURE_SELECTED: value=N`,
 and copies it into one extra handoff word that the payload admits only within the
 image's interval; a missing, malformed or out-of-image file fails at entry. The
-`display-fixture` (framebuffer and graphical-console) and `device-fixture` (console
-and owned-bytes) images read the same row (`loader-fixture.hpp`). Ordinary images have neither the fw_cfg reader nor the word. They validate successful ownership transfer, bounded retry,
+`display-fixture` (framebuffer and graphical-console), `device-fixture` (console
+and owned-bytes), `storage-fixture` (RAM file, RAM scratchpad, blocking call and
+snapshot) and `text-fixture` (file-call console, owned text and console region)
+images read the same row (`loader-fixture.hpp`). Ordinary images have neither the fw_cfg reader nor the word. They validate successful ownership transfer, bounded retry,
 rejection before accepting malformed metadata, rejection of an extra low-memory
 mapping, and actual hardware W^X enforcement. Hosted tests exercise124 descriptor,
 header and complete-tree cases; image validation has14 negative PE/payload cases;

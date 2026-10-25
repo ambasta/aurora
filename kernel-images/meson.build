@@ -69,10 +69,11 @@ foreach profile_id : profile_data['profiles'].split('|')
   profile_flags = flag_text == '' ? [] : flag_text.split('|')
   compiler_files = get_option('kernel_compiler') == '' ? [] : files(get_option('kernel_compiler'))
   objects = {}
-  closed = profile_data[key + '.closed'] == '1'
   bios_console = platform == 'bios' and mode == 'console'
   uefi_console = platform == 'uefi' and mode == 'device-fixture'
-  ram_scratchpad = platform == 'uefi' and mode in ['ram-scratchpad-console', 'ram-scratchpad-console-fixture']
+  # Closed objects (the protected supervisor, the scratchpad and the packed test
+  # images that compose them) keep local symbols and referenced reflection only.
+  sealed = profile_data[key + '.sealed'] == '1'
   stack_facts = []
   language_objects = []
   user_stack_args = []
@@ -82,7 +83,7 @@ foreach profile_id : profile_data['profiles'].split('|')
     root_args += ['--module-root', kernel_source / root]
   endforeach
   # The closed supervisor exposes only its bridge-declared scalar/native ABI.
-  if closed or ram_scratchpad
+  if sealed
     root_args += ['--referenced-reflection-only', '--local-symbols']
   endif
   bridge = profile_data[key + '.bridge']
@@ -90,11 +91,11 @@ foreach profile_id : profile_data['profiles'].split('|')
   language_outputs = [platform == 'bios' ? 'kernel-language.s' : 'language.s',
                       platform == 'bios' ? 'kernel-language.stack.json' : 'language.stack.json']
   language_dependencies = compiler_files
-  if closed or bios_console or ram_scratchpad or uefi_console
+  if sealed or bios_console or uefi_console
     language_outputs += [bios_console ? 'kernel-language.abi.json' : 'language.abi.json']
     root_args += ['--abi-facts', '@OUTPUT2@', '--bridge', kernel_source / bridge]
     language_dependencies += bridge_input + files('../scripts/bootstrap_frontend.py')
-    if closed or ram_scratchpad
+    if sealed
       root_args += ['--bridge', kernel_source / 'kernel/uefi/kernel-policy-entry.S']
       language_dependencies += files('../kernel/uefi/kernel-policy-entry.S')
     endif
@@ -197,19 +198,19 @@ foreach profile_id : profile_data['profiles'].split('|')
       endforeach
       entry_source = files('../' + profile_data[user_key + '.entry'])
       combined = profile_data[user_key + '.combined'] == '1'
-      owned_text = profile_data[key + '.user_mode'] in ['owned-text', 'console-region', 'console-region-fixture'] and name == 'clean'
-      call_client = combined and '--blocking-call' in profile_data[key + '.user_options'].split('|')
-      ram_file = '--ram-file' in profile_data[key + '.user_options'].split('|')
-      # Closed callers and owned text have independently checked linked graphs.
-      if (call_client and name == 'clean') or owned_text or ram_file
+      # Per-image options from the catalog: closed callers, owned text and RAM
+      # file images have independently checked linked graphs (ABI facts).
+      owned_text = profile_data[user_key + '.byte_stubs'] == '1'
+      user_abi = profile_data[user_key + '.abi'] == '1'
+      if profile_data[user_key + '.reflection_only'] == '1'
         user_root_args += ['--referenced-reflection-only']
       endif
-      if owned_text
+      if profile_data[user_key + '.local_symbols'] == '1'
         user_root_args += ['--local-symbols']
       endif
       user_outputs = ['user-' + name + '.s', 'user-' + name + '.stack.json']
       user_dependencies = compiler_files
-      if closed or call_client or owned_text or ram_file
+      if user_abi
         user_outputs += ['user-' + name + '.abi.json']
         user_root_args += ['--abi-facts', '@OUTPUT2@']
         if combined
@@ -244,7 +245,7 @@ foreach profile_id : profile_data['profiles'].split('|')
                     '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--depfile', '@DEPFILE@'] + user_root_args)
         kernel_user_assemblies += {user_recipe: user_assembly}
       endif
-      user_facts = [user_assembly[1]] + (closed or call_client or owned_text or ram_file ? [user_assembly[2]] : [])
+      user_facts = [user_assembly[1]] + (user_abi ? [user_assembly[2]] : [])
       byte_stubs = owned_text ? files('../kernel/uefi/owned-bytes-stubs.inc') : []
       user_object = custom_target(prefix + '-user-' + name + '-object',
         input: [user_assembly[0]] + (combined ? entry_source : []), output: 'user-' + name + '.o',
@@ -300,9 +301,9 @@ foreach profile_id : profile_data['profiles'].split('|')
   endif
 
   # Native Meson compiles own C++ dependency files and compile_commands entries.
-  # Keep the closed protected supervisor within its 152 KiB payload reservation.
-  # Both bounded scratchpad compositions use the existing protected Console size recipe.
-  profile_options = kernel_options + {'optimization': (closed or ram_scratchpad) ? 's' : '2'}
+  # Keep the closed protected supervisor, the scratchpad and the packed test
+  # images within their 152 KiB payload reservation (catalog optimization).
+  profile_options = kernel_options + {'optimization': profile_data[key + '.optimization']}
   cpp_names = profile_data[key + '.cpp'].split('|')
   foreach name : cpp_names
     source = files('../' + profile_data[key + '.cpp.' + name])

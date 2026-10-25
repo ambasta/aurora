@@ -47,11 +47,7 @@ unsigned ram_commands{};
            (ram_state == RamState::command && ram_command && mailbox && mailbox->state() == ipc::State::delivered &&
             transaction == ram_caller_wait.ticket);
 }
-#ifdef AURORA_RUNTIME_FIXTURE
 bool ram_fixture_injected{};
 U64 ram_epoch_ceiling = UINT64_MAX;
-#endif
 
-#ifdef AURORA_RAM_SCRATCHPAD_CONSOLE
 auto scratchpad_discard() -> void;
-#endif

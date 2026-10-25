@@ -41,18 +41,13 @@ template <class T> auto ram_clear(std::optional<T> &record) -> void {
              ram_command->framing.state() == RamFileFraming::State::aborting));
 }
 [[nodiscard]] auto ram_mint_epoch() -> std::optional<U64> {
-    if (timer_epoch_watermark == UINT64_MAX
-#ifdef AURORA_RUNTIME_FIXTURE
-        || timer_epoch_watermark >= ram_epoch_ceiling
-#endif
-    )
+    if (timer_epoch_watermark == UINT64_MAX || timer_epoch_watermark >= ram_epoch_ceiling)
         return std::nullopt;
     return ++timer_epoch_watermark;
 }
 [[nodiscard]] auto ram_boundary_debit() -> bool {
     require(timer_armed && !timer_exhausted && timer_remaining && timer_initial == timer_remaining + timer_ticks,
             "RAM boundary allowance");
-#ifdef AURORA_RUNTIME_FIXTURE
     // Conservative debits exercise exhaustion without replenishing any ledger.
     const bool inject = !ram_fixture_injected && ram_command &&
                         ((fixture == Fixture::ram_caller_budget && ram_commands == 2 && active == 0 &&
@@ -77,7 +72,6 @@ template <class T> auto ram_clear(std::optional<T> &record) -> void {
         Serial::number(timer_initial);
         Serial::text("\r\n");
     }
-#endif
     const auto charge = BudgetTransition::decode(
         language_budget_tick(timer_initial, timer_remaining, timer_ticks), timer_initial, timer_remaining, timer_ticks);
     require(charge.has_value(), "RAM boundary policy");
@@ -103,7 +97,6 @@ template <class T> auto ram_clear(std::optional<T> &record) -> void {
     return *context;
 }
 auto ram_trap(U64 frame) -> U64 {
-#ifdef AURORA_RUNTIME_FIXTURE
     if (active == 1 && ram_state == RamState::booting) {
         auto *words = reinterpret_cast<U64 *>(frame);
         if (fixture == Fixture::ram_grant)
@@ -115,8 +108,7 @@ auto ram_trap(U64 frame) -> U64 {
         if (fixture == Fixture::ram_root)
             asm volatile("mov %0,%%cr3" ::"r"(kernel_root) : "memory");
     }
-#endif
-    const auto context = ram_capture(frame, active == 0 ? images::clean_call_pc : images::bounds_serve_pc);
+    const auto context = ram_capture(frame, active == 0 ? image_sites(0).call_pc : image_sites(1).serve_pc);
     const auto &words = context.words();
     if (active == 0) {
         require(ram_command_valid() && !ram_caller_wait.context && words[8] == ram_command->caller_endpoint.slot() &&
@@ -181,12 +173,10 @@ auto ram_trap(U64 frame) -> U64 {
         park_run(*domains[1].handle);
         return 1;
     }
-#ifdef AURORA_RUNTIME_FIXTURE
     if (fixture == Fixture::ram_pending && !ram_fixture_injected) {
         ram_fixture_injected = true;
         force_timer_pending();
     }
-#endif
     // Capture the complete dormant record before publishing any observable reply.
     save_parked_run(ram_service_wait, context);
     if (ram_state == RamState::command) {
@@ -251,7 +241,7 @@ auto ram_launch(unsigned index, U64 phase, U64 epoch) -> void {
 auto ram_resume_service(U64 status, U64 word, U64 epoch) -> void {
     require(root() == kernel_root && active == L::domain_count && irq_off() && !timer_armed && !saved_rsp &&
                 !program.running() && ram_lifetime_valid() && ram_service_wait.context &&
-                ram_service_wait.context->call_frame(ram_lifetime->contract, images::bounds_serve_pc),
+                ram_service_wait.context->call_frame(ram_lifetime->contract, image_sites(1).serve_pc),
             "RAM dormant service authority");
     const bool cleanup = ram_state == RamState::aborting;
     require((cleanup && status == 1 && word == 0 && ram_command && ram_command->caller_disabled &&
@@ -282,8 +272,8 @@ auto ram_resume_service(U64 status, U64 word, U64 epoch) -> void {
         root() != kernel_root || active != L::domain_count || !irq_off() || timer_armed || saved_rsp ||
         program.running() || !saved.context || !saved.authority || !ticket || ticket != saved.ticket ||
         !saved.authority->ready_owner(registry, ram_command->caller, saved.authority->epoch()) ||
-        !saved.context->call_frame(*domains[0].contract, images::clean_call_pc) ||
-        !saved.context->call_frame(saved.authority->contract(), images::clean_call_pc) || saved.remaining == 0 ||
+        !saved.context->call_frame(*domains[0].contract, image_sites(0).call_pc) ||
+        !saved.context->call_frame(saved.authority->contract(), image_sites(0).call_pc) || saved.remaining == 0 ||
         saved.ticks >= 128 || saved.remaining != 128 - saved.ticks ||
         saved.endpoint.slot() != ram_command->caller_endpoint.slot() ||
         saved.endpoint.generation() != ram_command->caller_endpoint.generation() ||
@@ -337,9 +327,7 @@ auto ram_settle_caller() -> void {
     require(retire(0), "RAM retired caller scrub");
 }
 auto ram_reset() -> void {
-#ifdef AURORA_RAM_SCRATCHPAD_CONSOLE
     scratchpad_discard(); // No candidate can cross a reset or a new incarnation.
-#endif
     require(ram_state == RamState::poisoned && ram_lifetime_valid(), "RAM authenticated reset only");
     const bool uncertain = ram_command && ram_command->framing.commit_delivered() &&
                            ram_command->framing.outcome() != RamFileFraming::Outcome::committed &&
@@ -394,7 +382,7 @@ auto ram_exchange_commands() -> void {
             break;
         }
         require(ram_lifetime_valid() && ram_command_valid() && ram_service_wait.context &&
-                    ram_service_wait.context->call_frame(ram_lifetime->contract, images::bounds_serve_pc),
+                    ram_service_wait.context->call_frame(ram_lifetime->contract, image_sites(1).serve_pc),
                 "RAM pre-delivery continuation authority");
         const auto request = mailbox->receive(
             ram_command->service, ipc::Phase::service, ram_command->service_endpoint, ram_caller_wait.ticket);
@@ -405,7 +393,6 @@ auto ram_exchange_commands() -> void {
         if (ram_state == RamState::poisoned)
             break;
         require(ram_service_wait.context && mailbox->state() == ipc::State::replied, "RAM parked before caller reply");
-#ifdef AURORA_SCRATCHPAD_FIXTURE
         // Exercise caller loss with the real pending receipt. DATA #2 means
         // the unchanged caller already accumulated DATA #1 in its private result.
         if (ram_commands == 2 &&
@@ -415,8 +402,6 @@ auto ram_exchange_commands() -> void {
             ram_command->caller_disabled = true;
             break;
         }
-#endif
-#ifdef AURORA_RUNTIME_FIXTURE
         if (fixture == Fixture::ram_settlement &&
             ram_command->framing.outcome() == RamFileFraming::Outcome::committed) {
             // Dispose execution before consuming the committed receipt. Its
@@ -424,20 +409,17 @@ auto ram_exchange_commands() -> void {
             ram_command->caller_disabled = true;
             break;
         }
-#endif
         const auto ticket = ram_caller_wait.ticket;
         require(!ram_resume_caller((ticket == UINT64_MAX ? ticket - 1 : ticket + 1)) && ram_resume_caller(ticket),
                 "RAM exact reply wake");
     }
 }
-#ifndef AURORA_RAM_SCRATCHPAD_CONSOLE
 [[nodiscard]] auto ram_command_run(U64 scenario, RamFileFraming::Right right) -> bool {
     require(ram_state == RamState::idle && ram_lifetime_valid() && ram_service_wait.context && !ram_command &&
                 !domains[0].handle && !ram_caller_wait.context && mailbox->revoked(),
             "RAM command idle exclusivity");
     if (ram_commands >= 64)
         return false;
-#ifdef AURORA_RUNTIME_FIXTURE
     if (fixture == Fixture::ram_epochs && ram_commands == 1) {
         // Withhold every intermediate unused identity, monotonically. Never
         // decrease/reset a counter or admit a fabricated run. Both final tokens
@@ -445,7 +427,6 @@ auto ram_exchange_commands() -> void {
         require(timer_epoch_watermark < UINT64_MAX - 2, "RAM near-max fixture monotonicity");
         timer_epoch_watermark = UINT64_MAX - 2;
     }
-#endif
     const auto cleanup = ram_mint_epoch(), caller_epoch = ram_mint_epoch();
     if (!cleanup || !caller_epoch)
         return false; // No command admission, and no change to service contents.
@@ -471,7 +452,6 @@ auto ram_exchange_commands() -> void {
     Serial::text(" root=");
     Serial::number(ram_lifetime->root);
     Serial::text("\r\n");
-#ifdef AURORA_RUNTIME_FIXTURE
     if (fixture == Fixture::ram_epochs && ram_commands == 2) {
         require(*cleanup == UINT64_MAX - 1 && *caller_epoch == UINT64_MAX && timer_epoch_watermark == UINT64_MAX,
                 "RAM exact final command identities");
@@ -481,7 +461,6 @@ auto ram_exchange_commands() -> void {
         Serial::number(ram_epoch_ceiling);
         Serial::text("\r\n");
     }
-#endif
     ram_state = RamState::command;
     ram_launch(0, scenario, *caller_epoch);
     ram_exchange_commands();
@@ -490,11 +469,9 @@ auto ram_exchange_commands() -> void {
         return false;
     }
     const bool completed = ram_command->framing.state() == RamFileFraming::State::terminal;
-#ifdef AURORA_RUNTIME_FIXTURE
     const bool disposed_commit = fixture == Fixture::ram_settlement && completed && ram_command->caller_disabled &&
                                  mailbox->state() == ipc::State::replied &&
                                  ram_command->framing.outcome() == RamFileFraming::Outcome::committed;
-#endif
     const auto value = program.value();
     const auto event = program.event();
     const auto exchanges = ram_command->framing.count();
@@ -522,32 +499,43 @@ auto ram_exchange_commands() -> void {
     Serial::number(exchanges);
     Serial::text(" result=");
     Serial::number(value);
-    Serial::text(completed ? " outcome=completed retained=1\r\n" : " outcome=aborted retained=1\r\n");
-#ifdef AURORA_RUNTIME_FIXTURE
+    Serial::text(completed ? std::string_view{" outcome=completed retained=1\r\n"}
+                           : std::string_view{" outcome=aborted retained=1\r\n"});
     if (disposed_commit) {
         Serial::text("AURORA_RAM_FILE_SETTLED: caller_disabled=1 committed=1 consumed_once=1 retained=1\r\n");
         return true;
     }
-#endif
     return (scenario == 15 || scenario == 16) ? event == ProgramEvent::bounds
                                               : event == ProgramEvent::returned && value == 42;
 }
-#ifdef AURORA_RUNTIME_FIXTURE
 // Keep fixture dispatch explicit: byte-enum jump tables are intentionally not
 // in the stack checker's admitted full-width bounded-switch instruction set.
 [[gnu::noinline]] auto ram_fixture_is(Fixture expected) -> bool {
     return fixture == expected;
 }
-#endif
+// The baseline row runs the former fixture-free image's scenario list.
+auto run_ram_baseline() -> void {
+    using Right = RamFileFraming::Right;
+    constexpr std::array<U64, 25> scenarios{0, 1, 2,  3,  4,  7,  4,  15, 4,  16, 2, 5, 6,
+                                            8, 9, 13, 14, 10, 14, 11, 14, 12, 14, 5, 6};
+    const auto generation = ram_lifetime->generation;
+    for (const auto scenario : scenarios) {
+        const bool write = scenario == 1 || scenario == 3 || scenario == 5 || scenario == 7 || scenario == 8 ||
+                           scenario == 13 || (scenario >= 10 && scenario <= 12) || scenario == 15 || scenario == 16;
+        require(ram_command_run(scenario, write ? Right::replace : Right::read), "RAM compiled command result");
+        require(ram_lifetime->generation == generation, "RAM writer retirement retained incarnation");
+    }
+}
 auto run_ram_file() -> void {
     mailbox.emplace(registry);
-#ifdef AURORA_RUNTIME_FIXTURE
-    select_fixture(Fixture::ram_service_fault, Fixture::ram_root);
-#endif
+    const bool baseline = ram_fixture_is(Fixture::ram_baseline);
+    if (!baseline)
+        select_fixture(Fixture::ram_service_fault, Fixture::ram_root);
     require(ram_start(), "RAM initial service startup");
     using Right = RamFileFraming::Right;
-#ifdef AURORA_RUNTIME_FIXTURE
-    if (ram_fixture_is(Fixture::ram_settlement)) {
+    if (baseline) {
+        run_ram_baseline();
+    } else if (ram_fixture_is(Fixture::ram_settlement)) {
         require(ram_command_run(13, Right::replace) && ram_command_run(14, Right::read),
                 "RAM disposed writer exact fresh reader");
     } else if (ram_fixture_is(Fixture::ram_caller_budget) || ram_fixture_is(Fixture::ram_epochs)) {
@@ -591,17 +579,6 @@ auto run_ram_file() -> void {
                 "RAM source service fault reset");
         require(ram_start() && ram_command_run(0, Right::read), "RAM fresh missing after reset");
     }
-#else
-    constexpr std::array<U64, 25> scenarios{0, 1, 2,  3,  4,  7,  4,  15, 4,  16, 2, 5, 6,
-                                            8, 9, 13, 14, 10, 14, 11, 14, 12, 14, 5, 6};
-    const auto generation = ram_lifetime->generation;
-    for (const auto scenario : scenarios) {
-        const bool write = scenario == 1 || scenario == 3 || scenario == 5 || scenario == 7 || scenario == 8 ||
-                           scenario == 13 || (scenario >= 10 && scenario <= 12) || scenario == 15 || scenario == 16;
-        require(ram_command_run(scenario, write ? Right::replace : Right::read), "RAM compiled command result");
-        require(ram_lifetime->generation == generation, "RAM writer retirement retained incarnation");
-    }
-#endif
     require(ram_state == RamState::idle && ram_lifetime_valid() && mailbox->revoked(), "RAM quiescent exit");
     ram_service_wait.clear();
     ram_clear(ram_lifetime);
@@ -611,5 +588,3 @@ auto run_ram_file() -> void {
     mailbox.reset();
     Serial::text("AURORA_UEFI_RAM_FILE_OK: used=0 volatile=1\r\n");
 }
-
-#endif // !AURORA_RAM_SCRATCHPAD_CONSOLE

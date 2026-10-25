@@ -45,9 +45,9 @@ carry CRC32C only on success, with every other bit zero. Transport cancellation
 remains distinct from these operation results. The client decodes the checksum
 and combines it with live locals after returning from the call.
 The consumer checks live helper and caller locals, a rejected second call, service faults, post-call budget exhaustion,
-and retirement/reuse. `user-call-pending`, `user-call-owner` and `user-call-site`
-share one boot-selected fixture image for pending IRQ drain and rejected claims;
-the ordinary image omits those injected claims. Linked image gates retain the
+and retirement/reuse. `user-call` and its `user-call-pending`, `user-call-owner`
+and `user-call-site` cases are boot-selected rows of `storage-fixture` for pending
+IRQ drain and rejected claims; the baseline row runs no injected claim. Linked image gates retain the
 15,360-byte kernel stack cap and 512-byte fault reserve; this profile has no
 floating-point state, concurrent calls, general wait queues or budget donation.
 

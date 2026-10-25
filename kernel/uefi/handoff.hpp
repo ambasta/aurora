@@ -3,7 +3,8 @@
 #include <cstdint>
 #include <span>
 #include "runtime-layout.hpp"
-#if defined(AURORA_PLATFORM_FIXTURE) || defined(AURORA_DISPLAY_FIXTURE) || defined(AURORA_DEVICE_FIXTURE)
+#if defined(AURORA_PLATFORM_FIXTURE) || defined(AURORA_DISPLAY_FIXTURE) || defined(AURORA_DEVICE_FIXTURE) ||           \
+    defined(AURORA_STORAGE_FIXTURE) || defined(AURORA_TEXT_FIXTURE)
 #define AURORA_LOADER_FIXTURE 1
 #include "loader-fixture.hpp"
 #endif

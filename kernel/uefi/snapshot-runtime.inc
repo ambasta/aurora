@@ -78,7 +78,6 @@ auto snapshot_round_trip(U64 offset, bool unknown = false) -> U64 {
 
 auto run_snapshot(memory::PhysicalPages &producer_pool) -> void {
     auto scenario = SnapshotProducerCase::normal;
-#ifdef AURORA_SNAPSHOT_FIXTURE
     select_fixture(Fixture::snapshot_baseline, Fixture::snapshot_reply_reserved);
     if (fixture == Fixture::snapshot_producer_selector)
         scenario = SnapshotProducerCase::invalid_selector;
@@ -86,7 +85,6 @@ auto run_snapshot(memory::PhysicalPages &producer_pool) -> void {
         scenario = SnapshotProducerCase::quota;
     else if (fixture == Fixture::snapshot_producer_pages)
         scenario = SnapshotProducerCase::pages;
-#endif
     const auto publication = prepare_snapshot(arena, producer_pool, snapshot_slot, scenario);
     require(publication != ipc::SnapshotPublication::malformed, "snapshot producer publication");
     if (publication == ipc::SnapshotPublication::unavailable) {
@@ -99,7 +97,6 @@ auto run_snapshot(memory::PhysicalPages &producer_pool) -> void {
     mailbox.emplace(registry);
     require(create(0) == 0 && create(1) == 1, "snapshot owned participants");
     snapshot_bind();
-#ifdef AURORA_SNAPSHOT_FIXTURE
     if (fixture == Fixture::snapshot_stale) {
         const auto stale = mailbox->endpoint(*domains[0].handle);
         snapshot_slot.clear();
@@ -129,7 +126,6 @@ auto run_snapshot(memory::PhysicalPages &producer_pool) -> void {
         require(snapshot_complete(0, true) == snapshot_cancelled, "snapshot compiled cancellation");
         snapshot_restart(producer_pool);
     }
-#endif
     // Native retains only the copied continuation, never a persistent file cursor.
     U64 offset = 0;
     for (unsigned step = 0; step < 65; ++step) {

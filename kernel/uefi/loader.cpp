@@ -191,10 +191,21 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
     put(handoff, 120, arena + RuntimeLayout::metadata_offset);
     // Slot is the installed copy; role is the domain image it is linked for.
     const auto install_user = [&](unsigned slot, unsigned role, std::span<const std::byte> image, const auto &fields) {
+#ifdef AURORA_RUNTIME_BANK_PAGES
+        // A packed slot holds at most its own image's pages; each row's kernel
+        // admission (its former image's page policy) applies again at creation.
+        static_assert(bank_pages == AURORA_RUNTIME_BANK_PAGES && slot_offsets.size() == RuntimeLayout::image_slots);
+        static_cast<void>(role);
+        if (image.empty() || slot >= RuntimeLayout::image_slots ||
+            image.size() > slot_pages[slot] * RuntimeLayout::page_size || fields[1] != image.size())
+            fail("bounded user image");
+        auto target = span(arena + RuntimeLayout::image_offset + slot_offsets[slot], image.size());
+#else
         if (image.empty() || image.size() > RuntimeLayout::image_limit(role) || fields[1] != image.size() ||
             slot >= RuntimeLayout::image_slots)
             fail("bounded user image");
         auto target = span(arena + RuntimeLayout::slot_page(slot), image.size());
+#endif
         for (std::size_t i = 0; i < image.size(); ++i)
             target[i] = image[i];
         auto descriptor = span(arena + RuntimeLayout::metadata_offset + slot * 64, 64);

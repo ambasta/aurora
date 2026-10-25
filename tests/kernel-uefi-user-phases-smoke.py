@@ -41,6 +41,7 @@ DENIED_IRQ = ("user-role", "user-phase", "user-transaction", "user-epoch", "user
 DISPOSAL_DENIED = ("user-disposal-input", "user-disposal-output")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import kernel_profiles  # noqa: E402
+from kernel_uefi_oracle import loader_selection  # noqa: E402
 
 # Modes of the user-run rows of service-fixture, whose clean client carries the probe set.
 FIXTURE_MODES = kernel_profiles.family_modes("service-fixture", "user_")
@@ -739,8 +740,6 @@ def ram_trace(text, mode, metadata, call_pc, serve_pc):
     run, segment, compiled_count = ram_run_parser(take, peek, arena, metadata, call_pc, serve_pc, mode)
 
     take(f"AURORA_UEFI_TIMER_READY: physical=4276092928 virtual={budget.APIC} id=0 root={kernel}")
-    if mode != "user-ram-file":
-        take("AURORA_FIXTURE_READY")
     epoch = 1
     run(1, epoch, 1, 0, 8)
     denied = mode.endswith(("-grant", "-site", "-frame", "-root"))
@@ -879,25 +878,14 @@ def validate(status, text, mode, metadata):
                 "User selector admission phase",
             )
             text = text.replace(marker, "", 1)
+    # Every RAM-file and call mode, the baselines included, boots storage-fixture:
+    # its loader echoes the mode's fw_cfg row before any other record.
     if mode.startswith("user-ram-file"):
-        return validate_ram_file(status, text, mode, metadata)
+        return validate_ram_file(status, loader_selection(text.replace("\r", ""), mode), mode, metadata)
     if mode in ("user-call", "user-call-pending", "user-call-owner", "user-call-site"):
-        # Every call mode, the baseline included, boots user-call-fixture: one
-        # selector after timer admission and before the first call domain.
-        marker = "AURORA_FIXTURE_READY\n"
-        text = text.replace("\r", "")
-        later = [
-            index for index in (text.find(item) for item in ("AURORA_UEFI_TIMER_ARM:", "AURORA_CALL_")) if index >= 0
-        ]
-        need(
-            text.count(marker) == 1
-            and text.count("AURORA_FIXTURE") == 1
-            and 0 <= text.find("AURORA_UEFI_TIMER_READY:") < text.index(marker)
-            and later
-            and text.index(marker) + len(marker) <= min(later),
-            "Exact call fixture readiness",
-        )
-        return validate_call(status, text.replace(marker, "", 1), mode, metadata)
+        text = loader_selection(text.replace("\r", ""), mode)
+        need("AURORA_FIXTURE" not in text, "Exact call fixture selection")
+        return validate_call(status, text, mode, metadata)
     if mode == "user-resume":
         # Its baseline row boots service-fixture: one selector before timer admission.
         marker = "AURORA_FIXTURE_READY\n"

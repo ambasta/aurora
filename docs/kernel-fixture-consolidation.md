@@ -21,7 +21,10 @@ IVRS, BAR, BAR-state, BAR-capture and NVMe-preparation images into
 `platform-fixture`, and to 26 (23 UEFI, 3 BIOS) by folding the framebuffer and
 graphical-console images into `display-fixture` and the console and owned-bytes
 images into `device-fixture`, and to 22 (19 UEFI, 3 BIOS) by folding the IPC,
-budget, dispatcher, user-phase and user-resume images into `service-fixture`. Every
+budget, dispatcher, user-phase and user-resume images into `service-fixture`, and
+to 14 (11 UEFI, 3 BIOS) by folding the RAM file, RAM scratchpad, blocking-call and
+snapshot images into `storage-fixture` and the file-call, owned-text and
+console-region images into `text-fixture`. Every
 fault mode keeps its own guest run and exact oracle. A source image count is not a
 measured build or execution saving; the PR records those.
 
@@ -41,9 +44,10 @@ measured build or execution saving; the PR records those.
   (`kernel_profiles.fw_cfg_fixture`, machine variants included). The loader copies
   the value into one extra handoff word (offset 128, present only in these images)
   that the payload admits only within the image's interval, so every payload case
-  shares the image (see below). `display-fixture` and `device-fixture` use the
-  same loader row (`loader-fixture.hpp`), because their subsystems differ from the
-  loader onward and their interactive console sessions cannot take a serial byte. The
+  shares the image (see below). `display-fixture`, `device-fixture`,
+  `storage-fixture` and `text-fixture` use the same loader row
+  (`loader-fixture.hpp`), because their subsystems differ from the loader onward
+  and their interactive console sessions cannot take a serial byte. The
   `iommu-event` image reads the same file at Event entry, because its harness
   writes serial output to a file and cannot send a selector byte.
 - Capture bytes: the framebuffer capture gate waits for `G`, which only releases
@@ -61,8 +65,9 @@ measured build or execution saving; the PR records those.
   first row of its interval (`*_baseline`) selects the unchanged normal flow, so
   the mode boots the fixture image: `acpi`, `pci`, `ipc`, `budget`, `dispatch`,
   `user-phases`, `user-resume`, `snapshot`, `runtime`, `runtime-span`, `runtime-multipage`, `runtime-owned-text`,
-  `runtime-console-region`, `user-call`, `framebuffer`, `graphical-console`,
-  `console`, `owned-bytes` and BIOS `schedule`. Machine variants
+  `runtime-console-region`, `user-call`, `user-ram-file`, `ram-scratchpad-console`,
+  `program-file-call`, `framebuffer`, `graphical-console`, `console`, `owned-bytes`
+  and BIOS `schedule`. Machine variants
   (`acpi-two`, `pci-devices`, `pci-bridge`, `budget-smp`, `schedule-smp`,
   `schedule-no-apic`) inherit their baseline's image and selector. Oracles
   separate a family's fault cases (`kernel_profiles.fixture_cases`) from every
@@ -147,7 +152,7 @@ values from `kernel/bootstrap-layout-values.inc`.
 | Case | Was | Same property now enforced by |
 | --- | --- | --- |
 | IPC owner/version/phase/transaction/site/unknown | hostile client images | `service-fixture`'s IPC rows alter the trapped exit before the unchanged kernel checks (site moves the trapped RIP off the return site; unknown resumes the client at the wrapper's `bad_entry` UD2, an unregistered address); `tests/kernel-uefi-ipc-smoke.py` |
-| snapshot owner, reply byte/reserved; program ordinal/owner/transaction/unknown | hostile client/service images | same exit hook in `snapshot-fixture`/`program-fixture` (program unknown also faults at `bad_entry`); their transcript oracles |
+| snapshot owner, reply byte/reserved; program ordinal/owner/transaction/unknown | hostile client/service images | same exit hook in `storage-fixture`/`program-fixture` (program unknown also faults at `bad_entry`); their transcript oracles |
 | stale, stale-exhausted, bad-table, bad-handoff, bad-map, wp, nx, acpi-duplicate-root | eight kernel builds | `platform-fixture`; each injection sits where its build did (bad-table still maps 0x10000 before exit, so the payload's complete-tree check is unchanged). The image includes ACPI for `acpi-duplicate-root`, so bad-handoff swaps the handoff version between its RSDP-free and RSDP-bearing forms instead of writing 2; the payload's version/content check still rejects it. `tests/kernel-uefi-smoke.py`, `tests/kernel-acpi-smoke.py`, which also require the selector echo before any exit record |
 | runtime code/stack/kernel/window/write/nx/return/unknown/syscall/sysenter | one client image per probe | probe set in `runtime-fixture`'s clean client; `tests/kernel-uefi-runtime-smoke.py` |
 | runtime terminal input/output | two kernel builds | `runtime-fixture` mutation, as the BIOS fault fixture already did |
@@ -188,16 +193,14 @@ profiles; the clock catalog and launch lists reject the retired modes.
 
 ## Still separate
 
-- Interactive products with fixture siblings: `program-file-call` and
-  `ram-scratchpad-console` also open foreground serial sessions, where no harness
-  can send a serial selector; they stay fixture-free until they take a fw_cfg row.
-- Baselines whose fixture runs different user images: `user-ram-file` and
-  `ram-scratchpad-console` (their fixture services carry always-on hostile
-  requests) and `program-file-call` (the fixture client, and the kernel's
-  operation rewrite whenever the fixture is compiled). Folding these needs a
-  payload bank: the kernel compiles user-image sites (`images::*_pc`, compiled
-  ranges) in as constants and the loader installs the images before exit, so
-  several image sets need generated per-set records selected at boot.
+- `program-fixture`, `text-fixture` and `storage-fixture` cannot be fewer: the
+  program-console and file-call Aurora objects are 58.7 and 47.9 KB of
+  text+data, which with the ACPI, PCI and payload objects (21 KB) already reach
+  127.6 KB before any runtime code (the program fixture's runtime object alone
+  is 41.4 KB), so they need two images; and the storage compositions (the
+  scratchpad and producer objects, 24.6 and 12.9 KB, and a 72.6 KB runtime
+  object; memory end 148 of 152 KiB) do not fit the 28 and 12 KiB the program
+  and text fixtures leave free.
 - `display-fixture` and `device-fixture` cannot share one image: their union
   (graphical console, framebuffer, console service, UART policy and owned bytes:
   the two payloads less one shared 17 KiB base, about 242 KiB) exceeds the
@@ -312,3 +315,34 @@ rejects both images' flags.
 
 The 30-second generic, 60-second IVRS/BAR and 180-second console deadlines are
 unchanged. Grouping does not widen user-image, stack or page admission.
+
+## Storage and text fixtures
+
+`storage-fixture` co-hosts the RAM file service (`user-ram-file`, newly a baseline
+row, and its fault rows), the RAM scratchpad console (`ram-scratchpad-console` and
+`ram-scratchpad-console-fixture`, which then takes its own ASCII probe selector),
+the blocking snapshot call (`user-call` rows) and the snapshot producer
+(`snapshot` rows); `text-fixture` co-hosts the protected file-call console
+(`program-file-call`, newly a baseline row, and its two faults), owned text and
+the console region. Both read the loader row (`loader-fixture.hpp`) and echo it;
+`select_packed_row` fixes the composition before timer admission, and every
+former compile-time choice is a row predicate (`ram_rows`, `call_rows`, `timed`;
+`owned_rows`, `console_rows`): the trap and envelope routes, the run authority,
+the epoch source, the budget, the timer and exchange gates, and the flow. Snapshot
+rows stay untimed as their image was (no LAPIC leaf, no CPL3 `INT 0x82` gate).
+The former images are build data (`kernel_profiles.FORMER_IMAGES`, `PACKED_ROWS`):
+each row runs its former image's user images, compiler options and metadata from a
+packed bank of slots of their own page caps (`AURORA_RUNTIME_BANK_PAGES`,
+`images::slot_offsets`, 12 pages each), and admits its former image's page policy
+(`AURORA_RUNTIME_ROW_POLICY`, chosen before any domain exists), so no row's user
+image admission widens. Kernel-read sites (call/serve PCs, compiled ranges,
+owned-byte and Console sites) are per-slot records (`images::slot_sites`).
+The storage image's snapshot producer is a second closed Aurora object
+(`imports:producer`); the scratchpad object exports the kernel policies every row
+calls. Both images build at -Os (production keeps its own options). Payloads are
+135,960 and 128,432 bytes (memory ends 148 and 140 KiB); stack totals are 11,527
+and 11,591 of 15,360 bytes. The RAM file, call, snapshot, scratchpad, owned-text,
+console-region and file-call oracles require the loader echo with their row
+instead of a serial READY receipt at their old phase; their behavioural assertions
+are unchanged. Guards in `runtime.cpp` keep these compositions out of every other
+image, and production and the graphical terminal reject both flags.

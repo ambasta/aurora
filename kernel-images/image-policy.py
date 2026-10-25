@@ -46,9 +46,21 @@ RULES = [
             "bios/console",
             "uefi/program-*",
             "uefi/production",
-            "uefi/ram-scratchpad-console*",
+            "uefi/text-fixture",
         ],
         "imports": ["__au_runtime_console_next", "__au_runtime_console_put"],
+    },
+    # The storage fixture's scratchpad object reaches only Console; its snapshot
+    # producer object only the byte region.
+    {
+        "profiles": ["uefi/storage-fixture"],
+        "imports:language": ["__au_runtime_console_next", "__au_runtime_console_put"],
+        "imports:producer": [
+            "__au_runtime_bytes_allocate",
+            "__au_runtime_bytes_at",
+            "__au_runtime_bytes_drop",
+            "__au_runtime_bytes_set",
+        ],
     },
     # The display fixture's graphical console reads Console input and paints
     # through Display; its framebuffer service object only paints.
@@ -72,15 +84,6 @@ RULES = [
             "__au_runtime_console_put",
             "__au_runtime_iommu_event_acknowledge",
             "__au_runtime_iommu_event_poll",
-        ],
-    },
-    {
-        "profiles": ["uefi/snapshot*", "uefi/user-call*"],
-        "imports": [
-            "__au_runtime_bytes_allocate",
-            "__au_runtime_bytes_at",
-            "__au_runtime_bytes_drop",
-            "__au_runtime_bytes_set",
         ],
     },
     # The device fixture's console service object reaches only Console, its UART
@@ -107,35 +110,31 @@ RULES = [
         "profiles": [
             "uefi/runtime*",
             "uefi/service-fixture",
-            "uefi/snapshot*",
-            "uefi/user-*",
+            "uefi/storage-fixture",
+            "uefi/text-fixture",
             "uefi/program-*",
             "uefi/production",
-            "uefi/ram-scratchpad-console*",
             "bios/*",
         ],
         "reachable": ["aurora_kernel_terminal_event"],
     },
     {
         "profiles": [
-            "uefi/runtime-owned-text*",
-            "uefi/runtime-console-region*",
             "uefi/service-fixture",
-            "uefi/user-*",
+            "uefi/storage-fixture",
+            "uefi/text-fixture",
             "uefi/program-*",
             "uefi/production",
-            "uefi/ram-scratchpad-console*",
         ],
         "reachable": ["aurora_kernel_budget_tick"],
     },
     {
         "profiles": [
             "uefi/service-fixture",
-            "uefi/snapshot*",
-            "uefi/user-*",
+            "uefi/storage-fixture",
+            "uefi/text-fixture",
             "uefi/program-*",
             "uefi/production",
-            "uefi/ram-scratchpad-console*",
         ],
         "reachable": ["aurora_kernel_ipc_transition"],
     },
