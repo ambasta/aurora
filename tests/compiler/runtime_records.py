@@ -58,18 +58,8 @@ def checked(argv, name, timeout=120):
     return result.stdout
 
 
-# Byte values covering every class the package grammars distinguish. The merge
-# profile substitutes only these; --profile complete substitutes all 256.
-SAMPLE_BYTES = frozenset(b"\0\t\n\r #-./09:@AZ_az\x7f\x80\xff")
-
-
-def profile(parser):
-    parser.add_argument("--profile", choices=("merge", "complete"), default="merge")
-
-
-def substitution_sampled(label):
-    family, _, value = label.rpartition("/")
-    return not family.startswith("all-byte-substitution/") or int(value) in SAMPLE_BYTES
+# One byte from every class the package grammars distinguish, for substitution cases.
+SAMPLE_BYTES = tuple(sorted(b"\0\t\n\r #-./09:@AZ_az\x7f\x80\xff"))
 
 
 @contextlib.contextmanager

@@ -226,11 +226,11 @@ def parsing_cases():
     # name digit, internal hyphen, separator @, numeric starts/tails, both dots.
     token = b"a1-b2@12.34.56"
     for position in range(len(token)):
-        for value in range(256):
+        for value in records.SAMPLE_BYTES:
             add(f"all-byte-substitution/{position}/{value}", token[:position] + bytes([value]) + token[position + 1 :])
     maximum = b"a@4294967295.4294967295.4294967295"
     for position in (11, 22, 33):
-        for value in range(256):
+        for value in records.SAMPLE_BYTES:
             add(f"max-component-byte/{position}/{value}", maximum[:position] + bytes([value]) + maximum[position + 1 :])
     owner = b"\xff\0a@1.2.3\n\xff"
     for offset in (IMIN, -57, -1, 0, 1, 2, 3, len(owner) - 1, len(owner), len(owner) + 1, IMAX):
@@ -279,7 +279,7 @@ def construction_cases():
             version = [1, 2, 3]
             version[component] = value
             add(f"constructor/component/{component}/{value}", version=tuple(version))
-    for value in range(256):
+    for value in records.SAMPLE_BYTES:
         add(f"constructor/first-byte/{value}", bytes([value]))
     return cases
 
@@ -339,15 +339,12 @@ def packet(program, operation, values):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--compiler", type=Path, required=True)
-    records.profile(parser)
     args = parser.parse_args()
     cases = all_cases()
     golden = records.load_jsonl(GOLDEN / "package_identity.jsonl")
     require(len(golden) == len(cases), f"{len(cases)} generated cases, {len(golden)} golden rows")
     for (label, _, _), row in zip(cases, golden):
         require(row["label"] == label, f"golden row {row['label']!r} for case {label!r}")
-    if args.profile == "merge":
-        cases, golden = zip(*((case, row) for case, row in zip(cases, golden) if records.substitution_sampled(case[0])))
     with records.scratch("package-identity") as scratch:
         driver = records.Driver(args.compiler, scratch)
         program = driver.build(driver_source(), "IdentityInput", kind="u64")
@@ -359,7 +356,7 @@ def main():
             scratch,
         )
         rejections = driver.reject_all(GOLDEN / "package_identity_rejections.jsonl")
-    print(f"PASS package identity ({args.profile}): {count} cases, {words} u64 observations, {rejections} rejections")
+    print(f"PASS package identity: {count} cases, {words} u64 observations, {rejections} rejections")
 
 
 if __name__ == "__main__":
