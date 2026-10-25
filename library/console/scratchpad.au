@@ -5,10 +5,15 @@ export namespace console {
         return byte >= ' ' && byte <= '~';
     }
 
+    auto scratchpad_hex(u8 byte) -> bool {
+        return (byte >= '0' && byte <= '9') || (byte >= 'a' && byte <= 'f');
+    }
+
     enum class ScratchpadOperation {
         get,
         put,
-        append
+        append,
+        crc
     };
 
     enum class ScratchpadResultKind {
@@ -16,7 +21,8 @@ export namespace console {
         content,
         missing,
         saved,
-        refused
+        refused,
+        checksum
     };
 
     enum class ScratchpadInputAction {
@@ -37,7 +43,8 @@ export namespace console {
         indeterminate_reset,
         reset,
         unavailable,
-        limit
+        limit,
+        checksum
     };
 
     // These classes own ordinary inline transport bytes, not service state or
@@ -71,10 +78,10 @@ export namespace console {
         }
         auto valid() const -> bool {
             if (count > 49u64 || (operation != ScratchpadOperation::get && operation != ScratchpadOperation::put
-                && operation != ScratchpadOperation::append)) {
+                && operation != ScratchpadOperation::append && operation != ScratchpadOperation::crc)) {
                 return false;
             }
-            if (operation == ScratchpadOperation::get && count != 0u64) {
+            if ((operation == ScratchpadOperation::get || operation == ScratchpadOperation::crc) && count != 0u64) {
                 return false;
             }
             u64 index = 0u64;
@@ -114,7 +121,9 @@ export namespace console {
             return bytes[i64(index)];
         }
         auto append(u8 byte) -> bool {
-            if (kind != ScratchpadResultKind::content || count >= 49u64 || !scratchpad_printable(byte)) {
+            if ((kind != ScratchpadResultKind::content && kind != ScratchpadResultKind::checksum) || count >= 49u64
+                || !scratchpad_printable(byte) || (kind == ScratchpadResultKind::checksum && (count >= 8u64
+                || !scratchpad_hex(byte)))) {
                 return false;
             }
             bytes[i64(count)] = byte;
@@ -124,16 +133,18 @@ export namespace console {
         auto valid() const -> bool {
             if (count > 49u64 || (kind != ScratchpadResultKind::incomplete && kind != ScratchpadResultKind::content
                 && kind != ScratchpadResultKind::missing && kind != ScratchpadResultKind::saved && kind
-                != ScratchpadResultKind::refused)) {
+                != ScratchpadResultKind::refused && kind != ScratchpadResultKind::checksum)) {
                 return false;
             }
-            if (kind != ScratchpadResultKind::content && count != 0u64) {
+            if ((kind != ScratchpadResultKind::content && kind != ScratchpadResultKind::checksum && count != 0u64)
+                || (kind == ScratchpadResultKind::checksum && count != 8u64)) {
                 return false;
             }
             u64 index = 0u64;
             while (index < 64u64) {
                 if (index < count) {
-                    if (!scratchpad_printable(bytes[i64(index)])) {
+                    if (!scratchpad_printable(bytes[i64(index)]) || (kind == ScratchpadResultKind::checksum
+                        && !scratchpad_hex(bytes[i64(index)]))) {
                         return false;
                     }
                 } else {
@@ -193,7 +204,9 @@ export namespace console {
             return bytes[i64(index)];
         }
         auto append(u8 byte) -> bool {
-            if (kind != ScratchpadResponseKind::content || count >= 49u64 || !scratchpad_printable(byte)) {
+            if ((kind != ScratchpadResponseKind::content && kind != ScratchpadResponseKind::checksum) || count >= 49u64
+                || !scratchpad_printable(byte) || (kind == ScratchpadResponseKind::checksum && (count >= 8u64
+                || !scratchpad_hex(byte)))) {
                 return false;
             }
             bytes[i64(count)] = byte;
@@ -206,16 +219,19 @@ export namespace console {
                 != ScratchpadResponseKind::rejected && kind != ScratchpadResponseKind::aborted && kind
                 != ScratchpadResponseKind::read_failed && kind != ScratchpadResponseKind::committed_caller_failed
                 && kind != ScratchpadResponseKind::indeterminate_reset && kind != ScratchpadResponseKind::reset && kind
-                != ScratchpadResponseKind::unavailable && kind != ScratchpadResponseKind::limit)) {
+                != ScratchpadResponseKind::unavailable && kind != ScratchpadResponseKind::limit && kind
+                != ScratchpadResponseKind::checksum)) {
                 return false;
             }
-            if (kind != ScratchpadResponseKind::content && count != 0u64) {
+            if ((kind != ScratchpadResponseKind::content && kind != ScratchpadResponseKind::checksum && count != 0u64)
+                || (kind == ScratchpadResponseKind::checksum && count != 8u64)) {
                 return false;
             }
             u64 index = 0u64;
             while (index < 64u64) {
                 if (index < count) {
-                    if (!scratchpad_printable(bytes[i64(index)])) {
+                    if (!scratchpad_printable(bytes[i64(index)]) || (kind == ScratchpadResponseKind::checksum
+                        && !scratchpad_hex(bytes[i64(index)]))) {
                         return false;
                     }
                 } else {

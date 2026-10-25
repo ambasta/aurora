@@ -11,6 +11,10 @@ export namespace console {
             == 't') {
             return ScratchpadCommand(ScratchpadOperation::get, 0u64);
         }
+        if (length == 3 && line.submission_byte(0) == 'c' && line.submission_byte(1) == 'r' && line.submission_byte(2)
+            == 'c') {
+            return ScratchpadCommand(ScratchpadOperation::crc, 0u64);
+        }
         i64 start = 0;
         ScratchpadOperation operation = ScratchpadOperation::put;
         if (length >= 3 && line.submission_byte(0) == 'p' && line.submission_byte(1) == 'u' && line.submission_byte(2)

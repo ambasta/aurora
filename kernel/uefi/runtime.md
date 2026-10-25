@@ -257,7 +257,7 @@ Legacy `program-file-call` profiles retain their scrubbed-reentry and supervisor
 ## Opt-in interactive RAM scratchpad
 
 The separate `ram-scratchpad-console` composition accepts actual `put [text]`,
-`append [text]`, `get`, `help`, `status` and `exit` input. It is implemented with focused source,
+`append [text]`, `get`, `crc`, `help`, `status` and `exit` input. It is implemented with focused source,
 native, linked-image and real-PTY evidence; bounded local qualification is recorded
 in [#235](https://github.com/ambasta/aurora/pull/235). That receipt applies only to its
 recorded source, tools and profiles. Run
@@ -273,6 +273,14 @@ on a present file, but rejects a missing file. One separator after `put` or `app
 is grammar; remaining spaces are file bytes. At most 64 protected commands are admitted; local help/status and
 rejected input do not reset that count. This is not the legacy four-file console,
 a mounted filesystem, persistence or a general shell.
+
+`crc` computes CRC32C inside the compiled caller using the existing read-only
+request stream and `std.checksum`. It publishes exactly eight lowercase hex digits
+only after authenticated EOF and caller retirement; missing remains distinct from
+present-empty (`00000000`). No partial digest survives read failure or service
+reset. Digest results have their own closed kind, canonical width and zero suffix;
+ordinary `get` still requires its result length to equal the accepted DATA count.
+The supervisor never computes the checksum, and no service opcode or limit changes.
 
 Aurora owns the line grammar, exact client scalar requests, result bytes and
 presentation. Native code stages an 80-byte command and captures an 80-byte

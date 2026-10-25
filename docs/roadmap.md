@@ -22,7 +22,8 @@ state behind sealed ConsoleSession/DisplaySession capabilities. The
 and four named session-local RAM files; the [graphical console](framebuffer-console.md)
 adds Aurora-owned presentation. This state lasts for the session, not across
 reboots. The protected-console source also uses ConsoleSession for individual
-input and response turns, awaiting execution qualification; native dispatch and
+input and response turns, exercised by the production-console qualification in
+[9aa7b5d](https://github.com/ambasta/aurora/commit/9aa7b5dd72e005ead6053e7ec5742f5663786fa9); native dispatch and
 lifecycle remain migration dependencies. The BIOS console uses the same Aurora
 editor and sealed ConsoleSession for its bounded three-command session and
 presentation; trusted native code retains interrupt transport and shutdown.
@@ -44,7 +45,7 @@ or scheduler. The opt-in interactive scratchpad supplies real protected command
 input/output and explicit user-facing
 lifecycle outcomes, originally qualified in
 [#235](https://github.com/ambasta/aurora/pull/235), and now includes explicit atomic append
-to the existing volatile file. General program lifetime, mounted
+to the existing volatile file and a read-only caller-computed CRC32C command. General program lifetime, mounted
 durable storage and broader service APIs remain dependencies.
 
 Build capability-scoped blocking request/reply on the bounded two-program
