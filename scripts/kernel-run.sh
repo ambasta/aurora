@@ -9,7 +9,7 @@ usage() {
         '--ram-scratchpad-console selects the bounded RAM scratchpad: put/append/get/help/status/exit.' \
         'Default: bios --smoke. bios-console/uefi-console default to --console; program-* to --smoke.' \
         'bios/uefi --console selects the ordinary interactive console (300 seconds).' \
-        'Normal boots are bounded self-tests, not an interactive OS shell (BIOS 15s/UEFI 30s).' \
+        'Normal boots are bounded self-tests, not an interactive OS shell (BIOS 15s/UEFI 60s).' \
         'Console --smoke uses the existing PTY oracle; protected fault profiles are smoke-only.' \
         'Overrides: CXX, UEFI_LD, QEMU, QEMU_DATA, OVMF, OVMF_CODE/OVMF_VARS, OVMF_DIR.' \
         'Specialized profiles: iommu-event, graphical-console, framebuffer, bar, ivrs, bar-*, ivrs-*.' \
@@ -135,7 +135,7 @@ elif [[ "$platform" == uefi && ( "$mode" == normal || "$action" == --smoke || "$
 fi
 if [[ "$mode" == normal ]]; then
     if [[ "$platform" == uefi ]]; then
-        echo 'Running normal UEFI boot self-tests in QEMU (30-second limit).'
+        echo 'Running normal UEFI boot self-tests in QEMU (60-second limit).'
         exec ./scripts/kernel-uefi-smoke.sh normal
     fi
     echo 'Running normal BIOS boot self-tests in QEMU (15-second limit).'

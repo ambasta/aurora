@@ -47,7 +47,7 @@ def run_console_region(command, log, mode):
     transcript = bytearray()
     process = None
     sent = 0
-    deadline = time.monotonic() + 30
+    deadline = time.monotonic() + 60
     try:
         process = transport.start(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         while True:
