@@ -23,6 +23,7 @@ def binary(value, suffix="", group=5, prefix="0b"):
 def main():
     compiler = Path(sys.argv[1]).resolve(strict=True)
     suite = Suite(compiler, "binary literals", timeout=10)
+    suite.load(Path(__file__).with_suffix(".cases"))
     # Independent Python values cover all byte payloads and every u64 bit position.
     spellings = [(binary(value, "u8", 4), f"{value}u8", "u8", value) for value in range(256)]
     for value in sorted({0, 42, (1 << 64) - 1} | {1 << bit for bit in range(64)}):
@@ -88,85 +89,6 @@ def main():
         binary(1 << 63),
         "0b1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1111'1u64",
     ]
-    with tempfile.TemporaryDirectory(prefix="aurora-binary-literals-") as temporary:
-        root = Path(temporary)
-        source, output = root / "literal.au", root / "literal.s"
-        prefix = "module test;\r\n\tauto value()->u64{return "
-        for spelling in malformed:
-            text = prefix + spelling + ";}"
-            source.write_text(text)
-            result = run([compiler, "--check", "--diagnostics=json", source], timeout=10)
-            require(result.returncode == 1 and not result.stderr, f"invalid binary accepted: {spelling}")
-            diagnostic = json.loads(result.stdout)["diagnostics"][0]
-            require(
-                diagnostic["code"] == "AU3001" and "integer literal" in diagnostic["message"],
-                f"binary rejection changed: {diagnostic}",
-            )
-            require(
-                diagnostic["range"]["start"]["offset"] == len(prefix)
-                and diagnostic["range"]["end"]["offset"] == len(prefix) + len(spelling),
-                f"binary diagnostic is not the complete token: {diagnostic}",
-            )
-        decimal_prefix = "module test;auto value()->i64{return "
-        for spelling, token, message in [
-            ("-1foo", "1foo", "integer literal out of range or invalid suffix"),
-            ("-1_0", "1_0", "integer literal out of range or invalid suffix"),
-            ("-9223372036854775808abc", "9223372036854775808abc", "integer literal out of range or invalid suffix"),
-            ("-9223372036854775809", "9223372036854775809", "integer literal out of range or invalid suffix"),
-            ("-18446744073709551616", "-", "integer literal out of range"),
-            ("18446744073709551616", "18446744073709551616", "integer literal out of range or invalid suffix"),
-        ]:
-            source.write_text(decimal_prefix + spelling + ";}")
-            rejected = run([compiler, "--check", "--diagnostics=json", source], timeout=10)
-            require(rejected.returncode == 1 and not rejected.stderr, "malformed decimal accepted")
-            diagnostic = json.loads(rejected.stdout)["diagnostics"][0]
-            start = len(decimal_prefix) + spelling.index(token)
-            require(
-                diagnostic["code"] == "AU3001"
-                and diagnostic["message"] == message
-                and diagnostic["range"]["start"]["offset"] == start
-                and diagnostic["range"]["end"]["offset"] == start + len(token),
-                f"decimal diagnostic changed: {spelling}: {diagnostic}",
-            )
-        rejections = [
-            ("return -" + binary((1 << 63) + 1) + ";", "i64", "integer literal", ""),
-            ("return -0b1u64;", "u64", "expected", ""),
-            ("return -0b1u8;", "u8", "expected", ""),
-            ("return 0b1;", "u64", "expected", ""),
-            ("return 0b1u8;", "i64", "expected", ""),
-            ("return 0b1u64+1;", "u64", "expected", ""),
-            ("return 0b1u64<<0b1u64;", "u64", "expected", ""),
-            ("return 0x10u64;", "u64", "integer literal", ""),
-            ("return 1_0u64;", "u64", "integer literal", ""),
-            ("return 1'0u64;", "u64", "invalid byte literal", ""),
-        ]
-        # Capacities retain their explicit decimal-only grammar, including prefixes
-        # that an unchecked decimal parser could incorrectly accept as zero.
-        for capacity in ("0b10", "0B1'0", "0b10u64"):
-            rejections += [
-                (f"const array<u64,{capacity}> a={{0u64,1u64}};return a[0];", "u64", "decimal integer literal", ""),
-                (
-                    f"const std::array<u64,{capacity}> a=std::array<u64,{capacity}>();return a.at(0);",
-                    "u64",
-                    "decimal literals",
-                    "import std.array;",
-                ),
-            ]
-        for body, kind, message, imports in rejections:
-            suite.reject(f"literal boundary {body}", f"module test;{imports}auto value()->{kind}{{{body}}}", message)
-
-        def assembly(binary_spelling):
-            source.write_text(
-                "module test;\n"
-                + "\n".join(
-                    f"auto value_{index}()->{kind}{{return {spelling if binary_spelling else decimal};}}"
-                    for index, (spelling, decimal, kind, _) in enumerate(spellings)
-                )
-            )
-            require(run([compiler, source, "-o", output], timeout=10).returncode == 0, "spellings did not compile")
-            return output.read_bytes()
-
-        require(assembly(True) == assembly(False), "binary spellings changed decimal-equivalent assembly")
     suite.finish()
     print(
         f"PASS binary literal diagnostics: {len(malformed)} malformed tokens, 6 decimal diagnostics; "

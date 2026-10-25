@@ -1,0 +1,51 @@
+# Fixed binary_literals.py cases; the format is native_runner.Suite.load's.
+# Capacities retain their explicit decimal-only grammar, including prefixes
+# that an unchecked decimal parser could incorrectly accept as zero.
+@case literal boundary return -0b1000'00000'00000'00000'00000'00000'00000'00000'00000'00000'00000'00000'00001;
+@error integer literal
+module test;auto value()->i64{return -0b1000'00000'00000'00000'00000'00000'00000'00000'00000'00000'00000'00000'00001;}
+@case literal boundary return -0b1u64;
+@error expected
+module test;auto value()->u64{return -0b1u64;}
+@case literal boundary return -0b1u8;
+@error expected
+module test;auto value()->u8{return -0b1u8;}
+@case literal boundary return 0b1;
+@error expected
+module test;auto value()->u64{return 0b1;}
+@case literal boundary return 0b1u8;
+@error expected
+module test;auto value()->i64{return 0b1u8;}
+@case literal boundary return 0b1u64+1;
+@error expected
+module test;auto value()->u64{return 0b1u64+1;}
+@case literal boundary return 0b1u64<<0b1u64;
+@error expected
+module test;auto value()->u64{return 0b1u64<<0b1u64;}
+@case literal boundary return 0x10u64;
+@error integer literal
+module test;auto value()->u64{return 0x10u64;}
+@case literal boundary return 1_0u64;
+@error integer literal
+module test;auto value()->u64{return 1_0u64;}
+@case literal boundary return 1'0u64;
+@error invalid byte literal
+module test;auto value()->u64{return 1'0u64;}
+@case literal boundary const array<u64,0b10> a={0u64,1u64};return a[0];
+@error decimal integer literal
+module test;auto value()->u64{const array<u64,0b10> a={0u64,1u64};return a[0];}
+@case literal boundary const std::array<u64,0b10> a=std::array<u64,0b10>();return a.at(0);
+@error decimal literals
+module test;import std.array;auto value()->u64{const std::array<u64,0b10> a=std::array<u64,0b10>();return a.at(0);}
+@case literal boundary const array<u64,0B1'0> a={0u64,1u64};return a[0];
+@error decimal integer literal
+module test;auto value()->u64{const array<u64,0B1'0> a={0u64,1u64};return a[0];}
+@case literal boundary const std::array<u64,0B1'0> a=std::array<u64,0B1'0>();return a.at(0);
+@error decimal literals
+module test;import std.array;auto value()->u64{const std::array<u64,0B1'0> a=std::array<u64,0B1'0>();return a.at(0);}
+@case literal boundary const array<u64,0b10u64> a={0u64,1u64};return a[0];
+@error decimal integer literal
+module test;auto value()->u64{const array<u64,0b10u64> a={0u64,1u64};return a[0];}
+@case literal boundary const std::array<u64,0b10u64> a=std::array<u64,0b10u64>();return a.at(0);
+@error decimal literals
+module test;import std.array;auto value()->u64{const std::array<u64,0b10u64> a=std::array<u64,0b10u64>();return a.at(0);}

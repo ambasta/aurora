@@ -138,46 +138,6 @@ def native_cases(suite):
         )
 
     suite.check(
-        "leading-zero capacity spellings canonicalize to one nominal type",
-        program(
-            "std::array<i64,0004> a=std::array<i64,4>();a.set(3,42);"
-            "const std::array<i64,04> b=a;"
-            "static_assert(type_id(std::array<i64,0004>)==type_id(std::array<i64,4>));return b.at(3);"
-        ),
-    )
-    suite.check(
-        "scalar and capacity are both part of specialization identity",
-        program(
-            "static_assert(type_id(std::array<i64,1>)!=type_id(std::array<i64,2>));"
-            "static_assert(type_id(std::array<i64,2>)!=type_id(std::array<u64,2>));"
-            "static_assert(type_id(std::array<u64,2>)!=type_id(std::array<bool,2>));return 42;"
-        ),
-    )
-    suite.check(
-        "result lifetime survives repeated loop construction",
-        program(
-            "i64 index=0;i64 total=0;while(index<6){const std::array<i64,64> a=make(index);"
-            "total=total+a.at(63);index=index+1;}return total;",
-            helpers="auto make(i64 value)->std::array<i64,64>{std::array<i64,64> a=std::array<i64,64>();"
-            "a.set(63,value);return a;}",
-        ),
-        expected=15,
-    )
-    suite.check(
-        "scalar at result is copied before later mutation",
-        program(
-            "std::array<i64,2> a=std::array<i64,2>();a.set(0,20);return sum(a.at(0),a.set(0,22));",
-            helpers="auto sum(i64 first,i64 second)->i64{return first+second;}",
-        ),
-    )
-    suite.check(
-        "array argument snapshot precedes later set argument",
-        program(
-            "std::array<i64,64> a=std::array<i64,64>();a.set(63,20);return sum(a,a.set(63,22));",
-            helpers="auto sum(std::array<i64,64> first,i64 second)->i64{return first.at(63)+second;}",
-        ),
-    )
-    suite.check(
         "private array length query returns a scalar copy",
         program(
             "const Buffer<i64,4> a=Buffer<i64,4>();return a.size()+38;",
@@ -225,47 +185,6 @@ def native_cases(suite):
         ),
     )
 
-    for count in (63, 64):
-        definition = (
-            f"class Edge{{builtin::array<i64,{count}> values;i64 tail;public:"
-            f"Edge():values{{}},tail(41){{}}auto get()const->i64{{return values[{count - 1}]+tail;}}"
-            f"auto set()->i64{{values[{count - 1}]=1;return tail;}}}};"
-        )
-        body = "Edge a=Edge();a.set();const Edge b=copy(a);return b.get();"
-        suite.check(
-            f"flattened boundary {count + 1} words",
-            program(body, definition, "auto copy(Edge value)->Edge{return value;}", library=False),
-            error=None if count == 63 else ("64", "boundary", "fields", "words"),
-        )
-        if count == 64:
-            suite.check(
-                "65-word class remains usable as a local value",
-                program(
-                    "Edge a=Edge();a.set();const Edge b=a;static_assert(size_of(Edge)==520);return b.get();",
-                    definition,
-                    library=False,
-                ),
-            )
-            suite.check(
-                "65-word parameter is rejected independently of result",
-                program(
-                    "Edge a=Edge();return consume(a);",
-                    definition,
-                    "auto consume(Edge value)->i64{return value.get();}",
-                    library=False,
-                ),
-                error=("64", "boundary", "fields", "words"),
-            )
-            suite.check(
-                "65-word result is rejected independently of parameters",
-                program(
-                    "Edge a=make();return a.get();",
-                    definition,
-                    "auto make()->Edge{Edge value=Edge();return value;}",
-                    library=False,
-                ),
-                error=("64", "boundary", "fields", "words"),
-            )
     for count in (33, 34):
         definition = (
             f"class Split{{builtin::array<u64,30> first;builtin::array<bool,{count}> flags;"
@@ -303,16 +222,6 @@ def native_cases(suite):
         "builtin alias retains original large local capacity",
         program("builtin::array<i64,4096> a={" + ",".join(["0"] * 4095 + ["42"]) + "};return a[4095];", library=False),
     )
-    suite.check(
-        "canonical builtin array remains available without std.array",
-        program(
-            "builtin::array<u64,2> a={18446744073709551615u64,9223372036854775808u64};"
-            "const array<u64,2> b=a;a[0]=0u64;return b[0];",
-            library=False,
-            result="u64",
-        ),
-        expected=(1 << 64) - 1,
-    )
 
 
 def trap_cases(suite):
@@ -336,16 +245,6 @@ def trap_cases(suite):
                 program(f"std::array<i64,64> a=std::array<i64,64>();return a.{operation}({arguments});"),
                 expected=Trap.BOUNDS,
             )
-    suite.check(
-        "std.set evaluates all arguments before checking receiver bounds",
-        program("std::array<i64,2> a=std::array<i64,2>();return a.set(2,1/0);"),
-        expected=Trap.ZERO,
-    )
-    suite.check(
-        "at index arithmetic fails at overflow before bounds",
-        program("std::array<i64,2> a=std::array<i64,2>();return a.at(9223372036854775807+1);"),
-        expected=Trap.OVERFLOW,
-    )
     field_store = BUFFER.replace("elements[index]=value;", "elements[index]=1/0;")
     suite.check(
         "private field bounds precede store RHS evaluation",
@@ -381,121 +280,6 @@ def rejection_cases(suite):
         suite.check(
             label, program(f"i64 n=4;return size_of({concrete});", "class Cell{public:i64 value;};"), error=errors
         )
-
-    for label, body, helpers, error in (
-        ("wrong element type", "std::array<i64,2> a=std::array<i64,2>();a.set(0,true);return 42;", "", "expected"),
-        ("wrong signed index type", "std::array<i64,2> a=std::array<i64,2>();return a.at(0u64);", "", "expected"),
-        ("wrong boolean index type", "std::array<i64,2> a=std::array<i64,2>();return a.at(false);", "", "expected"),
-        ("const array set", "const std::array<i64,2> a=std::array<i64,2>();return a.set(0,42);", "", "mutable"),
-        (
-            "immutable by-value parameter set",
-            "std::array<i64,2> a=std::array<i64,2>();return change(a);",
-            "auto change(std::array<i64,2> a)->i64{return a.set(0,42);}",
-            "mutable",
-        ),
-        (
-            "capacity copy mismatch",
-            "std::array<i64,2> a=std::array<i64,2>();std::array<i64,1> b=a;return 42;",
-            "",
-            "expected",
-        ),
-        (
-            "scalar copy mismatch",
-            "std::array<i64,2> a=std::array<i64,2>();std::array<u64,2> b=a;return 42;",
-            "",
-            "expected",
-        ),
-        (
-            "capacity argument mismatch",
-            "std::array<i64,2> a=std::array<i64,2>();return consume(a);",
-            "auto consume(std::array<i64,1> a)->i64{return a.at(0);}",
-            "expected",
-        ),
-        (
-            "capacity result mismatch",
-            "std::array<i64,1> a=make();return 42;",
-            "auto make()->std::array<i64,1>{std::array<i64,2> a=std::array<i64,2>();return a;}",
-            "expected",
-        ),
-        (
-            "private storage read",
-            "std::array<i64,2> a=std::array<i64,2>();return a.elements[0];",
-            "",
-            ("private", "array", "index"),
-        ),
-        (
-            "private storage write",
-            "std::array<i64,2> a=std::array<i64,2>();a.elements[0]=42;return 42;",
-            "",
-            ("private", "array", "index"),
-        ),
-        (
-            "private storage local escape",
-            "std::array<i64,2> a=std::array<i64,2>();array<i64,2> escaped=a.elements;return 42;",
-            "",
-            ("private", "array", "copy"),
-        ),
-        ("no whole wrapper indexing", "std::array<i64,2> a=std::array<i64,2>();return a[0];", "", "array"),
-        ("no wrapper builtin len", "std::array<i64,2> a=std::array<i64,2>();return len(a);", "", "array"),
-        (
-            "no wrapper borrow",
-            "std::array<i64,2> a=std::array<i64,2>();const ref<i64> r=borrow(a);return read(r);",
-            "",
-            ("own", "borrow"),
-        ),
-        (
-            "no at result borrow",
-            "std::array<i64,2> a=std::array<i64,2>();const ref<i64> r=borrow(a.at(0));return read(r);",
-            "",
-            ("local", "borrow"),
-        ),
-        (
-            "no constructor arguments",
-            "std::array<i64,2> a=std::array<i64,2>(42);return 42;",
-            "",
-            ("argument", "constructor"),
-        ),
-        (
-            "no designated private storage construction",
-            "std::array<i64,2> a=std::array<i64,2>{.elements={1,2}};return 42;",
-            "",
-            ("designated", "constructor", "private"),
-        ),
-        (
-            "no bare template deduction",
-            "std::array<i64,2> a=std::array();return 42;",
-            "",
-            ("template", "constructor", "unknown"),
-        ),
-        (
-            "no builtin wrapper fallback",
-            "array<i64,2> a=array<i64,2>();return 42;",
-            "",
-            ("array", "constructor", "unknown"),
-        ),
-        (
-            "no qualified builtin constructor",
-            "builtin::array<i64,2> a=builtin::array<i64,2>();return 42;",
-            "",
-            ("array", "constructor", "unknown", "reserved"),
-        ),
-    ):
-        suite.check(label, program(body, helpers=helpers), error=error)
-
-    suite.check(
-        "temporary wrapper copied parameter",
-        program(
-            "return consume(std::array<i64,2>());", helpers="auto consume(std::array<i64,2> a)->i64{return a.at(0);}"
-        ),
-        expected=0,
-    )
-    suite.check(
-        "direct array construction return copies initialized storage",
-        program(
-            "std::array<i64,2> a=make();std::array<i64,2> b=make();a.set(0,42);return a.at(0)+a.at(1)+b.at(0)+b.at(1);",
-            helpers="auto make()->std::array<i64,2>{return std::array<i64,2>();}",
-        ),
-    )
 
     invalid_fields = (
         ("missing array initialization", "class Bad{builtin::array<i64,2> data;public:Bad(){} };"),
@@ -581,32 +365,6 @@ def rejection_cases(suite):
             program("return 42;", declaration, library=False),
             error=("reserved", "builtin", "namespace"),
         )
-    suite.check(
-        "root class cannot shadow legacy array alias",
-        program("return 42;", "class array{};", library=False),
-        error=("reserved", "array"),
-    )
-    suite.check(
-        "root template cannot shadow legacy array alias",
-        program("return 42;", BUFFER.replace("Buffer", "array"), library=False),
-        error=("reserved", "array"),
-    )
-    suite.check(
-        "non-std namespace template cannot shadow legacy array alias",
-        program("return 42;", "namespace wraps{" + BUFFER.replace("Buffer", "array") + "}", library=False),
-        error=("reserved", "array"),
-    )
-    suite.check(
-        "namespace bare constructor cannot fall back to wrapper",
-        program(
-            "return std::answer();",
-            "namespace std{"
-            + BUFFER.replace("Buffer", "array")
-            + "auto answer()->i64{std::array<i64,2> a=array<i64,2>();return a.at(0);}}",
-            library=False,
-        ),
-        error=("array", "constructor", "expected", "unknown"),
-    )
     suite.check(
         "malformed container preserves existing output",
         program("std::array<i64,65> a=std::array<i64,65>();return 42;"),
@@ -725,6 +483,7 @@ def main():
     args = parser.parse_args()
     require(1 <= args.steps <= 256, "steps must be between 1 and 256")
     suite = Suite(args.compiler, "fixed containers", ignore_case=True)
+    suite.load(Path(__file__).with_suffix(".cases"))
     native_cases(suite)
     trap_cases(suite)
     rejection_cases(suite)

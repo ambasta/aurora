@@ -1,0 +1,220 @@
+# Fixed value_calls.py cases; the format is native_runner.Suite.load's.
+@prelude FACTORY
+auto make(i64 n)->Counter{const Counter c=Counter(n);return c;}
+@prelude EMPTY
+class Empty{public:Empty(){}auto answer()const->i64{return 42;}};
+@prelude BOX
+class Box{Counter item;i64 later;public:Box(Counter c,i64 n):item(c),later(n){}auto answer()const->i64{return item.get()+later;}};
+@prelude PRIVATE_COUNTER
+class Counter {
+    i64 value;
+    Counter(i64 initial):value(initial){}
+public:
+    auto get() const -> i64{return value;}
+    auto add(i64 n)->i64{value=value+n;return value;}
+auto fresh(i64 n)const->Counter{return Counter(n);}};
+@case private-field factory result
+module app;${COUNTER}${FACTORY}auto test()->i64{Counter c=make(42);return c.get();}
+@case copy result independent
+module app;${COUNTER}auto copy(Counter c)->Counter{return c;}auto test()->i64{Counter a=Counter(40);Counter b=copy(a);b.add(2);return a.get()+b.get()-40;}
+@case callee mutable copy cannot alias caller
+module app;${COUNTER}auto increment(Counter c)->i64{Counter local=c;return local.add(2);}auto test()->i64{Counter a=Counter(40);return increment(a)+a.get()-40;}
+@case same source independent argument snapshots
+module app;${COUNTER}auto sum(Counter a,i64 ignored,Counter b)->i64{return a.get()+b.get();}auto test()->i64{Counter c=Counter(20);return sum(c,c.add(2),c);}
+@case six mixed arguments preserve order
+module app;${COUNTER}auto id(i64 n)->i64{return n;}auto sum(Counter a,i64 b,Counter c,i64 d,Counter e,i64 f)->i64{return a.get()+b+c.get()+d+e.get()+f;}auto test()->i64{Counter a=Counter(10);Counter b=Counter(20);return sum(a,id(1),b,id(2),a,id(-1));}
+@case class return branch
+module app;${COUNTER}auto make(bool yes)->Counter{Counter a=Counter(42);if(yes){return a;}Counter b=Counter(0);return b;}auto test()->i64{Counter c=make(true);return c.get();}
+@case class return other branch
+module app;${COUNTER}auto make(bool yes)->Counter{Counter a=Counter(0);if(yes){return a;}Counter b=Counter(42);return b;}auto test()->i64{Counter c=make(false);return c.get();}
+@case class result lifetime in loop
+module app;${COUNTER}auto make(i64 n)->Counter{Counter c=Counter(n);return c;}auto test()->i64{i64 n=0;i64 sum=0;while(n<2){const Counter c=make(21);sum=sum+c.get();n=n+1;}return sum;}
+@case parameter snapshot lifetime in loop
+module app;${COUNTER}auto get(Counter c)->i64{return c.get();}auto test()->i64{Counter c=Counter(21);i64 n=0;i64 sum=0;while(n<2){sum=sum+get(c);n=n+1;}return sum;}
+@case class result through intermediate local
+module app;${COUNTER}auto make(i64 n)->Counter{Counter c=Counter(n);return c;}auto outer(i64 n)->Counter{const Counter c=make(n);return c;}auto test()->i64{Counter c=outer(42);return c.get();}
+@case bool fields across boundary
+module app;class Flag{bool b;public:Flag(bool v):b(v){}auto get()const->bool{return b;}};auto make()->Flag{const Flag f=Flag(true);return f;}auto get(Flag f)->bool{return f.get();}auto test()->i64{Flag f=make();if(get(f)){return 42;}return 0;}
+@case empty class value boundary
+module app;class Empty{public:Empty(){}};auto make()->Empty{Empty e=Empty();return e;}auto use(Empty e)->i64{return 42;}auto test()->i64{Empty e=make();return use(e);}
+@case public aggregate class return
+module app;class Pair{public:i64 a;i64 b;};auto make()->Pair{Pair p=Pair{.a=20,.b=22};return p;}auto sum(Pair p)->i64{return p.a+p.b;}auto test()->i64{Pair p=make();return sum(p);}
+@case class return checked overflow
+@trap overflow
+module app;${COUNTER}auto make(i64 n)->Counter{Counter c=Counter(n+1);return c;}auto test()->i64{Counter c=make(9223372036854775807);return c.get();}
+@case scalar result with class input checked overflow
+@trap overflow
+module app;${COUNTER}auto overflow(Counter c)->i64{return c.get()+1;}auto test()->i64{Counter c=Counter(9223372036854775807);return overflow(c);}
+@case ordinary class-value recursion
+module app;${COUNTER}auto step(Counter c,i64 n)->Counter{if(n==0){return c;}Counter next=c;next.add(1);Counter result=step(next,n-1);return result;}auto test()->i64{Counter c=Counter(40);Counter r=step(c,2);return r.get();}
+@case class parameter immutable field
+@error mutable class local
+module app;${COUNTER}auto change(Counter c)->i64{c.value=0;return 42;}auto test()->i64{Counter c=Counter(42);return change(c);}
+@case class parameter mutable method denied
+@error mutable receiver
+module app;${COUNTER}auto change(Counter c)->i64{return c.add(1);}auto test()->i64{Counter c=Counter(42);return change(c);}
+@case class parameter private field denied
+@error private class field
+module app;${COUNTER}auto change(Counter c)->i64{return c.value;}auto test()->i64{Counter c=Counter(42);return change(c);}
+@case return scalar as class denied
+@error expected Counter
+module app;${COUNTER}auto make()->Counter{const i64 c=42;return c;}auto test()->i64{Counter c=make();return c.get();}
+@case discard class-return call denied
+@error typed local initializer
+module app;${COUNTER}auto make()->Counter{Counter c=Counter(42);return c;}auto test()->i64{make();return 42;}
+@case class return missing path
+@error every path
+module app;${COUNTER}auto make(bool yes)->Counter{Counter c=Counter(42);if(yes){return c;}}auto test()->i64{Counter c=make(true);return c.get();}
+@case wrong scalar argument to class parameter
+@error complete local name
+module app;${COUNTER}auto get(Counter c)->i64{return c.get();}auto test()->i64{return get(42);}
+@case class value cannot enter scalar argument
+@error class values
+module app;${COUNTER}auto get(i64 c)->i64{return c;}auto test()->i64{Counter c=Counter(42);return get(c);}
+@case nominal class parameter mismatch
+@error expected Counter
+module app;${COUNTER}class Other{public:i64 value;};auto get(Counter c)->i64{return c.get();}auto test()->i64{Other c=Other{.value=42};return get(c);}
+@case nominal class return mismatch
+@error expected Counter
+module app;${COUNTER}class Other{public:i64 value;};auto make()->Counter{Other c=Other{.value=42};return c;}auto test()->i64{Counter c=make();return c.get();}
+@case namespace factory nominal type
+module app; import counters; auto test() -> i64 { items::Counter c=items::make(42);return items::consume(c); }
+@module counters
+export module counters;export namespace items{${COUNTER}auto make(i64 n)->Counter{Counter c=Counter(n);return c;}auto consume(Counter c)->i64{return c.get();}}
+@case exported private parameter type rejected
+@error exposes private type
+module app; import counters; auto test() -> i64 { return 42; }
+@module counters
+export module counters;${COUNTER}export auto consume(Counter c)->i64{return c.get();}
+@case private value function allowed within defining module
+module app; import counters; auto test() -> i64 { return answer(); }
+@module counters
+export module counters;${COUNTER}auto make()->Counter{Counter c=Counter(42);return c;}export auto answer()->i64{Counter c=make();return c.get();}
+@case public factory cannot bypass designated restriction
+@error designated
+module app; import counters; auto test() -> i64 { Counter c=make();return c.get(); }
+@module counters
+export module counters;export ${COUNTER}export auto make()->Counter{Counter c=Counter{.value=42};return c;}
+@case minmax standard-shaped scalar algorithm
+module app; import std.numeric; auto test() -> i64 { const std::MinMax limits=std::minmax(42,0);return std::range_width(limits); }
+@case minmax signed endpoint preservation
+@expect -9223372036854775808
+module app; import std.numeric; auto test() -> i64 { const std::MinMax limits=std::minmax(9223372036854775807,-9223372036854775808);return limits.min(); }
+@case range width checked overflow
+@trap overflow
+module app; import std.numeric; auto test() -> i64 { const std::MinMax limits=std::minmax(9223372036854775807,-9223372036854775808);return std::range_width(limits); }
+@case minmax private representation
+@error private class field
+module app; import std.numeric; auto test() -> i64 { const std::MinMax limits=std::minmax(42,0);return limits.lower; }
+@case returned parameter survives clobbering helper
+module app;${COUNTER}auto clobber()->i64{Counter x=Counter(999);return x.get();}auto copy(Counter c)->Counter{clobber();return c;}auto test()->i64{Counter c=Counter(42);Counter result=copy(c);return result.get();}
+@case class parameter copied mutable local in loop
+module app;${COUNTER}auto twice(Counter c)->i64{i64 n=0;i64 sum=0;while(n<2){Counter x=c;sum=sum+x.add(1);n=n+1;}return sum;}auto test()->i64{Counter c=Counter(20);return twice(c);}
+@case class result reflection layout preserved
+module app;${COUNTER}auto make()->Counter{Counter c=Counter(34);return c;}auto test()->i64{Counter c=make();static_assert(size_of(Counter)==8);return reflect_size(type_id(Counter))+c.get();}
+@case seven class arguments rejected
+@error at most six
+module app;${COUNTER}auto too_many(Counter a,Counter b,Counter c,Counter d,Counter e,Counter f,Counter g)->i64{return 0;}auto test()->i64{return 42;}
+# Direct constructor returns share the typed-local constructor lowering. They
+# also admit bounded copied arguments, while arbitrary class expressions remain excluded.
+@case direct constructor ordinary result
+module app;${COUNTER}auto make(i64 n)->Counter{return Counter(n);}auto test()->i64{Counter c=make(42);return c.get();}
+@case direct constructor branch and loop lifetime
+module app;${COUNTER}auto make(bool first)->Counter{if(first){return Counter(20);}return Counter(22);}auto test()->i64{i64 n=0;i64 total=0;while(n<2){Counter c=make(n==0);total=total+c.get();n=n+1;}return total;}
+# No public construction is needed to validate the body of a same-class factory.
+@case direct private constructor allowed in same class
+module app;${PRIVATE_COUNTER}auto test()->i64{return 42;}
+@case direct empty constructor result
+module app;${EMPTY}auto make()->Empty{return Empty();}auto test()->i64{Empty e=make();return e.answer();}
+@case direct composed constructor snapshots before side effects
+module app;${COUNTER}${BOX}auto make()->Box{Counter c=Counter(20);return Box(c,c.add(2));}auto test()->i64{Box b=make();return b.answer();}
+@case direct empty composed constructor result
+module app;${EMPTY}class Holder{public:Empty item;Holder(Empty e):item(e){}};auto make()->Holder{Empty e=Empty();return Holder(e);}auto test()->i64{Holder h=make();const Empty e=h.item;return e.answer();}
+@case direct scalar arguments evaluate left to right
+module app;${COUNTER}class Pair{i64 a;i64 b;public:Pair(i64 x,i64 y):a(x),b(y){}auto answer()const->i64{return a*40+b;}};auto make()->Pair{Counter c=Counter(0);return Pair(c.add(1),c.add(1));}auto test()->i64{Pair p=make();return p.answer();}
+@case direct result copies constructor argument independently
+module app;${COUNTER}class Holder{public:Counter item;Holder(Counter c):item(c){}};auto make(Counter c)->Holder{return Holder(c);}auto test()->i64{Counter c=Counter(21);Holder h=make(c);c.add(21);const Counter r=h.item;return r.get()+21;}
+@case direct constructor return closes byte array and span
+module app;${COUNTER}auto make()->Counter{builtin::array<u8,1> bytes={42u8};const builtin::span<const u8> view=borrow_bytes(bytes);return Counter(i64(view.at(0)));}auto test()->i64{Counter c=make();return c.get();}
+@case direct qualified constructor result across module
+module app; import counters; auto test() -> i64 { items::Counter c=items::make(42);return c.get(); }
+@module counters
+export module counters;export namespace items{${COUNTER}auto make(i64 n)->Counter{return Counter(n);}}
+@case private constructor inaccessible
+@error private constructor
+module app;${PRIVATE_COUNTER}auto make()->Counter{return Counter(42);}auto test()->i64{return 42;}
+@case direct constructor exact nominal result
+@error expected Counter
+module app;${COUNTER}class Other {
+    i64 value;
+public:
+    Other(i64 initial):value(initial){}
+    auto get() const -> i64{return value;}
+    auto add(i64 n)->i64{value=value+n;return value;}
+};auto make()->Counter{return Other(42);}auto test()->i64{return 42;}
+@case direct constructor scalar type mismatch
+@error expected i64
+module app;${COUNTER}auto make()->Counter{return Counter(true);}auto test()->i64{return 42;}
+@case direct constructor argument count
+@error argument count
+module app;${COUNTER}auto make()->Counter{return Counter();}auto test()->i64{return 42;}
+@case direct temporary receiver rejected
+@error method receiver
+module app;${COUNTER}auto make()->Counter{return Counter(Counter(42).get());}auto test()->i64{return 42;}
+@case direct designated return still rejected
+@error complete local name
+module app;class Plain{public:i64 n;};auto make()->Plain{return Plain{.n=42};}auto test()->i64{return 42;}
+@case direct ordinary call const parameter snapshot remains independent
+module app;${COUNTER}auto identity(Counter c)->Counter{return c;}auto forward(Counter c)->Counter{return identity(c);}auto test()->i64{const Counter source=Counter(42);Counter result=forward(source);result.add(1);return source.get();}
+@case direct ordinary call branch return and loop lifetimes
+module app;${COUNTER}${FACTORY}auto forward(bool first)->Counter{if(first){return make(20);}return make(22);}auto test()->i64{i64 n=0;i64 total=0;while(n<2){Counter c=forward(n==0);total=total+c.get();n=n+1;}return total;}
+@case direct ordinary recursive result
+module app;${COUNTER}auto step(Counter source,i64 n)->Counter{if(n==0){return source;}Counter next=source;next.add(1);return step(next,n-1);}auto test()->i64{Counter source=Counter(40);Counter result=step(source,2);return result.get();}
+@case direct ordinary scalar arguments evaluate once left to right
+module app;${COUNTER}auto combine(i64 a,i64 b)->Counter{return Counter(a*40+b);}auto forward()->Counter{Counter source=Counter(0);return combine(source.add(1),source.add(1));}auto test()->i64{Counter result=forward();return result.get();}
+@case direct ordinary call closes temporary argument span
+module app;${COUNTER}auto inspect_bytes(builtin::span<const u8> bytes)->Counter{return Counter(i64(bytes.at(0)));}auto forward()->Counter{builtin::array<u8,1> bytes={42u8};return inspect_bytes(borrow_bytes(bytes));}auto test()->i64{Counter result=forward();return result.get();}
+@case direct ordinary empty result
+module app;${EMPTY}auto make()->Empty{return Empty();}auto forward()->Empty{return make();}auto test()->i64{Empty result=forward();return result.answer();}
+@case direct ordinary composed result remains independent
+module app;${COUNTER}${BOX}auto make(Counter source,i64 n)->Box{return Box(source,n);}auto forward(Counter source)->Box{return make(source,22);}auto test()->i64{Counter source=Counter(20);Box result=forward(source);source.add(99);return result.answer();}
+@case direct ordinary overload selects exact argument tuple
+module app;${COUNTER}auto pick(Counter source)->Counter{return source;}auto pick(i64 source)->i64{return source;}auto forward(Counter source)->Counter{return pick(source);}auto test()->i64{Counter source=Counter(42);Counter result=forward(source);return result.get();}
+@case direct qualified ordinary calls across modules
+module app; import counters; auto test() -> i64 { items::Counter source=items::forward(42);return source.get(); }
+@module counters
+export module counters;export namespace items{${COUNTER}${FACTORY}auto forward(i64 n)->Counter{return make(n);}}
+@case direct ordinary call argument trap
+@trap overflow
+module app;${COUNTER}${FACTORY}auto forward(i64 n)->Counter{return make(n+1);}auto test()->i64{Counter result=forward(9223372036854775807);return result.get();}
+@case direct ordinary exact nominal result
+@error expected Counter
+module app;${COUNTER}class Other {
+    i64 value;
+public:
+    Other(i64 initial):value(initial){}
+    auto get() const -> i64{return value;}
+    auto add(i64 n)->i64{value=value+n;return value;}
+};auto make()->Other{return Other(42);}auto forward()->Counter{return make();}auto test()->i64{return 42;}
+@case direct ordinary scalar result cannot fill class
+@error expected Counter
+module app;${COUNTER}auto make()->i64{return 42;}auto forward()->Counter{return make();}auto test()->i64{return 42;}
+@case direct ordinary overload return type cannot select candidate
+@error expected Counter
+module app;${COUNTER}auto pick(i64 n)->i64{return n;}auto pick(u8 n)->Counter{return Counter(i64(n));}auto forward()->Counter{return pick(42);}auto test()->i64{return 42;}
+@case direct ordinary return field projection
+@error complete local name
+module app;${COUNTER}class Box{public:Counter item;Box(Counter c):item(c){}};auto forward(Box source)->Counter{return source.item;}auto test()->i64{return 42;}
+@case direct owning ordinary result still requires move
+@error move
+module app; import std.binary;import std.byte_buffer; auto test() -> i64 { return 42; }auto take(builtin::ByteRegion region,std::ByteBuffer value)->std::ByteBuffer{return move(value);}auto forward(builtin::ByteRegion region,std::ByteBuffer value)->std::ByteBuffer{return take(region,move(value));}
+@case direct borrowed-helper result dispatch remains rejected
+@error ordinary function call
+module app; import std.binary;import std.byte_buffer; auto test() -> i64 { return 42; }auto snapshot(const std::ByteBuffer& value)->std::ByteReadResult{const std::ByteReadResult result=value.read_u8(0);return result;}auto forward(const std::ByteBuffer& value)->std::ByteReadResult{return snapshot(value);}
+@case direct service-helper result dispatch remains rejected
+@error ordinary function call
+module app;  auto test() -> i64 { return 42; }auto snapshot(builtin::ConsoleSession& session)->builtin::ConsoleSample{const builtin::ConsoleSample result=session.next();return result;}auto forward(builtin::ConsoleSession& session)->builtin::ConsoleSample{return snapshot(session);}
+@case direct nested constructor argument
+module app;${COUNTER}${BOX}auto make()->Box{return Box(Counter(20),22);}auto test()->i64{return 42;}
+@case nested constructor result executes copied payload
+module app;${COUNTER}${BOX}auto make()->Box{return Box(Counter(20),22);}auto test()->i64{Box result=make();return result.answer();}

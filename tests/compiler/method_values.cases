@@ -1,0 +1,173 @@
+# Fixed method_values.py cases; the format is native_runner.Suite.load's.
+@case direct method nested class-result argument
+module app;${COUNTER}auto forward(Counter source)->Counter{return source.copy(source.copy(source));}auto test()->i64{return 42;}
+@case temporary copied result from direct copied field receiver
+module app;${COUNTER}class Holder{public:Counter item;Holder(Counter source):item(source){}};auto test()->i64{Counter source=Counter(42);Holder holder=Holder(source);Counter receiver=Counter(0);return receiver.inspect(holder.item.copy(source));}
+@case array exchange temporary replacement
+module app;import std.array;auto test()->i64{std::array<u8,3> receiver=std::array<u8,3>();std::array<u8,3> old=receiver.exchange(std::array<u8,3>());return 42;}
+@case nested mutable receiver effect and snapshots inline
+module app;${COUNTER}auto test()->i64{Counter receiver=Counter(20);Counter saved=receiver.replace(receiver.copy(Counter(receiver.add(1))));return saved.get()+receiver.get();}
+@case nested mutable receiver effect and snapshots explicit locals
+module app;${COUNTER}auto test()->i64{Counter receiver=Counter(20);const Counter initial=Counter(receiver.add(1));const Counter copied=receiver.copy(initial);Counter saved=receiver.replace(copied);return saved.get()+receiver.get();}
+@case temporary empty nested constructor and method results
+module app;${EMPTY}class Receiver{public:Receiver(){}auto copy(Empty a,Empty b)const->Empty{return b;}};auto make()->Empty{return Empty();}auto test()->i64{Receiver receiver=Receiver();Empty result=receiver.copy(make(),Empty());return result.answer();}
+@case temporary packed array and enum constructor payload
+module app;import std.array;${ENUMS}${EMPTY}class Packet{public:u8 head;std::array<u8,3> data;Status state;Empty zero;u8 tail;Packet(u8 h,std::array<u8,3> b,Status s,Empty e,u8 t):head(h),data(b),state(s),zero(e),tail(t){} };class Receiver{public:Receiver(){}auto copy(Packet value)const->Packet{return value;}};auto test()->i64{Receiver receiver=Receiver();Packet result=receiver.copy(Packet(7u8,std::array<u8,3>(),Status::ready,Empty(),2u8));const std::array<u8,3> saved=result.data;const Empty zero=result.zero;if(saved.at(2)!=0u8||result.state!=Status::ready||result.head!=7u8||result.tail!=2u8){return 0;}return zero.answer();}
+@case parenthesized named-local argument retains independent copy semantics
+module app;${COUNTER}auto test()->i64{Counter source=Counter(42);Counter receiver=Counter(0);Counter result=receiver.copy((source));source.set(7);return result.get();}
+@case mutable receiver and returned parameter are independent
+module app;${COUNTER}auto test()->i64{Counter receiver=Counter(20);Counter source=Counter(22);Counter old=receiver.replace(source);source.set(99);old.add(1);if(source.get()!=99){return 1;}return old.get()+receiver.get()-1;}
+@case mutable self argument copied before receiver acquisition
+module app;${COUNTER}auto test()->i64{Counter receiver=Counter(42);Counter old=receiver.replace(receiver);receiver.set(7);return old.get();}
+@case readonly self argument and class result are distinct
+module app;${COUNTER}auto test()->i64{Counter receiver=Counter(42);Counter saved=receiver.copy(receiver);receiver.set(7);return saved.get();}
+@case scalar side effect before first class argument is visible
+module app;${COUNTER}class Reader{public:Reader(){}auto inspect(i64 n,Counter copy)const->i64{if(n!=2){return 1;}if(copy.get()!=2){return 2;}return 42;}};auto test()->i64{Counter source=Counter(1);Reader reader=Reader();return reader.inspect(source.add(1),source);}
+@case repeated class snapshots independently copied into mutable locals
+module app;${COUNTER}class Reader{public:Reader(){}auto inspect(Counter a,Counter b)const->i64{Counter changed=a;changed.add(2);return changed.get()+b.get();}};auto test()->i64{Counter source=Counter(20);Reader reader=Reader();return reader.inspect(source,source);}
+@case inner result binding reads outer same-name argument and receiver
+module app;${COUNTER}auto test()->i64{Counter value=Counter(42);if(true){Counter value=value.copy(value);value.set(0);}return value.get();}
+@case class parameter shadows receiver scalar field
+module app;${COUNTER}class Shadow{i64 source;public:Shadow(i64 n):source(n){}auto inspect(Counter source)const->i64{return source.get();}};auto test()->i64{Counter source=Counter(42);Shadow receiver=Shadow(99);return receiver.inspect(source);}
+@case local class shadows readonly method parameter in inner scope
+module app;${COUNTER}class Reader{public:Reader(){}auto inspect(Counter source)const->i64{if(true){Counter source=source;source.add(1);}return source.get();}};auto test()->i64{Counter source=Counter(42);Reader receiver=Reader();return receiver.inspect(source);}
+@case method parameter forwarded through ordinary function and receiver restored
+module app;${COUNTER}class Forward{i64 value;public:Forward(i64 n):value(n){}auto take(Counter source)const->Counter{Counter result=identity(source);result.add(value);return result;}};auto identity(Counter source)->Counter{return source;}auto test()->i64{Counter source=Counter(20);Forward receiver=Forward(22);Counter result=receiver.take(source);return result.get();}
+@case class-result destination independent across loop lifetimes
+module app;${COUNTER}auto test()->i64{Counter source=Counter(20);Counter receiver=Counter(0);i64 total=0;i64 i=0;while(i<2){Counter result=receiver.copy(source);total=total+result.add(1);i=i+1;}return total;}
+@case nominal enum result with copied class parameter
+module app;${ENUMS}class Tagged{Status value;public:Tagged(Status n):value(n){}auto status(Tagged source)const->Status{return source.value;}};auto test()->i64{Tagged source=Tagged(Status::ready);Tagged receiver=Tagged(Status::failed);if(receiver.status(source)!=Status::ready){return 1;}return 42;}
+@case empty parameter and result preserve nominal completeness
+module app;${EMPTY}class Receiver{public:Receiver(){}auto copy(Empty a,Empty b)const->Empty{return b;}};auto test()->i64{Empty source=Empty();Receiver receiver=Receiver();Empty result=receiver.copy(source,source);return result.answer();}
+@case class template injected self supports ordinary copied parameter
+module app;template<Scalar T>class Box{T value;public:Box(T n):value(n){}auto get()const->T{return value;}auto set(T n)->T{value=n;return value;}auto exchange(Box source)->Box{const Box old=Box(value);value=source.get();return old;}};auto test()->i64{Box<i64> source=Box<i64>(20);Box<i64> receiver=Box<i64>(22);Box<i64> old=receiver.exchange(source);source.set(99);return old.get()+receiver.get();}
+@case Value substitution method argument and result use exact nested type
+module app;${COUNTER}template<Value T>class Box{T item;public:Box(T n):item(n){}auto copy(T source)const->T{return source;}};auto test()->i64{Counter source=Counter(42);Box<Counter> receiver=Box<Counter>(source);Counter result=receiver.copy(source);source.set(99);return result.get();}
+@case nested class template argument copied through ordinary method
+module app;import std.array;import std.utility;class Receiver{public:Receiver(){}auto copy(std::pair<std::array<u8,3>,u8> value)const->std::pair<std::array<u8,3>,u8>{return value;}};auto test()->i64{std::array<u8,3> bytes=std::array<u8,3>();bytes.set(2,40u8);std::pair<std::array<u8,3>,u8> source=std::pair<std::array<u8,3>,u8>(bytes,2u8);Receiver receiver=Receiver();const std::pair<std::array<u8,3>,u8> result=receiver.copy(source);const std::array<u8,3> saved=result.first;return i64(saved.at(2))+i64(result.second);}
+@case direct empty method result retains initialization
+module app;class Empty{public:Empty(){}auto answer()const->i64{return 42;}auto copy(Empty source)const->Empty{return source;}auto forward(Empty source)const->Empty{return copy(source);}};auto test()->i64{Empty source=Empty();Empty result=source.forward(source);return result.answer();}
+@case copied parameter return shadows receiver class field
+module app;${COUNTER}class Holder{Counter item;public:Holder(Counter source):item(source){}auto get()const->i64{return item.get();}auto copy(Counter item)const->Counter{return item;}};auto test()->i64{Counter initial=Counter(20);Counter source=Counter(22);const Holder holder=Holder(initial);Counter result=holder.copy(source);if(result.get()!=22){return 1;}result.set(42);if(holder.get()!=20){return 2;}return result.get();}
+@case six maximum-width class args plus receiver and class result
+module app;import std.array;class Receiver{i64 value;public:Receiver(i64 n):value(n){}auto get()const->i64{return value;}auto pick(std::array<u64,64> a,std::array<u64,64> b,std::array<u64,64> c,std::array<u64,64> d,std::array<u64,64> e,std::array<u64,64> f)const->std::array<u64,64>{return f;}};auto test()->i64{std::array<u64,64> source=std::array<u64,64>();source.set(63,18446744073709551615u64);Receiver receiver=Receiver(42);const std::array<u64,64> result=receiver.pick(source,source,source,source,source,source);if(result.at(63)!=18446744073709551615u64){return 1;}return receiver.get();}
+@case seventh explicit class method parameter exceeds limit
+@error six
+module app;${COUNTER}class Receiver{public:Receiver(){}auto bad(Counter a,Counter b,Counter c,Counter d,Counter e,Counter f,Counter g)const->i64{return 42;}};auto test()->i64{return 42;}
+@case direct service operation result dispatch remains rejected
+@error ordinary method
+module app;auto forward(builtin::ConsoleSession& session)->builtin::ConsoleSample{return session.next();}auto test()->i64{return 42;}
+@case equal-layout nominal mismatch remains rejected
+@error
+module app;${COUNTER}class Other{public:i64 value;};auto test()->i64{Counter source=Counter(42);Counter receiver=Counter(0);Other source2=Other{.value=42};return receiver.inspect(source2);}
+@case nested field argument requires projected named local
+@error
+module app;${COUNTER}class Holder{public:Counter item;Holder(Counter x):item(x){} };auto test()->i64{Counter source=Counter(42);Counter receiver=Counter(0);Holder outer=Holder(source);return receiver.inspect(outer.item);}
+@case private field remains inaccessible through copied parameter
+@error private
+module app;${COUNTER}class Reader{public:Reader(){}auto inspect(Counter source)const->i64{return source.value;}};auto test()->i64{Counter source=Counter(42);Reader receiver=Reader();return receiver.inspect(source);}
+@case mutable receiver method rejects const receiver with copied arg
+@error
+module app;${COUNTER}auto test()->i64{const Counter receiver=Counter(0);Counter source=Counter(42);Counter result=receiver.replace(source);return 42;}
+@case const sibling cannot forward to mutable sibling
+@error
+module app;${COUNTER}class Receiver{public:Receiver(){}auto take(Counter x)->Counter{return x;}auto bad(Counter x)const->Counter{const Counter result=take(x);return result;}};auto test()->i64{return 42;}
+@case copied parameter name shadows sibling method callable
+@error
+module app;${COUNTER}class Receiver{auto select(Counter source)const->Counter{return source;}public:Receiver(){}auto take(Counter select)const->Counter{const Counter result=select(select);return result;}};auto test()->i64{return 42;}
+@case scalar parameter in copied signature remains immutable
+@error
+module app;${COUNTER}class Receiver{public:Receiver(){}auto take(Counter source,i64 n)const->i64{n=42;return n;}};auto test()->i64{return 42;}
+@case enum parameter in copied signature remains immutable
+@error
+module app;${ENUMS}${COUNTER}class Receiver{public:Receiver(){}auto take(Counter source,Status state)const->i64{state=Status::failed;return 42;}};auto test()->i64{return 42;}
+@case qualified wrapper name outside template still requires type arguments
+@error
+module app;import std.array;auto test()->i64{std::array value=std::array();return 42;}
+@case qualified injected wrapper self rejects another active instance
+@error
+module app;namespace std{template<Scalar T,i64 N>class array{builtin::array<T,N> elements;public:array():elements{}{}auto copy(std::array source)const->std::array{return source;}};}auto test()->i64{std::array<u8,1> one=std::array<u8,1>();std::array<u8,2> two=std::array<u8,2>();std::array<u8,1> result=one.copy(two);return 42;}
+@case generic methods remain unsupported
+@error
+module app;class Receiver{public:Receiver(){}template<Value T>auto copy(T x)const->T{return x;}};auto test()->i64{return 42;}
+@case readonly class field reassignment remains rejected
+@error
+module app;${COUNTER}class Holder{public:Counter item;Holder(Counter x):item(x){} };auto test()->i64{Counter source=Counter(42);const Holder value=Holder(source);value.item=source;return 42;}
+@case direct receiver cycle
+@error cycle
+module app;${COUNTER}class Receiver{public:Receiver(){}auto take(Counter x)const->Counter{return take(x);}};auto test()->i64{return 42;}
+@case mutual receiver cycle
+@error cycle
+module app;${COUNTER}class Receiver{public:Receiver(){}auto take(Counter x)const->Counter{const Counter result=other(x);return result;}auto other(Counter x)const->Counter{const Counter result=take(x);return result;}};auto test()->i64{return 42;}
+@case ordinary helper receiver cycle
+@error cycle
+module app;${COUNTER}class Receiver{public:Receiver(){}auto take(Counter x)const->Counter{const Counter result=helper(x);return result;}};auto helper(Counter x)->Counter{Receiver receiver=Receiver();Counter result=receiver.take(x);return result;}auto test()->i64{return 42;}
+@case self containment still rejected
+@error
+module app;class Bad{Bad field;public:Bad(Bad x):field(x){}auto copy(Bad source)const->Bad{return source;}};auto test()->i64{return 42;}
+@case enum method argument retains exact nominal type
+@error
+module app;${ENUMS}${COUNTER}class Receiver{public:Receiver(){}auto take(Counter x,Status s)const->i64{return x.get();}};auto test()->i64{Counter source=Counter(42);Receiver receiver=Receiver();return receiver.take(source,Other::ready);}
+@case array exchange const receiver
+@error
+module app;import std.array;auto test()->i64{const std::array<u8,3> receiver=std::array<u8,3>();std::array<u8,3> source=std::array<u8,3>();std::array<u8,3> old=receiver.exchange(source);return 42;}
+@case array exchange capacity mismatch
+@error
+module app;import std.array;auto test()->i64{std::array<u8,3> receiver=std::array<u8,3>();std::array<u8,2> source=std::array<u8,2>();std::array<u8,3> old=receiver.exchange(source);return 42;}
+@case array exchange scalar type mismatch
+@error
+module app;import std.array;auto test()->i64{std::array<u8,3> receiver=std::array<u8,3>();std::array<i64,3> source=std::array<i64,3>();std::array<u8,3> old=receiver.exchange(source);return 42;}
+@case array exchange private storage stays private
+@error
+module app;import std.array;auto test()->i64{std::array<u8,3> receiver=std::array<u8,3>();std::array<u8,3> old=receiver.exchange(receiver);return old.elements[0];return 42;}
+@case exported public method cannot expose private type parameter
+@error
+module app;import api;auto test()->i64{return 42;}
+@module api
+export module api;class Hidden{public:i64 value;};export class Receiver{public:Receiver(){}auto inspect(Hidden value)const->i64{return value.value;}};
+@case exported public method cannot expose private type result
+@error
+module app;import api;auto test()->i64{return 42;}
+@module api
+export module api;class Hidden{public:i64 value;};export class Receiver{public:Receiver(){}auto copy(Hidden value)const->Hidden{return value;}};
+@case public copied method signature cannot hide private nested template argument
+@error
+module app;import api;auto test()->i64{return 42;}
+@module api
+export module api;import std.utility;class Hidden{public:i64 value;};export class Receiver{public:Receiver(){}auto take(std::pair<Hidden,u8> source)const->i64{return 42;}};
+@case private copied method may use defining-module private type
+module app;import api;auto test()->i64{Receiver receiver=Receiver();return receiver.answer();}
+@module api
+export module api;class Hidden{public:i64 value;};export class Receiver{auto inspect(Hidden value)const->i64{return value.value;}public:Receiver(){}auto answer()const->i64{Hidden value=Hidden{.value=42};return inspect(value);}};
+@case private copied method inaccessible to importing caller
+@error
+module app;import api;auto test()->i64{Counter value=Counter(42);Receiver receiver=Receiver();return receiver.inspect(value);}
+@module api
+export module api;export ${COUNTER}export class Receiver{auto inspect(Counter value)const->i64{return value.get();}public:Receiver(){} };
+@case namespace private sibling binding cannot be hijacked by caller helper
+module app;import api;auto internal(api::Value value)->api::Value{const api::Value wrong=api::Value(0);return wrong;}auto test()->i64{api::Value source=api::Value(42);api::Receiver receiver=api::Receiver();api::Value result=receiver.copy(source);return result.get();}
+@module api
+export module api;namespace api{auto hidden(i64 value)->i64{return value;}export class Value{i64 value;public:Value(i64 n):value(n){}auto get()const->i64{return value;}};export class Receiver{auto internal(Value value)const->Value{return value;}public:Receiver(){}auto copy(Value value)const->Value{return internal(value);}};}
+@case imported class-template injected self parameter and result
+module app;import api;auto test()->i64{api::Box<i64> source=api::Box<i64>(42);api::Box<i64> receiver=api::Box<i64>(0);api::Box<i64> result=receiver.copy(source);return result.get();}
+@module api
+export module api;export namespace api{template<Scalar T>class Box{T value;public:Box(T n):value(n){}auto get()const->T{return value;}auto copy(Box source)const->Box{return source;}};}
+@case module class result and caller mutable copies preserve privacy
+module app;import api;auto test()->i64{api::Secret source=api::make();api::Receiver receiver=api::Receiver();api::Secret result=receiver.copy(source);return result.get();}
+@module api
+export module api;export namespace api{class Secret{i64 value;public:Secret(i64 n):value(n){}auto get()const->i64{return value;}auto copy(Secret value)const->Secret{return value;}};auto make()->Secret{Secret value=Secret(42);return value;}class Receiver{public:Receiver(){}auto copy(Secret value)const->Secret{return value;}};}
+@case class snapshot then scalar argument overflow precedes callee trap
+@trap overflow
+module app;${COUNTER}class Receiver{public:Receiver(){}auto inspect(Counter value,i64 ignored)const->i64{return 1/0;}};auto test()->i64{Counter source=Counter(9223372036854775807);Receiver receiver=Receiver();return receiver.inspect(source,source.add(1));}
+@case early scalar bounds trap precedes later scalar overflow
+@trap bounds
+module app;import std.array;${COUNTER}class Receiver{public:Receiver(){}auto inspect(Counter value,i64 first,i64 second)const->i64{return 42;}};auto test()->i64{Counter source=Counter(9223372036854775807);std::array<i64,1> values=std::array<i64,1>();Receiver receiver=Receiver();return receiver.inspect(source,values.at(1),source.add(1));}
+@case checked arithmetic on mutable copy of readonly method parameter
+@trap overflow
+module app;${COUNTER}class Receiver{public:Receiver(){}auto inspect(Counter value)const->i64{Counter copy=value;return copy.add(1);}};auto test()->i64{Counter source=Counter(9223372036854775807);Receiver receiver=Receiver();return receiver.inspect(source);}
+@case class-result method trap has no successful scalar observation
+@trap overflow
+module app;${COUNTER}class Receiver{public:Receiver(){}auto inspect(Counter value)const->Counter{Counter copy=value;copy.add(1);return copy;}};auto test()->i64{Counter source=Counter(9223372036854775807);Receiver receiver=Receiver();Counter result=receiver.inspect(source);return result.get();}
+@case exchange result retains exact independent bounds behavior
+@trap bounds
+module app;import std.array;auto test()->i64{std::array<u8,64> source=std::array<u8,64>();std::array<u8,64> receiver=std::array<u8,64>();std::array<u8,64> old=receiver.exchange(source);return i64(old.at(64));}

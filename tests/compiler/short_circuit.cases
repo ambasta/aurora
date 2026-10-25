@@ -1,0 +1,36 @@
+# Fixed short_circuit.py cases; the format is native_runner.Suite.load's.
+@case bool array initializer and checked assignment
+@expect true
+module app;auto test()->bool{array<bool,4> a={false,true||false,false||true,true&&true};a[0]=a[1]&&(a[2]||false);return a[0]&&a[3];}
+@case checked array index before logical RHS
+@trap bounds
+module app;auto test()->i64{array<bool,1> a={false};a[1]=true || (1/0==0);return 0;}
+@case mutable reference RHS runs once
+module app;auto test()->i64{own<i64> value=own(0);{mutref<i64> r=borrow_mut(value);const bool b=false||(write(r,42)==42);if(!b){return 0;}}return read(value);}
+@case mutable reference skipped RHS
+module app;auto test()->i64{own<i64> value=own(42);{mutref<i64> r=borrow_mut(value);const bool b=true||(write(r,0)==0);if(!b){return 0;}}return read(value);}
+@case static assertion composed predicates
+module app;auto test()->i64{static_assert((size_of(i64)==8&&field_count(i64)==0)||false);static_assert(!false && true);return 42;}
+@case overloaded bool exact selection
+module app;auto pick(bool b)->i64{if(b){return 42;}return 0;}auto pick(i64 b)->i64{return 0;}auto test()->i64{return pick(false||true);}
+@case function template bool specialization
+@expect true
+module app;template<Scalar T>auto logic(T a,T b)->bool{return a||b;}auto test()->bool{return logic<bool>(false,true);}
+@case imported logical function
+@expect true
+module app;import logic; auto test()->bool{return api::logic(false,true);}
+@module logic
+export module logic;export namespace api{auto logic(bool a,bool b)->bool{return a||b;}}
+@case required narrowing conversion &&
+@trap overflow
+module app;auto test()->bool{return true&&(u8(256)==0u8);}
+@case required narrowing conversion ||
+@trap overflow
+module app;auto test()->bool{return false||(u8(256)==0u8);}
+# The logical condition does not relax the surrounding branch/loop move rule.
+@case conditional move after logical condition
+@error use after move
+module app;auto test()->i64{own<i64> x=own(42);if(true||false){own<i64> y=move(x);}return read(x);}
+@case outer move on logical loop backedge
+@error loop backedge
+module app;auto test()->i64{own<i64> x=own(42);while(false&&true){own<i64> y=move(x);}return read(x);}

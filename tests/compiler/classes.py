@@ -151,45 +151,12 @@ check(
 )
 check("method overflow traps", program("Counter c = Counter(9223372036854775807); return c.add(1);"), trap=True)
 check(
-    "public aggregate method",
-    program(
-        "Pair p = Pair{.x=20,.y=22};return p.sum();",
-        "class Pair {public:i64 x;i64 y;auto sum() const -> i64{return x+y;}};",
-    ),
-)
-check(
     "empty constructor class",
     program("Empty e=Empty();return e.get();", "class Empty {public:Empty(){} auto get() const -> i64{return 42;}};"),
 )
 check(
-    "bool receiver field canonical",
-    program(
-        "Flag f=Flag(true);if(f.get()){return 42;}return 0;",
-        "class Flag {bool value;public:Flag(bool v):value(v){}auto get() const -> bool{return value;}};",
-    ),
-)
-check(
-    "six scalar method arguments",
-    program(
-        "Six x=Six(1);return x.sum(1,2,3,4,5,26);",
-        (
-            "class Six {i64 value;public:Six(i64 x):value(x){}auto sum(i64 a,i64 b,i64 c,i64 d,i64 e,i64 f)->i6"
-            "4{return value+a+b+c+d+e+f;}};"
-        ),
-    ),
-)
-check(
     "nested argument snapshots",
     program("Counter c=Counter(20);return sum(c.get(),c.add(2));", helpers="auto sum(i64 a,i64 b)->i64{return a+b;}"),
-)
-check(
-    "private public reflection count",
-    program(
-        (
-            "Counter c=Counter(42);static_assert(field_count(Counter)==0);return reflect_field_count(type_id(Co"
-            "unter))+c.get();"
-        )
-    ),
 )
 check(
     "global name cannot hijack private helper",
@@ -276,14 +243,6 @@ check(
     error="private constructor",
 )
 check(
-    "imported helper lexical identity",
-    (
-        "module app; import counters; auto checked_add(i64 x)->i64{return 999;}auto test()->i64{Counter c=Count"
-        "er(40);return c.add(2);}"
-    ),
-    {"counters": LIB},
-)
-check(
     "namespace class identity",
     app("math::Counter c=math::Counter(40);return c.add(2);", "import counters;"),
     {"counters": "export module counters;export namespace math {" + COUNTER + "}"},
@@ -296,44 +255,8 @@ check(
 )
 
 check(
-    "freestanding accumulator library",
-    app(
-        "std::Accumulator sum=std::Accumulator(0);i64 n=0;while(n<7){sum.add(n);n=n+1;}return sum.value()*2;",
-        "import std.numeric;",
-    ),
-    library=True,
-)
-check(
-    "accumulator private state",
-    app("std::Accumulator sum=std::Accumulator(42);return sum.total;", "import std.numeric;"),
-    library=True,
-    error="private class field",
-)
-check(
-    "accumulator checked overflow",
-    app("std::Accumulator sum=std::Accumulator(9223372036854775807);return sum.add(1);", "import std.numeric;"),
-    library=True,
-    trap=True,
-)
-check(
     "loop-local receiver lifetimes",
     program("i64 n=0;i64 total=0;while(n<2){Counter c=Counter(20);total=total+c.add(1);n=n+1;}return total;"),
-)
-check(
-    "loop-local const aggregate lifetimes",
-    program(
-        "i64 n=0;i64 total=0;while(n<2){const Point p=Point{.value=21};total=total+p.value;n=n+1;}return total;",
-        "class Point{public:i64 value;};",
-    ),
-)
-check(
-    "branch constructor lifetimes",
-    program(
-        (
-            "i64 total=0;if(true){Counter c=Counter(20);total=c.add(1);}else{Counter c=Counter(0);total=c.get()"
-            ";}Counter c=Counter(total);return c.add(total);"
-        )
-    ),
 )
 check("early return ends receiver lifetime", program("Counter c=Counter(42);if(true){return c.get();}return 0;"))
 check(
@@ -355,54 +278,6 @@ check(
 )
 
 check(
-    "six argument nested receiver calls",
-    program(
-        "Six x=Six(1);return 1+x.sum(id(1),id(2),id(3),id(4),id(5),id(25));",
-        (
-            "class Six {i64 value;public:Six(i64 x):value(x){}auto sum(i64 a,i64 b,i64 c,i64 d,i64 e,i64 f)->i6"
-            "4{return value+a+b+c+d+e+f;}};"
-        ),
-        "auto id(i64 x)->i64{return x;}",
-    ),
-)
-check(
-    "constructor multiple declaration-order fields",
-    program(
-        "Pair p=Pair(20,22);return p.sum();",
-        "class Pair {i64 a;i64 b;public:Pair(i64 x,i64 y):b(y),a(x){}auto sum() const -> i64{return a+b;}};",
-    ),
-)
-check(
-    "method caller owner lifetime preserved",
-    program(
-        (
-            "own<i64> n=own(20);Counter c=Counter(read(n));{const ref<i64> r=borrow(n);c.add(read(r));}own<i64>"
-            " moved=move(n);return c.get()+read(moved)-18;"
-        )
-    ),
-)
-check(
-    "method private fields of independent same-class local",
-    program(
-        "Counter c=Counter(0);return c.get();",
-        (
-            "class Counter {i64 value;public:Counter(i64 x):value(x){}auto get() const -> i64{Counter other=Cou"
-            "nter(40);other.value=other.value+2;return other.value;}};"
-        ),
-    ),
-)
-check(
-    "const method cannot mutate const local",
-    program(
-        "Counter c=Counter(0);return c.get();",
-        (
-            "class Counter {i64 value;public:Counter(i64 x):value(x){}auto get() const -> i64{const Counter oth"
-            "er=Counter(40);other.value=42;return other.value;}};"
-        ),
-    ),
-    error="mutable class local",
-)
-check(
     "scalar intermediary method cycle denied",
     program(
         "Counter c=Counter(42);return c.get();",
@@ -410,13 +285,6 @@ check(
         "auto recurse()->i64{Counter c=Counter(42);return c.doubled();}",
     ),
     error="cycle",
-)
-check(
-    "pure scalar recursion preserved",
-    program(
-        "Counter c=Counter(sum(6));return c.doubled();",
-        helpers="auto sum(i64 n)->i64{if(n==0){return 0;}return n+sum(n-1);}",
-    ),
 )
 check(
     "constructor argument local shadowing uses prior object",
@@ -444,11 +312,6 @@ check(
     error="nesting exceeds",
 )
 
-check(
-    "constructor return type rejected",
-    program("return 42;", "class Wrong {public:auto Wrong()->i64{return 42;}};"),
-    error="constructor cannot have a return type",
-)
 
 # The graph has shallow ASTs but a long call chain: cycle analysis must not use
 # unbounded host recursion. These are bounded regressions, not a resource proof.
@@ -469,4 +332,5 @@ check(
     error="cycle",
 )
 
+SUITE.load(Path(__file__).with_suffix(".cases"), COUNTER=COUNTER)
 SUITE.finish()

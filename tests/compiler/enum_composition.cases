@@ -1,0 +1,73 @@
+# Fixed enum_composition.py cases; the format is native_runner.Suite.load's.
+@prelude LEAF_PAIR_INIT
+Leaf leaf=Leaf(Status::ok,42u64);std::pair<Status,Leaf> pair=std::pair<Status,Leaf>(Status::ok,leaf);
+@prelude REPEATED
+class Repeated{public:Leaf first;Status middle;Leaf second;
+        Repeated(Leaf a,Status s,Leaf b):second(b),middle(s),first(a){}
+    };
+@case enum specialization identity includes ordered nominal arguments
+module app;import std.utility;enum class Status{ok,error};enum class Other{ok,error};${LEAF}auto test()->i64{static_assert(type_id(std::pair<Status,Other>)!=type_id(std::pair<Other,Status>));static_assert(type_id(std::pair<Status,Status>)!=type_id(std::pair<Other,Other>));static_assert(type_id(std::pair<Status,i64>)!=type_id(std::pair<i64,Status>));static_assert(type_id(std::pair<Status,Leaf>)!=type_id(std::pair<Other,Leaf>));if(reflect_size(type_id(std::pair<Status,Leaf>))!=24){return 1;}if(reflect_field_count(type_id(std::pair<Status,Leaf>))!=2){return 2;}return 42;}
+@case Value substituted enum method and class constructor
+module app;enum class Status{ok,error};enum class Other{ok,error};template<Value T>class Box{T item;public:Box(T value):item(value){}auto get()const->T{return item;}auto replace(T next)->T{const T old=item;item=next;return old;}};auto test()->i64{Box<Status> box=Box<Status>(Status::ok);if(box.replace(Status::error)!=Status::ok){return 1;}if(box.get()!=Status::error){return 2;}return 42;}
+@case Value substituted class result copies complete named local
+@expect 18446744073709551615
+module app;enum class Status{ok,error};enum class Other{ok,error};${LEAF}template<Value T>class Box{T item;public:Box(T value):item(value){}auto get()const->T{const T result=item;return result;}};auto test()->u64{Leaf source=Leaf(Status::ok,18446744073709551615u64);Box<Leaf> box=Box<Leaf>(source);Leaf copied=box.get();copied.set(Status::error,0u64);const Leaf saved=box.get();if(saved.status()!=Status::ok){return 0u64;}return saved.get();}
+@case enum side effect separates class constructor snapshots
+@expect 18446744073709551615
+module app;enum class Status{ok,error};enum class Other{ok,error};${LEAF}${REPEATED}auto test()->u64{Leaf source=Leaf(Status::ok,18446744073709551615u64);Repeated value=Repeated(source,source.change(Status::error),source);const Leaf first=value.first;const Leaf second=value.second;if(first.status()!=Status::ok){return 0u64;}if(second.status()!=Status::error){return 0u64;}if(value.middle!=Status::error){return 0u64;}return first.get();}
+@case later class result call cannot overwrite enum constructor snapshot
+module app;${BASE}${REPEATED}auto clobber()->Status{const Factory factory=Factory(Status::error,999u64);const Packet packet=factory.snapshot();const Leaf leaf=packet.item;return leaf.status();}auto test()->u64{Leaf source=Leaf(Status::ok,42u64);Repeated value=Repeated(source,clobber(),source);const Leaf first=value.first;const Leaf second=value.second;if(value.middle!=Status::error){return 0u64;}if(first.status()!=Status::ok){return 0u64;}return second.get();}
+@case readonly constructor parameter permits copied class result
+module app;${BASE}class Holder{public:Factory item;Holder(Factory source):item(source){} };auto test()->u64{const Factory source=Factory(Status::ok,42u64);Holder holder=Holder(source);const Factory copied=holder.item;const Packet packet=copied.snapshot();const Leaf leaf=packet.item;return leaf.get();}
+@case mutable result independent of later receiver and result mutation
+@expect 43
+module app;${BASE}auto test()->u64{Factory factory=Factory(Status::ok,20u64);Packet first=factory.advance(22u64);Packet second=factory.advance(1u64);first.tag=Status::ok;factory.set(Status::ok,0u64);const Leaf a=first.item;const Leaf b=second.item;if(second.tag!=Status::error){return 0u64;}if(a.get()!=42u64){return 0u64;}return b.get();}
+@case nested result survives receiver and method stack lifetimes
+@expect 9223372036854775808
+module app;${BASE}auto make()->Packet{const Factory factory=Factory(Status::error,9223372036854775808u64);const Packet local=factory.forwarded();return local;}auto test()->u64{const Packet packet=make();const Leaf leaf=packet.item;if(packet.tag!=Status::error){return 0u64;}return leaf.get();}
+@case class-result hidden destination survives two nested receivers
+module app;${BASE}class Mixer{u64 base;public:Mixer(u64 n):base(n){}auto mix()const->Packet{Factory left=Factory(Status::ok,20u64);Factory right=Factory(Status::error,12u64);const Packet a=left.snapshot();const Packet b=right.forwarded();const Packet c=copy_packet(a);const Leaf x=c.item;const Leaf y=b.item;const Leaf leaf=Leaf(Status::ok,x.get()+y.get()+base);const Empty zero=Empty();const Packet result=Packet(Status::ok,leaf,zero,true);return result;}};auto copy_packet(Packet source)->Packet{return source;}auto test()->u64{const Mixer source=Mixer(10u64);const Packet packet=source.mix();const Leaf leaf=packet.item;return leaf.get();}
+@case zero-leaf nested method result preserves logical completion
+module app;${EMPTY}class EmptyLeaf{public:Empty item;EmptyLeaf(Empty x):item(x){} };class EmptyMiddle{public:EmptyLeaf item;EmptyMiddle(EmptyLeaf x):item(x){} };class EmptyRoot{public:EmptyMiddle item;EmptyRoot(EmptyMiddle x):item(x){} };class EmptyFactory{public:EmptyFactory(){}auto make()const->EmptyRoot{const Empty a=Empty();const EmptyLeaf b=EmptyLeaf(a);const EmptyMiddle c=EmptyMiddle(b);const EmptyRoot result=EmptyRoot(c);return result;}};auto test()->i64{const EmptyFactory factory=EmptyFactory();const EmptyRoot root=factory.make();const EmptyMiddle middle=root.item;const EmptyLeaf leaf=middle.item;const Empty zero=leaf.item;static_assert(size_of(EmptyRoot)==8);return zero.answer();}
+@case named wrapper around std array is a Value argument and method result
+@expect 18446744073709551615
+module app;import std.array;import std.utility;enum class Status{ok,error};enum class Other{ok,error};class ArrayValue{public:std::array<u64,2> item;ArrayValue(std::array<u64,2> source):item(source){} };class Wrapper{public:std::pair<Status,ArrayValue> item;Wrapper(std::pair<Status,ArrayValue> source):item(source){} };class ArrayFactory{public:ArrayFactory(){}auto make()const->Wrapper{std::array<u64,2> a=std::array<u64,2>();a.set(0,18446744073709551615u64);a.set(1,9223372036854775808u64);const ArrayValue value=ArrayValue(a);const std::pair<Status,ArrayValue> pair=std::pair<Status,ArrayValue>(Status::ok,value);const Wrapper result=Wrapper(pair);return result;}};auto test()->u64{const ArrayFactory factory=ArrayFactory();const Wrapper result=factory.make();const std::pair<Status,ArrayValue> pair=result.item;ArrayValue value=pair.second;std::array<u64,2> elements=value.item;elements.set(0,0u64);const std::array<u64,2> saved=value.item;if(pair.first!=Status::ok){return 0u64;}if(saved.at(1)!=9223372036854775808u64){return 0u64;}return saved.at(0);}
+@case private enum representation remains encapsulated
+module app;import hidden;auto test()->i64{const Opaque value=Opaque();return value.get();}
+@module hidden
+export module hidden;enum class Secret{ok,error};export class Opaque{Secret state;public:Opaque():state(Secret::ok){}auto get()const->i64{if(state==Secret::ok){return 42;}return 0;}};
+@case std.decimal two different result snapshots share no state
+module app;import std.decimal;import std.utility;auto test()->u64{std::DecimalAccumulator accumulator=std::DecimalAccumulator();accumulator.push_digit(4u64);const std::DecimalResult first=accumulator.finish();accumulator.push_digit(2u64);const std::DecimalResult second=accumulator.finish();const std::pair<std::DecimalResult,std::DecimalResult> pair=std::pair<std::DecimalResult,std::DecimalResult>(first,second);accumulator.reset();const std::DecimalResult a=pair.first;const std::DecimalResult b=pair.second;if(a.value_or(0u64)!=4u64){return 0u64;}return b.value_or(0u64);}
+@case readonly parameter owned field replacement
+@error
+module app;import std.utility;${BASE}auto mutate(std::pair<Status,Leaf> input,Leaf leaf)->i64{input.second=leaf;return 42;}auto test()->i64{${LEAF_PAIR_INIT}return mutate(pair,leaf);}
+@case readonly parameter owned field mutable receiver
+@error
+module app;import std.utility;${BASE}auto mutate(std::pair<Status,Leaf> input,Leaf leaf)->i64{input.second.set(Status::error,0u64);return 42;}auto test()->i64{${LEAF_PAIR_INIT}return mutate(pair,leaf);}
+@case class result copied temporary argument
+module app;${BASE}auto consume(Packet value)->i64{return 42;}auto test()->i64{Factory factory=Factory(Status::ok,42u64);return consume(factory.snapshot());}
+@case wrong nominal class return remains rejected
+@error
+module app;${BASE}class Invalid{public:Invalid(){}auto make()const->Packet{Leaf value=Leaf(Status::ok,42u64);return value;}};auto test()->i64{return 42;}
+@case wrong nominal enum return remains rejected
+@error
+module app;${BASE}class Invalid{public:Invalid(){}auto status()const->Status{return Other::ok;}};auto test()->i64{return 42;}
+@case direct copied class return preserves enum payload
+module app;${BASE}auto forward(Factory source)->Packet{return source.snapshot();}auto test()->i64{Factory factory=Factory(Status::ok,42u64);Packet p=forward(factory);const Leaf item=p.item;if(p.tag!=Status::ok){return 1;}if(!p.valid){return 2;}if(item.status()!=Status::ok){return 3;}return i64(item.get());}
+@case direct class construction return preserves enum payload
+module app;${BASE}class Maker{public:Maker(){}auto make()const->Leaf{return Leaf(Status::ok,42u64);}};auto test()->i64{Maker maker=Maker();Leaf result=maker.make();if(result.status()!=Status::ok){return 1;}return i64(result.get());}
+@case copied class method parameter preserves enum payload
+module app;${BASE}class Receiver{public:Receiver(){}auto take(Leaf value)const->Leaf{return value;}};auto test()->i64{Leaf source=Leaf(Status::ok,42u64);Receiver receiver=Receiver();Leaf result=receiver.take(source);source.change(Status::error);if(result.status()!=Status::ok){return 1;}return i64(result.get());}
+@case nested class method parameter preserves copied result
+module app;${BASE}class Receiver{public:Receiver(){}auto take(Packet value)const->Packet{return value;}};auto test()->i64{Factory factory=Factory(Status::ok,42u64);Packet source=factory.snapshot();Receiver receiver=Receiver();Packet result=receiver.take(source);const Leaf item=result.item;return i64(item.get());}
+@case Value substitution authorizes copied class method parameter
+module app;enum class Status{ok,error};enum class Other{ok,error};${LEAF}template<Value T>class Box{T item;public:Box(T source):item(source){}auto take(T source)const->T{return source;}};auto test()->i64{Leaf leaf=Leaf(Status::ok,42u64);Box<Leaf> box=Box<Leaf>(leaf);Leaf result=box.take(leaf);leaf.change(Status::error);if(result.status()!=Status::ok){return 1;}return i64(result.get());}
+@case Value enum substitution does not authorize builtin enum arrays
+@error
+module app;enum class Status{ok,error};enum class Other{ok,error};template<Value T>class Box{builtin::array<T,2> data;public:Box():data{}{} };auto test()->i64{Box<Status> box=Box<Status>();return 42;}
+@case decimal enum cannot satisfy Scalar constraint
+@error
+module app;import std.decimal;template<Scalar T>class Only{T item;public:Only(T source):item(source){} };auto test()->i64{static_assert(size_of(Only<std::DecimalStatus>)>0);return 42;}
+@case decimal result private enum field remains private after composition
+@error
+module app;import std.decimal;import std.utility;enum class Status{ok,error};enum class Other{ok,error};auto test()->i64{std::DecimalAccumulator a=std::DecimalAccumulator();const std::DecimalResult result=a.finish();const std::pair<Status,std::DecimalResult> pair=std::pair<Status,std::DecimalResult>(Status::ok,result);const std::DecimalResult copy=pair.second;if(copy.outcome==std::DecimalStatus::empty){return 42;}return 0;}

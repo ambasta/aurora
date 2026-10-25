@@ -1,0 +1,69 @@
+# Fixed decimal_values.py cases; the format is native_runner.Suite.load's.
+@prelude STATES_MODULE
+export module states;export namespace items{enum class State{ready,done};auto ready()->State{return State::ready;}auto same(State a,State b)->bool{return a==b;}}
+@case enum locals and assignment
+module app;enum class State { ready, done, failed };auto test()->i64{const State first=State::ready;State next=first;next=State::done;if(first!=State::ready){return 1;}if(next!=State::done){return 2;}return 42;}
+@case enum compile time equality
+module app;enum class State { ready, done, failed };auto test()->i64{static_assert(State::ready==State::ready);static_assert(State::ready!=State::done);static_assert(!(State::failed==State::done));return 42;}
+@case builtin Scalar template remains available
+module app;template<Scalar T>class Pair{public:T value;Pair(T n):value(n){}};auto test()->u64{Pair<u64> p=Pair<u64>(42u64);return p.value;}
+@case enum fields and independent class copies
+module app;enum class State { ready, done, failed };class Flag{public:State state;};auto test()->i64{Flag first=Flag{.state=State::ready};Flag second=first;second.state=State::done;if(first.state!=State::ready){return 1;}if(second.state!=State::done){return 2;}return 42;}
+@case enum constructor and mutable method boundary
+module app;enum class State { ready, done, failed };class Flag{State state;public:Flag(State initial):state(initial){}auto get()const->State{return state;}auto set(State next)->State{const State old=state;state=next;return old;}};auto test()->i64{Flag flag=Flag(State::ready);const State old=flag.set(State::done);if(old!=State::ready){return 1;}if(flag.get()!=State::done){return 2;}return 42;}
+@case enum ordinary function parameters and result
+module app;enum class State { ready, done, failed };auto choose(State a,State b,bool second)->State{if(second){return b;}return a;}auto test()->i64{const State selected=choose(State::ready,State::done,true);if(selected==State::done){return 42;}return 0;}
+@case six enum function arguments
+module app;enum class State { ready, done, failed };auto last(State a,State b,State c,State d,State e,State f)->State{return f;}auto test()->i64{if(last(State::ready,State::failed,State::ready,State::ready,State::failed,State::done)==State::done){return 42;}return 0;}
+@case enum field copied across function result
+module app;enum class State { ready, done, failed };class Flag{public:State state;};auto copy(Flag value)->Flag{return value;}auto test()->i64{Flag first=Flag{.state=State::ready};const Flag second=copy(first);first.state=State::failed;if(second.state==State::ready){return 42;}return 0;}
+@case enum reflection nominal identity
+module app;enum class State { ready, done, failed };enum class Other{ready,done,failed};class Box{public:State state;};auto test()->i64{static_assert(size_of(State)==8);static_assert(field_count(State)==0);static_assert(type_id(State)!=type_id(Other));static_assert(type_id(State)!=type_id(i64));static_assert(type_id(State)!=type_id(u64));static_assert(type_id(State)!=type_id(bool));static_assert(type_id(State)!=type_id(Box));if(reflect_size(type_id(State))!=8){return 1;}if(reflect_field_count(type_id(State))!=0){return 2;}return 42;}
+@case enum field reflection matches class layout
+module app;enum class State { ready, done, failed };class Box{State hidden;public:State shown;Box(State a,State b):hidden(a),shown(b){}};auto test()->i64{static_assert(size_of(Box)==16);static_assert(field_count(Box)==1);if(reflect_size(type_id(Box))!=16){return 1;}if(reflect_field_count(type_id(Box))!=1){return 2;}return 42;}
+@case exported enum module boundary
+module app;import states;auto test()->i64{const items::State state=items::ready();if(items::same(state,items::State::ready)){return 42;}return 0;}
+@module states
+${STATES_MODULE}
+@case imported enum reflection
+module app;import states;auto test()->i64{static_assert(size_of(items::State)==8);static_assert(field_count(items::State)==0);if(reflect_size(type_id(items::State))!=8){return 1;}if(reflect_field_count(type_id(items::State))!=0){return 2;}return 42;}
+@module states
+${STATES_MODULE}
+@case namespace enums keep nominal identity
+module app;namespace left{enum class State{ready};}namespace right{enum class State{ready};}auto test()->i64{static_assert(type_id(left::State)!=type_id(right::State));if(left::State::ready==left::State::ready){return 42;}return 0;}
+@case same named enums in modules are distinct
+@error
+module app;import one;import two;auto test()->i64{a::State state=b::State::ready;return 42;}
+@module one
+export module one;export namespace a{enum class State{ready};}
+@module two
+export module two;export namespace b{enum class State{ready};}
+@case enum explicit argument and class result
+module app;enum class State { ready, done, failed };class Flag{public:State state;};class Factory{public:Factory(){}auto make(State state)const->Flag{const Flag result=Flag{.state=state};return result;}};auto test()->i64{const Factory f=Factory();const Flag r=f.make(State::done);if(r.state==State::done){return 42;}return 0;}
+@case empty class method result
+module app;class Empty{public:Empty(){}};class Factory{public:Factory(){}auto make()const->Empty{const Empty value=Empty();return value;}};auto test()->i64{Factory f=Factory();const Empty result=f.make();return 42;}
+@case class method result through module
+module app;import reports;auto test()->u64{const items::Counter c=items::Counter(42u64);const items::Report r=c.snapshot();return r.get();}
+@module reports
+export module reports;export namespace items{${REPORT}}
+@case class result remains independent of another result
+module app;${REPORT}auto test()->u64{Counter c=Counter(21u64);Report first=c.snapshot();Report second=c.snapshot();first.set(0u64);return second.get()+c.get();}
+@case const binding copied into mutable method result
+module app;${REPORT}auto test()->u64{const Counter c=Counter(40u64);Report result=c.snapshot();result.set(42u64);return result.get();}
+@case method result copies private fixed array leaves
+@expect 18446744073709551615
+module app;import std.array;class Factory{public:Factory(){}auto make()const->std::array<u64,3>{std::array<u64,3> r=std::array<u64,3>();r.set(0,18446744073709551615u64);r.set(1,42u64);r.set(2,9223372036854775808u64);return r;}};auto test()->u64{const Factory f=Factory();std::array<u64,3> first=f.make();const std::array<u64,3> second=first;first.set(0,0u64);if(second.at(1)!=42u64){return 0u64;}if(second.at(2)!=9223372036854775808u64){return 0u64;}return second.at(0);}
+@case method result copied temporary argument
+module app;${REPORT}class Other{public:u64 value;};auto consume(Report r)->i64{return 42;}auto test()->i64{Counter c=Counter(1u64);return consume(c.snapshot());}
+@case direct copied method return preserves payload
+@expect 1
+module app;${REPORT}auto forward(Counter c)->Report{return c.snapshot();}auto test()->u64{Counter c=Counter(1u64);const Report r=forward(c);return r.get();}
+@case decimal accumulator copies have independent input
+@expect 43
+module app;import std.decimal;auto test()->u64{std::DecimalAccumulator first=std::DecimalAccumulator();first.push_digit(4u64);std::DecimalAccumulator second=first;first.push_digit(2u64);second.push_digit(3u64);const std::DecimalResult a=first.finish();const std::DecimalResult b=second.finish();if(a.value_or(0u64)!=42u64){return 0u64;}return b.value_or(0u64);}
+@case decimal result ordinary function copy
+module app;import std.decimal;auto copy(std::DecimalResult r)->std::DecimalResult{return r;}auto test()->u64{std::DecimalAccumulator a=std::DecimalAccumulator();a.push_digit(4u64);a.push_digit(2u64);const std::DecimalResult first=a.finish();const std::DecimalResult second=copy(first);a.reset();return second.value_or(0u64);}
+@case decimal finish accepts const copied accumulator
+module app;import std.decimal;auto test()->u64{std::DecimalAccumulator a=std::DecimalAccumulator();a.push_digit(4u64);a.push_digit(2u64);const std::DecimalAccumulator frozen=a;a.reset();const std::DecimalResult r=frozen.finish();return r.value_or(0u64);}
+@case decimal result status nominal reflection
+module app;import std.decimal;auto test()->i64{static_assert(size_of(std::DecimalStatus)==8);static_assert(field_count(std::DecimalStatus)==0);static_assert(type_id(std::DecimalStatus)!=type_id(std::DecimalResult));static_assert(type_id(std::DecimalStatus)!=type_id(std::DecimalAccumulator));if(reflect_size(type_id(std::DecimalStatus))!=8){return 1;}return 42;}

@@ -1,0 +1,24 @@
+# Fixed unsigned_oracle.py cases; the format is native_runner.Suite.load's.
+@case reflection and high static comparison
+@expect 24
+module app;  auto test() -> i64 { static_assert(type_id(u64)==8);static_assert(size_of(u64)==8);static_assert(field_count(u64)==0);static_assert(18446744073709551615u64>9223372036854775807u64);static_assert(type_id(array<u64,2>)==2000002);return reflect_size(type_id(array<u64,2>))+reflect_size(type_id(u64)); }
+@case mixed six scalar unsigned arguments
+@expect 9223372036854775807
+module app;auto choose(i64 a,u64 b,bool c,u64 d,i64 e,u64 f)->u64{if(c){return b^d^f;}return 0u64;}auto test()->u64{return 1u64+choose(0,18446744073709551615u64,true,1u64,0,9223372036854775808u64);}
+@case receiver high payload survives divide and shifts
+@expect 3074457345618258602
+module app;class C{u64 n;public:C(u64 x):n(x){}auto run(u64 divisor,i64 count)->u64{const u64 q=n/divisor;n=q>>count;return n;}};auto test()->u64{C c=C(18446744073709551615u64);return c.run(3u64,1);}
+@case unsigned recursive scalar
+@expect 45
+module app;auto sum(u64 n)->u64{if(n==0u64){return 0u64;}return n+sum(n-1u64);}auto test()->u64{return sum(9u64);}
+@case unsigned class result preserves snapshot
+@expect 9223372036854775808
+module app;class C{u64 n;public:C(u64 x):n(x){}auto get()const->u64{return n;}auto bump()->u64{n=n+1u64;return n;}};auto save(C copy,u64 ignored)->C{return copy;}auto test()->u64{C c=C(9223372036854775808u64);const C snapshot=save(c,c.bump());return snapshot.get();}
+@case cross-module u64 private field and result
+@expect 18446744073709551615
+module app; import values; auto test() -> u64 { const values::Cell c=values::make(18446744073709551615u64);return c.get(); }
+@module values
+export module values;export namespace values{class Cell{u64 n;public:Cell(u64 x):n(x){}auto get()const->u64{return n;}};auto make(u64 x)->Cell{const Cell result=Cell(x);return result;}}
+@case unsigned and signed array metadata separate
+@expect 8
+module app;  auto test() -> i64 { static_assert(type_id(array<u64,1>)!=type_id(array<i64,1>));static_assert(type_id(array<u64,1>)!=type_id(array<bool,1>));static_assert(type_id(u64)!=type_id(i64));return reflect_size(8)+reflect_field_count(8); }

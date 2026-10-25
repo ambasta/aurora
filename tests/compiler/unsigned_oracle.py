@@ -392,17 +392,6 @@ def surface_cases(suite):
     ]:
         suite.reject(name, source, error)
     suite.check(
-        "reflection and high static comparison",
-        app(
-            "static_assert(type_id(u64)==8);static_assert(size_of(u64)==8);static_assert(field_count(u64)==0);"
-            "static_assert(18446744073709551615u64>9223372036854775807u64);"
-            "static_assert(type_id(array<u64,2>)==2000002);"
-            "return reflect_size(type_id(array<u64,2>))+reflect_size(type_id(u64));",
-            result="i64",
-        ),
-        24,
-    )
-    suite.check(
         "unsigned class value boundary",
         "module app;\n"
         "class Box {u64 value;public:Box(u64 n):value(n){} auto get() const->u64{return value;} "
@@ -422,51 +411,6 @@ def surface_cases(suite):
         "auto test()->u64{const Wide a=Wide{" + initializers + "};const Wide b=select(a,a,a,a,a,a);return b.f63;}",
         MAX - 63,
     )
-    suite.check(
-        "mixed six scalar unsigned arguments",
-        "module app;auto choose(i64 a,u64 b,bool c,u64 d,i64 e,u64 f)->u64{if(c){return b^d^f;}return 0u64;}"
-        "auto test()->u64{return 1u64+choose(0,18446744073709551615u64,true,1u64,0,9223372036854775808u64);}",
-        SIGN - 1,
-    )
-    suite.check(
-        "receiver high payload survives divide and shifts",
-        "module app;class C{u64 n;public:C(u64 x):n(x){}auto run(u64 divisor,i64 count)->u64{"
-        "const u64 q=n/divisor;n=q>>count;return n;}};"
-        "auto test()->u64{C c=C(18446744073709551615u64);return c.run(3u64,1);}",
-        (MAX // 3) >> 1,
-    )
-    suite.check(
-        "unsigned recursive scalar",
-        "module app;auto sum(u64 n)->u64{if(n==0u64){return 0u64;}return n+sum(n-1u64);}"
-        "auto test()->u64{return sum(9u64);}",
-        45,
-    )
-    suite.check(
-        "unsigned class result preserves snapshot",
-        "module app;class C{u64 n;public:C(u64 x):n(x){}auto get()const->u64{return n;}"
-        "auto bump()->u64{n=n+1u64;return n;}};auto save(C copy,u64 ignored)->C{return copy;}"
-        "auto test()->u64{C c=C(9223372036854775808u64);const C snapshot=save(c,c.bump());return snapshot.get();}",
-        SIGN,
-    )
-    suite.check(
-        "cross-module u64 private field and result",
-        app("const values::Cell c=values::make(18446744073709551615u64);return c.get();", "import values;"),
-        MAX,
-        modules={
-            "values": "export module values;export namespace values{class Cell{u64 n;public:Cell(u64 x):n(x){}"
-            "auto get()const->u64{return n;}};auto make(u64 x)->Cell{const Cell result=Cell(x);return result;}}"
-        },
-    )
-    suite.check(
-        "unsigned and signed array metadata separate",
-        app(
-            "static_assert(type_id(array<u64,1>)!=type_id(array<i64,1>));"
-            "static_assert(type_id(array<u64,1>)!=type_id(array<bool,1>));static_assert(type_id(u64)!=type_id(i64));"
-            "return reflect_size(8)+reflect_field_count(8);",
-            result="i64",
-        ),
-        8,
-    )
 
 
 def main():
@@ -478,6 +422,7 @@ def main():
     args = parser.parse_args()
     require(0 <= args.random_count <= 10000, "random-count must be between 0 and 10000")
     suite = Suite(args.compiler, "unsigned oracle", timeout=args.timeout)
+    suite.load(Path(__file__).with_suffix(".cases"))
     for case in generated_cases(args.seed, args.random_count):
         suite.value(case.name, case.body, case.expected, case.result_type, case.prelude, case.imports)
     for case in rejection_cases():

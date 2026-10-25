@@ -458,6 +458,74 @@ class Suite:
             )
         )
 
+    def load(self, path, **preludes):
+        """Register the cases of a `.cases` file; keyword arguments are extra preludes.
+
+        `#` lines are comments. `@prelude NAME`, `@case NAME` and `@module NAME`
+        (an extra module of the case above it) take the following lines, up to the
+        next `@` or `#` line, as source joined by newlines without trailing blank
+        lines; `${NAME}` in a source expands an earlier prelude. Right under `@case`
+        come `@expect N|true|false` (default 42), `@trap bounds|overflow|zero|count`
+        or `@error [FRAGMENT]` lines (any listed fragment matches; bare: any error).
+        """
+        path = Path(path)
+        case = block = None
+
+        def register():
+            if case is not None:
+                name, expected, errors, source, modules = case
+                error = None
+                if errors:
+                    error = True if errors == [""] else errors[0] if len(errors) == 1 else tuple(errors)
+                self.check(name, source, expected, error, modules=modules or None)
+
+        def expand(lines, where):
+            while lines and not lines[-1]:
+                lines.pop()
+            missing = [name for name in re.findall(r"\$\{(\w+)\}", "\n".join(lines)) if name not in preludes]
+            require(not missing, f"{where}: unknown prelude {missing}")
+            return re.sub(r"\$\{(\w+)\}", lambda match: preludes[match[1]], "\n".join(lines))
+
+        def close():
+            if block is not None:
+                keyword, name, lines, where = block
+                if keyword == "prelude":
+                    preludes[name] = expand(lines, where)
+                elif keyword == "case":
+                    case[3] = expand(lines, where)
+                else:
+                    case[4][name] = expand(lines, where)
+
+        for number, line in enumerate(path.read_text().split("\n"), 1):
+            where = f"{path.name}:{number}"
+            keyword, _, argument = line[1:].partition(" ")
+            if line.startswith("#"):
+                close()
+                block = None
+            elif line.startswith("@") and keyword in ("prelude", "case", "module"):
+                close()
+                require(argument, f"{where}: @{keyword} needs a name")
+                if keyword != "module":
+                    register()
+                    case = [argument, 42, [], "", {}] if keyword == "case" else None
+                require(keyword != "module" or case is not None, f"{where}: @module outside a case")
+                block = [keyword, argument, [], where]
+            elif line.startswith("@"):
+                require(block and block[0] == "case" and not block[2], f"{where}: misplaced @{keyword}")
+                if keyword == "expect" and not case[2]:
+                    case[1] = argument == "true" if argument in ("true", "false") else int(argument)
+                elif keyword == "trap" and not case[2] and argument.upper() in Trap.__members__:
+                    case[1] = Trap[argument.upper()]
+                else:
+                    require(keyword == "error" and case[1] == 42, f"{where}: unsupported directive {line!r}")
+                    case[2].append(argument)
+            else:
+                require(block is not None or not line, f"{where}: source outside a block")
+                if block is not None:
+                    block[2].append(line)
+        close()
+        register()
+
     def program(self, name, source, *, entry="test", modules=None, options=(), standalone=False, inspect=None):
         """A program for a custom harness; register runs on the returned handle with `invoke`."""
         case = Case(

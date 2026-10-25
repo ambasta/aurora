@@ -1,0 +1,155 @@
+# Fixed composed_values.py cases; the format is native_runner.Suite.load's.
+@prelude EMPTY
+class Empty{public:Empty(){}auto answer()const->i64{return 42;}};
+@prelude HOLDER
+class Holder{public:Empty item;Holder(Empty source):item(source){} };
+@prelude EMPTY_CHAIN_BODY
+Empty source1=Empty();Empty2 source2=Empty2(source1);Empty3 source3=Empty3(source2);Empty4 source4=Empty4(source3);
+@prelude EMPTY_CHAIN
+${EMPTY}class Empty2{public:Empty item;Empty2(Empty source):item(source){}};class Empty3{public:Empty2 item;Empty3(Empty2 source):item(source){}};class Empty4{public:Empty3 item;Empty4(Empty3 source):item(source){}};
+@prelude LEAF_WRAP
+${LEAF}class Wrap {
+public:
+    i64 head;
+    Leaf item;
+    i64 tail;
+    Wrap(i64 a,Leaf source,i64 b):head(a),item(source),tail(b){}
+};
+@case library pair with private MinMax and scalar
+module app;import std.utility;import std.numeric;auto test()->i64{const std::MinMax source=std::minmax(42,0);const std::pair<std::MinMax,i64> pair=std::pair<std::MinMax,i64>(source,0);const std::MinMax copy=pair.first;return std::range_width(copy)+pair.second;}
+@case library class in second field with preceding u64
+module app;import std.utility;import std.numeric;auto test()->i64{const std::MinMax source=std::minmax(42,0);const std::pair<u64,std::MinMax> pair=std::pair<u64,std::MinMax>(18446744073709551615u64,source);const std::MinMax copy=pair.second;if(pair.first!=18446744073709551615u64){return 1;}return std::range_width(copy);}
+@case two distinct library class fields retain independent private state
+module app;import std.utility;import std.numeric;auto test()->i64{std::Accumulator source=std::Accumulator(20);const std::MinMax limits=std::minmax(0,20);const std::pair<std::MinMax,std::Accumulator> pair=std::pair<std::MinMax,std::Accumulator>(limits,source);source.add(99);std::Accumulator copy=pair.second;copy.add(2);const std::Accumulator original=pair.second;const std::MinMax bounds=pair.first;if(original.value()!=20){return 1;}return copy.value()+std::range_width(bounds);}
+@case class-valued specialization identity includes ordered arguments
+module app;import std.utility;import std.numeric;auto test()->i64{static_assert(type_id(std::pair<std::MinMax,i64>)!=type_id(std::pair<i64,std::MinMax>));static_assert(type_id(std::pair<std::Accumulator,i64>)!=type_id(std::pair<i64,std::Accumulator>));static_assert(size_of(std::pair<std::MinMax,i64>)==24);static_assert(field_count(std::pair<std::MinMax,i64>)==2);if(reflect_size(type_id(std::pair<std::MinMax,i64>))!=24){return 1;}if(reflect_field_count(type_id(std::pair<std::MinMax,i64>))!=2){return 2;}return 42;}
+@case single Value parameter supports a named concrete class
+module app;${LEAF}template<Value T>class Box{public:T item;Box(T source):item(source){} };auto test()->i64{Leaf source=Leaf(42);Box<Leaf> value=Box<Leaf>(source);const Leaf copy=value.item;return copy.get();}
+@case Value remains usable as an ordinary contextual class name
+module app;class Value{public:i64 value;};template<Value T>class Box{public:T item;Box(T source):item(source){} };auto test()->i64{Value source=Value{.value=42};Box<Value> outer=Box<Value>(source);const Value copy=outer.item;return copy.value;}
+@case qualified and local class arguments reuse one specialization
+module app;namespace geometry{${LEAF}template<Value T>class Box{public:T item;Box(T source):item(source){} };auto identity(Box<Leaf> source)->Box<Leaf>{return source;}auto identity_id()->i64{return type_id(Box<Leaf>);}}auto test()->i64{geometry::Leaf source=geometry::Leaf(42);geometry::Box<geometry::Leaf> value=geometry::Box<geometry::Leaf>(source);const geometry::Box<geometry::Leaf> copy=geometry::identity(value);const geometry::Leaf inner=copy.item;if(type_id(geometry::Box<geometry::Leaf>)!=geometry::identity_id()){return 1;}return inner.get();}
+@case chained method call
+module app;${LEAF_WRAP}auto test()->i64{Leaf source=Leaf(42);Wrap w=Wrap(0,source,0);return w.item.get();}
+@case chained mutable method
+@expect 43
+module app;${LEAF_WRAP}auto test()->i64{Leaf source=Leaf(42);Wrap w=Wrap(0,source,0);return w.item.add(1);}
+@case whole nested field assignment
+module app;${LEAF_WRAP}auto test()->i64{Leaf source=Leaf(42);Wrap w=Wrap(0,source,0);w.item=source;return 42;}
+@case composed value ordinary parameter and complete return
+module app;${LEAF_WRAP}auto identity(Wrap source)->Wrap{return source;}auto test()->i64{Leaf source=Leaf(20);Wrap original=Wrap(7,source,15);Wrap copied=identity(original);copied.head=99;const Leaf value=copied.item;if(original.head!=7){return 1;}return value.get()+original.head+original.tail;}
+@case copy public class field from readonly value parameter
+module app;${LEAF_WRAP}auto consume(Wrap source)->i64{const Leaf value=source.item;return value.get()+source.head+source.tail;}auto test()->i64{Leaf source=Leaf(20);Wrap value=Wrap(7,source,15);return consume(value);}
+@case factory result survives local frame and reinitialization loop
+@expect 15
+module app;${LEAF_WRAP}auto make(i64 input)->Wrap{Leaf source=Leaf(input);Wrap result=Wrap(100,source,200);return result;}auto test()->i64{i64 pass=0;i64 sum=0;while(pass<6){const Wrap value=make(pass);const Leaf inner=value.item;sum=sum+inner.get();pass=pass+1;}return sum;}
+@case six mixed ordinary arguments preserve nested storage
+module app;${LEAF_WRAP}auto consume(Wrap a,i64 b,Wrap c,i64 d,Wrap e,i64 f)->i64{const Leaf x=a.item;const Leaf y=c.item;const Leaf z=e.item;return x.get()+y.get()+z.get()+b+d+f-20;}auto test()->i64{Leaf source=Leaf(20);Wrap value=Wrap(1,source,0);return consume(value,1,value,2,value,-1);}
+@case composed result chooses complete branch
+module app;${LEAF_WRAP}auto choose(bool first)->Wrap{Leaf a=Leaf(1);Wrap early=Wrap(0,a,0);if(first){return early;}Leaf b=Leaf(42);Wrap late=Wrap(0,b,0);return late;}auto test()->i64{Wrap value=choose(false);const Leaf inner=value.item;return inner.get();}
+@case result may shadow source only after argument snapshot
+module app;${LEAF_WRAP}auto identity(Wrap value)->Wrap{return value;}auto test()->i64{Leaf inner=Leaf(20);Wrap value=Wrap(10,inner,12);{Wrap value=identity(value);const Leaf item=value.item;return item.get()+value.head+value.tail;}}
+@case ordinary function recursion preserves composed values
+module app;${LEAF_WRAP}auto step(Wrap source,i64 remaining)->Wrap{if(remaining==0){return source;}Wrap local=source;local.head=local.head+1;Wrap result=step(local,remaining-1);return result;}auto test()->i64{Leaf source=Leaf(20);Wrap original=Wrap(1,source,0);Wrap result=step(original,21);const Leaf nested=result.item;return nested.get()+result.head;}
+@case ordinary field and constructor accept concrete array specialization
+module app;import std.array;class ArrayWrap{public:std::array<u64,2> item;ArrayWrap(std::array<u64,2> source):item(source){} };auto identity(ArrayWrap source)->ArrayWrap{return source;}auto test()->i64{std::array<u64,2> source=std::array<u64,2>();source.set(1,18446744073709551615u64);ArrayWrap value=ArrayWrap(source);source.set(1,0u64);ArrayWrap returned=identity(value);std::array<u64,2> copy=returned.item;copy.set(0,42u64);const std::array<u64,2> original=value.item;if(original.at(0)!=0u64){return 1;}if(copy.at(1)!=18446744073709551615u64){return 2;}return i64(copy.at(0));}
+@case empty nested value remains complete through constructor projection and ABI
+module app;${EMPTY}${HOLDER}auto identity(Holder source)->Holder{return source;}auto empty_identity(Empty source)->Empty{return source;}auto test()->i64{Empty original=Empty();Holder value=Holder(original);Holder copied=identity(value);const Empty projected=copied.item;const Empty returned=empty_identity(projected);static_assert(size_of(Empty)==8);static_assert(size_of(Holder)==8);static_assert(field_count(Holder)==1);return returned.answer();}
+@case two empty fields initialize and project as distinct logical fields
+module app;${EMPTY}${PAIR}auto identity(Pair<Empty,Empty> source)->Pair<Empty,Empty>{return source;}auto test()->i64{Empty a=Empty();Empty b=Empty();Pair<Empty,Empty> value=Pair<Empty,Empty>(a,b);const Pair<Empty,Empty> result=identity(value);const Empty first=result.first;const Empty second=result.second;static_assert(size_of(Pair<Empty,Empty>)==8);static_assert(field_count(Pair<Empty,Empty>)==2);return first.answer()+second.answer()-42;}
+@case empty field does not shift neighboring scalar payload
+module app;${EMPTY}class Mixed{public:i64 head;Empty item;i64 tail;Mixed(i64 a,Empty source,i64 b):head(a),item(source),tail(b){} };auto identity(Mixed source)->Mixed{return source;}auto test()->i64{Empty source=Empty();Mixed value=Mixed(19,source,23);const Mixed result=identity(value);const Empty copy=result.item;if(copy.answer()!=42){return 1;}static_assert(size_of(Mixed)==16);return result.head+result.tail;}
+@case empty constructor snapshot survives repeated loop lifetimes
+@expect 126
+module app;${EMPTY}${HOLDER}auto identity(Holder value)->Holder{return value;}auto test()->i64{i64 index=0;i64 total=0;while(index<3){Empty source=Empty();Holder value=Holder(source);Holder result=identity(value);const Empty copy=result.item;total=total+copy.answer();index=index+1;}return total;}
+@case empty siblings are not interchangeable constructor arguments
+@error
+module app;${EMPTY}class Other{public:Other(){}auto answer()const->i64{return 42;}};${HOLDER}auto test()->i64{Other source=Other();Holder value=Holder(source);return 42;}
+@case empty siblings are not interchangeable projections
+@error
+module app;${EMPTY}class Other{public:Other(){}auto answer()const->i64{return 42;}};${HOLDER}auto test()->i64{Empty source=Empty();Holder value=Holder(source);Other copy=value.item;return 42;}
+@case zero-leaf composition still enforces class-depth 4
+module app;${EMPTY_CHAIN}auto test()->i64{${EMPTY_CHAIN_BODY}static_assert(size_of(Empty4)==8);return 42;}
+@case zero-leaf composition still enforces class-depth 5
+@error depth
+@error four
+@error 4
+module app;${EMPTY_CHAIN}class Empty5{public:Empty4 item;Empty5(Empty4 source):item(source){}};auto test()->i64{${EMPTY_CHAIN_BODY}Empty5 source5=Empty5(source4);static_assert(size_of(Empty5)==8);return 42;}
+@case constructor snapshots class before later scalar mutation
+module app;${LEAF_WRAP}${PAIR}auto test()->i64{Leaf source=Leaf(20);Wrap value=Wrap(0,source,source.add(2));const Leaf snapshot=value.item;return snapshot.get()+value.tail;}
+@case constructor snapshots class after earlier scalar mutation
+module app;${LEAF_WRAP}${PAIR}auto test()->i64{Leaf source=Leaf(20);Wrap value=Wrap(source.add(2),source,0);const Leaf snapshot=value.item;return snapshot.get()+value.head-2;}
+@case constructor snapshot cannot be overwritten by later class-return call
+module app;${LEAF_WRAP}${PAIR}auto make()->Leaf{Leaf local=Leaf(999);return local;}auto clobber()->i64{Leaf temporary=make();return temporary.get()-977;}auto test()->i64{Leaf source=Leaf(20);Wrap value=Wrap(0,source,clobber());const Leaf snapshot=value.item;return snapshot.get()+value.tail;}
+@case scalar field mutation after class-field copy cannot alter snapshot
+module app;${LEAF_WRAP}${PAIR}auto test()->i64{Leaf source=Leaf(20);Wrap value=Wrap(0,source,0);const Leaf first=value.item;value.head=999;Leaf second=value.item;second.add(2);return first.get()+second.get();}
+@case constructor class parameter supports readonly scalar observations
+module app;${LEAF}class Observed{public:i64 head;Leaf item;i64 tail;Observed(Leaf source):head(source.get()),item(source),tail(source.get()+2){} };auto test()->i64{Leaf source=Leaf(20);Observed value=Observed(source);const Leaf copy=value.item;if(copy.get()!=20){return 1;}return value.head+value.tail;}
+@case checked arithmetic after copying private nested value
+@trap overflow
+module app;${LEAF_WRAP}auto test()->i64{Leaf source=Leaf(9223372036854775807);Wrap wrap=Wrap(0,source,0);Leaf copied=wrap.item;return copied.add(1);}
+@case constructor later scalar trap remains exact overflow
+@trap overflow
+module app;${LEAF_WRAP}auto test()->i64{Leaf source=Leaf(9223372036854775807);Wrap wrap=Wrap(0,source,source.add(1));return 42;}
+@case constructor later scalar trap remains exact division zero
+@trap zero
+module app;${LEAF_WRAP}auto divide(i64 value)->i64{return 42/value;}auto test()->i64{Leaf source=Leaf(20);Wrap wrap=Wrap(0,source,divide(0));return 42;}
+@case nested constructor temporary argument
+module app;${LEAF_WRAP}${PAIR}auto consume(Leaf source)->i64{return source.get();}auto make()->Leaf{Leaf source=Leaf(42);return source;}auto test()->i64{Wrap w=Wrap(0,Leaf(42),0);return 42;}
+@case nested constructor result argument
+module app;${LEAF_WRAP}${PAIR}auto consume(Leaf source)->i64{return source.get();}auto make()->Leaf{Leaf source=Leaf(42);return source;}auto test()->i64{Wrap w=Wrap(0,make(),0);return 42;}
+@case method class parameter snapshot is independent
+module app;${LEAF}class Factory{public:Factory(){}auto take(Leaf input)const->Leaf{return input;}};auto test()->i64{Leaf source=Leaf(42);Factory factory=Factory();Leaf result=factory.take(source);source.add(1);return result.get();}
+@case method class result copies into typed local
+module app;${LEAF}class Factory{public:Factory(){}auto get()->Leaf{Leaf value=Leaf(42);return value;}};auto test()->i64{Factory factory=Factory();Leaf result=factory.get();return result.get();}
+@case concrete nested Value argument Pair<i64,i64>
+module app;import std.array;${LEAF_WRAP}${PAIR}auto test()->i64{static_assert(size_of(Pair<Pair<i64,i64>,i64>)==24);return 42;}
+@case concrete nested Value argument std::array<i64,2>
+module app;import std.array;${LEAF_WRAP}${PAIR}auto test()->i64{static_assert(size_of(Pair<std::array<i64,2>,i64>)==24);return 42;}
+@case Scalar constraint still rejects concrete classes
+@error
+module app;${LEAF}template<Scalar T>class Only{T item;public:Only(T source):item(source){} };auto test()->i64{Leaf source=Leaf(42);Only<Leaf> value=Only<Leaf>(source);return 42;}
+@case Value class method directly returns independent receiver field copy
+module app;${LEAF}template<Value T>class Only{T item;public:Only(T source):item(source){}auto get()const->T{return item;}};auto test()->i64{Leaf source=Leaf(42);const Only<Leaf> value=Only<Leaf>(source);Leaf copied=value.get();copied.add(1);source.add(2);const Leaf retained=value.get();if(copied.get()!=43){return 1;}return retained.get();}
+@case Value substitution cannot authorize builtin arrays of classes
+@error
+module app;${LEAF}template<Value T>class Storage{builtin::array<T,2> data;public:Storage():data{}{} };auto test()->i64{Storage<Leaf> value=Storage<Leaf>();return 42;}
+@case returning nested field requires a complete local copy
+@error
+module app;${LEAF_WRAP}${PAIR}auto extract(Wrap source)->Leaf{return source.item;}auto test()->i64{Leaf source=Leaf(42);Wrap value=Wrap(0,source,0);Leaf copied=extract(value);return copied.get();}
+@case private field remains private after extraction
+@error private
+@error field
+module app;${LEAF_WRAP}${PAIR}auto test()->i64{Leaf source=Leaf(42);Wrap outer=Wrap(0,source,0);const Leaf copy=outer.item;return copy.value;}
+@case private class field cannot be extracted by caller
+@error private
+@error field
+module app;${LEAF}class Private{Leaf item;public:Private(Leaf source):item(source){} };auto test()->i64{Leaf source=Leaf(42);Private outer=Private(source);const Leaf copy=outer.item;return copy.get();}
+@case same-byte reordered nominal argument
+@error
+module app;${LEAF_WRAP}${PAIR}auto consume(Pair<i64,Leaf> value)->i64{return 42;}auto test()->i64{Leaf source=Leaf(42);Pair<Leaf,i64> value=Pair<Leaf,i64>(source,0);return consume(value);}
+@case same-byte reordered nominal result
+@error
+module app;${LEAF_WRAP}${PAIR}auto consume(Pair<Leaf,i64> value)->Pair<i64,Leaf>{return value;}auto test()->i64{Leaf source=Leaf(42);Pair<Leaf,i64> value=Pair<Leaf,i64>(source,0);Pair<i64,Leaf> result=consume(value);return 42;}
+@case exported public class field cannot expose private nominal type
+@error private
+@error visible
+@error export
+module app;import hidden;auto test()->i64{return 42;}
+@module hidden
+export module hidden;${LEAF}export class Exposed{public:Leaf item;private:Exposed(Leaf source):item(source){} };
+@case exported constructor signature cannot expose private nominal type
+@error private
+@error visible
+@error export
+module app;import hidden;auto test()->i64{return 42;}
+@module hidden
+export module hidden;${LEAF}export class Exposed{Leaf item;public:Exposed(Leaf source):item(source){} };
+@case private nested representation and private constructor stay encapsulated
+module app;import hidden;auto test()->i64{static_assert(size_of(Opaque)==8);static_assert(field_count(Opaque)==0);return 42;}
+@module hidden
+export module hidden;${LEAF}export class Opaque{Leaf item;Opaque(Leaf source):item(source){} };
+@case template helpers bind in defining module and class arguments in caller
+module app;import boxes;${LEAF}auto helper()->i64{return 999;}auto test()->i64{Leaf source=Leaf(20);Box<Leaf> value=Box<Leaf>(source);const Leaf copy=value.item;return copy.get()+value.offset();}
+@module boxes
+export module boxes;${LEAF}auto helper()->i64{return 22;}export template<Value T>class Box{public:T item;Box(T source):item(source){}auto offset()const->i64{return helper();}};

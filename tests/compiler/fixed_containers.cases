@@ -1,0 +1,158 @@
+# Fixed fixed_containers.py cases; the format is native_runner.Suite.load's.
+@prelude EDGE
+class Edge{builtin::array<i64,64> values;i64 tail;public:Edge():values{},tail(41){}auto get()const->i64{return values[63]+tail;}auto set()->i64{values[63]=1;return tail;}};
+@prelude NAMESPACE_ARRAY
+template<Scalar T,i64 N>class array {
+    builtin::array<T,N> elements;
+public:
+    array():elements{}{}
+    auto at(i64 index)const->T{return elements[index];}
+    auto set(i64 index,T value)->T{elements[index]=value;return elements[index];}
+    auto size()const->i64{return N;}
+};
+@case leading-zero capacity spellings canonicalize to one nominal type
+module app;import std.array;auto test()->i64{std::array<i64,0004> a=std::array<i64,4>();a.set(3,42);const std::array<i64,04> b=a;static_assert(type_id(std::array<i64,0004>)==type_id(std::array<i64,4>));return b.at(3);}
+@case scalar and capacity are both part of specialization identity
+module app;import std.array;auto test()->i64{static_assert(type_id(std::array<i64,1>)!=type_id(std::array<i64,2>));static_assert(type_id(std::array<i64,2>)!=type_id(std::array<u64,2>));static_assert(type_id(std::array<u64,2>)!=type_id(std::array<bool,2>));return 42;}
+@case result lifetime survives repeated loop construction
+@expect 15
+module app;import std.array;auto make(i64 value)->std::array<i64,64>{std::array<i64,64> a=std::array<i64,64>();a.set(63,value);return a;}auto test()->i64{i64 index=0;i64 total=0;while(index<6){const std::array<i64,64> a=make(index);total=total+a.at(63);index=index+1;}return total;}
+@case scalar at result is copied before later mutation
+module app;import std.array;auto sum(i64 first,i64 second)->i64{return first+second;}auto test()->i64{std::array<i64,2> a=std::array<i64,2>();a.set(0,20);return sum(a.at(0),a.set(0,22));}
+@case array argument snapshot precedes later set argument
+module app;import std.array;auto sum(std::array<i64,64> first,i64 second)->i64{return first.at(63)+second;}auto test()->i64{std::array<i64,64> a=std::array<i64,64>();a.set(63,20);return sum(a,a.set(63,22));}
+@case flattened boundary 64 words
+module app;class Edge{builtin::array<i64,63> values;i64 tail;public:Edge():values{},tail(41){}auto get()const->i64{return values[62]+tail;}auto set()->i64{values[62]=1;return tail;}};auto copy(Edge value)->Edge{return value;}auto test()->i64{Edge a=Edge();a.set();const Edge b=copy(a);return b.get();}
+@case 65-word class remains usable as a local value
+module app;${EDGE}auto test()->i64{Edge a=Edge();a.set();const Edge b=a;static_assert(size_of(Edge)==520);return b.get();}
+@case flattened boundary 65 words
+@error 64
+@error boundary
+@error fields
+@error words
+module app;${EDGE}auto copy(Edge value)->Edge{return value;}auto test()->i64{Edge a=Edge();a.set();const Edge b=copy(a);return b.get();}
+@case 65-word parameter is rejected independently of result
+@error 64
+@error boundary
+@error fields
+@error words
+module app;${EDGE}auto consume(Edge value)->i64{return value.get();}auto test()->i64{Edge a=Edge();return consume(a);}
+@case 65-word result is rejected independently of parameters
+@error 64
+@error boundary
+@error fields
+@error words
+module app;${EDGE}auto make()->Edge{Edge value=Edge();return value;}auto test()->i64{Edge a=make();return a.get();}
+@case canonical builtin array remains available without std.array
+@expect 18446744073709551615
+module app;auto test()->u64{builtin::array<u64,2> a={18446744073709551615u64,9223372036854775808u64};const array<u64,2> b=a;a[0]=0u64;return b[0];}
+@case std.set evaluates all arguments before checking receiver bounds
+@trap zero
+module app;import std.array;auto test()->i64{std::array<i64,2> a=std::array<i64,2>();return a.set(2,1/0);}
+@case at index arithmetic fails at overflow before bounds
+@trap overflow
+module app;import std.array;auto test()->i64{std::array<i64,2> a=std::array<i64,2>();return a.at(9223372036854775807+1);}
+@case wrong element type
+@error expected
+module app;import std.array;auto test()->i64{std::array<i64,2> a=std::array<i64,2>();a.set(0,true);return 42;}
+@case wrong signed index type
+@error expected
+module app;import std.array;auto test()->i64{std::array<i64,2> a=std::array<i64,2>();return a.at(0u64);}
+@case wrong boolean index type
+@error expected
+module app;import std.array;auto test()->i64{std::array<i64,2> a=std::array<i64,2>();return a.at(false);}
+@case const array set
+@error mutable
+module app;import std.array;auto test()->i64{const std::array<i64,2> a=std::array<i64,2>();return a.set(0,42);}
+@case immutable by-value parameter set
+@error mutable
+module app;import std.array;auto change(std::array<i64,2> a)->i64{return a.set(0,42);}auto test()->i64{std::array<i64,2> a=std::array<i64,2>();return change(a);}
+@case capacity copy mismatch
+@error expected
+module app;import std.array;auto test()->i64{std::array<i64,2> a=std::array<i64,2>();std::array<i64,1> b=a;return 42;}
+@case scalar copy mismatch
+@error expected
+module app;import std.array;auto test()->i64{std::array<i64,2> a=std::array<i64,2>();std::array<u64,2> b=a;return 42;}
+@case capacity argument mismatch
+@error expected
+module app;import std.array;auto consume(std::array<i64,1> a)->i64{return a.at(0);}auto test()->i64{std::array<i64,2> a=std::array<i64,2>();return consume(a);}
+@case capacity result mismatch
+@error expected
+module app;import std.array;auto make()->std::array<i64,1>{std::array<i64,2> a=std::array<i64,2>();return a;}auto test()->i64{std::array<i64,1> a=make();return 42;}
+@case private storage read
+@error private
+@error array
+@error index
+module app;import std.array;auto test()->i64{std::array<i64,2> a=std::array<i64,2>();return a.elements[0];}
+@case private storage write
+@error private
+@error array
+@error index
+module app;import std.array;auto test()->i64{std::array<i64,2> a=std::array<i64,2>();a.elements[0]=42;return 42;}
+@case private storage local escape
+@error private
+@error array
+@error copy
+module app;import std.array;auto test()->i64{std::array<i64,2> a=std::array<i64,2>();array<i64,2> escaped=a.elements;return 42;}
+@case no whole wrapper indexing
+@error array
+module app;import std.array;auto test()->i64{std::array<i64,2> a=std::array<i64,2>();return a[0];}
+@case no wrapper builtin len
+@error array
+module app;import std.array;auto test()->i64{std::array<i64,2> a=std::array<i64,2>();return len(a);}
+@case no wrapper borrow
+@error own
+@error borrow
+module app;import std.array;auto test()->i64{std::array<i64,2> a=std::array<i64,2>();const ref<i64> r=borrow(a);return read(r);}
+@case no at result borrow
+@error local
+@error borrow
+module app;import std.array;auto test()->i64{std::array<i64,2> a=std::array<i64,2>();const ref<i64> r=borrow(a.at(0));return read(r);}
+@case no constructor arguments
+@error argument
+@error constructor
+module app;import std.array;auto test()->i64{std::array<i64,2> a=std::array<i64,2>(42);return 42;}
+@case no designated private storage construction
+@error designated
+@error constructor
+@error private
+module app;import std.array;auto test()->i64{std::array<i64,2> a=std::array<i64,2>{.elements={1,2}};return 42;}
+@case no bare template deduction
+@error template
+@error constructor
+@error unknown
+module app;import std.array;auto test()->i64{std::array<i64,2> a=std::array();return 42;}
+@case no builtin wrapper fallback
+@error array
+@error constructor
+@error unknown
+module app;import std.array;auto test()->i64{array<i64,2> a=array<i64,2>();return 42;}
+@case no qualified builtin constructor
+@error array
+@error constructor
+@error unknown
+@error reserved
+module app;import std.array;auto test()->i64{builtin::array<i64,2> a=builtin::array<i64,2>();return 42;}
+@case temporary wrapper copied parameter
+@expect 0
+module app;import std.array;auto consume(std::array<i64,2> a)->i64{return a.at(0);}auto test()->i64{return consume(std::array<i64,2>());}
+@case direct array construction return copies initialized storage
+module app;import std.array;auto make()->std::array<i64,2>{return std::array<i64,2>();}auto test()->i64{std::array<i64,2> a=make();std::array<i64,2> b=make();a.set(0,42);return a.at(0)+a.at(1)+b.at(0)+b.at(1);}
+@case root class cannot shadow legacy array alias
+@error reserved
+@error array
+module app;class array{};auto test()->i64{return 42;}
+@case root template cannot shadow legacy array alias
+@error reserved
+@error array
+module app;${NAMESPACE_ARRAY}auto test()->i64{return 42;}
+@case non-std namespace template cannot shadow legacy array alias
+@error reserved
+@error array
+module app;namespace wraps{${NAMESPACE_ARRAY}}auto test()->i64{return 42;}
+@case namespace bare constructor cannot fall back to wrapper
+@error array
+@error constructor
+@error expected
+@error unknown
+module app;namespace std{${NAMESPACE_ARRAY}auto answer()->i64{std::array<i64,2> a=array<i64,2>();return a.at(0);}}auto test()->i64{return std::answer();}
