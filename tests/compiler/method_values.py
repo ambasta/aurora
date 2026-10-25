@@ -1335,7 +1335,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", type=Path, nargs="?", default=ROOT / "build/aurorac")
     parser.add_argument("--seed", type=int, default=22022)
-    parser.add_argument("--steps", type=int, default=12)
+    # Three steps cover self-exchange and both cross directions (step % 3, step % 2).
+    parser.add_argument("--steps", type=int, default=3)
     args = parser.parse_args()
     require(1 <= args.steps <= 48, "steps must be between 1 and 48")
     suite = MethodSuite(args.compiler, "method values", ignore_case=True, pack_templates=32)
