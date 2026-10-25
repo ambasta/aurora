@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+caller="$PWD"
 cd "$(dirname "$0")/.."
 if [[ "${KERNEL_CONSOLE:-0}" != 0 ]]; then
     echo 'Self-test smoke rejects KERNEL_CONSOLE; use the separate console profile.' >&2
@@ -8,9 +9,9 @@ fi
 run_only= output_dir=
 if [[ "${1-}" == --run-only ]]; then
     if (( $# < 4 )) || [[ -z "$2" || "$3" != --output-dir || -z "$4" ]]; then
-        echo 'Expected --run-only <absolute native profile directory> --output-dir <fresh directory>' >&2; exit 2
+        echo 'Expected --run-only <native profile directory> --output-dir <fresh directory>' >&2; exit 2
     fi
-    run_only="$2"; output_dir="$4"; shift 4
+    run_only="$(cd "$caller" && realpath -e "$2")"; output_dir="$(cd "$caller" && realpath -m "$4")"; shift 4
 fi
 if (( $# > 1 )); then echo 'Expected one exact BIOS mode' >&2; exit 2; fi
 mode="${1:-normal}"
