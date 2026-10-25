@@ -9,7 +9,7 @@ qualification. Do not write these images to a physical disk or change a bootload
 | Profile | Current behavior | Boundary |
 |---|---|---|
 | BIOS | Aurora-owned `help`, `status`, `exit` session; IRQ4-woken serial editor | Sealed ConsoleSession and Com1UartGrant; Aurora UART policy, trusted PIC/byte I/O |
-| Simple UEFI | Aurora-owned editor, commands, RAM note and four named RAM files | Sealed ConsoleSession; trusted boot, UART, LAPIC and wake-frame checks |
+| Simple UEFI | Aurora-owned editor, commands, RAM note and four named RAM files | Sealed ConsoleSession and Com1UartGrant; Aurora UART policy, trusted boot/LAPIC/wake checks |
 | [Graphical](framebuffer-console.md) | Same RAM commands, two text rows and dirty-cell drawing; serial input | Separate ConsoleSession/DisplaySession grants; bounded emulator fixture |
 | [Protected commands](program-console-contract.md) | `upper`, protected note read and uppercase replacement | Aurora input turns through ConsoleSession; native dispatch and authenticated two-domain IPC |
 
@@ -125,7 +125,7 @@ and generation exhaustion. Polling revalidates across each trusted wait; closing
 checks the closed completion code and exact active invocation once. Output timeout
 terminates rather than retrying a partial response. Traps fail stop; no unwinder
 or restarted editor is supplied. Console application source receives no pointer or device authority.
-The separate BIOS UART policy receives only a sealed, fixed COM1 UART grant
+The BIOS and standalone UEFI UART policy receives only a sealed, fixed COM1 UART grant
 (`Com1UartGrant`), with runtime offset checks.
 
 Every console LSR read, including transmit polling, latches receive errors.
@@ -164,7 +164,7 @@ revokes the grant before native IER teardown. Active BIOS diagnostics use the
 same source carry; exceptions fail stop before any bootstrap LSR reader can run.
 
 This is a partial driver migration. `console-uart.hpp` remains the native UART policy
-for simple UEFI, protected, graphical and event profiles. Native `Serial`, `Uart`
+for protected, graphical and event profiles. Native `Serial`, `Uart`
 and `SourceUart` share byte-preserving text and unsigned decimal formatting in
 `output-format.hpp`; this removes duplicate formatting, not UART policy. BIOS
 `Serial` still serves early boot and retains its non-inlined diagnostic routing
@@ -172,7 +172,7 @@ boundaries and unchanged image/stack admission gates. Qualification applies to t
 recorded in the relevant PR. Trusted boot serial initialization, PIC setup, IRQ
 acknowledgement and synchronous waiting remain native. This is not a stateful driver daemon, general port allocator or hardware
 qualification. Both existing FIFO triggers remain covered by the generated UART
-model; the BIOS consumer uses the one-byte trigger.
+model; BIOS uses one byte and standalone UEFI uses fourteen bytes.
 
 Only COM1 received-data interrupts are enabled. The unchanged private IRQ4 gate
 acknowledges the remapped legacy PIC and restores interrupted state. Foreground
@@ -229,7 +229,16 @@ budget fixture. There are no firmware calls after ExitBootServices.
   on the same kernel stack. IRQ code never calls Aurora or touches the editor.
 
 The adapter retains boot/MMIO, interrupt masking, wake authentication and
-quiescence authority. The bridge carries only a private grant/generation record.
+quiescence authority. After native DLAB and IER checks, it admits exclusive COM1
+ownership and initializes the same `SourceUart` policy/bridge as BIOS with FIFO14.
+Its port predicate checks established readiness, actual kernel CR3, IF-clear and
+non-waiting ownership; full LAPIC checks remain at Console/wait boundaries.
+The grant survives synchronous waits, but neither the waiting phase nor timer IRQ
+calls source UART code. Normal exit emits its final diagnostic before revocation;
+output failure closes at a verified quiet boundary and exits without replay.
+UART grant failures are silent. Explicit native fatal diagnostics never return to
+input; early boot remains native serial. Protected and graphical input are unchanged.
+The bridge carries only a private grant/generation record.
 
 ## Verification and acceptance gates
 

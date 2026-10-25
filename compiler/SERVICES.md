@@ -95,8 +95,8 @@ grant constructor, revocation operation, generic I/O intrinsic or wider I/O widt
 Ordinary helpers may forward it with copied scalar/class inputs and results.
 Offsets are checked at runtime, not compile time: `read8(1000u64)` typechecks but
 fails closed at the native grant before I/O. Read offsets are 0/2/5; write offsets
-are 0/2. Only BIOS console UART policy has migrated; native UEFI UART and
-early-boot serial consumers remain.
+are 0/2. BIOS and standalone UEFI console UART policies have migrated;
+protected/graphical UEFI UART and early-boot serial consumers remain.
 
 - `read8(u64 offset) -> u8` requests one byte from an allowed offset in the live grant.
 - `write8(u64 offset, u8 value) -> builtin::PortWriteResult` has the sole copied

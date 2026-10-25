@@ -104,8 +104,8 @@ RULES = [
         ],
     },
     {
-        "profiles": ["bios/console"],
-        "imports": ["__au_runtime_port_read8", "__au_runtime_port_write8"],
+        "profiles": ["bios/console", "uefi/console", "uefi/console-fixture"],
+        "imports:kernel-uart": ["__au_runtime_port_read8", "__au_runtime_port_write8"],
     },
     # Kernel decisions stay in Aurora: the supervisor must actually call these policy entries.
     {
