@@ -1832,7 +1832,7 @@ function reborrow_buffer
   params [(class Buffer)]
   frame 0
   roots 1
-  firstmut 1
+  rootmut 1
     AcquireObjectLoan 2 0 true
     BorrowedCall borrow_buffer [(0 2 -1)]
     ReleaseObjectLoan 2
@@ -1843,7 +1843,7 @@ function borrow_buffer
   params [(class Buffer)]
   frame 0
   roots 1
-  firstmut 1
+  rootmut 1
     MethodCall write_buffer
     Return
 end

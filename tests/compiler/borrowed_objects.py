@@ -402,7 +402,6 @@ def paired_borrowing_cases(suite):
 
     leading = "std::ByteBuffer& a, const std::ByteBuffer& b"
     signatures = {
-        "second-mutable": "auto bad(std::ByteBuffer& a, std::ByteBuffer& b) -> i64 { return 0; }",
         "copied-second-root": "auto bad(std::ByteBuffer& a, const Count& b) -> i64 { return 0; }",
         "copied-argument": f"auto bad({leading}, Count value) -> i64 {{ return 0; }}",
         "span-argument": f"auto bad({leading}, {SPAN} view) -> i64 {{ return 0; }}",
@@ -425,15 +424,17 @@ def bounded_borrowing_cases(suite):
     """One compact real program crosses every prefix/tail boundary and forwards it."""
     definitions = [HELPERS, "enum class RootMode { zero, one };"]
     checks = []
-    for roots in range(1, 4):
-        for mutable in (False, True):
+    for roots in range(1, 5):
+        for mutable in sorted({0, 1, 1 << (roots - 1), (1 << roots) - 1} | ({3, 10} if roots == 4 else set())):
             for tail in range(7 - roots):
                 name = f"roots_{roots}_{int(mutable)}_{tail}"
                 formals = [
-                    f"{'' if mutable and index == 0 else 'const '}std::ByteBuffer& r{index}" for index in range(roots)
+                    f"{'' if mutable & (1 << index) else 'const '}std::ByteBuffer& r{index}" for index in range(roots)
                 ]
                 formals += [f"{'RootMode' if index % 2 else 'i64'} a{index}" for index in range(tail)]
-                body = "if (!r0.clear()) { return -1; }" if mutable else ""
+                body = "".join(
+                    f"if (!r{index}.clear()) {{ return -1; }}" for index in range(roots) if mutable & (1 << index)
+                )
                 body += "".join(
                     f"if (a{index} != RootMode::one) {{ return -1; }}" for index in range(tail) if index % 2
                 )
@@ -456,26 +457,35 @@ def bounded_borrowing_cases(suite):
     )
     create = "".join(
         f"builtin::OwnedBytes allocation{index} = region.try_allocate(n);"
-        f"{'' if index == 0 else 'const '}std::ByteBuffer v{index} = std::ByteBuffer(region, move(allocation{index}));"
+        f"std::ByteBuffer v{index} = std::ByteBuffer(region, move(allocation{index}));"
         f"if (!v{index}.ok()) {{ return -7; }}"
-        for index in range(3)
+        for index in range(4)
     )
     actuals = ", ".join(f"v{index}" for index in range(3))
     body = create + "".join(checks)
     body += f"if (roots_enum({actuals}) != RootMode::one) {{ return 0; }}"
     body += f"if (flag == 1 && roots_growth({actuals})) {{ return 0; }}"
-    body += "".join(f"if (v{index}.capacity() != n || v{index}.size() != 0) {{ return 0; }}" for index in range(3))
-    executable = suite.compile("bounded-roots-one-through-three", program(body + "return 42;", "".join(definitions)))
+    body += "".join(f"if (v{index}.capacity() != n || v{index}.size() != 0) {{ return 0; }}" for index in range(4))
+    definitions.append(
+        "auto write_later(const std::ByteBuffer& r0, std::ByteBuffer& r1, "
+        "const std::ByteBuffer& r2, std::ByteBuffer& r3) -> bool { "
+        "return r1.try_append(17u8) && r3.try_append(25u8); }"
+    )
+    body += "if (n > 0) { if (!write_later(v0, v1, v2, v3)) { return 0; } "
+    body += "if (v0.size() != 0 || v2.size() != 0 || v1.size() != 1 || v3.size() != 1) { return 0; } "
+    body += "const std::ByteReadResult a = v1.read_u8(0); const std::ByteReadResult b = v3.read_u8(0); "
+    body += "if (a.value_or(0u64) != 17u64 || b.value_or(0u64) != 25u64) { return 0; } }"
+    executable = suite.compile("bounded-roots-one-through-four", program(body + "return 42;", "".join(definitions)))
     for length in (0, 2):
-        suite.run(executable, 3 * length, length, 0, 42, 3, 3)
-        suite.run(executable, 3 * length, length, 1, 42, 3, 3, fail_after=3)
-    suite.run(executable, 100, 2, 1, 42, 3, 3, fail_after=3)
+        suite.run(executable, 4 * length, length, 0, 42, 4, 4)
+        suite.run(executable, 4 * length, length, 1, 42, 4, 4, fail_after=4)
+    suite.run(executable, 100, 2, 1, 42, 4, 4, fail_after=4)
     suite.run(executable, 12, 2, 0, -7, 2, 2, fail_after=2)
     suite.run(executable, 5, 2, 0, -7, 2, 2)
 
     # All-readonly duplicate roots must reject too, even when every successful
     # allocation is empty and every nominal class is the same.
-    for roots in range(2, 4):
+    for roots in range(2, 5):
         for first in range(roots):
             for second in range(first + 1, roots):
                 arguments = [f"v{index}" for index in range(roots)]
@@ -483,11 +493,16 @@ def bounded_borrowing_cases(suite):
                 call = f"roots_{roots}_0_0({', '.join(arguments)});"
                 suite.reject(
                     f"bounded-readonly-alias-{roots}-{first}-{second}",
-                    program(create + call + "return 0;", "".join(definitions)),
+                    program(
+                        create + call + "return 0;",
+                        f"auto roots_{roots}_0_0("
+                        + ", ".join(f"const std::ByteBuffer& r{i}" for i in range(roots))
+                        + ") -> i64 { return 0; }",
+                    ),
                     "borrowed arguments require distinct owning roots",
                 )
-    readonly = ", ".join(f"const std::ByteBuffer& r{index}" for index in range(3))
-    for ordinal in range(3):
+    readonly = ", ".join(f"const std::ByteBuffer& r{index}" for index in range(4))
+    for ordinal in range(4):
         for name, statement, diagnostic in (
             (
                 "span",
@@ -500,6 +515,11 @@ def bounded_borrowing_cases(suite):
                 "mutable borrowed parameter requires a mutable owning object",
             ),
             (
+                "move-formal",
+                f"std::ByteBuffer taken = move(r{ordinal}); return 0;",
+                "borrowed object parameters cannot transfer ownership",
+            ),
+            (
                 "private-field",
                 f"return r{ordinal}.payload.size();",
                 "borrowed object parameters support public methods, not field projections",
@@ -510,11 +530,11 @@ def bounded_borrowing_cases(suite):
                 program("return 0;", HELPERS + f"auto bad({readonly}) -> i64 {{ {statement} }}"),
                 diagnostic,
             )
-    four = ", ".join(f"const std::ByteBuffer& r{index}" for index in range(4))
+    five = ", ".join(f"const std::ByteBuffer& r{index}" for index in range(5))
     suite.reject(
-        "bounded-four-roots",
-        program("return 0;", HELPERS + f"auto bad({four}) -> i64 {{ return 0; }}"),
-        "borrowed functions require one to three leading concrete owning-class references",
+        "bounded-five-roots",
+        program("return 0;", HELPERS + f"auto bad({five}) -> i64 {{ return 0; }}"),
+        "borrowed functions require one to four leading concrete owning-class references",
     )
     seven = ", ".join(f"const std::ByteBuffer& r{index}" for index in range(7))
     suite.reject(
@@ -531,13 +551,18 @@ def bounded_borrowing_cases(suite):
         ),
         "borrowed parameters require a supported leading ownership reference signature",
     )
-    for ordinal in range(1, 3):
-        formals = ", ".join(f"{'' if index == ordinal else 'const '}std::ByteBuffer& r{index}" for index in range(3))
-        suite.reject(
-            f"bounded-later-mutable-root-{ordinal}",
-            program("return 0;", f"auto bad({formals}) -> i64 {{ return 0; }}"),
-            "borrowed parameters require a supported leading ownership reference signature",
-        )
+    mutable = ", ".join(f"std::ByteBuffer& r{index}" for index in range(4))
+    exclusive = f"auto exclusive({mutable}, i64 value) -> i64 {{ return value; }}"
+    for ordinal in range(4):
+        for name, operation in (
+            ("read", f"v{ordinal}.size()"),
+            ("write", f"i64(v{ordinal}.clear())"),
+            ("move", f"consume(region, move(v{ordinal}))"),
+        ):
+            suite.reject(
+                f"bounded-exclusive-later-{name}-{ordinal}",
+                program(create + f"exclusive(v0, v1, v2, v3, {operation}); return 0;", HELPERS + exclusive),
+            )
 
 
 def direct_method_return_case(suite):
@@ -883,11 +908,6 @@ def rejection_cases(suite):
 
     signatures = {
         "nonleading-borrow": "auto bad(i64 first, std::ByteBuffer& input) -> i64 { return first; }",
-        "two-mutable-borrows": "auto bad(std::ByteBuffer& a, std::ByteBuffer& b) -> i64 { return 0; }",
-        "const-then-mutable-borrows": "auto bad(const std::ByteBuffer& a, std::ByteBuffer& b) -> i64 { return 0; }",
-        "two-mutable-readonly-third": (
-            "auto bad(std::ByteBuffer& a, std::ByteBuffer& b, const std::ByteBuffer& c) -> i64 { return 0; }"
-        ),
         "borrow-after-region": ("auto bad(builtin::ByteRegion region, std::ByteBuffer& input) -> i64 { return 0; }"),
         "borrow-and-owning-parameter": (
             "auto bad(std::ByteBuffer& input, std::ByteBuffer taken) -> i64 { return input.size(); }"
@@ -927,13 +947,10 @@ def rejection_cases(suite):
     declaration_diagnostic = (
         "borrowed parameters require a supported leading ownership reference signature on an ordinary function"
     )
-    result_diagnostic = "borrowed functions require one to three leading concrete owning-class references"
+    result_diagnostic = "borrowed functions require one to four leading concrete owning-class references"
     later_diagnostic = "borrowed-function tails require scalar or enum values"
     signature_diagnostics = {
         "nonleading-borrow": declaration_diagnostic,
-        "two-mutable-borrows": declaration_diagnostic,
-        "const-then-mutable-borrows": declaration_diagnostic,
-        "two-mutable-readonly-third": declaration_diagnostic,
         "borrow-after-region": declaration_diagnostic,
         "borrow-and-owning-parameter": later_diagnostic,
         "borrow-and-owned-bytes-parameter": later_diagnostic,

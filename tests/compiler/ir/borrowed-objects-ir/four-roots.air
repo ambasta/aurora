@@ -1,0 +1,358 @@
+; CASE: four roots readonly first mutable second and fourth
+; RUN: emit
+layout Buffer [i64]
+layout Other [i64]
+fields Buffer [(bytes 0 0 false) (i64 0 1 false)]
+fields Other [(bytes 0 0 false) (i64 0 1 false)]
+storage Buffer [32] [0 32] 40 8 40
+storage Other [32] [0 32] 40 8 40
+function four_forward
+  result i64
+  params [(class Buffer)*4]
+  frame 0
+  roots 4
+  rootmut 10
+    AcquireObjectLoan 1 0 false
+    AcquireObjectLoan 2 -1 true
+    AcquireObjectLoan 3 -2 false
+    AcquireObjectLoan 4 -3 true
+    BorrowedCall four_leaf [(0 1 -1) (-1 2 -1) (-2 3 -1) (-3 4 -1)]
+    ReleaseObjectLoan 4
+    ReleaseObjectLoan 3
+    ReleaseObjectLoan 2
+    ReleaseObjectLoan 1
+    Return
+end
+function four_leaf
+  result i64
+  params [(class Buffer)*4]
+  frame 0
+  roots 4
+  rootmut 10
+    MethodCall read_buffer 0
+    MethodCall write_buffer -1
+    MethodCall read_buffer -2
+    MethodCall write_buffer -3
+    Constant 42
+    Return
+end
+function read_buffer
+  result i64
+  frame 0
+  receiver Buffer false false
+    ReceiverLoad 1
+    Return
+end
+function write_buffer
+  result i64
+  frame 0
+  receiver Buffer true false
+    Constant 41
+    ReceiverStore 1
+    ReceiverLoad 1
+    Return
+end
+
+; CASE: four roots mask 0 forwards exactly
+; BASE: four roots readonly first mutable second and fourth
+; RUN: emit
+@@ -12 +12 @@
+-  rootmut 10
++  rootmut 0
+@@ -14 +14 @@
+-    AcquireObjectLoan 2 -1 true
++    AcquireObjectLoan 2 -1 false
+@@ -16 +16 @@
+-    AcquireObjectLoan 4 -3 true
++    AcquireObjectLoan 4 -3 false
+@@ -29 +29 @@
+-  rootmut 10
++  rootmut 0
+@@ -31 +31 @@
+-    MethodCall write_buffer -1
++    MethodCall read_buffer -1
+@@ -33 +33 @@
+-    MethodCall write_buffer -3
++    MethodCall read_buffer -3
+
+; CASE: four roots mask 3 forwards exactly
+; BASE: four roots readonly first mutable second and fourth
+; RUN: emit
+@@ -12,2 +12,2 @@
+-  rootmut 10
+-    AcquireObjectLoan 1 0 false
++  rootmut 3
++    AcquireObjectLoan 1 0 true
+@@ -16 +16 @@
+-    AcquireObjectLoan 4 -3 true
++    AcquireObjectLoan 4 -3 false
+@@ -29,2 +29,2 @@
+-  rootmut 10
+-    MethodCall read_buffer 0
++  rootmut 3
++    MethodCall write_buffer 0
+@@ -33 +33 @@
+-    MethodCall write_buffer -3
++    MethodCall read_buffer -3
+
+; CASE: four roots mask 8 forwards exactly
+; BASE: four roots readonly first mutable second and fourth
+; RUN: emit
+@@ -12 +12 @@
+-  rootmut 10
++  rootmut 8
+@@ -14 +14 @@
+-    AcquireObjectLoan 2 -1 true
++    AcquireObjectLoan 2 -1 false
+@@ -29 +29 @@
+-  rootmut 10
++  rootmut 8
+@@ -31 +31 @@
+-    MethodCall write_buffer -1
++    MethodCall read_buffer -1
+
+; CASE: four roots mask 15 forwards exactly
+; BASE: four roots readonly first mutable second and fourth
+; RUN: emit
+@@ -12,2 +12,2 @@
+-  rootmut 10
+-    AcquireObjectLoan 1 0 false
++  rootmut 15
++    AcquireObjectLoan 1 0 true
+@@ -15 +15 @@
+-    AcquireObjectLoan 3 -2 false
++    AcquireObjectLoan 3 -2 true
+@@ -29,2 +29,2 @@
+-  rootmut 10
+-    MethodCall read_buffer 0
++  rootmut 15
++    MethodCall write_buffer 0
+@@ -32 +32 @@
+-    MethodCall read_buffer -2
++    MethodCall write_buffer -2
+
+; CASE: four roots reject authority mask -1
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: invalid hosted IR metadata transport
+@@ -12 +12 @@
+-  rootmut 10
++  rootmut -1
+
+; CASE: four roots reject authority mask 16
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: invalid hosted IR metadata transport
+@@ -12 +12 @@
+-  rootmut 10
++  rootmut 16
+
+; CASE: four roots reject authority mask 9223372036854775807
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: invalid hosted IR metadata transport
+@@ -12 +12 @@
+-  rootmut 10
++  rootmut 9223372036854775807
+
+; CASE: four roots missing loan lane 0
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires active loan
+@@ -13 +12,0 @@
+-    AcquireObjectLoan 1 0 false
+
+; CASE: four roots exact type lane 0
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, lifetime, nominal type or authority mismatch
+@@ -9 +9 @@
+-  params [(class Buffer)*4]
++  params [(class Other) (class Buffer) (class Buffer) (class Buffer)]
+
+; CASE: four roots missing loan lane 1
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires active loan
+@@ -14 +13,0 @@
+-    AcquireObjectLoan 2 -1 true
+
+; CASE: four roots exact type lane 1
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, lifetime, nominal type or authority mismatch
+@@ -9 +9 @@
+-  params [(class Buffer)*4]
++  params [(class Buffer) (class Other) (class Buffer) (class Buffer)]
+
+; CASE: four roots missing loan lane 2
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires active loan
+@@ -15 +14,0 @@
+-    AcquireObjectLoan 3 -2 false
+
+; CASE: four roots exact type lane 2
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, lifetime, nominal type or authority mismatch
+@@ -9 +9 @@
+-  params [(class Buffer)*4]
++  params [(class Buffer) (class Buffer) (class Other) (class Buffer)]
+
+; CASE: four roots missing loan lane 3
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: borrowed call requires active loan
+@@ -16 +15,0 @@
+-    AcquireObjectLoan 4 -3 true
+
+; CASE: four roots exact type lane 3
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, lifetime, nominal type or authority mismatch
+@@ -9 +9 @@
+-  params [(class Buffer)*4]
++  params [(class Buffer) (class Buffer) (class Buffer) (class Other)]
+
+; CASE: four roots readonly caller cannot lend mutable lane 1
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, lifetime, nominal type or authority mismatch
+@@ -12 +12 @@
+-  rootmut 10
++  rootmut 8
+
+; CASE: four roots loan cannot weaken mutable lane 1
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, nominal type or authority mismatch
+@@ -14 +14 @@
+-    AcquireObjectLoan 2 -1 true
++    AcquireObjectLoan 2 -1 false
+
+; CASE: four roots cannot access exclusively borrowed lane 1
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -16,0 +17 @@
++    MethodCall read_buffer -1
+
+; CASE: four roots readonly caller cannot lend mutable lane 3
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, lifetime, nominal type or authority mismatch
+@@ -12 +12 @@
+-  rootmut 10
++  rootmut 2
+
+; CASE: four roots loan cannot weaken mutable lane 3
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: borrowed call root, nominal type or authority mismatch
+@@ -16 +16 @@
+-    AcquireObjectLoan 4 -3 true
++    AcquireObjectLoan 4 -3 false
+
+; CASE: four roots cannot access exclusively borrowed lane 3
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: object access conflicts with active synchronous loan
+@@ -16,0 +17 @@
++    MethodCall read_buffer -3
+
+; CASE: four roots reject duplicate selector 0 1
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -17 +17 @@
+-    BorrowedCall four_leaf [(0 1 -1) (-1 2 -1) (-2 3 -1) (-3 4 -1)]
++    BorrowedCall four_leaf [(0 1 -1) (0 2 -1) (-2 3 -1) (-3 4 -1)]
+
+; CASE: four roots reject reused loan 0 1
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -17 +17 @@
+-    BorrowedCall four_leaf [(0 1 -1) (-1 2 -1) (-2 3 -1) (-3 4 -1)]
++    BorrowedCall four_leaf [(0 1 -1) (-1 1 -1) (-2 3 -1) (-3 4 -1)]
+
+; CASE: four roots reject duplicate selector 0 2
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -17 +17 @@
+-    BorrowedCall four_leaf [(0 1 -1) (-1 2 -1) (-2 3 -1) (-3 4 -1)]
++    BorrowedCall four_leaf [(0 1 -1) (-1 2 -1) (0 3 -1) (-3 4 -1)]
+
+; CASE: four roots reject reused loan 0 2
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -17 +17 @@
+-    BorrowedCall four_leaf [(0 1 -1) (-1 2 -1) (-2 3 -1) (-3 4 -1)]
++    BorrowedCall four_leaf [(0 1 -1) (-1 2 -1) (-2 1 -1) (-3 4 -1)]
+
+; CASE: four roots reject duplicate selector 0 3
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -17 +17 @@
+-    BorrowedCall four_leaf [(0 1 -1) (-1 2 -1) (-2 3 -1) (-3 4 -1)]
++    BorrowedCall four_leaf [(0 1 -1) (-1 2 -1) (-2 3 -1) (0 4 -1)]
+
+; CASE: four roots reject reused loan 0 3
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -17 +17 @@
+-    BorrowedCall four_leaf [(0 1 -1) (-1 2 -1) (-2 3 -1) (-3 4 -1)]
++    BorrowedCall four_leaf [(0 1 -1) (-1 2 -1) (-2 3 -1) (-3 1 -1)]
+
+; CASE: four roots reject duplicate selector 1 2
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -17 +17 @@
+-    BorrowedCall four_leaf [(0 1 -1) (-1 2 -1) (-2 3 -1) (-3 4 -1)]
++    BorrowedCall four_leaf [(0 1 -1) (-1 2 -1) (-1 3 -1) (-3 4 -1)]
+
+; CASE: four roots reject reused loan 1 2
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -17 +17 @@
+-    BorrowedCall four_leaf [(0 1 -1) (-1 2 -1) (-2 3 -1) (-3 4 -1)]
++    BorrowedCall four_leaf [(0 1 -1) (-1 2 -1) (-2 2 -1) (-3 4 -1)]
+
+; CASE: four roots reject duplicate selector 1 3
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -17 +17 @@
+-    BorrowedCall four_leaf [(0 1 -1) (-1 2 -1) (-2 3 -1) (-3 4 -1)]
++    BorrowedCall four_leaf [(0 1 -1) (-1 2 -1) (-2 3 -1) (-1 4 -1)]
+
+; CASE: four roots reject reused loan 1 3
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -17 +17 @@
+-    BorrowedCall four_leaf [(0 1 -1) (-1 2 -1) (-2 3 -1) (-3 4 -1)]
++    BorrowedCall four_leaf [(0 1 -1) (-1 2 -1) (-2 3 -1) (-3 2 -1)]
+
+; CASE: four roots reject duplicate selector 2 3
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -17 +17 @@
+-    BorrowedCall four_leaf [(0 1 -1) (-1 2 -1) (-2 3 -1) (-3 4 -1)]
++    BorrowedCall four_leaf [(0 1 -1) (-1 2 -1) (-2 3 -1) (-2 4 -1)]
+
+; CASE: four roots reject reused loan 2 3
+; BASE: four roots readonly first mutable second and fourth
+; RUN: verify
+; EXPECT-ERROR: borrowed call root lanes do not match target
+@@ -17 +17 @@
+-    BorrowedCall four_leaf [(0 1 -1) (-1 2 -1) (-2 3 -1) (-3 4 -1)]
++    BorrowedCall four_leaf [(0 1 -1) (-1 2 -1) (-2 3 -1) (-3 3 -1)]

@@ -26,7 +26,7 @@ def items(values):
 class Fn:
     def __init__(self, name, result=I64, params=()):
         self.name, self.result, self.params = name, result, list(params)
-        self.frame, self.receiver, self.roots, self.firstmut, self.spanfield = 0, None, 0, 0, None
+        self.frame, self.receiver, self.roots, self.rootmut, self.spanfield = 0, None, 0, 0, None
         self.slots, self.objects, self.arrays, self.spans, self.code = {}, {}, {}, set(), []
 
     def add(self, *code):
@@ -43,8 +43,8 @@ class Fn:
             out.append(f"  receiver {self.receiver}")
         if self.roots:
             out.append(f"  roots {self.roots}")
-        if self.firstmut:
-            out.append(f"  firstmut {self.firstmut}")
+        if self.rootmut:
+            out.append(f"  rootmut {self.rootmut}")
         if self.spanfield is not None:
             out.append(f"  spanfield {self.spanfield}")
         out += [f"  slot {offset} {kind}" for offset, kind in sorted(self.slots.items())]
@@ -209,9 +209,9 @@ def method_spans():
     return program("method-spans-abi", RECEIVER_HEADER, functions)
 
 
-def rooted(name, roots, firstmut, params, result=I64):
+def rooted(name, roots, rootmut, params, result=I64):
     f = Fn(name, result, params)
-    f.roots, f.firstmut = roots, firstmut
+    f.roots, f.rootmut = roots, rootmut
     return f
 
 
@@ -307,13 +307,13 @@ def borrowed_objects():
             combine(f, depth)
             f.add("Return")
             functions.append(f)
-    # Bounded roots: one to three borrowed roots and up to six total parameters.
-    for roots in range(1, 4):
-        for mutable_first in range(2):
+    # Bounded roots: one to four borrowed roots and up to six total parameters.
+    for roots in range(1, 5):
+        for mutable_mask in sorted({0, 1, 1 << (roots - 1), (1 << roots) - 1} | ({3, 10} if roots == 4 else set())):
             for tail in range(7 - roots):
-                suffix = f"{roots}_{mutable_first}_{tail}"
+                suffix = f"{roots}_{mutable_mask}_{tail}"
                 params = [cls("Receiver")] * roots + [I64] * tail
-                target = rooted("bounded_target_" + suffix, roots, mutable_first, params)
+                target = rooted("bounded_target_" + suffix, roots, mutable_mask, params)
                 cursor = [0]
                 inputs = bind(target, cursor, roots)
                 total = slot(target, cursor, I64)
@@ -326,12 +326,12 @@ def borrowed_objects():
                 target.add(f"Load {total} i64", "Return")
                 functions.append(target)
                 for depth in range(3):
-                    f = rooted(f"bounded_forward_{suffix}_{depth}", roots, mutable_first, params)
+                    f = rooted(f"bounded_forward_{suffix}_{depth}", roots, mutable_mask, params)
                     cursor = [0]
                     arguments = bind(f, cursor, roots)
                     saved, copied_result = slot(f, cursor, I64), slot(f, cursor, BOX)
                     for ordinal in range(roots):
-                        mutable = "true" if ordinal == 0 and mutable_first else "false"
+                        mutable = "true" if mutable_mask & (1 << ordinal) else "false"
                         f.add(f"AcquireObjectLoan {ordinal + 1} {-ordinal} {mutable}")
                     save(f, depth)
                     for at in arguments:

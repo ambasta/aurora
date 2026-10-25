@@ -711,16 +711,16 @@ readonly-span and copied-class semantics; results are scalar/enum or copied
 classes. No temporary/projected argument, reference local/
 field/result, reference template/overload or ownership transfer is added.
 
-A bounded multi-root form accepts a leading sequence of up to three borrowed
-owning roots. The first may be mutable or readonly; every later root is readonly.
-Two mutable concrete owning roots remain unsupported pending a library or product
-consumer; sealed service-capability groups and single mutable typed-buffer borrows
-are separate, unchanged forms.
+A bounded multi-root form accepts a leading sequence of up to four borrowed
+owning roots, each independently mutable or readonly. Distinct roots may be
+mutated in the same synchronous helper; sealed service-capability groups and
+single mutable typed-buffer borrows remain separate, unchanged forms.
 Roots and trailing parameters together fit the existing six-parameter limit.
 With two or more roots, trailing parameters and the result are scalar/enum values.
 The single-root copied/span argument and copied-result rules above are unchanged.
-This enables algorithms that update a workspace while reading independent owners,
-including the verifier's instruction and metadata owners.
+This supports two independent mutable workspaces alongside readonly instruction
+and metadata owners without increasing the owning-class layout limit. Compiler
+source adoption still requires a separately qualified checkpoint hop.
 
 Every actual root is complete, named and pairwise distinct, even when all borrows
 are readonly or the classes are empty. Different instances of the same class are

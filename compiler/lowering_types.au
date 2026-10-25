@@ -1145,7 +1145,7 @@ export namespace compiler_lowering {
                 || !compiler_resolver::scalar_value_kind(result_kind))) {
                 return fail(session, LoweringError::borrowed_function_boundary, source);
             }
-            if (borrowed > 3 || borrowed_root_count(session, symbol) != borrowed || count == 0
+            if (borrowed > 4 || borrowed_root_count(session, symbol) != borrowed || count == 0
                 || !parameter_borrowed(session, symbol, 0) || receiver >= 0 || constructor || instantiated
                 || (!borrowed_values && (!owning_type(session, first) || tk(session, first)
                 != compiler_resolver::ResolvedTypeKind::class_value))
@@ -1156,9 +1156,8 @@ export namespace compiler_lowering {
             at = 0;
             while (at < borrowed && session.good()) {
                 const i64 type = parameter_type(session, symbol, at);
-                if (!parameter_borrowed(session, symbol, at) || (at > 0 && !parameter_const(session, symbol, at))
-                    || (!borrowed_values && (tk(session, type) != compiler_resolver::ResolvedTypeKind::class_value
-                    || !owning_type(session, type)))) {
+                if (!parameter_borrowed(session, symbol, at) || (!borrowed_values && (tk(session, type)
+                    != compiler_resolver::ResolvedTypeKind::class_value || !owning_type(session, type)))) {
                     return fail(session, LoweringError::borrowed_function_boundary, source);
                 }
                 if (!borrowed_values) {

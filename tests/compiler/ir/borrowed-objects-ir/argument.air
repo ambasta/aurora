@@ -57,7 +57,7 @@ function borrow_buffer
   params [(class Buffer) i64 (enum Mode) (class Word) span u8]
   frame 96
   roots 1
-  firstmut 1
+  rootmut 1
   slot 8 i64
   slot 16 (enum Mode)
   slot 24 i64
@@ -229,7 +229,7 @@ function borrow_buffer
   params [(class Buffer)]
   frame 0
   roots 1
-  firstmut 1
+  rootmut 1
     MethodCall write_buffer
     Return
 end

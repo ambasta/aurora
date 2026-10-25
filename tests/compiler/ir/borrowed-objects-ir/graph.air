@@ -38,7 +38,7 @@ function borrow_buffer
   params [(class Buffer)]
   frame 0
   roots 1
-  firstmut 1
+  rootmut 1
     AcquireObjectLoan 2 0 true
     Constant 1 bool
     BranchFalse 1
@@ -72,7 +72,7 @@ function borrow_leaf
   params [(class Buffer)]
   frame 0
   roots 1
-  firstmut 1
+  rootmut 1
     MethodCall write_buffer
     Return
 end
@@ -160,7 +160,7 @@ function borrow_buffer
   params [(class Buffer)]
   frame 0
   roots 1
-  firstmut 1
+  rootmut 1
     MethodCall write_buffer
     Return
 end
@@ -248,7 +248,7 @@ function borrow_buffer
   params [(class Buffer)]
   frame 16
   roots 1
-  firstmut 1
+  rootmut 1
   slot 8 i64
   object 8 Word false
     BeginObject 8
@@ -279,7 +279,7 @@ function borrow_leaf
   params [(class Buffer)]
   frame 0
   roots 1
-  firstmut 1
+  rootmut 1
     MethodCall write_buffer
     Return
 end
@@ -339,7 +339,7 @@ function borrow_buffer
   params [(class Buffer)]
   frame 0
   roots 1
-  firstmut 1
+  rootmut 1
     MethodCall write_buffer
     Return
 end
@@ -472,7 +472,7 @@ function borrow_buffer
   params [(class Buffer)]
   frame 0
   roots 1
-  firstmut 1
+  rootmut 1
     MethodCall write_buffer
     Return
 end
@@ -551,7 +551,7 @@ function borrow_buffer
   params [(class Buffer)]
   frame 0
   roots 1
-  firstmut 1
+  rootmut 1
     MethodCall write_buffer
     Return
 end

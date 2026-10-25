@@ -1275,18 +1275,6 @@ def borrowed_root_generation(facts):
         ):
             reject(predecessor, source, mutation)
 
-    # A second mutable concrete root is unsupported even when the first is
-    # mutable. Reject its lane here, not just at the fixed native-entry guard.
-    for source in ("compiler_frontend::graph_run", "compiler_frontend::emitter_run"):
-        changed, function = edit_declaration(facts, "functions", source)
-        function["borrowed_roots"][1]["mutable"] = True
-        try:
-            normalize_function_abi(changed, function)
-        except ValueError as error:
-            require(str(error) == "invalid compiler ABI borrowed root lane", "second mutable root failed wrong guard")
-        else:
-            raise AssertionError("second mutable root passed ABI normalization: " + source)
-
     # Check the generic multi-root tail guard directly. Fixed native signatures
     # would reject these too and must not hide a weakened normalizer.
     copied = dict(bytes=row["reserved"], kind="class", type_name=row_symbol)
@@ -1307,8 +1295,8 @@ def borrowed_root_generation(facts):
     # Exercise every supported root-count/authority/scalar-tail combination in
     # addition to the actual three-root emitter checked above.
     _, pair = abi_declaration(facts, "functions", "compiler_frontend::graph_run")
-    for count in range(1, 4):
-        for mutable in (False, True):
+    for count in range(1, 5):
+        for mutable in range(1 << count):
             for tail in range(7 - count):
                 function = deepcopy(pair)
                 function["borrowed_root_count"] = count
@@ -1317,7 +1305,7 @@ def borrowed_root_generation(facts):
                         ordinal=i,
                         selector=-i,
                         type_name=pair["borrowed_roots"][i % 2]["type_name"],
-                        mutable=mutable and i == 0,
+                        mutable=bool(mutable & (1 << i)),
                     )
                     for i in range(count)
                 ]
@@ -1331,16 +1319,16 @@ def borrowed_root_generation(facts):
                 function["parameters"] = [dict(offset=8 * i, bytes=8, kind="i64") for i in range(tail)]
                 function["parameter_bytes"] = 8 * tail
                 require(normalize_function_abi(facts, function) == function, "bounded root normalization drift")
-    # A fourth root is outside the supported prefix and must not normalize.
+    # A fifth root is outside the supported prefix and must not normalize.
     widened = deepcopy(run)
-    widened["borrowed_roots"] = [*run["borrowed_roots"], dict(run["borrowed_roots"][-1], ordinal=3)]
-    widened["borrowed_root_count"] = 4
+    widened["borrowed_roots"] = [dict(run["borrowed_roots"][0], ordinal=i, selector=-i) for i in range(5)]
+    widened["borrowed_root_count"] = 5
     try:
         normalize_function_abi(facts, widened)
     except ValueError:
         pass
     else:
-        raise AssertionError("four borrowed roots passed ABI normalization")
+        raise AssertionError("five borrowed roots passed ABI normalization")
     require(json.dumps(facts, sort_keys=True) == pristine, "a borrowed-root mutation leaked into the shared facts")
     print("PASS typed-buffer helper, class-only v2 roots and exact compatible paired-predecessor header normalization")
 
