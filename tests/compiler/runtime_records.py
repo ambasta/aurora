@@ -316,7 +316,8 @@ class Driver:
                 "-Wall",
                 "-Wextra",
                 "-Werror",
-                HOST,
+                # Meson builds the host once; standalone runs compile it here.
+                os.environ.get("AURORA_RUNTIME_RECORDS_HOST") or HOST,
                 directory / "program.o",
                 "-o",
                 binary,

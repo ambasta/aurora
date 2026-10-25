@@ -123,7 +123,8 @@ class Driver:
         self.program = directory / "driver"
         cxx = shlex.split(os.environ.get("CXX", "g++"))
         flags = ("-std=c++23", "-Wall", "-Wextra", "-Werror")
-        result = command([*cxx, *flags, HERE / "record_host.cpp", assembly, "-o", self.program], timeout=120)
+        host = os.environ.get("AURORA_STORAGE_RECORD_HOST") or HERE / "record_host.cpp"
+        result = command([*cxx, *flags, host, assembly, "-o", self.program], timeout=120)
         require(result.returncode == 0, f"{source.name}: host link failed: {result.stderr.decode()}")
         self.batches = 0
 

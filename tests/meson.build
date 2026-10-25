@@ -7,6 +7,23 @@ oracle_env.set('TMP', meson.current_build_dir())
 oracle_env.set('TEMP', meson.current_build_dir())
 oracle_env.set('PYTHONDONTWRITEBYTECODE', '1')
 oracle_env.set('CXX', oracle_cxx)
+fixture_options = ['optimization=1']
+# C++ hosts the record and storage drivers link, built once here instead of by
+# every test run; the drivers find them through these variables.
+record_hosts = {
+  'AURORA_RUNTIME_RECORDS_HOST': static_library('runtime-records-host', 'compiler/runtime_records_host.cpp',
+                                                 native: true, override_options: fixture_options, install: false),
+  'AURORA_HOSTED_RECORDS_HOST': static_library('hosted-records-host',
+                                                ['compiler/hosted_records_host.cpp', '../runtime/hosted_bytes.cpp'],
+                                                include_directories: include_directories('..'), native: true,
+                                                override_options: fixture_options, install: false),
+  'AURORA_STORAGE_RECORD_HOST': static_library('storage-record-host', 'compiler/storage/record_host.cpp',
+                                                native: true, override_options: fixture_options, install: false),
+}
+foreach name, host : record_hosts
+  oracle_env.set(name, host.full_path())
+endforeach
+record_host_targets = record_hosts.values()
 # Shared drivers: golden-output comparison and Aurora fixture objects built once.
 golden_runner = files('golden.py')
 fixture_builder = files('../scripts/meson-native-fixture.py')
@@ -14,7 +31,6 @@ fixture_builder = files('../scripts/meson-native-fixture.py')
 # hosted_frontend keeps the project optimization level. -O1, not -O0: with GCC 16
 # these template-heavy fixtures compile no faster at -O0 and emit ~24x larger
 # objects (1.8 GiB in total), while -O1 cuts compile CPU by about a quarter.
-fixture_options = ['optimization=1']
 
 # Every test in full is also in exactly one of merge (run on every merge) or
 # release (opt-in: releases and compiler bumps). dev/slow/core/bytes are focused
@@ -503,7 +519,7 @@ endforeach
 foreach family : ['token_scan', 'utf8', 'utf8_range', 'utf8_lines', 'utf8_text']
     test(family.replace('_', '-'), python,
          args: ['-B', files('compiler/' + family + '.py'), '--compiler', aurorac],
-         depends: aurorac, suite: ['full', 'merge', 'dev', 'compiler'],
+         depends: [aurorac] + record_host_targets, suite: ['full', 'merge', 'dev', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
 endforeach
 # std.json, std.json_read and std.json_write: one compiled driver or packed
@@ -511,20 +527,20 @@ endforeach
 foreach family : ['json_library', 'json_owned', 'json_string_read', 'json_string_write']
     test(family.replace('_', '-'), python,
          args: ['-B', files('compiler/' + family + '.py'), '--compiler', aurorac],
-         depends: aurorac, suite: ['full', 'merge', 'dev', 'bytes', 'compiler'],
+         depends: [aurorac] + record_host_targets, suite: ['full', 'merge', 'dev', 'bytes', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 300,
          priority: slow_tests.get(family.replace('_', '-'), 0))
 endforeach
 # Every two-byte input and a native sweep of all code points through the same driver.
 test('utf8-exhaustive', python,
      args: ['-B', files('compiler/utf8.py'), '--compiler', aurorac, '--profile', 'exhaustive'],
-     depends: aurorac, suite: ['exhaustive'], env: oracle_env,
+     depends: [aurorac] + record_host_targets, suite: ['exhaustive'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
 # Package identity, manifest and graph: one driver each over golden cases.
 foreach family : ['identity', 'manifest', 'graph']
     test('package-' + family, python,
          args: ['-B', files('compiler/package_' + family + '.py'), '--compiler', aurorac],
-         depends: aurorac, suite: ['full', 'merge', 'dev', 'packages', 'compiler'],
+         depends: [aurorac] + record_host_targets, suite: ['full', 'merge', 'dev', 'packages', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 300,
          priority: slow_tests.get('package-' + family, 0))
 endforeach
@@ -533,7 +549,7 @@ endforeach
 foreach family : ['byte_storage', 'storage_binary', 'block_io', 'xfs_geometry', 'xfs_root', 'xfs_file']
     test(family.replace('_', '-'), python,
          args: ['-B', files('compiler/storage/' + family + '.py'), aurorac],
-         depends: aurorac, suite: ['full', 'merge', 'dev', 'bytes', 'compiler'],
+         depends: [aurorac] + record_host_targets, suite: ['full', 'merge', 'dev', 'bytes', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 120)
 endforeach
 test('xfs-offline-native', python,

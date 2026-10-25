@@ -115,6 +115,8 @@ class Hosted:
         return self.packs[-1]
 
     def host_objects(self):
+        if self.objects is None and os.environ.get("AURORA_HOSTED_RECORDS_HOST"):
+            self.objects = [Path(os.environ["AURORA_HOSTED_RECORDS_HOST"])]
         if self.objects is None:
             self.objects = []
             for source in (HOST, RUNTIME):
@@ -180,7 +182,7 @@ class Hosted:
             f"driver imports outside the hosted byte runtime: {imported}",
         )
         binary = directory / "program"
-        records.checked([*self.cxx, *FLAGS, *self.host_objects(), directory / "program.o", "-o", binary], "link")
+        records.checked([*self.cxx, *FLAGS, directory / "program.o", *self.host_objects(), "-o", binary], "link")
         return directory, binary
 
     def finish(self):
