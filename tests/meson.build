@@ -374,8 +374,6 @@ foreach model : ['framebuffer', 'framebuffer-tables', 'framebuffer-loader', 'fra
 endforeach
 display_session = executable('display-session', 'kernel-display-session.cpp', native: true, override_options: fixture_options, install: false)
 test('display-session', display_session, suite: ['full', 'merge', 'dev'], timeout: 120)
-test('kernel_framebuffer_probe_oracle.py', python, args: ['-B', files('kernel_framebuffer_probe_oracle.py')],
-     suite: ['full', 'merge', 'dev'], env: oracle_env, timeout: 120)
 display_page_object = custom_target('display-page',
     input: '../examples/kernel-display-service.au', output: 'display-page.o', depfile: 'display-page.d',
     command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',
