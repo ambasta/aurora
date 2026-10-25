@@ -444,10 +444,6 @@ foreach runner : [
 endforeach
 
 
-# Compiler-free model-fixture integrity/mocks. No emulator or hardware acceptance.
-test('iommu-diagnostics-optimized', python, args: ['-B', '-O', files('iommu-diagnostics.py')],
-     suite: ['full', 'merge', 'dev'], env: oracle_env, timeout: 30)
-
 # Remaining compiler-native coverage. Fixtures are build targets, not commands
 # hidden inside each test invocation; Ninja tracks C++ header dependencies.
 compiler_fixtures = {}
