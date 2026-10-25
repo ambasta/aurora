@@ -8,8 +8,15 @@ import shlex
 from pathlib import Path
 import subprocess
 import tempfile
+import sys
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts"))
+from meson_aurora_assembly import compose_object_bridge, render_bridge
+
+
+def service_bridge(facts):
+    return render_bridge((ROOT / "kernel/uefi/console-service-entry.S").read_text(), json.loads(facts.read_text()))
 
 
 def require(value, message):
@@ -100,7 +107,7 @@ def mixed_region(compiler, work, comparison_compiler=None):
             "mixed capability nominal kind/layout changed",
         )
     bridge = work / "mixed-bridge.s"
-    bridge.write_text(assembly.read_text() + (ROOT / "kernel/uefi/console-service-entry.S").read_text())
+    bridge.write_text(assembly.read_text() + service_bridge(facts))
     binary = work / "mixed"
     result = link(bridge, HOSTS["region"], binary)
     require(result.returncode == 0, result.stderr.decode())
@@ -160,18 +167,25 @@ def main():
     with tempfile.TemporaryDirectory(prefix="console-service-") as scratch:
         work = Path(scratch)
         mixed_region(compiler, work, args.comparison_compiler.resolve() if args.comparison_compiler else None)
-        assembly = work / "console.s"
+        assembly = work / "console.o"
+        facts = work / "console.abi.json"
         result = run(
-            [compiler, "--module-root", ROOT / "library", ROOT / "examples/kernel-console-service.au", "-o", assembly]
+            [
+                compiler,
+                "--emit-object",
+                "--module-root",
+                ROOT / "library",
+                ROOT / "examples/kernel-console-service.au",
+                "-o",
+                assembly,
+                "--abi-facts",
+                facts,
+            ]
         )
         require(result.returncode == 0, result.stderr.decode())
-        text = assembly.read_text()
-        require("__au_runtime_bytes_" not in text, "service graph unexpectedly requires owning-byte runtime")
-        require(".local aurora_kernel_value" in text, "service graph contains an ordinary public root")
+        compose_object_bridge(assembly, [ROOT / "kernel/uefi/console-service-entry.S"], json.loads(facts.read_text()))
         binary = work / "editor"
-        combined = work / "console-bridge.s"
-        combined.write_text(text + (ROOT / "kernel/uefi/console-service-entry.S").read_text())
-        result = link(combined, HOSTS["console"], binary)
+        result = link(assembly, HOSTS["console"], binary)
         require(result.returncode == 0, result.stderr.decode())
         ready = b"AURORA_CONSOLE_READY: UEFI, ASCII, 64-byte lines\r\naurora> "
         exit_output = b"exit\r\nAURORA_CONSOLE_EXIT\r\n"
@@ -944,9 +958,10 @@ odd(session) != 8) {
     auto aurora_kernel_value() -> i64 { return 42; }
     """)
         abi_assembly = work / "mixed-abi.s"
-        result = run([compiler, abi_source, "-o", abi_assembly])
+        abi_facts = work / "mixed-abi.json"
+        result = run([compiler, abi_source, "-o", abi_assembly, "--abi-facts", abi_facts])
         require(result.returncode == 0, result.stderr.decode())
-        abi_assembly.write_text(abi_assembly.read_text() + (ROOT / "kernel/uefi/console-service-entry.S").read_text())
+        abi_assembly.write_text(abi_assembly.read_text() + service_bridge(abi_facts))
         abi_binary = work / "mixed-abi"
         result = link(abi_assembly, HOSTS["console"], abi_binary)
         require(result.returncode == 0, result.stderr.decode())
@@ -1009,11 +1024,12 @@ odd(session) != 8) {
     auto aurora_kernel_value() -> i64 { return 42; }
     """)
         imported_assembly = work / "imported.s"
-        result = run([compiler, "--module-root", modules, imported, "-o", imported_assembly])
-        require(result.returncode == 0, result.stderr.decode())
-        imported_assembly.write_text(
-            imported_assembly.read_text() + (ROOT / "kernel/uefi/console-service-entry.S").read_text()
+        imported_facts = work / "imported.abi.json"
+        result = run(
+            [compiler, "--module-root", modules, imported, "-o", imported_assembly, "--abi-facts", imported_facts]
         )
+        require(result.returncode == 0, result.stderr.decode())
+        imported_assembly.write_text(imported_assembly.read_text() + service_bridge(imported_facts))
         imported_binary = work / "imported"
         result = link(imported_assembly, HOSTS["console"], imported_binary)
         require(result.returncode == 0, result.stderr.decode())
@@ -1046,11 +1062,21 @@ odd(session) != 8) {
     auto aurora_kernel_value() -> i64 { return 42; }
     """)
         write_assembly, write_binary = work / "write-result.s", work / "write-result"
-        result = run([compiler, "--module-root", ROOT / "library", write_source, "-o", write_assembly])
-        require(result.returncode == 0, result.stderr.decode())
-        write_assembly.write_text(
-            write_assembly.read_text() + (ROOT / "kernel/uefi/console-service-entry.S").read_text()
+        write_facts = work / "write-result.abi.json"
+        result = run(
+            [
+                compiler,
+                "--module-root",
+                ROOT / "library",
+                write_source,
+                "-o",
+                write_assembly,
+                "--abi-facts",
+                write_facts,
+            ]
         )
+        require(result.returncode == 0, result.stderr.decode())
+        write_assembly.write_text(write_assembly.read_text() + service_bridge(write_facts))
         result = link(write_assembly, HOSTS["console"], write_binary)
         require(result.returncode == 0, result.stderr.decode())
         # Every short prefix, including NUL/high bytes, first/final-byte timeout,

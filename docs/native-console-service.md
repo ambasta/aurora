@@ -29,7 +29,14 @@ meson test -C build/meson --suite full
 
 `make run` and `make run-uefi` remain automatic boot self-tests. Console smokes
 are included in `make smoke-all`; the native `make test` graph does not run QEMU.
-Hosted sanitizers instrument the C++ adapters, not generated Aurora assembly.
+Hosted sanitizers instrument the C++ adapters, not generated Aurora code.
+
+The ordinary UEFI `console` and `console-fixture` profiles emit their Aurora
+editor/session source directly as checked ELF objects. Their native entry adapter
+selects private source symbols from compiler ABI facts and still uses GNU assembly
+and linking. BIOS, graphical and protected session sources retain their existing
+text route. Image, W^X, symbol and mixed-stack checks and all reservations remain
+unchanged; direct output is not a performance or full native-binutils claim.
 Missing tools or firmware are blocked verification, never a pass.
 
 ## Input behavior
