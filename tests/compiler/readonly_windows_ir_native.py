@@ -83,13 +83,17 @@ def main():
             "object_bytes",
             "object_class_array",
             "object_six_bytes",
+            "object_literal",
+            "object_literal_repeated",
+            "object_literal_empty",
         ]
-        expected = [MIN_I64, (1 << 64) - 1, -42, -1, 8, 21, 21, 128, 42, 21]
+        expected = [MIN_I64, (1 << 64) - 1, -42, -1, 8, 21, 21, 128, 42, 21, 127, 128, 0]
         object_traps = [
             ("object_bounds", Trap.BOUNDS),
             ("object_zero", Trap.ZERO),
             ("object_overflow", Trap.OVERFLOW),
             ("object_count", Trap.COUNT),
+            ("object_literal_empty_bounds", Trap.BOUNDS),
         ]
         entries = names + [name for name, _ in object_traps]
         observed, symbols = NativeRunner(directory, None, 10).assemble(encoded, entries, values=range(len(names)))

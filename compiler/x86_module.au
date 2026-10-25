@@ -96,8 +96,26 @@ export namespace compiler_x86 {
         return compiler_ir_metadata::name_prefix(m, row.name(), "__au_o_");
     }
     auto module_emit_instruction(EmitWorkspace& w, ObjectWorkspace& o, const compiler_ir_metadata::MetadataStore& m,
-        const compiler_ir_instructions::InstructionStore& s, i64 instruction) -> bool {
-        if (emit_scalar(w, o, m, s, instruction)) {
+        const compiler_ir_instructions::InstructionStore& s, i64 instruction, i64 position) -> bool {
+        i64 control = position;
+        if (o.object_mode()) {
+            const compiler_ir_instructions::BodyRow body = s.body_at(w.current_callable());
+            if (position < 0 || position >= body.count()) {
+                return w.fail();
+            }
+            const compiler_ir_instructions::CodeRow code = s.code_at(body.begin() + position);
+            if (code.id() != instruction) {
+                return w.fail();
+            }
+            const i64 form = module_form(s, instruction);
+            if (form == 41 || form == 42) {
+                control = code.target();
+                if (control < 0 || control >= body.count()) {
+                    return w.fail();
+                }
+            }
+        }
+        if (emit_scalar(w, o, m, s, instruction, control)) {
             return w.ok();
         }
         if (emit_objects(w, o, m, s, instruction)) {
@@ -138,9 +156,9 @@ export namespace compiler_x86 {
                     // The intervening accumulator load touches neither RCX nor the
                     // operand stack; preserve the old adjacency-only peephole.
                     emit_mov_rr(w, o, Register::rax, Register::rcx);
-                    module_emit_instruction(w, o, m, s, next);
+                    module_emit_instruction(w, o, m, s, next, at + 1);
                     w.set_left_in_rcx(true);
-                    module_emit_instruction(w, o, m, s, following);
+                    module_emit_instruction(w, o, m, s, following, at + 2);
                     w.set_left_in_rcx(false);
                     last = following;
                     at = at + 3;
@@ -153,20 +171,28 @@ export namespace compiler_x86 {
                             return w.fail();
                         }
                         w.set_direct_result(true);
-                        module_emit_instruction(w, o, m, s, current);
+                        module_emit_instruction(w, o, m, s, current, at);
                         w.set_direct_result(false);
                         emit_alu_rr(w, o, AluOp::bit_xor, Register::rax, Register::rax);
                         emit_branch(w, o, -1, 1, 0);
                         at = at + 2;
                     } else {
-                        module_emit_instruction(w, o, m, s, current);
+                        module_emit_instruction(w, o, m, s, current, at);
                         at = at + 1;
                     }
                 }
             }
             const i64 branch = module_instruction(s, callable, at);
             if (module_form(s, last) == 14 && module_form(s, branch) == 42) {
-                fused_branch(w, o, m, s, last, branch);
+                i64 target = operand_value(s, branch, 0);
+                if (o.object_mode()) {
+                    const compiler_ir_instructions::CodeRow code = s.code_at(body.begin() + at);
+                    target = code.target();
+                    if (code.id() != branch || target < 0 || target >= body.count()) {
+                        return w.fail();
+                    }
+                }
+                fused_branch(w, o, m, s, last, target);
                 at = at + 1;
             }
         }
@@ -352,6 +378,7 @@ export namespace compiler_x86 {
         }
         const bool local = force_local || receiver || aggregate || module_hidden_symbol(m, callable);
         if (o.object_mode()) {
+            o.begin_function_labels(body.count());
             o.begin_object_symbol(callable, local);
             callable_name(w, o, m, callable);
             o.end_object_symbol_name();
@@ -592,21 +619,35 @@ export namespace compiler_x86 {
                 const i64 instruction = module_instruction(s, callable, position);
                 if (module_form(s, instruction) == 51) {
                     if (o.object_mode()) {
-                        return w.unsupported_object();
+                        o.begin_literal(instruction);
+                    } else {
+                        if (!section) {
+                            w.text(".section .rodata\n");
+                            section = true;
+                        }
+                        w.text(".Laurora_literal_");
+                        w.number(instruction);
+                        w.text(":\n");
                     }
-                    if (!section) {
-                        w.text(".section .rodata\n");
-                        section = true;
-                    }
-                    w.text(".Laurora_literal_");
-                    w.number(instruction);
-                    w.text(":\n");
                     const compiler_ir_instructions::RawOperandRow literal = compiler_ir_instructions::call_operand(s,
                         instruction, 0);
                     i64 byte = 0;
                     while (byte < literal.count() && w.ok()) {
-                        w.line_number(".byte ", s.literal_at(literal.begin() + byte), "");
+                        if (o.object_mode()) {
+                            const i64 value = s.literal_at(literal.begin() + byte);
+                            if (value < 0 || value > 255) {
+                                return w.fail();
+                            }
+                            o.literal_byte(u8(value));
+                            emit_object_status(w, o);
+                        } else {
+                            w.line_number(".byte ", s.literal_at(literal.begin() + byte), "");
+                        }
                         byte = byte + 1;
+                    }
+                    if (o.object_mode()) {
+                        o.end_literal();
+                        emit_object_status(w, o);
                     }
                 }
                 position = position + 1;
@@ -633,8 +674,8 @@ export namespace compiler_x86 {
         if (o.object_mode()) {
             w.select_object();
             const i64 instruction_count = s.instruction_count();
-            const i64 retained_count = w.retained_count();
-            o.configure_labels(instruction_count, retained_count);
+            const i64 callable_count = m.callable_count();
+            o.configure_labels(instruction_count, callable_count);
             if (!emit_object_status(w, o)) {
                 return w.status();
             }

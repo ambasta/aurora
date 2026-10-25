@@ -58,7 +58,7 @@ frontend_assembly = custom_target(
   'hosted-frontend-assembly', input: frontend_inputs,
   output: ['hosted-frontend.s', 'hosted-frontend.generated.s', 'hosted-frontend.abi.json', 'hosted_frontend_abi.hpp'],
   command: [python, '-B', files('scripts/bootstrap_frontend.py'), bootstrap_compiler, '--compiler-sha256', bootstrap_sha256,
-            '--output', '@OUTPUT0@', '@INPUT@'],
+            '--output-mode', 'text', '--output', '@OUTPUT0@', '@INPUT@'],
   depend_files: bootstrap_depend_files + bridge_table,
 )
 frontend_object = custom_target(
@@ -87,24 +87,21 @@ aurorac = executable('aurorac', 'compiler/main.cpp', dependencies: hosted_fronte
 aurora_fmt = executable('aurora-fmt', 'compiler/format_main.cpp', dependencies: hosted_frontend,
                         native: true, install: false)
 
-# P emits frontend A, current C1 links A, C1 emits B, and current C2 links B.
-# Reuse only the current host C++ objects; C2 must not link frontend A. These
-# test prerequisites stay outside the default build unless the test is selected.
-frontend_stage2_assembly = custom_target(
-  'hosted-frontend-stage2-assembly', input: frontend_inputs + [frontend_assembly[3]],
-  output: ['hosted-frontend-stage2.s', 'hosted-frontend-stage2.generated.s',
-           'hosted-frontend-stage2.abi.json', 'hosted_frontend_stage2_abi.hpp'],
-  command: [python, '-B', files('scripts/bootstrap_frontend.py'), aurorac, '--output', '@OUTPUT0@', '@INPUT@'],
-  depend_files: bridge_table,
-  build_by_default: false,
-)
-frontend_stage2_object = custom_target(
-  'hosted-frontend-stage2-object', input: frontend_stage2_assembly[0], output: 'hosted-frontend-stage2.o',
-  command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '@INPUT@', '-o', '@OUTPUT@'],
+# C0 emits text frontend A; C1 emits direct-object B, which current C2 links.
+# Reuse only current host C++ objects. The old checkpoint needs no object support.
+# These prerequisites stay outside the default build unless the test is selected.
+frontend_stage2_output = custom_target(
+  'hosted-frontend-stage2-output', input: frontend_inputs + [frontend_assembly[3]],
+  output: ['hosted-frontend-stage2.o', 'hosted-frontend-stage2.generated.o',
+           'hosted-frontend-stage2.abi.json', 'hosted_frontend_stage2_abi.hpp',
+           'hosted-frontend-stage2.stack.json'],
+  command: [python, '-B', files('scripts/bootstrap_frontend.py'), aurorac,
+            '--output-mode', 'object', '--output', '@OUTPUT0@', '@INPUT@'],
+  depend_files: bridge_table + files('scripts/meson_aurora_assembly.py'),
   build_by_default: false,
 )
 frontend_stage2_library = static_library(
-  'hosted-frontend-stage2', frontend_stage2_object,
+  'hosted-frontend-stage2', frontend_stage2_output[0],
   objects: frontend_library.extract_objects(frontend_host_sources),
   native: true, install: false, build_by_default: false,
 )
@@ -118,7 +115,7 @@ aurorac_stage2 = executable(
 if build_machine.system() != 'linux' or build_machine.cpu_family() != 'x86_64'
   error('The bootstrap test prototype currently requires an x86-64 Linux build machine.')
 endif
-foreach tool : ['as', 'ld', 'nm', 'objdump']
+foreach tool : ['as', 'ld', 'nm', 'objdump', 'objcopy']
   find_program(tool, native: true)
 endforeach
 

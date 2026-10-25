@@ -7,6 +7,7 @@ bindings remain local; only trusted register bridges expose host entries.
 
 from pathlib import Path
 import re
+import shutil
 import importlib.util
 import hashlib
 import json
@@ -1004,10 +1005,20 @@ def emit(
     compatible_header=None,
     *,
     verification_source,
+    output_mode="text",
 ):
-    raw = output.with_suffix(".generated.s")
+    if output_mode not in ("text", "object"):
+        raise ValueError("unsupported frontend output mode")
+    raw = output.with_suffix(".generated.o" if output_mode == "object" else ".generated.s")
     facts_output = output.with_suffix(".abi.json")
     command = ["--local-symbols", "--abi-facts", str(facts_output.resolve())]
+    if output_mode == "object":
+        command += [
+            "--emit-object",
+            "--referenced-reflection-only",
+            "--stack-facts",
+            str(output.with_suffix(".stack.json").resolve()),
+        ]
     command += ["--module-root", str(module_root.resolve())]
     command += [str(source.resolve()), "-o", str(raw.resolve())]
     subprocess.run([str(compiler.resolve()), *command], check=True)
@@ -1023,14 +1034,17 @@ def emit(
         verification_source=verification_source,
     )
     # Symbol spellings come from this emitted module; only register moves are trusted.
-    output.write_bytes(
-        b"\n".join(
-            [
-                raw.read_bytes(),
-                frontend_bridge(None, facts).encode(),
-            ]
-        )
-    )
+    bridge = frontend_bridge(None, facts)
+    if output_mode == "object":
+        from meson_aurora_assembly import compose_private_object
+
+        selected = sorted(abi_function_symbol(facts, "compiler_frontend::" + alias) for alias in PASS_ENTRIES)
+        pending = output.with_suffix(".pending.o")
+        shutil.copyfile(raw, pending)
+        compose_private_object(pending, bridge + '.section .note.GNU-stack,"",@progbits\n', selected)
+        pending.replace(output)
+    else:
+        output.write_bytes(b"\n".join([raw.read_bytes(), bridge.encode()]))
 
 
 def main():
@@ -1041,8 +1055,16 @@ def main():
     if len(arguments) > 2 and arguments[1] == "--compiler-sha256":
         expected_sha256 = arguments[2]
         del arguments[1:3]
+    output_mode = "text"
+    if len(arguments) > 2 and arguments[1] == "--output-mode":
+        output_mode = arguments[2]
+        del arguments[1:3]
+    if output_mode not in ("text", "object"):
+        raise ValueError("--output-mode must be text or object")
     if len(arguments) < 4 or arguments[1] != "--output":
-        raise ValueError("expected COMPILER [--compiler-sha256 SHA] --output OUTPUT INPUT...")
+        raise ValueError(
+            "expected COMPILER [--compiler-sha256 SHA] [--output-mode text|object] --output OUTPUT INPUT..."
+        )
     compiler, output = Path(arguments[0]), Path(arguments[2])
     if expected_sha256 is not None and hashlib.sha256(compiler.read_bytes()).hexdigest() != expected_sha256:
         raise ValueError(f"{compiler} changed since Meson verified it; reconfigure Meson")
@@ -1078,6 +1100,7 @@ def main():
         modules[names.index("ir_instruction_storage.au")],
         headers[0] if headers else None,
         verification_source=modules[names.index("ir_verification_errors.au")],
+        output_mode=output_mode,
     )
 
 

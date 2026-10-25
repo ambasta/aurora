@@ -57,12 +57,12 @@ function object_loop
     Store 8
     Constant 1
     Store 16
-    Label 1
+    Label 2147483647
     Load 16
     Push
     Constant 7
     Compare Less
-    BranchFalse 2
+    BranchFalse 500000
     Load 8
     Push
     Load 16
@@ -73,8 +73,8 @@ function object_loop
     Constant 1
     BinaryValue CheckedAdd
     Store 16
-    Jump 1
-    Label 2
+    Jump 2147483647
+    Label 500000
     Load 8
     Return
 end
@@ -293,5 +293,59 @@ function object_sum_bytes
     Push
     Load 13 u8
     BinaryValue CheckedAdd u8
+    Return
+end
+function object_literal
+  result u8
+  frame 64
+  span 64
+    BorrowLiteralSpan "\x00\x80\xff" 64
+    Constant 0
+    SpanLoad 64
+    Push
+    Constant 1
+    SpanLoad 64
+    BinaryValue BitXor u8
+    Push
+    Constant 2
+    SpanLoad 64
+    BinaryValue BitXor u8
+    EndSpan 64
+    Return
+end
+function object_literal_repeated
+  result u8
+  frame 128
+  span 64
+  span 128
+    BorrowLiteralSpan "\x00\x80\xff" 64
+    BorrowLiteralSpan "\x00\x80\xff" 128
+    Constant 1
+    SpanLoad 64
+    Push
+    Constant 0
+    SpanLoad 128
+    BinaryValue BitXor u8
+    EndSpan 128
+    EndSpan 64
+    Return
+end
+function object_literal_empty
+  result i64
+  frame 64
+  span 64
+    BorrowLiteralSpan "" 64
+    SpanLength 64
+    EndSpan 64
+    Return
+end
+function object_literal_empty_bounds
+  result u8
+  frame 64
+  span 64
+    BorrowLiteralSpan "" 64
+    Constant 0
+    SpanLoad 64
+    EndSpan 64
     Return
 end

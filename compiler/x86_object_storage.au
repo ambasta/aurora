@@ -94,31 +94,108 @@ export namespace compiler_x86 {
         builtin::OwnedValues<ObjectSymbolRow> result = region.try_allocate(0, fill);
         return move(result);
     }
+    // Direct slots carry semantic label families, not raw source label numbers.
     class ObjectLabelRow {
-        i64 kindValue;
-        i64 scopeValue;
-        i64 identityValue;
-        i64 positionValue;
+        i64 epochValue;
+        i64 ordinaryValue;
+        i64 divisionReady;
+        i64 divisionDone;
+        i64 copyReady;
+        i64 copyDone;
+        i64 spanReady;
+        i64 spanDone;
     public:
-        ObjectLabelRow(i64 kind, i64 scope, i64 identity, i64 position) : kindValue(kind), scopeValue(scope),
-            identityValue(identity), positionValue(position) {
+        ObjectLabelRow(i64 epoch) : epochValue(epoch), ordinaryValue(-1), divisionReady(-1), divisionDone(-1),
+            copyReady(-1), copyDone(-1), spanReady(-1), spanDone(-1) {
         }
-        auto kind() const -> i64 {
-            return kindValue;
+        auto reset(i64 epoch) -> bool {
+            epochValue = epoch;
+            ordinaryValue = -1;
+            divisionReady = -1;
+            divisionDone = -1;
+            copyReady = -1;
+            copyDone = -1;
+            spanReady = -1;
+            spanDone = -1;
+            return true;
         }
-        auto scope() const -> i64 {
-            return scopeValue;
+        auto epoch() const -> i64 {
+            return epochValue;
         }
-        auto identity() const -> i64 {
-            return identityValue;
+        auto position(i64 kind) const -> i64 {
+            if (kind == 0) {
+                return ordinaryValue;
+            }
+            if (kind == 2) {
+                return divisionReady;
+            }
+            if (kind == 3) {
+                return divisionDone;
+            }
+            if (kind == 5) {
+                return copyReady;
+            }
+            if (kind == 6) {
+                return copyDone;
+            }
+            if (kind == 7) {
+                return spanReady;
+            }
+            if (kind == 8) {
+                return spanDone;
+            }
+            return -1;
         }
-        auto position() const -> i64 {
-            return positionValue;
+        auto bind(i64 kind, i64 position) -> bool {
+            if (kind == 0) {
+                ordinaryValue = position;
+            } else {
+                if (kind == 2) {
+                    divisionReady = position;
+                } else {
+                    if (kind == 3) {
+                        divisionDone = position;
+                    } else {
+                        if (kind == 5) {
+                            copyReady = position;
+                        } else {
+                            if (kind == 6) {
+                                copyDone = position;
+                            } else {
+                                if (kind == 7) {
+                                    spanReady = position;
+                                } else {
+                                    if (kind == 8) {
+                                        spanDone = position;
+                                    } else {
+                                        return false;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return true;
         }
     };
     auto ObjectLabelRow_pool(builtin::ByteRegion region) -> builtin::OwnedValues<ObjectLabelRow> {
-        const ObjectLabelRow fill = ObjectLabelRow(0, 0, 0, 0);
+        const ObjectLabelRow fill = ObjectLabelRow(-1);
         builtin::OwnedValues<ObjectLabelRow> result = region.try_allocate(0, fill);
+        return move(result);
+    }
+    class ObjectIndexRow {
+        i64 value;
+    public:
+        ObjectIndexRow(i64 index) : value(index) {
+        }
+        auto index() const -> i64 {
+            return value;
+        }
+    };
+    auto ObjectIndexRow_pool(builtin::ByteRegion region) -> builtin::OwnedValues<ObjectIndexRow> {
+        const ObjectIndexRow fill = ObjectIndexRow(-1);
+        builtin::OwnedValues<ObjectIndexRow> result = region.try_allocate(0, fill);
         return move(result);
     }
     class ObjectFixupRow {
@@ -207,6 +284,15 @@ export namespace compiler_x86 {
         builtin::OwnedValues<ObjectSymbolRow> objectSymbols;
         builtin::OwnedValues<ObjectLabelRow> objectLabels;
         builtin::OwnedValues<ObjectFixupRow> objectFixups;
+        builtin::OwnedValues<ObjectIndexRow> callableSymbols;
+        builtin::OwnedValues<ObjectIndexRow> runtimeSymbols;
+        builtin::OwnedValues<ObjectIndexRow> literalSymbols;
+        builtin::OwnedValues<ObjectIndexRow> trapPositions;
+        builtin::OwnedBytes literalBytes;
+        i64 literalSize;
+        i64 literalCurrentSymbol;
+        i64 returnPosition;
+        i64 functionFixupStart;
         EmitStatus outcome;
         bool objectMode;
         bool objectNameCapture;
@@ -224,14 +310,18 @@ export namespace compiler_x86 {
         ObjectWorkspace(builtin::ByteRegion region) : output(region.try_allocate(0)),
             objectNames(region.try_allocate(0)), objectCode(region.try_allocate(0)),
             objectSymbols(ObjectSymbolRow_pool(region)), objectLabels(ObjectLabelRow_pool(region)),
-            objectFixups(ObjectFixupRow_pool(region)), outcome(EmitStatus::pending), objectMode(false),
-            objectNameCapture(false), outputSize(0), artifactLimit(67108864), objectNameSize(0), objectSymbolSize(0),
-            objectLabelSize(0), objectLabelLimit(0), objectFixupSize(0), objectCurrentSymbol(-1),
+            objectFixups(ObjectFixupRow_pool(region)), callableSymbols(ObjectIndexRow_pool(region)),
+            runtimeSymbols(ObjectIndexRow_pool(region)), literalSymbols(ObjectIndexRow_pool(region)),
+            trapPositions(ObjectIndexRow_pool(region)), literalBytes(region.try_allocate(0)), literalSize(0),
+            literalCurrentSymbol(-1), returnPosition(-1), functionFixupStart(0), outcome(EmitStatus::pending),
+            objectMode(false), objectNameCapture(false), outputSize(0), artifactLimit(67108864), objectNameSize(0),
+            objectSymbolSize(0), objectLabelSize(0), objectLabelLimit(0), objectFixupSize(0), objectCurrentSymbol(-1),
             objectCaptureSymbol(-1), functionIndex(0) {
         }
         auto allocated() const -> bool {
             return output.ok() && objectNames.ok() && objectCode.ok() && objectSymbols.ok() && objectLabels.ok()
-                && objectFixups.ok();
+                && objectFixups.ok() && callableSymbols.ok() && runtimeSymbols.ok() && literalSymbols.ok()
+                && trapPositions.ok() && literalBytes.ok();
         }
         auto enable_object() -> bool {
             if (outcome != EmitStatus::pending || outputSize != 0 || !allocated()) {
@@ -242,17 +332,25 @@ export namespace compiler_x86 {
             return object_name_byte(u8(0));
         }
         auto configure_labels(i64 instructions, i64 functions) -> bool {
-            if (0 > instructions || 0 > functions || functions > 9223372036854775807 - 4 || instructions
-                > (9223372036854775807 - functions - 4) / 8 || objectLabelSize != 0) {
+            if (instructions < 0 || instructions > 67108864 || functions < 0 || functions > 67108864 || objectSymbolSize
+                != 0 || objectLabelLimit != 0) {
                 return fail();
             }
-            // A four-root call can emit two receiver-copy labels per root.
-            // Other admitted instructions emit at most two; each function has
-            // one return label, and the module has four shared traps.
-            objectLabelLimit = instructions * 8 + functions + 4;
-            if (objectLabelLimit > 9223372036854775807 / 32) {
-                return limit_failure();
+            const ObjectIndexRow missing = ObjectIndexRow(-1);
+            if (!callableSymbols.try_resize(functions, missing) || !runtimeSymbols.try_resize(64, missing)
+                || !literalSymbols.try_resize(instructions + 1, missing) || !trapPositions.try_resize(4, missing)) {
+                return allocation_failure();
             }
+            objectLabelLimit = instructions;
+            return ok();
+        }
+        auto begin_function_labels(i64 instructions) -> bool {
+            if (instructions < 0 || instructions > objectLabelLimit || instructions > 67108864 / 4) {
+                return fail();
+            }
+            objectLabelSize = instructions;
+            returnPosition = -1;
+            functionFixupStart = objectFixupSize;
             return ok();
         }
         auto maximum_name_width() const -> i64 {
@@ -290,13 +388,20 @@ export namespace compiler_x86 {
             return true;
         }
         auto object_symbol_index(i64 kind, i64 identity) const -> i64 {
-            i64 at = 0;
-            while (at < objectSymbolSize) {
-                const ObjectSymbolRow row = objectSymbols.at(at);
-                if (row.kind() == kind && row.identity() == identity) {
-                    return at;
-                }
-                at = at + 1;
+            if (identity < 0) {
+                return -1;
+            }
+            if (kind == 0 && identity < callableSymbols.size()) {
+                const ObjectIndexRow row = callableSymbols.at(identity);
+                return row.index();
+            }
+            if (kind == 1 && identity < runtimeSymbols.size()) {
+                const ObjectIndexRow row = runtimeSymbols.at(identity);
+                return row.index();
+            }
+            if (kind == 3 && identity > 0 && identity < literalSymbols.size()) {
+                const ObjectIndexRow row = literalSymbols.at(identity);
+                return row.index();
             }
             return -1;
         }
@@ -319,6 +424,23 @@ export namespace compiler_x86 {
                 }
             }
             if (!objectSymbols.set(objectSymbolSize, row)) {
+                return fail();
+            }
+            const ObjectIndexRow index = ObjectIndexRow(objectSymbolSize);
+            bool stored = false;
+            if (row.kind() == 0 && row.identity() >= 0 && row.identity() < callableSymbols.size()) {
+                stored = callableSymbols.set(row.identity(), index);
+            }
+            if (row.kind() == 1 && row.identity() >= 0 && row.identity() < runtimeSymbols.size()) {
+                stored = runtimeSymbols.set(row.identity(), index);
+            }
+            if (row.kind() == 3 && row.identity() > 0 && row.identity() < literalSymbols.size()) {
+                stored = literalSymbols.set(row.identity(), index);
+            }
+            if (row.kind() == 2) {
+                stored = true;
+            }
+            if (!stored) {
                 return fail();
             }
             objectSymbolSize = objectSymbolSize + 1;
@@ -393,6 +515,26 @@ export namespace compiler_x86 {
                 old.position(), old.local());
             row.set_size(outputSize - old.position());
             row.set_index(old.index());
+            // Function-local branches cannot outlive this epoch. Compact only
+            // this function's tail; module traps and symbol relocations survive.
+            i64 scan = functionFixupStart;
+            i64 retained = functionFixupStart;
+            while (scan < objectFixupSize && ok()) {
+                const ObjectFixupRow fix = objectFixups.at(scan);
+                if (fix.targetKind() < 0 && fix.kind() != 4) {
+                    if (!patch_relative(fix.position(), object_label_position(fix.kind(), fix.scope(),
+                        fix.identity()))) {
+                        return false;
+                    }
+                } else {
+                    if (!objectFixups.set(retained, fix)) {
+                        return fail();
+                    }
+                    retained = retained + 1;
+                }
+                scan = scan + 1;
+            }
+            objectFixupSize = retained;
             functionIndex = functionIndex + 1;
             if (!objectSymbols.set(objectCurrentSymbol, row)) {
                 return fail();
@@ -461,45 +603,47 @@ export namespace compiler_x86 {
             return functionIndex;
         }
         auto object_label_position(i64 kind, i64 scope, i64 identity) const -> i64 {
-            i64 at = 0;
-            while (at < objectLabelSize) {
-                const ObjectLabelRow row = objectLabels.at(at);
-                if (row.kind() == kind && row.scope() == scope && row.identity() == identity) {
-                    return row.position();
+            if (kind == 4) {
+                if (scope != -1 || identity < 0 || identity >= 4) {
+                    return -1;
                 }
-                at = at + 1;
+                const ObjectIndexRow row = trapPositions.at(identity);
+                return row.index();
             }
-            return -1;
+            if (scope != functionIndex || identity < 0) {
+                return -1;
+            }
+            if (kind == 1) {
+                if (identity == 0) {
+                    return returnPosition;
+                }
+                return -1;
+            }
+            // A four-root call emits at most four generated label pairs.
+            // Ordinary identities instead denote normalized body positions.
+            i64 bound = objectLabelSize * 4;
+            if (kind == 0) {
+                bound = objectLabelSize;
+            }
+            if (identity >= bound || identity >= objectLabels.size()) {
+                return -1;
+            }
+            const ObjectLabelRow row = objectLabels.at(identity);
+            if (row.epoch() != functionIndex) {
+                return -1;
+            }
+            return row.position(kind);
         }
         auto bind_label(i64 kind, i64 identity) -> bool {
-            if (kind < 0 || kind > 8 || identity < 0) {
+            if (kind < 0 || kind > 8 || identity < 0 || object_label_position(kind, object_label_scope(kind), identity)
+                >= 0) {
                 return fail();
             }
-
-            const i64 scope = object_label_scope(kind);
-            if (object_label_position(kind, scope, identity) >= 0) {
-                return fail();
-            }
-            // The configured bound is derived from the admitted instruction graph.
-            if (objectLabelSize >= objectLabelLimit) {
-                return limit_failure();
-            }
-            if (objectLabelSize == objectLabels.size()) {
-                const i64 capacity = grow_capacity(objectLabels.size(), objectLabelSize + 1, objectLabelLimit, 32);
-                const ObjectLabelRow fill = ObjectLabelRow(0, 0, 0, 0);
-                if (capacity < 0) {
-                    return limit_failure();
-                }
-                if (!objectLabels.try_resize(capacity, fill)) {
-                    return allocation_failure();
-                }
-            }
-            const ObjectLabelRow row = ObjectLabelRow(kind, scope, identity, outputSize);
-            if (!objectLabels.set(objectLabelSize, row)) {
-                return fail();
-            }
-            objectLabelSize = objectLabelSize + 1;
             if (kind == 4) {
+                const ObjectIndexRow position = ObjectIndexRow(outputSize);
+                if (identity >= 4 || !trapPositions.set(identity, position)) {
+                    return fail();
+                }
                 if (identity == 0) {
                     return trap_symbol(identity, ".Laurora_bounds_trap");
                 }
@@ -509,9 +653,38 @@ export namespace compiler_x86 {
                 if (identity == 2) {
                     return trap_symbol(identity, ".Laurora_division_zero_trap");
                 }
-                if (identity == 3) {
-                    return trap_symbol(identity, ".Laurora_shift_count_trap");
+                return trap_symbol(identity, ".Laurora_shift_count_trap");
+            }
+            if (kind == 1) {
+                if (identity != 0) {
+                    return fail();
                 }
+                returnPosition = outputSize;
+                return true;
+            }
+            i64 bound = objectLabelSize * 4;
+            if (kind == 0) {
+                bound = objectLabelSize;
+            }
+            if (identity >= bound) {
+                return fail();
+            }
+            if (identity >= objectLabels.size()) {
+                const i64 capacity = grow_capacity(objectLabels.size(), identity + 1, objectLabelLimit * 4, 32);
+                if (capacity < 0) {
+                    return limit_failure();
+                }
+                const ObjectLabelRow missing = ObjectLabelRow(-1);
+                if (!objectLabels.try_resize(capacity, missing)) {
+                    return allocation_failure();
+                }
+            }
+            ObjectLabelRow row = objectLabels.at(identity);
+            // Reusing an ordinal resets every family lazily, not a module table.
+            if (row.epoch() != functionIndex) {
+                row.reset(functionIndex);
+            }
+            if (!row.bind(kind, outputSize) || !objectLabels.set(identity, row)) {
                 return fail();
             }
             return true;
@@ -535,6 +708,74 @@ export namespace compiler_x86 {
             }
             byte(u8(232));
             return object_fixup(0, -1, callable, 0);
+        }
+        auto lea_literal(i64 instruction, Register target) -> bool {
+            if (instruction <= 0 || instruction >= literalSymbols.size()) {
+                return fail();
+            }
+            const i64 dst = hardware_register(target);
+            rex(true, dst, 0, 0, false);
+            byte(u8(141));
+            byte(u8(dst % 8 * 8 + 5));
+            return object_fixup(0, -1, instruction, 3);
+        }
+        auto begin_literal(i64 instruction) -> bool {
+            if (literalCurrentSymbol >= 0 || instruction <= 0 || instruction >= literalSymbols.size()
+                || object_symbol_index(3, instruction) >= 0) {
+                return fail();
+            }
+            // Literal names are private; identities are admitted instruction IDs.
+            const i64 first = objectNameSize;
+            object_name_byte('.');
+            object_name_byte('L');
+            object_name_byte('a');
+            object_name_byte('u');
+            i64 divisor = 100000000;
+            bool started = false;
+            while (divisor > 0) {
+                const i64 digit = instruction / divisor % 10;
+                if (digit != 0 || started || divisor == 1) {
+                    object_name_byte(u8(48 + digit));
+                    started = true;
+                }
+                divisor = divisor / 10;
+            }
+            const i64 width = objectNameSize - first;
+            object_name_byte(u8(0));
+            literalCurrentSymbol = objectSymbolSize;
+            const ObjectSymbolRow row = ObjectSymbolRow(3, instruction, first, width, literalSize, 1);
+            return append_object_symbol(row);
+        }
+        auto literal_byte(u8 value) -> bool {
+            if (literalCurrentSymbol < 0 || literalSize >= artifactLimit) {
+                return fail();
+            }
+            if (literalSize == literalBytes.size()) {
+                const i64 capacity = grow_capacity(literalBytes.size(), literalSize + 1, artifactLimit, 256);
+                if (capacity < 0) {
+                    return limit_failure();
+                }
+                if (!literalBytes.try_resize(capacity)) {
+                    return allocation_failure();
+                }
+            }
+            if (!literalBytes.set(literalSize, value)) {
+                return fail();
+            }
+            literalSize = literalSize + 1;
+            return true;
+        }
+        auto end_literal() -> bool {
+            if (literalCurrentSymbol < 0) {
+                return fail();
+            }
+            ObjectSymbolRow row = objectSymbols.at(literalCurrentSymbol);
+            row.set_size(literalSize - row.position());
+            if (!objectSymbols.set(literalCurrentSymbol, row)) {
+                return fail();
+            }
+            literalCurrentSymbol = -1;
+            return true;
         }
         auto emit_little(u64 value, i64 width) -> bool {
             if (width != 1 && width != 2 && width != 4 && width != 8) {
@@ -1097,6 +1338,9 @@ export namespace compiler_x86 {
             i64 flags = 0;
             i64 alignment = 1;
             i64 entry = 0;
+            if (name == 60) {
+                flags = 2;
+            }
             if (name == 1) {
                 flags = 6;
                 alignment = 16;
@@ -1132,7 +1376,7 @@ export namespace compiler_x86 {
             return ok();
         }
         auto finish_object() -> bool {
-            if (!objectMode || objectNameCapture || !ok()) {
+            if (!objectMode || objectNameCapture || literalCurrentSymbol >= 0 || !ok()) {
                 return fail();
             }
             const i64 code_size = outputSize;
@@ -1157,9 +1401,13 @@ export namespace compiler_x86 {
             at = 0;
             while (at < objectSymbolSize && ok()) {
                 const ObjectSymbolRow row = objectSymbols.at(at);
+                i64 section_size = code_size;
+                if (row.kind() == 3) {
+                    section_size = literalSize;
+                }
                 if (row.nameSize() <= 0 || row.name() < 1 || row.name() > objectNameSize || row.nameSize()
-                    >= objectNameSize - row.name() || row.position() > code_size || row.size() < 0 || (row.position()
-                    >= 0 && row.size() > code_size - row.position())) {
+                    >= objectNameSize - row.name() || row.position() > section_size || row.size() < 0 || (row.position()
+                    >= 0 && row.size() > section_size - row.position())) {
                     return fail();
                 }
                 if (row.local() != 0 && row.local() != 1) {
@@ -1207,13 +1455,14 @@ export namespace compiler_x86 {
                 at = at + 1;
             }
             const i64 text_offset = 64;
-            const i64 relocation_offset =(text_offset + code_size + 7) / 8 * 8;
+            const i64 literal_offset = text_offset + code_size;
+            const i64 relocation_offset =(literal_offset + literalSize + 7) / 8 * 8;
             const i64 symbol_offset = relocation_offset + relocation_count * 24;
             const i64 string_offset = symbol_offset + (objectSymbolSize + 1) * 24;
             const i64 section_string_offset = string_offset + objectNameSize;
-            // Fixed section-name table below occupies 60 bytes.
-            const i64 section_offset =(section_string_offset + 60 + 7) / 8 * 8;
-            const i64 complete_size = section_offset + 7 * 64;
+            // Fixed section-name table below occupies 68 bytes.
+            const i64 section_offset =(section_string_offset + 68 + 7) / 8 * 8;
+            const i64 complete_size = section_offset + 8 * 64;
             if (complete_size > artifactLimit || complete_size < section_offset) {
                 return limit_failure();
             }
@@ -1237,11 +1486,16 @@ export namespace compiler_x86 {
             emit_little(0u64, 2);
             emit_little(0u64, 2);
             emit_little(64u64, 2);
-            emit_little(7u64, 2);
+            emit_little(8u64, 2);
             emit_little(5u64, 2);
             at = 0;
             while (at < code_size && ok()) {
                 byte(objectCode.at(at));
+                at = at + 1;
+            }
+            at = 0;
+            while (at < literalSize && ok()) {
+                byte(literalBytes.at(at));
                 at = at + 1;
             }
             object_align(8);
@@ -1258,9 +1512,13 @@ export namespace compiler_x86 {
                     }
                     const ObjectSymbolRow row = objectSymbols.at(symbol);
                     emit_little(u64(fix.position()), 8);
-                    // R_X86_64_PLT32 uses S + A - P; displacement starts four
-                    // bytes before the next instruction, hence A = -4.
-                    emit_little(u64(row.index()) * 4294967296u64 + 4u64, 8);
+                    // PLT32 calls and PC32 literal addresses use S + A - P.
+                    // Displacement ends at the next instruction, hence A = -4.
+                    u64 relocation = 4u64;
+                    if (fix.targetKind() == 3) {
+                        relocation = 2u64;
+                    }
+                    emit_little(u64(row.index()) * 4294967296u64 + relocation, 8);
                     emit_little(18446744073709551612u64, 8);
                 }
                 at = at + 1;
@@ -1283,10 +1541,13 @@ export namespace compiler_x86 {
                         i64 section = 0;
                         i64 value = 0;
                         if (row.position() >= 0) {
-                            if (row.kind() != 2) {
+                            if (row.kind() == 0) {
                                 info = info + 2;
                             }
                             section = 1;
+                            if (row.kind() == 3) {
+                                section = 7;
+                            }
                             value = row.position();
                         }
                         byte(u8(info));
@@ -1310,7 +1571,7 @@ export namespace compiler_x86 {
             if (outputSize != section_string_offset) {
                 return fail();
             }
-            object_literal_bytes("\0.text\0.rela.text\0.symtab\0.strtab\0.shstrtab\0.note.GNU-stack\0");
+            object_literal_bytes("\0.text\0.rela.text\0.symtab\0.strtab\0.shstrtab\0.note.GNU-stack\0.rodata\0");
             object_align(8);
             if (outputSize != section_offset) {
                 return fail();
@@ -1320,8 +1581,9 @@ export namespace compiler_x86 {
             object_section(7, 4, relocation_offset, relocation_count * 24, 3, 1);
             object_section(18, 2, symbol_offset,(objectSymbolSize + 1) * 24, 4, local_count + 1);
             object_section(26, 3, string_offset, objectNameSize, 0, 0);
-            object_section(34, 3, section_string_offset, 60, 0, 0);
-            object_section(44, 1, section_string_offset + 60, 0, 0, 0);
+            object_section(34, 3, section_string_offset, 68, 0, 0);
+            object_section(44, 1, section_string_offset + 68, 0, 0, 0);
+            object_section(60, 1, literal_offset, literalSize, 0, 0);
             return ok() && outputSize == complete_size;
         }
         auto status() const -> EmitStatus {
