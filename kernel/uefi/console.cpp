@@ -4,19 +4,16 @@
 #include "console-context.hpp"
 #include "tables.hpp"
 #include "../console-session.hpp"
-#include "../console-uart.hpp"
+#include "../source-uart.hpp"
 
 namespace aurora::uefi {
 namespace {
 using U64 = std::uint64_t;
 using hardware::Io;
-// QEMU caps backend reads at the FIFO trigger even with UART IRQs disabled.
-// Polling uses fourteen-byte batches; the BIOS IRQ adapter keeps its one-byte trigger.
-using Serial = console::Uart<hardware::Io, console::FifoTrigger::fourteen>;
 using Timer = LocalApicTimerIo;
 constexpr std::uint32_t polling_count = 1250000;
 U64 owned_arena{}, kernel_root{}, wait_stack{}, wakes{}, expected_wake{};
-bool ready{}, waiting{};
+bool ready{}, waiting{}, uart_owned{};
 std::optional<LocalApicAdmission> admission;
 extern const std::byte wait_begin asm("uefi_console_poll_begin");
 extern const std::byte wait_end asm("uefi_console_poll_end");
@@ -39,9 +36,10 @@ Fixture fixture{};
     return {reinterpret_cast<std::byte *>(address), count};
 }
 [[noreturn]] auto fail(std::string_view reason) -> void {
-    Serial::text("AURORA_UEFI_CONSOLE_FAIL: ");
-    Serial::text(reason);
-    Serial::text("\r\n");
+    // Fatal diagnostics never return to source input or its receive-error carry.
+    hardware::Serial::text("AURORA_UEFI_CONSOLE_FAIL: ");
+    hardware::Serial::text(reason);
+    hardware::Serial::text("\r\n");
     Io::write(0xf4, 0x11);
     for (;;) {
         asm volatile("cli; hlt");
@@ -56,6 +54,29 @@ auto require(bool okay, std::string_view reason) -> void {
     return ready && admission && root() == kernel_root && Timer::irq_off() && !waiting && Timer::stop() &&
            Timer::quiet(0x100, false) && Timer::quiet(0x200, false);
 }
+
+// Port admission is local to the established owner. Full APIC quiescence is
+// checked at Console operations and wait boundaries, not at every byte access.
+class UartPlatform final {
+public:
+    [[nodiscard]] static auto quiet() -> bool {
+        return ready && root() == kernel_root && Timer::irq_off() && !waiting;
+    }
+    [[nodiscard]] static auto owns_uart() -> bool {
+        return uart_owned;
+    }
+    [[noreturn]] static auto fail() -> void {
+        // Grant rejection must not recurse into either UART output path.
+        Io::write(0xf4, 0x11);
+        for (;;) {
+            asm volatile("cli; hlt");
+        }
+    }
+};
+using PortService = hardware::Com1UartGrant<UartPlatform>;
+// QEMU caps backend reads at the FIFO trigger even with UART IRQs disabled.
+// Polling uses fourteen-byte batches; the BIOS IRQ adapter keeps one byte.
+using Serial = console::SourceUart<PortService, UartPlatform, console::FifoTrigger::fourteen>;
 
 __attribute__((noinline)) auto wait_for_sample() -> void {
     require(quiet() && wakes != UINT64_MAX, "poll boundary");
@@ -150,6 +171,16 @@ auto establish_timer(const Bytes &handoff) -> void {
 }
 } // namespace
 
+auto port_read(const void *, U64, U64) -> U64 asm("__au_runtime_port_read8") __attribute__((visibility("hidden")));
+auto port_read(const void *grant, U64 generation, U64 offset) -> U64 {
+    return PortService::read8(grant, generation, offset);
+}
+auto port_write(const void *, U64, U64, U64) -> U64 asm("__au_runtime_port_write8")
+    __attribute__((visibility("hidden")));
+auto port_write(const void *grant, U64 generation, U64 offset, U64 value) -> U64 {
+    return PortService::write8(grant, generation, offset, value);
+}
+
 auto service_entry(const console::ServiceArgument *) -> U64 asm("__au_runtime_console_entry")
     __attribute__((visibility("hidden")));
 
@@ -192,7 +223,7 @@ auto interrupt_dispatch(U64 frame) -> void {
 [[noreturn]] auto run_console(U64 arena, const Bytes &handoff) -> void {
     // No runtime/user image path is compiled in this profile. The loader has
     // completed its normal private-memory/ACPI/language tests before this call.
-    require(!ready && !waiting && !admission && handoff.get(8, 4) == 2 && handoff.get(120) == 0 &&
+    require(!ready && !waiting && !uart_owned && !admission && handoff.get(8, 4) == 2 && handoff.get(120) == 0 &&
                 RuntimeLayout::valid(arena) && root() == handoff.get(88) && Timer::irq_off(),
             "entry authority");
 #ifdef AURORA_CONSOLE_SERVICE_FIXTURE
@@ -236,6 +267,7 @@ auto interrupt_dispatch(U64 frame) -> void {
     require((Io::read(0x3fb) & 0x80) == 0, "UART register bank");
     Io::write(0x3f9, 0);
     require(Io::read(0x3f9) == 0, "UART interrupts disabled");
+    uart_owned = true; // Exclusive COM1 admission follows trusted setup.
     Serial::initialize_input();
     Serial::text("AURORA_UEFI_CONSOLE_TIMER_READY: polling_count=1250000 uart_irq=0\r\n");
     auto argument = Service::open();
@@ -253,11 +285,15 @@ auto interrupt_dispatch(U64 frame) -> void {
     if (completion == console::Completion::output_failure) {
         // A partial response cannot be rolled back or blindly replayed. Avoid
         // depending on the failed output channel to terminate this session.
+        Serial::close();
+        uart_owned = false;
         Io::write(0xf4, 0x11);
     } else {
         Serial::text("AURORA_UEFI_CONSOLE_QUIET: wakes=");
         Serial::number(wakes);
         Serial::text(" timer=masked isr=0 irr=0 uart_irq=0\r\n");
+        Serial::close();
+        uart_owned = false;
         Io::write(0xf4, 0x10);
     }
     for (;;) {

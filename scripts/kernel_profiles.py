@@ -710,6 +710,7 @@ def uefi_profile(profile_mode, flags):
         link=["payload-entry", "memory", "payload", "acpi", "pci", "runtime"]
         + runtime_objects
         + console_objects
+        + (["kernel-uart"] if console else [])
         + ["language"]
         + (["terminal"] if terminal else [])
         + owned_objects

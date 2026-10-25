@@ -132,7 +132,7 @@ foreach profile_id : profile_data['profiles'].split('|')
       command: [kernel_as, '--64', '@INPUT@', '-o', '@OUTPUT@'])}
     language_objects += [objects['terminal']]
   endif
-  if bios_console
+  if bios_console or (platform == 'uefi' and mode in ['console', 'console-fixture'])
     uart_assembly = custom_target(prefix + '-uart-assembly',
       input: files('../examples/kernel-uart.au'),
       output: ['kernel-uart.s', 'kernel-uart.stack.json', 'kernel-uart.abi.json'],
