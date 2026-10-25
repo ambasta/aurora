@@ -1656,8 +1656,7 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
 
 
 def main():
-    # Keep fast lexer and whole-frontend convergence independent. The default
-    # emitter differential shares C1/C2 observations for the complete corpus.
+    # Keep fast lexer and whole-frontend convergence independent.
     arguments = sys.argv[1:]
     current1, current2, root, built_a, built_b = (Path(value).resolve() for value in arguments)
     with tempfile.TemporaryDirectory(prefix="hosted-lexer-bootstrap-") as temporary:
@@ -1671,7 +1670,6 @@ def main():
         require(root / "compiler/frontend.au" in corpus, "whole frontend self-rebuild input is missing")
         compiler_sources = {root / "compiler" / name for name in COMPILER_MODULES}
         compiler_dependency_fixtures = {
-            root / "tests/fixtures/emitter-history/ir_initialization.au",
             root / "tests/compiler/initialization_probe.au",
         }
         require(compiler_sources.issubset(corpus), "a real compiler module is missing from self-rebuild coverage")

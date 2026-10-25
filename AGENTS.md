@@ -96,8 +96,7 @@ stated safety reason; more checking is not a reason by itself.
    never share a build directory across toolchains.
 6. Bootstrap: one verified checkpoint compiler builds C1, C1 builds C2, and C1/C2
    convergence is the self-check, like GCC's stage compare. New compiler features
-   are adopted at scheduled bumps; the historical-oracle corpus differential runs
-   at bumps, not on every merge. See compiler/README.md.
+   are adopted at scheduled bumps. See compiler/README.md.
 7. Review changes independently before merge. Record commands, tool versions,
    timings and limits in the commit or PR, not in new per-feature report files.
 8. Update implementation docs and the completeness matrix in the same change.

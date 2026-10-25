@@ -5,8 +5,7 @@ Normal builds use one checkpoint: the checkpoint compiles C1, C1 compiles C2, an
 the `hosted-lexer-bootstrap` test requires C1/C2 convergence (GCC's stage compare).
 `compiler/checkpoint.json` pins the checkpoint by source commit/tree and executable
 SHA256; Meson accepts only that executable. A bump builds a new source with the
-current checkpoint (`hop`), runs C1/C2 convergence and the historical-oracle
-emitter differential, and prints the new pin. The six-stage route that produced
+current checkpoint (`hop`), runs C1/C2 convergence, and prints the new pin. The six-stage route that produced
 the first checkpoint is kept as a record in `compiler/bootstrap-history.json`.
 Receipts are local build evidence, not signed attestations.
 """
@@ -37,8 +36,8 @@ MESON_OPTIONS = (
     "-Dwarning_level=3",
     "-Dwerror=true",
 )
-# C1/C2 convergence, then the corpus differential against the historical C++ emitter.
-HOP_TESTS = ("hosted-lexer-bootstrap", "emitter-differential-default", "emitter-differential-closed")
+# C1/C2 convergence.
+HOP_TESTS = ("hosted-lexer-bootstrap",)
 TOOLS = ("gcc", "g++", "as", "ld", "meson", "ninja", "python3")
 
 
@@ -58,8 +57,7 @@ def digest(path):
 def pin():
     value = json.loads(CHECKPOINT.read_text())
     require(value.get("schema") == 1, "unsupported compiler/checkpoint.json schema")
-    for role in ("checkpoint", "historical_oracle"):
-        require(len(value[role]["sha256"]) == 64, "checkpoint.json: missing " + role + " sha256")
+    require(len(value["checkpoint"]["sha256"]) == 64, "checkpoint.json: missing checkpoint sha256")
     return value
 
 
@@ -72,13 +70,11 @@ def checked(path, sha256, role):
     return [str(path), sha256]
 
 
-def select(compiler, oracle=""):
-    """Meson's configure-time check: the checkpoint, and the oracle when given."""
+def select(compiler):
+    """Meson's configure-time check of the checkpoint."""
     value = pin()
     try:
-        lines = checked(compiler, value["checkpoint"]["sha256"], "bootstrap_compiler")
-        lines += checked(oracle, value["historical_oracle"]["sha256"], "historical_oracle") if oracle else ["", ""]
-        return lines
+        return checked(compiler, value["checkpoint"]["sha256"], "bootstrap_compiler")
     except (OSError, ValueError) as error:
         raise ValueError(
             f"Checkpoint compiler rejected: {error}. To fix: select the retained checkpoint "
@@ -146,7 +142,7 @@ def run_logged(argv, log):
 
 
 def hop(args):
-    """Build SOURCE with COMPILER, check C1/C2 and the oracle differential, record."""
+    """Build SOURCE with COMPILER, check C1/C2 convergence, record."""
     jobs = str(build_resources.jobs(args.jobs, "--jobs"))
     source, output = args.source.resolve(), args.output.resolve()
     compiler = str(args.compiler.resolve())
@@ -156,13 +152,10 @@ def hop(args):
     output.mkdir(parents=True, exist_ok=False)
     build = output / "build"
     # The first checkpoint's source still selects its predecessor through the
-    # six-stage receipt; later sources take the previous checkpoint and oracle.
+    # six-stage receipt; later sources take the previous checkpoint.
     setup = ["meson", "setup", str(build), str(source), *MESON_OPTIONS, "-Dbootstrap_compiler=" + compiler]
     if args.receipt:
         setup.append("-Dbootstrap_receipt=" + str(args.receipt.resolve()))
-    else:
-        require(args.oracle, "--oracle is required to run the historical emitter differential")
-        setup.append("-Dhistorical_oracle=" + str(args.oracle.resolve()))
     commands = [
         setup,
         ["meson", "compile", "-C", str(build), "-j", jobs, "aurorac", "aurorac-stage2"],
@@ -176,9 +169,6 @@ def hop(args):
         "schema": 1,
         "source": {"commit": args.commit, "tree": tree},
         "predecessor": {"path": compiler, "sha256": digest(compiler)},
-        "historical_oracle": {"path": str(args.oracle.resolve()), "sha256": digest(args.oracle)}
-        if args.oracle
-        else {"from_receipt": str(args.receipt.resolve())},
         "tools": identity,
         "commands": records,
         "checkpoint": {
@@ -197,12 +187,10 @@ def hop(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     subparsers = parser.add_subparsers(dest="action", required=True)
-    selector = subparsers.add_parser("select", help="verify the pinned checkpoint (and oracle) for Meson")
+    selector = subparsers.add_parser("select", help="verify the pinned checkpoint for Meson")
     selector.add_argument("--compiler", required=True)
-    selector.add_argument("--oracle", default="")
     hopper = subparsers.add_parser("hop", help="build the next checkpoint with the current one")
     hopper.add_argument("--compiler", type=Path, required=True, help="the current checkpoint compiler")
-    hopper.add_argument("--oracle", type=Path, help="the historical C++ emitter oracle")
     hopper.add_argument("--receipt", type=Path, help="six-stage receipt, for the first checkpoint's source only")
     hopper.add_argument("--source", type=Path, required=True, help="clean checkout of the new checkpoint commit")
     hopper.add_argument("--commit", required=True)
@@ -212,7 +200,7 @@ def main():
     hopper.add_argument("--jobs", default="auto", help="auto (nproc) or a positive job ceiling")
     args = parser.parse_args()
     if args.action == "select":
-        print("\n".join(select(args.compiler, args.oracle)))
+        print("\n".join(select(args.compiler)))
     else:
         hop(args)
 

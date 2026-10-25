@@ -15,10 +15,10 @@ Select matching real `gcc` and `g++` on PATH: a stack-guard
 runner invokes bare `gcc`. Keep one stable build directory per toolchain/configuration:
 
 ```sh
-# C0 and ORACLE are local copies of the executables pinned by
-# compiler/checkpoint.json. PATH must already select the matching GCC 16 pair.
+# C0 is a local copy of the executable pinned by compiler/checkpoint.json.
+# PATH must already select the matching GCC 16 pair.
 CXX=g++ meson setup build/gcc16 --backend=ninja -Dlsp=false \
-  "-Dbootstrap_compiler=$C0" "-Dhistorical_oracle=$ORACLE"
+  "-Dbootstrap_compiler=$C0"
 export MESON_BUILD_DIR=build/gcc16
 # Optional quick feedback while developing; merge below includes these tests.
 python3 -B scripts/meson_test.py --suite dev
@@ -258,21 +258,20 @@ BIOS/UEFI smoke, affected fault/recovery profiles, sanitizers and physical hardw
 remain separate gates. Retained receipts/logs remain readable; generated products
 can be losslessly archived with exact mapping after review.
 
-An optional `BOOTSTRAP_COMPILER` or `HISTORICAL_ORACLE` requests a different
+An optional `BOOTSTRAP_COMPILER` requests a different
 pinned selection for Make shortcuts. A different selection refreshes only the
 implicit default build under its existing lock; explicit custom build directories
 require the printed reconfigure command. With no request, the configured
-checkpoint is reused. `container.sh` forwards the paths literally, so select
-container-visible paths.
+checkpoint is reused. `container.sh` forwards the path literally, so select a
+container-visible path.
 
 ## Bootstrap stages
 
 One pinned checkpoint compiler C0 builds C1 (`aurorac`); C1 builds C2
 (`aurorac-stage2`); `hosted-lexer-bootstrap` requires C1/C2 convergence, like
-GCC's stage compare. `compiler/checkpoint.json` pins C0 and the separate
-historical C++ emitter oracle by digest. A bump is one hop
+GCC's stage compare. `compiler/checkpoint.json` pins C0 by digest. A bump is one hop
 (`scripts/bootstrap.py hop`): build an accepted main commit with the current C0,
-check C1/C2 and the emitter differential, record its C2 as the new pin. The
+check C1/C2 convergence, record its C2 as the new pin. The
 six-stage route that produced the first checkpoint is a record in
 `compiler/bootstrap-history.json`; see the
 [source-bootstrap recipe](../compiler/README.md#source-bootstrap) for both.

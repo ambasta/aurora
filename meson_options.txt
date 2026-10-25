@@ -8,5 +8,3 @@ option('kernel_compiler', type: 'string', value: '',
        description: 'Optional absolute prebuilt aurorac for kernel images; empty builds the native compiler')
 option('bootstrap_compiler', type: 'string', value: '',
        description: 'Required absolute checkpoint aurorac pinned by compiler/checkpoint.json; see compiler/README.md')
-option('historical_oracle', type: 'string', value: '',
-       description: 'Absolute historical C++-emitter aurorac pinned by compiler/checkpoint.json; required by the emitter differential')

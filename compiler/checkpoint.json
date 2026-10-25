@@ -8,12 +8,6 @@
     "built_by": "one hop from checkpoint 8bcb17f354f8a28e3dfcde0e34ede9ebbbc7447d5395d52a59548d96fc1d619d (scripts/bootstrap.py hop)",
     "tools": "ci/image: GCC 16.2.0 (Debian 16.2.0-3), GNU binutils 2.47, Meson 1.12.1, Ninja 1.13.2, Python 3.13.5"
   },
-  "historical_oracle": {
-    "commit": "672821f70f37b185c46690791bd00d74d4414403",
-    "tree": "b76cf3aa16c687ed5c51408e1fdbe1b4f8dd6610",
-    "artifact": "aurorac of the borrow stage in bootstrap-history.json",
-    "sha256": "41611b84dcbafc81a9eec7ee6fd99a1e7bdfd7bec5a44f96041bf9d174baeb16"
-  },
   "history": [
     {
       "commit": "2fd30b2c252afda5fbf6e78c399bca1cae7bd04e",
