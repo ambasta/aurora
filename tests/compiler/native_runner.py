@@ -310,11 +310,15 @@ class Freestanding:
     """No libc: the assembly entry glue plus the freestanding signal observer."""
 
     def prepare(self, directory):
+        # Meson builds the observer once; standalone runs compile it here.
+        if os.environ.get("AURORA_INTEGER_SIGNAL_OBSERVER"):
+            self.observer = Path(os.environ["AURORA_INTEGER_SIGNAL_OBSERVER"])
+            return
         self.observer = directory / "integer_signal.o"
         cxx = shlex.split(os.environ.get("CXX", "c++"))
         command(
             cxx
-            + "-std=c++23 -O2 -Wall -Wextra -Werror -c -ffreestanding -fno-stack-protector -fno-exceptions "
+            + "-std=c++23 -O1 -Wall -Wextra -Werror -c -ffreestanding -fno-stack-protector -fno-exceptions "
             "-fno-rtti -fno-asynchronous-unwind-tables -fno-pie".split()
             + [ROOT / "tests/compiler/integer_signal.cpp", "-o", self.observer],
             timeout=120,

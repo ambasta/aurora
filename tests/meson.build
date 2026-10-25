@@ -20,6 +20,11 @@ record_hosts = {
   'AURORA_STORAGE_RECORD_HOST': static_library('storage-record-host', 'compiler/storage/record_host.cpp',
                                                 native: true, override_options: fixture_options, install: false),
 }
+# The freestanding SIGILL/SIGFPE observer every native_runner program links.
+record_hosts += {'AURORA_INTEGER_SIGNAL_OBSERVER': static_library('integer-signal-observer',
+    'compiler/integer_signal.cpp', native: true, override_options: fixture_options + ['cpp_eh=none', 'cpp_rtti=false'],
+    cpp_args: ['-ffreestanding', '-fno-stack-protector', '-fno-asynchronous-unwind-tables', '-fno-pie'],
+    pic: false, install: false)}
 foreach name, host : record_hosts
   oracle_env.set(name, host.full_path())
 endforeach
