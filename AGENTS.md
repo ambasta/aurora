@@ -88,8 +88,9 @@ stated safety reason; more checking is not a reason by itself.
    unsupported syntax/semantics.
 4. Develop with incremental builds and focused tests. Before a merge, run the
    merge suite with GCC 16 in the pinned container on the final source, the guest
-   families the change affects, and the normal BIOS and UEFI smokes. Release suite
-   and every guest family run before releases and compiler bumps.
+   families the change affects, and the normal BIOS and UEFI smokes. Changes to
+   compiler/ or the host bridge table also run the release suite. The release
+   suite and every guest family run before releases and compiler bumps.
 5. The pinned container (`scripts/container.sh`: Debian GCC 16, pinned QEMU, OVMF
    and test tooling under /opt) is the reference for merge evidence. Native host
    builds are fine for fast development feedback in their own build directory;
@@ -99,6 +100,7 @@ stated safety reason; more checking is not a reason by itself.
    are adopted at scheduled bumps. See compiler/README.md.
 7. Review changes independently before merge. Record commands, tool versions,
    timings and limits in the commit or PR, not in new per-feature report files.
+   Commit messages say what changed and why, not which PR or tool produced it.
 8. Update implementation docs and the completeness matrix in the same change.
    Keep docs short; history lives in Git.
 9. Use clean squash merges so work-in-progress checkpoints do not enter main.
