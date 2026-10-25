@@ -55,9 +55,10 @@ auto file_service_poison() -> void {
 }
 [[nodiscard]] auto file_service_quiet() -> bool {
     const auto &caller = domains[0];
-    if (caller.handle || caller.contract || caller.tables || caller.call_used || call_wait.context ||
-        call_wait.authority || call_wait.service || call_wait.ticket || call_wait.endpoint.slot() ||
-        call_wait.endpoint.generation() || call_wait.remaining || call_wait.ticks)
+    if (caller.handle || caller.contract || caller.tables || caller.call_count || caller.call_limit != 1 ||
+        caller.call_service_used || caller.call_closed || call_wait.context || call_wait.authority ||
+        call_wait.service || call_wait.ticket || call_wait.endpoint.slot() || call_wait.endpoint.generation() ||
+        call_wait.remaining || call_wait.ticks)
         return false;
     for (const auto &lease : caller.stacks)
         if (lease)
@@ -67,7 +68,8 @@ auto file_service_poison() -> void {
             return false;
     const auto &service = domains[1];
     if (!service.handle) {
-        if (file_lifecycle != 0 || service.contract || service.tables || service.call_used || frames.used() != 0)
+        if (file_lifecycle != 0 || service.contract || service.tables || service.call_count ||
+            service.call_limit != 1 || service.call_service_used || service.call_closed || frames.used() != 0)
             return false;
         for (const auto &lease : service.stacks)
             if (lease)
@@ -75,8 +77,8 @@ auto file_service_poison() -> void {
         return true;
     }
     if (file_lifecycle != 1 || !registry.ready(*service.handle) || registry.index(*service.handle) != 1 ||
-        service.image != 1 || !service.contract || !service.tables || service.call_used ||
-        frames.used() != service.stacks.size() || !verify(service))
+        service.image != 1 || !service.contract || !service.tables || service.call_count || service.call_limit != 1 ||
+        service.call_service_used || service.call_closed || frames.used() != service.stacks.size() || !verify(service))
         return false;
     for (const auto &lease : service.stacks) {
         if (!lease)
@@ -525,6 +527,18 @@ program_command(program::Submission &input, bool reading = false, bool saving = 
     return *action;
 }
 #ifdef AURORA_FILE_CALL
+// File protocol policy stays outside the call transport and timer accounting.
+auto file_call_offset(U64 offset) -> void {
+    const auto &caller = domains[0];
+    require(offset == caller.call_count, "file bounded sequential offset");
+}
+[[nodiscard]] auto file_call_reply(U64 reply) -> bool {
+    if (!program::Files::read_reply_valid(reply))
+        return false;
+    if (domains[0].call_limit > 1 && (reply & 255) != 1)
+        domains[0].call_closed = true;
+    return true;
+}
 #include "blocking-call.inc"
 #include "file-call.inc"
 #endif

@@ -178,6 +178,14 @@ state. Its `FileReader` decodes canonical byte, EOF and missing replies, tracks
 the next offset, rejects more than 49 bytes and closes on terminal or failed
 replies. Each sealed call reads the frozen projection and returns into the
 caller's live local state.
+The caller incarnation owns its admitted call limit, accepted-call count, terminal
+state and cumulative service usage. `peek` admits one exchange; `wc` and `crc`
+admit at most 50. All three use one dispatch loop and the same call transport;
+file policy alone validates sequential offsets and terminal read replies. Repeated
+exchanges charge discarded timer intervals without resetting either participant's
+allowance. Retirement resets this accounting before another caller can be created.
+The one-shot snapshot profile still rejects a second call, and retained `Serve`
+continuations remain a separate mechanism.
 `crc` prints eight lowercase hexadecimal digits only after authenticated
 transaction cleanup; failed work discards the partial count or checksum.
 

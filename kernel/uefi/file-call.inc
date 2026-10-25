@@ -5,9 +5,6 @@
     require(ProgramInputPlatform::quiet() && command_files.selected() && !command_files.writable(),
             "file call boundary");
     require(!checksum || count_words, "CRC sequential selection");
-    file_wc = count_words;
-    file_closed = false;
-    file_call_count = file_service_used = 0;
     input.scrub();
     const auto begin_effect = file_service_transition(0);
     require(begin_effect == 1 || begin_effect == 2, "file service begin effect");
@@ -18,11 +15,13 @@
                 mailbox->bind(*domains[0].handle, *domains[1].handle) &&
                 command_files.bind_read_retained(registry, *mailbox, *domains[0].handle, *domains[1].handle),
             "file call participants");
+    auto &caller = domains[0];
+    caller.call_limit = count_words ? 50 : 1;
     const auto endpoint = mailbox->endpoint(*domains[1].handle);
     require(endpoint && command_note.bind(command_files.projection(), *endpoint), "file call frozen projection");
-    Serial::text(checksum  ? std::string_view{"AURORA_CRC_BEGIN: generation="}
-                 : file_wc ? std::string_view{"AURORA_WC_BEGIN: generation="}
-                           : std::string_view{"AURORA_FILE_CALL_BEGIN: generation="});
+    Serial::text(checksum      ? std::string_view{"AURORA_CRC_BEGIN: generation="}
+                 : count_words ? std::string_view{"AURORA_WC_BEGIN: generation="}
+                               : std::string_view{"AURORA_FILE_CALL_BEGIN: generation="});
     Serial::number(endpoint->generation());
     Serial::text("\r\n");
     const auto service_identity = registry.incarnation(*domains[1].handle);
@@ -41,34 +40,36 @@
     Serial::number(reused ? 1 : 0);
     Serial::text("\r\n");
     U64 result = 0;
-    if (file_wc) {
-        call_execute(0, checksum ? 48 : 32, 0, 0);
-        U64 previous = 0;
-        while (call_wait.context) {
-            require(call_wait.authority && call_wait.ticket && file_call_count > 0 && file_call_count <= 50,
-                    "wc bounded live suspension");
-            const auto ticket = call_wait.ticket, epoch = call_wait.authority->epoch();
-            const auto ticks = call_wait.ticks, remaining = call_wait.remaining;
-            require(!call_resume(previous) && !call_resume(ticket), "wc stale and unready wake");
-            const auto request = mailbox->receive(*domains[1].handle, ipc::Phase::service, *endpoint, ticket);
-            require(request && request->first() == file_call_count - 1 && request->second() == 0,
-                    "wc sequential copied offset");
-            call_execute(1, 11, request->first(), request->second());
-            require(timer_epoch > epoch && call_wait.ticks == ticks && call_wait.remaining == remaining,
-                    "wc isolated cumulative allowance");
-            if (timer_exhausted || program.event() != ProgramEvent::returned) {
-                file_service_poison();
-                file_closed = true;
-                require(mailbox->cancel(ipc::Phase::inactive), "wc partial cancellation");
-            } else
-                require(mailbox->state() == ipc::State::replied && !mailbox->cancel(ipc::Phase::inactive),
-                        "wc durable reply");
-            require(!call_resume(previous), "wc stale wake preserves readiness");
-            require(call_resume(ticket) && !call_resume(ticket), "wc exactly once resume");
-            require(timer_epoch == epoch && timer_ticks >= ticks && timer_initial == timer_ticks + timer_remaining,
-                    "wc original caller allowance");
-            previous = ticket;
-        }
+    call_execute(0, checksum ? 48 : count_words ? 32 : 16, 0, 0);
+    require(count_words || (call_wait.context && call_wait.ticks > 0), "file caller live suspension");
+    U64 previous = 0;
+    while (call_wait.context) {
+        require(call_wait.authority && call_wait.ticket && caller.call_count > 0 &&
+                    caller.call_count <= caller.call_limit,
+                "file bounded live suspension");
+        const auto ticket = call_wait.ticket, epoch = call_wait.authority->epoch();
+        const auto ticks = call_wait.ticks, remaining = call_wait.remaining;
+        require(!call_resume(previous) && !call_resume(ticket), "file stale and unready wake");
+        const auto request = mailbox->receive(*domains[1].handle, ipc::Phase::service, *endpoint, ticket);
+        require(request && request->first() == caller.call_count - 1 && request->second() == 0,
+                "file sequential copied offset");
+        call_execute(1, 11, request->first(), request->second());
+        require(timer_epoch > epoch && call_wait.ticks == ticks && call_wait.remaining == remaining,
+                "file isolated cumulative allowance");
+        if (timer_exhausted || program.event() != ProgramEvent::returned) {
+            file_service_poison();
+            caller.call_closed = true;
+            require(mailbox->cancel(ipc::Phase::inactive), "file partial cancellation");
+        } else
+            require(mailbox->state() == ipc::State::replied && !mailbox->cancel(ipc::Phase::inactive),
+                    "file durable reply");
+        require(!call_resume(previous), "file stale wake preserves readiness");
+        require(call_resume(ticket) && !call_resume(ticket), "file exactly once resume");
+        require(timer_epoch == epoch && timer_ticks >= ticks && timer_initial == timer_ticks + timer_remaining,
+                "file original caller allowance");
+        previous = ticket;
+    }
+    if (count_words) {
         if (!timer_exhausted && program.event() == ProgramEvent::returned)
             result = program.value();
         require(
@@ -79,33 +80,13 @@
             "wc bounded copied counts");
         Serial::text(checksum ? std::string_view{"AURORA_CRC_TOTAL: calls="}
                               : std::string_view{"AURORA_WC_TOTAL: calls="});
-        Serial::number(file_call_count);
+        Serial::number(caller.call_count);
         Serial::text(" caller=");
         Serial::number(timer_ticks);
         Serial::text(" service=");
-        Serial::number(file_service_used);
+        Serial::number(caller.call_service_used);
         Serial::text("\r\n");
     } else {
-        call_execute(0, 16, 0, 0);
-        require(call_wait.context && call_wait.authority && call_wait.ticket && call_wait.ticks > 0,
-                "file caller live suspension");
-        const auto ticket = call_wait.ticket, epoch = call_wait.authority->epoch();
-        const auto ticks = call_wait.ticks, remaining = call_wait.remaining;
-        const auto request = mailbox->receive(*domains[1].handle, ipc::Phase::service, *endpoint, ticket);
-        require(request && request->first() == 0 && request->second() == 0, "file copied offset");
-        call_execute(1, 11, request->first(), request->second());
-        require(timer_epoch > epoch && call_wait.ticks == ticks && call_wait.remaining == remaining,
-                "file isolated service budget");
-        if (timer_exhausted || program.event() != ProgramEvent::returned) {
-            file_service_poison();
-            require(mailbox->cancel(ipc::Phase::inactive), "file service cancellation");
-        } else {
-            require(mailbox->state() == ipc::State::replied && !mailbox->cancel(ipc::Phase::inactive),
-                    "file durable service reply");
-        }
-        require(call_resume(ticket), "file exactly once resume");
-        require(timer_epoch == epoch && timer_ticks >= ticks && timer_initial == timer_ticks + timer_remaining,
-                "file original caller budget");
         if (!timer_exhausted && program.event() == ProgramEvent::returned) {
             require(program.value() >= 40, "file caller result envelope");
             result = program.value() - 40;
@@ -144,15 +125,15 @@
     Serial::text(" used=");
     Serial::number(frames.used());
     Serial::text(" scrubbed=1\r\n");
-    Serial::text(checksum  ? std::string_view{"AURORA_CRC_END: result="}
-                 : file_wc ? std::string_view{"AURORA_WC_END: result="}
-                           : std::string_view{"AURORA_FILE_CALL_END: result="});
+    Serial::text(checksum      ? std::string_view{"AURORA_CRC_END: result="}
+                 : count_words ? std::string_view{"AURORA_WC_END: result="}
+                               : std::string_view{"AURORA_FILE_CALL_END: result="});
     Serial::number(result);
     Serial::text(" used=");
     Serial::number(frames.used());
     Serial::text("\r\n");
     program::Response response{program::Response::Kind::stopped};
-    if (file_wc && result != 0) {
+    if (count_words && result != 0) {
         response = program::Response{result == 3 ? program::Response::Kind::file_missing
                                                  : program::Response::Kind::file_reply};
         if (result != 3) {
@@ -173,7 +154,7 @@
                 }
             require(response.payload(std::span<const std::uint8_t>{text.data(), size}), "wc counts presentation");
         }
-    } else if (!file_wc && result != 0) {
+    } else if (!count_words && result != 0) {
         response = program::Response{result == 3 ? program::Response::Kind::file_missing
                                                  : program::Response::Kind::file_reply};
         if (result == 2) {
@@ -186,7 +167,5 @@
         } else
             require(result == 3, "file command supported result");
     }
-    file_wc = file_closed = false;
-    file_call_count = file_service_used = 0;
     return program_write_response(response);
 }
