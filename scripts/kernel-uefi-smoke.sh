@@ -26,9 +26,9 @@ if [[ "$shared_normal" == true && "$mode" != normal ]]; then
     echo '--shared-normal requires the normal profile' >&2; exit 2
 fi
 case "$mode" in
- iommu-event-denial|iommu-event-success|iommu-event-overflow|iommu-event-command-error|iommu-event-observe)
+ iommu-event|iommu-event-denial|iommu-event-success|iommu-event-overflow|iommu-event-command-error)
     echo "UEFI mode '$mode' is build-only; the generic smoke launcher cannot run Event profiles." >&2
-    echo "Build with: UEFI_MODE=$mode ./scripts/kernel-uefi-build.sh" >&2
+    echo "Build with: scripts/kernel-image.sh uefi iommu-event" >&2
     echo 'Run hosted Event behavior (synthetic transport, no guest DMA): meson test -C <configured-build> iommu-event-source-native --print-errorlogs' >&2
     echo 'Event guest execution requires the reviewed model/firmware, admitted raw ESP and supervised plan described in docs/iommu-dma-conformance.md.' >&2
     echo 'For the separate supported developer guest route, use make smoke-iommu-event with its explicit custom-model inputs.' >&2

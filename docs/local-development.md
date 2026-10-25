@@ -163,10 +163,7 @@ regenerates setup controls. Protected-console PTY already takes `--build-dir`
 and allocates private evidence. Simple console PTY accepts `--output-dir` too.
 Console-service qualification accepts `--normal-build-dir "$normal_profile"`
 so each fault worker performs its actual normal restoration with private logs
-and no build. Event orchestration uses `capture_staged` in separate processes,
-then the existing normal boot after all owned children settle; admission state
-is process-local. A staged Event ESP master and its private guest copy consume
-64 MiB each, so select Event concurrency from disk headroom rather than CPU count.
+and no build.
 
 ## Packaged development environment
 
@@ -188,18 +185,9 @@ Their source archives, reviewed patches and build recipes remain under
 `/opt/aurora-event/share/source` and `/opt/aurora-fixtures/share/source`.
 BAR/IVRS launchers validate the selected firmware and device configuration.
 
-The Event-capable package exports `EVENT_TOOL_PREFIX=/opt/aurora-event`.
-An explicitly selected equivalent local prefix is also supported. Its fixed
-`runtime.json` marker names model `aurora-amdvi-command-stop-v1`, QEMU 10.0.13
-and OVMF `2025.02-8+deb13u1`; fixed tool paths and versions are checked once at
-startup. The pinned package/image is the tool trust boundary: normal packaged
-smokes do not rehash executables, libraries or source files, copy installed tools,
-or emit new tool-provenance records. This does not establish guest correctness;
-current image/FAT admission and the actual Event serial/RAM oracles still apply.
-The optional external `EVENT_BUILD_RECEIPT`, `EVENT_CODE`, `EVENT_VARS` and
-`EVENT_DATA` route retains its selected-input integrity checks. A contradictory
-provided manifest fails; missing prerequisites block. Do not combine the two
-selectors. A stock-only image remains incomplete for Event.
+The Event-capable package exports `EVENT_TOOL_PREFIX=/opt/aurora-event`; the pinned
+image is the tool trust boundary.
+A stock-only image has no AMD-Vi model, so the Event smoke reports BLOCKED there.
 
 ## Native images and guest transport
 

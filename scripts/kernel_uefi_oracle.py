@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from kernel_layout import LAYOUT  # noqa: E402
-from kernel_profiles import EARLY_FIXTURE_IMAGE, FIXTURE_MODES  # noqa: E402
+from kernel_profiles import FIXTURE_MODES  # noqa: E402
 
 
 def need(value, reason):
@@ -18,7 +18,7 @@ def early_selection(text, mode):
     """The early-fixture loader echoes its fw_cfg selector before any exit attempt."""
     image, value = FIXTURE_MODES.get(mode, ("", 0))
     selected = re.findall(r"AURORA_EARLY_FIXTURE: value=(\d+)", text)
-    if image != EARLY_FIXTURE_IMAGE:
+    if image != "early-fixture":
         need(not selected, "Unexpected early fixture selector")
         return
     need(selected == [str(value)], "Wrong early fixture selector")

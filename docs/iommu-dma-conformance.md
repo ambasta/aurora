@@ -38,85 +38,30 @@ ownership, other endpoint bus mastering disabled, and AHCI engines idle. It does
 not reset an unsuitable controller to force admission. The newly implemented
 firmware handoff below is a separate one-shot boundary before Event admission.
 
-The four active modes are `iommu-event-denial`, `iommu-event-success`,
-`iommu-event-overflow` and `iommu-event-command-error`. Build-only selection through
-`UEFI_MODE` and `scripts/kernel-uefi-build.sh` remains available. Ordinary hosted
-Event tests stay in the fast native graph and never launch QEMU.
+One test image, `uefi/iommu-event`, runs four cases: `iommu-event-denial`,
+`iommu-event-success`, `iommu-event-overflow` and `iommu-event-command-error`. The
+case is read at Event entry from the QEMU fw_cfg file `opt/aurora/fixture`
+(`kernel/uefi/fw-cfg-fixture.hpp`), whose value must lie in the image's interval
+of `kernel/uefi/runtime-fixtures.inc`; anything else fails closed before any
+device is touched. Ordinary hosted Event tests stay in the native graph and
+never launch QEMU.
 
-### Supported local developer execution
+### Local developer execution
 
-`make smoke-iommu-event` builds fresh normal and Event images, reproduces current
-`checked()` source/image/stack admission and validates two byte-identical raw ESPs
-per profile. It runs the four active profiles sequentially, then restores the
-exact staged normal artifact inventory and boots normal UEFI with the existing
-serial oracle and native exit 33. The generic UEFI launcher still rejects Event;
-this opt-in target is outside `make test` and `smoke-all`.
+`make smoke-iommu-event` (`scripts/kernel_iommu_event_smoke.py`) builds the image,
+writes a raw FAT ESP with GNU mtools (the Event QEMU has no vvfat driver) and
+boots each case under the packaged AMD-Vi model in `EVENT_TOOL_PREFIX` (default
+`/opt/aurora-event`) on q35/TCG with `amd-iommu` and `edu`. When the guest prints
+its terminal record, QEMU is paused over QMP and the handoff and retained Event
+allocations (located in `payload.elf`) are saved with `pmemsave`. The oracle
+checks the ordered serial output, the handoff and terminal, all three ring pages
+and all 32 KiB of backing. Limits are 1 MiB of serial/stderr, 64 KiB of QMP and
+30 seconds per case (90 for overflow). Scratch output goes to `build/aurora-event-*`
+and is removed after a pass.
 
-Supply the [custom-model inputs](../tools/qemu-amdvi/README.md#developer-event-runtime)
-through `EVENT_BUILD_RECEIPT`, `EVENT_CODE`, `EVENT_VARS`, `EVENT_DATA`. Ordinary
-`QEMU`/`QEMU_DATA` and `OVMF` or `OVMF_CODE`/`OVMF_VARS` independently select normal
-restoration. `scripts/kernel-iommu-event-smoke.sh --build-only` checks the same
-fresh images/ESPs and restores normal bytes without guests or a custom runtime.
-Missing tools, files or required configuration and insufficient reserved space are
-`BLOCKED` (runner exit 2) before build/evidence allocation. Present but malformed,
-unsupported or mismatched inputs, including custom model, binary and dependency
-integrity failures, are `FAIL` (runner exit 1), as are build, image-admission and
-guest defects. GNU Make returns 2 for an unsuccessful recipe in either case.
-
-Initial ESP support is installed GNU mtools 4.0.48 with standard system config
-locations, selected through PATH or `MTOOLS_DIR`. It checks initial versions and
-current executable/link identities, without historical binary-size/hash pins.
-Private HOME and a clean environment are required. Both `/etc/mtools.conf` and
-`/etc/default/mtools.conf` must be absent: `MTOOLSRC=/dev/null` is additive.
-Other versions/custom compiled config paths are unsupported. Instead of changing
-host configuration, `EVENT_ESP_DIR` may supply `<mode>.raw` for each fresh loader;
-the same complete FAT/allocation/loader validator runs before a SHA-bound private
-copy. Historical pinned mtools behavior and receipts are unchanged.
-
-Each run creates a fresh `build/aurora-event-smoke-*` directory and prints its path
-before work starts. `EVENT_OUTPUT_PARENT` may select another existing directory
-within `build/` or outside the source tree. After all selected checks and normal
-restoration succeed, the shared graphical/Event retention helper drops only known
-raw ESP copies, writable guest VARS and RAM captures. Summaries, oracle results,
-serial/QMP/stderr, build logs and staged images remain. Default retention keeps
-the newest two successful managed runs; `AURORA_EVENT_KEEP_RUNS=N` accepts 1..999,
-or `all` to keep and pin the new run, including its raw files. Use `all` when
-build-only inspection requires the raw ESPs. A `.keep` also pins an individual run.
-Failures and interruptions retain all output. Unmarked historical directories,
-active runs and malformed markers are never adopted for cleanup. Successful runs
-are ordered by status-marker modification time, including older successful markers;
-pruning happens after the current run finishes. Cleanup errors
-warn without changing the completed test result. Each run reserves 1 GiB with a
-1 GiB free floor; the shared policy bounds completed successful output without
-removing failures or explicit keeps.
-Closed q35/TCG argv uses owned regular ESP/VARS copies, private HOME/empty module
-directory, no network, host disks, mounts, VFIO or arbitrary options. Fixed limits
-are 1 MiB each serial/stderr, 64 KiB QMP, 30 seconds per case except overflow's
-90 seconds, and separate two-second TERM/two-second KILL cleanup grace.
-
-QMP stdio and an inherited anonymous serial pipe require no sockets. Paused proof
-precedes six current-layout RAM captures totaling 45,856 bytes. The oracle checks
-full ordered Event serial, the handoff/terminal, all three ring pages, guarded
-snapshots and all 32 KiB of backing including tables/zero regions. Denial preserves
-the discriminating sink check, not a universal zero-filled denied-read promise.
-Failure markers, limits, early exit, forced cleanup, capture/restoration failure
-never pass; an unsettled owned child blocks restoration rather than racing it.
-
-A pass is **local developer emulator evidence**, without per-run handwritten
-supervision or an independent receipt pin. `reviewed()` and historical qualification
-remain unchanged. Final-source merge/release gates still need independent review;
-old evidence does not transfer. Source-copied MMIO observations plus captured RAM
-do not establish physical DMA drain, reclamation, concurrent producers or hardware
-support. Historical NVMe/IVRS results remain separate.
-
-### Read-only firmware observation
-
-The separate `iommu-event-observe` build is read-only. It copies two complete six-port AHCI samples (CAP/GHC/PI and each
-CMD/CI/SACT/TFD/CLB/FB) through a read-only UC/NX page, revokes that page before
-serial reporting, and checks PCI/capability equality afterward. Matching samples
-are observations only, not an idle, drain, ownership or transition guarantee.
-Resource observations may retain inherited BME; their explicit read-only purpose
-cannot become `EventAdmission`. EDU command 7 is describable only in this read-only mode; it is not Event admission.
+A pass is local emulator evidence. Source-copied MMIO observations plus captured
+RAM do not establish physical DMA drain, reclamation, concurrent producers or
+hardware support.
 
 Read-only observation also includes two EDU snapshots: 64-bit DMA command at 0x98,
 32-bit status at 0x20 and IRQ status at 0x24. The reviewed

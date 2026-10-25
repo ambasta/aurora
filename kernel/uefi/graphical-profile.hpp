@@ -17,10 +17,10 @@
     defined(AURORA_UEFI_BAR_ADMISSION) || defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_BAR_EDK2) ||         \
     defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_DISPATCH) || defined(AURORA_UEFI_FRAMEBUFFER) ||               \
     defined(AURORA_UEFI_FRAMEBUFFER_CAPTURE) || defined(AURORA_UEFI_FRAMEBUFFER_FIXTURE) ||                            \
-    defined(AURORA_UEFI_FRAMEBUFFER_PROBE) || defined(AURORA_UEFI_IPC) || defined(AURORA_UEFI_IVRS) ||                 \
-    defined(AURORA_UEFI_NVME_PREPARE) || defined(AURORA_UEFI_OWNED_BYTES) || defined(AURORA_UEFI_PCI) ||               \
-    defined(AURORA_UEFI_PINS) || defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_UEFI_RUNTIME) ||               \
-    defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_TABLES) || defined(AURORA_UEFI_USER_BUDGET)
+    defined(AURORA_UEFI_IPC) || defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_NVME_PREPARE) ||                      \
+    defined(AURORA_UEFI_OWNED_BYTES) || defined(AURORA_UEFI_PCI) || defined(AURORA_UEFI_PINS) ||                       \
+    defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_UEFI_RUNTIME) || defined(AURORA_UEFI_SERVICE_BUDGET) ||     \
+    defined(AURORA_UEFI_TABLES) || defined(AURORA_UEFI_USER_BUDGET)
 #error "Graphical Console rejects legacy profile and fault selectors"
 #endif
 #elif defined(AURORA_UEFI_GRAPHICAL_FIXTURE) || defined(AURORA_UEFI_GRAPHICAL_CAPTURE)
@@ -46,15 +46,15 @@
     defined(AURORA_UEFI_GRAPHICAL_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_FIXTURE) ||                                \
     defined(AURORA_UEFI_GRAPHICAL_CAPTURE) || defined(AURORA_UEFI_FRAMEBUFFER) ||                                      \
     defined(AURORA_UEFI_FRAMEBUFFER_FIXTURE) || defined(AURORA_UEFI_FRAMEBUFFER_CAPTURE) ||                            \
-    defined(AURORA_UEFI_FRAMEBUFFER_PROBE) || defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_BAR_EDK2) ||     \
-    defined(AURORA_UEFI_BAR_ADMISSION) || defined(AURORA_UEFI_NVME_PREPARE) || defined(AURORA_UEFI_IVRS) ||            \
-    defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_DISPATCH) ||               \
-    defined(AURORA_UEFI_OWNED_BYTES) || defined(AURORA_UEFI_PINS) || defined(AURORA_UEFI_TABLES) ||                    \
-    defined(AURORA_UEFI_SNAPSHOT) || defined(AURORA_BLOCKING_CALL) || defined(AURORA_FILE_CALL) ||                     \
-    defined(AURORA_RAM_FILE) || defined(AURORA_RAM_SCRATCHPAD_CONSOLE) || defined(AURORA_OWNED_TEXT) ||                \
-    defined(AURORA_CONSOLE_REGION) || defined(AURORA_USER_RESUME) || defined(AURORA_DORMANT_TABLE_TESTING) ||          \
-    defined(AURORA_PIN_LEDGER_TESTING) || defined(AURORA_KERNEL_BYTES_TESTING) ||                                      \
-    defined(AURORA_NVME_QUEUE_TESTING) || defined(AURORA_NVME_QUEUE_GENERATION_LIMIT)
+    defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_BAR_EDK2) || defined(AURORA_UEFI_BAR_ADMISSION) ||         \
+    defined(AURORA_UEFI_NVME_PREPARE) || defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT) ||              \
+    defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_DISPATCH) || defined(AURORA_UEFI_OWNED_BYTES) ||               \
+    defined(AURORA_UEFI_PINS) || defined(AURORA_UEFI_TABLES) || defined(AURORA_UEFI_SNAPSHOT) ||                       \
+    defined(AURORA_BLOCKING_CALL) || defined(AURORA_FILE_CALL) || defined(AURORA_RAM_FILE) ||                          \
+    defined(AURORA_RAM_SCRATCHPAD_CONSOLE) || defined(AURORA_OWNED_TEXT) || defined(AURORA_CONSOLE_REGION) ||          \
+    defined(AURORA_USER_RESUME) || defined(AURORA_DORMANT_TABLE_TESTING) || defined(AURORA_PIN_LEDGER_TESTING) ||      \
+    defined(AURORA_KERNEL_BYTES_TESTING) || defined(AURORA_NVME_QUEUE_TESTING) ||                                      \
+    defined(AURORA_NVME_QUEUE_GENERATION_LIMIT)
 #error "Graphical terminal rejects test, fixture, capture and probe flags and other compositions"
 #endif
 #endif

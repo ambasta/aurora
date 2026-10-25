@@ -31,9 +31,10 @@ check_fixture_families(FIXTURES)
 FIXTURE_MODES = {
     mode: (image, value) for name, (mode, image, value) in FIXTURES.items() if not name.startswith("bios_")
 }
-# Early-fixture modes inject before ExitBootServices, while firmware owns the UART:
-# their selector travels in a QEMU fw_cfg file instead of a serial byte.
-EARLY_FIXTURE_IMAGE = "early-fixture"
+# These images read their selector from a QEMU fw_cfg file instead of a serial
+# byte: early-fixture injects before ExitBootServices, while firmware owns the
+# UART, and the Event harness writes serial output to a file.
+FW_CFG_IMAGES = frozenset(("early-fixture", "iommu-event"))
 BIOS_FIXTURE_MODES = {
     mode: (image, value) for name, (mode, image, value) in FIXTURES.items() if name.startswith("bios_")
 }
@@ -74,13 +75,7 @@ UEFI_FAMILIES = [
     ([], {"normal": []}),
     (
         ["-maccumulate-outgoing-args", "-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI", "-DAURORA_UEFI_IOMMU_EVENT"],
-        {
-            "iommu-event-denial": ["-DAURORA_IOMMU_EVENT_CASE=0"],
-            "iommu-event-success": ["-DAURORA_IOMMU_EVENT_CASE=1"],
-            "iommu-event-overflow": ["-DAURORA_IOMMU_EVENT_CASE=2"],
-            "iommu-event-command-error": ["-DAURORA_IOMMU_EVENT_CASE=3"],
-            "iommu-event-observe": ["-DAURORA_IOMMU_EVENT_CASE=4"],
-        },
+        {"iommu-event": []},
     ),
     (
         ["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_GRAPHICAL_CONSOLE", "-DAURORA_UEFI_GRAPHICAL_FIXTURE"],
@@ -92,7 +87,6 @@ UEFI_FAMILIES = [
             "framebuffer": [],
         },
     ),
-    (["-DAURORA_UEFI_FRAMEBUFFER", "-DAURORA_UEFI_FRAMEBUFFER_PROBE"], {"framebuffer-probe": []}),
     (["-DAURORA_UEFI_OWNED_BYTES"], {"owned-bytes": []}),
     (
         [
@@ -551,7 +545,7 @@ def uefi_profile(profile_mode, flags):
     console = mode in ("console", "console-fixture")
     graphical = mode in ("graphical-console", "graphical-console-capture")
     framebuffer = mode == "framebuffer"
-    event = mode.startswith("iommu-event-")
+    event = mode == "iommu-event"
     user_mode = "normal"
     if mode.startswith("runtime-") and mode[8:] in ("span", "multipage", "owned-text", "fixture"):
         user_mode = mode[8:]
@@ -677,11 +671,11 @@ def uefi_profile(profile_mode, flags):
         owned_objects = ["owned-bytes-runtime"]
     if framebuffer:
         cpp["framebuffer"] = "kernel/uefi/framebuffer.cpp"
-    if event and mode != "iommu-event-observe":
+    if event:
         cpp["event-intake"] = "kernel/uefi/event-intake.cpp"
     entry, bridge = "examples/kernel.au", ""
     for enabled, source, adapter in (
-        (event and mode != "iommu-event-observe", "iommu-event-service", "event-service"),
+        (event, "iommu-event-service", "event-service"),
         (framebuffer, "display-service", "display-service"),
         (program, "program-console", "program-note"),
         (file_call, "program-file-call", "program-file-call"),
@@ -715,7 +709,7 @@ def uefi_profile(profile_mode, flags):
         + (["terminal"] if terminal else [])
         + owned_objects
         + (["framebuffer"] if framebuffer else [])
-        + (["event-intake"] if event and mode != "iommu-event-observe" else []),
+        + (["event-intake"] if event else []),
         closed=program,
         terminal_language="examples/kernel-graphical-terminal.au" if terminal else "",
         terminal_bridge="kernel/uefi/graphical-terminal-entry.S" if terminal else "",
@@ -787,13 +781,13 @@ def selected_modes(image):
 
 def serial_fixture_byte(mode):
     image, value = FIXTURE_MODES.get(UEFI_VARIANTS.get(mode, mode), ("", ""))
-    return "" if image == EARLY_FIXTURE_IMAGE else value
+    return "" if image in FW_CFG_IMAGES else value
 
 
 def fw_cfg_fixture(mode):
-    """QEMU arguments carrying an early-fixture selector; empty for every other mode."""
+    """QEMU arguments carrying a fw_cfg selector; empty for serial-selector and ordinary modes."""
     image, value = FIXTURE_MODES.get(mode, ("", 0))
-    return ["-fw_cfg", f"name=opt/aurora/fixture,string={value}"] if image == EARLY_FIXTURE_IMAGE else []
+    return ["-fw_cfg", f"name=opt/aurora/fixture,string={value}"] if image in FW_CFG_IMAGES else []
 
 
 def canonical_profile(platform, mode):

@@ -367,52 +367,8 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
                                                                     graphics_features,
                                                                     graphics_pat);
 #endif
-#ifdef AURORA_UEFI_FRAMEBUFFER_PROBE
-        Serial::text("AURORA_FRAMEBUFFER_MAP_PROBE: attempt=");
-        Serial::number(attempt);
-        Serial::text(" base=");
-        Serial::number(framebuffer->geometry().base());
-        Serial::text(" resource=");
-        Serial::number(framebuffer->geometry().resource_bytes());
-        Serial::text(" mapped=");
-        Serial::number(framebuffer->geometry().mapped_bytes());
-        Serial::text(" described=");
-        Serial::number(graphics_grant.has_value());
-        Serial::text(" width=");
-        Serial::number(framebuffer->geometry().width());
-        Serial::text(" height=");
-        Serial::number(framebuffer->geometry().height());
-        Serial::text(" pitch=");
-        Serial::number(framebuffer->geometry().pitch());
-        Serial::text(" format=");
-        Serial::number(framebuffer->geometry().format());
-        Serial::text(" physical_bits=");
-        Serial::number(graphics_bits);
-        Serial::text(" mode=");
-        Serial::number(framebuffer->mode());
-        Serial::text(" mode_count=");
-        Serial::number(framebuffer->mode_count());
-        Serial::text("\r\n");
-        for (U64 at = 0; at < size; at += stride) {
-            const Bytes descriptor{span(arena + Handoff::map_offset + at, stride)};
-            const auto begin = descriptor.get(8), end = begin + descriptor.get(24) * 4096;
-            if (begin < framebuffer->geometry().base() + framebuffer->geometry().mapped_bytes() &&
-                framebuffer->geometry().base() < end) {
-                Serial::text("AURORA_FRAMEBUFFER_MAP_OVERLAP: type=");
-                Serial::number(descriptor.get(0, 4));
-                Serial::text(" begin=");
-                Serial::number(begin);
-                Serial::text(" end=");
-                Serial::number(end);
-                Serial::text(" attrs=");
-                Serial::number(descriptor.get(32));
-                Serial::text("\r\n");
-            }
-        }
-#else
         if (!graphics_grant)
             fail("framebuffer final map authority");
-#endif
 #endif
         put(handoff, 32, size);
         put(handoff, 40, stride);
