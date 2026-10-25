@@ -172,13 +172,15 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
         fail("runtime arena layout");
     put(handoff, 8, 3, 4);
     put(handoff, 120, arena + RuntimeLayout::metadata_offset);
-    const auto install_user = [&](unsigned index, std::span<const std::byte> image, const auto &fields) {
-        if (image.empty() || image.size() > RuntimeLayout::image_limit(index) || fields[1] != image.size())
+    // Slot is the installed copy; role is the domain image it is linked for.
+    const auto install_user = [&](unsigned slot, unsigned role, std::span<const std::byte> image, const auto &fields) {
+        if (image.empty() || image.size() > RuntimeLayout::image_limit(role) || fields[1] != image.size() ||
+            slot >= RuntimeLayout::image_slots)
             fail("bounded user image");
-        auto target = span(arena + RuntimeLayout::image_page(index), image.size());
+        auto target = span(arena + RuntimeLayout::slot_page(slot), image.size());
         for (std::size_t i = 0; i < image.size(); ++i)
             target[i] = image[i];
-        auto descriptor = span(arena + RuntimeLayout::metadata_offset + index * 64, 64);
+        auto descriptor = span(arena + RuntimeLayout::metadata_offset + slot * 64, 64);
         for (unsigned i = 0; i < 8; ++i)
             put(descriptor, i * 8, fields[i]);
         if (fields[7]) {
@@ -187,7 +189,12 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
             put(target, fields[7], arena);
         }
     };
+#ifdef AURORA_RUNTIME_IMAGE_BANK
+    static_assert(bank_size == RuntimeLayout::image_slots);
+    install_bank(install_user);
+#else
     install_user(0,
+                 0,
                  clean_bytes,
                  std::array<U64, 8>{clean_entry,
                                     clean_size,
@@ -198,6 +205,7 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
                                     clean_shift_count_pc,
                                     clean_probe_offset});
     install_user(1,
+                 1,
                  bounds_bytes,
                  std::array<U64, 8>{bounds_entry,
                                     bounds_size,
@@ -209,6 +217,7 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
                                     bounds_probe_offset});
 #ifdef AURORA_UEFI_DISPATCH
     install_user(2,
+                 2,
                  peer_bytes,
                  std::array<U64, 8>{peer_entry,
                                     peer_size,
@@ -218,6 +227,7 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
                                     peer_division_zero_pc,
                                     peer_shift_count_pc,
                                     peer_probe_offset});
+#endif
 #endif
 #endif
 #if defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_IOMMU_EVENT)

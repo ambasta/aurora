@@ -100,15 +100,25 @@ elif [[ "$mode" == snapshot* ]]; then
 elif [[ "$mode" == ipc* ]]; then
     cp "$image_dir/user-images.json" "$output_dir/$mode.metadata.json"
     python3 tests/kernel-uefi-ipc-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
-elif [[ "$mode" == runtime-table-* ]]; then
-    cp "$image_dir/user-images.json" "$output_dir/$mode.metadata.json"
-    python3 tests/kernel-uefi-tables-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
-elif [[ "$mode" == runtime-pin-* ]]; then
-    cp "$image_dir/user-images.json" "$output_dir/$mode.metadata.json"
-    python3 tests/kernel-uefi-pin-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
 elif [[ "$mode" == runtime* ]]; then
-    cp "$image_dir/user-images.json" "$output_dir/$mode.metadata.json"
-    python3 tests/kernel-uefi-runtime-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
+    # A user image bank hands each oracle the images its mode runs as clean and bounds.
+    python3 -B - "$mode" "$image_dir" "$output_dir/$mode.metadata.json" <<'PYSET'
+from pathlib import Path
+import json, sys
+mode, root, output = sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3])
+images = json.loads((root / 'user-images.json').read_text())
+if (root / 'user-sets.json').exists():
+    sets = json.loads((root / 'user-sets.json').read_text())
+    images = {role: images[name] for role, name in sets.get(mode, sets['default']).items()}
+output.write_text(json.dumps(images, indent=2) + '\n')
+PYSET
+    if [[ "$mode" == runtime-table-* ]]; then
+        python3 tests/kernel-uefi-tables-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
+    elif [[ "$mode" == runtime-pin-* ]]; then
+        python3 tests/kernel-uefi-pin-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
+    else
+        python3 tests/kernel-uefi-runtime-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
+    fi
 elif [[ "$mode" == bar-state ]]; then
     python3 tests/kernel-uefi-bar-state.py "$status" "$log"
 elif [[ "$mode" == pci* ]]; then

@@ -28,9 +28,11 @@ Protected user images have 16 KiB virtual slots beginning at 0x10000000000.
 Each slot contains at most three RX code pages followed by an unmapped guard.
 These are chosen canonical lower-half virtual addresses, not physical load
 addresses or BIOS constants. Their immutable, boot-owned physical slots occupy three pages each, beginning
-at arena + 0xb0000 (then +0xb3000 and, for dispatch, +0xb6000). Link metadata, exact entry, segment permissions and every trap site
-are validated before installation. `runtime-multipage` admits three pages per
-image. Blocking-call profiles admit two pages for the caller and one for the
+at arena + 0xb0000 (then +0xb3000 and, for dispatch, +0xb6000). `runtime-fixture`
+installs a five-slot bank up to +0xbf000 (clean, bounds, span, two multipage) and
+each row selects the two slots acting as images 0 and 1. Link metadata, exact entry, segment permissions and every trap site
+are validated before installation. `runtime-fixture` admits three pages per
+image, which its multipage row needs; its other bank images are linked at one page. Blocking-call profiles admit two pages for the caller and one for the
 service; owned-text profiles (including console-region) admit three pages for
 the first image and one for the second. Other profiles retain one-page image
 allowances. Metadata cannot select its own allowance. The linker, image validator, loader and runtime independently
@@ -117,8 +119,10 @@ and shared exception object relocations; absolute relocations are rejected.
 - `runtime-syscall`, `runtime-sysenter`: alternate inherited entry mechanisms
   cannot transfer user execution to firmware/kernel targets.
 
-All runtime modes except span and multipage boot the one `runtime-fixture` image
-and pick their case from the serial selector; `runtime` is the baseline selector. The ten user-fault cases used to be separate images,
+All runtime, span, multipage, pin and table modes boot the one `runtime-fixture`
+image and pick their case from the serial selector; `runtime`, `runtime-span` and
+`runtime-multipage` are baseline selectors, and only pin rows run the pin-ledger
+supervisor and only table rows the dormant-table one. The ten user-fault cases used to be separate images,
 each with a client built for one probe. The fixture's clean client now carries
 every probe and the trusted launcher passes the selected one in its first entry
 argument (`runtime_probe()`); the bounds client, page tables and every kernel

@@ -70,11 +70,12 @@ def validate(status, text, mode, metadata):
     quarantine = mode.endswith("quarantine")
     runtime.validate(
         status,
-        runtime.checked_fixture_projection(text),
+        text,
         "runtime",
         metadata,
         retained=2 if quarantine else 0,
         final_slot=1 if quarantine else 0,
+        selected=mode,
     )
     need(
         not any(prefix in text for prefix in ("AURORA_PIN", "AURORA_DMA", "AURORA_IOMMU")),

@@ -50,11 +50,12 @@ def validate(status, text, mode, metadata):
     need(mode in MODES, "Unknown pin mode")
     runtime.validate(
         status,
-        runtime.checked_fixture_projection(text),
+        text,
         "runtime",
         metadata,
         retained=2 if mode == "runtime-pin-fault" else 0,
         final_slot=1 if mode == "runtime-pin-fault" else 0,
+        selected=mode,
     )
     rows = list(re.finditer(PATTERN, text))
     seen = [(m[1], *(int(m[i]) for i in range(2, 6))) for m in rows]

@@ -1,4 +1,6 @@
 // CPU-only lease ownership gate. No DMA publication or completion adapter.
+// Selected at boot by the runtime fixture image's pin rows.
+namespace pin_supervisor {
 constinit std::optional<memory::PinLedger> pin_ledger;
 std::optional<memory::PinHandle> stale_pin;
 U64 old_service_incarnation{};
@@ -172,3 +174,4 @@ auto pin_final() -> void {
     pin_record("final");
     Serial::text("AURORA_PIN_OK\r\n");
 }
+} // namespace pin_supervisor

@@ -280,8 +280,10 @@ foreach profile_id : profile_data['profiles'].split('|')
     else
       user_option_text = profile_data[key + '.user_options']
       user_options = user_option_text == '' ? [] : user_option_text.split('|')
+      # A user image bank also names the images each selected mode runs.
       user_metadata = custom_target(prefix + '-user-metadata', input: user_inputs,
-        output: ['uefi-user-images.hpp', 'user-images.json'], build_subdir: output_subdir,
+        output: ['uefi-user-images.hpp', 'user-images.json'] + ('--image' in user_options ? ['user-sets.json'] : []),
+        build_subdir: output_subdir,
         depend_files: files('../scripts/bootstrap_frontend.py') + check_dependencies,
         command: [python, '-B', files('../scripts/kernel-uefi-user-images.py'), '--output', output_dir,
                   '--mode', profile_data[key + '.user_mode']] + user_options)

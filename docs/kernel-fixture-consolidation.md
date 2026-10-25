@@ -14,7 +14,9 @@ per-component driver change, then to 74 (54 UEFI, 20 BIOS) with the early fixtur
 to 62 (43 UEFI, 19 BIOS) by folding test baselines into their fixtures, and to
 57 (38 UEFI, 19 BIOS) by folding the four IOMMU Event cases into one image and
 dropping the framebuffer probe and Event observation images, which nothing booted,
-then to 41 (38 UEFI, 3 BIOS) by folding every BIOS test image into `bios-fixture`. Every
+then to 41 (38 UEFI, 3 BIOS) by folding every BIOS test image into `bios-fixture`, then
+to 37 (34 UEFI, 3 BIOS) by folding the span, multipage, pin and table images into
+`runtime-fixture`. Every
 fault mode keeps its own guest run and exact oracle. A source image count is not a
 measured build or execution saving; the PR records those.
 
@@ -49,7 +51,7 @@ measured build or execution saving; the PR records those.
 - Baseline row: where a family's ordinary image was only a test baseline, the
   first row of its interval (`*_baseline`) selects the unchanged normal flow, so
   the mode boots the fixture image: `acpi`, `pci`, `ipc`, `budget`, `dispatch`,
-  `user-phases`, `snapshot`, `runtime`, `runtime-owned-text`,
+  `user-phases`, `snapshot`, `runtime`, `runtime-span`, `runtime-multipage`, `runtime-owned-text`,
   `runtime-console-region`, `user-call` and BIOS `schedule`. Machine variants
   (`acpi-two`, `pci-devices`, `pci-bridge`, `budget-smp`, `schedule-smp`,
   `schedule-no-apic`) inherit their baseline's image and selector. Oracles
@@ -185,9 +187,8 @@ profiles; the clock catalog and launch lists reject the retired modes.
   payload bank: the kernel compiles user-image sites (`images::*_pc`, compiled
   ranges) in as constants and the loader installs the images before exit, so
   several image sets need generated per-set records selected at boot.
-- Distinct compositions: one-page/multipage/span, resume, pin/table
-  supervisors, BAR state/capture/NVMe preparation, owned bytes and graphical
-  capture.
+- Distinct compositions: resume, BAR state/capture/NVMe preparation, owned bytes
+  and graphical capture.
 
 ## BIOS program bank
 
@@ -201,6 +202,28 @@ entry-probe variants (bad return, unknown trap, foreign code/stack, APIC read,
 softint, FPU) fault in image 0's entry stub before program code runs, so they are
 built on the small bounds program; the image is 62,192 bytes of the 65,024-byte
 BIOS transport. `kernel-smoke.sh` hands each oracle its mode's set metadata.
+
+## Runtime image bank
+
+`runtime-fixture` co-hosts the plain runtime cases, the span and multipage
+baselines and the pin and dormant-table supervisors. Its loader installs a bank
+of user images (`kernel_profiles.RUNTIME_BANK`: clean, bounds, span, multipage
+clean and faulting) in five read-only arena slots (0xb0000..0xbf000), each
+linked for domain image 0 or 1 and capped at its own page count; `RUNTIME_SETS`
+names the slots acting as images 0 and 1 for `runtime-span` and
+`runtime-multipage`, and every other row runs clean and bounds. Every image-0
+entry carries the probe dispatch, which a zero launch word skips. Before any
+domain exists the kernel picks the slots, the multipage rollback self-test and
+the supervisor from the selector: pin rows the pin ledger, table rows the dormant
+tables, other rows neither, retaining no pages. The image admits three code pages
+per image for every row, as `runtime-multipage` did; the other bank images stay
+one page by their link-time cap and their oracles' size bounds. Pin uncertainty
+and dormant-table test access are now separated at run time, not compile time;
+production and the graphical terminal still reject both flags.
+`kernel-uefi-smoke.sh` hands each oracle its mode's set (`user-sets.json`). Rows
+that differ only in image set or supervisor have identical domain records, so the
+image echoes `AURORA_FIXTURE_SELECTED: value=N` right after READY and the runtime,
+pin and table oracles require it to be their mode's selector.
 
 The 30-second generic, 60-second IVRS/BAR and 180-second console deadlines are
 unchanged. Grouping does not widen user-image, stack or page admission.

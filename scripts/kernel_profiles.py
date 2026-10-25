@@ -219,35 +219,22 @@ UEFI_FAMILIES = [
             "ipc-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_IPC_FIXTURE"],
         },
     ),
-    (
-        [
-            "-DAURORA_UEFI_ACPI",
-            "-DAURORA_UEFI_PCI",
-            "-DAURORA_UEFI_RUNTIME",
-            "-DAURORA_UEFI_PINS",
-            "-DAURORA_UEFI_TABLES",
-            "-DAURORA_DORMANT_TABLE_TESTING=1",
-        ],
-        {
-            "runtime-table-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_TABLE_FIXTURE"],
-        },
-    ),
-    (
-        ["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI", "-DAURORA_UEFI_RUNTIME", "-DAURORA_UEFI_PINS"],
-        {
-            "runtime-pin-fixture": [
-                "-DAURORA_RUNTIME_FIXTURE",
-                "-DAURORA_PIN_FIXTURE",
-                "-DAURORA_PIN_LEDGER_TESTING=1",
-            ],
-        },
-    ),
+    # The plain runtime, span and multipage baselines and the pin and dormant-table
+    # supervisors, each selected at boot; its user images are RUNTIME_BANK.
     (
         ["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI", "-DAURORA_UEFI_RUNTIME"],
         {
-            "runtime-span": [],
-            "runtime-multipage": ["-DAURORA_RUNTIME_MULTIPAGE"],
-            "runtime-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_RUNTIME_CONTROL_FIXTURE"],
+            "runtime-fixture": [
+                "-DAURORA_RUNTIME_FIXTURE",
+                "-DAURORA_RUNTIME_CONTROL_FIXTURE",
+                "-DAURORA_RUNTIME_MULTIPAGE",
+                "-DAURORA_UEFI_PINS",
+                "-DAURORA_PIN_FIXTURE",
+                "-DAURORA_PIN_LEDGER_TESTING=1",
+                "-DAURORA_UEFI_TABLES",
+                "-DAURORA_DORMANT_TABLE_TESTING=1",
+                "-DAURORA_TABLE_FIXTURE",
+            ],
         },
     ),
     (
@@ -294,6 +281,21 @@ BIOS_PROGRAMS = (
     ("fpu", "bounds", ("AURORA_PROGRAM_FPU",)),
 )
 ORDINARY_SET = ("clean", "bounds", "overflow")
+# runtime-fixture's user image bank: (name, source, domain image it is linked
+# for, admitted pages, entry defines). Every image-0 entry carries the probe
+# dispatch, which a zero launch word skips. RUNTIME_SETS names the bank images
+# acting as images 0 and 1 for a mode; every other mode runs clean and bounds.
+RUNTIME_BANK = (
+    ("clean", "clean", 0, 1, ("UEFI_USER_PROBES",)),
+    ("bounds", "bounds", 1, 1, ()),
+    ("span-clean", "span-clean", 0, 1, ("UEFI_USER_PROBES",)),
+    ("multipage-clean", "multipage", 0, 3, ("UEFI_USER_PROBES",)),
+    ("multipage-bounds", "multipage", 1, 3, ("UEFI_USER_MULTIPAGE_FAULT",)),
+)
+RUNTIME_SETS = {
+    "runtime-span": ("span-clean", "bounds"),
+    "runtime-multipage": ("multipage-clean", "multipage-bounds"),
+}
 SCHEDULE_SET = ("scheduled-clean", "scheduled-spin", "bounds")
 # Fixture mode -> (images 0, 1, 2, division label, unsigned label, family). Other
 # bios-fixture modes run the ordinary set.
@@ -341,18 +343,24 @@ def user_images(
 ):
     """Exact source/adapter composition; Meson owns every compile/link edge."""
     result = {}
+    if kind == "runtime" and mode == "fixture":
+        for name, source, role, pages, defines in RUNTIME_BANK:
+            result[name] = dict(
+                source="tests/kernel-programs/" + source + ".au",
+                roots=["library"],
+                base=LAYOUT.user_code + role * LAYOUT.code_stride,
+                entry="kernel/uefi/user-image-entry.S",
+                entry_flags=[value for define in defines for value in ("--defsym", define + "=1")],
+                combined=False,
+                max_pages=pages,
+            )
+        return result
     names = ("clean", "bounds", "peer") if dispatcher else ("clean", "bounds")
     for index, name in enumerate(names):
         if kind == "runtime":
-            source = (
-                "multipage" if mode == "multipage" else "span-clean" if name == "clean" and mode == "span" else name
-            )
+            source = name
             entry = "kernel/uefi/user-image-entry.S"
             defines = []
-            if mode == "multipage" and index == 1:
-                defines.append("UEFI_USER_MULTIPAGE_FAULT=1")
-            if mode == "fixture" and index == 0:
-                defines.append("UEFI_USER_PROBES=1")
         else:
             source = "budget-service" if budget and index == 1 else "ipc-client" if index == 0 else "ipc-service"
             if program:
@@ -513,7 +521,7 @@ def uefi_profile(profile_mode, flags):
     framebuffer = mode == "framebuffer"
     event = mode == "iommu-event"
     user_mode = "normal"
-    if mode.startswith("runtime-") and mode[8:] in ("span", "multipage", "owned-text", "fixture"):
+    if mode.startswith("runtime-") and mode[8:] in ("owned-text", "fixture"):
         user_mode = mode[8:]
     if owned_text:
         user_mode = (
@@ -591,7 +599,16 @@ def uefi_profile(profile_mode, flags):
     )
     flags = [*flags, "-DAURORA_RUNTIME_IMAGE_POLICY=" + image_policy]
     for index, image in enumerate(users.values()):
-        image["max_pages"] = IMAGE_POLICIES[image_policy][index]
+        if "max_pages" not in image:
+            image["max_pages"] = IMAGE_POLICIES[image_policy][index]
+    if user_mode == "fixture":
+        # The kernel admits multipage's three pages for image 0 and 1 of every
+        # row; each bank image keeps its own build-time page cap.
+        flags.append(f"-DAURORA_RUNTIME_IMAGE_BANK={len(RUNTIME_BANK)}")
+        for name, _, role, _, _ in RUNTIME_BANK:
+            user_options += ["--image", f"{name}:{role}"]
+        for mode_name, chosen in RUNTIME_SETS.items():
+            user_options += ["--set", f"{mode_name}:{FIXTURE_MODES[mode_name][1]}:{','.join(chosen)}"]
     cpp = {name: "kernel/uefi/" + name + ".cpp" for name in ("payload", "acpi", "pci", "runtime")}
     assembly = {
         name: dict(source="kernel/uefi/" + name + ".S", flags=["--64"])

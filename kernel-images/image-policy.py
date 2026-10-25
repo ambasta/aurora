@@ -31,13 +31,10 @@ RULES = [
         "profiles": ["bios/bios-fixture"],
         "callbacks": ["kernel_main(="],
     },
+    # The pin and table supervisors' scrub callbacks, one per boot-selected row family.
     {
-        "profiles": ["uefi/runtime-pin-fixture"],
-        "callbacks": ["PinLedger::release_reserved(=pin_scrub("],
-    },
-    {
-        "profiles": ["uefi/runtime-table-fixture"],
-        "callbacks": ["PinLedger::release_reserved(=table_scrub("],
+        "profiles": ["uefi/runtime-fixture"],
+        "callbacks": ["PinLedger::release_reserved(=pin_scrub(", "PinLedger::release_reserved(=table_scrub("],
     },
     # Aurora imports: generated kernel code reaches hardware only through these runtime services.
     {

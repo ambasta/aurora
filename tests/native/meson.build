@@ -429,9 +429,9 @@ test('kernel-compile-fail', python,
 if get_option('kernel_images')
   test('native-uefi-span-integration', python,
        args: ['-B', files('../../tests/kernel-uefi-span.py'), aurorac,
-              meson.project_build_root() / 'kernel-images/uefi/runtime-span'],
+              meson.project_build_root() / 'kernel-images/uefi/runtime-fixture'],
        suite: ['full', 'merge', 'slow', 'integration'], env: native_test_env, workdir: native_root,
-       timeout: 120, depends: [aurorac, kernel_profile_users['uefi/runtime-span']])
+       timeout: 120, depends: [aurorac, kernel_profile_users['uefi/runtime-fixture']])
 endif
 
 # UEFI guest families (QEMU), outside full: meson test --suite guest or guest-<family>.

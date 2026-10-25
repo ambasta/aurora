@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Native replay of the runtime-span profile's user programs.
+"""Native replay of the runtime-span mode's user programs (runtime-fixture's span set).
 
-The profile's clean user program must return 42, and its bounds fixture and the
+The mode's clean user program must return 42, and its bounds fixture and the
 checked-in reads one element before and after the span must each stop at the
 exact bounds UD2. No guest runs here.
 """
@@ -23,13 +23,15 @@ class Trap(Enum):
 
 def main():
     compiler, span_dir = Path(sys.argv[1]).resolve(strict=True), Path(sys.argv[2]).resolve(strict=True)
-    span = json.loads((span_dir / "user-images.json").read_text())
+    images = json.loads((span_dir / "user-images.json").read_text())
+    names = json.loads((span_dir / "user-sets.json").read_text())["runtime-span"]
+    span = {role: images[name] for role, name in names.items()}
     with tempfile.TemporaryDirectory(prefix="aurora-uefi-span-") as temporary:
         native = Path(temporary)
         runner = NativeRunner(native, compiler, 5)
-        observed, _ = runner.assemble((span_dir / "user-clean.s").read_text(), ["aurora_user_main"])
+        observed, _ = runner.assemble((span_dir / f"user-{names['clean']}.s").read_text(), ["aurora_user_main"])
         validate_values(observed, [Case("span-clean", "", 42, "i64")])
-        observed, symbols = runner.assemble((span_dir / "user-bounds.s").read_text(), ["aurora_user_main"])
+        observed, symbols = runner.assemble((span_dir / f"user-{names['bounds']}.s").read_text(), ["aurora_user_main"])
         validate_trap(observed, Trap.BOUNDS, symbols, "unchanged bounds fixture")
         for side in ("before", "after"):
             assembly = native / f"span-bounds-{side}.s"
