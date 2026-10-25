@@ -16,11 +16,16 @@ namespace policy_vectors {
 using U64 = std::uint64_t;
 inline constexpr U64 maximum = ~U64{0};
 
-enum class Rows { none, all, nonzero };
+enum class Rows {
+    none,
+    all,
+    nonzero
+};
 
 class Family final {
 public:
-    explicit Family(const char *name, Rows rows = Rows::none) : name_(name), rows_(rows) {}
+    explicit Family(const char *name, Rows rows = Rows::none) : name_(name), rows_(rows) {
+    }
     Family(const Family &) = delete;
     auto operator=(const Family &) -> Family & = delete;
     ~Family() {
@@ -39,7 +44,8 @@ public:
             add(word);
             zero = zero && word == 0;
             char buffer[24];
-            std::snprintf(buffer, sizeof(buffer), "%s%#llx", text.empty() ? "" : ",", static_cast<unsigned long long>(word));
+            std::snprintf(
+                buffer, sizeof(buffer), "%s%#llx", text.empty() ? "" : ",", static_cast<unsigned long long>(word));
             text += buffer;
         }
         const auto lead = *result.begin();
@@ -67,7 +73,8 @@ private:
 // Deterministic full-width samples; std::mt19937_64's sequence is fixed by the standard.
 class Random final {
 public:
-    explicit Random(U64 seed) : engine_(seed) {}
+    explicit Random(U64 seed) : engine_(seed) {
+    }
     auto operator()() -> U64 {
         return engine_();
     }

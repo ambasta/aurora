@@ -24,6 +24,9 @@ foreach name, host : record_hosts
   oracle_env.set(name, host.full_path())
 endforeach
 record_host_targets = record_hosts.values()
+# The pinned formatters over every host source; skipped where they are not installed.
+test('style', python, args: ['-B', files('../scripts/style.py'), 'check', '--tree'],
+     suite: ['full', 'merge', 'dev'], timeout: 120)
 # Shared drivers: golden-output comparison and Aurora fixture objects built once.
 golden_runner = files('golden.py')
 fixture_builder = files('../scripts/meson-native-fixture.py')
