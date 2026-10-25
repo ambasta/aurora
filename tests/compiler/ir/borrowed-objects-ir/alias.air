@@ -40,7 +40,7 @@ function borrow_buffer
   params [(class Buffer)]
   frame 0
   roots 1
-  firstmut 1
+  rootmut 1
     MethodCall write_buffer
     Return
 end
@@ -113,7 +113,7 @@ end
 +    Constant 7
 +    Store 16
 @@ -40,2 +41 @@
--  firstmut 1
+-  rootmut 1
 -    MethodCall write_buffer
 +    MethodCall read_buffer
 
@@ -130,7 +130,7 @@ end
 +    Constant 7 u8
 +    BytesStore 48 0
 @@ -40,2 +43 @@
--  firstmut 1
+-  rootmut 1
 -    MethodCall write_buffer
 +    MethodCall read_buffer
 
@@ -145,7 +145,7 @@ end
 +    Constant 65
 +    BytesResize 48 0
 @@ -40,2 +41 @@
--  firstmut 1
+-  rootmut 1
 -    MethodCall write_buffer
 +    MethodCall read_buffer
 
@@ -159,7 +159,7 @@ end
 +    AcquireObjectLoan 1 48
 +    MethodCall write_buffer 48
 @@ -40,2 +40 @@
--  firstmut 1
+-  rootmut 1
 -    MethodCall write_buffer
 +    MethodCall read_buffer
 
@@ -174,7 +174,7 @@ end
 +    BeginObject 88
 +    MoveObject 48 88
 @@ -40,2 +41 @@
--  firstmut 1
+-  rootmut 1
 -    MethodCall write_buffer
 +    MethodCall read_buffer
 
@@ -188,7 +188,7 @@ end
 +    AcquireObjectLoan 1 48
 +    EndObject 48
 @@ -40,2 +40 @@
--  firstmut 1
+-  rootmut 1
 -    MethodCall write_buffer
 +    MethodCall read_buffer
 
@@ -260,7 +260,7 @@ end
 +    Constant 7
 +    IndexStore 16 1
 @@ -40,2 +44 @@
--  firstmut 1
+-  rootmut 1
 -    MethodCall write_buffer
 +    MethodCall read_buffer
 
@@ -450,7 +450,7 @@ end
 +    AcquireObjectLoan 1 48 true
 @@ -43 +43,2 @@
 -    MethodCall read_buffer
-+  firstmut 1
++  rootmut 1
 +    MethodCall write_buffer
 
 ; CASE: mutable loan excludes copied child replacement
@@ -463,7 +463,7 @@ end
 +    AssignObjectField 48 1 96
 @@ -43 +44,2 @@
 -    MethodCall read_buffer
-+  firstmut 1
++  rootmut 1
 +    MethodCall write_buffer
 
 ; CASE: mutable loan excludes ResourceCall consumption
@@ -475,7 +475,7 @@ end
 +    AcquireObjectLoan 1 48 true
 @@ -40 +40,2 @@
 -    MethodCall read_buffer
-+  firstmut 1
++  rootmut 1
 +    MethodCall write_buffer
 
 ; CASE: shared self-derived later view survives synchronous call
@@ -490,7 +490,7 @@ end
 +    SpanLength 160
 +    EndSpan 160
 @@ -40,2 +42 @@
--  firstmut 1
+-  rootmut 1
 -    MethodCall write_buffer
 +    MethodCall read_buffer
 
@@ -504,7 +504,7 @@ end
 +    BytesLength 48 0
 +    MethodCall read_buffer 48
 @@ -40,2 +42 @@
--  firstmut 1
+-  rootmut 1
 -    MethodCall write_buffer
 +    MethodCall read_buffer
 
@@ -535,7 +535,7 @@ end
 @@ -31,0 +33 @@
 +    EndSpan 160
 @@ -40,2 +42 @@
--  firstmut 1
+-  rootmut 1
 -    MethodCall write_buffer
 +    MethodCall read_buffer
 
@@ -560,7 +560,7 @@ end
 +    BorrowedCall borrow_buffer [(48 2 -1)]
 +    ReleaseObjectLoan 2
 @@ -40,2 +42 @@
--  firstmut 1
+-  rootmut 1
 -    MethodCall write_buffer
 +    MethodCall read_buffer
 

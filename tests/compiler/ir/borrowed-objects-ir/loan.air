@@ -38,7 +38,7 @@ function borrow_buffer
   params [(class Buffer)]
   frame 0
   roots 1
-  firstmut 1
+  rootmut 1
     MethodCall write_buffer
     Return
 end
@@ -66,7 +66,7 @@ end
 -    AcquireObjectLoan 1 48 true
 +    AcquireObjectLoan 1 48
 @@ -39,2 +39 @@
--  firstmut 1
+-  rootmut 1
 -    MethodCall write_buffer
 +    MethodCall read_buffer
 
@@ -88,7 +88,7 @@ end
 -    EndObject 48
 +    EndObject 88
 @@ -39,2 +42 @@
--  firstmut 1
+-  rootmut 1
 -    MethodCall write_buffer
 +    MethodCall read_buffer
 
@@ -137,7 +137,7 @@ function borrow_buffer
   params [(class Buffer)]
   frame 0
   roots 1
-  firstmut 1
+  rootmut 1
     MethodCall write_buffer
     Return
 end
@@ -188,7 +188,7 @@ end
 +  params [(class Buffer)]
 +  frame 0
 +  roots 1
-+  firstmut 1
++  rootmut 1
 +    MethodCall write_buffer
 +    Return
 +end
@@ -218,7 +218,7 @@ end
 -    AcquireObjectLoan 1 48 true
 +    AcquireObjectLoan 1 48
 @@ -39,2 +39,3 @@
--  firstmut 1
+-  rootmut 1
 -    MethodCall write_buffer
 +    AcquireObjectLoan 2
 +    BorrowedCall borrow_leaf [(0 2 -1)]
@@ -291,7 +291,7 @@ function borrow_buffer
   params [(class Buffer) i64 (enum Mode) (class Word) span u8]
   frame 96
   roots 1
-  firstmut 1
+  rootmut 1
   slot 8 i64
   slot 16 (enum Mode)
   slot 24 i64
@@ -417,7 +417,7 @@ end
 +    AcquireObjectLoan 1 48
 +    AcquireObjectLoan 2 48 true
 @@ -39,2 +40 @@
--  firstmut 1
+-  rootmut 1
 -    MethodCall write_buffer
 +    MethodCall read_buffer
 
@@ -508,7 +508,7 @@ end
 -    EndObject 48
 +    EndObject 88
 @@ -39,2 +42 @@
--  firstmut 1
+-  rootmut 1
 -    MethodCall write_buffer
 +    MethodCall read_buffer
 
@@ -554,7 +554,7 @@ end
 ; RUN: verify
 ; EXPECT-ERROR: borrowed call root, nominal type or authority mismatch
 @@ -39,2 +39 @@
--  firstmut 1
+-  rootmut 1
 -    MethodCall write_buffer
 +    MethodCall read_buffer
 
@@ -621,7 +621,7 @@ end
 -    AcquireObjectLoan 1 48 true
 +    AcquireObjectLoan 1 48
 @@ -39,2 +39,3 @@
--  firstmut 1
+-  rootmut 1
 -    MethodCall write_buffer
 +    AcquireObjectLoan 2 0 true
 +    BorrowedCall borrow_leaf [(0 2 -1)]

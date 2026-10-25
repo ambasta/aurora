@@ -39,7 +39,7 @@ function borrow_buffer
   params [(class Buffer)]
   frame 0
   roots 1
-  firstmut 1
+  rootmut 1
     MethodCall write_buffer
     Return
 end
@@ -138,7 +138,7 @@ function borrow_buffer
   params [(class Buffer)]
   frame 0
   roots 1
-  firstmut 1
+  rootmut 1
     MethodCall write_buffer
     Return
 end
@@ -255,7 +255,7 @@ end
 -    AcquireObjectLoan 1 48
 +    AcquireObjectLoan 1 48 true
 @@ -38,0 +39 @@
-+  firstmut 1
++  rootmut 1
 @@ -41 +42,3 @@
 -    SpanLength 56
 +    AcquireObjectLoan 2 0 true
@@ -267,7 +267,7 @@ end
 +  params [(class Buffer)]
 +  frame 0
 +  roots 1
-+  firstmut 1
++  rootmut 1
 +    MethodCall write_buffer
 +    Return
 +end
@@ -533,7 +533,7 @@ end
 +    AcquireObjectLoan 1 48
 +    BorrowedCall borrow_buffer [(48 1 -1)]
 @@ -39 +38,0 @@
--  firstmut 1
+-  rootmut 1
 
 ; CASE: ordinary lexical method cannot mint named-formal loan
 ; BASE: borrowed call cannot target ordinary method
@@ -561,7 +561,7 @@ function borrow_buffer
   result i64
   frame 0
   roots 1
-  firstmut 1
+  rootmut 1
     MethodCall write_buffer
     Return
 end

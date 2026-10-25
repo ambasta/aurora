@@ -1110,14 +1110,14 @@ std::uint64_t resolutionQuota() {
     // substitutions, not new source limits or eagerly reserved storage.
     const auto X = Sx, F = X, fields = add(X, members), carriers = X, returns = add(X, F);
     // The existing six-formal limit bounds the non-frame borrowed identities;
-    // borrowed roots (at most three) may supplement the frame-backed local prefix.
+    // borrowed roots (at most four) may supplement the frame-backed local prefix.
     constexpr std::uint64_t maximumFormals = 6, frameBytes = 65536, frameWords = 8192;
     constexpr std::uint64_t localHigh = frameWords + maximumFormals;
     const auto allLocals = mul(F, localHigh);
     // Primitive producers: literal/load/store/operator/index/control/receiver,
     // service/resource operations and <=6 scalar pushes fit 16 per syntax row.
-    // A borrowed call has N <= 3 acquisitions, N releases and one call; with
-    // tail pushes the bound is 2*N + (6-N) + 1 <= 10, inside that same charge.
+    // A borrowed call has N <= 4 acquisitions, N releases and one call; with
+    // tail pushes the bound is 2*N + (6-N) + 1 <= 11, inside that same charge.
     // Array copy/literal/byte-string expansion is <=4*4096 per occurrence;
     // designated/constructor fields <=3 per field/edge; parameter binding <=6/F.
     // Lifetime begins/staging consume <=2/allocation. Every explicit/synthetic
@@ -1128,7 +1128,7 @@ std::uint64_t resolutionQuota() {
     // snapshot positions and the additional service's two loan/kind items.
     // A borrowed call is a disjoint call kind: its ordered triple list costs
     // 3*N. One-root copied/span calls add two (6-N)-position lists, totaling
-    // 13; multi-root scalar-only calls need at most 3*N+(6-N) <= 12.
+    // 13; multi-root scalar-only calls need at most 3*N+(6-N) <= 14.
     // The existing 14-item per-call charge covers both.
     const auto instructionLists = add(mul(14, X), mul(64, X));
     const auto literalBytes = mul(4096, X);

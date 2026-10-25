@@ -37,7 +37,7 @@ function borrow_values
   params [(values Word)]
   frame 0
   roots 1
-  firstmut 1
+  rootmut 1
     BytesLength
     Return
 end
@@ -89,7 +89,7 @@ function borrow_values
   params [(values Word)]
   frame 0
   roots 1
-  firstmut 1
+  rootmut 1
     BytesLength
     Return
 end
@@ -107,7 +107,7 @@ end
 +  params [(values Word)]
 +  frame 0
 +  roots 1
-+  firstmut 1
++  rootmut 1
 +    BytesLength
 +    Return
 +end
@@ -159,7 +159,7 @@ function borrow_values
   params [(values Word) (class Word) i64]
   frame 16
   roots 1
-  firstmut 1
+  rootmut 1
   slot 8 i64
   slot 16 i64
   object 8 Word false
@@ -442,7 +442,7 @@ end
 +  params [(values Word)]
 +  frame 0
 +  roots 1
-+  firstmut 1
++  rootmut 1
 +    BytesLength
 +    Return
 +end
@@ -461,7 +461,7 @@ end
 +  params [(values Word)]
 +  frame 0
 +  roots 1
-+  firstmut 1
++  rootmut 1
 +    BytesLength
 +    Return
 +end

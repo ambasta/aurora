@@ -126,7 +126,7 @@ function borrowed_values
   params [(values Record) (class Record) i64]
   frame 64
   roots 1
-  firstmut 1
+  rootmut 1
   slot 8 u8
   slot 16 u64
   slot 24 u8
@@ -157,7 +157,7 @@ end
 ; RUN: verify
 ; EXPECT-ERROR: invalid typed IR
 @@ -25 +24,0 @@
--  firstmut 1
+-  rootmut 1
 
 ; CASE: borrowed typed owner rejects raw byte formal
 ; BASE: borrowed typed owner reads writes resizes and cleans copied tails

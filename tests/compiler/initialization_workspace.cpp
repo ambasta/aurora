@@ -189,7 +189,7 @@ public:
         callable.nameRange = text(function.name);
         callable.typeRange = {argument(types.size()), argument(function.parameters.size() + 1)};
         callable.borrowedRootCount = function.borrowedRootCount;
-        callable.firstBorrowedMutable = function.firstBorrowedMutable;
+        callable.borrowedRootMutability = function.borrowedRootMutability;
         callable.moduleScope = function.moduleScope;
         callable.frameBytes = function.frameBytes;
         appendType(function.result);

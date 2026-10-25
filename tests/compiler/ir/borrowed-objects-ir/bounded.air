@@ -291,23 +291,23 @@ end
 ; RUN: emit
 @@ -16 +16,2 @@
 -    AcquireObjectLoan 1
-+  firstmut 1
++  rootmut 1
 +    AcquireObjectLoan 1 0 true
 @@ -26 +27,2 @@
 -    MethodCall read_buffer
-+  firstmut 1
++  rootmut 1
 +    MethodCall write_buffer
 
 ; CASE: bounded roots 1 first 1 scalar enum tail 1
 ; BASE: bounded roots 1 first 0 scalar enum tail 1
 ; RUN: emit
 @@ -15,0 +16 @@
-+  firstmut 1
++  rootmut 1
 @@ -18 +19 @@
 -    AcquireObjectLoan 1
 +    AcquireObjectLoan 1 0 true
 @@ -29,0 +31 @@
-+  firstmut 1
++  rootmut 1
 @@ -32 +34 @@
 -    MethodCall read_buffer
 +    MethodCall write_buffer
@@ -329,7 +329,7 @@ function bounded_forward
   params [(class Buffer) i64 (enum Mode)]
   frame 16
   roots 1
-  firstmut 1
+  rootmut 1
   slot 8 i64
   slot 16 (enum Mode)
     BindParameter 0 8
@@ -348,7 +348,7 @@ function bounded_leaf
   params [(class Buffer) i64 (enum Mode)]
   frame 16
   roots 1
-  firstmut 1
+  rootmut 1
   slot 8 i64
   slot 16 (enum Mode)
     BindParameter 0 8
@@ -378,12 +378,12 @@ end
 ; BASE: bounded roots 1 first 0 scalar enum tail 3
 ; RUN: emit
 @@ -15,0 +16 @@
-+  firstmut 1
++  rootmut 1
 @@ -22 +23 @@
 -    AcquireObjectLoan 1
 +    AcquireObjectLoan 1 0 true
 @@ -37,0 +39 @@
-+  firstmut 1
++  rootmut 1
 @@ -44 +46 @@
 -    MethodCall read_buffer
 +    MethodCall write_buffer
@@ -405,7 +405,7 @@ function bounded_forward
   params [(class Buffer) i64 (enum Mode) i64 (enum Mode)]
   frame 32
   roots 1
-  firstmut 1
+  rootmut 1
   slot 8 i64
   slot 16 (enum Mode)
   slot 24 i64
@@ -432,7 +432,7 @@ function bounded_leaf
   params [(class Buffer) i64 (enum Mode) i64 (enum Mode)]
   frame 32
   roots 1
-  firstmut 1
+  rootmut 1
   slot 8 i64
   slot 16 (enum Mode)
   slot 24 i64
@@ -466,12 +466,12 @@ end
 ; BASE: bounded roots 1 first 0 scalar enum tail 5
 ; RUN: emit
 @@ -15,0 +16 @@
-+  firstmut 1
++  rootmut 1
 @@ -26 +27 @@
 -    AcquireObjectLoan 1
 +    AcquireObjectLoan 1 0 true
 @@ -45,0 +47 @@
-+  firstmut 1
++  rootmut 1
 @@ -56 +58 @@
 -    MethodCall read_buffer
 +    MethodCall write_buffer
@@ -768,23 +768,23 @@ end
 ; RUN: emit
 @@ -16 +16,2 @@
 -    AcquireObjectLoan 1
-+  firstmut 1
++  rootmut 1
 +    AcquireObjectLoan 1 0 true
 @@ -28 +29,2 @@
 -    MethodCall read_buffer
-+  firstmut 1
++  rootmut 1
 +    MethodCall write_buffer
 
 ; CASE: bounded roots 2 first 1 scalar enum tail 1
 ; BASE: bounded roots 2 first 0 scalar enum tail 1
 ; RUN: emit
 @@ -15,0 +16 @@
-+  firstmut 1
++  rootmut 1
 @@ -18 +19 @@
 -    AcquireObjectLoan 1
 +    AcquireObjectLoan 1 0 true
 @@ -31,0 +33 @@
-+  firstmut 1
++  rootmut 1
 @@ -34 +36 @@
 -    MethodCall read_buffer
 +    MethodCall write_buffer
@@ -830,7 +830,7 @@ function bounded_forward
   params [(class Buffer) (class Buffer) i64 (enum Mode) i64]
   frame 32
   roots 2
-  firstmut 1
+  rootmut 1
   slot 8 i64
   slot 16 (enum Mode)
   slot 24 i64
@@ -855,7 +855,7 @@ function bounded_leaf
   params [(class Buffer) (class Buffer) i64 (enum Mode) i64]
   frame 32
   roots 2
-  firstmut 1
+  rootmut 1
   slot 8 i64
   slot 16 (enum Mode)
   slot 24 i64
@@ -888,12 +888,12 @@ end
 ; BASE: bounded roots 2 first 0 scalar enum tail 4
 ; RUN: emit
 @@ -15,0 +16 @@
-+  firstmut 1
++  rootmut 1
 @@ -24 +25 @@
 -    AcquireObjectLoan 1
 +    AcquireObjectLoan 1 0 true
 @@ -43,0 +45 @@
-+  firstmut 1
++  rootmut 1
 @@ -52 +54 @@
 -    MethodCall read_buffer
 +    MethodCall write_buffer
@@ -1095,12 +1095,12 @@ end
 @@ -16,2 +16,3 @@
 -    AcquireObjectLoan 1
 -    AcquireObjectLoan 2 -1
-+  firstmut 1
++  rootmut 1
 +    AcquireObjectLoan 1 0 true
 +    AcquireObjectLoan 2 -1 true
 @@ -28 +29,2 @@
 -    MethodCall read_buffer
-+  firstmut 1
++  rootmut 1
 +    MethodCall write_buffer
 
 ; CASE: every bound root denies span production 2/1
@@ -1316,11 +1316,11 @@ end
 ; RUN: emit
 @@ -16 +16,2 @@
 -    AcquireObjectLoan 1
-+  firstmut 1
++  rootmut 1
 +    AcquireObjectLoan 1 0 true
 @@ -30 +31,2 @@
 -    MethodCall read_buffer
-+  firstmut 1
++  rootmut 1
 +    MethodCall write_buffer
 
 ; CASE: bounded roots 3 first 1 scalar enum tail 1
@@ -1340,7 +1340,7 @@ function bounded_forward
   params [(class Buffer)*3 i64]
   frame 16
   roots 3
-  firstmut 1
+  rootmut 1
   slot 8 i64
     BindParameter 0 8
     AcquireObjectLoan 1 0 true
@@ -1359,7 +1359,7 @@ function bounded_leaf
   params [(class Buffer)*3 i64]
   frame 16
   roots 3
-  firstmut 1
+  rootmut 1
   slot 8 i64
     BindParameter 0 8
     MethodCall write_buffer
@@ -1389,12 +1389,12 @@ end
 ; BASE: bounded roots 3 first 0 scalar enum tail 2
 ; RUN: emit
 @@ -15,0 +16 @@
-+  firstmut 1
++  rootmut 1
 @@ -20 +21 @@
 -    AcquireObjectLoan 1
 +    AcquireObjectLoan 1 0 true
 @@ -37,0 +39 @@
-+  firstmut 1
++  rootmut 1
 @@ -42 +44 @@
 -    MethodCall read_buffer
 +    MethodCall write_buffer
@@ -1630,12 +1630,12 @@ end
 @@ -16,2 +16,3 @@
 -    AcquireObjectLoan 1
 -    AcquireObjectLoan 2 -1
-+  firstmut 1
++  rootmut 1
 +    AcquireObjectLoan 1 0 true
 +    AcquireObjectLoan 2 -1 true
 @@ -30 +31,2 @@
 -    MethodCall read_buffer
-+  firstmut 1
++  rootmut 1
 +    MethodCall write_buffer
 
 ; CASE: every bound root denies span production 3/1
@@ -1722,14 +1722,14 @@ end
 ; EXPECT-ERROR: shared formal cannot supply mutable object loan
 @@ -16 +16,2 @@
 -    AcquireObjectLoan 1
-+  firstmut 1
++  rootmut 1
 +    AcquireObjectLoan 1 0 true
 @@ -18 +19 @@
 -    AcquireObjectLoan 3 -2
 +    AcquireObjectLoan 3 -2 true
 @@ -30 +31,2 @@
 -    MethodCall read_buffer
-+  firstmut 1
++  rootmut 1
 +    MethodCall write_buffer
 
 ; CASE: every bound root denies span production 3/2
@@ -1797,13 +1797,13 @@ end
 -  roots 3
 +  roots -1
 
-; CASE: raw root count stays hostile 4
+; CASE: raw root count stays hostile 5
 ; BASE: bounded roots 3 first 0 scalar enum tail 0
 ; RUN: verify
 ; EXPECT-ERROR: invalid hosted IR metadata transport
 @@ -15 +15 @@
 -  roots 3
-+  roots 4
++  roots 5
 
 ; CASE: raw root count stays hostile -9223372036854775808
 ; BASE: bounded roots 3 first 0 scalar enum tail 0
@@ -1813,30 +1813,30 @@ end
 -  roots 3
 +  roots -9223372036854775808
 
-; CASE: raw first mutability stays hostile -1
+; CASE: raw root mutability stays hostile -1
 ; BASE: bounded roots 3 first 0 scalar enum tail 0
 ; RUN: verify
 ; EXPECT-ERROR: invalid hosted IR metadata transport
 @@ -15,0 +16 @@
-+  firstmut -1
++  rootmut -1
 
-; CASE: raw first mutability stays hostile 2
+; CASE: raw root mutability stays hostile 8
 ; BASE: bounded roots 3 first 0 scalar enum tail 0
 ; RUN: verify
 ; EXPECT-ERROR: invalid hosted IR metadata transport
 @@ -15,0 +16 @@
-+  firstmut 2
++  rootmut 8
 
-; CASE: raw first mutability stays hostile 9223372036854775807
+; CASE: raw root mutability stays hostile 9223372036854775807
 ; BASE: bounded roots 3 first 0 scalar enum tail 0
 ; RUN: verify
 ; EXPECT-ERROR: invalid hosted IR metadata transport
 @@ -15,0 +16 @@
-+  firstmut 9223372036854775807
++  rootmut 9223372036854775807
 
 ; CASE: readonly first cannot escalate while forwarding
 ; BASE: bounded roots 3 first 0 scalar enum tail 0
 ; RUN: verify
 ; EXPECT-ERROR: borrowed call root, lifetime, nominal type or authority mismatch
 @@ -29,0 +30 @@
-+  firstmut 1
++  rootmut 1

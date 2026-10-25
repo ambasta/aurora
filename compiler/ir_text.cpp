@@ -876,8 +876,8 @@ void printFunction(std::string &out, const Function &function) {
     }
     if (function.borrowedRootCount != 0)
         out += "  roots " + std::to_string(function.borrowedRootCount) + '\n';
-    if (function.firstBorrowedMutable != 0)
-        out += "  firstmut " + std::to_string(function.firstBorrowedMutable) + '\n';
+    if (function.borrowedRootMutability != 0)
+        out += "  rootmut " + std::to_string(function.borrowedRootMutability) + '\n';
     if (function.receiverSpanField)
         out += "  spanfield " + std::to_string(*function.receiverSpanField) + '\n';
     for (const auto &[offset, type] : function.slots)
@@ -1004,9 +1004,9 @@ class ModuleReader : public Reader {
         } else if (keyword == "roots") {
             arity(nodes, 2, 2);
             function.borrowedRootCount = integer64(nodes[1]);
-        } else if (keyword == "firstmut") {
+        } else if (keyword == "rootmut") {
             arity(nodes, 2, 2);
-            function.firstBorrowedMutable = integer64(nodes[1]);
+            function.borrowedRootMutability = integer64(nodes[1]);
         } else if (keyword == "spanfield") {
             arity(nodes, 2, 2);
             function.receiverSpanField = integer(nodes[1]);

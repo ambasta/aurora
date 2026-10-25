@@ -163,7 +163,12 @@ def paired_harness(text, selected):
 
 
 def bounded_shapes():
-    return [(roots, mutable, tail) for roots in range(1, 4) for mutable in range(2) for tail in range(7 - roots)]
+    return [
+        (roots, mask, tail)
+        for roots in range(1, 5)
+        for mask in sorted({0, 1, 1 << (roots - 1), (1 << roots) - 1} | ({3, 10} if roots == 4 else set()))
+        for tail in range(7 - roots)
+    ]
 
 
 def bounded_value(ordinal):
@@ -238,7 +243,7 @@ def bounded_harness(text, selected):
         text += abi.blob(f"bounded_receiver_{ordinal}", words)
         text += abi.blob(f"bounded_receiver_{ordinal}_right", [abi.RIGHT])
         text += abi.blob(f"literal_bounded_receiver_{ordinal}", [abi.LEFT, *words, abi.RIGHT])
-    for roots in range(2, 4):
+    for roots in range(2, 5):
         words = ["receiver", *(f"bounded_receiver_{ordinal}" for ordinal in range(1, roots))]
         if roots % 2:
             words.append(0xABABABABABABABAB)

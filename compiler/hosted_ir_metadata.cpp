@@ -659,7 +659,7 @@ void detail::MetadataWriter::declarations(const Module &module) {
         row.typeRange.firstIndex = writer.position().coreCounts.types;
         row.typeRange.indexCount = add(1, count(function.parameters.size()));
         row.borrowedRootCount = function.borrowedRootCount;
-        row.firstBorrowedMutable = function.firstBorrowedMutable;
+        row.borrowedRootMutability = function.borrowedRootMutability;
         row.moduleScope = function.moduleScope;
         writer.callableType(function.result);
         for (const auto &parameter : function.parameters)
@@ -821,9 +821,8 @@ void Metadata::publish() {
         (void)integer(row.moduleScope);
         (void)state_->text(row.receiver.nameRange);
         const auto roots = index(row.borrowedRootCount);
-        if (roots > 3 || roots > index(row.typeRange.indexCount) - 1 ||
-            (row.firstBorrowedMutable != 0 && row.firstBorrowedMutable != 1) ||
-            (roots == 0 && row.firstBorrowedMutable != 0))
+        if (roots > 4 || roots > index(row.typeRange.indexCount) - 1 || row.borrowedRootMutability < 0 ||
+            static_cast<std::uint64_t>(row.borrowedRootMutability) >= (std::uint64_t{1} << roots))
             invalidTransport();
         if ((row.flags & metadataFlagMasks().callableSpanSummary) != 0)
             (void)integer(row.receiverSpanField);
@@ -1008,9 +1007,8 @@ std::size_t CallableView::borrowedRootCount() const {
     const auto row = metadata_->state_->row<Pool::callables>(id_);
     const auto roots = index(row.borrowedRootCount);
     const auto types = index(row.typeRange.indexCount);
-    if (types == 0 || roots > 3 || roots > types - 1 ||
-        (row.firstBorrowedMutable != 0 && row.firstBorrowedMutable != 1) ||
-        (roots == 0 && row.firstBorrowedMutable != 0))
+    if (types == 0 || roots > 4 || roots > types - 1 || row.borrowedRootMutability < 0 ||
+        static_cast<std::uint64_t>(row.borrowedRootMutability) >= (std::uint64_t{1} << roots))
         invalidTransport();
     return roots;
 }
@@ -1021,7 +1019,8 @@ Type CallableView::borrowedRootType(std::size_t ordinal) const {
 }
 bool CallableView::borrowedRootMutable(std::size_t ordinal) const {
     checkIndex(ordinal, borrowedRootCount());
-    return ordinal == 0 && metadata_->state_->row<Pool::callables>(id_).firstBorrowedMutable == 1;
+    return (static_cast<std::uint64_t>(metadata_->state_->row<Pool::callables>(id_).borrowedRootMutability) &
+            (std::uint64_t{1} << ordinal)) != 0;
 }
 std::optional<Receiver> CallableView::receiver() const {
     if (borrowedRootCount() != 0) {
