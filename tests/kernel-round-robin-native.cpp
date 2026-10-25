@@ -33,8 +33,22 @@ auto main() -> int {
     }
     {
         Family family("policy-edges");
-        const U64 values[] = {0, 1, 2, 3, 4, 7, 15, 127, 128, 255, 256, (U64{1} << 32) - 1, U64{1} << 32,
-                              (U64{1} << 63) - 1, U64{1} << 63, maximum};
+        const U64 values[] = {0,
+                              1,
+                              2,
+                              3,
+                              4,
+                              7,
+                              15,
+                              127,
+                              128,
+                              255,
+                              256,
+                              (U64{1} << 32) - 1,
+                              U64{1} << 32,
+                              (U64{1} << 63) - 1,
+                              U64{1} << 63,
+                              maximum};
         for (const auto cursor : values)
             for (const auto mask : values)
                 policy(family, cursor, mask);
@@ -71,8 +85,8 @@ auto main() -> int {
         const U64 contexts[] = {0, 1, 2, 3, 4, U64{1} << 63, maximum};
         for (const auto cursor : contexts)
             for (const auto mask : contexts)
-                for (const U64 word : {U64{0}, U64{1}, U64{2}, U64{0x10001}, U64{0x10002}, U64{0x102}, U64{1} << 63,
-                                       maximum})
+                for (const U64 word :
+                     {U64{0}, U64{1}, U64{2}, U64{0x10001}, U64{0x10002}, U64{0x102}, U64{1} << 63, maximum})
                     decoder(family, word, cursor, mask);
     }
     return 0;

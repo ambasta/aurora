@@ -4,8 +4,10 @@
 #include "driver.hpp"
 
 auto main(int argc, char **argv) -> int {
-    return native_driver::run(argc, argv, {
-        {"kernel-uefi-runtime", kernel_uefi_runtime::main},
-        {"kernel-uefi-user-run", kernel_uefi_user_run::main},
-    });
+    return native_driver::run(argc,
+                              argv,
+                              {
+                                  {"kernel-uefi-runtime", kernel_uefi_runtime::main},
+                                  {"kernel-uefi-user-run", kernel_uefi_user_run::main},
+                              });
 }

@@ -4,8 +4,10 @@
 #include "driver.hpp"
 
 auto main(int argc, char **argv) -> int {
-    return native_driver::run(argc, argv, {
-        {"kernel-dormant-api", kernel_dormant_api::main},
-        {"kernel-pin-api", kernel_pin_api::main},
-    });
+    return native_driver::run(argc,
+                              argv,
+                              {
+                                  {"kernel-dormant-api", kernel_dormant_api::main},
+                                  {"kernel-pin-api", kernel_pin_api::main},
+                              });
 }

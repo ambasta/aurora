@@ -9,12 +9,14 @@
 #include "driver.hpp"
 
 auto main(int argc, char **argv) -> int {
-    return native_driver::run(argc, argv, {
-        {"kernel-pages", kernel_pages::main},
-        {"kernel-protection", kernel_protection::main},
-        {"kernel-program", kernel_program::main},
-        {"kernel-program-layout", kernel_program_layout::main},
-        {"kernel-domain", kernel_domain::main},
-        {"kernel-schedule", kernel_schedule::main},
-    });
+    return native_driver::run(argc,
+                              argv,
+                              {
+                                  {"kernel-pages", kernel_pages::main},
+                                  {"kernel-protection", kernel_protection::main},
+                                  {"kernel-program", kernel_program::main},
+                                  {"kernel-program-layout", kernel_program_layout::main},
+                                  {"kernel-domain", kernel_domain::main},
+                                  {"kernel-schedule", kernel_schedule::main},
+                              });
 }

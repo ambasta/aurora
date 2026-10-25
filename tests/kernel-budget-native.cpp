@@ -76,7 +76,8 @@ int main() {
         for (U64 initial = 1; initial <= 128; ++initial) {
             for (U64 remaining = 0; remaining < 131; ++remaining) {
                 for (int offset = -2; offset <= 2; ++offset) {
-                    const auto used = static_cast<std::int64_t>(initial) - static_cast<std::int64_t>(remaining) + offset;
+                    const auto used =
+                        static_cast<std::int64_t>(initial) - static_cast<std::int64_t>(remaining) + offset;
                     if (used >= 0)
                         policy(family, initial, remaining, static_cast<U64>(used));
                 }

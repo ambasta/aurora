@@ -5,9 +5,11 @@
 #include "driver.hpp"
 
 auto main(int argc, char **argv) -> int {
-    return native_driver::run(argc, argv, {
-        {"kernel-uefi", kernel_uefi::main},
-        {"kernel-acpi", kernel_acpi::main},
-        {"kernel-pci", kernel_pci::main},
-    });
+    return native_driver::run(argc,
+                              argv,
+                              {
+                                  {"kernel-uefi", kernel_uefi::main},
+                                  {"kernel-acpi", kernel_acpi::main},
+                                  {"kernel-pci", kernel_pci::main},
+                              });
 }

@@ -3,7 +3,9 @@
 #include "driver.hpp"
 
 auto main(int argc, char **argv) -> int {
-    return native_driver::run(argc, argv, {
-        {"kernel-uefi-handoff", kernel_uefi_handoff::main},
-    });
+    return native_driver::run(argc,
+                              argv,
+                              {
+                                  {"kernel-uefi-handoff", kernel_uefi_handoff::main},
+                              });
 }

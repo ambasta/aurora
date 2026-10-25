@@ -11,9 +11,27 @@ namespace kernel_ipc_transition_native {
 using namespace policy_vectors;
 
 namespace {
-constexpr U64 edges[] = {0,   1,   2,     3,     4,         5,          6,         7,
-                         8,   15,  127,   128,   255,       256,        65535,     65536,
-                         (U64{1} << 32) - 1, U64{1} << 32, (U64{1} << 63) - 1, U64{1} << 63, maximum};
+constexpr U64 edges[] = {0,
+                         1,
+                         2,
+                         3,
+                         4,
+                         5,
+                         6,
+                         7,
+                         8,
+                         15,
+                         127,
+                         128,
+                         255,
+                         256,
+                         65535,
+                         65536,
+                         (U64{1} << 32) - 1,
+                         U64{1} << 32,
+                         (U64{1} << 63) - 1,
+                         U64{1} << 63,
+                         maximum};
 constexpr U64 valid_words[] = {1, 0x010102, 0x020202, 0x030302, 0x040502, 0x050502, 0x060402, 0x070002};
 using Context = std::array<U64, 4>;
 auto contexts() -> std::vector<Context> {
@@ -114,8 +132,14 @@ auto main() -> int {
         // Invalid original contexts must reject even refusal or a plausible success.
         Family family("decoder-invalid-context");
         const U64 limits[] = {5, 3, 5, 1};
-        const Context bases[] = {{0, 1, 0, 1}, {1, 2, 1, 0}, {2, 2, 2, 1}, {3, 3, 3, 0},
-                                 {3, 3, 4, 1}, {4, 0, 1, 0}, {4, 0, 2, 1}, {5, 0, 5, 1}};
+        const Context bases[] = {{0, 1, 0, 1},
+                                 {1, 2, 1, 0},
+                                 {2, 2, 2, 1},
+                                 {3, 3, 3, 0},
+                                 {3, 3, 4, 1},
+                                 {4, 0, 1, 0},
+                                 {4, 0, 2, 1},
+                                 {5, 0, 5, 1}};
         for (unsigned field = 0; field < 4; ++field)
             for (const auto value : edges) {
                 if (value <= limits[field])
