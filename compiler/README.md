@@ -14,7 +14,20 @@ call-site admission and whole-function value, lifetime and provenance verificati
 Module file loading, mechanical projection, quota and report transport checks
 remain C++23. The Aurora-native x86-64 emitter
 consumes the admitted source stores; the host retains artifact I/O.
-GNU assembler/linker and Linux host I/O remain bootstrap dependencies.
+The same semantic traversal feeds typed x86 forms to the text backend or the
+checked relocatable-object backend selected by `--emit-object`. Object output
+uses a separate typed workspace for code, symbols, labels and relocations. It
+supports the ordinary forms used by the source UART policy; literal storage and
+reflection code generation fail closed rather than falling back to an assembler.
+Use `--referenced-reflection-only` when no reflection entry is required.
+
+The native UART wrapper remains a separate bootstrap adapter. The private
+composition step globalizes only its three fact-selected source entries,
+assembles the wrapper, partially links, and restores those source entries to
+LOCAL before atomic publication. Existing hidden wrapper exports and port
+imports are unchanged. This adds no Aurora C ABI or public export mechanism.
+GNU assembler/linker and Linux host I/O remain bootstrap dependencies for text
+output, native adapters and final links.
 
 The verifier keeps active facts in a flat, sorted owner-backed prefix and restores
 canonical snapshots directly, without rebuilding a search tree. Binary searches
@@ -102,8 +115,9 @@ checkpoint C0 --compiles--> C1 (aurorac) --compiles--> C2 (aurorac-stage2)
 
 [`checkpoint.json`](checkpoint.json) pins C0 by source commit, tree and
 executable SHA-256. C0 is the C2 of
-main commit `d4cbabb` (typed views), built in one hop from the previous
-checkpoint, the C2 of `2fd30b2`; `history` in `checkpoint.json` lists earlier pins
+main commit `ab255328` (four distinct borrowed roots with per-root mutability),
+built in one hop from the previous checkpoint, the C2 of `d4cbabb`;
+`history` in `checkpoint.json` lists earlier pins
 and the first one was built from the last historical stage (below). No
 compiler binary is committed or downloaded. Meson's `bootstrap_compiler` option
 names a local copy; `scripts/bootstrap.py select` accepts it only if its bytes
@@ -113,7 +127,7 @@ it regenerates the frontend.
 
 ```sh
 # A local copy of the pinned executable; only its digest is pinned.
-C0=/workspace/build/checkpoint-d4cbabbb692a/aurorac
+C0=/workspace/build/checkpoint-ab255328/aurorac
 meson setup build/meson . "-Dbootstrap_compiler=$C0" "-Duefi_ld=$UEFI_LD"
 meson setup build/meson-compiler . -Dkernel_images=false "-Dbootstrap_compiler=$C0"
 MESON_BUILD_DIR=build/meson-compiler python3 -B scripts/meson_test.py \
@@ -147,17 +161,21 @@ It copies NEW's C2 to `OUTPUT/aurorac`, writes
 commands, logs and timings) and prints the new pin. The bump commit records that
 pin in `checkpoint.json`, moves the old one to `history`, and qualifies with the
 release suite and the merge gates. Adding `--expect SHA256` reproduces a recorded
-hop. To rebuild the current C0 from the previous one (C2 of `2fd30b2`, kept at
-`build/bootstrap-reseed/checkpoint/aurorac` or rebuilt by the historical route below):
+hop. To rebuild the current C0 from the previous one (C2 of `d4cbabb`,
+retained locally or rebuilt through its history entry):
 
 ```sh
-git worktree add --detach build/hop-src d4cbabbb692a5553d8b14641e145a2f5ddc6ca93
+git worktree add --detach build/hop-src ab255328a762b859e76b84144cf6515de71303bf
 ./scripts/container.sh python3 scripts/bootstrap.py hop --jobs "$(nproc)" \
-  --compiler /workspace/build/bootstrap-reseed/checkpoint/aurorac \
-  --source /workspace/build/hop-src --commit d4cbabbb692a5553d8b14641e145a2f5ddc6ca93 \
-  --tree ea4bba96465978e978646ef67c541df9073328a3 --output /workspace/build/checkpoint-d4cbabbb692a \
-  --expect deae50d0f1d339a297608ef5e50f163e68fc32c9d32614e74a99ca6d9542e42e
+  --compiler /workspace/build/checkpoint-d4cbabbb692a/aurorac \
+  --source /workspace/build/hop-src --commit ab255328a762b859e76b84144cf6515de71303bf \
+  --tree ed168629519d1ad76759fba59c8f47c4fef043aa --output /workspace/build/checkpoint-ab255328 \
+  --expect ed5efd0b8dae5a1bf5f808c40f8b4ac08ab3bf05d8255f829850de4231687975
 ```
+
+The recorded hop used the exact pinned native tools and a canonical no-RPATH
+compiler wrapper. This is native evidence, not a claim that the container route
+was executed for that receipt.
 
 With the pinned image, builds were byte-identical across build directories:
 all six historical stages matched their earlier receipt, and C2 rebuilt from C0

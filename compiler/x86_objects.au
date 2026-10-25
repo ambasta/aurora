@@ -1,5 +1,6 @@
 export module aurora.compiler.x86_objects;
 import aurora.compiler.x86_storage;
+import aurora.compiler.x86_object_storage;
 import aurora.compiler.x86_helpers;
 import aurora.compiler.ir_metadata;
 import aurora.compiler.ir_metadata_storage;
@@ -14,26 +15,21 @@ export namespace compiler_x86 {
         }
         return slot_class(metadata, callable, offset);
     }
-    auto object_copy_record_words(EmitWorkspace& workspace, i64 source, i64 destination, i64 bytes) -> bool {
+    auto object_copy_record_words(EmitWorkspace& workspace, ObjectWorkspace& object, i64 source, i64 destination,
+        i64 bytes) -> bool {
         i64 byte = 0;
         while (byte < bytes) {
-            workspace.begin_line();
-            workspace.text("movq ");
             const i64 packed_address13 = workspace.advance_address(source, byte);
-            workspace.memory(packed_address13);
-            workspace.text(", %rax");
-            workspace.end_line();
-            workspace.begin_line();
-            workspace.text("movq %rax, ");
+            emit_load(workspace, object, packed_address13, Register::rax, false);
             const i64 packed_address14 = workspace.advance_address(destination, byte);
-            workspace.memory(packed_address14);
-            workspace.end_line();
+            emit_store(workspace, object, Register::rax, packed_address14, false);
             byte = byte + 8;
         }
         return workspace.ok();
     }
-    auto pack_arguments(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
-        const compiler_ir_instructions::InstructionStore& store, i64 instruction, i64 target) -> i64 {
+    auto pack_arguments(EmitWorkspace& workspace, ObjectWorkspace& object,
+        const compiler_ir_metadata::MetadataStore& metadata, const compiler_ir_instructions::InstructionStore& store,
+        i64 instruction, i64 target) -> i64 {
         const compiler_ir_instructions::RawInstructionRow row = store.instruction_at(instruction);
         const i64 form = row.form();
         i64 object_field = 2;
@@ -58,13 +54,13 @@ export namespace compiler_x86 {
             const i64 type = parameter_type(metadata, target, index);
             const i64 kind = type_kind(metadata, type);
             if (kind != 5 && !span_kind(kind)) {
-                workspace.pop_argument(index);
+                emit_pop_argument(workspace, object, index);
             }
         }
         const i64 payload = record_offset(metadata, target, count);
         const i64 bytes =((payload + 15) / 16) * 16;
         if (bytes != 0) {
-            workspace.reserve_stack(bytes);
+            emit_reserve_stack(workspace, object, bytes);
         }
         // Clear exact representation gaps before storing payload. Owner-bearing
         // parameters cannot enter this admitted copied-argument family.
@@ -76,7 +72,7 @@ export namespace compiler_x86 {
             if (kind == 5) {
                 const i64 class_id = type_class(metadata, type);
                 const i64 packed_address15 = workspace.pack_address(1, offset);
-                clear_padding(workspace, metadata, class_id, packed_address15);
+                clear_padding(workspace, object, metadata, class_id, packed_address15);
             } else {
                 if (!span_kind(kind)) {
                     i64 width = 8;
@@ -84,13 +80,13 @@ export namespace compiler_x86 {
                         width = 1;
                     }
                     const i64 packed_address16 = workspace.pack_address(1, offset);
-                    clear_bytes(workspace, width, 8, packed_address16);
+                    clear_bytes(workspace, object, width, 8, packed_address16);
                 }
             }
             index = index + 1;
         }
         const i64 packed_address17 = workspace.pack_address(1, 0);
-        clear_bytes(workspace, payload, bytes, packed_address17);
+        clear_bytes(workspace, object, payload, bytes, packed_address17);
         index = 0;
         while (index < count) {
             const i64 type = parameter_type(metadata, target, index);
@@ -100,26 +96,27 @@ export namespace compiler_x86 {
                 const i64 source = operand_lane(store, instruction, span_field, index);
                 const i64 packed_address18 = workspace.pack_address(0, source);
                 const i64 packed_address19 = workspace.pack_address(1, offset);
-                object_copy_record_words(workspace, packed_address18, packed_address19, 56);
+                object_copy_record_words(workspace, object, packed_address18, packed_address19, 56);
             } else {
                 if (kind == 5) {
                     const i64 class_id = type_class(metadata, type);
                     const i64 source = operand_lane(store, instruction, object_field, index);
                     const i64 packed_address20 = workspace.pack_address(0, source);
                     const i64 packed_address21 = workspace.pack_address(1, offset);
-                    copy_class(workspace, metadata, class_id, packed_address20, packed_address21);
+                    copy_class(workspace, object, metadata, class_id, packed_address20, packed_address21);
                 } else {
                     const i64 packed_address22 = workspace.pack_address(1, offset);
-                    store_argument(workspace, metadata, type, index, packed_address22);
+                    store_argument(workspace, object, metadata, type, index, packed_address22);
                 }
             }
             index = index + 1;
         }
-        workspace.line("movq %rsp, %r11");
+        emit_mov_rr(workspace, object, Register::rsp, Register::r11);
         return bytes;
     }
-    auto pack_service(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
-        const compiler_ir_instructions::InstructionStore& store, i64 instruction, i64 target) -> i64 {
+    auto pack_service(EmitWorkspace& workspace, ObjectWorkspace& object,
+        const compiler_ir_metadata::MetadataStore& metadata, const compiler_ir_instructions::InstructionStore& store,
+        i64 instruction, i64 target) -> i64 {
         const i64 count = parameter_count(metadata, target);
         i64 index = count;
         while (index > 0) {
@@ -127,14 +124,14 @@ export namespace compiler_x86 {
             const i64 type = parameter_type(metadata, target, index);
             const i64 kind = type_kind(metadata, type);
             if (kind != 5 && kind != 11 && kind != 12 && !service_type_kind(kind)) {
-                workspace.pop_argument(index);
+                emit_pop_argument(workspace, object, index);
             }
         }
         const i64 payload = record_offset(metadata, target, count);
         const i64 bytes =((payload + 15) / 16) * 16;
-        workspace.reserve_stack(bytes);
+        emit_reserve_stack(workspace, object, bytes);
         const i64 packed_address23 = workspace.pack_address(1, 0);
-        clear_bytes(workspace, 0, bytes, packed_address23);
+        clear_bytes(workspace, object, 0, bytes, packed_address23);
         index = 0;
         while (index < count) {
             const i64 type = parameter_type(metadata, target, index);
@@ -152,145 +149,173 @@ export namespace compiler_x86 {
                 }
                 const i64 packed_address24 = workspace.pack_address(0, source);
                 const i64 packed_address25 = workspace.pack_address(1, offset);
-                object_copy_record_words(workspace, packed_address24, packed_address25, 16);
+                object_copy_record_words(workspace, object, packed_address24, packed_address25, 16);
             } else {
                 if (kind == 12) {
                     const i64 source = operand_value(store, instruction, 7);
-                    workspace.line_address("movq ", source, ", %r10");
-                    workspace.line_number("movq %r10, ", offset, "(%rsp)");
+                    const i64 address_token1 = workspace.pack_address(0, source);
+                    emit_load(workspace, object, address_token1, Register::r10, false);
+                    const i64 address_token2 = workspace.pack_address(1, offset);
+                    emit_store(workspace, object, Register::r10, address_token2, false);
                 } else {
                     if (kind == 11) {
                         const i64 source = operand_lane(store, instruction, 3, index);
                         const i64 packed_address26 = workspace.pack_address(0, source);
                         const i64 packed_address27 = workspace.pack_address(1, offset);
-                        object_copy_record_words(workspace, packed_address26, packed_address27, 56);
+                        object_copy_record_words(workspace, object, packed_address26, packed_address27, 56);
                     } else {
                         if (kind == 5) {
                             const i64 class_id = type_class(metadata, type);
                             const i64 source = operand_lane(store, instruction, 6, index);
                             const i64 packed_address28 = workspace.pack_address(0, source);
                             const i64 packed_address29 = workspace.pack_address(1, offset);
-                            copy_class(workspace, metadata, class_id, packed_address28, packed_address29);
+                            copy_class(workspace, object, metadata, class_id, packed_address28, packed_address29);
                         } else {
                             const i64 packed_address30 = workspace.pack_address(1, offset);
-                            store_argument(workspace, metadata, type, index, packed_address30);
+                            store_argument(workspace, object, metadata, type, index, packed_address30);
                         }
                     }
                 }
             }
             index = index + 1;
         }
-        workspace.line("movq %rsp, %r11");
+        emit_mov_rr(workspace, object, Register::rsp, Register::r11);
         return bytes;
     }
-    auto emit_service_operation(EmitWorkspace& workspace, const compiler_ir_instructions::InstructionStore& store,
-        i64 instruction) -> bool {
+    auto emit_service_operation(EmitWorkspace& workspace, ObjectWorkspace& object,
+        const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> bool {
         const i64 offset = operand_value(store, instruction, 0);
         const i64 operation = operand_value(store, instruction, 1);
         const i64 result = operand_value(store, instruction, 2);
-        workspace.line_address("movq ", offset, ", %rdi");
-        workspace.line_address("movq ", offset - 8, ", %rsi");
+        const i64 address_token3 = workspace.pack_address(0, offset);
+        emit_load(workspace, object, address_token3, Register::rdi, false);
+        const i64 address_token4 = workspace.pack_address(0, offset - 8);
+        emit_load(workspace, object, address_token4, Register::rsi, false);
         if (operation == 6) {
-            workspace.line("movq %rax, %rdx");
-            workspace.call_runtime("__au_runtime_port_read8");
-            workspace.service_completion("__au_runtime_port_read8", 3, 255);
+            emit_mov_rr(workspace, object, Register::rax, Register::rdx);
+            const i64 runtime_symbol1 = workspace.intern_runtime("__au_runtime_port_read8");
+            emit_call_runtime(workspace, object, runtime_symbol1);
+            emit_service_completion(workspace, object, runtime_symbol1, 3, 255);
             return workspace.ok();
         }
         if (operation == 7) {
-            workspace.pop("%rcx");
-            workspace.pop("%rdx");
-            workspace.call_runtime("__au_runtime_port_write8");
-            workspace.service_completion("__au_runtime_port_write8", 4, 0);
+            emit_pop(workspace, object, Register::rcx);
+            emit_pop(workspace, object, Register::rdx);
+            const i64 runtime_symbol2 = workspace.intern_runtime("__au_runtime_port_write8");
+            emit_call_runtime(workspace, object, runtime_symbol2);
+            emit_service_completion(workspace, object, runtime_symbol2, 4, 0);
             return workspace.ok();
         }
         if (operation == 5 || operation == 8) {
-            workspace.line("movq %rax, %rdx");
+            emit_mov_rr(workspace, object, Register::rax, Register::rdx);
             if (operation == 8) {
-                workspace.call_runtime("__au_runtime_serve_exchange");
-                workspace.service_completion("__au_runtime_serve_exchange", 3, 1);
+                const i64 runtime_symbol3 = workspace.intern_runtime("__au_runtime_serve_exchange");
+                emit_call_runtime(workspace, object, runtime_symbol3);
+                emit_service_completion(workspace, object, runtime_symbol3, 3, 1);
             } else {
-                workspace.call_runtime("__au_runtime_call");
-                workspace.service_completion("__au_runtime_call", 3, 2);
+                const i64 runtime_symbol4 = workspace.intern_runtime("__au_runtime_call");
+                emit_call_runtime(workspace, object, runtime_symbol4);
+                emit_service_completion(workspace, object, runtime_symbol4, 3, 2);
             }
             // The trap returns copied scalars only. Never pass the result address
             // to the kernel, and reject a nonzero value for every failure status.
-            workspace.line("xorq %rcx, %rcx");
-            workspace.line("testq %rax, %rax");
-            workspace.line("setne %cl");
-            workspace.line("negq %rcx");
-            workspace.line("andq %rdx, %rcx");
-            workspace.line("jne .Laurora_bounds_trap");
-            workspace.line_address("movq %rax, ", result, "");
-            workspace.line_address("movq %rdx, ", result - 8, "");
+            emit_alu_rr(workspace, object, AluOp::bit_xor, Register::rcx, Register::rcx);
+            emit_alu_rr(workspace, object, AluOp::test, Register::rax, Register::rax);
+            emit_set_condition(workspace, object, 5, Register::rcx);
+            emit_unary(workspace, object, UnaryOp::negate, Register::rcx);
+            emit_alu_rr(workspace, object, AluOp::bit_and, Register::rdx, Register::rcx);
+            emit_branch(workspace, object, 5, 4, 0);
+            const i64 address_token5 = workspace.pack_address(0, result);
+            emit_store(workspace, object, Register::rax, address_token5, false);
+            const i64 address_token6 = workspace.pack_address(0, result - 8);
+            emit_store(workspace, object, Register::rdx, address_token6, false);
             return workspace.ok();
         }
         if (operation == 2) { // Pixel has a seventh host argument.
-            workspace.pop("%r10");
-            workspace.pop("%r9");
-            workspace.pop("%r8");
-            workspace.pop("%rcx");
-            workspace.pop("%rdx");
+            emit_pop(workspace, object, Register::r10);
+            emit_pop(workspace, object, Register::r9);
+            emit_pop(workspace, object, Register::r8);
+            emit_pop(workspace, object, Register::rcx);
+            emit_pop(workspace, object, Register::rdx);
             i64 bytes = 16;
             const i64 depth = workspace.stack_depth();
             if (depth % 2 != 0) {
                 bytes = 8;
             }
-            workspace.line_number("subq $", bytes, ", %rsp");
+            emit_alu_imm(workspace, object, AluOp::subtract, bytes, Register::rsp);
             workspace.grow_stack(bytes);
-            workspace.line("movq %r10, (%rsp)");
-            workspace.direct_runtime("__au_runtime_display_pixel");
-            workspace.release_stack(bytes);
-            workspace.service_completion("__au_runtime_display_pixel", 7, 1);
+            const i64 address_token7 = workspace.pack_address(1, 0);
+            emit_store(workspace, object, Register::r10, address_token7, false);
+            const i64 runtime_symbol5 = workspace.intern_runtime("__au_runtime_display_pixel");
+            emit_direct_runtime(workspace, object, runtime_symbol5);
+            emit_release_stack(workspace, object, bytes);
+            emit_service_completion(workspace, object, runtime_symbol5, 7, 1);
         } else {
             if (operation == 1) {
-                workspace.line("movq %rax, %rdx");
-                workspace.call_runtime("__au_runtime_console_put");
-                workspace.service_completion("__au_runtime_console_put", 3, 1);
+                emit_mov_rr(workspace, object, Register::rax, Register::rdx);
+                const i64 runtime_symbol7 = workspace.intern_runtime("__au_runtime_console_put");
+                emit_call_runtime(workspace, object, runtime_symbol7);
+                emit_service_completion(workspace, object, runtime_symbol7, 3, 1);
             } else {
                 if (operation == 4) {
-                    workspace.call_runtime("__au_runtime_iommu_event_acknowledge");
-                    workspace.service_completion("__au_runtime_iommu_event_acknowledge", 2, 2);
+                    const i64 runtime_symbol8 = workspace.intern_runtime("__au_runtime_iommu_event_acknowledge");
+                    emit_call_runtime(workspace, object, runtime_symbol8);
+                    emit_service_completion(workspace, object, runtime_symbol8, 2, 2);
                 } else {
                     if (operation == 3 || operation == 0) {
-                        workspace.line_address("leaq ", result, ", %rdx");
+                        const i64 address_token8 = workspace.pack_address(0, result);
+                        emit_lea(workspace, object, address_token8, Register::rdx);
                         i64 bytes = 24;
                         if (operation == 3) {
                             bytes = 32;
                         }
                         i64 byte = 0;
                         while (byte < bytes) {
-                            workspace.line_address("movq $0, ", result - byte, "");
+                            const i64 address_token9 = workspace.pack_address(0, result - byte);
+                            emit_store_imm(workspace, object, 0, address_token9, false);
                             byte = byte + 8;
                         }
                         // Every raw host channel is checked before any source
                         // field can observe the copied result.
                         if (operation == 3) {
-                            workspace.call_runtime("__au_runtime_iommu_event_poll");
-                            workspace.line_address("cmpq $3, ", result, "");
-                            workspace.line("ja .Laurora_bounds_trap");
-                            workspace.line_address("cmpq $31, ", result - 24, "");
-                            workspace.line("ja .Laurora_bounds_trap");
-                            workspace.line("xorq %rax, %rax");
-                            workspace.line_address("cmpq $1, ", result, "");
-                            workspace.line("setne %al");
-                            workspace.line("negq %rax");
-                            workspace.line_address("movq ", result - 8, ", %rcx");
-                            workspace.line_address("orq ", result - 16, ", %rcx");
-                            workspace.line("andq %rcx, %rax");
-                            workspace.line("jne .Laurora_bounds_trap");
+                            const i64 runtime_symbol9 = workspace.intern_runtime("__au_runtime_iommu_event_poll");
+                            emit_call_runtime(workspace, object, runtime_symbol9);
+                            const i64 address_token10 = workspace.pack_address(0, result);
+                            emit_alu_mem_imm(workspace, object, AluOp::compare, 3, address_token10);
+                            emit_branch(workspace, object, 7, 4, 0);
+                            const i64 address_token11 = workspace.pack_address(0, result - 24);
+                            emit_alu_mem_imm(workspace, object, AluOp::compare, 31, address_token11);
+                            emit_branch(workspace, object, 7, 4, 0);
+                            emit_alu_rr(workspace, object, AluOp::bit_xor, Register::rax, Register::rax);
+                            const i64 address_token12 = workspace.pack_address(0, result);
+                            emit_alu_mem_imm(workspace, object, AluOp::compare, 1, address_token12);
+                            emit_set_condition(workspace, object, 5, Register::rax);
+                            emit_unary(workspace, object, UnaryOp::negate, Register::rax);
+                            const i64 address_token13 = workspace.pack_address(0, result - 8);
+                            emit_load(workspace, object, address_token13, Register::rcx, false);
+                            const i64 address_token14 = workspace.pack_address(0, result - 16);
+                            emit_alu_load(workspace, object, AluOp::bit_or, address_token14, Register::rcx);
+                            emit_alu_rr(workspace, object, AluOp::bit_and, Register::rcx, Register::rax);
+                            emit_branch(workspace, object, 5, 4, 0);
                         } else {
-                            workspace.call_runtime("__au_runtime_console_next");
-                            workspace.line_address("cmpq $1, ", result, "");
-                            workspace.line("ja .Laurora_bounds_trap");
-                            workspace.line_address("cmpq $255, ", result - 8, "");
-                            workspace.line("ja .Laurora_bounds_trap");
-                            workspace.line_address("cmpq $1, ", result - 16, "");
-                            workspace.line("ja .Laurora_bounds_trap");
-                            workspace.line_address("movq ", result, ", %rax");
-                            workspace.line("negq %rax");
-                            workspace.line("notq %rax");
-                            workspace.line_address("andq ", result - 8, ", %rax");
-                            workspace.line("jne .Laurora_bounds_trap");
+                            const i64 runtime_symbol10 = workspace.intern_runtime("__au_runtime_console_next");
+                            emit_call_runtime(workspace, object, runtime_symbol10);
+                            const i64 address_token15 = workspace.pack_address(0, result);
+                            emit_alu_mem_imm(workspace, object, AluOp::compare, 1, address_token15);
+                            emit_branch(workspace, object, 7, 4, 0);
+                            const i64 address_token16 = workspace.pack_address(0, result - 8);
+                            emit_alu_mem_imm(workspace, object, AluOp::compare, 255, address_token16);
+                            emit_branch(workspace, object, 7, 4, 0);
+                            const i64 address_token17 = workspace.pack_address(0, result - 16);
+                            emit_alu_mem_imm(workspace, object, AluOp::compare, 1, address_token17);
+                            emit_branch(workspace, object, 7, 4, 0);
+                            const i64 address_token18 = workspace.pack_address(0, result);
+                            emit_load(workspace, object, address_token18, Register::rax, false);
+                            emit_unary(workspace, object, UnaryOp::negate, Register::rax);
+                            emit_unary(workspace, object, UnaryOp::bit_not, Register::rax);
+                            const i64 address_token19 = workspace.pack_address(0, result - 8);
+                            emit_alu_load(workspace, object, AluOp::bit_and, address_token19, Register::rax);
+                            emit_branch(workspace, object, 5, 4, 0);
                         }
                     } else {
                         workspace.fail();
@@ -325,8 +350,9 @@ export namespace compiler_x86 {
         }
         return first.id();
     }
-    auto emit_object_calls(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
-        const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> bool {
+    auto emit_object_calls(EmitWorkspace& workspace, ObjectWorkspace& object,
+        const compiler_ir_metadata::MetadataStore& metadata, const compiler_ir_instructions::InstructionStore& store,
+        i64 instruction) -> bool {
         const compiler_ir_instructions::RawInstructionRow row = store.instruction_at(instruction);
         const i64 form = row.form();
         if (form != 4 && form != 19 && form != 20 && form != 38 && form != 83) {
@@ -342,9 +368,9 @@ export namespace compiler_x86 {
             i64 index = count;
             while (index > 0) {
                 index = index - 1;
-                workspace.pop_argument(index);
+                emit_pop_argument(workspace, object, index);
             }
-            call_target(workspace, metadata, target);
+            call_target(workspace, object, metadata, target);
             return true;
         }
         const i64 result_type_id = result_type(metadata, target);
@@ -352,29 +378,30 @@ export namespace compiler_x86 {
         if (form == 20 || form == 4) {
             i64 bytes = 0;
             if (form == 20) {
-                bytes = pack_arguments(workspace, metadata, store, instruction, target);
+                bytes = pack_arguments(workspace, object, metadata, store, instruction, target);
             } else {
-                bytes = pack_service(workspace, metadata, store, instruction, target);
+                bytes = pack_service(workspace, object, metadata, store, instruction, target);
             }
             if (result_kind == 5) {
                 const i64 result = operand_value(store, instruction, 2);
-                workspace.line_address("leaq ", result, ", %r10");
+                const i64 address_token20 = workspace.pack_address(0, result);
+                emit_lea(workspace, object, address_token20, Register::r10);
             }
-            call_target(workspace, metadata, target);
+            call_target(workspace, object, metadata, target);
             if (bytes != 0 || form == 4) {
-                workspace.release_stack(bytes);
+                emit_release_stack(workspace, object, bytes);
             }
             return true;
         }
         const bool aggregate = class_parameters(metadata, target);
         i64 bytes = 0;
         if (aggregate) {
-            bytes = pack_arguments(workspace, metadata, store, instruction, target);
+            bytes = pack_arguments(workspace, object, metadata, store, instruction, target);
         } else {
             i64 index = count;
             while (index > 0) {
                 index = index - 1;
-                workspace.pop_argument(index);
+                emit_pop_argument(workspace, object, index);
             }
         }
         i64 root_bytes = 0;
@@ -395,47 +422,48 @@ export namespace compiler_x86 {
                     return true;
                 }
                 root_bytes =((roots * 8 + 15) / 16) * 16;
-                workspace.reserve_stack(root_bytes);
+                emit_reserve_stack(workspace, object, root_bytes);
                 i64 ordinal = 0;
                 while (ordinal < roots) {
                     const i64 root = operand_lane(store, instruction, 1, ordinal * 3);
-                    receiver_address(workspace, metadata, root, Register::r10);
-                    workspace.line_number("movq %r10, ", ordinal * 8, "(%rsp)");
+                    receiver_address(workspace, object, metadata, root, Register::r10);
+                    const i64 address_token21 = workspace.pack_address(1, ordinal * 8);
+                    emit_store(workspace, object, Register::r10, address_token21, false);
                     ordinal = ordinal + 1;
                 }
-                workspace.line("leaq (%rsp), %r10");
+                const i64 address_token22 = workspace.pack_address(1, 0);
+                emit_lea(workspace, object, address_token22, Register::r10);
             } else {
                 const i64 root = operand_lane(store, instruction, 1, 0);
                 const i64 field = operand_lane(store, instruction, 1, 2);
                 if (type_kind(metadata, callable.borrowed_root_type(0)) == 17) {
-                    const i64 descriptor = bytes_owner_address(workspace, metadata, root, field, 0);
-                    workspace.text("    leaq ");
-                    workspace.memory(descriptor);
-                    workspace.text(", %r10");
-                    workspace.end_line();
+                    const i64 descriptor = bytes_owner_address(workspace, object, metadata, root, field, 0);
+                    emit_lea(workspace, object, descriptor, Register::r10);
                 } else {
-                    receiver_address(workspace, metadata, root, Register::r10);
+                    receiver_address(workspace, object, metadata, root, Register::r10);
                 }
             }
         } else {
             const i64 root = operand_value(store, instruction, 1);
             const i64 field = operand_value(store, instruction, 4);
-            receiver_address(workspace, metadata, root, Register::r10);
+            receiver_address(workspace, object, metadata, root, Register::r10);
             if (field >= 0) {
                 const i64 current = workspace.current_callable();
                 const i64 class_id = object_root_class(metadata, current, root);
                 const i64 offset = class_field_offset(metadata, class_id, field);
                 if (offset != 0) {
-                    workspace.line_number("addq $", offset, ", %r10");
+                    emit_alu_imm(workspace, object, AluOp::add, offset, Register::r10);
                 }
             }
         }
         if (result_kind == 5 || span_kind(result_kind)) {
             const i64 result = operand_value(store, instruction, 3);
             if (aggregate) {
-                workspace.line_address("leaq ", result, ", %rax");
+                const i64 address_token23 = workspace.pack_address(0, result);
+                emit_lea(workspace, object, address_token23, Register::rax);
             } else {
-                workspace.line_address("leaq ", result, ", %r11");
+                const i64 address_token24 = workspace.pack_address(0, result);
+                emit_lea(workspace, object, address_token24, Register::r11);
             }
         }
         i64 getter = -1;
@@ -448,20 +476,21 @@ export namespace compiler_x86 {
             const i64 type = operand_value(store, getter, 1);
             const i64 offset = class_field_offset(metadata, receiver_class(metadata, target), field);
             const i64 address = workspace.pack_address(2, offset);
-            load_value(workspace, metadata, type, address);
+            load_value(workspace, object, metadata, type, address);
         } else {
-            call_target(workspace, metadata, target);
+            call_target(workspace, object, metadata, target);
         }
         if (root_bytes != 0) {
-            workspace.release_stack(root_bytes);
+            emit_release_stack(workspace, object, root_bytes);
         }
         if (bytes != 0) {
-            workspace.release_stack(bytes);
+            emit_release_stack(workspace, object, bytes);
         }
         return true;
     }
-    auto emit_object_payload(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
-        const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> bool {
+    auto emit_object_payload(EmitWorkspace& workspace, ObjectWorkspace& object,
+        const compiler_ir_metadata::MetadataStore& metadata, const compiler_ir_instructions::InstructionStore& store,
+        i64 instruction) -> bool {
         const compiler_ir_instructions::RawInstructionRow row = store.instruction_at(instruction);
         const i64 form = row.form();
         const i64 current = workspace.current_callable();
@@ -471,10 +500,10 @@ export namespace compiler_x86 {
             if (form == 21) {
                 // An in-place element is never read from its own padding.
                 if (workspace.loan_offset(0 - offset) <= 0) {
-                    clear_object(workspace, metadata, offset, class_id);
+                    clear_object(workspace, object, metadata, offset, class_id);
                 }
             } else {
-                drop_object(workspace, metadata, offset, class_id);
+                drop_object(workspace, object, metadata, offset, class_id);
             }
             return true;
         }
@@ -488,7 +517,7 @@ export namespace compiler_x86 {
             const i64 class_id = slot_class(metadata, current, source);
             const i64 packed_address31 = workspace.pack_address(0, source);
             const i64 packed_address32 = workspace.pack_address(0, destination);
-            copy_class(workspace, metadata, class_id, packed_address31, packed_address32);
+            copy_class(workspace, object, metadata, class_id, packed_address31, packed_address32);
             return true;
         }
         if (form == 25) {
@@ -500,11 +529,11 @@ export namespace compiler_x86 {
             const i64 child = type_class(metadata, type);
             const i64 first = class_field_first(metadata, parent, field);
             const i64 count = class_field_length(metadata, parent, field);
-            receiver_address(workspace, metadata, source, Register::r10);
+            receiver_address(workspace, object, metadata, source, Register::r10);
             const i64 packed_address33 = workspace.pack_address(2, 0);
             const i64 packed_address34 = workspace.pack_address(0, destination);
             workspace.set_copy(packed_address33, packed_address34, first, 0);
-            copy_leaves(workspace, metadata, parent, child, count);
+            copy_leaves(workspace, object, metadata, parent, child, count);
             return true;
         }
         if (form == 26 || form == 27) {
@@ -519,11 +548,11 @@ export namespace compiler_x86 {
             const i64 child = type_class(metadata, type);
             const i64 first = class_field_first(metadata, parent, field);
             const i64 count = class_field_length(metadata, parent, field);
-            receiver_address(workspace, metadata, root, Register::r10);
+            receiver_address(workspace, object, metadata, root, Register::r10);
             const i64 packed_address35 = workspace.pack_address(0, source);
             const i64 packed_address36 = workspace.pack_address(2, 0);
             workspace.set_copy(packed_address35, packed_address36, 0, first);
-            copy_leaves(workspace, metadata, child, parent, count);
+            copy_leaves(workspace, object, metadata, child, parent, count);
             return true;
         }
         if (form == 28) {
@@ -535,14 +564,14 @@ export namespace compiler_x86 {
             const i64 first = class_field_first(metadata, parent, field);
             const i64 count = class_leaf_count(metadata, child);
             const i64 elements = operand_count(store, instruction, 2);
-            receiver_address(workspace, metadata, root, Register::r10);
+            receiver_address(workspace, object, metadata, root, Register::r10);
             i64 element = 0;
             while (element < elements) {
                 const i64 source = operand_lane(store, instruction, 2, element);
                 const i64 packed_address37 = workspace.pack_address(0, source);
                 const i64 packed_address38 = workspace.pack_address(2, 0);
                 workspace.set_copy(packed_address37, packed_address38, 0, first + element * count);
-                copy_leaves(workspace, metadata, child, parent, count);
+                copy_leaves(workspace, object, metadata, child, parent, count);
                 element = element + 1;
             }
             return true;
@@ -553,8 +582,8 @@ export namespace compiler_x86 {
             const i64 parent = object_root_class(metadata, current, root);
             if (form == 29) {
                 const i64 count = class_field_elements(metadata, parent, field);
-                workspace.line_number("cmpq $", count, ", %rax");
-                workspace.line("jae .Laurora_bounds_trap");
+                emit_alu_imm(workspace, object, AluOp::compare, count, Register::rax);
+                emit_branch(workspace, object, 3, 4, 0);
                 return true;
             }
             const i64 type = class_field_type(metadata, parent, field);
@@ -563,19 +592,19 @@ export namespace compiler_x86 {
             if (class_leaf_count(metadata, child) != 0) {
                 stride = class_size(metadata, child);
             }
-            workspace.line_number("imulq $", stride, ", %rax");
-            receiver_address(workspace, metadata, root, Register::r10);
+            emit_alu_imm(workspace, object, AluOp::multiply, stride, Register::rax);
+            receiver_address(workspace, object, metadata, root, Register::r10);
             const i64 field_offset = class_field_offset(metadata, parent, field);
-            workspace.line_number("leaq ", field_offset, "(%r10,%rax), %r10");
+            emit_indexed_lea(workspace, object, Register::r10, Register::rax, field_offset, Register::r10);
             const i64 local = operand_value(store, instruction, 2);
             if (form == 30) {
                 const i64 packed_address39 = workspace.pack_address(2, 0);
                 const i64 packed_address40 = workspace.pack_address(0, local);
-                copy_class(workspace, metadata, child, packed_address39, packed_address40);
+                copy_class(workspace, object, metadata, child, packed_address39, packed_address40);
             } else {
                 const i64 packed_address41 = workspace.pack_address(0, local);
                 const i64 packed_address42 = workspace.pack_address(2, 0);
-                copy_class(workspace, metadata, child, packed_address41, packed_address42);
+                copy_class(workspace, object, metadata, child, packed_address41, packed_address42);
             }
             return true;
         }
@@ -584,21 +613,20 @@ export namespace compiler_x86 {
             const i64 source = operand_value(store, instruction, 0);
             const i64 result = result_type(metadata, current);
             const i64 class_id = type_class(metadata, result);
-            workspace.line_address("movq ", save, ", %r10");
+            const i64 address_token25 = workspace.pack_address(0, save);
+            emit_load(workspace, object, address_token25, Register::r10, false);
             const i64 packed_address43 = workspace.pack_address(0, source);
             const i64 packed_address44 = workspace.pack_address(2, 0);
-            copy_class(workspace, metadata, class_id, packed_address43, packed_address44);
-            workspace.line("xorq %rax, %rax");
-            workspace.begin_line();
-            workspace.text("jmp ");
-            workspace.return_label();
-            workspace.end_line();
+            copy_class(workspace, object, metadata, class_id, packed_address43, packed_address44);
+            emit_alu_rr(workspace, object, AluOp::bit_xor, Register::rax, Register::rax);
+            emit_branch(workspace, object, -1, 1, 0);
             return true;
         }
         return false;
     }
-    auto emit_receiver_payload(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
-        const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> bool {
+    auto emit_receiver_payload(EmitWorkspace& workspace, ObjectWorkspace& object,
+        const compiler_ir_metadata::MetadataStore& metadata, const compiler_ir_instructions::InstructionStore& store,
+        i64 instruction) -> bool {
         const compiler_ir_instructions::RawInstructionRow row = store.instruction_at(instruction);
         const i64 form = row.form();
         if (form < 32 || form > 37) {
@@ -611,19 +639,20 @@ export namespace compiler_x86 {
         const i64 field_offset = class_field_offset(metadata, class_id, field);
         if (form == 35) {
             const i64 count = class_field_length(metadata, class_id, field);
-            workspace.line_number("cmpq $", count, ", %rax");
-            workspace.line("jae .Laurora_bounds_trap");
+            emit_alu_imm(workspace, object, AluOp::compare, count, Register::rax);
+            emit_branch(workspace, object, 3, 4, 0);
             return true;
         }
         if (form == 32 || form == 33) {
             const i64 type = operand_value(store, instruction, 1);
-            workspace.line_address("movq ", save, ", %r10");
+            const i64 address_token26 = workspace.pack_address(0, save);
+            emit_load(workspace, object, address_token26, Register::r10, false);
             if (form == 32) {
                 const i64 packed_address45 = workspace.pack_address(2, field_offset);
-                load_value(workspace, metadata, type, packed_address45);
+                load_value(workspace, object, metadata, type, packed_address45);
             } else {
                 const i64 packed_address46 = workspace.pack_address(2, field_offset);
-                store_value(workspace, metadata, type, packed_address46);
+                store_value(workspace, object, metadata, type, packed_address46);
             }
             return true;
         }
@@ -632,14 +661,17 @@ export namespace compiler_x86 {
         if (form == 34) {
             const i64 first = class_field_first(metadata, class_id, field);
             const i64 count = class_field_length(metadata, class_id, field);
-            workspace.line_address("movq ", save, ", %r10");
+            const i64 address_token27 = workspace.pack_address(0, save);
+            emit_load(workspace, object, address_token27, Register::r10, false);
             i64 element = 0;
             while (element < count) {
                 const i64 offset = class_leaf_offset(metadata, class_id, first + element);
                 if (kind == 10) {
-                    workspace.line_number("movb $0, ", offset, "(%r10)");
+                    const i64 address_token28 = workspace.pack_address(2, offset);
+                    emit_store_imm(workspace, object, 0, address_token28, true);
                 } else {
-                    workspace.line_number("movq $0, ", offset, "(%r10)");
+                    const i64 address_token29 = workspace.pack_address(2, offset);
+                    emit_store_imm(workspace, object, 0, address_token29, false);
                 }
                 element = element + 1;
             }
@@ -650,36 +682,32 @@ export namespace compiler_x86 {
             width = 1;
         }
         if (form == 37) {
-            workspace.pop("%rcx");
+            emit_pop(workspace, object, Register::rcx);
         }
-        workspace.line_address("movq ", save, ", %r10");
-        workspace.begin_line();
+        const i64 address_token30 = workspace.pack_address(0, save);
+        emit_load(workspace, object, address_token30, Register::r10, false);
         if (form == 36) {
             if (kind == 10) {
-                workspace.text("movzbq ");
+                emit_indexed_load(workspace, object, Register::r10, Register::rax, indexed_address(width, field_offset),
+                    true);
             } else {
-                workspace.text("movq ");
+                emit_indexed_load(workspace, object, Register::r10, Register::rax, indexed_address(width, field_offset),
+                    false);
             }
-            workspace.number(field_offset);
-            workspace.text("(%r10,%rax,");
-            workspace.number(width);
-            workspace.text("), %rax");
         } else {
             if (kind == 10) {
-                workspace.text("movb %al, ");
+                emit_indexed_store(workspace, object, Register::r10, Register::rcx, indexed_address(width,
+                    field_offset), true);
             } else {
-                workspace.text("movq %rax, ");
+                emit_indexed_store(workspace, object, Register::r10, Register::rcx, indexed_address(width,
+                    field_offset), false);
             }
-            workspace.number(field_offset);
-            workspace.text("(%r10,%rcx,");
-            workspace.number(width);
-            workspace.text(")");
         }
-        workspace.end_line();
         return true;
     }
-    auto emit_objects(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
-        const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> bool {
+    auto emit_objects(EmitWorkspace& workspace, ObjectWorkspace& object,
+        const compiler_ir_metadata::MetadataStore& metadata, const compiler_ir_instructions::InstructionStore& store,
+        i64 instruction) -> bool {
         const compiler_ir_instructions::RawInstructionRow row = store.instruction_at(instruction);
         const i64 form = row.form();
         if (form == 1 || form == 2 || form == 81 || form == 82) {
@@ -688,7 +716,7 @@ export namespace compiler_x86 {
             return true;
         }
         if (form == 3) {
-            emit_service_operation(workspace, store, instruction);
+            emit_service_operation(workspace, object, store, instruction);
             return true;
         }
         if (form == 0 || form == 45 || form == 46) {
@@ -698,41 +726,44 @@ export namespace compiler_x86 {
             const i64 save = workspace.call_record_save();
             const i64 source = record_offset(metadata, current, index);
             if (form == 0) {
-                workspace.line_address("movq ", save, ", %r11");
+                const i64 address_token31 = workspace.pack_address(0, save);
+                emit_load(workspace, object, address_token31, Register::r11, false);
                 const i64 packed_address47 = workspace.pack_address(3, source);
                 const i64 packed_address48 = workspace.pack_address(0, destination);
-                object_copy_record_words(workspace, packed_address47, packed_address48, 16);
+                object_copy_record_words(workspace, object, packed_address47, packed_address48, 16);
                 return true;
             }
             if (form == 45) {
                 const i64 type = operand_value(store, instruction, 2);
                 if (save != 0) {
-                    workspace.line_address("movq ", save, ", %r11");
+                    const i64 address_token32 = workspace.pack_address(0, save);
+                    emit_load(workspace, object, address_token32, Register::r11, false);
                     const i64 packed_address49 = workspace.pack_address(3, source);
-                    load_value(workspace, metadata, type, packed_address49);
+                    load_value(workspace, object, metadata, type, packed_address49);
                     const i64 packed_address50 = workspace.pack_address(0, destination);
-                    store_value(workspace, metadata, type, packed_address50);
+                    store_value(workspace, object, metadata, type, packed_address50);
                 } else {
                     const i64 packed_address51 = workspace.pack_address(0, destination);
-                    store_argument(workspace, metadata, type, index, packed_address51);
+                    store_argument(workspace, object, metadata, type, index, packed_address51);
                 }
                 return true;
             }
             const i64 type = parameter_type(metadata, current, index);
             const i64 class_id = type_class(metadata, type);
-            workspace.line_address("movq ", save, ", %r11");
-            clear_object(workspace, metadata, destination, class_id);
+            const i64 address_token33 = workspace.pack_address(0, save);
+            emit_load(workspace, object, address_token33, Register::r11, false);
+            clear_object(workspace, object, metadata, destination, class_id);
             const i64 packed_address52 = workspace.pack_address(3, source);
             const i64 packed_address53 = workspace.pack_address(0, destination);
-            copy_class(workspace, metadata, class_id, packed_address52, packed_address53);
+            copy_class(workspace, object, metadata, class_id, packed_address52, packed_address53);
             return true;
         }
-        if (emit_object_calls(workspace, metadata, store, instruction)) {
+        if (emit_object_calls(workspace, object, metadata, store, instruction)) {
             return true;
         }
-        if (emit_object_payload(workspace, metadata, store, instruction)) {
+        if (emit_object_payload(workspace, object, metadata, store, instruction)) {
             return true;
         }
-        return emit_receiver_payload(workspace, metadata, store, instruction);
+        return emit_receiver_payload(workspace, object, metadata, store, instruction);
     }
 }

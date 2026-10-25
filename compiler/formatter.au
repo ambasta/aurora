@@ -2,6 +2,7 @@ export module aurora.compiler.formatter;
 import aurora.compiler.lexer;
 import aurora.compiler.syntax_arena;
 import aurora.compiler.x86_storage;
+import aurora.compiler.x86_object_storage;
 
 export namespace compiler_formatter {
     // Private fixed-width scratch and copied result row. Finding rows carry

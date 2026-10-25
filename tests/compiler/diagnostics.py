@@ -269,6 +269,35 @@ with tempfile.TemporaryDirectory(prefix="aurora-diagnostics-") as directory:
         require(set(closed) == {"demo"}, "query-free closed mode retained helper facts")
         require(b"aurora_reflect_" not in emitted.read_bytes(), "query-free closed mode retained helper symbols")
     closed_assembly, closed_facts = emitted.read_bytes(), facts_path.read_bytes()
+    object_path = root / "good.o"
+    object_stack = root / "good.object.stack.json"
+    object_abi = root / "good.object.abi.json"
+    run(
+        [
+            source,
+            "--emit-object",
+            "--referenced-reflection-only",
+            "-o",
+            object_path,
+            "--stack-facts",
+            object_stack,
+            "--abi-facts",
+            object_abi,
+        ],
+        0,
+        json_mode=False,
+    )
+    require(object_path.read_bytes().startswith(b"\x7fELF"), "object mode did not publish ELF")
+    require(object_stack.read_bytes() == closed_facts, "object mode changed stack facts")
+    require(json.loads(object_abi.read_text())["version"] > 0, "object mode omitted ABI facts")
+    for options in (
+        [source, "--emit-object", "--emit-object", "-o", object_path],
+        [source, "--emit-object=yes", "-o", object_path],
+        ["--check", "--emit-object", source],
+    ):
+        before_object = object_path.read_bytes()
+        run(options, 2, json_mode=False)
+        require(object_path.read_bytes() == before_object, "invalid object option replaced output")
     for options in (
         [source, "-o", emitted, "--referenced-reflection-only", "--referenced-reflection-only"],
         [source, "-o", emitted, "--referenced-reflection-only=yes"],

@@ -22,13 +22,27 @@ constexpr bool addExtent(std::uint64_t &total, std::uint64_t count, std::uint64_
     total += count * stride;
     return true;
 }
-constexpr std::uint64_t payloadQuota(std::uint64_t retained, std::uint64_t views, std::uint64_t instructions) {
+constexpr std::uint64_t payloadQuota(std::uint64_t retained,
+                                     std::uint64_t views,
+                                     std::uint64_t instructions,
+                                     std::uint64_t objectNameWidth = 0) {
     std::uint64_t functions = retained, calls = instructions;
     // Each direct/query call fact has an instruction. A retained function can
     // additionally call each member of the source's bounded runtime vocabulary.
     if (!addExtent(functions, views, 2) || !addExtent(calls, retained, 64))
         return 0;
-    std::uint64_t stack = artifactLimit * 2 + 1024;
+    std::uint64_t nameOccurrences = artifactLimit;
+    if (objectNameWidth != 0) {
+        // Object symbols are deduplicated; their on-disk bytes do not bound
+        // repeated symbol spellings in stack facts. Bound each occurrence.
+        nameOccurrences = 0;
+        if (!addExtent(nameOccurrences, functions, objectNameWidth) ||
+            !addExtent(nameOccurrences, calls, objectNameWidth))
+            return 0;
+    }
+    std::uint64_t stack = 1024;
+    if (!addExtent(stack, nameOccurrences, 2))
+        return 0;
     if (!addExtent(stack, functions, 1024) || !addExtent(stack, calls, 128))
         return 0;
     std::uint64_t quota = 0;
@@ -47,6 +61,19 @@ constexpr std::uint64_t payloadQuota(std::uint64_t retained, std::uint64_t views
     if (!addExtent(quota, artifactLimit, sizeof(wire::AbiNameRow) + 1) || !addExtent(quota, 65536, 1) ||
         !addExtent(quota, 64, sizeof(wire::NameRow)))
         return 0;
+    if (objectNameWidth != 0) {
+        // Keep six typed owners separate. Final object bytes bound code/names,
+        // symbol entries (24 bytes each), and disjoint rel32 fixups (4 bytes).
+        // Labels need an input-derived bound: an instruction may emit two
+        // receiver labels for each of four roots, plus function returns/traps.
+        std::uint64_t labels = retained;
+        if (!addExtent(labels, instructions, 8) || !addExtent(labels, 4, 1) ||
+            !addExtent(quota, artifactLimit + 4096, 2) || !addExtent(quota, artifactLimit, 2) ||
+            !addExtent(quota, artifactLimit / 24, sizeof(wire::ObjectSymbolRow)) ||
+            !addExtent(quota, artifactLimit / 4, sizeof(wire::ObjectFixupRow)) ||
+            !addExtent(quota, labels, sizeof(wire::ObjectLabelRow)))
+            return 0;
+    }
     return quota;
 }
 // Count-derived decisions cover the former cap without allocating huge IR in a
@@ -71,38 +98,53 @@ std::int64_t count(std::size_t value) {
 } // namespace
 
 class X86Emitter::State {
-    static std::uint64_t quota(const ir::ValidatedModule &validated) {
+    static std::uint64_t quota(const ir::ValidatedModule &validated, CodeEmission format) {
         if (!validated.instructionOwner)
             invalidEmitter();
+        std::uint64_t objectNameWidth = 0;
+        if (format == CodeEmission::Object) {
+            // The existing closed runtime-name vocabulary fits its 64 KiB
+            // prefix allowance. Callable spellings come from admitted metadata.
+            objectNameWidth = 65536;
+            const auto &metadata = validated.metadata();
+            for (std::size_t at = 0; at < metadata.callableCount(); ++at)
+                objectNameWidth = std::max(objectNameWidth, std::uint64_t(metadata.callable(at).name().size()));
+        }
         const auto result = payloadQuota(validated.get().functions.size(),
                                          validated.metadata().scopeCount(),
-                                         validated.instructionOwner->sourceInstructionCount(validated.metadata()));
+                                         validated.instructionOwner->sourceInstructionCount(validated.metadata()),
+                                         objectNameWidth);
         if (result == 0)
             resourceLimit();
         return result;
     }
     hosted::bytes::Region region;
     hosted_abi::EmitterRelease owner{};
+    hosted_abi::EmitterObjectRelease objectOwner{};
 
 public:
     const ir::Metadata *metadata;
     const ir::Instructions *instructions;
     const std::uint64_t sourceIdentity;
-    // Three pointers occupy a canonically padded 32-byte borrowed-root tuple.
+    // Two mutable emission owners precede the two immutable source owners.
     alignas(16) std::array<const void *, 4> roots;
-    explicit State(const ir::ValidatedModule &validated)
-        : region(quota(validated)), metadata(&validated.metadata()), instructions(validated.instructionOwner.get()),
-          sourceIdentity(instructions->sourceIdentity(*metadata)),
-          roots{
-              data(), metadata->sourceOwner(), instructions ? instructions->sourceOwner(*metadata) : nullptr, nullptr} {
+    State(const ir::ValidatedModule &validated, CodeEmission format)
+        : region(quota(validated, format)), metadata(&validated.metadata()),
+          instructions(validated.instructionOwner.get()), sourceIdentity(instructions->sourceIdentity(*metadata)),
+          roots{data(), objectData(), metadata->sourceOwner(), instructions->sourceOwner(*metadata)} {
         if (!region.is_open())
             throw Error(DiagnosticCode::Internal, "hosted x86 emission region allocation failed");
         owner.region = region.id();
         hosted_abi::EmitterCreate input{};
         input.region = region.id();
         aurora_hosted_emitter_create(&input, data());
+        objectOwner.region = region.id();
+        hosted_abi::EmitterObjectCreate objectInput{};
+        objectInput.region = region.id();
+        aurora_hosted_emitter_object_create(&objectInput, objectData());
     }
     ~State() {
+        aurora_hosted_emitter_object_release(&objectOwner);
         aurora_hosted_emitter_release(&owner);
     }
     State(const State &) = delete;
@@ -112,6 +154,12 @@ public:
     }
     const void *data() const {
         return owner.workspace.storage.data();
+    }
+    void *objectData() {
+        return objectOwner.workspace.storage.data();
+    }
+    const void *objectData() const {
+        return objectOwner.workspace.storage.data();
     }
     bool matches(const ir::ValidatedModule &validated) const {
         if (!validated.instructionOwner)
@@ -123,11 +171,17 @@ public:
                instructions == validated.instructionOwner.get();
     }
     [[noreturn]] void failure() const {
-        const auto status = aurora_hosted_emitter_status(data());
+        auto status = aurora_hosted_emitter_status(data());
+        if (status == static_cast<std::int64_t>(wire::EmitStatus::pending) ||
+            status == static_cast<std::int64_t>(wire::EmitStatus::running) ||
+            status == static_cast<std::int64_t>(wire::EmitStatus::complete))
+            status = aurora_hosted_emitter_object_status(objectData());
         if (status == static_cast<std::int64_t>(wire::EmitStatus::allocation))
             throw Error(DiagnosticCode::Internal, "hosted x86 emission allocation failed");
         if (status == static_cast<std::int64_t>(wire::EmitStatus::limit))
             throw Error(DiagnosticCode::Internal, "hosted x86 emission exceeded its bounded output or workspace");
+        if (status == static_cast<std::int64_t>(wire::EmitStatus::unsupported))
+            throw Error(DiagnosticCode::Internal, "x86 object emission does not support this instruction or data form");
         invalidEmitter();
     }
     void boolean(std::int64_t result) const {
@@ -175,25 +229,29 @@ public:
 
 X86Emitter::X86Emitter() = default;
 X86Emitter::~X86Emitter() = default;
-std::string
-X86Emitter::emit(const ir::ValidatedModule &validated, SymbolBinding binding, ReflectionEmission reflection) {
+std::string X86Emitter::emit(const ir::ValidatedModule &validated,
+                             SymbolBinding binding,
+                             ReflectionEmission reflection,
+                             CodeEmission format) {
     state_.reset();
-    auto state = std::make_unique<State>(validated);
+    auto state = std::make_unique<State>(validated, format);
+    if (format == CodeEmission::Object)
+        state->boolean(aurora_hosted_emitter_enable_object(state->objectData()));
     for (const auto &body : validated.get().functions)
         state->boolean(aurora_hosted_emitter_add_retained(state->data(), count(body.callableId)));
     state->complete(aurora_hosted_emitter_run(state->roots.data(),
                                               binding == SymbolBinding::Local ? 1 : 0,
                                               reflection == ReflectionEmission::Referenced ? 1 : 0));
-    auto assembly = state->artifact(wire::Artifact::assembly);
+    auto code = state->artifact(wire::Artifact::assembly);
     state_ = std::move(state);
-    return assembly;
+    return code;
 }
 std::string X86Emitter::stackFactsJson(const ir::ValidatedModule &validated) const {
     if (!state_ || !state_->matches(validated))
         throw Error("stack facts require the same emitted module");
     const auto artifact = static_cast<std::int64_t>(wire::Artifact::stack);
     state_->boolean(aurora_hosted_emitter_prepare_facts(state_->data(), artifact));
-    alignas(16) const std::array<const void *, 2> roots{state_->data(), state_->roots[1]};
+    alignas(16) const std::array<const void *, 2> roots{state_->data(), state_->roots[2]};
     state_->complete(aurora_hosted_emitter_facts(roots.data(), artifact));
     return state_->artifact(wire::Artifact::stack);
 }
@@ -230,7 +288,7 @@ std::string X86Emitter::abiFactsJson(const ir::ValidatedModule &validated, const
                 invalidEmitter();
             state_->name(2, count(*id), -1, declaration.sourceName);
         }
-    alignas(16) const std::array<const void *, 2> roots{state_->data(), state_->roots[1]};
+    alignas(16) const std::array<const void *, 2> roots{state_->data(), state_->roots[2]};
     state_->complete(aurora_hosted_emitter_facts(roots.data(), artifact));
     return state_->artifact(wire::Artifact::abi);
 }

@@ -49,7 +49,7 @@ expand the same way.
 ; CASE: name                  starts a case; the lines before the first CASE are
 ;                             the file's header module
 ; BASE: other name            optional: patch against an earlier case
-; RUN: verify | emit [local] [referenced] | stack-facts | abi-facts | metadata | metrics [null]
+; RUN: verify | emit [local] [referenced] | emit-object [local] | stack-facts | abi-facts | metadata | metrics [null]
 ; EXPECT-OK / EXPECT-ERROR: substring of what() / EXPECT-MESSAGE: exact message / EXPECT-CODE: AU0000
 ; ABI: function|record|enum SYMBOL SOURCE-NAME [MEMBER...]   (declarations for abi-facts)
 ; CHECK: / CHECK-NEXT: / CHECK-SAME: / CHECK-NOT: / CHECK-DAG: on the RUN output
@@ -102,7 +102,9 @@ reservation plus 16; call-site bytes are 16-byte aligned and cover the packed
 record).
 
 `aurora-ir-check --output FILE CASE [DEST]` writes a case's first RUN output, for
-the native ABI runners that link emitted assembly against handwritten harnesses.
+the native ABI runners that link emitted assembly or object bytes against handwritten harnesses.
+`emit-object` requests referenced reflection only; unsupported executable forms reject
+before output publication, rather than falling back to an assembler.
 
 ## Generated programs
 

@@ -133,21 +133,20 @@ foreach profile_id : profile_data['profiles'].split('|')
     language_objects += [objects['terminal']]
   endif
   if bios_console or (platform == 'uefi' and mode in ['console', 'console-fixture'])
-    uart_assembly = custom_target(prefix + '-uart-assembly',
+    uart_object = custom_target(prefix + '-uart-object',
       input: files('../examples/kernel-uart.au'),
-      output: ['kernel-uart.s', 'kernel-uart.stack.json', 'kernel-uart.abi.json'],
-      build_subdir: output_subdir, depfile: 'kernel-uart.d',
+      output: ['kernel-uart.o', 'kernel-uart.stack.json', 'kernel-uart.abi.json'],
+      build_subdir: object_subdir, depfile: 'kernel-uart.d',
       depend_files: compiler_files + files('../kernel/uart-policy-entry.S', '../scripts/bootstrap_frontend.py'),
       command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
                 '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--abi-facts', '@OUTPUT2@',
                 '--depfile', '@DEPFILE@', '--module-root', kernel_source / 'kernel/policies',
-                '--local-symbols', '--referenced-reflection-only',
+                '--local-symbols', '--referenced-reflection-only', '--emit-object',
+                '--assembler', kernel_as, '--linker', kernel_ld, '--objcopy', kernel_objcopy,
                 '--bridge', kernel_source / 'kernel/uart-policy-entry.S'])
-    stack_facts += [uart_assembly[1]]
-    objects += {'kernel-uart': custom_target(prefix + '-uart-object',
-      input: uart_assembly[0], output: 'kernel-uart.o', build_subdir: object_subdir,
-      command: [kernel_as, '--64', '@INPUT@', '-o', '@OUTPUT@'])}
-    language_objects += [objects['kernel-uart']]
+    stack_facts += [uart_object[1]]
+    objects += {'kernel-uart': uart_object}
+    language_objects += [uart_object[0]]
   endif
   foreach name : profile_data[key + '.assembly'].split('|')
     assembly_key = key + '.assembly.' + name

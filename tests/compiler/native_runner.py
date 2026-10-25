@@ -822,13 +822,22 @@ class NativeRunner:
         self.harness.prepare(self.directory)
         self.observer = self.harness.observer
 
-    def assemble(self, assembly, functions):
+    def assemble(self, assembly, functions, *, values=None):
         # Callers link program.o elsewhere too, so the entry glue stays a separate object.
-        program = self.directory / "program.s"
-        program.write_text(assembly)
-        (self.directory / "entry.s").write_text(freestanding_glue(list(functions), range(len(functions)), note=True))
-        # -L retains compiler-local trap labels for exact instruction attribution.
-        command(["as", "--64", "-L", program, "-o", self.directory / "program.o"])
+        output = self.directory / "program.o"
+        if isinstance(assembly, bytes):
+            # Test entry glue lives in another object. Expose only its explicitly
+            # selected entries in this private test copy, never other functions.
+            output.write_bytes(assembly)
+            command(["objcopy", *("--globalize-symbol=" + name for name in functions), output])
+        else:
+            program = self.directory / "program.s"
+            program.write_text(assembly)
+            # -L retains compiler-local trap labels for exact instruction attribution.
+            command(["as", "--64", "-L", program, "-o", output])
+        if values is None:
+            values = range(len(functions))
+        (self.directory / "entry.s").write_text(freestanding_glue(list(functions), values, note=True))
         command(["as", "--64", self.directory / "entry.s", "-o", self.directory / "entry.o"])
         binary = self.directory / "program"
         self.harness.link([self.directory / "entry.o", self.directory / "program.o"], binary)

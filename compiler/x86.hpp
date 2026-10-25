@@ -13,8 +13,12 @@ enum class ReflectionEmission {
     All,
     Referenced
 };
+enum class CodeEmission {
+    Assembly,
+    Object
+};
 class AbiDeclarations;
-// Aurora owns all validated-IR-to-x86 text policy. This host object only lends
+// Aurora owns validated-IR-to-x86 assembly and object policy. This host object only lends
 // the two already-published owners, transports retained IDs/optional names,
 // copies sealed output chunks. Optional JSON requires the same live module.
 class X86Emitter final {
@@ -30,6 +34,7 @@ public:
     std::string abiFactsJson(const ir::ValidatedModule &validated, const AbiDeclarations &declarations) const;
     std::string emit(const ir::ValidatedModule &validated,
                      SymbolBinding binding = SymbolBinding::Default,
-                     ReflectionEmission reflection = ReflectionEmission::All);
+                     ReflectionEmission reflection = ReflectionEmission::All,
+                     CodeEmission format = CodeEmission::Assembly);
 };
 } // namespace aurora

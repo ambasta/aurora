@@ -42,7 +42,7 @@ native_uart_object = custom_target('native-uart-policy',
     depfile: 'uart-policy.d',
     command: [python, '-B', native_fixture, '--compiler', aurorac,
               '--source', '@INPUT@', '--module-root', native_root / 'kernel/policies',
-              '--local-symbols', '--referenced-reflection-only',
+              '--local-symbols', '--referenced-reflection-only', '--emit-object',
               '--bridge', native_root / 'kernel/uart-policy-entry.S',
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
 native_program_console_object = custom_target('native-program-console-policy',

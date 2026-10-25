@@ -21,6 +21,7 @@ int main(int argc, char **argv) {
         bool checkOnly = false;
         bool localSymbols = false;
         bool referencedReflectionOnly = false;
+        bool emitObject = false;
         bool inputSpecified = false;
         bool outputSpecified = false;
         bool stackFactsSpecified = false, abiFactsSpecified = false;
@@ -49,6 +50,10 @@ int main(int argc, char **argv) {
                     throw argumentError("--abi-facts requires exactly one output path");
                 abiFactsSpecified = true;
                 abiFactsPath = argv[index];
+            } else if (option == "--emit-object") {
+                if (emitObject)
+                    throw argumentError("duplicate --emit-object option");
+                emitObject = true;
             } else if (option == "--local-symbols") {
                 if (localSymbols)
                     throw argumentError("duplicate --local-symbols option");
@@ -73,14 +78,17 @@ int main(int argc, char **argv) {
             }
         }
         if (inputPath.empty() || (!checkOnly && outputPath.empty())) {
-            const std::string usage = "usage: aurorac [--local-symbols] [--referenced-reflection-only] [--module-root "
-                                      "DIR] INPUT.au -o OUTPUT.s "
-                                      "[--stack-facts OUTPUT.json] [--abi-facts OUTPUT.json]\n"
-                                      "       aurorac --check [--diagnostics=text|json] [--module-root DIR] INPUT.au";
+            const std::string usage =
+                "usage: aurorac [--emit-object] [--local-symbols] [--referenced-reflection-only] [--module-root "
+                "DIR] INPUT.au -o OUTPUT "
+                "[--stack-facts OUTPUT.json] [--abi-facts OUTPUT.json]\n"
+                "       aurorac --check [--diagnostics=text|json] [--module-root DIR] INPUT.au";
             throw argumentError(usage);
         }
         if (checkOnly && outputSpecified)
             throw argumentError("--check does not accept -o");
+        if (checkOnly && emitObject)
+            throw argumentError("--check does not accept --emit-object");
         if (checkOnly && stackFactsSpecified)
             throw argumentError("--check does not accept --stack-facts");
         if (stackFactsSpecified && stackFactsPath.empty())
@@ -105,7 +113,8 @@ int main(int argc, char **argv) {
         auto result = emitter.emit(checked.module,
                                    localSymbols ? aurora::SymbolBinding::Local : aurora::SymbolBinding::Default,
                                    referencedReflectionOnly ? aurora::ReflectionEmission::Referenced
-                                                            : aurora::ReflectionEmission::All);
+                                                            : aurora::ReflectionEmission::All,
+                                   emitObject ? aurora::CodeEmission::Object : aurora::CodeEmission::Assembly);
         aurora::host::ArtifactWriter output(outputPath, checked.sourceIdentities);
         std::optional<aurora::host::ArtifactWriter> stackFacts;
         if (stackFactsSpecified) {

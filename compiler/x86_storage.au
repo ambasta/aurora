@@ -1,33 +1,14 @@
 export module aurora.compiler.x86_storage;
 import std.decimal_digits;
+import aurora.compiler.x86_object_storage;
 
 // Bounded x86 output and emission facts. The workspace retains only selected
 // callable IDs and optional ABI names; executable IR stays in the source stores.
 export namespace compiler_x86 {
-    enum class EmitStatus {
-        pending,
-        running,
-        complete,
-        allocation,
-        limit,
-        invalid
-    };
     enum class Artifact {
         assembly,
         stack,
         abi
-    };
-    enum class Register {
-        rax,
-        rbx,
-        rcx,
-        rdx,
-        rsi,
-        rdi,
-        r8,
-        r9,
-        r10,
-        r11
     };
     class IndexRow {
         i64 valueValue;
@@ -176,54 +157,6 @@ export namespace compiler_x86 {
         builtin::OwnedValues<AbiNameRow> result = region.try_allocate(0, fill);
         return move(result);
     }
-    class EmitChunk {
-        builtin::array<u8, 512> payload;
-        i64 byteCount;
-    public:
-        EmitChunk() : payload{}, byteCount(0) {
-        }
-        auto size() const -> i64 {
-            return byteCount;
-        }
-        auto at(i64 index) const -> u8 {
-            return payload[index];
-        }
-        auto append(u8 value) -> bool {
-            if (byteCount >= 512) {
-                return false;
-            }
-            payload[byteCount] = value;
-            byteCount = byteCount + 1;
-            return true;
-        }
-        auto invalidate() -> bool {
-            byteCount = -1;
-            return false;
-        }
-    };
-    // Checked geometric growth. Limits come from byte extents, not a row quota.
-    auto grow_capacity(i64 current, i64 required, i64 maximum, i64 minimum) -> i64 {
-        if (current < 0 || required < 0 || maximum < 0 || minimum < 0 || current > maximum || required > maximum) {
-            return -1;
-        }
-        if (required <= current) {
-            return current;
-        }
-        i64 capacity = minimum;
-        if (current > 0) {
-            capacity = maximum;
-            if (current <= maximum / 2) {
-                capacity = current * 2;
-            }
-        }
-        if (capacity > maximum) {
-            capacity = maximum;
-        }
-        if (capacity < required) {
-            capacity = required;
-        }
-        return capacity;
-    }
     auto stack_byte_bound(i64 assembly, i64 function_count, i64 call_count) -> i64 {
         if (assembly < 0 || function_count < 0 || call_count < 0) {
             return -1;
@@ -281,6 +214,8 @@ export namespace compiler_x86 {
         bool directResult;
         bool leftInRcx;
         bool ownedSpanRuntime;
+        bool objectMode;
+        i64 objectNameWidth;
     public:
         EmitWorkspace(builtin::ByteRegion region) : output(region.try_allocate(0)), names(region.try_allocate(0)),
             retained(IndexRow_pool(region)), functions(FunctionFact_pool(region)), calls(CallFact_pool(region)),
@@ -290,11 +225,574 @@ export namespace compiler_x86 {
             loanSize(0), runtimeSize(0), abiNameSize(0), currentCallable(-1), currentFunction(-1), functionIndex(0),
             divisionIndex(0), stackDepth(0), liveStackBytes(8), receiverSave(0), callRecordSave(0), resultSave(0),
             copySource(0), copyDestination(0), copySourceFirst(0), copyDestinationFirst(0), directResult(false),
-            leftInRcx(false), ownedSpanRuntime(false) {
+            leftInRcx(false), ownedSpanRuntime(false), objectMode(false), objectNameWidth(0) {
         }
         auto allocated() const -> bool {
             return output.ok() && names.ok() && retained.ok() && functions.ok() && calls.ok() && loans.ok()
                 && runtimeNames.ok() && abiNames.ok();
+        }
+        auto label_spelling(i64 kind, i64 identity) -> bool {
+            if (kind == 0) {
+                return label(identity);
+            }
+            if (kind == 1) {
+                return return_label();
+            }
+            if (kind == 4) {
+                if (identity == 0) {
+                    return text(".Laurora_bounds_trap");
+                }
+                if (identity == 1) {
+                    return text(".Laurora_overflow_trap");
+                }
+                if (identity == 2) {
+                    return text(".Laurora_division_zero_trap");
+                }
+                if (identity == 3) {
+                    return text(".Laurora_shift_count_trap");
+                }
+                return fail();
+            }
+            if (kind == 2) {
+                text(".Ldivision_ready_");
+            } else {
+                if (kind == 3) {
+                    text(".Ldivision_done_");
+                } else {
+                    if (kind == 5) {
+                        text(".Lelide_copy_");
+                    } else {
+                        if (kind == 6) {
+                            text(".Lelide_done_");
+                        } else {
+                            if (kind == 7) {
+                                text(".Lspan_array_");
+                            } else {
+                                if (kind == 8) {
+                                    text(".Lspan_done_");
+                                } else {
+                                    return fail();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            number(functionIndex);
+            text("_");
+            return number(identity);
+        }
+        auto condition_spelling(i64 condition) -> bool {
+            if (condition == 0) {
+                return text("o");
+            }
+            if (condition == 1) {
+                return text("no");
+            }
+            if (condition == 2) {
+                return text("b");
+            }
+            if (condition == 3) {
+                return text("ae");
+            }
+            if (condition == 4) {
+                return text("e");
+            }
+            if (condition == 5) {
+                return text("ne");
+            }
+            if (condition == 6) {
+                return text("be");
+            }
+            if (condition == 7) {
+                return text("a");
+            }
+            if (condition == 8) {
+                return text("s");
+            }
+            if (condition == 9) {
+                return text("ns");
+            }
+            if (condition == 10) {
+                return text("p");
+            }
+            if (condition == 11) {
+                return text("np");
+            }
+            if (condition == 12) {
+                return text("l");
+            }
+            if (condition == 13) {
+                return text("ge");
+            }
+            if (condition == 14) {
+                return text("le");
+            }
+            if (condition == 15) {
+                return text("g");
+            }
+            return fail();
+        }
+        auto argument_register_id(i64 index) -> Register {
+            if (index == 0) {
+                return Register::rdi;
+            }
+            if (index == 1) {
+                return Register::rsi;
+            }
+            if (index == 2) {
+                return Register::rdx;
+            }
+            if (index == 3) {
+                return Register::rcx;
+            }
+            if (index == 4) {
+                return Register::r8;
+            }
+            if (index == 5) {
+                return Register::r9;
+            }
+            fail();
+            return Register::rax;
+        }
+        auto argument_reg(i64 index) -> Register {
+            return argument_register_id(index);
+        }
+        auto byte_register(Register value) -> bool {
+            if (value == Register::rax) {
+                return text("%al");
+            }
+            if (value == Register::rbx) {
+                return text("%bl");
+            }
+            if (value == Register::rcx) {
+                return text("%cl");
+            }
+            if (value == Register::rdx) {
+                return text("%dl");
+            }
+            if (value == Register::rsi) {
+                return text("%sil");
+            }
+            if (value == Register::rdi) {
+                return text("%dil");
+            }
+            if (value == Register::rbp) {
+                return text("%bpl");
+            }
+            if (value == Register::rsp) {
+                return text("%spl");
+            }
+            if (value == Register::r8) {
+                return text("%r8b");
+            }
+            if (value == Register::r9) {
+                return text("%r9b");
+            }
+            if (value == Register::r10) {
+                return text("%r10b");
+            }
+            if (value == Register::r11) {
+                return text("%r11b");
+            }
+            return fail();
+        }
+        auto indexed_spelling(Register base, Register index, i64 scale, i64 displacement) -> bool {
+            if (displacement != 0) {
+                number(displacement);
+            }
+            text("(");
+            reg(base);
+            text(",");
+            reg(index);
+            text(",");
+            number(scale);
+            return text(")");
+        }
+        auto alu_spelling(AluOp operation) -> bool {
+            if (operation == AluOp::add) {
+                return text("addq");
+            }
+            if (operation == AluOp::bit_or) {
+                return text("orq");
+            }
+            if (operation == AluOp::bit_and) {
+                return text("andq");
+            }
+            if (operation == AluOp::subtract) {
+                return text("subq");
+            }
+            if (operation == AluOp::bit_xor) {
+                return text("xorq");
+            }
+            if (operation == AluOp::compare) {
+                return text("cmpq");
+            }
+            if (operation == AluOp::test) {
+                return text("testq");
+            }
+            if (operation == AluOp::multiply) {
+                return text("imulq");
+            }
+            return fail();
+        }
+        auto mov_rr(Register source, Register target) -> bool {
+            text("    movq ");
+            reg(source);
+            text(", ");
+            reg(target);
+            return end_line();
+        }
+        auto mov_imm(i64 value, Register target) -> bool {
+            text("    movq $");
+            number(value);
+            text(", ");
+            reg(target);
+            return end_line();
+        }
+        auto mov_abs(i64 value, Register target) -> bool {
+            text("    movabsq $");
+            number(value);
+            text(", ");
+            reg(target);
+            return end_line();
+        }
+        auto mov_uimm(u64 value, Register target) -> bool {
+            text("    movabsq $");
+            if (value > 9223372036854775807u64) {
+                text("-");
+                unsigned_number(18446744073709551615u64 - value + 1u64);
+            } else {
+                unsigned_number(value);
+            }
+            text(", ");
+            reg(target);
+            return end_line();
+        }
+        auto load(i64 token, Register target, bool narrow) -> bool {
+            if (narrow) {
+                text("    movzbq ");
+            } else {
+                text("    movq ");
+            }
+            memory(token);
+            text(", ");
+            reg(target);
+            return end_line();
+        }
+        auto store(Register source, i64 token, bool narrow) -> bool {
+            if (narrow) {
+                text("    movb ");
+                byte_register(source);
+            } else {
+                text("    movq ");
+                reg(source);
+            }
+            text(", ");
+            memory(token);
+            return end_line();
+        }
+        auto lea(i64 token, Register target) -> bool {
+            text("    leaq ");
+            memory(token);
+            text(", ");
+            reg(target);
+            return end_line();
+        }
+        auto indexed_load(Register base, Register index, i64 scale, i64 displacement, Register target,
+            bool narrow) -> bool {
+            if (narrow) {
+                text("    movzbq ");
+            } else {
+                text("    movq ");
+            }
+            indexed_spelling(base, index, scale, displacement);
+            text(", ");
+            reg(target);
+            return end_line();
+        }
+        auto indexed_store(Register source, Register base, Register index, i64 scale, i64 displacement,
+            bool narrow) -> bool {
+            if (narrow) {
+                text("    movb ");
+                byte_register(source);
+            } else {
+                text("    movq ");
+                reg(source);
+            }
+            text(", ");
+            indexed_spelling(base, index, scale, displacement);
+            return end_line();
+        }
+        auto indexed_lea(Register base, Register index, i64 scale, i64 displacement, Register target) -> bool {
+            text("    leaq ");
+            indexed_spelling(base, index, scale, displacement);
+            text(", ");
+            reg(target);
+            return end_line();
+        }
+        auto alu_rr(AluOp operation, Register source, Register target) -> bool {
+            begin_line();
+            alu_spelling(operation);
+            text(" ");
+            reg(source);
+            text(", ");
+            reg(target);
+            return end_line();
+        }
+        auto alu_imm(AluOp operation, i64 value, Register target) -> bool {
+            begin_line();
+            alu_spelling(operation);
+            text(" $");
+            number(value);
+            text(", ");
+            reg(target);
+            return end_line();
+        }
+        auto alu_load(AluOp operation, i64 token, Register target) -> bool {
+            begin_line();
+            alu_spelling(operation);
+            text(" ");
+            memory(token);
+            text(", ");
+            reg(target);
+            return end_line();
+        }
+        auto alu_mem_imm(AluOp operation, i64 value, i64 token) -> bool {
+            begin_line();
+            alu_spelling(operation);
+            text(" $");
+            number(value);
+            text(", ");
+            memory(token);
+            return end_line();
+        }
+        auto store_imm_width(i64 value, i64 token, i64 width) -> bool {
+            if (width != 1 && width != 2 && width != 4 && width != 8) {
+                return fail();
+            }
+
+            text("    mov");
+            if (width == 1) {
+                text("b");
+            } else {
+                if (width == 2) {
+                    text("w");
+                } else {
+                    if (width == 4) {
+                        text("l");
+                    } else {
+                        text("q");
+                    }
+                }
+            }
+            text(" $");
+            number(value);
+            text(", ");
+            memory(token);
+            return end_line();
+        }
+        auto imul_imm(i64 value, Register source, Register target) -> bool {
+            text("    imulq $");
+            number(value);
+            text(", ");
+            reg(source);
+            text(", ");
+            reg(target);
+            return end_line();
+        }
+        auto shift(bool left, Register target) -> bool {
+            if (left) {
+                text("    shlq %cl, ");
+            } else {
+                text("    shrq %cl, ");
+            }
+            reg(target);
+            return end_line();
+        }
+        auto shift_imm(bool left, i64 count, Register target) -> bool {
+            if (count < 0 || count > 63) {
+                return fail();
+            }
+            if (left) {
+                text("    shlq $");
+            } else {
+                text("    shrq $");
+            }
+            number(count);
+            text(", ");
+            reg(target);
+            return end_line();
+        }
+        auto unary(UnaryOp operation, Register target) -> bool {
+            i64 group = 0;
+            if (operation == UnaryOp::negate) {
+                group = 3;
+            } else {
+                if (operation == UnaryOp::bit_not) {
+                    group = 2;
+                } else {
+                    if (operation == UnaryOp::divide) {
+                        group = 7;
+                    } else {
+                        if (operation == UnaryOp::unsigned_divide) {
+                            group = 6;
+                        } else {
+                            if (operation == UnaryOp::unsigned_multiply) {
+                                group = 4;
+                            } else {
+                                return fail();
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (group == 3) {
+                text("    negq ");
+            } else {
+                if (group == 2) {
+                    text("    notq ");
+                } else {
+                    if (group == 7) {
+                        text("    idivq ");
+                    } else {
+                        if (group == 6) {
+                            text("    divq ");
+                        } else {
+                            text("    mulq ");
+                        }
+                    }
+                }
+            }
+            reg(target);
+            return end_line();
+        }
+        auto push_register(Register source) -> bool {
+            text("    pushq ");
+            reg(source);
+            return end_line();
+        }
+        auto pop_register(Register target) -> bool {
+            text("    popq ");
+            reg(target);
+            return end_line();
+        }
+        auto set_condition(i64 condition, Register target) -> bool {
+            if (condition < 0 || condition > 15) {
+                return fail();
+            }
+            text("    set");
+            condition_spelling(condition);
+            text(" ");
+            byte_register(target);
+            return end_line();
+        }
+        auto zero_extend_byte(Register source, Register target) -> bool {
+            text("    movzbq ");
+            byte_register(source);
+            text(", ");
+            reg(target);
+            return end_line();
+        }
+        auto cqto() -> bool {
+            return line("cqto");
+        }
+        auto cld() -> bool {
+            return line("cld");
+        }
+        auto rep_movsb() -> bool {
+            return line("rep movsb");
+        }
+        auto return_instruction() -> bool {
+            return line("ret");
+        }
+        auto leave_instruction() -> bool {
+            return line("leave");
+        }
+        auto trap_instruction() -> bool {
+            return line("ud2");
+        }
+        auto lea_base(Register base, i64 displacement, Register target) -> bool {
+            text("    leaq ");
+            number(displacement);
+            text("(");
+            reg(base);
+            text("), ");
+            reg(target);
+            return end_line();
+        }
+        auto store_imm(i64 value, i64 token, bool narrow) -> bool {
+            if (narrow) {
+                return store_imm_width(value, token, 1);
+            }
+            return store_imm_width(value, token, 8);
+        }
+        auto cmp_imm_memory(i64 value, i64 token) -> bool {
+            return alu_mem_imm(AluOp::compare, value, token);
+        }
+        auto bind_label(i64 kind, i64 id) -> bool {
+            label_spelling(kind, id);
+            return text(":\n");
+        }
+        auto branch(i64 cc, i64 kind, i64 id) -> bool {
+            text("    j");
+            if (cc == 4 && kind == 4 && id == 2) {
+                text("z");
+            } else {
+                if (cc == -1) {
+                    text("mp");
+                } else {
+                    condition_spelling(cc);
+                }
+            }
+            text(" ");
+            label_spelling(kind, id);
+            return end_line();
+        }
+        auto lea_literal(i64 instruction, Register target) -> bool {
+            text("    leaq .Laurora_literal_");
+            number(instruction);
+            text("(%rip), ");
+            reg(target);
+            return end_line();
+        }
+        auto unsupported_object() -> bool {
+            if (ok()) {
+                outcome = EmitStatus::unsupported;
+            }
+            return false;
+        }
+        auto object_failure(EmitStatus failure) -> bool {
+            if (ok()) {
+                outcome = failure;
+            }
+            return false;
+        }
+        auto select_object() -> bool {
+            objectMode = true;
+            return ok();
+        }
+        auto object_name_width(i64 width) -> bool {
+            if (!objectMode || width < 0 || width > 67108864) {
+                return fail();
+            }
+            objectNameWidth = width;
+            return ok();
+        }
+        auto executable_empty() const -> bool {
+            return outputSize == 0;
+        }
+        auto push_fact() -> bool {
+            stackDepth = stackDepth + 1;
+            return grow_stack(8);
+        }
+        auto pop_fact() -> bool {
+            if (stackDepth <= 0) {
+                return fail();
+            }
+            stackDepth = stackDepth - 1;
+            return shrink_stack(8);
         }
         auto status() const -> EmitStatus {
             return outcome;
@@ -354,6 +852,9 @@ export namespace compiler_x86 {
             return true;
         }
         auto text(builtin::span<const u8> value) -> bool {
+            if (objectMode && assemblySize == 0) {
+                return unsupported_object();
+            }
             if (!reserve_output(value.size())) {
                 return false;
             }
@@ -509,6 +1010,12 @@ export namespace compiler_x86 {
             }
             if (value == Register::r11) {
                 return text("%r11");
+            }
+            if (value == Register::rbp) {
+                return text("%rbp");
+            }
+            if (value == Register::rsp) {
+                return text("%rsp");
             }
             return fail();
         }
@@ -867,16 +1374,12 @@ export namespace compiler_x86 {
             stackDepth = stackDepth + 1;
             return grow_stack(8);
         }
-        auto pop(builtin::span<const u8> target) -> bool {
+        auto pop(Register target) -> bool {
             if (stackDepth <= 0) {
                 return fail();
             }
-            begin_line();
-            text("popq ");
-            text(target);
-            end_line();
-            stackDepth = stackDepth - 1;
-            return shrink_stack(8);
+            pop_register(target);
+            return pop_fact();
         }
         auto pop_argument(i64 index) -> bool {
             if (stackDepth <= 0) {
@@ -1145,6 +1648,19 @@ export namespace compiler_x86 {
                 // a service call can print twice. Fixed JSON/numeric overhead
                 // is <=652/function, <=101/call and 29 wrapper bytes.
                 artifactLimit = stack_byte_bound(assemblySize, functionSize, callSize);
+                if (objectMode) {
+                    // Object symbols are deduplicated, so code size cannot bound
+                    // JSON name occurrences. Each function/call contributes at
+                    // most the measured widest symbol, printed at most twice.
+                    if (functionSize > 9223372036854775807 - callSize) {
+                        return limit_failure();
+                    }
+                    const i64 occurrences = functionSize + callSize;
+                    if (objectNameWidth > 0 && occurrences > 9223372036854775807 / objectNameWidth) {
+                        return limit_failure();
+                    }
+                    artifactLimit = stack_byte_bound(occurrences * objectNameWidth, functionSize, callSize);
+                }
                 if (artifactLimit < 0) {
                     return limit_failure();
                 }
@@ -1227,6 +1743,565 @@ export namespace compiler_x86 {
             return result;
         }
     };
+    auto emit_object_status(EmitWorkspace& w, const ObjectWorkspace& object) -> bool {
+        if (!w.ok()) {
+            return false;
+        }
+        if (!object.ok()) {
+            const EmitStatus status = object.status();
+            return w.object_failure(status);
+        }
+        return true;
+    }
+    auto emit_mov_rr(EmitWorkspace& w, ObjectWorkspace& object, Register source, Register target) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.mov_rr(source, target);
+            return emit_object_status(w, object);
+        }
+        return w.mov_rr(source, target);
+    }
+    auto emit_mov_imm(EmitWorkspace& w, ObjectWorkspace& object, i64 value, Register target) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.mov_imm(value, target);
+            return emit_object_status(w, object);
+        }
+        return w.mov_imm(value, target);
+    }
+    auto emit_mov_abs(EmitWorkspace& w, ObjectWorkspace& object, i64 value, Register target) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.mov_abs(value, target);
+            return emit_object_status(w, object);
+        }
+        return w.mov_abs(value, target);
+    }
+    auto emit_mov_uimm(EmitWorkspace& w, ObjectWorkspace& object, u64 value, Register target) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.mov_uimm(value, target);
+            return emit_object_status(w, object);
+        }
+        return w.mov_uimm(value, target);
+    }
+    auto emit_load(EmitWorkspace& w, ObjectWorkspace& object, i64 token, Register target, bool narrow) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.load(token, target, narrow);
+            return emit_object_status(w, object);
+        }
+        return w.load(token, target, narrow);
+    }
+    auto emit_store(EmitWorkspace& w, ObjectWorkspace& object, Register source, i64 token, bool narrow) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.store(source, token, narrow);
+            return emit_object_status(w, object);
+        }
+        return w.store(source, token, narrow);
+    }
+    auto emit_lea(EmitWorkspace& w, ObjectWorkspace& object, i64 token, Register target) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.lea(token, target);
+            return emit_object_status(w, object);
+        }
+        return w.lea(token, target);
+    }
+    auto emit_alu_rr(EmitWorkspace& w, ObjectWorkspace& object, AluOp operation, Register source,
+        Register target) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.alu_rr(operation, source, target);
+            return emit_object_status(w, object);
+        }
+        return w.alu_rr(operation, source, target);
+    }
+    auto emit_alu_imm(EmitWorkspace& w, ObjectWorkspace& object, AluOp operation, i64 value, Register target) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.alu_imm(operation, value, target);
+            return emit_object_status(w, object);
+        }
+        return w.alu_imm(operation, value, target);
+    }
+    auto emit_alu_load(EmitWorkspace& w, ObjectWorkspace& object, AluOp operation, i64 token, Register target) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.alu_load(operation, token, target);
+            return emit_object_status(w, object);
+        }
+        return w.alu_load(operation, token, target);
+    }
+    auto emit_alu_mem_imm(EmitWorkspace& w, ObjectWorkspace& object, AluOp operation, i64 value, i64 token) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.alu_mem_imm(operation, value, token);
+            return emit_object_status(w, object);
+        }
+        return w.alu_mem_imm(operation, value, token);
+    }
+    auto emit_store_imm_width(EmitWorkspace& w, ObjectWorkspace& object, i64 value, i64 token, i64 width) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.store_imm_width(value, token, width);
+            return emit_object_status(w, object);
+        }
+        return w.store_imm_width(value, token, width);
+    }
+    auto emit_store_imm(EmitWorkspace& w, ObjectWorkspace& object, i64 value, i64 token, bool narrow) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.store_imm(value, token, narrow);
+            return emit_object_status(w, object);
+        }
+        return w.store_imm(value, token, narrow);
+    }
+    auto emit_cmp_imm_memory(EmitWorkspace& w, ObjectWorkspace& object, i64 value, i64 token) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.cmp_imm_memory(value, token);
+            return emit_object_status(w, object);
+        }
+        return w.cmp_imm_memory(value, token);
+    }
+    auto emit_imul_imm(EmitWorkspace& w, ObjectWorkspace& object, i64 value, Register source, Register target) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.imul_imm(value, source, target);
+            return emit_object_status(w, object);
+        }
+        return w.imul_imm(value, source, target);
+    }
+    auto emit_shift(EmitWorkspace& w, ObjectWorkspace& object, bool left, Register target) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.shift(left, target);
+            return emit_object_status(w, object);
+        }
+        return w.shift(left, target);
+    }
+    auto emit_shift_imm(EmitWorkspace& w, ObjectWorkspace& object, bool left, i64 count, Register target) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.shift_imm(left, count, target);
+            return emit_object_status(w, object);
+        }
+        return w.shift_imm(left, count, target);
+    }
+    auto emit_unary(EmitWorkspace& w, ObjectWorkspace& object, UnaryOp operation, Register target) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.unary(operation, target);
+            return emit_object_status(w, object);
+        }
+        return w.unary(operation, target);
+    }
+    auto emit_push_register(EmitWorkspace& w, ObjectWorkspace& object, Register source) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.push_register(source);
+            return emit_object_status(w, object);
+        }
+        return w.push_register(source);
+    }
+    auto emit_pop_register(EmitWorkspace& w, ObjectWorkspace& object, Register target) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.pop_register(target);
+            return emit_object_status(w, object);
+        }
+        return w.pop_register(target);
+    }
+    auto emit_set_condition(EmitWorkspace& w, ObjectWorkspace& object, i64 condition, Register target) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.set_condition(condition, target);
+            return emit_object_status(w, object);
+        }
+        return w.set_condition(condition, target);
+    }
+    auto emit_zero_extend_byte(EmitWorkspace& w, ObjectWorkspace& object, Register source, Register target) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.zero_extend_byte(source, target);
+            return emit_object_status(w, object);
+        }
+        return w.zero_extend_byte(source, target);
+    }
+    auto emit_cqto(EmitWorkspace& w, ObjectWorkspace& object) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.cqto();
+            return emit_object_status(w, object);
+        }
+        return w.cqto();
+    }
+    auto emit_cld(EmitWorkspace& w, ObjectWorkspace& object) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.cld();
+            return emit_object_status(w, object);
+        }
+        return w.cld();
+    }
+    auto emit_rep_movsb(EmitWorkspace& w, ObjectWorkspace& object) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.rep_movsb();
+            return emit_object_status(w, object);
+        }
+        return w.rep_movsb();
+    }
+    auto emit_return_instruction(EmitWorkspace& w, ObjectWorkspace& object) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.return_instruction();
+            return emit_object_status(w, object);
+        }
+        return w.return_instruction();
+    }
+    auto emit_leave_instruction(EmitWorkspace& w, ObjectWorkspace& object) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.leave_instruction();
+            return emit_object_status(w, object);
+        }
+        return w.leave_instruction();
+    }
+    auto emit_trap_instruction(EmitWorkspace& w, ObjectWorkspace& object) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.trap_instruction();
+            return emit_object_status(w, object);
+        }
+        return w.trap_instruction();
+    }
+    auto emit_lea_base(EmitWorkspace& w, ObjectWorkspace& object, Register base, i64 displacement,
+        Register target) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.lea_base(base, displacement, target);
+            return emit_object_status(w, object);
+        }
+        return w.lea_base(base, displacement, target);
+    }
+    auto emit_bind_label(EmitWorkspace& w, ObjectWorkspace& object, i64 kind, i64 id) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.bind_label(kind, id);
+            return emit_object_status(w, object);
+        }
+        return w.bind_label(kind, id);
+    }
+    auto emit_branch(EmitWorkspace& w, ObjectWorkspace& object, i64 cc, i64 kind, i64 id) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.branch(cc, kind, id);
+            return emit_object_status(w, object);
+        }
+        return w.branch(cc, kind, id);
+    }
+    // A numeric indexed address carries only scale (1 or 8) and signed disp32.
+    // Register identities remain explicit; this is not an instruction encoding.
+    auto indexed_address(i64 scale, i64 displacement) -> i64 {
+        if ((scale != 1 && scale != 8) || displacement < -2147483648 || displacement > 2147483647) {
+            return -1;
+        }
+        i64 bit = 0;
+        if (scale == 8) {
+            bit = 1;
+        }
+        return (displacement + 2147483648) * 2 + bit;
+    }
+    auto emit_indexed_load(EmitWorkspace& w, ObjectWorkspace& object, Register base, Register index, i64 address,
+        bool narrow) -> bool {
+        if (!emit_object_status(w, object) || address < 0 || address > 8589934591) {
+            return w.fail();
+        }
+        i64 scale = 1;
+        if (address % 2 == 1) {
+            scale = 8;
+        }
+        const i64 displacement = address / 2 - 2147483648;
+        if (object.object_mode()) {
+            object.indexed_load(base, index, scale, displacement, Register::rax, narrow);
+            return emit_object_status(w, object);
+        }
+        return w.indexed_load(base, index, scale, displacement, Register::rax, narrow);
+    }
+    auto emit_indexed_store(EmitWorkspace& w, ObjectWorkspace& object, Register base, Register index, i64 address,
+        bool narrow) -> bool {
+        if (!emit_object_status(w, object) || address < 0 || address > 8589934591) {
+            return w.fail();
+        }
+        i64 scale = 1;
+        if (address % 2 == 1) {
+            scale = 8;
+        }
+        const i64 displacement = address / 2 - 2147483648;
+        if (object.object_mode()) {
+            object.indexed_store(Register::rax, base, index, scale, displacement, narrow);
+            return emit_object_status(w, object);
+        }
+        return w.indexed_store(Register::rax, base, index, scale, displacement, narrow);
+    }
+    auto emit_indexed_lea(EmitWorkspace& w, ObjectWorkspace& object, Register base, Register index, i64 displacement,
+        Register target) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.indexed_lea(base, index, 1, displacement, target);
+            return emit_object_status(w, object);
+        }
+        return w.indexed_lea(base, index, 1, displacement, target);
+    }
+    auto emit_lea_literal(EmitWorkspace& w, ObjectWorkspace& object, i64 instruction, Register target) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.unsupported_object();
+            return emit_object_status(w, object);
+        }
+        return w.lea_literal(instruction, target);
+    }
+    auto emit_push(EmitWorkspace& w, ObjectWorkspace& object) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (!object.object_mode()) {
+            return w.push();
+        }
+        object.push_register(Register::rax);
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        return w.push_fact();
+    }
+    auto emit_pop(EmitWorkspace& w, ObjectWorkspace& object, Register target) -> bool {
+        if (!emit_object_status(w, object) || w.stack_depth() <= 0) {
+            return w.fail();
+        }
+        if (!object.object_mode()) {
+            return w.pop(target);
+        }
+        object.pop_register(target);
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        return w.pop_fact();
+    }
+    auto emit_pop_argument(EmitWorkspace& w, ObjectWorkspace& object, i64 index) -> bool {
+        const Register target = w.argument_register_id(index);
+        return emit_pop(w, object, target);
+    }
+    auto emit_reserve_stack(EmitWorkspace& w, ObjectWorkspace& object, i64 bytes) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (!object.object_mode()) {
+            return w.reserve_stack(bytes);
+        }
+        if (!w.grow_stack(bytes)) {
+            return false;
+        }
+        if (bytes == 0) {
+            object.alu_imm(AluOp::subtract, 0, Register::rsp);
+        }
+        i64 remaining = bytes;
+        while (remaining > 0 && object.ok()) {
+            i64 step = remaining;
+            if (step > 4096) {
+                step = 4096;
+            }
+            object.alu_imm(AluOp::subtract, step, Register::rsp);
+            object.alu_mem_imm(AluOp::bit_or, 0, 1000000000);
+            remaining = remaining - step;
+        }
+        return emit_object_status(w, object);
+    }
+    auto emit_release_stack(EmitWorkspace& w, ObjectWorkspace& object, i64 bytes) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (!object.object_mode()) {
+            return w.release_stack(bytes);
+        }
+        object.alu_imm(AluOp::add, bytes, Register::rsp);
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        return w.shrink_stack(bytes);
+    }
+    auto emit_prepare_call(EmitWorkspace& w, ObjectWorkspace& object) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (!object.object_mode()) {
+            return w.prepare_call();
+        }
+        if (w.stack_depth() % 2 != 0) {
+            object.alu_imm(AluOp::subtract, 8, Register::rsp);
+            if (!emit_object_status(w, object)) {
+                return false;
+            }
+            return w.grow_stack(8);
+        }
+        return true;
+    }
+    auto emit_finish_call(EmitWorkspace& w, ObjectWorkspace& object) -> bool {
+        if (w.stack_depth() % 2 != 0) {
+            return emit_release_stack(w, object, 8);
+        }
+        return emit_object_status(w, object);
+    }
+    auto emit_object_call_symbol(EmitWorkspace& w, ObjectWorkspace& object, i64 callable) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        object.object_call_symbol(callable);
+        return emit_object_status(w, object);
+    }
+    auto emit_direct_runtime(EmitWorkspace& w, ObjectWorkspace& object, i64 symbol) -> bool {
+        if (!emit_object_status(w, object) || symbol < 0 || symbol >= w.runtime_count()) {
+            return w.fail();
+        }
+        w.record_call(2, symbol);
+        const NameRow name = w.runtime_name(symbol);
+        if (object.object_mode()) {
+            if (!object.has_runtime_symbol(symbol)) {
+                object.begin_runtime_symbol(symbol);
+                i64 at = 0;
+                while (at < name.count() && object.ok()) {
+                    const i64 value = w.name_byte(name.begin() + at);
+                    object.object_name_byte(u8(value));
+                    at = at + 1;
+                }
+                object.end_object_symbol_name();
+            }
+            object.object_call_runtime(symbol);
+            return emit_object_status(w, object);
+        }
+        w.text("    call ");
+        i64 at = 0;
+        while (at < name.count() && w.ok()) {
+            const i64 value = w.name_byte(name.begin() + at);
+            w.byte(u8(value));
+            at = at + 1;
+        }
+        return w.end_line();
+    }
+    auto emit_call_runtime(EmitWorkspace& w, ObjectWorkspace& object, i64 symbol) -> bool {
+        emit_prepare_call(w, object);
+        emit_direct_runtime(w, object, symbol);
+        return emit_finish_call(w, object);
+    }
+    auto emit_service_completion(EmitWorkspace& w, ObjectWorkspace& object, i64 symbol, i64 arguments,
+        i64 maximum) -> bool {
+        if (!w.record_service(symbol, arguments, maximum)) {
+            return false;
+        }
+        emit_alu_imm(w, object, AluOp::compare, maximum, Register::rax);
+        return emit_branch(w, object, 7, 4, 0);
+    }
+    auto finish_assembly(EmitWorkspace& w, ObjectWorkspace& object) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            if (!w.executable_empty()) {
+                return w.unsupported_object();
+            }
+            if (!object.seal()) {
+                return emit_object_status(w, object);
+            }
+            w.select_object();
+            const i64 width = object.maximum_name_width();
+            if (!w.object_name_width(width)) {
+                return false;
+            }
+            const i64 size = object.size();
+            i64 offset = 0;
+            while (offset < size && w.ok()) {
+                const EmitChunk chunk = object.chunk(offset);
+                if (chunk.size() <= 0 || chunk.size() > size - offset) {
+                    return w.fail();
+                }
+                i64 at = 0;
+                while (at < chunk.size() && w.ok()) {
+                    w.byte(chunk.at(at));
+                    at = at + 1;
+                }
+                offset = offset + chunk.size();
+            }
+        }
+        return w.finish_assembly();
+    }
     auto create(builtin::ByteRegion region) -> EmitWorkspace {
         EmitWorkspace result = EmitWorkspace(region);
         return move(result);
