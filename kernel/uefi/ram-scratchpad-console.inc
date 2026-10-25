@@ -306,14 +306,16 @@ using ProgramInputSession = console::Session<Serial, ScratchpadInputPlatform>;
         response = ScratchpadResponse{ScratchpadKind::unavailable};
         return false;
     }
-    const bool replace = input.command.operation == 1;
+    const auto right = input.command.operation == 0   ? RamFileFraming::Right::read
+                       : input.command.operation == 1 ? RamFileFraming::Right::replace
+                                                      : RamFileFraming::Right::append;
     ram_command.emplace(*domains[0].handle,
                         *domains[1].handle,
                         *mailbox->endpoint(*domains[0].handle),
                         *mailbox->endpoint(*domains[1].handle),
                         *cleanup,
-                        replace ? RamFileFraming::Right::replace : RamFileFraming::Right::read,
-                        replace ? static_cast<unsigned>(input.command.count) : 50U);
+                        right,
+                        right == RamFileFraming::Right::read ? 50U : static_cast<unsigned>(input.command.count));
     ++ram_commands;
     ram_state = RamState::command;
     scratchpad_stage(input);

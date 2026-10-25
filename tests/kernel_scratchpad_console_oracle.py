@@ -19,13 +19,14 @@ budget, need, LAYOUT = phases.budget, phases.need, phases.LAYOUT
 READY = "AURORA_RAM_SCRATCHPAD_READY: 49-byte session scratchpad; all data is lost on service reset or session exit."
 HELP = (
     "put [text]  Replace the session scratchpad (0..49 printable ASCII bytes)\n"
+    "append [text]  Append to the existing scratchpad (total at most 49 bytes)\n"
     "get         Read the session scratchpad\n"
     "help        Show commands\n"
     "status      Show static capacity and service availability\n"
     "exit        Close this session and discard all data"
 )
 STATUS = "status: capacity=49 printable ASCII bytes; command ceiling=64; retained service=available"
-INVALID = "Invalid command. Type help; put accepts at most 49 printable ASCII bytes."
+INVALID = "Invalid command. Type help; put/append accept at most 49 printable ASCII bytes."
 ABORTED = "aborted: previous data retained"
 READ_FAILED = "read failed: output discarded"
 COMMITTED_FAILED = "committed; caller failed: do not retry automatically"
@@ -141,7 +142,10 @@ def validate(status, text, plan, metadata, *, fixture=False):
         )
         need(fixture or effect == "normal", "Production cannot select a fault fixture")
         commands += 1
-        need(commands <= 64 and count >= 2, "Bounded protected command")
+        need(
+            commands <= 64 and count >= (1 if command.startswith("append") and reply == "rejected" else 2),
+            "Bounded protected command",
+        )
         if effect != "normal":
             need(commands == 2, "Fixture acts exactly once on second admitted command")
         cleanup, client_epoch = epoch + 1, epoch + 2

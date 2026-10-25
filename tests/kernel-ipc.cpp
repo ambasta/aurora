@@ -538,44 +538,67 @@ auto generation_exhaustion() -> void {
 
 auto retained_file_framing() -> void {
     using F = aurora::uefi::RamFileFraming;
-    for (unsigned length = 0; length <= 49; ++length) {
-        F fixed{F::Right::replace, length};
-        for (unsigned other = 0; other <= 50; ++other)
-            check(fixed.permits((other << 8) | 3) == (other == length), "scratchpad exact admitted BEGIN length");
-        F write{F::Right::replace};
-        check(!write.permits(1) && !write.permits(5), "RAM write immutable right and begin order");
-        check(write.publish((length << 8) | 3), "RAM bounded replace begin");
-        check(!write.reply(1), "RAM reply requires delivery");
-        check(write.delivered((length << 8) | 3) && !write.delivered((length << 8) | 3), "RAM one-shot delivery");
-        check(write.reply(1) && !write.reply(1), "RAM one-shot begin reply");
-        for (unsigned offset = 0; offset < length; ++offset) {
-            for (unsigned byte = 0; byte < 256; ++byte)
-                check(write.permits((byte << 16) | (offset << 8) | 4), "RAM every binary byte admitted");
-            const auto word = (255U << 16) | (offset << 8) | 4;
-            check(!write.permits(word | (1ULL << 24)) && !write.permits(word + 256), "RAM reserved/order rejection");
-            check(!write.permits(5), "RAM no premature COMMIT");
-            check(write.publish(word) && write.delivered(word) && write.reply(1), "RAM sequential staging framing");
+    for (const auto right : {F::Right::replace, F::Right::append}) {
+        const unsigned tag = right == F::Right::replace ? 3 : 8;
+        for (unsigned length = 0; length <= 49; ++length) {
+            F fixed{right, length};
+            for (unsigned other = 0; other <= 50; ++other)
+                check(fixed.permits((other << 8) | tag) == (other == length), "scratchpad exact admitted BEGIN length");
+            F write{right};
+            check(!write.permits(1) && !write.permits(5) && !write.permits(tag == 3 ? 8 : 3),
+                  "RAM write immutable right and begin order");
+            check(write.publish((length << 8) | tag), "RAM bounded replace begin");
+            check(!write.reply(1), "RAM reply requires delivery");
+            check(write.delivered((length << 8) | tag) && !write.delivered((length << 8) | tag),
+                  "RAM one-shot delivery");
+            check(write.reply(1) && !write.reply(1), "RAM one-shot begin reply");
+            for (unsigned offset = 0; offset < length; ++offset) {
+                for (unsigned byte = 0; byte < 256; ++byte)
+                    check(write.permits((byte << 16) | (offset << 8) | 4), "RAM every binary byte admitted");
+                const auto word = (255U << 16) | (offset << 8) | 4;
+                check(!write.permits(word | (1ULL << 24)) && !write.permits(word + 256),
+                      "RAM reserved/order rejection");
+                check(!write.permits(5), "RAM no premature COMMIT");
+                check(write.publish(word) && write.delivered(word) && write.reply(1), "RAM sequential staging framing");
+            }
+            check(write.publish(5) && !write.commit_delivered(), "RAM COMMIT publication not delivery");
+            check(write.delivered(5) && write.commit_delivered() && !write.begin_abort(), "RAM no post-COMMIT abort");
+            check(!write.reply(1) && !write.reply(5 | (1ULL << 63)) && write.reply(5), "RAM exact committed reply");
+            check(write.outcome() == F::Outcome::committed && write.count() == length + 2 && !write.permits(1),
+                  "RAM terminal command cannot renew allowance");
+            check(write.terminal_reply() == 5 && write.data_count() == 0, "RAM committed terminal evidence");
+            F read{F::Right::read};
+            check(!read.permits(3) && !read.permits(8) && read.publish(1) && read.delivered(1) && read.reply(1),
+                  "RAM read right");
+            for (unsigned offset = 0; offset < length; ++offset) {
+                check(read.publish((offset << 8) | 2) && read.delivered((offset << 8) | 2), "RAM read offset");
+                check(!read.reply(0x10002) && !read.reply(7) && read.reply(0xff02), "RAM bounded binary reply");
+            }
+            check(read.publish((length << 8) | 2) && read.delivered((length << 8) | 2) && read.reply(3),
+                  "RAM EOF framing");
+            check(read.count() == length + 2 && read.state() == F::State::terminal, "RAM maximum51 exchanges");
+            check(read.terminal_reply() == 3 && read.data_count() == length, "RAM exact EOF/data-count evidence");
         }
-        check(write.publish(5) && !write.commit_delivered(), "RAM COMMIT publication not delivery");
-        check(write.delivered(5) && write.commit_delivered() && !write.begin_abort(), "RAM no post-COMMIT abort");
-        check(!write.reply(1) && !write.reply(5 | (1ULL << 63)) && write.reply(5), "RAM exact committed reply");
-        check(write.outcome() == F::Outcome::committed && write.count() == length + 2 && !write.permits(1),
-              "RAM terminal command cannot renew allowance");
-        check(write.terminal_reply() == 5 && write.data_count() == 0, "RAM committed terminal evidence");
-        F read{F::Right::read};
-        check(!read.permits(3) && read.publish(1) && read.delivered(1) && read.reply(1), "RAM read right");
-        for (unsigned offset = 0; offset < length; ++offset) {
-            check(read.publish((offset << 8) | 2) && read.delivered((offset << 8) | 2), "RAM read offset");
-            check(!read.reply(0x10002) && !read.reply(7) && read.reply(0xff02), "RAM bounded binary reply");
-        }
-        check(read.publish((length << 8) | 2) && read.delivered((length << 8) | 2) && read.reply(3), "RAM EOF framing");
-        check(read.count() == length + 2 && read.state() == F::State::terminal, "RAM maximum51 exchanges");
-        check(read.terminal_reply() == 3 && read.data_count() == length, "RAM exact EOF/data-count evidence");
     }
     for (const auto word : std::array<std::uint64_t, 6>{0, 6, 50U << 8 | 3U, 1ULL << 63 | 3, 0x10003, UINT64_MAX}) {
         F bad{F::Right::replace};
         check(!bad.publish(word) && bad.state() == F::State::fresh && bad.count() == 0, "RAM malformed nonmutation");
     }
+    for (const auto right :
+         {F::Right::read, F::Right::replace, F::Right::append, static_cast<F::Right>(3), static_cast<F::Right>(-1)}) {
+        F framing{right};
+        check(framing.permits(1) == (right == F::Right::read) && framing.permits(3) == (right == F::Right::replace) &&
+                  framing.permits(8) == (right == F::Right::append),
+              "RAM exact closed right dispatch");
+    }
+    for (const auto word : std::array<std::uint64_t, 3>{50U << 8 | 8U, 1ULL << 63 | 8, 0x10008}) {
+        F bad{F::Right::append};
+        check(!bad.publish(word) && bad.count() == 0, "RAM malformed append nonmutation");
+    }
+    F append_rejected{F::Right::append};
+    check(append_rejected.publish(8) && append_rejected.delivered(8) && append_rejected.reply(6) &&
+              append_rejected.outcome() == F::Outcome::rejected,
+          "RAM append semantic refusal terminal");
     F missing{F::Right::read};
     check(missing.publish(1) && missing.delivered(1) && missing.reply(1) && missing.publish(2) &&
               missing.delivered(2) && missing.reply(4),
@@ -586,17 +609,21 @@ auto retained_file_framing() -> void {
     F rejected{F::Right::read};
     check(rejected.publish(1) && rejected.delivered(1) && rejected.reply(6) && rejected.terminal_reply() == 6,
           "RAM exact rejected terminal");
-    F abort{F::Right::replace};
-    check(abort.publish(259) && abort.delivered(259) && abort.reply(1) && abort.begin_abort(), "RAM precommit abort");
-    check(!abort.permits(3) && !abort.publish(3) && !abort.delivered(3) && !abort.reply(7) &&
-              !abort.acknowledge_abort(0) && !abort.acknowledge_abort(7 | (1ULL << 63)),
-          "RAM abort exclusive private acknowledgement");
-    check(abort.acknowledge_abort(7) && !abort.acknowledge_abort(7) && abort.outcome() == F::Outcome::aborted,
-          "RAM exact ABORTED once");
-    F pending_commit{F::Right::replace};
-    check(pending_commit.publish(3) && pending_commit.delivered(3) && pending_commit.reply(1) &&
-              pending_commit.publish(5) && pending_commit.begin_abort(),
-          "RAM undelivered COMMIT can abort");
+    for (const auto right : {F::Right::replace, F::Right::append}) {
+        const unsigned tag = right == F::Right::replace ? 3 : 8;
+        F abort{right};
+        check(abort.publish((256U | tag)) && abort.delivered((256U | tag)) && abort.reply(1) && abort.begin_abort(),
+              "RAM precommit abort");
+        check(!abort.permits(tag) && !abort.publish(tag) && !abort.delivered(tag) && !abort.reply(7) &&
+                  !abort.acknowledge_abort(0) && !abort.acknowledge_abort(7 | (1ULL << 63)),
+              "RAM abort exclusive private acknowledgement");
+        check(abort.acknowledge_abort(7) && !abort.acknowledge_abort(7) && abort.outcome() == F::Outcome::aborted,
+              "RAM exact ABORTED once");
+        F pending_commit{right};
+        check(pending_commit.publish(tag) && pending_commit.delivered(tag) && pending_commit.reply(1) &&
+                  pending_commit.publish(5) && pending_commit.begin_abort(),
+              "RAM undelivered COMMIT can abort");
+    }
 }
 auto retained_file_settlement() -> void {
     DomainRegistry registry;
@@ -635,17 +662,18 @@ auto scratchpad_copied_records() -> void {
     Command command;
     Result result;
     check(command.valid() && result.valid(), "scratchpad pristine get/incomplete");
-    for (std::uint64_t operation = 0; operation < 3; ++operation)
+    for (std::uint64_t operation = 0; operation < 4; ++operation)
         for (std::uint64_t kind = 0; kind < 6; ++kind)
             for (std::uint64_t reply = 0; reply < 8; ++reply)
                 for (std::uint64_t count = 0; count < 3; ++count) {
                     scrub(result);
                     result.kind = kind;
                     const bool accepted =
-                        operation <= 1 &&
+                        operation <= 2 &&
                         ((operation == 0 && kind == 1 && reply == 3 && count == 0) ||
                          (operation == 0 && kind == 2 && reply == 4 && count == 0) ||
-                         (operation == 1 && kind == 3 && reply == 5 && count == 0) || (kind == 4 && reply == 6));
+                         ((operation == 1 || operation == 2) && kind == 3 && reply == 5 && count == 0) ||
+                         (kind == 4 && reply == 6));
                     check(result.terminal_for(operation, reply, count) == accepted,
                           "scratchpad exhaustive operation/result/terminal relation");
                 }
@@ -662,7 +690,8 @@ auto scratchpad_copied_records() -> void {
             command.count = length;
             for (std::size_t i = 0; i < length; ++i)
                 command.bytes[i] = 32;
-            check(command.valid() == (operation <= 1 && length <= 49 && (operation == 1 || length == 0)),
+            check(command.valid() ==
+                      (operation <= 2 && length <= 49 && (operation == 1 || operation == 2 || length == 0)),
                   "scratchpad closed raw operation/count");
         }
     scrub(command);

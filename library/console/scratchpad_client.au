@@ -2,17 +2,21 @@ export module console.scratchpad_client;
 import console.scratchpad;
 
 export namespace console {
-    // Actual command bytes are encoded into the unchanged scalar protocol.
+    // Actual command bytes are encoded into the existing scalar Call ABI.
     // An incomplete exchange discards every accumulated byte. Only exact
     // REJECTED is represented as refused; native settlement still decides why.
     auto run_scratchpad_command(builtin::CallSession& session, ScratchpadCommand command) -> ScratchpadResult {
         if (!command.valid()) {
             return ScratchpadResult(ScratchpadResultKind::incomplete);
         }
-        const bool writing = command.selection() == ScratchpadOperation::put;
+        const bool writing = command.selection() == ScratchpadOperation::put || command.selection()
+            == ScratchpadOperation::append;
         u64 begin = 1u64;
         if (writing) {
             begin = 3u64 | (command.size() << 8);
+        }
+        if (command.selection() == ScratchpadOperation::append) {
+            begin = 8u64 | (command.size() << 8);
         }
         const builtin::CallResult started = session.call(begin);
         if (started.status != builtin::CallStatus::replied) {

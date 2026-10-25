@@ -42,8 +42,9 @@ implemented with bounded local qualification in [#234](https://github.com/ambast
 it is separate from that reusable read service and is not a general filesystem
 or scheduler. The opt-in interactive scratchpad supplies real protected command
 input/output and explicit user-facing
-lifecycle outcomes, with its own bounded local qualification in
-[#235](https://github.com/ambasta/aurora/pull/235). General program lifetime, mounted
+lifecycle outcomes, originally qualified in
+[#235](https://github.com/ambasta/aurora/pull/235), and now includes explicit atomic append
+to the existing volatile file. General program lifetime, mounted
 durable storage and broader service APIs remain dependencies.
 
 Build capability-scoped blocking request/reply on the bounded two-program

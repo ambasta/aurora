@@ -6,7 +6,7 @@ usage() {
         'Usage: scripts/kernel-run.sh [PROFILE] [--console|--smoke]' \
         'Profiles: bios, uefi, bios-console, uefi-console, production, program-console, program-*.' \
         'production boots the one production UEFI image; its console is the protected program console.' \
-        '--ram-scratchpad-console selects the bounded RAM scratchpad: put/get/help/status/exit.' \
+        '--ram-scratchpad-console selects the bounded RAM scratchpad: put/append/get/help/status/exit.' \
         'Default: bios --smoke. bios-console/uefi-console default to --console; program-* to --smoke.' \
         'bios/uefi --console selects the ordinary interactive console (300 seconds).' \
         'Normal boots are bounded self-tests, not an interactive OS shell (BIOS 15s/UEFI 30s).' \

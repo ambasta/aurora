@@ -206,10 +206,15 @@ while retaining independent host-owned scenario/command plans and output checks.
 This deletion-first cleanup awaits exact-source build, native, guest and review gates.
 No pointer or caller-supplied endpoint/ticket/budget crosses the Serve ABI.
 
-Read and Replace rights are fixed at native command admission, not selected by a
+Read, Replace and Append rights are fixed at native command admission, not selected by a
 request word. Transport enforces closed framing, lengths, sequential offsets,
 reply shapes and a maximum 51 exchanges; only source owns existence, committed
-bytes/length, staging, commit and read results. Service startup has one 8-unit
+bytes/length, staging, commit and read results. APPEND_BEGIN (tag 8) carries a
+suffix count; source rejects missing files and totals above 49, stages the existing
+prefix, and accepts sequential suffix-relative DATA offsets. COMMIT publishes the
+whole result atomically; an empty suffix succeeds only for a present file. Append
+has its own admission right and cannot be requested through Read or Replace.
+Service startup has one 8-unit
 allowance per incarnation. Each command has cumulative caller 128 and service
 120 normal units, plus an exclusive 8-unit abort reserve. Every exchange boundary
 is charged conservatively: parking charges the discarded partial timer interval,
@@ -252,7 +257,7 @@ Legacy `program-file-call` profiles retain their scrubbed-reentry and supervisor
 ## Opt-in interactive RAM scratchpad
 
 The separate `ram-scratchpad-console` composition accepts actual `put [text]`,
-`get`, `help`, `status` and `exit` input. It is implemented with focused source,
+`append [text]`, `get`, `help`, `status` and `exit` input. It is implemented with focused source,
 native, linked-image and real-PTY evidence; bounded local qualification is recorded
 in [#235](https://github.com/ambasta/aurora/pull/235). That receipt applies only to its
 recorded source, tools and profiles. Run
@@ -262,8 +267,10 @@ timeout/kill is an interrupted, unverified teardown, not a clean exit.
 
 The unnamed file starts missing; bare `put` creates a present-empty file. It
 contains at most 49 printable ASCII bytes and is lost on service reset or session
-exit. One separator after `put` is grammar; remaining spaces are
-file bytes. At most 64 protected commands are admitted; local help/status and
+exit. `append [text]` adds a printable suffix only to a present file and rejects
+a result above 49 bytes without changing it. Bare `append` is a successful no-op
+on a present file, but rejects a missing file. One separator after `put` or `append`
+is grammar; remaining spaces are file bytes. At most 64 protected commands are admitted; local help/status and
 rejected input do not reset that count. This is not the legacy four-file console,
 a mounted filesystem, persistence or a general shell.
 
@@ -272,7 +279,7 @@ presentation. Native code stages an 80-byte command and captures an 80-byte
 result at fixed disjoint locations in the existing caller stack; no user pointer,
 new capability, general copied transport or native file store is introduced.
 The supervisor releases its Console loan before creating each fresh Call-only
-caller. The retained Serve-only service is unchanged in production. Its original
+caller. The retained Serve-only service owns all file mutation. Its original
 four stack leases and live source locals survive prompt waits and Console turns.
 The new strict-idle predicate authenticates that dormant service while requiring
 no caller, endpoint, transaction, active run, timer owner or pending result

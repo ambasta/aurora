@@ -8,7 +8,8 @@ class RamFileFraming final {
 public:
     enum class Right {
         read,
-        replace
+        replace,
+        append
     };
     enum class State {
         fresh,
@@ -33,7 +34,7 @@ private:
     const Right right_;
     // 50 leaves the legacy binary fixture length unbound. Console admission
     // supplies an exact 0..49 length; this is framing, never committed state.
-    const unsigned expected_replace_count_;
+    const unsigned expected_write_count_;
     State state_ = State::fresh;
     Outcome outcome_ = Outcome::none;
     unsigned count_{}, offset_{}, target_{};
@@ -41,20 +42,23 @@ private:
     bool commit_delivered_{}, delivered_{};
 
 public:
-    explicit constexpr RamFileFraming(Right right, unsigned expected_replace_count = 50)
-        : right_(right), expected_replace_count_(expected_replace_count) {
+    explicit constexpr RamFileFraming(Right right, unsigned expected_write_count = 50)
+        : right_(right), expected_write_count_(expected_write_count) {
     }
     [[nodiscard]] constexpr auto permits(std::uint64_t word) const -> bool {
-        if (expected_replace_count_ > 50 || count_ >= maximum_exchanges ||
+        if (expected_write_count_ > 50 || count_ >= maximum_exchanges ||
             (state_ != State::fresh && state_ != State::open))
             return false;
-        if (state_ == State::fresh)
-            return right_ == Right::read ? word == 1
-                                         : right_ == Right::replace && (word & 255) == 3 && word <= (49U << 8 | 3U) &&
-                                               (expected_replace_count_ == 50 || word >> 8 == expected_replace_count_);
+        if (state_ == State::fresh) {
+            if (right_ == Right::read)
+                return word == 1;
+            const unsigned tag = right_ == Right::replace ? 3 : right_ == Right::append ? 8 : 0;
+            return tag != 0 && (word & 255) == tag && word <= (49U << 8 | tag) &&
+                   (expected_write_count_ == 50 || word >> 8 == expected_write_count_);
+        }
         if (right_ == Right::read)
             return word == (std::uint64_t{offset_} << 8 | 2U) && offset_ <= 49;
-        if (right_ != Right::replace)
+        if (right_ != Right::replace && right_ != Right::append)
             return false;
         return offset_ == target_ ? word == 5
                                   : offset_ < target_ && word <= 0xffffff && (word & 0xffff) == (offset_ << 8 | 4U);
@@ -63,7 +67,7 @@ public:
         if (!permits(word))
             return false;
         request_ = word;
-        if (state_ == State::fresh && right_ == Right::replace)
+        if (state_ == State::fresh && (right_ == Right::replace || right_ == Right::append))
             target_ = static_cast<unsigned>(word >> 8);
         state_ = State::pending;
         delivered_ = false;
@@ -85,7 +89,7 @@ public:
         if (word == 6) {
             state_ = State::terminal;
             outcome_ = Outcome::rejected;
-        } else if (tag == 1 || tag == 3 || tag == 4) {
+        } else if (tag == 1 || tag == 3 || tag == 8 || tag == 4) {
             if (word != 1)
                 return false;
             if (tag == 4)

@@ -40,7 +40,7 @@ export namespace console {
                             } else {
                                 if (event == ConsoleEvent::help) {
                                     okay = scratchpad_input_text(session,
-                                        "\r\nput [text]  Replace the session scratchpad (0..49 printable ASCII bytes)\r\nget         Read the session scratchpad\r\nhelp        Show commands\r\nstatus      Show static capacity and service availability\r\nexit        Close this session and discard all data\r\naurora> ");
+                                        "\r\nput [text]  Replace the session scratchpad (0..49 printable ASCII bytes)\r\nappend [text]  Append to the existing scratchpad (total at most 49 bytes)\r\nget         Read the session scratchpad\r\nhelp        Show commands\r\nstatus      Show static capacity and service availability\r\nexit        Close this session and discard all data\r\naurora> ");
                                 } else {
                                     if (event == ConsoleEvent::status) {
                                         okay = scratchpad_input_text(session,
@@ -67,7 +67,7 @@ export namespace console {
                                                         carry);
                                                 }
                                                 okay = scratchpad_input_text(session,
-                                                    "\r\nInvalid command. Type help; put accepts at most 49 printable ASCII bytes.\r\naurora> ");
+                                                    "\r\nInvalid command. Type help; put/append accept at most 49 printable ASCII bytes.\r\naurora> ");
                                             }
                                         }
                                     }

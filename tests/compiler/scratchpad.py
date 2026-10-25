@@ -20,7 +20,7 @@ from unsigned_oracle import Case, NativeRunner, Rejection
 
 ROOT = Path(__file__).resolve().parents[2]
 PROMPT = b"aurora> "
-INVALID = b"\r\nInvalid command. Type help; put accepts at most 49 printable ASCII bytes.\r\n" + PROMPT
+INVALID = b"\r\nInvalid command. Type help; put/append accept at most 49 printable ASCII bytes.\r\n" + PROMPT
 REJECTED = b"\r\nLine rejected: too long, non-ASCII/control byte, or UART error.\r\n" + PROMPT
 MAXIMUM = bytes(32 + (index * 37) % 95 for index in range(49))
 
@@ -54,6 +54,14 @@ def source_cases():
         (b"get ", False),
         (b"GET", False),
         (b"putx", False),
+        (b"append", b""),
+        (b"append ", b""),
+        (b"append  x ", b" x "),
+        (b"append " + MAXIMUM, MAXIMUM),
+        (b"append " + b"x" * 50, False),
+        (b"appendx", False),
+        (b"append\tvalue", False),
+        (b"Append x", False),
         (b"put\tvalue", False),
         (b"help", False),
         (b"status", False),
@@ -68,7 +76,7 @@ def source_cases():
         if payload is False:
             body += "if (command.valid()) { return 0u64; }\n"
         else:
-            op = "get" if payload is None else "put"
+            op = "get" if payload is None else "append" if raw.startswith(b"append") else "put"
             expected = payload or b""
             body += f"if (!command.valid() || command.size() != {len(expected)}u64"
             body += f" || command.selection() != console::ScratchpadOperation::{op}) {{ return 0u64; }}\n"
@@ -192,6 +200,12 @@ def client_cases(binary):
         writes += [(4 | (index << 8) | (byte << 16), 0, 1) for index, byte in enumerate(payload)]
         writes += [(5, 0, 5)]
         execute(1, payload, writes, kind=3)
+        appends = [(8 | (len(payload) << 8), 0, 1)] + writes[1:]
+        execute(2, payload, appends, kind=3)
+        for index in range(len(appends)):
+            request = appends[index][0]
+            for status, value, kind in ((1, 0, 0), (2, 0, 0), (0, 6, 4), (0, 7, 0)):
+                execute(2, payload, appends[:index] + [(request, status, value)], kind=kind)
         reads = [(1, 0, 1)] + [(2 | (index << 8), 0, 2 | (byte << 8)) for index, byte in enumerate(payload)]
         reads += [(2 | (len(payload) << 8), 0, 3)]
         execute(0, b"", reads, payload, 1)
@@ -210,6 +224,8 @@ def client_cases(binary):
     execute(0, b"", [(1, 0, 1)] + [(2 | (i << 8), 0, 2 | (65 << 8)) for i in range(50)])
     for operation, payload, mutation in ((0, b"x", 0), (1, b"x" * 50, 0), (1, b"x", 1), (1, b"x", 2), (1, b"", 3)):
         execute(operation, payload, [], mutation=mutation)
+    for payload, mutation in ((b"x" * 50, 0), (b"x", 1), (b"x", 2), (b"", 3)):
+        execute(2, payload, [], mutation=mutation)
     # Noncanonical host Call status/value combinations must trap, not turn into
     # an outcome enum. The original native service adapter covers exact trap PCs.
     for status, value in ((3, 0), (1 << 32, 0), (1, 1), (2, 1)):
@@ -230,6 +246,10 @@ def input_cases(binary):
         (b"put  x \r", b" x ", 1),
         (b"put " + MAXIMUM + b"\n", MAXIMUM, 1),
         (b"put ab\bc\x7fd\n", b"ad", 1),
+        (b"append\n", b"", 2),
+        (b"append \n", b"", 2),
+        (b"append  x \r", b" x ", 2),
+        (b"append " + MAXIMUM + b"\n", MAXIMUM, 2),
     ):
         result = execute(raw)
         record(result, payload, len(payload), kind)
@@ -244,6 +264,8 @@ def input_cases(binary):
         b"get x",
         b"get ",
         b"putx",
+        b"appendx",
+        b"append " + b"x" * 50,
         b"Put x",
         b"exit ",
         b"help x",
@@ -266,12 +288,25 @@ def input_cases(binary):
         require(REJECTED in result.stdout, "UART damage admitted a command")
     result = execute(b"help\r\nstatus\n\nget\n")
     record(result, b"", 0, 0)
-    require(result.stdout.count(b"put [text]") == 1 and b"command ceiling=64" in result.stdout, "local help/status")
+    require(
+        result.stdout.count(b"put [text]") == 1
+        and result.stdout.count(b"append [text]") == 1
+        and b"command ceiling=64" in result.stdout,
+        "local help/status",
+    )
     require(b"upper" not in result.stdout and b"note" not in result.stdout, "legacy grammar leaked")
     result = execute(b"exit\r")
     record(result, b"", 0, 0)
     require(b"action=1 carry=1" in result.stderr, "exit/carry not canonical")
-    for raw in (b"put actual\n", b"get\n", b"help\nget\n", b"status\nget\n", b"exit\n", b"x\bget\n"):
+    for raw in (
+        b"append actual\n",
+        b"put actual\n",
+        b"get\n",
+        b"help\nget\n",
+        b"status\nget\n",
+        b"exit\n",
+        b"x\bget\n",
+    ):
         complete = execute(raw)
         for limit in range(len(complete.stdout)):
             result = execute(raw, limit=limit)

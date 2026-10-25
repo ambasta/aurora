@@ -7,7 +7,8 @@ export namespace console {
 
     enum class ScratchpadOperation {
         get,
-        put
+        put,
+        append
     };
 
     enum class ScratchpadResultKind {
@@ -61,15 +62,16 @@ export namespace console {
             return bytes[i64(index)];
         }
         auto set(u64 index, u8 byte) -> bool {
-            if (operation != ScratchpadOperation::put || count > 49u64 || index >= count
-                || !scratchpad_printable(byte)) {
+            if ((operation != ScratchpadOperation::put && operation != ScratchpadOperation::append) || count > 49u64
+                || index >= count || !scratchpad_printable(byte)) {
                 return false;
             }
             bytes[i64(index)] = byte;
             return true;
         }
         auto valid() const -> bool {
-            if (count > 49u64 || (operation != ScratchpadOperation::get && operation != ScratchpadOperation::put)) {
+            if (count > 49u64 || (operation != ScratchpadOperation::get && operation != ScratchpadOperation::put
+                && operation != ScratchpadOperation::append)) {
                 return false;
             }
             if (operation == ScratchpadOperation::get && count != 0u64) {
