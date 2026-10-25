@@ -11,8 +11,8 @@ import argparse
 import tempfile
 
 from native_runner import Freestanding, check_trap, check_words, command, freestanding_glue, observe, run
-from native_runner import symbols_of, worker_count
-from readonly_spans import Trap, MIN_I64, MAX_I64
+from native_runner import NativeRunner, Trap, symbols_of, worker_count
+from readonly_spans import MIN_I64, MAX_I64
 
 # Verified textual IR cases; the aurora-ir-check driver prints their assembly.
 AIR = Path(__file__).resolve().parent / "ir" / "readonly-windows-ir" / "abi.air"
@@ -67,7 +67,37 @@ def main():
 
         with ThreadPoolExecutor(max_workers=worker_count()) as pool:
             list(pool.map(trap, traps))
-    print(f"PASS readonly window direct IR native: {len(names)} cases, {len(traps)} exact bounds traps; one link")
+    window_count = len(names)
+    with tempfile.TemporaryDirectory(prefix="aurora-object-ir-") as temporary:
+        directory = Path(temporary)
+        object_cases = AIR.parent.parent / "ir-tests" / "object.air"
+        encoded = command([args.ir_tests.resolve(), "--output", object_cases, "native object values"]).stdout
+        names = [
+            "object_minimum",
+            "object_unsigned",
+            "object_division",
+            "object_remainder",
+            "object_shift",
+            "object_loop",
+            "object_six_arguments",
+            "object_bytes",
+            "object_class_array",
+            "object_six_bytes",
+        ]
+        expected = [MIN_I64, (1 << 64) - 1, -42, -1, 8, 21, 21, 128, 42, 21]
+        object_traps = [
+            ("object_bounds", Trap.BOUNDS),
+            ("object_zero", Trap.ZERO),
+            ("object_overflow", Trap.OVERFLOW),
+            ("object_count", Trap.COUNT),
+        ]
+        entries = names + [name for name, _ in object_traps]
+        observed, symbols = NativeRunner(directory, None, 10).assemble(encoded, entries, values=range(len(names)))
+        check_words(observed, expected, names)
+        for index, (name, expected_trap) in enumerate(object_traps, len(names)):
+            check_trap(observe(run([directory / "program", index], 10)), expected_trap, symbols, name)
+    print(f"PASS direct object native: {len(names)} values, {len(object_traps)} traps; one object emission and link")
+    print(f"PASS readonly window direct IR native: {window_count} cases, {len(traps)} exact bounds traps; one link")
 
 
 if __name__ == "__main__":

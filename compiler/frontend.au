@@ -24,6 +24,7 @@ import aurora.compiler.ir_verification_errors;
 import aurora.compiler.ir_verification_storage;
 import aurora.compiler.ir_verification;
 import aurora.compiler.x86_storage;
+import aurora.compiler.x86_object_storage;
 import aurora.compiler.x86_module;
 import aurora.compiler.x86_facts;
 

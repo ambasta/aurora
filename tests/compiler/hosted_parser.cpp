@@ -5065,11 +5065,11 @@ void rawInstructionAdmission() {
 }
 
 void resolvedCompilerSources(char **paths) {
-    context = "all forty-six real compiler modules and decimal digit dependency through production typed lowering";
-    const std::array<std::size_t, 47> arguments{0,  1,  2,  15, 19, 20, 21, 32, 16, 33, 34, 17, 22, 23, 24, 25,
+    context = "all forty-seven real compiler modules and decimal digit dependency through production typed lowering";
+    const std::array<std::size_t, 48> arguments{0,  1,  2,  15, 19, 20, 21, 32, 16, 33, 34, 17, 22, 23, 24, 25,
                                                 28, 29, 30, 31, 26, 27, 35, 37, 38, 39, 40, 41, 52, 53, 54, 55,
-                                                56, 57, 58, 59, 49, 42, 43, 44, 45, 46, 47, 48, 50, 51, 18};
-    const std::array<std::string, 47> modules{"lexer",
+                                                56, 57, 58, 59, 49, 60, 42, 43, 44, 45, 46, 47, 48, 50, 51, 18};
+    const std::array<std::string, 48> modules{"lexer",
                                               "syntax_arena",
                                               "parser",
                                               "resolution_kinds",
@@ -5106,6 +5106,7 @@ void resolvedCompilerSources(char **paths) {
                                               "ir_verification_transfer",
                                               "ir_verification",
                                               "decimal_digits",
+                                              "x86_object_storage",
                                               "x86_storage",
                                               "x86_helpers",
                                               "x86_scalar",
@@ -5117,8 +5118,8 @@ void resolvedCompilerSources(char **paths) {
                                               "resolution_linkage",
                                               "frontend"};
     // Explicit module order preserves scope assertions, independent of file argv.
-    std::array<aurora::Program, 47> syntax;
-    std::array<aurora::HostedModule, 47> headers;
+    std::array<aurora::Program, 48> syntax;
+    std::array<aurora::HostedModule, 48> headers;
     const auto resolved = [&] {
         aurora::HostedResolution resolution;
         for (std::size_t index = 0; index < modules.size(); ++index) {
@@ -7154,8 +7155,9 @@ void callCatalogueIsolation() {
 int main(int argc, char **argv) {
     try {
         context = "fixture arguments";
-        require(argc == 61,
-                "expected forty-six compiler, one scalar library, six aggregate and seven typed consumer source paths");
+        require(
+            argc == 62,
+            "expected forty-seven compiler, one scalar library, six aggregate and seven typed consumer source paths");
         grammarExpectations();
         callCatalogueIsolation();
         rawCatalogueControls();

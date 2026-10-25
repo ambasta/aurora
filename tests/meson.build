@@ -637,7 +637,7 @@ test('hosted-parser', hosted_parser_test,
                  '../compiler/ir_verification_resources.au',
                  '../compiler/ir_verification_services.au',
                  '../compiler/ir_verification_transfer.au',
-                 '../compiler/ir_verification.au'),
+                 '../compiler/ir_verification.au', '../compiler/x86_object_storage.au'),
      suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120,
      priority: slow_tests['hosted-parser'])
 # The already-built adapter objects with forged Aurora entries; the generated

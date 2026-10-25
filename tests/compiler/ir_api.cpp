@@ -864,6 +864,61 @@ void emitterReuseTests() {
     ++passed;
 }
 
+// Object and text sinks share lowering and facts, but a rejected object must
+// invalidate the previous published artifact and its optional sidecars.
+void objectEmissionTests() {
+    const auto checked = validate(load("ir-tests/object.air", "native object values"));
+    AbiDeclarations declarations;
+    declarations.functions["object_minimum"] = {"object_minimum", {}};
+    X86Emitter emitter;
+    const auto assembly = emitter.emit(checked, SymbolBinding::Local, ReflectionEmission::Referenced);
+    const auto stack = emitter.stackFactsJson(checked);
+    const auto abi = emitter.abiFactsJson(checked, declarations);
+    const auto emitObject = [&] {
+        return emitter.emit(checked, SymbolBinding::Local, ReflectionEmission::Referenced, CodeEmission::Object);
+    };
+    const auto object = emitObject();
+    require(emitter.stackFactsJson(checked) == stack && emitter.abiFactsJson(checked, declarations) == abi &&
+                emitter.stackFactsJson(checked) == stack,
+            "object emission changed stack/ABI facts or optional sidecar reuse");
+    require(emitObject() == object &&
+                emitter.emit(checked, SymbolBinding::Local, ReflectionEmission::Referenced) == assembly &&
+                emitObject() == object,
+            "object/text emission reuse retained stale bytes or sink selection");
+    ++passed;
+
+    const auto rejectUnsupported = [&](const ValidatedModule &unsupported) {
+        bool rejected = false;
+        try {
+            (void)emitter.emit(unsupported, SymbolBinding::Local, ReflectionEmission::Referenced, CodeEmission::Object);
+        } catch (const Error &error) {
+            rejected = std::string(error.what()).find("does not support") != std::string::npos;
+        }
+        require(rejected, "unsupported object form did not fail with an unsupported diagnostic");
+        bool stackRejected = false;
+        bool abiRejected = false;
+        try {
+            (void)emitter.stackFactsJson(checked);
+        } catch (const Error &error) {
+            stackRejected = std::string(error.what()) == "stack facts require the same emitted module";
+        }
+        try {
+            (void)emitter.abiFactsJson(checked, declarations);
+        } catch (const Error &error) {
+            abiRejected = std::string(error.what()) == "ABI facts require the same emitted module";
+        }
+        require(stackRejected && abiRejected, "failed object emission retained earlier sidecar ownership");
+        require(emitObject() == object && emitter.stackFactsJson(checked) == stack,
+                "failed object emission poisoned a subsequent supported module");
+        ++passed;
+    };
+    const auto literal = validate(load("readonly-windows-ir/cases.air", "literal window emission"));
+    rejectUnsupported(literal);
+    const auto reflection = validate(
+        load("ir-tests/reflection-emission.air", "referenced reflection retains referenced helper bodies and facts"));
+    rejectUnsupported(reflection);
+}
+
 void metadataLifetimeTests() {
     static_assert(!std::is_copy_constructible_v<ValidatedModule>);
     static_assert(std::is_move_constructible_v<ValidatedModule>);
@@ -1030,6 +1085,7 @@ int main(int argc, char **argv) {
         metadataIngressTests();
         validatedViewTests();
         emitterReuseTests();
+        objectEmissionTests();
         metadataLifetimeTests();
         std::cout << "PASS IR API: " << passed << " checks\n";
         return 0;

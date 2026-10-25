@@ -184,9 +184,9 @@ std::string execute(const Run &item, Module module) {
         const auto checked = validate(std::move(module));
         return metadataText(checked);
     }
-    if (action == "emit" || action == "stack-facts" || action == "abi-facts") {
+    if (action == "emit" || action == "emit-object" || action == "stack-facts" || action == "abi-facts") {
         auto binding = SymbolBinding::Default;
-        auto reflection = ReflectionEmission::All;
+        auto reflection = action == "emit-object" ? ReflectionEmission::Referenced : ReflectionEmission::All;
         for (std::size_t index = 1; index < run.size(); ++index) {
             if (run[index] == "local")
                 binding = SymbolBinding::Local;
@@ -197,7 +197,8 @@ std::string execute(const Run &item, Module module) {
         }
         const auto checked = validate(std::move(module));
         X86Emitter emitter;
-        auto assembly = emitter.emit(checked, binding, reflection);
+        auto assembly = emitter.emit(
+            checked, binding, reflection, action == "emit-object" ? CodeEmission::Object : CodeEmission::Assembly);
         if (action == "stack-facts")
             return emitter.stackFactsJson(checked);
         if (action == "abi-facts")

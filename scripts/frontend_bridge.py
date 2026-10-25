@@ -68,6 +68,30 @@ ROWS = (
         "noexcept",
     ),
     (
+        "emitter_object_create(builtin::ByteRegion region) -> compiler_x86::ObjectWorkspace",
+        "move compiler_x86::object_create(region)",
+        "EmitterObjectCreate:region",
+        "noexcept",
+    ),
+    (
+        "emitter_object_release(builtin::ByteRegion region, compiler_x86::ObjectWorkspace workspace) -> i64",
+        "direct compiler_x86::object_release(region, move(workspace))",
+        "EmitterObjectRelease:region,workspace",
+        "noexcept,discard",
+    ),
+    (
+        "emitter_object_status(const compiler_x86::ObjectWorkspace& workspace) -> compiler_x86::EmitStatus",
+        "direct workspace.status()",
+        "",
+        "noexcept",
+    ),
+    (
+        "emitter_enable_object(compiler_x86::ObjectWorkspace& workspace) -> bool",
+        "direct workspace.enable_object()",
+        "",
+        "noexcept",
+    ),
+    (
         "emitter_add_retained(compiler_x86::EmitWorkspace& workspace, i64 callable) -> bool",
         "direct workspace.add_retained(callable)",
         "",
@@ -92,10 +116,11 @@ ROWS = (
         "noexcept",
     ),
     (
-        "emitter_run(compiler_x86::EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& "
+        "emitter_run(compiler_x86::EmitWorkspace& workspace, compiler_x86::ObjectWorkspace& object, "
+        "const compiler_ir_metadata::MetadataStore& "
         "metadata, const compiler_ir_instructions::InstructionStore& instructions, i64 binding, i64 "
         "reflection) -> compiler_x86::EmitStatus",
-        "direct compiler_x86::run(workspace, metadata, instructions, binding, reflection)",
+        "direct compiler_x86::run(workspace, object, metadata, instructions, binding, reflection)",
         "",
         "noexcept",
     ),
@@ -609,7 +634,7 @@ def signatures():
                 parameters.append(
                     {"builtin::ByteRegion": "region", "builtin::span<const u8>": "span"}.get(spelling, spelling)
                 )
-        if name in entries or len(roots) > 3 or (consume and roots):
+        if name in entries or len(roots) > 4 or (consume and roots):
             raise ValueError("duplicate bridge or unsupported root count")
         entries[name] = (tuple(roots), tuple(parameters), result, record, discard)
     return entries

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Emit one Aurora assembly input and its conservative module dependencies."""
+"""Emit one Aurora code artifact and its conservative module dependencies."""
 
 import argparse
 import json
@@ -7,6 +7,7 @@ import re
 import sys
 from pathlib import Path
 import subprocess
+import tempfile
 
 
 def escaped(path):
@@ -129,6 +130,64 @@ def render_bridge(source, facts):
     return re.sub(r"@([A-Za-z_][A-Za-z_0-9:]*)@", symbol, source)
 
 
+def compose_object_bridge(path, bridges, facts, assembler="as", linker="ld", objcopy="objcopy"):
+    """Keep native adapters separate, then restore private source bindings."""
+    from bootstrap_frontend import abi_function_symbol
+
+    sources = [bridge.read_text() for bridge in bridges]
+    # Rendering validates the copied layouts before any symbol is exposed.
+    assembly = "\n".join(render_bridge(source, facts) for source in sources)
+    selected = sorted(
+        {
+            abi_function_symbol(facts, name)
+            for source in sources
+            for name in re.findall(r"@([A-Za-z_][A-Za-z_0-9:]*)@", source)
+        }
+    )
+    if not selected:
+        raise ValueError("Object bridge requires fact-selected private entries")
+
+    def symbol_types(object_path):
+        result = subprocess.run(
+            ["nm", "-P", "--defined-only", str(object_path)], check=True, capture_output=True, text=True
+        )
+        return {fields[0]: fields[1] for fields in map(str.split, result.stdout.splitlines()) if len(fields) >= 2}
+
+    before = symbol_types(path)
+    if any(before.get(name) != "t" for name in selected):
+        raise ValueError("Object bridge targets must be defined LOCAL text symbols")
+    with tempfile.TemporaryDirectory(prefix=".aurora-bridge-", dir=path.parent) as directory:
+        work = Path(directory)
+        source_object = work / "source.o"
+        bridge_source = work / "bridge.s"
+        bridge_object = work / "bridge.o"
+        combined = work / "combined.o"
+        bridge_source.write_text(assembly)
+        subprocess.run(
+            [objcopy, *["--globalize-symbol=" + name for name in selected], str(path), str(source_object)], check=True
+        )
+        subprocess.run([assembler, "--64", str(bridge_source), "-o", str(bridge_object)], check=True)
+        subprocess.run(
+            [
+                linker,
+                "-m",
+                "elf_x86_64",
+                "-r",
+                "--build-id=none",
+                str(source_object),
+                str(bridge_object),
+                "-o",
+                str(combined),
+            ],
+            check=True,
+        )
+        subprocess.run([objcopy, *["--localize-symbol=" + name for name in selected], str(combined)], check=True)
+        after = symbol_types(combined)
+        if any(after.get(name) != "t" for name in selected):
+            raise ValueError("Object bridge did not restore private source bindings")
+        combined.replace(path)
+
+
 def main():
     if sys.argv[1:2] == ["--render-bridge"]:
         facts, source, output = map(Path, sys.argv[2:])
@@ -146,14 +205,20 @@ def main():
     parser.add_argument("--bridge", type=Path, action="append", default=[])
     parser.add_argument("--referenced-reflection-only", action="store_true")
     parser.add_argument("--local-symbols", action="store_true")
+    parser.add_argument("--emit-object", action="store_true")
+    parser.add_argument("--assembler", default="as")
+    parser.add_argument("--linker", default="ld")
+    parser.add_argument("--objcopy", default="objcopy")
     args = parser.parse_args()
     if args.bridge and not args.abi_facts:
         parser.error("--bridge requires --abi-facts")
     inputs = dependencies(args.source, args.module_root)
     inputs += [bridge.absolute() for bridge in args.bridge]
     inputs += [Path(__file__).with_name("bootstrap_frontend.py"), Path(__file__).with_name("frontend_bridge.py")]
-    temporary = args.output.with_suffix(".pending.s")
+    temporary = args.output.with_suffix(".pending.o" if args.emit_object else ".pending.s")
     command = [str(args.compiler.resolve(strict=True))]
+    if args.emit_object:
+        command.append("--emit-object")
     if args.referenced_reflection_only:
         command.append("--referenced-reflection-only")
     if args.local_symbols:
@@ -170,9 +235,12 @@ def main():
     subprocess.run(command, check=True)
     if pending_abi:
         facts = json.loads(pending_abi.read_text())
-        with temporary.open("a") as output:
-            for bridge in args.bridge:
-                output.write("\n" + render_bridge(bridge.read_text(), facts))
+        if args.emit_object and args.bridge:
+            compose_object_bridge(temporary, args.bridge, facts, args.assembler, args.linker, args.objcopy)
+        elif not args.emit_object:
+            with temporary.open("a") as output:
+                for bridge in args.bridge:
+                    output.write("\n" + render_bridge(bridge.read_text(), facts))
     # A successful command must produce the complete declared pair before any
     # previously admitted assembly/facts/dependencies are replaced.
     temporary.stat()

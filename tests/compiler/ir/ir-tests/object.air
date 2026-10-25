@@ -1,0 +1,297 @@
+; CASE: native object values
+; RUN: emit-object local
+; EXPECT-OK
+layout ObjectCarrier [u8*6]
+layout ObjectChild [u8*3]
+fields ObjectCarrier [((class ObjectChild) 0 6 true 2)]
+storage ObjectCarrier [{0,1}*6] [0] 6 1 8
+storage ObjectChild [{0,1}*3] [{0,1}*3] 3 1 8
+carrier ObjectCarrier
+function object_minimum
+  result i64
+    Constant -9223372036854775808
+    Return
+end
+function object_unsigned
+  result u64
+    Constant -1 u64
+    Return
+end
+function object_division
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 2
+    Store 8
+    Constant -85
+    Push
+    Load 8
+    BinaryValue CheckedDivide
+    Return
+end
+function object_remainder
+  result i64
+    Constant -85
+    Push
+    Constant 2
+    BinaryValue CheckedRemainder
+    Return
+end
+function object_shift
+  result u64
+    Constant 1 u64
+    Push
+    Constant 63
+    BinaryValue ShiftLeft u64
+    Push
+    Constant 60
+    BinaryValue ShiftRight u64
+    Return
+end
+function object_loop
+  result i64
+  frame 16
+  slot 8 i64
+  slot 16 i64
+    Constant 0
+    Store 8
+    Constant 1
+    Store 16
+    Label 1
+    Load 16
+    Push
+    Constant 7
+    Compare Less
+    BranchFalse 2
+    Load 8
+    Push
+    Load 16
+    BinaryValue CheckedAdd
+    Store 8
+    Load 16
+    Push
+    Constant 1
+    BinaryValue CheckedAdd
+    Store 16
+    Jump 1
+    Label 2
+    Load 8
+    Return
+end
+function object_six_arguments
+  result i64
+    Constant 1
+    Push
+    Constant 2
+    Push
+    Constant 3
+    Push
+    Constant 4
+    Push
+    Constant 5
+    Push
+    Constant 6
+    Push
+    Call object_sum_six
+    Return
+end
+function object_sum_six
+  result i64
+  params [i64 i64 i64 i64 i64 i64]
+  frame 48
+  slot 8 i64
+  slot 16 i64
+  slot 24 i64
+  slot 32 i64
+  slot 40 i64
+  slot 48 i64
+    BindParameter 0 8
+    BindParameter 1 16
+    BindParameter 2 24
+    BindParameter 3 32
+    BindParameter 4 40
+    BindParameter 5 48
+    Load 8
+    Push
+    Load 16
+    BinaryValue CheckedAdd
+    Push
+    Load 24
+    BinaryValue CheckedAdd
+    Push
+    Load 32
+    BinaryValue CheckedAdd
+    Push
+    Load 40
+    BinaryValue CheckedAdd
+    Push
+    Load 48
+    BinaryValue CheckedAdd
+    Return
+end
+function object_bytes
+  result u8
+  frame 80
+  slot 6 u8
+  slot 7 u8
+  slot 8 u8
+  array 8 3
+  span 64
+    BeginArray 8
+    Constant 11 u8
+    Store 8 u8
+    Constant 128 u8
+    Store 7 u8
+    Constant 255 u8
+    Store 6 u8
+    BorrowSpan 8 64
+    Constant 1
+    SpanLoad 64
+    EndSpan 64
+    EndArray 8
+    Return
+end
+function object_class_array
+  result u8
+  frame 80
+  slot 14 u8
+  slot 15 u8
+  slot 16 u8
+  slot 30 u8
+  slot 31 u8
+  slot 32 u8
+  slot 59 u8
+  slot 60 u8
+  slot 61 u8
+  slot 62 u8
+  slot 63 u8
+  slot 64 u8
+  slot 78 u8
+  slot 79 u8
+  slot 80 u8
+  object 16 ObjectChild false
+  object 32 ObjectChild false
+  object 64 ObjectCarrier true
+  object 80 ObjectChild false
+    BeginObject 16
+    Constant 1 u8
+    Store 16 u8
+    Constant 2 u8
+    Store 15 u8
+    Constant 3 u8
+    Store 14 u8
+    BeginObject 32
+    Constant 41 u8
+    Store 32 u8
+    Constant 42 u8
+    Store 31 u8
+    Constant 43 u8
+    Store 30 u8
+    BeginObject 64
+    InitializeClassArray 64 0 [16 32]
+    Constant 1
+    ClassArrayBoundsGuard 64
+    BeginObject 80
+    ClassArrayCopy 64 0 80
+    Load 79 u8
+    EndObject 80
+    EndObject 64
+    EndObject 32
+    EndObject 16
+    Return
+end
+function object_bounds
+  result u8
+  frame 80
+  slot 8 u8
+  array 8 1
+  span 64
+    BeginArray 8
+    Constant 1 u8
+    Store 8 u8
+    BorrowSpan 8 64
+    Constant 1
+    SpanLoad 64
+    EndSpan 64
+    EndArray 8
+    Return
+end
+function object_zero
+  result i64
+  frame 16
+  slot 8 i64
+    Constant 0
+    Store 8
+    Constant 1
+    Push
+    Load 8
+    BinaryValue CheckedDivide
+    Return
+end
+function object_overflow
+  result i64
+    Constant 9223372036854775807
+    Push
+    Constant 1
+    BinaryValue CheckedAdd
+    Return
+end
+function object_count
+  result u64
+    Constant 1 u64
+    Push
+    Constant 64
+    BinaryValue ShiftLeft u64
+    Return
+end
+function object_six_bytes
+  result u8
+    Constant 1 u8
+    Push
+    Constant 2 u8
+    Push
+    Constant 3 u8
+    Push
+    Constant 4 u8
+    Push
+    Constant 5 u8
+    Push
+    Constant 6 u8
+    Push
+    Call object_sum_bytes
+    Return
+end
+function object_sum_bytes
+  result u8
+  params [u8 u8 u8 u8 u8 u8]
+  frame 16
+  slot 8 u8
+  slot 9 u8
+  slot 10 u8
+  slot 11 u8
+  slot 12 u8
+  slot 13 u8
+    BindParameter 0 8 u8
+    BindParameter 1 9 u8
+    BindParameter 2 10 u8
+    BindParameter 3 11 u8
+    BindParameter 4 12 u8
+    BindParameter 5 13 u8
+    Load 8 u8
+    Push
+    Load 9 u8
+    BinaryValue CheckedAdd u8
+    Push
+    Load 10 u8
+    BinaryValue CheckedAdd u8
+    Push
+    Load 11 u8
+    BinaryValue CheckedAdd u8
+    Push
+    Load 12 u8
+    BinaryValue CheckedAdd u8
+    Push
+    Load 13 u8
+    BinaryValue CheckedAdd u8
+    Return
+end

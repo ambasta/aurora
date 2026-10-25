@@ -1,5 +1,6 @@
 export module aurora.compiler.x86_helpers;
 import aurora.compiler.x86_storage;
+import aurora.compiler.x86_object_storage;
 import aurora.compiler.ir_metadata;
 import aurora.compiler.ir_metadata_storage;
 import aurora.compiler.ir_instructions;
@@ -253,22 +254,29 @@ export namespace compiler_x86 {
         i64 field) -> i64 {
         return class_size(metadata, type_class(metadata, owner_storage_type(metadata, callable, offset, field)));
     }
-    auto metadata_text(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata, i64 begin,
-        i64 count) -> bool {
+    auto metadata_text(EmitWorkspace& workspace, ObjectWorkspace& o,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 begin, i64 count) -> bool {
         i64 at = 0;
-        while (at < count) {
-            workspace.byte(u8(metadata.byte_at(begin + at)));
-            at = at + 1;
+        if (o.object_mode()) {
+            while (at < count) {
+                o.object_name_byte(u8(metadata.byte_at(begin + at)));
+                at = at + 1;
+            }
+        } else {
+            while (at < count) {
+                workspace.byte(u8(metadata.byte_at(begin + at)));
+                at = at + 1;
+            }
         }
-        return workspace.ok();
+        return emit_object_status(workspace, o);
     }
-    auto callable_name(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
-        i64 callable) -> bool {
+    auto callable_name(EmitWorkspace& workspace, ObjectWorkspace& o,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 callable) -> bool {
         const compiler_ir_metadata::CallableRow row = metadata.callable_at(callable);
         const compiler_ir_metadata::ByteRange name = row.name();
-        return metadata_text(workspace, metadata, name.begin(), name.count());
+        return metadata_text(workspace, o, metadata, name.begin(), name.count());
     }
-    auto query_name(EmitWorkspace& workspace, i64 query, i64 scope) -> bool {
+    auto query_name(EmitWorkspace& workspace, ObjectWorkspace& o, i64 query, i64 scope) -> bool {
         if (scope == 0) {
             workspace.text("aurora_reflect_");
         } else {
@@ -281,27 +289,38 @@ export namespace compiler_x86 {
         }
         return workspace.text("field_count");
     }
-    auto direct_target(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
-        i64 callable) -> bool {
+    auto direct_target(EmitWorkspace& workspace, ObjectWorkspace& o,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 callable) -> bool {
         workspace.record_call(0, callable);
+        if (o.object_mode()) {
+            if (!o.has_object_symbol(callable)) {
+                o.begin_object_external(callable);
+                callable_name(workspace, o, metadata, callable);
+                o.end_object_symbol_name();
+            }
+            return emit_object_call_symbol(workspace, o, callable);
+        }
         workspace.text("    call ");
-        callable_name(workspace, metadata, callable);
+        callable_name(workspace, o, metadata, callable);
         return workspace.end_line();
     }
-    auto call_target(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
+    auto call_target(EmitWorkspace& workspace, ObjectWorkspace& o, const compiler_ir_metadata::MetadataStore& metadata,
         i64 callable) -> bool {
-        workspace.prepare_call();
-        direct_target(workspace, metadata, callable);
-        return workspace.finish_call();
+        emit_prepare_call(workspace, o);
+        direct_target(workspace, o, metadata, callable);
+        return emit_finish_call(workspace, o);
     }
-    auto call_query(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata, i64 query,
-        i64 scope) -> bool {
-        workspace.prepare_call();
+    auto call_query(EmitWorkspace& workspace, ObjectWorkspace& o, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 query, i64 scope) -> bool {
+        if (o.object_mode()) {
+            return workspace.unsupported_object();
+        }
+        emit_prepare_call(workspace, o);
         workspace.record_call(1, scope * 2 + query);
         workspace.text("    call ");
-        query_name(workspace, query, scope);
+        query_name(workspace, o, query, scope);
         workspace.end_line();
-        return workspace.finish_call();
+        return emit_finish_call(workspace, o);
     }
     auto root_save_offset(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
         i64 ordinal) -> i64 {
@@ -320,160 +339,97 @@ export namespace compiler_x86 {
     }
     // An in-place typed span element (module_elidable): kind 0 views stash the
     // element address in the object's first word; kind 1 views copied it there.
-    auto elided_receiver(EmitWorkspace& workspace, i64 root, i64 span, Register target) -> bool {
+    auto elided_receiver(EmitWorkspace& workspace, ObjectWorkspace& o, i64 root, i64 span, Register target) -> bool {
         if (!workspace.owned_span_runtime()) {
-            workspace.text("    movq ");
-            workspace.address(root);
-            workspace.text(", ");
-            workspace.reg(target);
-            return workspace.end_line();
+            return emit_load(workspace, o, root, target, false);
         }
-        const i64 function = workspace.function_index();
         const i64 division = workspace.next_division();
-        workspace.line_address("cmpq $0, ", span, "");
-        workspace.text("    jne .Lelide_copy_");
-        workspace.number(function);
-        workspace.text("_");
-        workspace.number(division);
-        workspace.end_line();
-        workspace.text("    movq ");
-        workspace.address(root);
-        workspace.text(", ");
-        workspace.reg(target);
-        workspace.end_line();
-        workspace.text("    jmp .Lelide_done_");
-        workspace.number(function);
-        workspace.text("_");
-        workspace.number(division);
-        workspace.end_line();
-        workspace.text(".Lelide_copy_");
-        workspace.number(function);
-        workspace.text("_");
-        workspace.number(division);
-        workspace.text(":\n    leaq ");
-        workspace.address(root);
-        workspace.text(", ");
-        workspace.reg(target);
-        workspace.end_line();
-        workspace.text(".Lelide_done_");
-        workspace.number(function);
-        workspace.text("_");
-        workspace.number(division);
-        return workspace.text(":\n");
+        emit_cmp_imm_memory(workspace, o, 0, span);
+        emit_branch(workspace, o, 5, 5, division);
+        emit_load(workspace, o, root, target, false);
+        emit_branch(workspace, o, -1, 6, division);
+        emit_bind_label(workspace, o, 5, division);
+        emit_lea(workspace, o, root, target);
+        return emit_bind_label(workspace, o, 6, division);
     }
-    auto receiver_address(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata, i64 root,
-        Register target) -> bool {
+    auto receiver_address(EmitWorkspace& workspace, ObjectWorkspace& o,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 root, Register target) -> bool {
         if (root > 0) {
             const i64 elided = workspace.loan_offset(0 - root);
             if (elided > 0) {
-                return elided_receiver(workspace, root, elided, target);
+                return elided_receiver(workspace, o, root, elided, target);
             }
         }
         if (root >= -5 && root <= 0) {
             const i64 offset = root_save_offset(workspace, metadata, -root);
-            workspace.text("    movq ");
-            workspace.address(offset);
-        } else {
-            if (root > 0) {
-                workspace.text("    leaq ");
-                workspace.address(root);
-            } else {
-                return workspace.fail();
-            }
+            return emit_load(workspace, o, offset, target, false);
         }
-        workspace.text(", ");
-        workspace.reg(target);
-        return workspace.end_line();
-    }
-    auto load_value(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata, i64 type,
-        i64 source) -> bool {
-        if (type_kind(metadata, type) == 10) {
-            workspace.text("    movzbq ");
-        } else {
-            workspace.text("    movq ");
+        if (root > 0) {
+            return emit_lea(workspace, o, root, target);
         }
-        workspace.memory(source);
-        return workspace.text(", %rax\n");
+        return workspace.fail();
     }
-    auto store_value(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata, i64 type,
-        i64 destination) -> bool {
-        if (type_kind(metadata, type) == 10) {
-            workspace.text("    movb %al, ");
-        } else {
-            workspace.text("    movq %rax, ");
-        }
-        workspace.memory(destination);
-        return workspace.end_line();
+    auto load_value(EmitWorkspace& workspace, ObjectWorkspace& o, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 type, i64 source) -> bool {
+        return emit_load(workspace, o, source, Register::rax, type_kind(metadata, type) == 10);
     }
-    auto store_argument(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata, i64 type,
-        i64 index, i64 destination) -> bool {
-        const bool narrow = type_kind(metadata, type) == 10;
-        if (narrow) {
-            workspace.text("    movb ");
-        } else {
-            workspace.text("    movq ");
-        }
-        workspace.argument_register(index, narrow);
-        workspace.text(", ");
-        workspace.memory(destination);
-        return workspace.end_line();
+    auto store_value(EmitWorkspace& workspace, ObjectWorkspace& o, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 type, i64 destination) -> bool {
+        return emit_store(workspace, o, Register::rax, destination, type_kind(metadata, type) == 10);
     }
-    auto clear_bytes(EmitWorkspace& workspace, i64 begin, i64 end, i64 destination) -> bool {
+    auto store_argument(EmitWorkspace& workspace, ObjectWorkspace& o,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 type, i64 index, i64 destination) -> bool {
+        const Register source = workspace.argument_register_id(index);
+        return emit_store(workspace, o, source, destination, type_kind(metadata, type) == 10);
+    }
+    auto clear_bytes(EmitWorkspace& workspace, ObjectWorkspace& o, i64 begin, i64 end, i64 destination) -> bool {
         i64 at = begin;
         while (at < end) {
             const i64 remaining = end - at;
             i64 width = 1;
-            workspace.text("    mov");
             if (remaining >= 8) {
                 width = 8;
-                workspace.text("q");
             } else {
                 if (remaining >= 4) {
                     width = 4;
-                    workspace.text("l");
                 } else {
                     if (remaining >= 2) {
                         width = 2;
-                        workspace.text("w");
-                    } else {
-                        workspace.text("b");
                     }
                 }
             }
-            workspace.text(" $0, ");
-            const i64 packed_address0 = workspace.advance_address(destination, at);
-            workspace.memory(packed_address0);
-            workspace.end_line();
+            const i64 address = workspace.advance_address(destination, at);
+            emit_store_imm_width(workspace, o, 0, address, width);
             at = at + width;
         }
         return workspace.ok();
     }
-    auto clear_bytes_owner(EmitWorkspace& workspace, i64 offset) -> bool {
+    auto clear_bytes_owner(EmitWorkspace& workspace, ObjectWorkspace& o, i64 offset) -> bool {
         i64 byte = 0;
         while (byte < 32) {
-            workspace.line_address("movq $0, ", offset - byte, "");
+            emit_store_imm(workspace, o, 0, offset - byte, false);
             byte = byte + 8;
         }
         return workspace.ok();
     }
-    auto move_bytes_owner(EmitWorkspace& workspace, i64 source, i64 destination) -> bool {
+    auto move_bytes_owner(EmitWorkspace& workspace, ObjectWorkspace& o, i64 source, i64 destination) -> bool {
         i64 byte = 0;
         while (byte < 32) {
-            workspace.line_address("movq ", source - byte, ", %rcx");
-            workspace.line_address("movq %rcx, ", destination - byte, "");
+            emit_load(workspace, o, source - byte, Register::rcx, false);
+            emit_store(workspace, o, Register::rcx, destination - byte, false);
             byte = byte + 8;
         }
-        return clear_bytes_owner(workspace, source);
+        return clear_bytes_owner(workspace, o, source);
     }
-    auto bytes_owner_address(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata, i64 offset,
-        i64 field, i64 byte) -> i64 {
+    auto bytes_owner_address(EmitWorkspace& workspace, ObjectWorkspace& o,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 offset, i64 field, i64 byte) -> i64 {
         const i64 callable = workspace.current_callable();
         if (field < 0) {
             if (offset == 0 && field == -1) {
                 const compiler_ir_metadata::CallableRow function = metadata.callable_at(callable);
                 if (function.borrowed_root_count() == 1 && type_kind(metadata, function.borrowed_root_type(0)) == 17) {
                     const i64 save = root_save_offset(workspace, metadata, 0);
-                    workspace.line_address("movq ", save, ", %r10");
+                    emit_load(workspace, o, save, Register::r10, false);
                     return workspace.pack_address(2, byte);
                 }
                 workspace.fail();
@@ -489,11 +445,11 @@ export namespace compiler_x86 {
             return workspace.pack_address(0, offset - field_offset - byte);
         }
         const i64 save = workspace.receiver_save();
-        workspace.line_address("movq ", save, ", %r10");
+        emit_load(workspace, o, save, Register::r10, false);
         return workspace.pack_address(2, field_offset + byte);
     }
-    auto clear_padding(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata, i64 class_id,
-        i64 destination) -> bool {
+    auto clear_padding(EmitWorkspace& workspace, ObjectWorkspace& o,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 class_id, i64 destination) -> bool {
         // Canonical admission orders leaf offsets and declaration field offsets.
         // Merge those two ordered payload streams, skipping non-owner fields.
         // Each extent is visited once; no payload-sized temporary or rescan.
@@ -525,35 +481,35 @@ export namespace compiler_x86 {
                 leaf = leaves;
             } else {
                 if (leaf_offset < owner_offset) {
-                    clear_bytes(workspace, cursor, leaf_offset, destination);
+                    clear_bytes(workspace, o, cursor, leaf_offset, destination);
                     cursor = leaf_offset + storage_width(metadata, class_leaf_type(metadata, class_id, leaf));
                     leaf = leaf + 1;
                 } else {
-                    clear_bytes(workspace, cursor, owner_offset, destination);
+                    clear_bytes(workspace, o, cursor, owner_offset, destination);
                     cursor = owner_offset + 32;
                     field = field + 1;
                 }
             }
         }
-        clear_bytes(workspace, cursor, end, destination);
+        clear_bytes(workspace, o, cursor, end, destination);
         return workspace.ok();
     }
-    auto clear_object(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata, i64 base,
-        i64 class_id) -> bool {
+    auto clear_object(EmitWorkspace& workspace, ObjectWorkspace& o, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 base, i64 class_id) -> bool {
         const i64 packed_address1 = workspace.pack_address(0, base);
-        clear_padding(workspace, metadata, class_id, packed_address1);
+        clear_padding(workspace, o, metadata, class_id, packed_address1);
         i64 field = 0;
         while (field < class_field_count(metadata, class_id)) {
             const i64 kind = type_kind(metadata, class_field_type(metadata, class_id, field));
             if (kind == 13 || kind == 17) {
-                clear_bytes_owner(workspace, base - class_field_offset(metadata, class_id, field));
+                clear_bytes_owner(workspace, o, base - class_field_offset(metadata, class_id, field));
             }
             field = field + 1;
         }
         return workspace.ok();
     }
-    auto copy_leaves(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata, i64 source_class,
-        i64 destination_class, i64 count) -> bool {
+    auto copy_leaves(EmitWorkspace& workspace, ObjectWorkspace& o, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 source_class, i64 destination_class, i64 count) -> bool {
         const i64 source = workspace.copy_source();
         const i64 destination = workspace.copy_destination();
         const i64 source_first = workspace.copy_source_first();
@@ -579,33 +535,27 @@ export namespace compiler_x86 {
             if (bytes >= 64) {
                 const bool stack_destination = destination >= 1000000000 && destination < 2000000000;
                 if (stack_destination) {
-                    workspace.text("    leaq ");
                     const i64 packed_address2 = workspace.advance_address(destination, destination_offset);
-                    workspace.memory(packed_address2);
-                    workspace.text(", %rax\n");
+                    emit_lea(workspace, o, packed_address2, Register::rax);
                 }
-                workspace.line("pushq %rsi");
-                workspace.line("pushq %rdi");
-                workspace.line("pushq %rcx");
+                emit_push_register(workspace, o, Register::rsi);
+                emit_push_register(workspace, o, Register::rdi);
+                emit_push_register(workspace, o, Register::rcx);
                 workspace.grow_stack(24);
-                workspace.text("    leaq ");
                 const i64 packed_address3 = workspace.advance_address(source, source_offset);
-                workspace.memory(packed_address3);
-                workspace.text(", %rsi\n");
+                emit_lea(workspace, o, packed_address3, Register::rsi);
                 if (stack_destination) {
-                    workspace.line("movq %rax, %rdi");
+                    emit_mov_rr(workspace, o, Register::rax, Register::rdi);
                 } else {
-                    workspace.text("    leaq ");
                     const i64 packed_address4 = workspace.advance_address(destination, destination_offset);
-                    workspace.memory(packed_address4);
-                    workspace.text(", %rdi\n");
+                    emit_lea(workspace, o, packed_address4, Register::rdi);
                 }
-                workspace.line_number("movq $", bytes, ", %rcx");
-                workspace.line("cld");
-                workspace.line("rep movsb");
-                workspace.line("popq %rcx");
-                workspace.line("popq %rdi");
-                workspace.line("popq %rsi");
+                emit_mov_imm(workspace, o, bytes, Register::rcx);
+                emit_cld(workspace, o);
+                emit_rep_movsb(workspace, o);
+                emit_pop_register(workspace, o, Register::rcx);
+                emit_pop_register(workspace, o, Register::rdi);
+                emit_pop_register(workspace, o, Register::rsi);
                 workspace.shrink_stack(24);
                 leaf = end;
             } else {
@@ -619,52 +569,37 @@ export namespace compiler_x86 {
                     byte = byte + 1;
                 }
                 if (qword) {
-                    workspace.text("    movq ");
                     const i64 packed_address5 = workspace.advance_address(source, source_offset);
-                    workspace.memory(packed_address5);
-                    workspace.text(", %rax\n    movq %rax, ");
+                    emit_load(workspace, o, packed_address5, Register::rax, false);
                     const i64 packed_address6 = workspace.advance_address(destination, destination_offset);
-                    workspace.memory(packed_address6);
-                    workspace.end_line();
+                    emit_store(workspace, o, Register::rax, packed_address6, false);
                     leaf = leaf + 8;
                 } else {
                     const i64 packed_address7 = workspace.advance_address(source, source_offset);
-                    load_value(workspace, metadata, type, packed_address7);
+                    load_value(workspace, o, metadata, type, packed_address7);
                     const i64 packed_address8 = workspace.advance_address(destination, destination_offset);
-                    store_value(workspace, metadata, type, packed_address8);
+                    store_value(workspace, o, metadata, type, packed_address8);
                     leaf = leaf + 1;
                 }
             }
         }
         return workspace.ok();
     }
-    auto copy_class(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata, i64 class_id,
-        i64 source, i64 destination) -> bool {
+    auto copy_class(EmitWorkspace& workspace, ObjectWorkspace& o, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 class_id, i64 source, i64 destination) -> bool {
         workspace.set_copy(source, destination, 0, 0);
-        return copy_leaves(workspace, metadata, class_id, class_id, class_leaf_count(metadata, class_id));
+        return copy_leaves(workspace, o, metadata, class_id, class_id, class_leaf_count(metadata, class_id));
     }
-    auto transfer_object(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata, i64 class_id,
-        i64 source, i64 destination) -> bool {
+    auto transfer_object(EmitWorkspace& workspace, ObjectWorkspace& o,
+        const compiler_ir_metadata::MetadataStore& metadata, i64 class_id, i64 source, i64 destination) -> bool {
         i64 leaf = 0;
         while (leaf < class_leaf_count(metadata, class_id)) {
             const i64 offset = class_leaf_offset(metadata, class_id, leaf);
             const bool narrow = type_kind(metadata, class_leaf_type(metadata, class_id, leaf)) == 10;
-            if (narrow) {
-                workspace.text("    movzbq ");
-            } else {
-                workspace.text("    movq ");
-            }
-            const i64 packed_address9 = workspace.advance_address(source, offset);
-            workspace.memory(packed_address9);
-            workspace.text(", %rcx\n");
-            if (narrow) {
-                workspace.text("    movb %cl, ");
-            } else {
-                workspace.text("    movq %rcx, ");
-            }
-            const i64 packed_address10 = workspace.advance_address(destination, offset);
-            workspace.memory(packed_address10);
-            workspace.end_line();
+            const i64 source_address = workspace.advance_address(source, offset);
+            emit_load(workspace, o, source_address, Register::rcx, narrow);
+            const i64 destination_address = workspace.advance_address(destination, offset);
+            emit_store(workspace, o, Register::rcx, destination_address, narrow);
             leaf = leaf + 1;
         }
         i64 field = 0;
@@ -674,36 +609,34 @@ export namespace compiler_x86 {
                 const i64 offset = class_field_offset(metadata, class_id, field);
                 i64 byte = 0;
                 while (byte < 32) {
-                    workspace.text("    movq ");
                     const i64 packed_address11 = workspace.advance_address(source, offset + byte);
-                    workspace.memory(packed_address11);
-                    workspace.text(", %rcx\n    movq %rcx, ");
+                    emit_load(workspace, o, packed_address11, Register::rcx, false);
                     const i64 packed_address12 = workspace.advance_address(destination, offset + byte);
-                    workspace.memory(packed_address12);
-                    workspace.end_line();
+                    emit_store(workspace, o, Register::rcx, packed_address12, false);
                     byte = byte + 8;
                 }
-                clear_bytes(workspace, offset, offset + 32, source);
+                clear_bytes(workspace, o, offset, offset + 32, source);
             }
             field = field + 1;
         }
         return workspace.ok();
     }
-    auto drop_object(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata, i64 base,
-        i64 class_id) -> bool {
+    auto drop_object(EmitWorkspace& workspace, ObjectWorkspace& o, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 base, i64 class_id) -> bool {
         if (!owning_class(metadata, class_id)) {
             return workspace.ok();
         }
-        workspace.push();
+        emit_push(workspace, o);
         i64 field = class_field_count(metadata, class_id);
         while (field > 0) {
             const i64 kind = type_kind(metadata, class_field_type(metadata, class_id, field - 1));
             if (kind == 13 || kind == 17) {
-                workspace.line_address("leaq ", base - class_field_offset(metadata, class_id, field - 1), ", %rdi");
-                workspace.call_runtime("__au_runtime_bytes_drop");
+                emit_lea(workspace, o, base - class_field_offset(metadata, class_id, field - 1), Register::rdi);
+                const i64 runtime_symbol1 = workspace.intern_runtime("__au_runtime_bytes_drop");
+                emit_call_runtime(workspace, o, runtime_symbol1);
             }
             field = field - 1;
         }
-        return workspace.pop("%rax");
+        return emit_pop(workspace, o, Register::rax);
     }
 }

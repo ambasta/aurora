@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import subprocess
 
-from meson_aurora_assembly import dependencies, render_bridge
+from meson_aurora_assembly import compose_object_bridge, dependencies, render_bridge
 
 
 def escaped(path):
@@ -29,12 +29,17 @@ def main():
     )
     parser.add_argument("--local-symbols", action="store_true")
     parser.add_argument("--referenced-reflection-only", action="store_true")
+    parser.add_argument("--emit-object", action="store_true")
     parser.add_argument("--object", required=True, type=Path)
     parser.add_argument("--depfile", required=True, type=Path)
     args = parser.parse_args()
+    if args.emit_object and (args.assemble_with or args.defsym or args.keep_local_labels):
+        parser.error("--emit-object does not accept assembler-only options")
     compiler = args.compiler.resolve(strict=True)
-    assembly = args.object.with_suffix(".s")
+    assembly = args.object.with_suffix(".pending.o" if args.emit_object else ".s")
     command = [str(compiler)]
+    if args.emit_object:
+        command.append("--emit-object")
     for root in args.module_root:
         command += ["--module-root", str(root)]
     if args.local_symbols:
@@ -47,13 +52,19 @@ def main():
     subprocess.run(command + [str(args.source), "-o", str(assembly)], check=True)
     if args.bridge:
         facts = json.loads(abi.read_text())
-        with assembly.open("a") as output:
-            for bridge in args.bridge:
-                output.write("\n" + render_bridge(bridge.read_text(), facts))
+        if args.emit_object:
+            compose_object_bridge(assembly, args.bridge, facts)
+        else:
+            with assembly.open("a") as output:
+                for bridge in args.bridge:
+                    output.write("\n" + render_bridge(bridge.read_text(), facts))
     extra = [str(path) for path in args.assemble_with]
     listing = ["-L"] if args.bridge or args.keep_local_labels else []
     defsyms = [part for definition in args.defsym for part in ("--defsym", definition)]
-    subprocess.run(["as", "--64", *listing, *defsyms, str(assembly), *extra, "-o", str(args.object)], check=True)
+    if args.emit_object:
+        assembly.replace(args.object)
+    else:
+        subprocess.run(["as", "--64", *listing, *defsyms, str(assembly), *extra, "-o", str(args.object)], check=True)
     if args.localize_reflection:
         symbols = subprocess.run(
             ["nm", "-g", "--defined-only", str(args.object)], check=True, capture_output=True, text=True

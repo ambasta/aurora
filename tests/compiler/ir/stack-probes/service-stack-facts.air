@@ -9,7 +9,7 @@
 ; CHECK-NEXT:     movq %rsp, %rbp
 ; CHECK-PROBES: [[#PIXEL:]] 48..
 ; CHECK:     subq $[[#SEVENTH:]], %rsp
-; CHECK-NEXT:     movq {{%r[a-z0-9]+}}, (%rsp)
+; CHECK-NEXT:     movq {{%r[a-z0-9]+}}, {{0?}}(%rsp)
 ; CHECK-NEXT:     call __au_runtime_display_pixel
 ; CHECK-NEXT:     addq $[[#SEVENTH]], %rsp
 ; CHECK-RANGE: [[#SEVENTH]] 8..16
@@ -72,7 +72,7 @@ end
 ; CHECK-NEXT:     movq %rsp, %rbp
 ; CHECK-PROBES: [[#PIXEL:]] 48..
 ; CHECK:     subq $[[#SEVENTH:]], %rsp
-; CHECK-NEXT:     movq {{%r[a-z0-9]+}}, (%rsp)
+; CHECK-NEXT:     movq {{%r[a-z0-9]+}}, {{0?}}(%rsp)
 ; CHECK-NEXT:     call __au_runtime_display_pixel
 ; CHECK-NEXT:     addq $[[#SEVENTH]], %rsp
 ; CHECK-RANGE: [[#SEVENTH]] 8..16

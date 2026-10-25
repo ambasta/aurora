@@ -1,106 +1,91 @@
 export module aurora.compiler.x86_scalar;
 import aurora.compiler.x86_storage;
+import aurora.compiler.x86_object_storage;
 import aurora.compiler.x86_helpers;
 import aurora.compiler.ir_metadata_storage;
 import aurora.compiler.ir_instruction_storage;
 
 export namespace compiler_x86 {
-    auto division_label(EmitWorkspace& workspace, i64 function, i64 division, bool done) -> bool {
-        if (done) {
-            workspace.text(".Ldivision_done_");
-        } else {
-            workspace.text(".Ldivision_ready_");
-        }
-        workspace.number(function);
-        workspace.text("_");
-        return workspace.number(division);
-    }
-    auto checked_division(EmitWorkspace& workspace, bool remainder, bool unsigned_value) -> bool {
-        const i64 function = workspace.function_index();
+    auto checked_division(EmitWorkspace& workspace, ObjectWorkspace& object, bool remainder,
+        bool unsigned_value) -> bool {
         const i64 division = workspace.next_division();
-        workspace.line("movq %rax, %r11");
-        workspace.line("testq %r11, %r11");
-        workspace.line("jz .Laurora_division_zero_trap");
-        workspace.line("movq %rcx, %rax");
+        emit_mov_rr(workspace, object, Register::rax, Register::r11);
+        emit_alu_rr(workspace, object, AluOp::test, Register::r11, Register::r11);
+        emit_branch(workspace, object, 4, 4, 2);
+        emit_mov_rr(workspace, object, Register::rcx, Register::rax);
         if (unsigned_value) {
-            workspace.line("xorq %rdx, %rdx");
-            workspace.line("divq %r11");
+            emit_alu_rr(workspace, object, AluOp::bit_xor, Register::rdx, Register::rdx);
+            emit_unary(workspace, object, UnaryOp::unsigned_divide, Register::r11);
             if (remainder) {
-                workspace.line("movq %rdx, %rax");
+                emit_mov_rr(workspace, object, Register::rdx, Register::rax);
             }
             return workspace.ok();
         }
-        workspace.line("cmpq $-1, %r11");
-        workspace.text("    jne ");
-        division_label(workspace, function, division, false);
-        workspace.end_line();
-        workspace.line("movabsq $-9223372036854775808, %rdx");
-        workspace.line("cmpq %rdx, %rax");
-        workspace.text("    jne ");
-        division_label(workspace, function, division, false);
-        workspace.end_line();
+        emit_alu_imm(workspace, object, AluOp::compare, -1, Register::r11);
+        emit_branch(workspace, object, 5, 2, division);
+        emit_mov_abs(workspace, object, -9223372036854775808, Register::rdx);
+        emit_alu_rr(workspace, object, AluOp::compare, Register::rdx, Register::rax);
+        emit_branch(workspace, object, 5, 2, division);
         if (remainder) {
-            workspace.line("xorq %rax, %rax");
-            workspace.text("    jmp ");
-            division_label(workspace, function, division, true);
-            workspace.end_line();
+            emit_alu_rr(workspace, object, AluOp::bit_xor, Register::rax, Register::rax);
+            emit_branch(workspace, object, -1, 3, division);
         } else {
-            workspace.line("jmp .Laurora_overflow_trap");
+            emit_branch(workspace, object, -1, 4, 1);
         }
-        division_label(workspace, function, division, false);
-        workspace.text(":\n");
-        workspace.line("cqto");
-        workspace.line("idivq %r11");
+        emit_bind_label(workspace, object, 2, division);
+        emit_cqto(workspace, object);
+        emit_unary(workspace, object, UnaryOp::divide, Register::r11);
         if (remainder) {
-            workspace.line("movq %rdx, %rax");
+            emit_mov_rr(workspace, object, Register::rdx, Register::rax);
         }
-        division_label(workspace, function, division, true);
-        return workspace.text(":\n");
+        return emit_bind_label(workspace, object, 3, division);
     }
-    auto checked_shift(EmitWorkspace& workspace, bool left, bool byte_value) -> bool {
+    auto checked_shift(EmitWorkspace& workspace, ObjectWorkspace& object, bool left, bool byte_value) -> bool {
         if (byte_value) {
-            workspace.line("cmpq $7, %rax");
+            emit_alu_imm(workspace, object, AluOp::compare, 7, Register::rax);
         } else {
-            workspace.line("cmpq $63, %rax");
+            emit_alu_imm(workspace, object, AluOp::compare, 63, Register::rax);
         }
-        workspace.line("ja .Laurora_shift_count_trap");
-        workspace.line("movq %rcx, %rdx");
-        workspace.line("movq %rax, %rcx");
-        workspace.line("movq %rdx, %rax");
+        emit_branch(workspace, object, 7, 4, 3);
+        emit_mov_rr(workspace, object, Register::rcx, Register::rdx);
+        emit_mov_rr(workspace, object, Register::rax, Register::rcx);
+        emit_mov_rr(workspace, object, Register::rdx, Register::rax);
         if (!left) {
-            return workspace.line("shrq %cl, %rax");
+            return emit_shift(workspace, object, false, Register::rax);
         }
-        workspace.line("shlq %cl, %rax");
+        emit_shift(workspace, object, true, Register::rax);
         if (byte_value) {
-            workspace.line("cmpq $255, %rax");
-            return workspace.line("ja .Laurora_overflow_trap");
+            emit_alu_imm(workspace, object, AluOp::compare, 255, Register::rax);
+            return emit_branch(workspace, object, 7, 4, 1);
         }
-        workspace.line("movq %rax, %r11");
-        workspace.line("shrq %cl, %r11");
-        workspace.line("cmpq %rdx, %r11");
-        return workspace.line("jne .Laurora_overflow_trap");
+        emit_mov_rr(workspace, object, Register::rax, Register::r11);
+        emit_shift(workspace, object, false, Register::r11);
+        emit_alu_rr(workspace, object, AluOp::compare, Register::rdx, Register::r11);
+        return emit_branch(workspace, object, 5, 4, 1);
     }
-    auto overflow_check(EmitWorkspace& workspace, bool unsigned_value, bool byte_value) -> bool {
+    auto overflow_check(EmitWorkspace& workspace, ObjectWorkspace& object, bool unsigned_value,
+        bool byte_value) -> bool {
         if (unsigned_value) {
-            workspace.line("jc .Laurora_overflow_trap");
+            emit_branch(workspace, object, 2, 4, 1);
         } else {
-            workspace.line("jo .Laurora_overflow_trap");
+            emit_branch(workspace, object, 0, 4, 1);
         }
         if (byte_value) {
-            workspace.line("cmpq $255, %rax");
-            workspace.line("ja .Laurora_overflow_trap");
+            emit_alu_imm(workspace, object, AluOp::compare, 255, Register::rax);
+            emit_branch(workspace, object, 7, 4, 1);
         }
         return workspace.ok();
     }
     // The condition code of a Compare, or of its negation.
     auto comparison_condition(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
-        const compiler_ir_instructions::InstructionStore& store, i64 instruction, bool inverse) -> bool {
+        const compiler_ir_instructions::InstructionStore& store, i64 instruction, bool inverse) -> i64 {
         const compiler_ir_instructions::RawInstructionRow row = store.instruction_at(instruction);
         const i64 kind = type_kind(metadata, operand_value(store, instruction, 0));
         const bool unsigned_value = kind == 7 || kind == 10;
         i64 operation = row.comparison_operation();
         if (operation < 0 || operation > 5) {
-            return workspace.fail();
+            workspace.fail();
+            return -1;
         }
         if (inverse) {
             // Operations 0..5 are == != < > <= >=; == and !=, < and >=, > and <= negate.
@@ -111,51 +96,49 @@ export namespace compiler_x86 {
             }
         }
         if (operation == 0) {
-            return workspace.text("e");
+            return 4;
         }
         if (operation == 1) {
-            return workspace.text("ne");
+            return 5;
         }
         if (operation == 2) {
             if (unsigned_value) {
-                return workspace.text("b");
+                return 2;
             }
-            return workspace.text("l");
+            return 12;
         }
         if (operation == 3) {
             if (unsigned_value) {
-                return workspace.text("a");
+                return 7;
             }
-            return workspace.text("g");
+            return 15;
         }
         if (operation == 4) {
             if (unsigned_value) {
-                return workspace.text("be");
+                return 6;
             }
-            return workspace.text("le");
+            return 14;
         }
         if (unsigned_value) {
-            return workspace.text("ae");
+            return 3;
         }
-        return workspace.text("ge");
+        return 13;
     }
     // The flags of a just-emitted left - right comparison become a 0/1 value.
-    auto comparison_result(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
-        const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> bool {
-        workspace.text("    set");
-        comparison_condition(workspace, metadata, store, instruction, false);
-        workspace.text(" %al\n");
-        return workspace.line("movzbq %al, %rax");
+    auto comparison_result(EmitWorkspace& workspace, ObjectWorkspace& object,
+        const compiler_ir_metadata::MetadataStore& metadata, const compiler_ir_instructions::InstructionStore& store,
+        i64 instruction) -> bool {
+        const i64 condition = comparison_condition(workspace, metadata, store, instruction, false);
+        emit_set_condition(workspace, object, condition, Register::rax);
+        return emit_zero_extend_byte(workspace, object, Register::rax, Register::rax);
     }
     // BranchFalse right after a Compare: setcc and movzbq keep the flags, so the
     // branch tests them directly. The 0/1 value stays in %rax for the target.
-    auto fused_branch(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
-        const compiler_ir_instructions::InstructionStore& store, i64 compare, i64 branch) -> bool {
-        workspace.text("    j");
-        comparison_condition(workspace, metadata, store, compare, true);
-        workspace.text(" ");
-        workspace.label(operand_value(store, branch, 0));
-        return workspace.end_line();
+    auto fused_branch(EmitWorkspace& workspace, ObjectWorkspace& object,
+        const compiler_ir_metadata::MetadataStore& metadata, const compiler_ir_instructions::InstructionStore& store,
+        i64 compare, i64 branch) -> bool {
+        const i64 condition = comparison_condition(workspace, metadata, store, compare, true);
+        return emit_branch(workspace, object, condition, 0, operand_value(store, branch, 0));
     }
     // A right operand that x86 can take as an immediate or a frame operand: an
     // imm32 Constant, an EnumConstant, or a 64-bit frame Load. -1 otherwise.
@@ -184,22 +167,22 @@ export namespace compiler_x86 {
         }
         return -1;
     }
-    auto direct_operand(EmitWorkspace& workspace, const compiler_ir_instructions::InstructionStore& store,
-        i64 instruction, i64 kind) -> bool {
+    auto direct_binary_operand(EmitWorkspace& workspace, ObjectWorkspace& object,
+        const compiler_ir_instructions::InstructionStore& store, i64 instruction, i64 kind, AluOp operation) -> bool {
         if (kind == 0) {
             const compiler_ir_instructions::RawInstructionRow row = store.instruction_at(instruction);
             const compiler_ir_instructions::RawOperandRow value = store.operand_at(row.operand_begin());
-            workspace.text("$");
             if (value.role() == 11) {
-                return workspace.unsigned_number(value.unsigned_value());
+                // direct_operand_kind admits only values within signed imm32.
+                return emit_alu_imm(workspace, object, operation, i64(value.unsigned_value()), Register::rax);
             }
-            return workspace.number(value.signed_value());
+            return emit_alu_imm(workspace, object, operation, value.signed_value(), Register::rax);
         }
         if (kind == 1) {
-            workspace.text("$");
-            return workspace.number(operand_value(store, instruction, 1));
+            return emit_alu_imm(workspace, object, operation, operand_value(store, instruction, 1), Register::rax);
         }
-        return workspace.address(operand_value(store, instruction, 0));
+        const i64 address_token1 = workspace.pack_address(0, operand_value(store, instruction, 0));
+        return emit_alu_load(workspace, object, operation, address_token1, Register::rax);
     }
     // Push, a direct right operand, then Compare or add/sub/and/or/xor: operate
     // on the left value in %rax directly. Flags and results match the stack form.
@@ -218,46 +201,44 @@ export namespace compiler_x86 {
         const i64 operation = row.binary_operation();
         return operation == 0 || operation == 1 || operation == 5 || operation == 6 || operation == 7;
     }
-    auto emit_fused_binary(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
-        const compiler_ir_instructions::InstructionStore& store, i64 load, i64 binary) -> bool {
+    auto emit_fused_binary(EmitWorkspace& workspace, ObjectWorkspace& object,
+        const compiler_ir_metadata::MetadataStore& metadata, const compiler_ir_instructions::InstructionStore& store,
+        i64 load, i64 binary) -> bool {
         const compiler_ir_instructions::RawInstructionRow row = store.instruction_at(binary);
         const i64 kind = direct_operand_kind(metadata, store, load);
         if (row.form() == 14) {
-            workspace.text("    cmpq ");
-            direct_operand(workspace, store, load, kind);
-            workspace.text(", %rax\n");
-            return comparison_result(workspace, metadata, store, binary);
+            direct_binary_operand(workspace, object, store, load, kind, AluOp::compare);
+            return comparison_result(workspace, object, metadata, store, binary);
         }
         const i64 type = type_kind(metadata, operand_value(store, binary, 0));
         const bool byte_value = type == 10;
         const bool unsigned_value = type == 7 || byte_value;
         const i64 operation = row.binary_operation();
+        AluOp emission = AluOp::bit_xor;
         if (operation == 0) {
-            workspace.text("    addq ");
+            emission = AluOp::add;
         } else {
             if (operation == 1) {
-                workspace.text("    subq ");
+                emission = AluOp::subtract;
             } else {
                 if (operation == 5) {
-                    workspace.text("    andq ");
+                    emission = AluOp::bit_and;
                 } else {
                     if (operation == 6) {
-                        workspace.text("    orq ");
-                    } else {
-                        workspace.text("    xorq ");
+                        emission = AluOp::bit_or;
                     }
                 }
             }
         }
-        direct_operand(workspace, store, load, kind);
-        workspace.text(", %rax\n");
+        direct_binary_operand(workspace, object, store, load, kind, emission);
         if (operation == 0 || operation == 1) {
-            return overflow_check(workspace, unsigned_value, byte_value);
+            return overflow_check(workspace, object, unsigned_value, byte_value);
         }
         return workspace.ok();
     }
-    auto emit_scalar(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,
-        const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> bool {
+    auto emit_scalar(EmitWorkspace& workspace, ObjectWorkspace& object,
+        const compiler_ir_metadata::MetadataStore& metadata, const compiler_ir_instructions::InstructionStore& store,
+        i64 instruction) -> bool {
         const compiler_ir_instructions::RawInstructionRow row = store.instruction_at(instruction);
         const i64 form = row.form();
         if (form == 5) {
@@ -265,56 +246,48 @@ export namespace compiler_x86 {
             // Native Constant observes the exact 64-bit pattern through int64_t.
             // Preserve its signed decimal spelling even for a u64 high bit.
             if (value.role() == 11) {
-                const u64 bits = value.unsigned_value();
-                workspace.text("    movabsq $");
-                if (bits > 9223372036854775807u64) {
-                    workspace.text("-");
-                    workspace.unsigned_number((18446744073709551615u64 - bits) + 1u64);
-                } else {
-                    workspace.unsigned_number(bits);
-                }
-                workspace.text(", %rax\n");
+                emit_mov_uimm(workspace, object, value.unsigned_value(), Register::rax);
             } else {
-                workspace.line_number("movabsq $", value.signed_value(), ", %rax");
+                emit_mov_abs(workspace, object, value.signed_value(), Register::rax);
             }
             return true;
         }
         if (form == 6) {
-            workspace.line_number("movq $", operand_value(store, instruction, 1), ", %rax");
+            emit_mov_imm(workspace, object, operand_value(store, instruction, 1), Register::rax);
             return true;
         }
         if (form == 7) {
             const i64 packed_address = workspace.pack_address(0, operand_value(store, instruction, 0));
-            load_value(workspace, metadata, operand_value(store, instruction, 1), packed_address);
+            load_value(workspace, object, metadata, operand_value(store, instruction, 1), packed_address);
             return true;
         }
         if (form == 8) {
             const i64 packed_address = workspace.pack_address(0, operand_value(store, instruction, 0));
-            store_value(workspace, metadata, operand_value(store, instruction, 1), packed_address);
+            store_value(workspace, object, metadata, operand_value(store, instruction, 1), packed_address);
             return true;
         }
         if (form == 9) {
-            workspace.push();
+            emit_push(workspace, object);
             return true;
         }
         if (form == 10) {
-            workspace.pop("%rax");
+            emit_pop(workspace, object, Register::rax);
             return true;
         }
         if (form == 11) {
             const i64 operation = row.unary_operation();
             if (operation == 0) {
-                workspace.line("negq %rax");
-                workspace.line("jo .Laurora_overflow_trap");
+                emit_unary(workspace, object, UnaryOp::negate, Register::rax);
+                emit_branch(workspace, object, 0, 4, 1);
             } else {
                 if (operation == 1) {
-                    workspace.line("xorq $1, %rax");
+                    emit_alu_imm(workspace, object, AluOp::bit_xor, 1, Register::rax);
                 } else {
                     if (operation == 2) {
                         if (type_kind(metadata, operand_value(store, instruction, 0)) == 10) {
-                            workspace.line("xorq $255, %rax");
+                            emit_alu_imm(workspace, object, AluOp::bit_xor, 255, Register::rax);
                         } else {
-                            workspace.line("notq %rax");
+                            emit_unary(workspace, object, UnaryOp::bit_not, Register::rax);
                         }
                     } else {
                         workspace.fail();
@@ -325,43 +298,43 @@ export namespace compiler_x86 {
         }
         if (form == 12) {
             if (!workspace.left_in_rcx()) {
-                workspace.pop("%rcx");
+                emit_pop(workspace, object, Register::rcx);
             }
             const i64 kind = type_kind(metadata, operand_value(store, instruction, 0));
             const bool byte_value = kind == 10;
             const bool unsigned_value = kind == 7 || byte_value;
             const i64 operation = row.binary_operation();
             if (operation == 0) {
-                workspace.line("addq %rcx, %rax");
-                overflow_check(workspace, unsigned_value, byte_value);
+                emit_alu_rr(workspace, object, AluOp::add, Register::rcx, Register::rax);
+                overflow_check(workspace, object, unsigned_value, byte_value);
             } else {
                 if (operation == 1) {
-                    workspace.line("subq %rax, %rcx");
-                    workspace.line("movq %rcx, %rax");
-                    overflow_check(workspace, unsigned_value, byte_value);
+                    emit_alu_rr(workspace, object, AluOp::subtract, Register::rax, Register::rcx);
+                    emit_mov_rr(workspace, object, Register::rcx, Register::rax);
+                    overflow_check(workspace, object, unsigned_value, byte_value);
                 } else {
                     if (operation == 2) {
                         if (unsigned_value) {
-                            workspace.line("mulq %rcx");
+                            emit_unary(workspace, object, UnaryOp::unsigned_multiply, Register::rcx);
                         } else {
-                            workspace.line("imulq %rcx, %rax");
+                            emit_alu_rr(workspace, object, AluOp::multiply, Register::rcx, Register::rax);
                         }
-                        overflow_check(workspace, unsigned_value, byte_value);
+                        overflow_check(workspace, object, unsigned_value, byte_value);
                     } else {
                         if (operation == 3 || operation == 4) {
-                            checked_division(workspace, operation == 4, unsigned_value);
+                            checked_division(workspace, object, operation == 4, unsigned_value);
                         } else {
                             if (operation == 5) {
-                                workspace.line("andq %rcx, %rax");
+                                emit_alu_rr(workspace, object, AluOp::bit_and, Register::rcx, Register::rax);
                             } else {
                                 if (operation == 6) {
-                                    workspace.line("orq %rcx, %rax");
+                                    emit_alu_rr(workspace, object, AluOp::bit_or, Register::rcx, Register::rax);
                                 } else {
                                     if (operation == 7) {
-                                        workspace.line("xorq %rcx, %rax");
+                                        emit_alu_rr(workspace, object, AluOp::bit_xor, Register::rcx, Register::rax);
                                     } else {
                                         if (operation == 8 || operation == 9) {
-                                            checked_shift(workspace, operation == 8, byte_value);
+                                            checked_shift(workspace, object, operation == 8, byte_value);
                                         } else {
                                             workspace.fail();
                                         }
@@ -376,26 +349,26 @@ export namespace compiler_x86 {
         }
         if (form == 13) {
             if (type_kind(metadata, operand_value(store, instruction, 1)) == 10) {
-                workspace.line("cmpq $255, %rax");
-                workspace.line("ja .Laurora_overflow_trap");
+                emit_alu_imm(workspace, object, AluOp::compare, 255, Register::rax);
+                emit_branch(workspace, object, 7, 4, 1);
             } else {
                 if (type_kind(metadata, operand_value(store, instruction, 0)) != 10) {
-                    workspace.line("testq %rax, %rax");
-                    workspace.line("js .Laurora_overflow_trap");
+                    emit_alu_rr(workspace, object, AluOp::test, Register::rax, Register::rax);
+                    emit_branch(workspace, object, 8, 4, 1);
                 }
             }
             return true;
         }
         if (form == 14) {
             if (!workspace.left_in_rcx()) {
-                workspace.pop("%rcx");
+                emit_pop(workspace, object, Register::rcx);
             }
-            workspace.line("cmpq %rax, %rcx");
-            return comparison_result(workspace, metadata, store, instruction);
+            emit_alu_rr(workspace, object, AluOp::compare, Register::rax, Register::rcx);
+            return comparison_result(workspace, object, metadata, store, instruction);
         }
         if (form == 15) {
-            workspace.line_number("cmpq $", operand_value(store, instruction, 1), ", %rax");
-            workspace.line("jae .Laurora_bounds_trap");
+            emit_alu_imm(workspace, object, AluOp::compare, operand_value(store, instruction, 1), Register::rax);
+            emit_branch(workspace, object, 3, 4, 0);
             return true;
         }
         if (form == 16 || form == 17) {
@@ -403,52 +376,50 @@ export namespace compiler_x86 {
             const bool narrow = type_kind(metadata, type) == 10;
             const i64 offset = operand_value(store, instruction, 0);
             if (form == 16) {
-                workspace.line_address("leaq ", offset, ", %rcx");
+                const i64 address_token2 = workspace.pack_address(0, offset);
+                emit_lea(workspace, object, address_token2, Register::rcx);
                 if (narrow) {
-                    workspace.text("    movzbq (%rcx,%rax,1), %rax\n");
+                    emit_indexed_load(workspace, object, Register::rcx, Register::rax, indexed_address(1, 0), true);
                 } else {
-                    workspace.text("    movq (%rcx,%rax,8), %rax\n");
+                    emit_indexed_load(workspace, object, Register::rcx, Register::rax, indexed_address(8, 0), false);
                 }
             } else {
-                workspace.pop("%rcx");
-                workspace.line_address("leaq ", offset, ", %rdx");
+                emit_pop(workspace, object, Register::rcx);
+                const i64 address_token3 = workspace.pack_address(0, offset);
+                emit_lea(workspace, object, address_token3, Register::rdx);
                 if (narrow) {
-                    workspace.text("    movb %al, (%rdx,%rcx,1)\n");
+                    emit_indexed_store(workspace, object, Register::rdx, Register::rcx, indexed_address(1, 0), true);
                 } else {
-                    workspace.text("    movq %rax, (%rdx,%rcx,8)\n");
+                    emit_indexed_store(workspace, object, Register::rdx, Register::rcx, indexed_address(8, 0), false);
                 }
             }
             return true;
         }
         if (form == 18) {
-            workspace.line_address("leaq ", operand_value(store, instruction, 0), ", %rax");
+            const i64 address_token4 = workspace.pack_address(0, operand_value(store, instruction, 0));
+            emit_lea(workspace, object, address_token4, Register::rax);
             return true;
         }
         if (form == 39) {
-            workspace.line("movq %rax, %rdi");
-            call_query(workspace, metadata, row.query(), operand_value(store, instruction, 0));
+            emit_mov_rr(workspace, object, Register::rax, Register::rdi);
+            call_query(workspace, object, metadata, row.query(), operand_value(store, instruction, 0));
             return true;
         }
         if (form == 40) {
-            workspace.label(operand_value(store, instruction, 0));
-            workspace.text(":\n");
+            emit_bind_label(workspace, object, 0, operand_value(store, instruction, 0));
             return true;
         }
         if (form == 41 || form == 42) {
             if (form == 42) {
-                workspace.line("testq %rax, %rax");
-                workspace.text("    jz ");
+                emit_alu_rr(workspace, object, AluOp::test, Register::rax, Register::rax);
+                emit_branch(workspace, object, 4, 0, operand_value(store, instruction, 0));
             } else {
-                workspace.text("    jmp ");
+                emit_branch(workspace, object, -1, 0, operand_value(store, instruction, 0));
             }
-            workspace.label(operand_value(store, instruction, 0));
-            workspace.end_line();
             return true;
         }
         if (form == 43) {
-            workspace.text("    jmp ");
-            workspace.return_label();
-            workspace.end_line();
+            emit_branch(workspace, object, -1, 1, 0);
             return true;
         }
         return false;

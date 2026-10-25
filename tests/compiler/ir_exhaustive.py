@@ -318,14 +318,15 @@ extern "C" std::int64_t __wrap_aurora_hosted_emitter_run(
 export module aurora.compiler.frontend;
 import aurora.compiler.x86_module;
 import aurora.compiler.x86_storage;
+import aurora.compiler.x86_object_storage;
 import aurora.compiler.ir_metadata_storage;
 import aurora.compiler.ir_instruction_storage;
 export namespace compiler_frontend {
-    auto emitter_run(compiler_x86::EmitWorkspace& workspace,
+    auto emitter_run(compiler_x86::EmitWorkspace& workspace, compiler_x86::ObjectWorkspace& object,
         const compiler_ir_metadata::MetadataStore& metadata,
         const compiler_ir_instructions::InstructionStore& instructions,
         i64 binding, i64 reflection) -> compiler_x86::EmitStatus {
-        return compiler_x86::run(workspace, metadata, instructions, binding, reflection);
+        return compiler_x86::run(workspace, object, metadata, instructions, binding, reflection);
     }
 }
 """)
@@ -374,6 +375,7 @@ export namespace compiler_frontend {
         facts = json.loads(facts_path.read_text())
         for group, name in (
             ("records", "compiler_x86::EmitWorkspace"),
+            ("records", "compiler_x86::ObjectWorkspace"),
             ("records", "compiler_ir_metadata::MetadataStore"),
             ("records", "compiler_ir_instructions::InstructionStore"),
             ("functions", "compiler_frontend::emitter_run"),

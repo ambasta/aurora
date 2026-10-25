@@ -1,5 +1,6 @@
 export module aurora.compiler.x86_module;
 import aurora.compiler.x86_storage;
+import aurora.compiler.x86_object_storage;
 import aurora.compiler.x86_helpers;
 import aurora.compiler.x86_scalar;
 import aurora.compiler.x86_objects;
@@ -94,15 +95,15 @@ export namespace compiler_x86 {
         const compiler_ir_metadata::CallableRow row = m.callable_at(callable);
         return compiler_ir_metadata::name_prefix(m, row.name(), "__au_o_");
     }
-    auto module_emit_instruction(EmitWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+    auto module_emit_instruction(EmitWorkspace& w, ObjectWorkspace& o, const compiler_ir_metadata::MetadataStore& m,
         const compiler_ir_instructions::InstructionStore& s, i64 instruction) -> bool {
-        if (emit_scalar(w, m, s, instruction)) {
+        if (emit_scalar(w, o, m, s, instruction)) {
             return w.ok();
         }
-        if (emit_objects(w, m, s, instruction)) {
+        if (emit_objects(w, o, m, s, instruction)) {
             return w.ok();
         }
-        if (emit_resources(w, m, s, instruction)) {
+        if (emit_resources(w, o, m, s, instruction)) {
             return w.ok();
         }
         return w.fail();
@@ -113,7 +114,7 @@ export namespace compiler_x86 {
     auto module_popped_binary(i64 form) -> bool {
         return form == 12 || form == 14;
     }
-    auto module_emit_body(EmitWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+    auto module_emit_body(EmitWorkspace& w, ObjectWorkspace& o, const compiler_ir_metadata::MetadataStore& m,
         const compiler_ir_instructions::InstructionStore& s, i64 callable) -> bool {
         const compiler_ir_instructions::BodyRow body = s.body_at(callable);
         w.set_direct_result(false);
@@ -128,7 +129,7 @@ export namespace compiler_x86 {
             i64 last = current;
             if (following > 0 && form == 9 && fusable_binary(m, s, next, following)) {
                 // The left value stays in %rax and the right is an operand.
-                emit_fused_binary(w, m, s, next, following);
+                emit_fused_binary(w, o, m, s, next, following);
                 last = following;
                 at = at + 3;
             } else {
@@ -136,10 +137,10 @@ export namespace compiler_x86 {
                     following))) {
                     // The intervening accumulator load touches neither RCX nor the
                     // operand stack; preserve the old adjacency-only peephole.
-                    w.line("movq %rax, %rcx");
-                    module_emit_instruction(w, m, s, next);
+                    emit_mov_rr(w, o, Register::rax, Register::rcx);
+                    module_emit_instruction(w, o, m, s, next);
                     w.set_left_in_rcx(true);
-                    module_emit_instruction(w, m, s, following);
+                    module_emit_instruction(w, o, m, s, following);
                     w.set_left_in_rcx(false);
                     last = following;
                     at = at + 3;
@@ -152,22 +153,20 @@ export namespace compiler_x86 {
                             return w.fail();
                         }
                         w.set_direct_result(true);
-                        module_emit_instruction(w, m, s, current);
+                        module_emit_instruction(w, o, m, s, current);
                         w.set_direct_result(false);
-                        w.line("xorq %rax, %rax");
-                        w.text("    jmp ");
-                        w.return_label();
-                        w.end_line();
+                        emit_alu_rr(w, o, AluOp::bit_xor, Register::rax, Register::rax);
+                        emit_branch(w, o, -1, 1, 0);
                         at = at + 2;
                     } else {
-                        module_emit_instruction(w, m, s, current);
+                        module_emit_instruction(w, o, m, s, current);
                         at = at + 1;
                     }
                 }
             }
             const i64 branch = module_instruction(s, callable, at);
             if (module_form(s, last) == 14 && module_form(s, branch) == 42) {
-                fused_branch(w, m, s, last, branch);
+                fused_branch(w, o, m, s, last, branch);
                 at = at + 1;
             }
         }
@@ -324,8 +323,8 @@ export namespace compiler_x86 {
         }
         return w.ok();
     }
-    auto module_emit_callable(EmitWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
-        const compiler_ir_instructions::InstructionStore& s, i64 callable, i64 binding, bool private_graph) -> bool {
+    auto module_emit_callable(EmitWorkspace& w, ObjectWorkspace& o, const compiler_ir_metadata::MetadataStore& m,
+        const compiler_ir_instructions::InstructionStore& s, i64 callable, bool force_local) -> bool {
         const compiler_ir_metadata::CallableRow declaration = m.callable_at(callable);
         const compiler_ir_instructions::BodyRow body = s.body_at(callable);
         const i64 declared = declaration.frame_bytes();
@@ -351,20 +350,27 @@ export namespace compiler_x86 {
         if (!module_elide_span_objects(w, m, s, callable)) {
             return false;
         }
-        if (binding == 1 || private_graph || receiver || aggregate || module_hidden_symbol(m, callable)) {
-            w.text(".local ");
+        const bool local = force_local || receiver || aggregate || module_hidden_symbol(m, callable);
+        if (o.object_mode()) {
+            o.begin_object_symbol(callable, local);
+            callable_name(w, o, m, callable);
+            o.end_object_symbol_name();
         } else {
-            w.text(".globl ");
+            if (local) {
+                w.text(".local ");
+            } else {
+                w.text(".globl ");
+            }
+            callable_name(w, o, m, callable);
+            w.text("\n.type ");
+            callable_name(w, o, m, callable);
+            w.text(", @function\n");
+            callable_name(w, o, m, callable);
+            w.text(":\n");
         }
-        callable_name(w, m, callable);
-        w.text("\n.type ");
-        callable_name(w, m, callable);
-        w.text(", @function\n");
-        callable_name(w, m, callable);
-        w.text(":\n");
-        w.line("pushq %rbp");
+        emit_push_register(w, o, Register::rbp);
         w.grow_stack(8);
-        w.line("movq %rsp, %rbp");
+        emit_mov_rr(w, o, Register::rsp, Register::rbp);
         i64 receiver_save = 0;
         if (receiver) {
             receiver_save = declared + 8;
@@ -407,50 +413,55 @@ export namespace compiler_x86 {
                 }
             }
         }
-        w.reserve_stack(frame);
+        emit_reserve_stack(w, o, frame);
         if (roots > 1) {
             i64 ordinal = 1;
             while (ordinal < roots) {
-                w.line_number("movq ", ordinal * 8, "(%r10), %r11");
+                const i64 root_address = w.pack_address(2, ordinal * 8);
+                emit_load(w, o, root_address, Register::r11, false);
                 const i64 save = root_save_offset(w, m, ordinal);
-                w.line_address("movq %r11, ", save, "");
+                emit_store(w, o, Register::r11, save, false);
                 ordinal = ordinal + 1;
             }
-            w.line("movq (%r10), %r10");
+            const i64 first_root = w.pack_address(2, 0);
+            emit_load(w, o, first_root, Register::r10, false);
         }
         if (receiver) {
             const i64 save = root_save_offset(w, m, 0);
-            w.line_address("movq %r10, ", save, "");
+            emit_store(w, o, Register::r10, save, false);
         }
         if (packed) {
-            w.line_address("movq %r11, ", record_save, "");
+            emit_store(w, o, Register::r11, record_save, false);
         }
         if (result_save != 0) {
             if (combined) {
-                w.line_address("movq %rax, ", result_save, "");
+                emit_store(w, o, Register::rax, result_save, false);
             } else {
                 if (receiver) {
-                    w.line_address("movq %r11, ", result_save, "");
+                    emit_store(w, o, Register::r11, result_save, false);
                 } else {
-                    w.line_address("movq %r10, ", result_save, "");
+                    emit_store(w, o, Register::r10, result_save, false);
                 }
             }
         }
-        if (!module_emit_body(w, m, s, callable)) {
+        if (!module_emit_body(w, o, m, s, callable)) {
             return false;
         }
         if (w.stack_depth() != 0 || w.live_stack() != frame + 16) {
             return w.fail();
         }
-        w.return_label();
-        w.text(":\n");
-        w.line("leave");
-        w.line("ret");
-        w.text(".size ");
-        callable_name(w, m, callable);
-        w.text(", .-");
-        callable_name(w, m, callable);
-        w.end_line();
+        emit_bind_label(w, o, 1, 0);
+        emit_leave_instruction(w, o);
+        emit_return_instruction(w, o);
+        if (o.object_mode()) {
+            o.end_object_symbol();
+        } else {
+            w.text(".size ");
+            callable_name(w, o, m, callable);
+            w.text(", .-");
+            callable_name(w, o, m, callable);
+            w.end_line();
+        }
         return w.finish_function();
     }
     auto module_reflection_referenced(const EmitWorkspace& w, const compiler_ir_instructions::InstructionStore& s,
@@ -492,7 +503,7 @@ export namespace compiler_x86 {
         }
         return -1;
     }
-    auto module_scope_label(EmitWorkspace& w, i64 scope, i64 query, i64 id) -> bool {
+    auto module_scope_label(EmitWorkspace& w, ObjectWorkspace& o, i64 scope, i64 query, i64 id) -> bool {
         w.text(".Lscope");
         w.number(scope);
         if (query == 0) {
@@ -502,7 +513,7 @@ export namespace compiler_x86 {
         }
         return w.number(id);
     }
-    auto module_emit_reflection(EmitWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+    auto module_emit_reflection(EmitWorkspace& w, ObjectWorkspace& o, const compiler_ir_metadata::MetadataStore& m,
         const compiler_ir_instructions::InstructionStore& s, i64 binding, i64 reflection) -> bool {
         i64 at = 0;
         while (at < m.view_count() && w.ok()) {
@@ -512,6 +523,11 @@ export namespace compiler_x86 {
             i64 query = 0;
             while (query < 2 && w.ok()) {
                 if (reflection == 0 || module_reflection_referenced(w, s, scope, query)) {
+                    // Object output initially admits ordinary callable code only.
+                    // Never silently discard an admitted reflection function.
+                    if (o.object_mode()) {
+                        return w.unsupported_object();
+                    }
                     if (!w.begin_function(1, scope * 2 + query, -1)) {
                         return false;
                     }
@@ -520,11 +536,11 @@ export namespace compiler_x86 {
                     } else {
                         w.text(".globl ");
                     }
-                    query_name(w, query, scope);
+                    query_name(w, o, query, scope);
                     w.text("\n.type ");
-                    query_name(w, query, scope);
+                    query_name(w, o, query, scope);
                     w.text(", @function\n");
-                    query_name(w, query, scope);
+                    query_name(w, o, query, scope);
                     w.text(":\n");
                     i64 entry = 0;
                     while (entry < ids.count()) {
@@ -532,11 +548,11 @@ export namespace compiler_x86 {
                         const i64 id = row.value();
                         w.line_number("cmpq $", id, ", %rdi");
                         w.text("    je ");
-                        module_scope_label(w, scope, query, id);
+                        module_scope_label(w, o, scope, query, id);
                         w.end_line();
                         entry = entry + 1;
                     }
-                    w.line("xorq %rax, %rax");
+                    emit_alu_rr(w, o, AluOp::bit_xor, Register::rax, Register::rax);
                     w.line("ret");
                     entry = 0;
                     while (entry < ids.count()) {
@@ -546,16 +562,16 @@ export namespace compiler_x86 {
                         if (value < 0) {
                             return w.fail();
                         }
-                        module_scope_label(w, scope, query, id);
+                        module_scope_label(w, o, scope, query, id);
                         w.text(":\n");
                         w.line_number("movq $", value, ", %rax");
                         w.line("ret");
                         entry = entry + 1;
                     }
                     w.text(".size ");
-                    query_name(w, query, scope);
+                    query_name(w, o, query, scope);
                     w.text(", .-");
-                    query_name(w, query, scope);
+                    query_name(w, o, query, scope);
                     w.end_line();
                 }
                 query = query + 1;
@@ -564,7 +580,8 @@ export namespace compiler_x86 {
         }
         return w.ok();
     }
-    auto module_emit_literals(EmitWorkspace& w, const compiler_ir_instructions::InstructionStore& s) -> bool {
+    auto module_emit_literals(EmitWorkspace& w, ObjectWorkspace& o,
+        const compiler_ir_instructions::InstructionStore& s) -> bool {
         bool section = false;
         i64 at = 0;
         while (at < w.retained_count() && w.ok()) {
@@ -574,6 +591,9 @@ export namespace compiler_x86 {
             while (position < body.count() && w.ok()) {
                 const i64 instruction = module_instruction(s, callable, position);
                 if (module_form(s, instruction) == 51) {
+                    if (o.object_mode()) {
+                        return w.unsupported_object();
+                    }
                     if (!section) {
                         w.text(".section .rodata\n");
                         section = true;
@@ -603,29 +623,46 @@ export namespace compiler_x86 {
         }
         return w.retained_valid(m.callable_count());
     }
-    auto run(EmitWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
+    auto run(EmitWorkspace& w, ObjectWorkspace& o, const compiler_ir_metadata::MetadataStore& m,
         const compiler_ir_instructions::InstructionStore& s, i64 binding, i64 reflection) -> EmitStatus {
         if ((binding != 0 && binding != 1) || (reflection != 0 && reflection != 1) || !module_retained_integrity(w, m,
             s) || !w.begin()) {
             w.fail();
             return w.status();
         }
+        if (o.object_mode()) {
+            w.select_object();
+            const i64 instruction_count = s.instruction_count();
+            const i64 retained_count = w.retained_count();
+            o.configure_labels(instruction_count, retained_count);
+            if (!emit_object_status(w, o)) {
+                return w.status();
+            }
+        }
         const bool resources = module_resource_graph(w, m, s);
         const bool private_graph = resources || module_service_graph(w, m);
         w.set_owned_span_runtime(resources);
-        w.text("# Aurora compiler output: validated typed IR, x86-64 bootstrap\n.text\n");
+        if (!o.object_mode()) {
+            w.text("# Aurora compiler output: validated typed IR, x86-64 bootstrap\n.text\n");
+        }
         i64 at = 0;
         while (at < w.retained_count() && w.ok()) {
             const i64 callable = w.retained_at(at);
-            module_emit_callable(w, m, s, callable, binding, private_graph);
+            module_emit_callable(w, o, m, s, callable, binding == 1 || private_graph);
             at = at + 1;
         }
-        module_emit_reflection(w, m, s, binding, reflection);
-        w.text(".Laurora_bounds_trap:\n    ud2\n.Laurora_overflow_trap:\n    ud2\n");
-        w.text(".Laurora_division_zero_trap:\n    ud2\n.Laurora_shift_count_trap:\n    ud2\n");
-        module_emit_literals(w, s);
-        w.text(".section .note.GNU-stack,\"\",@progbits\n");
-        w.finish_assembly();
+        module_emit_reflection(w, o, m, s, binding, reflection);
+        i64 trap = 0;
+        while (trap < 4) {
+            emit_bind_label(w, o, 4, trap);
+            emit_trap_instruction(w, o);
+            trap = trap + 1;
+        }
+        module_emit_literals(w, o, s);
+        if (!o.object_mode()) {
+            w.text(".section .note.GNU-stack,\"\",@progbits\n");
+        }
+        finish_assembly(w, o);
         return w.status();
     }
 }

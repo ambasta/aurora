@@ -1,5 +1,6 @@
 export module aurora.compiler.x86_facts;
 import aurora.compiler.x86_storage;
+import aurora.compiler.x86_object_storage;
 import aurora.compiler.x86_helpers;
 import aurora.compiler.ir_metadata;
 import aurora.compiler.ir_metadata_storage;

@@ -1354,6 +1354,7 @@ class OwnedBytesCases(Suite):
             """
             module emitter_storage_test;
             import aurora.compiler.x86_storage;
+            import aurora.compiler.x86_object_storage;
             auto entry(builtin::ByteRegion region, i64 n, i64 flag)->i64 {
                 compiler_x86::EmitWorkspace w=compiler_x86::create(region);
                 if(flag==0) {
@@ -1439,7 +1440,10 @@ class OwnedBytesCases(Suite):
                 return 42;
             }
             """,
-            modules={"aurora.compiler.x86_storage": (ROOT / "compiler/x86_storage.au").read_text()},
+            modules={
+                "aurora.compiler.x86_storage": (ROOT / "compiler/x86_storage.au").read_text(),
+                "aurora.compiler.x86_object_storage": (ROOT / "compiler/x86_object_storage.au").read_text(),
+            },
         )
         self.run(executable, 0, 0, 0, 42, 8, 8)
         for last_id in (0, 7):
