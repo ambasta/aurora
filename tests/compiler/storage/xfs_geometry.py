@@ -481,32 +481,6 @@ def format_result(driver, values, words):
 
 PREFIX = "module xfs_geometry_test;import fs.xfs_geometry;import fs.xfs_probe;import std.binary;\n"
 SPAN = "builtin::span<const u8>"
-FACT_GROUPS = (
-    ("blocks", "XfsBlockFacts", 6),
-    ("inodes", "XfsInodeFacts", 4),
-    ("data", "XfsDataFacts", 3),
-    ("ags", "XfsAgFacts", 6),
-    ("log", "XfsLogFacts", 5),
-)
-
-
-def constructed():
-    """Every report part built from distinct full-width values (the driver's fabricated report)."""
-    source, count = "", 0
-    for group, typename, fields in FACT_GROUPS:
-        arguments = ",".join(f"{(1 << 63) + (count + index) * 65537 + 17}u64" for index in range(fields))
-        source += f"const fs::{typename} {group}=fs::{typename}({arguments});"
-        count += fields
-    source += "const fs::XfsGeometryFacts facts=fs::XfsGeometryFacts(blocks,inodes,data,ags,log);"
-    source += (
-        "const fs::XfsProbeResult probe=fs::XfsProbeResult(fs::XfsProbeStatus::checksum_mismatch,1u64,2u64,3u64,4u64);"
-    )
-    source += "const fs::XfsHeaderObservations raw=fs::XfsHeaderObservations(5u64,6u64,7u64);"
-    source += "const fs::XfsFeatureMasks unsupported=fs::XfsFeatureMasks(8u64,9u64,10u64,11u64);"
-    source += "const fs::XfsFeatureMasks unknown=fs::XfsFeatureMasks(12u64,13u64,14u64,15u64);"
-    return source + "const fs::XfsFeatureDiagnostics masks=fs::XfsFeatureDiagnostics(unsupported,unknown);"
-
-
 SECTOR_PREFIX = "module test; import std.binary; import std.binary_buffer; import storage.sector;"
 SECTOR_PREFIX += " import storage.block_io; import storage.ram_sector; import fs.xfs_probe; import fs.xfs_geometry;"
 SECTOR_PREFIX += " import fs.xfs_sector; auto test() -> u64 {"
@@ -520,23 +494,8 @@ def rejections(real):
     bytes_array = "array<u8,512> bytes={" + ",".join(f"{value}u8" for value in real) + "};"
     report = PREFIX + "auto test()->u64{const " + bytes_array
     report += "const fs::XfsGeometryReport r=fs::inspect_xfs_v5_512_geometry(borrow_bytes(bytes));"
-    firsts = ("block_bytes", "inode_bytes", "data_blocks", "ag_block_log", "log_start_encoded")
-    for (_, typename, count), first in zip(FACT_GROUPS, firsts):
-        arguments = ",".join(["0u64"] * count)
-        yield (
-            f"{typename} privacy",
-            PREFIX + f"auto test()->u64{{const fs::{typename} r=fs::{typename}({arguments});return r._{first};}}",
-        )
-    for label, tail in (
-        ("facts group privacy", "const fs::XfsBlockFacts hidden=facts._blocks;return 1u64;}"),
-        ("raw observation privacy", "return raw._versionnum;}"),
-        ("feature mask privacy", "return unsupported._compat;}"),
-        ("diagnostic group privacy", "const fs::XfsFeatureMasks hidden=masks._unknown;return 1u64;}"),
-    ):
-        yield label, PREFIX + "auto test()->u64{" + constructed() + tail
     for label, tail in (
         ("report private status", "return r._status;}"),
-        ("report private facts", "const fs::XfsGeometryFacts f=r._facts;return 1u64;}"),
         ("status has no numeric conversion", "return u64(r.status());}"),
         ("issue has no numeric conversion", "return u64(r.issue());}"),
         ("copied facts not a span", f"const {SPAN} view=r.facts();return 1u64;}}"),

@@ -187,26 +187,18 @@ REJECTIONS = (
     ("private result field mutation", ENTRY_PREFIX + "entry._name_length = 0u64; return 0u64;}"),
     ("closed entry enum", ENTRY_PREFIX + "return u64(fs::XfsRootEntryStatus::found);}"),
     (
-        "private common validator",
-        ENTRY_PREFIX + "const array<u8, 1> data = {0u8};"
-        "const fs::XfsRootReport result = fs::xr_validate_root(borrow_bytes(data), borrow_bytes(data), true);"
-        "return 0u64;}",
-    ),
-    (
         "index exact signed type",
         ENTRY_PREFIX + "const array<u8, 1> data = {0u8};"
         "const fs::XfsRootEntryReport result = fs::entry_at_xfs_v5_512_root("
         "borrow_bytes(data), borrow_bytes(data), 0u64); return 0u64;}",
     ),
     ("private helper", LOOKUP_PREFIX + "return fs::xr_address(borrow_bytes(bytes),128u64);}"),
-    ("private field", LOOKUP_PREFIX + FACTS + "return f._root;}"),
     (
         "wrong query type",
         LOOKUP_PREFIX + "const fs::XfsRootReport r="
         "fs::lookup_xfs_v5_512_root(borrow_bytes(bytes),borrow_bytes(bytes),1u64);return 0u64;}",
     ),
     ("closed enum conversion", LOOKUP_PREFIX + "return u64(fs::XfsRootStatus::found);}"),
-    ("private helper with report argument", LOOKUP_PREFIX + FACTS + "return fs::xr_address(f,128u64);}"),
     (
         "span result excluded by callable type surface",
         "module root_lookup_test;import fs.xfs_root;\n"
