@@ -165,13 +165,6 @@ native_host = executable('native-uefi-memory', files('../../tests/kernel-uefi-me
     native: true, install: false, override_options: ['optimization=2', 'debug=false', 'warning_level=2'],
     cpp_args: ['-fno-builtin'], link_args: [])
 test('native-uefi-memory', native_host, suite: native_kernel_suites, env: native_test_env, timeout: 180)
-# The framebuffer models and display session are the executables tests/meson.build
-# already builds with the same options.
-foreach model : ['framebuffer', 'framebuffer-tables', 'framebuffer-loader', 'framebuffer-pixels']
-  test('native-uefi-' + model, framebuffer_models[model], suite: native_kernel_suites,
-       env: native_test_env, timeout: 180)
-endforeach
-test('native-display-session', display_session, suite: native_kernel_suites, env: native_test_env, timeout: 180)
 native_owned_object = custom_target('native-owned-bytes-policy',
     input: '../../examples/kernel-owned-bytes.au', output: 'owned-bytes-policy.o',
     depfile: 'owned-bytes-policy.d',
