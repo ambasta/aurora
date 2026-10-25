@@ -4203,6 +4203,7 @@ void rawResolutionOwnership() {
     for (std::size_t index = 0; index < 32; ++index)
         source += "auto f" + std::to_string(index) + "()->i64{return 1+2;}";
     std::array<std::size_t, 11> initialBytes{};
+    std::size_t firstIngestAllocations = 0;
     {
         Allocations allocations;
         RawResolution resolution(allocations);
@@ -4223,6 +4224,7 @@ void rawResolutionOwnership() {
                     resolution.status().storage == Wire::StorageStatus::none,
                 "Session creation did not retain six original owners followed by five empty typed pools");
         require(resolution.ingest(source) && resolution.transferred, "valid parser/session transfer failed");
+        firstIngestAllocations = allocations.successful;
         const auto first = resolution.meta(0);
         require(first.tag == Wire::MetaTag::module_unit && first.value10 >= 0,
                 "successful transfer did not publish exactly one module root");
@@ -4263,6 +4265,19 @@ void rawResolutionOwnership() {
         require(!resolution.ingest(source), "failed Session accepted a source");
         resolution.finish();
         require(allocations.successful == allocations.released, "failed Session retained an owner");
+    }
+    {
+        // Fail the final allocation of a real consuming ingest, not just Session creation.
+        require(firstIngestAllocations > 0, "successful ingest made no allocations");
+        Allocations allocations;
+        allocations.allowed = firstIngestAllocations - 1;
+        RawResolution resolution(allocations);
+        require(!resolution.ingest(source) && resolution.transferred &&
+                    resolution.status().storage == Wire::StorageStatus::allocation &&
+                    resolution.meta(0).tag == Wire::MetaTag::module_source && resolution.meta(0).value10 == -1,
+                "allocation failure after transfer published a root or lost its returned owner");
+        resolution.finish();
+        require(allocations.successful == allocations.released, "failed consuming ingest leaked an owner");
     }
     for (const auto &[badModule, badRoot] : {std::pair{true, false}, std::pair{false, true}}) {
         Allocations allocations;
