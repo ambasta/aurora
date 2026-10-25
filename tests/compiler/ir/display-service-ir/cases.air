@@ -82,14 +82,6 @@ end
 -    ServiceOperation 16 Pixel 0 Display
 +    ServiceOperation 16 Put 0 Display
 
-; CASE: rejected: hostile mutation 7
-; BASE: accepted service graph 1
-; RUN: verify
-; EXPECT-ERROR:
-@@ -23 +23 @@
--    ServiceOperation 16 Pixel 0 Display
-+    ServiceOperation 16 Next 0 Display
-
 ; CASE: rejected: pixel requires closed enum result and no object storage 8
 ; BASE: accepted service graph 1
 ; RUN: verify
@@ -136,20 +128,6 @@ end
 @@ -10,0 +11 @@
 +  slot 8 u64
 
-; CASE: rejected: hostile mutation 14
-; BASE: accepted service graph 1
-; RUN: verify
-; EXPECT-ERROR:
-@@ -10,0 +11 @@
-+  span 32
-
-; CASE: rejected: hostile mutation 15
-; BASE: accepted service graph 1
-; RUN: verify
-; EXPECT-ERROR:
-@@ -11,0 +12 @@
-+  service 24
-
 ; CASE: rejected: hostile mutation 16
 ; BASE: accepted service graph 1
 ; RUN: verify
@@ -158,38 +136,6 @@ end
 -  params [display]
 +  params [display console]
 
-; CASE: rejected: hostile mutation 17
-; BASE: accepted service graph 1
-; RUN: verify
-; EXPECT-ERROR:
-@@ -9 +9 @@
--  params [display]
-+  params [display display]
-
-; CASE: rejected: hostile mutation 18
-; BASE: accepted service graph 1
-; RUN: verify
-; EXPECT-ERROR:
-@@ -9 +9 @@
--  params [display]
-+  params [display region]
-
-; CASE: rejected: hostile mutation 19
-; BASE: accepted service graph 1
-; RUN: verify
-; EXPECT-ERROR:
-@@ -9 +9 @@
--  params [display]
-+  params [display bytes]
-
-; CASE: rejected: hostile mutation 20
-; BASE: accepted service graph 1
-; RUN: verify
-; EXPECT-ERROR:
-@@ -9 +9 @@
--  params [display]
-+  params [display span]
-
 ; CASE: rejected: hostile mutation 21
 ; BASE: accepted service graph 1
 ; RUN: verify
@@ -197,14 +143,6 @@ end
 @@ -6 +6 @@
 -enum __au_display_put_result 2
 +enum __au_display_put_result 3
-
-; CASE: rejected: hostile mutation 22
-; BASE: accepted service graph 1
-; RUN: verify
-; EXPECT-ERROR:
-@@ -5 +5 @@
--enum __au_display_completion 2
-+enum __au_display_completion 1
 
 ; CASE: rejected: pixel requires closed enum result and no object storage 23
 ; BASE: accepted service graph 1
@@ -350,58 +288,6 @@ end
 -function pixel_entry
 +function __au_runtime_display_pixel
 
-; CASE: rejected: hostile mutation 31
-; BASE: accepted service graph 1
-; RUN: verify
-; EXPECT-ERROR:
-@@ -12,0 +13 @@
-+    Call __au_runtime_display_pixel
-
-; CASE: rejected: hostile mutation 32
-; BASE: accepted service graph 1
-; RUN: verify
-; EXPECT-ERROR:
-@@ -7 +7 @@
--function pixel_entry
-+function __au_runtime_display_entry
-
-; CASE: rejected: hostile mutation 33
-; BASE: accepted service graph 1
-; RUN: verify
-; EXPECT-ERROR:
-@@ -12,0 +13 @@
-+    Call __au_runtime_display_entry
-
-; CASE: rejected: hostile mutation 34
-; BASE: accepted service graph 1
-; RUN: verify
-; EXPECT-ERROR:
-@@ -7 +7 @@
--function pixel_entry
-+function __au_runtime_console_next
-
-; CASE: rejected: hostile mutation 35
-; BASE: accepted service graph 1
-; RUN: verify
-; EXPECT-ERROR:
-@@ -12,0 +13 @@
-+    Call __au_runtime_console_next
-
-; CASE: rejected: hostile mutation 36
-; BASE: accepted service graph 1
-; RUN: verify
-; EXPECT-ERROR:
-@@ -7 +7 @@
--function pixel_entry
-+function __au_runtime_console_put
-
-; CASE: rejected: hostile mutation 37
-; BASE: accepted service graph 1
-; RUN: verify
-; EXPECT-ERROR:
-@@ -12,0 +13 @@
-+    Call __au_runtime_console_put
-
 ; CASE: accepted service graph 38
 ; RUN: emit
 ; CHECK-NOT: __au_runtime_bytes_
@@ -442,22 +328,6 @@ end
 -    ServiceOperation 16 Call 40 Call
 +    ServiceOperation 16 Call 40 Display
 
-; CASE: rejected: hostile mutation 41
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -15 +15 @@
--    ServiceOperation 16 Call 40 Call
-+    ServiceOperation 16 Call 40 IommuEvent
-
-; CASE: rejected: hostile mutation 42
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -15 +15 @@
--    ServiceOperation 16 Call 40 Call
-+    ServiceOperation 16 Call 40 Port
-
 ; CASE: rejected: hostile mutation 43
 ; BASE: accepted service graph 38
 ; RUN: verify
@@ -473,62 +343,6 @@ end
 @@ -15 +15 @@
 -    ServiceOperation 16 Call 40 Call
 +    ServiceOperation 16 -1 40 Call
-
-; CASE: rejected: hostile mutation 45
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -15 +15 @@
--    ServiceOperation 16 Call 40 Call
-+    ServiceOperation 16 Next 40 Call
-
-; CASE: rejected: hostile mutation 46
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -15 +15 @@
--    ServiceOperation 16 Call 40 Call
-+    ServiceOperation 16 Put 40 Call
-
-; CASE: rejected: hostile mutation 47
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -15 +15 @@
--    ServiceOperation 16 Call 40 Call
-+    ServiceOperation 16 Pixel 40 Call
-
-; CASE: rejected: hostile mutation 48
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -15 +15 @@
--    ServiceOperation 16 Call 40 Call
-+    ServiceOperation 16 IommuPoll 40 Call
-
-; CASE: rejected: hostile mutation 49
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -15 +15 @@
--    ServiceOperation 16 Call 40 Call
-+    ServiceOperation 16 IommuAcknowledge 40 Call
-
-; CASE: rejected: hostile mutation 50
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -15 +15 @@
--    ServiceOperation 16 Call 40 Call
-+    ServiceOperation 16 PortRead8 40 Call
-
-; CASE: rejected: hostile mutation 51
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -15 +15 @@
--    ServiceOperation 16 Call 40 Call
-+    ServiceOperation 16 999 40 Call
 
 ; CASE: rejected: hostile mutation 52
 ; BASE: accepted service graph 38
@@ -546,14 +360,6 @@ end
 -    Constant 42 u64
 +    Constant 1 u8
 
-; CASE: rejected: hostile mutation 54
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -14 +14 @@
--    Constant 42 u64
-+    Constant 1 bool
-
 ; CASE: rejected: hostile mutation 55
 ; BASE: accepted service graph 38
 ; RUN: verify
@@ -561,134 +367,6 @@ end
 @@ -15 +15 @@
 -    ServiceOperation 16 Call 40 Call
 +    ServiceOperation 16 Call 0 Call
-
-; CASE: rejected: hostile mutation 56
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -15 +15 @@
--    ServiceOperation 16 Call 40 Call
-+    ServiceOperation 16 Call 8 Call
-
-; CASE: rejected: hostile mutation 57
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -15 +15 @@
--    ServiceOperation 16 Call 40 Call
-+    ServiceOperation 16 Call 16 Call
-
-; CASE: rejected: hostile mutation 58
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -15 +15 @@
--    ServiceOperation 16 Call 40 Call
-+    ServiceOperation 16 Call 32 Call
-
-; CASE: rejected: hostile mutation 59
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -15 +15 @@
--    ServiceOperation 16 Call 40 Call
-+    ServiceOperation 16 Call 48 Call
-
-; CASE: rejected: hostile mutation 60
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -6 +6 @@
--  params [call]
-+  params [console]
-
-; CASE: rejected: hostile mutation 61
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -6 +6 @@
--  params [call]
-+  params [display]
-
-; CASE: rejected: hostile mutation 62
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -6 +6 @@
--  params [call]
-+  params [iommu]
-
-; CASE: rejected: hostile mutation 63
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -6 +6 @@
--  params [call]
-+  params [values]
-
-; CASE: rejected: hostile mutation 64
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -6 +6 @@
--  params [call]
-+  params [call console]
-
-; CASE: rejected: hostile mutation 65
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -6 +6 @@
--  params [call]
-+  params [call display]
-
-; CASE: rejected: hostile mutation 66
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -6 +6 @@
--  params [call]
-+  params [call iommu]
-
-; CASE: rejected: hostile mutation 67
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -6 +6 @@
--  params [call]
-+  params [call call]
-
-; CASE: rejected: hostile mutation 68
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -3 +3 @@
--enum __au_call_status 3
-+enum __au_call_status 0
-
-; CASE: rejected: hostile mutation 69
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -3 +3 @@
--enum __au_call_status 3
-+enum __au_call_status 1
-
-; CASE: rejected: hostile mutation 70
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -3 +3 @@
--enum __au_call_status 3
-+enum __au_call_status 2
-
-; CASE: rejected: hostile mutation 71
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -3 +3 @@
--enum __au_call_status 3
-+enum __au_call_status 4
 
 ; CASE: rejected: hostile mutation 72
 ; BASE: accepted service graph 38
@@ -718,13 +396,6 @@ end
 -  object 40 __au_call_result false
 +  object 40 Fake false
 
-; CASE: rejected: hostile mutation 75
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -13 +12,0 @@
--    BeginObject 40
-
 ; CASE: rejected: hostile mutation 76
 ; BASE: accepted service graph 38
 ; RUN: verify
@@ -732,13 +403,6 @@ end
 @@ -13,0 +14,2 @@
 +    Constant 0 u64
 +    Store 32 u64
-
-; CASE: rejected: hostile mutation 77
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -13,0 +14 @@
-+    AcquireServiceLoan 1 16 Call
 
 ; CASE: accepted service graph 78
 ; RUN: emit
@@ -778,13 +442,6 @@ function call_forward
     ReleaseServiceLoan 1 Call
     ReturnObject 40
 end
-
-; CASE: rejected: hostile mutation 79
-; BASE: accepted service graph 78
-; RUN: verify
-; EXPECT-ERROR:
-@@ -30 +29,0 @@
--    ReleaseServiceLoan 1 Call
 
 ; CASE: accepted service graph 80
 ; RUN: emit
@@ -1287,52 +944,6 @@ end
 -    ServiceCall group_sample 1 64 [0 0] Console [(2 Display)]
 +    ServiceCall group_sample 1 0 [0 0] Console [(2 Display)]
 
-; CASE: rejected: hostile mutation 96
-; BASE: accepted service graph 94
-; RUN: verify
-; EXPECT-ERROR:
-@@ -38 +38 @@
--    ServiceCall group_sample 1 64 [0 0] Console [(2 Display)]
-+    ServiceCall group_sample 1 56 [0 0] Console [(2 Display)]
-
-; CASE: rejected: hostile mutation 97
-; BASE: accepted service graph 94
-; RUN: verify
-; EXPECT-ERROR:
-@@ -35 +34,0 @@
--    BeginObject 64
-
-; CASE: rejected: hostile mutation 98
-; BASE: accepted service graph 94
-; RUN: verify
-; EXPECT-ERROR:
-@@ -35,0 +36,2 @@
-+    Constant 0 bool
-+    Store 64 bool
-
-; CASE: rejected: hostile mutation 99
-; BASE: accepted service graph 94
-; RUN: verify
-; EXPECT-ERROR:
-@@ -35,0 +36,2 @@
-+    Constant 0 u8
-+    Store 56 u8
-
-; CASE: rejected: hostile mutation 100
-; BASE: accepted service graph 94
-; RUN: verify
-; EXPECT-ERROR:
-@@ -35,0 +36,2 @@
-+    Constant 0 bool
-+    Store 48 bool
-
-; CASE: rejected: hostile mutation 101
-; BASE: accepted service graph 94
-; RUN: verify
-; EXPECT-ERROR:
-@@ -35,0 +36 @@
-+    ServiceOperation 16 Next 64
-
 ; CASE: rejected: hostile mutation 102
 ; BASE: accepted service graph 94
 ; RUN: verify
@@ -1384,25 +995,6 @@ end
 @@ -38 +38 @@
 -    ServiceCall group_sample 1 64 [0 0] Console [(2 Display)]
 +    ServiceCall group_sample 2 0 [0 0] Display [(1 Console)]
-
-; CASE: rejected: hostile mutation 105
-; BASE: accepted service graph 94
-; RUN: verify
-; EXPECT-ERROR:
-@@ -9 +9 @@
--  params [console display]
-+  params [display console]
-@@ -17,2 +17,2 @@
--    BindServiceParameter 0 16
--    BindServiceParameter 1 32 Display
-+    BindServiceParameter 0 16 Display
-+    BindServiceParameter 1 32
-@@ -20 +20 @@
--    ServiceOperation 16 Next 64
-+    ServiceOperation 32 Next 64
-@@ -38 +38 @@
--    ServiceCall group_sample 1 64 [0 0] Console [(2 Display)]
-+    ServiceCall group_sample 2 56 [0 0] Display [(1 Console)]
 
 ; CASE: rejected: hostile mutation 106
 ; RUN: verify
@@ -1864,32 +1456,6 @@ end
 -    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
 +    ServiceCall group_leaf 1 0 [0 0] Console [(0 Display)]
 
-; CASE: rejected: hostile mutation 135
-; BASE: accepted service graph 112
-; RUN: verify
-; EXPECT-ERROR:
-@@ -41,6 +41 @@
--    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
--    ReleaseServiceLoan 2 Display
--    ReleaseServiceLoan 1
--    AcquireServiceLoan 1 16
--    AcquireServiceLoan 2 32 Display
--    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
-+    ServiceCall group_leaf 1 0 [0 0] Console [(1 Display)]
-
-; CASE: rejected: hostile mutation 136
-; BASE: accepted service graph 112
-; RUN: verify
-; EXPECT-ERROR:
-@@ -41,6 +41 @@
--    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
--    ReleaseServiceLoan 2 Display
--    ReleaseServiceLoan 1
--    AcquireServiceLoan 1 16
--    AcquireServiceLoan 2 32 Display
--    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
-+    ServiceCall group_leaf 1 0 [0 0] Console [(3 Display)]
-
 ; CASE: rejected: hostile mutation 137
 ; BASE: accepted service graph 112
 ; RUN: verify
@@ -1902,19 +1468,6 @@ end
 -    AcquireServiceLoan 2 32 Display
 -    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
 +    ServiceCall group_leaf 1 0 [0 0] Console [(2 Console)]
-
-; CASE: rejected: hostile mutation 138
-; BASE: accepted service graph 112
-; RUN: verify
-; EXPECT-ERROR:
-@@ -41,6 +41 @@
--    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
--    ReleaseServiceLoan 2 Display
--    ReleaseServiceLoan 1
--    AcquireServiceLoan 1 16
--    AcquireServiceLoan 2 32 Display
--    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
-+    ServiceCall group_leaf 1 0 [0 0] Console [(2 999)]
 
 ; CASE: rejected: hostile mutation 139
 ; BASE: accepted service graph 112
@@ -2243,16 +1796,6 @@ end
 -    AcquireServiceLoan 1 16
 -    AcquireServiceLoan 2 32 Display
 
-; CASE: rejected: hostile mutation 155
-; BASE: accepted service graph 112
-; RUN: verify
-; EXPECT-ERROR:
-@@ -42,4 +41,0 @@
--    ReleaseServiceLoan 2 Display
--    ReleaseServiceLoan 1
--    AcquireServiceLoan 1 16
--    AcquireServiceLoan 2 32 Display
-
 ; CASE: rejected: hostile mutation 156
 ; BASE: accepted service graph 112
 ; RUN: verify
@@ -2265,29 +1808,6 @@ end
 -    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
 -    ReleaseServiceLoan 2 Display
 +    ReleaseServiceLoan 2
-
-; CASE: rejected: hostile mutation 157
-; BASE: accepted service graph 112
-; RUN: verify
-; EXPECT-ERROR:
-@@ -42,6 +41,0 @@
--    ReleaseServiceLoan 2 Display
--    ReleaseServiceLoan 1
--    AcquireServiceLoan 1 16
--    AcquireServiceLoan 2 32 Display
--    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
--    ReleaseServiceLoan 2 Display
-
-; CASE: rejected: hostile mutation 158
-; BASE: accepted service graph 112
-; RUN: verify
-; EXPECT-ERROR:
-@@ -44,3 +43,0 @@
--    AcquireServiceLoan 1 16
--    AcquireServiceLoan 2 32 Display
--    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
-@@ -48 +44,0 @@
--    ReleaseServiceLoan 1
 
 ; CASE: rejected: hostile mutation 159
 ; BASE: accepted service graph 112

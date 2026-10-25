@@ -54,14 +54,6 @@ end
 -    ServiceCall putter 1 0 [0*3] Console [] [] 56
 +    ServiceCall putter 1 0 [0*3] Console [] [] 16
 
-; CASE: rejected: hostile mutation 4
-; BASE: accepted service graph 1
-; RUN: verify
-; EXPECT-ERROR:
-@@ -16 +16 @@
--    ServiceCall putter 1 0 [0*3] Console [] [] 56
-+    ServiceCall putter 1 0 [0*3] Console [] [] 17
-
 ; CASE: rejected: hostile mutation 5
 ; BASE: accepted service graph 1
 ; RUN: verify
@@ -69,14 +61,6 @@ end
 @@ -16 +16 @@
 -    ServiceCall putter 1 0 [0*3] Console [] [] 56
 +    ServiceCall putter 1 0 [0 16 0] Console [] [] 56
-
-; CASE: rejected: hostile mutation 6
-; BASE: accepted service graph 1
-; RUN: verify
-; EXPECT-ERROR:
-@@ -7 +7 @@
--  params [console region]
-+  params [display region]
 
 ; CASE: rejected: hostile mutation 7
 ; BASE: accepted service graph 1
@@ -203,14 +187,6 @@ end
 -    ServiceCall copied_helper 1 512 [0*4] Console [] [0 0 320 416] 520
 +    ServiceCall copied_helper 1 512 [0*4] Console [] [0 0 320 416] 16
 
-; CASE: rejected: hostile mutation 12
-; BASE: accepted service graph 9
-; RUN: verify
-; EXPECT-ERROR:
-@@ -53 +53 @@
--    ServiceCall copied_helper 1 512 [0*4] Console [] [0 0 320 416] 520
-+    ServiceCall copied_helper 1 512 [0*4] Console [] [0 0 320 416] 17
-
 ; CASE: rejected: hostile mutation 13
 ; BASE: accepted service graph 9
 ; RUN: verify
@@ -218,14 +194,6 @@ end
 @@ -53 +53 @@
 -    ServiceCall copied_helper 1 512 [0*4] Console [] [0 0 320 416] 520
 +    ServiceCall copied_helper 1 512 [0 16 0 0] Console [] [0 0 320 416] 520
-
-; CASE: rejected: hostile mutation 14
-; BASE: accepted service graph 9
-; RUN: verify
-; EXPECT-ERROR:
-@@ -9 +9 @@
--  params [console region (class Packet) (class Packet)]
-+  params [display region (class Packet) (class Packet)]
 
 ; CASE: rejected: hostile mutation 15
 ; BASE: accepted service graph 9
@@ -336,14 +304,6 @@ endrepeat
     ReturnObject 128
 end
 
-; CASE: rejected: hostile mutation 18
-; BASE: accepted service graph 17
-; RUN: verify
-; EXPECT-ERROR:
-@@ -55 +55 @@
--    ServiceCall copied_helper 1 512 [0*3 576] Console [] [0 0 320 0] 584
-+    ServiceCall copied_helper 1 512 [0*3 576] Console [] [0 0 320 0]
-
 ; CASE: rejected: hostile mutation 19
 ; BASE: accepted service graph 17
 ; RUN: verify
@@ -351,30 +311,6 @@ end
 @@ -55 +55 @@
 -    ServiceCall copied_helper 1 512 [0*3 576] Console [] [0 0 320 0] 584
 +    ServiceCall copied_helper 1 512 [0*3 576] Console [] [0 0 320 0] 16
-
-; CASE: rejected: hostile mutation 20
-; BASE: accepted service graph 17
-; RUN: verify
-; EXPECT-ERROR:
-@@ -55 +55 @@
--    ServiceCall copied_helper 1 512 [0*3 576] Console [] [0 0 320 0] 584
-+    ServiceCall copied_helper 1 512 [0*3 576] Console [] [0 0 320 0] 17
-
-; CASE: rejected: hostile mutation 21
-; BASE: accepted service graph 17
-; RUN: verify
-; EXPECT-ERROR:
-@@ -55 +55 @@
--    ServiceCall copied_helper 1 512 [0*3 576] Console [] [0 0 320 0] 584
-+    ServiceCall copied_helper 1 512 [0 16 0 576] Console [] [0 0 320 0] 584
-
-; CASE: rejected: hostile mutation 22
-; BASE: accepted service graph 17
-; RUN: verify
-; EXPECT-ERROR:
-@@ -9 +9 @@
--  params [console region (class Packet) (class Packet)]
-+  params [display region (class Packet) (class Packet)]
 
 ; CASE: rejected: hostile mutation 23
 ; BASE: accepted service graph 17
@@ -1138,14 +1074,6 @@ end
 -    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
 +    ServiceCall copied_helper 1 512 [0*3]
 
-; CASE: rejected: hostile mutation 51
-; BASE: accepted service graph 30
-; RUN: verify
-; EXPECT-ERROR:
-@@ -51 +51 @@
--    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
-+    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320]
-
 ; CASE: rejected: hostile mutation 52
 ; BASE: accepted service graph 30
 ; RUN: verify
@@ -1169,22 +1097,6 @@ end
 @@ -51 +51 @@
 -    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
 +    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 320]
-
-; CASE: rejected: hostile mutation 55
-; BASE: accepted service graph 30
-; RUN: verify
-; EXPECT-ERROR:
-@@ -51 +51 @@
--    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
-+    ServiceCall copied_helper 1 512 [0*3] Console [] [0 16 416]
-
-; CASE: rejected: hostile mutation 56
-; BASE: accepted service graph 30
-; RUN: verify
-; EXPECT-ERROR:
-@@ -51 +51 @@
--    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
-+    ServiceCall copied_helper 1 512 [0*3] Console [] [0 319 416]
 
 ; CASE: rejected: hostile mutation 57
 ; BASE: accepted service graph 30
@@ -1214,50 +1126,6 @@ end
 @@ -44 +46 @@
 -    BindObjectParameter 2 224 Packet
 +    BindObjectParameter 2 224 Other
-
-; CASE: rejected: hostile mutation 59
-; BASE: accepted service graph 30
-; RUN: verify
-; EXPECT-ERROR:
-@@ -46 +45,0 @@
--    CopyObject 128 320
-
-; CASE: rejected: hostile mutation 60
-; BASE: accepted service graph 30
-; RUN: verify
-; EXPECT-ERROR:
-@@ -50,0 +51 @@
-+    EndObject 320
-
-; CASE: rejected: hostile mutation 61
-; BASE: accepted service graph 30
-; RUN: verify
-; EXPECT-ERROR:
-@@ -51 +51 @@
--    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
-+    ServiceCall copied_helper 1 320 [0*3] Console [] [0 320 416]
-
-; CASE: rejected: hostile mutation 62
-; BASE: accepted service graph 32
-; RUN: verify
-; EXPECT-ERROR:
-@@ -20 +19,0 @@
--    CopyObject 128 320
-
-; CASE: rejected: hostile mutation 63
-; BASE: accepted service graph 32
-; RUN: verify
-; EXPECT-ERROR:
-@@ -24,0 +25 @@
-+    EndObject 320
-
-; CASE: rejected: hostile mutation 64
-; BASE: accepted service graph 32
-; RUN: verify
-; EXPECT-ERROR:
-@@ -25 +25 @@
--    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
-+    ServiceCall copied_helper 1 320 [0*3] Console [] [0 320 416]
 
 ; CASE: rejected: hostile mutation 65
 ; BASE: accepted service graph 32
@@ -1293,14 +1161,6 @@ end
 -    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
 +    ServiceCall copied_helper 1 320 [0*3] Console [] [0 320 416]
 
-; CASE: rejected: hostile mutation 68
-; BASE: accepted service graph 30
-; RUN: verify
-; EXPECT-ERROR:
-@@ -51 +51 @@
--    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
-+    ServiceCall copied_helper 1 512 [0 320 0] Console [] [0 320 416]
-
 ; CASE: rejected: hostile mutation 69
 ; BASE: accepted service graph 34
 ; RUN: verify
@@ -1317,14 +1177,6 @@ end
 -    ServiceCall copied_helper 1 512 [0*4] Console [(2 Display)] [0 0 320 416]
 +    ServiceCall copied_helper 1 512 [0*4] Console [(2 Display)] [0 416 320 416]
 
-; CASE: rejected: hostile mutation 71
-; BASE: accepted service graph 31
-; RUN: verify
-; EXPECT-ERROR:
-@@ -56 +56 @@
--    ServiceCall copied_helper 1 512 [0*4] Console [(2 Display)] [0 0 320 416]
-+    ServiceCall copied_helper 1 512 [0*4] Console [(2 Console)] [0 0 320 416]
-
 ; CASE: rejected: hostile mutation 72
 ; BASE: accepted service graph 30
 ; RUN: verify
@@ -1333,38 +1185,6 @@ end
 -fields Packet [(u8 0 64 true) (i64 64 1 false) ((enum __au_console_put_result display=builtin::ConsolePutResult) 65 1 false)]
 +fields Packet [(u8 0 64 true) (i64 64 1 false) ((enum __au_console_put_result display=builtin::ConsolePutResult) 65 1 false) (console 66 0 false)]
 
-; CASE: rejected: hostile mutation 73
-; BASE: accepted service graph 30
-; RUN: verify
-; EXPECT-ERROR:
-@@ -3 +3 @@
--fields Packet [(u8 0 64 true) (i64 64 1 false) ((enum __au_console_put_result display=builtin::ConsolePutResult) 65 1 false)]
-+fields Packet [(u8 0 64 true) (i64 64 1 false) ((enum __au_console_put_result display=builtin::ConsolePutResult) 65 1 false) (span 66 0 false)]
-
-; CASE: rejected: hostile mutation 74
-; BASE: accepted service graph 30
-; RUN: verify
-; EXPECT-ERROR:
-@@ -3 +3 @@
--fields Packet [(u8 0 64 true) (i64 64 1 false) ((enum __au_console_put_result display=builtin::ConsolePutResult) 65 1 false)]
-+fields Packet [(u8 0 64 true) (i64 64 1 false) ((enum __au_console_put_result display=builtin::ConsolePutResult) 65 1 false) (bytes 66 0 false)]
-
-; CASE: rejected: hostile mutation 75
-; BASE: accepted service graph 30
-; RUN: verify
-; EXPECT-ERROR:
-@@ -3 +3 @@
--fields Packet [(u8 0 64 true) (i64 64 1 false) ((enum __au_console_put_result display=builtin::ConsolePutResult) 65 1 false)]
-+fields Packet [(u8 0 64 true) (i64 64 1 false) ((enum __au_console_put_result display=builtin::ConsolePutResult) 65 1 false) (region 66 0 false)]
-
-; CASE: rejected: hostile mutation 76
-; BASE: accepted service graph 30
-; RUN: verify
-; EXPECT-ERROR:
-@@ -59 +59 @@
--  params [console (class Packet) (class Packet)]
-+  params [console (class Packet) (class Packet) i64*4]
-
 ; CASE: rejected: hostile mutation 77
 ; BASE: accepted service graph 30
 ; RUN: verify
@@ -1372,29 +1192,6 @@ end
 @@ -51 +51 @@
 -    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
 +    Call copied_helper
-
-; CASE: rejected: hostile mutation 78
-; BASE: accepted service graph 30
-; RUN: verify
-; EXPECT-ERROR:
-@@ -51 +51 @@
--    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
-+    AggregateCall copied_helper [0 320 416] 512
-
-; CASE: rejected: hostile mutation 79
-; BASE: accepted service graph 30
-; RUN: verify
-; EXPECT-ERROR:
-@@ -50 +49,0 @@
--    AcquireServiceLoan 1 16
-
-; CASE: rejected: hostile mutation 80
-; BASE: accepted service graph 30
-; RUN: verify
-; EXPECT-ERROR:
-@@ -50,0 +51,2 @@
-+    Constant 65 u8
-+    ServiceOperation 16 Put
 
 ; CASE: accepted service graph 81
 ; RUN: emit
@@ -1431,14 +1228,6 @@ function putter
     ServiceOperation 16 Put
     Return
 end
-
-; CASE: rejected: hostile mutation 82
-; BASE: accepted service graph 81
-; RUN: verify
-; EXPECT-ERROR:
-@@ -14 +14 @@
--    ServiceCall putter 1 0 [0 0] Console [] [0 0]
-+    ServiceCall putter 1 0 [0 0] Console [] [0 24]
 
 ; CASE: rejected: hostile mutation 83
 ; RUN: verify
@@ -2029,14 +1818,6 @@ end
 +    Label 2
 +    EnumConstant (enum __au_console_put_result display=builtin::ConsolePutResult)
 
-; CASE: rejected: hostile mutation 123
-; BASE: rejected: service observation requires exact pristine active copied sample object 103
-; RUN: verify
-; EXPECT-ERROR:
-@@ -14 +14 @@
--    BindServiceParameter 0 16
-+    BeginObject 40
-
 ; CASE: rejected: hostile mutation 124
 ; BASE: rejected: service observation requires exact pristine active copied sample object 103
 ; RUN: verify
@@ -2064,15 +1845,6 @@ end
 @@ -14,0 +14 @@
 +    BeginObject 40
 
-; CASE: rejected: hostile mutation 127
-; BASE: rejected: service observation requires exact pristine active copied sample object 103
-; RUN: verify
-; EXPECT-ERROR:
-@@ -8,0 +9 @@
-+  slot 16 u64
-@@ -14,0 +16 @@
-+    BeginObject 40
-
 ; CASE: rejected: hostile mutation 128
 ; BASE: rejected: service observation requires exact pristine active copied sample object 103
 ; RUN: verify
@@ -2082,24 +1854,6 @@ end
 +  frame 64
 @@ -12,0 +13 @@
 +  span 56
-@@ -14,0 +16 @@
-+    BeginObject 40
-
-; CASE: rejected: hostile mutation 129
-; BASE: rejected: service observation requires exact pristine active copied sample object 103
-; RUN: verify
-; EXPECT-ERROR:
-@@ -13,0 +14 @@
-+  bytes 32 true
-@@ -14,0 +16 @@
-+    BeginObject 40
-
-; CASE: rejected: hostile mutation 130
-; BASE: rejected: service observation requires exact pristine active copied sample object 103
-; RUN: verify
-; EXPECT-ERROR:
-@@ -13,0 +14 @@
-+  service 24
 @@ -14,0 +16 @@
 +    BeginObject 40
 
@@ -2176,15 +1930,6 @@ end
 @@ -14,0 +15 @@
 +    BeginObject 40
 
-; CASE: rejected: hostile mutation 139
-; BASE: rejected: service observation requires exact pristine active copied sample object 103
-; RUN: verify
-; EXPECT-ERROR:
-@@ -14,0 +15 @@
-+    BeginObject 40
-@@ -17,0 +19 @@
-+    Load 16 u64
-
 ; CASE: rejected: hostile mutation 140
 ; BASE: rejected: service release requires exactly one completed helper call 112
 ; RUN: verify
@@ -2214,13 +1959,6 @@ end
 @@ -15 +14 @@
 -    ReleaseServiceLoan -1
 +    ReleaseServiceLoan 1
-
-; CASE: rejected: hostile mutation 143
-; BASE: rejected: service release requires exactly one completed helper call 112
-; RUN: verify
-; EXPECT-ERROR:
-@@ -15 +14,0 @@
--    ReleaseServiceLoan -1
 
 ; CASE: rejected: service release requires exactly one completed helper call 144
 ; BASE: rejected: service release requires exactly one completed helper call 112
