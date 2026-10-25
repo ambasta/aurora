@@ -1,10 +1,15 @@
 # Convenience routes use the configured predecessor-backed Meson graph.
 .DEFAULT_GOAL := all
 
+ROOT := $(abspath ..)
+BUILD := $(if $(filter /%,$(MESON_BUILD_DIR)),$(MESON_BUILD_DIR),$(ROOT)/$(or $(MESON_BUILD_DIR),build/meson))
+
 .PHONY: all formatter test
 all:
-	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --build-only aurorac --publish-compiler
+	../scripts/watchdog.sh meson compile -C $(BUILD) aurorac
+	install -m 755 $(BUILD)/aurorac ../build/aurorac
 formatter:
-	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --build-only aurora-fmt --publish-formatter
+	../scripts/watchdog.sh meson compile -C $(BUILD) aurora-fmt
+	install -m 755 $(BUILD)/aurora-fmt ../build/aurora-fmt
 test:
-	python3 -B ../scripts/meson_test.py --repo-root "$(abspath ..)" --suite compiler
+	../scripts/watchdog.sh meson test -C $(BUILD) --suite compiler --print-errorlogs

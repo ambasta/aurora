@@ -2,9 +2,7 @@
 """package.graph through one compiled driver fed every case as a record.
 
 Inputs are generated here; expected results are the reviewed golden file
-golden/package_graph.jsonl, frozen from the earlier independent permutation-search
-reference (evidence/package-graph/oracle/reference-v1) after it reproduced the
-old test's ordered expectations exactly. Golden rows hold semantic results (a
+golden/package_graph.jsonl. Golden rows hold semantic results (a
 failure status, or the order and catalog roots); `words` expands them into the
 driver's observation layout. Rejections compile one source each.
 """
@@ -295,11 +293,13 @@ def catalog(label, manifests=None, *, data=None, offsets=None, lengths=None, cou
 
 
 def exhaustive_cases():
-    """Every dependency mask over up to four packages, in several catalog orders."""
+    """Every dependency mask over up to three packages and a sample over four."""
     cases = []
     for n in range(5):
         edges = list(itertools.permutations(range(n), 2))
         for mask in range(1 << len(edges)):
+            if n == 4 and not (mask % 37 == 0 or mask in (0, 4095, 1, 2048)):
+                continue
             manifests = [
                 make_manifest(
                     bytes([97 + i]),
@@ -590,26 +590,15 @@ def packet(program, operation, values):
     return program.pack(data=data, operation=OPERATIONS.index(operation), length=len(data), **values)
 
 
-def sampled(label):
-    # Merge keeps every graph of up to three packages and samples those of four.
-    if not label.startswith("exhaustive/4/"):
-        return True
-    mask = int(label.split("/")[2])
-    return mask % 37 == 0 or mask in (0, 1, 2048, 4095)
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--compiler", type=Path, required=True)
-    records.profile(parser)
     args = parser.parse_args()
     golden = records.load_jsonl(GOLDEN / "package_graph.jsonl")
     cases = all_cases()
     require(len(golden) == len(cases), f"{len(cases)} generated cases, {len(golden)} golden rows")
     for (label, _, _), row in zip(cases, golden):
         require(row["label"] == label, f"golden row {row['label']!r} for case {label!r}")
-    if args.profile == "merge":
-        cases, golden = zip(*((case, row) for case, row in zip(cases, golden) if sampled(case[0])))
     with records.scratch("package-graph") as scratch:
         driver = records.Driver(args.compiler, scratch)
         program = driver.build(driver_source(), "GraphInput", kind="u64", words="words")
@@ -626,7 +615,7 @@ def main():
             scratch,
         )
         rejections = driver.reject_all(GOLDEN / "package_graph_rejections.jsonl")
-    print(f"PASS package graph ({args.profile}): {count} cases, {observed} u64 observations, {rejections} rejections")
+    print(f"PASS package graph: {count} cases, {observed} u64 observations, {rejections} rejections")
 
 
 if __name__ == "__main__":

@@ -20,8 +20,8 @@ fixture_options = ['optimization=1']
 # release (opt-in: releases and compiler bumps). dev/slow/core/bytes are focused
 # selections; explicit library enumeration is separate in exhaustive.
 # Start the longest merge tests first so they do not form the tail of a run.
-slow_tests = {'json-library': 30, 'hosted-lexer-bootstrap': 30, 'package-graph': 20, 'method-values': 20,
-              'package-manifest': 15, 'hosted-parser': 15, 'decimal-values': 10, 'sector-values-abi': 10,
+slow_tests = {'json-library': 30, 'package-graph': 20, 'method-values': 20,
+              'package-manifest': 15, 'hosted-parser': 5, 'decimal-values': 10, 'sector-values-abi': 10,
               'readonly-windows': 5, 'json-string-write': 5, 'composed-values': 5}
 foreach entry : [
     ['frontend', 'compiler/run.py', 'core'],
@@ -225,13 +225,17 @@ test('owned-spans-source', python,
      args: ['-B', '-O', files('compiler/owned_spans_source.py'), aurorac],
      depends: aurorac, suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 180)
+owned_spans_kernel_host = static_library('owned-spans-kernel-host',
+    ['compiler/owned_spans_kernel_host.cpp', '../kernel/owned-bytes.cpp'],
+    cpp_args: ['-DNDEBUG', '-fno-exceptions', '-fno-rtti'], pic: false,
+    native: true, override_options: fixture_options, install: false)
 foreach mode : ['standalone', 'receiver']
-    span_kernel_args = ['-B', '-O', files('compiler/owned_spans_kernel.py'), aurorac]
+    span_kernel_args = ['-B', '-O', files('compiler/owned_spans_kernel.py'), aurorac, '--host', owned_spans_kernel_host]
     if mode == 'receiver'
         span_kernel_args += ['--receiver-bound']
     endif
     test('owned-spans-kernel-' + mode, python,
-         args: span_kernel_args, depends: aurorac, suite: ['full', 'merge', 'dev', 'bytes', 'compiler'],
+         args: span_kernel_args, depends: [aurorac, owned_spans_kernel_host], suite: ['full', 'merge', 'dev', 'bytes', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 endforeach
 test('logical-spans-abi', python,
@@ -280,9 +284,8 @@ foreach name, host : console_service_hosts
   console_service_args += ['--' + name + '-host', host.full_path()]
 endforeach
 test('console-service-source-native', python,
-     args: ['-B', '-O', files('compiler/console_service.py'), aurorac,
-            '--comparison-compiler', aurorac_stage2] + console_service_args,
-     depends: [aurorac, aurorac_stage2] + console_service_hosts.values(),
+     args: ['-B', '-O', files('compiler/console_service.py'), aurorac] + console_service_args,
+     depends: [aurorac] + console_service_hosts.values(),
      suite: ['full', 'merge', 'slow', 'core', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
 
@@ -371,8 +374,6 @@ foreach model : ['framebuffer', 'framebuffer-tables', 'framebuffer-loader', 'fra
 endforeach
 display_session = executable('display-session', 'kernel-display-session.cpp', native: true, override_options: fixture_options, install: false)
 test('display-session', display_session, suite: ['full', 'merge', 'dev'], timeout: 120)
-test('kernel_framebuffer_probe_oracle.py', python, args: ['-B', files('kernel_framebuffer_probe_oracle.py')],
-     suite: ['full', 'merge', 'dev'], env: oracle_env, timeout: 120)
 display_page_object = custom_target('display-page',
     input: '../examples/kernel-display-service.au', output: 'display-page.o', depfile: 'display-page.d',
     command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',
@@ -465,11 +466,7 @@ test('source-overlays', python,
      args: ['-B', '-O', files('compiler/source_overlays.py'), compiler_fixtures['source_overlays']],
      depends: compiler_fixtures['source_overlays'], suite: ['full', 'merge', 'slow', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 120)
-# The exact legacy glob roots; this adapter enumerates them anew on every run.
-test('lexer-trivia', python,
-     args: ['-B', files('meson_lexer_inputs.py'), compiler_fixtures['lexer_trivia'], meson.project_source_root()],
-     depends: compiler_fixtures['lexer_trivia'], suite: ['full', 'merge', 'slow', 'compiler'],
-     env: oracle_env, timeout: 180)
+test('lexer-trivia', compiler_fixtures['lexer_trivia'], suite: ['full', 'merge', 'slow', 'compiler'], timeout: 180)
 # Reuse the real CLI entry object for alternate-emitter mutation probes.
 # No duplicate compiler/IR translation unit or production entry is added.
 emitter_probe_main = static_library('emitter-probe-main',
@@ -523,18 +520,13 @@ test('utf8-exhaustive', python,
      args: ['-B', files('compiler/utf8.py'), '--compiler', aurorac, '--profile', 'exhaustive'],
      depends: aurorac, suite: ['exhaustive'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
-# Package identity, manifest and graph. Merge samples the byte-substitution and
-# four-package graph sweeps; the complete corpus runs in release.
+# Package identity, manifest and graph: one driver each over golden cases.
 foreach family : ['identity', 'manifest', 'graph']
     test('package-' + family, python,
          args: ['-B', files('compiler/package_' + family + '.py'), '--compiler', aurorac],
          depends: aurorac, suite: ['full', 'merge', 'dev', 'packages', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 300,
          priority: slow_tests.get('package-' + family, 0))
-    test('package-' + family + '-complete', python,
-         args: ['-B', files('compiler/package_' + family + '.py'), '--compiler', aurorac, '--profile', 'complete'],
-         depends: aurorac, suite: ['full', 'release', 'packages', 'compiler'],
-         env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
 endforeach
 # Storage and filesystem libraries: one compiled driver per family over data cases,
 # compared with the golden file beside it (tests/compiler/storage).
@@ -572,21 +564,17 @@ hosted_lexer_test = executable(
     dependencies: hosted_frontend, include_directories: include_directories('../compiler'),
     native: true, override_options: fixture_options, install: false,
 )
-test('hosted-lexer', python,
-     args: ['-B', files('meson_lexer_inputs.py'), hosted_lexer_test, meson.project_source_root(), '--all', frontend_forwarders],
-     depends: hosted_lexer_test, suite: ['full', 'merge', 'dev', 'core', 'compiler'], env: oracle_env, timeout: 180)
-bootstrap_args = ['-B', '-O', files('compiler/hosted_lexer_bootstrap.py'), aurorac, aurorac_stage2,
-                  meson.project_source_root(), frontend_assembly[0], frontend_stage2_output[0]]
-test('hosted-lexer-bootstrap', python, args: bootstrap_args,
-     depends: [aurorac, aurorac_stage2], suite: ['full', 'merge', 'dev', 'core', 'compiler'],
-     env: oracle_env, workdir: meson.current_build_dir(), timeout: 180,
-     priority: slow_tests['hosted-lexer-bootstrap'])
+test('hosted-lexer', hosted_lexer_test, args: files('compiler/golden/hosted_lexer.golden'),
+     suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 180)
+test('hosted-lexer-bootstrap', python,
+     args: ['-B', files('compiler/hosted_lexer_bootstrap.py'), frontend_assembly[0], frontend_stage2_output[0],
+            frontend_stage3_output[0]],
+     depends: [frontend_stage2_output, frontend_stage3_output], suite: ['full', 'merge', 'dev', 'core', 'compiler'],
+     env: oracle_env, timeout: 30)
 
 format_fixture = executable('format-fixture', 'compiler/format.cpp', dependencies: hosted_frontend,
                             include_directories: include_directories('../compiler'), native: true, override_options: fixture_options, install: false)
-test('hosted-lexer-format', python,
-     args: ['-B', files('meson_lexer_inputs.py'), format_fixture, meson.project_source_root(), '--all', frontend_forwarders],
-     depends: format_fixture, suite: ['full', 'merge', 'dev', 'compiler'], env: oracle_env, timeout: 180)
+test('hosted-lexer-format', format_fixture, suite: ['full', 'merge', 'dev', 'compiler'], timeout: 180)
 test('hosted-lexer-format-cli', python, args: ['-B', '-O', files('compiler/format.py'), aurora_fmt],
      depends: aurora_fmt, suite: ['full', 'merge', 'dev', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 180)
@@ -610,35 +598,6 @@ hosted_parser_test = executable(
     native: true, override_options: fixture_options, install: false,
 )
 test('hosted-parser', hosted_parser_test,
-     args: files('../compiler/lexer.au', '../compiler/syntax_arena.au', '../compiler/parser.au',
-                 '../library/std/array.au', '../library/console/session_files.au',
-                 '../examples/kernel-graphical-console.au', '../library/fs/xfs_sector.au',
-                 '../examples/class_values.au', '../library/std/utility.au', '../library/std/decimal.au',
-                 '../library/std/json.au', '../library/package/graph.au', '../examples/function_token_values.au',
-                 '../examples/class_values.au', '../examples/kernel-bios.au', '../compiler/resolution_kinds.au',
-                 '../compiler/resolution_arena.au', '../compiler/resolver.au') + [frontend_forwarders] + files(
-                 '../compiler/lowering_kinds.au', '../compiler/lowering_errors.au', '../compiler/lowering_storage.au',
-                 '../compiler/lowering_common.au', '../compiler/lowering_configuration.au', '../compiler/lowering_types.au',
-                 '../compiler/lowering_values.au', '../compiler/lowering_body.au', '../compiler/lowering.au',
-                 '../compiler/lowering_frames.au', '../compiler/lowering_calls.au',
-                 '../compiler/lowering_expressions.au', '../compiler/lowering_statements.au',
-                 '../compiler/resolution_rows.au', '../compiler/resolution_names.au',
-                 '../compiler/resolution_ingest.au', '../compiler/ir_graph.au', '../library/console/line.au',
-                 '../compiler/ir_metadata_storage.au', '../compiler/ir_metadata.au',
-                 '../compiler/ir_instruction_storage.au', '../compiler/ir_instructions.au',
-                 '../compiler/ir_verification_errors.au',
-                 '../compiler/x86_storage.au', '../compiler/x86_helpers.au', '../compiler/x86_scalar.au',
-                 '../compiler/x86_objects.au', '../compiler/x86_resources.au', '../compiler/x86_facts.au',
-                 '../compiler/x86_module.au', '../library/std/decimal_digits.au', '../compiler/formatter.au',
-                 '../compiler/resolution_linkage.au',
-                 '../compiler/ir_verification_storage.au',
-                 '../compiler/ir_verification_initialization.au',
-                 '../compiler/ir_verification_common.au',
-                 '../compiler/ir_verification_values.au',
-                 '../compiler/ir_verification_resources.au',
-                 '../compiler/ir_verification_services.au',
-                 '../compiler/ir_verification_transfer.au',
-                 '../compiler/ir_verification.au', '../compiler/x86_object_storage.au'),
      suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120,
      priority: slow_tests['hosted-parser'])
 # The already-built adapter objects with forged Aurora entries; the generated

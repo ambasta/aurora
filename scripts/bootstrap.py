@@ -22,7 +22,6 @@ import sys
 import time
 
 import meson_toolchain
-import build_resources
 
 ROOT = Path(__file__).resolve().parents[1]
 CHECKPOINT = ROOT / "compiler/checkpoint.json"
@@ -133,7 +132,7 @@ def run_logged(argv, log):
     started = time.monotonic()
     with log.open("w") as stream:
         try:
-            result = build_resources.run(argv, stdout=stream, stderr=subprocess.STDOUT)
+            result = subprocess.run([ROOT / "scripts/watchdog.sh", *argv], stdout=stream, stderr=subprocess.STDOUT)
         except (OSError, ValueError, subprocess.SubprocessError) as error:
             raise ValueError(f"{error}; retained log: {log}") from error
     record = {"argv": argv, "returncode": result.returncode, "seconds": round(time.monotonic() - started, 1)}
@@ -143,7 +142,7 @@ def run_logged(argv, log):
 
 def hop(args):
     """Build SOURCE with COMPILER, check C1/C2 convergence, record."""
-    jobs = str(build_resources.jobs(args.jobs, "--jobs"))
+    jobs = str(args.jobs or os.cpu_count())
     source, output = args.source.resolve(), args.output.resolve()
     compiler = str(args.compiler.resolve())
     require(not output.is_relative_to(source), "build outside the source checkout; it must stay clean")
@@ -159,7 +158,7 @@ def hop(args):
     commands = [
         setup,
         ["meson", "compile", "-C", str(build), "-j", jobs, "aurorac", "aurorac-stage2"],
-        ["meson", "test", "-C", str(build), "--no-rebuild", "--num-processes", jobs, "--print-errorlogs", *HOP_TESTS],
+        ["meson", "test", "-C", str(build), "--num-processes", jobs, "--print-errorlogs", *HOP_TESTS],
     ]
     identity = tools()
     records = [run_logged(argv, output / f"{index}.log") for index, argv in enumerate(commands)]
@@ -197,7 +196,7 @@ def main():
     hopper.add_argument("--tree", required=True, help="`git rev-parse COMMIT^{tree}`")
     hopper.add_argument("--output", type=Path, required=True, help="new directory for the build and receipt")
     hopper.add_argument("--expect", help="require this checkpoint SHA256 (reproducing a pin)")
-    hopper.add_argument("--jobs", default="auto", help="auto (nproc) or a positive job ceiling")
+    hopper.add_argument("--jobs", type=int, help="job count; default nproc")
     args = parser.parse_args()
     if args.action == "select":
         print("\n".join(select(args.compiler)))

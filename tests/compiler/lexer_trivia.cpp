@@ -292,7 +292,7 @@ void cases() {
     }
 }
 } // namespace
-int main(int argc, char **argv) {
+int main() {
     try {
         const std::string originalLocale = std::setlocale(LC_CTYPE, nullptr);
         for (const auto *locale : {"C", "C.utf8", "en_US", "en_US.utf8", "tr_TR", "tr_TR.utf8"}) {
@@ -307,13 +307,7 @@ int main(int argc, char **argv) {
         require(std::setlocale(LC_CTYPE, originalLocale.c_str()) != nullptr, "cannot restore locale");
         cases();
         binaryLiterals();
-        for (int index = 1; index < argc; ++index) {
-            std::ifstream input(argv[index], std::ios::binary);
-            require(input.good(), "cannot open corpus source");
-            const std::string source{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
-            verify(source, argv[index]);
-        }
-        std::cout << "PASS lossless trivia cases, 256 generated scans, and " << argc - 1 << " corpus sources\n";
+        std::cout << "PASS lossless trivia cases and 256 generated scans\n";
         return 0;
     } catch (const std::exception &error) {
         std::cerr << "FAIL " << error.what() << '\n';

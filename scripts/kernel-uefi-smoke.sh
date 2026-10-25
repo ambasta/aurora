@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+caller="$PWD"
 cd "$(dirname "$0")/.."
 # Compatibility alias: normal restoration now boots the isolated native image.
 shared_normal=false
@@ -7,12 +8,12 @@ if [[ "${1-}" == --shared-normal ]]; then shared_normal=true; shift; fi
 run_only= output_dir= scratch=
 if [[ "${1-}" == --run-only ]]; then
     if (( $# < 2 )) || [[ -z "$2" ]]; then
-        echo 'Expected --run-only <absolute native profile directory> [--output-dir <fresh directory>]' >&2; exit 2
+        echo 'Expected --run-only <native profile directory> [--output-dir <fresh directory>]' >&2; exit 2
     fi
-    run_only="$2"; shift 2
+    run_only="$(cd "$caller" && realpath -e "$2")"; shift 2
     if [[ "${1-}" == --output-dir ]]; then
         [[ -n "${2-}" ]] || { echo 'Expected --output-dir <fresh directory>' >&2; exit 2; }
-        output_dir="$2"; shift 2
+        output_dir="$(cd "$caller" && realpath -m "$2")"; shift 2
     else
         # Private scratch, kept after a failure and removed after a pass.
         scratch="$(mktemp -d)"; output_dir="$scratch/output"

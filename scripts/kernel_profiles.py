@@ -877,6 +877,7 @@ if __name__ == "__main__":
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument("--meson-output", type=Path)
     action.add_argument("--select", choices=("bios", "uefi"))
+    action.add_argument("--canonical", nargs=2, metavar=("PLATFORM", "PROFILE"))
     action.add_argument("--fixture-byte")
     action.add_argument("--bios-fixture-byte")
     args = parser.parse_args()
@@ -884,6 +885,12 @@ if __name__ == "__main__":
         print(BIOS_FIXTURE_MODES.get(BIOS_VARIANTS.get(args.bios_fixture_byte, args.bios_fixture_byte), ("", ""))[1])
     elif args.fixture_byte:
         print(serial_fixture_byte(args.fixture_byte))
+    elif args.canonical:
+        platform, profile = args.canonical
+        try:
+            print(canonical_profile(platform, select(platform, {}, profile)))
+        except ValueError as error:
+            parser.error(str(error))
     elif args.select:
         try:
             print(select(args.select, os.environ))

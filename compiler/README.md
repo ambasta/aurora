@@ -114,8 +114,8 @@ The build has one predecessor stage and a self-check, like GCC's
 bootstrap-and-compare:
 
 ```text
-checkpoint C0 --compiles--> C1 (aurorac) --compiles--> C2 (aurorac-stage2)
-                            hosted-lexer-bootstrap: C1 and C2 output identical
+checkpoint C0 --compiles--> C1 (aurorac) --compiles--> C2 (aurorac-stage2) --compiles--> frontend C
+                            hosted-lexer-bootstrap: C1's frontend B and C2's frontend C identical
 ```
 
 [`checkpoint.json`](checkpoint.json) pins C0 by source commit, tree and
@@ -135,16 +135,11 @@ it regenerates the frontend.
 C0=/workspace/build/checkpoint-ab255328/aurorac
 meson setup build/meson . "-Dbootstrap_compiler=$C0" "-Duefi_ld=$UEFI_LD"
 meson setup build/meson-compiler . -Dkernel_images=false "-Dbootstrap_compiler=$C0"
-MESON_BUILD_DIR=build/meson-compiler python3 -B scripts/meson_test.py \
-  --tests hosted-lexer-bootstrap
+meson test -C build/meson-compiler hosted-lexer-bootstrap
 ```
 
-`BOOTSTRAP_COMPILER` requests a different selection for
-`make test`: the wrapper reconfigures the implicit default build after checking
-the pin, and rejects an explicit `MESON_BUILD_DIR` with the exact reconfigure
-command. A build directory configured with the former `bootstrap_receipt`
-option must be recreated with `meson setup --wipe`, which the wrapper prints.
-The container launcher forwards it literally.
+To use a different checkpoint, reconfigure the build with
+`meson configure BUILD -Dbootstrap_compiler=PATH`; Meson rechecks the pin.
 
 #### Bumping the checkpoint (one hop)
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Legacy environment selectors feed the canonical native Meson graph.
+# Build the UEFI profile selected by the environment (default normal).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 if [[ $# != 0 && ( $# != 1 || $1 != --print-image-dir ) ]]; then
@@ -7,4 +7,5 @@ if [[ $# != 0 && ( $# != 1 || $1 != --print-image-dir ) ]]; then
     exit 2
 fi
 profile="$(python3 -B scripts/kernel_profiles.py --select uefi)"
-exec python3 -B scripts/meson_test.py --kernel uefi --profile "$profile" "$@"
+directory="$(scripts/kernel-image.sh uefi "$profile")"
+if [[ $# == 1 ]]; then echo "$directory"; else echo "Built UEFI $profile image in $directory"; fi

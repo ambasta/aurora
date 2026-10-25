@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Focused real-server protocol checks; never builds or runs generated Aurora code."""
 
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -1291,15 +1290,4 @@ except BaseException:
 CASES += 1
 require(process.returncode == 0 and not stderr, "fragmented transport session succeeds")
 require(parse_frames(stdout)[0]["id"] == "😀", "request IDs preserve escaped Unicode")
-print(
-    json.dumps(
-        {
-            "status": "passed",
-            "scope": "focused LSP protocol only",
-            "server_sha256": hashlib.sha256(SERVER.read_bytes()).hexdigest(),
-            "process_cases": CASES,
-            "assertions": CHECKS,
-        },
-        sort_keys=True,
-    )
-)
+print(f"PASS LSP protocol: {CASES} process cases, {CHECKS} assertions")

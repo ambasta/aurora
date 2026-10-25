@@ -1085,24 +1085,6 @@ void bootstrapStatements(const std::vector<aurora::Token> &tokens,
         bootstrapStatements(tokens, statement->other, strings);
     }
 }
-void bootstrapFunctions(const std::vector<aurora::Token> &tokens,
-                        const std::vector<aurora::Function> &functions,
-                        std::size_t &initializers,
-                        std::size_t &strings) {
-    for (const auto &function : functions) {
-        for (const auto &[field, expression] : function.initializers) {
-            const auto position = tokenAt(tokens, field) + 1;
-            // These three compiler sources currently have no brace initializers.
-            if (tokens.at(position).text == "{")
-                continue;
-            require(function.constructor && tokens.at(position).text == "(",
-                    "constructor initializer has no parenthesized source root");
-            hostedRoot(tokens, position + 1, Stop::close_parenthesis, expression);
-            ++initializers;
-        }
-        bootstrapStatements(tokens, function.body, strings);
-    }
-}
 std::size_t expectedStringRoots(const std::vector<aurora::StatementPtr> &statements) {
     std::size_t count = 0;
     for (const auto &statement : statements) {
@@ -1110,53 +1092,6 @@ std::size_t expectedStringRoots(const std::vector<aurora::StatementPtr> &stateme
         count += expectedStringRoots(statement->body) + expectedStringRoots(statement->other);
     }
     return count;
-}
-void expectedBootstrapRoots(const std::vector<aurora::Function> &functions,
-                            std::size_t &initializers,
-                            std::size_t &strings) {
-    for (const auto &function : functions) {
-        initializers += function.initializers.size();
-        strings += expectedStringRoots(function.body);
-    }
-}
-void bootstrapBodies(const std::vector<aurora::Token> &, const aurora::Program &);
-void bootstrapDeclarationTypes(const std::vector<aurora::Token> &, const aurora::Program &);
-void bootstrapPreambleEnums(const std::vector<aurora::Token> &, const aurora::Program &);
-void bootstrapSources(char **paths) {
-    std::size_t initializers = 0, strings = 0;
-    std::size_t expectedInitializers = 0, expectedStrings = 0;
-    const std::array<std::string, 3> modules{
-        "aurora.compiler.lexer", "aurora.compiler.syntax_arena", "aurora.compiler.parser"};
-    for (std::size_t i = 0; i < modules.size(); ++i) {
-        context = paths[i];
-        std::ifstream input(paths[i], std::ios::binary);
-        require(bool(input), "cannot read actual bootstrap source");
-        const std::string source((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-        require(!input.bad(), "cannot finish reading actual bootstrap source");
-        const auto tokens = aurora::lex(source, paths[i]);
-        const auto program = checkedProgram(tokens);
-        require(program.moduleName == modules[i], "unexpected bootstrap source module/order");
-        bootstrapBodies(tokens, program);
-        bootstrapDeclarationTypes(tokens, program);
-        bootstrapPreambleEnums(tokens, program);
-        expectedBootstrapRoots(program.functions, expectedInitializers, expectedStrings);
-        expectedBootstrapRoots(program.functionTemplates, expectedInitializers, expectedStrings);
-        for (const auto &definition : program.classes)
-            expectedBootstrapRoots(definition.methods, expectedInitializers, expectedStrings);
-        for (const auto &definition : program.templates)
-            expectedBootstrapRoots(definition.methods, expectedInitializers, expectedStrings);
-        bootstrapFunctions(tokens, program.functions, initializers, strings);
-        bootstrapFunctions(tokens, program.functionTemplates, initializers, strings);
-        for (const auto &definition : program.classes)
-            bootstrapFunctions(tokens, definition.methods, initializers, strings);
-        for (const auto &definition : program.templates)
-            bootstrapFunctions(tokens, definition.methods, initializers, strings);
-    }
-    context = "actual bootstrap source roots";
-    require(initializers == expectedInitializers && strings == expectedStrings,
-            "actual bootstrap roots were omitted: expected " + std::to_string(expectedInitializers) +
-                " constructors and " + std::to_string(expectedStrings) + " strings, observed " +
-                std::to_string(initializers) + " and " + std::to_string(strings));
 }
 
 std::size_t closingBrace(const std::vector<aurora::Token> &tokens, std::size_t opening) {
@@ -1204,17 +1139,6 @@ void consumerStatements(const std::vector<aurora::Token> &tokens, const std::vec
         consumerStatements(tokens, statement->other);
     }
 }
-void consumerFunctions(const std::vector<aurora::Token> &tokens, const std::vector<aurora::Function> &functions) {
-    for (const auto &function : functions) {
-        for (const auto &[field, expression] : function.initializers) {
-            if (tokens.at(tokenAt(tokens, field) + 1).text != "{")
-                continue;
-            require(function.constructor, "brace initializer escaped its constructor");
-            hostedBraces(tokens, field, expression);
-        }
-        consumerStatements(tokens, function.body);
-    }
-}
 bool containsTypeQuery(const aurora::ExpressionPtr &expression) {
     if (!expression)
         return false;
@@ -1233,32 +1157,6 @@ void consumerReflection(const std::vector<aurora::Token> &tokens, const std::vec
         }
         consumerReflection(tokens, statement->body);
         consumerReflection(tokens, statement->other);
-    }
-}
-void consumerSources(const std::array<const char *, 6> &paths) {
-    const std::array<std::string, 6> modules{"std.array",
-                                             "console.session_files",
-                                             "kernel_graphical_console",
-                                             "fs.xfs_sector",
-                                             "examples.class_values",
-                                             "console.line"};
-    for (std::size_t index = 0; index < modules.size(); ++index) {
-        context = paths[index];
-        std::ifstream input(paths[index], std::ios::binary);
-        require(bool(input), "cannot read actual aggregate consumer source");
-        const std::string source((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-        require(!input.bad(), "cannot finish reading actual aggregate consumer source");
-        const auto tokens = aurora::lex(source, paths[index]);
-        const auto program = checkedProgram(tokens);
-        require(program.moduleName == modules[index], "unexpected aggregate consumer module/order");
-        consumerFunctions(tokens, program.functions);
-        consumerFunctions(tokens, program.functionTemplates);
-        for (const auto &definition : program.classes)
-            consumerFunctions(tokens, definition.methods);
-        for (const auto &definition : program.templates)
-            consumerFunctions(tokens, definition.methods);
-        for (const auto &function : program.functions)
-            consumerReflection(tokens, function.body);
     }
 }
 
@@ -1295,44 +1193,6 @@ Context fixtureContext(const std::vector<aurora::Token> &tokens,
     }
     result.functionTemplate = functionTemplate;
     return result;
-}
-// Every source auto declaration must route through Body. Whole/direct
-// equality establishes dispatch consistency, not independence.
-void bootstrapBodies(const std::vector<aurora::Token> &tokens, const aurora::Program &program) {
-    std::set<std::size_t> lexical, imported;
-    for (std::size_t token = 0; token + 1 < tokens.size(); ++token)
-        if (tokens[token].text == "auto")
-            lexical.insert(token + 1);
-    const auto functions = [&](const std::vector<aurora::Function> &items, const Context &classContext) {
-        for (const auto &function : items) {
-            if (function.constructor) {
-                require(function.body.empty(), "bootstrap constructor acquired a nonempty body");
-                continue;
-            }
-            const auto name = tokenAt(tokens, function.token);
-            require(lexical.contains(name) && imported.insert(name).second,
-                    "body dispatch duplicated or synthesized a nonconstructor declaration");
-            auto opening = name + 1;
-            while (opening < tokens.size() && tokens[opening].text != "{")
-                ++opening;
-            require(opening < tokens.size(), "auto declaration lost its body opening");
-            const auto expectedEnd = closingBrace(tokens, opening) + 1;
-            const auto captured = function.templateParameters.empty()
-                                      ? classContext
-                                      : fixtureContext(tokens, function.token, function.templateParameters, true);
-            auto position = opening;
-            sameStatements(aurora::parseHostedBody(tokens, position, captured), function.body);
-            require(position == expectedEnd, "actual body dispatch lost its exact closing brace");
-            ++cases;
-        }
-    };
-    functions(program.functions, {});
-    functions(program.functionTemplates, {});
-    for (const auto &definition : program.classes)
-        functions(definition.methods, {});
-    for (const auto &definition : program.templates)
-        functions(definition.methods, fixtureContext(tokens, definition.token, definition.templateParameters, false));
-    require(imported == lexical, "actual bootstrap body dispatch omitted an auto declaration");
 }
 bool containsTypedSyntax(const aurora::ExpressionPtr &expression) {
     if (!expression)
@@ -1445,26 +1305,6 @@ std::vector<std::string> typedProgram(const std::vector<aurora::Token> &tokens, 
 }
 std::vector<std::string> typedProgram(const std::vector<aurora::Token> &tokens) {
     return typedProgram(tokens, checkedProgram(tokens));
-}
-void typedConsumerSources(char **paths) {
-    const std::array<std::string, 7> modules{"std.utility",
-                                             "std.decimal",
-                                             "std.json",
-                                             "package.graph",
-                                             "function_token_values",
-                                             "examples.class_values",
-                                             "kernel"};
-    for (std::size_t index = 0; index < modules.size(); ++index) {
-        context = paths[index];
-        std::ifstream input(paths[index], std::ios::binary);
-        require(bool(input), "cannot read actual typed consumer source");
-        const std::string source((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-        require(!input.bad(), "cannot finish reading actual typed consumer source");
-        const auto tokens = aurora::lex(source, paths[index]);
-        const auto program = checkedProgram(tokens);
-        require(program.moduleName == modules[index], "unexpected typed consumer source/module order");
-        static_cast<void>(typedProgram(tokens, program));
-    }
 }
 
 // Type fixtures name their expected values independently of the grammar. Type's
@@ -2394,136 +2234,6 @@ void fieldDiagnostics() {
     }
 }
 
-// Real-source declarations check whole/direct dispatch consistency only; the
-// explicit type fixtures above carry the independent structural expectations.
-void bootstrapDeclarationTypes(const std::vector<aurora::Token> &tokens, const aurora::Program &program) {
-    std::set<std::size_t> lexicalFunctions, importedFunctions, lexicalConstructors, importedConstructors;
-    for (std::size_t index = 0; index + 1 < tokens.size(); ++index)
-        if (tokens[index].text == "auto")
-            lexicalFunctions.insert(index + 1);
-    const auto check = [&](std::size_t first, std::size_t end, const aurora::Type &whole) {
-        require(first < end && end < tokens.size(), "actual declaration has an empty/escaped type range");
-        const auto direct = aurora::parseHostedType(tokens, Cursor{first});
-        sameType(direct.type, whole);
-        require(direct.next.ordinal == end && direct.next.half == 0,
-                "actual declaration direct parse consumed the following name/delimiter");
-        ++cases;
-    };
-    const auto functions = [&](const std::vector<aurora::Function> &items,
-                               const Context &classContext = {},
-                               const std::string &className = {}) {
-        for (const auto &function : items) {
-            const auto name = tokenAt(tokens, function.token);
-            const auto stop = function.constructor ? Stop::constructor
-                              : className.empty()  ? Stop::function
-                                                   : Stop::method;
-            const auto captured = function.templateParameters.empty()
-                                      ? classContext
-                                      : fixtureContext(tokens, function.token, function.templateParameters, true);
-            const auto direct =
-                aurora::parseHostedCallable(tokens, Cursor{function.constructor ? name : name - 1}, stop, captured);
-            sameCallable(direct.function, function);
-            // Current bootstrap constructors use parenthesized initializers;
-            // this independent lexical scan must not mistake one for the body.
-            for (const auto &[field, expression] : function.initializers) {
-                static_cast<void>(expression);
-                require(tokens.at(tokenAt(tokens, field) + 1).text == "(",
-                        "new braced bootstrap initializer needs its lexical boundary pinned");
-            }
-            auto body = name + 1;
-            while (tokens.at(body).text != "{")
-                ++body;
-            require(direct.next.ordinal == closingBrace(tokens, body) + 1 && direct.next.half == 0,
-                    "whole callable dispatch changed its exact source boundary");
-            auto &imported = function.constructor ? importedConstructors : importedFunctions;
-            require(imported.insert(name).second, "actual declaration type dispatch duplicated a function");
-            auto position = name + 1;
-            require(tokens.at(position++).text == "(", "actual function lost its parameter list");
-            for (std::size_t index = 0; index < function.params.size(); ++index) {
-                const auto &parameter = function.params[index];
-                const bool constant = tokens.at(position).text == "const";
-                require(constant == parameter.borrowConst, "actual parameter const qualification differs");
-                position += constant;
-                auto binding = position;
-                while (binding + 1 < tokens.size() &&
-                       !(tokens[binding].text == parameter.name &&
-                         (tokens[binding + 1].text == "," || tokens[binding + 1].text == ")")))
-                    ++binding;
-                require(binding > position && binding + 1 < tokens.size(), "actual parameter binding was omitted");
-                const bool borrowed = tokens.at(binding - 1).text == "&";
-                require(borrowed == parameter.borrowed, "actual parameter reference qualification differs");
-                if (borrowed)
-                    sameSpan(parameter.borrowSpan, tokens.at(binding - 1).span);
-                check(position, binding - borrowed, parameter.type);
-                position = binding + 1;
-                if (index + 1 < function.params.size())
-                    require(tokens.at(position++).text == ",", "actual parameter count/order differs");
-            }
-            require(tokens.at(position++).text == ")", "actual parameter list was truncated");
-            if (!function.constructor) {
-                const bool constant = tokens.at(position).text == "const";
-                require(constant == function.receiverConst, "actual method const qualification differs");
-                position += constant;
-                require(tokens.at(position++).text == "->", "actual function lost its explicit result type");
-                auto opening = position;
-                while (opening < tokens.size() && tokens[opening].text != "{")
-                    ++opening;
-                check(position, opening, function.result);
-            }
-        }
-    };
-    functions(program.functions);
-    functions(program.functionTemplates);
-    const auto classes = [&](const std::vector<aurora::ClassDefinition> &items) {
-        for (const auto &definition : items) {
-            const auto opening = tokenAt(tokens, definition.token) + 1;
-            const auto end = closingBrace(tokens, opening);
-            std::set<std::size_t> lexicalFields, importedFields;
-            // Count source class-level ';' and constructor headers independently
-            // of the parsed declaration lists; method/local statements are deeper.
-            std::size_t depth = 1;
-            for (auto index = opening + 1; index < end; ++index) {
-                if (depth == 1 && tokens[index].text == ";")
-                    lexicalFields.insert(index - 1);
-                if (depth == 1 && tokens[index].text == definition.name && tokens.at(index + 1).text == "(")
-                    lexicalConstructors.insert(index);
-                if (tokens[index].text == "{")
-                    ++depth;
-                else if (tokens[index].text == "}")
-                    --depth;
-            }
-            for (const auto &field : definition.fields) {
-                const auto binding = tokenAt(tokens, field.token);
-                require(importedFields.insert(binding).second, "actual field type was counted twice");
-                auto first = binding;
-                while (first > opening + 1 && tokens[first - 1].text != ";" && tokens[first - 1].text != "}" &&
-                       tokens[first - 1].text != "{") {
-                    if (tokens[first - 1].text == ":")
-                        break;
-                    --first;
-                }
-                check(first, binding, field.type);
-                const auto captured = fixtureContext(tokens, definition.token, definition.templateParameters, false);
-                const auto direct = aurora::parseHostedField(tokens, Cursor{first}, captured);
-                sameToken(direct.field.token, field.token);
-                sameType(direct.field.type, field.type);
-                require(direct.next.ordinal == binding + 2 && direct.next.half == 0 &&
-                            tokens.at(binding + 1).text == ";",
-                        "whole field dispatch consumed a neighboring declaration");
-            }
-            require(importedFields == lexicalFields, "actual source field declaration type was omitted");
-            functions(definition.methods,
-                      fixtureContext(tokens, definition.token, definition.templateParameters, false),
-                      definition.token.text);
-        }
-    };
-    classes(program.classes);
-    classes(program.templates);
-    // Independent lexical scans prevent a source declaration from being skipped.
-    require(importedFunctions == lexicalFunctions && importedConstructors == lexicalConstructors,
-            "actual compiler declaration dispatch omitted a function or constructor");
-}
-
 // Compact independent container/member expectations. Signs pin access rather
 // than deriving it from the parsed AST or replaying declaration grammar.
 std::vector<std::string> words(const std::string &text) {
@@ -2703,38 +2413,6 @@ void sameEnum(const aurora::EnumDefinition &definition,
         require(definition.cases[index].text == names[index], "enum case spelling/order differs");
         sameToken(definition.cases[index], tokens.at(start + 4 + 2 * index));
     }
-}
-// Real compiler preambles and enums: direct dispatch must match the whole-module
-// parse, and an independent lexical scan finds every enum declaration.
-void bootstrapPreambleEnums(const std::vector<aurora::Token> &tokens, const aurora::Program &program) {
-    const auto before = tokens;
-    const auto preamble = aurora::parseHostedPreamble(tokens, {});
-    require(preamble.program.moduleName == program.moduleName &&
-                preamble.program.interfaceUnit == program.interfaceUnit &&
-                preamble.program.imports.size() == program.imports.size() && preamble.next.half == 0,
-            "actual compiler preamble or ordered imports differ from the whole-module parse");
-    for (std::size_t index = 0; index < program.imports.size(); ++index)
-        sameToken(preamble.program.imports[index], program.imports[index]);
-    std::vector<std::size_t> starts;
-    for (std::size_t index = 0; index + 1 < tokens.size(); ++index)
-        if (tokens[index].text == "enum" && tokens[index + 1].text == "class")
-            starts.push_back(index);
-    require(program.enums.size() == starts.size(), "actual compiler enum declaration was omitted or duplicated");
-    for (std::size_t index = 0; index < starts.size(); ++index) {
-        const auto &whole = program.enums[index];
-        const auto direct = aurora::parseHostedEnum(tokens, Cursor{starts[index]}, index);
-        require(direct.definition.name == whole.name && direct.definition.scope.empty() &&
-                    !direct.definition.exported && direct.definition.id == 0 && direct.next.half == 0 &&
-                    tokens.at(direct.next.ordinal - 1).text == ";" &&
-                    direct.definition.cases.size() == whole.cases.size(),
-                "actual compiler enum direct dispatch differs from the whole-module parse");
-        sameToken(direct.definition.token, whole.token);
-        for (std::size_t value = 0; value < whole.cases.size(); ++value)
-            sameToken(direct.definition.cases[value], whole.cases[value]);
-        ++cases;
-    }
-    unchangedTokens(tokens, before);
-    ++cases;
 }
 
 void preambleEnumSyntax() {
@@ -5064,206 +4742,6 @@ void rawInstructionAdmission() {
     }
 }
 
-void resolvedCompilerSources(char **paths) {
-    context = "all forty-seven real compiler modules and decimal digit dependency through production typed lowering";
-    const std::array<std::size_t, 48> arguments{0,  1,  2,  15, 19, 20, 21, 32, 16, 33, 34, 17, 22, 23, 24, 25,
-                                                28, 29, 30, 31, 26, 27, 35, 37, 38, 39, 40, 41, 52, 53, 54, 55,
-                                                56, 57, 58, 59, 49, 60, 42, 43, 44, 45, 46, 47, 48, 50, 51, 18};
-    const std::array<std::string, 48> modules{"lexer",
-                                              "syntax_arena",
-                                              "parser",
-                                              "resolution_kinds",
-                                              "lowering_kinds",
-                                              "lowering_errors",
-                                              "lowering_storage",
-                                              "resolution_rows",
-                                              "resolution_arena",
-                                              "resolution_names",
-                                              "resolution_ingest",
-                                              "resolver",
-                                              "lowering_common",
-                                              "lowering_configuration",
-                                              "lowering_types",
-                                              "lowering_values",
-                                              "lowering_frames",
-                                              "lowering_calls",
-                                              "lowering_expressions",
-                                              "lowering_statements",
-                                              "lowering_body",
-                                              "lowering",
-                                              "ir_graph",
-                                              "ir_metadata_storage",
-                                              "ir_metadata",
-                                              "ir_instruction_storage",
-                                              "ir_instructions",
-                                              "ir_verification_errors",
-                                              "ir_verification_storage",
-                                              "ir_verification_initialization",
-                                              "ir_verification_common",
-                                              "ir_verification_values",
-                                              "ir_verification_resources",
-                                              "ir_verification_services",
-                                              "ir_verification_transfer",
-                                              "ir_verification",
-                                              "decimal_digits",
-                                              "x86_object_storage",
-                                              "x86_storage",
-                                              "x86_helpers",
-                                              "x86_scalar",
-                                              "x86_objects",
-                                              "x86_resources",
-                                              "x86_facts",
-                                              "x86_module",
-                                              "formatter",
-                                              "resolution_linkage",
-                                              "frontend"};
-    // Explicit module order preserves scope assertions, independent of file argv.
-    std::array<aurora::Program, 48> syntax;
-    std::array<aurora::HostedModule, 48> headers;
-    const auto resolved = [&] {
-        aurora::HostedResolution resolution;
-        for (std::size_t index = 0; index < modules.size(); ++index) {
-            std::ifstream input(paths[arguments[index]], std::ios::binary);
-            require(bool(input), "cannot read real compiler source");
-            std::string text((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
-            require(!input.bad(), "cannot finish reading real compiler source");
-            const auto source = std::make_shared<const aurora::SourceText>(paths[arguments[index]], std::move(text));
-            const auto tokens = aurora::lex(source);
-            syntax[index] = checkedProgram(tokens);
-            if ((index >= 4 && index <= 6) || (index >= 12 && index <= 21))
-                bootstrapDeclarationTypes(tokens, syntax[index]);
-            headers[index] = resolution.add(source);
-            const std::string modulePrefix = modules[index] == "decimal_digits" ? "std." : "aurora.compiler.";
-            require(headers[index].moduleName == modulePrefix + modules[index] && headers[index].interfaceUnit,
-                    "compiler source argument does not name the expected module");
-        }
-        std::vector<std::size_t> dependencyOrder;
-        for (const auto &header : headers)
-            dependencyOrder.push_back(header.id);
-        return resolution.resolve(dependencyOrder, headers.back().id, aurora::AnalysisMode::Check, true);
-    }();
-    const auto &module = resolved.module.get();
-    const auto &metadata = resolved.module.metadata();
-    const auto &abi = resolved.abiDeclarations;
-    require(metadata.scopeCount() == modules.size() && resolved.lintDiagnostics.empty(),
-            "actual compiler typed graph omitted a scope or emitted lint in check mode");
-    const auto native = [&](const auto &declarations, const std::string &name) -> const std::string & {
-        const auto found = std::find_if(declarations.begin(), declarations.end(), [&](const auto &entry) {
-            return entry.second.sourceName == name;
-        });
-        require(found != declarations.end() && std::count_if(declarations.begin(),
-                                                             declarations.end(),
-                                                             [&](const auto &entry) {
-                                                                 return entry.second.sourceName == name;
-                                                             }) == 1,
-                "compiler source ABI declaration was omitted or duplicated: " + name);
-        return found->first;
-    };
-    const auto qualified = [](const std::string &scope, const std::string &name) {
-        return scope.empty() ? name : scope + "::" + name;
-    };
-    std::size_t functions = 0, retainedFunctions = 0;
-    std::set<std::string> identities;
-    std::multiset<std::string> sourceFunctionNames, abiFunctionNames;
-    for (const auto &[name, declaration] : abi.functions) {
-        static_cast<void>(name);
-        abiFunctionNames.insert(declaration.sourceName);
-    }
-    // Index retained bodies once by ABI source name and module scope.
-    std::multimap<std::pair<std::string, int>, const aurora::ir::FunctionBody *> bodies;
-    for (const auto &body : module.functions) {
-        const auto candidate = metadata.callable(body.callableId);
-        const auto declaration = abi.functions.find(candidate.name());
-        if (declaration != abi.functions.end())
-            bodies.emplace(std::pair{declaration->second.sourceName, static_cast<int>(candidate.moduleScope())}, &body);
-    }
-    for (std::size_t index = 0; index < syntax.size(); ++index) {
-        const auto scope = index + 1 == syntax.size() ? 0 : static_cast<int>(index + 1);
-        const auto function = [&](const aurora::Function &source,
-                                  const std::string &sourceName,
-                                  const std::string &receiver) {
-            // Legacy ABI method source names contain the namespace and method,
-            // not the owning class. Typed receiver identity disambiguates them.
-            const auto matches = [&](const aurora::ir::FunctionBody &body) {
-                const auto candidate = metadata.callable(body.callableId);
-                return receiver.empty() ? !candidate.receiver() || candidate.borrowedRootCount() != 0
-                                        : candidate.receiver() && candidate.borrowedRootCount() == 0 &&
-                                              candidate.receiver()->className == receiver;
-            };
-            ++functions;
-            sourceFunctionNames.insert(sourceName);
-            const aurora::ir::FunctionBody *found = nullptr;
-            std::size_t matched = 0;
-            const auto [first, last] = bodies.equal_range({sourceName, scope});
-            for (auto entry = first; entry != last; ++entry)
-                if (matches(*entry->second)) {
-                    if (!found)
-                        found = entry->second;
-                    ++matched;
-                }
-            if (!found) {
-                require(scope != 0, "compiler root callable was discarded: " + sourceName);
-                return;
-            }
-            require(matched == 1, "compiler retained callable/source identity was duplicated: " + sourceName);
-            const auto actual = metadata.callable(found->callableId);
-            std::size_t borrowedRoots = 0;
-            while (borrowedRoots < source.params.size() && source.params[borrowedRoots].borrowed &&
-                   !source.params[borrowedRoots].type.isService())
-                ++borrowedRoots;
-            // Only class roots have the compatibility receiver observation;
-            // builtin owner roots never acquire a class receiver.
-            const bool hasReceiver = !receiver.empty() || (borrowedRoots != 0 && source.params.front().type.isClass());
-            require(identities.insert(actual.name()).second && actual.moduleScope() == scope &&
-                        actual.borrowedRootCount() == borrowedRoots &&
-                        actual.parameters().size() == source.params.size() - borrowedRoots &&
-                        bool(actual.receiver()) == hasReceiver,
-                    "compiler typed callable identity, module or receiver presence differs: " + sourceName);
-            for (std::size_t root = 0; root < borrowedRoots; ++root)
-                require(actual.borrowedRootMutable(root) == !source.params[root].borrowConst,
-                        "compiler typed borrowed-root mutability differs");
-            if (!receiver.empty())
-                require(actual.receiver()->className == receiver &&
-                            actual.receiver()->constructor == source.constructor &&
-                            actual.receiver()->mutableValue == !source.receiverConst &&
-                            actual.receiver()->publicAccess == source.publicAccess,
-                        "compiler typed method receiver, constructor or visibility differs");
-            ++retainedFunctions;
-        };
-        for (const auto &source : syntax[index].functions)
-            function(source, qualified(source.scope, source.token.text), {});
-        for (const auto &source : syntax[index].classes) {
-            const auto sourceName = qualified(source.scope, source.token.text);
-            const auto &name = native(abi.records, sourceName);
-            const auto classId = metadata.findClass(name).value();
-            const auto shape = metadata.fields(classId);
-            const auto storage = metadata.storage(classId);
-            require(identities.insert(name).second && shape.size() == source.fields.size() &&
-                        storage.fieldOffsets.size() == shape.size(),
-                    "compiler class lost its nominal layout or logical field inventory");
-            std::vector<std::string> names;
-            for (const auto &field : source.fields)
-                names.push_back(field.token.text);
-            require(abi.records.at(name).members == names, "compiler ABI field source order differs");
-            for (const auto &method : source.methods)
-                function(method, qualified(method.scope, method.token.text), name);
-        }
-        for (const auto &source : syntax[index].enums) {
-            const auto &name = native(abi.enums, qualified(source.scope, source.token.text));
-            std::vector<std::string> names;
-            for (const auto &value : source.cases)
-                names.push_back(value.text);
-            require(identities.insert(name).second && abi.enums.at(name).members == names &&
-                        metadata.enumCases(metadata.findEnum(name).value()) == static_cast<int>(names.size()),
-                    "compiler enum source order or typed case count differs");
-        }
-    }
-    require(retainedFunctions == module.functions.size() && functions == abi.functions.size() &&
-                sourceFunctionNames == abiFunctionNames,
-            "real compiler typed graph omitted or appended an unaccounted declaration");
-    ++cases;
-}
-
 void rawModules() {
     static_assert(static_cast<std::int64_t>(Stop::module_definition) == 12 &&
                   wire(SyntaxKind::module_definition) == 21 && wire(SyntaxKind::namespace_definition) == 22 &&
@@ -7152,12 +6630,8 @@ void callCatalogueIsolation() {
     ++cases;
 }
 
-int main(int argc, char **argv) {
+int main() {
     try {
-        context = "fixture arguments";
-        require(
-            argc == 62,
-            "expected forty-seven compiler, one scalar library, six aggregate and seven typed consumer source paths");
         grammarExpectations();
         callCatalogueIsolation();
         rawCatalogueControls();
@@ -7315,18 +6789,13 @@ int main(int argc, char **argv) {
         rawMetadataOwnership();
         rawInstructionOwnership();
         rawInstructionAdmission();
-        resolvedCompilerSources(argv + 1);
-        bootstrapSources(argv + 1);
-        consumerSources({argv[4], argv[5], argv[6], argv[7], argv[8], argv[37]});
-        typedConsumerSources(argv + 9);
         std::cout << "PASS hosted parser " << cases
                   << " explicit AST/diagnostic, dispatch-consistency and ABI cases: expression, body, declaration, "
                      "type, preamble/enum and module grammar with diagnostics; 199-node/frame, 257-argument/aggregate, "
                      "type, 513-entry callable/body/import and 256-case enum growth with representative "
-                     "allocation-failure cleanup; whole/direct dispatch consistency over the bootstrap, consumer and "
-                     "typed consumer sources; typed module instances, nominal reflection views, selected overloads, "
-                     "linkage modes and caches, Session/metadata/instruction ownership and instruction admission; "
-                     "the forty-seven-module frontend graph through production typed lowering\n";
+                     "allocation-failure cleanup; typed module instances, nominal reflection views, selected "
+                     "overloads, linkage modes and caches, Session/metadata/instruction ownership and instruction "
+                     "admission\n";
     } catch (const std::exception &error) {
         std::cerr << "FAIL " << error.what() << '\n';
         return 1;

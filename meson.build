@@ -110,6 +110,17 @@ aurorac_stage2 = executable(
   link_with: frontend_stage2_library, link_language: 'cpp',
   native: true, install: false, build_by_default: false,
 )
+# C2 emits frontend C; hosted-lexer-bootstrap compares it with B (stage compare).
+frontend_stage3_output = custom_target(
+  'hosted-frontend-stage3-output', input: frontend_inputs + [frontend_assembly[3]],
+  output: ['hosted-frontend-stage3.o', 'hosted-frontend-stage3.generated.o',
+           'hosted-frontend-stage3.abi.json', 'hosted_frontend_stage3_abi.hpp',
+           'hosted-frontend-stage3.stack.json'],
+  command: [python, '-B', files('scripts/bootstrap_frontend.py'), aurorac_stage2,
+            '--output-mode', 'object', '--output', '@OUTPUT0@', '@INPUT@'],
+  depend_files: bridge_table + files('scripts/meson_aurora_assembly.py'),
+  build_by_default: false,
+)
 
 # These existing native oracles use Linux/x86-64 syscalls and GNU binutils.
 if build_machine.system() != 'linux' or build_machine.cpu_family() != 'x86_64'

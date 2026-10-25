@@ -56,14 +56,16 @@ image trap sites are verified again by the kernel itself at load time
 | Every merge | pinned container, final source: build, merge suite, the guest families the change touches, normal BIOS and UEFI smokes |
 | Releases, compiler bumps | release suite, every guest family; a bump is one checkpoint hop ([compiler/README.md](../compiler/README.md#bumping-the-checkpoint-one-hop)) |
 
-Report fresh-build and merge-suite wall time at full concurrency next to the
-previous main. Missing tools or skipped gates are reported, never passed.
+Report the wall time of `make test` in a fresh build directory, at full
+concurrency, next to the previous main. Missing tools or skipped gates are reported, never passed.
 
 ## Where tests live
 
 The release suite holds IR mutation testing (`ir-exhaustive`) and the complete
-copies of subset tests; everything else is in merge. There are no test inventories, oracle
-self-tests or compiler-identity pins.
+borrowed-objects sweep; everything else is in merge. Tests do not pin inventories
+of other tests or of the source tree, do not test their own oracles, and check no
+digests other than the bootstrap checkpoint's, which the frontend generator and
+initialization probe re-verify before running it.
 
 Compiler-semantics runners in `tests/compiler` register cases as data on
 `native_runner.Suite`: accepted cases are packed into one compiled program per

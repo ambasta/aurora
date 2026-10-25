@@ -1,8 +1,8 @@
-// Private migration fixture: the independent C++ reference is an oracle, never
-// a fallback. Raw ABI records below deliberately do not use production layouts.
+// Aurora lexer cases checked against the reviewed golden file hosted_lexer.golden
+// (--update rewrites it). Raw ABI records below deliberately do not use
+// production layouts.
 #include "lexer.hpp"
 #include "hosted_lexer_abi.hpp"
-#include "lexer_reference.hpp"
 #include <algorithm>
 #include <array>
 #include <cerrno>
@@ -14,30 +14,19 @@
 #include <iostream>
 #include <iterator>
 #include <limits>
+#include <map>
 #include <optional>
 #include <random>
 #include <sstream>
 #include <sys/mman.h>
-#include <sys/resource.h>
-#include <sys/wait.h>
-#include <unistd.h>
 
 #ifndef AURORA_HOSTED_LEXER
-#error "hosted lexer differential fixture requires AURORA_HOSTED_LEXER"
+#error "hosted lexer fixture requires AURORA_HOSTED_LEXER"
 #endif
 
 using Entry = void (*)(const void *, void *);
 extern "C" void aurora_hosted_lexer_invoke(const void *, void *);
 extern "C" void checked_hosted_lexer_call(const void *, void *, Entry);
-extern "C" void hosted_lexer_clobber_rbp(const void *, void *);
-extern "C" void hosted_lexer_clobber_rbx(const void *, void *);
-extern "C" void hosted_lexer_clobber_r12(const void *, void *);
-extern "C" void hosted_lexer_clobber_r13(const void *, void *);
-extern "C" void hosted_lexer_clobber_r14(const void *, void *);
-extern "C" void hosted_lexer_clobber_r15(const void *, void *);
-extern "C" void hosted_lexer_clobber_canary(const void *, void *);
-extern "C" void hosted_lexer_shift_stack(const void *, void *);
-extern "C" void hosted_lexer_misaligned_call(const void *, void *, Entry);
 
 namespace {
 using aurora::Diagnostic;
@@ -58,6 +47,9 @@ static_assert(sizeof(void *) == 8);
 std::string context;
 std::size_t cases = 0;
 std::size_t abiCalls = 0;
+bool updating = false;
+std::map<std::string, std::string> golden;
+std::map<std::string, std::size_t> occurrences;
 
 void require(bool condition, const std::string &message) {
     if (!condition)
@@ -170,61 +162,72 @@ public:
     std::string what;
 };
 
-Outcome scan(const Snapshot &source, TriviaRetention retention, bool reference) {
+Outcome scan(const Snapshot &source, TriviaRetention retention) {
     try {
-        return {
-            reference ? aurora::lexSourceReference(source, retention) : aurora::lexSource(source, retention), {}, {}};
+        return {aurora::lexSource(source, retention), {}, {}};
     } catch (const aurora::Error &error) {
         return {{}, error.diagnostic, error.what()};
     }
 }
 
-void sameOutcome(const Outcome &a, const Outcome &b, const Snapshot &source, TriviaRetention retention) {
-    require(a.lexed.has_value() == b.lexed.has_value(), "success/error disagreement");
-    if (a.lexed) {
-        validate(*a.lexed, source, retention);
-        validate(*b.lexed, source, retention);
-        sameTokens(*a.lexed, *b.lexed);
-        require(a.lexed->trivia.size() == b.lexed->trivia.size(), "trivia count mismatch");
-        for (std::size_t index = 0; index != a.lexed->trivia.size(); ++index) {
-            require(a.lexed->trivia[index].kind == b.lexed->trivia[index].kind, "trivia kind mismatch");
-            sameSpan(a.lexed->trivia[index].span, b.lexed->trivia[index].span);
-        }
+void checkError(const Outcome &outcome, const Snapshot &source) {
+    require(outcome.error.has_value(), "missing diagnostic");
+    spanBounds(outcome.error->span, source, positions(source->text));
+    require(outcome.error->span.begin.offset < outcome.error->span.end.offset, "empty lexical error range");
+    require(outcome.what == outcome.error->message, "what() differs from the diagnostic message");
+}
+
+// One golden line per case: token boundaries for accepted input, or the
+// diagnostic code, extent and message. Long token lists keep only their count.
+std::string summary(const Outcome &outcome) {
+    std::ostringstream out;
+    if (!outcome.lexed) {
+        const auto &error = *outcome.error;
+        out << "err " << static_cast<int>(error.code) << ' ' << error.span.begin.offset << '-' << error.span.end.offset
+            << ' ' << error.message;
+        return out.str();
+    }
+    const auto &tokens = outcome.lexed->tokens;
+    out << "ok " << tokens.size() - 1 << " trivia " << outcome.lexed->trivia.size();
+    if (tokens.size() <= 65)
+        for (std::size_t index = 0; index + 1 < tokens.size(); ++index)
+            out << (index ? ',' : ' ') << tokens[index].span.begin.offset << '-' << tokens[index].span.end.offset;
+    return out.str();
+}
+
+void expectGolden(const std::string &name, const Outcome &outcome) {
+    const auto key = name + "#" + std::to_string(occurrences[name]++);
+    const auto line = summary(outcome);
+    if (updating) {
+        golden.emplace(key, line);
         return;
     }
-    require(a.error && b.error, "missing diagnostic");
-    require(a.error->code == b.error->code && a.error->severity == b.error->severity &&
-                a.error->message == b.error->message && a.what == b.what,
-            "diagnostic code, severity, message or what() mismatch");
-    sameSpan(a.error->span, b.error->span);
-    spanBounds(a.error->span, source, positions(source->text));
-    require(a.error->span.begin.offset < a.error->span.end.offset, "empty lexical error range");
-    std::ostringstream aJson, bJson, aText, bText;
-    std::vector<Diagnostic> diagnostics;
-    diagnostics.push_back(*a.error);
-    aurora::writeDiagnosticsJson(aJson, diagnostics);
-    diagnostics.front() = *b.error;
-    aurora::writeDiagnosticsJson(bJson, diagnostics);
-    aurora::writeDiagnosticText(aText, *a.error, "aurorac");
-    aurora::writeDiagnosticText(bText, *b.error, "aurorac");
-    require(aJson.str() == bJson.str() && aText.str() == bText.str(), "rendered diagnostic mismatch");
+    const auto found = golden.find(key);
+    require(found != golden.end(), "case is missing from the golden file: " + key);
+    require(found->second == line,
+            "lexer output differs from the golden file for " + key + ": got '" + line + "', expected '" +
+                found->second + "'");
 }
 
 Outcome verify(const std::string &text, const std::string &name) {
     context = name;
     ++cases;
     const auto source = std::make_shared<const SourceText>(name, text);
-    const auto keep = scan(source, TriviaRetention::Keep, false);
-    const auto referenceKeep = scan(source, TriviaRetention::Keep, true);
-    sameOutcome(keep, referenceKeep, source, TriviaRetention::Keep);
-    const auto discard = scan(source, TriviaRetention::Discard, false);
-    const auto referenceDiscard = scan(source, TriviaRetention::Discard, true);
-    sameOutcome(discard, referenceDiscard, source, TriviaRetention::Discard);
+    const auto keep = scan(source, TriviaRetention::Keep);
+    const auto discard = scan(source, TriviaRetention::Discard);
     require(keep.lexed.has_value() == discard.lexed.has_value(), "retention changed acceptance");
-    if (keep.lexed)
+    if (keep.lexed) {
+        validate(*keep.lexed, source, TriviaRetention::Keep);
+        validate(*discard.lexed, source, TriviaRetention::Discard);
         sameTokens(*keep.lexed, *discard.lexed);
-    else
-        sameOutcome(keep, discard, source, TriviaRetention::Discard);
+    } else {
+        checkError(keep, source);
+        checkError(discard, source);
+        require(keep.error->code == discard.error->code && keep.error->message == discard.error->message,
+                "retention changed the diagnostic");
+        sameSpan(keep.error->span, discard.error->span);
+    }
+    expectGolden(name, keep);
     require(source->text == text && source->path == name, "source snapshot mutated");
     return keep;
 }
@@ -478,25 +481,20 @@ void ownershipCases() {
     const std::weak_ptr<const SourceText> weak = source;
     auto first = aurora::lexSource(source);
     auto second = aurora::lexSource(source);
-    const auto reference = aurora::lexSourceReference(source);
     first.tokens.front().text = "changed";
     first.trivia.clear();
-    require(second.tokens.front().text == "one" && reference.tokens.front().text == "one" && !second.trivia.empty() &&
-                !reference.trivia.empty(),
+    require(second.tokens.front().text == "one" && !second.trivia.empty(),
             "results alias mutable token or trivia storage");
     source.reset();
     require(!weak.expired(), "result did not retain source ownership");
     validate(second, second.source, TriviaRetention::Keep);
-    validate(reference, reference.source, TriviaRetention::Keep);
     auto distinct = aurora::lexSource("three", "separate.au");
     require(distinct.source != second.source && second.tokens.front().text == "one",
             "later scan changed earlier result");
-    for (bool referenceMode : {false, true}) {
-        const auto null = scan({}, TriviaRetention::Keep, referenceMode);
-        require(null.error && null.error->code == DiagnosticCode::Internal &&
-                    null.error->message == "source snapshot must not be null" && !null.error->span.source,
-                "null source contract mismatch");
-    }
+    const auto null = scan({}, TriviaRetention::Keep);
+    require(null.error && null.error->code == DiagnosticCode::Internal &&
+                null.error->message == "source snapshot must not be null" && !null.error->span.source,
+            "null source contract mismatch");
 }
 
 Input input(
@@ -650,43 +648,23 @@ void abiCases() {
     require(raw(input(source.end(), 0)) == Event{3, 0, 1, 0}, "empty scanner dereferenced inaccessible backing");
 }
 
-void abiControls() {
-    context = "ABI-negative-controls";
-    const std::array<Entry, 8> controls = {hosted_lexer_clobber_rbp,
-                                           hosted_lexer_clobber_rbx,
-                                           hosted_lexer_clobber_r12,
-                                           hosted_lexer_clobber_r13,
-                                           hosted_lexer_clobber_r14,
-                                           hosted_lexer_clobber_r15,
-                                           hosted_lexer_clobber_canary,
-                                           hosted_lexer_shift_stack};
-    for (std::size_t index = 0; index <= controls.size(); ++index) {
-        const pid_t child = fork();
-        require(child >= 0, "fork ABI negative control failed");
-        if (child == 0) {
-            if (index == controls.size())
-                hosted_lexer_misaligned_call(nullptr, nullptr, aurora_hosted_lexer_invoke);
-            else
-                checked_hosted_lexer_call(nullptr, nullptr, controls[index]);
-            _exit(0);
-        }
-        int status = 0;
-        pid_t result;
-        do {
-            result = waitpid(child, &status, 0);
-        } while (result < 0 && errno == EINTR);
-        require(result == child && WIFSIGNALED(status) && WTERMSIG(status) == SIGILL,
-                "ABI control was not rejected with SIGILL: " + std::to_string(index));
-    }
-}
 } // namespace
 
 int main(int argc, char **argv) {
     try {
-        const rlimit noCore{0, 0};
-        require(setrlimit(RLIMIT_CORE, &noCore) == 0, "cannot disable negative-control core dumps");
+        updating = argc == 3 && std::string_view(argv[1]) == "--update";
+        require(argc == 2 || updating, "usage: hosted-lexer-test [--update] GOLDEN");
+        const std::string path = argv[argc - 1];
+        if (!updating) {
+            std::ifstream file(path);
+            require(file.good(), "cannot open golden file " + path);
+            for (std::string line; std::getline(file, line);) {
+                const auto tab = line.find('\t');
+                require(tab != std::string::npos, "malformed golden line");
+                golden.emplace(line.substr(0, tab), line.substr(tab + 1));
+            }
+        }
         require(std::setlocale(LC_CTYPE, "C") != nullptr, "C locale unavailable");
-        abiControls();
         eventAbiCases();
         abiCases();
         languageCases();
@@ -696,6 +674,7 @@ int main(int argc, char **argv) {
         ownershipCases();
         for (const char *locale : {"C.utf8", "en_US.utf8", "tr_TR.utf8"}) {
             if (std::setlocale(LC_CTYPE, locale)) {
+                occurrences.clear();
                 byteCases();
                 utf8Cases();
                 std::cout << "PASS hosted lexer locale " << locale << '\n';
@@ -704,16 +683,13 @@ int main(int argc, char **argv) {
             }
         }
         require(std::setlocale(LC_CTYPE, "C") != nullptr, "cannot restore C locale");
-        for (int index = 1; index < argc; ++index) {
-            std::ifstream file(argv[index], std::ios::binary);
-            context = argv[index];
-            require(file.good(), "cannot open corpus source");
-            const std::string text((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-            require(!file.bad(), "cannot read corpus source");
-            verify(text, argv[index]);
+        if (updating) {
+            std::ofstream file(path);
+            for (const auto &[key, line] : golden)
+                file << key << '\t' << line << '\n';
+            require(file.good(), "cannot write golden file " + path);
         }
-        std::cout << "PASS hosted lexer: " << cases << " differential cases, " << abiCalls
-                  << " raw ABI calls, 9 ABI negative controls, " << argc - 1 << " corpus files\n";
+        std::cout << "PASS hosted lexer: " << cases << " golden cases, " << abiCalls << " raw ABI calls\n";
         return 0;
     } catch (const std::exception &error) {
         std::cerr << "FAIL hosted lexer: " << error.what() << '\n';

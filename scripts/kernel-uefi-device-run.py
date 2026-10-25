@@ -60,16 +60,7 @@ def firmware(mode, family, env, out):
 def image_directory(mode, out, env):
     with (out / "build.log").open("xb") as log:
         transport.run_logged(
-            [
-                sys.executable,
-                "-B",
-                ROOT / "scripts/meson_test.py",
-                "--kernel",
-                "uefi",
-                "--profile",
-                mode,
-                "--print-image-dir",
-            ],
+            [ROOT / "scripts/kernel-image.sh", "uefi", mode],
             out / "image-directory.log",
             cwd=ROOT,
             env=env,

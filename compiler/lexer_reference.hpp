@@ -1,5 +1,5 @@
 #pragma once
-// Stage 0 seed and differential oracle only. Production hosted builds use lexer.au.
+// Non-hosted builds and hosted-parser-invalid's stand-in lexer. Production hosted builds use lexer.au.
 #include "lexer_types.hpp"
 #include "byte_literal.hpp"
 #include <cctype>
