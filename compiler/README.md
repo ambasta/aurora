@@ -141,8 +141,8 @@ python3 scripts/bootstrap.py hop --compiler "$C0" \
 ```
 
 The hop checks that the checkout's files hash to `TREE`, configures NEW with
-C0 and the fixed options, builds C1 and C2, and runs `hosted-lexer-bootstrap`
-. It copies NEW's C2 to `OUTPUT/aurorac`, writes
+C0 and the fixed options, builds C1 and C2, and runs `hosted-lexer-bootstrap`.
+It copies NEW's C2 to `OUTPUT/aurorac`, writes
 `OUTPUT/receipt.json` (source and predecessor digests, tool versions,
 commands, logs and timings) and prints the new pin. The bump commit records that
 pin in `checkpoint.json`, moves the old one to `history`, and qualifies with the
@@ -219,8 +219,8 @@ adapter generates its record layouts, enum values and bridge symbol targets from
 those facts; this is not a general exported ABI. Initialization and emission use
 one closed entry table in the existing bootstrap adapter for root authority,
 argument-record names, host declarations and the five fixed register transports.
-The facts normalizer accepts up to three concrete owning roots with only the
-first optionally mutable. Tuple storage does not imply pointee mutability or prove
+The facts normalizer accepts up to four distinct concrete owning roots, each
+independently mutable or readonly. Tuple storage does not imply pointee mutability or prove
 distinct ownership. Aurora forwards and owner lifetime/semantic checks remain
 unchanged. Both stages generate their own facts and header. The existing bootstrap
 test checks current C1/C2 assembly, object,

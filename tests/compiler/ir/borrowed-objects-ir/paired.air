@@ -42,7 +42,7 @@ function borrow_pair
   params [(class Buffer) (class Other)]
   frame 0
   roots 2
-  firstmut 1
+  rootmut 1
     MethodCall write_buffer
     MethodCall read_second -1
     Return
@@ -107,7 +107,7 @@ end
 +  params [(class Buffer) (class Other)]
 +  frame 0
 +  roots 2
-+  firstmut 1
++  rootmut 1
 +    MethodCall write_buffer
 +    MethodCall read_second -1
 +    Return
@@ -236,7 +236,7 @@ end
 +  params [(class Buffer) (class Other)]
 +  frame 0
 +  roots 2
-+  firstmut 1
++  rootmut 1
 +    MethodCall write_buffer
 +    MethodCall read_second -1
 +    Return
@@ -398,7 +398,7 @@ function borrow_buffer
   params [(class Buffer)]
   frame 0
   roots 1
-  firstmut 1
+  rootmut 1
     MethodCall write_buffer
     Return
 end
@@ -445,7 +445,7 @@ function borrow_pair
   frame 0
   receiver Buffer true false
   roots 2
-  firstmut 1
+  rootmut 1
     MethodCall write_buffer
     MethodCall read_second -1
     Return
@@ -474,15 +474,15 @@ function read_second
     Return
 end
 
-; CASE: pair first mutability must be canonical
+; CASE: pair mutability mask cannot exceed root count
 ; BASE: pair requires borrowed free function identity
 ; RUN: verify
 ; EXPECT-ERROR: invalid hosted IR metadata transport
 @@ -14 +13,0 @@
 -  receiver Buffer true false
 @@ -16 +15 @@
--  firstmut 1
-+  firstmut 2
+-  rootmut 1
++  rootmut 4
 
 ; CASE: pair cannot have constructor receiver
 ; BASE: pair requires borrowed free function identity
@@ -554,7 +554,7 @@ end
 +  params [(class Buffer) (class Other)]
 +  frame 0
 +  roots 2
-+  firstmut 1
++  rootmut 1
 +    MethodCall write_buffer
 +    MethodCall read_second -1
 +    Return
@@ -583,7 +583,7 @@ end
 +  params [(class Buffer) (class Other)]
 +  frame 0
 +  roots 2
-+  firstmut 1
++  rootmut 1
 +    MethodCall write_buffer
 +    MethodCall read_second -1
 +    Return
@@ -619,7 +619,7 @@ end
 +  params [(class Buffer) (class Other)]
 +  frame 0
 +  roots 2
-+  firstmut 1
++  rootmut 1
 +    MethodCall write_buffer
 +    MethodCall read_second -1
 +    Return

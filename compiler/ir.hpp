@@ -775,8 +775,8 @@ public:
     // Canonical explicit formals include the leading owning roots. Receiver is
     // reserved for genuine methods/constructors; raw integers stay hostile.
     std::int64_t borrowedRootCount = 0;
-    // Only the first root may be mutable; validate this raw flag as 0 or 1.
-    std::int64_t firstBorrowedMutable = 0;
+    // Bit i grants mutable authority only to admitted root i; reject out-of-range bits.
+    std::int64_t borrowedRootMutability = 0;
     std::optional<int> receiverSpanField;
 };
 class Descriptor {

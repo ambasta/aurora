@@ -25,7 +25,7 @@ function test
   receiver Pair true false             ; class mutable constructor [public]
   slot 8 i64                           ; also object, array, span, service,
                                        ; region, bytes, values, scope, roots,
-                                       ; firstmut, spanfield
+                                       ; rootmut (per-root mask), spanfield
     Constant 42 i64
     MethodCall get_pair 0
     Return

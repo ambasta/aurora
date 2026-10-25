@@ -40,8 +40,8 @@ instance:
 - a fresh build must finish in 60 s or less, and an incremental rebuild after a
   one-file change in seconds;
 - the merge suite (`meson test --suite merge`) must finish in 60 s or less;
-- the release suite (`--suite release`) is opt-in and runs before releases and
-  compiler bumps, not on every merge.
+- the release suite (`--suite release`) runs for compiler or host-bridge changes
+  and before releases and compiler bumps, not on unrelated merges.
 
 Every change that touches the build or tests reports fresh-build and merge-suite
 wall time next to the previous main, measured at full concurrency. Growth needs a

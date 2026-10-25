@@ -3230,8 +3230,8 @@ namespace compiler_parser {
                 const bool continuation = type.kind() == AdmissionKind::service && index == 1 && first_borrowed
                     && first_service != 0 && first_service != type.service() && (u64(configuration.groups()) & (1u64
                     << i64(group))) != 0u64;
-                const bool owning_continuation = index > 0 && owning_prefix && type.kind() == AdmissionKind::class_value
-                    && parameter_node.mutable_binding() == 1;
+                const bool owning_continuation = index > 0 && owning_prefix && type.kind()
+                    == AdmissionKind::class_value;
                 const bool borrowed_values = index == 0 && syntax.kind() == TypeKind::owned_values
                     && parameter_node.mutable_binding() == 0;
                 if (!function || (index != 0 && !continuation && !owning_continuation) || context.end(0) != 0

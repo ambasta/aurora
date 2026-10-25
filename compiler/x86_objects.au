@@ -383,7 +383,7 @@ export namespace compiler_x86 {
             const i64 roots = callable.borrowed_root_count();
             // Root lists contain (selector, loan, field) triples. Loans are
             // independently admitted; roots and fields select actual addresses.
-            if (roots < 1 || roots > 3 || operand_count(store, instruction, 1) != roots * 3) {
+            if (roots < 1 || roots > 4 || operand_count(store, instruction, 1) != roots * 3) {
                 workspace.fail();
                 return true;
             }

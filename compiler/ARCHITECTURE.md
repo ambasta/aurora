@@ -164,10 +164,9 @@ and native copied strings, remain unmeasured for this source draft.
 `x86.hpp` contains the public interface only; no production fallback remains.
 
 Each checkpoint bump builds with the pinned checkpoint from
-[the bootstrap recipe](README.md#source-bootstrap), compares full assembly and
-both sidecars to the external old compiler, checks all existing backend/host
-artifact gates and C1/C2 convergence, measures time and peak memory, then runs the
-final-source GCC 16 full suite plus normal BIOS/UEFI and affected profiles.
+[the bootstrap recipe](README.md#source-bootstrap), checks the existing backend/host
+artifact gates and C1/C2 convergence, records timings and limits, then runs the
+final-source merge and release suites, every guest family and normal BIOS/UEFI.
 
 ## Compile speed
 
@@ -175,8 +174,8 @@ The nine `ir_verification*.au` modules implement whole-function verification.
 `ir_verify.cpp` retains only the native orchestration of source admission,
 verification, graph checks and publication; `ir_verify.hpp` exposes metrics.
 The obsolete native dynamic verifier and production initialization adapter are
-removed. The byte-exact old initialization source remains solely as a historical
-emitter-corpus fixture, not as a production fallback or current-verifier proof.
+removed. The retired historical emitter corpus remains in Git history, not as
+a production fallback or current-verifier proof.
 Test-only source probes exercise the current workspace without a production
 friend, accessor or widened publication boundary. Final-source generation,
 regressions and performance comparison remain required after this migration.

@@ -1550,7 +1550,7 @@ export namespace compiler_ir_metadata {
         if (roots == 0) {
             return true;
         }
-        if (roots < 1 || roots > 3) {
+        if (roots < 1 || roots > 4) {
             return fail(store, MetadataError::borrowed_root_count);
         }
         const IndexRange types = row.types();
