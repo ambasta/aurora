@@ -114,8 +114,8 @@ The build has one predecessor stage and a self-check, like GCC's
 bootstrap-and-compare:
 
 ```text
-checkpoint C0 --compiles--> C1 (aurorac) --compiles--> C2 (aurorac-stage2)
-                            hosted-lexer-bootstrap: C1 and C2 output identical
+checkpoint C0 --compiles--> C1 (aurorac) --compiles--> C2 (aurorac-stage2) --compiles--> frontend C
+                            hosted-lexer-bootstrap: C1's frontend B and C2's frontend C identical
 ```
 
 [`checkpoint.json`](checkpoint.json) pins C0 by source commit, tree and

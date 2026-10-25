@@ -83,13 +83,9 @@ Build and test routes are intentionally distinct:
   C++ oracle, including all checked-in `.au` source roots. Its ABI and guard-page
   controls exercise real generated code. A separate malformed-return stub tests
   the host adapter's fail-closed checks.
-- `hosted-lexer-bootstrap` has stage 1 rebuild `lexer.au` and requires identical
-  emitted assembly, then compares diagnostics, assembly and rejected-output
-  preservation over the source corpus. Crashes and internal failures fail the
-  comparison even when both compilers fail alike. It also assembles both private
-  stage outputs, checks that the shim is the sole global definition, compares
-  symbol locations/sizes/types and statically linked code/data bytes against
-  ordinary output, and rejects invalid `--local-symbols` option combinations.
+- `hosted-lexer-bootstrap` is the stage compare: the build has C1 emit frontend B
+  and C2 emit frontend C, and the test requires them to be byte-identical, with
+  matching generated headers and no exports outside the host shim.
 - Historical compiler-contract receipts keep their original meaning in Git
   history; their readers are retired, and legacy executor controls reject with
   Meson migration instructions. `std.token_scan` is checked against reviewed golden reports

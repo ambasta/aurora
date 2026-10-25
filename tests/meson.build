@@ -20,7 +20,7 @@ fixture_options = ['optimization=1']
 # release (opt-in: releases and compiler bumps). dev/slow/core/bytes are focused
 # selections; explicit library enumeration is separate in exhaustive.
 # Start the longest merge tests first so they do not form the tail of a run.
-slow_tests = {'json-library': 30, 'hosted-lexer-bootstrap': 30, 'package-graph': 20, 'method-values': 20,
+slow_tests = {'json-library': 30, 'package-graph': 20, 'method-values': 20,
               'package-manifest': 15, 'hosted-parser': 15, 'decimal-values': 10, 'sector-values-abi': 10,
               'readonly-windows': 5, 'json-string-write': 5, 'composed-values': 5}
 foreach entry : [
@@ -575,12 +575,11 @@ hosted_lexer_test = executable(
 test('hosted-lexer', python,
      args: ['-B', files('meson_lexer_inputs.py'), hosted_lexer_test, meson.project_source_root(), '--all', frontend_forwarders],
      depends: hosted_lexer_test, suite: ['full', 'merge', 'dev', 'core', 'compiler'], env: oracle_env, timeout: 180)
-bootstrap_args = ['-B', '-O', files('compiler/hosted_lexer_bootstrap.py'), aurorac, aurorac_stage2,
-                  meson.project_source_root(), frontend_assembly[0], frontend_stage2_output[0]]
-test('hosted-lexer-bootstrap', python, args: bootstrap_args,
-     depends: [aurorac, aurorac_stage2], suite: ['full', 'merge', 'dev', 'core', 'compiler'],
-     env: oracle_env, workdir: meson.current_build_dir(), timeout: 180,
-     priority: slow_tests['hosted-lexer-bootstrap'])
+test('hosted-lexer-bootstrap', python,
+     args: ['-B', files('compiler/hosted_lexer_bootstrap.py'), frontend_assembly[0], frontend_stage2_output[0],
+            frontend_stage3_output[0]],
+     depends: [frontend_stage2_output, frontend_stage3_output], suite: ['full', 'merge', 'dev', 'core', 'compiler'],
+     env: oracle_env, timeout: 30)
 
 format_fixture = executable('format-fixture', 'compiler/format.cpp', dependencies: hosted_frontend,
                             include_directories: include_directories('../compiler'), native: true, override_options: fixture_options, install: false)
