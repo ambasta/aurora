@@ -43,6 +43,8 @@ class ProgramLayout final : public BootstrapLayout {
 
 public:
     static constexpr std::uint64_t max_stack_pages = stack_pages;
+    // The BIOS test image installs a bank of one-page programs side by side.
+    static constexpr std::uint64_t max_code_region_pages = 24;
 
     // All intervals are half-open, with canonical, page-aligned endpoints. A
     // kernel entry stack may occupy either canonical half. Actual ownership,
@@ -54,7 +56,7 @@ public:
                                                std::uint64_t user_stack_top,
                                                std::uint64_t entry_stack_bottom,
                                                std::uint64_t entry_stack_top) -> std::optional<ProgramLayout> {
-        if (!interval(code_begin, code_end, max_code_pages) || !lower_canonical(code_begin) ||
+        if (!interval(code_begin, code_end, max_code_region_pages) || !lower_canonical(code_begin) ||
             !lower_canonical(code_end) || max_image_pages == 0 ||
             max_image_pages > (code_end - code_begin) / page_size ||
             !interval(user_stack_bottom, user_stack_top, max_stack_pages) || !lower_canonical(user_stack_bottom) ||
@@ -73,7 +75,7 @@ public:
     }
     [[nodiscard]] static constexpr auto bios() -> ProgramLayout {
         return *create(0x1b0000,
-                       0x1b3000,
+                       0x1c8000,
                        1,
                        hardware::Protection::user_stack_bottom,
                        hardware::Protection::user_stack_top,

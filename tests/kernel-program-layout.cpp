@@ -34,7 +34,7 @@ static_assert(uefi.has_value());
 static_assert(uefi->code_begin() == code && uefi->code_end() == code + 2 * page);
 static_assert(uefi->max_image_pages() == 1 && uefi->max_image_size() == page);
 static_assert(ProgramLayout::bios().code_begin() == 0x1b0000);
-static_assert(ProgramLayout::bios().code_end() == 0x1b3000);
+static_assert(ProgramLayout::bios().code_end() == 0x1c8000);
 static_assert(ProgramLayout::bios().max_image_size() == page);
 static_assert(ProgramLayout::bios().user_stack_bottom() == 0x1e0000);
 static_assert(ProgramLayout::bios().user_stack_top() == 0x1e4000);
@@ -74,7 +74,7 @@ auto main() -> int {
                                       code_layout(code + page, code),
                                       code_layout(code + 1, code + page),
                                       code_layout(code, code + page + 1),
-                                      code_layout(code, code + 4 * page),
+                                      code_layout(code, code + (ProgramLayout::max_code_region_pages + 1) * page),
                                       code_layout(code, code + 2 * page, 0),
                                       code_layout(code, code + 2 * page, 3),
                                       code_layout(code, code + 2 * page, UINT64_MAX),
@@ -102,7 +102,8 @@ auto main() -> int {
                                       entry_layout(hole - page, high + page),
                                       entry_layout(last_page, 0)})
         check(!bad.has_value(), "invalid interval, canonical endpoint, overflow or page budget");
-    check(code_layout(code, code + 3 * page, 3).has_value(), "hard code page ceiling inclusive");
+    check(code_layout(code, code + ProgramLayout::max_code_region_pages * page, 3).has_value(),
+          "hard code page ceiling inclusive");
     check(stack_layout(stack, stack + page).has_value(), "one-page user stack");
     check(entry_layout(entry_bottom, entry_bottom + page).has_value(), "one-page entry stack");
     const auto upper_entry = entry_layout(high, high + 4 * page);

@@ -33,7 +33,8 @@ def validate_metadata(metadata: dict, fixture: str) -> None:
         )
         base, size = image["base"], image["size"]
         require(
-            base == 0x1B0000 + index * 4096 and 4 <= size <= 4096, "Unsigned image is not bounded to its private page"
+            0x1B0000 <= base < 0x1C8000 and base % 4096 == 0 and 4 <= size <= 4096,
+            "Unsigned image is not bounded to its private page",
         )
         sites = [image[key] for key in names]
         require(

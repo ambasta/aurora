@@ -64,8 +64,11 @@ def main() -> None:
                 ]
             )
             oracle.command(["objcopy", "-O", "binary", linked, binary])
-            sites = image.validate(linked.read_bytes(), binary.read_bytes(), base, image.symbols_for(linked))
-            oracle.require(sites[3] != 0 and sites[4] != 0, "Linked unsigned fixture lost exact fault authority")
+            sites = image.sites(binary.read_bytes(), base, image.symbols_for(linked))
+            oracle.require(
+                sites["division_zero"] != 0 and sites["shift_count"] != 0,
+                "Linked unsigned fixture lost exact fault authority",
+            )
     print(
         (
             "PASS: 4 exact kernel unsigned fixtures and bounded RX images: full-width values, negative/64 shift"

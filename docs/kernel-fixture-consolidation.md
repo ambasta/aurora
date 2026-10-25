@@ -13,7 +13,8 @@ The source catalog went from 233 canonical images (196 UEFI, 37 BIOS) to 125
 per-component driver change, then to 74 (54 UEFI, 20 BIOS) with the early fixture
 to 62 (43 UEFI, 19 BIOS) by folding test baselines into their fixtures, and to
 57 (38 UEFI, 19 BIOS) by folding the four IOMMU Event cases into one image and
-dropping the framebuffer probe and Event observation images, which nothing booted. Every
+dropping the framebuffer probe and Event observation images, which nothing booted,
+then to 41 (38 UEFI, 3 BIOS) by folding every BIOS test image into `bios-fixture`. Every
 fault mode keeps its own guest run and exact oracle. A source image count is not a
 measured build or execution saving; the PR records those.
 
@@ -185,10 +186,21 @@ profiles; the clock catalog and launch lists reject the retired modes.
   ranges) in as constants and the loader installs the images before exit, so
   several image sets need generated per-set records selected at boot.
 - Distinct compositions: one-page/multipage/span, resume, pin/table
-  supervisors, BAR state/capture/NVMe preparation, owned bytes, framebuffer
-  probe and graphical capture, and BIOS images that differ in user programs or
-  entry probes (division, unsigned, scheduler mmio/softint/fpu, program
-  bad-return/unknown-trap, domain code/stack).
+  supervisors, BAR state/capture/NVMe preparation, owned bytes and graphical
+  capture.
+
+## BIOS program bank
+
+`bios-fixture` carries every BIOS fault, program-set and scheduler case. Its user
+programs are a bank (`kernel_profiles.BIOS_PROGRAMS`), each linked at its own page
+in 0x1B0000..0x1C8000 and installed once; a row of `kernel_profiles.BIOS_SETS`
+names the three bank programs that act as images 0, 1 and 2 for one selector, and
+every other selector uses the ordinary clean/bounds/overflow set
+(`UserPrograms::select`). Domains still map only their own image's page. The
+entry-probe variants (bad return, unknown trap, foreign code/stack, APIC read,
+softint, FPU) fault in image 0's entry stub before program code runs, so they are
+built on the small bounds program; the image is 62,192 bytes of the 65,024-byte
+BIOS transport. `kernel-smoke.sh` hands each oracle its mode's set metadata.
 
 The 30-second generic, 60-second IVRS/BAR and 180-second console deadlines are
 unchanged. Grouping does not widen user-image, stack or page admission.

@@ -192,7 +192,7 @@ uses the same shutdown with the successful QEMU result.
 
 This single-CPU QEMU PC transport is not a general interrupt-controller or device
 driver. It has no note/file or process commands. For a build-only check, use
-`KERNEL_CONSOLE=1 ./scripts/kernel-build.sh`. BIOS admission retains the 65,024-byte
+`scripts/kernel-build.sh console`. BIOS admission retains the 65,024-byte
 transport payload limit; historical sizes do not admit a rebuild. Its main stack
 is 32 KiB, separately from the UEFI 16 KiB profile. Generated Aurora frames,
 native `.su`/`.ci` records and exact bridges are bound to the actual BIOS image by

@@ -21,7 +21,7 @@ namespace {
 constinit aurora::memory::PhysicalPages pages;
 constinit aurora::memory::PhysicalPages foreign_pages;
 constinit std::array<std::optional<aurora::memory::PageLease>, aurora::memory::PhysicalPages::capacity> leases{};
-#ifdef AURORA_BIOS_FAULT_FIXTURE
+#ifdef AURORA_BIOS_FIXTURE
 alignas(4096) constinit std::array<std::uint8_t, 4096> nx_probe{};
 #endif
 constinit aurora::user::ProgramRun program_run;
@@ -133,23 +133,25 @@ auto execute_program(std::size_t index, aurora::user::ProgramEvent expected) -> 
     Serial::text("AURORA_PROGRAM_ENTER: image=");
     Serial::number(index);
     Serial::text("\r\n");
-#ifdef AURORA_BIOS_FAULT_FIXTURE
+#ifdef AURORA_BIOS_FIXTURE
     if (aurora::bios::selected(aurora::bios::Fixture::bios_program_kernel_trap)) {
         asm volatile("jmp *%0" : : "r"(contract->bounds_pc()) : "memory");
         fail("Kernel UD2 unexpectedly returned");
     }
 #endif
-#ifdef AURORA_BIOS_FAULT_FIXTURE
+#ifdef AURORA_BIOS_FIXTURE
     if (aurora::bios::selected(aurora::bios::Fixture::bios_division_kernel_trap)) {
         require(contract->division_zero_pc() != 0, "Missing division trap authority");
         asm volatile("jmp *%0" : : "r"(contract->division_zero_pc()) : "memory");
         fail("Kernel division UD2 unexpectedly returned");
     }
 #endif
-#ifdef AURORA_TEST_UNSIGNED_KERNEL_TRAP
-    require(contract->shift_count_pc() != 0, "Missing shift-count trap authority");
-    asm volatile("jmp *%0" : : "r"(contract->shift_count_pc()) : "memory");
-    fail("Kernel shift-count UD2 unexpectedly returned");
+#ifdef AURORA_BIOS_FIXTURE
+    if (aurora::bios::selected(aurora::bios::Fixture::bios_unsigned_kernel_trap)) {
+        require(contract->shift_count_pc() != 0, "Missing shift-count trap authority");
+        asm volatile("jmp *%0" : : "r"(contract->shift_count_pc()) : "memory");
+        fail("Kernel shift-count UD2 unexpectedly returned");
+    }
 #endif
     const auto resumed = user_program(contract->entry());
     require(aurora::user::AddressSpaces::deactivate(domains[index]), "Kernel root restoration failed");
@@ -179,19 +181,21 @@ auto execute_program(std::size_t index, aurora::user::ProgramEvent expected) -> 
     using aurora::hardware::Serial;
     using aurora::user::AddressSpaces;
     using aurora::user::ProgramEvent;
-#ifdef AURORA_BIOS_FAULT_FIXTURE
+#ifdef AURORA_BIOS_FIXTURE
     if (aurora::bios::selected(aurora::bios::Fixture::bios_division_kernel_trap))
         Serial::text("AURORA_DIVISION_FIXTURE: kernel-trap\r\n");
 #endif
-#ifdef AURORA_DIVISION_FIXTURE
-    Serial::text("AURORA_DIVISION_FIXTURE: ");
-    Serial::text(AURORA_DIVISION_FIXTURE);
-    Serial::text("\r\n");
-#endif
-#ifdef AURORA_UNSIGNED_FIXTURE
-    Serial::text("AURORA_UNSIGNED_FIXTURE: ");
-    Serial::text(AURORA_UNSIGNED_FIXTURE);
-    Serial::text("\r\n");
+#ifdef AURORA_BIOS_FIXTURE
+    if (!aurora::bios::division().empty()) {
+        Serial::text("AURORA_DIVISION_FIXTURE: ");
+        Serial::text(aurora::bios::division());
+        Serial::text("\r\n");
+    }
+    if (!aurora::bios::unsigned_case().empty()) {
+        Serial::text("AURORA_UNSIGNED_FIXTURE: ");
+        Serial::text(aurora::bios::unsigned_case());
+        Serial::text("\r\n");
+    }
 #endif
     require(!AddressSpaces::initialize(foreign_pages), "Out-of-arena allocator accepted by domain manager");
     require(AddressSpaces::initialize(pages), "Domain manager initialization failed");
@@ -222,14 +226,19 @@ auto execute_program(std::size_t index, aurora::user::ProgramEvent expected) -> 
     Serial::text("\r\n");
     require(AddressSpaces::stack_frame(domains[1], 0) == 0x104000,
             "Cross-domain test address does not name second owner's frame");
-    execute_program(0, ProgramEvent::returned);
-#ifdef AURORA_TEST_DIVISION_ZERO
-    execute_program(1, ProgramEvent::division_zero);
-#elif defined(AURORA_TEST_UNSIGNED_SHIFT_COUNT)
-    execute_program(1, ProgramEvent::shift_count);
-#else
-    execute_program(1, ProgramEvent::bounds);
+    // Image 1 traps on bounds unless its program set replaces it with a
+    // division-by-zero or shift-count program.
+    auto second = ProgramEvent::bounds;
+#ifdef AURORA_BIOS_FIXTURE
+    using aurora::bios::Fixture;
+    if (aurora::bios::selected(Fixture::bios_division_zero) ||
+        aurora::bios::selected(Fixture::bios_division_remainder_zero))
+        second = ProgramEvent::division_zero;
+    else if (aurora::bios::selected(Fixture::bios_unsigned_shift_count))
+        second = ProgramEvent::shift_count;
 #endif
+    execute_program(0, ProgramEvent::returned);
+    execute_program(1, second);
     execute_program(0, ProgramEvent::returned);
     execute_program(2, ProgramEvent::overflow);
     execute_program(0, ProgramEvent::returned);
@@ -272,18 +281,14 @@ auto execute_program(std::size_t index, aurora::user::ProgramEvent expected) -> 
         require(AddressSpaces::destroy(domain), "Final domain teardown failed");
     require(pages.used() == 0 && Protection::verify(), "Domain teardown leaked memory or active root");
     Serial::text("AURORA_DOMAINS_OK: private CR3, private stacks, zero reuse, clean teardown\r\n");
-#ifdef AURORA_TEST_DIVISION_ZERO
-    Serial::text("AURORA_COMPILED_USER_OK: arrays, loop, division_zero, overflow, clean restart\r\n");
-#elif defined(AURORA_TEST_UNSIGNED_SHIFT_COUNT)
-    Serial::text("AURORA_COMPILED_USER_OK: arrays, loop, shift_count, overflow, clean restart\r\n");
-#else
-    Serial::text("AURORA_COMPILED_USER_OK: arrays, loop, bounds, overflow, clean restart\r\n");
-#endif
-#ifdef AURORA_DIVISION_FIXTURE
-    Serial::text("AURORA_DIVISION_OK: exact typed trap, clean restart, private teardown\r\n");
-#endif
-#ifdef AURORA_UNSIGNED_FIXTURE
-    Serial::text("AURORA_UNSIGNED_OK: full-width values, exact typed trap, clean restart, private teardown\r\n");
+    Serial::text("AURORA_COMPILED_USER_OK: arrays, loop, ");
+    Serial::text(program_fault_kind(second));
+    Serial::text(", overflow, clean restart\r\n");
+#ifdef AURORA_BIOS_FIXTURE
+    if (!aurora::bios::division().empty())
+        Serial::text("AURORA_DIVISION_OK: exact typed trap, clean restart, private teardown\r\n");
+    if (!aurora::bios::unsigned_case().empty())
+        Serial::text("AURORA_UNSIGNED_OK: full-width values, exact typed trap, clean restart, private teardown\r\n");
 #endif
 }
 } // namespace
@@ -321,7 +326,7 @@ auto exception_dispatch(std::uint64_t vector,
     const auto scheduled = aurora::user::Scheduler::interrupt(vector, code, instruction, frame);
     if (scheduled >= 0)
         return static_cast<std::uint64_t>(scheduled);
-#ifdef AURORA_BIOS_FAULT_FIXTURE
+#ifdef AURORA_BIOS_FIXTURE
     if (aurora::bios::selected(aurora::bios::Fixture::bios_domain_root_mismatch)) {
         if (program_run.running() && code == 0x1b) {
             const auto root = Protection::kernel_root();
@@ -418,17 +423,12 @@ auto kernel_main() -> void {
     Serial::text("AURORA_EXCEPTION_OK: breakpoint, 15 GPRs, direction flag\r\n");
     page_self_test();
 #ifdef AURORA_BIOS_FIXTURE
-#ifdef AURORA_TEST_SCHEDULE
-    const auto selected = aurora::bios::read_fixture(aurora::bios::Fixture::bios_schedule_baseline,
-                                                     aurora::bios::Fixture::bios_schedule_root);
-#else
-    const auto selected = aurora::bios::read_fixture(aurora::bios::Fixture::bios_division_kernel_trap,
-                                                     aurora::bios::Fixture::bios_domain_root_mismatch);
-#endif
+    const auto selected = aurora::bios::read_fixture(aurora::bios::first, aurora::bios::last);
     require(selected.has_value(), "fixture selector outside BIOS image family");
     aurora::bios::fixture = *selected;
+    aurora::user::UserPrograms::select(static_cast<unsigned>(*selected));
 #endif
-#ifdef AURORA_BIOS_FAULT_FIXTURE
+#ifdef AURORA_BIOS_FIXTURE
     if (aurora::bios::selected(aurora::bios::Fixture::bios_fault)) {
         asm volatile("xor %%edx, %%edx; mov $1, %%eax; xor %%ecx, %%ecx; div %%rcx"
                      :
@@ -437,19 +437,19 @@ auto kernel_main() -> void {
         fail("Divide exception failed to dispatch");
     }
 #endif
-#ifdef AURORA_BIOS_FAULT_FIXTURE
+#ifdef AURORA_BIOS_FIXTURE
     if (aurora::bios::selected(aurora::bios::Fixture::bios_page_fault)) {
         static_cast<void>(*reinterpret_cast<volatile const std::uint8_t *>(0x400000));
         fail("Page fault failed to dispatch");
     }
 #endif
-#ifdef AURORA_BIOS_FAULT_FIXTURE
+#ifdef AURORA_BIOS_FIXTURE
     if (aurora::bios::selected(aurora::bios::Fixture::bios_wp)) {
         *reinterpret_cast<volatile std::uint8_t *>(0x10000) = 0;
         fail("Supervisor write protection failed");
     }
 #endif
-#ifdef AURORA_BIOS_FAULT_FIXTURE
+#ifdef AURORA_BIOS_FIXTURE
     if (aurora::bios::selected(aurora::bios::Fixture::bios_nx)) {
         nx_probe[0] = 0xc3;
         Serial::text("AURORA_FAULT_TARGET: ");
@@ -459,7 +459,7 @@ auto kernel_main() -> void {
         fail("Data execution was permitted");
     }
 #endif
-#ifdef AURORA_BIOS_FAULT_FIXTURE
+#ifdef AURORA_BIOS_FIXTURE
     if (aurora::bios::selected(aurora::bios::Fixture::bios_stack)) {
         asm volatile("mov $0x88000, %%rsp; pushq $0" : : : "memory");
         fail("Stack guard failed");
@@ -468,7 +468,7 @@ auto kernel_main() -> void {
     user_expected = true;
     Serial::text("AURORA_USER_ENTER: ");
     auto probe_mode = static_cast<unsigned>(AURORA_USER_PROBE_MODE);
-#ifdef AURORA_BIOS_FAULT_FIXTURE
+#ifdef AURORA_BIOS_FIXTURE
     const auto fixture = static_cast<unsigned>(aurora::bios::fixture);
     if (fixture >= static_cast<unsigned>(aurora::bios::Fixture::bios_user_read) &&
         fixture <= static_cast<unsigned>(aurora::bios::Fixture::bios_user_io))
@@ -481,8 +481,11 @@ auto kernel_main() -> void {
     require(user_result == 1 && user_returns == 1 && Protection::verify(),
             "Controlled user boundary did not return intact");
     Serial::text("AURORA_USER_OK: ring3, own stack, TSS entry, controlled return\r\n");
-#ifdef AURORA_TEST_SCHEDULE
-    require(aurora::user::Scheduler::run(pages), "Scheduling test failed");
+#ifdef AURORA_BIOS_FIXTURE
+    if (aurora::bios::schedule())
+        require(aurora::user::Scheduler::run(pages), "Scheduling test failed");
+    else
+        compiled_program_self_test();
 #else
     compiled_program_self_test();
 #endif

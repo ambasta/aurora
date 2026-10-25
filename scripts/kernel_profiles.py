@@ -266,49 +266,62 @@ UEFI_FAMILIES = [
     (["-DAURORA_UEFI_ACPI", "-DAURORA_EARLY_FIXTURE"], {"early-fixture": []}),
 ]
 
-BIOS_CONTROLS = {
-    "bios-fixture": {"KERNEL_TEST_BIOS_FIXTURE": "1"},
-    "bios-schedule-fixture": {"KERNEL_TEST_BIOS_FIXTURE": "1", "KERNEL_TEST_SCHEDULE": "1"},
-    "normal": {},
-    "division-zero": {"KERNEL_TEST_DIVISION": "zero"},
-    "division-remainder-zero": {"KERNEL_TEST_DIVISION": "remainder-zero"},
-    "division-overflow": {"KERNEL_TEST_DIVISION": "overflow"},
-    "division-remainder-min": {"KERNEL_TEST_DIVISION": "remainder-min"},
-    "division-kernel-trap": {"KERNEL_TEST_DIVISION": "kernel-trap"},
-    "unsigned-valid": {"KERNEL_TEST_UNSIGNED": "valid"},
-    "unsigned-shift-count": {"KERNEL_TEST_UNSIGNED": "shift-count"},
-    "unsigned-conversion-overflow": {"KERNEL_TEST_UNSIGNED": "conversion-overflow"},
-    "unsigned-kernel-trap": {"KERNEL_TEST_UNSIGNED": "kernel-trap"},
-    "schedule": {"KERNEL_TEST_SCHEDULE": "1"},
-    "schedule-smp": {"KERNEL_TEST_SCHEDULE": "1"},
-    "schedule-mmio": {"KERNEL_TEST_SCHEDULE": "1", "KERNEL_TEST_PROGRAM_APIC_READ": "1"},
-    "schedule-no-apic": {"KERNEL_TEST_SCHEDULE": "1"},
-    "schedule-forged": {"KERNEL_TEST_SCHEDULE": "1", "KERNEL_TEST_SCHEDULE_FORGED": "1"},
-    "schedule-context": {"KERNEL_TEST_SCHEDULE": "1", "KERNEL_TEST_SCHEDULE_CONTEXT": "1"},
-    "schedule-root": {"KERNEL_TEST_SCHEDULE": "1", "KERNEL_TEST_SCHEDULE_ROOT": "1"},
-    "schedule-softint": {"KERNEL_TEST_SCHEDULE": "1", "KERNEL_TEST_PROGRAM_SOFTINT": "1"},
-    "schedule-fpu": {"KERNEL_TEST_SCHEDULE": "1", "KERNEL_TEST_PROGRAM_FPU": "1"},
-    "fault": {"KERNEL_TEST_DIVIDE_ERROR": "1"},
-    "page-fault": {"KERNEL_TEST_PAGE_FAULT": "1"},
-    "wp": {"KERNEL_TEST_WP": "1"},
-    "nx": {"KERNEL_TEST_NX": "1"},
-    "stack": {"KERNEL_TEST_STACK": "1"},
-    "user-read": {"KERNEL_USER_PROBE_MODE": "1"},
-    "user-write": {"KERNEL_USER_PROBE_MODE": "2"},
-    "user-cli": {"KERNEL_USER_PROBE_MODE": "3"},
-    "user-code-write": {"KERNEL_USER_PROBE_MODE": "4"},
-    "user-nx": {"KERNEL_USER_PROBE_MODE": "5"},
-    "user-io": {"KERNEL_USER_PROBE_MODE": "6"},
-    "program-terminal-input": {"KERNEL_TEST_TERMINAL_EVENT_INPUT": "1"},
-    "program-terminal-output": {"KERNEL_TEST_TERMINAL_EVENT_OUTPUT": "1"},
-    "program-bad-return": {"KERNEL_TEST_PROGRAM_BAD_RETURN": "1"},
-    "program-unknown-trap": {"KERNEL_TEST_PROGRAM_UNKNOWN_TRAP": "1"},
-    "program-kernel-trap": {"KERNEL_TEST_PROGRAM_KERNEL_TRAP": "1"},
-    "domain-code": {"KERNEL_TEST_PROGRAM_FOREIGN_CODE": "1"},
-    "domain-stack": {"KERNEL_TEST_PROGRAM_FOREIGN_STACK": "1"},
-    "domain-root-mismatch": {"KERNEL_TEST_DOMAIN_ROOT_MISMATCH": "1"},
-    "no-nx": {},
-    "console": {"KERNEL_CONSOLE": "1"},
+# BIOS profiles: the smoke image, the interactive console and one test image whose
+# fault, program-set and scheduler cases are selected at boot (runtime-fixtures.inc).
+BIOS_PROFILES = ("normal", "console", "bios-fixture")
+# The test image's program bank, one page each: (name, source, entry defines). The
+# entry-probe variants only need the probe in image 0's entry stub, which faults
+# before any program code runs, so they are built on the small bounds program.
+BIOS_PROGRAMS = (
+    ("clean", "clean", ()),
+    ("bounds", "bounds", ()),
+    ("overflow", "overflow", ()),
+    ("division-zero", "division-zero", ()),
+    ("division-remainder-zero", "division-remainder-zero", ()),
+    ("division-overflow", "division-overflow", ()),
+    ("division-remainder-min", "division-remainder-min", ()),
+    ("unsigned-valid", "unsigned-valid", ()),
+    ("unsigned-shift-count", "unsigned-shift-count", ()),
+    ("unsigned-conversion-overflow", "unsigned-conversion-overflow", ()),
+    ("bad-return", "bounds", ("AURORA_PROGRAM_BAD_RETURN",)),
+    ("unknown-trap", "bounds", ("AURORA_PROGRAM_UNKNOWN_TRAP",)),
+    ("foreign-code", "bounds", ("AURORA_PROGRAM_FOREIGN_CODE",)),
+    ("foreign-stack", "bounds", ("AURORA_PROGRAM_FOREIGN_STACK",)),
+    ("scheduled-clean", "scheduled-clean", ("AURORA_PROGRAM_CONTEXT_PROBE",)),
+    ("scheduled-spin", "scheduled-spin", ()),
+    ("apic-read", "bounds", ("AURORA_PROGRAM_APIC_READ",)),
+    ("softint", "bounds", ("AURORA_PROGRAM_SOFTINT",)),
+    ("fpu", "bounds", ("AURORA_PROGRAM_FPU",)),
+)
+ORDINARY_SET = ("clean", "bounds", "overflow")
+SCHEDULE_SET = ("scheduled-clean", "scheduled-spin", "bounds")
+# Fixture mode -> (images 0, 1, 2, division label, unsigned label, family). Other
+# bios-fixture modes run the ordinary set.
+BIOS_SETS = {
+    "division-zero": (("clean", "division-zero", "overflow"), "zero", "none", "ordinary"),
+    "division-remainder-zero": (("clean", "division-remainder-zero", "overflow"), "remainder-zero", "none", "ordinary"),
+    "division-overflow": (("clean", "bounds", "division-overflow"), "overflow", "none", "ordinary"),
+    "division-remainder-min": (("division-remainder-min", "bounds", "overflow"), "remainder-min", "none", "ordinary"),
+    "unsigned-valid": (("unsigned-valid", "bounds", "overflow"), "none", "valid", "ordinary"),
+    "unsigned-shift-count": (("unsigned-valid", "unsigned-shift-count", "overflow"), "none", "shift-count", "ordinary"),
+    "unsigned-conversion-overflow": (
+        ("unsigned-valid", "bounds", "unsigned-conversion-overflow"),
+        "none",
+        "conversion-overflow",
+        "ordinary",
+    ),
+    "unsigned-kernel-trap": (("unsigned-valid", "bounds", "overflow"), "none", "kernel-trap", "ordinary"),
+    "program-bad-return": (("bad-return", "bounds", "overflow"), "none", "none", "ordinary"),
+    "program-unknown-trap": (("unknown-trap", "bounds", "overflow"), "none", "none", "ordinary"),
+    "domain-code": (("foreign-code", "bounds", "overflow"), "none", "none", "ordinary"),
+    "domain-stack": (("foreign-stack", "bounds", "overflow"), "none", "none", "ordinary"),
+    "schedule": (SCHEDULE_SET, "none", "none", "schedule"),
+    "schedule-forged": (SCHEDULE_SET, "none", "none", "schedule"),
+    "schedule-context": (SCHEDULE_SET, "none", "none", "schedule"),
+    "schedule-root": (SCHEDULE_SET, "none", "none", "schedule"),
+    "schedule-mmio": (("apic-read", "scheduled-spin", "bounds"), "none", "none", "schedule"),
+    "schedule-softint": (("softint", "scheduled-spin", "bounds"), "none", "none", "schedule"),
+    "schedule-fpu": (("fpu", "scheduled-spin", "bounds"), "none", "none", "schedule"),
 }
 
 
@@ -396,79 +409,33 @@ def user_images(
     return result
 
 
-def bios_profile(mode, controls):
-    division = controls.get("KERNEL_TEST_DIVISION", "none")
-    unsigned = controls.get("KERNEL_TEST_UNSIGNED", "none")
-    schedule = controls.get("KERNEL_TEST_SCHEDULE") == "1"
-    console = controls.get("KERNEL_CONSOLE") == "1"
+def bios_profile(mode):
+    console = mode == "console"
+    fixture = mode == "bios-fixture"
     flags = ["-DAURORA_INTERACTIVE_CONSOLE"] if console else []
-    fixture = controls.get("KERNEL_TEST_BIOS_FIXTURE") == "1"
-    if fixture and controls != BIOS_CONTROLS["bios-schedule-fixture" if schedule else "bios-fixture"]:
-        raise ValueError("BIOS fixture rejects incompatible payload or entry controls")
     if fixture:
-        flags += ["-DAURORA_BIOS_FIXTURE", "-DAURORA_BIOS_" + ("SCHEDULE" if schedule else "FAULT") + "_FIXTURE"]
-    if division != "none":
-        flags.append('-DAURORA_DIVISION_FIXTURE="' + division + '"')
-    if division in ("zero", "remainder-zero"):
-        flags.append("-DAURORA_TEST_DIVISION_ZERO")
-    elif division == "kernel-trap":
-        flags.append("-DAURORA_TEST_DIVISION_KERNEL_TRAP")
-    if unsigned != "none":
-        flags.append('-DAURORA_UNSIGNED_FIXTURE="' + unsigned + '"')
-    if unsigned == "shift-count":
-        flags.append("-DAURORA_TEST_UNSIGNED_SHIFT_COUNT")
-    elif unsigned == "kernel-trap":
-        flags.append("-DAURORA_TEST_UNSIGNED_KERNEL_TRAP")
-    for name in (
-        "DIVIDE_ERROR",
-        "PAGE_FAULT",
-        "WP",
-        "NX",
-        "STACK",
-        "PROGRAM_KERNEL_TRAP",
-        "DOMAIN_ROOT_MISMATCH",
-        "SCHEDULE",
-        "SCHEDULE_FORGED",
-        "SCHEDULE_CONTEXT",
-        "SCHEDULE_ROOT",
-    ):
-        if controls.get("KERNEL_TEST_" + name) == "1":
-            flags.append("-DAURORA_TEST_" + name)
-    flags.append("-DAURORA_USER_PROBE_MODE=" + controls.get("KERNEL_USER_PROBE_MODE", "0"))
-    for name in ("INPUT", "OUTPUT"):
-        if controls.get("KERNEL_TEST_TERMINAL_EVENT_" + name) == "1":
-            flags.append("-DAURORA_TERMINAL_EVENT_" + name)
-    defines = [
-        "AURORA_PROGRAM_" + name + "=1"
-        for name in ("BAD_RETURN", "UNKNOWN_TRAP", "FOREIGN_CODE", "FOREIGN_STACK", "SOFTINT", "FPU", "APIC_READ")
-        if controls.get("KERNEL_TEST_PROGRAM_" + name) == "1"
-    ]
-    users = {}
-    for index, name in enumerate(("clean", "bounds", "overflow")):
-        source = name
-        source = {
-            ("zero", "bounds"): "division-zero",
-            ("remainder-zero", "bounds"): "division-remainder-zero",
-            ("overflow", "overflow"): "division-overflow",
-            ("remainder-min", "clean"): "division-remainder-min",
-        }.get((division, name), source)
-        if unsigned != "none" and name == "clean":
-            source = "unsigned-valid"
-        if unsigned == "shift-count" and name == "bounds":
-            source = "unsigned-shift-count"
-        if unsigned == "conversion-overflow" and name == "overflow":
-            source = "unsigned-conversion-overflow"
-        if schedule:
-            source = {"clean": "scheduled-clean", "bounds": "scheduled-spin", "overflow": "bounds"}[name]
-        entry_defines = defines + (["AURORA_PROGRAM_CONTEXT_PROBE=1"] if schedule and name == "clean" else [])
-        users[name] = dict(
+        flags.append("-DAURORA_BIOS_FIXTURE")
+    flags.append("-DAURORA_USER_PROBE_MODE=0")
+    programs = BIOS_PROGRAMS if fixture else tuple(row for row in BIOS_PROGRAMS if row[0] in ORDINARY_SET)
+    users = {
+        name: dict(
             source="tests/kernel-programs/" + source + ".au",
             roots=["library"],
             base=0x1B0000 + index * 4096,
             entry="kernel/program-entry.S",
-            entry_flags=[value for define in entry_defines for value in ("--defsym", define)],
+            entry_flags=[value for define in defines for value in ("--defsym", define + "=1")],
             combined=False,
         )
+        for index, (name, source, defines) in enumerate(programs)
+    }
+    sets = [("default", 0, ORDINARY_SET, "none", "none", "ordinary" if fixture else "")]
+    if fixture:
+        sets += [
+            (case, value, *BIOS_SETS[case]) for case, (_, value) in BIOS_FIXTURE_MODES.items() if case in BIOS_SETS
+        ]
+    metadata_options = [option for name in users for option in ("--program", name)]
+    for name, value, images, division, unsigned, family in sets:
+        metadata_options += ["--set", ":".join((name, str(value), division, unsigned, family, ",".join(images)))]
     cpp = {
         "kernel-" + name: "kernel/" + name + ".cpp"
         for name in ("main", "interrupts", "protection", "user-program", "address-spaces", "apic", "scheduler")
@@ -499,8 +466,7 @@ def bios_profile(mode, controls):
         user_kind="bios",
         user_mode="",
         user_options=[],
-        user_metadata_options=["--division-fixture", division, "--unsigned-fixture", unsigned]
-        + (["--bios-fixture-family", "schedule" if schedule else "ordinary"] if fixture else []),
+        user_metadata_options=metadata_options,
         link=[
             "kernel-apic",
             "kernel-scheduler",
@@ -766,7 +732,7 @@ def fixture_cases(image):
     return tuple(mode for mode, (owner, _) in FIXTURE_MODES.items() if owner == image and mode not in BASELINE_MODES)
 
 
-# The scheduler baseline and its machine variants boot bios-schedule-fixture with its baseline selector.
+# The scheduler baseline's machine variants boot bios-fixture with the baseline selector.
 BIOS_VARIANTS = {"schedule-smp": "schedule", "schedule-no-apic": "schedule"}
 BIOS_ALIASES = {"no-nx": "normal"}
 BIOS_ALIASES.update({mode: image for mode, (image, _) in BIOS_FIXTURE_MODES.items()})
@@ -796,24 +762,8 @@ def canonical_profile(platform, mode):
 
 
 def select(platform, environment, requested=None):
-    """Choose one bounded profile; never silently combine inherited fixtures."""
-    if platform not in ("bios", "uefi"):
-        raise ValueError("Unknown kernel platform: " + platform)
-    controls = {}
-    known = {name for values in BIOS_CONTROLS.values() for name in values}
-    for name, value in environment.items():
-        if not (name.startswith("KERNEL_TEST_") or name in ("KERNEL_CONSOLE", "KERNEL_USER_PROBE_MODE")):
-            continue
-        if not value:
-            continue
-        if name not in known:
-            raise ValueError("Unknown kernel profile control: " + name)
-        inactive = "none" if name in ("KERNEL_TEST_DIVISION", "KERNEL_TEST_UNSIGNED") else "0"
-        if value != inactive:
-            controls[name] = value
+    """One named profile or fixture mode; UEFI_MODE still names a UEFI profile."""
     if platform == "uefi":
-        if controls:
-            raise ValueError("UEFI profiles reject inherited BIOS controls: " + ", ".join(sorted(controls)))
         inherited = environment.get("UEFI_MODE")
         mode = requested or inherited or "normal"
         if inherited and requested and inherited != requested:
@@ -821,26 +771,18 @@ def select(platform, environment, requested=None):
         if mode not in {mode for _, variants in UEFI_FAMILIES for mode in variants} | UEFI_ALIASES.keys():
             raise ValueError("Unknown UEFI profile: " + mode)
         return mode
+    if platform != "bios":
+        raise ValueError("Unknown kernel platform: " + platform)
     if environment.get("UEFI_MODE"):
         raise ValueError("BIOS profiles reject inherited UEFI_MODE")
-    if requested is not None:
-        if requested not in BIOS_CONTROLS:
-            raise ValueError("Unknown BIOS profile: " + requested)
-        if controls and controls != BIOS_CONTROLS[requested]:
-            raise ValueError("Inherited BIOS controls conflict with requested profile")
-        return requested
-    matches = [mode for mode, values in BIOS_CONTROLS.items() if values == controls]
-    if not matches:
-        raise ValueError("Unsupported or conflicting BIOS profile controls: " + repr(controls))
-    return matches[0]
+    mode = requested or "normal"
+    if mode not in BIOS_PROFILES and mode not in BIOS_ALIASES:
+        raise ValueError("Unknown BIOS profile: " + mode)
+    return mode
 
 
 def profiles():
-    result = {
-        "bios/" + mode: bios_profile(mode, controls)
-        for mode, controls in BIOS_CONTROLS.items()
-        if mode not in BIOS_ALIASES
-    }
+    result = {"bios/" + mode: bios_profile(mode) for mode in BIOS_PROFILES}
     for common, variants in UEFI_FAMILIES:
         for mode, extra in variants.items():
             if mode in UEFI_ALIASES:

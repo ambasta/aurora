@@ -150,7 +150,7 @@ def main():
                 smoke.validate(
                     33,
                     startup.split("AURORA_CONSOLE_READY:")[0].replace("\r", ""),
-                    json.loads((build / "user-metadata.json").read_text()),
+                    json.loads((build / "user-metadata.json").read_text())["default"],
                 )
             if uefi:
                 # With the fourteen-byte trigger and UART IRQs disabled, even
