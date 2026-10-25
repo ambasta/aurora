@@ -486,29 +486,32 @@ SELECTED = selected_modes("runtime-fixture")
 PROBE_NAMES = {"stack", "kernel", "window", "write", "return", "unknown", "syscall", "sysenter"}
 
 
-def checked_fixture_projection(text):
-    """Remove only the exact, phase-checked selector receipt for the base oracle."""
+def checked_fixture_projection(text, mode):
+    """Remove only the exact, phase-checked selector receipt and its echo of `mode`'s selector."""
     text = text.replace("\r", "")
+    receipt = f"AURORA_FIXTURE_READY\nAURORA_FIXTURE_SELECTED: value={serial_fixture_byte(mode)}\n"
     ready = list(re.finditer(r"^AURORA_FIXTURE_READY$", text, re.M))
     closed = list(re.finditer(r"^AURORA_PCI_WINDOW_CLOSED: reads=\d+$", text, re.M))
     first_enter = text.find("AURORA_UEFI_DOMAIN_ENTER:")
-    need(len(ready) == 1 and text.count("AURORA_FIXTURE") == 1, "Exact fixture READY line/count")
+    need(len(ready) == 1 and text.count("AURORA_FIXTURE") == 2, "Exact fixture READY line/count")
+    need(text.count(receipt) == 1 and text.find(receipt) == ready[0].start(), "Exact selector echo")
     need(
         len(closed) == 1 and closed[0].end() < ready[0].start() < first_enter,
         "Fixture selection after PCI closure and before domain authority",
     )
-    return text[: ready[0].start()] + text[ready[0].end() + 1 :]
+    return text[: ready[0].start()] + text[ready[0].start() + len(receipt) :]
 
 
 def validate(status, text, mode, metadata, *, retained=0, final_slot=0, selected=None):
-    """`selected` marks a guest run of runtime-fixture; pin/table oracles reuse "runtime" without one."""
+    """`selected` names the runtime-fixture mode whose selector the run used; pin/table
+    oracles reuse "runtime" with their own mode."""
     if mode.startswith("runtime-console-region"):
         return validate_console_region(status, text, metadata, mode)
     if mode.startswith("runtime-owned-text"):
         return validate_owned_text(status, text, metadata, mode)
-    selected = mode in PLAIN_FIXTURE_MODES if selected is None else selected
+    selected = (mode if mode in PLAIN_FIXTURE_MODES else None) if selected is None else selected
     if selected:
-        text = checked_fixture_projection(text)
+        text = checked_fixture_projection(text, selected)
     else:
         need("AURORA_FIXTURE" not in text, "Ordinary runtime must not read a fixture selector")
     need(type(retained) is int and retained in (0, 2), "Invalid retained pin count")
@@ -816,7 +819,7 @@ if __name__ == "__main__":
             Path(sys.argv[2]).read_text(),
             sys.argv[3],
             json.loads(Path(sys.argv[4]).read_text()),
-            selected=sys.argv[3] in SELECTED,
+            selected=sys.argv[3] if sys.argv[3] in SELECTED else None,
         )
     except ValueError as error:
         sys.exit(f"FAIL: {error}")

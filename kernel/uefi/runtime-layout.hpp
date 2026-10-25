@@ -8,8 +8,11 @@
 namespace aurora::uefi {
 // Offsets belong to the loader's existing allocation. This describes ownership;
 // neither a valid layout nor a physical address grants a mapping by itself.
-template <std::size_t Domains> class RuntimeLayoutProfile final : public BootstrapLayout {
+// Slots counts the installed image slots: one per domain, or a test image's bank
+// whose boot-selected rows choose which slots act as the domains' images.
+template <std::size_t Domains, std::size_t Slots = Domains> class RuntimeLayoutProfile final : public BootstrapLayout {
     static_assert(Domains == 2 || Domains == 3);
+    static_assert(Slots >= Domains);
     // The third pool follows the stack frames, not the first two pools: the
     // next contiguous address (0xb0000) already belongs to an RX image.
     static constexpr std::array<std::uint64_t, 3> table_offsets{
@@ -18,6 +21,7 @@ template <std::size_t Domains> class RuntimeLayoutProfile final : public Bootstr
 public:
     static constexpr std::size_t domain_count = Domains;
     static constexpr std::size_t image_count = Domains;
+    static constexpr std::size_t image_slots = Slots;
 
     [[nodiscard]] static constexpr auto user_stack_begin(std::size_t domain) -> std::uint64_t {
         return domain < domain_count ? user_stack_bottom + domain * user_stack_stride : lower_limit;
@@ -44,6 +48,9 @@ public:
     }
     [[nodiscard]] static constexpr auto image_page(std::size_t index) -> std::uint64_t {
         return index < image_count ? image_offset + index * image_slot_bytes : arena_bytes;
+    }
+    [[nodiscard]] static constexpr auto slot_page(std::size_t slot) -> std::uint64_t {
+        return slot < image_slots ? image_offset + slot * image_slot_bytes : arena_bytes;
     }
     [[nodiscard]] static constexpr auto code_begin(std::size_t image) -> std::uint64_t {
         return image < image_count ? user_code + image * code_stride : lower_limit;
@@ -78,7 +85,7 @@ public:
         for (std::size_t domain = 0; domain < domain_count; ++domain)
             if (offset >= table_offset(domain) && offset - table_offset(domain) < table_pages * page_size)
                 return 3 | nx;
-        if (offset >= image_offset && offset < image_offset + image_count * image_slot_bytes)
+        if (offset >= image_offset && offset < image_offset + image_slots * image_slot_bytes)
             return 1;
         return 0;
     }
@@ -95,7 +102,7 @@ public:
              {gdt_offset, page_size},
              {rsp0_bottom, rsp0_top - rsp0_bottom},
              {ist_bottom, ist_top - ist_bottom},
-             {image_offset, image_count * image_slot_bytes},
+             {image_offset, image_slots * image_slot_bytes},
              {stack_frames_offset, stack_frame_count * page_size}}};
         for (std::size_t domain = 0; domain < domain_count; ++domain)
             ranges[7 + domain] = {table_offset(domain), table_pages * page_size};
@@ -149,6 +156,8 @@ public:
 };
 #if defined(AURORA_UEFI_DISPATCH)
 using RuntimeLayout = RuntimeLayoutProfile<3>;
+#elif defined(AURORA_RUNTIME_IMAGE_BANK)
+using RuntimeLayout = RuntimeLayoutProfile<2, AURORA_RUNTIME_IMAGE_BANK>;
 #else
 using RuntimeLayout = RuntimeLayoutProfile<2>;
 #endif

@@ -94,26 +94,65 @@ def main():
         "--ram-scratchpad-fixture",
     ):
         parser.add_argument(flag, action="store_true")
+    # A bank image installs every --image NAME:ROLE in its own slot, linked for
+    # domain image ROLE; a --set MODE:VALUE:NAME0,NAME1 names the slots acting
+    # as images 0 and 1 when the boot selector is VALUE (else slots 0 and 1).
+    parser.add_argument("--image", action="append", default=[])
+    parser.add_argument("--set", action="append", default=[])
     arguments = parser.parse_args()
     out = arguments.output.resolve()
     records = {}
     header = ["#pragma once", "#include <array>", "#include <cstddef>", "namespace aurora::uefi::images {"]
-    for index, name in enumerate(("clean", "bounds", "peer") if arguments.dispatcher else ("clean", "bounds")):
-        meta, blob = image_metadata(
-            out / f"user-{name}", LAYOUT.user_code + index * LAYOUT.code_stride, arguments, index
-        )
+    names = ("clean", "bounds", "peer") if arguments.dispatcher else ("clean", "bounds")
+    bank = [(name, int(role)) for name, _, role in (entry.partition(":") for entry in arguments.image)]
+    need(not bank or (bank[0] == ("clean", 0) and bank[1] == ("bounds", 1)), "bank must start with clean and bounds")
+    for name, role in bank or list((name, index) for index, name in enumerate(names)):
+        need(not bank or (role in (0, 1) and name not in records), f"{name}: invalid bank image")
+        meta, blob = image_metadata(out / f"user-{name}", LAYOUT.user_code + role * LAYOUT.code_stride, arguments, role)
         records[name] = meta
+        symbol = name.replace("-", "_")
         header.append(
-            f"inline constexpr std::array<std::byte,{len(blob)}> {name}_bytes = {{"
+            f"inline constexpr std::array<std::byte,{len(blob)}> {symbol}_bytes = {{"
             + ",".join(f"std::byte{{{value}}}" for value in blob)
             + "};"
         )
         # The kernel loads only scalar facts; the probe set is guest-oracle evidence.
         header += [
-            f"inline constexpr unsigned long long {name}_{key}={value}ULL;"
+            f"inline constexpr unsigned long long {symbol}_{key}={value}ULL;"
             for key, value in meta.items()
             if key != "probes"
         ]
+    if bank:
+        fields = ("entry", "size", "return_pc", "bounds_pc", "overflow_pc", "division_zero_pc", "shift_count_pc")
+        # Rip-relative calls, not a table of pointers needing load-time relocation.
+        header += [
+            f"inline constexpr std::size_t bank_size = {len(bank)};",
+            "template <class Install> inline auto install_bank(const Install &install) -> void {",
+        ]
+        for slot, (name, role) in enumerate(bank):
+            symbol = name.replace("-", "_")
+            values = ", ".join(f"{symbol}_{key}" for key in fields + ("probe_offset",))
+            header.append(
+                f"    install({slot}U, {role}U, {symbol}_bytes, std::array<unsigned long long, 8>{{{values}}});"
+            )
+        header.append("}")
+        sets = {"default": {"clean": "clean", "bounds": "bounds"}}
+        rows = []
+        slots = [name for name, _ in bank]
+        for entry in arguments.set:
+            mode, value, chosen = entry.split(":")
+            chosen = chosen.split(",")
+            need(
+                len(chosen) == 2 and all(name in slots for name in chosen) and 0 < int(value) < 256,
+                f"{mode}: invalid image set",
+            )
+            need([dict(bank)[name] for name in chosen] == [0, 1], f"{mode}: set roles are not images 0 and 1")
+            sets[mode] = {"clean": chosen[0], "bounds": chosen[1]}
+            rows.append(f"{{{int(value)}U, {slots.index(chosen[0])}U, {slots.index(chosen[1])}U}}")
+        header.append(
+            f"inline constexpr std::array<std::array<unsigned, 3>, {len(rows)}> sets{{{{" + ", ".join(rows) + "}};"
+        )
+        (out / "user-sets.json").write_text(json.dumps(sets, indent=2) + "\n")
     header.append("}")
     (out / "uefi-user-images.hpp").write_text("\n".join(header) + "\n")
     (out / "user-images.json").write_text(json.dumps(records, indent=2) + "\n")

@@ -1,4 +1,6 @@
 // CPU-only guest harness. These owned bytes are never published to any device.
+// Selected at boot by the runtime fixture image's table rows.
+namespace table_supervisor {
 constinit std::optional<memory::PinLedger> table_ledger;
 constinit std::optional<memory::DormantTables> dormant_tables;
 std::array<U64, 2> table_quarantine_pages{};
@@ -215,3 +217,4 @@ auto pin_final() -> void {
     table_record("final");
     Serial::text("AURORA_TABLE_OK: scope=cpu-only\r\n");
 }
+} // namespace table_supervisor

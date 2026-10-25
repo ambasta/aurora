@@ -92,6 +92,14 @@ auto main() -> int {
             check(Layout::code_pages(image, size) == (size && size <= limit ? (size - 1) / 4096 + 1 : 0));
     }
     check(Layout::image_limit(2) == 0 && Layout::code_pages(2, 1) == 0);
+    // The runtime fixture's five-slot bank fills the gap before the stack frames;
+    // its slots are kernel-read-only like the two-slot layout's, and a sixth overlaps.
+    using Bank = aurora::uefi::RuntimeLayoutProfile<2, 5>;
+    check(Bank::valid(0x100000) && !aurora::uefi::RuntimeLayoutProfile<2, 6>::valid(0x100000));
+    check(Bank::slot_page(4) == 0xbc000 && Bank::slot_page(5) == Bank::arena_bytes &&
+          Bank::image_page(2) == Bank::arena_bytes);
+    check(Bank::kernel_flags(0xbe000) == 1 && Bank::kernel_flags(0xbf000) == 0 && Layout::kernel_flags(0xb6000) == 0);
+    check(Layout::slot_page(1) == Layout::image_page(1) && Layout::slot_page(2) == Layout::arena_bytes);
     check(Layout::stack_frame_offset(15) == 0xcf000 && Layout::stack_frame_offset(16) == Layout::arena_bytes);
     check(Layout::user_stack_begin(0) == 0x10000200000ULL && Layout::user_stack_begin(1) == 0x10000400000ULL);
     check(Layout::user_stack_end(1) == 0x10000404000ULL);

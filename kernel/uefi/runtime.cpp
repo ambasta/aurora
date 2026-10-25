@@ -1,19 +1,14 @@
-#if defined(AURORA_RUNTIME_CONTROL_FIXTURE) &&                                                                         \
-    (!defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_RUNTIME) || defined(AURORA_UEFI_IPC) ||                  \
-     defined(AURORA_UEFI_PINS) || defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_OWNED_TEXT))
-#error "Plain runtime fixture requires the original non-service two-domain composition"
-#endif
-#if defined(AURORA_PIN_FIXTURE) &&                                                                                     \
-    (!defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_RUNTIME) || !defined(AURORA_UEFI_PINS) ||                \
-     !defined(AURORA_PIN_LEDGER_TESTING) || defined(AURORA_UEFI_TABLES) || defined(AURORA_UEFI_IPC) ||                 \
+// The one runtime test image co-hosts the plain fixture, the span and multipage
+// baselines and the pin and dormant-table supervisors; its rows select one at boot.
+#if (defined(AURORA_RUNTIME_CONTROL_FIXTURE) || defined(AURORA_PIN_FIXTURE) || defined(AURORA_TABLE_FIXTURE) ||        \
+     defined(AURORA_UEFI_PINS) || defined(AURORA_UEFI_TABLES) || defined(AURORA_RUNTIME_MULTIPAGE) ||                  \
+     defined(AURORA_RUNTIME_IMAGE_BANK)) &&                                                                            \
+    (!defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_RUNTIME) || !defined(AURORA_RUNTIME_CONTROL_FIXTURE) ||  \
+     !defined(AURORA_PIN_FIXTURE) || !defined(AURORA_TABLE_FIXTURE) || !defined(AURORA_UEFI_PINS) ||                   \
+     !defined(AURORA_UEFI_TABLES) || !defined(AURORA_PIN_LEDGER_TESTING) || !defined(AURORA_DORMANT_TABLE_TESTING) ||  \
+     !defined(AURORA_RUNTIME_MULTIPAGE) || !defined(AURORA_RUNTIME_IMAGE_BANK) || defined(AURORA_UEFI_IPC) ||          \
      defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_OWNED_TEXT))
-#error "Pin fixture requires its isolated ledger testing composition"
-#endif
-#if defined(AURORA_TABLE_FIXTURE) &&                                                                                   \
-    (!defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_RUNTIME) || !defined(AURORA_UEFI_PINS) ||                \
-     !defined(AURORA_UEFI_TABLES) || !defined(AURORA_DORMANT_TABLE_TESTING) || defined(AURORA_PIN_LEDGER_TESTING) ||   \
-     defined(AURORA_UEFI_IPC) || defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_OWNED_TEXT))
-#error "Dormant table fixture must not acquire pin uncertainty testing authority"
+#error "Runtime fixture requires its one two-domain image with every boot-selected supervisor"
 #endif
 #if defined(AURORA_PROGRAM_FIXTURE) &&                                                                                 \
     (!defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_PROGRAM_CONSOLE) || !defined(AURORA_UEFI_RUNTIME) ||     \
@@ -53,9 +48,10 @@
 #include "../pages.hpp"
 #ifdef AURORA_UEFI_PINS
 #include "../pin-ledger.hpp"
-#ifdef AURORA_UEFI_TABLES
 #include "dormant-inspector.hpp"
 #endif
+#ifdef AURORA_RUNTIME_IMAGE_BANK
+#include "uefi-user-images.hpp"
 #endif
 #include "../console.hpp"
 #ifdef AURORA_UEFI_IPC
@@ -343,6 +339,29 @@ auto require(bool okay, std::string_view reason) -> void {
 #ifdef AURORA_RUNTIME_FIXTURE
 #include "runtime-fixture.inc"
 #endif
+#ifdef AURORA_RUNTIME_IMAGE_BANK
+// Bank slots acting as images 0 and 1 for the selected row (images::sets); every
+// other row runs slots 0 and 1. Chosen once, before any domain exists.
+static_assert([] {
+    for (const auto &set : images::sets)
+        if (set[1] >= L::image_slots || set[2] >= L::image_slots)
+            return false;
+    return true;
+}());
+std::array<std::size_t, L::image_count> image_slots{0, 1};
+auto select_images() -> void {
+    for (const auto &set : images::sets)
+        if (set[0] == static_cast<unsigned>(fixture))
+            image_slots = {set[1], set[2]};
+}
+[[nodiscard]] auto image_slot(std::size_t image) -> std::size_t {
+    return image < L::image_count ? image_slots[image] : L::image_slots;
+}
+#else
+[[nodiscard]] constexpr auto image_slot(std::size_t image) -> std::size_t {
+    return image;
+}
+#endif
 auto fill(U64 physical, std::uint8_t value) -> void {
     for (auto &byte : view(physical, 4096))
         byte = std::byte{value};
@@ -367,7 +386,7 @@ auto fill(U64 physical, std::uint8_t value) -> void {
     const auto code = L::code_begin(domain.image);
     const auto pages = L::code_pages(domain.image, domain.contract->size());
     if (address >= code && address - code < pages * L::page_size && address % L::page_size == 0)
-        return (arena + L::image_page(domain.image) + address - code) | 5;
+        return (arena + L::slot_page(image_slot(domain.image)) + address - code) | 5;
     const auto bottom = domain.contract->layout().user_stack_bottom();
     if (address >= bottom && address < bottom + 0x4000 && address % 4096 == 0) {
         const auto slot = (address - bottom) / 4096;
@@ -489,7 +508,8 @@ auto fill(U64 physical, std::uint8_t value) -> void {
         static_cast<void>(retire(*index));
         return std::nullopt;
     }
-    const Bytes descriptor{view(arena + L::metadata_offset + image * 64, 64)};
+    const auto backing = arena + L::slot_page(image_slot(image));
+    const Bytes descriptor{view(arena + L::metadata_offset + image_slot(image) * 64, 64)};
     domain.contract.emplace(*layout,
                             descriptor.get(0),
                             descriptor.get(8),
@@ -499,7 +519,7 @@ auto fill(U64 physical, std::uint8_t value) -> void {
                             descriptor.get(40),
                             descriptor.get(48));
     if (domain.contract->entry() != L::code_begin(image) || !L::code_pages(image, domain.contract->size()) ||
-        !user::ProgramImage{view(arena + L::image_page(image), domain.contract->size()), *domain.contract}.valid()) {
+        !user::ProgramImage{view(backing, domain.contract->size()), *domain.contract}.valid()) {
         static_cast<void>(retire(*index));
         return std::nullopt;
     }
@@ -532,8 +552,7 @@ auto fill(U64 physical, std::uint8_t value) -> void {
 #endif
          ;
          ++page)
-        good = domain.tables->map(
-            L::code_begin(image) + page * L::page_size, arena + L::image_page(image) + page * L::page_size, 5);
+        good = domain.tables->map(L::code_begin(image) + page * L::page_size, backing + page * L::page_size, 5);
     for (unsigned page = 0; page < 4 && good; ++page)
         good = domain.tables->map(
             layout->user_stack_bottom() + page * 4096, *frames.address(*domain.stacks[page]), 7 | RuntimeTables::nx);
@@ -620,13 +639,60 @@ auto install_architecture() -> void {
         asm volatile("wrmsr" ::"c"(msr), "a"(0), "d"(0) : "memory");
 }
 #ifdef AURORA_UEFI_PINS
-#ifdef AURORA_UEFI_TABLES
-#include "dormant-runtime.inc"
-#else
 #include "pin-runtime.inc"
-#endif
-#endif
-#ifndef AURORA_UEFI_PINS
+#include "dormant-runtime.inc"
+// Pin rows run the pin-ledger supervisor and table rows the dormant-table one;
+// every other row calls neither and retains no pages, as its former image did.
+enum class Supervisor {
+    none,
+    pins,
+    tables
+};
+Supervisor supervisor = Supervisor::none;
+auto select_supervisor() -> void {
+    const auto value = static_cast<unsigned>(fixture);
+    if (value >= static_cast<unsigned>(Fixture::runtime_pin_cancel) &&
+        value <= static_cast<unsigned>(Fixture::runtime_pin_exhaust))
+        supervisor = Supervisor::pins;
+    if (value >= static_cast<unsigned>(Fixture::runtime_table_readback) &&
+        value <= static_cast<unsigned>(Fixture::runtime_table_quarantine))
+        supervisor = Supervisor::tables;
+}
+auto pin_retained() -> std::size_t {
+    return supervisor == Supervisor::pins     ? pin_supervisor::pin_retained()
+           : supervisor == Supervisor::tables ? table_supervisor::pin_retained()
+                                              : 0;
+}
+auto pin_request() -> void {
+    if (supervisor == Supervisor::pins)
+        pin_supervisor::pin_request();
+    if (supervisor == Supervisor::tables)
+        table_supervisor::pin_request();
+}
+auto pin_fault_returned() -> void {
+    if (supervisor == Supervisor::pins)
+        pin_supervisor::pin_fault_returned();
+    if (supervisor == Supervisor::tables)
+        table_supervisor::pin_fault_returned();
+}
+[[nodiscard]] auto pin_retired() -> bool {
+    return supervisor == Supervisor::pins     ? pin_supervisor::pin_retired()
+           : supervisor == Supervisor::tables ? table_supervisor::pin_retired()
+                                              : true;
+}
+auto pin_reborn(user::DomainHandle old_owner) -> void {
+    if (supervisor == Supervisor::pins)
+        pin_supervisor::pin_reborn(old_owner);
+    if (supervisor == Supervisor::tables)
+        table_supervisor::pin_reborn(old_owner);
+}
+auto pin_final() -> void {
+    if (supervisor == Supervisor::pins)
+        pin_supervisor::pin_final();
+    if (supervisor == Supervisor::tables)
+        table_supervisor::pin_final();
+}
+#else
 constexpr auto pin_retained() -> std::size_t {
     return 0;
 }
@@ -992,16 +1058,17 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
         return false;
     install_architecture();
 #if defined(AURORA_RUNTIME_CONTROL_FIXTURE)
-    select_fixture(Fixture::runtime_baseline, Fixture::runtime_terminal_output);
+    select_fixture(Fixture::runtime_baseline, Fixture::runtime_table_quarantine);
+    // Rows that differ only in their image set or supervisor are told apart by this echo.
+    Serial::text("AURORA_FIXTURE_SELECTED: value=");
+    Serial::number(static_cast<unsigned>(fixture));
+    Serial::text("\r\n");
     user::terminal_mutation = fixture == Fixture::runtime_terminal_input    ? 1
                               : fixture == Fixture::runtime_terminal_output ? 2
                                                                             : 0;
-#elif defined(AURORA_PIN_FIXTURE)
-    select_fixture(Fixture::runtime_pin_cancel, Fixture::runtime_pin_exhaust);
-    const bool restart_service = fixture == Fixture::runtime_pin_fault;
-#elif defined(AURORA_TABLE_FIXTURE)
-select_fixture(Fixture::runtime_table_readback, Fixture::runtime_table_quarantine);
-const bool restart_service = fixture == Fixture::runtime_table_quarantine;
+    select_images();
+    select_supervisor();
+    const bool restart_service = fixture == Fixture::runtime_pin_fault || fixture == Fixture::runtime_table_quarantine;
 #endif
 #ifdef AURORA_UEFI_SERVICE_BUDGET
 #ifdef AURORA_BUDGET_FIXTURE
@@ -1064,14 +1131,16 @@ const bool restart_service = fixture == Fixture::runtime_table_quarantine;
 #else
 #ifdef AURORA_RUNTIME_MULTIPAGE
 // A short construction must fail completeness and take the real retirement path.
-for (std::size_t prefix = 0; prefix < L::max_code_pages; ++prefix) {
-    require(!create(0, prefix) && frames.used() == 0 && !domains[0].handle && !domains[0].tables &&
-                !domains[0].contract,
-            "multipage partial mapping cleanup");
-    for (std::size_t page = 0; page < L::table_pages; ++page)
-        require(zero(arena + L::table_offset(0) + page * L::page_size), "multipage cleared table pool");
+if (fixture == Fixture::runtime_multipage_baseline) {
+    for (std::size_t prefix = 0; prefix < L::max_code_pages; ++prefix) {
+        require(!create(0, prefix) && frames.used() == 0 && !domains[0].handle && !domains[0].tables &&
+                    !domains[0].contract,
+                "multipage partial mapping cleanup");
+        for (std::size_t page = 0; page < L::table_pages; ++page)
+            require(zero(arena + L::table_offset(0) + page * L::page_size), "multipage cleared table pool");
+    }
+    Serial::text("AURORA_UEFI_MULTIPAGE_ROLLBACK_OK: prefixes=3\r\n");
 }
-Serial::text("AURORA_UEFI_MULTIPAGE_ROLLBACK_OK: prefixes=3\r\n");
 #endif
 const auto first = create(0), second = create(1);
 require(first && second && *first == 0 && *second == 1, "two owned domains");
@@ -1086,7 +1155,7 @@ pin_fault_returned();
 #endif
 execute(0, ProgramEvent::returned);
 const auto stale = *domains[0].handle;
-#if defined(AURORA_PIN_FIXTURE) || defined(AURORA_TABLE_FIXTURE)
+#ifdef AURORA_UEFI_PINS
 const auto old_service = restart_service ? *domains[1].handle : user::DomainHandle{};
 #endif
 for (auto &domain : domains)
@@ -1100,7 +1169,7 @@ require(retire(0) && retire(1)
             !registry.destroy(stale),
         "retire/stale authority");
 const auto reused = create(
-#if defined(AURORA_PIN_FIXTURE) || defined(AURORA_TABLE_FIXTURE)
+#ifdef AURORA_UEFI_PINS
     restart_service ? 1 : 0
 #else
     0
@@ -1112,7 +1181,7 @@ for (const auto &lease : domains[0].stacks)
 Serial::text("AURORA_UEFI_DOMAIN_REUSE_OK: frame=");
 Serial::number(original);
 Serial::text("\r\n");
-#if defined(AURORA_PIN_FIXTURE) || defined(AURORA_TABLE_FIXTURE)
+#ifdef AURORA_UEFI_PINS
 if (restart_service) {
     const auto restarted = create(0);
     require(restarted && *restarted == 1, "same service slot restart");
