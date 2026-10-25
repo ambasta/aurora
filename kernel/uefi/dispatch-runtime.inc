@@ -24,8 +24,7 @@ auto dispatch_record(std::string_view operation, unsigned client, U64 ticket, U6
     Serial::text("\r\n");
 }
 auto dispatch_observe(unsigned client, unsigned index, ProgramEvent event, U64 value) -> void {
-#ifdef AURORA_USER_RESUME
-    if (domains[index].continuation.context) {
+    if (resuming() && domains[index].continuation.context) {
         require(!program.running() && root() == kernel_root && active == L::domain_count && saved_rsp == 0,
                 "suspended kernel continuation");
         Serial::text("AURORA_USER_SUSPEND: domain=");
@@ -41,7 +40,6 @@ auto dispatch_observe(unsigned client, unsigned index, ProgramEvent event, U64 v
         transaction = 0;
         return;
     }
-#endif
     const auto current_stack = stack();
     require(root() == kernel_root && active == L::domain_count && saved_rsp == 0 && !program.running() && irq_off() &&
                 current_stack >= arena + Handoff::stack_bottom && current_stack < arena + Handoff::stack_top,
@@ -121,10 +119,10 @@ auto dispatch_execute(unsigned client,
               transaction,
               second,
               phase == ipc::Phase::service ? 0x202ULL : 2ULL};
-#ifdef AURORA_UEFI_USER_BUDGET
-    selected_role = index == 1 ? RunAuthority::Role::service : RunAuthority::Role::client;
-    launch[6] = 0x202;
-#endif
+    if (user_runs()) {
+        selected_role = index == 1 ? RunAuthority::Role::service : RunAuthority::Role::client;
+        launch[6] = 0x202;
+    }
 #ifdef AURORA_IPC_PROBES
     launch[7] = ipc_probe(index, source_phase);
 #endif
@@ -150,52 +148,34 @@ auto dispatch_execute(unsigned client,
     Serial::text("\r\n");
     const auto selected = domain.tables->root();
     asm volatile("mov %0,%%cr3" ::"r"(selected) : "memory");
-#ifdef AURORA_UEFI_USER_BUDGET
-    timer_begin(index);
-    if (index == 0) {
-#if defined(AURORA_USER_FIXTURE)
-        if (fixture == Fixture::user_role) {
-            selected_role = RunAuthority::Role::service;
-        }
-#endif
-#if defined(AURORA_USER_FIXTURE)
-        if (fixture == Fixture::user_phase) {
-            selected_phase = ipc::Phase::completion;
-        }
-#endif
-#if defined(AURORA_USER_FIXTURE)
-        if (fixture == Fixture::user_transaction) {
-            ++transaction;
-        }
-#endif
-#if defined(AURORA_USER_FIXTURE)
-        if (fixture == Fixture::user_epoch) {
-            --timer_owner_epoch;
-        }
-#endif
-    }
-#else
-    if (phase == ipc::Phase::service)
+    // User rows time every run; dispatcher rows only the service's.
+    if (user_runs()) {
         timer_begin(index);
-#endif
+        if (index == 0) {
+            if (fixture == Fixture::user_role)
+                selected_role = RunAuthority::Role::service;
+            if (fixture == Fixture::user_phase)
+                selected_phase = ipc::Phase::completion;
+            if (fixture == Fixture::user_transaction)
+                ++transaction;
+            if (fixture == Fixture::user_epoch)
+                --timer_owner_epoch;
+        }
+    } else if (phase == ipc::Phase::service)
+        timer_begin(index);
     require(enter(domain.contract->entry(), domain.contract->layout().user_stack_top(), launch.data()) == 1,
             "dispatch continuation");
-#ifdef AURORA_UEFI_USER_BUDGET
-    timer_finish();
+    if (user_runs() || phase == ipc::Phase::service)
+        timer_finish();
 #if defined(AURORA_USER_FIXTURE)
     if (fixture == Fixture::user_context && index == 0 && phase == ipc::Phase::request)
         require(timer_context_hits > 0, "user register probe interrupt");
-#endif
-#else
-    if (phase == ipc::Phase::service)
-        timer_finish();
 #endif
     dispatch_observe(client, index, event, value);
 }
 
 auto dispatch_envelope(const Bytes &captured, U64 result) -> void {
-    if (program.event() != ProgramEvent::returned) {
-#ifdef AURORA_UEFI_USER_BUDGET
+    if (program.event() != ProgramEvent::returned && user_runs()) {
         require(selected_client < 2 &&
                     (program.event() == ProgramEvent::bounds || program.event() == ProgramEvent::overflow) &&
                     ((selected_role == RunAuthority::Role::service && selected_phase == ipc::Phase::service &&
@@ -204,11 +184,11 @@ auto dispatch_envelope(const Bytes &captured, U64 result) -> void {
                       (selected_phase == ipc::Phase::request || selected_phase == ipc::Phase::completion))),
                 "user known fault phase");
         return;
-#else
+    }
+    if (program.event() != ProgramEvent::returned) {
         require(selected_phase == ipc::Phase::service && program.event() == ProgramEvent::bounds,
                 "dispatch fault phase");
         return;
-#endif
     }
     require(selected_client < 2 && captured.get(64) == launch[0] && captured.get(72) == 1,
             "dispatch phase/version authority");

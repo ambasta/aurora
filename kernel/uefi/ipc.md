@@ -123,7 +123,7 @@ or sites remain fatal. A client fault is not given the service cancellation path
   actual user reply, or an actual user reply after cancelled completion.
 - `ipc-site`, `ipc-unknown`: forged return site or unknown user UD2.
 
-All IPC modes boot the one `ipc-fixture` image and pick their case from the
+All IPC modes boot the shared `service-fixture` image (its untimed IPC rows) and pick their case from the
 serial selector; `ipc` is the baseline selector, which runs the ordinary flow. The owner, version, phase, transaction, site and unknown cases
 used to be separate images with a hostile client binary each; the fixture kernel
 now applies the same corruption to the trapped exit before validating it (claimed

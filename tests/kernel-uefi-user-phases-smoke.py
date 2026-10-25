@@ -42,8 +42,8 @@ DISPOSAL_DENIED = ("user-disposal-input", "user-disposal-output")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import kernel_profiles  # noqa: E402
 
-# Modes that boot user-fixture, whose clean client carries the probe set.
-FIXTURE_MODES = tuple(mode for mode, (image, _) in kernel_profiles.FIXTURE_MODES.items() if image == "user-fixture")
+# Modes of the user-run rows of service-fixture, whose clean client carries the probe set.
+FIXTURE_MODES = kernel_profiles.family_modes("service-fixture", "user_")
 # Historical synthetic scenarios include copied-policy failures now covered hosted.
 # Current boot modes are admitted separately by kernel_profiles and emulator_clock.
 MODES = SUCCESS + DENIED_IRQ + ("user-unknown", "user-stale-grant") + DISPOSAL_DENIED
@@ -126,7 +126,7 @@ def metadata_valid(meta, mode):
         0 < kernel["drain_begin"] < kernel["drain_end"] < kernel["text_end"] <= LAYOUT.kernel_payload_limit
         and kernel["drain_end"] - kernel["drain_begin"] == 4
         and kernel["text_end"] % 4096 == 0
-        and kernel["forged_pc"] == 0,
+        and (2 <= kernel["forged_pc"] < kernel["text_end"] if budget.service_image(mode) else kernel["forged_pc"] == 0),
         "Drain outside exact owned RX interval",
     )
 
@@ -873,6 +873,7 @@ def validate(status, text, mode, metadata):
         marker = "AURORA_FIXTURE_READY\n"
         need(text.count(marker) == (1 if mode in FIXTURE_MODES else 0), "Exact user fixture readiness")
         if mode in FIXTURE_MODES:
+            text = budget.ipc.selected_echo(text, mode)
             need(
                 text.index("AURORA_PCI_WINDOW_CLOSED:") < text.index(marker) < text.index("AURORA_UEFI_TIMER_READY:"),
                 "User selector admission phase",
@@ -898,7 +899,15 @@ def validate(status, text, mode, metadata):
         )
         return validate_call(status, text.replace(marker, "", 1), mode, metadata)
     if mode == "user-resume":
-        return validate_resume(status, text, metadata)
+        # Its baseline row boots service-fixture: one selector before timer admission.
+        marker = "AURORA_FIXTURE_READY\n"
+        text = budget.ipc.selected_echo(text, mode)
+        need(
+            text.count(marker) == 1
+            and text.index("AURORA_PCI_WINDOW_CLOSED:") < text.index(marker) < text.index("AURORA_UEFI_TIMER_READY:"),
+            "Resume selector admission phase",
+        )
+        return validate_resume(status, text.replace(marker, "", 1), metadata)
     need(mode in MODES, "Unknown user-phase mode")
     metadata_valid(metadata, mode)
     need(type(status) is int and status == (33 if mode in SUCCESS else 35), "Wrong user-phase exit")

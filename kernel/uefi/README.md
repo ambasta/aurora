@@ -181,8 +181,10 @@ acceptance gates and emulator-only boundaries.
 
 The [three-domain staged dispatcher](dispatcher.md) provides bounded staged
 request/reply scheduling. The [all-controlled-user-phase budget and retirement
-contract](user-phases.md) adds isolated client recovery. These emulator profiles
-do not establish physical hardware support or a general scheduler.
+contract](user-phases.md) adds isolated client recovery. All four, and the resume
+row, are boot-selected rows of the one `service-fixture` test image
+([fixture consolidation](../../docs/kernel-fixture-consolidation.md#service-fixture)).
+These emulator profiles do not establish physical hardware support or a general scheduler.
 
 ## NVMe page preparation
 

@@ -106,10 +106,8 @@ RULES = [
     {
         "profiles": [
             "uefi/runtime*",
-            "uefi/ipc*",
+            "uefi/service-fixture",
             "uefi/snapshot*",
-            "uefi/budget*",
-            "uefi/dispatch*",
             "uefi/user-*",
             "uefi/program-*",
             "uefi/production",
@@ -122,8 +120,7 @@ RULES = [
         "profiles": [
             "uefi/runtime-owned-text*",
             "uefi/runtime-console-region*",
-            "uefi/budget*",
-            "uefi/dispatch*",
+            "uefi/service-fixture",
             "uefi/user-*",
             "uefi/program-*",
             "uefi/production",
@@ -133,10 +130,8 @@ RULES = [
     },
     {
         "profiles": [
-            "uefi/ipc*",
+            "uefi/service-fixture",
             "uefi/snapshot*",
-            "uefi/budget*",
-            "uefi/dispatch*",
             "uefi/user-*",
             "uefi/program-*",
             "uefi/production",
@@ -144,13 +139,10 @@ RULES = [
         ],
         "reachable": ["aurora_kernel_ipc_transition"],
     },
+    # The dispatcher, user-run and resume rows of the service fixture.
     {
-        "profiles": ["uefi/dispatch*", "uefi/user-fixture"],
-        "reachable": ["aurora_kernel_round_robin_next"],
-    },
-    {
-        "profiles": ["uefi/user-resume", "uefi/user-fixture"],
-        "reachable": ["aurora_kernel_client_disposal"],
+        "profiles": ["uefi/service-fixture"],
+        "reachable": ["aurora_kernel_round_robin_next", "aurora_kernel_client_disposal"],
     },
     # No fixture state or capture handshake links into the production image.
     {

@@ -19,33 +19,30 @@ auto runtime_probe() -> U64 {
 #ifdef AURORA_IPC_PROBES
 // Selectors for the IPC_PROBES dispatch in ipc-user-entry.S: mmio 1, softint 2,
 // fpu 3, register loop 4, peer code read 5, unknown UD2 before the exit 6. Each
-// fixture family places its probes in the one domain its former image did:
-// the budget service, the dispatcher's peer client, or the user client. The
+// row family places its probes in the one domain its former image did: the
+// budget service, the dispatcher's peer client, or the user client. The
 // faulting probes are fatal on their first entry; the register loops run on
-// the phase their former images tested. Zero runs the program normally.
-auto ipc_probe(unsigned index, [[maybe_unused]] U64 source_phase) -> U64 {
-#if defined(AURORA_BUDGET_FIXTURE)
-    if (index != 1)
-        return 0;
+// the phase their former images tested. Zero runs the program normally, as
+// every IPC and resume row does.
+auto ipc_probe(unsigned index, U64 source_phase) -> U64 {
     switch (fixture) {
     case Fixture::budget_mmio:
-        return 1;
+        return index == 1 ? 1 : 0;
     case Fixture::budget_softint:
-        return 2;
+        return index == 1 ? 2 : 0;
     case Fixture::budget_fpu:
-        return 3;
+        return index == 1 ? 3 : 0;
     case Fixture::budget_context:
-        return source_phase == 1 ? 4 : 0;
+        return index == 1 && source_phase == 1 ? 4 : 0;
+    case Fixture::dispatch_peer_code:
+        return index == 2 ? 5 : 0;
+    case Fixture::user_context:
+        return index == 0 && source_phase == 0 ? 4 : 0;
+    case Fixture::user_unknown:
+        return index == 0 ? 6 : 0;
     default:
         return 0;
     }
-#elif defined(AURORA_DISPATCH_FIXTURE)
-    return index == 2 && fixture == Fixture::dispatch_peer_code ? 5 : 0;
-#else
-    if (index != 0)
-        return 0;
-    return fixture == Fixture::user_context && source_phase == 0 ? 4 : fixture == Fixture::user_unknown ? 6 : 0;
-#endif
 }
 #endif
 #if defined(AURORA_IPC_FIXTURE) || defined(AURORA_SNAPSHOT_FIXTURE) || defined(AURORA_PROGRAM_FIXTURE)

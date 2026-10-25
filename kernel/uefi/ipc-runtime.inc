@@ -40,7 +40,8 @@ auto ipc_execute(unsigned index,
               second};
     selected_phase = phase;
 #ifdef AURORA_UEFI_SERVICE_BUDGET
-    launch[6] = phase == ipc::Phase::service ? 0x202 : 2;
+    // Untimed IPC rows keep interrupts masked in every phase, as their image's fixed RFLAGS did.
+    launch[6] = timed() && phase == ipc::Phase::service ? 0x202 : 2;
 #endif
 #ifdef AURORA_IPC_PROBES
     launch[7] = ipc_probe(index, source_phase);
@@ -91,7 +92,7 @@ auto ipc_execute(unsigned index,
     }
 #endif
 #ifdef AURORA_UEFI_SERVICE_BUDGET
-    if (phase == ipc::Phase::service) {
+    if (timed() && phase == ipc::Phase::service) {
         timer_begin(index);
 #if defined(AURORA_BUDGET_FIXTURE)
         if (fixture == Fixture::budget_epoch) {
@@ -109,7 +110,7 @@ auto ipc_execute(unsigned index,
     require(enter(domain.contract->entry(), domain.contract->layout().user_stack_top(), launch.data()) == 1,
             "IPC continuation");
 #ifdef AURORA_UEFI_SERVICE_BUDGET
-    if (phase == ipc::Phase::service)
+    if (timed() && phase == ipc::Phase::service)
         timer_finish();
 #endif
     const auto current_stack = stack();
@@ -165,33 +166,26 @@ auto ipc_deliver(bool fault) -> void {
     require(request && request->first() == 40 && request->second() == 2 && mailbox->scrubbed(), "IPC request copy");
     ipc_record("DELIVER", request->first(), request->second());
 #ifdef AURORA_UEFI_SERVICE_BUDGET
-    const bool exhaust = fault;
-#ifdef AURORA_BUDGET_FIXTURE
-    const bool fault_case = fixture == Fixture::budget_fault;
-    const auto source_phase = exhaust ? (fault_case ? 4 : 5) : 1;
-    const auto wanted = exhaust ? (fault_case ? ProgramEvent::bounds : ProgramEvent::rejected) : ProgramEvent::returned;
-#else
-    const auto source_phase = exhaust ? 5 : 1;
-    const auto wanted = exhaust ? ProgramEvent::rejected : ProgramEvent::returned;
+    // Timed rows run the service under its interrupt budget; IPC rows run it untimed below.
+    if (timed()) {
+        const bool exhaust = fault;
+        const bool fault_case = fixture == Fixture::budget_fault;
+        const auto source_phase = exhaust ? (fault_case ? 4 : 5) : 1;
+        const auto wanted =
+            exhaust ? (fault_case ? ProgramEvent::bounds : ProgramEvent::rejected) : ProgramEvent::returned;
+        ipc_execute(
+            1, ipc::Phase::service, source_phase, request->first(), request->second(), wanted, exhaust ? 0 : 42);
+        if (fault_case)
+            require(!timer_exhausted && (exhaust || timer_compiled_hits > 0), "service fault outcome");
+        else
+            require(timer_exhausted == exhaust && timer_compiled_hits > 0 &&
+                        (!exhaust || (timer_ticks == 3 && timer_resumes == 2)),
+                    "service budget outcome");
+        if (fixture == Fixture::budget_context && !exhaust)
+            require(timer_context_hits > 0, "timer register probe delivery");
+        return;
+    }
 #endif
-    ipc_execute(1, ipc::Phase::service, source_phase, request->first(), request->second(), wanted, exhaust ? 0 : 42);
-#ifdef AURORA_BUDGET_FIXTURE
-    if (fault_case)
-        require(!timer_exhausted && (exhaust || timer_compiled_hits > 0), "service fault outcome");
-    else
-        require(timer_exhausted == exhaust && timer_compiled_hits > 0 &&
-                    (!exhaust || (timer_ticks == 3 && timer_resumes == 2)),
-                "service budget outcome");
-#else
-    require(timer_exhausted == exhaust && timer_compiled_hits > 0 &&
-                (!exhaust || (timer_ticks == 3 && timer_resumes == 2)),
-            "service budget outcome");
-#endif
-#if defined(AURORA_BUDGET_FIXTURE)
-    if (fixture == Fixture::budget_context && !exhaust)
-        require(timer_context_hits > 0, "timer register probe delivery");
-#endif
-#else
     ipc_execute(1,
                 ipc::Phase::service,
                 fault ? 4 : 1,
@@ -199,7 +193,6 @@ auto ipc_deliver(bool fault) -> void {
                 request->second(),
                 fault ? ProgramEvent::bounds : ProgramEvent::returned,
                 fault ? 0 : 42);
-#endif
 }
 [[maybe_unused]] auto ipc_cancel() -> void {
     require(root() == kernel_root && active == L::domain_count && mailbox->cancel(ipc::Phase::inactive) &&
@@ -214,9 +207,6 @@ auto ipc_deliver(bool fault) -> void {
     ipc_complete(true);
 }
 auto run_ipc() -> void {
-#ifdef AURORA_IPC_FIXTURE
-    select_fixture(Fixture::ipc_baseline, Fixture::ipc_unknown);
-#endif
 #ifdef AURORA_IPC_FIXTURE
     if (fixture == Fixture::ipc_exhausted)
         mailbox.emplace(registry, 1);
@@ -245,7 +235,8 @@ auto run_ipc() -> void {
       defined(AURORA_IPC_POLICY_CANCEL_OUTPUT)) ||                                                                     \
      defined(AURORA_IPC_FIXTURE))
 #ifdef AURORA_IPC_FIXTURE
-    if (fixture == Fixture::ipc_fault) {
+    // Timed rows always exhaust one service run first, as the budget image did.
+    if (timed() || fixture == Fixture::ipc_fault) {
 #endif
         ipc_deliver(true);
         ipc_cancel();
@@ -291,6 +282,8 @@ auto run_ipc() -> void {
     mailbox.reset();
     Serial::text("AURORA_UEFI_IPC_CLEANUP_OK: used=0 records=0\r\nAURORA_UEFI_IPC_OK\r\n");
 #ifdef AURORA_UEFI_SERVICE_BUDGET
+    if (!timed())
+        return;
     require(timer_stop() && timer_drain() && !timer_armed, "timer final quiescence");
     Serial::text("AURORA_UEFI_SERVICE_BUDGET_OK\r\n");
 #endif

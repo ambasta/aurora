@@ -75,19 +75,39 @@ fi
 status=$?
 set -e
 cat "$log"
+# A user image bank hands each oracle the images its mode runs (user-sets.json),
+# named by role; other images' metadata is already that set.
+if [[ -f "$image_dir/user-images.json" ]]; then
+    python3 -B - "$mode" "$image_dir" "$output_dir/$mode.images.json" <<'PYSET'
+from pathlib import Path
+import json, sys
+sys.path.insert(0, 'scripts')
+from kernel_profiles import UEFI_VARIANTS
+mode, root, output = sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3])
+images = json.loads((root / 'user-images.json').read_text())
+if (root / 'user-sets.json').exists():
+    sets = json.loads((root / 'user-sets.json').read_text())
+    chosen = sets.get(UEFI_VARIANTS.get(mode, mode), sets['default'])
+    images = {role: images[name] for role, name in chosen.items()}
+    (output.parent / (mode + '.set.json')).write_text(json.dumps(chosen) + '\n')
+output.write_text(json.dumps(images, indent=2) + '\n')
+PYSET
+fi
 if [[ "$mode" == budget* || "$mode" == dispatch* || "$mode" == user-* ]]; then
     python3 - "$mode" "$image_dir" "$output_dir" <<'PYMETA'
 from pathlib import Path
 import json,sys
-root=Path(sys.argv[2])
+root,output=Path(sys.argv[2]),Path(sys.argv[3])
 timer=root/'service-timer-metadata.json'
 kernel=json.loads(timer.read_text())
-(Path(sys.argv[3])/(sys.argv[1]+'.metadata.json')).write_text(json.dumps(dict(images=json.loads((root/'user-images.json').read_text()),kernel=kernel),indent=2)+'\n')
+images=json.loads((output/(sys.argv[1]+'.images.json')).read_text())
+(output/(sys.argv[1]+'.metadata.json')).write_text(json.dumps(dict(images=images,kernel=kernel),indent=2)+'\n')
 PYMETA
     if [[ "$mode" == user-* ]]; then
         python3 tests/kernel-uefi-user-phases-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
         if [[ "$mode" == user-resume ]]; then
-            python3 tests/kernel-uefi-user-phases-smoke.py --resume-code "$log" "$image_dir/user-clean.elf"
+            clean="$(python3 -B -c 'import json,sys; print(json.load(open(sys.argv[1]))["clean"])' "$output_dir/$mode.set.json")"
+            python3 tests/kernel-uefi-user-phases-smoke.py --resume-code "$log" "$image_dir/user-$clean.elf"
         fi
     elif [[ "$mode" == dispatch* ]]; then
         python3 tests/kernel-uefi-dispatch-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
@@ -98,26 +118,14 @@ elif [[ "$mode" == snapshot* ]]; then
     cp "$image_dir/user-images.json" "$output_dir/$mode.metadata.json"
     python3 tests/kernel-snapshot-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
 elif [[ "$mode" == ipc* ]]; then
-    cp "$image_dir/user-images.json" "$output_dir/$mode.metadata.json"
-    python3 tests/kernel-uefi-ipc-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
+    python3 tests/kernel-uefi-ipc-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.images.json"
 elif [[ "$mode" == runtime* ]]; then
-    # A user image bank hands each oracle the images its mode runs as clean and bounds.
-    python3 -B - "$mode" "$image_dir" "$output_dir/$mode.metadata.json" <<'PYSET'
-from pathlib import Path
-import json, sys
-mode, root, output = sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3])
-images = json.loads((root / 'user-images.json').read_text())
-if (root / 'user-sets.json').exists():
-    sets = json.loads((root / 'user-sets.json').read_text())
-    images = {role: images[name] for role, name in sets.get(mode, sets['default']).items()}
-output.write_text(json.dumps(images, indent=2) + '\n')
-PYSET
     if [[ "$mode" == runtime-table-* ]]; then
-        python3 tests/kernel-uefi-tables-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
+        python3 tests/kernel-uefi-tables-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.images.json"
     elif [[ "$mode" == runtime-pin-* ]]; then
-        python3 tests/kernel-uefi-pin-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
+        python3 tests/kernel-uefi-pin-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.images.json"
     else
-        python3 tests/kernel-uefi-runtime-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.metadata.json"
+        python3 tests/kernel-uefi-runtime-smoke.py "$status" "$log" "$mode" "$output_dir/$mode.images.json"
     fi
 elif [[ "$mode" == bar-state ]]; then
     python3 tests/kernel-uefi-bar-state.py "$status" "$log"

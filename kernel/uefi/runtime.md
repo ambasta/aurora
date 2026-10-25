@@ -30,7 +30,9 @@ These are chosen canonical lower-half virtual addresses, not physical load
 addresses or BIOS constants. Their immutable, boot-owned physical slots occupy three pages each, beginning
 at arena + 0xb0000 (then +0xb3000 and, for dispatch, +0xb6000). `runtime-fixture`
 installs a five-slot bank up to +0xbf000 (clean, bounds, span, two multipage) and
-each row selects the two slots acting as images 0 and 1. Link metadata, exact entry, segment permissions and every trap site
+each row selects the two slots acting as images 0 and 1; `service-fixture`
+installs eleven one-page slots packed one page apart up to +0xbb000, and each
+row selects the slots acting as its two or three images. Link metadata, exact entry, segment permissions and every trap site
 are validated before installation. `runtime-fixture` admits three pages per
 image, which its multipage row needs; its other bank images are linked at one page. Blocking-call profiles admit two pages for the caller and one for the
 service; owned-text profiles (including console-region) admit three pages for

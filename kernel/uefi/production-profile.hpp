@@ -14,7 +14,7 @@
     defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_DORMANT_TABLE_TESTING) || defined(AURORA_PIN_LEDGER_TESTING) || \
     defined(AURORA_KERNEL_BYTES_TESTING) || defined(AURORA_NVME_QUEUE_TESTING) ||                                      \
     defined(AURORA_NVME_QUEUE_GENERATION_LIMIT) || defined(AURORA_RUNTIME_IMAGE_BANK) ||                               \
-    defined(AURORA_RUNTIME_MULTIPAGE)
+    defined(AURORA_RUNTIME_MULTIPAGE) || defined(AURORA_SERVICE_FIXTURE)
 #error "The production image rejects fixture selectors, test hooks and capture handshakes"
 #endif
 #if !defined(AURORA_UEFI_RUNTIME) || !defined(AURORA_UEFI_PROGRAM_CONSOLE) || !defined(AURORA_UEFI_GRAPHICAL_TERMINAL)

@@ -33,10 +33,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from kernel_layout import LAYOUT  # noqa: E402
 import kernel_profiles  # noqa: E402
 
-# Fault cases of the shared budget-fixture image, from the one fixture table.
-FIXTURE_MODES = kernel_profiles.fixture_cases("budget-fixture")
-# Every guest mode that boots budget-fixture: the cases, the baseline and its SMP variant.
-SELECTED = kernel_profiles.selected_modes("budget-fixture")
+# Fault cases of the budget rows of the shared service-fixture image, from the one fixture table.
+FIXTURE_MODES = kernel_profiles.fixture_cases("service-fixture", "budget_")
+# Every guest mode that boots a budget row: the cases, the baseline and its SMP variant.
+SELECTED = kernel_profiles.selected_modes("service-fixture", "budget_")
 # Instruction probes the fixture service selects from its launch word.
 PROBE_FAULTS = {"mmio": (14, 5), "softint": (13, 514), "fpu": (7, 0)}
 # Every fixture wrapper carries the complete selectable set (see ipc-user-entry.S).
@@ -51,8 +51,9 @@ EVENT = r"AURORA_UEFI_DOMAIN_EVENT: vector=(\d+) error=(\d+) pc=(\d+) cpl=(\d+) 
 def metadata_valid(meta, mode, probe_image=None, fixture_image=None):
     """probe_image names the one image whose wrapper carries the fixture probes.
 
-    fixture_image marks budget-fixture's own metadata; callers that reuse these
-    checks for their own images under the tag "budget" carry neither.
+    fixture_image marks the budget rows' own metadata; callers that reuse these
+    checks for their own images under the tag "budget" carry neither. The kernel
+    sites follow the image `mode` boots: only service-fixture links the forged site.
     """
     fixture_image = mode in FIXTURE_MODES if fixture_image is None else fixture_image
     need(type(meta) is dict and set(meta) == {"images", "kernel"}, "Malformed budget metadata")
@@ -117,10 +118,17 @@ def metadata_valid(meta, mode, probe_image=None, fixture_image=None):
         "Drain range outside owned RX",
     )
     need(
-        (2 <= kernel["forged_pc"] < kernel["text_end"]) if fixture_image else kernel["forged_pc"] == 0,
+        (2 <= kernel["forged_pc"] < kernel["text_end"]) if service_image(mode) else kernel["forged_pc"] == 0,
         "Forged site authority",
     )
     return base_images
+
+
+def service_image(mode):
+    """Whether `mode` (or its machine variant's base) boots service-fixture."""
+    return (
+        kernel_profiles.FIXTURE_MODES.get(kernel_profiles.UEFI_VARIANTS.get(mode, mode), ("",))[0] == "service-fixture"
+    )
 
 
 def firmware_prefix(prefix, mode):
@@ -136,6 +144,7 @@ def validate(status, text, mode, meta):
     marker = "AURORA_FIXTURE_READY\n"
     need(text.count(marker) == (1 if mode in SELECTED else 0), "Exact budget fixture readiness")
     if mode in SELECTED:
+        text = ipc.selected_echo(text, mode)
         need(text.index("AURORA_PCI_WINDOW_CLOSED:") < text.index(marker), "Budget selector before firmware completion")
         boundary = [text.index(item) for item in ("AURORA_UEFI_TIMER_", "AURORA_UEFI_RUNTIME_FAIL:") if item in text]
         need(boundary and text.index(marker) < min(boundary), "Budget selector after timer admission")

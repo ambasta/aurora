@@ -31,7 +31,7 @@ def need(value, message):
         raise SystemExit("FAIL: " + message)
 
 
-def image_metadata(prefix, base, arguments, index):
+def image_metadata(prefix, base, arguments, index, budget):
     elf = Elf(prefix.with_suffix(".elf"))
     blob = prefix.with_suffix(".bin").read_bytes()
     symbols = {symbol.name: symbol for symbol in elf.symbols if symbol.name and symbol.section}
@@ -59,12 +59,12 @@ def image_metadata(prefix, base, arguments, index):
         meta["serve_pc"] = at("aurora_serve_return_pc")
     abi = prefix.with_suffix(".abi.json")
     compiled = abi_function_symbol(json.loads(abi.read_text()), "aurora_user_main") if abi.exists() else None
-    if arguments.service_budget or (arguments.mode in OWNED and index == 0):
+    if budget or (arguments.mode in OWNED and index == 0):
         compiled = compiled or "aurora_user_main"
         need(compiled in elf.functions, f"{prefix.name}: compiled entry {compiled} is not a linked function")
         function = elf.functions[compiled]
         meta.update(compiled_begin=function.address, compiled_end=function.address + function.size)
-    if arguments.service_budget:
+    if budget:
         meta.update(context_begin=at("aurora_budget_context_begin"), context_end=at("aurora_budget_context_end"))
     if arguments.mode in OWNED and index == 0:
         meta.update(("bytes_" + name + "_pc", at("aurora_bytes_" + name + "_pc")) for name in BYTE_OPERATIONS)
@@ -74,6 +74,9 @@ def image_metadata(prefix, base, arguments, index):
 
 
 OWNED = ("owned-text", "console-region", "console-region-fixture")
+# Domain image role names, as the oracles' metadata sets name them.
+ROLES = ("clean", "bounds", "peer")
+RANGES = ("compiled_begin", "compiled_end", "context_begin", "context_end")
 
 
 def main():
@@ -81,7 +84,6 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--mode", default="normal")
     parser.add_argument("--service-budget", action="store_true")
-    parser.add_argument("--dispatcher", action="store_true")
     # Accepted composition selectors; the linked symbols carry their effect.
     for flag in (
         "--user-budget",
@@ -94,21 +96,26 @@ def main():
         "--ram-scratchpad-fixture",
     ):
         parser.add_argument(flag, action="store_true")
-    # A bank image installs every --image NAME:ROLE in its own slot, linked for
-    # domain image ROLE; a --set MODE:VALUE:NAME0,NAME1 names the slots acting
-    # as images 0 and 1 when the boot selector is VALUE (else slots 0 and 1).
+    # A bank image installs every --image NAME:ROLE[:budget] in its own slot,
+    # linked for domain image ROLE (budget: its metadata carries the service-timer
+    # ranges); a --set MODE:VALUE:NAME0,NAME1[,NAME2] names the slots acting as
+    # images 0, 1 (and 2) when the boot selector is VALUE, else each role's first.
     parser.add_argument("--image", action="append", default=[])
     parser.add_argument("--set", action="append", default=[])
     arguments = parser.parse_args()
     out = arguments.output.resolve()
     records = {}
     header = ["#pragma once", "#include <array>", "#include <cstddef>", "namespace aurora::uefi::images {"]
-    names = ("clean", "bounds", "peer") if arguments.dispatcher else ("clean", "bounds")
-    bank = [(name, int(role)) for name, _, role in (entry.partition(":") for entry in arguments.image)]
-    need(not bank or (bank[0] == ("clean", 0) and bank[1] == ("bounds", 1)), "bank must start with clean and bounds")
-    for name, role in bank or list((name, index) for index, name in enumerate(names)):
-        need(not bank or (role in (0, 1) and name not in records), f"{name}: invalid bank image")
-        meta, blob = image_metadata(out / f"user-{name}", LAYOUT.user_code + role * LAYOUT.code_stride, arguments, role)
+    bank = [entry.split(":") for entry in arguments.image]
+    need(all(len(entry) in (2, 3) and entry[2:] in ([], ["budget"]) for entry in bank), "invalid bank image")
+    bank = [(name, int(role), extra == ["budget"]) for name, role, *extra in bank]
+    roles = sorted({role for _, role, _ in bank})
+    need(roles == list(range(len(roles))) and len(roles) in (0, 2, 3), "bank roles are not images 0, 1 (and 2)")
+    for name, role, budget in bank or [(name, index, arguments.service_budget) for index, name in enumerate(ROLES[:2])]:
+        need(name not in records, f"{name}: duplicate bank image")
+        meta, blob = image_metadata(
+            out / f"user-{name}", LAYOUT.user_code + role * LAYOUT.code_stride, arguments, role, budget
+        )
         records[name] = meta
         symbol = name.replace("-", "_")
         header.append(
@@ -129,28 +136,48 @@ def main():
             f"inline constexpr std::size_t bank_size = {len(bank)};",
             "template <class Install> inline auto install_bank(const Install &install) -> void {",
         ]
-        for slot, (name, role) in enumerate(bank):
+        for slot, (name, role, _) in enumerate(bank):
             symbol = name.replace("-", "_")
             values = ", ".join(f"{symbol}_{key}" for key in fields + ("probe_offset",))
             header.append(
                 f"    install({slot}U, {role}U, {symbol}_bytes, std::array<unsigned long long, 8>{{{values}}});"
             )
         header.append("}")
-        sets = {"default": {"clean": "clean", "bounds": "bounds"}}
+        # Service-timer ranges per slot (compiled begin/end, context begin/end); zero when absent.
+        ranges = ["{" + ", ".join(f"{records[name].get(key, 0)}ULL" for key in RANGES) + "}" for name, _, _ in bank]
+        header.append(
+            f"inline constexpr std::array<std::array<unsigned long long, 4>, {len(bank)}> slot_ranges{{{{"
+            + ", ".join(ranges)
+            + "}};"
+        )
+        slots = [name for name, _, _ in bank]
+        first = [next(slot for slot, entry in enumerate(bank) if entry[1] == role) for role in roles]
+        sets = {"default": {ROLES[role]: slots[slot] for role, slot in enumerate(first)}}
+        header.append(
+            f"inline constexpr std::array<std::size_t, {len(roles)}> default_slots{{"
+            + ", ".join(f"{slot}U" for slot in first)
+            + "};"
+        )
         rows = []
-        slots = [name for name, _ in bank]
         for entry in arguments.set:
             mode, value, chosen = entry.split(":")
             chosen = chosen.split(",")
             need(
-                len(chosen) == 2 and all(name in slots for name in chosen) and 0 < int(value) < 256,
+                2 <= len(chosen) <= len(roles) and all(name in slots for name in chosen) and 0 < int(value) < 256,
                 f"{mode}: invalid image set",
             )
-            need([dict(bank)[name] for name in chosen] == [0, 1], f"{mode}: set roles are not images 0 and 1")
-            sets[mode] = {"clean": chosen[0], "bounds": chosen[1]}
-            rows.append(f"{{{int(value)}U, {slots.index(chosen[0])}U, {slots.index(chosen[1])}U}}")
+            need(
+                [bank[slots.index(name)][1] for name in chosen] == list(range(len(chosen))),
+                f"{mode}: set roles are not its images in order",
+            )
+            sets[mode] = dict(zip(ROLES, chosen))
+            # A set naming fewer images than the bank has roles leaves the rest unbound.
+            picked = [slots.index(name) for name in chosen] + [len(bank)] * (len(roles) - len(chosen))
+            rows.append("{" + ", ".join(f"{item}U" for item in [int(value), *picked]) + "}")
         header.append(
-            f"inline constexpr std::array<std::array<unsigned, 3>, {len(rows)}> sets{{{{" + ", ".join(rows) + "}};"
+            f"inline constexpr std::array<std::array<unsigned, {1 + len(roles)}>, {len(rows)}> sets{{{{"
+            + ", ".join(rows)
+            + "}};"
         )
         (out / "user-sets.json").write_text(json.dumps(sets, indent=2) + "\n")
     header.append("}")

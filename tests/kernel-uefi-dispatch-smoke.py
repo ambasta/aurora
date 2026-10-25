@@ -34,8 +34,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from kernel_layout import LAYOUT  # noqa: E402
 import kernel_profiles  # noqa: E402
 
-# Modes that boot dispatch-fixture, whose peer wrapper carries the probe set.
-FIXTURE_MODES = tuple(mode for mode, (image, _) in kernel_profiles.FIXTURE_MODES.items() if image == "dispatch-fixture")
+# Modes of the dispatcher rows of service-fixture, whose peer wrapper carries the probe set.
+FIXTURE_MODES = kernel_profiles.family_modes("service-fixture", "dispatch_")
 
 
 def metadata_valid(meta, mode):
@@ -243,6 +243,7 @@ def validate(status, text, mode, meta):
     marker = "AURORA_FIXTURE_READY\n"
     need(text.count(marker) == (1 if mode in FIXTURE_MODES else 0), "Exact dispatcher fixture readiness")
     if mode in FIXTURE_MODES:
+        text = budget.ipc.selected_echo(text, mode)
         need(
             text.index("AURORA_PCI_WINDOW_CLOSED:") < text.index(marker) < text.index("AURORA_UEFI_TIMER_READY:"),
             "Dispatcher selector admission phase",
