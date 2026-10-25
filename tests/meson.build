@@ -603,8 +603,9 @@ hosted_lexer_invalid = executable(
 )
 test('hosted-lexer-invalid', hosted_lexer_invalid, suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 30)
 
-# The real generated-code fixture checks explicit AST/diagnostic contracts and
-# private ABI behavior. The separate forged-return fixture never links it.
+# Parser cases are data (compiler/hosted_parser.cases) checked against a reviewed
+# golden dump; the driver also keeps the private ABI, growth and ownership
+# controls. The separate forged-return fixture never links the generated code.
 hosted_parser_abi = custom_target(
     'hosted-parser-abi-object', input: 'compiler/hosted_parser_abi.S', output: 'hosted-parser-abi.o',
     command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '@INPUT@', '-o', '@OUTPUT@'],
@@ -615,6 +616,7 @@ hosted_parser_test = executable(
     native: true, override_options: fixture_options, install: false,
 )
 test('hosted-parser', hosted_parser_test,
+     args: files('compiler/hosted_parser.cases', 'compiler/golden/hosted_parser.golden'),
      suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120,
      priority: slow_tests['hosted-parser'])
 # The already-built adapter objects with forged Aurora entries; the generated

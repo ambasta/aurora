@@ -71,6 +71,7 @@ std::vector<EdgeWords> edges;
 std::vector<TypeWords> types;
 std::vector<SyntaxWords> statements;
 InputWords capturedInput{};
+std::string fixtureSource;
 void *arenaAddress = nullptr;
 std::uint64_t arenaRegion = 0;
 constexpr std::uint64_t arenaCanary = 0x746970656172656eULL;
@@ -123,12 +124,14 @@ void reset() {
     created = parsed = admitted = released = read = edgeRead = typeRead = statementRead = throwingRead = 0;
     capturedInput = {};
     arenaAddress = nullptr;
+    fixtureSource = "1+2;";
 }
 void fixture(const std::string &source,
              std::vector<NodeWords> nodes,
              std::vector<EdgeWords> arguments = {},
              std::int64_t consumed = -1) {
     const auto tokens = aurora::lex(source, "forged.au");
+    fixtureSource = source;
     records = std::move(nodes);
     edges = std::move(arguments);
     count = static_cast<std::int64_t>(records.size());
@@ -263,9 +266,10 @@ void valid(const std::string &source,
     inspect(actual, tokens);
     ++cases;
 }
-void invalid(const std::string &label, const std::function<void()> &mutate, const std::string &source = "1+2;") {
+void invalid(const std::string &label, const std::function<void()> &mutate) {
     reset();
     mutate();
+    const auto source = fixtureSource;
     const auto tokens = aurora::lex(source, "forged.au");
     std::size_t position = 0;
     bool rejected = false;
@@ -526,124 +530,78 @@ void graphControls() {
             records[2][4] = value;
         });
     for (const auto value : {-1LL, 3LL, std::numeric_limits<long long>::max()})
-        invalid(
-            "edge child",
-            [=] {
-                callFixture();
-                edges[0][0] = value;
-            },
-            "f(1,2);");
+        invalid("edge child", [=] {
+            callFixture();
+            edges[0][0] = value;
+        });
     for (const auto value : {-2LL, 0LL, std::numeric_limits<long long>::max()})
-        invalid(
-            "edge link",
-            [=] {
-                callFixture();
-                edges[0][1] = value;
-            },
-            "f(1,2);");
+        invalid("edge link", [=] {
+            callFixture();
+            edges[0][1] = value;
+        });
     for (const auto value : {0LL, 129LL, std::numeric_limits<long long>::max()})
-        invalid(
-            "edge depth",
-            [=] {
-                callFixture();
-                edges[0][3] = value;
-            },
-            "f(1,2);");
+        invalid("edge depth", [=] {
+            callFixture();
+            edges[0][3] = value;
+        });
     for (const auto value : {0LL, 3LL, std::numeric_limits<long long>::max()})
-        invalid(
-            "edge length",
-            [=] {
-                callFixture();
-                edges[0][2] = value;
-            },
-            "f(1,2);");
-    invalid(
-        "edge forward node",
-        [] {
+        invalid("edge length", [=] {
             callFixture();
-            edges[0][0] = 2;
-        },
-        "f(1,2);");
-    invalid(
-        "shared edge child",
-        [] {
-            callFixture();
-            edges[1][0] = 0;
-        },
-        "f(1,2);");
-    invalid(
-        "list length mismatch",
-        [] {
-            callFixture();
-            records[2][3] = 1;
-        },
-        "f(1,2);");
-    invalid(
-        "list head out of bounds",
-        [] {
-            callFixture();
-            records[2][2] = 2;
-        },
-        "f(1,2);");
-    invalid(
-        "orphan edge",
-        [] {
-            callFixture();
-            records[2][2] = 0;
-            records[2][3] = 1;
-        },
-        "f(1,2);");
-    invalid(
-        "shared edge chain",
-        [] {
-            fixture("f(g(1),2);",
-                    {{wire(NodeKind::literal), 4, -1, -1, 1, 4, 4},
-                     {wire(NodeKind::literal), 7, -1, -1, 1, 7, 7},
-                     {wire(NodeKind::call), 2, 0, 1, 2, 2, 5},
-                     {wire(NodeKind::call), 0, 2, 3, 3, 0, 8}},
-                    {{0, -1, 1, 2, -1}, {1, 0, 2, 2, -1}, {2, 1, 3, 3, -1}});
-        },
-        "f(g(1),2);");
-    invalid(
-        "missing method receiver",
-        [] {
-            methodFixture();
-            records[2][2] = -1;
-            records[2][3] = 0;
-        },
-        "a.m(1);");
-    invalid(
-        "missing designated field",
-        [] {
-            constructFixture();
-            edges[0][4] = -1;
-        },
-        "T{.a=1,.b=2};");
-    invalid(
-        "field index",
-        [] {
-            constructFixture();
-            edges[0][4] = result[3];
-        },
-        "T{.a=1,.b=2};");
-    invalid(
-        "field on ordinary argument",
-        [] {
-            callFixture();
-            edges[0][4] = 0;
-        },
-        "f(1,2);");
+            edges[0][2] = value;
+        });
+    invalid("edge forward node", [] {
+        callFixture();
+        edges[0][0] = 2;
+    });
+    invalid("shared edge child", [] {
+        callFixture();
+        edges[1][0] = 0;
+    });
+    invalid("list length mismatch", [] {
+        callFixture();
+        records[2][3] = 1;
+    });
+    invalid("list head out of bounds", [] {
+        callFixture();
+        records[2][2] = 2;
+    });
+    invalid("orphan edge", [] {
+        callFixture();
+        records[2][2] = 0;
+        records[2][3] = 1;
+    });
+    invalid("shared edge chain", [] {
+        fixture("f(g(1),2);",
+                {{wire(NodeKind::literal), 4, -1, -1, 1, 4, 4},
+                 {wire(NodeKind::literal), 7, -1, -1, 1, 7, 7},
+                 {wire(NodeKind::call), 2, 0, 1, 2, 2, 5},
+                 {wire(NodeKind::call), 0, 2, 3, 3, 0, 8}},
+                {{0, -1, 1, 2, -1}, {1, 0, 2, 2, -1}, {2, 1, 3, 3, -1}});
+    });
+    invalid("missing method receiver", [] {
+        methodFixture();
+        records[2][2] = -1;
+        records[2][3] = 0;
+    });
+    invalid("missing designated field", [] {
+        constructFixture();
+        edges[0][4] = -1;
+    });
+    invalid("field index", [] {
+        constructFixture();
+        edges[0][4] = result[3];
+    });
+    invalid("field on ordinary argument", [] {
+        callFixture();
+        edges[0][4] = 0;
+    });
 }
 void typeControls() {
-    const std::string source = "f<Box<i64>>();";
-    const auto bad = [&](const std::string &label, const std::function<void()> &mutate) {
-        invalid(
-            label,
-            [&] {
-                splitFixture();
-                mutate();
-            },
-            source);
+    const auto bad = [](const std::string &label, const std::function<void()> &mutate) {
+        invalid(label, [&] {
+            splitFixture();
+            mutate();
+        });
     };
     for (const auto tag : {-1LL, 0LL, static_cast<long long>(wire(TypeKind::builtin_class) + 1)})
         bad("type tag", [=] {
@@ -706,14 +664,11 @@ void typeControls() {
     bad("non-template root value", [] {
         types[2][0] = wire(TypeKind::array_type);
     });
-    invalid(
-        "capacity overflow",
-        [] {
-            typedFixture(
-                "f<999999999999999999999>();",
-                {{wire(TypeKind::capacity), 2, 2, 4, -1, -1, -1, 0}, {wire(TypeKind::named), 0, 0, 6, 0, -1, 0, 1}});
-        },
-        "f<999999999999999999999>();");
+    invalid("capacity overflow", [] {
+        typedFixture(
+            "f<999999999999999999999>();",
+            {{wire(TypeKind::capacity), 2, 2, 4, -1, -1, -1, 0}, {wire(TypeKind::named), 0, 0, 6, 0, -1, 0, 1}});
+    });
 }
 std::string depthFixture(int depth) {
     const std::string source = std::string(static_cast<std::size_t>(depth - 1), '!') + "1;";
@@ -740,12 +695,9 @@ void depthControls() {
             depthFixture(128);
         },
         inspect);
-    invalid(
-        "computed AST depth",
-        [] {
-            depthFixture(129);
-        },
-        std::string(128, '!') + "1;");
+    invalid("computed AST depth", [] {
+        depthFixture(129);
+    });
     // The single structural bound intentionally does not reproduce Aurora's
     // separate grammar nesting counters; it bounds recursive host values.
     valid(
@@ -756,12 +708,9 @@ void depthControls() {
         [](const auto &tree, const auto &) {
             require(tree->reflectedType.isClass(), "deep Type conversion failed");
         });
-    invalid(
-        "structural Type depth",
-        [] {
-            nestedTemplateFixture(128, true);
-        },
-        nestedTemplateSource(128, true));
+    invalid("structural Type depth", [] {
+        nestedTemplateFixture(128, true);
+    });
 }
 void inputControls() {
     for (int control = 0; control < 8; ++control) {

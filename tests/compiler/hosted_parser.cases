@@ -1,0 +1,1599 @@
+# Parser cases for hosted-parser-test; expected output is golden/hosted_parser.golden
+# (hosted-parser-test --update CASES GOLDEN rewrites it for review).
+#
+# '#' lines are comments and blank lines are ignored.
+#   @case NAME            one case; its following lines are the source, joined by newlines
+#   @cases LABEL          one case per following line, named "LABEL[/VARIANT] LINE"
+#   @variant NAME [P|S]   (in @cases) also run each line as P + LINE + S; \n, \r, \t in P/S
+#   @step MODE OPTION...  parse step of the current case or variant, in order
+# In @cases, a @variant or @step after source lines starts a new configuration.
+# Modes: expr, body, type, callable, field, preamble, enum (Aurora grammar entries),
+# program and parser (whole module), resolve (whole module through typed lowering),
+# raw (the private parser ABI record, every copied record and optional admission).
+# Options: stop=NAME, at=N|snippet|next|^K (token ordinal, first token of the line inside
+# its variant wrapper, cursor after the previous successful step, or the K-th marker),
+# types=A,B caps=N fn (captured template context, by first token of that spelling),
+# count=N (enum count), and for raw: offset=N rawctx=W,... admit config=W,... reuse.
+# The marker character U+2038 is removed from the source and records a position.
+# «N|TEXT» in a source line is N copies of TEXT, «N,|TEXT» joins them with commas,
+# and '#' in TEXT is the copy ordinal; case names keep the unexpanded line.
+
+# ---- Expressions: every operator, postfix, aggregate, template and reflection form.
+@cases expr
+@variant semicolon |;
+@step expr
+1
+123u64
+255u8
+false
+true
+name
+_value
+fn
+__au_name
+x
+'x'
+'\n'
+-1 + ~2 * !false
+a || b && c | d ^ e & f == g != h < i <= j > k >= l << m >> n + o - p * q / r % s
+(a + b) * (c - d)
+(a)
+1 + 2
+f()
+f(1, 2)
+name.member
+name.at(1)
+one::two
+a[1]
+f(g(1), h(2, 3)) + object.at(index + 1)
+Box(42)
+move(value)
+one :: two(1, other.run()).field[2].at(3)
+((a)).field
+(a + b)[(i)]
+a[one::index(f(1))].method().field
+builtin::borrow_bytes(value)
+one::array(1)
+object.size_of()
+ns::size_of(i64)
+-object.at(1) + f(2)
+f(a[1], b.member)
+size_of(i64)
+type_id(array<u8,2>)
+field_count(Box)
+f(size_of(i64))
+f("text")
+ns::f("", "é😀", "\0\xff")
+object.write("\"\\\n")
+"left" == "right"
+("text")[0]
+(x + 1) * 2
+-x + ns::value
+ns::Mode::ready
+ns::make(x, a[2]).field
+object.at(index + 1)
+f("a\0\xff", a[one::index(f(1))])
+{1,2}
+{{1,2},{3,4}}
+{f(), object.at(2), a[0]}
+{Box{.value=1}, ns::Box{}, {}}
+{Box{.value=type_id(array<u8,2>)}}
+one :: two::Box{.last=3,.first=1,.middle=2}
+Box{.value={1,2}[0]}
+{1,size_of(i64)}
+Box{.first=1,.second=type_id(array<u8,2>)}
+f({1,field_count(Box)})
+{Box{.value=f(size_of(i64))}}
+f<i64>(1)
+x<y<z>>(a)
+f<a<b<c>>>(0)
+ns :: make<Pair<i64, u8>>(1)
+{f<i64>(1),2}
+Box{.first=f<a<b<c>>>(0),.second={x<y<z>>(a)}}
+f({Box<i64>{.value=1},2})
+{1,f<a<b<c>>(0)}
+f<A<B<C<D<i64>>>>>()
+size_of(A<B<C<D<i64>>>>)
+A<B<C<D<E<i64>>>>>{}
+{}
+{1}
+{1,2,3}
+{{}, {1, {2}}, f(3, {4,5})}
+{1,2}[0]
+({1,2}).field
+{}.size()
+ns::Box{}
+Box{.first=f(1,{2}),.last=Other{.items={3,4}}}
+Box{.value=1}.value
+Box{.items={1,2}}.items[0]
+Box{.items={1,2}}.at({3,4}[0])
+f({}, Box{.value=1}, {f(2),object.at(3)})
+f("text", Box{.value=1})
+{true < x > (y), a < b >> (c)}
+{1,f<T}>(0)
+Box{.first=true < x > (y),.last=a < b >> (c)}
+{Box{}, ns::array{}, object.size_of()}
+f<i64>()
+f<u64,u8>(1,2)
+ns::make<bool,64>(true)
+f<Box<i64>>()
+f<Pair<i64,u8>,Box<64>>(1)
+f<ns::array<u8,16>>(value)
+one::two::Box<Pair<u8,16>,Other>{.last=2,.first=1}
+f<i64>(type_id(Pair<Box<u8>,i64>)).member[0]
+{f<i64>(1),size_of(array<u8,4096>),Box<u64>{.value=2}}
+Box<i64>{.value=field_count(Other)}.value
+size_of<i64>(u8)
+type_id<8>(Box)
+a < b >> (c)
+(a) < b > (c)
+true < x > (y)
+f<a<b<c>>(0)
+
+@case expr trivia/binary
+@step expr
+1 // comment
+ + 2;
+@case expr trivia/qualified-call
+@step expr
+one // name trivia
+ :: two(1, other.run()).field[2].at(3);
+@case expr trivia/qualified-construct
+@step expr
+one // qualified trivia
+ :: two::Box{.last=3,.first=1,.middle=2};
+@case expr trivia/template-call
+@step expr
+ns // callee trivia
+ :: make<Pair<i64, // argument trivia
+ u8>>(1);
+
+# Alternate expression stops: closing parenthesis, assignment target, constructor braces.
+@cases expr-close
+@variant parenthesis |)
+@step expr stop=close_parenthesis
+1 + 2
+f(a[1], b.member)
+Box{.value={1,2}[0]}
+1
+x
+(x + 1) * 2
+-x + ns::value
+ns::Mode::ready
+f()
+ns::make(x, a[2]).field
+object.at(index + 1)
+f("a\0\xff", a[one::index(f(1))])
+true < x > (y)
+size_of(i64)
+type_id(array<u8,2>)
+field_count(Box)
+f(size_of(i64))
+
+@cases expr-assign
+@step expr stop=assignment
+target = 2;
+1 + 2;
+a[1] = 2;
+{1,2}[0] = 3;
+
+@cases expr-braces
+@step expr stop=constructor_braces
+@step raw stop=constructor_braces
+field{}
+field{},other{}
+field{}{size_of(i64)
+field{};size_of(i64)
+field{1}
+field{1},other{}
+field{1}{size_of(i64)
+field{1};
+@case expr-braces trivia
+@step expr stop=constructor_braces
+@step raw stop=constructor_braces
+field{} // following trivia
+ {
+
+# Reflection over every declaration type spelling.
+@cases expr-reflect
+@variant query |;
+@step expr
+size_of(i64)
+size_of(u64)
+size_of(u8)
+size_of(bool)
+size_of(own<i64>)
+size_of(ref<i64>)
+size_of(mutref<i64>)
+size_of(Name)
+size_of(ns::Name)
+size_of(Pair<i64,u8>)
+size_of(Box<Pair<u8,64>>)
+size_of(array<u8,1>)
+size_of(array<i64,4096>)
+size_of(array<ns::Value,64>)
+size_of(array<Box<i64>,2>)
+size_of(builtin::array<bool,3>)
+size_of(builtin::span<const u8>)
+size_of(builtin::OwnedValues<ns::Value>)
+size_of(array<builtin::ConsoleSample,2>)
+size_of(array<builtin::IommuEventSample,64>)
+size_of(builtin::OwnedValues<builtin::IommuEventSample>)
+size_of(builtin::OwnedValues<builtin::ConsoleSample>)
+size_of(builtin::ByteRegion)
+size_of(builtin::OwnedBytes)
+size_of(builtin::ConsoleSession)
+size_of(builtin::ConsoleSample)
+size_of(builtin::ConsolePutResult)
+size_of(builtin::ConsoleCompletion)
+size_of(builtin::DisplaySession)
+size_of(builtin::DisplayPutResult)
+size_of(builtin::DisplayCompletion)
+size_of(builtin::IommuEventSession)
+size_of(builtin::IommuEventSample)
+size_of(builtin::EventPollResult)
+size_of(builtin::EventAckResult)
+size_of(builtin::EventIntakeCompletion)
+type_id(i64)
+type_id(u64)
+type_id(u8)
+type_id(bool)
+type_id(own<i64>)
+type_id(ref<i64>)
+type_id(mutref<i64>)
+type_id(Name)
+type_id(ns::Name)
+type_id(Pair<i64,u8>)
+type_id(Box<Pair<u8,64>>)
+type_id(array<u8,1>)
+type_id(array<i64,4096>)
+type_id(array<ns::Value,64>)
+type_id(array<Box<i64>,2>)
+type_id(builtin::array<bool,3>)
+type_id(builtin::span<const u8>)
+type_id(builtin::OwnedValues<ns::Value>)
+type_id(array<builtin::ConsoleSample,2>)
+type_id(array<builtin::IommuEventSample,64>)
+type_id(builtin::OwnedValues<builtin::IommuEventSample>)
+type_id(builtin::OwnedValues<builtin::ConsoleSample>)
+type_id(builtin::ByteRegion)
+type_id(builtin::OwnedBytes)
+type_id(builtin::ConsoleSession)
+type_id(builtin::ConsoleSample)
+type_id(builtin::ConsolePutResult)
+type_id(builtin::ConsoleCompletion)
+type_id(builtin::DisplaySession)
+type_id(builtin::DisplayPutResult)
+type_id(builtin::DisplayCompletion)
+type_id(builtin::IommuEventSession)
+type_id(builtin::IommuEventSample)
+type_id(builtin::EventPollResult)
+type_id(builtin::EventAckResult)
+type_id(builtin::EventIntakeCompletion)
+field_count(i64)
+field_count(u64)
+field_count(u8)
+field_count(bool)
+field_count(own<i64>)
+field_count(ref<i64>)
+field_count(mutref<i64>)
+field_count(Name)
+field_count(ns::Name)
+field_count(Pair<i64,u8>)
+field_count(Box<Pair<u8,64>>)
+field_count(array<u8,1>)
+field_count(array<i64,4096>)
+field_count(array<ns::Value,64>)
+field_count(array<Box<i64>,2>)
+field_count(builtin::array<bool,3>)
+field_count(builtin::span<const u8>)
+field_count(builtin::OwnedValues<ns::Value>)
+field_count(array<builtin::ConsoleSample,2>)
+field_count(array<builtin::IommuEventSample,64>)
+field_count(builtin::OwnedValues<builtin::IommuEventSample>)
+field_count(builtin::OwnedValues<builtin::ConsoleSample>)
+field_count(builtin::ByteRegion)
+field_count(builtin::OwnedBytes)
+field_count(builtin::ConsoleSession)
+field_count(builtin::ConsoleSample)
+field_count(builtin::ConsolePutResult)
+field_count(builtin::ConsoleCompletion)
+field_count(builtin::DisplaySession)
+field_count(builtin::DisplayPutResult)
+field_count(builtin::DisplayCompletion)
+field_count(builtin::IommuEventSession)
+field_count(builtin::IommuEventSample)
+field_count(builtin::EventPollResult)
+field_count(builtin::EventAckResult)
+field_count(builtin::EventIntakeCompletion)
+
+# Typed expression diagnostics, directly and as a return root.
+@cases expr-typed-error
+@variant direct
+@step expr
+@variant return module typed_errors; auto f()->i64{return |}
+@step program
+f<T)>(0);
+f<T]>(0);
+f<T:>(0);
+f<>(0);
+f<i64,>(0);
+(f<T)>(0);
+{f<T)>(0)};
+Box{.value=f<T)>(0)};
+size_of(builtin::span<const u8>>);
+f<i64,u8,bool>(0);
+f<0>(0);
+f<65>(0);
+f<1u64>(0);
+f<18446744073709551616>(0);
+f<true>(0);
+f<false>(0);
+f<own>(0);
+f<ref>(0);
+f<mutref>(0);
+f<array>(0);
+f<builtin>(0);
+f<fn>(0);
+f<ns::true>(0);
+f<__au_private>(0);
+size_of();
+size_of(123);
+size_of(fn);
+size_of(i64,u8);
+size_of(own);
+size_of(own<u8>);
+size_of(ref<i64>>);
+size_of(mutref<i64);
+size_of(builtin);
+size_of(builtin::unknown);
+size_of(builtin::span<u8>);
+size_of(builtin::span<const i64>);
+size_of(array<i64>);
+size_of(array<own<i64>,1>);
+size_of(array<array<i64,1>,1>);
+size_of(array<i64,0>);
+size_of(array<i64,4097>);
+size_of(array<i64,1u64>);
+size_of(array<i64,N>);
+size_of(array<Class,65>);
+size_of(builtin::OwnedValues<i64>);
+size_of(builtin::OwnedValues<Box<i64>>);
+size_of(Box<i64,u8,bool>);
+size_of(Box<i64,>);
+size_of(Box<0>);
+size_of(array<builtin::ConsolePutResult,2>);
+size_of(array<builtin::DisplayCompletion,2>);
+size_of(builtin::OwnedValues<builtin::EventPollResult>);
+@case expr-typed-error trivia
+@step expr
+f< T // malformed trivia
+ ) >(0);
+@case expr-typed-error trivia/return
+@step program
+module typed_errors; auto f()->i64{return f< T // malformed trivia
+ ) >(0);}
+# The second byte of >> is the diagnostic token; template-id nesting limits.
+@cases expr-typed-error
+@step expr
+size_of(Box<i64>>);
+size_of(array<i64,2>>);
+size_of(builtin::OwnedValues<Value>>);
+f<A<B<C<D<E<i64>>>>>>();
+size_of(A<B<C<D<E<i64>>>>>);
+
+# ---- Expression roots inside whole modules.
+@cases return-root
+@variant aggregates module aggregates; auto f()->i64{return |;}
+@step program
+{}
+{1}
+{1,2,3}
+{{}, {1, {2}}, f(3, {4,5})}
+{1,2}[0]
+({1,2}).field
+{}.size()
+ns::Box{}
+Box{.first=f(1,{2}),.last=Other{.items={3,4}}}
+Box{.value=1}.value
+Box{.items={1,2}}.items[0]
+Box{.items={1,2}}.at({3,4}[0])
+f({}, Box{.value=1}, {f(2),object.at(3)})
+f("text", Box{.value=1})
+{true < x > (y), a < b >> (c)}
+{1,f<T}>(0)
+Box{.first=true < x > (y),.last=a < b >> (c)}
+{Box{}, ns::array{}, object.size_of()}
+@case return-root aggregates/trivia
+@step program
+module aggregates; auto f()->i64{return one // qualified trivia
+ :: two::Box{.last=3,.first=1,.middle=2};}
+@cases return-root
+@variant typed module typed; auto f()->i64{return |;}
+@step program
+f<i64>()
+f<u64,u8>(1,2)
+ns::make<bool,64>(true)
+f<Box<i64>>()
+f<Pair<i64,u8>,Box<64>>(1)
+f<ns::array<u8,16>>(value)
+one::two::Box<Pair<u8,16>,Other>{.last=2,.first=1}
+f<i64>(type_id(Pair<Box<u8>,i64>)).member[0]
+{f<i64>(1),size_of(array<u8,4096>),Box<u64>{.value=2}}
+Box<i64>{.value=field_count(Other)}.value
+size_of<i64>(u8)
+type_id<8>(Box)
+a < b >> (c)
+(a) < b > (c)
+true < x > (y)
+f<a<b<c>>(0)
+{1,f<T}>(0)
+@case return-root typed/trivia
+@step program
+module typed; auto f()->i64{return ns // callee trivia
+ :: make<Pair<i64, // argument trivia
+ u8>>(1);}
+@cases return-root
+@variant templates module templates; auto f()->i64{return |;}
+@step program
+f<i64>(1)
+x<y<z>>(a)
+f<a<b<c>>>(0)
+f<a<b<c>>(0)
+{f<i64>(1),2}
+Box{.first=f<a<b<c>>>(0),.second={x<y<z>>(a)}}
+f({Box<i64>{.value=1},2})
+{1,f<a<b<c>>(0)}
+{f<T)>(0)}
+{f<T]>(0)}
+{f<T:>(0)}
+Box{.value=f<T)>(0)}
+f({f<T]>(0)})
+@cases return-root
+@variant errors module errors; auto f()->i64{return |;}
+@step program
+(f<T)>(0)
+f<T]>(0)
+f<T:>(0)
+
+@cases program-root
+@step program
+module templates; auto f()->i64{if(f<T)>(0)){return 1;}return 0;}
+module hooks; auto f()->i64 { i64 x = 1+2; const i64 y = 3; x = x+y; x+1; static_assert(true && !false); if(x>0){x=x-1;}else{x=0;} while(x<4){x=x+1;} return x*2; }
+module fallback; auto f()->i64 { i64 x=f(1); x=f(2); if(f(1)){return f(2);} while(f(0)){x=f(3);} static_assert(f(1)); return x<y<z>>(a); }
+
+# Expression and aggregate grammar errors in a return statement.
+@cases return-error
+@variant errors module errors; auto f()->i64{return |}
+@step program
+;
+:;
+];
+,;
+1 + ;
+1 +
+f(;
+f(,);
+a[;
+a[];
+(1 + 2;
+1 2;
+1:2;
+1]2;
+1,2;
+1(2);
+true(2);
+(1) + ;
+f(1,);
+(1)(2);
+f(1;
+f(1 2);
+a.;
+a..b;
+name::;
+a.true;
+name::true;
+a.array;
+a.builtin;
+name::builtin;
+a.__au_private;
+name::__au_x;
+a[1;
+a[1);
+a[1,2];
+f(1)(2);
+{,};
+{1,};
+{1 2};
+{1;
+{1];
+{1)};
+{1,2
+Box{value=1};
+Box{..value=1};
+Box{.1=1};
+Box{.true=1};
+Box{.array=1};
+Box{.builtin=1};
+Box{.__au_private=1};
+Box{.value 1};
+Box{.value==1};
+Box{.value=};
+Box{.value=1,};
+Box{.value=1;
+Box{.value=1 .other=2};
+Box{.value={1,}};
+{}(1);
+Box{}(1);
+
+# Constructor initializer roots and their diagnostics.
+@cases initializer
+@variant parenthesized export module constructors; class Box { i64 value; public: Box(i64 x):value(|){} auto read() const->i64 {return value;} };
+@step program
+1
+x
+(x + 1) * 2
+-x + ns::value
+ns::Mode::ready
+f()
+ns::make(x, a[2]).field
+object.at(index + 1)
+f("a\0\xff", a[one::index(f(1))])
+true < x > (y)
+size_of(i64)
+type_id(array<u8,2>)
+field_count(Box)
+f(size_of(i64))
+f<i64>(1)
+x<y<z>>(a)
+f<a<b<c>>>(0)
+1 +
+(1 + 2
+1 2
+f(1,)
+f(,)
+a[]
+a[1
+a.
+name::
+"text"(1)
+"text"[0]
+f<T)>(0)
+@cases initializer
+@step program
+export module constructors; class Box { i64 value; public: Box(i64 x):value(){} auto read() const->i64 {return value;} };
+export module constructors; class Box { i64 value; public: Box():value(1 {} };
+export module constructors; class Box { i64 value; public: Box():value(1),{} };
+export module constructors; template<Scalar T> class Box { T value; public: Box(T x):value(x){} auto read() const->T {return value;} };
+export module constructors; class Box { array<i64,2> values; public: Box():values{1,2}{} };
+export module constructors; class Box { array<i64,2> values; public: Box():values{}{} };
+@case initializer trivia
+@step program
+export module constructors; namespace ns { class Pair { i64 first; i64 second; public: Pair(i64 x):second // initializer order and field-token trivia
+ (ns::value),
+first(f("text", a[x + 1])){} auto get() const->i64 {return first + second;} }; }
+
+# Brace initializers: the whole module, then each initializer directly at its field.
+@cases initializer-braces
+@variant fields export module braces; class Box { array<i64,4> value; array<i64,4> other; public: Box():‸value|,‸other{}{} };
+@step program
+@step expr stop=constructor_braces at=^1
+@step expr stop=constructor_braces at=^2
+{}
+{1,2}
+{{1,2},{3,4}}
+{f(), object.at(2), a[0]}
+{Box{.value=1}, ns::Box{}, {}}
+{true < x > (y), a < b >> (c)}
+{1,size_of(i64)}
+{Box{.value=type_id(array<u8,2>)}}
+@cases initializer-braces
+@variant templates export module templates; class Box { array<i64,2> value; public: Box():value{|}{} };
+@step program
+{f<i64>(1),2}
+Box{.first=f<a<b<c>>>(0),.second={x<y<z>>(a)}}
+f({Box<i64>{.value=1},2})
+{1,f<a<b<c>>(0)}
+{f<T)>(0)}
+{f<T]>(0)}
+{f<T:>(0)}
+Box{.value=f<T)>(0)}
+f({f<T]>(0)})
+@variant errors export module errors; class Box { array<i64,2> value; public: Box():value|{} };
+@step program
+{,}
+{1,}
+{1 2}
+{1
+{1]}
+{Box{.value=1,}}
+
+# Template-dependent roots in function and class templates, whole and direct.
+@case typed-context function
+@step program
+@step expr at=^1 types=T,U fn
+@step expr at=^2 types=T,U fn
+export module context; template<Value T,Value U> auto f(T x,U y)->i64 {const Pair<T,U> p=‸Pair<T,U>(x,y); return ‸size_of(T)+type_id(U);}
+@case typed-context class-capacity
+@step program
+@step expr stop=constructor_braces at=^1 types=T caps=N
+@step expr at=^2 types=T caps=N
+export module context; template<Scalar T,i64 N> class C { array<T,N> data; public: C():‸data{size_of(T)}{} auto f()->i64{return ‸size_of(array<T,N>);} };
+@case typed-context class-value
+@step program
+@step expr stop=close_parenthesis at=^1 types=T
+@step expr at=^2 types=T
+export module context; template<Value T> class C { i64 value; public: C():value(‸size_of(T)){} auto f()->i64{return ‸field_count(T);} };
+@case typed-context statements
+@step program
+@step expr stop=close_parenthesis at=^1 types=T fn
+@step expr at=^2 types=T fn
+@step expr stop=close_parenthesis at=^3 types=T fn
+@step expr stop=assignment at=^4 types=T fn
+@step expr at=^5 types=T fn
+@step expr stop=close_parenthesis at=^6 types=T fn
+export module context; template<Value T> auto f(T x)->i64 { if(‸type_id(T)){return ‸g<T>(x);} while(‸size_of(T)){‸x=‸g<T>(x);} static_assert(‸size_of(T)>0); return 0;}
+@cases typed-context
+@step program
+export module context; template<Value T> class C { public: auto f()->i64{return g<T>();} };
+export module context; template<Value T> class C { public: auto f()->i64{return size_of(Box<i64>);} };
+export module context; template<Value T> auto f(T x)->i64{return g<Box<T>>(x);}
+export module context; template<Value T> auto f(T x)->i64{return g<T<i64>>(x);}
+export module context; template<Value T> auto f(T x)->i64{return size_of(builtin::OwnedValues<T>);}
+
+# ---- Bodies.
+@cases body
+@step body
+{}
+{{}}
+{i64 x=1;const u8 y=2u8;return x;}
+{x=1;obj.field=2;a[0]=3;f();}
+{if(true){return 1;}else{while(false){return 2;}}}
+{static_assert(1);{return (2);}}
+{array<u8,2> bytes={1u8,2u8};return bytes[0];}
+{Box<Box<i64>> value=Box<Box<i64>>{};return size_of(Box<Box<i64>>);}
+{1;if(true){2;}else{}3;while(false){}4;}
+{return values[indices[0]];}
+# Control words after const remain unresolved named types, never locals.
+{const return x=1;const if y=2;const while z=3;static_assert a=4;}
+return 1;
+{
+{return 1;
+{return 1}
+{return;}
+{1 2;}
+{if true){}}
+{if(true {}}
+{if(true)1;}
+{if(true){}else if(false){}}
+{while(1){}
+{static_assert 1;}
+{static_assert(1)}
+{i64 x 1;}
+{const i64 x=1}
+{i64 true=1;}
+{1=2;}
+{f()=2;}
+{a.b.c=2;}
+{return f(1;}
+{if(1 2){}}
+{i64 x=1 2;}
+{return size_of(i64,);}
+{return x=1;}
+{if x=1;}
+{while x=1;}
+@case body trivia
+@step body
+{
+ const i64 binding = 1;
+ return binding;
+}
+# The root consumes exactly its own brace even when a second body follows.
+@case body boundary
+@step body
+@step body at=next
+{} {return 1;}
+@case body context/function
+@step body at=^1 types=T,U fn
+@step program
+export module body_context;template<Value T,Value U>auto f(T x,U y)->i64‸{const Pair<T,U> p=Pair<T,U>(x,y);return size_of(T)+type_id(U);}
+@case body context/class
+@step body at=^1 types=T caps=N
+@step program
+export module body_context;template<Scalar T,i64 N>class Buffer{public:auto f()->i64‸{array<T,N> items={};return size_of(T);}};
+
+# ---- Declaration types, standalone and after a preceding line.
+@cases type
+@variant alone
+@step type
+@variant nested prefix\n | value, suffix
+@step type at=snippet
+i64
+u64
+u8
+bool
+own<i64>
+ref<i64>
+mutref<i64>
+Name
+ns::Name
+Pair<i64,u8>
+Box<Pair<u8,64>>
+array<u8,1>
+array<i64,4096>
+array<ns::Value,64>
+array<Box<i64>,2>
+builtin::array<bool,3>
+builtin::span<const u8>
+builtin::OwnedValues<ns::Value>
+array<builtin::ConsoleSample,2>
+array<builtin::IommuEventSample,64>
+builtin::OwnedValues<builtin::IommuEventSample>
+builtin::OwnedValues<builtin::ConsoleSample>
+builtin::ByteRegion
+builtin::OwnedBytes
+builtin::ConsoleSession
+builtin::ConsoleSample
+builtin::ConsolePutResult
+builtin::ConsoleCompletion
+builtin::DisplaySession
+builtin::DisplayPutResult
+builtin::DisplayCompletion
+builtin::IommuEventSession
+builtin::IommuEventSample
+builtin::EventPollResult
+builtin::EventAckResult
+builtin::EventIntakeCompletion
+ns::Box<other::array<bool,1>>
+true
+return
+__au_private
+@cases type-error
+@variant alone
+@step type
+@variant nested prefix\n |
+@step type at=snippet
+fn value
+123 value
+array;
+own<i64;
+ref<i64>>;
+own<u8>;
+builtin;
+builtin::unknown;
+builtin::span<u8>;
+builtin::span<const i64>;
+builtin::span<const u8>>;
+array<i64>;
+array<own<i64>,1>;
+array<i64,0>;
+array<i64,4097>;
+array<i64,1u64>;
+array<i64,N>;
+array<Class,65>;
+array<Class,65>>;
+builtin::OwnedValues<i64>;
+builtin::OwnedValues<Box<i64>>;
+Box<i64,u8,bool>;
+Box<own>;
+Box<0>;
+Box<65>;
+Box<18446744073709551616>;
+Box<i64,>;
+ns::true;
+ns::__au_private;
+A<B<C<D<E<i64>>>>>;
+@case type trivia
+@step type
+ns // retained trivia
+ :: Name
+@case type trivia/nested
+@step type at=1
+prefix
+ ns // retained trivia
+ :: Name value, suffix
+# One type only: a malformed template-looking suffix is never scanned; >> may leave a half.
+@cases type
+@step type
+i64 f<T)> broken
+Box<i64> f<T)> broken
+Box<i64>> rest
+Box<i64>>
+array<i64,2>> rest
+builtin::OwnedValues<Item>> rest
+Box<Pair<i64,u8>>> rest
+A<B<C<D<i64>>>> next
+@case type half/trivia
+@step type at=1
+prefix
+ Box // first
+ <i64 // close
+ >> rest
+@case type successive
+@step type
+@step type at=next
+@step type at=next
+@step type at=next
+i64 u8 Box<i64> array<u8,2>
+# Repeated reads from an explicit residual closer fail identically, then read on.
+@case type residual
+@step type at=1
+@step type at=next
+@step type at=next
+@step type at=5
+prefix Box<i64>> next
+@cases type-context
+@variant function template<Value T,Value U> |
+@step type at=snippet types=T,U fn
+T value
+U value
+Pair<T,U> value
+ns::T value
+Box<Box<T>> value
+Box<T<i64>> value
+builtin::OwnedValues<T> value
+@variant class template<Scalar T,i64 N> |
+@step type at=snippet types=T caps=N
+array<T,N> value
+T<i64> value
+Box<i64> value
+# Conversion rejects after the grammar split >>, keeping the original token.
+@cases type-program
+@step program
+module type_errors; class C{Box<i64>> value;};
+module type_errors; auto f(Box<i64>> value)->i64{}
+module type_errors; auto f()->Box<i64>>{}
+module type_errors; class C{C(Box<i64>> value){} };
+module type_errors; class C{auto f(Box<i64>> value)->i64{} };
+module type_errors; class C{auto f()->Box<i64>>{} };
+export module declarations;template<Value T,Value U> auto choose(T x,U y)->Pair<T,U>{return Pair<T,U>(x,y);}template<Scalar T,i64 N> class Buffer{array<T,N> data;public:Buffer(T value):data{value}{} auto read(T index)->T{return index;}};class Concrete{Box<Pair<i64,u8>> value;builtin::OwnedValues<Item> items;public:Concrete(Box<Pair<i64,u8>> input):value(input),items(make_items()){}auto read(u8 index) const ->Box<Pair<i64,u8>>{return value;}};
+@step parser
+module field_span;class C{own<i64> value;};
+module field_span;class C{builtin::ByteRegion value;};
+
+# ---- Callables, standalone and inside a namespace or class.
+@cases callable
+@variant alone
+@step callable stop=function
+@variant wrapped export module callable_contract;namespace ns{|}
+@step callable stop=function at=snippet
+@step program
+auto empty()->i64{}
+auto mix(i64 first,u8 second,bool third,u64 fourth)->bool{return third;}
+auto inspect(const Owner& owner,i64 amount)->i64{return amount;}
+auto inspect(const Owner& first,const Other& second)->i64{return 0;}
+auto inspect(Owner& first,const Other& second,const Third& third)->i64{return 0;}
+auto f(Owner& first,Other& second)->i64{}
+auto f(const Owner& first,Other& second)->i64{}
+auto f(Owner& first,Other& second,const Third& third)->i64{}
+auto f(Owner& first,Other& second,Third& third)->i64{}
+auto f(Owner& first,const Other& second,Third& third)->i64{}
+auto f(const Owner& first,Other& second,const Third& third,Fourth& fourth)->i64{}
+auto touch(Owner& owner)->Owner{return owner;}
+auto events(builtin::ConsoleSession& console,builtin::DisplaySession& display)->i64{return 0;}
+auto transfer(builtin::ByteRegion region,builtin::OwnedBytes bytes)->builtin::OwnedBytes{return move(bytes);}
+auto nested(Box<Box<i64>> value)->Box<Box<i64>>{return value;}
+@cases callable-method
+@variant alone
+@step callable stop=method
+@variant wrapped export module callable_contract;namespace ns{class Box{public:|};}
+@step callable stop=method at=snippet
+@step program
+auto read(i64 key)const->u8{const u8 byte=2u8;return byte;}
+auto view(builtin::span<const u8> input)const->builtin::span<const u8>{return input;}
+auto nested(Box<Box<i64>> value)->Box<Box<i64>>{return value;}
+@cases callable-constructor
+@variant alone
+@step callable stop=constructor
+@variant wrapped export module callable_contract;namespace ns{class Box{public:|};}
+@step callable stop=constructor at=snippet
+@step program
+Box(){}
+Box(i64 value):first(value),bytes{},last{1u8,2u8}{}
+@case callable boundary
+@step callable stop=function at=2
+@step callable stop=method at=next
+1;auto first()->i64{}auto second()->i64{}
+
+# Callable grammar errors, directly and in a module (truncated inputs stay truncated).
+@cases callable-error
+@variant direct
+@step callable stop=function
+@variant module module callable_errors;|
+@step program
+f()->i64{}
+auto
+auto true()->i64{}
+auto array()->i64{}
+auto __au_private()->i64{}
+auto f{}
+auto f(
+auto f(i64
+auto f(i64 x
+auto f(i64 x i64 y)->i64{}
+auto f(i64 x,)->i64{}
+auto f(fn x)->i64{}
+auto f(own<u8> x)->i64{}
+auto f(i64 true)->i64{}
+auto f()
+auto f()const->i64{}
+auto f()->
+auto f()->i64
+auto f()->i64{
+auto f()->i64{return;}
+auto f()->i64{if(true)return 1;}
+auto f(Box<i64>> value)->i64{}
+auto f(i64& true)->i64{}
+auto f(i64& value)->i64{return 1}
+auto f(array<i64,2> value)->i64{return 1}
+@cases callable-error-method
+@variant direct
+@step callable stop=method
+@variant module module callable_errors;class Box{|
+@step program
+auto f(i64 array)->i64{}
+auto f(i64 __au_value)->i64{}
+auto f()const const->i64{}
+auto f()->i64;
+auto f()->i64{return 1}
+auto f()->Box<i64>>{}
+auto Box()->i64{return 1}
+@cases callable-error-constructor
+@variant direct
+@step callable stop=constructor
+@variant module module callable_errors;class Box{|
+@step program
+Box(
+Box(i64 value
+Box()
+Box(){
+Box(){return 1;}
+Box(){{}}
+Box()const{}
+Box():
+Box():true(1){}
+Box():array{}{}
+Box():__au_field{}{}
+Box():value=1{}
+Box():value(1{}
+Box():value(){}
+Box():value{1,}{}
+Box():value{}
+Box():value(1),{}
+Box(Owner& value){return 1;}
+# Declaration admission: complete syntax is accepted alone and rejected in a module.
+@cases callable-admission
+@variant direct
+@step callable stop=function
+@variant module module callable_errors;|
+@step program
+auto f(const i64 value)->i64{}
+auto f(i64& value)->i64{}
+auto f(i64 first,Owner& second)->i64{}
+auto f(Box<i64>& value)->i64{}
+auto f(builtin::ConsoleSession& first,builtin::ConsoleSession& second)->i64{}
+auto f(builtin::DisplaySession& first,builtin::IommuEventSession& second)->i64{}
+auto f(array<i64,2> value)->i64{}
+auto f()->array<i64,2>{}
+auto f()->builtin::span<const u8>{}
+@cases callable-admission-method
+@variant direct
+@step callable stop=method
+@variant module module callable_errors;class Box{|};
+@step program
+auto f(Owner& value)->i64{}
+auto f(own<i64> value)->i64{}
+auto f()->own<i64>{}
+auto Box()->i64{}
+@cases callable-admission-constructor
+@variant direct
+@step callable stop=constructor
+@variant module module callable_errors;class Box{|};
+@step program
+Box(Owner& value){}
+# Two-service borrowed parameter combinations.
+@cases callable-services
+@step program
+module service_admission;auto f(builtin::ConsoleSession& first,builtin::IommuEventSession& second)->i64{}
+module service_admission;auto f(builtin::IommuEventSession& first,builtin::ConsoleSession& second)->i64{}
+module service_admission;auto f(builtin::DisplaySession& first,builtin::ConsoleSession& second)->i64{}
+module service_admission;auto f(builtin::IommuEventSession& first,builtin::DisplaySession& second)->i64{}
+# Six parameters is a semantic bound, not a grammar or admission bound.
+@cases callable-limit
+@step callable stop=function at=3
+@step program
+@step resolve
+module callable_limit;auto bounded(i64 p0,i64 p1,i64 p2,i64 p3,i64 p4,i64 p5)->i64{return p0;}
+module callable_limit;auto bounded(i64 p0,i64 p1,i64 p2,i64 p3,i64 p4,i64 p5,i64 p6)->i64{return p0;}
+
+# Callables and fields inside template declarations with their captured context.
+@case callable-context function
+@step program
+@step callable stop=function at=^1 types=T,U fn
+export module callable_context;template<Value T,Value U>‸auto pair(T first,U second)->Pair<T,U>{return Pair<T,U>(first,second);}
+@case callable-context class
+@step program
+@step callable stop=method at=^1 types=T caps=N
+@step callable stop=constructor at=next types=T caps=N
+export module callable_context;template<Scalar T,i64 N>class Buffer{public:‸auto get(T value)->T{array<T,N> items={};return value;}Buffer(T value):items{}{}};
+@case callable-context field
+@step field at=^1 types=T caps=N
+@step program
+export module field_context;template<Scalar T,i64 N>class Buffer{‸array<T,N> items;};
+@cases callable-context
+@variant shadow export module callable_shadow;template<Scalar T>|
+@step callable stop=function at=snippet types=T fn
+@step program
+auto T()->i64{}
+auto T()->i64{return 1}
+auto f(Owner& value)->i64{}
+@case callable-context array-constructor
+@step callable stop=constructor at=^1
+@step program
+export module callable_array;namespace std{class array{public:‸array(){}};}
+
+# ---- Fields.
+@cases field
+@variant alone | next
+@step field
+@variant wrapped export module field_contract;class Holder{|};
+@step field at=snippet
+@step program
+bool ready;
+array<u8,2> bytes;
+builtin::OwnedBytes bytes;
+builtin::OwnedValues<Item> items;
+builtin::ConsoleSample sample;
+@cases field
+@variant alone | next
+@step field
+@variant public export module field_contract;class Holder{public:|};
+@step field at=snippet
+@step program
+i64 count;
+Box<Box<i64>> value;
+@case field trivia
+@step field
+Box // retained type trivia
+ <i64> value; next
+@case field trivia/wrapped
+@step field at=7
+@step program
+export module field_contract;class Holder{Box // retained type trivia
+ <i64> value;};
+@cases field-error
+@variant direct
+@step field
+@variant module module field_errors;class Holder{|};
+@step program
+i64
+i64 value
+i64 true;
+i64 value=1;
+Box<i64>> value;
+array<i64,65> values;
+array<u8,513> bytes;
+@variant direct-public
+@step field
+@variant public module field_errors;class Holder{public:|};
+@step program
+array<u8,2> bytes;
+array<i64,65> values;
+builtin::OwnedBytes bytes;
+array<u8,2> bytes=1;
+@variant direct-template
+@step field
+@variant template module field_errors;template<Scalar T>class Holder{|};
+@step program
+builtin::OwnedBytes bytes;
+
+# ---- Module containers, namespaces and contexts.
+@cases module
+@step program
+export module containers;import dependency;namespace outer::inner{class Box{i64 hidden;public:Box(){}auto get()const->i64{return 1;}private:i64 secret;auto hide()->i64{return 2;}public:i64 visible;};export namespace child{class Open{};auto visible()->i64{return 3;}}}export namespace outer{class Shared{};}class Last{};
+export module scopes;namespace std{namespace nested{class Inner{};}class array{};}namespace other{}namespace std{class array{};}
+export module scopes;namespace std{}namespace other{class array{};}
+export module scopes;namespace std{namespace nested{class array{};}}
+export module contexts;template<Scalar T,i64 N>class Box{builtin::array<T,N> values;};class T{i64 value;};class N{};template<Value U>auto make(U item)->U{return item;}auto U(T item)->T{return item;}auto N()->i64{return 1;}auto inspect(Owner& owner)->i64{return 0;}
+export module enums;namespace inner{export enum class E{a,b,};}enum class F{c};
+@step parser
+export module facade;class Empty{};
+@cases module-error
+@variant interface export module containers;|
+@step program
+namespace
+namespace true{}
+namespace array{}
+namespace a::{}
+namespace a
+namespace a{
+namespace a{class C{};
+class
+class true{};
+class array{};
+class C
+class C{
+class C{}
+class C{public i64 x;};
+class C{private i64 x;};
+template
+template<>class C{};
+template<class T>class C{};
+template<Scalar>class C{};
+template<Scalar T
+template<Scalar T,Value U,Scalar V>class C{};
+template<Scalar T,Value T>class C{};
+template<Scalar i64>class C{};
+template<i64 N>class C{};
+template<Value T,i64 N>class C{};
+template<Scalar T>namespace n{};
+template<Scalar T,i64 N>auto f()->i64{}
+template<Scalar T>class T{};
+class C{};import dependency;
+export import dependency;
+@variant implementation module containers;|
+@step program
+export class C{};
+class C{};
+
+# ---- Preambles and enums.
+@cases preamble
+@variant alone
+@step preamble
+@variant prefixed prefix;|
+@step preamble at=snippet
+module one;enum
+export module one.two;import std.array;import alpha.beta;enum
+module a.array;import a.array;
+module one;import one;import one;
+@case preamble trivia
+@step preamble
+export module a // gap
+ . b; // next
+ import c . array;class
+@case preamble trivia/prefixed
+@step preamble at=2
+prefix;export module a // gap
+ . b; // next
+ import c . array;class
+# The module-name cap counts the name, not its trivia; import names are unlimited.
+@case preamble name-limit
+@step preamble
+module «4094|a» // gap
+ . // gap
+ b;import «4094|a» // gap
+ . b;
+@case preamble name-limit/short
+@step preamble
+module short;import «4095|a» // gap
+ . b;
+@cases enum
+@variant alone
+@step enum
+@variant prefixed prefix;|
+@step enum at=snippet
+enum class Solo{first};next
+enum class Case{_zero,Same,same};next
+@variant alone-63
+@step enum count=63
+@variant prefixed-63 prefix;|
+@step enum at=snippet count=63
+enum class Shade{red,green,blue,};next
+@variant wide-63
+@step enum count=63
+enum class Wide{«256,|case_#»};
+enum class Wide{«256,|case_#»,};
+# Grammar diagnostics with their raw first-diagnostic records.
+@cases preamble-error
+@variant direct
+@step preamble
+@step raw stop=preamble
+@step program
+export
+module
+module 0;
+module true;
+module array;
+module __au_private;
+module a.;
+module a.true;
+module a.builtin;
+module a.__au_private;
+module a::b;
+module a
+module a;import
+module a;import array;
+module a;import a.true;
+module a;import a.builtin;
+module a;import a.
+module a;import a
+module «4097|a».true;
+module «4097|a».;
+module «4097|a» missing
+@case preamble-error name-limit/trivia
+@step preamble
+@step raw stop=preamble
+@step program
+module «4095|a» // gap
+ . b;
+@case preamble-error empty
+@step preamble
+@step raw stop=preamble
+@step program
+@cases enum-error
+@variant direct
+@step enum
+@step raw stop=enum_definition
+@variant module export module errors;|
+@step program
+enum E{a};
+enum class
+enum class true{a};
+enum class array{a};
+enum class __au_E{a};
+enum class E
+enum class E{};
+enum class E{
+enum class E{0};
+enum class E{true};
+enum class E{array};
+enum class E{__au_case};
+enum class E{a,a};
+enum class E{a,a=1};
+enum class E{ab,a,ab};
+enum class E{a=1};
+enum class E{a
+enum class E{a b};
+enum class E{a,,};
+enum class E{a,
+enum class E{a}
+enum class Wide{«255,|case_#»,case_0};
+enum class Wide{«257,|case_#»};
+enum class Wide{«256,|case_#»,true};
+@cases enum-error
+@step enum
+@step raw stop=enum_definition
+class E{a};
+@variant count-64
+@step enum count=64
+@step raw stop=enum_definition count=64
+enum class 0{};
+enum class true{};
+enum E{};
+enum class E
+enum class E{};
+
+# ---- Limits: 128 nested blocks, 128 expression levels, 64 type levels and wide lists.
+@cases limit-body
+@step body
+{«127|{»return 1;«128|}»
+{«128|{»«129|}»
+{«127|if(true){»return 1;«128|}»
+{«128|if(true){»«129|}»
+{«127|while(true){»return 1;«128|}»
+{«128|while(true){»«129|}»
+@cases limit-expr
+@step expr
+1«99|+1»;
+1«127|+1»;
+«127|(»1«127|)»;
+«127|-»1;
+a«127|.field»;
+a«127|[0]»;
+«127|f(»1«127|)»;
+«127|{»1«127|}»;
+f(«257,|1»);
+{«257,|1»};
+ns::Box{«257,|.f#=1»};
+{«257,|f<i64>(size_of(array<u8, 4>))»};
+# A brace list adds AST depth; outside constructor braces it also consumes a primary level.
+@cases limit-return
+@variant depth module depth; auto f()->i64{return |;}
+@step program
+1«128|+1»
+«128|(»1«128|)»
+«128|-»1
+a«128|.field»
+a«128|[0]»
+«128|f(»1«128|)»
+{«127|{»1«127|}»}
+{«127|(»1«127|)»}
+@cases limit-raw
+@step raw
+1«128|+1»;
+«128|(»1«128|)»;
+@cases limit-braces
+@variant fields export module braces; class Box { array<i64,4> value; array<i64,4> other; public: Box():‸value|,‸other{}{} };
+@step program
+@step expr stop=constructor_braces at=^1
+@step expr stop=constructor_braces at=^2
+{«127|(»1«127|)»}
+{1«126|+1»}
+{«257,|1»}
+@cases limit-braces
+@step program
+export module depth; class Box { array<i64,1> value; public: Box():value{1«127|+1»}{} };
+# Type level 64 is entered before element validation; entering level 65 is the limit.
+@cases limit-type
+@step type
+«63|array<»i64«63|,1>»;
+«64|array<»i64«64|,1>»;
+@cases limit-reflect
+@step expr
+@step raw
+size_of(«63|array<»i64«63|,1>»);
+size_of(«64|array<»i64«64|,1>»);
+@cases limit-module
+@step program
+export module limit;«64|enum class E#{one};»
+export module limit;«64|enum class E#{one};»enum class Last{one};
+export module limit;«64|enum class E#{one};»enum class 0{};
+export module limit;«64|enum class E#{one};»enum class true{};
+export module limit;«64|enum class E#{one};»enum class Last
+export module depth;«32|namespace n{»class Leaf{};«32|}»
+export module depth;namespace n«31|::n»{class Leaf{};}
+export module depth;«33|namespace n{»«33|}»
+export module depth;namespace n«32|::n»{}
+@cases limit-callable
+@variant function
+@step callable stop=function
+@variant method
+@step callable stop=method
+auto wide(«513,|i64 p#»)->i64{return 1;}
+@variant constructor
+@step callable stop=constructor
+Box(i64 p):«513,|f#(make(p))»{}
+@cases limit-field
+@step field
+Pair < Pair < Pair < Pair < i64 , i64 > , Pair < i64 , i64 > > , Pair < Pair < i64 , i64 > , Pair < i64 , i64 > > > , Pair < Pair < Pair < i64 , i64 > , Pair < i64 , i64 > > , Pair < Pair < i64 , i64 > , Pair < i64 , i64 > > > > value;
+
+# ---- Byte strings: escapes, UTF-8 and the 4096-byte decoded limit in every root context.
+@cases byte-string
+@variant trivia // preceding trivia\r\n\t|;
+@step expr
+@variant close |)
+@step expr stop=close_parenthesis
+@variant raw |;
+@step raw
+""
+"text"
+"\'\\\0\a\b\f\n\r\t\v\"\x00\x7f\x80\xff"
+"é😀"
+"\0\x00\x7f\x80\xff"
+"«4095|a»"
+"«4096|a»"
+@cases byte-string
+@step program
+module strings; class Text { array<u8,512> bytes; public: Text():bytes(""){} auto first() const->u8 {return bytes[0];} }; auto f()->i64 {const array<u8,4096> bytes="";return 0;}
+module strings; class Text { array<u8,512> bytes; public: Text():bytes("text"){} auto first() const->u8 {return bytes[0];} }; auto f()->i64 {const array<u8,4096> bytes="text";return 0;}
+module strings; class Text { array<u8,512> bytes; public: Text():bytes("\'\\\0\a\b\f\n\r\t\v\"\x00\x7f\x80\xff"){} auto first() const->u8 {return bytes[0];} }; auto f()->i64 {const array<u8,4096> bytes="\'\\\0\a\b\f\n\r\t\v\"\x00\x7f\x80\xff";return 0;}
+module strings; class Text { array<u8,512> bytes; public: Text():bytes("é😀"){} auto first() const->u8 {return bytes[0];} }; auto f()->i64 {const array<u8,4096> bytes="é😀";return 0;}
+module strings; class Text { array<u8,512> bytes; public: Text():bytes("\0\x00\x7f\x80\xff"){} auto first() const->u8 {return bytes[0];} }; auto f()->i64 {const array<u8,4096> bytes="\0\x00\x7f\x80\xff";return 0;}
+module strings; class Text { array<u8,512> bytes; public: Text():bytes("«4095|a»"){} auto first() const->u8 {return bytes[0];} }; auto f()->i64 {const array<u8,4096> bytes="«4095|a»";return 0;}
+module strings; class Text { array<u8,512> bytes; public: Text():bytes("«4096|a»"){} auto first() const->u8 {return bytes[0];} }; auto f()->i64 {const array<u8,4096> bytes="«4096|a»";return 0;}
+
+# ---- Whole-module lowering diagnostics keep the original failed-session source.
+@cases resolve
+@step resolve
+export module fail;namespace ns {class Hidden{public:i64 value;};export auto expose(Hidden value)->i64{return 0;}}
+export module fail;namespace ns {enum class Hidden{one};export auto expose(Hidden value)->i64{return 0;}}
+module fail;namespace ns {enum class E{one};}auto answer()->i64{return ns::E::one;}
+module fail;class C{public:i64 value;};auto answer()->i64{const C value=C{.value=1};return value.missing;}
+
+# ---- Raw parser ABI records: result words, every copied record and admission.
+@cases raw
+@step raw
+1;
+{1};
+f(1);
+a[1;
+a.;
+a.true;
+a.array;
+a.__au_private;
+1+;
+(1;
+1 2;
+:;
+];
+,;
+1:2;
+1]2;
+1,2;
+1(2);
+true(2);
+(1)(2);
+name;
+true;
+'x';
+-1;
+ns::f(1,2);
+obj.m();
+a.b;
+a[0];
+{};
+{};size_of(i64)
+ns::Box{};
+{1,{2,3}};
+ns::Box{.last=1,.first=2};
+{1,size_of(i64)};
+Box{.first=1,.second=type_id(array<u8,2>)};
+f({1,field_count(Box)});
+{Box{.value=f(size_of(i64))}};
+{1;
+{1,};
+{,};
+{1 2};
+{1,2
+Box{value=1};
+Box{.1=1};
+Box{.true=1};
+Box{.array=1};
+Box{.__au_private=1};
+Box{.value 1};
+Box{.value=};
+Box{.value=1,};
+Box{.value=1;
+size_of(i64);
+size_of(u64);
+size_of(u8);
+size_of(bool);
+size_of(ns::Name);
+size_of(own<i64>);
+size_of(ref<i64>);
+size_of(mutref<i64>);
+size_of(builtin::span<const u8>);
+size_of(builtin::ByteRegion);
+size_of(builtin::ConsoleSample);
+size_of(array<builtin::ConsoleSample,2>);
+size_of(builtin::OwnedValues<builtin::IommuEventSample>);
+size_of(builtin::OwnedValues<Value>);
+size_of<i64>(u8);
+f<i64>();
+f<Box<i64>>();
+size_of(array<u8, 4>);
+Box<i64>{.value=1};
+size_of(Box<Pair<i64, u8>>);
+size_of(array);
+size_of(own<i64);
+size_of(builtin);
+size_of(array<i64>);
+size_of(builtin::span<u8>);
+size_of(builtin::span<const i64>);
+size_of(own<u8>);
+size_of(builtin::unknown);
+size_of(fn);
+size_of(123);
+size_of(A<B<C<D<E<i64>>>>>);
+f<A<B<C<D<E<i64>>>>>>();
+f<i64, u8, bool>();
+f<own>();
+f<65>();
+size_of(builtin::OwnedValues<i64>);
+size_of(array<own<i64>, 1>);
+size_of(array<i64, 4097>);
+size_of(array<Class, 65>);
+size_of(Box<i64>>);
+size_of(array<i64, 2>>);
+@variant close
+@step raw stop=close_parenthesis
+1)
+size_of(i64))
+type_id(array<u8,2>))
+field_count(Box))
+f(size_of(i64)))
+@variant assignment
+@step raw stop=assignment
+name=
+@variant braces
+@step raw stop=constructor_braces
+value{1,size_of(i64)}
+value{Box{.value=type_id(array<u8,2>)}}
+value(1)
+value{1,}
+value{1
+true{}
+array{}
+__au_field{}
+@variant invalid-low
+@step raw stop=-1
+{};
+@variant invalid-high
+@step raw stop=13
+{};
+# Copied type contexts: absolute source ranges of the captured parameters.
+@cases raw-context
+@step raw offset=4 rawctx=0,1,2,3,0,0,2
+T U size_of(T)+type_id(U);
+@step raw offset=4 rawctx=0,1,0,0,2,3,1
+T N size_of(array<T, N>);
+@variant scalar
+@step raw offset=2 rawctx=0,1,0,0,0,0,1
+T f<T>();
+@variant two
+@step raw offset=2 rawctx=0,1,0,0,0,0,2
+T f<Box<T>>();
+T f<T<i64>>();
+@cases raw-type
+@step raw stop=type reuse
+i64 next
+ns::Name next
+own<i64> next
+builtin::span<const u8> next
+builtin::ByteRegion next
+Box<i64>> next
+Box<Pair<i64,u8>> next
+array<u8,4>> next
+builtin::OwnedValues<Item>> next
+array<builtin::ConsoleSample,2> next
+@variant error
+@step raw stop=type
+fn next
+123 next
+array;
+own<i64>>;
+builtin::span<u8>;
+Box<i64,u8,bool>;
+array<Class,65>>;
+builtin::OwnedValues<Box<i64>>;
+A<B<C<D<E<i64>>>>>;
+@variant function-context
+@step raw stop=type offset=4 rawctx=0,1,2,3,0,0,2
+T U Pair<T,U> next
+@variant class-context
+@step raw stop=type offset=4 rawctx=0,1,0,0,2,3,1
+T N array<T,N> next
+@cases raw-declaration
+@step raw stop=body
+{} next
+{i64 x=1;return x;} next
+@variant preamble
+@step raw stop=preamble reuse
+module one;next
+export module one.two;import std.array;import alpha.beta;next
+@variant enum
+@step raw stop=enum_definition reuse
+enum class Solo{first};next
+enum class Shade{red,green,blue,};next
+@variant field
+@step raw stop=field reuse
+i64 value;next
+Box<i64> value;next
+array<u8,2> value;next
+@variant field-error
+@step raw stop=field
+i64 value
+i64 true;
+Box<i64>> value;
+@variant function
+@step raw stop=function reuse
+auto f()->i64{} next
+auto f(const Owner& p)->i64{} next
+@variant function-error
+@step raw stop=function
+f()->i64{}
+auto f(){}
+auto f(Box<i64>> value)->i64{}
+@variant method
+@step raw stop=method reuse
+auto f(i64 p)const->i64{return p;} next
+@variant method-error
+@step raw stop=method
+auto f()const{}
+auto f()->i64{
+@variant constructor
+@step raw stop=constructor reuse
+Box(){} next
+Box(i64 p):first(p),bytes{}{} next
+@variant constructor-error
+@step raw stop=constructor
+Box():field(1
+Box():field{}
+Box(){{}}
+@cases raw-module
+@step raw stop=module_definition admit
+export module m;namespace n{template<Scalar T,i64 N>class C{T value;};}
+module declarations;class C{};
+@variant context
+@step raw stop=module_definition rawctx=0,6,0,0,0,0,1
+export module m;namespace n{template<Scalar T,i64 N>class C{T value;};}
