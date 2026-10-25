@@ -6,6 +6,7 @@
 #include <limits>
 #include <vector>
 
+namespace kernel_iommu_oracle {
 namespace {
 
 using namespace amd310_oracle;
@@ -384,3 +385,4 @@ int main() {
         "%s %zu independent AMD310 translation checks; no device operation\n", failures ? "FAIL" : "PASS", checks);
     return failures ? 1 : 0;
 }
+} // namespace kernel_iommu_oracle

@@ -7,6 +7,7 @@
 #include <string_view>
 #include <type_traits>
 
+namespace kernel_dispatch {
 using namespace aurora::ipc;
 using aurora::user::DomainHandle;
 using aurora::user::DomainRegistry;
@@ -809,4 +810,6 @@ auto main() -> int {
                  "admission, selected-only replies,"
                  " terminal/quiescence ordering, copied/scrubbed payloads, stale/rebound identity and generation "
                  "exhaustion\n";
+    return 0;
 }
+} // namespace kernel_dispatch

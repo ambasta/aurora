@@ -5,6 +5,7 @@
 #include "policy-vectors.hpp"
 #include <cstdlib>
 
+namespace kernel_client_disposal_native {
 static_assert(aurora::ipc::DisposalTransition::decode(0x0102, 0, 0).accepted());
 static_assert(!aurora::ipc::DisposalTransition::decode(0x0102, 0, 1).accepted());
 static_assert(!aurora::ipc::DisposalTransition::decode(1, 4, 0).accepted());
@@ -128,4 +129,6 @@ auto main() -> int {
             decoder(family, random(), phase, state);
         }
     }
+    return 0;
 }
+} // namespace kernel_client_disposal_native

@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <vector>
 
+namespace kernel_ipc_transition_native {
 using namespace policy_vectors;
 
 namespace {
@@ -143,4 +144,6 @@ auto main() -> int {
             decoder(family, random(), context);
         }
     }
+    return 0;
 }
+} // namespace kernel_ipc_transition_native

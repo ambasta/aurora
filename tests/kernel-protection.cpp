@@ -5,6 +5,7 @@
 #include <string_view>
 #include <type_traits>
 
+namespace kernel_protection {
 using aurora::memory::FirmwareMemory;
 using aurora::memory::IdentityMap;
 using aurora::memory::PageAccess;
@@ -72,4 +73,6 @@ auto main() -> int {
     put(0, 33, 2);
     check(!FirmwareMemory::grants(handoff, 0x100000, 0x180000), "excess firmware count");
     std::cout << "PASS: 511 identity mappings, W^X/domain/default-deny policy, malformed/overlapping firmware grants\n";
+    return 0;
 }
+} // namespace kernel_protection

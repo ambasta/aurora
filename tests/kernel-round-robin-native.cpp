@@ -5,6 +5,7 @@
 #include "policy-vectors.hpp"
 #include <cstdlib>
 
+namespace kernel_round_robin_native {
 using namespace policy_vectors;
 
 namespace {
@@ -74,4 +75,6 @@ auto main() -> int {
                                        maximum})
                     decoder(family, word, cursor, mask);
     }
+    return 0;
 }
+} // namespace kernel_round_robin_native

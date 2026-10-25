@@ -1,6 +1,8 @@
 #include "../kernel/schedule-policy.hpp"
 #include <cassert>
 #include <iostream>
+
+namespace kernel_schedule {
 using namespace aurora::user;
 auto main() -> int {
     const ProgramContract contract{0x1b0000, 1024, 0x1b0100, 0x1b0200, 0x1b0300};
@@ -55,4 +57,6 @@ auto main() -> int {
     SliceBudget empty{0};
     assert(empty.exhausted() && !empty.consume());
     std::cout << "PASS: integer context, privileged flags, snapshot reset, exact trap/return and bounded slices\n";
+    return 0;
 }
+} // namespace kernel_schedule

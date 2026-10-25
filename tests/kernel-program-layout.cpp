@@ -5,6 +5,7 @@
 #include <string_view>
 #include <type_traits>
 
+namespace kernel_program_layout {
 using namespace aurora::user;
 static_assert(!std::is_default_constructible_v<ProgramLayout>);
 static_assert(!std::is_aggregate_v<ProgramLayout>);
@@ -226,4 +227,6 @@ auto main() -> int {
     check(!image.valid(), "UEFI metadata still requires exact optional trap opcode");
     std::cout << "PASS: immutable validated BIOS/UEFI program layout, interval and canonical checks, exact "
                  "code/stack/frame authority\n";
+    return 0;
 }
+} // namespace kernel_program_layout

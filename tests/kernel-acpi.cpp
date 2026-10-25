@@ -2,6 +2,8 @@
 #include <cassert>
 #include <iostream>
 #include <vector>
+
+namespace kernel_acpi {
 using namespace aurora::uefi;
 using Buffer = std::vector<std::byte>;
 unsigned checks = 0;
@@ -244,4 +246,6 @@ auto main() -> int {
         check(Topology::parse(large, 40).has_value() == (count == 256));
     }
     std::cout << "PASS: " << checks << " ACPI root/checksum/topology/range/window-authority cases\n";
+    return 0;
 }
+} // namespace kernel_acpi

@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <limits>
 
+namespace kernel_dormant_decoder {
 namespace {
 
 std::size_t checks = 0;
@@ -380,3 +381,4 @@ int main() {
     std::printf("Independent AMD 3.10 decoder: %zu checks, %zu failures\n", checks, failures);
     return failures == 0 ? 0 : 1;
 }
+} // namespace kernel_dormant_decoder

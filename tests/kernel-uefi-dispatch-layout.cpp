@@ -7,6 +7,7 @@
 #include <limits>
 #include <type_traits>
 
+namespace kernel_uefi_dispatch_layout {
 using namespace aurora::uefi;
 using Two = RuntimeLayoutProfile<2>;
 using Three = RuntimeLayoutProfile<3>;
@@ -242,4 +243,6 @@ auto main() -> int {
     std::cout
         << "PASS: " << check.count()
         << " independent two/three-domain UEFI layout, exact-page authority, guard, capacity and isolation checks\n";
+    return 0;
 }
+} // namespace kernel_uefi_dispatch_layout

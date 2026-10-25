@@ -4,6 +4,8 @@
 #include <map>
 #include <type_traits>
 #include <vector>
+
+namespace kernel_pci {
 using namespace aurora::uefi;
 using Buffer = std::vector<std::byte>;
 using Header = std::array<std::byte, 64>;
@@ -382,4 +384,6 @@ auto main() -> int {
     inventory = PciInventory::scan(*aperture, function_bridge);
     check(inventory && inventory->count() == 3 && inventory->bus_count() == 2);
     std::cout << "PASS: " << checks << " PCI MCFG/aperture/snapshot/topology/boundary cases\n";
+    return 0;
 }
+} // namespace kernel_pci

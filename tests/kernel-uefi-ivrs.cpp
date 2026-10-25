@@ -5,6 +5,8 @@
 #include <source_location>
 #include <type_traits>
 #include <vector>
+
+namespace kernel_uefi_ivrs {
 using namespace aurora::uefi;
 using Buffer = std::vector<std::byte>;
 unsigned checks = 0;
@@ -561,4 +563,6 @@ auto main() -> int {
     check(parsed->matches_inventory(pci, 0, 0, 2, 0));
     check_admission(*parsed);
     std::cout << "PASS: " << checks << " IVRS profile/pair/scope/boundary/read-only cases\n";
+    return 0;
 }
+} // namespace kernel_uefi_ivrs

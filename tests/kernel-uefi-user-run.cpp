@@ -7,6 +7,7 @@
 #include <string_view>
 #include <type_traits>
 
+namespace kernel_uefi_user_run {
 using namespace aurora::uefi;
 using aurora::ipc::Phase;
 using aurora::user::DomainHandle;
@@ -685,4 +686,6 @@ auto main() -> int {
     arena_and_interval_boundaries();
     std::cout << "PASS: " << checks
               << " UEFI immutable user-run authority, exact origins and adversarial frame checks\n";
+    return 0;
 }
+} // namespace kernel_uefi_user_run

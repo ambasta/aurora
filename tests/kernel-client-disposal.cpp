@@ -10,6 +10,7 @@
 #include <string_view>
 #include <type_traits>
 
+namespace kernel_client_disposal {
 using namespace aurora::ipc;
 using aurora::user::DomainHandle;
 using aurora::user::DomainRegistry;
@@ -730,4 +731,6 @@ auto main() -> int {
                  "exact live identity and quiescence, first-terminal and consumed receipts, peer preservation, "
                  "copied-word scrub, "
                  "per-client retirement/rebind, replay and generation exhaustion\n";
+    return 0;
 }
+} // namespace kernel_client_disposal

@@ -2,6 +2,8 @@
 // cannot mint bindings, publish frames, import leases, or report completion.
 #include "../kernel/pin-ledger.hpp"
 #include <type_traits>
+
+namespace kernel_pin_api {
 using aurora::memory::PinHandle;
 using aurora::memory::PinLedger;
 using aurora::user::DomainHandle;
@@ -13,3 +15,4 @@ template <class T> concept HasCompletion = requires(T& ledger, PinHandle pin) { 
 static_assert(!HasInjection<PinLedger> && !HasPublication<PinLedger> && !HasCompletion<PinLedger>);
 static_assert(!std::is_constructible_v<PinHandle, PinLedger&, unsigned long, unsigned long, unsigned long>);
 auto main() -> int { return 0; }
+} // namespace kernel_pin_api

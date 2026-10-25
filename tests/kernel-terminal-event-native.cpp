@@ -10,6 +10,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+
+namespace kernel_terminal_event_native {
 using namespace aurora::user;
 [[maybe_unused]] static void require(bool value) {
     if (!value)
@@ -20,10 +22,13 @@ static std::uint64_t proposal, calls;
 static bool genuine;
 auto real_terminal_event(std::uint64_t, std::uint64_t, std::uint64_t) -> std::uint64_t
     asm("aurora_kernel_terminal_event_real");
+} // namespace kernel_terminal_event_native
 auto aurora::user::language_terminal_event(std::uint64_t v, std::uint64_t m, std::uint64_t t) -> std::uint64_t {
-    ++calls;
-    return genuine ? real_terminal_event(v, m, t) : proposal;
+    namespace observed = kernel_terminal_event_native;
+    ++observed::calls;
+    return observed::genuine ? observed::real_terminal_event(v, m, t) : observed::proposal;
 }
+namespace kernel_terminal_event_native {
 #endif
 static auto wire(ProgramEvent e) -> std::uint64_t {
     switch (e) {
@@ -183,4 +188,6 @@ auto main() -> int {
             decoder(family, hostile[i], words[i % words.size()]);
     }
 #endif
+    return 0;
 }
+} // namespace kernel_terminal_event_native

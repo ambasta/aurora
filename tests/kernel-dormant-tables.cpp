@@ -25,6 +25,8 @@ public:
     }
 };
 } // namespace aurora::memory
+
+namespace kernel_dormant_tables {
 using namespace aurora;
 std::size_t checks{};
 auto check(bool value) -> void {
@@ -231,4 +233,6 @@ auto main() -> int {
     fragmented_and_lifetime();
     malformed_requests();
     std::printf("PASS %zu dormant construction/ownership/independent-byte checks; no device operation\n", checks);
+    return 0;
 }
+} // namespace kernel_dormant_tables

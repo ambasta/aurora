@@ -10,6 +10,7 @@
 #include <type_traits>
 #include <vector>
 
+namespace kernel_uefi_service_budget {
 using namespace aurora::uefi;
 using aurora::user::ProgramContract;
 using aurora::user::ProgramEvent;
@@ -787,4 +788,6 @@ auto main() -> int {
     mapping_boundaries(cpus);
     std::cout << "PASS: " << checks
               << " UEFI service-budget APIC admission, immutable integer context and adversarial authority checks\n";
+    return 0;
 }
+} // namespace kernel_uefi_service_budget

@@ -4,6 +4,8 @@
 #include <iostream>
 #include <string_view>
 #include <type_traits>
+
+namespace kernel_program {
 using namespace aurora::user;
 using aurora::hardware::Protection;
 static_assert(!std::is_copy_constructible_v<ProgramRun>);
@@ -216,4 +218,6 @@ auto main() -> int {
           "fresh authority after trusted abort");
     std::cout << "PASS: scalar return authority, bounds/overflow/division/shift metadata, origin/stack/flags "
                  "rejection, replay/lifetime/reset policy\n";
+    return 0;
 }
+} // namespace kernel_program

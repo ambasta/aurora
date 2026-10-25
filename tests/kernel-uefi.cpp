@@ -3,6 +3,8 @@
 #include <array>
 #include <cassert>
 #include <iostream>
+
+namespace kernel_uefi {
 using namespace aurora::uefi;
 alignas(4096) static std::array<std::byte, Handoff::arena_bytes> arena{};
 auto main() -> int {
@@ -126,4 +128,6 @@ auto main() -> int {
     check(tables.map(0x10000, 3 | PageTables::nx));
     check(!tables.verify(base, Bytes{h}));
     std::cout << "PASS: " << cases << " UEFI descriptor, ownership, bounded handoff and complete table-tree checks\n";
+    return 0;
 }
+} // namespace kernel_uefi

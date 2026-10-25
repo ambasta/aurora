@@ -9,6 +9,7 @@
 #include <iostream>
 #include <type_traits>
 
+namespace kernel_uefi_runtime {
 using namespace aurora::uefi;
 using Layout = RuntimeLayout;
 using Tables = RuntimeTables;
@@ -503,4 +504,6 @@ auto main() -> int {
     }));
     std::cout << "PASS: " << cases
               << " UEFI runtime layout, owned table, permission, isolation, corruption and reuse checks\n";
+    return 0;
 }
+} // namespace kernel_uefi_runtime

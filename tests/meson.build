@@ -381,12 +381,13 @@ test('iommu-event-backing', iommu_event_backing, suite: ['full', 'merge', 'dev']
 
 
 # Output-only framebuffer boundary and its actual Aurora software renderer.
+framebuffer_models = {}
 foreach model : ['framebuffer', 'framebuffer-tables', 'framebuffer-loader', 'framebuffer-pixels']
-    framebuffer_model = executable(
+    framebuffer_models += {model: executable(
         'uefi-' + model, 'kernel-uefi-' + model + '.cpp',
         native: true, override_options: fixture_options, install: false, cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page'], link_args: ['-no-pie'],
-    )
-    test('uefi-' + model, framebuffer_model, suite: ['full', 'merge', 'dev'], timeout: 120)
+    )}
+    test('uefi-' + model, framebuffer_models[model], suite: ['full', 'merge', 'dev'], timeout: 120)
 endforeach
 display_session = executable('display-session', 'kernel-display-session.cpp', native: true, override_options: fixture_options, install: false)
 test('display-session', display_session, suite: ['full', 'merge', 'dev'], timeout: 120)
