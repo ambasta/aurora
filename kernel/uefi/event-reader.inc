@@ -51,7 +51,6 @@ public:
             return std::nullopt;
         return facts;
     }
-#if AURORA_IOMMU_EVENT_CASE != 4
     [[nodiscard]] auto clear_fre(unsigned port, unsigned command) -> bool {
         if (port >= 6 || command != 0x4004 || !begin(resources_.ahci_base(), true))
             return false;
@@ -62,25 +61,16 @@ public:
         const bool closed = end();
         return unchanged && closed;
     }
-#endif
 };
-#if AURORA_IOMMU_EVENT_CASE != 4
 constinit bool event_handoff_attempted{};
-#endif
-#if AURORA_IOMMU_EVENT_CASE == 4
-[[gnu::noipa]] auto inspect_event(U64, const Bytes &, const Q35Ecam &, EcamWindow &, const PciInventory &, unsigned)
-    -> bool asm("uefi_event_observation");
-#endif
 [[gnu::noinline]] auto inspect_event(U64 arena,
                                      const Bytes &handoff,
                                      const Q35Ecam &aperture,
                                      EcamWindow &ecam,
                                      const PciInventory &inventory,
                                      unsigned bits) -> bool {
-#if AURORA_IOMMU_EVENT_CASE != 4
     if (event_handoff_attempted)
         return false;
-#endif
     if (handoff.get(8, 4) != 4 || handoff.get(120) != arena + Handoff::bar_record_offset ||
         inventory.count() != EventResources::maximum_functions)
         return false;
@@ -158,11 +148,7 @@ constinit bool event_handoff_attempted{};
                                                               handoff.get(40),
                                                               arena,
                                                               0xfee00000,
-#if AURORA_IOMMU_EVENT_CASE == 4
-                                                              EventResources::Purpose::read_only_observation
-#else
                                                               EventResources::Purpose::firmware_handoff
-#endif
     );
     if (!resources) {
         Serial::text("AURORA_EVENT_REJECTED: reason=resources-or-bme\r\n");
@@ -177,84 +163,6 @@ constinit bool event_handoff_attempted{};
     const auto &ahci = *first_sample, &second = *second_sample;
     const auto &edu = *edu_sample;
     const bool stable = ahci == second;
-#if AURORA_IOMMU_EVENT_CASE == 4
-    for (unsigned sample = 0; sample < edu.samples.size(); ++sample) {
-        Serial::text("AURORA_EVENT_EDU: sample=");
-        Serial::number(sample);
-        Serial::text(" command=");
-        Serial::number(edu.samples[sample].command);
-        Serial::text(" status=");
-        Serial::number(edu.samples[sample].status);
-        Serial::text(" irq=");
-        Serial::number(edu.samples[sample].irq);
-        Serial::text("\r\n");
-    }
-    bool backing_complete = true;
-    for (unsigned port = 0; port < ahci.ports.size(); ++port) {
-        for (unsigned kind = 0; kind < 2; ++kind) {
-            const auto address = kind == 0 ? ahci.ports[port].command_list : ahci.ports[port].received_fis;
-            const auto fact =
-                EventBackingObservation::capture(map, handoff.get(40), address, kind == 0 ? 1024 : 256, arena, bits);
-            Serial::text("AURORA_EVENT_AHCI_BACKING: port=");
-            Serial::number(port);
-            Serial::text(" kind=");
-            Serial::number(kind);
-            Serial::text(" valid=");
-            Serial::number(fact.has_value());
-            if (fact) {
-                Serial::text(" page=");
-                Serial::number(fact->page);
-                Serial::text(" type=");
-                Serial::number(fact->type);
-                Serial::text(" begin=");
-                Serial::number(fact->begin);
-                Serial::text(" pages=");
-                Serial::number(fact->pages);
-                Serial::text(" attributes=");
-                Serial::number(fact->attributes);
-            } else {
-                backing_complete = false;
-            }
-            Serial::text("\r\n");
-        }
-    }
-    for (const auto *snapshot : {&ahci, &second}) {
-        Serial::text("AURORA_EVENT_AHCI: sample=");
-        Serial::number(snapshot == &ahci ? 0 : 1);
-        Serial::text(" base=");
-        Serial::number(snapshot->base);
-        Serial::text(" cap=");
-        Serial::number(snapshot->capability);
-        Serial::text(" ghc=");
-        Serial::number(snapshot->global_control);
-        Serial::text(" pi=");
-        Serial::number(snapshot->implemented_ports);
-        Serial::text("\r\n");
-        for (unsigned port = 0; port < snapshot->ports.size(); ++port) {
-            const auto &fact = snapshot->ports[port];
-            Serial::text("AURORA_EVENT_AHCI_PORT: port=");
-            Serial::number(port);
-            Serial::text(" cmd=");
-            Serial::number(fact.command);
-            Serial::text(" ci=");
-            Serial::number(fact.command_issue);
-            Serial::text(" sact=");
-            Serial::number(fact.sata_active);
-            Serial::text(" tfd=");
-            Serial::number(fact.task_file);
-            Serial::text(" clb=");
-            Serial::number(fact.command_list);
-            Serial::text(" fb=");
-            Serial::number(fact.received_fis);
-            Serial::text("\r\n");
-        }
-    }
-    Serial::text("AURORA_EVENT_OBSERVATION: stable=");
-    Serial::number(stable);
-    Serial::text("\r\n");
-    if (!backing_complete || edu.samples[0] != edu.samples[1])
-        return false;
-#endif
     if (!stable || !tables.verify(arena, handoff))
         return false;
     for (const auto &fact : current) {
@@ -266,10 +174,6 @@ constinit bool event_handoff_attempted{};
     const auto after_caps = ecam.iommu_capability(*address);
     if (!after_caps || *after_caps != *caps || !ecam.closed() || !tables.verify(arena, handoff))
         return false;
-#if AURORA_IOMMU_EVENT_CASE == 4
-    Serial::text("AURORA_EVENT_OBSERVATION_OK: pci-unchanged=1 windows-closed=1 producer-linked=0\r\n");
-    return true;
-#else
     auto attempt = EventHandoff::prepare(*resources, current, ahci, second, edu, map, handoff.get(40), arena);
     const auto admission = attempt ? attempt->complete(
                                          event_handoff_attempted,
@@ -303,5 +207,4 @@ constinit bool event_handoff_attempted{};
         return false;
     Serial::text("AURORA_EVENT_ADMISSION_OK: default-ivrs=1 handoff-complete=1\r\n");
     run_event_intake(arena, handoff, *admission);
-#endif
 }

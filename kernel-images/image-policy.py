@@ -72,10 +72,7 @@ RULES = [
     },
     {
         "profiles": [
-            "uefi/iommu-event-denial",
-            "uefi/iommu-event-success",
-            "uefi/iommu-event-overflow",
-            "uefi/iommu-event-command-error",
+            "uefi/iommu-event",
         ],
         "imports": [
             "__au_runtime_console_put",

@@ -11,7 +11,9 @@ consecutive values (the interval `read_fixture` admits); numeric values are not 
 The source catalog went from 233 canonical images (196 UEFI, 37 BIOS) to 125
 (105 UEFI, 20 BIOS) in PR #244, to 81 (61 UEFI, 20 BIOS) in the
 per-component driver change, then to 74 (54 UEFI, 20 BIOS) with the early fixture
-and to 62 (43 UEFI, 19 BIOS) by folding test baselines into their fixtures. Every
+to 62 (43 UEFI, 19 BIOS) by folding test baselines into their fixtures, and to
+57 (38 UEFI, 19 BIOS) by folding the four IOMMU Event cases into one image and
+dropping the framebuffer probe and Event observation images, which nothing booted. Every
 fault mode keeps its own guest run and exact oracle. A source image count is not a
 measured build or execution saving; the PR records those.
 
@@ -22,14 +24,16 @@ measured build or execution saving; the PR records those.
   family reads it at a fixed phase (after ACPI closure for PCI/IVRS/BAR, before
   timer initialization for the protected-runtime families, at the top of
   `run_console` for the console), and each oracle checks that phase.
-- fw_cfg file: the loader-stage faults inject before ExitBootServices, when
+- fw_cfg file (`kernel/uefi/fw-cfg-fixture.hpp`): the loader-stage faults inject before ExitBootServices, when
   OVMF's terminal driver owns and buffers the UART, so `early-fixture` reads a
   decimal selector from the QEMU fw_cfg file `opt/aurora/fixture` (I/O ports
   0x510/0x511) at loader entry and echoes it before any exit attempt. The
   harness adds `-fw_cfg name=opt/aurora/fixture,string=N` from the table
   (`kernel_profiles.fw_cfg_fixture`). The loader copies the value into one extra
   handoff word (offset 128, present only in this image) that the payload admits
-  only within the family, so the payload's `wp`/`nx` cases share the image.
+  only within the family, so the payload's `wp`/`nx` cases share the image. The
+  `iommu-event` image reads the same file at Event entry, because its harness
+  writes serial output to a file and cannot send a selector byte.
 - Capture release byte: the framebuffer capture gate already waited for one
   reviewed byte; `G` releases the normal frame and the three framebuffer fault
   selectors release their cases.
@@ -185,8 +189,6 @@ profiles; the clock catalog and launch lists reject the retired modes.
   probe and graphical capture, and BIOS images that differ in user programs or
   entry probes (division, unsigned, scheduler mmio/softint/fpu, program
   bad-return/unknown-trap, domain code/stack).
-- `iommu-event-*`: their guests need the patched QEMU AMD-Vi model in
-  `tools/qemu-amdvi`, which is not built here, so they were not folded.
 
 The 30-second generic, 60-second IVRS/BAR and 180-second console deadlines are
 unchanged. Grouping does not widen user-image, stack or page admission.

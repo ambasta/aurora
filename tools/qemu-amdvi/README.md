@@ -125,41 +125,12 @@ release, absolute workspace path or raw environment is included here.
 
 ## Developer Event runtime
 
-The opt-in `make smoke-iommu-event` route uses the command-stop-v1 model above.
-It is separate from the immutable historical fixture commands. Supply
-`EVENT_BUILD_RECEIPT`, `EVENT_CODE`, `EVENT_VARS` and `EVENT_DATA`; the launcher
-constructs and records its closed runtime contract instead of asking for a new
-handwritten method or review pin on each run.
-
-The supplied build record binds `binary_path`, `binary_sha256`, `binary_bytes`,
-`source_path`, and `runtime_library_manifest` (`path` and `sha256`). Its descriptive
-profile/commit/patch/review labels confer no authority. Actual final model-file
-hashes and the four-line `configs/devices/x86_64-softmmu/aurora-dma.mak` content
-must match the recipe above. Keep those source inputs available at `source_path`.
-The dependency JSON records `LD_LIBRARY_PATH` and a `libraries` map from selected
-loader/library paths to `resolved_path`, `bytes` and `sha256`; the actual ELF
-interpreter dependency list is checked before launch. Duplicate-key/nonfinite
-JSON, mismatched bytes/links and unsupported actual model/configuration fail closed.
-
-The executable and build record are trusted user-supplied toolchain inputs.
-These checks bind current identities; they cannot cryptographically prove
-source-to-binary correspondence or authenticate an intentionally forged record.
-A newly built supported binary may have different bytes and gains only its newly
-measured local scope. A version string or historical status never grants approval.
-
-Initial firmware support is the default, non-Secure-Boot Debian OVMF
-2025.02-8+deb13u1 split pair:
-
-- CODE: 3,653,632 bytes; SHA-256 `624e06de18b4fa535e90db7160d00d3d07d206422b89999bf1e27d920264e4e0`
-- VARS: 540,672 bytes; SHA-256 `5d2ac383371b408398accee7ec27c8c09ea5b74a0de0ceea6513388b15be5d1e`
-
-`EVENT_DATA` is the complete supplied QEMU data directory. Its bounded inventory,
-resolved file mappings and current hashes are recorded and rechecked, including
-symlink targets. The runner does not download firmware, install tools, alter host
-configuration or fall back to stock QEMU after failure. The historical binary pin
-and fixture admission instructions above apply to historical replay only.
-See [developer execution](../../docs/iommu-dma-conformance.md#supported-local-developer-execution)
-for mtools/config support, exact captures, cleanup and normal restoration.
+The opt-in `make smoke-iommu-event` route runs the command-stop-v1 model above
+from the packaged runtime in `EVENT_TOOL_PREFIX` (default `/opt/aurora-event`):
+`bin/qemu-system-x86_64`, `share/qemu` and the Debian OVMF 2025.02-8+deb13u1
+split pair in `firmware/`. The pinned container image is the tool trust boundary;
+the runner does not download firmware, install tools or fall back to stock QEMU.
+See [developer execution](../../docs/iommu-dma-conformance.md#local-developer-execution).
 
 ### Debian source packaging correction
 

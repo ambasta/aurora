@@ -51,14 +51,9 @@ esac
 if [[ "$mode" == normal && "$action" == --console ]]; then mode=console; fi
 cd "$(dirname "$0")/.."
 if [[ "$mode" == iommu-event ]]; then
-    firmware=(); options=()
-    if [[ "$action" == --build-only ]]; then options=(--build-only)
-    else
-        source scripts/uefi-firmware.sh
-        uefi_firmware_select || { echo 'BLOCKED: Event developer smoke requires ordinary OVMF for normal restoration.' >&2; exit 2; }
-        firmware=(--normal-firmware "$UEFI_FIRMWARE_COMBINED" --normal-code "$UEFI_FIRMWARE_CODE" --normal-vars "$UEFI_FIRMWARE_VARS")
-    fi
-    exec python3 -B scripts/kernel_iommu_event_smoke.py "${options[@]}" "${firmware[@]}"
+    options=()
+    if [[ "$action" == --build-only ]]; then options=(--build-only); fi
+    exec python3 -B scripts/kernel_iommu_event_smoke.py "${options[@]}"
 fi
 if [[ "$protected" == true ]]; then
     case "$mode" in

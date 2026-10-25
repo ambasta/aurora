@@ -26,9 +26,7 @@
 #include "pci-policy.hpp"
 #ifdef AURORA_UEFI_IOMMU_EVENT
 #include "event-profile-policy.hpp"
-#if AURORA_IOMMU_EVENT_CASE != 4
 #include "event-handoff-policy.hpp"
-#endif
 #include "event-intake.hpp"
 #endif
 #ifdef AURORA_UEFI_IVRS
@@ -137,7 +135,7 @@ public:
         return first;
     }
 #endif
-#if defined(AURORA_UEFI_IOMMU_EVENT) && AURORA_IOMMU_EVENT_CASE != 4
+#ifdef AURORA_UEFI_IOMMU_EVENT
     [[gnu::noinline, nodiscard]] auto reduce_event_command(const EventPciFact &before, unsigned command)
         -> std::optional<std::array<std::byte, 64>> {
         const auto rid = before.requester();

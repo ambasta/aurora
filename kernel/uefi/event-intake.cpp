@@ -4,11 +4,11 @@
 #include "tables.hpp"
 #include "../console-session.hpp"
 #include "../iommu-event-session.hpp"
+#include "fw-cfg-fixture.hpp"
 
-#if !defined(AURORA_UEFI_IOMMU_EVENT) || !defined(AURORA_IOMMU_EVENT_CASE)
+#ifndef AURORA_UEFI_IOMMU_EVENT
 #error "The finite Event bootstrap adapter requires its explicit image profile"
 #endif
-static_assert(AURORA_IOMMU_EVENT_CASE >= 0 && AURORA_IOMMU_EVENT_CASE <= 3);
 
 namespace aurora::uefi {
 EventTerminal terminal asm("uefi_event_terminal") __attribute__((visibility("hidden"))){};
@@ -40,9 +40,15 @@ enum class Failure : U64 {
     authority,
     final_state
 };
-constexpr U64 selector = AURORA_IOMMU_EVENT_CASE;
-constexpr U64 control_value = selector == 3 ? 0x1005 : 5;
-constexpr U64 edu_command_value = selector == 3 ? 2 : 6;
+// The case (0 denial, 1 success, 2 overflow, 3 command error) arrives in the
+// fw_cfg fixture file before any device is touched.
+U64 selector{};
+[[nodiscard]] auto control_value() -> U64 {
+    return selector == 3 ? 0x1005 : 5;
+}
+[[nodiscard]] auto edu_command_value() -> U64 {
+    return selector == 3 ? 2 : 6;
+}
 constexpr U64 leaf_flags = 3 | PageTables::nx;
 constexpr U64 io_flags = 1 | 8 | 16 | PageTables::nx;
 constexpr U64 offsets[] = {0, 8, 0x10, 0x18, 0x30, 0x2000, 0x2008, 0x2010, 0x2018, 0x2020};
@@ -206,8 +212,9 @@ public:
 [[nodiscard]] auto fixed_profile(const std::array<U64, 12> &value) -> bool {
     if ((value[9] & ~iommu_event::status_mask) || value[0] != (address(backing.device_table.data()) | 1) ||
         value[1] != (selector == 3 ? address(backing.command_ring.data()) | (8ULL << 56) : 0) ||
-        value[2] != (address(iommu_event::BootLifetimeRing::identity()) | (8ULL << 56)) || value[3] != control_value ||
-        value[4] != 0x29d3 || value[7] >= 4096 || value[7] % 16 || value[8] >= 4096 || value[8] % 16 || (value[10] & 1))
+        value[2] != (address(iommu_event::BootLifetimeRing::identity()) | (8ULL << 56)) ||
+        value[3] != control_value() || value[4] != 0x29d3 || value[7] >= 4096 || value[7] % 16 || value[8] >= 4096 ||
+        value[8] % 16 || (value[10] & 1))
         return false;
     return selector == 3 ? value[5] == 0 && value[6] == 16 && value[10] == 0 && value[11] == 0
                          : value[5] == 0 && value[6] == 0 && (value[9] & 16) == 0 && value[10] == 2 && value[11] == 4;
@@ -355,15 +362,15 @@ auto publish_profile() -> void {
     require(RegisterWindow::write(iommu_base, 8, address(backing.device_table.data()) | 1) &&
                 RegisterWindow::write(iommu_base + 0x10, 8, terminal.ring | (8ULL << 56)),
             Failure::publication);
-    if constexpr (selector == 3)
+    if (selector == 3)
         require(RegisterWindow::write(iommu_base + 8, 8, address(backing.command_ring.data()) | (8ULL << 56)),
                 Failure::publication);
-    require(RegisterWindow::write(iommu_base + 0x18, 8, control_value), Failure::publication);
+    require(RegisterWindow::write(iommu_base + 0x18, 8, control_value()), Failure::publication);
     // The only PCI configuration write is the exact admitted EDU command word.
     // No status DWORD is overwritten and no generic configuration API escapes.
-    if constexpr (selector != 3)
-        require(RegisterWindow::write(edu_config + 4, 2, edu_command_value), Failure::publication);
-    require(RegisterWindow::read(edu_config + 4, 2, value) && value == edu_command_value, Failure::publication);
+    if (selector != 3)
+        require(RegisterWindow::write(edu_config + 4, 2, edu_command_value()), Failure::publication);
+    require(RegisterWindow::read(edu_config + 4, 2, value) && value == edu_command_value(), Failure::publication);
     set_phase(Phase::producing);
 }
 auto transfer(U64 iova, bool write) -> void {
@@ -395,7 +402,7 @@ auto transfer(U64 iova, bool write) -> void {
     ++terminal.dma_completed;
 }
 auto produce() -> void {
-    if constexpr (selector == 3) {
+    if (selector == 3) {
         require(phase == Phase::producing && RegisterWindow::write(iommu_base + 0x2008, 8, 16), Failure::producer);
         bool stopped = false;
         U64 status{};
@@ -411,12 +418,12 @@ auto produce() -> void {
         require(stopped, Failure::readiness);
     } else {
         transfer(Policy::helper_iova, false);
-        if constexpr (selector == 0) {
+        if (selector == 0) {
             transfer(Policy::secret_iova, false);
             transfer(Policy::sink_iova, true);
             transfer(Policy::helper_iova, false);
             transfer(Policy::target_iova, true);
-        } else if constexpr (selector == 1) {
+        } else if (selector == 1) {
             transfer(Policy::sink_iova, true);
         } else {
             // Fill with actual model-produced denials. Never fabricate valid
@@ -442,7 +449,7 @@ public:
         std::array<U64, 12> value{};
         U64 command{};
         const bool okay = producer_quiet && mapping_closed() && registers(value) && fixed_profile(value) &&
-                          RegisterWindow::read(edu_config + 4, 2, command) && command == edu_command_value &&
+                          RegisterWindow::read(edu_config + 4, 2, command) && command == edu_command_value() &&
                           Policy::frozen_registers_match(value, fixed_registers);
         return {iommu_event::BootLifetimeRing::identity(),
                 value[2],
@@ -532,12 +539,12 @@ using Entry = iommu_event::Entry<EventSession, ConsoleSession, ServicePlatform>;
         if (Bytes{before_ring}.get(index * 16) != first || Bytes{before_ring}.get(index * 16 + 8) != second)
             return false;
     }
-    if constexpr (selector == 0) {
+    if (selector == 0) {
         for (unsigned index = 0; index < 4; ++index)
             if (backing.sink[0x100 + index] == backing.secret[0x100 + index] ||
                 backing.sink[0x100 + index] == std::byte(0x7896b4d2ULL >> (index * 8)))
                 return false;
-    } else if constexpr (selector == 1) {
+    } else if (selector == 1) {
         if (Bytes{backing.sink}.get(0x100, 4) != 0x192b4d6f)
             return false;
     } else if (Bytes{backing.sink}.get(0x100, 4) != 0x7896b4d2)
@@ -581,6 +588,10 @@ auto event_output(const void *grant, U64 generation, U64 byte) -> U64 {
     begun = true;
     terminal.magic = 0x41554556494e5431ULL;
     terminal.version = 1;
+    using fw_cfg::Fixture;
+    const auto fixture = fw_cfg::FwCfg::read(Fixture::event_denial, Fixture::event_command_error);
+    require(fixture.has_value(), Failure::entry);
+    selector = static_cast<U64>(*fixture) - static_cast<U64>(Fixture::event_denial);
     terminal.selector = selector;
     terminal.completion = UINT64_MAX;
     owned_arena = arena;
@@ -630,7 +641,7 @@ auto event_output(const void *grant, U64 generation, U64 byte) -> U64 {
     // model expectations. A mismatch cannot hide behind a source success marker.
     require(validate_pre_evidence(), Failure::evidence);
     terminal.checks |= 1;
-    if constexpr (selector == 2) {
+    if (selector == 2) {
         // The existing session deliberately rejects overflow at initial open.
         // Keep that boundary: report a pre-entry loss with no fabricated grant.
         terminal.completion = static_cast<U64>(iommu_event::Completion::loss_detected);
