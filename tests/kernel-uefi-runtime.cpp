@@ -100,6 +100,17 @@ auto main() -> int {
           Bank::image_page(2) == Bank::arena_bytes);
     check(Bank::kernel_flags(0xbe000) == 1 && Bank::kernel_flags(0xbf000) == 0 && Layout::kernel_flags(0xb6000) == 0);
     check(Layout::slot_page(1) == Layout::image_page(1) && Layout::slot_page(2) == Layout::arena_bytes);
+#ifndef AURORA_RUNTIME_MULTIPAGE
+    // The service fixture's eleven one-page slots pack one page apart before the
+    // stack frames, beside its three domains' pools; a seventeenth slot overlaps them.
+    using OnePageBank = aurora::uefi::RuntimeLayoutProfile<3, 11, 1>;
+    check(OnePageBank::valid(0x100000) && aurora::uefi::RuntimeLayoutProfile<3, 16, 1>::valid(0x100000) &&
+          !aurora::uefi::RuntimeLayoutProfile<3, 17, 1>::valid(0x100000));
+    check(OnePageBank::slot_page(1) == 0xb1000 && OnePageBank::slot_page(10) == 0xba000 &&
+          OnePageBank::slot_page(11) == OnePageBank::arena_bytes && OnePageBank::image_page(2) == 0xb6000);
+    check(OnePageBank::kernel_flags(0xba000) == 1 && OnePageBank::kernel_flags(0xbb000) == 0 &&
+          OnePageBank::table_offset(2) == 0xd0000);
+#endif
     check(Layout::stack_frame_offset(15) == 0xcf000 && Layout::stack_frame_offset(16) == Layout::arena_bytes);
     check(Layout::user_stack_begin(0) == 0x10000200000ULL && Layout::user_stack_begin(1) == 0x10000400000ULL);
     check(Layout::user_stack_end(1) == 0x10000404000ULL);

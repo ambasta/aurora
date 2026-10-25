@@ -10,7 +10,7 @@ process model. Unknown or malformed fault origins remain fatal.
 
 ## Deferred integer continuation
 
-The `user-resume` profile parks client A after its first authenticated, debited
+The `user-resume` row of `service-fixture` parks client A after its first authenticated, debited
 timer tick, runs client B, then resumes A with a fresh kernel return anchor.
 Private Domain storage owns the full saved integer frame, immutable run authority,
 launch fields and remaining quota. The shared RSP0 frame is reconstructed only
@@ -102,8 +102,8 @@ adapter operations, not a user-language unsafe or destruction interface.
   recovery or safe continuation after an unknown origin is claimed.
 - user-stale-grant: a retired client's old grant fails under the fresh incarnation.
 
-Every mode except user-resume boots the one `user-fixture` image and picks its
-case from the serial selector; user-phases is its baseline selector, which runs
+Every mode boots the shared `service-fixture` image (its user-run rows; user-resume
+is its own resume row) and picks its case from the serial selector; user-phases is the baseline selector, which runs
 the ordinary flow. user-context and user-unknown used to
 be separate images whose first client always ran its register loop or unknown UD2.
 The fixture's first client now carries the shared selectable probe set (see

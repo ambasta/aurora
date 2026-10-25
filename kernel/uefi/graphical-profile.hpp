@@ -51,7 +51,8 @@
     defined(AURORA_RAM_FILE) || defined(AURORA_RAM_SCRATCHPAD_CONSOLE) || defined(AURORA_OWNED_TEXT) ||                \
     defined(AURORA_CONSOLE_REGION) || defined(AURORA_USER_RESUME) || defined(AURORA_DORMANT_TABLE_TESTING) ||          \
     defined(AURORA_PIN_LEDGER_TESTING) || defined(AURORA_KERNEL_BYTES_TESTING) ||                                      \
-    defined(AURORA_NVME_QUEUE_TESTING) || defined(AURORA_NVME_QUEUE_GENERATION_LIMIT)
+    defined(AURORA_NVME_QUEUE_TESTING) || defined(AURORA_NVME_QUEUE_GENERATION_LIMIT) ||                               \
+    defined(AURORA_SERVICE_FIXTURE)
 #error "Graphical terminal rejects test, fixture, capture and probe flags and other compositions"
 #endif
 #endif

@@ -111,7 +111,7 @@ continue to use the copied-message rights/generation/scrubbing rules in [ipc.md]
 - `budget-mmio`, `budget-softint`, `budget-fpu`: actual supervisor-MMIO read,
   forbidden interrupt instruction and unsupported extended-state instruction fail.
 
-Every mode boots the one `budget-fixture` image and picks its case from the
+Every mode boots the shared `service-fixture` image (its budget rows) and picks its case from the
 serial selector; `budget` (and its two-CPU variant `budget-smp`) is the baseline
 selector, which runs the ordinary flow. The context, mmio, softint and fpu
 cases used to be separate images, each with a service that always ran its probe.

@@ -151,6 +151,8 @@ UEFI_FAMILIES = [
             "program-file-call-fixture": ["-DAURORA_BLOCKING_CALL", "-DAURORA_FILE_CALL", "-DAURORA_RUNTIME_FIXTURE"],
         },
     ),
+    # The IPC, service-budget, dispatcher, user-run and resume compositions, each
+    # selected at boot; its user images are SERVICE_BANK.
     (
         [
             "-DAURORA_UEFI_ACPI",
@@ -160,41 +162,17 @@ UEFI_FAMILIES = [
             "-DAURORA_UEFI_SERVICE_BUDGET",
             "-DAURORA_UEFI_DISPATCH",
             "-DAURORA_UEFI_USER_BUDGET",
+            "-DAURORA_USER_RESUME",
         ],
         {
-            "user-resume": ["-DAURORA_USER_RESUME"],
-            "user-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_USER_FIXTURE"],
-        },
-    ),
-    (
-        [
-            "-DAURORA_UEFI_ACPI",
-            "-DAURORA_UEFI_PCI",
-            "-DAURORA_UEFI_RUNTIME",
-            "-DAURORA_UEFI_IPC",
-            "-DAURORA_UEFI_SERVICE_BUDGET",
-            "-DAURORA_UEFI_DISPATCH",
-        ],
-        {
-            "dispatch-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_DISPATCH_FIXTURE"],
-        },
-    ),
-    (
-        [
-            "-DAURORA_UEFI_ACPI",
-            "-DAURORA_UEFI_PCI",
-            "-DAURORA_UEFI_RUNTIME",
-            "-DAURORA_UEFI_IPC",
-            "-DAURORA_UEFI_SERVICE_BUDGET",
-        ],
-        {
-            "budget-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_BUDGET_FIXTURE"],
-        },
-    ),
-    (
-        ["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI", "-DAURORA_UEFI_RUNTIME", "-DAURORA_UEFI_IPC"],
-        {
-            "ipc-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_IPC_FIXTURE"],
+            "service-fixture": [
+                "-DAURORA_RUNTIME_FIXTURE",
+                "-DAURORA_SERVICE_FIXTURE",
+                "-DAURORA_IPC_FIXTURE",
+                "-DAURORA_BUDGET_FIXTURE",
+                "-DAURORA_DISPATCH_FIXTURE",
+                "-DAURORA_USER_FIXTURE",
+            ],
         },
     ),
     # The plain runtime, span and multipage baselines and the pin and dormant-table
@@ -272,6 +250,31 @@ RUNTIME_SETS = {
     "runtime-span": ("span-clean", "bounds"),
     "runtime-multipage": ("multipage-clean", "multipage-bounds"),
 }
+# service-fixture's user image bank: (name, source, domain image it is linked
+# for, entry defines, whether its metadata carries the service-timer compiled
+# and context ranges). Each one-page image keeps the source and probe wrapper
+# its former image had; budget-client is ipc-client with the budget metadata.
+SERVICE_BANK = (
+    ("ipc-client", "ipc-client", 0, (), False),
+    ("ipc-service", "ipc-service", 1, (), False),
+    ("budget-client", "ipc-client", 0, (), True),
+    ("budget-service", "budget-service", 1, ("IPC_PROBES",), True),
+    ("dispatch-client-a", "dispatch-client-a", 0, (), True),
+    ("dispatch-service", "dispatch-service", 1, (), True),
+    ("dispatch-client-b", "dispatch-client-b", 2, ("IPC_PROBES",), True),
+    ("user-client-a", "user-budget-client-a", 0, ("IPC_PROBES",), True),
+    ("user-client-b", "user-budget-client-b", 2, (), True),
+    ("checksum-client-a", "user-checksum-client", 0, (), True),
+    ("checksum-client-b", "user-checksum-client", 2, (), True),
+)
+# Row family (row-name prefix) -> the bank images acting as images 0, 1 (and 2).
+SERVICE_SETS = {
+    "ipc_": ("ipc-client", "ipc-service"),
+    "budget_": ("budget-client", "budget-service"),
+    "dispatch_": ("dispatch-client-a", "dispatch-service", "dispatch-client-b"),
+    "user_": ("user-client-a", "dispatch-service", "user-client-b"),
+    "resume_": ("checksum-client-a", "dispatch-service", "checksum-client-b"),
+}
 SCHEDULE_SET = ("scheduled-clean", "scheduled-spin", "bounds")
 # Fixture mode -> (images 0, 1, 2, division label, unsigned label, family). Other
 # bios-fixture modes run the ordinary set.
@@ -307,9 +310,6 @@ def user_images(
     kind,
     mode,
     *,
-    budget=False,
-    dispatcher=False,
-    user_budget=False,
     program=False,
     snapshot=False,
     blocking_call=False,
@@ -331,24 +331,27 @@ def user_images(
                 max_pages=pages,
             )
         return result
-    names = ("clean", "bounds", "peer") if dispatcher else ("clean", "bounds")
-    for index, name in enumerate(names):
+    if kind == "ipc" and mode == "service":
+        for name, source, role, defines, _ in SERVICE_BANK:
+            result[name] = dict(
+                source="tests/kernel-programs/" + source + ".au",
+                roots=["library"],
+                base=LAYOUT.user_code + role * LAYOUT.code_stride,
+                entry="kernel/uefi/ipc-user-entry.S",
+                entry_flags=[value for define in defines for value in ("--defsym", define + "=1")],
+                combined=False,
+                max_pages=1,
+            )
+        return result
+    for index, name in enumerate(("clean", "bounds")):
         if kind == "runtime":
             source = name
             entry = "kernel/uefi/user-image-entry.S"
             defines = []
         else:
-            source = "budget-service" if budget and index == 1 else "ipc-client" if index == 0 else "ipc-service"
+            source = "ipc-client" if index == 0 else "ipc-service"
             if program:
                 source = "program-upper-client" if index == 0 else "program-stream-service"
-            if dispatcher:
-                source = (
-                    "dispatch-service" if index == 1 else "dispatch-client-a" if index == 0 else "dispatch-client-b"
-                )
-            if user_budget and not program and index != 1:
-                source = "user-budget-client-a" if index == 0 else "user-budget-client-b"
-            if user_budget and mode == "resume" and index != 1:
-                source = "user-checksum-client"
             if snapshot:
                 source = "snapshot-client" if index == 0 else "snapshot-service"
             if blocking_call:
@@ -363,11 +366,7 @@ def user_images(
                 if scratchpad and index == 0
                 else "kernel/uefi/ipc-user-entry.S"
             )
-            # Fixture kernels select hostile probes in the one domain whose former
-            # image carried them: the user client, the dispatcher's peer, or the
-            # budget service.
-            probe_index = 0 if user_budget else 2 if dispatcher else 1
-            defines = ["IPC_PROBES=1"] if mode == "probes" and index == probe_index else []
+            defines = []
             if (blocking_call or ram_file) and not scratchpad and index == 0:
                 defines.append("CALL_CLIENT=1")
             if ram_file and index == 1:
@@ -479,16 +478,16 @@ def uefi_profile(profile_mode, flags):
     terminal = "-DAURORA_UEFI_GRAPHICAL_TERMINAL" in flags
     scratchpad = mode in ("ram-scratchpad-console", "ram-scratchpad-console-fixture")
     scratchpad_fixture = mode == "ram-scratchpad-console-fixture"
-    runtime = scratchpad or mode.startswith(("runtime", "ipc", "budget", "dispatch", "user-", "program-", "snapshot"))
-    ipc = scratchpad or mode.startswith(("ipc", "budget", "dispatch", "user-", "program-", "snapshot"))
+    service = mode == "service-fixture"
+    runtime = scratchpad or service or mode.startswith(("runtime", "user-", "program-", "snapshot"))
+    ipc = scratchpad or service or mode.startswith(("user-", "program-", "snapshot"))
     console_region = mode.startswith("runtime-console-region")
     owned_text = mode.startswith("runtime-owned-text") or console_region
-    budget = scratchpad or mode.startswith(("budget", "dispatch", "user-", "program-")) or owned_text
+    budget = scratchpad or service or mode.startswith(("user-", "program-")) or owned_text
     file_call = mode.startswith("program-file-call")
     blocking_call = mode.startswith("user-call") or file_call
     ram_file = scratchpad or mode in ("user-ram-file", "user-ram-file-fixture")
-    dispatcher = mode.startswith(("dispatch", "user-")) and not (blocking_call or ram_file)
-    user_budget = scratchpad or mode.startswith(("user-", "program-"))
+    user_budget = scratchpad or service or mode.startswith(("user-", "program-"))
     program = mode.startswith("program-")
     snapshot = mode.startswith("snapshot")
     console = owned_bytes = mode == "device-fixture"
@@ -505,15 +504,12 @@ def uefi_profile(profile_mode, flags):
             if console_region
             else "owned-text"
         )
-    if mode == "user-resume":
-        user_mode = "resume"
-    if mode in ("budget-fixture", "dispatch-fixture", "user-fixture"):
-        user_mode = "probes"
+    if service:
+        user_mode = "service"
     user_options = [
         option
         for enabled, option in (
             (budget and not owned_text, "--service-budget"),
-            (dispatcher, "--dispatcher"),
             (user_budget, "--user-budget"),
             (program, "--program-console"),
             (snapshot, "--snapshot"),
@@ -529,9 +525,6 @@ def uefi_profile(profile_mode, flags):
         user_images(
             "ipc" if ipc else "runtime",
             user_mode,
-            budget=budget,
-            dispatcher=dispatcher,
-            user_budget=user_budget,
             program=program,
             snapshot=snapshot,
             blocking_call=blocking_call,
@@ -583,6 +576,15 @@ def uefi_profile(profile_mode, flags):
             user_options += ["--image", f"{name}:{role}"]
         for mode_name, chosen in RUNTIME_SETS.items():
             user_options += ["--set", f"{mode_name}:{FIXTURE_MODES[mode_name][1]}:{','.join(chosen)}"]
+    if service:
+        # Every row names its images; only budget-bearing images carry timer ranges.
+        flags.append(f"-DAURORA_RUNTIME_IMAGE_BANK={len(SERVICE_BANK)}")
+        for name, _, role, _, timed in SERVICE_BANK:
+            user_options += ["--image", f"{name}:{role}" + (":budget" if timed else "")]
+        for row, (mode_name, image, value) in FIXTURES.items():
+            if image == "service-fixture":
+                chosen = next(names for family, names in SERVICE_SETS.items() if row.startswith(family))
+                user_options += ["--set", f"{mode_name}:{value}:{','.join(chosen)}"]
     cpp = {name: "kernel/uefi/" + name + ".cpp" for name in ("payload", "acpi", "pci", "runtime")}
     assembly = {
         name: dict(source="kernel/uefi/" + name + ".S", flags=["--64"])
@@ -595,13 +597,13 @@ def uefi_profile(profile_mode, flags):
         )
         if owned_text:
             runtime_flags += ["--defsym", "AURORA_OWNED_TEXT=1"]
-        if mode == "user-resume" or blocking_call or ram_file or console_region:
+        if service or blocking_call or ram_file or console_region:
             runtime_flags += ["--defsym", "AURORA_USER_RESUME=1"]
         if blocking_call or ram_file:
             runtime_flags += ["--defsym", "AURORA_BLOCKING_CALL=1"]
         if mode == "runtime-fixture":
             runtime_flags += ["--defsym", "AURORA_RUNTIME_PROBES=1"]
-        if mode in ("budget-fixture", "dispatch-fixture", "user-fixture"):
+        if service:
             runtime_flags += ["--defsym", "AURORA_IPC_PROBES=1"]
         assembly["runtime-entry"] = dict(source="kernel/uefi/runtime-entry.S", flags=["--64"] + runtime_flags)
         assembly["runtime-exceptions"] = dict(

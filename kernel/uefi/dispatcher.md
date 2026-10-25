@@ -10,10 +10,11 @@ DMA authority, or physical Framework qualification.
 
 ## Ownership and layout
 
-The default RuntimeLayoutProfile<2> retains its prior exact mappings. The explicit
-trusted dispatcher profile selects RuntimeLayoutProfile<3>. In the existing owned
-1 MiB arena, the third root pool occupies offsets 0xd0000..0xe0000 and the third
-RX image occupies 0xb2000..0xb3000. The existing 16-frame pool at 0xc0000..0xd0000
+The default RuntimeLayoutProfile<2> retains its prior exact mappings. The
+dispatcher rows run in `service-fixture`, whose profile is
+RuntimeLayoutProfile<3, 11, 1>. In the existing owned 1 MiB arena, the third root
+pool occupies offsets 0xd0000..0xe0000 and eleven one-page RX image slots occupy
+0xb0000..0xbb000, of which each row's set names images 0, 1 and 2. The existing 16-frame pool at 0xc0000..0xd0000
 supplies twelve leased user-stack frames. Each root pool remains sixteen pages.
 No allocation or image budget is expanded. Both profiles check all intervals,
 canonical addresses, guards, disjointness and capacity before mapping.
@@ -77,7 +78,7 @@ revocation; no orphan-discard or general process lifecycle is claimed.
 - dispatch-peer-code: the third client actually faults reading another client's
   absent user code mapping, at the exact controlled probe site.
 
-Every mode boots the one `dispatch-fixture` image and picks its case from the
+Every mode boots the shared `service-fixture` image (its dispatcher rows) and picks its case from the
 serial selector; `dispatch` is the baseline selector, which runs the ordinary flow. dispatch-peer-code used to have its own image whose
 third client always ran the read. The fixture's third client now carries the
 shared selectable probe set (see [service-budget.md](service-budget.md)), and the

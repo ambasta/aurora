@@ -28,7 +28,7 @@ IPC has a bounded, copy-based control path plus explicit shared-buffer grants fo
 
 The target scheduler combines preemptible execution with explicit service budgets. Ordinary workloads use fairness; real-time profiles require admission control and declared deadlines. Priority inheritance or budget donation across synchronous IPC must be specified before claiming bounded response time. A clock, timer, and interrupt model must define monotonicity, ordering, and wrap handling for each platform.
 
-The experimental `user-resume` profile retains one authenticated timer continuation in private domain storage. Two Aurora checksum programs demonstrate returning to the kernel, running a peer and restoring the first program’s integer frame and stack with its remaining budget. Cancellation scrubs that continuation before domain reuse. This bounded single-core mechanism precedes a general scheduler, blocking I/O and floating-point context support.
+The experimental `user-resume` row of the `service-fixture` test image retains one authenticated timer continuation in private domain storage. Two Aurora checksum programs demonstrate returning to the kernel, running a peer and restoring the first program’s integer frame and stack with its remaining budget. Cancellation scrubs that continuation before domain reuse. This bounded single-core mechanism precedes a general scheduler, blocking I/O and floating-point context support.
 
 The `user-call` profile adds one sealed `CallSession&` call per client incarnation
 between a fixed pair of Aurora programs. A dedicated authenticated `INT 0x82`

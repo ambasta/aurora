@@ -20,7 +20,8 @@ to 37 (34 UEFI, 3 BIOS) by folding the span, multipage, pin and table images int
 IVRS, BAR, BAR-state, BAR-capture and NVMe-preparation images into
 `platform-fixture`, and to 26 (23 UEFI, 3 BIOS) by folding the framebuffer and
 graphical-console images into `display-fixture` and the console and owned-bytes
-images into `device-fixture`. Every
+images into `device-fixture`, and to 22 (19 UEFI, 3 BIOS) by folding the IPC,
+budget, dispatcher, user-phase and user-resume images into `service-fixture`. Every
 fault mode keeps its own guest run and exact oracle. A source image count is not a
 measured build or execution saving; the PR records those.
 
@@ -59,7 +60,7 @@ measured build or execution saving; the PR records those.
 - Baseline row: where a family's ordinary image was only a test baseline, the
   first row of its interval (`*_baseline`) selects the unchanged normal flow, so
   the mode boots the fixture image: `acpi`, `pci`, `ipc`, `budget`, `dispatch`,
-  `user-phases`, `snapshot`, `runtime`, `runtime-span`, `runtime-multipage`, `runtime-owned-text`,
+  `user-phases`, `user-resume`, `snapshot`, `runtime`, `runtime-span`, `runtime-multipage`, `runtime-owned-text`,
   `runtime-console-region`, `user-call`, `framebuffer`, `graphical-console`,
   `console`, `owned-bytes` and BIOS `schedule`. Machine variants
   (`acpi-two`, `pci-devices`, `pci-bridge`, `budget-smp`, `schedule-smp`,
@@ -145,14 +146,14 @@ values from `kernel/bootstrap-layout-values.inc`.
 
 | Case | Was | Same property now enforced by |
 | --- | --- | --- |
-| IPC owner/version/phase/transaction/site/unknown | hostile client images | `ipc-fixture` alters the trapped exit before the unchanged kernel checks (site moves the trapped RIP off the return site; unknown resumes the client at the wrapper's `bad_entry` UD2, an unregistered address); `tests/kernel-uefi-ipc-smoke.py` |
+| IPC owner/version/phase/transaction/site/unknown | hostile client images | `service-fixture`'s IPC rows alter the trapped exit before the unchanged kernel checks (site moves the trapped RIP off the return site; unknown resumes the client at the wrapper's `bad_entry` UD2, an unregistered address); `tests/kernel-uefi-ipc-smoke.py` |
 | snapshot owner, reply byte/reserved; program ordinal/owner/transaction/unknown | hostile client/service images | same exit hook in `snapshot-fixture`/`program-fixture` (program unknown also faults at `bad_entry`); their transcript oracles |
 | stale, stale-exhausted, bad-table, bad-handoff, bad-map, wp, nx, acpi-duplicate-root | eight kernel builds | `platform-fixture`; each injection sits where its build did (bad-table still maps 0x10000 before exit, so the payload's complete-tree check is unchanged). The image includes ACPI for `acpi-duplicate-root`, so bad-handoff swaps the handoff version between its RSDP-free and RSDP-bearing forms instead of writing 2; the payload's version/content check still rejects it. `tests/kernel-uefi-smoke.py`, `tests/kernel-acpi-smoke.py`, which also require the selector echo before any exit record |
 | runtime code/stack/kernel/window/write/nx/return/unknown/syscall/sysenter | one client image per probe | probe set in `runtime-fixture`'s clean client; `tests/kernel-uefi-runtime-smoke.py` |
 | runtime terminal input/output | two kernel builds | `runtime-fixture` mutation, as the BIOS fault fixture already did |
-| budget mmio/softint/fpu/context | service image per probe | probe word in `budget-fixture`; `tests/kernel-uefi-budget-smoke.py` |
+| budget mmio/softint/fpu/context | service image per probe | probe word in `service-fixture`'s budget service; `tests/kernel-uefi-budget-smoke.py` |
 | budget no-APIC | kernel build plus a link-time check that no launch or timer symbol survived | the CPUID bit is cleared when selected. The link-time property cannot hold in a shared image (it only held because the rejection was constant folded); what remains is the weaker run-time form: the guest oracle requires the rejection to be the only record after firmware discovery, before any timer, IPC or domain record |
-| dispatch peer-code; user context/unknown | client images | probe word in `dispatch-fixture`/`user-fixture`; dispatch and user-phase oracles |
+| dispatch peer-code; user context/unknown | client images | probe word in `service-fixture`'s dispatcher peer and user client; dispatch and user-phase oracles |
 | console stale/reentry/timeout/report | four kernel builds | `device-fixture` rows; `tests/kernel-console-service-qualification.py`, which requires the loader echo immediately before the bootstrap it used to require before the serial READY |
 | framebuffer record/permissions/stale | three kernel builds | `display-fixture` rows; `scripts/framebuffer_capture_oracle.py` |
 | IVRS default/read | two kernel builds | `platform-fixture` selects the architectural or explicit cold profile (never a fallback); IVRS serial/trace/provenance oracles, which now require both linked fault sites in every IVRS image |
@@ -197,7 +198,6 @@ profiles; the clock catalog and launch lists reject the retired modes.
   payload bank: the kernel compiles user-image sites (`images::*_pc`, compiled
   ranges) in as constants and the loader installs the images before exit, so
   several image sets need generated per-set records selected at boot.
-- Distinct compositions: resume.
 - `display-fixture` and `device-fixture` cannot share one image: their union
   (graphical console, framebuffer, console service, UART policy and owned bytes:
   the two payloads less one shared 17 KiB base, about 242 KiB) exceeds the
@@ -237,6 +237,34 @@ production and the graphical terminal still reject both flags.
 that differ only in image set or supervisor have identical domain records, so the
 image echoes `AURORA_FIXTURE_SELECTED: value=N` right after READY and the runtime,
 pin and table oracles require it to be their mode's selector.
+
+## Service fixture
+
+`service-fixture` co-hosts five compositions that were separate builds, each
+selected by its row before timer admission: the untimed two-domain IPC rows,
+the IPC budget rows, the three-domain dispatcher rows, the user-run rows and the
+`user-resume` row (newly a baseline row; its oracle now requires the selector).
+`select_service_row` picks the composition; `timed`, `dispatching`, `user_runs`
+and `resuming` stand for the former `SERVICE_BUDGET`, `DISPATCH`, `USER_BUDGET`
+and `USER_RESUME` choices (mailbox or dispatcher, service-only or user run
+authority, LAPIC admission and mapping, the service's RFLAGS, the resume park),
+and `run_protected` calls the row's flow. The image is three-domain
+(`RuntimeLayoutProfile<3, 11>`): two-domain rows never create the third domain,
+so their transcripts are unchanged (same roots, frames and stacks); only the
+third table pool and image slot are reserved and kernel-mapped. The loader
+installs an 11-slot bank of one-page user images (`kernel_profiles.SERVICE_BANK`,
+packed one page apart at 0xb0000..0xbb000) and `SERVICE_SETS` names each row
+family's images 0, 1 and 2; `budget-client` is `ipc-client` with the
+service-timer ranges the budget oracle requires and the IPC oracle forbids. The
+service timer reads each slot's compiled and context ranges
+(`images::slot_ranges`). The image echoes `AURORA_FIXTURE_SELECTED` after READY,
+and the IPC, budget, dispatcher and user oracles require it to be their mode's
+row; `kernel-uefi-smoke.sh` hands each oracle its mode's set. The kernel metadata
+now carries the budget family's forged-interrupt site for every row, so the
+dispatcher and user oracles require it present on this image instead of absent.
+The payload is 131,104 bytes; the stack total is 11,471 of 15,360 bytes. A guard
+in `runtime.cpp` keeps these compositions out of every other image, and
+production and the graphical terminal reject the flag.
 
 ## Platform fixture
 

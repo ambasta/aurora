@@ -2,7 +2,7 @@
 // baselines and the pin and dormant-table supervisors; its rows select one at boot.
 #if (defined(AURORA_RUNTIME_CONTROL_FIXTURE) || defined(AURORA_PIN_FIXTURE) || defined(AURORA_TABLE_FIXTURE) ||        \
      defined(AURORA_UEFI_PINS) || defined(AURORA_UEFI_TABLES) || defined(AURORA_RUNTIME_MULTIPAGE) ||                  \
-     defined(AURORA_RUNTIME_IMAGE_BANK)) &&                                                                            \
+     (defined(AURORA_RUNTIME_IMAGE_BANK) && !defined(AURORA_SERVICE_FIXTURE))) &&                                      \
     (!defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_RUNTIME) || !defined(AURORA_RUNTIME_CONTROL_FIXTURE) ||  \
      !defined(AURORA_PIN_FIXTURE) || !defined(AURORA_TABLE_FIXTURE) || !defined(AURORA_UEFI_PINS) ||                   \
      !defined(AURORA_UEFI_TABLES) || !defined(AURORA_PIN_LEDGER_TESTING) || !defined(AURORA_DORMANT_TABLE_TESTING) ||  \
@@ -22,22 +22,18 @@
      defined(AURORA_OWNED_TEXT))
 #error "Snapshot fixture requires the original producer and one-page IPC composition"
 #endif
-#if defined(AURORA_USER_FIXTURE) && (!defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_USER_BUDGET) ||          \
-                                     !defined(AURORA_UEFI_DISPATCH) || defined(AURORA_USER_RESUME))
-#error "User fixture requires its original non-resuming three-domain composition"
-#endif
-#if defined(AURORA_DISPATCH_FIXTURE) && (!defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_DISPATCH) ||         \
-                                         !defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_USER_BUDGET))
-#error "Dispatcher fixture requires its original three-domain composition"
-#endif
-#if defined(AURORA_BUDGET_FIXTURE) &&                                                                                  \
-    (!defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_SERVICE_BUDGET) || !defined(AURORA_UEFI_IPC) ||          \
-     defined(AURORA_UEFI_DISPATCH) || defined(AURORA_OWNED_TEXT))
-#error "Budget fixture requires the standalone one-page service-timer composition"
-#endif
-#if defined(AURORA_IPC_FIXTURE) && (!defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_IPC) ||                   \
-                                    defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_SNAPSHOT))
-#error "IPC fixture requires the standalone one-page IPC composition"
+// The one service test image co-hosts the IPC, service-budget, dispatcher,
+// user-run and resume compositions; its rows select one at boot.
+#if (defined(AURORA_SERVICE_FIXTURE) || defined(AURORA_IPC_FIXTURE) || defined(AURORA_BUDGET_FIXTURE) ||               \
+     defined(AURORA_DISPATCH_FIXTURE) || defined(AURORA_USER_FIXTURE) || defined(AURORA_USER_RESUME) ||                \
+     defined(AURORA_UEFI_DISPATCH)) &&                                                                                 \
+    (!defined(AURORA_SERVICE_FIXTURE) || !defined(AURORA_IPC_FIXTURE) || !defined(AURORA_BUDGET_FIXTURE) ||            \
+     !defined(AURORA_DISPATCH_FIXTURE) || !defined(AURORA_USER_FIXTURE) || !defined(AURORA_USER_RESUME) ||             \
+     !defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_IPC) || !defined(AURORA_UEFI_SERVICE_BUDGET) ||          \
+     !defined(AURORA_UEFI_DISPATCH) || !defined(AURORA_UEFI_USER_BUDGET) || !defined(AURORA_RUNTIME_IMAGE_BANK) ||     \
+     defined(AURORA_UEFI_SNAPSHOT) || defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_BLOCKING_CALL) ||         \
+     defined(AURORA_RAM_FILE) || defined(AURORA_OWNED_TEXT))
+#error "Service fixture requires its one three-domain image with every boot-selected composition"
 #endif
 #include "runtime.hpp"
 #ifdef AURORA_UEFI_RUNTIME
@@ -189,6 +185,30 @@ using hardware::Serial;
 #endif
 using user::ProgramEvent;
 using L = RuntimeLayout;
+#ifdef AURORA_SERVICE_FIXTURE
+// The selected row's composition, fixed before any timer or domain exists. Each
+// predicate stands for the compile-time flag the composition's former image set.
+enum class Composition : unsigned char {
+    ipc,
+    budget,
+    dispatch,
+    user,
+    resume
+};
+Composition composition{};
+[[nodiscard]] auto timed() -> bool { // AURORA_UEFI_SERVICE_BUDGET
+    return composition != Composition::ipc;
+}
+[[nodiscard]] auto dispatching() -> bool { // AURORA_UEFI_DISPATCH
+    return composition >= Composition::dispatch;
+}
+[[nodiscard]] auto user_runs() -> bool { // AURORA_UEFI_USER_BUDGET
+    return composition >= Composition::user;
+}
+[[nodiscard]] auto resuming() -> bool { // AURORA_USER_RESUME
+    return composition == Composition::resume;
+}
+#endif
 #if defined(AURORA_BUDGET_FIXTURE) || defined(AURORA_DISPATCH_FIXTURE) || defined(AURORA_USER_FIXTURE)
 #define AURORA_IPC_PROBES
 // The fixture launcher appends one hostile-probe selector word, loaded into %rax.
@@ -258,7 +278,8 @@ constinit user::ProgramRun program;
 #ifdef AURORA_UEFI_IPC
 #ifdef AURORA_UEFI_DISPATCH
 constinit std::optional<ipc::Dispatcher> dispatcher;
-#else
+#endif
+#if !defined(AURORA_UEFI_DISPATCH) || defined(AURORA_SERVICE_FIXTURE)
 constinit std::optional<ipc::Mailbox> mailbox;
 #if defined(AURORA_UEFI_SNAPSHOT) || (defined(AURORA_BLOCKING_CALL) && !defined(AURORA_FILE_CALL))
 constinit ipc::SnapshotSlot snapshot_slot;
@@ -301,11 +322,23 @@ auto service_delivered() -> bool {
 #ifdef AURORA_RAM_FILE
     return ram_service_admitted();
 #elif defined(AURORA_UEFI_DISPATCH)
+#ifdef AURORA_SERVICE_FIXTURE
+    if (!dispatching())
+        return mailbox && mailbox->state() == ipc::State::delivered;
+#endif
     return dispatcher && dispatcher->selected() == selected_client &&
            dispatcher->state(selected_client) == ipc::State::delivered;
 #else
     return mailbox && mailbox->state() == ipc::State::delivered;
 #endif
+}
+#endif
+#ifdef AURORA_SERVICE_FIXTURE
+// Phases whose run holds a timer allowance, and so must end through its terminal check.
+[[nodiscard]] auto timed_phase() -> bool {
+    return timed() &&
+           (selected_phase == ipc::Phase::service ||
+            (user_runs() && (selected_phase == ipc::Phase::request || selected_phase == ipc::Phase::completion)));
 }
 #endif
 U64 arena{}, kernel_root{};
@@ -340,26 +373,61 @@ auto require(bool okay, std::string_view reason) -> void {
 #include "runtime-fixture.inc"
 #endif
 #ifdef AURORA_RUNTIME_IMAGE_BANK
-// Bank slots acting as images 0 and 1 for the selected row (images::sets); every
-// other row runs slots 0 and 1. Chosen once, before any domain exists.
-static_assert([] {
-    for (const auto &set : images::sets)
-        if (set[1] >= L::image_slots || set[2] >= L::image_slots)
-            return false;
-    return true;
-}());
-std::array<std::size_t, L::image_count> image_slots{0, 1};
+// Bank slots acting as each domain image for the selected row (images::sets);
+// rows without a set run each role's first slot. A set naming fewer images
+// leaves the rest at image_slots, which create() refuses. Chosen once, before
+// any domain exists.
+static_assert(images::default_slots.size() == L::image_count &&
+              std::tuple_size_v<decltype(images::sets)::value_type> == 1 + L::image_count && [] {
+                  for (const auto &set : images::sets)
+                      for (std::size_t image = 0; image < L::image_count; ++image)
+                          if (set[1 + image] > L::image_slots || (image < 2 && set[1 + image] == L::image_slots))
+                              return false;
+                  return true;
+              }());
+std::array<std::size_t, L::image_count> image_slots = images::default_slots;
 auto select_images() -> void {
     for (const auto &set : images::sets)
         if (set[0] == static_cast<unsigned>(fixture))
-            image_slots = {set[1], set[2]};
+            for (std::size_t image = 0; image < L::image_count; ++image)
+                image_slots[image] = set[1 + image];
 }
 [[nodiscard]] auto image_slot(std::size_t image) -> std::size_t {
     return image < L::image_count ? image_slots[image] : L::image_slots;
 }
+#ifdef AURORA_SERVICE_FIXTURE
+// Service-timer ranges (compiled begin/end, context begin/end) of the image the
+// selected set runs as domain image `image`; empty for an unbound image.
+[[nodiscard]] auto image_ranges(std::size_t image) -> std::array<unsigned long long, 4> {
+    static_assert(images::slot_ranges.size() == L::image_slots);
+    return image_slot(image) < L::image_slots ? images::slot_ranges[image_slot(image)]
+                                              : std::array<unsigned long long, 4>{};
+}
+#endif
 #else
 [[nodiscard]] constexpr auto image_slot(std::size_t image) -> std::size_t {
     return image;
+}
+#endif
+#ifdef AURORA_SERVICE_FIXTURE
+// One serial row before timer admission picks the composition and its images.
+// Several baselines share a transcript prefix, so the image echoes the row.
+static_assert(Fixture::ipc_baseline < Fixture::budget_baseline &&
+              Fixture::budget_baseline < Fixture::dispatch_baseline &&
+              Fixture::dispatch_baseline < Fixture::user_phases_baseline &&
+              Fixture::user_phases_baseline < Fixture::resume_baseline);
+auto select_service_row() -> void {
+    select_fixture(Fixture::ipc_baseline, Fixture::resume_baseline);
+    Serial::text("AURORA_FIXTURE_SELECTED: value=");
+    Serial::number(static_cast<unsigned>(fixture));
+    Serial::text("\r\n");
+    const auto value = static_cast<unsigned>(fixture);
+    composition = value < static_cast<unsigned>(Fixture::budget_baseline)        ? Composition::ipc
+                  : value < static_cast<unsigned>(Fixture::dispatch_baseline)    ? Composition::budget
+                  : value < static_cast<unsigned>(Fixture::user_phases_baseline) ? Composition::dispatch
+                  : value < static_cast<unsigned>(Fixture::resume_baseline)      ? Composition::user
+                                                                                 : Composition::resume;
+    select_images();
 }
 #endif
 auto fill(U64 physical, std::uint8_t value) -> void {
@@ -418,9 +486,13 @@ auto fill(U64 physical, std::uint8_t value) -> void {
             return false;
     }
 #ifdef AURORA_UEFI_SERVICE_BUDGET
-    if (!interrupt_admission || (domain.tables->entry(LocalApicAdmission::virtual_address) & ~0x60ULL) !=
-                                    expected(domain, LocalApicAdmission::virtual_address))
-        return false;
+#ifdef AURORA_SERVICE_FIXTURE
+    // IPC rows run untimed, as their former image did: no LAPIC leaf exists.
+    if (timed())
+#endif
+        if (!interrupt_admission || (domain.tables->entry(LocalApicAdmission::virtual_address) & ~0x60ULL) !=
+                                        expected(domain, LocalApicAdmission::virtual_address))
+            return false;
 #endif
     return domain.tables->entry(PageTables::window_address) == 0;
 }
@@ -484,7 +556,8 @@ auto fill(U64 physical, std::uint8_t value) -> void {
                           std::size_t mapped_pages = L::max_code_pages
 #endif
                           ) -> std::optional<unsigned> {
-    if (root() != kernel_root || active != L::domain_count || image >= L::image_count)
+    if (root() != kernel_root || active != L::domain_count || image >= L::image_count ||
+        image_slot(image) >= L::image_slots)
         return std::nullopt;
     auto token = registry.create();
     if (!token)
@@ -557,10 +630,13 @@ auto fill(U64 physical, std::uint8_t value) -> void {
         good = domain.tables->map(
             layout->user_stack_bottom() + page * 4096, *frames.address(*domain.stacks[page]), 7 | RuntimeTables::nx);
 #ifdef AURORA_UEFI_SERVICE_BUDGET
-    good = good && interrupt_admission &&
-           domain.tables->map(LocalApicAdmission::virtual_address,
-                              LocalApicAdmission::physical_address,
-                              LocalApicAdmission::leaf_flags);
+#ifdef AURORA_SERVICE_FIXTURE
+    if (timed())
+#endif
+        good = good && interrupt_admission &&
+               domain.tables->map(LocalApicAdmission::virtual_address,
+                                  LocalApicAdmission::physical_address,
+                                  LocalApicAdmission::leaf_flags);
 #endif
     if (!good || !verify(domain)) {
         static_cast<void>(retire(*index));
@@ -780,14 +856,11 @@ auto execute(unsigned index, ProgramEvent wanted) -> void {
 #endif
 #ifdef AURORA_UEFI_IPC
 #ifdef AURORA_UEFI_DISPATCH
+// service-fixture: every composition's flow, selected by run_protected.
+#include "ipc-runtime.inc"
 #include "dispatch-runtime.inc"
-#ifdef AURORA_UEFI_USER_BUDGET
-#ifdef AURORA_USER_RESUME
-#include "user-resume.inc"
-#else
 #include "user-lifecycle.inc"
-#endif
-#endif
+#include "user-resume.inc"
 #elif defined(AURORA_RAM_FILE)
 #include "ram-file.inc"
 #ifdef AURORA_RAM_SCRATCHPAD_CONSOLE
@@ -868,16 +941,10 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
     }
 #endif
 #ifdef AURORA_UEFI_SERVICE_BUDGET
-#if defined(AURORA_BUDGET_FIXTURE) || defined(AURORA_DISPATCH_FIXTURE) || defined(AURORA_USER_FIXTURE)
-    if (vector == 64 && !timer_draining
-#ifdef AURORA_BUDGET_FIXTURE
-        && fixture == Fixture::budget_root
-#elif defined(AURORA_DISPATCH_FIXTURE)
-        && fixture == Fixture::dispatch_root
-#elif defined(AURORA_USER_FIXTURE)
-        && fixture == Fixture::user_root && active == 0
-#endif
-    ) {
+#ifdef AURORA_SERVICE_FIXTURE
+    if (vector == 64 && !timer_draining &&
+        (fixture == Fixture::budget_root || fixture == Fixture::dispatch_root ||
+         (fixture == Fixture::user_root && active == 0))) {
         asm volatile("mov %0,%%cr3" ::"r"(kernel_root) : "memory");
         Serial::text("AURORA_UEFI_RUNTIME_ROOT_PROBE: root=");
         Serial::number(root());
@@ -928,6 +995,8 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
 #ifdef AURORA_UEFI_SERVICE_BUDGET
 #ifdef AURORA_OWNED_TEXT
     if (true)
+#elif defined(AURORA_SERVICE_FIXTURE)
+    if (timed_phase())
 #else
     if (selected_phase == ipc::Phase::service
 #ifdef AURORA_UEFI_USER_BUDGET
@@ -940,21 +1009,20 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
         require(text_active(), "text terminal authority");
 #endif
 #ifdef AURORA_UEFI_USER_BUDGET
-        require(active < L::domain_count && run_authority && current_run_identity(), "user terminal run authority");
+#ifdef AURORA_SERVICE_FIXTURE
+        if (user_runs())
+#endif
+            require(active < L::domain_count && run_authority && current_run_identity(), "user terminal run authority");
 #endif
         const auto integer = ServiceContext::capture(
             std::span<const U64>{reinterpret_cast<const U64 *>(frame), 22}, frame, *domains[active].contract);
         require(timer_armed && integer && integer->terminal_context(*domains[active].contract) && timer_stop(),
                 "timer terminal context");
-#if defined(AURORA_PROGRAM_FIXTURE) || defined(AURORA_BUDGET_FIXTURE) || defined(AURORA_DISPATCH_FIXTURE) ||           \
-    defined(AURORA_USER_FIXTURE)
-#ifdef AURORA_BUDGET_FIXTURE
-        if (fixture == Fixture::budget_pending)
-#elif defined(AURORA_DISPATCH_FIXTURE)
-        if (fixture == Fixture::dispatch_pending)
-#elif defined(AURORA_USER_FIXTURE)
-        if (fixture == Fixture::user_pending)
-#elif defined(AURORA_PROGRAM_FIXTURE)
+#if defined(AURORA_PROGRAM_FIXTURE) || defined(AURORA_SERVICE_FIXTURE)
+#ifdef AURORA_SERVICE_FIXTURE
+        if (fixture == Fixture::budget_pending || fixture == Fixture::dispatch_pending ||
+            fixture == Fixture::user_pending)
+#else
         if (fixture == Fixture::program_pending)
 #endif
             force_timer_pending();
@@ -979,10 +1047,14 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
     call_envelope(captured, result);
 #elif defined(AURORA_UEFI_PROGRAM_CONSOLE)
     program_console_envelope(captured, result);
-#elif defined(AURORA_UEFI_DISPATCH)
-    dispatch_envelope(captured, result);
+#else
+#ifdef AURORA_UEFI_DISPATCH
+    if (dispatching())
+        dispatch_envelope(captured, result);
+    else if (program.event() == ProgramEvent::returned) {
 #else
     if (program.event() == ProgramEvent::returned) {
+#endif
         Serial::text("AURORA_UEFI_IPC_ENVELOPE: phase=");
         Serial::number(captured.get(64));
         Serial::text(" version=");
@@ -1071,16 +1143,16 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
     const bool restart_service = fixture == Fixture::runtime_pin_fault || fixture == Fixture::runtime_table_quarantine;
 #endif
 #ifdef AURORA_UEFI_SERVICE_BUDGET
-#ifdef AURORA_BUDGET_FIXTURE
-    select_fixture(Fixture::budget_baseline, Fixture::budget_context);
-#elif defined(AURORA_DISPATCH_FIXTURE)
-    select_fixture(Fixture::dispatch_baseline, Fixture::dispatch_peer_code);
-#elif defined(AURORA_USER_FIXTURE)
-    select_fixture(Fixture::user_phases_baseline, Fixture::user_unknown);
-#elif defined(AURORA_PROGRAM_FIXTURE)
+#ifdef AURORA_SERVICE_FIXTURE
+    select_service_row();
+    if (timed())
+        initialize_service_timer();
+#else
+#ifdef AURORA_PROGRAM_FIXTURE
     select_fixture(Fixture::program_request_fault, Fixture::program_unknown);
 #endif
     initialize_service_timer();
+#endif
 #endif
 #ifdef AURORA_OWNED_TEXT
 #ifdef AURORA_CONSOLE_REGION
@@ -1098,15 +1170,21 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
     return true;
 #elif defined(AURORA_UEFI_IPC)
 #ifdef AURORA_UEFI_DISPATCH
-#ifdef AURORA_UEFI_USER_BUDGET
-#ifdef AURORA_USER_RESUME
-    run_resumable_clients();
-#else
-    run_user_lifecycle();
-#endif
-#else
-    run_dispatcher();
-#endif
+    switch (composition) {
+    case Composition::ipc:
+    case Composition::budget:
+        run_ipc();
+        break;
+    case Composition::dispatch:
+        run_dispatcher();
+        break;
+    case Composition::user:
+        run_user_lifecycle();
+        break;
+    case Composition::resume:
+        run_resumable_clients();
+        break;
+    }
 #elif defined(AURORA_RAM_FILE)
 #ifdef AURORA_RAM_SCRATCHPAD_CONSOLE
     run_ram_scratchpad_console();

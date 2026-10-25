@@ -206,18 +206,28 @@ def expected(mode, metadata, arena):
     return rows
 
 
-# Modes that boot the shared ipc-fixture image, from the one fixture table.
+# Modes of the IPC rows of the shared service-fixture image, from the one fixture table.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from kernel_layout import LAYOUT  # noqa: E402
 import kernel_profiles  # noqa: E402
 
-FIXTURE_MODES = tuple(mode for mode, (image, _) in kernel_profiles.FIXTURE_MODES.items() if image == "ipc-fixture")
+FIXTURE_MODES = kernel_profiles.family_modes("service-fixture", "ipc_")
+
+
+def selected_echo(text, mode):
+    """service-fixture echoes its row right after READY, since several of its
+    baselines share a transcript; require `mode`'s row there, then drop only the echo."""
+    text = text.replace("\r", "")
+    echo = f"AURORA_FIXTURE_READY\nAURORA_FIXTURE_SELECTED: value={kernel_profiles.serial_fixture_byte(mode)}\n"
+    need(text.count("AURORA_FIXTURE_SELECTED:") == 1 and text.count(echo) == 1, "Exact selected service row")
+    return text.replace(echo, "AURORA_FIXTURE_READY\n", 1)
 
 
 def validate(status, text, mode, metadata):
     marker = "AURORA_FIXTURE_READY\n"
     need(text.count(marker) == (1 if mode in FIXTURE_MODES else 0), "Exact IPC fixture readiness")
     if mode in FIXTURE_MODES:
+        text = selected_echo(text, mode)
         need(
             text.index("AURORA_PCI_WINDOW_CLOSED:") < text.index(marker) < text.index("AURORA_UEFI_IPC_ENTER:"),
             "IPC selector admission phase",
