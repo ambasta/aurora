@@ -12,9 +12,9 @@ using aurora::hardware::Serial;
 std::optional<FramebufferAdmission> admission;
 U64 owned_arena{}, kernel_root{}, table_count{}, stores{};
 #ifdef AURORA_UEFI_FRAMEBUFFER_CAPTURE
-#include "fixture-selector.inc"
-// Released by 'G' for the normal frame, or by one framebuffer fault selector.
-std::optional<Fixture> fixture;
+using loader_fixture::Fixture;
+// The display fixture's handoff row: the normal frame or one framebuffer fault case.
+Fixture fixture{};
 #endif
 bool ready{};
 [[noreturn]] auto fail() -> void {
@@ -46,12 +46,8 @@ auto capture_gate() -> void {
         const auto status = aurora::hardware::Io::read(0x3fd);
         require((status & 0x1e) == 0);
         if (status & 1) {
-            const auto release = aurora::hardware::Io::read(0x3f8);
-            if (release != 0x47) {
-                require(release >= static_cast<unsigned char>(Fixture::framebuffer_record) &&
-                        release <= static_cast<unsigned char>(Fixture::framebuffer_stale));
-                fixture = static_cast<Fixture>(release);
-            }
+            // Only 'G' releases; the handoff row already selected the case.
+            require(aurora::hardware::Io::read(0x3f8) == 0x47);
             Serial::text("AURORA_DISPLAY_CAPTURE_RELEASED\r\n");
             return;
         }
@@ -102,14 +98,16 @@ public:
 using Session = aurora::display::Session<Transport, Platform>;
 } // namespace
 extern "C" auto __au_runtime_display_entry(const aurora::display::ServiceArgument *) -> U64;
-extern "C" auto
-__au_runtime_display_pixel(const void *grant, U64 generation, U64 x, U64 y, U64 red, U64 green, U64 blue) -> U64 {
+auto framebuffer_display_pixel(const void *grant, U64 generation, U64 x, U64 y, U64 red, U64 green, U64 blue) -> U64 {
     return Session::pixel(grant, generation, x, y, red, green, blue);
 }
 [[noreturn]] auto run_framebuffer(U64 arena) -> void {
     require(!ready && !admission && stores == 0);
     owned_arena = arena;
 #ifdef AURORA_UEFI_FRAMEBUFFER_CAPTURE
+    fixture = loader_fixture::row(
+        Bytes{{reinterpret_cast<const std::byte *>(arena), Handoff::header}}.get(Handoff::fixture_offset));
+    require(loader_fixture::framebuffer(fixture));
     // payload_main already validated firmware exit, active private paging and
     // the complete empty framebuffer tree before calling this profile.
     capture_gate();

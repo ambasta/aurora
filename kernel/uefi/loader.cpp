@@ -10,9 +10,12 @@
 #endif
 #ifdef AURORA_UEFI_FRAMEBUFFER
 #include "framebuffer-loader.hpp"
-#if defined(AURORA_UEFI_ACPI) || defined(AURORA_UEFI_RUNTIME) || defined(AURORA_UEFI_BAR_CAPTURE) ||                   \
+// The framebuffer cases share only the display fixture image, whose framebuffer
+// rows skip ACPI, with the standalone graphical console.
+#if !defined(AURORA_DISPLAY_FIXTURE) || !defined(AURORA_UEFI_FRAMEBUFFER_FIXTURE) ||                                   \
+    !defined(AURORA_UEFI_FRAMEBUFFER_CAPTURE) || defined(AURORA_UEFI_RUNTIME) || defined(AURORA_UEFI_BAR_CAPTURE) ||   \
     defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_OWNED_BYTES)
-#error "Framebuffer output profile does not compose other capability profiles"
+#error "Framebuffer output profile composes only the display fixture image"
 #endif
 #endif
 #include "acpi-policy.hpp"
@@ -73,18 +76,22 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
     Serial::text("AURORA_UEFI_ENTRY\r\n");
     if (relocated_anchor != &anchor || *relocated_anchor != Handoff::magic)
         fail("PE relocation");
-#ifdef AURORA_PLATFORM_FIXTURE
-    // Every platform case is one fw_cfg row, echoed before any other record.
-    using aurora::uefi::platform::Fixture;
-    const auto selected = aurora::uefi::platform::FwCfg::read();
+#ifdef AURORA_LOADER_FIXTURE
+    // Every case of a loader fixture image is one fw_cfg row, echoed before any other record.
+    using aurora::uefi::loader_fixture::Fixture;
+    const auto selected = aurora::uefi::loader_fixture::read();
     if (!selected)
-        fail("platform fixture selector");
-    const auto injected = [&](Fixture fixture) {
+        fail("loader fixture selector");
+    [[maybe_unused]] const auto injected = [&](Fixture fixture) {
         return *selected == fixture;
     };
     Serial::text("AURORA_FIXTURE_SELECTED: value=");
     Serial::number(static_cast<unsigned>(*selected));
     Serial::text("\r\n");
+    // Framebuffer and owned-bytes rows hand over the RSDP-free handoff (v5, v1) as their images did.
+    [[maybe_unused]] const bool acpi = aurora::uefi::loader_fixture::acpi(*selected);
+#else
+    [[maybe_unused]] constexpr bool acpi = true;
 #endif
     const auto system_address = reinterpret_cast<U64>(system);
     if (!header_valid(system_address, 0x5453595320494249ULL, 120))
@@ -168,11 +175,12 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
     put(handoff, 0, Handoff::magic);
     put(handoff, 8, 1, 4);
     put(handoff, 12, Handoff::header, 4);
-#ifdef AURORA_PLATFORM_FIXTURE
+#ifdef AURORA_LOADER_FIXTURE
     put(handoff, Handoff::fixture_offset, static_cast<unsigned>(*selected));
 #endif
 #ifdef AURORA_UEFI_ACPI
-    put(handoff, 8, 2, 4);
+    if (acpi)
+        put(handoff, 8, 2, 4);
 #endif
 #ifdef AURORA_UEFI_RUNTIME
     using aurora::uefi::RuntimeLayout;
@@ -247,7 +255,8 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
 #endif
 #if defined(AURORA_UEFI_FRAMEBUFFER) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
 #ifdef AURORA_UEFI_GRAPHICAL_CONSOLE
-    put(handoff, 8, 6, 4);
+    // The display fixture's graphical rows carry the RSDP (v6); its framebuffer rows do not (v5).
+    put(handoff, 8, acpi ? 6 : 5, 4);
 #else
     put(handoff, 8, 5, 4);
 #endif
@@ -277,10 +286,10 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
         fail("bad-table injection");
 #endif
 #ifdef AURORA_UEFI_ACPI
-    if (!tables.prepare_window())
+    if (acpi && !tables.prepare_window())
         fail("firmware window tables");
 #if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
-    if (!tables.prepare_interrupts())
+    if (acpi && !tables.prepare_interrupts())
         fail("interrupt tables");
 #endif
 #endif
@@ -304,12 +313,15 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
     if (a < 0x80000001U)
         fail("NX unavailable");
 #ifdef AURORA_UEFI_ACPI
-    if (a < 0x80000008U)
-        fail("physical address width unavailable");
-    asm volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(0x80000008U), "c"(0));
-    const auto firmware_physical_bits = a & 255;
-    if (firmware_physical_bits < 32 || firmware_physical_bits > 52)
-        fail("physical address width unsupported");
+    unsigned firmware_physical_bits = 0;
+    if (acpi) {
+        if (a < 0x80000008U)
+            fail("physical address width unavailable");
+        asm volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(0x80000008U), "c"(0));
+        firmware_physical_bits = a & 255;
+        if (firmware_physical_bits < 32 || firmware_physical_bits > 52)
+            fail("physical address width unsupported");
+    }
 #endif
     asm volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(0x80000001U), "c"(0));
     if (!(d & (1U << 20)))
@@ -330,29 +342,31 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
         if (!map.owns(arena, Handoff::arena_bytes))
             fail("final map ownership");
 #ifdef AURORA_UEFI_ACPI
-        const auto count = table.get(104), configuration = table.get(112);
-        const aurora::uefi::FirmwareRanges readable{
-            span(arena + Handoff::map_offset, size), stride, arena, firmware_physical_bits};
-        if (count == 0 || count > 128 || !readable.readable(configuration, count * 24))
-            fail("configuration table range");
-        aurora::uefi::AcpiRoots roots;
-        for (U64 i = 0; i < count; ++i) {
-            const auto candidate = span(configuration + i * 24, 24);
-            const auto before = roots.root();
-            if (!roots.accept(candidate))
-                fail("duplicate or invalid ACPI roots");
+        if (acpi) {
+            const auto count = table.get(104), configuration = table.get(112);
+            const aurora::uefi::FirmwareRanges readable{
+                span(arena + Handoff::map_offset, size), stride, arena, firmware_physical_bits};
+            if (count == 0 || count > 128 || !readable.readable(configuration, count * 24))
+                fail("configuration table range");
+            aurora::uefi::AcpiRoots roots;
+            for (U64 i = 0; i < count; ++i) {
+                const auto candidate = span(configuration + i * 24, 24);
+                const auto before = roots.root();
+                if (!roots.accept(candidate))
+                    fail("duplicate or invalid ACPI roots");
 #ifdef AURORA_PLATFORM_FIXTURE
-            if (injected(Fixture::early_acpi_duplicate_root) && before == 0 && roots.root() != 0 &&
-                !roots.accept(candidate))
-                fail("duplicate or invalid ACPI roots");
+                if (injected(Fixture::early_acpi_duplicate_root) && before == 0 && roots.root() != 0 &&
+                    !roots.accept(candidate))
+                    fail("duplicate or invalid ACPI roots");
 #else
-            static_cast<void>(before);
+                static_cast<void>(before);
 #endif
+            }
+            const auto rsdp = roots.root();
+            if (!rsdp || !readable.readable(rsdp, 36))
+                fail("RSDP source range");
+            put(handoff, 112, rsdp);
         }
-        const auto rsdp = roots.root();
-        if (!rsdp || !readable.readable(rsdp, 36))
-            fail("RSDP source range");
-        put(handoff, 112, rsdp);
 #endif
 #if defined(AURORA_UEFI_FRAMEBUFFER) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE) ||                                      \
     defined(AURORA_UEFI_GRAPHICAL_TERMINAL)

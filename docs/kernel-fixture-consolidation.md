@@ -18,7 +18,9 @@ then to 41 (38 UEFI, 3 BIOS) by folding every BIOS test image into `bios-fixture
 to 37 (34 UEFI, 3 BIOS) by folding the span, multipage, pin and table images into
 `runtime-fixture`, and to 30 (27 UEFI, 3 BIOS) by folding the early, ACPI, PCI,
 IVRS, BAR, BAR-state, BAR-capture and NVMe-preparation images into
-`platform-fixture`. Every
+`platform-fixture`, and to 26 (23 UEFI, 3 BIOS) by folding the framebuffer and
+graphical-console images into `display-fixture` and the console and owned-bytes
+images into `device-fixture`. Every
 fault mode keeps its own guest run and exact oracle. A source image count is not a
 measured build or execution saving; the PR records those.
 
@@ -36,14 +38,16 @@ measured build or execution saving; the PR records those.
   line after loader entry, before any other record. The harnesses add
   `-fw_cfg name=opt/aurora/fixture,string=N` from the table
   (`kernel_profiles.fw_cfg_fixture`, machine variants included). The loader copies
-  the value into one extra handoff word (offset 128, present only in this image)
+  the value into one extra handoff word (offset 128, present only in these images)
   that the payload admits only within the image's interval, so every payload case
-  shares the image (see below). The
+  shares the image (see below). `display-fixture` and `device-fixture` use the
+  same loader row (`loader-fixture.hpp`), because their subsystems differ from the
+  loader onward and their interactive console sessions cannot take a serial byte. The
   `iommu-event` image reads the same file at Event entry, because its harness
   writes serial output to a file and cannot send a selector byte.
-- Capture release byte: the framebuffer capture gate already waited for one
-  reviewed byte; `G` releases the normal frame and the three framebuffer fault
-  selectors release their cases.
+- Capture bytes: the framebuffer capture gate waits for `G`, which only releases
+  the case its row selected. The graphical capture gate's byte still selects one
+  capture scenario of the `graphical-console-capture` row.
 - Launch probe word: hostile user code lives in one fixture client per family.
   The trusted launcher passes the selected probe in a launch argument (the
   runtime client's first argument, or one extra word loaded into `%rax` for the
@@ -56,7 +60,8 @@ measured build or execution saving; the PR records those.
   first row of its interval (`*_baseline`) selects the unchanged normal flow, so
   the mode boots the fixture image: `acpi`, `pci`, `ipc`, `budget`, `dispatch`,
   `user-phases`, `snapshot`, `runtime`, `runtime-span`, `runtime-multipage`, `runtime-owned-text`,
-  `runtime-console-region`, `user-call` and BIOS `schedule`. Machine variants
+  `runtime-console-region`, `user-call`, `framebuffer`, `graphical-console`,
+  `console`, `owned-bytes` and BIOS `schedule`. Machine variants
   (`acpi-two`, `pci-devices`, `pci-bridge`, `budget-smp`, `schedule-smp`,
   `schedule-no-apic`) inherit their baseline's image and selector. Oracles
   separate a family's fault cases (`kernel_profiles.fixture_cases`) from every
@@ -93,7 +98,7 @@ diagnostics are not. Changed cells are painted through one DisplaySession loan
 before the console's poll wait and after each Console turn releases its grant,
 never during a protected run, with the paired LAPIC/framebuffer tree verified at
 each paint and the leaf rechecked per store (`kernel/uefi/graphical-terminal.inc`).
-The standalone graphical console image keeps its own line editor and capture
+The display fixture's standalone graphical console keeps its own line editor and capture
 cases; both consoles draw cells through the shared `graphics.text_cells` library.
 
 Handoff. Version 7 is the production layout: word 112 is the copied RSDP, word
@@ -114,7 +119,7 @@ guards and whole-tree verification. Firmware omits PCI apertures from the memory
 map, so the aperture must be either wholly absent from or wholly described by
 reserved/MMIO descriptors; a partial description denies. A missing GOP or a
 framebuffer in firmware RAM (QEMU ramfb) fails closed in the loader. The std-VGA
-fixture rule remains for the framebuffer and graphical-console capture images.
+fixture rule remains for the display fixture's framebuffer and graphical-console rows.
 This is exercised only under QEMU/OVMF; it is not physical-hardware support.
 
 Guest. `scripts/kernel_production_smoke.py` runs the program-console PTY oracle
@@ -148,8 +153,8 @@ values from `kernel/bootstrap-layout-values.inc`.
 | budget mmio/softint/fpu/context | service image per probe | probe word in `budget-fixture`; `tests/kernel-uefi-budget-smoke.py` |
 | budget no-APIC | kernel build plus a link-time check that no launch or timer symbol survived | the CPUID bit is cleared when selected. The link-time property cannot hold in a shared image (it only held because the rejection was constant folded); what remains is the weaker run-time form: the guest oracle requires the rejection to be the only record after firmware discovery, before any timer, IPC or domain record |
 | dispatch peer-code; user context/unknown | client images | probe word in `dispatch-fixture`/`user-fixture`; dispatch and user-phase oracles |
-| console stale/reentry/timeout/report | four kernel builds | `console-fixture`; `tests/kernel-console-service-qualification.py` |
-| framebuffer record/permissions/stale | three kernel builds | capture release byte; `scripts/framebuffer_capture_oracle.py` |
+| console stale/reentry/timeout/report | four kernel builds | `device-fixture` rows; `tests/kernel-console-service-qualification.py`, which requires the loader echo immediately before the bootstrap it used to require before the serial READY |
+| framebuffer record/permissions/stale | three kernel builds | `display-fixture` rows; `scripts/framebuffer_capture_oracle.py` |
 | IVRS default/read | two kernel builds | `platform-fixture` selects the architectural or explicit cold profile (never a fallback); IVRS serial/trace/provenance oracles, which now require both linked fault sites in every IVRS image |
 | BAR read/inherited/write/revoked/alias | four kernel builds | `platform-fixture`; BAR serial/trace/provenance oracles, including the stock-firmware control |
 
@@ -182,9 +187,9 @@ profiles; the clock catalog and launch lists reject the retired modes.
 
 ## Still separate
 
-- Interactive products with fixture siblings: `console`, `program-file-call`
-  and `ram-scratchpad-console` also open foreground serial sessions, where no
-  harness can send a selector, so they stay fixture-free.
+- Interactive products with fixture siblings: `program-file-call` and
+  `ram-scratchpad-console` also open foreground serial sessions, where no harness
+  can send a serial selector; they stay fixture-free until they take a fw_cfg row.
 - Baselines whose fixture runs different user images: `user-ram-file` and
   `ram-scratchpad-console` (their fixture services carry always-on hostile
   requests) and `program-file-call` (the fixture client, and the kernel's
@@ -192,7 +197,11 @@ profiles; the clock catalog and launch lists reject the retired modes.
   payload bank: the kernel compiles user-image sites (`images::*_pc`, compiled
   ranges) in as constants and the loader installs the images before exit, so
   several image sets need generated per-set records selected at boot.
-- Distinct compositions: resume, owned bytes and graphical capture.
+- Distinct compositions: resume.
+- `display-fixture` and `device-fixture` cannot share one image: their union
+  (graphical console, framebuffer, console service, UART policy and owned bytes:
+  the two payloads less one shared 17 KiB base, about 242 KiB) exceeds the
+  152 KiB payload reservation, and `device-fixture` alone is 147,472 bytes.
 
 ## BIOS program bank
 
@@ -250,6 +259,28 @@ BAR-state and IVRS oracles require the loader echo with their row instead of a
 serial READY receipt at their old phase; their behavioural assertions are
 unchanged. A guard in `pci.cpp` keeps BAR capture, NVMe preparation and IVRS out
 of every other image.
+
+## Display and device fixtures
+
+`display-fixture` co-hosts the framebuffer rows (`framebuffer` and its record,
+permissions and stale faults) and the standalone graphical console
+(`graphical-console`, `graphical-console-capture`); `device-fixture` co-hosts the
+UEFI console, its four service faults and owned bytes. Both read the loader row
+(`loader-fixture.hpp`), so the console and graphical interactive flows boot their
+baseline rows. Framebuffer and owned-bytes rows skip ACPI in the loader and the
+payload and hand over v5 and v1 as their images did; the other rows hand over v6
+and v2. The payload runs only its row's subsystem; the graphical console decides
+capture mode (capture gate, counters, no exit write) from its row, and the one
+`__au_runtime_display_pixel` import reaches the framebuffer session until the
+graphical console has entered. The second Aurora object of each image (the
+display service, the owned-bytes graph) is compiled like the production terminal,
+with local symbols, referenced reflection only and its own `imports:STEM` policy.
+Payloads are 117,393 and 147,472 bytes; stack totals are 8,247 and 13,743 of
+15,360 bytes. The framebuffer, graphical, console-PTY, console-service and
+owned-bytes oracles require the loader echo with their row; their behavioural
+assertions are unchanged. Guards in `loader.cpp`, `graphical-profile.hpp` and
+`owned-bytes.cpp` keep each subsystem out of every other image, and production
+rejects both images' flags.
 
 The 30-second generic, 60-second IVRS/BAR and 180-second console deadlines are
 unchanged. Grouping does not widen user-image, stack or page admission.

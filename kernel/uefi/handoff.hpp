@@ -3,6 +3,10 @@
 #include <cstdint>
 #include <span>
 #include "runtime-layout.hpp"
+#if defined(AURORA_PLATFORM_FIXTURE) || defined(AURORA_DISPLAY_FIXTURE) || defined(AURORA_DEVICE_FIXTURE)
+#define AURORA_LOADER_FIXTURE 1
+#include "loader-fixture.hpp"
+#endif
 #ifdef AURORA_PLATFORM_FIXTURE
 #include "platform-fixture.hpp"
 #endif
@@ -67,8 +71,8 @@ public:
 class Handoff final {
 public:
     static constexpr std::uint64_t magic = 0x41524f5255454649ULL;
-#ifdef AURORA_PLATFORM_FIXTURE
-    // The platform-fixture image appends one selector word; ordinary images have none.
+#ifdef AURORA_LOADER_FIXTURE
+    // A loader fixture image appends one selector word; ordinary images have none.
     static constexpr std::size_t fixture_offset = 128;
     static constexpr std::size_t header = 136;
 #elif defined(AURORA_UEFI_GRAPHICAL_TERMINAL)
@@ -96,8 +100,8 @@ public:
         if (bytes.size() != header)
             return false;
         const Bytes h{bytes};
-#ifdef AURORA_PLATFORM_FIXTURE
-        if (!platform::admitted(h.get(fixture_offset)))
+#ifdef AURORA_LOADER_FIXTURE
+        if (!loader_fixture::admitted(h.get(fixture_offset)))
             return false;
 #endif
         // v6 requires both the copied RSDP and immutable graphics record; v7

@@ -3,7 +3,8 @@
 #include <string_view>
 
 // Pure closed diagnostic policy. Native state and effects exist only in the
-// exact graphical capture profile; these values are never a source service ABI.
+// display fixture image, active only for its capture row; these values are
+// never a source service ABI.
 namespace aurora::uefi::graphical_capture {
 enum class Scenario : std::uint8_t {
     invalid,

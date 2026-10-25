@@ -18,7 +18,8 @@ std::optional<LocalApicAdmission> admission;
 extern const std::byte wait_begin asm("uefi_console_poll_begin");
 extern const std::byte wait_end asm("uefi_console_poll_end");
 #ifdef AURORA_CONSOLE_SERVICE_FIXTURE
-#include "fixture-selector.inc"
+using loader_fixture::Fixture;
+// The device fixture's handoff row: the ordinary console or one service fault.
 Fixture fixture{};
 #endif
 
@@ -97,8 +98,8 @@ __attribute__((noinline)) auto wait_for_sample() -> void {
     require(wakes == expected_wake && quiet(), "poll completion");
 }
 
-// Fault-only transport injection is selected by exact image-build provenance.
-// Normal builds call the real UART for every operation.
+// Fault-only transport injection is selected by the device fixture row; the
+// console row calls the real UART for every operation.
 class ServiceTransport final {
 public:
     static auto next() -> console::Sample {
@@ -227,10 +228,9 @@ auto interrupt_dispatch(U64 frame) -> void {
                 RuntimeLayout::valid(arena) && root() == handoff.get(88) && Timer::irq_off(),
             "entry authority");
 #ifdef AURORA_CONSOLE_SERVICE_FIXTURE
-    // Select before any timer, IDT or UART input state exists.
-    const auto selected = read_fixture(Fixture::console_service_stale, Fixture::console_service_report);
-    require(selected.has_value(), "fixture selector outside image family");
-    fixture = *selected;
+    // The loader read the row before any timer, IDT or UART input state existed.
+    fixture = loader_fixture::row(handoff.get(Handoff::fixture_offset));
+    require(loader_fixture::console(fixture), "fixture selector outside image family");
 #endif
     owned_arena = arena;
     kernel_root = handoff.get(88);

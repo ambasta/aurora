@@ -180,13 +180,13 @@ if [[ "$mode" == graphical-console ]]; then
     exit 0
 elif [[ "$mode" == framebuffer ]]; then
     python3 -B scripts/kernel_framebuffer_preview.py --preflight
-    # The four capture cases share one image; --smoke selects each by release byte.
+    # The four capture cases boot display-fixture; --smoke selects each by its fw_cfg row.
     options=()
     if [[ "$action" == --smoke ]]; then options=(--full-smoke); fi
     if image_dir="$(build_profile framebuffer)"; then :; else
         status=$?; echo "FAIL: framebuffer image build/admission exited $status" >&2; exit "$status"
     fi
-    if [[ ${#options[@]} != 0 && ${image_dir##*/} != framebuffer ]]; then profile_fail 'unexpected native framebuffer profile'; fi
+    if [[ ${#options[@]} != 0 && ${image_dir##*/} != display-fixture ]]; then profile_fail 'unexpected native framebuffer profile'; fi
     exec python3 -B scripts/kernel_framebuffer_preview.py "${options[@]}" --build-dir "$image_dir" "$qemu" "$UEFI_FIRMWARE_COMBINED" \
         "$UEFI_FIRMWARE_CODE" "$UEFI_FIRMWARE_VARS" "${QEMU_DATA:-}"
 fi

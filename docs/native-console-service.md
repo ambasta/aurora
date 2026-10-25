@@ -31,7 +31,7 @@ meson test -C build/meson --suite full
 are included in `make smoke-all`; the native `make test` graph does not run QEMU.
 Hosted sanitizers instrument the C++ adapters, not generated Aurora code.
 
-The ordinary UEFI `console` and `console-fixture` profiles emit their Aurora
+The ordinary UEFI console's `device-fixture` profile emits its Aurora
 editor/session source directly as checked ELF objects. Their native entry adapter
 selects private source symbols from compiler ABI facts and still uses GNU assembly
 and linking. BIOS, graphical and protected session sources retain their existing
@@ -290,10 +290,11 @@ a generated report or successful guest does not replace them.
 
 The four fault modes exercise stale generation after close/reopen, operation
 reentry from a wait hook, transmit failure after exactly 17 output bytes and a
-noncanonical copied damage boolean. They boot one `console-fixture` image, which
-reads its serial selector before any timer, IDT or UART input state exists; the
-driver maps each mode to that image (`--build-dir` names `console-fixture`) and
-keeps the four exact fault oracles. They used to be four separately compiled
+noncanonical copied damage boolean. They boot one `device-fixture` image, whose
+loader reads the mode's fw_cfg row before any timer, IDT or UART input state exists;
+the driver maps each mode to that image (`--build-dir` names `device-fixture`),
+passes its row and keeps the four exact fault oracles. The ordinary console and
+owned bytes are rows of the same image. They used to be four separately compiled
 images whose only difference was the selected injection. The timeout is a transport-result injection,
 not actual UART hardware fault induction. Hostile source/IR and fake-port UART
 controls remain separate. Historical passes cover only their recorded source,

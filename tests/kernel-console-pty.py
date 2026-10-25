@@ -20,6 +20,7 @@ import tty
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import qemu_transport as transport
+from kernel_uefi_oracle import loader_selection
 
 
 def need(condition, message):
@@ -133,7 +134,8 @@ def main():
                 smoke = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(smoke)
                 prefix = startup.split("AURORA_UEFI_CONSOLE_TIMER_READY:")[0].replace("\r", "")
-                smoke.validate(33, prefix, "acpi")
+                # The console boots device-fixture with its row, echoed right after loader entry.
+                smoke.validate(33, loader_selection(prefix, "console"), "acpi")
                 need(
                     "AURORA_UEFI_CONSOLE_TIMER_READY: polling_count=1250000 uart_irq=0" in startup,
                     "Missing exact timer polling admission",

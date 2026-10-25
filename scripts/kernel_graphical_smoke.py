@@ -227,6 +227,11 @@ def validate(rows, selector, model, idle=False, production=False):
             )
 
 
+def selection(channel, mode):
+    """The display fixture echoes the mode's fw_cfg row once, right after loader entry."""
+    normal.loader_selection(channel.serial_bytes.decode("ascii"), mode)
+
+
 def wait(channel, predicate, production=False):
     while True:
         channel.drain_serial()
@@ -260,6 +265,7 @@ def guest(args, mode, directory, record):
             os.ttyname(slave),
             qmp=True,
             firmware_args=args.firmware,
+            mode=mode,
         )
         record["argv"] = argv
         with open(directory / "qemu.stderr", "xb") as stderr:
@@ -334,6 +340,7 @@ def capture_case(args, case, directory, record):
         transport.wait_exit(channel.proc, 5, expected=0)
         channel.drain_serial()
         validate(markers(channel.serial_bytes, final=True), selector, model, idle)
+        selection(channel, "graphical-console-capture")
         record.update(termination="qmp-quit", terminal=rows[-1], sent_hex=(selector + data).hex())
 
 
@@ -380,6 +387,7 @@ def production_case(args, directory, record):
         channel.drain_serial()
         rows = markers(channel.serial_bytes, production=True, final=True)
         validate(rows, b"G", model, production=True)
+        selection(channel, "graphical-console")
         record.update(termination="native-debug-exit", terminal=rows[-1])
 
 

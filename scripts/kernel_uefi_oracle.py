@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from kernel_layout import LAYOUT  # noqa: E402
-from kernel_profiles import FIXTURE_MODES, UEFI_VARIANTS  # noqa: E402
+from kernel_profiles import FIXTURE_MODES, LOADER_FIXTURE_IMAGES, UEFI_VARIANTS  # noqa: E402
 
 
 def need(value, reason):
@@ -18,7 +18,7 @@ ENTRY_ECHO = re.compile(r"AURORA_UEFI_ENTRY\r?\n(AURORA_FIXTURE_SELECTED: value=
 
 
 def loader_selection(text, mode, selected=True):
-    """platform-fixture's loader echoes its fw_cfg row on the line after loader entry.
+    """A loader fixture image echoes its fw_cfg row on the line after loader entry.
 
     The echo precedes every other record, so no case can inject before its own
     phase, and must be the mode's row. Returns the transcript without the echo.
@@ -26,7 +26,7 @@ def loader_selection(text, mode, selected=True):
     """
     image, value = FIXTURE_MODES.get(UEFI_VARIANTS.get(mode, mode), ("", 0))
     echoes = list(ENTRY_ECHO.finditer(text))
-    if not selected or image != "platform-fixture":
+    if not selected or image not in LOADER_FIXTURE_IMAGES:
         need(not echoes, "Unexpected loader fixture selector")
         return text
     need(
