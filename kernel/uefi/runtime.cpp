@@ -236,12 +236,6 @@ public:
 #endif
 #ifdef AURORA_BLOCKING_CALL
 constinit ParkedRun call_wait;
-#ifdef AURORA_FILE_CALL
-// Bounds/accounting for the existing command-selected pair, not IPC state.
-// file_wc selects the existing sequential-read authority for both wc and CRC.
-bool file_wc{}, file_closed{};
-unsigned file_call_count{}, file_service_used{};
-#endif
 [[nodiscard]] auto call_retire(unsigned index) -> bool;
 #endif
 class Domain final {
@@ -252,7 +246,10 @@ public:
     std::optional<RuntimeTables> tables{};
     unsigned image{};
 #ifdef AURORA_BLOCKING_CALL
-    bool call_used{};
+    // One caller incarnation owns admission and cumulative service accounting.
+    // Selected consumers may admit a bounded sequence; snapshots stay one-shot.
+    unsigned call_count{}, call_limit{1}, call_service_used{};
+    bool call_closed{};
 #endif
 #ifdef AURORA_USER_RESUME
     ParkedRun continuation;
@@ -431,7 +428,9 @@ auto fill(U64 physical, std::uint8_t value) -> void {
 #ifdef AURORA_BLOCKING_CALL
     if (!call_retire(index))
         return false;
-    domain.call_used = false;
+    domain.call_count = domain.call_service_used = 0;
+    domain.call_limit = 1;
+    domain.call_closed = false;
 #endif
 #ifdef AURORA_USER_RESUME
     domain.continuation.clear();

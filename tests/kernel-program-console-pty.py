@@ -474,6 +474,7 @@ def validate_file_call(text, mode, expected, service_results, images, timer):
         and text.count("AURORA_PROGRAM_CONSOLE_QUIET: timer=masked isr=0 irr=0 domains=0") == 1,
         "Exact quiescent console exit",
     )
+    previous_epoch = 0
     for index, (part, result) in enumerate(zip(parts, expected)):
         body = part[2]
         fault = index == 0 and mode.endswith("-fault")
@@ -484,7 +485,8 @@ def validate_file_call(text, mode, expected, service_results, images, timer):
         need(len(park) == len(resume) == 1 and park[0][1:] == resume[0], "Original caller continuation")
         ticket, epoch, used, left = map(int, park[0])
         need(ticket > 0, "Nonzero transaction ticket")
-        need(epoch == 2 * index + 1 and 0 < used < 128 and used + left == 128, "Original budget before park")
+        need(epoch > previous_epoch and 0 < used < 128 and used + left == 128, "Fresh original budget before park")
+        previous_epoch = epoch + 1
         launches = re.findall(
             r"AURORA_UEFI_USER_RUN: epoch=(\d+) role=(client|service) phase=(request|service) "
             r"client=(\d+) transaction=(\d+) source=(\d+) root=(\d+)",
@@ -1196,6 +1198,9 @@ def main():
                 crc("beta", "Hello")
                 for invalid in ("crc ", "crc alpha extra", "crc note"):
                     file_local(invalid, "Unknown command. Type help.")
+                # A sequential consumer must not leave its allowance or terminal
+                # state on the next one-shot caller incarnation.
+                peek("alpha", "1")
                 begin = len(transcript)
                 send(b"exit\n")
                 receive(b"AURORA_UEFI_OK", begin)

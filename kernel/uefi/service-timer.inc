@@ -238,8 +238,8 @@ auto timer_begin(unsigned index) -> void {
         : launch[0] == 2 ? 120U
                          : 8U;
 #else
-#ifdef AURORA_FILE_CALL
-        file_wc ? 128U :
+#ifdef AURORA_BLOCKING_CALL
+        domains[0].call_limit > 1 ? 128U :
 #endif
         (launch[0] == 5 || launch[0] == 6 || launch[0] == 7) ? 3U
                                                              : 128U;
@@ -292,10 +292,10 @@ auto timer_begin(unsigned index) -> void {
         timer_remaining = 120 - timer_ticks;
     }
 #endif
-#ifdef AURORA_FILE_CALL
-    if (file_wc && index == 1) {
-        require(file_service_used < timer_initial, "wc cumulative service allowance");
-        timer_ticks = file_service_used;
+#ifdef AURORA_BLOCKING_CALL
+    if (domains[0].call_limit > 1 && index == 1) {
+        require(domains[0].call_service_used < timer_initial, "call cumulative service allowance");
+        timer_ticks = domains[0].call_service_used;
         timer_remaining = timer_initial - timer_ticks;
     }
 #endif
@@ -341,18 +341,18 @@ auto timer_begin(unsigned index) -> void {
     timer_begin(index);
     return enter(domain.contract->entry(), domain.contract->layout().user_stack_top(), launch.data()) == 1;
 }
-#ifdef AURORA_FILE_CALL
+#ifdef AURORA_BLOCKING_CALL
 // Conservatively charge the discarded partial timer interval before publication.
 // Hardware IRQs and boundary charges share the same checked 128-unit allowance.
-[[nodiscard]] auto file_boundary_debit() -> bool {
-    require(file_wc && timer_armed && !timer_exhausted && timer_remaining && timer_initial == 128 &&
+[[nodiscard]] auto call_boundary_debit() -> bool {
+    require(domains[0].call_limit > 1 && timer_armed && !timer_exhausted && timer_remaining && timer_initial == 128 &&
                 timer_ticks + timer_remaining == 128,
             "wc boundary allowance");
-#ifdef AURORA_RUNTIME_FIXTURE
+#if defined(AURORA_RUNTIME_FIXTURE) && defined(AURORA_FILE_CALL)
     // Test-only conservative charging, never a quota reset or simulated IRQ.
     // Exercise exhaustion at the actual pre-publication boundaries after two bytes.
-    if ((file_probe == 36 && active == 0 && file_call_count == 2) ||
-        (file_probe == 37 && active == 1 && file_call_count == 3)) {
+    if ((file_probe == 36 && active == 0 && domains[0].call_count == 2) ||
+        (file_probe == 37 && active == 1 && domains[0].call_count == 3)) {
         Serial::text(active == 0 ? std::string_view{"AURORA_WC_BOUNDARY_PROBE: role=client\r\n"}
                                  : std::string_view{"AURORA_WC_BOUNDARY_PROBE: role=service\r\n"});
         while (timer_ticks < 127) {
