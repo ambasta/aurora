@@ -29,15 +29,15 @@ Other geometries fail closed. Use the
 [local-development prerequisites and overrides](local-development.md), including
 `QEMU`, `QEMU_DATA`, `OVMF`, `OVMF_CODE`/`OVMF_VARS`, `OVMF_DIR`, `CXX` and `UEFI_LD`.
 Missing prerequisites are `BLOCKED`; build, admission and guest defects are failures.
-The framebuffer image stays in its isolated native profile directory; normal
-images coexist. Do not mutate an image profile while it is in use.
+The framebuffer cases boot the `display-fixture` profile directory, which they
+share with the graphical console; normal images coexist. Do not mutate an image profile while it is in use.
 
 The result says `qualified: false`. Ordinary preview runs one positive guest.
 For all four capture cases, run the same entrypoint with
 `scripts/kernel-framebuffer-preview.sh --full-smoke`. The cases boot the one
-admitted image: the paused capture gate's release byte is `G` for the success
-scene, or one of the three framebuffer fault selectors in the fixture table
-(record, permissions, stale), each of which used to be its own image. It checks
+admitted image with their own fw_cfg row: the success scene or one of the three
+framebuffer fault rows in the fixture table (record, permissions, stale), each of
+which used to be its own image; the paused capture gate's release byte is `G`. It checks
 the success scene against the native display renderer's golden output
 (`tests/kernel-display-renderer.golden`), all three no-write cases, and the serial oracle,
 then invokes the normal UEFI smoke entrypoint for an actual restoration boot,
@@ -237,8 +237,9 @@ plus fault and wait plus IRQ/fault within 15,360 bytes, and IRQ plus fault withi
 
 ### Build admission and trust limits
 
-Use `UEFI_MODE=graphical-console ./scripts/kernel-uefi-build.sh`; the separate
-`graphical-console-capture` mode is for controlled capture. Each mode requires
+Use `UEFI_MODE=graphical-console ./scripts/kernel-uefi-build.sh`; the
+`graphical-console-capture` mode is for controlled capture. Both are rows of the
+`display-fixture` image, which decides capture mode from the row. Each mode requires
 its own combined linked-stack/image begin/end/emit admission; starting a build
 invalidates prior combined receipts. Source/tool/flags/output identity binds
 begin/end/admission. Mixed or stale inputs reject; historical token/object/compiler

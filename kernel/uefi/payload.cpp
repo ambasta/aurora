@@ -28,16 +28,20 @@ auto page_fault() -> void asm("uefi_payload_page_fault") __attribute__((visibili
 #if defined(AURORA_UEFI_IOMMU_EVENT)
 auto language_value() -> long long asm("__au_runtime_iommu_event_value");
 #elif defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
+// The display fixture's framebuffer rows end in run_framebuffer before this check.
 auto language_value() -> long long asm("__au_runtime_graphical_value");
-#elif defined(AURORA_UEFI_FRAMEBUFFER_FIXTURE)
-auto language_value() -> long long asm("__au_runtime_display_value");
 #elif defined(AURORA_UEFI_CONSOLE)
 auto language_value() -> long long asm("__au_runtime_console_value");
-#elif !defined(AURORA_UEFI_OWNED_BYTES)
+#else
 auto language_value() -> long long asm("aurora_kernel_value");
 #endif
 namespace {
 constinit aurora::memory::PhysicalPages pool;
+#if defined(AURORA_DISPLAY_FIXTURE) || defined(AURORA_DEVICE_FIXTURE)
+using aurora::uefi::loader_fixture::Fixture;
+// The validated handoff row; each subsystem of the image runs only for its own rows.
+constinit Fixture row{};
+#endif
 [[noreturn]] auto fail(std::string_view reason) -> void {
     Serial::text("AURORA_UEFI_PAYLOAD_FAIL: ");
     Serial::text(reason);
@@ -76,10 +80,10 @@ auto payload_fail(U64 vector, U64 error, U64 rip) -> void {
     Serial::number(cr2);
     Serial::text("\r\n");
 #ifdef AURORA_UEFI_GRAPHICAL_CONSOLE
-    aurora::uefi::graphical_console_fault();
-#else
-    fail("exception");
+    if (aurora::uefi::loader_fixture::graphical(row))
+        aurora::uefi::graphical_console_fault(aurora::uefi::loader_fixture::graphical_capture(row));
 #endif
+    fail("exception");
 }
 auto payload_main(U64, U64) -> void asm("uefi_payload_main");
 auto payload_main(U64 arena, U64 size) -> void {
@@ -91,6 +95,9 @@ auto payload_main(U64 arena, U64 size) -> void {
     if (!Handoff::valid(handoff, arena))
         fail("handoff validation");
     const Bytes h{handoff};
+#if defined(AURORA_DISPLAY_FIXTURE) || defined(AURORA_DEVICE_FIXTURE)
+    row = aurora::uefi::loader_fixture::row(h.get(Handoff::fixture_offset));
+#endif
     if (reinterpret_cast<U64>(&payload_entry) != arena + Handoff::payload_offset)
         fail("position independent entry");
     const aurora::uefi::MemoryMap map{
@@ -144,12 +151,14 @@ auto payload_main(U64 arena, U64 size) -> void {
     }
 #endif
 #ifdef AURORA_UEFI_FRAMEBUFFER_FIXTURE
-    aurora::uefi::run_framebuffer(arena);
+    if (aurora::uefi::loader_fixture::framebuffer(row))
+        aurora::uefi::run_framebuffer(arena);
 #endif
     if (!pool.initialize(arena + Handoff::pool_offset, 16))
         fail("owned pool initialization");
 #ifdef AURORA_UEFI_OWNED_BYTES
-    if (!aurora::uefi::run_owned_bytes(arena, pool))
+    const bool owned_bytes = aurora::uefi::loader_fixture::owned_bytes(row);
+    if (owned_bytes && !aurora::uefi::run_owned_bytes(arena, pool))
         fail("owned byte allocation profile");
 #endif
 #ifdef AURORA_UEFI_IOMMU_EVENT
@@ -158,7 +167,11 @@ auto payload_main(U64 arena, U64 size) -> void {
     Serial::text("AURORA_UEFI_LANGUAGE_OK: value=42\r\n");
 #endif
 #ifdef AURORA_UEFI_ACPI
+#if defined(AURORA_DISPLAY_FIXTURE) || defined(AURORA_DEVICE_FIXTURE)
+    if (aurora::uefi::loader_fixture::acpi(row) && !aurora::uefi::discover_acpi(arena, h, pool))
+#else
     if (!aurora::uefi::discover_acpi(arena, h, pool))
+#endif
         fail("ACPI discovery");
 #endif
 #ifdef AURORA_UEFI_RUNTIME
@@ -183,16 +196,21 @@ auto payload_main(U64 arena, U64 size) -> void {
             fail("owned page readback");
     if (!pool.release(*page) || pool.used() != 0)
         fail("owned page release");
-#ifndef AURORA_UEFI_OWNED_BYTES
+#ifdef AURORA_UEFI_OWNED_BYTES
+    // The owned-bytes row's Aurora object has no self-test value, as its image had none.
+    if (!owned_bytes && language_value() != 42)
+#else
     if (language_value() != 42)
-        fail("compiled language result");
 #endif
+        fail("compiled language result");
     Serial::text("AURORA_UEFI_LANGUAGE_OK: value=42\r\nAURORA_UEFI_OK\r\n");
 #ifdef AURORA_UEFI_GRAPHICAL_CONSOLE
-    aurora::uefi::run_graphical_console(arena, h);
+    if (aurora::uefi::loader_fixture::graphical(row))
+        aurora::uefi::run_graphical_console(arena, h);
 #endif
 #ifdef AURORA_UEFI_CONSOLE
-    aurora::uefi::run_console(arena, h);
+    if (aurora::uefi::loader_fixture::console(row))
+        aurora::uefi::run_console(arena, h);
 #endif
     aurora::hardware::Io::write(0xf4, 0x10);
     for (;;)

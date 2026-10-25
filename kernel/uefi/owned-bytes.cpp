@@ -1,12 +1,12 @@
 #include "owned-bytes.hpp"
 
-#if !defined(AURORA_UEFI_OWNED_BYTES) || defined(AURORA_UEFI_ACPI) || defined(AURORA_UEFI_PCI) ||                      \
-    defined(AURORA_UEFI_RUNTIME) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_BAR_CAPTURE) ||                \
-    defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_NVME_PREPARE) || defined(AURORA_UEFI_PINS) ||                     \
-    defined(AURORA_UEFI_TABLES) || defined(AURORA_UEFI_IPC) || defined(AURORA_UEFI_SERVICE_BUDGET) ||                  \
-    defined(AURORA_UEFI_DISPATCH) || defined(AURORA_UEFI_USER_BUDGET) || defined(AURORA_PLATFORM_FIXTURE) ||           \
-    defined(AURORA_KERNEL_BYTES_TESTING)
-#error "Owned bytes require the exclusive normal CPU allocation profile"
+// Owned bytes is the device fixture's one CPU-only row; its loader skips ACPI for it.
+#if !defined(AURORA_UEFI_OWNED_BYTES) || !defined(AURORA_DEVICE_FIXTURE) || defined(AURORA_UEFI_PCI) ||                \
+    defined(AURORA_UEFI_RUNTIME) || defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_IVRS) ||                   \
+    defined(AURORA_UEFI_NVME_PREPARE) || defined(AURORA_UEFI_PINS) || defined(AURORA_UEFI_TABLES) ||                   \
+    defined(AURORA_UEFI_IPC) || defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_DISPATCH) ||                \
+    defined(AURORA_UEFI_USER_BUDGET) || defined(AURORA_PLATFORM_FIXTURE) || defined(AURORA_KERNEL_BYTES_TESTING)
+#error "Owned bytes require the exclusive CPU allocation row of the device fixture image"
 #endif
 
 #include "../console.hpp"

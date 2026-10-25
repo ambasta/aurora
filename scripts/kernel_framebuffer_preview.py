@@ -69,10 +69,10 @@ def run(qemu, firmware, code, variables, data, *, build_dir, full_smoke=False):
     preflight()
     if full_smoke:
         need(
-            build_dir.is_absolute() and build_dir.parts[-3:] == ("kernel-images", "uefi", "framebuffer"),
-            "full smoke requires the native framebuffer profile directory",
+            build_dir.is_absolute() and build_dir.parts[-3:] == ("kernel-images", "uefi", "display-fixture"),
+            "full smoke requires the native display-fixture profile directory",
         )
-    # Every case boots the one admitted capture image; its release byte selects it.
+    # Every case boots the display fixture with its own fw_cfg row; 'G' releases it.
     modes = MODES if full_smoke else ("framebuffer",)
     profiles = {mode: build_dir for mode in modes}
     firmware_args = firmware_options(firmware, code, variables)

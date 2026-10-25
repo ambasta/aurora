@@ -13,16 +13,13 @@ import tty
 import qemu_transport as transport
 
 from framebuffer_capture_oracle import BASE, SIZE, GATE, need, validate_serial, validate_capture
-from kernel_profiles import FIXTURE_MODES
+from kernel_profiles import FIXTURE_MODES, fw_cfg_fixture
 
 
 def release_byte(mode):
-    """'G' releases the normal frame; each fault mode sends its table selector."""
-    if mode == "framebuffer":
-        return 0x47
-    image, value = FIXTURE_MODES[mode]
-    need(image == "framebuffer" and value != 0x47, "unknown framebuffer release")
-    return value
+    """'G' releases every case; the display fixture's fw_cfg row selected it at loader entry."""
+    need(FIXTURE_MODES.get(mode, ("",))[0] == "display-fixture", "unknown framebuffer release")
+    return 0x47
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -90,10 +87,12 @@ class Channel(transport.Qmp):
         self.slog.close()
 
 
-def command(pins, roots, esp, serial, qmp=False, firmware_args=None):
+def command(pins, roots, esp, serial, qmp=False, firmware_args=None, mode=""):
+    """`mode` adds a display-fixture mode's fw_cfg row; the normal image takes none."""
     return transport.command(
         pins["qemu"],
         roots.get("data"),
+        prefix=fw_cfg_fixture(mode),
         firmware=firmware_args if firmware_args is not None else ["-bios", str(pins["firmware"])],
         boot=transport.fat_boot(esp),
         peripherals=["-vga", "std"],
@@ -112,7 +111,13 @@ def run_case(mode, manifest, pins, roots, env, directory, *, firmware_args=None)
         master, slave = os.openpty()
         tty.setraw(slave)
         argv = command(
-            pins, roots, manifest["cases"][mode]["esp"], os.ttyname(slave), qmp=True, firmware_args=firmware_args
+            pins,
+            roots,
+            manifest["cases"][mode]["esp"],
+            os.ttyname(slave),
+            qmp=True,
+            firmware_args=firmware_args,
+            mode=mode,
         )
         receipt["command"] = argv
         with open(directory / "qemu.stderr", "xb") as stderr:

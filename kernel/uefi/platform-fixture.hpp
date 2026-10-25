@@ -9,13 +9,14 @@
 #ifndef AURORA_PLATFORM_FIXTURE
 #error "The fw_cfg platform selector belongs only to the platform-fixture image"
 #endif
-#include "fw-cfg-fixture.hpp"
-#include <cstdint>
-#include <optional>
+#include "loader-fixture.hpp"
 namespace aurora::uefi::platform {
-using Fixture = fw_cfg::Fixture;
-inline constexpr auto first = Fixture::early_stale;
-inline constexpr auto last = Fixture::ivrs_missing;
+using loader_fixture::admitted;
+using loader_fixture::first;
+using loader_fixture::Fixture;
+using loader_fixture::last;
+using loader_fixture::row;
+using loader_fixture::selected;
 // Each family is one run of rows; the predicates below rely on this order.
 static_assert(static_cast<unsigned>(Fixture::early_nx) + 1 == static_cast<unsigned>(Fixture::acpi_baseline) &&
               static_cast<unsigned>(Fixture::acpi_revoked) + 1 == static_cast<unsigned>(Fixture::pci_baseline) &&
@@ -24,16 +25,6 @@ static_assert(static_cast<unsigned>(Fixture::early_nx) + 1 == static_cast<unsign
               static_cast<unsigned>(Fixture::bar_alias) + 1 == static_cast<unsigned>(Fixture::bar_prepare) &&
               static_cast<unsigned>(Fixture::bar_prepare) + 1 == static_cast<unsigned>(Fixture::ivrs_write) &&
               static_cast<unsigned>(Fixture::ivrs_read) + 1 == static_cast<unsigned>(Fixture::ivrs_missing));
-[[nodiscard]] constexpr auto admitted(std::uint64_t value) -> bool {
-    return value >= static_cast<unsigned>(first) && value <= static_cast<unsigned>(last);
-}
-[[nodiscard]] constexpr auto selected(std::uint64_t value, Fixture fixture) -> bool {
-    return admitted(value) && value == static_cast<unsigned>(fixture);
-}
-// The copied row of an already validated handoff word.
-[[nodiscard]] constexpr auto row(std::uint64_t value) -> Fixture {
-    return admitted(value) ? static_cast<Fixture>(value) : Fixture{};
-}
 // Rows from PCI onward require MCFG and scan PCI; early and ACPI rows stop after ACPI.
 [[nodiscard]] constexpr auto pci(Fixture fixture) -> bool {
     return fixture >= Fixture::pci_baseline && fixture <= last;
@@ -46,10 +37,4 @@ static_assert(static_cast<unsigned>(Fixture::early_nx) + 1 == static_cast<unsign
 [[nodiscard]] constexpr auto ivrs(Fixture fixture) -> bool {
     return fixture >= Fixture::ivrs_write && fixture <= last;
 }
-class FwCfg final {
-public:
-    [[nodiscard]] static auto read() -> std::optional<Fixture> {
-        return fw_cfg::FwCfg::read(first, last);
-    }
-};
 } // namespace aurora::uefi::platform

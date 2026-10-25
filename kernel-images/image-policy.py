@@ -44,17 +44,18 @@ RULES = [
     {
         "profiles": [
             "bios/console",
-            "uefi/console",
-            "uefi/console-fixture",
             "uefi/program-*",
             "uefi/production",
             "uefi/ram-scratchpad-console*",
         ],
         "imports": ["__au_runtime_console_next", "__au_runtime_console_put"],
     },
+    # The display fixture's graphical console reads Console input and paints
+    # through Display; its framebuffer service object only paints.
     {
-        "profiles": ["uefi/graphical-console*"],
-        "imports": ["__au_runtime_console_next", "__au_runtime_display_pixel"],
+        "profiles": ["uefi/display-fixture"],
+        "imports:language": ["__au_runtime_console_next", "__au_runtime_display_pixel"],
+        "imports:display": ["__au_runtime_display_pixel"],
     },
     # The production terminal painter reaches the framebuffer only through the
     # sealed Display pixel service; the program-console object gains nothing.
@@ -62,10 +63,6 @@ RULES = [
         "profiles": ["uefi/production"],
         "imports:terminal": ["__au_runtime_display_pixel"],
         "reachable": ["__au_runtime_terminal_paint"],
-    },
-    {
-        "profiles": ["uefi/framebuffer"],
-        "imports": ["__au_runtime_display_pixel"],
     },
     {
         "profiles": [
@@ -86,9 +83,13 @@ RULES = [
             "__au_runtime_bytes_set",
         ],
     },
+    # The device fixture's console service object reaches only Console, its UART
+    # policy only the COM1 ports, and its owned-bytes object only the byte region.
     {
-        "profiles": ["uefi/owned-bytes"],
-        "imports": [
+        "profiles": ["uefi/device-fixture"],
+        "imports:language": ["__au_runtime_console_next", "__au_runtime_console_put"],
+        "imports:kernel-uart": ["__au_runtime_port_read8", "__au_runtime_port_write8"],
+        "imports:owned-bytes": [
             "__au_runtime_bytes_allocate",
             "__au_runtime_bytes_at",
             "__au_runtime_bytes_borrow_span",
@@ -98,7 +99,7 @@ RULES = [
         ],
     },
     {
-        "profiles": ["bios/console", "uefi/console", "uefi/console-fixture"],
+        "profiles": ["bios/console"],
         "imports:kernel-uart": ["__au_runtime_port_read8", "__au_runtime_port_write8"],
     },
     # Kernel decisions stay in Aurora: the supervisor must actually call these policy entries.

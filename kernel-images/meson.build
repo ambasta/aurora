@@ -71,7 +71,7 @@ foreach profile_id : profile_data['profiles'].split('|')
   objects = {}
   closed = profile_data[key + '.closed'] == '1'
   bios_console = platform == 'bios' and mode == 'console'
-  uefi_console = platform == 'uefi' and mode in ['console', 'console-fixture']
+  uefi_console = platform == 'uefi' and mode == 'device-fixture'
   ram_scratchpad = platform == 'uefi' and mode in ['ram-scratchpad-console', 'ram-scratchpad-console-fixture']
   stack_facts = []
   language_objects = []
@@ -125,28 +125,35 @@ foreach profile_id : profile_data['profiles'].split('|')
   endif
   stack_facts += [language[1]]
   language_objects += [objects[language_name][0]]
-  # The production composition's second closed Aurora object: the graphical
-  # terminal painter, with its own private bridge and import policy.
-  terminal_language = profile_data[key + '.terminal_language']
-  if terminal_language != ''
-    terminal_bridge = profile_data[key + '.terminal_bridge']
-    terminal_assembly = custom_target(prefix + '-terminal-assembly',
-      input: files('../' + terminal_language),
-      output: ['terminal.s', 'terminal.stack.json', 'terminal.abi.json'],
-      build_subdir: output_subdir, depfile: 'terminal.d',
-      depend_files: compiler_files + files('../' + terminal_bridge, '../scripts/bootstrap_frontend.py'),
-      command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
-                '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--abi-facts', '@OUTPUT2@',
-                '--depfile', '@DEPFILE@', '--module-root', kernel_source / 'library',
-                '--local-symbols', '--referenced-reflection-only',
-                '--bridge', kernel_source / terminal_bridge])
-    stack_facts += [terminal_assembly[1]]
-    objects += {'terminal': custom_target(prefix + '-terminal-object',
-      input: terminal_assembly[0], output: 'terminal.o', build_subdir: object_subdir,
-      command: [kernel_as, '--64', '@INPUT@', '-o', '@OUTPUT@'])}
-    language_objects += [objects['terminal']]
+  # Further closed Aurora objects: the production terminal painter and the
+  # services the display and device fixture images co-host, each with its own
+  # private bridge (rendered from its compiler facts) and import policy.
+  extra_languages = profile_data[key + '.languages']
+  if extra_languages != ''
+    foreach stem : extra_languages.split('|')
+      extra_key = key + '.languages.' + stem
+      extra_bridge = profile_data[extra_key + '.bridge']
+      extra_roots = []
+      foreach root : profile_data[extra_key + '.roots'].split('|')
+        extra_roots += ['--module-root', kernel_source / root]
+      endforeach
+      extra_assembly = custom_target(prefix + '-' + stem + '-assembly',
+        input: files('../' + profile_data[extra_key + '.source']),
+        output: [stem + '.s', stem + '.stack.json', stem + '.abi.json'],
+        build_subdir: output_subdir, depfile: stem + '.d',
+        depend_files: compiler_files + files('../' + extra_bridge, '../scripts/bootstrap_frontend.py'),
+        command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
+                  '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--abi-facts', '@OUTPUT2@',
+                  '--depfile', '@DEPFILE@'] + extra_roots + ['--local-symbols', '--referenced-reflection-only',
+                  '--bridge', kernel_source / extra_bridge])
+      stack_facts += [extra_assembly[1]]
+      objects += {stem: custom_target(prefix + '-' + stem + '-object',
+        input: extra_assembly[0], output: stem + '.o', build_subdir: object_subdir,
+        command: [kernel_as, '--64', '@INPUT@', '-o', '@OUTPUT@'])}
+      language_objects += [objects[stem]]
+    endforeach
   endif
-  if bios_console or (platform == 'uefi' and mode in ['console', 'console-fixture'])
+  if bios_console or uefi_console
     uart_object = custom_target(prefix + '-uart-object',
       input: files('../examples/kernel-uart.au'),
       output: ['kernel-uart.o', 'kernel-uart.stack.json', 'kernel-uart.abi.json'],

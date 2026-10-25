@@ -1,8 +1,7 @@
 #include "graphical-profile.hpp"
-#ifdef AURORA_UEFI_GRAPHICAL_CAPTURE
 #include "graphical-capture-policy.hpp"
-#endif
 #include "graphical-console.hpp"
+#include "framebuffer.hpp"
 #include "framebuffer-payload.hpp"
 #include "framebuffer-pixels.hpp"
 #include "../display-session.hpp"
@@ -30,11 +29,12 @@ U64 owned_arena{}, kernel_root{}, wait_stack{}, wakes{}, expected_wake{}, table_
 unsigned active_operation{};
 // Consumer effects only; diagnostic UART writes below are deliberately excluded.
 U64 consumer_entries{}, sample_calls{}, output_attempts{}, completed_samples{};
-#ifdef AURORA_UEFI_GRAPHICAL_CAPTURE
 namespace Capture = graphical_capture;
+// Set from the display fixture's handoff row at entry: only the capture row
+// waits at the capture gate, reports its counters and leaves QEMU running.
+bool capturing{};
 Capture::Scenario capture_scenario{Capture::Scenario::invalid};
 U64 pixel_attempts{};
-#endif
 std::optional<FramebufferAdmission> graphics;
 [[nodiscard]] auto timer_mapping() -> bool;
 bool ready{}, waiting{};
@@ -72,18 +72,17 @@ extern const std::byte wait_end asm("uefi_console_poll_end");
     Serial::number(output_attempts);
     Serial::text(" stores=");
     Serial::number(stores);
-#ifdef AURORA_UEFI_GRAPHICAL_CAPTURE
-    Serial::text(" completed=");
-    Serial::number(completed_samples);
-    Serial::text(" wakes=");
-    Serial::number(wakes);
-    Serial::text(" pixel_attempts=");
-    Serial::number(pixel_attempts);
-#endif
+    if (capturing) {
+        Serial::text(" completed=");
+        Serial::number(completed_samples);
+        Serial::text(" wakes=");
+        Serial::number(wakes);
+        Serial::text(" pixel_attempts=");
+        Serial::number(pixel_attempts);
+    }
     Serial::text("\r\n");
-#ifndef AURORA_UEFI_GRAPHICAL_CAPTURE
-    Io::write(0xf4, 0x11);
-#endif
+    if (!capturing)
+        Io::write(0xf4, 0x11);
     for (;;) {
         asm volatile("cli; hlt");
     }
@@ -135,7 +134,6 @@ __attribute__((noinline)) auto wait_for_sample() -> void {
     require(wakes == expected_wake && wakes <= wake_limit && quiet(), "poll completion");
 }
 
-#ifdef AURORA_UEFI_GRAPHICAL_CAPTURE
 // Qualification-only baseline handshake. This byte never enters Console:
 // it is consumed here before initialize_input resets the UART input FIFO.
 // No framebuffer write or service grant exists yet.
@@ -162,7 +160,6 @@ auto capture_gate() -> void {
     }
     fail("capture release deadline");
 }
-#endif
 
 class ServiceTransport final {
 public:
@@ -210,12 +207,12 @@ public:
                     graphics->mapping(page),
                 "pixel mapping");
         require(stores < 1000000, "pixel lifetime budget");
-#ifdef AURORA_UEFI_GRAPHICAL_CAPTURE
-        require(pixel_attempts != UINT64_MAX, "pixel attempt counter overflow");
-        ++pixel_attempts;
-        if (Capture::fail_pixel(capture_scenario, stores))
-            return static_cast<U64>(FramebufferPixelResult::out_of_bounds);
-#endif
+        if (capturing) {
+            require(pixel_attempts != UINT64_MAX, "pixel attempt counter overflow");
+            ++pixel_attempts;
+            if (Capture::fail_pixel(capture_scenario, stores))
+                return static_cast<U64>(FramebufferPixelResult::out_of_bounds);
+        }
         const auto result = FramebufferPixels<FramebufferMmio>::pixel(*graphics, x, y, red, green, blue);
         if (result == FramebufferPixelResult::success)
             ++stores;
@@ -267,10 +264,9 @@ auto service_next(const void *, U64, console::RawSample *) -> void asm("__au_run
 auto service_next(const void *grant, U64 generation, console::RawSample *output) -> void {
     require(active_operation == 0 && quiet(), "console next exclusion");
     Service::preflight(grant, generation);
-#ifdef AURORA_UEFI_GRAPHICAL_CAPTURE
     // At most 96 markers. Prior synchronous Aurora painting has returned;
     // complete those stores before announcing a pre-sampling observation point.
-    if (completed_samples < 96) {
+    if (capturing && completed_samples < 96) {
         FramebufferMmio::complete();
         Serial::text("AURORA_GRAPHICAL_PRE_SAMPLE: completed=");
         Serial::number(completed_samples);
@@ -278,7 +274,6 @@ auto service_next(const void *grant, U64 generation, console::RawSample *output)
         Serial::number(stores);
         Serial::text("\r\n");
     }
-#endif
     active_operation = 1;
     *output = Service::next(grant, generation);
     require(completed_samples != UINT64_MAX, "completed sample counter overflow");
@@ -297,6 +292,10 @@ auto service_put(const void *grant, U64 generation, U64 byte) -> U64 {
 auto display_pixel(const void *, U64, U64, U64, U64, U64, U64) -> U64 asm("__au_runtime_display_pixel")
     __attribute__((visibility("hidden")));
 auto display_pixel(const void *grant, U64 generation, U64 x, U64 y, U64 red, U64 green, U64 blue) -> U64 {
+    // The display fixture's framebuffer rows never enter this console; their
+    // own Display session validates every call they make.
+    if (!owned_arena)
+        return framebuffer_display_pixel(grant, generation, x, y, red, green, blue);
     require(active_operation == 0 && quiet(), "display exclusion");
     active_operation = 2;
     const auto result = Display::pixel(grant, generation, x, y, red, green, blue);
@@ -327,14 +326,20 @@ auto interrupt_dispatch(U64 frame) -> void {
     ++wakes;
 }
 
-[[noreturn]] auto graphical_console_fault() -> void {
+[[noreturn]] auto graphical_console_fault(bool capture) -> void {
+    // A fault may precede run_graphical_console; the payload passes its row's mode.
+    capturing = capture;
     fail("synchronous payload fault");
 }
 
 [[noreturn]] auto run_graphical_console(U64 arena, const Bytes &handoff) -> void {
     // No runtime/user image path is compiled in this profile. The loader has
     // completed its normal private-memory/ACPI/language tests before this call.
-    require(!ready && !waiting && !admission && !graphics && stores == 0 && wakes == 0 && handoff.get(8, 4) == 6 &&
+    // The display fixture's row selects the plain console or its capture mode.
+    const auto row = loader_fixture::row(handoff.get(Handoff::fixture_offset));
+    capturing = loader_fixture::graphical_capture(row);
+    require(loader_fixture::graphical(row) && !ready && !waiting && !admission && !graphics && stores == 0 &&
+                wakes == 0 && handoff.get(8, 4) == 6 &&
                 handoff.get(120) == arena + Handoff::framebuffer_record_offset && RuntimeLayout::valid(arena) &&
                 root() == handoff.get(88) && Timer::irq_off(),
             "entry authority");
@@ -374,9 +379,8 @@ auto interrupt_dispatch(U64 frame) -> void {
     graphics = FramebufferPayload::restore_graphical_fixture(arena);
     require(graphics.has_value(), "graphics restoration");
     require(graphics->geometry().width() >= 440 && graphics->geometry().height() >= 146, "viewport geometry");
-#ifdef AURORA_UEFI_GRAPHICAL_CAPTURE
-    capture_gate();
-#endif
+    if (capturing)
+        capture_gate();
     establish_timer(handoff);
     require((Io::read(0x3fb) & 0x80) == 0, "UART register bank");
     Io::write(0x3f9, 0);
@@ -393,7 +397,6 @@ auto interrupt_dispatch(U64 frame) -> void {
                                         display_argument.generation,
                                         display_argument.width,
                                         display_argument.height};
-#ifdef AURORA_UEFI_GRAPHICAL_CAPTURE
     // Only this host-owned record changes; real Session preflights stay unchanged.
     if (capture_scenario == Capture::Scenario::cross_console)
         argument.console_grant = display_argument.grant;
@@ -406,7 +409,6 @@ auto interrupt_dispatch(U64 frame) -> void {
         static_cast<void>(Display::close(display_argument, 0));
         display_argument = Display::open();
     }
-#endif
     const auto completion = Entry::invoke(&argument, argument, [](const graphical::ServiceArgument *record) {
         require(consumer_entries == 0, "single consumer entry");
         ++consumer_entries;
@@ -431,22 +433,21 @@ auto interrupt_dispatch(U64 frame) -> void {
     Serial::number(wakes);
     Serial::text(" stores=");
     Serial::number(stores);
-#ifdef AURORA_UEFI_GRAPHICAL_CAPTURE
-    Serial::text(" entries=");
-    Serial::number(consumer_entries);
-    Serial::text(" samples=");
-    Serial::number(sample_calls);
-    Serial::text(" output_attempts=");
-    Serial::number(output_attempts);
-    Serial::text(" completed=");
-    Serial::number(completed_samples);
-    Serial::text(" pixel_attempts=");
-    Serial::number(pixel_attempts);
-#endif
+    if (capturing) {
+        Serial::text(" entries=");
+        Serial::number(consumer_entries);
+        Serial::text(" samples=");
+        Serial::number(sample_calls);
+        Serial::text(" output_attempts=");
+        Serial::number(output_attempts);
+        Serial::text(" completed=");
+        Serial::number(completed_samples);
+        Serial::text(" pixel_attempts=");
+        Serial::number(pixel_attempts);
+    }
     Serial::text("\r\n");
-#ifndef AURORA_UEFI_GRAPHICAL_CAPTURE
-    Io::write(0xf4, mapped == 0 ? 0x10 : 0x11);
-#endif
+    if (!capturing)
+        Io::write(0xf4, mapped == 0 ? 0x10 : 0x11);
     for (;;) {
         asm volatile("cli; hlt");
     }

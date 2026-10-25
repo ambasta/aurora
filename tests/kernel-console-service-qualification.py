@@ -23,7 +23,8 @@ import tty
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-from kernel_profiles import FIXTURE_MODES, canonical_profile
+from kernel_profiles import canonical_profile, fixture_cases, fw_cfg_fixture
+from kernel_uefi_oracle import loader_selection
 import qemu_transport as transport
 
 BUILD = None
@@ -40,22 +41,22 @@ def run_bounded(argv, timeout, env=None):
     return subprocess.CompletedProcess(argv, status, stdout.getvalue(), stderr.getvalue())
 
 
-# Service faults are boot-selected console-fixture cases, each with its own oracle.
-FAULT_MODES = tuple(mode for mode, (image, _) in FIXTURE_MODES.items() if image == "console-fixture")
-SELECTOR = b"AURORA_FIXTURE_READY\n"
+# Service faults are boot-selected device-fixture rows, each with its own oracle.
+FAULT_MODES = fixture_cases("device-fixture", "console_service_")
 
 
 def validate_fault(transcript, status, mode, sent):
     need(mode in FAULT_MODES, "Unknown console service fault")
     text = transcript.replace(b"\r", b"")
-    # The selector is read once, after the trusted bootstrap and before any timer,
-    # IDT or UART input state; nothing else may precede it in the service.
+    # The loader reads the row once, before the trusted bootstrap and any timer,
+    # IDT or UART input state, and echoes it before any other record.
+    need(b"AURORA_FIXTURE_READY" not in text, "Unexpected serial fixture selector")
+    text = loader_selection(text.decode("latin-1"), mode).encode("latin-1")
     bootstrap = b"AURORA_UEFI_LANGUAGE_OK: value=42\nAURORA_UEFI_OK\n"
     need(
-        text.count(SELECTOR) == 1 and bootstrap + SELECTOR + b"AURORA_UEFI_CONSOLE_TIMER_READY:" in text,
-        "Missing, repeated or misplaced fixture selector",
+        bootstrap + b"AURORA_UEFI_CONSOLE_TIMER_READY:" in text,
+        "Missing or misplaced trusted bootstrap before the console service",
     )
-    text = text.replace(SELECTOR, b"", 1)
     need(status == 35, "Fault did not exit fail-closed through the QEMU device")
     need(b"AURORA_UEFI_LANGUAGE_OK: value=42\nAURORA_UEFI_OK\n" in text, "Fault preceded successful trusted bootstrap")
     need(
@@ -101,6 +102,7 @@ def fault_guest(mode, work):
         qemu,
         os.environ.get("QEMU_DATA", ""),
         firmware=transport.firmware_args(combined, code, variables),
+        prefix=fw_cfg_fixture(mode),
         boot=transport.fat_boot(BUILD / "esp"),
     )
     master, slave = pty.openpty()
@@ -108,7 +110,6 @@ def fault_guest(mode, work):
     transcript = bytearray()
     process = None
     sent = False
-    selected = False
     started = time.monotonic()
     try:
         with (work / "guest.stderr").open("wb") as stderr:
@@ -129,10 +130,6 @@ def fault_guest(mode, work):
                         break
                     transcript.extend(data)
                     need(len(transcript) < 65536, "Fault transcript exceeded bound")
-                    if not selected and SELECTOR in transcript.replace(b"\r", b""):
-                        tty.setraw(master)
-                        os.write(master, bytes([FIXTURE_MODES[mode][1]]))
-                        selected = True
                     if mode == "console-service-report" and not sent and b"aurora> " in transcript:
                         tty.setraw(master)
                         os.write(master, b"x")

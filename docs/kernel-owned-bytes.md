@@ -2,16 +2,17 @@
 
 ## Scope and dependency
 
-The `owned-bytes` UEFI profile connects the existing Aurora `ByteRegion` and
+The `owned-bytes` UEFI mode connects the existing Aurora `ByteRegion` and
 `OwnedBytes` lowering to the kernel's real `PhysicalPages` leases. This is a
 CPU-only, single-threaded bootstrap allocation milestone. The trusted C++ and
 assembly adapter remains part of the small explicit trusted base; it is not a
 language-native allocator, userspace runtime, device driver or safety proof.
 
-The profile is deliberately exclusive. It compiles `examples/kernel-owned-bytes.au`
-and a private grant bridge in one object instead of the ordinary scalar policy
-graph. Each current generated graph exports the same reflection helper names;
-mixed independently generated scalar/resource graphs remain unsupported.
+The mode is deliberately exclusive: it is the CPU-only row of the
+`device-fixture` image, whose loader and payload skip ACPI and the console for
+it. It compiles `examples/kernel-owned-bytes.au` and a private grant bridge in one
+object beside the console's graph, with local symbols and referenced reflection
+only, so the two independently generated graphs share no exported name.
 The source entries stay local. The original bridge returns scalar status; a
 second private bridge returns a pointer-free copied status and 64-byte record.
 No owner descriptor, source pointer, span or physical address is returned.

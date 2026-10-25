@@ -9,6 +9,7 @@ import hashlib
 import re
 from pathlib import Path
 from kernel_layout import LAYOUT  # noqa: E402
+from kernel_uefi_oracle import loader_selection  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 GOLDEN = ROOT / "tests/kernel-display-renderer.golden"
@@ -63,16 +64,17 @@ def parse_ppm(data):
     return body
 
 
-def serial_lines(raw):
+def serial_lines(raw, mode):
     need(len(raw) <= 1024 * 1024, "serial limit")
     text = raw.decode("ascii", errors="strict").replace("\r", "")
     need(text.endswith("\n"), "incomplete serial line")
-    return text.splitlines()
+    # The display fixture echoes the mode's fw_cfg row right after loader entry.
+    return loader_selection(text, mode).splitlines()
 
 
 def validate_serial(raw, mode, gate_only=False):
     need(mode in MODES, "unknown case")
-    lines = serial_lines(raw)
+    lines = serial_lines(raw, mode)
     prefixes = (
         "AURORA_UEFI_ENTRY",
         "AURORA_UEFI_EXIT_OK:",

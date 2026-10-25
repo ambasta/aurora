@@ -32,9 +32,14 @@ FIXTURE_MODES = {
     mode: (image, value) for name, (mode, image, value) in FIXTURES.items() if not name.startswith("bios_")
 }
 # These images read their selector from a QEMU fw_cfg file instead of a serial
-# byte: platform-fixture's loader cases inject before ExitBootServices, while
-# firmware owns the UART, and the Event harness writes serial output to a file.
-FW_CFG_IMAGES = frozenset(("platform-fixture", "iommu-event"))
+# byte. The loader fixture images read it at loader entry, echo it and hand it
+# over in one handoff word: platform-fixture's loader cases inject before
+# ExitBootServices, while firmware owns the UART, and the display and device
+# images co-host subsystems that each need their row from the first phase,
+# including interactive console sessions no harness can send a byte to. The
+# Event harness writes serial output to a file.
+LOADER_FIXTURE_IMAGES = frozenset(("platform-fixture", "display-fixture", "device-fixture"))
+FW_CFG_IMAGES = LOADER_FIXTURE_IMAGES | {"iommu-event"}
 BIOS_FIXTURE_MODES = {
     mode: (image, value) for name, (mode, image, value) in FIXTURES.items() if name.startswith("bios_")
 }
@@ -77,17 +82,30 @@ UEFI_FAMILIES = [
         ["-maccumulate-outgoing-args", "-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI", "-DAURORA_UEFI_IOMMU_EVENT"],
         {"iommu-event": []},
     ),
+    # The framebuffer cases and the standalone graphical console (plain and
+    # capture), selected by a fw_cfg row read at loader entry.
     (
-        ["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_GRAPHICAL_CONSOLE", "-DAURORA_UEFI_GRAPHICAL_FIXTURE"],
-        {"graphical-console": [], "graphical-console-capture": ["-DAURORA_UEFI_GRAPHICAL_CAPTURE"]},
+        [
+            "-DAURORA_UEFI_ACPI",
+            "-DAURORA_UEFI_GRAPHICAL_CONSOLE",
+            "-DAURORA_UEFI_GRAPHICAL_FIXTURE",
+            "-DAURORA_UEFI_GRAPHICAL_CAPTURE",
+            "-DAURORA_UEFI_FRAMEBUFFER",
+            "-DAURORA_UEFI_FRAMEBUFFER_FIXTURE",
+            "-DAURORA_UEFI_FRAMEBUFFER_CAPTURE",
+        ],
+        {"display-fixture": ["-DAURORA_DISPLAY_FIXTURE"]},
     ),
+    # The UEFI console, its service faults and owned bytes, selected likewise.
     (
-        ["-DAURORA_UEFI_FRAMEBUFFER", "-DAURORA_UEFI_FRAMEBUFFER_FIXTURE", "-DAURORA_UEFI_FRAMEBUFFER_CAPTURE"],
-        {
-            "framebuffer": [],
-        },
+        [
+            "-DAURORA_UEFI_ACPI",
+            "-DAURORA_UEFI_CONSOLE",
+            "-DAURORA_CONSOLE_SERVICE_FIXTURE",
+            "-DAURORA_UEFI_OWNED_BYTES",
+        ],
+        {"device-fixture": ["-DAURORA_DEVICE_FIXTURE"]},
     ),
-    (["-DAURORA_UEFI_OWNED_BYTES"], {"owned-bytes": []}),
     (
         [
             "-DAURORA_UEFI_ACPI",
@@ -111,13 +129,6 @@ UEFI_FAMILIES = [
         ],
         {
             "snapshot-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_SNAPSHOT_FIXTURE"],
-        },
-    ),
-    (
-        ["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_CONSOLE"],
-        {
-            "console": [],
-            "console-fixture": ["-DAURORA_CONSOLE_SERVICE_FIXTURE"],
         },
     ),
     (
@@ -457,8 +468,7 @@ def bios_profile(mode):
         ]
         + (["serial-input", "kernel-interactive-console", "kernel-uart"] if console else []),
         closed=False,
-        terminal_language="",
-        terminal_bridge="",
+        languages={},
     )
 
 
@@ -481,9 +491,8 @@ def uefi_profile(profile_mode, flags):
     user_budget = scratchpad or mode.startswith(("user-", "program-"))
     program = mode.startswith("program-")
     snapshot = mode.startswith("snapshot")
-    console = mode in ("console", "console-fixture")
-    graphical = mode in ("graphical-console", "graphical-console-capture")
-    framebuffer = mode == "framebuffer"
+    console = owned_bytes = mode == "device-fixture"
+    graphical = framebuffer = mode == "display-fixture"
     event = mode == "iommu-event"
     user_mode = "normal"
     if mode.startswith("runtime-") and mode[8:] in ("owned-text", "fixture"):
@@ -609,7 +618,7 @@ def uefi_profile(profile_mode, flags):
         cpp[name] = "kernel/uefi/" + name + ".cpp"
         console_objects = ["console-entry", name]
     owned_objects = []
-    if mode == "owned-bytes" or snapshot or (blocking_call and not file_call):
+    if owned_bytes or snapshot or (blocking_call and not file_call):
         cpp["owned-bytes-runtime"] = "kernel/owned-bytes.cpp"
         name = "snapshot" if snapshot or blocking_call else "owned-bytes-profile"
         cpp[name] = "kernel/uefi/" + ("snapshot" if snapshot or blocking_call else "owned-bytes") + ".cpp"
@@ -624,17 +633,28 @@ def uefi_profile(profile_mode, flags):
     entry, bridge = "examples/kernel.au", ""
     for enabled, source, adapter in (
         (event, "iommu-event-service", "event-service"),
-        (framebuffer, "display-service", "display-service"),
         (program, "program-console", "program-note"),
         (file_call, "program-file-call", "program-file-call"),
         (scratchpad, "ram-scratchpad-console", "ram-scratchpad-console"),
-        (mode == "owned-bytes", "owned-bytes", "owned-bytes"),
         (snapshot or (blocking_call and not file_call), "snapshot", "snapshot"),
         (console, "console-service", "console-service"),
         (graphical, "graphical-console", "graphical-console"),
     ):
         if enabled:
             entry, bridge = "examples/kernel-" + source + ".au", "kernel/uefi/" + adapter + "-entry.S"
+    # Further closed Aurora objects, each with its own private bridge, local
+    # symbols and import policy (imports:STEM): the production terminal painter,
+    # and the services co-hosted by the display and device fixture images.
+    languages = {}
+    for enabled, stem, source, adapter, roots in (
+        (terminal, "terminal", "graphical-terminal", "graphical-terminal", ["library"]),
+        (framebuffer, "display", "display-service", "display-service", ["kernel/policies", "library"]),
+        (owned_bytes, "owned-bytes", "owned-bytes", "owned-bytes", ["kernel/policies", "library"]),
+    ):
+        if enabled:
+            languages[stem] = dict(
+                source="examples/kernel-" + source + ".au", bridge="kernel/uefi/" + adapter + "-entry.S", roots=roots
+            )
     return dict(
         platform="uefi",
         mode=profile_mode,
@@ -654,13 +674,12 @@ def uefi_profile(profile_mode, flags):
         + console_objects
         + (["kernel-uart"] if console else [])
         + ["language"]
-        + (["terminal"] if terminal else [])
+        + list(languages)
         + owned_objects
         + (["framebuffer"] if framebuffer else [])
         + (["event-intake"] if event else []),
         closed=program,
-        terminal_language="examples/kernel-graphical-terminal.au" if terminal else "",
-        terminal_bridge="kernel/uefi/graphical-terminal-entry.S" if terminal else "",
+        languages=languages,
     )
 
 
