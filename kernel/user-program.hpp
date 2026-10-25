@@ -2,6 +2,7 @@
 #include "program-layout.hpp"
 #include "terminal-event-transport.hpp"
 #include "bios-fixture.hpp"
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -120,7 +121,7 @@ public:
         if (terminal_mutation == 1)
             policy_vector = ~std::uint64_t{0};
 #endif
-#ifdef AURORA_BIOS_FAULT_FIXTURE
+#ifdef AURORA_BIOS_FIXTURE
         if (bios::selected(bios::Fixture::bios_program_terminal_input))
             policy_vector = ~std::uint64_t{0};
 #endif
@@ -131,7 +132,7 @@ public:
             encoded |= reserved_bit;
         }
 #endif
-#ifdef AURORA_BIOS_FAULT_FIXTURE
+#ifdef AURORA_BIOS_FIXTURE
         if (bios::selected(bios::Fixture::bios_program_terminal_output)) {
             const volatile std::uint64_t reserved_bit = std::uint64_t{1} << 63;
             encoded |= reserved_bit;
@@ -227,11 +228,23 @@ public:
         return value_;
     }
 };
+// The three bank programs that act as images 0, 1 and 2 when the boot fixture
+// selector equals `selector`, and image 0's scheduler context-probe range.
+class ProgramSet final {
+public:
+    unsigned selector;
+    std::array<std::uint8_t, 3> images;
+    std::uint64_t probe_begin, probe_end;
+};
 class UserPrograms final {
 public:
     static constexpr std::uint64_t code_begin = 0x1b0000;
-    static constexpr std::uint64_t code_end = 0x1b3000;
+    static constexpr std::uint64_t code_end = 0x1c8000;
+    // Install every bank program at its own page; the first set is selected.
     [[nodiscard]] static auto install() -> bool;
+    // Select the set for one fixture selector; other selectors keep the first set.
+    static auto select(unsigned selector) -> void;
     [[nodiscard]] static auto contract(std::size_t index) -> const ProgramContract *;
+    [[nodiscard]] static auto probe() -> std::array<std::uint64_t, 2>;
 };
 } // namespace aurora::user

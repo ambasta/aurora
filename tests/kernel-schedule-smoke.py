@@ -15,12 +15,8 @@ def need(value, reason):
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 import kernel_profiles  # noqa: E402
 
-# Modes that boot bios-schedule-fixture: its cases, the baseline and the machine variants.
-SELECTED = tuple(
-    "--" + mode
-    for mode in kernel_profiles.BIOS_ALIASES
-    if kernel_profiles.canonical_profile("bios", mode) == "bios-schedule-fixture"
-)
+# Every scheduler mode boots bios-fixture with a selector: the cases, the baseline and its machine variants.
+SELECTED = tuple("--" + mode for mode in kernel_profiles.BIOS_ALIASES if mode.startswith("schedule"))
 
 
 def validate(status, text, mode, metadata):

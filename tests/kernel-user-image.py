@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Emit the embedded BIOS user images and their read-only trap-site metadata."""
+"""Emit the embedded BIOS user program bank, its program sets and their trap-site metadata.
+
+Each --program is linked at its own page, BASE + index * 4096, and installed once.
+A --set names the three programs that act as images 0, 1 and 2 when the boot
+fixture selector has VALUE; set 0 (the first --set, or the first three programs)
+is used otherwise. user-metadata.json maps each set's MODE to the per-image
+metadata the BIOS oracles read.
+"""
 
 from pathlib import Path
 import subprocess
@@ -8,39 +15,24 @@ import json
 import argparse
 import os
 
-NAMES = ("clean", "bounds", "overflow")
 ROOT = Path(__file__).resolve().parents[1]
 BASE = 0x1B0000
+BANK_PAGES = 24
 DIVISION_SYMBOL = ".Laurora_division_zero_trap"
 SHIFT_SYMBOL = ".Laurora_shift_count_trap"
-# Preserve the original division contract's ordering for its standalone tests.
-AUTHORITY_SYMBOLS = (
+REQUIRED_SYMBOLS = (
     "aurora_program_entry",
     "aurora_user_main",
     "aurora_program_return_pc",
     ".Laurora_bounds_trap",
     ".Laurora_overflow_trap",
-    DIVISION_SYMBOL,
 )
-REQUIRED_SYMBOLS = AUTHORITY_SYMBOLS[:-1]
-OPTIONAL_SYMBOLS = (DIVISION_SYMBOL, SHIFT_SYMBOL)
-ALL_AUTHORITY_SYMBOLS = REQUIRED_SYMBOLS + OPTIONAL_SYMBOLS
-DIVISION_FIXTURES = ("none", "zero", "remainder-zero", "overflow", "remainder-min", "kernel-trap")
-UNSIGNED_FIXTURES = ("none", "valid", "shift-count", "conversion-overflow", "kernel-trap")
+ALL_AUTHORITY_SYMBOLS = REQUIRED_SYMBOLS + (DIVISION_SYMBOL, SHIFT_SYMBOL)
 
 
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise ValueError(message)
-
-
-def validate(elf: bytes, binary: bytes, base: int, symbols: dict[str, int]) -> tuple[int, int, int, int, int]:
-    """Extract the trap sites; the kernel's ProgramImage::valid re-checks them at load."""
-    require(0 < len(binary) <= 4096, "User image must fit one nonempty page")
-    require(all(name in symbols for name in REQUIRED_SYMBOLS), "Missing entry/return/compiler trap metadata")
-    require(symbols[REQUIRED_SYMBOLS[0]] == base, "Entry symbol is not the image base")
-    ret, bounds, overflow = (symbols[name] for name in REQUIRED_SYMBOLS[2:])
-    return ret, bounds, overflow, symbols.get(DIVISION_SYMBOL, 0), symbols.get(SHIFT_SYMBOL, 0)
 
 
 def parse_symbols(output: str) -> dict[str, int]:
@@ -74,71 +66,100 @@ def assembly_path(path: Path) -> str:
     )
 
 
+def program(build: Path, name: str, base: int) -> dict:
+    return sites((build / f"user-{name}.bin").read_bytes(), base, symbols_for(build / f"user-{name}.elf"))
+
+
+def sites(binary: bytes, base: int, symbols: dict[str, int]) -> dict:
+    """Trap sites of one linked program; the kernel's ProgramImage::valid re-checks them at load."""
+    require(0 < len(binary) <= 4096, "User image must fit one nonempty page")
+    require(all(name in symbols for name in REQUIRED_SYMBOLS), "Missing entry/return/compiler trap metadata")
+    require(symbols[REQUIRED_SYMBOLS[0]] == base, "Entry symbol is not the image base")
+    probe_begin = symbols.get("aurora_context_probe_begin", 0)
+    probe_end = symbols.get("aurora_context_probe_end", 0)
+    require(
+        (probe_begin == probe_end == 0) or base <= probe_begin < probe_end <= base + len(binary),
+        "Invalid context probe range",
+    )
+    return {
+        "base": base,
+        "size": len(binary),
+        "return": symbols[REQUIRED_SYMBOLS[2]],
+        "bounds": symbols[REQUIRED_SYMBOLS[3]],
+        "overflow": symbols[REQUIRED_SYMBOLS[4]],
+        "division_zero": symbols.get(DIVISION_SYMBOL, 0),
+        "shift_count": symbols.get(SHIFT_SYMBOL, 0),
+        "probe_begin": probe_begin,
+        "probe_end": probe_end,
+    }
+
+
+def parse_set(text: str) -> dict:
+    # MODE:VALUE:DIVISION:UNSIGNED:FAMILY:program0,program1,program2
+    mode, value, division, unsigned, family, names = text.split(":")
+    names = names.split(",")
+    require(len(names) == 3 and 0 <= int(value) < 256, "A program set names three programs and one selector")
+    return dict(mode=mode, value=int(value), division=division, unsigned=unsigned, family=family, names=names)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--root", type=Path, default=ROOT, help="source root (default: repository root)")
-    parser.add_argument("--build-dir", type=Path, help="artifact directory (default: ROOT/build)")
-    parser.add_argument("--bios-fixture-family", choices=("ordinary", "schedule"))
-    parser.add_argument("--division-fixture", choices=DIVISION_FIXTURES, default="none")
-    parser.add_argument("--unsigned-fixture", choices=UNSIGNED_FIXTURES, default="none")
+    parser.add_argument("--build-dir", type=Path, required=True)
+    parser.add_argument("--program", action="append", required=True, help="bank program name, in page order")
+    parser.add_argument("--set", action="append", default=[], type=parse_set)
     arguments = parser.parse_args()
-    root = arguments.root.resolve()
-    build = (arguments.build_dir if arguments.build_dir is not None else root / "build").resolve()
+    build = arguments.build_dir.resolve()
+    names = arguments.program
+    require(0 < len(names) <= BANK_PAGES and len(set(names)) == len(names), "Invalid program bank")
+    bank = {name: program(build, name, BASE + index * 4096) for index, name in enumerate(names)}
+    sets = arguments.set or [dict(mode="normal", value=0, division="none", unsigned="none", family="", names=names[:3])]
+    require(len({entry["value"] for entry in sets}) == len(sets), "Duplicate program set selector")
     assembly = ['.section .rodata.user_images,"a"']
     declarations = ["// Generated by tests/kernel-user-image.py; do not edit."]
-    contracts = []
-    require(
-        arguments.division_fixture == "none" or arguments.unsigned_fixture == "none",
-        "Compiler feature gates cannot be combined",
-    )
-    metadata = {"division_fixture": arguments.division_fixture, "unsigned_fixture": arguments.unsigned_fixture}
-    if arguments.bios_fixture_family:
-        metadata["bios_fixture_family"] = arguments.bios_fixture_family
-    for index, name in enumerate(NAMES):
-        base = BASE + index * 4096
-        elf = (build / f"user-{name}.elf").read_bytes()
-        binary = (build / f"user-{name}.bin").read_bytes()
-        symbols = symbols_for(build / f"user-{name}.elf")
-        ret, bounds, overflow, division, shift = validate(elf, binary, base, symbols)
-        require(
-            (arguments.division_fixture == "none" and arguments.bios_fixture_family != "ordinary") or division != 0,
-            "Division gates require retained compiler division-zero metadata",
-        )
-        require(
-            arguments.unsigned_fixture == "none" or shift != 0,
-            "Unsigned gates require retained compiler shift-count metadata",
-        )
-        if index == 0:
-            probe_begin = symbols.get("aurora_context_probe_begin", 0)
-            probe_end = symbols.get("aurora_context_probe_end", 0)
-            require(
-                (probe_begin == probe_end == 0) or base <= probe_begin < probe_end <= base + len(binary),
-                "Invalid context probe range",
-            )
-            assembly += [".global aurora_schedule_probe", "aurora_schedule_probe:", f".quad {probe_begin}, {probe_end}"]
-        metadata[str(index)] = {
-            "base": base,
-            "size": len(binary),
-            "return": ret,
-            "bounds": bounds,
-            "overflow": overflow,
-            "division_zero": division,
-            "shift_count": shift,
-            "probe_begin": symbols.get("aurora_context_probe_begin", 0),
-            "probe_end": symbols.get("aurora_context_probe_end", 0),
-        }
-        assembly += [
-            f".global aurora_image_{name}",
-            f"aurora_image_{name}:",
-            f".incbin {assembly_path(build / f'user-{name}.bin')}",
+    contracts, rows, metadata = [], [], {}
+    for index, name in enumerate(names):
+        row = bank[name]
+        assembly += [f"aurora_image_{index}:", f".incbin {assembly_path(build / f'user-{name}.bin')}"]
+        assembly.insert(1, f".global aurora_image_{index}")
+        declarations += [
+            f'extern const std::array<std::byte, {row["size"]}> image_{index} asm("aurora_image_{index}");'
         ]
-        declarations += [f'extern const std::array<std::byte, {len(binary)}> image_{name} asm("aurora_image_{name}");']
         contracts += [
-            "ProgramImage{image_%s, ProgramContract{%d, %d, %d, %d, %d, %d, %d}}"
-            % (name, base, len(binary), ret, bounds, overflow, division, shift)
+            "ProgramImage{image_%d, ProgramContract{%d, %d, %d, %d, %d, %d, %d}}"
+            % (
+                index,
+                row["base"],
+                row["size"],
+                row["return"],
+                row["bounds"],
+                row["overflow"],
+                row["division_zero"],
+                row["shift_count"],
+            )
         ]
+    for entry in sets:
+        images = [names.index(name) for name in entry["names"]]
+        first = bank[entry["names"][0]]
+        rows += [
+            "ProgramSet{%d, {%d, %d, %d}, %d, %d}" % (entry["value"], *images, first["probe_begin"], first["probe_end"])
+        ]
+        record = {"division_fixture": entry["division"], "unsigned_fixture": entry["unsigned"]}
+        if entry["family"]:
+            record["bios_fixture_family"] = entry["family"]
+        for slot, name in enumerate(entry["names"]):
+            record[str(slot)] = bank[name]
+            require(
+                (entry["division"] == "none" and entry["family"] != "ordinary") or bank[name]["division_zero"] != 0,
+                "Division gates require retained compiler division-zero metadata",
+            )
+            require(
+                entry["unsigned"] == "none" or bank[name]["shift_count"] != 0,
+                "Unsigned gates require retained compiler shift-count metadata",
+            )
+        metadata[entry["mode"]] = record
     assembly += ['.section .note.GNU-stack,"",@progbits']
-    declarations += ["constinit const std::array<ProgramImage, 3> images{", ",\n".join(contracts), "};"]
+    declarations += [f"constinit const std::array<ProgramImage, {len(names)}> bank{{", ",\n".join(contracts), "};"]
+    declarations += [f"constinit const std::array<ProgramSet, {len(sets)}> sets{{", ",\n".join(rows), "};"]
     (build / "user-metadata.json").write_text(json.dumps(metadata, indent=2) + "\n")
     (build / "kernel-user-images.S").write_text("\n".join(assembly) + "\n")
     (build / "kernel-user-images.hpp").write_text("\n".join(declarations) + "\n")

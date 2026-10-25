@@ -63,13 +63,13 @@ if [[ "$protected" == true ]]; then
     if [[ "$action" == --console && "$mode" != program-console && "$mode" != program-file-call ]]; then profile_fail 'fault profiles are smoke-only'; fi
 fi
 if [[ "$strict" == true || "$mode" == graphical-console ]]; then
-    controls=("${!KERNEL_TEST_@}" AURORA_TEST_CONTEXT KERNEL_USER_PROBE_MODE KERNEL_CONSOLE UEFI_MODE UEFI_CONSOLE_HANDOFF)
+    controls=(AURORA_TEST_CONTEXT UEFI_MODE UEFI_CONSOLE_HANDOFF)
 else
     if [[ -n "${AURORA_TEST_CONTEXT:-}" ]]; then
         echo 'This standalone shortcut rejects inherited AURORA_TEST_CONTEXT; start it outside the active supervised test run.' >&2
         exit 2
     fi
-    controls=("${!KERNEL_TEST_@}" KERNEL_USER_PROBE_MODE KERNEL_CONSOLE UEFI_MODE)
+    controls=(UEFI_MODE)
     if [[ "$mode" == console && ( "$platform" == uefi || "$action" == --smoke ) ]]; then controls+=(UEFI_CONSOLE_HANDOFF); fi
 fi
 for name in "${controls[@]}"; do
@@ -142,7 +142,7 @@ if [[ "$mode" == normal ]]; then
     exec ./scripts/kernel-smoke.sh normal
 fi
 build_profile() {
-    if [[ "$platform" == bios ]]; then KERNEL_CONSOLE=1 ./scripts/kernel-build.sh --print-image-dir
+    if [[ "$platform" == bios ]]; then scripts/kernel-image.sh bios console
     else UEFI_MODE="${1:-$mode}" ./scripts/kernel-uefi-build.sh --print-image-dir; fi
 }
 if [[ "$mode" == graphical-console ]]; then

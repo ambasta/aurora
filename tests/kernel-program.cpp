@@ -36,11 +36,12 @@ auto main() -> int {
     check(explicit_bios.valid() && explicit_bios.classify(context(ret)) == ProgramEvent::returned &&
               explicit_bios.classify(context(shift, 6)) == ProgramEvent::shift_count,
           "explicit BIOS layout preserves legacy authority");
-    for (const auto entry : {base, base + 4096, base + 8192})
+    for (auto entry = base; entry < UserPrograms::code_end; entry += 4096)
         check(ProgramContract{entry, 4096, entry + 32, entry + 64, entry + 66}.valid(),
-              "all three BIOS code pages remain authorized");
-    check(!ProgramContract{base + 12288, 128, base + 12320, base + 12352, base + 12354}.valid(),
-          "BIOS metadata cannot authorize a fourth code page");
+              "every BIOS program bank page remains authorized");
+    const auto past = UserPrograms::code_end;
+    check(!ProgramContract{past, 128, past + 32, past + 64, past + 66}.valid(),
+          "BIOS metadata cannot authorize a page past the program bank");
     check(contract.classify(context(ret)) == ProgramEvent::returned, "typed return");
     check(contract.classify(context(bounds, 6, 0, 0x1b, 0x23, Protection::user_stack_top - 32, 0x10002)) ==
               ProgramEvent::bounds,

@@ -72,7 +72,7 @@ def validate_program_sequence(transcript: str, metadata: dict | None) -> None:
         require(
             (image, kind) == expected and 0x82000 <= int(frame) <= 0x86000 - 176, "Wrong contained fault kind/origin"
         )
-        base = 0x1B0000 + int(image) * 4096
+        base = metadata[image]["base"] if metadata is not None else 0x1B0000 + int(image) * 4096
         require(base <= int(pc) < base + 4096, "Contained fault outside active image")
         if metadata is not None:
             require(int(pc) == metadata[image][kind], "Contained fault does not match linked UD2 metadata")
@@ -197,7 +197,8 @@ def validate_mode(status: int, transcript: str, mode: str, metadata: dict | None
             if mode == "--domain-code":
                 require(rip == 0x1B1000, "Foreign-code fault did not reject fetch")
             else:
-                require(0x1B0000 <= rip < 0x1B1000, "Program fault did not originate in active image")
+                base = metadata["0"]["base"] if metadata is not None else 0x1B0000
+                require(base <= rip < base + 0x1000, "Program fault did not originate in active image")
         else:
             require(f"AURORA_USER_ENTER: {user_mode}" in lines, "Wrong controlled user probe")
         if mode != "--user-nx" and not program_mode:
@@ -235,16 +236,11 @@ def validate_fault(status: int, transcript: str, vector: int = 0) -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) in (4, 5):
+    if len(sys.argv) == 5:
         try:
-            metadata_path = (
-                Path(sys.argv[4])
-                if len(sys.argv) == 5
-                else Path(__file__).resolve().parents[1] / "build" / "user-metadata.json"
-            )
-            metadata = json.loads(metadata_path.read_text())
+            metadata = json.loads(Path(sys.argv[4]).read_text())
             validate_mode(int(sys.argv[1]), Path(sys.argv[2]).read_text(), sys.argv[3], metadata)
         except ValueError as error:
             sys.exit(f"FAIL: {error}")
     else:
-        sys.exit("usage: kernel-smoke.py EXIT_STATUS SERIAL_LOG MODE [IMAGE_METADATA]")
+        sys.exit("usage: kernel-smoke.py EXIT_STATUS SERIAL_LOG MODE IMAGE_METADATA")

@@ -25,7 +25,6 @@ constinit bool tick = false;
 constinit bool started = false;
 constinit bool restarted = false;
 constinit unsigned probe_ticks = 0;
-extern const std::array<std::uint64_t, 2> probe asm("aurora_schedule_probe");
 auto log(std::string_view kind, std::size_t task) -> void {
     Serial::text("AURORA_SCHEDULE_");
     Serial::text(kind);
@@ -47,7 +46,7 @@ auto Scheduler::interrupt(std::uint64_t vector, std::uint64_t code, std::uint64_
     if (contract == nullptr || code != 0x1b || frame < Protection::entry_stack_bottom ||
         frame > Protection::entry_stack_top - 176 || frame % 8 != 0 || !AddressSpaces::active(task.domain))
         return -1;
-#ifdef AURORA_BIOS_SCHEDULE_FIXTURE
+#ifdef AURORA_BIOS_FIXTURE
     if (bios::selected(bios::Fixture::bios_schedule_root)) {
         if (vector == Apic::vector) {
             const auto root = Protection::kernel_root();
@@ -60,7 +59,7 @@ auto Scheduler::interrupt(std::uint64_t vector, std::uint64_t code, std::uint64_
     const auto *words = reinterpret_cast<const volatile std::uint64_t *>(frame);
     for (std::size_t i = 0; i < 22; ++i)
         captured.words()[i] = words[i];
-#ifdef AURORA_BIOS_SCHEDULE_FIXTURE
+#ifdef AURORA_BIOS_FIXTURE
     if (bios::selected(bios::Fixture::bios_schedule_context)) {
         if (vector == Apic::vector)
             captured.words()[18] = 8;
@@ -71,6 +70,7 @@ auto Scheduler::interrupt(std::uint64_t vector, std::uint64_t code, std::uint64_
     if (vector == Apic::vector) {
         if (!Apic::acknowledge() || !task.budget.consume())
             return -1;
+        const auto probe = UserPrograms::probe();
         if (*running == 0 && instruction >= probe[0] && instruction < probe[1]) {
             constexpr std::array<std::uint64_t, 15> sentinels{
                 255, 238, 221, 204, 187, 170, 153, 136, 119, 102, 85, 68, 51, 34, 17};
@@ -160,7 +160,7 @@ auto Scheduler::run(memory::PhysicalPages &pages) -> bool {
                 log("ENTER", i);
                 if (!Apic::arm())
                     return false;
-#ifdef AURORA_BIOS_SCHEDULE_FIXTURE
+#ifdef AURORA_BIOS_FIXTURE
                 if (bios::selected(bios::Fixture::bios_schedule_forged)) {
                     asm volatile("int $64" : : : "memory");
                 }
