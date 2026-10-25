@@ -36,6 +36,15 @@ inside `/workspace`, for example:
 MESON_BUILD_DIR=build/container ./scripts/container.sh make test
 ```
 
+The AGENTS.md cost budget is measured on 8 vCPUs. On a larger host,
+`AURORA_CPUS` confines the container to eight hardware threads (`nproc` inside
+then reports 8):
+
+```sh
+rm -rf build/budget
+time AURORA_CPUS=0-7 MESON_BUILD_DIR=build/budget ./scripts/container.sh make test
+```
+
 `make clean` removes products and preserves configuration.
 
 ## Advanced native setup
@@ -232,7 +241,7 @@ firmware tuple. Preview reuses capture transport and its production firmware
 builder. Compiler-free controls establish transport behavior only.
 
 Normal smoke stdin is `/dev/null`; no root, KVM, network or physical-device access
-is needed. Normal BIOS/UEFI wall limits are 15/30 seconds. Exact serial validation
+is needed. Normal BIOS/UEFI wall limits are 15/60 seconds. Exact serial validation
 and QEMU debug-exit status 33 are required; logs stay beside the selected image.
 Missing prerequisites are BLOCKED; malformed/tampered inputs and runtime failures
 are FAIL. An image build, timeout or skipped guest is never a boot pass.

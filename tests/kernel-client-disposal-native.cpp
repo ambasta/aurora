@@ -5,6 +5,7 @@
 #include "policy-vectors.hpp"
 #include <cstdlib>
 
+namespace kernel_client_disposal_native {
 static_assert(aurora::ipc::DisposalTransition::decode(0x0102, 0, 0).accepted());
 static_assert(!aurora::ipc::DisposalTransition::decode(0x0102, 0, 1).accepted());
 static_assert(!aurora::ipc::DisposalTransition::decode(1, 4, 0).accepted());
@@ -12,9 +13,27 @@ static_assert(!aurora::ipc::DisposalTransition::decode(1, 4, 0).accepted());
 using namespace policy_vectors;
 
 namespace {
-constexpr U64 edges[] = {0,   1,   2,     3,     4,         5,          6,         7,
-                         8,   15,  127,   128,   255,       256,        65535,     65536,
-                         (U64{1} << 32) - 1, U64{1} << 32, (U64{1} << 63) - 1, U64{1} << 63, maximum};
+constexpr U64 edges[] = {0,
+                         1,
+                         2,
+                         3,
+                         4,
+                         5,
+                         6,
+                         7,
+                         8,
+                         15,
+                         127,
+                         128,
+                         255,
+                         256,
+                         65535,
+                         65536,
+                         (U64{1} << 32) - 1,
+                         U64{1} << 32,
+                         (U64{1} << 63) - 1,
+                         U64{1} << 63,
+                         maximum};
 constexpr U64 words[] = {1, 0x0102, 0x0202, 0x0302, 0x0402};
 auto policy(Family &family, U64 phase, U64 state) -> void {
     family.observe({phase, state}, {aurora::ipc::language_client_disposal(phase, state)});
@@ -128,4 +147,6 @@ auto main() -> int {
             decoder(family, random(), phase, state);
         }
     }
+    return 0;
 }
+} // namespace kernel_client_disposal_native

@@ -34,6 +34,9 @@ tooling; production lowering does not require a second C++ grammar. See
 
 Expressions, declarations and bodies are part of the same Aurora parser. The
 legacy C++ expression parser is retired; final-source convergence remains a required gate.
+`hosted-parser` checks each grammar entry against data cases and a reviewed golden
+dump ([test contract](../docs/developer-test-contract.md)); `hosted-parser-invalid`
+links the adapters with forged Aurora entries to test their fail-closed conversion.
 
 ## Current boundaries
 

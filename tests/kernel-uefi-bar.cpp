@@ -4,6 +4,8 @@
 #include <source_location>
 #include <type_traits>
 #include <vector>
+
+namespace kernel_uefi_bar {
 using namespace aurora::uefi;
 using Buffer = std::vector<std::byte>;
 using Header = std::array<std::byte, 64>;
@@ -688,4 +690,6 @@ auto main() -> int {
         }
     }
     std::cout << "PASS: " << checks << " PCI BAR descriptor, exclusion, exact-read, mutation and revocation checks\n";
+    return 0;
 }
+} // namespace kernel_uefi_bar

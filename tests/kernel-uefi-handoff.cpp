@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <iostream>
 
+namespace kernel_uefi_handoff {
 namespace {
 using namespace aurora::uefi;
 using U64 = std::uint64_t;
@@ -179,4 +180,6 @@ int main() {
          RuntimeLayout::kernel_flags(Handoff::bar_record_offset));
 #endif
     std::cout << "PASS: handoff layout " << (admitted ? "v7 terminal" : "v1-v6") << ' ' << checks << " checks\n";
+    return 0;
 }
+} // namespace kernel_uefi_handoff

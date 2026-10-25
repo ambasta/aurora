@@ -10,6 +10,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+
+namespace kernel_terminal_event_native {
 using namespace aurora::user;
 [[maybe_unused]] static void require(bool value) {
     if (!value)
@@ -20,10 +22,13 @@ static std::uint64_t proposal, calls;
 static bool genuine;
 auto real_terminal_event(std::uint64_t, std::uint64_t, std::uint64_t) -> std::uint64_t
     asm("aurora_kernel_terminal_event_real");
+} // namespace kernel_terminal_event_native
 auto aurora::user::language_terminal_event(std::uint64_t v, std::uint64_t m, std::uint64_t t) -> std::uint64_t {
-    ++calls;
-    return genuine ? real_terminal_event(v, m, t) : proposal;
+    namespace observed = kernel_terminal_event_native;
+    ++observed::calls;
+    return observed::genuine ? observed::real_terminal_event(v, m, t) : observed::proposal;
 }
+namespace kernel_terminal_event_native {
 #endif
 static auto wire(ProgramEvent e) -> std::uint64_t {
     switch (e) {
@@ -130,9 +135,21 @@ auto main() -> int {
     std::vector<U64> edges;
     for (U64 value = 0; value < 34; ++value)
         edges.push_back(value);
-    for (const U64 value : {U64{127}, U64{128}, U64{129}, U64{130}, U64{254}, U64{255}, U64{256}, U64{257},
-                            U64{65535}, U64{65536}, (U64{1} << 32) - 1, U64{1} << 32, (U64{1} << 63) - 1,
-                            U64{1} << 63, maximum})
+    for (const U64 value : {U64{127},
+                            U64{128},
+                            U64{129},
+                            U64{130},
+                            U64{254},
+                            U64{255},
+                            U64{256},
+                            U64{257},
+                            U64{65535},
+                            U64{65536},
+                            (U64{1} << 32) - 1,
+                            U64{1} << 32,
+                            (U64{1} << 63) - 1,
+                            U64{1} << 63,
+                            maximum})
         edges.push_back(value);
     for (const auto v : edges)
         for (const auto m : edges)
@@ -170,9 +187,19 @@ auto main() -> int {
     {
         // Every accepted tuple and near misses against every proposal word.
         Family family("decoder-proposals");
-        const std::array<U64, 3> rows[] = {{129, 1, 1}, {6, 2, 0},  {6, 2, 1},   {6, 4, 0},  {6, 4, 1},
-                                           {6, 8, 0},   {6, 8, 1},  {6, 16, 0},  {6, 16, 1}, {256, 1, 1},
-                                           {129, 33, 1}, {129, 1, 2}, {6, 3, 1}};
+        const std::array<U64, 3> rows[] = {{129, 1, 1},
+                                           {6, 2, 0},
+                                           {6, 2, 1},
+                                           {6, 4, 0},
+                                           {6, 4, 1},
+                                           {6, 8, 0},
+                                           {6, 8, 1},
+                                           {6, 16, 0},
+                                           {6, 16, 1},
+                                           {256, 1, 1},
+                                           {129, 33, 1},
+                                           {129, 1, 2},
+                                           {6, 3, 1}};
         for (const auto &row : rows)
             for (const auto e : words)
                 decoder(family, row, e);
@@ -183,4 +210,6 @@ auto main() -> int {
             decoder(family, hostile[i], words[i % words.size()]);
     }
 #endif
+    return 0;
 }
+} // namespace kernel_terminal_event_native

@@ -95,6 +95,13 @@ and histograms of their full-width vector families (`tests/policy-vectors.hpp`).
 C++ test-configuration guards are one-line compile-fail cases in
 `tests/kernel-compile-fail.txt`.
 
+Parser cases are data: `tests/compiler/hosted_parser.cases` lists sources and
+the Aurora grammar entries, whole-module parses, raw parser records or lowering
+runs to apply, and `hosted-parser` compares a canonical dump of every tree, record
+and diagnostic with `tests/compiler/golden/hosted_parser.golden` (`--update CASES
+GOLDEN` rewrites it for review). The format is described at the top of the cases
+file; only ABI-envelope, growth, allocation-failure and ownership controls stay C++.
+
 Hand-built IR is data: `.air` case files under `tests/compiler/ir`, one Meson
 test per directory, run by the single `aurora-ir-check` driver (format and
 directives in [tests/compiler/ir/README.md](../tests/compiler/ir/README.md)).

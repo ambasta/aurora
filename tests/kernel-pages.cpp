@@ -4,6 +4,7 @@
 #include <string_view>
 #include <type_traits>
 
+namespace kernel_pages {
 using aurora::memory::PageLease;
 using aurora::memory::PhysicalPages;
 static_assert(!std::is_copy_constructible_v<PageLease>);
@@ -98,4 +99,6 @@ auto main() -> int {
     check(!incarnation->address(*stale) && !incarnation->release(*stale), "incarnation resurrection");
     check(incarnation->address(*current) == 0x400000 && incarnation->release(*current), "new incarnation ownership");
     std::cout << "PASS: physical-page ownership, invalid inputs, exhaustion, reuse, 10000 model steps\n";
+    return 0;
 }
+} // namespace kernel_pages

@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <limits>
 
+namespace kernel_iommu_event_completion {
 namespace {
 using namespace amd310_event_oracle;
 std::size_t checks = 0;
@@ -368,3 +369,4 @@ int main() {
         "%s %zu independent AMD310 event/completion checks; no device operation\n", failures ? "FAIL" : "PASS", checks);
     return failures ? 1 : 0;
 }
+} // namespace kernel_iommu_event_completion

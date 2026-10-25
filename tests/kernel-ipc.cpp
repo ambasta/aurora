@@ -9,6 +9,7 @@
 #include <string_view>
 #include <type_traits>
 
+namespace kernel_ipc {
 // The direct program-console source link imports I/O; this IPC fixture grants none.
 extern "C" void __au_runtime_console_next(const void *, std::uint64_t, void *) {
     std::abort();
@@ -799,4 +800,6 @@ auto main() -> int {
     std::cout << "PASS: IPC " << invalid << " rejected envelopes, " << sequences
               << " six-operation transition sequences, copy/scrub, rights, stale/foreign/rebirth, terminal races, "
                  "generation limits and overflow boundaries\n";
+    return 0;
 }
+} // namespace kernel_ipc

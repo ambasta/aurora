@@ -1,6 +1,8 @@
 #include "../kernel/uefi/user-run-policy.hpp"
 #include <cstdlib>
 #include <iostream>
+
+namespace kernel_program_run_authority {
 using namespace aurora;
 using A = uefi::ProgramRunAuthority;
 using L = uefi::RuntimeLayoutProfile<2>;
@@ -318,4 +320,6 @@ auto main() -> int {
     check(fresh.has_value());
     check(!authority->ready_owner(registry, *fresh, 1));
     std::cout << "PASS: two-domain immutable run authority (" << count << " checks)\n";
+    return 0;
 }
+} // namespace kernel_program_run_authority

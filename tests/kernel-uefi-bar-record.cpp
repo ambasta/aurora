@@ -2,6 +2,8 @@
 #include <array>
 #include <cstdlib>
 #include <iostream>
+
+namespace kernel_uefi_bar_record {
 using namespace aurora::uefi;
 using U64 = std::uint64_t;
 using Header = std::array<std::byte, 64>;
@@ -162,4 +164,6 @@ auto main() -> int {
     std::cout << "PASS: " << checks
               << " BAR handoff identity, complete reservations, missing/duplicate/extra/conflict and snapshot mutation "
                  "checks\n";
+    return 0;
 }
+} // namespace kernel_uefi_bar_record

@@ -6,6 +6,8 @@
 #include <optional>
 #include <string_view>
 #include <type_traits>
+
+namespace kernel_domain {
 using aurora::memory::AddressMap;
 using aurora::memory::PageAccess;
 using aurora::memory::PageDomain;
@@ -69,4 +71,6 @@ auto main() -> int {
         check(map.entry(page) == 0, "root clear");
     std::cout
         << "PASS: domain ownership, active/foreign/stale/rebirth rejection, bounded slots, nonidentity W^X aliases\n";
+    return 0;
 }
+} // namespace kernel_domain

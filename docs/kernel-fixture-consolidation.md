@@ -313,7 +313,7 @@ assertions are unchanged. Guards in `loader.cpp`, `graphical-profile.hpp` and
 `owned-bytes.cpp` keep each subsystem out of every other image, and production
 rejects both images' flags.
 
-The 30-second generic, 60-second IVRS/BAR and 180-second console deadlines are
+The 60-second generic UEFI, 60-second IVRS/BAR and 180-second console deadlines are
 unchanged. Grouping does not widen user-image, stack or page admission.
 
 ## Storage and text fixtures

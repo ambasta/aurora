@@ -2,6 +2,7 @@
 #include <cstdlib>
 #include <iostream>
 
+namespace kernel_uefi_console_context {
 namespace {
 using Context = aurora::uefi::ConsoleWakeContext;
 using U64 = std::uint64_t;
@@ -67,4 +68,6 @@ int main() {
     need(!Context::valid(words, frame, arena + 1, begin, begin + 3, stack));
     need(!Context::valid(words, frame, arena, arena, arena + 3, stack));
     std::cout << "PASS: UEFI console copied frame " << observations << " observations\n";
+    return 0;
 }
+} // namespace kernel_uefi_console_context

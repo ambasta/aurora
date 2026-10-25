@@ -8,6 +8,7 @@
 #include <cstring>
 #include <limits>
 
+namespace kernel_budget_native {
 namespace {
 // The guest policy faults change only copied first-tick inputs or the returned
 // word. Decode against the untouched trusted context, not those invalid copies.
@@ -75,7 +76,8 @@ int main() {
         for (U64 initial = 1; initial <= 128; ++initial) {
             for (U64 remaining = 0; remaining < 131; ++remaining) {
                 for (int offset = -2; offset <= 2; ++offset) {
-                    const auto used = static_cast<std::int64_t>(initial) - static_cast<std::int64_t>(remaining) + offset;
+                    const auto used =
+                        static_cast<std::int64_t>(initial) - static_cast<std::int64_t>(remaining) + offset;
                     if (used >= 0)
                         policy(family, initial, remaining, static_cast<U64>(used));
                 }
@@ -121,4 +123,6 @@ int main() {
         for (const U64 value : {U64{0}, U64{129}, U64{255}, U64{1} << 63, maximum})
             decoder(family, first, value, 3, 0);
     }
+    return 0;
 }
+} // namespace kernel_budget_native

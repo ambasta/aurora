@@ -225,7 +225,13 @@ compilation sweeps.
 Canonical Meson uses its checked-libstdc++ configuration (`_GLIBCXX_ASSERTIONS`
 and large-file definitions); historical Make compiler bytes need not match.
 Special native `-O1`, debug, no-PIE, exception/RTTI and testing macros remain where
-required; the existing `-O2` framebuffer variants remain distinct. Existing
+required. Kernel model tests that share flags and link inputs are cases of one
+driver translation unit per group (`tests/native/*.cpp`, dispatch in
+`tests/native/driver.hpp`): each test file is wrapped in its own namespace, and
+each Meson test runs `driver CASE`. Files with distinct macros, conflicting
+runtime-hook symbols, substituted policy objects or special link flags stay
+separate programs. The native framebuffer and display-session tests run the
+executables `tests/meson.build` already builds with the same options. Existing
 compiler Python runners use explicit optimized checks rather than Python assert;
 ordinary/optimized harness controls remain separate where they test mode behavior.
 

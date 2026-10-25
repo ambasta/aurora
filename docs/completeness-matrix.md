@@ -46,6 +46,8 @@ Kernel policy, graphical console, display renderer, IOMMU event, protected
 note/snapshot, pin/NVMe/dormant and executable-semantics tests build once in Meson
 and compare golden results; their Python reimplementation oracles, mutant controls
 and receipts are gone.
+Parser grammar cases are data (`tests/compiler/hosted_parser.cases`) checked by
+one driver against a reviewed golden dump instead of hand-built C++ trees.
 Hand-built verifier/emitter IR cases are textual IR data (`tests/compiler/ir`,
 one `aurora-ir-check` driver) instead of 24 C++ fixture translation units; the
 five shape-sweep ABI programs are generated per build by `abi_programs.py`.
