@@ -21,7 +21,7 @@ CXX=g++ meson setup build/gcc16 --backend=ninja -Dlsp=false \
   "-Dbootstrap_compiler=$C0"
 export MESON_BUILD_DIR=build/gcc16
 # Optional quick feedback while developing; merge below includes these tests.
-python3 -B scripts/meson_test.py --suite dev
+meson test -C build/gcc16 --suite dev
 make test
 make test-release  # opt-in: releases and compiler bumps
 ```
@@ -79,35 +79,13 @@ meson test -C build/meson-compiler --list
 ```
 
 `make clean` still preserves configuration.
-The convenience wrapper and `scripts/bootstrap.py hop` default to `nproc` jobs,
-not a fixed per-job memory estimate. `AURORA_BUILD_JOBS` and `AURORA_TEST_JOBS`
-accept `auto` (the default) or positive numeric ceilings, capped at `nproc`;
-bootstrap's `--jobs` accepts the same values. Invalid values or unavailable
-`nproc` fail clearly. Selected counts are printed before work starts.
-To replace inherited fixed settings, use
-`AURORA_BUILD_JOBS=auto AURORA_TEST_JOBS=auto make test`.
-
-For each setup/build/test command they launch, the wrappers check host
-`MemAvailable` and visible finite cgroup-v2 `memory.max - memory.current`
-headroom (including mounted ancestors) before launch and every 250 ms while
-running. Headroom at or below the 2 GiB reserve, missing `MemAvailable`, or
-unreadable visible finite cgroup limits stops the command with an error.
-Each command owns a separate process group. Memory failure, interruption or
-command failure terminates that group, then kills survivors after a bounded
-500 ms grace period and reaps the command. Interrupted/failed runs never count
-as passing tests; inspect retained logs and retry only when resources allow.
-
-This is a best-effort watchdog, not memory containment or a reservation: other
-processes can consume memory between samples, container limits may not all be
-visible, and descendants that leave the process group are not contained.
-No cgroups or host limits are changed. Direct Meson/Ninja commands do not use
-this watchdog; prefer the guarded convenience routes for build/test runs.
-Use `-j "$(nproc)"` / `--num-processes "$(nproc)"` if running Meson directly
-under your own memory watchdog. Existing exclusive tests are unchanged.
-The container wrapper forwards these two controls and `MESON_BUILD_DIR` when set;
-use checkout-relative build paths, since the checkout is mounted at `/workspace`.
-`SANITIZE` and nondefault `CPPFLAGS`/`LDFLAGS` are not silently accepted by the
-convenience route; use explicit configured sanitizer builds/separate focused gates.
+Make targets and `scripts/bootstrap.py hop` run Meson at `nproc` jobs under
+`scripts/watchdog.sh`. It runs the command in its own process group and stops
+the group (TERM, then KILL after two seconds) when MemAvailable falls below
+`AURORA_MEMORY_RESERVE_MIB` (default 2048). It is a best-effort guard, not
+memory containment: other processes can allocate between samples. A stopped run
+fails; it never counts as passing. The container wrapper forwards
+`MESON_BUILD_DIR`, `MESON_TESTTHREADS` and `AURORA_MEMORY_RESERVE_MIB`.
 The obsolete legacy acceptance executor gives a migration error; historical
 receipts remain readable without being reinterpreted as current Meson results.
 
@@ -124,12 +102,11 @@ or rewriting them; all existing negative image controls remain active.
 ```sh
 MESON_BUILD_DIR=build/gcc16 make kernel
 MESON_BUILD_DIR=build/gcc16 make kernel-uefi
-MESON_BUILD_DIR=build/gcc16 python3 -B scripts/meson_test.py \
-  --tests native-bios-image native-uefi-normal-image
+meson test -C build/gcc16 native-bios-image native-uefi-normal-image
 ```
 
-`make` / `make all` builds the Meson compiler once through the BIOS image graph
-and atomically copies it to the compatible `build/aurorac` path. `make kernel`
+`make` / `make all` builds the normal BIOS image and copies the Meson compiler
+to the compatible `build/aurorac` path. `make kernel`
 keeps all outputs isolated; `make compiler` also enters the configured Meson
 graph and retains its documented compatibility compiler output.
 
@@ -257,13 +234,6 @@ build. Full native execution still needs independent final-source review; normal
 BIOS/UEFI smoke, affected fault/recovery profiles, sanitizers and physical hardware
 remain separate gates. Retained receipts/logs remain readable; generated products
 can be losslessly archived with exact mapping after review.
-
-An optional `BOOTSTRAP_COMPILER` requests a different
-pinned selection for Make shortcuts. A different selection refreshes only the
-implicit default build under its existing lock; explicit custom build directories
-require the printed reconfigure command. With no request, the configured
-checkpoint is reused. `container.sh` forwards the path literally, so select a
-container-visible path.
 
 ## Bootstrap stages
 

@@ -342,16 +342,7 @@ def build(mode, directory, label=None):
     selection = directory / ("image-directory-" + label + ".log")
     with (directory / ("build-" + label + ".log")).open("xb") as log:
         transport.run_logged(
-            [
-                sys.executable,
-                "-B",
-                ROOT / "scripts/meson_test.py",
-                "--kernel",
-                "uefi",
-                "--profile",
-                mode,
-                "--print-image-dir",
-            ],
+            [ROOT / "scripts/kernel-image.sh", "uefi", mode],
             selection,
             cwd=ROOT,
             env=os.environ.copy(),

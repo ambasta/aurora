@@ -28,17 +28,15 @@ for Podman, preserving the invoking user's ownership on the checkout mount.
 Docker keeps its explicit `--user UID:GID` selection. Run as the checkout owner;
 the wrapper does not change host ownership or permissions.
 
-The wrapper forwards `MESON_BUILD_DIR`, `AURORA_BUILD_JOBS` and `AURORA_TEST_JOBS`
-when set. Build paths are relative to the checkout inside `/workspace`, for example:
+The wrapper forwards `MESON_BUILD_DIR`, `MESON_TESTTHREADS` and
+`AURORA_MEMORY_RESERVE_MIB` when set. Build paths are relative to the checkout
+inside `/workspace`, for example:
 
 ```sh
-MESON_BUILD_DIR=build/container AURORA_BUILD_JOBS=2 ./scripts/container.sh make test
+MESON_BUILD_DIR=build/container ./scripts/container.sh make test
 ```
 
-The default build refreshes missing old kernel options automatically without
-wiping its files. Explicitly chosen builds keep their configuration; use a fresh
-matching directory or reconfigure them yourself. `make clean` removes products
-and preserves configuration.
+`make clean` removes products and preserves configuration.
 
 ## Advanced native setup
 
@@ -59,10 +57,9 @@ make test                    # native Meson merge suite; does not start QEMU
 make test-exhaustive         # separate whole-space library enumeration
 ```
 
-Use `MESON_BUILD_DIR=build/gcc16` to select a stable configuration.
-`AURORA_BUILD_JOBS` and `AURORA_TEST_JOBS` separately cap compilation and test
-concurrency below the `nproc` default. A running MemAvailable watchdog stops
-owned commands on low memory; see the [watchdog policy and its limits](meson-bootstrap.md).
+Use `MESON_BUILD_DIR=build/gcc16` to select a stable configuration. Builds and
+tests use every core; `scripts/watchdog.sh` stops the command's process group if
+MemAvailable falls below `AURORA_MEMORY_RESERVE_MIB` (default 2048).
 The [Meson guide](meson-bootstrap.md) specifies native targets, setup options,
 profile selection, dependency tracking and merge/release coverage.
 

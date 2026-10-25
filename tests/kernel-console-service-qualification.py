@@ -156,16 +156,7 @@ def restore_normal(work, env, result=None, normal_build=None):
     """Boot the selected isolated normal image and require this attempt's logs."""
     if normal_build is None:
         selected = run_bounded(
-            [
-                sys.executable,
-                "-B",
-                ROOT / "scripts/meson_test.py",
-                "--kernel",
-                "uefi",
-                "--profile",
-                "normal",
-                "--print-image-dir",
-            ],
+            [ROOT / "scripts/kernel-image.sh", "uefi", "normal"],
             env=env,
             timeout=180,
         )

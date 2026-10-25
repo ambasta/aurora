@@ -149,7 +149,7 @@ Use the checks appropriate to the change:
 meson setup build/gcc16 \
   "-Dbootstrap_compiler=$C0"
 export MESON_BUILD_DIR=build/gcc16
-python3 -B scripts/meson_test.py --suite dev  # optional focused feedback
+meson test -C build/gcc16 --suite dev  # optional focused feedback
 make test                    # merge suite, nproc jobs with memory watchdog; no QEMU
 make run && make run-uefi     # normal BIOS/UEFI smokes; also run affected guest families
 # Releases and compiler bumps only:
@@ -168,10 +168,10 @@ normal BIOS/UEFI and affected emulator profiles.
 
 Normal development reuses dependency-tracked compiler and C++ fixture builds.
 Changing source reruns affected build commands; changing toolchain/configuration
-requires another directory. Make is a convenience entrypoint to the same graph,
-with `MESON_BUILD_DIR`, `AURORA_BUILD_JOBS` and `AURORA_TEST_JOBS` controls. Omit
-`MESON_BUILD_DIR` to use `build/meson` (or `build/meson-compiler` for compiler-only
-work), or set it to a fresh or matching configured directory. Explicit
+requires another directory. Make is a convenience entrypoint that runs
+`meson compile`/`meson test` on `MESON_BUILD_DIR` (default `build/meson`) under
+`scripts/watchdog.sh`, which stops the run if MemAvailable falls below
+`AURORA_MEMORY_RESERVE_MIB` (default 2048). Explicit
 historical receipt boundaries remain in the [developer-test contract](docs/developer-test-contract.md).
 Selected artifact identity, a focused pass or registration alone does not establish
 full native, sanitizer, emulator or hardware qualification.

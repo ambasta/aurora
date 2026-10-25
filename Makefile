@@ -8,27 +8,32 @@ export EVENT_TOOL_PREFIX EVENT_BUILD_RECEIPT EVENT_CODE EVENT_VARS EVENT_DATA EV
 export AURORA_BAR_FIRMWARE AURORA_BAR_COVERAGE AURORA_BAR_RECEIPTS AURORA_NVME_RECEIPTS
 export CLEAN_PATHS
 
+# One configured build directory per toolchain (compiler/README.md#source-bootstrap).
+BUILD := $(or $(MESON_BUILD_DIR),build/meson)
+MESON_TEST := scripts/watchdog.sh meson test -C $(BUILD) --print-errorlogs
+
 .PHONY: all compiler kernel kernel-uefi test test-release test-exhaustive
 all:
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --kernel bios --publish-compiler
+	scripts/kernel-image.sh bios normal
+	install -m 755 $(BUILD)/aurorac build/aurorac
 
 compiler:
 	$(MAKE) -C compiler
 
 kernel:
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --kernel bios
+	scripts/kernel-image.sh bios normal
 
 kernel-uefi:
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --kernel uefi
+	scripts/kernel-image.sh uefi normal
 
 test:
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite merge
+	$(MESON_TEST) --suite merge
 
 test-release:
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite release
+	$(MESON_TEST) --suite release
 
 test-exhaustive:
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite exhaustive
+	$(MESON_TEST) --suite exhaustive
 
 .PHONY: help
 help:
@@ -133,11 +138,11 @@ smoke-scheduling:
 
 .PHONY: smoke-uefi
 smoke-uefi:
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite guest-uefi
+	$(MESON_TEST) --suite guest-uefi
 
 .PHONY: smoke-acpi
 smoke-acpi:
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite guest-acpi
+	$(MESON_TEST) --suite guest-acpi
 
 .PHONY: smoke-division
 smoke-division:
@@ -145,7 +150,7 @@ smoke-division:
 
 .PHONY: smoke-pci
 smoke-pci:
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite guest-pci
+	$(MESON_TEST) --suite guest-pci
 
 .PHONY: smoke-unsigned
 smoke-unsigned:
@@ -153,27 +158,27 @@ smoke-unsigned:
 
 .PHONY: smoke-uefi-runtime
 smoke-uefi-runtime:
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite guest-runtime
+	$(MESON_TEST) --suite guest-runtime
 
 .PHONY: smoke-uefi-ipc
 smoke-uefi-ipc:
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite guest-ipc
+	$(MESON_TEST) --suite guest-ipc
 
 .PHONY: smoke-uefi-budget
 smoke-uefi-budget:
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite guest-budget
+	$(MESON_TEST) --suite guest-budget
 
 .PHONY: smoke-uefi-dispatch
 smoke-uefi-dispatch:
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite guest-dispatch
+	$(MESON_TEST) --suite guest-dispatch
 
 .PHONY: smoke-uefi-user-phases
 smoke-uefi-user-phases:
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite guest-user-phases
+	$(MESON_TEST) --suite guest-user-phases
 
 .PHONY: smoke-all
 smoke-all:
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite guest
+	$(MESON_TEST) --suite guest
 	./scripts/kernel-run.sh ivrs --smoke
 	./scripts/kernel-run.sh bar --smoke
 	./scripts/kernel-protection-smoke.sh
@@ -191,7 +196,7 @@ test-storage-model:
 
 .PHONY: test-nvme-queues
 test-nvme-queues:
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --tests kernel-nvme-queues kernel-nvme-queues-generation-3 kernel-nvme-queues-api kernel-compile-fail
+	$(MESON_TEST) kernel-nvme-queues kernel-nvme-queues-generation-3 kernel-nvme-queues-api kernel-compile-fail
 
 .PHONY: smoke-nvme-prepare
 smoke-nvme-prepare:
@@ -214,20 +219,20 @@ smoke-uefi-ivrs:
 
 .PHONY: test-pin-ledger
 test-pin-ledger:
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --tests kernel-pin-ledger kernel-pin-ledger-generation-3 kernel-pin-api kernel-compile-fail
+	$(MESON_TEST) kernel-pin-ledger kernel-pin-ledger-generation-3 kernel-pin-api kernel-compile-fail
 
 .PHONY: smoke-uefi-pins
 smoke-uefi-pins:
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite guest-pins
+	$(MESON_TEST) --suite guest-pins
 
 .PHONY: test-dormant-tables
 test-dormant-tables:
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --tests kernel-dormant-tables kernel-dormant-decoder kernel-dormant-oracle \
+	$(MESON_TEST) kernel-dormant-tables kernel-dormant-decoder kernel-dormant-oracle \
 	    kernel-dormant-generation kernel-dormant-api kernel-iommu-oracle kernel-iommu-event-completion kernel-compile-fail
 
 .PHONY: smoke-uefi-tables
 smoke-uefi-tables:
-	python3 -B scripts/meson_test.py --repo-root "$(abspath .)" --suite guest-tables
+	$(MESON_TEST) --suite guest-tables
 
 .PHONY: test-boot-capacity
 test-boot-capacity:
