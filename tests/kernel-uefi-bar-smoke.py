@@ -28,10 +28,7 @@ MODES = (
 CLEAN = ("bar-read", "bar-prepare", "bar-write", "bar-revoked", "bar-alias")
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from kernel_layout import LAYOUT  # noqa: E402
-import kernel_profiles  # noqa: E402
 
-# Cases that boot bar-fixture and read its selector; state/capture/prepare do not.
-FIXTURE_MODES = tuple(mode for mode, (image, _) in kernel_profiles.FIXTURE_MODES.items() if image == "bar-fixture")
 READS = ((0, 8), (8, 4), (0x14, 4), (0x1C, 4), (0x24, 4), (0x28, 8), (0x30, 8))
 WINDOW = 0xFFFF800000001000
 CAP = 18023332293183487
@@ -41,9 +38,14 @@ SUFFIX = ["AURORA_UEFI_LANGUAGE_OK: value=42", "AURORA_UEFI_OK"]
 DEC = r"(0|[1-9][0-9]*)"
 
 
-def protocol_lines(text):
-    """Ignore firmware preamble only; never silently discard an Aurora record."""
+def protocol_lines(text, mode=None):
+    """Ignore firmware preamble only; never silently discard an Aurora record.
+
+    A guest run of `mode` must carry its platform-fixture row right after loader entry; the echo is dropped.
+    """
     need(isinstance(text, str) and text.endswith("\n"), "Truncated serial log")
+    if mode is not None:
+        text = pci.acpi.loader_selection(text, mode)
     lines = text.replace("\r\n", "\n").split("\n")[:-1]
     positions = [i for i, line in enumerate(lines) if line == "AURORA_UEFI_ENTRY"]
     need(len(positions) == 1, "Missing/duplicate exact UEFI entry")
@@ -148,20 +150,9 @@ def fixture_rows(command):
 def validate(status, serial, mode, payload=None):
     need(mode in MODES, "Unknown BAR mode")
     need(status == (33 if mode in ("bar-read", "bar-prepare") else 35), "Wrong emulator exit status")
-    lines = protocol_lines(serial)
-    # bar-fixture cases read their selector after ACPI closure, before PCI.
-    marker = "AURORA_FIXTURE_READY"
-    need(lines.count(marker) == (1 if mode in FIXTURE_MODES else 0), "Exact BAR fixture readiness")
-    if mode in FIXTURE_MODES:
-        at = lines.index(marker)
-        need(
-            at > 0
-            and lines[at - 1].startswith("AURORA_ACPI_WINDOW_CLOSED:")
-            and at + 1 < len(lines)
-            and lines[at + 1].startswith("AURORA_PCI_APERTURE:"),
-            "BAR fixture admission phase",
-        )
-        lines.remove(marker)
+    # Every BAR mode is a platform-fixture row, echoed right after loader entry.
+    lines = protocol_lines(serial, mode)
+    need("AURORA_FIXTURE_READY" not in lines, "Unexpected serial fixture selector")
     command = 2 if mode in CLEAN else 7
     descriptor_count = 0 if mode == "bar-state" else 2
     need(
@@ -288,7 +279,7 @@ def validate(status, serial, mode, payload=None):
             and 0 < extent <= LAYOUT.kernel_payload_limit
             and type(probe) is int
             and 0 <= probe < extent
-            # The shared bar-fixture image links both fault sites, distinctly.
+            # The shared platform-fixture image links both fault sites, distinctly.
             and set(faults) == {"bar-write", "bar-revoked"}
             and len(set(faults.values())) == 2,
             "Missing/invalid exact linked probe metadata",

@@ -1,26 +1,13 @@
 #include "pci.hpp"
-#if defined(AURORA_UEFI_NVME_PREPARE) &&                                                                               \
-    (!defined(AURORA_UEFI_ACPI) || !defined(AURORA_UEFI_PCI) || !defined(AURORA_UEFI_BAR_CAPTURE) ||                   \
-     !defined(AURORA_UEFI_BAR_EDK2) || defined(AURORA_UEFI_RUNTIME) || defined(AURORA_UEFI_IVRS) ||                    \
-     defined(AURORA_UEFI_TABLES))
-#error "NVMe preparation requires the standalone BAR profile"
-#endif
-#if defined(AURORA_PCI_FIXTURE) &&                                                                                     \
-    (!defined(AURORA_UEFI_ACPI) || !defined(AURORA_UEFI_PCI) || defined(AURORA_UEFI_RUNTIME) ||                        \
-     defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT))
-#error "PCI fixture requires the standalone ACPI/PCI profile"
-#endif
-#if defined(AURORA_IVRS_FIXTURE) && (!defined(AURORA_UEFI_IVRS) || !defined(AURORA_UEFI_PCI) ||                        \
-                                     !defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_PCI_FIXTURE))
-#error "IVRS fault fixture requires its explicit cold observation profile"
-#endif
-#if defined(AURORA_BAR_FIXTURE) &&                                                                                     \
-    (!defined(AURORA_UEFI_BAR_CAPTURE) || !defined(AURORA_UEFI_BAR_EDK2) || defined(AURORA_UEFI_IVRS) ||               \
-     defined(AURORA_UEFI_NVME_PREPARE) || defined(AURORA_PCI_FIXTURE))
-#error "BAR fixture requires the standalone read-only BAR profile"
-#endif
-#if defined(AURORA_UEFI_IVRS) && !defined(AURORA_IVRS_FIXTURE)
-#error "IVRS read profiles are boot-selected cases of the IVRS fixture image"
+// BAR capture, NVMe preparation and IVRS observation are boot-selected rows of
+// the one platform test image, which composes no runtime or other device profile.
+#if (defined(AURORA_PLATFORM_FIXTURE) || defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_NVME_PREPARE) ||      \
+     defined(AURORA_UEFI_IVRS)) &&                                                                                     \
+    (!defined(AURORA_PLATFORM_FIXTURE) || !defined(AURORA_UEFI_ACPI) || !defined(AURORA_UEFI_PCI) ||                   \
+     !defined(AURORA_UEFI_BAR_CAPTURE) || !defined(AURORA_UEFI_NVME_PREPARE) || !defined(AURORA_UEFI_IVRS) ||          \
+     defined(AURORA_UEFI_RUNTIME) || defined(AURORA_UEFI_TABLES) || defined(AURORA_UEFI_IOMMU_EVENT) ||                \
+     defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_SNAPSHOT) || defined(AURORA_UEFI_CONSOLE))
+#error "BAR, NVMe preparation and IVRS cases are boot-selected rows of the platform fixture image"
 #endif
 #ifdef AURORA_UEFI_PCI
 #include "pci-policy.hpp"
@@ -46,8 +33,9 @@ namespace aurora::uefi {
 namespace {
 using U64 = std::uint64_t;
 using hardware::Serial;
-#if defined(AURORA_PCI_FIXTURE) || defined(AURORA_IVRS_FIXTURE) || defined(AURORA_BAR_FIXTURE)
-#include "fixture-selector.inc"
+#ifdef AURORA_PLATFORM_FIXTURE
+// The admitted row copied from the loader's handoff word, set before any PCI mapping.
+using platform::Fixture;
 Fixture pci_fixture{};
 #endif
 class EcamWindow final {
@@ -110,7 +98,7 @@ public:
         if (!end(*ticket) || first != second)
             return std::nullopt;
         auto result = first;
-#ifdef AURORA_PCI_FIXTURE
+#ifdef AURORA_PLATFORM_FIXTURE
         if (pci_fixture == Fixture::pci_cycle && (Bytes{result}.get(14, 1) & 127) == 1) {
             put(result, 25, (page - Q35Ecam::base) >> 20, 1);
             // Keep the configured subordinate bound: secondary now points at its own parent.
@@ -192,14 +180,70 @@ public:
 #ifdef AURORA_UEFI_IOMMU_EVENT
 #include "event-reader.inc"
 #endif
-#ifdef AURORA_UEFI_BAR_CAPTURE
-#ifdef AURORA_UEFI_NVME_PREPARE
+#ifdef AURORA_PLATFORM_FIXTURE
 #include "nvme-prepare.inc"
-#endif
 #include "bar-reader.inc"
-#ifdef AURORA_UEFI_IVRS
 #include "ivrs-reader.inc"
-#endif
+// The IVRS requester check ends before the BAR reads, so its facts leave the stack.
+[[gnu::noinline]] auto ivrs_covers(U64 arena, const PciInventory &inventory, unsigned bits) -> bool {
+    const auto ivrs_bytes =
+        std::span<const std::byte>{reinterpret_cast<const std::byte *>(arena + 0x60000), Ivrs::maximum_table};
+    const auto ivrs_length = Bytes{ivrs_bytes}.get(4, 4);
+    const auto facts =
+        ivrs_length <= ivrs_bytes.size() ? Ivrs::parse_qemu_10_0_13(ivrs_bytes.first(ivrs_length), bits) : std::nullopt;
+    return facts && facts->matches_inventory(inventory.functions(), 0, 0, 2, 0);
+}
+// bar-state: the early refusal creates no BAR mapping or controller access grant.
+[[gnu::noinline]] auto refuse_bar_admission(const PciInventory &inventory) -> bool {
+    unsigned candidates = 0;
+    for (const auto &function : inventory.functions()) {
+        if (function.vendor != 0x1b36 || function.device_id != 0x10 || function.class_code != 1 ||
+            function.subclass != 8 || function.programming_interface != 2 || function.header_type != 0)
+            continue;
+        ++candidates;
+        Serial::text("AURORA_BAR_ADMISSION: segment=");
+        Serial::number(function.segment);
+        Serial::text(" bus=");
+        Serial::number(function.bus);
+        Serial::text(" device=");
+        Serial::number(function.device);
+        Serial::text(" function=");
+        Serial::number(function.function);
+        Serial::text(" command=");
+        Serial::number(function.command);
+        Serial::text(" grant=0 reason=");
+        if (function.command & 4)
+            Serial::text("bus-master-enabled");
+        else
+            Serial::text("resource-handoff-required");
+        Serial::text("\r\n");
+    }
+    if (candidates != 1)
+        Serial::text("AURORA_BAR_TARGET_REJECTED\r\n");
+    return false;
+}
+// The row's device phase after the published inventory; PCI rows end here.
+[[gnu::noinline]] auto inspect_platform(U64 arena,
+                                        const Bytes &handoff,
+                                        const Q35Ecam &aperture,
+                                        EcamWindow &window,
+                                        const PciInventory &inventory,
+                                        unsigned bits,
+                                        memory::PhysicalPages &pool) -> bool {
+    if (pci_fixture == Fixture::bar_state)
+        return refuse_bar_admission(inventory);
+    if (!platform::capture(pci_fixture))
+        return true;
+    if (!platform::ivrs(pci_fixture))
+        return inspect_bar(arena, handoff, aperture, window, inventory, bits, pool);
+    if (!ivrs_covers(arena, inventory, bits)) {
+        Serial::text("AURORA_IVRS_REJECTED: reason=requester-coverage\r\n");
+        return false;
+    }
+    if (!inspect_bar(arena, handoff, aperture, window, inventory, bits, pool))
+        return false;
+    return inspect_ivrs(arena, handoff, aperture, window, inventory, bits);
+}
 #endif
 } // namespace
 auto discover_pci(U64 arena,
@@ -207,25 +251,9 @@ auto discover_pci(U64 arena,
                   std::span<const std::byte> source,
                   unsigned bits,
                   [[maybe_unused]] memory::PhysicalPages &pool) -> bool {
-#ifdef AURORA_PCI_FIXTURE
-    // ACPI has closed its window before this call. Admit the selector before
-    // parsing or acquiring any PCI mapping; no normal image contains this path.
-    const auto selected = read_fixture(Fixture::pci_baseline, Fixture::pci_revoked);
-    if (!selected)
-        return false;
-    pci_fixture = *selected;
-#endif
-#ifdef AURORA_IVRS_FIXTURE
-    const auto selected = read_fixture(Fixture::ivrs_write, Fixture::ivrs_read);
-    if (!selected)
-        return false;
-    pci_fixture = *selected;
-#endif
-#ifdef AURORA_BAR_FIXTURE
-    const auto selected = read_fixture(Fixture::bar_read, Fixture::bar_alias);
-    if (!selected)
-        return false;
-    pci_fixture = *selected;
+#ifdef AURORA_PLATFORM_FIXTURE
+    // ACPI has closed its window before this call; the row was admitted at handoff.
+    pci_fixture = platform::row(handoff.get(Handoff::fixture_offset));
 #endif
     // The source is an owned, consistent ACPI snapshot. No firmware pointer escapes.
     std::array<std::byte, 108> storage{};
@@ -234,7 +262,7 @@ auto discover_pci(U64 arena,
     for (std::size_t i = 0; i < source.size(); ++i)
         storage[i] = source[i];
     auto table = std::span<std::byte>{storage}.first(source.size());
-#ifdef AURORA_PCI_FIXTURE
+#ifdef AURORA_PLATFORM_FIXTURE
     if (pci_fixture == Fixture::pci_checksum)
         table[9] ^= std::byte{1};
 #endif
@@ -263,7 +291,7 @@ auto discover_pci(U64 arena,
     Serial::text(" bytes=");
     Serial::number(Q35Ecam::bytes);
     Serial::text(" segment=0 first=0 last=255\r\n");
-#ifdef AURORA_PCI_FIXTURE
+#ifdef AURORA_PLATFORM_FIXTURE
     if (pci_fixture == Fixture::pci_write)
         return window.probe_write();
     if (pci_fixture == Fixture::pci_revoked) {
@@ -322,49 +350,8 @@ auto discover_pci(U64 arena,
     Serial::text("\r\n");
 #ifdef AURORA_UEFI_IOMMU_EVENT
     return inspect_event(arena, handoff, *aperture, window, *inventory, bits);
-#elif defined(AURORA_UEFI_IVRS)
-    const auto ivrs_bytes =
-        std::span<const std::byte>{reinterpret_cast<const std::byte *>(arena + 0x60000), Ivrs::maximum_table};
-    const auto ivrs_length = Bytes{ivrs_bytes}.get(4, 4);
-    const auto facts =
-        ivrs_length <= ivrs_bytes.size() ? Ivrs::parse_qemu_10_0_13(ivrs_bytes.first(ivrs_length), bits) : std::nullopt;
-    if (!facts || !facts->matches_inventory(inventory->functions(), 0, 0, 2, 0)) {
-        Serial::text("AURORA_IVRS_REJECTED: reason=requester-coverage\r\n");
-        return false;
-    }
-    if (!inspect_bar(arena, handoff, *aperture, window, *inventory, bits, pool))
-        return false;
-    return inspect_ivrs(arena, handoff, *aperture, window, *inventory, bits);
-#elif defined(AURORA_UEFI_BAR_CAPTURE)
-    return inspect_bar(arena, handoff, *aperture, window, *inventory, bits, pool);
-#elif defined(AURORA_UEFI_BAR_ADMISSION)
-    unsigned candidates = 0;
-    for (const auto &function : inventory->functions()) {
-        if (function.vendor != 0x1b36 || function.device_id != 0x10 || function.class_code != 1 ||
-            function.subclass != 8 || function.programming_interface != 2 || function.header_type != 0)
-            continue;
-        ++candidates;
-        Serial::text("AURORA_BAR_ADMISSION: segment=");
-        Serial::number(function.segment);
-        Serial::text(" bus=");
-        Serial::number(function.bus);
-        Serial::text(" device=");
-        Serial::number(function.device);
-        Serial::text(" function=");
-        Serial::number(function.function);
-        Serial::text(" command=");
-        Serial::number(function.command);
-        // This early refusal creates no BAR mapping or controller access grant.
-        Serial::text(" grant=0 reason=");
-        if (function.command & 4)
-            Serial::text("bus-master-enabled");
-        else
-            Serial::text("resource-handoff-required");
-        Serial::text("\r\n");
-    }
-    if (candidates != 1)
-        Serial::text("AURORA_BAR_TARGET_REJECTED\r\n");
-    return false;
+#elif defined(AURORA_PLATFORM_FIXTURE)
+    return inspect_platform(arena, handoff, *aperture, window, *inventory, bits, pool);
 #else
     return true;
 #endif

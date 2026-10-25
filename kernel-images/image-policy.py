@@ -24,7 +24,7 @@ RULES = [
         ],
     },
     {
-        "profiles": ["uefi/early-fixture"],
+        "profiles": ["uefi/platform-fixture"],
         "callbacks": ["payload_main(="],
     },
     {

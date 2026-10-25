@@ -16,25 +16,17 @@ from kernel_layout import LAYOUT  # noqa: E402
 import kernel_profiles  # noqa: E402
 
 SUCCESS = ("pci", "pci-devices", "pci-bridge")
-# Guest runs of every PCI mode, the successful baseline and its variants included, boot pci-fixture.
-SELECTED = kernel_profiles.selected_modes("pci-fixture")
-MODES = SUCCESS + kernel_profiles.fixture_cases("pci-fixture")
+# Guest runs of every PCI mode, the successful baseline and its variants included, boot platform-fixture.
+SELECTED = kernel_profiles.selected_modes("platform-fixture", "pci_")
+MODES = SUCCESS + kernel_profiles.fixture_cases("platform-fixture", "pci_")
 SUFFIX = "AURORA_UEFI_LANGUAGE_OK: value=42\nAURORA_UEFI_OK\n"
 
 
 def validate(status, text, mode, selected=None):
-    """`selected` marks a guest run's own PCI selector; reused transcript prefixes carry none."""
+    """`selected` marks a guest run's own loader selector; reused transcript prefixes carry none."""
     need(mode in MODES, "Unknown PCI mode")
-    marker = "AURORA_FIXTURE_READY\n"
     selected = mode not in SUCCESS if selected is None else selected
-    need(text.count(marker) == int(selected), "Exact PCI fixture selector readiness")
-    if selected:
-        need(text.index("AURORA_ACPI_WINDOW_CLOSED:") < text.index(marker), "Selector admission phase")
-        if "AURORA_UEFI_PAYLOAD_FAIL:" in text:
-            need(text.index(marker) < text.index("AURORA_UEFI_PAYLOAD_FAIL:"), "Selector admission phase")
-        if "AURORA_PCI_APERTURE:" in text:
-            need(text.index(marker) < text.index("AURORA_PCI_APERTURE:"), "PCI mapping preceded selector")
-        text = text.replace(marker, "", 1)
+    text = acpi.loader_selection(text, mode, selected)
 
     if mode in SUCCESS:
         acpi.validate(status, text, "acpi")

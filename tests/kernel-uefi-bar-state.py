@@ -12,6 +12,8 @@ spec.loader.exec_module(pci)
 def validate(status, text):
     if status != 35:
         raise ValueError("Expected fail-closed admission exit")
+    # The platform-fixture row is echoed right after loader entry; the PCI prefix carries no selector.
+    text = pci.acpi.loader_selection(text, "bar-state")
     lines = text.splitlines()
     indices = [i for i, line in enumerate(lines) if line.startswith("AURORA_BAR_ADMISSION:")]
     if len(indices) != 1:

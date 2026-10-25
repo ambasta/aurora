@@ -3,15 +3,14 @@
 // injected fault, conformance capture or diagnostic probe is compiled into its
 // loader or payload. Test images keep those cases (see runtime-fixtures.inc).
 #ifdef AURORA_PRODUCTION
-#if defined(AURORA_EARLY_FIXTURE) || defined(AURORA_RUNTIME_FIXTURE) || defined(AURORA_RUNTIME_CONTROL_FIXTURE) ||     \
-    defined(AURORA_ACPI_FIXTURE) || defined(AURORA_PCI_FIXTURE) || defined(AURORA_IVRS_FIXTURE) ||                     \
-    defined(AURORA_BAR_FIXTURE) || defined(AURORA_IPC_FIXTURE) || defined(AURORA_BUDGET_FIXTURE) ||                    \
-    defined(AURORA_DISPATCH_FIXTURE) || defined(AURORA_USER_FIXTURE) || defined(AURORA_PROGRAM_FIXTURE) ||             \
-    defined(AURORA_SNAPSHOT_FIXTURE) || defined(AURORA_PIN_FIXTURE) || defined(AURORA_TABLE_FIXTURE) ||                \
-    defined(AURORA_SCRATCHPAD_FIXTURE) || defined(AURORA_CONSOLE_SERVICE_FIXTURE) ||                                   \
-    defined(AURORA_UEFI_GRAPHICAL_FIXTURE) || defined(AURORA_UEFI_GRAPHICAL_CAPTURE) ||                                \
-    defined(AURORA_UEFI_FRAMEBUFFER_FIXTURE) || defined(AURORA_UEFI_FRAMEBUFFER_CAPTURE) ||                            \
-    defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_BAR_EDK2) || defined(AURORA_UEFI_BAR_ADMISSION) ||         \
+#if defined(AURORA_PLATFORM_FIXTURE) || defined(AURORA_RUNTIME_FIXTURE) || defined(AURORA_RUNTIME_CONTROL_FIXTURE) ||  \
+                                                                                                                       \
+    defined(AURORA_IPC_FIXTURE) || defined(AURORA_BUDGET_FIXTURE) || defined(AURORA_DISPATCH_FIXTURE) ||               \
+    defined(AURORA_USER_FIXTURE) || defined(AURORA_PROGRAM_FIXTURE) || defined(AURORA_SNAPSHOT_FIXTURE) ||             \
+    defined(AURORA_PIN_FIXTURE) || defined(AURORA_TABLE_FIXTURE) || defined(AURORA_SCRATCHPAD_FIXTURE) ||              \
+    defined(AURORA_CONSOLE_SERVICE_FIXTURE) || defined(AURORA_UEFI_GRAPHICAL_FIXTURE) ||                               \
+    defined(AURORA_UEFI_GRAPHICAL_CAPTURE) || defined(AURORA_UEFI_FRAMEBUFFER_FIXTURE) ||                              \
+    defined(AURORA_UEFI_FRAMEBUFFER_CAPTURE) || defined(AURORA_UEFI_BAR_CAPTURE) ||                                    \
     defined(AURORA_UEFI_NVME_PREPARE) || defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT) ||              \
     defined(AURORA_DORMANT_TABLE_TESTING) || defined(AURORA_PIN_LEDGER_TESTING) ||                                     \
     defined(AURORA_KERNEL_BYTES_TESTING) || defined(AURORA_NVME_QUEUE_TESTING) ||                                      \

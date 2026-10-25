@@ -1,9 +1,4 @@
 #include "acpi.hpp"
-#if defined(AURORA_ACPI_FIXTURE) &&                                                                                    \
-    (!defined(AURORA_UEFI_ACPI) || defined(AURORA_UEFI_PCI) || defined(AURORA_UEFI_RUNTIME) ||                         \
-     defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_ACPI_DUPLICATE_ROOT))
-#error "ACPI fixture requires the standalone payload ACPI profile"
-#endif
 #include "acpi-policy.hpp"
 #include "tables.hpp"
 #if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
@@ -33,9 +28,6 @@ auto discovered_topology() -> const std::optional<Topology> & {
 #endif
 namespace {
 using hardware::Serial;
-#ifdef AURORA_ACPI_FIXTURE
-#include "fixture-selector.inc"
-#endif
 using U64 = std::uint64_t;
 auto bytes(U64 base, std::size_t size) -> std::span<std::byte> {
     return {reinterpret_cast<std::byte *>(base), size};
@@ -140,22 +132,20 @@ prepare_table_acpi(U64 arena, const Bytes &handoff, unsigned &copied_bits, std::
 #elif defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
 [[gnu::noinline]] auto
 prepare_ivrs_acpi(U64 arena, const Bytes &handoff, unsigned &copied_bits, std::size_t &copied_mcfg_size) -> bool {
-#elif defined(AURORA_UEFI_BAR_CAPTURE)
-[[gnu::noinline]] auto
-prepare_bar_acpi(U64 arena, const Bytes &handoff, unsigned &copied_bits, std::size_t &copied_mcfg_size) -> bool {
-#elif defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_SNAPSHOT) || defined(AURORA_UEFI_RUNTIME)
+#elif defined(AURORA_UEFI_PCI)
 [[gnu::noinline]] auto
 prepare_service_acpi(U64 arena, const Bytes &handoff, unsigned &copied_bits, std::size_t &copied_mcfg_size) -> bool {
 #else
 auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::PhysicalPages &pool) -> bool {
 #endif
-#ifdef AURORA_ACPI_FIXTURE
-    // Payload admission precedes every firmware window acquisition. Loader-time
-    // root rejection deliberately remains a separate, earlier fixture.
-    const auto selected = read_fixture(Fixture::acpi_baseline, Fixture::acpi_revoked);
-    if (!selected)
-        return false;
-    const auto fixture = *selected;
+#ifdef AURORA_PLATFORM_FIXTURE
+    // The loader admitted and copied the fw_cfg row before any firmware window
+    // exists. Only PCI rows need MCFG; only IVRS rows need IVRS and the q35 LAPIC.
+    using platform::Fixture;
+    const auto fixture = platform::row(handoff.get(Handoff::fixture_offset));
+    const bool pci_row = platform::pci(fixture), ivrs_row = platform::ivrs(fixture);
+#else
+    [[maybe_unused]] constexpr bool pci_row = true, ivrs_row = true;
 #endif
 #if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
     copied_topology.reset();
@@ -181,7 +171,7 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
         return false;
     ReadWindow window{ranges, slot, physical_bits};
     auto source = handoff.get(112);
-#ifdef AURORA_ACPI_FIXTURE
+#ifdef AURORA_PLATFORM_FIXTURE
     if (fixture == Fixture::acpi_bad_source)
         source = 0xfec00000;
     if (fixture == Fixture::acpi_write)
@@ -198,7 +188,7 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
         return false;
     if (!Acpi::same_header(rsdp, rsdp_header))
         return false;
-#ifdef AURORA_ACPI_FIXTURE
+#ifdef AURORA_PLATFORM_FIXTURE
     if (fixture == Fixture::acpi_revoked) {
         if (!window.closed())
             return false;
@@ -231,14 +221,14 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
         if (length < 36 || length > Acpi::maximum_table || !ranges.readable(candidate, length))
             return false;
 #ifdef AURORA_UEFI_PCI
-        if (Acpi::signature(header, "MCFG")) {
+        if (pci_row && Acpi::signature(header, "MCFG")) {
             if (mcfg_address)
                 return false;
             mcfg_address = candidate;
         }
 #endif
 #if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
-        if (Acpi::signature(header, "IVRS")) {
+        if (ivrs_row && Acpi::signature(header, "IVRS")) {
             if (ivrs_address)
                 return false;
             ivrs_address = candidate;
@@ -255,7 +245,7 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
     auto madt = window.table(madt_address, bytes(arena + 0x70000, Acpi::maximum_table), "APIC");
     if (!madt)
         return false;
-#ifdef AURORA_ACPI_FIXTURE
+#ifdef AURORA_PLATFORM_FIXTURE
     auto altered = bytes(arena + 0x70000, madt->size());
     if (fixture == Fixture::acpi_checksum)
         altered[9] ^= std::byte{1};
@@ -281,7 +271,7 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
     if (!topology || !window.closed() || !tables.verify(arena, handoff))
         return false;
 #if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
-    if (topology->apic() != 0xfee00000)
+    if (ivrs_row && topology->apic() != 0xfee00000)
         return false; // Explicit q35 profile; no unverified APIC alias.
 #endif
     unsigned enabled = 0, capable = 0;
@@ -310,67 +300,64 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
     Serial::number(topology->apic());
     Serial::text("\r\n");
 #ifdef AURORA_UEFI_PCI
-    if (!mcfg_address)
-        return false;
-    auto mcfg = window.table(mcfg_address, bytes(arena + 0x70000, Acpi::maximum_table), "MCFG");
-    if (!mcfg || !window.closed() || !tables.verify(arena, handoff))
-        return false;
+    std::size_t mcfg_size = 0;
+    if (pci_row) {
+        if (!mcfg_address)
+            return false;
+        auto mcfg = window.table(mcfg_address, bytes(arena + 0x70000, Acpi::maximum_table), "MCFG");
+        if (!mcfg || !window.closed() || !tables.verify(arena, handoff))
+            return false;
+        mcfg_size = mcfg->size();
+    }
 #endif
 #if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
-    if (!ivrs_address) {
-        Serial::text("AURORA_IVRS_REJECTED: reason=missing-table\r\n");
-        return false;
-    }
-    auto ivrs = window.table(ivrs_address, bytes(arena + 0x60000, Acpi::maximum_table), "IVRS");
-    if (!ivrs || !window.closed() || !tables.verify(arena, handoff))
-        return false;
-    Serial::text("AURORA_IVRS_RAW: bytes=");
-    Serial::number(ivrs->size());
-    Serial::text(" data=");
-    constexpr std::string_view digits = "0123456789abcdef";
-    for (auto value : *ivrs) {
-        const auto byte = std::to_integer<unsigned>(value);
-        Serial::put(digits[byte >> 4]);
-        Serial::put(digits[byte & 15]);
-    }
-    Serial::text("\r\n");
+    if (ivrs_row) {
+        if (!ivrs_address) {
+            Serial::text("AURORA_IVRS_REJECTED: reason=missing-table\r\n");
+            return false;
+        }
+        auto ivrs = window.table(ivrs_address, bytes(arena + 0x60000, Acpi::maximum_table), "IVRS");
+        if (!ivrs || !window.closed() || !tables.verify(arena, handoff))
+            return false;
+        Serial::text("AURORA_IVRS_RAW: bytes=");
+        Serial::number(ivrs->size());
+        Serial::text(" data=");
+        constexpr std::string_view digits = "0123456789abcdef";
+        for (auto value : *ivrs) {
+            const auto byte = std::to_integer<unsigned>(value);
+            Serial::put(digits[byte >> 4]);
+            Serial::put(digits[byte & 15]);
+        }
+        Serial::text("\r\n");
 #ifdef AURORA_UEFI_IOMMU_EVENT
-    const auto facts = read_event_ivrs(*ivrs, physical_bits);
+        const auto facts = read_event_ivrs(*ivrs, physical_bits);
 #else
-    const auto facts = Ivrs::parse_qemu_10_0_13(*ivrs, physical_bits);
+        const auto facts = Ivrs::parse_qemu_10_0_13(*ivrs, physical_bits);
 #endif
-    if (!facts) {
-        Serial::text("AURORA_IVRS_REJECTED: reason=table-profile\r\n");
-        return false;
+        if (!facts) {
+            Serial::text("AURORA_IVRS_REJECTED: reason=table-profile\r\n");
+            return false;
+        }
+        Serial::text("AURORA_IVRS_TABLE: units=1 records=2 requesters=");
+        Serial::number(facts->requesters().size());
+        Serial::text(" base=");
+        Serial::number(facts->unit().base());
+        Serial::text(" bytes=16384\r\n");
     }
-    Serial::text("AURORA_IVRS_TABLE: units=1 records=2 requesters=");
-    Serial::number(facts->requesters().size());
-    Serial::text(" base=");
-    Serial::number(facts->unit().base());
-    Serial::text(" bytes=16384\r\n");
 #endif
     Serial::text("AURORA_ACPI_WINDOW_CLOSED: copies=");
     Serial::number(window.copies());
     Serial::text("\r\n");
 #ifdef AURORA_UEFI_PCI
-#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_TABLES) ||                    \
-    defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_SNAPSHOT) ||        \
-    defined(AURORA_UEFI_RUNTIME)
     copied_bits = physical_bits;
-    copied_mcfg_size = mcfg->size();
-#else
-    if (!discover_pci(arena, handoff, *mcfg, physical_bits, pool))
-        return false;
-#endif
+    copied_mcfg_size = mcfg_size;
 #endif
 #if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
     copied_topology.emplace(*topology);
 #endif
     return true;
 }
-#if defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_TABLES) ||                    \
-    defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_SNAPSHOT) ||        \
-    defined(AURORA_UEFI_RUNTIME)
+#ifdef AURORA_UEFI_PCI
 auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::PhysicalPages &pool) -> bool {
     unsigned physical_bits = 0;
     std::size_t mcfg_size = 0;
@@ -380,12 +367,14 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
 #elif defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_IOMMU_EVENT)
     if (!prepare_ivrs_acpi(arena, handoff, physical_bits, mcfg_size))
         return false;
-#elif defined(AURORA_UEFI_BAR_CAPTURE)
-    if (!prepare_bar_acpi(arena, handoff, physical_bits, mcfg_size))
-        return false;
 #else
     if (!prepare_service_acpi(arena, handoff, physical_bits, mcfg_size))
         return false;
+#endif
+#ifdef AURORA_PLATFORM_FIXTURE
+    // Early and ACPI rows end after ACPI discovery, as their ACPI-only images did.
+    if (!platform::pci(platform::row(handoff.get(Handoff::fixture_offset))))
+        return true;
 #endif
     // ACPI parsing/Topology temporaries have ended before PCI scan construction.
     const bool accepted = discover_pci(arena, handoff, bytes(arena + 0x70000, mcfg_size), physical_bits, pool);

@@ -19,7 +19,7 @@ import sys
 import tempfile
 
 import qemu_transport as transport
-from kernel_profiles import FIXTURE_MODES, canonical_profile
+from kernel_profiles import canonical_profile, fw_cfg_fixture
 
 ROOT = Path(__file__).resolve().parent.parent
 FAMILIES = {
@@ -97,14 +97,15 @@ def run(mode, out, build=None):
             "-device",
             "isa-debugcon,iobase=0x402,chardev=firmware",
         ],
-        extra=["-device", "amd-iommu,pt=off,intremap=off,device-iotlb=off,xtsup=off"]
-        if family == "ivrs" and mode != "ivrs-missing"
-        else [],
+        # Every mode is a platform-fixture row, read from fw_cfg at loader entry.
+        extra=(
+            ["-device", "amd-iommu,pt=off,intremap=off,device-iotlb=off,xtsup=off"]
+            if family == "ivrs" and mode != "ivrs-missing"
+            else []
+        )
+        + fw_cfg_fixture(mode),
     )
-    startup = FIXTURE_MODES.get(mode)
-    status = transport.run_logged(
-        argv, out / "serial.log", cwd=ROOT, env=env, timeout=60, startup_byte=startup[1] if startup else None
-    )
+    status = transport.run_logged(argv, out / "serial.log", cwd=ROOT, env=env, timeout=60)
     serial = (out / "serial.log").read_text()
     print(serial, end="")
     metadata = json.loads((build / f"{family}-metadata.json").read_text())

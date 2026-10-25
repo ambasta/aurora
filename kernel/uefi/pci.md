@@ -103,11 +103,11 @@ setup documented in [the UEFI guide](README.md).
 - `pci-write`: supervisor write protection, page fault 14/error 3 at the window.
 - `pci-revoked`: recently unmapped read, page fault 14/error 0 at the window.
 
-Every PCI mode shares `pci-fixture`, with selectors from the fixture catalog;
-`pci` (and its `pci-devices`/`pci-bridge` machine variants) is the baseline
-selector, which runs the ordinary inventory. The existing serial readiness
-transport sends the selector after ACPI window closure and before MCFG parsing
-or PCI mapping. An out-of-family selector fails closed. Existing 30-second guest deadlines
+Every PCI mode is a row of `platform-fixture`, with selectors from the fixture
+catalog; `pci` (and its `pci-devices`/`pci-bridge` machine variants) is the
+baseline row, which runs the ordinary inventory. The row arrives through fw_cfg
+at loader entry, before ACPI window acquisition, MCFG parsing or PCI mapping, and
+an out-of-image row fails closed there. Existing 30-second guest deadlines
 and original emulator clock selection are unchanged.
 
 All successful inventory gates continue to compiled language result 42. All

@@ -36,10 +36,11 @@ lifetime ticket, and rechecks the closed page-table tree. The stale window is
 actually faulted in an emulator gate. Another gate verifies a write faults before
 any device write. No writable or differently cached alias is admitted.
 
-The read, inherited, write, revoked and alias gates boot one `bar-fixture` image
-that reads the serial selector after ACPI closure, before PCI discovery; state,
-capture and NVMe preparation remain distinct compositions. Write, revoked and
-alias used to be separate images. The fixture links both exact fault
+The state, capture, read, inherited, write, revoked, alias and NVMe preparation
+gates are rows of the one `platform-fixture` image, selected through fw_cfg at
+loader entry. Only capture and later rows capture the firmware BAR record, only
+capture keeps the generic resource parser, and only state prints the admission
+refusal. Write, revoked and alias used to be separate images. The fixture links both exact fault
 instructions for every case and each gate keeps its own serial, trace and
 provenance oracles; the stock-firmware trace control boots the same image as
 the inherited case.

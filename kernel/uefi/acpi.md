@@ -94,13 +94,13 @@ bytes. The source window never points into these buffers.
 
 ## Evidence gates and limits
 
-Eight emulator scenarios now use two images: payload `acpi-fixture`, whose
-baseline selector runs ordinary `acpi` (and `acpi-two`), and loader-time
-`acpi-duplicate-root`, a case of the shared `early-fixture` image selected
-through fw_cfg. The fault selectors preserve disabled-record success, checksum failure propagation,
-bad-source rejection and real write/revoked page faults. Payload selector
-admission happens before any firmware window acquisition. The loader rejection
-still happens before ExitBootServices and never reads a serial selector.
+Eight emulator scenarios are rows of the one `platform-fixture` image, selected
+through fw_cfg at loader entry: the baseline row runs ordinary `acpi` (and
+`acpi-two`), and loader-time `acpi-duplicate-root` rejects before
+ExitBootServices. ACPI rows require no MCFG and end after ACPI discovery, as
+their ACPI-only image did. The fault selectors preserve disabled-record success, checksum failure propagation,
+bad-source rejection and real write/revoked page faults. The row is admitted in
+the loader, before any firmware window acquisition; nothing reads a serial selector.
 Ordinary and production images contain no selector or injection authority.
 
 Pure mutations moved to existing hosted assertions: bad-entry uses the MADT

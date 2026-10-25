@@ -32,9 +32,9 @@ FIXTURE_MODES = {
     mode: (image, value) for name, (mode, image, value) in FIXTURES.items() if not name.startswith("bios_")
 }
 # These images read their selector from a QEMU fw_cfg file instead of a serial
-# byte: early-fixture injects before ExitBootServices, while firmware owns the
-# UART, and the Event harness writes serial output to a file.
-FW_CFG_IMAGES = frozenset(("early-fixture", "iommu-event"))
+# byte: platform-fixture's loader cases inject before ExitBootServices, while
+# firmware owns the UART, and the Event harness writes serial output to a file.
+FW_CFG_IMAGES = frozenset(("platform-fixture", "iommu-event"))
 BIOS_FIXTURE_MODES = {
     mode: (image, value) for name, (mode, image, value) in FIXTURES.items() if name.startswith("bios_")
 }
@@ -144,39 +144,6 @@ UEFI_FAMILIES = [
         [
             "-DAURORA_UEFI_ACPI",
             "-DAURORA_UEFI_PCI",
-            "-DAURORA_UEFI_BAR_CAPTURE",
-            "-DAURORA_UEFI_BAR_EDK2",
-            "-DAURORA_UEFI_IVRS",
-        ],
-        {
-            "ivrs-fixture": ["-DAURORA_IVRS_FIXTURE"],
-        },
-    ),
-    (
-        [
-            "-DAURORA_UEFI_ACPI",
-            "-DAURORA_UEFI_PCI",
-            "-DAURORA_UEFI_BAR_CAPTURE",
-            "-DAURORA_UEFI_BAR_EDK2",
-            "-DAURORA_UEFI_NVME_PREPARE",
-        ],
-        {"bar-prepare": []},
-    ),
-    (
-        ["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI", "-DAURORA_UEFI_BAR_CAPTURE", "-DAURORA_UEFI_BAR_EDK2"],
-        {
-            "bar-fixture": ["-DAURORA_BAR_FIXTURE"],
-        },
-    ),
-    (
-        ["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI", "-DAURORA_UEFI_BAR_ADMISSION", "-DAURORA_UEFI_BAR_CAPTURE"],
-        {"bar-capture": []},
-    ),
-    (["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI", "-DAURORA_UEFI_BAR_ADMISSION"], {"bar-state": []}),
-    (
-        [
-            "-DAURORA_UEFI_ACPI",
-            "-DAURORA_UEFI_PCI",
             "-DAURORA_UEFI_RUNTIME",
             "-DAURORA_UEFI_IPC",
             "-DAURORA_UEFI_SERVICE_BUDGET",
@@ -237,20 +204,18 @@ UEFI_FAMILIES = [
             ],
         },
     ),
+    # Loader handoff, ACPI, PCI, BAR, NVMe-preparation and IVRS cases, selected by
+    # a fw_cfg file read at loader entry.
     (
-        ["-DAURORA_UEFI_ACPI", "-DAURORA_UEFI_PCI"],
-        {
-            "pci-fixture": ["-DAURORA_PCI_FIXTURE"],
-        },
+        [
+            "-DAURORA_UEFI_ACPI",
+            "-DAURORA_UEFI_PCI",
+            "-DAURORA_UEFI_BAR_CAPTURE",
+            "-DAURORA_UEFI_NVME_PREPARE",
+            "-DAURORA_UEFI_IVRS",
+        ],
+        {"platform-fixture": ["-DAURORA_PLATFORM_FIXTURE"]},
     ),
-    (
-        ["-DAURORA_UEFI_ACPI"],
-        {
-            "acpi-fixture": ["-DAURORA_ACPI_FIXTURE"],
-        },
-    ),
-    # Loader and payload handoff faults, selected by a fw_cfg file read at loader entry.
-    (["-DAURORA_UEFI_ACPI", "-DAURORA_EARLY_FIXTURE"], {"early-fixture": []}),
 ]
 
 # BIOS profiles: the smoke image, the interactive console and one test image whose
@@ -733,8 +698,6 @@ UEFI_VARIANTS = {
     "acpi-two": "acpi",
 }
 UEFI_ALIASES = {
-    # Rejected in ACPI discovery, before the fixture selector is read.
-    "ivrs-missing": "ivrs-fixture",
     # The protected program console is the production image's console.
     "program-console": "production",
 }
@@ -744,9 +707,18 @@ UEFI_ALIASES.update({variant: UEFI_ALIASES.get(base, base) for variant, base in 
 BASELINE_MODES = frozenset(mode for name, (mode, _, _) in FIXTURES.items() if name.endswith("_baseline"))
 
 
-def fixture_cases(image):
-    """Fault modes of one fixture image, excluding its baseline selector."""
-    return tuple(mode for mode, (owner, _) in FIXTURE_MODES.items() if owner == image and mode not in BASELINE_MODES)
+def family_modes(image, family=""):
+    """Modes of one fixture image whose row names start with `family` (all rows by default)."""
+    return tuple(
+        mode
+        for name, (mode, owner, _) in FIXTURES.items()
+        if owner == image and name.startswith(family) and not name.startswith("bios_")
+    )
+
+
+def fixture_cases(image, family=""):
+    """Fault modes of one fixture image (or one row family of it), excluding its baseline selector."""
+    return tuple(mode for mode in family_modes(image, family) if mode not in BASELINE_MODES)
 
 
 # The scheduler baseline's machine variants boot bios-fixture with the baseline selector.
@@ -756,9 +728,9 @@ BIOS_ALIASES.update({mode: image for mode, (image, _) in BIOS_FIXTURE_MODES.item
 BIOS_ALIASES.update({variant: BIOS_ALIASES.get(base, base) for variant, base in BIOS_VARIANTS.items()})
 
 
-def selected_modes(image):
-    """Every mode that boots one fixture image with a selector: cases, baseline and its machine variants."""
-    modes = tuple(mode for mode, (owner, _) in FIXTURE_MODES.items() if owner == image)
+def selected_modes(image, family=""):
+    """Every mode booting one fixture image (or row family) with a selector: cases, baseline, machine variants."""
+    modes = family_modes(image, family)
     return modes + tuple(variant for variant, base in UEFI_VARIANTS.items() if base in modes)
 
 
@@ -769,7 +741,7 @@ def serial_fixture_byte(mode):
 
 def fw_cfg_fixture(mode):
     """QEMU arguments carrying a fw_cfg selector; empty for serial-selector and ordinary modes."""
-    image, value = FIXTURE_MODES.get(mode, ("", 0))
+    image, value = FIXTURE_MODES.get(UEFI_VARIANTS.get(mode, mode), ("", 0))
     return ["-fw_cfg", f"name=opt/aurora/fixture,string={value}"] if image in FW_CFG_IMAGES else []
 
 

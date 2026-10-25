@@ -14,26 +14,20 @@ WINDOW = 0xFFFF800000000000
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from kernel_layout import LAYOUT  # noqa: E402
 import kernel_profiles  # noqa: E402
-from kernel_uefi_oracle import early_selection  # noqa: E402
+from kernel_uefi_oracle import loader_selection  # noqa: E402
 
-FIXTURE_MODES = kernel_profiles.fixture_cases("acpi-fixture")
-# Guest runs of the baseline and its two-CPU variant also boot acpi-fixture with a selector.
-SELECTED = kernel_profiles.selected_modes("acpi-fixture")
-MODES = ("acpi-duplicate-root", *SELECTED)
+FIXTURE_MODES = kernel_profiles.fixture_cases("platform-fixture", "acpi_")
+# Guest runs of the baseline and its two-CPU variant also boot platform-fixture with its row.
+SELECTED = ("acpi-duplicate-root", *kernel_profiles.selected_modes("platform-fixture", "acpi_"))
+MODES = SELECTED
 
 
 def validate(status, text, mode, selected=None):
-    """`selected` marks a guest run's own ACPI selector; reused transcript prefixes carry none."""
+    """`selected` marks a guest run's own loader selector; reused transcript prefixes carry none."""
     need(mode in MODES, "Unknown ACPI mode")
-    early_selection(text, mode)
-    marker = "AURORA_FIXTURE_READY\n"
     selected = mode in FIXTURE_MODES if selected is None else selected
-    need(text.count(marker) == int(selected), "Exact ACPI fixture readiness")
-    if selected:
-        need(text.index("AURORA_UEFI_PROTECTION_OK:") < text.index(marker), "ACPI selector before payload protection")
-        later = [text.index(value) for value in ("AURORA_ACPI_", "AURORA_UEFI_PAYLOAD_FAIL:") if value in text]
-        need(later and text.index(marker) < min(later), "ACPI fixture admitted after observation")
-        text = text.replace(marker, "", 1)
+    text = loader_selection(text, mode, selected)
+    need("AURORA_FIXTURE_READY" not in text, "Unexpected serial fixture selector")
     if mode == "acpi-duplicate-root":
         need(
             status == 35

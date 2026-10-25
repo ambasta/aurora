@@ -1,10 +1,7 @@
 // Included inside the PCI adapter namespace. Diagnostic reads are bounded and
 // separate from the inactive-controller receipt; neither enables a device.
-#ifdef AURORA_UEFI_IVRS
-[[gnu::noinline]]
-#endif
-auto inspect_bar(U64 arena, const Bytes &handoff, const Q35Ecam &aperture, EcamWindow &ecam,
-                 const PciInventory &inventory, unsigned bits, [[maybe_unused]] memory::PhysicalPages &pool) -> bool {
+[[gnu::noinline]] auto inspect_bar(U64 arena, const Bytes &handoff, const Q35Ecam &aperture, EcamWindow &ecam,
+                 const PciInventory &inventory, unsigned bits, memory::PhysicalPages &pool) -> bool {
     if (handoff.get(8,4)!=4 || handoff.get(120)!=arena+Handoff::bar_record_offset) return false;
     const auto storage=std::span<const std::byte>{reinterpret_cast<const std::byte*>(handoff.get(120)),4096};
     const Bytes record{storage};
@@ -16,13 +13,10 @@ auto inspect_bar(U64 arena, const Bytes &handoff, const Q35Ecam &aperture, EcamW
     if (!copied || !address) return false;
     const auto current_bytes=ecam.read(*address); if (!current_bytes) return false;
     const auto current=PciBarSnapshot::parse(0,0,2,0,*current_bytes); if (!current) return false;
-#ifdef AURORA_UEFI_BAR_EDK2
-    const auto bar=PciResources::parse_edk2_bar(storage.subspan(512,48),bits);
-    const auto resources=PciResources::parse_edk2_root(storage.subspan(1024,record.get(64)),bits);
-#else
-    const auto bar=PciResources::parse(storage.subspan(512,48),bits);
-    const auto resources=PciResources::parse(storage.subspan(1024,record.get(64)),bits);
-#endif
+    // bar-capture keeps the generic parser, which must refuse the EDK2 producer.
+    const bool edk2=pci_fixture!=Fixture::bar_capture;
+    const auto bar=edk2 ? PciResources::parse_edk2_bar(storage.subspan(512,48),bits) : PciResources::parse(storage.subspan(512,48),bits);
+    const auto resources=edk2 ? PciResources::parse_edk2_root(storage.subspan(1024,record.get(64)),bits) : PciResources::parse(storage.subspan(1024,record.get(64)),bits);
     if (!bar || !resources) { Serial::text("AURORA_BAR_REJECTED: reason=resource-profile\r\n"); return false; }
     const auto reservations=captured.reservations(inventory.functions(),bar->resources()[0],bits,[&](const PciFunction& function) {
         const auto location=aperture.address(function.segment,function.bus,function.device,function.function);
@@ -42,7 +36,6 @@ auto inspect_bar(U64 arena, const Bytes &handoff, const Q35Ecam &aperture, EcamW
     const auto probe=NvmeBarProbe::authorize(*copied,*current,*bar,*resources,0,map,handoff.get(40),arena,0xfee00000,authority,*ticket);
     if (!probe) { static_cast<void>(authority.revoke(*ticket)); Serial::text("AURORA_BAR_REJECTED: reason=resource-admission\r\n"); return false; }
     const auto page=probe->page(authority); if (!page) return false;
-#ifdef AURORA_BAR_FIXTURE
     if (pci_fixture==Fixture::bar_alias) {
     slot[1]=*page|3|8|16|PageTables::nx;
     const bool rejected_alias=!tables.verify(arena,handoff);
@@ -53,7 +46,6 @@ auto inspect_bar(U64 arena, const Bytes &handoff, const Q35Ecam &aperture, EcamW
     }
     return false;
     }
-#endif
     *slot=*page|flags;
     asm volatile("invlpg (%0)"::"r"(window):"memory");
     unsigned reads=0;
@@ -78,15 +70,11 @@ auto inspect_bar(U64 arena, const Bytes &handoff, const Q35Ecam &aperture, EcamW
         Serial::text(" cc="); Serial::number(*cc); Serial::text(" csts="); Serial::number(*csts);
         Serial::text(" aqa="); Serial::number(*aqa); Serial::text(" asq="); Serial::number(*asq); Serial::text(" acq="); Serial::number(*acq); Serial::text("\r\n");
     }
-#ifdef AURORA_BAR_FIXTURE
     if (grant && pci_fixture==Fixture::bar_write) {
         Serial::text("AURORA_BAR_WRITE_PROBE\r\n");
         asm volatile(".global uefi_bar_write_probe\nuefi_bar_write_probe: movl $0,(%%rax)"::"a"(window+8):"memory");
     }
-#endif
-#ifdef AURORA_UEFI_NVME_PREPARE
-    const bool preparation_ok = grant && prepare_nvme_pages(arena, pool, *grant, authority, *after);
-#endif
+    const bool preparation_ok = pci_fixture!=Fixture::bar_prepare || (grant && prepare_nvme_pages(arena, pool, *grant, authority, *after));
     *slot=0;
     asm volatile("invlpg (%0)"::"r"(window):"memory");
     if (!authority.revoke(*ticket) || *slot || probe->page(authority) || !ecam.closed() || !tables.verify(arena,handoff)) return false;
@@ -94,17 +82,13 @@ auto inspect_bar(U64 arena, const Bytes &handoff, const Q35Ecam &aperture, EcamW
     Serial::text("AURORA_BAR_WINDOW_CLOSED: reads="); Serial::number(reads); Serial::text(" config="); Serial::number(ecam.reads()-initial_reads);
     Serial::text(" revoked=1\r\n");
     if (!grant) { Serial::text("AURORA_BAR_REJECTED: reason=inactive-controller-required\r\n"); return false; }
-#ifdef AURORA_UEFI_NVME_PREPARE
     if (!preparation_ok) return false;
-#endif
-#ifdef AURORA_BAR_FIXTURE
     if (pci_fixture==Fixture::bar_revoked) {
     Serial::text("AURORA_BAR_REVOKED_PROBE\r\n");
     U64 ignored; asm volatile(".global uefi_bar_revoked_probe\nuefi_bar_revoked_probe: movl (%%rax),%%eax":"=a"(ignored):"0"(window+8):"memory");
     static_cast<void>(ignored);
     return false;
     }
-#endif
     Serial::text("AURORA_BAR_READ_ONLY_OK\r\n");
     return true;
 }

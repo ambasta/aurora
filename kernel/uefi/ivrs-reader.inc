@@ -1,4 +1,4 @@
-// Included only in the explicitly selected AMD-Vi observation adapter.
+// Included only in the platform fixture image; IVRS rows alone call it.
 [[gnu::noinline]] auto inspect_ivrs(U64 arena,
                                     const Bytes &handoff,
                                     const Q35Ecam &aperture,
@@ -164,7 +164,6 @@
     Serial::text(" status=");
     Serial::number(status);
     Serial::text("\r\n");
-#ifdef AURORA_IVRS_FIXTURE
     if (pci_fixture == Fixture::ivrs_write) {
         const auto page = grant->page(authority, 0);
         if (!page || *slot)
@@ -176,12 +175,10 @@
                      : "memory");
         return false;
     }
-#endif
     if (!authority.revoke(*ticket) || grant->page(authority, 0) || grant->read_address(authority, *after, 0x18, 8) ||
         *slot || !ecam.closed() || !tables.verify(arena, handoff))
         return false;
     Serial::text("AURORA_IVRS_WINDOW_CLOSED: reads=3 pages=2 revoked=1\r\n");
-#ifdef AURORA_IVRS_FIXTURE
     if (pci_fixture == Fixture::ivrs_revoked) {
         Serial::text("AURORA_IVRS_REVOKED_PROBE\r\n");
         U64 ignored;
@@ -192,7 +189,6 @@
         static_cast<void>(ignored);
         return false;
     }
-#endif
     Serial::text("AURORA_IVRS_READ_ONLY_OK\r\n");
     return true;
 }

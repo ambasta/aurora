@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from kernel_layout import LAYOUT  # noqa: E402
-from kernel_profiles import FIXTURE_MODES  # noqa: E402
+from kernel_profiles import FIXTURE_MODES, UEFI_VARIANTS  # noqa: E402
 
 
 def need(value, reason):
@@ -14,25 +14,34 @@ def need(value, reason):
         raise ValueError(reason)
 
 
-def early_selection(text, mode):
-    """The early-fixture loader echoes its fw_cfg selector before any exit attempt."""
-    image, value = FIXTURE_MODES.get(mode, ("", 0))
-    selected = re.findall(r"AURORA_EARLY_FIXTURE: value=(\d+)", text)
-    if image != "early-fixture":
-        need(not selected, "Unexpected early fixture selector")
-        return
-    need(selected == [str(value)], "Wrong early fixture selector")
-    marker = text.index("AURORA_EARLY_FIXTURE:")
+ENTRY_ECHO = re.compile(r"AURORA_UEFI_ENTRY\r?\n(AURORA_FIXTURE_SELECTED: value=(\d+)\r?\n)")
+
+
+def loader_selection(text, mode, selected=True):
+    """platform-fixture's loader echoes its fw_cfg row on the line after loader entry.
+
+    The echo precedes every other record, so no case can inject before its own
+    phase, and must be the mode's row. Returns the transcript without the echo.
+    Other images, and prefixes another oracle reuses (`selected` false), carry none.
+    """
+    image, value = FIXTURE_MODES.get(UEFI_VARIANTS.get(mode, mode), ("", 0))
+    echoes = list(ENTRY_ECHO.finditer(text))
+    if not selected or image != "platform-fixture":
+        need(not echoes, "Unexpected loader fixture selector")
+        return text
     need(
-        text.count("AURORA_UEFI_ENTRY") == 1
-        and text.index("AURORA_UEFI_ENTRY") < marker
-        and all(word not in text[:marker] for word in ("AURORA_UEFI_EXIT_", "AURORA_UEFI_FAIL:")),
-        "Early fixture selected after loader entry",
+        len(echoes) == 1
+        and echoes[0][2] == str(value)
+        and text.count("AURORA_FIXTURE_SELECTED:") == 1
+        and text.count("AURORA_UEFI_ENTRY") == 1
+        and "AURORA_FIXTURE_READY" not in text,
+        "Wrong loader fixture selector",
     )
+    return text[: echoes[0].start(1)] + text[echoes[0].end(1) :]
 
 
 def validate(status, text, mode):
-    early_selection(text, mode)
+    loader_selection(text, mode)
     rejected = re.findall(r"AURORA_UEFI_EXIT_REJECTED: attempt=(\d+)", text)
     need(
         rejected == (["1", "2", "3"] if mode == "stale-exhausted" else ["1"] if mode == "stale" else []),

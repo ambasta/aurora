@@ -73,16 +73,17 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
     Serial::text("AURORA_UEFI_ENTRY\r\n");
     if (relocated_anchor != &anchor || *relocated_anchor != Handoff::magic)
         fail("PE relocation");
-#ifdef AURORA_EARLY_FIXTURE
-    using aurora::uefi::early::Fixture;
-    const auto early = aurora::uefi::early::FwCfg::read();
-    if (!early)
-        fail("early fixture selector");
+#ifdef AURORA_PLATFORM_FIXTURE
+    // Every platform case is one fw_cfg row, echoed before any other record.
+    using aurora::uefi::platform::Fixture;
+    const auto selected = aurora::uefi::platform::FwCfg::read();
+    if (!selected)
+        fail("platform fixture selector");
     const auto injected = [&](Fixture fixture) {
-        return *early == fixture;
+        return *selected == fixture;
     };
-    Serial::text("AURORA_EARLY_FIXTURE: value=");
-    Serial::number(static_cast<unsigned>(*early));
+    Serial::text("AURORA_FIXTURE_SELECTED: value=");
+    Serial::number(static_cast<unsigned>(*selected));
     Serial::text("\r\n");
 #endif
     const auto system_address = reinterpret_cast<U64>(system);
@@ -107,16 +108,24 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
     for (auto &byte : span(arena, Handoff::arena_bytes))
         byte = std::byte{0};
 #if defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_IOMMU_EVENT)
-    std::uint32_t capture_a, capture_b, capture_c, capture_d;
-    asm volatile("cpuid"
-                 : "=a"(capture_a), "=b"(capture_b), "=c"(capture_c), "=d"(capture_d)
-                 : "a"(0x80000008U), "c"(0));
-#ifdef AURORA_UEFI_IOMMU_EVENT
-    if (!aurora::uefi::BarLoader{boot, arena, capture_a & 255}.capture_event())
+#ifdef AURORA_PLATFORM_FIXTURE
+    // Only BAR and IVRS rows capture the firmware BAR resources (handoff v4).
+    const bool capture = aurora::uefi::platform::capture(*selected);
 #else
-    if (!aurora::uefi::BarLoader{boot, arena, capture_a & 255}.capture())
+    constexpr bool capture = true;
 #endif
-        fail("bounded BAR firmware capture");
+    if (capture) {
+        std::uint32_t capture_a, capture_b, capture_c, capture_d;
+        asm volatile("cpuid"
+                     : "=a"(capture_a), "=b"(capture_b), "=c"(capture_c), "=d"(capture_d)
+                     : "a"(0x80000008U), "c"(0));
+#ifdef AURORA_UEFI_IOMMU_EVENT
+        if (!aurora::uefi::BarLoader{boot, arena, capture_a & 255}.capture_event())
+#else
+        if (!aurora::uefi::BarLoader{boot, arena, capture_a & 255}.capture())
+#endif
+            fail("bounded BAR firmware capture");
+    }
 #endif
 #if defined(AURORA_UEFI_FRAMEBUFFER) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE) ||                                      \
     defined(AURORA_UEFI_GRAPHICAL_TERMINAL)
@@ -159,8 +168,8 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
     put(handoff, 0, Handoff::magic);
     put(handoff, 8, 1, 4);
     put(handoff, 12, Handoff::header, 4);
-#ifdef AURORA_EARLY_FIXTURE
-    put(handoff, Handoff::fixture_offset, static_cast<unsigned>(*early));
+#ifdef AURORA_PLATFORM_FIXTURE
+    put(handoff, Handoff::fixture_offset, static_cast<unsigned>(*selected));
 #endif
 #ifdef AURORA_UEFI_ACPI
     put(handoff, 8, 2, 4);
@@ -231,8 +240,10 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
 #endif
 #endif
 #if defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_IOMMU_EVENT)
-    put(handoff, 8, 4, 4);
-    put(handoff, 120, arena + Handoff::bar_record_offset);
+    if (capture) {
+        put(handoff, 8, 4, 4);
+        put(handoff, 120, arena + Handoff::bar_record_offset);
+    }
 #endif
 #if defined(AURORA_UEFI_FRAMEBUFFER) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
 #ifdef AURORA_UEFI_GRAPHICAL_CONSOLE
@@ -261,7 +272,7 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
         if (flags && !tables.map(arena + offset, flags))
             fail("private tables");
     }
-#ifdef AURORA_EARLY_FIXTURE
+#ifdef AURORA_PLATFORM_FIXTURE
     if (injected(Fixture::early_bad_table) && !tables.map(0x10000, 3 | aurora::uefi::PageTables::nx))
         fail("bad-table injection");
 #endif
@@ -330,7 +341,7 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
             const auto before = roots.root();
             if (!roots.accept(candidate))
                 fail("duplicate or invalid ACPI roots");
-#ifdef AURORA_EARLY_FIXTURE
+#ifdef AURORA_PLATFORM_FIXTURE
             if (injected(Fixture::early_acpi_duplicate_root) && before == 0 && roots.root() != 0 &&
                 !roots.accept(candidate))
                 fail("duplicate or invalid ACPI roots");
@@ -384,7 +395,7 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
         put(handoff, 40, stride);
         put(handoff, 48, version, 4);
         put(handoff, 52, attempt, 4);
-#ifdef AURORA_EARLY_FIXTURE
+#ifdef AURORA_PLATFORM_FIXTURE
         if ((injected(Fixture::early_stale) && attempt == 1) || injected(Fixture::early_stale_exhausted))
             key ^= 1;
 #endif
@@ -405,7 +416,7 @@ auto __attribute__((ms_abi)) entry(void *image, void *system) -> U64 {
     Serial::text("AURORA_UEFI_EXIT_OK: attempts=");
     Serial::number(Bytes{handoff}.get(52, 4));
     Serial::text("\r\n");
-#ifdef AURORA_EARLY_FIXTURE
+#ifdef AURORA_PLATFORM_FIXTURE
     // Swap the version between the RSDP-free and RSDP-bearing forms, so the
     // version no longer describes the copied handoff in either composition.
     if (injected(Fixture::early_bad_handoff))
