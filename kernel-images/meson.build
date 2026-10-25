@@ -71,6 +71,7 @@ foreach profile_id : profile_data['profiles'].split('|')
   objects = {}
   closed = profile_data[key + '.closed'] == '1'
   bios_console = platform == 'bios' and mode == 'console'
+  uefi_console = platform == 'uefi' and mode in ['console', 'console-fixture']
   ram_scratchpad = platform == 'uefi' and mode in ['ram-scratchpad-console', 'ram-scratchpad-console-fixture']
   stack_facts = []
   language_objects = []
@@ -89,7 +90,7 @@ foreach profile_id : profile_data['profiles'].split('|')
   language_outputs = [platform == 'bios' ? 'kernel-language.s' : 'language.s',
                       platform == 'bios' ? 'kernel-language.stack.json' : 'language.stack.json']
   language_dependencies = compiler_files
-  if closed or bios_console or ram_scratchpad
+  if closed or bios_console or ram_scratchpad or uefi_console
     language_outputs += [bios_console ? 'kernel-language.abi.json' : 'language.abi.json']
     root_args += ['--abi-facts', '@OUTPUT2@', '--bridge', kernel_source / bridge]
     language_dependencies += bridge_input + files('../scripts/bootstrap_frontend.py')
@@ -100,17 +101,30 @@ foreach profile_id : profile_data['profiles'].split('|')
     bridge_input = []
   endif
   language_name = platform == 'bios' ? 'kernel-language' : 'language'
-  language = custom_target(prefix + '-language-assembly',
-    input: files('../' + profile_data[key + '.language']), output: language_outputs,
-    build_subdir: output_subdir, depfile: language_name + '.d', depend_files: language_dependencies,
-    command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
-              '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--depfile', '@DEPFILE@'] + root_args)
+  if uefi_console
+    # Only the ordinary UEFI session source is direct; the native adapter still
+    # uses GNU as and the existing private-object composition helper.
+    language = custom_target(prefix + '-language-object',
+      input: files('../' + profile_data[key + '.language']),
+      output: ['language.o', 'language.stack.json', 'language.abi.json'],
+      build_subdir: object_subdir, depfile: language_name + '.d', depend_files: language_dependencies,
+      command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
+                '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--depfile', '@DEPFILE@',
+                '--emit-object', '--assembler', kernel_as, '--linker', kernel_ld, '--objcopy', kernel_objcopy] + root_args)
+    objects += {language_name: language}
+  else
+    language = custom_target(prefix + '-language-assembly',
+      input: files('../' + profile_data[key + '.language']), output: language_outputs,
+      build_subdir: output_subdir, depfile: language_name + '.d', depend_files: language_dependencies,
+      command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
+                '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--depfile', '@DEPFILE@'] + root_args)
+    # Private local symbols require the bridge and generated source in ONE as command.
+    objects += {language_name: custom_target(prefix + '-language-object',
+      input: [language[0]] + bridge_input, output: language_name + '.o', build_subdir: object_subdir,
+      command: [kernel_as, '--64', '@INPUT@', '-o', '@OUTPUT@'])}
+  endif
   stack_facts += [language[1]]
-  # Private local symbols require the bridge and generated source in ONE as command.
-  objects += {language_name: custom_target(prefix + '-language-object',
-    input: [language[0]] + bridge_input, output: language_name + '.o', build_subdir: object_subdir,
-    command: [kernel_as, '--64', '@INPUT@', '-o', '@OUTPUT@'])}
-  language_objects += [objects[language_name]]
+  language_objects += [objects[language_name][0]]
   # The production composition's second closed Aurora object: the graphical
   # terminal painter, with its own private bridge and import policy.
   terminal_language = profile_data[key + '.terminal_language']
