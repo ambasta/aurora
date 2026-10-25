@@ -72,7 +72,10 @@ Compiler-semantics runners in `tests/compiler` register cases as data on
 test (more only past the 1 MiB source limit, a per-graph compiler budget, or a
 differing import/module set), value cases run in one exec, each trap is one
 exec of the same binary selected by argv, and each rejection is one compile.
-Hosted owner programs use the same packing through `owned_bytes.Suite`
+Fixed cases (one source text, one expected value, trap or diagnostic) are data in
+the `.cases` file beside their runner, read by `Suite.load` (format in its
+docstring); the Python keeps only families generated over types, capacities and
+edges, and cases that need a custom check. Hosted owner programs use the same packing through `owned_bytes.Suite`
 (`deferred=True`).
 
 Library-behaviour tests (`token-scan`, `utf8*`, `json-*`, `package-*`) compile one

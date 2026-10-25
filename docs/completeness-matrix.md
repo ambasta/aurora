@@ -40,7 +40,8 @@ keeps the program fixture, the text fixture and the storage fixture apart
 build runs one compiler-fact stack check and one image/W^X/symbol-policy check
 in place of the former per-profile admission scripts.
 The compiler-semantics runners now compile one packed program per test through
-`tests/compiler/native_runner.py`; the token-scan, UTF-8, JSON and package library
+`tests/compiler/native_runner.py`, with fixed cases as `.cases` data beside each
+runner; the token-scan, UTF-8, JSON and package library
 tests compile one driver per library surface and stream their cases as data.
 Kernel policy, graphical console, display renderer, IOMMU event, protected
 note/snapshot, pin/NVMe/dormant and executable-semantics tests build once in Meson
