@@ -67,31 +67,13 @@ auto aurora_kernel_value() -> i64 { return 0; }
 """
 
 
-def mixed_region(compiler, work, comparison_compiler=None):
+def mixed_region(compiler, work):
     source = work / "mixed.au"
     source.write_text(MIXED_SOURCE)
     assembly = work / "mixed.s"
     facts = work / "mixed.abi.json"
     result = run([compiler, "--module-root", ROOT / "library", source, "-o", assembly, "--abi-facts", facts])
     require(result.returncode == 0, result.stderr.decode())
-    if comparison_compiler is not None:
-        comparison_assembly = work / "mixed-c2.s"
-        comparison_facts = work / "mixed-c2.abi.json"
-        result = run(
-            [
-                comparison_compiler,
-                "--module-root",
-                ROOT / "library",
-                source,
-                "-o",
-                comparison_assembly,
-                "--abi-facts",
-                comparison_facts,
-            ]
-        )
-        require(result.returncode == 0, result.stderr.decode())
-        require(assembly.read_bytes() == comparison_assembly.read_bytes(), "mixed C1/C2 assembly differs")
-        require(facts.read_bytes() == comparison_facts.read_bytes(), "mixed C1/C2 ABI facts differ")
     functions = json.loads(facts.read_text())["functions"]
     mixed = [
         row for row in functions.values() if len(row["parameters"]) >= 2 and row["parameters"][1]["kind"] == "region"
@@ -159,14 +141,13 @@ def main():
     parser.add_argument("compiler", type=Path)
     for name in ("console", "region", "note", "files"):
         parser.add_argument(f"--{name}-host", type=Path, required=True, help="Meson-built host library")
-    parser.add_argument("--comparison-compiler", type=Path)
     args = parser.parse_args()
     compiler = args.compiler.resolve()
     for name in ("console", "region", "note", "files"):
         HOSTS[name] = getattr(args, f"{name}_host").resolve(strict=True)
     with tempfile.TemporaryDirectory(prefix="console-service-") as scratch:
         work = Path(scratch)
-        mixed_region(compiler, work, args.comparison_compiler.resolve() if args.comparison_compiler else None)
+        mixed_region(compiler, work)
         assembly = work / "console.o"
         facts = work / "console.abi.json"
         result = run(

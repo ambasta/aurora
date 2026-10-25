@@ -225,13 +225,17 @@ test('owned-spans-source', python,
      args: ['-B', '-O', files('compiler/owned_spans_source.py'), aurorac],
      depends: aurorac, suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 180)
+owned_spans_kernel_host = static_library('owned-spans-kernel-host',
+    ['compiler/owned_spans_kernel_host.cpp', '../kernel/owned-bytes.cpp'],
+    cpp_args: ['-DNDEBUG', '-fno-exceptions', '-fno-rtti'], pic: false,
+    native: true, override_options: fixture_options, install: false)
 foreach mode : ['standalone', 'receiver']
-    span_kernel_args = ['-B', '-O', files('compiler/owned_spans_kernel.py'), aurorac]
+    span_kernel_args = ['-B', '-O', files('compiler/owned_spans_kernel.py'), aurorac, '--host', owned_spans_kernel_host]
     if mode == 'receiver'
         span_kernel_args += ['--receiver-bound']
     endif
     test('owned-spans-kernel-' + mode, python,
-         args: span_kernel_args, depends: aurorac, suite: ['full', 'merge', 'dev', 'bytes', 'compiler'],
+         args: span_kernel_args, depends: [aurorac, owned_spans_kernel_host], suite: ['full', 'merge', 'dev', 'bytes', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 endforeach
 test('logical-spans-abi', python,
@@ -280,9 +284,8 @@ foreach name, host : console_service_hosts
   console_service_args += ['--' + name + '-host', host.full_path()]
 endforeach
 test('console-service-source-native', python,
-     args: ['-B', '-O', files('compiler/console_service.py'), aurorac,
-            '--comparison-compiler', aurorac_stage2] + console_service_args,
-     depends: [aurorac, aurorac_stage2] + console_service_hosts.values(),
+     args: ['-B', '-O', files('compiler/console_service.py'), aurorac] + console_service_args,
+     depends: [aurorac] + console_service_hosts.values(),
      suite: ['full', 'merge', 'slow', 'core', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
 

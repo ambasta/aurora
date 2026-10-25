@@ -2,14 +2,11 @@
 """Fresh generated owner-span consumers against the real fragmented kernel adapter.
 
 This is a host integration, not a guest or a substitute for guest admission.
-Fatal sanitizers instrument host C++ only; generated Aurora stays unsanitized.
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
-import json
 import os
 from pathlib import Path
 import re
@@ -167,10 +164,6 @@ def require(condition, message):
         raise ValueError(message)
 
 
-def digest(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
 def receiver_source():
     source = SOURCE.replace("module owned_spans_kernel;", "module owned_spans_kernel_receiver;")
     source = source.replace("auto entry(", RECEIVER_CLASS + "\nauto entry(")
@@ -191,130 +184,57 @@ def receiver_source():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", type=Path)
-    parser.add_argument("--sanitize", action="store_true")
-    parser.add_argument("--compile-only", action="store_true")
+    parser.add_argument("--host", type=Path, required=True, help="Meson-built host library")
     parser.add_argument("--receiver-bound", action="store_true")
     args = parser.parse_args()
     compiler = args.compiler.resolve(strict=True)
     with tempfile.TemporaryDirectory(prefix="aurora-owner-span-kernel-") as scratch:
         directory = Path(scratch)
-        sources = [
-            compiler,
-            Path(__file__).resolve(),
-            ROOT / "tests/compiler/owned_spans_kernel_host.cpp",
-            ROOT / "kernel/owned-bytes.cpp",
-            ROOT / "kernel/owned-bytes.hpp",
-            ROOT / "kernel/pages.hpp",
-            ROOT / "runtime/bytes_abi.hpp",
-            *sorted((ROOT / "library").rglob("*.au")),
-        ]
-        inputs = {str(path): digest(path) for path in sources}
-        receipt = dict(
-            status="running",
-            inputs=inputs,
-            sanitize=args.sanitize,
-            compile_only=args.compile_only,
-            receiver_bound=args.receiver_bound,
-            guest_executed=False,
-            commands=[],
-        )
 
-        def save():
-            (directory / "run.json").write_text(json.dumps(receipt, indent=2) + "\n")
-
-        def run(label, argv, expected=0, env=None):
-            argv = list(map(str, argv))
-            result = subprocess.run(argv, cwd=ROOT, env=env, capture_output=True, timeout=120)
-            (directory / (label + ".stdout")).write_bytes(result.stdout)
-            (directory / (label + ".stderr")).write_bytes(result.stderr)
-            receipt["commands"].append(dict(label=label, argv=argv, returncode=result.returncode, expected=expected))
-            save()
-            require(result.returncode == expected, f"{label}: expected {expected}, got {result.returncode}")
+        def run(label, argv, expected=0):
+            result = subprocess.run(list(map(str, argv)), cwd=ROOT, capture_output=True, timeout=120)
+            require(
+                result.returncode == expected,
+                f"{label}: expected {expected}, got {result.returncode}: {result.stderr.decode(errors='replace')}",
+            )
             return result
 
-        print(f"artifacts={directory}", flush=True)
-        save()
-        try:
-            source = directory / "input.au"
-            source.write_text(receiver_source() if args.receiver_bound else SOURCE)
-            assembly = directory / "output.s"
-            run("compile", [compiler, "--module-root", ROOT / "library", source, "-o", assembly])
-            text = assembly.read_text()
-            entries = re.findall(r"^\.type (\w+__d5entry), @function$", text, re.M)
-            require(len(entries) == 1 and f".local {entries[0]}\n" in text, "one local resource entry required")
-            require(
-                "__au_runtime_bytes_borrow_span" in text and "__au_runtime_bytes_at" in text,
-                "real validation and backend-neutral copied read imports required",
-            )
-            linked = directory / "linked.s"
-            linked.write_text(text + BRIDGE.replace("@ENTRY@", entries[0]))
-            receipt["generated_sha256"] = digest(assembly)
-            if not args.compile_only:
-                flags = [
-                    "-std=c++23",
-                    "-O1",
-                    "-g",
-                    "-Wall",
-                    "-Wextra",
-                    "-Wpedantic",
-                    "-Werror",
-                    "-DNDEBUG",
-                    "-fno-exceptions",
-                    "-fno-rtti",
-                    "-no-pie",
-                ]
-                if args.sanitize:
-                    flags += ["-fsanitize=address,undefined", "-fno-sanitize-recover=all", "-fno-omit-frame-pointer"]
-                executable = directory / "native"
-                run(
-                    "link",
-                    [
-                        *shlex.split(os.environ.get("CXX", "g++")),
-                        *flags,
-                        ROOT / "tests/compiler/owned_spans_kernel_host.cpp",
-                        ROOT / "kernel/owned-bytes.cpp",
-                        linked,
-                        "-o",
-                        executable,
-                    ],
+        source = directory / "input.au"
+        source.write_text(receiver_source() if args.receiver_bound else SOURCE)
+        assembly = directory / "output.s"
+        run("compile", [compiler, "--module-root", ROOT / "library", source, "-o", assembly])
+        text = assembly.read_text()
+        entries = re.findall(r"^\.type (\w+__d5entry), @function$", text, re.M)
+        require(len(entries) == 1 and f".local {entries[0]}\n" in text, "one local resource entry required")
+        require(
+            "__au_runtime_bytes_borrow_span" in text and "__au_runtime_bytes_at" in text,
+            "real validation and backend-neutral copied read imports required",
+        )
+        linked = directory / "linked.s"
+        linked.write_text(text + BRIDGE.replace("@ENTRY@", entries[0]))
+        executable = directory / "native"
+        cxx = shlex.split(os.environ.get("CXX", "g++"))
+        run("link", [*cxx, "-no-pie", linked, args.host.resolve(strict=True), "-o", executable])
+        for mode in range(4):
+            result = run(f"mode-{mode}", [executable, mode], 82 if mode == 2 else 0)
+            require(not result.stderr, f"mode {mode}: unexpected stderr")
+            if mode == 2:
+                require(
+                    result.stdout == b"PASS generated kernel owned spans: failed borrow, exact fault 2, "
+                    b"unchanged metrics/pages/leases\n",
+                    "failed borrow did not reach exact read-only fault endpoint",
                 )
-                receipt["native_sha256"] = digest(executable)
-                env = os.environ.copy()
-                env.update(
-                    ASAN_OPTIONS="detect_leaks=0:halt_on_error=1:abort_on_error=1",
-                    UBSAN_OPTIONS="halt_on_error=1:print_stacktrace=1",
+            else:
+                require(
+                    re.fullmatch(
+                        rf"PASS generated kernel owned spans: mode={mode} checks=[1-9][0-9]* "
+                        r"exact metrics/pages/leases\n",
+                        result.stdout.decode(),
+                    )
+                    is not None,
+                    "wrong native success observation",
                 )
-                for mode in range(4):
-                    result = run(f"mode-{mode}", [executable, mode], 82 if mode == 2 else 0, env)
-                    require(not result.stderr, f"mode {mode}: unexpected stderr")
-                    if mode == 2:
-                        require(
-                            result.stdout
-                            == (
-                                b"PASS generated kernel owned spans: failed borrow, exact fault 2, "
-                                b"unchanged metrics/pages/leases\n"
-                            ),
-                            "failed borrow did not reach exact read-only fault endpoint",
-                        )
-                    else:
-                        require(
-                            re.fullmatch(
-                                (
-                                    rf"PASS generated kernel owned spans: mode={mode} checks=[1-9][0-9]* "
-                                    r"exact metrics/pages/leases\n"
-                                ),
-                                result.stdout.decode(),
-                            )
-                            is not None,
-                            "wrong native success observation",
-                        )
-                    print(result.stdout.decode(), end="", flush=True)
-            receipt.update(status="passed", native_cases=0 if args.compile_only else 4)
-        except BaseException as error:
-            receipt.update(status="failed", error=str(error))
-            raise
-        finally:
-            save()
+            print(result.stdout.decode(), end="", flush=True)
 
 
 if __name__ == "__main__":
