@@ -277,12 +277,42 @@ export namespace compiler_x86 {
         return metadata_text(workspace, o, metadata, name.begin(), name.count());
     }
     auto query_name(EmitWorkspace& workspace, ObjectWorkspace& o, i64 query, i64 scope) -> bool {
+        if (scope < 0 || scope >= 64 || query < 0 || query >= 2) {
+            return workspace.fail();
+        }
         if (scope == 0) {
-            workspace.text("aurora_reflect_");
+            if (o.object_mode()) {
+                o.object_name_text("aurora_reflect_");
+            } else {
+                workspace.text("aurora_reflect_");
+            }
         } else {
-            workspace.text("__au_reflect_s");
-            workspace.number(scope);
-            workspace.text("_");
+            if (o.object_mode()) {
+                o.object_name_text("__au_reflect_s");
+            } else {
+                workspace.text("__au_reflect_s");
+            }
+            if (o.object_mode()) {
+                if (scope >= 10) {
+                    o.object_name_byte(u8(48 + scope / 10));
+                }
+                o.object_name_byte(u8(48 + scope % 10));
+            } else {
+                workspace.number(scope);
+            }
+            if (o.object_mode()) {
+                o.object_name_text("_");
+            } else {
+                workspace.text("_");
+            }
+        }
+        if (o.object_mode()) {
+            if (query == 0) {
+                o.object_name_text("size");
+            } else {
+                o.object_name_text("field_count");
+            }
+            return emit_object_status(workspace, o);
         }
         if (query == 0) {
             return workspace.text("size");
@@ -294,7 +324,7 @@ export namespace compiler_x86 {
         workspace.record_call(0, callable);
         if (o.object_mode()) {
             if (!o.has_object_symbol(callable)) {
-                o.begin_object_external(callable);
+                o.begin_object_external(0, callable);
                 callable_name(workspace, o, metadata, callable);
                 o.end_object_symbol_name();
             }
@@ -312,14 +342,22 @@ export namespace compiler_x86 {
     }
     auto call_query(EmitWorkspace& workspace, ObjectWorkspace& o, const compiler_ir_metadata::MetadataStore& metadata,
         i64 query, i64 scope) -> bool {
-        if (o.object_mode()) {
-            return workspace.unsupported_object();
-        }
         emit_prepare_call(workspace, o);
-        workspace.record_call(1, scope * 2 + query);
-        workspace.text("    call ");
-        query_name(workspace, o, query, scope);
-        workspace.end_line();
+        const i64 identity = scope * 2 + query;
+        workspace.record_call(1, identity);
+        if (o.object_mode()) {
+            if (o.object_symbol_index(4, identity) < 0) {
+                o.begin_object_external(4, identity);
+                query_name(workspace, o, query, scope);
+                o.end_object_symbol_name();
+            }
+            o.object_call_query(identity);
+            emit_object_status(workspace, o);
+        } else {
+            workspace.text("    call ");
+            query_name(workspace, o, query, scope);
+            workspace.end_line();
+        }
         return emit_finish_call(workspace, o);
     }
     auto root_save_offset(EmitWorkspace& workspace, const compiler_ir_metadata::MetadataStore& metadata,

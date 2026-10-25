@@ -285,7 +285,8 @@ export namespace compiler_x86 {
         builtin::OwnedValues<ObjectLabelRow> objectLabels;
         builtin::OwnedValues<ObjectFixupRow> objectFixups;
         builtin::OwnedValues<ObjectIndexRow> callableSymbols;
-        builtin::OwnedValues<ObjectIndexRow> runtimeSymbols;
+        // Runtime identities occupy [0, 64); scope/query identities occupy [64, 192).
+        builtin::OwnedValues<ObjectIndexRow> generatedSymbols;
         builtin::OwnedValues<ObjectIndexRow> literalSymbols;
         builtin::OwnedValues<ObjectIndexRow> trapPositions;
         builtin::OwnedBytes literalBytes;
@@ -311,7 +312,7 @@ export namespace compiler_x86 {
             objectNames(region.try_allocate(0)), objectCode(region.try_allocate(0)),
             objectSymbols(ObjectSymbolRow_pool(region)), objectLabels(ObjectLabelRow_pool(region)),
             objectFixups(ObjectFixupRow_pool(region)), callableSymbols(ObjectIndexRow_pool(region)),
-            runtimeSymbols(ObjectIndexRow_pool(region)), literalSymbols(ObjectIndexRow_pool(region)),
+            generatedSymbols(ObjectIndexRow_pool(region)), literalSymbols(ObjectIndexRow_pool(region)),
             trapPositions(ObjectIndexRow_pool(region)), literalBytes(region.try_allocate(0)), literalSize(0),
             literalCurrentSymbol(-1), returnPosition(-1), functionFixupStart(0), outcome(EmitStatus::pending),
             objectMode(false), objectNameCapture(false), outputSize(0), artifactLimit(67108864), objectNameSize(0),
@@ -320,7 +321,7 @@ export namespace compiler_x86 {
         }
         auto allocated() const -> bool {
             return output.ok() && objectNames.ok() && objectCode.ok() && objectSymbols.ok() && objectLabels.ok()
-                && objectFixups.ok() && callableSymbols.ok() && runtimeSymbols.ok() && literalSymbols.ok()
+                && objectFixups.ok() && callableSymbols.ok() && generatedSymbols.ok() && literalSymbols.ok()
                 && trapPositions.ok() && literalBytes.ok();
         }
         auto enable_object() -> bool {
@@ -331,17 +332,20 @@ export namespace compiler_x86 {
             outcome = EmitStatus::running;
             return object_name_byte(u8(0));
         }
-        auto configure_labels(i64 instructions, i64 functions) -> bool {
-            if (instructions < 0 || instructions > 67108864 || functions < 0 || functions > 67108864 || objectSymbolSize
-                != 0 || objectLabelLimit != 0) {
+        auto configure_labels(i64 instructions, i64 functions, i64 descriptors) -> bool {
+            if (descriptors < 0 || descriptors > 67108864 || instructions < 0 || instructions > 67108864 || functions
+                < 0 || functions > 67108864 || objectSymbolSize != 0 || objectLabelLimit != 0) {
                 return fail();
             }
             const ObjectIndexRow missing = ObjectIndexRow(-1);
-            if (!callableSymbols.try_resize(functions, missing) || !runtimeSymbols.try_resize(64, missing)
+            if (!callableSymbols.try_resize(functions, missing) || !generatedSymbols.try_resize(192, missing)
                 || !literalSymbols.try_resize(instructions + 1, missing) || !trapPositions.try_resize(4, missing)) {
                 return allocation_failure();
             }
             objectLabelLimit = instructions;
+            if (descriptors > objectLabelLimit) {
+                objectLabelLimit = descriptors;
+            }
             return ok();
         }
         auto begin_function_labels(i64 instructions) -> bool {
@@ -387,6 +391,17 @@ export namespace compiler_x86 {
             objectNameSize = objectNameSize + 1;
             return true;
         }
+        auto object_name_text(builtin::span<const u8> text) -> bool {
+            if (!objectNameCapture) {
+                return fail();
+            }
+            i64 at = 0;
+            while (at < text.size() && ok()) {
+                object_name_byte(text.at(at));
+                at = at + 1;
+            }
+            return ok();
+        }
         auto object_symbol_index(i64 kind, i64 identity) const -> i64 {
             if (identity < 0) {
                 return -1;
@@ -395,8 +410,12 @@ export namespace compiler_x86 {
                 const ObjectIndexRow row = callableSymbols.at(identity);
                 return row.index();
             }
-            if (kind == 1 && identity < runtimeSymbols.size()) {
-                const ObjectIndexRow row = runtimeSymbols.at(identity);
+            if (kind == 1 && identity < 64) {
+                const ObjectIndexRow row = generatedSymbols.at(identity);
+                return row.index();
+            }
+            if (kind == 4 && identity < 128) {
+                const ObjectIndexRow row = generatedSymbols.at(64 + identity);
                 return row.index();
             }
             if (kind == 3 && identity > 0 && identity < literalSymbols.size()) {
@@ -431,8 +450,11 @@ export namespace compiler_x86 {
             if (row.kind() == 0 && row.identity() >= 0 && row.identity() < callableSymbols.size()) {
                 stored = callableSymbols.set(row.identity(), index);
             }
-            if (row.kind() == 1 && row.identity() >= 0 && row.identity() < runtimeSymbols.size()) {
-                stored = runtimeSymbols.set(row.identity(), index);
+            if (row.kind() == 1 && row.identity() >= 0 && row.identity() < 64) {
+                stored = generatedSymbols.set(row.identity(), index);
+            }
+            if (row.kind() == 4 && row.identity() >= 0 && row.identity() < 128) {
+                stored = generatedSymbols.set(64 + row.identity(), index);
             }
             if (row.kind() == 3 && row.identity() > 0 && row.identity() < literalSymbols.size()) {
                 stored = literalSymbols.set(row.identity(), index);
@@ -446,16 +468,16 @@ export namespace compiler_x86 {
             objectSymbolSize = objectSymbolSize + 1;
             return true;
         }
-        auto begin_object_symbol(i64 callable, bool local) -> bool {
-            if (!objectMode || objectNameCapture || callable < 0) {
+        auto begin_object_symbol(i64 kind, i64 identity, bool local) -> bool {
+            if (!objectMode || objectNameCapture || identity < 0 || (kind != 0 && kind != 4)) {
                 return fail();
             }
             i64 binding = 0;
             if (local) {
                 binding = 1;
             }
-            const ObjectSymbolRow row = ObjectSymbolRow(0, callable, objectNameSize, 0, outputSize, binding);
-            i64 index = object_symbol_index(0, callable);
+            const ObjectSymbolRow row = ObjectSymbolRow(kind, identity, objectNameSize, 0, outputSize, binding);
+            i64 index = object_symbol_index(kind, identity);
             if (index >= 0) {
                 const ObjectSymbolRow old = objectSymbols.at(index);
                 if (old.position() >= 0 || !objectSymbols.set(index, row)) {
@@ -472,11 +494,12 @@ export namespace compiler_x86 {
             objectNameCapture = true;
             return true;
         }
-        auto begin_object_external(i64 callable) -> bool {
-            if (!objectMode || objectNameCapture || callable < 0 || has_object_symbol(callable)) {
+        auto begin_object_external(i64 kind, i64 identity) -> bool {
+            if (!objectMode || objectNameCapture || identity < 0 || (kind != 0 && kind != 4)
+                || object_symbol_index(kind, identity) >= 0) {
                 return fail();
             }
-            const ObjectSymbolRow row = ObjectSymbolRow(0, callable, objectNameSize, 0, -1, 0);
+            const ObjectSymbolRow row = ObjectSymbolRow(kind, identity, objectNameSize, 0, -1, 0);
             objectCaptureSymbol = objectSymbolSize;
             if (!append_object_symbol(row)) {
                 return false;
@@ -562,6 +585,13 @@ export namespace compiler_x86 {
             }
             byte(u8(232));
             return object_fixup(0, -1, identity, 1);
+        }
+        auto object_call_query(i64 identity) -> bool {
+            if (!objectMode || object_symbol_index(4, identity) < 0) {
+                return fail();
+            }
+            byte(u8(232));
+            return object_fixup(0, -1, identity, 4);
         }
         auto trap_symbol(i64 identity, builtin::span<const u8> name) -> bool {
             const i64 first = objectNameSize;
@@ -1541,7 +1571,7 @@ export namespace compiler_x86 {
                         i64 section = 0;
                         i64 value = 0;
                         if (row.position() >= 0) {
-                            if (row.kind() == 0) {
+                            if (row.kind() == 0 || row.kind() == 4) {
                                 info = info + 2;
                             }
                             section = 1;
