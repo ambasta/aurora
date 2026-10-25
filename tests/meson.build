@@ -484,7 +484,7 @@ test('ir-exhaustive', python,
             '--compiler', aurorac, '--frontend-library', frontend_library,
             '--main-library', emitter_probe_main],
      depends: [aurora_ir_check, frontend_assembly, frontend_library, aurorac, emitter_probe_main], suite: ['full', 'release', 'compiler'],
-     env: oracle_env, workdir: meson.current_build_dir(), timeout: 600, is_parallel: false)
+     env: oracle_env, workdir: meson.current_build_dir(), timeout: 600)
 test('stack-guards', python,
      args: ['-B', '-O', files('compiler/sector_values_abi.py'), aurora_ir_check, '--stack-guards'],
      depends: aurora_ir_check, suite: ['full', 'merge', 'slow', 'compiler'],
