@@ -6,6 +6,7 @@ if [[ ${1:-} == --help ]]; then
     echo 'Run in the published linux/amd64 image pinned by ci/image; default: bash.'
     echo 'Requires Docker or Podman; the public dependency image supports anonymous pulls.'
     echo 'Forwards MESON_BUILD_DIR, MESON_TESTTHREADS and AURORA_MEMORY_RESERVE_MIB when set.'
+    echo 'AURORA_CPUS=0-7 confines the container to those CPUs, as for the 8-vCPU budget.'
     exit 0
 fi
 if [[ ! -f "$root/ci/image" ]]; then
@@ -42,6 +43,7 @@ controls=()
 for name in MESON_BUILD_DIR MESON_TESTTHREADS AURORA_MEMORY_RESERVE_MIB; do
     if [[ -v $name ]]; then controls+=(--env "$name=${!name}"); fi
 done
+if [[ -v AURORA_CPUS ]]; then controls+=(--cpuset-cpus "$AURORA_CPUS"); fi
 if [[ $# == 0 ]]; then set -- bash; fi
 exec "$engine" run --rm --init --platform linux/amd64 \
     --network none --read-only --cap-drop ALL --security-opt no-new-privileges \

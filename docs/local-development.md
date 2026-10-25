@@ -36,6 +36,15 @@ inside `/workspace`, for example:
 MESON_BUILD_DIR=build/container ./scripts/container.sh make test
 ```
 
+The AGENTS.md cost budget is measured on 8 vCPUs. On a larger host,
+`AURORA_CPUS` confines the container to eight hardware threads (`nproc` inside
+then reports 8):
+
+```sh
+rm -rf build/budget
+time AURORA_CPUS=0-7 MESON_BUILD_DIR=build/budget ./scripts/container.sh make test
+```
+
 `make clean` removes products and preserves configuration.
 
 ## Advanced native setup
