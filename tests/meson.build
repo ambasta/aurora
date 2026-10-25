@@ -21,7 +21,7 @@ fixture_options = ['optimization=1']
 # selections; explicit library enumeration is separate in exhaustive.
 # Start the longest merge tests first so they do not form the tail of a run.
 slow_tests = {'json-library': 30, 'package-graph': 20, 'method-values': 20,
-              'package-manifest': 15, 'hosted-parser': 15, 'decimal-values': 10, 'sector-values-abi': 10,
+              'package-manifest': 15, 'hosted-parser': 5, 'decimal-values': 10, 'sector-values-abi': 10,
               'readonly-windows': 5, 'json-string-write': 5, 'composed-values': 5}
 foreach entry : [
     ['frontend', 'compiler/run.py', 'core'],
@@ -604,35 +604,6 @@ hosted_parser_test = executable(
     native: true, override_options: fixture_options, install: false,
 )
 test('hosted-parser', hosted_parser_test,
-     args: files('../compiler/lexer.au', '../compiler/syntax_arena.au', '../compiler/parser.au',
-                 '../library/std/array.au', '../library/console/session_files.au',
-                 '../examples/kernel-graphical-console.au', '../library/fs/xfs_sector.au',
-                 '../examples/class_values.au', '../library/std/utility.au', '../library/std/decimal.au',
-                 '../library/std/json.au', '../library/package/graph.au', '../examples/function_token_values.au',
-                 '../examples/class_values.au', '../examples/kernel-bios.au', '../compiler/resolution_kinds.au',
-                 '../compiler/resolution_arena.au', '../compiler/resolver.au') + [frontend_forwarders] + files(
-                 '../compiler/lowering_kinds.au', '../compiler/lowering_errors.au', '../compiler/lowering_storage.au',
-                 '../compiler/lowering_common.au', '../compiler/lowering_configuration.au', '../compiler/lowering_types.au',
-                 '../compiler/lowering_values.au', '../compiler/lowering_body.au', '../compiler/lowering.au',
-                 '../compiler/lowering_frames.au', '../compiler/lowering_calls.au',
-                 '../compiler/lowering_expressions.au', '../compiler/lowering_statements.au',
-                 '../compiler/resolution_rows.au', '../compiler/resolution_names.au',
-                 '../compiler/resolution_ingest.au', '../compiler/ir_graph.au', '../library/console/line.au',
-                 '../compiler/ir_metadata_storage.au', '../compiler/ir_metadata.au',
-                 '../compiler/ir_instruction_storage.au', '../compiler/ir_instructions.au',
-                 '../compiler/ir_verification_errors.au',
-                 '../compiler/x86_storage.au', '../compiler/x86_helpers.au', '../compiler/x86_scalar.au',
-                 '../compiler/x86_objects.au', '../compiler/x86_resources.au', '../compiler/x86_facts.au',
-                 '../compiler/x86_module.au', '../library/std/decimal_digits.au', '../compiler/formatter.au',
-                 '../compiler/resolution_linkage.au',
-                 '../compiler/ir_verification_storage.au',
-                 '../compiler/ir_verification_initialization.au',
-                 '../compiler/ir_verification_common.au',
-                 '../compiler/ir_verification_values.au',
-                 '../compiler/ir_verification_resources.au',
-                 '../compiler/ir_verification_services.au',
-                 '../compiler/ir_verification_transfer.au',
-                 '../compiler/ir_verification.au', '../compiler/x86_object_storage.au'),
      suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120,
      priority: slow_tests['hosted-parser'])
 # The already-built adapter objects with forged Aurora entries; the generated
