@@ -37,15 +37,18 @@ Linux and GCC. A Linux defconfig compiles a few million lines in roughly 80-120 
 on 8 cores; this repository compiles about 25x less. On the 8-vCPU development
 instance:
 
-- a fresh build must finish in 60 s or less, and an incremental rebuild after a
-  one-file change in seconds;
-- the merge suite (`meson test --suite merge`) must finish in 60 s or less;
+- `make test` in a fresh build directory, which builds everything the merge
+  suite needs and runs it, must finish in 120 s or less. The number is the whole
+  run; do not split prerequisites, default build and test run into separate
+  figures;
+- after a one-file change, the same command must finish in seconds plus the
+  test run;
 - the release suite (`--suite release`) runs for compiler or host-bridge changes
   and before releases and compiler bumps, not on unrelated merges.
 
-Every change that touches the build or tests reports fresh-build and merge-suite
-wall time next to the previous main, measured at full concurrency. Growth needs a
-stated reason; over-budget changes do not merge without the user's approval.
+Every change that touches the build or tests reports that one number next to the
+previous main, measured at full concurrency. Growth needs a stated reason;
+over-budget changes do not merge without the user's approval.
 Use every core: build and test at `nproc` jobs, bounded by a MemAvailable
 watchdog rather than a low fixed job count.
 
@@ -98,9 +101,9 @@ stated safety reason; more checking is not a reason by itself.
 6. Bootstrap: one verified checkpoint compiler builds C1, C1 builds C2, and C1/C2
    convergence is the self-check, like GCC's stage compare. New compiler features
    are adopted at scheduled bumps. See compiler/README.md.
-7. Review changes independently before merge. Record commands, tool versions,
-   timings and limits in the commit or PR, not in new per-feature report files.
-   Commit messages say what changed and why, not which PR or tool produced it.
+7. Review changes independently before merge. Commit messages say what changed
+   and why, plus the budget number when it moves. Commands, tool versions and
+   limits go in the PR description; never in new per-feature report files.
 8. Update implementation docs and the completeness matrix in the same change.
    Keep docs short; history lives in Git.
 9. Use clean squash merges so work-in-progress checkpoints do not enter main.
