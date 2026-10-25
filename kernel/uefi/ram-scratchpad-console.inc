@@ -53,7 +53,7 @@ auto scratchpad_clear_inactive_accounting() -> void {
     if (!ram_lifetime_valid() || !registry.ready(ram_lifetime->owner) || !domains[1].handle ||
         !registry.ready(*domains[1].handle) || domains[1].image != 1 || frames.used() != 4 || !saved.context ||
         saved.authority || saved.service || saved.endpoint.slot() || saved.endpoint.generation() || saved.ticket ||
-        !saved.context->call_frame(ram_lifetime->contract, images::bounds_serve_pc) ||
+        !saved.context->call_frame(ram_lifetime->contract, image_sites(1).serve_pc) ||
         saved.context->words()[8] != ram_lifetime->grant || saved.context->words()[9] != ram_lifetime->generation ||
         saved.remaining == 0 || saved.remaining > 120 || saved.ticks >= 120 ||
         (saved.remaining + saved.ticks != 8 && saved.remaining + saved.ticks != 120) || saved.resumes > saved.ticks ||
@@ -149,11 +149,9 @@ using ProgramInputSession = console::Session<Serial, ScratchpadInputPlatform>;
     scratchpad::ResponseArgument argument{ProgramInputSession::open(), response};
     scratchpad_console_owned = true;
     scratchpad::scrub(response);
-#ifdef AURORA_SCRATCHPAD_FIXTURE
     if (scratchpad_probe == '8' && ram_commands == 2 &&
         argument.response.kind == static_cast<U64>(ScratchpadKind::saved))
         scratchpad_output_left = 2; // Publish "sa", then fail exactly once without a retry.
-#endif
     const auto result = __au_runtime_scratchpad_response(&argument);
     ProgramInputSession::release(argument.console);
     scratchpad_console_owned = false;
@@ -234,11 +232,9 @@ using ProgramInputSession = console::Session<Serial, ScratchpadInputPlatform>;
         timer_exhausted || ram_command->framing.state() != RamFileFraming::State::terminal)
         return;
     auto &copy = *scratchpad_transfer;
-#ifdef AURORA_SCRATCHPAD_FIXTURE
     if (scratchpad_probe == '5' && ram_commands == 2)
         scratchpad_caller_window()[scratchpad::CopiedStack::result + offsetof(scratchpad::Result, kind)] =
             std::byte{255}; // Exact completed record, now malformed before native capture.
-#endif
     if (scratchpad::CopiedStack::capture(scratchpad_caller_window(),
                                          copy.endpoint.slot(),
                                          copy.endpoint.generation(),
@@ -345,7 +341,6 @@ using ProgramInputSession = console::Session<Serial, ScratchpadInputPlatform>;
         return restarted;
     }
     scratchpad_capture_result();
-#ifdef AURORA_SCRATCHPAD_FIXTURE
     if (scratchpad_probe == '6' && ram_commands == 2) {
         require(scratchpad_transfer->captured, "scratchpad captured reset probe");
         ram_state = RamState::poisoned;
@@ -354,7 +349,6 @@ using ProgramInputSession = console::Session<Serial, ScratchpadInputPlatform>;
         response = ScratchpadResponse{restarted ? ScratchpadKind::reset : ScratchpadKind::unavailable};
         return restarted;
     }
-#endif
     const auto outcome = ram_command->framing.outcome();
     const bool terminal = ram_command->framing.state() == RamFileFraming::State::terminal;
     // An unresolved delivered COMMIT is never translated into an abort. Reset
@@ -371,10 +365,8 @@ using ProgramInputSession = console::Session<Serial, ScratchpadInputPlatform>;
                               : terminal                                     ? ScratchpadKind::read_failed
                                                                              : ScratchpadKind::aborted;
     ram_settle_caller();
-#ifdef AURORA_SCRATCHPAD_FIXTURE
     if (scratchpad_probe == '7' && ram_commands == 2)
         ram_lifetime->backing[0] ^= L::page_size; // Must fail before candidate promotion or Console.
-#endif
     if (!terminal) {
         require(ram_command->framing.begin_abort(), "scratchpad exclusive precommit abort");
         ram_state = RamState::aborting;
@@ -410,16 +402,17 @@ auto scratchpad_shutdown() -> void {
 }
 [[gnu::noinline]] auto run_ram_scratchpad_console() -> void {
     Serial::initialize_input();
-#ifdef AURORA_SCRATCHPAD_FIXTURE
-    Serial::text("AURORA_SCRATCHPAD_FIXTURE_READY\r\n");
-    while (!scratchpad_probe) {
-        const auto sample = Serial::next();
-        require(!sample.damaged, "scratchpad fixture selector damage");
-        if (sample.present)
-            scratchpad_probe = sample.byte;
+    // Only the fixture row takes the in-session probe selector; the baseline is the product.
+    if (fixture == Fixture::scratchpad_fixture) {
+        Serial::text("AURORA_SCRATCHPAD_FIXTURE_READY\r\n");
+        while (!scratchpad_probe) {
+            const auto sample = Serial::next();
+            require(!sample.damaged, "scratchpad fixture selector damage");
+            if (sample.present)
+                scratchpad_probe = sample.byte;
+        }
+        require(scratchpad_probe >= '1' && scratchpad_probe <= '8', "scratchpad fixture selector range");
     }
-    require(scratchpad_probe >= '1' && scratchpad_probe <= '8', "scratchpad fixture selector range");
-#endif
     mailbox.emplace(registry);
     ScratchpadResponse response{ScratchpadKind::ready};
     if (!scratchpad_restart())

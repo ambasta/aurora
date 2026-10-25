@@ -3,11 +3,16 @@
 // (fw-cfg-fixture.hpp), echoes it as AURORA_FIXTURE_SELECTED and copies it into
 // one extra handoff word that the payload admits only within the image's
 // interval: platform-fixture (loader and device-discovery faults),
-// display-fixture (the framebuffer cases and the standalone graphical console)
-// and device-fixture (the UEFI console, its service faults and owned bytes).
-// Every later phase of those images branches on the copied row.
-#if defined(AURORA_PLATFORM_FIXTURE) + defined(AURORA_DISPLAY_FIXTURE) + defined(AURORA_DEVICE_FIXTURE) != 1
-#error "The fw_cfg loader selector belongs only to the platform, display and device fixture images"
+// display-fixture (the framebuffer cases and the standalone graphical console),
+// device-fixture (the UEFI console, its service faults and owned bytes),
+// storage-fixture (the RAM file service, RAM scratchpad console, blocking
+// snapshot call and snapshot producer) and text-fixture (the protected file-call
+// console, owned text and the console region). Every later phase of those images
+// branches on the copied row.
+#if defined(AURORA_PLATFORM_FIXTURE) + defined(AURORA_DISPLAY_FIXTURE) + defined(AURORA_DEVICE_FIXTURE) +              \
+        defined(AURORA_STORAGE_FIXTURE) + defined(AURORA_TEXT_FIXTURE) !=                                              \
+    1
+#error "The fw_cfg loader selector belongs only to the platform, display, device, storage and text fixture images"
 #endif
 #include "fw-cfg-fixture.hpp"
 #include <cstdint>
@@ -24,6 +29,12 @@ inline constexpr auto last = Fixture::graphical_capture;
 static_assert(static_cast<unsigned>(Fixture::framebuffer_stale) + 1 ==
                   static_cast<unsigned>(Fixture::graphical_baseline) &&
               static_cast<unsigned>(Fixture::graphical_baseline) + 1 == static_cast<unsigned>(last));
+#elif defined(AURORA_STORAGE_FIXTURE)
+inline constexpr auto first = Fixture::ram_baseline;
+inline constexpr auto last = Fixture::snapshot_reply_reserved;
+#elif defined(AURORA_TEXT_FIXTURE)
+inline constexpr auto first = Fixture::text_baseline;
+inline constexpr auto last = Fixture::file_budget;
 #else
 inline constexpr auto first = Fixture::console_service_baseline;
 inline constexpr auto last = Fixture::owned_bytes_baseline;

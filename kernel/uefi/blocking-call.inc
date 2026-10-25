@@ -45,10 +45,10 @@ auto release_call_source() -> void {
                 timer_owner && registry.active(*timer_owner) && timer_owner_epoch == timer_epoch &&
                 current_run_identity(),
             "call active run authority");
-#if defined(AURORA_RUNTIME_FIXTURE) && !defined(AURORA_FILE_CALL)
+#ifndef AURORA_FILE_CALL
     call_fixture_entry(reinterpret_cast<U64 *>(frame));
 #endif
-    const auto context = capture_exchange(0, frame, images::clean_call_pc);
+    const auto context = capture_exchange(0, frame, image_sites(0).call_pc);
     const auto endpoint = mailbox->endpoint(*domains[0].handle);
     require(context && endpoint && context->words()[8] == endpoint->slot() &&
                 context->words()[9] == endpoint->generation(),
@@ -90,7 +90,7 @@ auto release_call_source() -> void {
     require(ticket.has_value(), "call atomic publication");
     call_wait.ticket = *ticket;
     ++caller.call_count;
-#if defined(AURORA_RUNTIME_FIXTURE) && !defined(AURORA_FILE_CALL)
+#ifndef AURORA_FILE_CALL
     if (fixture == Fixture::call_pending)
         force_timer_pending();
 #endif
@@ -135,8 +135,10 @@ auto call_envelope(const Bytes &captured, U64 result) -> void {
     }
 }
 auto call_execute(unsigned index, U64 source_phase, U64 first, U64 second) -> void {
-#if defined(AURORA_RUNTIME_FIXTURE) && defined(AURORA_FILE_CALL)
-    source_phase = file_fixture_phase(index, source_phase, first);
+#ifdef AURORA_FILE_CALL
+    // The baseline row is the former fixture-free image: no operation rewrite.
+    if (fixture != Fixture::file_baseline)
+        source_phase = file_fixture_phase(index, source_phase, first);
 #endif
     require(index < 2 && irq_off() && root() == kernel_root && active == L::domain_count && !timer_armed &&
                 !program.running() && saved_rsp == 0,
@@ -208,8 +210,8 @@ auto call_execute(unsigned index, U64 source_phase, U64 first, U64 second) -> vo
         saved.authority->phase() != ipc::Phase::request || saved.authority->transaction() != 0 ||
         saved.authority->client() != 0 || saved.authority->root() != domain.tables->root() ||
         saved.authority->owned_arena() != arena ||
-        !saved.context->call_frame(*domain.contract, images::clean_call_pc) ||
-        !saved.context->call_frame(saved.authority->contract(), images::clean_call_pc) || saved.remaining == 0 ||
+        !saved.context->call_frame(*domain.contract, image_sites(0).call_pc) ||
+        !saved.context->call_frame(saved.authority->contract(), image_sites(0).call_pc) || saved.remaining == 0 ||
         saved.ticks >= saved.authority->budget() || saved.remaining != saved.authority->budget() - saved.ticks)
         return false;
     const auto endpoint = mailbox->endpoint(*domain.handle);
@@ -301,7 +303,7 @@ auto call_completion_controls(U64 ticket) -> void {
     --call_wait.launch[3];
 }
 auto run_blocking_calls(memory::PhysicalPages &producer_pool) -> void {
-#if defined(AURORA_RUNTIME_FIXTURE) && !defined(AURORA_FILE_CALL)
+#ifndef AURORA_FILE_CALL
     select_fixture(Fixture::call_baseline, Fixture::call_site);
 #endif
     for (unsigned scenario = 0; scenario < 4; ++scenario) {

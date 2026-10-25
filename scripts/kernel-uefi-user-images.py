@@ -31,7 +31,7 @@ def need(value, message):
         raise SystemExit("FAIL: " + message)
 
 
-def image_metadata(prefix, base, arguments, index, budget):
+def image_metadata(prefix, base, budget, owned, console):
     elf = Elf(prefix.with_suffix(".elf"))
     blob = prefix.with_suffix(".bin").read_bytes()
     symbols = {symbol.name: symbol for symbol in elf.symbols if symbol.name and symbol.section}
@@ -59,16 +59,16 @@ def image_metadata(prefix, base, arguments, index, budget):
         meta["serve_pc"] = at("aurora_serve_return_pc")
     abi = prefix.with_suffix(".abi.json")
     compiled = abi_function_symbol(json.loads(abi.read_text()), "aurora_user_main") if abi.exists() else None
-    if budget or (arguments.mode in OWNED and index == 0):
+    if budget or owned:
         compiled = compiled or "aurora_user_main"
         need(compiled in elf.functions, f"{prefix.name}: compiled entry {compiled} is not a linked function")
         function = elf.functions[compiled]
         meta.update(compiled_begin=function.address, compiled_end=function.address + function.size)
     if budget:
         meta.update(context_begin=at("aurora_budget_context_begin"), context_end=at("aurora_budget_context_end"))
-    if arguments.mode in OWNED and index == 0:
+    if owned:
         meta.update(("bytes_" + name + "_pc", at("aurora_bytes_" + name + "_pc")) for name in BYTE_OPERATIONS)
-        if arguments.mode.startswith("console-region"):
+        if console:
             meta.update(console_next_pc=at("aurora_console_next_pc"), console_put_pc=at("aurora_console_put_pc"))
     return meta, blob
 
@@ -77,6 +77,11 @@ OWNED = ("owned-text", "console-region", "console-region-fixture")
 # Domain image role names, as the oracles' metadata sets name them.
 ROLES = ("clean", "bounds", "peer")
 RANGES = ("compiled_begin", "compiled_end", "context_begin", "context_end")
+# Kernel-read sites of each slot of a packed bank, whose rows run several former
+# images: the call/serve exchange sites, timer ranges, owned-byte and Console sites.
+SITES_FIELDS = ("call_pc", "serve_pc", *RANGES, *("bytes_" + name + "_pc" for name in BYTE_OPERATIONS))
+SITES_FIELDS += ("console_next_pc", "console_put_pc")
+FLAGS = ("budget", "owned", "console")
 
 
 def main():
@@ -96,26 +101,41 @@ def main():
         "--ram-scratchpad-fixture",
     ):
         parser.add_argument(flag, action="store_true")
-    # A bank image installs every --image NAME:ROLE[:budget] in its own slot,
+    # A bank image installs every --image NAME:ROLE[:FLAG...] in its own slot,
     # linked for domain image ROLE (budget: its metadata carries the service-timer
-    # ranges); a --set MODE:VALUE:NAME0,NAME1[,NAME2] names the slots acting as
-    # images 0, 1 (and 2) when the boot selector is VALUE, else each role's first.
+    # ranges; owned/console: its owned-byte and Console sites; pages=N: a packed
+    # slot of N pages, one per image of the bank, laid out in order); a
+    # --set MODE:VALUE:NAME0,NAME1[,NAME2] names the slots acting as images 0, 1
+    # (and 2) when the boot selector is VALUE, else each role's first.
     parser.add_argument("--image", action="append", default=[])
     parser.add_argument("--set", action="append", default=[])
     arguments = parser.parse_args()
     out = arguments.output.resolve()
     records = {}
     header = ["#pragma once", "#include <array>", "#include <cstddef>", "namespace aurora::uefi::images {"]
-    bank = [entry.split(":") for entry in arguments.image]
-    need(all(len(entry) in (2, 3) and entry[2:] in ([], ["budget"]) for entry in bank), "invalid bank image")
-    bank = [(name, int(role), extra == ["budget"]) for name, role, *extra in bank]
+    bank, pages = [], []
+    for name, role, *extra in (entry.split(":") for entry in arguments.image):
+        sized = [int(flag[6:]) for flag in extra if flag.startswith("pages=") and flag[6:].isdigit()]
+        flags = [flag for flag in extra if not flag.startswith("pages=")]
+        need(len(sized) == len(extra) - len(flags) <= 1 and set(flags) <= set(FLAGS), "invalid bank image")
+        bank.append((name, int(role), {flag: flag in flags for flag in FLAGS}))
+        pages += sized
+    need(not pages or (len(pages) == len(bank) and all(0 < count <= 3 for count in pages)), "invalid packed slots")
     roles = sorted({role for _, role, _ in bank})
     need(roles == list(range(len(roles))) and len(roles) in (0, 2, 3), "bank roles are not images 0, 1 (and 2)")
-    for name, role, budget in bank or [(name, index, arguments.service_budget) for index, name in enumerate(ROLES[:2])]:
+    owned_mode = arguments.mode in OWNED
+    ordinary = [
+        (name, index, dict(budget=arguments.service_budget, owned=owned_mode and index == 0))
+        for index, name in enumerate(ROLES[:2])
+    ]
+    for name, role, flags in bank or ordinary:
         need(name not in records, f"{name}: duplicate bank image")
+        console = flags.get("console", arguments.mode.startswith("console-region") and flags["owned"])
         meta, blob = image_metadata(
-            out / f"user-{name}", LAYOUT.user_code + role * LAYOUT.code_stride, arguments, role, budget
+            out / f"user-{name}", LAYOUT.user_code + role * LAYOUT.code_stride, flags["budget"], flags["owned"], console
         )
+        if pages:
+            need(len(blob) <= pages[len(records)] * LAYOUT.page_size, f"{name}: image exceeds its packed slot")
         records[name] = meta
         symbol = name.replace("-", "_")
         header.append(
@@ -150,6 +170,29 @@ def main():
             + ", ".join(ranges)
             + "}};"
         )
+        # Every kernel-read site of each slot; zero when its image has none.
+        header += [
+            "class Sites final {",
+            "public:",
+            "    unsigned long long " + ", ".join(SITES_FIELDS) + ";",
+            "};",
+            f"inline constexpr std::array<Sites, {len(bank)}> slot_sites{{{{"
+            + ", ".join(
+                "{" + ", ".join(f"{records[name].get(key, 0)}ULL" for key in SITES_FIELDS) + "}" for name, _, _ in bank
+            )
+            + "}};",
+        ]
+        if pages:
+            offsets = [sum(pages[:slot]) * LAYOUT.page_size for slot in range(len(bank))]
+            header += [
+                f"inline constexpr std::size_t bank_pages = {sum(pages)};",
+                f"inline constexpr std::array<std::size_t, {len(bank)}> slot_offsets{{"
+                + ", ".join(f"{offset}U" for offset in offsets)
+                + "};",
+                f"inline constexpr std::array<std::size_t, {len(bank)}> slot_pages{{"
+                + ", ".join(f"{count}U" for count in pages)
+                + "};",
+            ]
         slots = [name for name, _, _ in bank]
         first = [next(slot for slot, entry in enumerate(bank) if entry[1] == role) for role in roles]
         sets = {"default": {ROLES[role]: slots[slot] for role, slot in enumerate(first)}}

@@ -11,9 +11,7 @@ bool console_setup{};
 }
 [[nodiscard]] auto console_launch(U64 generation, U64 region) -> std::array<U64, 7> {
     U64 argument = 0;
-#ifdef AURORA_RUNTIME_FIXTURE
     argument = static_cast<U64>(fixture == Fixture::console_fault);
-#endif
     return {1, generation, region, argument, 0, 0, 0x202};
 }
 [[nodiscard]] auto console_parked() -> bool {
@@ -25,7 +23,7 @@ bool console_setup{};
            console_grant.grant && launch == console_launch(console_read.generation, console_read.region) &&
            console_read.initial == 128 && console_read.remaining > 0 &&
            console_read.remaining + console_read.ticks == console_read.initial &&
-           console_read.context->call_frame(*domains[0].contract, images::clean_console_next_pc) && verify(domains[0]);
+           console_read.context->call_frame(*domains[0].contract, image_sites(0).console_next_pc) && verify(domains[0]);
 }
 class ProtectedConsolePlatform final {
 public:
@@ -42,13 +40,11 @@ public:
         return Serial::next();
     }
     static auto try_put(std::uint8_t byte) -> console::PutResult {
-#ifdef AURORA_RUNTIME_FIXTURE
         if (fixture == Fixture::console_output) {
             static unsigned written{};
             if (written++ == 2)
                 return console::PutResult::timeout;
         }
-#endif
         return Serial::try_put(byte);
     }
 };
@@ -59,10 +55,11 @@ using ProtectedConsole = console::Session<ProtectedConsoleTransport, ProtectedCo
            !console_grant.grant && !console_grant.generation && !console_setup && !console_waiting &&
            !console_wait_stack && console_wakes == console_expected_wake;
 }
-[[nodiscard]] auto program_poll_policy() -> bool {
+// The poll wait's policy for this composition (program_poll_policy dispatches to it).
+[[nodiscard]] auto console_poll_policy() -> bool {
     return console_parked();
 }
-[[nodiscard]] auto program_boundary() -> bool {
+[[nodiscard]] auto console_boundary() -> bool {
     const auto current = stack();
     return console_parked() && !console_waiting && console_wait_stack == 0 && current % 8 == 0 &&
            current >=
@@ -82,13 +79,13 @@ auto console_result(U64 *words, console::RawSample sample) -> void {
     require(text_active(), "console application active");
     auto *words = reinterpret_cast<U64 *>(frame);
     const auto site = words[17];
-    if (site != images::clean_console_next_pc && site != images::clean_console_put_pc)
+    if (site != image_sites(0).console_next_pc && site != image_sites(0).console_put_pc)
         return text_trap(frame);
     const auto context =
         ServiceContext::capture_bytes(std::span<const U64>{words, 22}, frame, *domains[0].contract, site);
     require(context && words[8] == 1 && words[9] == console_grant.generation && !console_read.context,
             "console exact site and private grant");
-    if (site == images::clean_console_put_pc) {
+    if (site == image_sites(0).console_put_pc) {
         words[14] = ProtectedConsole::put(console_grant.grant, console_grant.generation, words[11]);
         return 0;
     }
@@ -100,7 +97,6 @@ auto console_result(U64 *words, console::RawSample sample) -> void {
     require(timer_stop() && console_ticket != UINT64_MAX, "console stop and ticket");
     const auto prior_ticks = timer_ticks;
     // Charge the discarded partial quantum; resumption never renews the budget.
-#ifdef AURORA_RUNTIME_FIXTURE
     if (fixture == Fixture::console_budget) {
         while (timer_remaining > 1) {
             const auto debit =
@@ -113,7 +109,6 @@ auto console_result(U64 *words, console::RawSample sample) -> void {
             timer_remaining = debit->remaining();
         }
     }
-#endif
     const auto transition = BudgetTransition::decode(
         language_budget_tick(timer_initial, timer_remaining, timer_ticks), timer_initial, timer_remaining, timer_ticks);
     require(transition.has_value(), "console boundary debit");
@@ -213,32 +208,26 @@ auto console_result(U64 *words, console::RawSample sample) -> void {
         require(!console_resume(ticket) && !console_resume(ticket - 1) && !console_cancel(ticket - 1) &&
                     !console_cancel(ticket + 1) && !retire(0),
                 "console pending authority");
-#ifdef AURORA_RUNTIME_FIXTURE
         if (fixture == Fixture::console_cancel) {
             require(console_cancel(ticket) && !console_resume(ticket) && !console_cancel(ticket),
                     "console cancelled ticket");
             break;
         }
-#endif
         while (!console_read.ready) {
             auto sample = ProtectedConsole::poll(console_grant.grant, console_grant.generation);
-#ifdef AURORA_RUNTIME_FIXTURE
             if (fixture == Fixture::console_input)
                 sample = {0, 0, 1};
-#endif
             if (sample.byte_present || sample.damaged)
                 console_read.ready = sample;
             else
                 program_wait_sample();
         }
         require(!console_resume(ticket + 1) && !console_cancel(ticket + 1), "console stale ticket preserves sample");
-#ifdef AURORA_RUNTIME_FIXTURE
         if (fixture == Fixture::console_cancel_ready) {
             require(console_read.ready && console_cancel(ticket) && !console_resume(ticket),
                     "console ready cancellation");
             break;
         }
-#endif
         require(console_resume(ticket) && !console_resume(ticket), "console exactly once resume");
     }
     require(console_quiescent(), "console terminal boundary");

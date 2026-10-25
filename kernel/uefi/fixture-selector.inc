@@ -5,6 +5,7 @@ enum class Fixture : unsigned char {
 #include "runtime-fixtures.inc"
 #undef AURORA_FIXTURE
 };
+#ifndef AURORA_LOADER_FIXTURE // Loader fixture images take their row from the handoff instead.
 [[nodiscard]] inline auto read_fixture(Fixture first, Fixture last) -> std::optional<Fixture> {
     hardware::Serial::text("AURORA_FIXTURE_READY\r\n");
     // Keep the existing host smoke deadline; an absent byte grants no authority.
@@ -15,3 +16,4 @@ enum class Fixture : unsigned char {
         return std::nullopt;
     return static_cast<Fixture>(value);
 }
+#endif

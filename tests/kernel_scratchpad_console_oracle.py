@@ -58,6 +58,8 @@ def validate(status, text, plan, metadata, *, fixture=False):
             "Timeout output is byte-exact sa then EOF, with no additional CR or retry",
         )
     text = text.replace("\r", "")
+    # Both scratchpad rows boot storage-fixture, whose loader echoes the row first.
+    text = phases.loader_selection(text, "ram-scratchpad-console-fixture" if fixture else "ram-scratchpad-console")
     lines = text.splitlines()
     start = next(
         (

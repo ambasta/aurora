@@ -2,7 +2,8 @@
 // baselines and the pin and dormant-table supervisors; its rows select one at boot.
 #if (defined(AURORA_RUNTIME_CONTROL_FIXTURE) || defined(AURORA_PIN_FIXTURE) || defined(AURORA_TABLE_FIXTURE) ||        \
      defined(AURORA_UEFI_PINS) || defined(AURORA_UEFI_TABLES) || defined(AURORA_RUNTIME_MULTIPAGE) ||                  \
-     (defined(AURORA_RUNTIME_IMAGE_BANK) && !defined(AURORA_SERVICE_FIXTURE))) &&                                      \
+     (defined(AURORA_RUNTIME_IMAGE_BANK) && !defined(AURORA_SERVICE_FIXTURE) &&                                        \
+      !defined(AURORA_RUNTIME_BANK_PAGES))) &&                                                                         \
     (!defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_RUNTIME) || !defined(AURORA_RUNTIME_CONTROL_FIXTURE) ||  \
      !defined(AURORA_PIN_FIXTURE) || !defined(AURORA_TABLE_FIXTURE) || !defined(AURORA_UEFI_PINS) ||                   \
      !defined(AURORA_UEFI_TABLES) || !defined(AURORA_PIN_LEDGER_TESTING) || !defined(AURORA_DORMANT_TABLE_TESTING) ||  \
@@ -16,11 +17,36 @@
      defined(AURORA_BLOCKING_CALL) || defined(AURORA_UEFI_DISPATCH))
 #error "Program fixture requires the original two-domain streaming console"
 #endif
-#if defined(AURORA_SNAPSHOT_FIXTURE) &&                                                                                \
-    (!defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_SNAPSHOT) || !defined(AURORA_UEFI_RUNTIME) ||            \
-     !defined(AURORA_UEFI_IPC) || defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_BLOCKING_CALL) ||              \
-     defined(AURORA_OWNED_TEXT))
-#error "Snapshot fixture requires the original producer and one-page IPC composition"
+// The storage test image co-hosts the RAM file service, the RAM scratchpad
+// console, the blocking snapshot call and the snapshot producer; the text test
+// image co-hosts the protected file-call console, owned text and the console
+// region. Their loader rows select one at boot; no other image has them.
+#if (!defined(AURORA_STORAGE_FIXTURE) &&                                                                               \
+     (defined(AURORA_RAM_FILE) || defined(AURORA_RAM_SCRATCHPAD_CONSOLE) || defined(AURORA_UEFI_SNAPSHOT) ||           \
+      defined(AURORA_SNAPSHOT_FIXTURE) || defined(AURORA_SCRATCHPAD_FIXTURE))) ||                                      \
+    (!defined(AURORA_TEXT_FIXTURE) &&                                                                                  \
+     (defined(AURORA_FILE_CALL) || defined(AURORA_OWNED_TEXT) || defined(AURORA_CONSOLE_REGION))) ||                   \
+    (!defined(AURORA_STORAGE_FIXTURE) && !defined(AURORA_TEXT_FIXTURE) &&                                              \
+     (defined(AURORA_BLOCKING_CALL) || defined(AURORA_RUNTIME_BANK_PAGES) || defined(AURORA_RUNTIME_ROW_POLICY)))
+#error "Packed compositions and row page policies belong only to the storage and text fixture images"
+#endif
+#if defined(AURORA_STORAGE_FIXTURE) &&                                                                                 \
+    (!defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_RUNTIME) || !defined(AURORA_UEFI_IPC) ||                 \
+     !defined(AURORA_UEFI_SERVICE_BUDGET) || !defined(AURORA_UEFI_USER_BUDGET) || !defined(AURORA_RAM_FILE) ||         \
+     !defined(AURORA_RAM_SCRATCHPAD_CONSOLE) || !defined(AURORA_SCRATCHPAD_FIXTURE) ||                                 \
+     !defined(AURORA_BLOCKING_CALL) || !defined(AURORA_UEFI_SNAPSHOT) || !defined(AURORA_SNAPSHOT_FIXTURE) ||          \
+     !defined(AURORA_RUNTIME_BANK_PAGES) || !defined(AURORA_RUNTIME_ROW_POLICY) || defined(AURORA_FILE_CALL) ||        \
+     defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_OWNED_TEXT) || defined(AURORA_TEXT_FIXTURE))
+#error "Storage fixture requires its one image with every boot-selected composition"
+#endif
+#if defined(AURORA_TEXT_FIXTURE) &&                                                                                    \
+    (!defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_RUNTIME) || !defined(AURORA_UEFI_IPC) ||                 \
+     !defined(AURORA_UEFI_SERVICE_BUDGET) || !defined(AURORA_UEFI_USER_BUDGET) ||                                      \
+     !defined(AURORA_UEFI_PROGRAM_CONSOLE) || !defined(AURORA_BLOCKING_CALL) || !defined(AURORA_FILE_CALL) ||          \
+     !defined(AURORA_OWNED_TEXT) || !defined(AURORA_CONSOLE_REGION) || !defined(AURORA_RUNTIME_BANK_PAGES) ||          \
+     !defined(AURORA_RUNTIME_ROW_POLICY) || defined(AURORA_RAM_FILE) || defined(AURORA_UEFI_SNAPSHOT) ||               \
+     defined(AURORA_PROGRAM_FIXTURE))
+#error "Text fixture requires its one image with every boot-selected composition"
 #endif
 // The one service test image co-hosts the IPC, service-budget, dispatcher,
 // user-run and resume compositions; its rows select one at boot.
@@ -52,7 +78,7 @@
 #include "../console.hpp"
 #ifdef AURORA_UEFI_IPC
 #include "../ipc-policy.hpp"
-#if defined(AURORA_UEFI_SNAPSHOT) || (defined(AURORA_BLOCKING_CALL) && !defined(AURORA_FILE_CALL))
+#ifdef AURORA_STORAGE_FIXTURE
 #include "snapshot.hpp"
 #endif
 #ifdef AURORA_UEFI_DISPATCH
@@ -73,10 +99,6 @@
 #endif
 #ifdef AURORA_OWNED_TEXT
 #include "../owned-bytes.hpp"
-#include "acpi.hpp"
-#include "budget-transport.hpp"
-#include "apic-timer-io.hpp"
-#include "uefi-user-images.hpp"
 #endif
 #include <array>
 #include <optional>
@@ -127,22 +149,10 @@ using U64 = std::uint64_t;
 unsigned char scratchpad_probe{};
 unsigned scratchpad_output_left = UINT32_MAX;
 #endif
-#if defined(AURORA_UEFI_SNAPSHOT) || (defined(AURORA_BLOCKING_CALL) && !defined(AURORA_FILE_CALL))
-// Keep repeated bootstrap diagnostics shared in this bounded combined image.
-// The underlying serial behavior is unchanged; neither helper carries authority.
-class SnapshotDiagnostics final {
-public:
-    [[gnu::noinline]] static void text(std::string_view value) {
-        hardware::Serial::text(value);
-    }
-    [[gnu::noinline]] static void number(unsigned long long value) {
-        hardware::Serial::number(value);
-    }
-};
-using Serial = SnapshotDiagnostics;
-#elif defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_CONSOLE_REGION) || defined(AURORA_RAM_SCRATCHPAD_CONSOLE)
+#if defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_CONSOLE_REGION) || defined(AURORA_RAM_SCRATCHPAD_CONSOLE)
 // Runtime diagnostics and input share the same sticky LSR error latch. A raw
 // hardware::Serial read during a protected command would otherwise erase OE.
+// Every row of the storage and text images writes its diagnostics through it.
 class ProgramSerialAdapter final {
     using Uart = console::Uart<hardware::Io, console::FifoTrigger::fourteen>;
 
@@ -185,6 +195,41 @@ using hardware::Serial;
 #endif
 using user::ProgramEvent;
 using L = RuntimeLayout;
+#if defined(AURORA_STORAGE_FIXTURE) || defined(AURORA_TEXT_FIXTURE)
+// The selected row's former image, fixed from the loader row before any timer
+// or domain exists. Each predicate stands for a compile-time flag that image set.
+enum class Composition : unsigned char {
+    ram,
+    scratchpad,
+    call,
+    snapshot,
+    text,
+    console,
+    file
+};
+Composition composition{};
+#endif
+#ifdef AURORA_STORAGE_FIXTURE
+[[nodiscard]] auto ram_rows() -> bool { // AURORA_RAM_FILE
+    return composition == Composition::ram || composition == Composition::scratchpad;
+}
+[[nodiscard]] auto call_rows() -> bool { // AURORA_BLOCKING_CALL
+    return composition == Composition::call;
+}
+[[nodiscard]] auto timed() -> bool { // AURORA_UEFI_SERVICE_BUDGET and AURORA_UEFI_USER_BUDGET
+    return composition != Composition::snapshot;
+}
+#elif defined(AURORA_TEXT_FIXTURE)
+[[nodiscard]] auto owned_rows() -> bool { // AURORA_OWNED_TEXT
+    return composition != Composition::file;
+}
+[[nodiscard]] auto console_rows() -> bool { // AURORA_CONSOLE_REGION
+    return composition == Composition::console;
+}
+[[nodiscard]] auto call_rows() -> bool { // AURORA_BLOCKING_CALL, AURORA_FILE_CALL and the program console
+    return composition == Composition::file;
+}
+#endif
 #ifdef AURORA_SERVICE_FIXTURE
 // The selected row's composition, fixed before any timer or domain exists. Each
 // predicate stands for the compile-time flag the composition's former image set.
@@ -224,19 +269,19 @@ public:
     std::optional<ServiceContext> context;
 #ifdef AURORA_USER_RESUME
     std::optional<RunAuthority> authority;
-#elif defined(AURORA_BLOCKING_CALL) || defined(AURORA_RAM_FILE)
+#else
     std::optional<ProgramRunAuthority> authority;
     std::optional<user::DomainHandle> service;
     ipc::Endpoint endpoint;
     U64 ticket{};
-#else
+#ifdef AURORA_CONSOLE_REGION
+    // The console-region rows' parked read; the file-call rows use the fields above.
     std::optional<user::DomainHandle> owner;
-    U64 root{}, region{}, generation{}, epoch{}, ticket{};
+    U64 root{}, region{}, generation{}, epoch{};
     unsigned initial{};
 #endif
-#ifndef AURORA_CONSOLE_REGION
-    std::array<U64, launch_words> launch{};
 #endif
+    std::array<U64, launch_words> launch{};
     unsigned remaining{}, ticks{}, resumes{}, compiled{}, contexts{};
 #ifdef AURORA_CONSOLE_REGION
     std::optional<console::RawSample> ready;
@@ -281,7 +326,7 @@ constinit std::optional<ipc::Dispatcher> dispatcher;
 #endif
 #if !defined(AURORA_UEFI_DISPATCH) || defined(AURORA_SERVICE_FIXTURE)
 constinit std::optional<ipc::Mailbox> mailbox;
-#if defined(AURORA_UEFI_SNAPSHOT) || (defined(AURORA_BLOCKING_CALL) && !defined(AURORA_FILE_CALL))
+#ifdef AURORA_STORAGE_FIXTURE
 constinit ipc::SnapshotSlot snapshot_slot;
 #endif
 #endif
@@ -298,18 +343,13 @@ using SelectedRunAuthority = RunAuthority;
 std::optional<SelectedRunAuthority> run_authority;
 SelectedRunAuthority::Role selected_role = SelectedRunAuthority::Role::client;
 #endif
-#ifdef AURORA_UEFI_SERVICE_BUDGET
 std::array<U64, launch_words> launch{};
 std::optional<LocalApicAdmission> interrupt_admission;
-#else
-std::array<U64, 6> launch{};
-#endif
 U64 transaction{};
 ipc::Phase selected_phase = ipc::Phase::inactive;
 #endif
 #ifdef AURORA_OWNED_TEXT
-std::array<U64, 7> launch{};
-std::optional<LocalApicAdmission> interrupt_admission;
+// The owned-text rows share the file-call rows' launch words and timer admission.
 constinit kernel::bytes::Region text_region;
 std::optional<user::DomainHandle> text_owner;
 U64 text_epoch{};
@@ -317,10 +357,12 @@ U64 text_epoch{};
 #ifdef AURORA_RAM_FILE
 #include "ram-file-state.inc"
 #endif
-#if defined(AURORA_UEFI_SERVICE_BUDGET) && !defined(AURORA_OWNED_TEXT)
+#ifdef AURORA_UEFI_SERVICE_BUDGET
 auto service_delivered() -> bool {
-#ifdef AURORA_RAM_FILE
-    return ram_service_admitted();
+#ifdef AURORA_STORAGE_FIXTURE
+    if (ram_rows())
+        return ram_service_admitted();
+    return mailbox && mailbox->state() == ipc::State::delivered;
 #elif defined(AURORA_UEFI_DISPATCH)
 #ifdef AURORA_SERVICE_FIXTURE
     if (!dispatching())
@@ -409,6 +451,50 @@ auto select_images() -> void {
     return image;
 }
 #endif
+#ifdef AURORA_RUNTIME_BANK_PAGES
+// A packed slot's installed copy, and the kernel-read sites of the image the
+// selected set runs as domain image `image` (all zero for an unbound image).
+static_assert(images::bank_pages == AURORA_RUNTIME_BANK_PAGES && images::slot_offsets.size() == L::image_slots &&
+              images::slot_sites.size() == L::image_slots);
+[[nodiscard]] auto slot_backing(std::size_t slot) -> U64 {
+    return slot < L::image_slots ? arena + L::image_offset + images::slot_offsets[slot] : arena + L::arena_bytes;
+}
+[[nodiscard]] auto image_sites(std::size_t image) -> images::Sites {
+    return image_slot(image) < L::image_slots ? images::slot_sites[image_slot(image)] : images::Sites{};
+}
+#endif
+#if defined(AURORA_STORAGE_FIXTURE) || defined(AURORA_TEXT_FIXTURE)
+// The copied loader row (already admitted by the handoff check) picks the
+// composition, its images and its former image's page policy before any timer
+// or domain exists. The loader echoed the row; the oracles check it.
+auto select_packed_row(const Bytes &h) -> void {
+    require(loader_fixture::admitted(h.get(Handoff::fixture_offset)), "packed fixture row");
+    fixture = static_cast<Fixture>(h.get(Handoff::fixture_offset));
+    const auto value = static_cast<unsigned>(fixture);
+    const auto within = [value](Fixture first, Fixture last) {
+        return value >= static_cast<unsigned>(first) && value <= static_cast<unsigned>(last);
+    };
+#ifdef AURORA_STORAGE_FIXTURE
+    composition = within(Fixture::ram_baseline, Fixture::ram_root)                    ? Composition::ram
+                  : within(Fixture::scratchpad_baseline, Fixture::scratchpad_fixture) ? Composition::scratchpad
+                  : within(Fixture::call_baseline, Fixture::call_site)                ? Composition::call
+                                                                                      : Composition::snapshot;
+    if (composition == Composition::snapshot)
+        ImagePagePolicy::choose<ImagePagePolicy::one_page>();
+    else
+        ImagePagePolicy::choose<ImagePagePolicy::call>();
+#else
+    composition = within(Fixture::text_baseline, Fixture::text_stale)          ? Composition::text
+                  : within(Fixture::console_baseline, Fixture::console_budget) ? Composition::console
+                                                                               : Composition::file;
+    if (composition == Composition::file)
+        ImagePagePolicy::choose<ImagePagePolicy::call>();
+    else
+        ImagePagePolicy::choose<ImagePagePolicy::owned_text>();
+#endif
+    select_images();
+}
+#endif
 #ifdef AURORA_SERVICE_FIXTURE
 // One serial row before timer admission picks the composition and its images.
 // Several baselines share a transcript prefix, so the image echoes the row.
@@ -454,7 +540,11 @@ auto fill(U64 physical, std::uint8_t value) -> void {
     const auto code = L::code_begin(domain.image);
     const auto pages = L::code_pages(domain.image, domain.contract->size());
     if (address >= code && address - code < pages * L::page_size && address % L::page_size == 0)
+#ifdef AURORA_RUNTIME_BANK_PAGES
+        return (slot_backing(image_slot(domain.image)) + address - code) | 5;
+#else
         return (arena + L::slot_page(image_slot(domain.image)) + address - code) | 5;
+#endif
     const auto bottom = domain.contract->layout().user_stack_bottom();
     if (address >= bottom && address < bottom + 0x4000 && address % 4096 == 0) {
         const auto slot = (address - bottom) / 4096;
@@ -486,8 +576,8 @@ auto fill(U64 physical, std::uint8_t value) -> void {
             return false;
     }
 #ifdef AURORA_UEFI_SERVICE_BUDGET
-#ifdef AURORA_SERVICE_FIXTURE
-    // IPC rows run untimed, as their former image did: no LAPIC leaf exists.
+#if defined(AURORA_SERVICE_FIXTURE) || defined(AURORA_STORAGE_FIXTURE)
+    // IPC and snapshot rows run untimed, as their former image did: no LAPIC leaf exists.
     if (timed())
 #endif
         if (!interrupt_admission || (domain.tables->entry(LocalApicAdmission::virtual_address) & ~0x60ULL) !=
@@ -506,18 +596,14 @@ auto fill(U64 physical, std::uint8_t value) -> void {
     if (index >= L::domain_count || root() != kernel_root || active != L::domain_count)
         return false;
     auto &domain = domains[index];
-#ifdef AURORA_OWNED_TEXT
-    if (index != 0 || !text_retirable()
-#ifdef AURORA_CONSOLE_REGION
-        || !console_retirable()
-#endif
-    )
+#ifdef AURORA_TEXT_FIXTURE
+    if (owned_rows() && (index != 0 || !text_retirable() || (console_rows() && !console_retirable())))
         return false;
 #endif
     if (!domain.handle || !registry.ready(*domain.handle))
         return false;
 #ifdef AURORA_BLOCKING_CALL
-    if (!call_retire(index))
+    if (call_rows() && !call_retire(index))
         return false;
     domain.call_count = domain.call_service_used = 0;
     domain.call_limit = 1;
@@ -581,7 +667,11 @@ auto fill(U64 physical, std::uint8_t value) -> void {
         static_cast<void>(retire(*index));
         return std::nullopt;
     }
+#ifdef AURORA_RUNTIME_BANK_PAGES
+    const auto backing = slot_backing(image_slot(image));
+#else
     const auto backing = arena + L::slot_page(image_slot(image));
+#endif
     const Bytes descriptor{view(arena + L::metadata_offset + image_slot(image) * 64, 64)};
     domain.contract.emplace(*layout,
                             descriptor.get(0),
@@ -630,7 +720,7 @@ auto fill(U64 physical, std::uint8_t value) -> void {
         good = domain.tables->map(
             layout->user_stack_bottom() + page * 4096, *frames.address(*domain.stacks[page]), 7 | RuntimeTables::nx);
 #ifdef AURORA_UEFI_SERVICE_BUDGET
-#ifdef AURORA_SERVICE_FIXTURE
+#if defined(AURORA_SERVICE_FIXTURE) || defined(AURORA_STORAGE_FIXTURE)
     if (timed())
 #endif
         good = good && interrupt_admission &&
@@ -674,10 +764,13 @@ auto install_architecture() -> void {
         put(gate,
             5,
             (vector == 129
-#if defined(AURORA_BLOCKING_CALL) || defined(AURORA_RAM_FILE) || defined(AURORA_OWNED_TEXT)
+#ifdef AURORA_STORAGE_FIXTURE
+             // Only the timed rows' former images admitted the CPL3 exchange gate.
+             || (vector == 130 && timed())
+#elif defined(AURORA_TEXT_FIXTURE)
              || vector == 130
 #endif
-             )
+                 )
                 ? 0xee
                 : 0x8e,
             1);
@@ -836,7 +929,11 @@ auto execute(unsigned index, ProgramEvent wanted) -> void {
     const auto context = ServiceContext::capture_call(
         std::span<const U64>{reinterpret_cast<const U64 *>(frame), 22}, frame, contract, pc);
     const auto site = pc - contract.entry();
+#ifdef AURORA_RUNTIME_BANK_PAGES
+    const Bytes code{view(slot_backing(image_slot(domains[index].image)), contract.size())};
+#else
     const Bytes code{view(arena + L::image_page(index), contract.size())};
+#endif
     if (!context || site < 2 || site >= contract.size() || code.get(site - 2, 1) != 0xcd ||
         code.get(site - 1, 1) != 0x82 || code.get(site, 1) != 0xc3)
         return std::nullopt;
@@ -861,22 +958,16 @@ auto execute(unsigned index, ProgramEvent wanted) -> void {
 #include "dispatch-runtime.inc"
 #include "user-lifecycle.inc"
 #include "user-resume.inc"
-#elif defined(AURORA_RAM_FILE)
+#elif defined(AURORA_STORAGE_FIXTURE)
+// storage-fixture: every composition's flow, selected by run_protected.
 #include "ram-file.inc"
-#ifdef AURORA_RAM_SCRATCHPAD_CONSOLE
 #include "ram-scratchpad-console.inc"
-#endif
-#elif defined(AURORA_FILE_CALL)
-#include "program-console.inc"
-#elif defined(AURORA_BLOCKING_CALL)
 #include "blocking-call.inc"
-#elif defined(AURORA_UEFI_PROGRAM_CONSOLE)
-#include "program-console.inc"
-#else
 #include "ipc-runtime.inc"
-#ifdef AURORA_UEFI_SNAPSHOT
 #include "snapshot-runtime.inc"
-#endif
+#else
+// The program console: production, program-fixture and text-fixture's file-call rows.
+#include "program-console.inc"
 #endif
 #endif
 } // namespace
@@ -900,7 +991,7 @@ auto terminal_display_pixel(const void *grant, U64 generation, U64 x, U64 y, U64
     return TerminalDisplay::pixel(grant, generation, x, y, red, green, blue);
 }
 #endif
-#if defined(AURORA_UEFI_SNAPSHOT) || (defined(AURORA_BLOCKING_CALL) && !defined(AURORA_FILE_CALL))
+#ifdef AURORA_STORAGE_FIXTURE
 extern "C" [[noreturn]] void __au_runtime_bytes_kernel_fault(U64) noexcept {
     stop("snapshot producer ownership fault");
 }
@@ -916,9 +1007,9 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
     if (program_console_interrupt(vector, error, pc, cs, frame))
         return 0;
 #endif
-#ifdef AURORA_CONSOLE_REGION
-    // Routine byte operations share the console UART; only terminal/IRQ events are diagnostic.
-    if (vector != 130) {
+#ifdef AURORA_TEXT_FIXTURE
+    // Console-region byte operations share the console UART; the other rows report every event.
+    if (vector != 130 || !console_rows()) {
 #endif
         U64 cr2;
         asm volatile("mov %%cr2,%0" : "=r"(cr2));
@@ -937,7 +1028,7 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
         Serial::text(" cr2=");
         Serial::number(cr2);
         Serial::text("\r\n");
-#ifdef AURORA_CONSOLE_REGION
+#ifdef AURORA_TEXT_FIXTURE
     }
 #endif
 #ifdef AURORA_UEFI_SERVICE_BUDGET
@@ -974,27 +1065,24 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
                 saved_rsp >= arena + Handoff::stack_bottom && saved_rsp <= arena + Handoff::stack_top - 56 &&
                 saved_rsp % 8 == 0,
             "exception origin/stack");
-#ifdef AURORA_OWNED_TEXT
+#ifdef AURORA_TEXT_FIXTURE
     if (vector == 130)
-#ifdef AURORA_CONSOLE_REGION
-        return console_region_trap(frame);
-#else
-        return text_trap(frame);
-#endif
-#endif
-#ifdef AURORA_RAM_FILE
+        return call_rows() ? call_trap(frame) : console_rows() ? console_region_trap(frame) : text_trap(frame);
+#elif defined(AURORA_STORAGE_FIXTURE)
+    // Only the timed rows' gate admits INT 0x82 from CPL3 (install_architecture).
     if (vector == 130)
-        return ram_trap(frame);
-#endif
-#ifdef AURORA_BLOCKING_CALL
-    if (vector == 130)
-        return call_trap(frame);
+        return ram_rows() ? ram_trap(frame) : call_trap(frame);
 #endif
     const Bytes captured{view(frame, 176)};
     auto saved_flags = captured.get(152);
 #ifdef AURORA_UEFI_SERVICE_BUDGET
-#ifdef AURORA_OWNED_TEXT
-    if (true)
+#ifdef AURORA_TEXT_FIXTURE
+    if (owned_rows() || selected_phase == ipc::Phase::service || selected_phase == ipc::Phase::request ||
+        selected_phase == ipc::Phase::completion)
+#elif defined(AURORA_STORAGE_FIXTURE)
+    // Snapshot rows run untimed, as their former image did.
+    if (timed() && (selected_phase == ipc::Phase::service || selected_phase == ipc::Phase::request ||
+                    selected_phase == ipc::Phase::completion))
 #elif defined(AURORA_SERVICE_FIXTURE)
     if (timed_phase())
 #else
@@ -1005,12 +1093,15 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
     )
 #endif
     {
-#ifdef AURORA_OWNED_TEXT
-        require(text_active(), "text terminal authority");
+#ifdef AURORA_TEXT_FIXTURE
+        if (owned_rows())
+            require(text_active(), "text terminal authority");
 #endif
 #ifdef AURORA_UEFI_USER_BUDGET
 #ifdef AURORA_SERVICE_FIXTURE
         if (user_runs())
+#elif defined(AURORA_TEXT_FIXTURE)
+        if (!owned_rows())
 #endif
             require(active < L::domain_count && run_authority && current_run_identity(), "user terminal run authority");
 #endif
@@ -1026,7 +1117,7 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
         if (fixture == Fixture::program_pending)
 #endif
             force_timer_pending();
-#elif defined(AURORA_RUNTIME_FIXTURE) && defined(AURORA_BLOCKING_CALL) && !defined(AURORA_FILE_CALL)
+#elif defined(AURORA_STORAGE_FIXTURE)
         if (fixture == Fixture::call_pending)
             force_timer_pending();
 #endif
@@ -1041,10 +1132,10 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
     const user::ProgramContext context{vector, error, pc, cs, captured.get(168), captured.get(160), saved_flags, frame};
     require(program.accept(context, result), "exception site authority");
 #ifdef AURORA_UEFI_IPC
-#ifdef AURORA_RAM_FILE
-    ram_terminal();
-#elif defined(AURORA_BLOCKING_CALL)
-    call_envelope(captured, result);
+#ifdef AURORA_TEXT_FIXTURE
+    // Owned-text and console-region rows have no IPC envelope, as their former image had none.
+    if (call_rows())
+        call_envelope(captured, result);
 #elif defined(AURORA_UEFI_PROGRAM_CONSOLE)
     program_console_envelope(captured, result);
 #else
@@ -1053,7 +1144,11 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
         dispatch_envelope(captured, result);
     else if (program.event() == ProgramEvent::returned) {
 #else
-    if (program.event() == ProgramEvent::returned) {
+    if (ram_rows())
+        ram_terminal();
+    else if (call_rows())
+        call_envelope(captured, result);
+    else if (program.event() == ProgramEvent::returned) {
 #endif
         Serial::text("AURORA_UEFI_IPC_ENVELOPE: phase=");
         Serial::number(captured.get(64));
@@ -1107,8 +1202,7 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
     active = L::domain_count;
     return 1;
 }
-#if defined(AURORA_UEFI_SNAPSHOT) || (defined(AURORA_BLOCKING_CALL) && !defined(AURORA_FILE_CALL)) ||                  \
-    defined(AURORA_OWNED_TEXT)
+#if defined(AURORA_STORAGE_FIXTURE) || defined(AURORA_TEXT_FIXTURE)
 auto run_protected(U64 owned_arena, const Bytes &h, memory::PhysicalPages &producer_pool) -> bool {
 #else
 auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
@@ -1128,6 +1222,9 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
         return false;
     if (!frames.initialize(arena + L::stack_frames_offset, 16))
         return false;
+#if defined(AURORA_STORAGE_FIXTURE) || defined(AURORA_TEXT_FIXTURE)
+    select_packed_row(h);
+#endif
     install_architecture();
 #if defined(AURORA_RUNTIME_CONTROL_FIXTURE)
     select_fixture(Fixture::runtime_baseline, Fixture::runtime_table_quarantine);
@@ -1147,6 +1244,9 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
     select_service_row();
     if (timed())
         initialize_service_timer();
+#elif defined(AURORA_STORAGE_FIXTURE)
+    if (timed())
+        initialize_service_timer();
 #else
 #ifdef AURORA_PROGRAM_FIXTURE
     select_fixture(Fixture::program_request_fault, Fixture::program_unknown);
@@ -1154,58 +1254,52 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
     initialize_service_timer();
 #endif
 #endif
-#ifdef AURORA_OWNED_TEXT
-#ifdef AURORA_CONSOLE_REGION
-#ifdef AURORA_RUNTIME_FIXTURE
-    select_fixture(Fixture::console_baseline, Fixture::console_budget);
-#endif
-    run_console_application(producer_pool);
-#ifdef AURORA_RUNTIME_FIXTURE
-    if (fixture == Fixture::console_cancel)
+#ifdef AURORA_STORAGE_FIXTURE
+    if (composition == Composition::ram)
+        run_ram_file();
+    else if (composition == Composition::scratchpad)
+        run_ram_scratchpad_console();
+    else if (composition == Composition::call)
+        run_blocking_calls(producer_pool);
+    else
+        run_snapshot(producer_pool);
+    return true;
+#elif defined(AURORA_TEXT_FIXTURE)
+    if (composition == Composition::console) {
+        select_fixture(Fixture::console_baseline, Fixture::console_budget);
         run_console_application(producer_pool);
-#endif
-#else
-    run_owned_text(producer_pool);
-#endif
+        if (fixture == Fixture::console_cancel)
+            run_console_application(producer_pool);
+    } else if (composition == Composition::text)
+        run_owned_text(producer_pool);
+    else {
+        // The file-call baseline row is the former fixture-free image's flow.
+        if (fixture != Fixture::file_baseline)
+            select_fixture(Fixture::file_fault, Fixture::file_budget);
+        run_program_console();
+    }
     return true;
 #elif defined(AURORA_UEFI_IPC)
 #ifdef AURORA_UEFI_DISPATCH
-    switch (composition) {
-    case Composition::ipc:
-    case Composition::budget:
-        run_ipc();
-        break;
-    case Composition::dispatch:
-        run_dispatcher();
-        break;
-    case Composition::user:
-        run_user_lifecycle();
-        break;
-    case Composition::resume:
-        run_resumable_clients();
-        break;
-    }
-#elif defined(AURORA_RAM_FILE)
-#ifdef AURORA_RAM_SCRATCHPAD_CONSOLE
-    run_ram_scratchpad_console();
-#else
-    run_ram_file();
-#endif
-#elif defined(AURORA_FILE_CALL)
-#ifdef AURORA_RUNTIME_FIXTURE
-    select_fixture(Fixture::file_fault, Fixture::file_budget);
-#endif
-    run_program_console();
-#elif defined(AURORA_BLOCKING_CALL)
-    run_blocking_calls(producer_pool);
-#elif defined(AURORA_UEFI_PROGRAM_CONSOLE)
-    run_program_console();
-#elif defined(AURORA_UEFI_SNAPSHOT)
-    run_snapshot(producer_pool);
-#else
+switch (composition) {
+case Composition::ipc:
+case Composition::budget:
     run_ipc();
+    break;
+case Composition::dispatch:
+    run_dispatcher();
+    break;
+case Composition::user:
+    run_user_lifecycle();
+    break;
+case Composition::resume:
+    run_resumable_clients();
+    break;
+}
+#else
+run_program_console();
 #endif
-    return true;
+return true;
 #else
 #ifdef AURORA_RUNTIME_MULTIPAGE
 // A short construction must fail completeness and take the real retirement path.

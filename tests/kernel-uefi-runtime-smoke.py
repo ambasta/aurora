@@ -79,14 +79,11 @@ def run_console_region(command, log, mode):
         need(not errors, "Protected console transport cleanup: " + "; ".join(errors))
 
 
-def selector_projection(text, before):
-    """Every mode of a folded fixture image reads one selector after timer admission, before `before`."""
-    ready = list(re.finditer(r"^AURORA_FIXTURE_READY\n", text, re.M))
-    need(len(ready) == 1 and text.count("AURORA_FIXTURE") == 1, "Exact fixture READY line/count")
-    timer = text.find("AURORA_UEFI_TIMER_READY:")
-    later = [index for index in (text.find(marker) for marker in before) if index >= 0]
-    need(0 <= timer < ready[0].start() and later and ready[0].end() <= min(later), "Fixture selection phase")
-    return text[: ready[0].start()] + text[ready[0].end() :]
+def loader_projection(text, mode):
+    """Every owned-text and console-region mode boots text-fixture: its loader echoes the mode's fw_cfg row first."""
+    text = pci.acpi.loader_selection(text, mode)
+    need("AURORA_FIXTURE" not in text, "Exact fixture selection")
+    return text
 
 
 def validate_console_region(status, text, metadata, mode):
@@ -94,7 +91,7 @@ def validate_console_region(status, text, metadata, mode):
 
     Native tests cover policy and frame components, not the integrated ParkedRun path.
     """
-    text = selector_projection(text.replace("\r", ""), ("AURORA_UEFI_TIMER_ARM:",))
+    text = loader_projection(text.replace("\r", ""), mode)
     validate_region_metadata(metadata, True)
     need(status == 33 and text.endswith(SUFFIX), "Protected console natural successful exit")
     arenas = re.findall(r"AURORA_UEFI_OWNERSHIP_OK: arena=(\d+) bytes=1048576 descriptors=\d+", text)
@@ -266,7 +263,7 @@ def validate_region_metadata(metadata, console_region=False):
 
 
 def validate_owned_text(status, text, metadata, mode):
-    text = selector_projection(text.replace("\r", ""), ("AURORA_UEFI_TIMER_ARM:", "AURORA_UEFI_RUNTIME_FAIL:"))
+    text = loader_projection(text.replace("\r", ""), mode)
     denied = mode != "runtime-owned-text"
     need(type(status) is int and status == (35 if denied else 33), "Owned text exact exit")
     validate_region_metadata(metadata)

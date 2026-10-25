@@ -21,6 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import qemu_transport as transport
 import kernel_scratchpad_console_oracle as oracle
+from kernel_profiles import canonical_profile
 
 need = oracle.need
 
@@ -157,12 +158,18 @@ def run(args):
     fixture = args.case not in {"normal", "limit"}
     mode = "ram-scratchpad-console" + ("-fixture" if fixture else "")
     build = args.build_dir.resolve(strict=True)
-    need(build.parts[-3:] == ("kernel-images", "uefi", mode), "Exact native profile directory required")
+    need(
+        build.parts[-3:] == ("kernel-images", "uefi", canonical_profile("uefi", mode)),
+        "Exact native profile directory required",
+    )
     if args.payload is None:
         args.payload = time.strftime("Scratchpad %H:%M:%S", time.gmtime())
     plan = plans(args.case, args.payload)
+    # The storage image's bank: the images this row runs, by role.
+    images = json.loads((build / "user-images.json").read_text())
+    chosen = json.loads((build / "user-sets.json").read_text())[mode]
     metadata = dict(
-        images=json.loads((build / "user-images.json").read_text()),
+        images={role: images[name] for role, name in chosen.items()},
         kernel=json.loads((build / "service-timer-metadata.json").read_text()),
     )
     qemu = shutil.which(os.environ.get("QEMU", "qemu-system-x86_64"))

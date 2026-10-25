@@ -1,11 +1,19 @@
 // Only fixture images accept a boot-time selector; ordinary images omit this code.
 #include "fixture-selector.inc"
 Fixture fixture{};
+#ifdef AURORA_LOADER_FIXTURE
+// The storage and text images' row is the loader's fw_cfg row, already copied
+// from the handoff; each composition still admits only its own family.
+auto select_fixture(Fixture first, Fixture last) -> void {
+    require(fixture >= first && fixture <= last, "fixture selector outside image family");
+}
+#else
 auto select_fixture(Fixture first, Fixture last) -> void {
     const auto selected = read_fixture(first, last);
     require(selected.has_value(), "fixture selector outside image family");
     fixture = *selected;
 }
+#endif
 #ifdef AURORA_RUNTIME_CONTROL_FIXTURE
 // Probe numbers follow the table order and the UEFI_USER_PROBES dispatch in
 // user-image-entry.S: code, stack, kernel, window, write, nx, return, unknown,
@@ -97,7 +105,7 @@ auto hostile_exit_fixture(U64 vector, [[maybe_unused]] U64 &pc, U64 frame, [[may
     return resume;
 }
 #endif
-#if defined(AURORA_OWNED_TEXT) && !defined(AURORA_CONSOLE_REGION)
+#ifdef AURORA_TEXT_FIXTURE
 auto text_fixture_entry(U64 *words) -> void {
     if (fixture == Fixture::text_site)
         ++words[17];
@@ -119,7 +127,7 @@ auto text_fixture_owner(std::size_t operation, aurora::hosted::bytes::NativeOwne
 }
 
 #endif
-#if defined(AURORA_BLOCKING_CALL) && !defined(AURORA_FILE_CALL)
+#ifdef AURORA_STORAGE_FIXTURE
 auto call_fixture_entry(U64 *words) -> void {
     if (fixture == Fixture::call_owner)
         words[9] ^= 1;

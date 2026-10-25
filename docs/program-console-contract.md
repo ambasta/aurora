@@ -170,9 +170,10 @@ Each fault/budget smoke runs both writable and read-only recovery guests, so
 partial read cancellation exercises this release path without exposing output.
 
 The opt-in `program-file-call`, `program-file-call-fault` and
-`program-file-call-budget` profiles use a separately checked retained-service
-read lifetime for `peek`, `wc` and `crc`. The two fault modes select cases at boot in one fixture image;
-the ordinary kernel path and caller contain no fault-phase selection. Both callers
+`program-file-call-budget` modes use a separately checked retained-service
+read lifetime for `peek`, `wc` and `crc`. All three are fw_cfg rows of `text-fixture`
+(the interactive `--console` session boots the baseline row); the baseline row's
+kernel path and caller contain no fault-phase selection. Both callers
 share `console.file_calls` and the Call-free `console.file_stream` counting/CRC
 state. Its `FileReader` decodes canonical byte, EOF and missing replies, tracks
 the next offset, rejects more than 49 bytes and closes on terminal or failed

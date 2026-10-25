@@ -238,7 +238,7 @@ false cancelled result. Authenticated service faults reset the incarnation and
 lose all data; restart begins missing. Unknown trap/grant/frame/root/mapping
 failures remain fail-stop, with no unsafe reclamation or new command admission.
 
-`user-ram-file-fixture` consolidates known source service faults, a pending committed
+The `user-ram-file` fault rows of `storage-fixture` consolidate known source service faults, a pending committed
 receipt with a logically disposed caller, a post-COMMIT pre-reply fault, caller and
 service/cleanup allowance exhaustion, pending interrupt drain, and final-epoch
 cleanup. The source-fault case repeats reset, proves missing in each new
@@ -257,12 +257,12 @@ complete kernel/IRQ/drain paths must pass linked admission. Native image tests d
 not run QEMU. The bounded [#234 qualification](https://github.com/ambasta/aurora/pull/234)
 completed actual guest controls, final GCC 16 full/normal restoration and independent
 exact-source review; subsequent source changes must pass those gates again.
-Legacy `program-file-call` profiles retain their scrubbed-reentry and supervisor-store semantics unchanged.
+The `program-file-call` rows of `text-fixture` retain their scrubbed-reentry and supervisor-store semantics unchanged.
 
 
 ## Opt-in interactive RAM scratchpad
 
-The separate `ram-scratchpad-console` composition accepts actual `put [text]`,
+The `ram-scratchpad-console` composition (a baseline row of `storage-fixture`) accepts actual `put [text]`,
 `append [text]`, `get`, `crc`, `help`, `status` and `exit` input. It is implemented with focused source,
 native, linked-image and real-PTY evidence; bounded local qualification is recorded
 in [#235](https://github.com/ambasta/aurora/pull/235). That receipt applies only to its
@@ -310,12 +310,13 @@ reports commitment without retry. An unresolved delivered COMMIT resets as
 indeterminate/data-lost. Reset invalidates even an already captured candidate.
 Stale authority or reclamation uncertainty fails closed before publication.
 
-The single `ram-scratchpad-console-fixture` image adds explicit test-only disposal,
-malformed-copy, captured-reset, saved-backing and Console timeout selectors. Its
+The `ram-scratchpad-console-fixture` row adds explicit test-only disposal,
+malformed-copy, captured-reset, saved-backing and Console timeout selectors (its
+own ASCII byte after `AURORA_SCRATCHPAD_FIXTURE_READY`). Its
 alternate source Serve program faults after actual COMMIT publication but before
 reply. Fixture Console timeout is a source transport return, not physical UART
 fault qualification. The production image contains none of these selectors.
-Both new compositions use the existing protected Console size-optimization recipe
+Both rows use the existing protected Console size-optimization recipe
 and retain the two-page caller, one-page service, 15,360-byte stack, 51-exchange,
 128/120+8 budget and 64-command limits. The handwritten native adapter grows the
 bootstrap trusted surface; this is not native-code retirement or a general safety

@@ -20,12 +20,10 @@ MODES = SUCCESS + (
     "snapshot-reply-reserved",
     "snapshot-reply-byte",
 )
-# Modes that boot the shared snapshot-fixture image, from the one fixture table.
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from kernel_layout import LAYOUT  # noqa: E402
-import kernel_profiles  # noqa: E402
+from kernel_uefi_oracle import loader_selection  # noqa: E402
 
-FIXTURE_MODES = tuple(mode for mode, (image, _) in kernel_profiles.FIXTURE_MODES.items() if image == "snapshot-fixture")
 DONE = (1 << 64) - 1
 STACK = r"(\d+)"
 SUFFIX = ipc.SUFFIX
@@ -111,24 +109,10 @@ def expected(mode, metadata, arena):
 
 def validate(status, text, mode, metadata):
     need(mode in MODES, "Unknown snapshot mode")
-    selected = mode in FIXTURE_MODES
-    need(
-        text.count("AURORA_FIXTURE_READY") == int(selected)
-        and text.splitlines().count("AURORA_FIXTURE_READY") == int(selected),
-        "Snapshot fixture selector readiness",
-    )
-    if selected:
-        need(
-            "AURORA_PCI_WINDOW_CLOSED:" in text
-            and text.index("AURORA_PCI_WINDOW_CLOSED:") < text.index("AURORA_FIXTURE_READY"),
-            "Snapshot selector precedes hardware closure",
-        )
-        first = min(
-            (text.find(marker) for marker in ("AURORA_UEFI_SNAPSHOT_", "AURORA_UEFI_IPC_") if text.find(marker) >= 0),
-            default=-1,
-        )
-        need(first > text.index("AURORA_FIXTURE_READY"), "Snapshot selector follows publication")
-        text = text.replace("AURORA_FIXTURE_READY\r\n", "").replace("AURORA_FIXTURE_READY\n", "")
+    # Every snapshot mode, the baseline included, boots storage-fixture: its
+    # loader echoes the mode's fw_cfg row before any other record.
+    text = loader_selection(text, mode)
+    need("AURORA_FIXTURE" not in text, "Snapshot fixture selection")
     ipc.metadata_valid(metadata, "ipc")
     need(status == (33 if mode in SUCCESS else 35), "Wrong snapshot exit status")
     lines = text.splitlines()

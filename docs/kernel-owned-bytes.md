@@ -210,9 +210,8 @@ claiming contained recovery from arbitrary hostile native code.
 The source consumer covers UTF-8 append, invalid-scalar rollback, growth to the
 64-byte quota and failed replacement rollback, then live-owner fault and budget
 termination. `runtime-owned-text-site`, `runtime-owned-text-region` and
-`runtime-owned-text-stale` select cases at boot in one shared fixture image.
-Use the existing smoke launcher so it sends the selector after guest readiness;
-ordinary `runtime-owned-text` contains no injection code. The stale case replays
+`runtime-owned-text-stale` are rows of `text-fixture`, selected by the loader's
+fw_cfg row (the smoke launcher adds it); the `runtime-owned-text` baseline row runs no injection. The stale case replays
 the old descriptor after a committed resize into the unchanged allocator validator.
 The existing allocator harness also checks stale grants after revocation and
 second-owner scrub failure after partial cleanup. The user image remains limited

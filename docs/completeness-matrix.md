@@ -22,17 +22,21 @@ and [storage](storage.md).
 
 Validation cleanup passed independent integrated qualification in
 [PR #244](https://github.com/ambasta/aurora/pull/244). [Fixture consolidation](kernel-fixture-consolidation.md)
-now leaves 22 canonical images (19 UEFI, 3 BIOS): every fault mode is a
+now leaves 14 canonical images (11 UEFI, 3 BIOS): every fault mode is a
 boot-selected fixture case (loader, ACPI, PCI, BAR and IVRS cases through the fw_cfg
 platform fixture; framebuffer, graphical-console, console and owned-bytes rows
 through the display and device fixtures; IPC, budget, dispatcher, user-phase and
-resume rows through the one service fixture),
+resume rows through the one service fixture; RAM file, RAM scratchpad, blocking-call
+and snapshot rows through the storage fixture; file-call, owned-text and
+console-region rows through the text fixture, each row running its former image's
+user images from a packed bank),
 test baselines are baseline selectors of their fixtures, and `uefi/production`
 is the one fixture-free production UEFI image: the protected program console,
 rendered on the firmware (GOP) framebuffer by the graphical terminal, under a
 v7 handoff and a firmware-described framebuffer admission exercised only under
-QEMU/OVMF (no physical display qualification). Payload-bank folding of compositions
-that differ only in user images remains, so this is not yet the few-test-images target. Each image
+QEMU/OVMF (no physical display qualification). The 152 KiB payload reservation
+keeps the program fixture, the text fixture and the storage fixture apart
+([why](kernel-fixture-consolidation.md#still-separate)). Each image
 build runs one compiler-fact stack check and one image/W^X/symbol-policy check
 in place of the former per-profile admission scripts.
 The compiler-semantics runners now compile one packed program per test through

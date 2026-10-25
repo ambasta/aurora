@@ -133,9 +133,9 @@ auto ipc_execute(unsigned index,
     Serial::text(" stack=");
     Serial::number(current_stack);
     Serial::text(" event=");
-    Serial::text(expected_event == ProgramEvent::returned ? "returned"
-                 : expected_event == ProgramEvent::bounds ? "bounds"
-                                                          : "budget");
+    Serial::text(expected_event == ProgramEvent::returned ? std::string_view{"returned"}
+                 : expected_event == ProgramEvent::bounds ? std::string_view{"bounds"}
+                                                          : std::string_view{"budget"});
     Serial::text(" value=");
     Serial::number(program.value());
     Serial::text("\r\n");

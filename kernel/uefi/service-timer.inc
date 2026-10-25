@@ -1,8 +1,9 @@
 // Trusted single-BSP xAPIC adapter. All addresses come from validated admission.
-// Every timed composition names its run authority: owned text, user runs (whose
-// service-fixture rows may instead run the service-only dispatcher or budget flow).
-#if !defined(AURORA_OWNED_TEXT) && !defined(AURORA_UEFI_USER_BUDGET)
-#error "Service timer requires an owned-text or user-run authority"
+// Every timed composition names its run authority: user runs (whose
+// service-fixture rows may instead run the service-only dispatcher or budget
+// flow) or, on text-fixture's owned-text rows, the private text owner.
+#ifndef AURORA_UEFI_USER_BUDGET
+#error "Service timer requires a user-run authority"
 #endif
 constexpr U64 timer_vector = 64;
 bool timer_ready{}, timer_armed{}, timer_draining{}, timer_exhausted{};
@@ -30,7 +31,7 @@ std::optional<user::DomainHandle> timer_owner;
                                          *domains[active].contract,
                                          timer_owner_epoch)
 #ifdef AURORA_RAM_FILE
-           && ram_active_authority()
+           && (!ram_rows() || ram_active_authority())
 #endif
         ;
 }
@@ -215,22 +216,27 @@ auto initialize_service_timer() -> void {
 }
 auto timer_begin(unsigned index) -> void {
     using namespace std::literals::string_view_literals;
-#ifdef AURORA_RAM_FILE
-    require(ram_run_epoch != 0 && ram_run_epoch <= timer_epoch_watermark, "RAM reserved run epoch");
-    const auto next_epoch = ram_run_epoch;
-#elif defined(AURORA_USER_RESUME) || defined(AURORA_BLOCKING_CALL)
+#ifdef AURORA_STORAGE_FIXTURE
+    U64 next_epoch;
+    if (ram_rows()) {
+        require(ram_run_epoch != 0 && ram_run_epoch <= timer_epoch_watermark, "RAM reserved run epoch");
+        next_epoch = ram_run_epoch;
+    } else {
+        require(timer_epoch_watermark != UINT64_MAX, "run epoch exhaustion");
+        next_epoch = ++timer_epoch_watermark;
+    }
+#elif defined(AURORA_TEXT_FIXTURE)
+    U64 next_epoch = timer_epoch + 1;
+    if (!owned_rows()) {
+        require(timer_epoch_watermark != UINT64_MAX, "run epoch exhaustion");
+        next_epoch = ++timer_epoch_watermark;
+    }
+#elif defined(AURORA_USER_RESUME)
     require(timer_epoch_watermark != UINT64_MAX, "run epoch exhaustion");
     const auto next_epoch = ++timer_epoch_watermark;
 #else
     const auto next_epoch = timer_epoch + 1;
 #endif
-#ifdef AURORA_OWNED_TEXT
-    require(index == 0 && domains[0].handle && text_owner && registry.index(*text_owner) == 0 &&
-                registry.active(*text_owner) && root() == domains[0].tables->root() && !timer_armed &&
-                timer_epoch != UINT64_MAX && text_region.is_open() && !text_region.faulted(),
-            "text run authority");
-    text_epoch = next_epoch;
-#elif defined(AURORA_UEFI_USER_BUDGET)
 #ifdef AURORA_SERVICE_FIXTURE
     // IPC-budget and dispatcher rows time only the delivered service, without a user run authority.
     if (!user_runs())
@@ -238,48 +244,82 @@ auto timer_begin(unsigned index) -> void {
                     registry.active(*domains[index].handle) && !timer_armed && timer_epoch != UINT64_MAX,
                 "timer run authority");
     else {
+#elif defined(AURORA_TEXT_FIXTURE)
+    // Owned-text and console-region rows run under the private text owner, without a user run authority.
+    if (owned_rows()) {
+        require(index == 0 && domains[0].handle && text_owner && registry.index(*text_owner) == 0 &&
+                    registry.active(*text_owner) && root() == domains[0].tables->root() && !timer_armed &&
+                    timer_epoch != UINT64_MAX && text_region.is_open() && !text_region.faulted(),
+                "text run authority");
+        text_epoch = next_epoch;
+    } else {
 #endif
-        require(index < L::domain_count && domains[index].handle && selected_client < 2 && !timer_armed
-#ifndef AURORA_RAM_FILE
-                    && timer_epoch != UINT64_MAX
+        require(index < L::domain_count && domains[index].handle && selected_client < 2 && !timer_armed &&
+#ifdef AURORA_STORAGE_FIXTURE
+                    (ram_rows() || timer_epoch != UINT64_MAX),
+#else
+                    timer_epoch != UINT64_MAX,
 #endif
-                ,
                 "user timer run boundary");
         const auto budget =
-#ifdef AURORA_RAM_FILE
-            index == 0       ? 128U
-            : launch[0] == 2 ? 120U
-                             : 8U;
-#else
+#ifdef AURORA_STORAGE_FIXTURE
+            // RAM rows keep their retained-session allowances: caller 128, service 120 or 8.
+            ram_rows() ? (index == 0       ? 128U
+                          : launch[0] == 2 ? 120U
+                                           : 8U)
+            :
+#endif
 #ifdef AURORA_BLOCKING_CALL
-        domains[0].call_limit > 1 ? 128U :
+            domains[0].call_limit > 1 ? 128U
+            :
 #endif
-        (launch[0] == 5 || launch[0] == 6 || launch[0] == 7) ? 3U
-                                                             : 128U;
-#endif
-#ifdef AURORA_RAM_FILE
-        auto authorization = SelectedRunAuthority::authorize_retained_session(
+            (launch[0] == 5 || launch[0] == 6 || launch[0] == 7) ? 3U
+                                                                 : 128U;
+#ifdef AURORA_STORAGE_FIXTURE
+        // RAM rows' retained sessions have their own startup/abort-only admission.
+        auto authorization = ram_rows() ? SelectedRunAuthority::authorize_retained_session(registry,
+                                                                                           *domains[index].handle,
+                                                                                           selected_role,
+                                                                                           selected_phase,
+                                                                                           selected_client,
+                                                                                           transaction,
+                                                                                           launch[0],
+                                                                                           arena,
+                                                                                           root(),
+                                                                                           *domains[index].contract,
+                                                                                           next_epoch,
+                                                                                           budget)
+                                        : SelectedRunAuthority::authorize(registry,
+                                                                          *domains[index].handle,
+                                                                          selected_role,
+                                                                          selected_phase,
+                                                                          selected_client,
+                                                                          transaction,
+                                                                          launch[0],
+                                                                          arena,
+                                                                          root(),
+                                                                          *domains[index].contract,
+                                                                          next_epoch,
+                                                                          budget);
 #else
-    auto authorization = SelectedRunAuthority::authorize(
+        auto authorization = SelectedRunAuthority::authorize(registry,
+                                                             *domains[index].handle,
+                                                             selected_role,
+                                                             selected_phase,
+                                                             selected_client,
+                                                             transaction,
+                                                             launch[0],
+                                                             arena,
+                                                             root(),
+                                                             *domains[index].contract,
+                                                             next_epoch,
+                                                             budget);
 #endif
-            registry,
-            *domains[index].handle,
-            selected_role,
-            selected_phase,
-            selected_client,
-            transaction,
-            launch[0],
-            arena,
-            root(),
-            *domains[index].contract,
-            next_epoch,
-            budget);
         require(authorization.has_value(), "user timer immutable authority");
         run_authority.emplace(*authorization);
         require(selected_role != SelectedRunAuthority::Role::service || service_delivered(), "user service selection");
-#ifdef AURORA_SERVICE_FIXTURE
+#if defined(AURORA_SERVICE_FIXTURE) || defined(AURORA_TEXT_FIXTURE)
     }
-#endif
 #endif
     timer_owner = *domains[index].handle;
     timer_owner_epoch = timer_epoch = next_epoch;
@@ -289,16 +329,16 @@ auto timer_begin(unsigned index) -> void {
     timer_context_hits = 0;
     timer_compiled_hits = 0;
     timer_exhausted = false;
-#ifdef AURORA_OWNED_TEXT
-    timer_remaining = 128;
+#ifdef AURORA_TEXT_FIXTURE
+    timer_remaining = owned_rows() ? 128 : run_authority->budget();
 #elif defined(AURORA_SERVICE_FIXTURE)
-    timer_remaining = user_runs() ? run_authority->budget() : launch[0] == 5 ? 3 : 128;
+        timer_remaining = user_runs() ? run_authority->budget() : launch[0] == 5 ? 3 : 128;
 #else
     timer_remaining = run_authority->budget();
 #endif
     timer_initial = timer_remaining;
 #ifdef AURORA_RAM_FILE
-    if (index == 1 && launch[0] == 2) {
+    if (ram_rows() && index == 1 && launch[0] == 2) {
         require(ram_command && ram_command->service_used < 120, "RAM cumulative service allowance");
         timer_ticks = ram_command->service_used;
         timer_remaining = 120 - timer_ticks;
@@ -316,6 +356,8 @@ auto timer_begin(unsigned index) -> void {
 #ifdef AURORA_UEFI_USER_BUDGET
 #ifdef AURORA_SERVICE_FIXTURE
     if (user_runs()) {
+#elif defined(AURORA_TEXT_FIXTURE)
+    if (!owned_rows()) {
 #endif
         Serial::text("AURORA_UEFI_USER_RUN: epoch=");
         Serial::number(run_authority->epoch());
@@ -334,7 +376,7 @@ auto timer_begin(unsigned index) -> void {
         Serial::text(" root=");
         Serial::number(run_authority->root());
         Serial::text("\r\n");
-#ifdef AURORA_SERVICE_FIXTURE
+#if defined(AURORA_SERVICE_FIXTURE) || defined(AURORA_TEXT_FIXTURE)
     }
 #endif
 #endif
@@ -366,7 +408,7 @@ auto timer_begin(unsigned index) -> void {
     require(domains[0].call_limit > 1 && timer_armed && !timer_exhausted && timer_remaining && timer_initial == 128 &&
                 timer_ticks + timer_remaining == 128,
             "wc boundary allowance");
-#if defined(AURORA_RUNTIME_FIXTURE) && defined(AURORA_FILE_CALL)
+#ifdef AURORA_FILE_CALL
     // Test-only conservative charging, never a quota reset or simulated IRQ.
     // Exercise exhaustion at the actual pre-publication boundaries after two bytes.
     if ((file_probe == 36 && active == 0 && domains[0].call_count == 2) ||
@@ -418,14 +460,17 @@ auto service_timer_interrupt(U64 vector, U64 error, U64 pc, U64 cs, U64 frame) -
                     frame % 8 == 0 && pc >= reinterpret_cast<U64>(&service_drain_begin) &&
                     pc <= reinterpret_cast<U64>(&service_drain_end),
                 "timer drain interrupt authority");
-#ifdef AURORA_OWNED_TEXT
-        require(text_owner && registry.index(*text_owner) == 0 && registry.index(*timer_owner) == 0 &&
-                    text_epoch == timer_epoch,
-                "text drain owner epoch");
+#ifdef AURORA_TEXT_FIXTURE
+        if (owned_rows())
+            require(text_owner && registry.index(*text_owner) == 0 && registry.index(*timer_owner) == 0 &&
+                        text_epoch == timer_epoch,
+                    "text drain owner epoch");
 #endif
 #ifdef AURORA_UEFI_USER_BUDGET
 #ifdef AURORA_SERVICE_FIXTURE
         if (user_runs())
+#elif defined(AURORA_TEXT_FIXTURE)
+            if (!owned_rows())
 #endif
             require(run_authority && run_authority->ready_owner(registry, *timer_owner, timer_owner_epoch),
                     "user drain owner epoch");
@@ -448,24 +493,12 @@ auto service_timer_interrupt(U64 vector, U64 error, U64 pc, U64 cs, U64 frame) -
         Serial::text("\r\n");
         return 0;
     }
-#ifdef AURORA_OWNED_TEXT
-    require(text_active() && saved_rsp % 8 == 0 && saved_rsp >= arena + Handoff::stack_bottom &&
-                saved_rsp <= arena + Handoff::stack_top - 56,
-            "text timer authority");
-    const auto &interrupted_contract = *domains[0].contract;
-#elif defined(AURORA_UEFI_USER_BUDGET)
-#ifdef AURORA_SERVICE_FIXTURE
-    if (!user_runs())
-        require(active == 1 && domains[1].handle && timer_owner && registry.active(*timer_owner) &&
-                    registry.active(*domains[1].handle) && root() == domains[1].tables->root() &&
-                    selected_phase == ipc::Phase::service && service_delivered() && timer_armed &&
-                    timer_owner_epoch == timer_epoch && timer_owner_epoch != 0 && timer_remaining != 0 &&
-                    saved_rsp % 8 == 0 && saved_rsp >= arena + Handoff::stack_bottom &&
-                    saved_rsp <= arena + Handoff::stack_top - 56 && frame >= arena + L::rsp0_bottom &&
-                    frame <= arena + L::rsp0_top - 176 && frame % 8 == 0,
-                "timer active origin");
+#ifdef AURORA_TEXT_FIXTURE
+    if (owned_rows())
+        require(text_active() && saved_rsp % 8 == 0 && saved_rsp >= arena + Handoff::stack_bottom &&
+                    saved_rsp <= arena + Handoff::stack_top - 56,
+                "text timer authority");
     else
-#endif
         require(active < L::domain_count && domains[active].handle && timer_owner && run_authority &&
                     current_run_identity() && registry.active(*timer_owner) && timer_armed &&
                     timer_owner_epoch == timer_epoch && timer_remaining != 0 &&
@@ -474,10 +507,32 @@ auto service_timer_interrupt(U64 vector, U64 error, U64 pc, U64 cs, U64 frame) -
                     saved_rsp <= arena + Handoff::stack_top - 56 && frame >= arena + L::rsp0_bottom &&
                     frame <= arena + L::rsp0_top - 176 && frame % 8 == 0,
                 "user timer active authority");
-#ifdef AURORA_SERVICE_FIXTURE
-    const auto &interrupted_contract = user_runs() ? run_authority->contract() : *domains[1].contract;
+    const auto &interrupted_contract = owned_rows() ? *domains[0].contract : run_authority->contract();
 #else
-    const auto &interrupted_contract = run_authority->contract();
+#ifdef AURORA_SERVICE_FIXTURE
+        if (!user_runs())
+            require(active == 1 && domains[1].handle && timer_owner && registry.active(*timer_owner) &&
+                        registry.active(*domains[1].handle) && root() == domains[1].tables->root() &&
+                        selected_phase == ipc::Phase::service && service_delivered() && timer_armed &&
+                        timer_owner_epoch == timer_epoch && timer_owner_epoch != 0 && timer_remaining != 0 &&
+                        saved_rsp % 8 == 0 && saved_rsp >= arena + Handoff::stack_bottom &&
+                        saved_rsp <= arena + Handoff::stack_top - 56 && frame >= arena + L::rsp0_bottom &&
+                        frame <= arena + L::rsp0_top - 176 && frame % 8 == 0,
+                    "timer active origin");
+        else
+#endif
+            require(active < L::domain_count && domains[active].handle && timer_owner && run_authority &&
+                        current_run_identity() && registry.active(*timer_owner) && timer_armed &&
+                        timer_owner_epoch == timer_epoch && timer_remaining != 0 &&
+                        (selected_role != SelectedRunAuthority::Role::service || service_delivered()) &&
+                        saved_rsp % 8 == 0 && saved_rsp >= arena + Handoff::stack_bottom &&
+                        saved_rsp <= arena + Handoff::stack_top - 56 && frame >= arena + L::rsp0_bottom &&
+                        frame <= arena + L::rsp0_top - 176 && frame % 8 == 0,
+                    "user timer active authority");
+#ifdef AURORA_SERVICE_FIXTURE
+        const auto &interrupted_contract = user_runs() ? run_authority->contract() : *domains[1].contract;
+#else
+        const auto &interrupted_contract = run_authority->contract();
 #endif
 #endif
     const auto context = ServiceContext::capture(
@@ -486,28 +541,19 @@ auto service_timer_interrupt(U64 vector, U64 error, U64 pc, U64 cs, U64 frame) -
                 cs == context->words()[18] && timer_acknowledge(),
             "timer frame/ISR authority");
     bool context_sample = false;
-#ifdef AURORA_SERVICE_FIXTURE
-    // The selected set's compiled ranges: every user-run image, else the service's.
-    const auto compiled = image_ranges(user_runs() ? active : 1);
-    if (pc >= compiled[0] && pc < compiled[1])
+#ifdef AURORA_RUNTIME_BANK_PAGES
+    // The compiled range of the image the selected set runs as the interrupted domain.
+    if (const auto sites = image_sites(active); pc >= sites.compiled_begin && pc < sites.compiled_end)
         ++timer_compiled_hits;
-#elif defined(AURORA_UEFI_USER_BUDGET)
-#if defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_BLOCKING_CALL) || defined(AURORA_RAM_FILE)
+#elif defined(AURORA_SERVICE_FIXTURE)
+        // The selected set's compiled ranges: every user-run image, else the service's.
+        const auto compiled = image_ranges(user_runs() ? active : 1);
+        if (pc >= compiled[0] && pc < compiled[1])
+            ++timer_compiled_hits;
+#else
     const std::array<U64, 2> compiled_begin{images::clean_compiled_begin, images::bounds_compiled_begin};
     const std::array<U64, 2> compiled_end{images::clean_compiled_end, images::bounds_compiled_end};
-#else
-    const std::array<U64, 3> compiled_begin{
-        images::clean_compiled_begin, images::bounds_compiled_begin, images::peer_compiled_begin};
-    const std::array<U64, 3> compiled_end{
-        images::clean_compiled_end, images::bounds_compiled_end, images::peer_compiled_end};
-#endif
     if (pc >= compiled_begin[active] && pc < compiled_end[active])
-        ++timer_compiled_hits;
-#elif defined(AURORA_OWNED_TEXT)
-    if (pc >= images::clean_compiled_begin && pc < images::clean_compiled_end)
-        ++timer_compiled_hits;
-#else
-    if (pc >= images::bounds_compiled_begin && pc < images::bounds_compiled_end)
         ++timer_compiled_hits;
 #endif
 #if defined(AURORA_USER_FIXTURE)
