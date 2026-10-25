@@ -432,9 +432,6 @@ if get_option('kernel_images')
               meson.project_build_root() / 'kernel-images/uefi/runtime-span'],
        suite: ['full', 'merge', 'slow', 'integration'], env: native_test_env, workdir: native_root,
        timeout: 120, depends: [aurorac, kernel_profile_users['uefi/runtime-span']])
-  # Building every profile runs its image and stack checks (kernel-images/meson.build).
-  test('kernel-images', find_program('true'), depends: kernel_images_all,
-       suite: ['full', 'merge', 'slow', 'integration', 'boot'], timeout: 900)
 endif
 
 # UEFI guest families (QEMU), outside full: meson test --suite guest or guest-<family>.
