@@ -522,13 +522,18 @@ test('utf8-exhaustive', python,
      args: ['-B', files('compiler/utf8.py'), '--compiler', aurorac, '--profile', 'exhaustive'],
      depends: aurorac, suite: ['exhaustive'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
-# Package identity, manifest and graph, each with its complete case corpus.
+# Package identity, manifest and graph. Merge samples the byte-substitution and
+# four-package graph sweeps; the complete corpus runs in release.
 foreach family : ['identity', 'manifest', 'graph']
     test('package-' + family, python,
          args: ['-B', files('compiler/package_' + family + '.py'), '--compiler', aurorac],
          depends: aurorac, suite: ['full', 'merge', 'dev', 'packages', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 300,
          priority: slow_tests.get('package-' + family, 0))
+    test('package-' + family + '-complete', python,
+         args: ['-B', files('compiler/package_' + family + '.py'), '--compiler', aurorac, '--profile', 'complete'],
+         depends: aurorac, suite: ['full', 'release', 'packages', 'compiler'],
+         env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
 endforeach
 # Storage and filesystem libraries: one compiled driver per family over data cases,
 # compared with the golden file beside it (tests/compiler/storage).
