@@ -16,7 +16,9 @@ to 62 (43 UEFI, 19 BIOS) by folding test baselines into their fixtures, and to
 dropping the framebuffer probe and Event observation images, which nothing booted,
 then to 41 (38 UEFI, 3 BIOS) by folding every BIOS test image into `bios-fixture`, then
 to 37 (34 UEFI, 3 BIOS) by folding the span, multipage, pin and table images into
-`runtime-fixture`. Every
+`runtime-fixture`, and to 30 (27 UEFI, 3 BIOS) by folding the early, ACPI, PCI,
+IVRS, BAR, BAR-state, BAR-capture and NVMe-preparation images into
+`platform-fixture`. Every
 fault mode keeps its own guest run and exact oracle. A source image count is not a
 measured build or execution saving; the PR records those.
 
@@ -24,17 +26,19 @@ measured build or execution saving; the PR records those.
 
 - Serial selector: a fixture image prints `AURORA_FIXTURE_READY`, waits for one
   byte and accepts only its family's interval; anything else fails closed. Each
-  family reads it at a fixed phase (after ACPI closure for PCI/IVRS/BAR, before
-  timer initialization for the protected-runtime families, at the top of
-  `run_console` for the console), and each oracle checks that phase.
+  family reads it at a fixed phase (before timer initialization for the
+  protected-runtime families, at the top of `run_console` for the console), and
+  each oracle checks that phase.
 - fw_cfg file (`kernel/uefi/fw-cfg-fixture.hpp`): the loader-stage faults inject before ExitBootServices, when
-  OVMF's terminal driver owns and buffers the UART, so `early-fixture` reads a
+  OVMF's terminal driver owns and buffers the UART, so `platform-fixture` reads a
   decimal selector from the QEMU fw_cfg file `opt/aurora/fixture` (I/O ports
-  0x510/0x511) at loader entry and echoes it before any exit attempt. The
-  harness adds `-fw_cfg name=opt/aurora/fixture,string=N` from the table
-  (`kernel_profiles.fw_cfg_fixture`). The loader copies the value into one extra
-  handoff word (offset 128, present only in this image) that the payload admits
-  only within the family, so the payload's `wp`/`nx` cases share the image. The
+  0x510/0x511) at loader entry and echoes it as `AURORA_FIXTURE_SELECTED` on the
+  line after loader entry, before any other record. The harnesses add
+  `-fw_cfg name=opt/aurora/fixture,string=N` from the table
+  (`kernel_profiles.fw_cfg_fixture`, machine variants included). The loader copies
+  the value into one extra handoff word (offset 128, present only in this image)
+  that the payload admits only within the image's interval, so every payload case
+  shares the image (see below). The
   `iommu-event` image reads the same file at Event entry, because its harness
   writes serial output to a file and cannot send a selector byte.
 - Capture release byte: the framebuffer capture gate already waited for one
@@ -56,8 +60,9 @@ measured build or execution saving; the PR records those.
   (`acpi-two`, `pci-devices`, `pci-bridge`, `budget-smp`, `schedule-smp`,
   `schedule-no-apic`) inherit their baseline's image and selector. Oracles
   separate a family's fault cases (`kernel_profiles.fixture_cases`) from every
-  selected mode (`selected_modes`): a baseline run requires the READY receipt at
-  its phase and the fixture image's probe metadata, while other oracles reusing
+  selected mode (`selected_modes`, optionally one row family): a baseline run
+  requires the READY receipt at its phase (the loader echo on `platform-fixture`)
+  and the fixture image's probe metadata, while other oracles reusing
   a baseline name for a prefix check keep its selector-free meaning.
 
 The smoke images (`normal` UEFI and BIOS) and the production image contain no
@@ -95,7 +100,7 @@ Handoff. Version 7 is the production layout: word 112 is the copied RSDP, word
 120 the runtime metadata (as in v3) and word 128 the framebuffer record, in a
 136-byte header. Only the production header admits v7 and it admits nothing
 else; every other image keeps its 128-byte header, rejects v7 and validates
-v1-v6 unchanged (`native-kernel-uefi-handoff[-terminal]`). The early fixture's
+v1-v6 unchanged (`native-kernel-uefi-handoff[-terminal]`). The platform fixture's
 word 128 exists only in its own image, which can never compose the terminal.
 
 Framebuffer admission. The loader and the payload's restoration use the firmware
@@ -137,7 +142,7 @@ values from `kernel/bootstrap-layout-values.inc`.
 | --- | --- | --- |
 | IPC owner/version/phase/transaction/site/unknown | hostile client images | `ipc-fixture` alters the trapped exit before the unchanged kernel checks (site moves the trapped RIP off the return site; unknown resumes the client at the wrapper's `bad_entry` UD2, an unregistered address); `tests/kernel-uefi-ipc-smoke.py` |
 | snapshot owner, reply byte/reserved; program ordinal/owner/transaction/unknown | hostile client/service images | same exit hook in `snapshot-fixture`/`program-fixture` (program unknown also faults at `bad_entry`); their transcript oracles |
-| stale, stale-exhausted, bad-table, bad-handoff, bad-map, wp, nx, acpi-duplicate-root | eight kernel builds | `early-fixture`; each injection sits where its build did (bad-table still maps 0x10000 before exit, so the payload's complete-tree check is unchanged). The image includes ACPI for `acpi-duplicate-root`, so bad-handoff swaps the handoff version between its RSDP-free and RSDP-bearing forms instead of writing 2; the payload's version/content check still rejects it. `tests/kernel-uefi-smoke.py`, `tests/kernel-acpi-smoke.py`, which also require the selector echo before any exit record |
+| stale, stale-exhausted, bad-table, bad-handoff, bad-map, wp, nx, acpi-duplicate-root | eight kernel builds | `platform-fixture`; each injection sits where its build did (bad-table still maps 0x10000 before exit, so the payload's complete-tree check is unchanged). The image includes ACPI for `acpi-duplicate-root`, so bad-handoff swaps the handoff version between its RSDP-free and RSDP-bearing forms instead of writing 2; the payload's version/content check still rejects it. `tests/kernel-uefi-smoke.py`, `tests/kernel-acpi-smoke.py`, which also require the selector echo before any exit record |
 | runtime code/stack/kernel/window/write/nx/return/unknown/syscall/sysenter | one client image per probe | probe set in `runtime-fixture`'s clean client; `tests/kernel-uefi-runtime-smoke.py` |
 | runtime terminal input/output | two kernel builds | `runtime-fixture` mutation, as the BIOS fault fixture already did |
 | budget mmio/softint/fpu/context | service image per probe | probe word in `budget-fixture`; `tests/kernel-uefi-budget-smoke.py` |
@@ -145,8 +150,8 @@ values from `kernel/bootstrap-layout-values.inc`.
 | dispatch peer-code; user context/unknown | client images | probe word in `dispatch-fixture`/`user-fixture`; dispatch and user-phase oracles |
 | console stale/reentry/timeout/report | four kernel builds | `console-fixture`; `tests/kernel-console-service-qualification.py` |
 | framebuffer record/permissions/stale | three kernel builds | capture release byte; `scripts/framebuffer_capture_oracle.py` |
-| IVRS default/read | two kernel builds | `ivrs-fixture` selects the architectural or explicit cold profile (never a fallback); IVRS serial/trace/provenance oracles, which now require both linked fault sites in every IVRS image |
-| BAR read/inherited/write/revoked/alias | four kernel builds | `bar-fixture`; BAR serial/trace/provenance oracles, including the stock-firmware control |
+| IVRS default/read | two kernel builds | `platform-fixture` selects the architectural or explicit cold profile (never a fallback); IVRS serial/trace/provenance oracles, which now require both linked fault sites in every IVRS image |
+| BAR read/inherited/write/revoked/alias | four kernel builds | `platform-fixture`; BAR serial/trace/provenance oracles, including the stock-firmware control |
 
 Before this change `full` built only eleven images; the rest were built only by
 the guest smoke that selected them. `native-kernel-profile-images` now makes
@@ -187,8 +192,7 @@ profiles; the clock catalog and launch lists reject the retired modes.
   payload bank: the kernel compiles user-image sites (`images::*_pc`, compiled
   ranges) in as constants and the loader installs the images before exit, so
   several image sets need generated per-set records selected at boot.
-- Distinct compositions: resume, BAR state/capture/NVMe preparation, owned bytes
-  and graphical capture.
+- Distinct compositions: resume, owned bytes and graphical capture.
 
 ## BIOS program bank
 
@@ -224,6 +228,28 @@ production and the graphical terminal still reject both flags.
 that differ only in image set or supervisor have identical domain records, so the
 image echoes `AURORA_FIXTURE_SELECTED: value=N` right after READY and the runtime,
 pin and table oracles require it to be their mode's selector.
+
+## Platform fixture
+
+`platform-fixture` co-hosts the loader handoff faults and the ACPI, PCI, BAR,
+BAR-state, BAR-capture, NVMe-preparation and IVRS cases: 32 rows, with new rows
+for `bar-state`, `bar-capture`, `bar-prepare` and `ivrs-missing`, which had no
+selector before. Only the loader faults and the BAR capture change the loader, so
+the one selector is the fw_cfg row read at loader entry, and every phase branches
+on the copied handoff word (`platform-fixture.hpp`). Early and ACPI rows stop
+after ACPI discovery and never require MCFG; PCI rows scan PCI; `bar-capture`,
+the later BAR rows and every IVRS row capture the firmware BAR record (handoff
+v4); only `bar-capture` keeps the generic resource parser, which must refuse the
+EDK2 producer; only `bar-prepare` prepares NVMe pages; only `bar-state` prints
+the admission refusal; only IVRS rows require the IVRS table and the q35 LAPIC.
+The device phase runs in `noinline` functions after the ACPI frame has
+returned, so the union of every path is 11,551 of 15,360 stack bytes
+(`pci-fixture` and `bar-state` alone were 14,719 and 14,871, because their PCI
+scan ran inside the ACPI frame). The payload is 76,500 bytes. The ACPI, PCI, BAR,
+BAR-state and IVRS oracles require the loader echo with their row instead of a
+serial READY receipt at their old phase; their behavioural assertions are
+unchanged. A guard in `pci.cpp` keeps BAR capture, NVMe preparation and IVRS out
+of every other image.
 
 The 30-second generic, 60-second IVRS/BAR and 180-second console deadlines are
 unchanged. Grouping does not widen user-image, stack or page admission.

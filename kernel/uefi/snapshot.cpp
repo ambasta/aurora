@@ -7,8 +7,7 @@
     defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE) ||  \
     defined(AURORA_UEFI_FRAMEBUFFER) || defined(AURORA_UEFI_PINS) || defined(AURORA_UEFI_TABLES) ||                    \
     defined(AURORA_UEFI_IVRS) || defined(AURORA_UEFI_NVME_PREPARE) || defined(AURORA_UEFI_IOMMU_EVENT) ||              \
-    defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_BAR_ADMISSION) || defined(AURORA_UEFI_BAR_EDK2) ||         \
-    defined(AURORA_KERNEL_BYTES_TESTING)
+    defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_KERNEL_BYTES_TESTING)
 #error "Snapshot producer requires its exact CPU-only protected IPC profile"
 #endif
 

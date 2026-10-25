@@ -76,9 +76,9 @@ and page-table verification and before ACPI discovery. The same allocator is
 passed explicitly through ACPI and PCI discovery into BAR preparation. The
 separate protected-runtime stack allocator at arena+0xc0000 is unchanged.
 
-The opt-in `bar-prepare` mode uses the existing clean, cold, namespace-free
-Q35 NVMe BAR fixture. It cannot be combined with runtime, dormant-table or IVRS
-profiles. BAR handoff version 4 and protected-runtime metadata version 3 share
+The opt-in `bar-prepare` mode is a row of `platform-fixture` over the existing
+clean, cold, namespace-free Q35 NVMe BAR fixture; no other row prepares pages.
+The image cannot be combined with runtime or dormant-table profiles. BAR handoff version 4 and protected-runtime metadata version 3 share
 arena+0x81000 with incompatible meanings; this change does not combine them and
 does not invent a `DomainHandle` for the BAR-only profile.
 

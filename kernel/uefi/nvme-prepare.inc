@@ -1,4 +1,4 @@
-// Included only by the standalone, namespace-free BAR preparation fixture.
+// Included only in the platform fixture image; the bar-prepare row alone calls it.
 // Persistent storage prevents accidental reconstruction over retained leases.
 constinit std::optional<NvmeQueueBundle> nvme_pages;
 

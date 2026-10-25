@@ -22,8 +22,9 @@ and [storage](storage.md).
 
 Validation cleanup passed independent integrated qualification in
 [PR #244](https://github.com/ambasta/aurora/pull/244). [Fixture consolidation](kernel-fixture-consolidation.md)
-now leaves 62 canonical images (43 UEFI, 19 BIOS): every fault mode is a
-boot-selected fixture case (loader-stage faults through a fw_cfg early fixture),
+now leaves 30 canonical images (27 UEFI, 3 BIOS): every fault mode is a
+boot-selected fixture case (loader, ACPI, PCI, BAR and IVRS cases through the fw_cfg
+platform fixture),
 test baselines are baseline selectors of their fixtures, and `uefi/production`
 is the one fixture-free production UEFI image: the protected program console,
 rendered on the firmware (GOP) framebuffer by the graphical terminal, under a

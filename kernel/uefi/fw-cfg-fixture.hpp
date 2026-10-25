@@ -1,6 +1,6 @@
 #pragma once
 // QEMU fw_cfg selector for fixture images whose harness cannot send a serial
-// byte: the early fixture (firmware still owns the UART) and the IOMMU Event
+// byte: the platform fixture (firmware still owns the UART) and the IOMMU Event
 // image (its serial output goes to a file). The harness adds
 // -fw_cfg name=opt/aurora/fixture,string=N; the value must lie in the image's
 // interval of runtime-fixtures.inc, or the read fails closed.

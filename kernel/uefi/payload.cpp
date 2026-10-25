@@ -134,11 +134,11 @@ auto payload_main(U64 arena, U64 size) -> void {
     Serial::text(" stack=");
     Serial::number(stack);
     Serial::text("\r\n");
-#ifdef AURORA_EARLY_FIXTURE
-    using aurora::uefi::early::Fixture;
-    if (aurora::uefi::early::selected(h.get(Handoff::fixture_offset), Fixture::early_wp))
+#ifdef AURORA_PLATFORM_FIXTURE
+    using aurora::uefi::platform::Fixture;
+    if (aurora::uefi::platform::selected(h.get(Handoff::fixture_offset), Fixture::early_wp))
         *reinterpret_cast<volatile std::uint8_t *>(arena + Handoff::payload_offset) = 0;
-    if (aurora::uefi::early::selected(h.get(Handoff::fixture_offset), Fixture::early_nx)) {
+    if (aurora::uefi::platform::selected(h.get(Handoff::fixture_offset), Fixture::early_nx)) {
         *reinterpret_cast<volatile std::uint8_t *>(arena + Handoff::pool_offset) = 0xc3;
         reinterpret_cast<void (*)()>(arena + Handoff::pool_offset)();
     }

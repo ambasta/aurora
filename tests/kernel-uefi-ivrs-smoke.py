@@ -42,8 +42,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from kernel_layout import LAYOUT  # noqa: E402
 import kernel_profiles  # noqa: E402
 
-# Current cases that boot ivrs-fixture and read its selector.
-FIXTURE_MODES = tuple(mode for mode, (image, _) in kernel_profiles.FIXTURE_MODES.items() if image == "ivrs-fixture")
 EARLY = ("ivrs-pair", "ivrs-alias", "ivrs-reserved", "ivrs-missing")
 READ_MODES = ("ivrs-read", "ivrs-write", "ivrs-revoked")
 BASE, LENGTH, WINDOW = 0xFED80000, 0x4000, 0xFFFF800000002000
@@ -160,17 +158,9 @@ def raw_record(line):
 def validate(status, serial, mode, payload=None):
     need(mode in HISTORICAL_MODES and status == (33 if mode == "ivrs-read" else 35), "Wrong IVRS mode/process status")
     # Parse raw UART framing once, including CRLF from provenance artifact replay.
-    lines = bar.protocol_lines(serial)
-    marker = "AURORA_FIXTURE_READY"
-    # Every selected IVRS case reads the selector; ivrs-missing rejects first.
-    fixture_image = mode in FIXTURE_MODES
-    need(lines.count(marker) == (1 if fixture_image else 0), "Exact IVRS fixture readiness")
-    if fixture_image:
-        need(
-            serial.index("AURORA_ACPI_WINDOW_CLOSED:") < serial.index(marker) < serial.index("AURORA_PCI_APERTURE:"),
-            "IVRS fixture admission phase",
-        )
-        lines.remove(marker)
+    # Every live IVRS mode is a platform-fixture row, echoed right after loader entry.
+    lines = bar.protocol_lines(serial, mode if mode in kernel_profiles.FIXTURE_MODES else None)
+    need("AURORA_FIXTURE_READY" not in lines, "Unexpected serial fixture selector")
     need(len(lines) >= 11, "Truncated IVRS receipt")
     base, length = bar.descriptor_pair(lines[1:3])
     expected = [

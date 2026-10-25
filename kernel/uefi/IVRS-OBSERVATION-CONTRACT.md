@@ -90,11 +90,11 @@ encountered in the normal fixture. Historical147 modes retain their own firmware
 and acceptance profiles. Final receipts must include exact source/tool/firmware
 hashes, argv, complete raw traces, linked fault metadata and copied input bytes.
 
-The five live modes boot one `ivrs-fixture` image. Default, read, write and
-revoked read the serial selector after ACPI closure; default selects the
-architectural profile there and every other case the explicit QEMU cold
-profile, never as a fallback. Missing IVRS rejects in ACPI discovery before
-the selector. Default and read used to be separate images; the fixture now
+The five live modes are rows of the one `platform-fixture` image, selected
+through fw_cfg at loader entry; only these rows require the IVRS table and the
+q35 LAPIC. Default selects the architectural profile and every other case the
+explicit QEMU cold profile, never as a fallback. Missing IVRS rejects in ACPI
+discovery. Default and read used to be separate images; the fixture now
 links both exact fault instructions for every case, and each mode keeps its
 own serial, trace and provenance oracles.
 

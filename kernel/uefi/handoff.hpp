@@ -3,8 +3,8 @@
 #include <cstdint>
 #include <span>
 #include "runtime-layout.hpp"
-#ifdef AURORA_EARLY_FIXTURE
-#include "early-fixture.hpp"
+#ifdef AURORA_PLATFORM_FIXTURE
+#include "platform-fixture.hpp"
 #endif
 namespace aurora::uefi {
 class Bytes final {
@@ -67,8 +67,8 @@ public:
 class Handoff final {
 public:
     static constexpr std::uint64_t magic = 0x41524f5255454649ULL;
-#ifdef AURORA_EARLY_FIXTURE
-    // The early-fixture image appends one selector word; ordinary images have none.
+#ifdef AURORA_PLATFORM_FIXTURE
+    // The platform-fixture image appends one selector word; ordinary images have none.
     static constexpr std::size_t fixture_offset = 128;
     static constexpr std::size_t header = 136;
 #elif defined(AURORA_UEFI_GRAPHICAL_TERMINAL)
@@ -96,8 +96,8 @@ public:
         if (bytes.size() != header)
             return false;
         const Bytes h{bytes};
-#ifdef AURORA_EARLY_FIXTURE
-        if (!early::admitted(h.get(fixture_offset)))
+#ifdef AURORA_PLATFORM_FIXTURE
+        if (!platform::admitted(h.get(fixture_offset)))
             return false;
 #endif
         // v6 requires both the copied RSDP and immutable graphics record; v7
