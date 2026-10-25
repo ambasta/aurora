@@ -864,8 +864,8 @@ void emitterReuseTests() {
     ++passed;
 }
 
-// Object and text sinks share lowering and facts, but a rejected object must
-// invalidate the previous published artifact and its optional sidecars.
+// Object and text sinks share lowering, helper selection and facts; reusing
+// one emitter must not retain a previous module or output policy.
 void objectEmissionTests() {
     const auto checked = validate(load("ir-tests/object.air", "native object values"));
     AbiDeclarations declarations;
@@ -887,34 +887,39 @@ void objectEmissionTests() {
             "object/text emission reuse retained stale bytes or sink selection");
     ++passed;
 
-    const auto rejectUnsupported = [&](const ValidatedModule &unsupported) {
-        bool rejected = false;
-        try {
-            (void)emitter.emit(unsupported, SymbolBinding::Local, ReflectionEmission::Referenced, CodeEmission::Object);
-        } catch (const Error &error) {
-            rejected = std::string(error.what()).find("does not support") != std::string::npos;
+    for (const auto &name : {"referenced reflection retains referenced helper bodies and facts",
+                             "sparse reflection views exceed code length"}) {
+        const auto reflection = validate(load("ir-tests/reflection-emission.air", name));
+        for (const auto binding : {SymbolBinding::Default, SymbolBinding::Local}) {
+            for (const auto selection : {ReflectionEmission::All, ReflectionEmission::Referenced}) {
+                const auto text = emitter.emit(reflection, binding, selection);
+                const auto facts = emitter.stackFactsJson(reflection);
+                const auto reflectionAbi = emitter.abiFactsJson(reflection, {});
+                const auto encoded = emitter.emit(reflection, binding, selection, CodeEmission::Object);
+                require(encoded.starts_with("\177ELF") && emitter.stackFactsJson(reflection) == facts &&
+                            emitter.abiFactsJson(reflection, {}) == reflectionAbi,
+                        "reflection object emission changed stack or ABI facts");
+                require(emitter.emit(reflection, binding, selection) == text &&
+                            emitter.emit(reflection, binding, selection, CodeEmission::Object) == encoded,
+                        "reflection object/text reuse changed output");
+                for (const auto helper : {"aurora_reflect_size",
+                                          "aurora_reflect_field_count",
+                                          "__au_reflect_s1_size",
+                                          "__au_reflect_s1_field_count",
+                                          "__au_reflect_s2_size",
+                                          "__au_reflect_s2_field_count",
+                                          "__au_reflect_s63_size",
+                                          "__au_reflect_s63_field_count"}) {
+                    require((text.find(std::string(helper) + ":\n") != std::string::npos) ==
+                                (encoded.find(std::string(helper) + '\0') != std::string::npos),
+                            "reflection object helper selection differs from text");
+                }
+                ++passed;
+            }
         }
-        require(rejected, "unsupported object form did not fail with an unsupported diagnostic");
-        bool stackRejected = false;
-        bool abiRejected = false;
-        try {
-            (void)emitter.stackFactsJson(checked);
-        } catch (const Error &error) {
-            stackRejected = std::string(error.what()) == "stack facts require the same emitted module";
-        }
-        try {
-            (void)emitter.abiFactsJson(checked, declarations);
-        } catch (const Error &error) {
-            abiRejected = std::string(error.what()) == "ABI facts require the same emitted module";
-        }
-        require(stackRejected && abiRejected, "failed object emission retained earlier sidecar ownership");
-        require(emitObject() == object && emitter.stackFactsJson(checked) == stack,
-                "failed object emission poisoned a subsequent supported module");
-        ++passed;
-    };
-    const auto reflection = validate(
-        load("ir-tests/reflection-emission.air", "referenced reflection retains referenced helper bodies and facts"));
-    rejectUnsupported(reflection);
+    }
+    require(emitObject() == object && emitter.stackFactsJson(checked) == stack,
+            "reflection emission retained state in a subsequent ordinary object");
 }
 
 void metadataLifetimeTests() {

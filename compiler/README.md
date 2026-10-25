@@ -18,9 +18,9 @@ The same semantic traversal feeds typed x86 forms to the text backend or the
 checked relocatable-object backend selected by `--emit-object`. Object output
 uses a separate typed workspace for code, symbols, labels and relocations. It
 supports the ordinary source UART and hosted frontend forms, including readonly
-literal data and RIP-relative references. Required reflection code generation
-fails closed rather than falling back to an assembler.
-Use `--referenced-reflection-only` when no reflection entry is required.
+literal data and RIP-relative references, plus size/public-field-count reflection
+helpers with the same defining-module visibility and symbol-selection rules as
+text output. Neither backend adds reflection access to private values.
 
 Native UART and hosted frontend wrappers remain separate bootstrap adapters. The
 private composition step globalizes only their fact-selected source entries,

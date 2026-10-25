@@ -71,3 +71,108 @@ end
 @@ -31 +31 @@
 -    MetadataQuery Size 2
 +    MetadataQuery Size 1
+
+; CASE: sparse reflection views exceed code length
+; RUN: emit
+; CHECK: __au_reflect_s63_size:
+; CHECK: __au_reflect_s63_field_count:
+; RUN: emit referenced
+; CHECK-NOT: aurora_reflect_
+; CHECK-NOT: __au_reflect_
+descriptor 1 8 0
+descriptor 100 16 1
+descriptor 1000002 8 0
+descriptor 2147483647 24 2
+views [(0 [1 100 1000002 2147483647]) (2 []) (63 [1000002 2147483647])]
+function metadata_probe
+  result i64
+    Constant 42
+    Return
+end
+
+; CASE: native object reflection values
+; RUN: emit-object local
+; EXPECT-OK
+descriptor 1 8 0
+descriptor 100 16 1
+descriptor 2147483647 24 2
+views [(0 [1 100 2147483647]) (1 [100]) (2 []) (63 [2147483647])]
+function retain_scoped_reflection
+  result i64
+    Call reflect_scoped_size
+    Call reflect_scoped_fields
+    Call reflect_invisible
+    Call reflect_empty
+    Call reflect_last_size
+    Call reflect_last_fields
+    Return
+end
+function reflect_root_size
+  result i64
+  scope 0
+    Constant 100
+    MetadataQuery Size 0
+    Return
+end
+function reflect_root_fields
+  result i64
+  scope 0
+    Constant 100
+    MetadataQuery PublicFieldCount 0
+    Return
+end
+function reflect_unknown
+  result i64
+  scope 0
+    Constant 999
+    MetadataQuery Size 0
+    Return
+end
+function reflect_scoped_size
+  result i64
+  scope 1
+    Constant 100
+    MetadataQuery Size 1
+    Return
+end
+function reflect_scoped_fields
+  result i64
+  scope 1
+    Constant 100
+    MetadataQuery PublicFieldCount 1
+    Return
+end
+function reflect_invisible
+  result i64
+  scope 1
+    Constant 2147483647
+    MetadataQuery Size 1
+    Return
+end
+function reflect_empty
+  result i64
+  scope 2
+    Constant 100
+    MetadataQuery Size 2
+    Return
+end
+function reflect_last_size
+  result i64
+  scope 63
+    Constant 2147483647
+    MetadataQuery Size 63
+    Return
+end
+function reflect_last_fields
+  result i64
+  scope 63
+    Constant 2147483647
+    MetadataQuery PublicFieldCount 63
+    Return
+end
+
+; CASE: descriptor-only module remains invalid
+; RUN: verify
+; EXPECT-ERROR: empty module
+descriptor 100 16 1
+views [(0 [100])]

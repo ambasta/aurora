@@ -495,9 +495,10 @@ foreach family : ['readonly_windows', 'short_circuit']
          depends: aurorac, suite: ['full', 'merge', 'slow', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
     generated = family == 'short_circuit' ? [abi_air['short-circuit']] : []
+    source_compiler = family == 'readonly_windows' ? ['--compiler', aurorac] : []
     test(family.replace('_', '-') + '-ir-native', python,
-         args: ['-B', '-O', files('compiler/' + family + '_ir_native.py'), aurora_ir_check] + (generated.length() > 0 ? ['--air'] + generated : []),
-         depends: [aurora_ir_check] + generated, suite: ['full', 'merge', 'slow', 'compiler'],
+         args: ['-B', '-O', files('compiler/' + family + '_ir_native.py'), aurora_ir_check] + (generated.length() > 0 ? ['--air'] + generated : []) + source_compiler,
+         depends: [aurora_ir_check, aurorac] + generated, suite: ['full', 'merge', 'slow', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
 endforeach
 # Library behaviour: one compiled driver per library, linked once with

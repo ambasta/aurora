@@ -379,7 +379,7 @@ export namespace compiler_x86 {
         const bool local = force_local || receiver || aggregate || module_hidden_symbol(m, callable);
         if (o.object_mode()) {
             o.begin_function_labels(body.count());
-            o.begin_object_symbol(callable, local);
+            o.begin_object_symbol(0, callable, local);
             callable_name(w, o, m, callable);
             o.end_object_symbol_name();
         } else {
@@ -550,37 +550,44 @@ export namespace compiler_x86 {
             i64 query = 0;
             while (query < 2 && w.ok()) {
                 if (reflection == 0 || module_reflection_referenced(w, s, scope, query)) {
-                    // Object output initially admits ordinary callable code only.
-                    // Never silently discard an admitted reflection function.
-                    if (o.object_mode()) {
-                        return w.unsupported_object();
-                    }
                     if (!w.begin_function(1, scope * 2 + query, -1)) {
                         return false;
                     }
-                    if (binding == 1) {
-                        w.text(".local ");
+                    if (o.object_mode()) {
+                        o.begin_function_labels(ids.count());
+                        o.begin_object_symbol(4, scope * 2 + query, binding == 1);
+                        query_name(w, o, query, scope);
+                        o.end_object_symbol_name();
+                        emit_object_status(w, o);
                     } else {
-                        w.text(".globl ");
+                        if (binding == 1) {
+                            w.text(".local ");
+                        } else {
+                            w.text(".globl ");
+                        }
+                        query_name(w, o, query, scope);
+                        w.text("\n.type ");
+                        query_name(w, o, query, scope);
+                        w.text(", @function\n");
+                        query_name(w, o, query, scope);
+                        w.text(":\n");
                     }
-                    query_name(w, o, query, scope);
-                    w.text("\n.type ");
-                    query_name(w, o, query, scope);
-                    w.text(", @function\n");
-                    query_name(w, o, query, scope);
-                    w.text(":\n");
                     i64 entry = 0;
                     while (entry < ids.count()) {
                         const compiler_ir_metadata::IndexRow row = m.index_at(ids.begin() + entry);
                         const i64 id = row.value();
-                        w.line_number("cmpq $", id, ", %rdi");
-                        w.text("    je ");
-                        module_scope_label(w, o, scope, query, id);
-                        w.end_line();
+                        emit_alu_imm(w, o, AluOp::compare, id, Register::rdi);
+                        if (o.object_mode()) {
+                            emit_branch(w, o, 4, 0, entry);
+                        } else {
+                            w.text("    je ");
+                            module_scope_label(w, o, scope, query, id);
+                            w.end_line();
+                        }
                         entry = entry + 1;
                     }
                     emit_alu_rr(w, o, AluOp::bit_xor, Register::rax, Register::rax);
-                    w.line("ret");
+                    emit_return_instruction(w, o);
                     entry = 0;
                     while (entry < ids.count()) {
                         const compiler_ir_metadata::IndexRow row = m.index_at(ids.begin() + entry);
@@ -589,17 +596,26 @@ export namespace compiler_x86 {
                         if (value < 0) {
                             return w.fail();
                         }
-                        module_scope_label(w, o, scope, query, id);
-                        w.text(":\n");
-                        w.line_number("movq $", value, ", %rax");
-                        w.line("ret");
+                        if (o.object_mode()) {
+                            emit_bind_label(w, o, 0, entry);
+                        } else {
+                            module_scope_label(w, o, scope, query, id);
+                            w.text(":\n");
+                        }
+                        emit_mov_imm(w, o, value, Register::rax);
+                        emit_return_instruction(w, o);
                         entry = entry + 1;
                     }
-                    w.text(".size ");
-                    query_name(w, o, query, scope);
-                    w.text(", .-");
-                    query_name(w, o, query, scope);
-                    w.end_line();
+                    if (o.object_mode()) {
+                        o.end_object_symbol();
+                        emit_object_status(w, o);
+                    } else {
+                        w.text(".size ");
+                        query_name(w, o, query, scope);
+                        w.text(", .-");
+                        query_name(w, o, query, scope);
+                        w.end_line();
+                    }
                 }
                 query = query + 1;
             }
@@ -675,7 +691,7 @@ export namespace compiler_x86 {
             w.select_object();
             const i64 instruction_count = s.instruction_count();
             const i64 callable_count = m.callable_count();
-            o.configure_labels(instruction_count, callable_count);
+            o.configure_labels(instruction_count, callable_count, m.descriptor_count());
             if (!emit_object_status(w, o)) {
                 return w.status();
             }
