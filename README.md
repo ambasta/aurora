@@ -33,8 +33,7 @@ Podman installed, start from the repository root.
 Select a local copy of the checkpoint compiler pinned by
 `compiler/checkpoint.json` (or rebuild it from the recorded route). Then enter
 the pinned shell with `./scripts/container.sh bash` and configure the two current
-Meson graphs with `-Dbootstrap_compiler` (and `-Dhistorical_oracle` for the
-emitter differential), as shown in the
+Meson graphs with `-Dbootstrap_compiler`, as shown in the
 [source-bootstrap recipe](compiler/README.md#source-bootstrap). Meson accepts only
 the pinned executable digests rather than trusting a compiler path alone.
 Then run:
@@ -148,7 +147,7 @@ Use the checks appropriate to the change:
 
 ```sh
 meson setup build/gcc16 \
-  "-Dbootstrap_compiler=$C0" "-Dhistorical_oracle=$ORACLE"
+  "-Dbootstrap_compiler=$C0"
 export MESON_BUILD_DIR=build/gcc16
 python3 -B scripts/meson_test.py --suite dev  # optional focused feedback
 make test                    # merge suite, nproc jobs with memory watchdog; no QEMU
@@ -162,8 +161,7 @@ For direct Meson commands, configure a separate [build](docs/meson-bootstrap.md)
 for each toolchain, with matching `gcc`/`g++` on PATH. `make test` and the
 compiler-only shortcuts reuse an explicitly checkpoint-configured build
 incrementally. `make test` runs the `merge` suite; `make test-release` runs the
-opt-in `release` suite (corpus emitter differential, mutation testing, complete
-subset sweeps); `full` is their union. Named `dev`, `slow`, `integration`, `boot`,
+opt-in `release` suite (mutation testing, complete subset sweeps); `full` is their union. Named `dev`, `slow`, `integration`, `boot`,
 `core` and `bytes` suites support focused work. A merge requires the final-source
 GCC 16 gates in [AGENTS.md](AGENTS.md), including the `merge` suite and separate
 normal BIOS/UEFI and affected emulator profiles.

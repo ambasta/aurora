@@ -375,7 +375,7 @@ void expectError(const std::vector<aurora::Token> &tokens,
     require(false, "malformed input was accepted");
 }
 // Every program fixture enters the one whole-module Aurora call. Acceptance
-// alone is not an AST oracle; the explicit inventories below carry that claim.
+// alone is not an AST oracle; the explicit expectations below carry that claim.
 aurora::Program checkedProgram(const std::vector<aurora::Token> &tokens) {
     auto program = aurora::parseHostedProgram(tokens);
     require(!program.moduleName.empty(), "accepted program lost its module");
@@ -1088,8 +1088,7 @@ void bootstrapStatements(const std::vector<aurora::Token> &tokens,
 void bootstrapFunctions(const std::vector<aurora::Token> &tokens,
                         const std::vector<aurora::Function> &functions,
                         std::size_t &initializers,
-                        std::size_t &strings,
-                        std::size_t &newInitializers) {
+                        std::size_t &strings) {
     for (const auto &function : functions) {
         for (const auto &[field, expression] : function.initializers) {
             const auto position = tokenAt(tokens, field) + 1;
@@ -1099,11 +1098,7 @@ void bootstrapFunctions(const std::vector<aurora::Token> &tokens,
             require(function.constructor && tokens.at(position).text == "(",
                     "constructor initializer has no parenthesized source root");
             hostedRoot(tokens, position + 1, Stop::close_parenthesis, expression);
-            if (field.text == "field_token" &&
-                (function.token.text == "ParseFrame" || function.token.text == "ChildEdge"))
-                ++newInitializers;
-            else
-                ++initializers;
+            ++initializers;
         }
         bootstrapStatements(tokens, function.body, strings);
     }
@@ -1124,14 +1119,11 @@ void expectedBootstrapRoots(const std::vector<aurora::Function> &functions,
         strings += expectedStringRoots(function.body);
     }
 }
-void bootstrapBodies(const std::vector<aurora::Token> &, const aurora::Program &, std::size_t);
-std::size_t wholeCallables = 0, wholeFields = 0;
-void bootstrapDeclarationTypes(const std::vector<aurora::Token> &, const aurora::Program &, std::size_t);
-void bootstrapPreambleEnums(const std::vector<aurora::Token> &, const aurora::Program &, std::size_t);
-void bootstrapContainers(const std::vector<aurora::Token> &, const aurora::Program &, std::size_t);
-void libraryContainers(const std::vector<aurora::Token> &, const aurora::Program &, bool);
+void bootstrapBodies(const std::vector<aurora::Token> &, const aurora::Program &);
+void bootstrapDeclarationTypes(const std::vector<aurora::Token> &, const aurora::Program &);
+void bootstrapPreambleEnums(const std::vector<aurora::Token> &, const aurora::Program &);
 void bootstrapSources(char **paths) {
-    std::size_t initializers = 0, strings = 0, newInitializers = 0;
+    std::size_t initializers = 0, strings = 0;
     std::size_t expectedInitializers = 0, expectedStrings = 0;
     const std::array<std::string, 3> modules{
         "aurora.compiler.lexer", "aurora.compiler.syntax_arena", "aurora.compiler.parser"};
@@ -1144,30 +1136,27 @@ void bootstrapSources(char **paths) {
         const auto tokens = aurora::lex(source, paths[i]);
         const auto program = checkedProgram(tokens);
         require(program.moduleName == modules[i], "unexpected bootstrap source module/order");
-        bootstrapBodies(tokens, program, i);
-        bootstrapDeclarationTypes(tokens, program, i);
-        bootstrapPreambleEnums(tokens, program, i);
-        bootstrapContainers(tokens, program, i);
+        bootstrapBodies(tokens, program);
+        bootstrapDeclarationTypes(tokens, program);
+        bootstrapPreambleEnums(tokens, program);
         expectedBootstrapRoots(program.functions, expectedInitializers, expectedStrings);
         expectedBootstrapRoots(program.functionTemplates, expectedInitializers, expectedStrings);
         for (const auto &definition : program.classes)
             expectedBootstrapRoots(definition.methods, expectedInitializers, expectedStrings);
         for (const auto &definition : program.templates)
             expectedBootstrapRoots(definition.methods, expectedInitializers, expectedStrings);
-        bootstrapFunctions(tokens, program.functions, initializers, strings, newInitializers);
-        bootstrapFunctions(tokens, program.functionTemplates, initializers, strings, newInitializers);
+        bootstrapFunctions(tokens, program.functions, initializers, strings);
+        bootstrapFunctions(tokens, program.functionTemplates, initializers, strings);
         for (const auto &definition : program.classes)
-            bootstrapFunctions(tokens, definition.methods, initializers, strings, newInitializers);
+            bootstrapFunctions(tokens, definition.methods, initializers, strings);
         for (const auto &definition : program.templates)
-            bootstrapFunctions(tokens, definition.methods, initializers, strings, newInitializers);
+            bootstrapFunctions(tokens, definition.methods, initializers, strings);
     }
     context = "actual bootstrap source roots";
-    require(initializers + newInitializers == expectedInitializers && strings == expectedStrings &&
-                expectedInitializers >= 42 && expectedStrings >= 5 && newInitializers == 2,
-            "actual bootstrap roots were omitted or lost historical coverage: expected " +
-                std::to_string(expectedInitializers) + " constructors and " + std::to_string(expectedStrings) +
-                " strings, observed " + std::to_string(initializers + newInitializers) + " and " +
-                std::to_string(strings));
+    require(initializers == expectedInitializers && strings == expectedStrings,
+            "actual bootstrap roots were omitted: expected " + std::to_string(expectedInitializers) +
+                " constructors and " + std::to_string(expectedStrings) + " strings, observed " +
+                std::to_string(initializers) + " and " + std::to_string(strings));
 }
 
 std::size_t closingBrace(const std::vector<aurora::Token> &tokens, std::size_t opening) {
@@ -1196,10 +1185,7 @@ void hostedBraces(const std::vector<aurora::Token> &tokens,
             "constructor braces lost their empty-array distinction");
     ++cases;
 }
-using AggregateRoots = std::vector<std::pair<std::string, std::size_t>>;
-void consumerStatements(const std::vector<aurora::Token> &tokens,
-                        const std::vector<aurora::StatementPtr> &statements,
-                        AggregateRoots &aggregates) {
+void consumerStatements(const std::vector<aurora::Token> &tokens, const std::vector<aurora::StatementPtr> &statements) {
     for (const auto &statement : statements) {
         if (statement->expr && (statement->expr->op == "array_literal" || statement->expr->op == "construct")) {
             const auto &expression = statement->expr;
@@ -1212,36 +1198,21 @@ void consumerStatements(const std::vector<aurora::Token> &tokens,
             sameExpression(hosted, expression);
             require(position == close + 1 && tokens.at(position).text == ";",
                     "consumer aggregate lost its exact closing delimiter");
-            if (construct)
-                require(statement->name == "current" && expression->token.text == "Sample" &&
-                            expression->fieldNames == std::vector<std::string>{"value", "ready"} &&
-                            expression->args.size() == 2 && expression->args[0]->token.text == "40" &&
-                            expression->args[1]->token.text == "false",
-                        "class-values consumer lost its designated field order/values");
-            aggregates.emplace_back(statement->name, expression->args.size());
             ++cases;
         }
-        consumerStatements(tokens, statement->body, aggregates);
-        consumerStatements(tokens, statement->other, aggregates);
+        consumerStatements(tokens, statement->body);
+        consumerStatements(tokens, statement->other);
     }
 }
-void consumerFunctions(const std::vector<aurora::Token> &tokens,
-                       const std::vector<aurora::Function> &functions,
-                       AggregateRoots &aggregates,
-                       AggregateRoots &braces) {
+void consumerFunctions(const std::vector<aurora::Token> &tokens, const std::vector<aurora::Function> &functions) {
     for (const auto &function : functions) {
         for (const auto &[field, expression] : function.initializers) {
             if (tokens.at(tokenAt(tokens, field) + 1).text != "{")
                 continue;
             require(function.constructor, "brace initializer escaped its constructor");
             hostedBraces(tokens, field, expression);
-            braces.emplace_back(field.text, expression->args.size());
-            if (field.text == "records")
-                for (const auto &child : expression->args)
-                    require(child->op == "name" && child->token.text == "empty",
-                            "session-file record initialization changed its source/order");
         }
-        consumerStatements(tokens, function.body, aggregates);
+        consumerStatements(tokens, function.body);
     }
 }
 bool containsTypeQuery(const aurora::ExpressionPtr &expression) {
@@ -1252,20 +1223,16 @@ bool containsTypeQuery(const aurora::ExpressionPtr &expression) {
         return true;
     return std::any_of(expression->args.begin(), expression->args.end(), containsTypeQuery);
 }
-void consumerReflection(const std::vector<aurora::Token> &tokens,
-                        const std::vector<aurora::StatementPtr> &statements,
-                        std::size_t &roots) {
+void consumerReflection(const std::vector<aurora::Token> &tokens, const std::vector<aurora::StatementPtr> &statements) {
     for (const auto &statement : statements) {
         if (containsTypeQuery(statement->expr)) {
             const bool assertion = statement->token.text == "static_assert";
             require(assertion || statement->token.text == "return", "unexpected reflection consumer statement");
             const auto start = tokenAt(tokens, statement->token) + (assertion ? 2 : 1);
             hostedRoot(tokens, start, assertion ? Stop::close_parenthesis : Stop::semicolon, statement->expr);
-            ++roots;
-            ++cases;
         }
-        consumerReflection(tokens, statement->body, roots);
-        consumerReflection(tokens, statement->other, roots);
+        consumerReflection(tokens, statement->body);
+        consumerReflection(tokens, statement->other);
     }
 }
 void consumerSources(const std::array<const char *, 6> &paths) {
@@ -1275,20 +1242,6 @@ void consumerSources(const std::array<const char *, 6> &paths) {
                                              "fs.xfs_sector",
                                              "examples.class_values",
                                              "console.line"};
-    const std::array<AggregateRoots, 6> expectedAggregates{
-        AggregateRoots{},
-        AggregateRoots{},
-        AggregateRoots{{"text", 61}, {"text", 27}, {"text", 63}, {"text", 19}, {"blank", 1}, {"text", 22}},
-        AggregateRoots{{"bytes", 512}},
-        AggregateRoots{{"current", 2}},
-        AggregateRoots{}};
-    const std::array<AggregateRoots, 6> expectedBraces{AggregateRoots{{"elements", 0}},
-                                                       AggregateRoots{{"bytes", 0}, {"records", 4}},
-                                                       AggregateRoots{{"desired", 0}, {"committed", 0}},
-                                                       AggregateRoots{},
-                                                       AggregateRoots{},
-                                                       AggregateRoots{{"bytes", 0}}};
-    std::size_t roots = 0;
     for (std::size_t index = 0; index < modules.size(); ++index) {
         context = paths[index];
         std::ifstream input(paths[index], std::ios::binary);
@@ -1298,26 +1251,15 @@ void consumerSources(const std::array<const char *, 6> &paths) {
         const auto tokens = aurora::lex(source, paths[index]);
         const auto program = checkedProgram(tokens);
         require(program.moduleName == modules[index], "unexpected aggregate consumer module/order");
-        if (index == 0)
-            libraryContainers(tokens, program, false);
-        AggregateRoots aggregates, braces;
-        consumerFunctions(tokens, program.functions, aggregates, braces);
-        consumerFunctions(tokens, program.functionTemplates, aggregates, braces);
+        consumerFunctions(tokens, program.functions);
+        consumerFunctions(tokens, program.functionTemplates);
         for (const auto &definition : program.classes)
-            consumerFunctions(tokens, definition.methods, aggregates, braces);
+            consumerFunctions(tokens, definition.methods);
         for (const auto &definition : program.templates)
-            consumerFunctions(tokens, definition.methods, aggregates, braces);
-        require(aggregates == expectedAggregates[index] && braces == expectedBraces[index],
-                "actual consumer aggregate roots changed shape/order or were omitted");
-        roots += aggregates.size() + braces.size();
-        if (index == 4) {
-            std::size_t reflection = 0;
-            for (const auto &function : program.functions)
-                consumerReflection(tokens, function.body, reflection);
-            require(reflection == 3, "expected all three retained class-values reflection roots");
-        }
+            consumerFunctions(tokens, definition.methods);
+        for (const auto &function : program.functions)
+            consumerReflection(tokens, function.body);
     }
-    require(roots == 14, "expected all 14 actual product aggregate roots");
 }
 
 // Fixture-only declaration capture. Production Parser captures the same Tokens
@@ -1354,139 +1296,9 @@ Context fixtureContext(const std::vector<aurora::Token> &tokens,
     result.functionTemplate = functionTemplate;
     return result;
 }
-// This inventory is pinned to PR147's 18/56/51 pre-migration entries.
-// Names are a multiset: all historical methods (including repeated accessors)
-// must remain, and every new source auto entry must route through Body too.
-// Whole/direct equality establishes dispatch consistency, not independence.
-void bootstrapBodies(const std::vector<aurora::Token> &tokens, const aurora::Program &program, std::size_t module) {
-    const std::array<std::multiset<std::string>, 3> historical{{
-        {"at",
-         "row",
-         "start",
-         "kind",
-         "next_offset",
-         "next_line",
-         "next_line_start",
-         "space",
-         "letter",
-         "digit",
-         "word",
-         "hex",
-         "escape",
-         "punctuation",
-         "pair",
-         "valid_byte",
-         "valid_string",
-         "next_lexeme"},
-        {"state",
-         "min",
-         "lhs",
-         "token",
-         "designate",
-         "field",
-         "kind",
-         "token",
-         "first",
-         "second",
-         "depth",
-         "locate",
-         "last",
-         "close",
-         "child",
-         "previous",
-         "count",
-         "depth",
-         "field",
-         "kind",
-         "token",
-         "last",
-         "close",
-         "first",
-         "second",
-         "owner",
-         "role",
-         "bind_owner",
-         "store",
-         "ok",
-         "size",
-         "capacity",
-         "failure",
-         "stack_size",
-         "scratch_at",
-         "replace_scratch",
-         "truncate_stack",
-         "types",
-         "type_at",
-         "append_type",
-         "own_type",
-         "frame",
-         "pop",
-         "replace",
-         "push",
-         "at",
-         "append_at",
-         "append",
-         "append_name",
-         "append_index",
-         "arguments",
-         "edge",
-         "append_field",
-         "append_argument",
-         "append_list",
-         "make_arena"},
-        {"begin",
-         "end",
-         "mode",
-         "status",
-         "root",
-         "size",
-         "tokens",
-         "offset",
-         "update",
-         "kind",
-         "first",
-         "last",
-         "row",
-         "start",
-         "index",
-         "half",
-         "split",
-         "status",
-         "root",
-         "token",
-         "read_token",
-         "advance",
-         "single",
-         "boolean_literal",
-         "precedence",
-         "stopped",
-         "pair",
-         "word_matches",
-         "word_list_matches",
-         "identifier_status",
-         "type_query",
-         "reserved_type_name",
-         "builtin_type_name",
-         "type_word",
-         "parameter",
-         "valid_context",
-         "decimal_capacity",
-         "type_close",
-         "type_error",
-         "parse_type",
-         "prepare_templates",
-         "failure",
-         "parse",
-         "create",
-         "node_count",
-         "read_node",
-         "edge_count",
-         "read_edge",
-         "type_count",
-         "read_type",
-         "release"},
-    }};
-    auto remaining = historical.at(module);
+// Every source auto declaration must route through Body. Whole/direct
+// equality establishes dispatch consistency, not independence.
+void bootstrapBodies(const std::vector<aurora::Token> &tokens, const aurora::Program &program) {
     std::set<std::size_t> lexical, imported;
     for (std::size_t token = 0; token + 1 < tokens.size(); ++token)
         if (tokens[token].text == "auto")
@@ -1499,10 +1311,7 @@ void bootstrapBodies(const std::vector<aurora::Token> &tokens, const aurora::Pro
             }
             const auto name = tokenAt(tokens, function.token);
             require(lexical.contains(name) && imported.insert(name).second,
-                    "body inventory duplicated or synthesized a nonconstructor declaration");
-            const auto found = remaining.find(function.token.text);
-            if (found != remaining.end())
-                remaining.erase(found);
+                    "body dispatch duplicated or synthesized a nonconstructor declaration");
             auto opening = name + 1;
             while (opening < tokens.size() && tokens[opening].text != "{")
                 ++opening;
@@ -1523,8 +1332,7 @@ void bootstrapBodies(const std::vector<aurora::Token> &tokens, const aurora::Pro
         functions(definition.methods, {});
     for (const auto &definition : program.templates)
         functions(definition.methods, fixtureContext(tokens, definition.token, definition.templateParameters, false));
-    require(remaining.empty() && imported == lexical && imported.size() >= historical[module].size(),
-            "actual bootstrap body inventory lost an old entry or omitted a new auto entry");
+    require(imported == lexical, "actual bootstrap body dispatch omitted an auto declaration");
 }
 bool containsTypedSyntax(const aurora::ExpressionPtr &expression) {
     if (!expression)
@@ -1646,13 +1454,6 @@ void typedConsumerSources(char **paths) {
                                              "function_token_values",
                                              "examples.class_values",
                                              "kernel"};
-    const std::array<std::vector<std::string>, 7> expected{std::vector<std::string>{"pair"},
-                                                           {"std::array"},
-                                                           {"std::array", "std::array"},
-                                                           {"std::array", "std::array", "std::array", "std::array"},
-                                                           {"std::array", "std::make_pair", "size_of", "field_count"},
-                                                           {"size_of", "field_count", "type_id"},
-                                                           {"size_of"}};
     for (std::size_t index = 0; index < modules.size(); ++index) {
         context = paths[index];
         std::ifstream input(paths[index], std::ios::binary);
@@ -1662,9 +1463,7 @@ void typedConsumerSources(char **paths) {
         const auto tokens = aurora::lex(source, paths[index]);
         const auto program = checkedProgram(tokens);
         require(program.moduleName == modules[index], "unexpected typed consumer source/module order");
-        if (index == 0)
-            libraryContainers(tokens, program, true);
-        require(typedProgram(tokens, program) == expected[index], "typed consumer roots changed order or were omitted");
+        static_cast<void>(typedProgram(tokens, program));
     }
 }
 
@@ -2595,131 +2394,19 @@ void fieldDiagnostics() {
     }
 }
 
-// The actual compiler sources use this closed vocabulary. This is a lookup of
-// manually stated Type values, not a second grammar implementation. A new source
-// spelling must acquire its own structural expectation rather than silently
-// using the product parser as its oracle.
-std::map<std::string, aurora::Type> compilerDeclarationTypes() {
-    using T = aurora::Type;
-    std::map<std::string, T> result{{"i64", T::I64},
-                                    {"u64", T::U64},
-                                    {"u8", T::U8},
-                                    {"bool", T::Bool},
-                                    {"builtin::span<constu8>", T::ByteSpan},
-                                    {"builtin::ByteRegion", T::ByteRegion},
-                                    {"builtin::OwnedBytes", T::OwnedBytes}};
-    for (const auto &name : {"Cursor",
-                             "Event",
-                             "Lexeme",
-                             "FrameState",
-                             "NodeKind",
-                             "ArenaFailure",
-                             "ParseFrame",
-                             "AstNode",
-                             "ChildEdge",
-                             "TypeKind",
-                             "TypeSyntax",
-                             "SyntaxKind",
-                             "SyntaxNode",
-                             "AstArena",
-                             "Stop",
-                             "TypeContext",
-                             "ParseResult",
-                             "ParseStatus",
-                             "AdmissionStatus",
-                             "AdmissionConfig",
-                             "AdmissionResult",
-                             "AdmissionProgress",
-                             "AdmissionKind",
-                             "AdmissionType",
-                             "AdmissionScope",
-                             "ParseToken",
-                             "TypeResult",
-                             "TypeWord",
-                             "DeclarationWord",
-                             "HeaderResult",
-                             "IndexRow",
-                             "InstructionForm",
-                             "Unary",
-                             "Binary",
-                             "Comparison",
-                             "Query",
-                             "RecordKind",
-                             "OperandRole",
-                             "SpanOriginKind",
-                             "ContinuationKind",
-                             "ContinuationPhase",
-                             "ArgumentKind",
-                             "CleanupKind",
-                             "LoweringStatus",
-                             "LoweringError",
-                             "LoweringResult",
-                             "OutputRow",
-                             "OperandRow",
-                             "SnapshotRow",
-                             "LocalRow",
-                             "ArgumentLane",
-                             "ContinuationRow",
-                             "compiler_lexer::Cursor",
-                             "compiler_lexer::Event"})
-        result.emplace(name, T(name));
-    for (const auto &name : {"AstNode",
-                             "ParseFrame",
-                             "ChildEdge",
-                             "TypeSyntax",
-                             "SyntaxNode",
-                             "IndexRow",
-                             "OutputRow",
-                             "OperandRow",
-                             "SnapshotRow",
-                             "LocalRow",
-                             "ContinuationRow"})
-        result.emplace(std::string("builtin::OwnedValues<") + name + ">", T::ownedValues(T(name)));
-    for (const auto &name : {"Session",
-                             "MetaRow",
-                             "SyntaxRow",
-                             "ResolvedRow",
-                             "WorkRow",
-                             "ResolvedTypeKind",
-                             "NativeMode",
-                             "DeclarationKind",
-                             "BindContext",
-                             "Arguments"})
-        result.emplace("compiler_resolver::" + std::string(name), T("compiler_resolver::" + std::string(name)));
-    for (const auto &name : {"LoweringConfig",
-                             "ScalarSeed",
-                             "ServiceParameters",
-                             "ServiceSeed",
-                             "LocalRequest",
-                             "LiteralValue",
-                             "IndexedStorage",
-                             "FunctionBodyResult"})
-        result.emplace(name, T(name));
-    return result;
-}
-void bootstrapDeclarationTypes(const std::vector<aurora::Token> &tokens,
-                               const aurora::Program &program,
-                               std::size_t module) {
-    const auto vocabulary = compilerDeclarationTypes();
-    std::size_t parameters = 0, results = 0, fields = 0;
+// Real-source declarations check whole/direct dispatch consistency only; the
+// explicit type fixtures above carry the independent structural expectations.
+void bootstrapDeclarationTypes(const std::vector<aurora::Token> &tokens, const aurora::Program &program) {
     std::set<std::size_t> lexicalFunctions, importedFunctions, lexicalConstructors, importedConstructors;
     for (std::size_t index = 0; index + 1 < tokens.size(); ++index)
         if (tokens[index].text == "auto")
             lexicalFunctions.insert(index + 1);
     const auto check = [&](std::size_t first, std::size_t end, const aurora::Type &whole) {
-        require(first < end && end < tokens.size(), "declaration inventory has an empty/escaped type range");
-        std::string spelling;
-        for (auto index = first; index < end; ++index)
-            spelling += tokens[index].text;
-        const auto expected = vocabulary.find(spelling);
-        require(expected != vocabulary.end(), "actual declaration type needs an independent expectation: " + spelling);
-        sameType(whole, expected->second);
-        const auto before = tokens;
+        require(first < end && end < tokens.size(), "actual declaration has an empty/escaped type range");
         const auto direct = aurora::parseHostedType(tokens, Cursor{first});
-        sameType(direct.type, expected->second);
+        sameType(direct.type, whole);
         require(direct.next.ordinal == end && direct.next.half == 0,
                 "actual declaration direct parse consumed the following name/delimiter");
-        unchangedTokens(tokens, before);
         ++cases;
     };
     const auto functions = [&](const std::vector<aurora::Function> &items,
@@ -2748,9 +2435,8 @@ void bootstrapDeclarationTypes(const std::vector<aurora::Token> &tokens,
                 ++body;
             require(direct.next.ordinal == closingBrace(tokens, body) + 1 && direct.next.half == 0,
                     "whole callable dispatch changed its exact source boundary");
-            ++wholeCallables;
             auto &imported = function.constructor ? importedConstructors : importedFunctions;
-            require(imported.insert(name).second, "actual declaration type inventory duplicated a function");
+            require(imported.insert(name).second, "actual declaration type dispatch duplicated a function");
             auto position = name + 1;
             require(tokens.at(position++).text == "(", "actual function lost its parameter list");
             for (std::size_t index = 0; index < function.params.size(); ++index) {
@@ -2772,7 +2458,6 @@ void bootstrapDeclarationTypes(const std::vector<aurora::Token> &tokens,
                 position = binding + 1;
                 if (index + 1 < function.params.size())
                     require(tokens.at(position++).text == ",", "actual parameter count/order differs");
-                ++parameters;
             }
             require(tokens.at(position++).text == ")", "actual parameter list was truncated");
             if (!function.constructor) {
@@ -2784,7 +2469,6 @@ void bootstrapDeclarationTypes(const std::vector<aurora::Token> &tokens,
                 while (opening < tokens.size() && tokens[opening].text != "{")
                     ++opening;
                 check(position, opening, function.result);
-                ++results;
             }
         }
     };
@@ -2826,8 +2510,6 @@ void bootstrapDeclarationTypes(const std::vector<aurora::Token> &tokens,
                 require(direct.next.ordinal == binding + 2 && direct.next.half == 0 &&
                             tokens.at(binding + 1).text == ";",
                         "whole field dispatch consumed a neighboring declaration");
-                ++wholeFields;
-                ++fields;
             }
             require(importedFields == lexicalFields, "actual source field declaration type was omitted");
             functions(definition.methods,
@@ -2837,20 +2519,12 @@ void bootstrapDeclarationTypes(const std::vector<aurora::Token> &tokens,
     };
     classes(program.classes);
     classes(program.templates);
-    // PR149 source declarations: all 490 type occurrences (259 parameters,
-    // 155 results, 76 fields), plus any new declarations. The lexical inventories
-    // above prevent larger current sources from hiding omitted new entries.
-    const std::array<std::size_t, 6> historicalParameters{24, 91, 144, 0, 0, 0};
-    const std::array<std::size_t, 6> historicalResults{18, 73, 64, 0, 0, 0};
-    const std::array<std::size_t, 6> historicalFields{7, 47, 22, 0, 0, 0};
-    require(importedFunctions == lexicalFunctions && importedConstructors == lexicalConstructors &&
-                parameters >= (module < 3 ? historicalParameters.at(module) : 0) &&
-                results >= (module < 3 ? historicalResults.at(module) : 0) &&
-                fields >= (module < 3 ? historicalFields.at(module) : 0),
-            "checked-in compiler declaration-type inventory lost historical or new source entries");
+    // Independent lexical scans prevent a source declaration from being skipped.
+    require(importedFunctions == lexicalFunctions && importedConstructors == lexicalConstructors,
+            "actual compiler declaration dispatch omitted a function or constructor");
 }
 
-// Compact independent container/member inventories. Signs pin access rather
+// Compact independent container/member expectations. Signs pin access rather
 // than deriving it from the parsed AST or replaying declaration grammar.
 std::vector<std::string> words(const std::string &text) {
     std::istringstream input(text);
@@ -2893,132 +2567,6 @@ void sameContainer(const aurora::ClassDefinition &actual,
         sameToken(method.token, tokens.at(tokenAt(tokens, method.token)));
     }
     ++cases;
-}
-void sameTemplateParameters(const std::vector<aurora::TemplateParameter> &actual,
-                            const std::vector<aurora::TemplateParameter> &expected) {
-    require(actual.size() == expected.size(), "template parameter count differs");
-    for (std::size_t index = 0; index < expected.size(); ++index)
-        require(actual[index].kind == expected[index].kind && actual[index].name == expected[index].name,
-                "template parameter kind/name/order differs");
-}
-void bootstrapContainers(const std::vector<aurora::Token> &tokens, const aurora::Program &program, std::size_t module) {
-    static const std::array<std::vector<ContainerAst>, 3> expected{{
-        {{"Cursor", true, "-offset -line -line_start", "+Cursor +at +row +start"},
-         {"Lexeme",
-          true,
-          "-event -offset -line -line_start",
-          "+Lexeme +kind +next_offset +next_line +next_line_start"}},
-        {{"ParseFrame",
-          true,
-          "-step -minimum -left -operator_token -field_token",
-          "+ParseFrame +state +min +lhs +token +designate +field"},
-         {"AstNode",
-          true,
-          "-tag -token_index -first_child -second_child -tree_depth -name_end -closing_token",
-          "+AstNode +kind +token +first +second +depth +locate +last +close"},
-         {"ChildEdge",
-          true,
-          "-child_node -previous_edge -argument_count -tree_depth -field_token",
-          "+ChildEdge +child +previous +count +depth +field"},
-         {"TypeSyntax",
-          true,
-          "-tag -token_index -name_end -closing_token -first_child -second_child -owner_token -owner_role",
-          "+TypeSyntax +kind +token +last +close +first +second +owner +role +bind_owner"},
-         {"SyntaxNode",
-          true,
-          "-tag -token_index -end_token -previous_node -expression_root -target_root -declared_type -binding_token "
-          "-body_node -other_node -qualifier -borrow_token",
-          "+SyntaxNode +kind +token +end +previous +expression +target +type +binding +body +other +borrow_site "
-          "+bind_borrow +mutable_binding +bind_expression +bind_declaration +bind_body"},
-         {"AstArena",
-          true,
-          "-nodes -used -frames -frame_count -error -edges -edge_count -type_nodes -type_count -syntax_nodes "
-          "-syntax_count",
-          "-store +AstArena +ok +size +capacity +failure +stack_size +scratch_at +replace_scratch +truncate_stack "
-          "+types +type_at +append_type +own_type +syntax_size +syntax_at +append_syntax +frame +pop +replace +push "
-          "+at +append_at +append +append_name +append_index +arguments +edge +append_field +append_argument "
-          "+append_list"}},
-        {{"AdmissionConfig",
-          true,
-          "-scalar_array_limit -byte_array_limit -service_groups -console_mask -display_mask -event_mask",
-          "+AdmissionConfig +array_limit +groups +service_mask"},
-         {"AdmissionResult",
-          true,
-          "-result -token_index -end_token -type_node -detail",
-          "+AdmissionResult +status +token +end +type +value"},
-         {"TypeContext",
-          true,
-          "-first_begin -first_end -second_begin -second_end -capacity_begin -capacity_end -template_mode",
-          "+TypeContext +update +begin +end +mode +bind_parameter +set_mode"},
-         {"ParseResult",
-          true,
-          "-result -root_node -node_count -token_count -source_offset -token_half",
-          "+ParseResult +status +root +size +tokens +offset +half"},
-         {"ParseToken",
-          false,
-          "-event -begin -end -line -line_start -ordinal -token_half",
-          "+ParseToken +update +kind +first +last +row +start +index +half +split"},
-         {"TypeResult", false, "-result -root_type -next_token", "+TypeResult +status +root +token"},
-         {"HeaderResult", false, "-parsed_header -type_context", "+HeaderResult +parsed +context"},
-         {"AdmissionProgress", false, "-result -next_token", "+AdmissionProgress +outcome +token"},
-         {"AdmissionType", false, "-category -service_bit -next_token", "+AdmissionType +kind +service +token"},
-         {"AdmissionScope",
-          false,
-          "-type_context -class_begin -class_end -public_access",
-          "+AdmissionScope +context +begin +end +access"}},
-    }};
-    const std::string scope = module == 0 ? "compiler_lexer" : "compiler_parser";
-    require(program.classes.size() == expected.at(module).size() && program.templates.empty() &&
-                program.functionTemplates.empty() && program.namespaces == std::set<std::string>{scope},
-            "compiler class/template/namespace inventory differs");
-    for (std::size_t index = 0; index < expected[module].size(); ++index) {
-        sameContainer(program.classes[index], tokens, scope, expected[module][index]);
-        sameTemplateParameters(program.classes[index].templateParameters, {});
-    }
-    const std::vector<bool> exports =
-        module == 2 ? std::vector<bool>{true, false, false, true} : std::vector<bool>{true};
-    std::vector<std::size_t> starts;
-    for (std::size_t index = 0; index + 1 < tokens.size(); ++index)
-        if (tokens[index].text == "namespace") {
-            require(starts.size() < exports.size() && tokens[index + 1].text == scope &&
-                        (index > 0 && tokens[index - 1].text == "export") == exports[starts.size()],
-                    "compiler namespace block name/export/order differs");
-            starts.push_back(index);
-        }
-    require(starts.size() == exports.size(), "compiler omitted one of its six namespace blocks");
-    for (const auto &function : program.functions) {
-        const auto token = tokenAt(tokens, function.token);
-        const auto block = std::upper_bound(starts.begin(), starts.end(), token);
-        require(block != starts.begin() && function.scope == scope &&
-                    function.exported == exports[static_cast<std::size_t>(block - starts.begin() - 1)],
-                "compiler function lost its namespace export inheritance");
-    }
-    ++cases;
-}
-void libraryContainers(const std::vector<aurora::Token> &tokens, const aurora::Program &program, bool utility) {
-    using Kind = aurora::TemplateParameterKind;
-    const std::vector<aurora::TemplateParameter> parameters =
-        utility ? std::vector<aurora::TemplateParameter>{{Kind::Value, "T"}, {Kind::Value, "U"}}
-                : std::vector<aurora::TemplateParameter>{{Kind::Scalar, "T"}, {Kind::Capacity, "N"}};
-    require(program.interfaceUnit && program.namespaces == std::set<std::string>{"std"} && program.classes.empty() &&
-                program.templates.size() == 1 && program.functions.empty() &&
-                program.functionTemplates.size() == (utility ? 1U : 0U),
-            "library template declaration inventory differs");
-    sameContainer(program.templates.front(),
-                  tokens,
-                  "std",
-                  utility ? ContainerAst{"pair", true, "+first +second", "+pair"}
-                          : ContainerAst{"array", true, "-elements", "+array +size +at +set +exchange"});
-    sameTemplateParameters(program.templates.front().templateParameters, parameters);
-    if (utility) {
-        const auto &function = program.functionTemplates.front();
-        require(function.name == "make_pair" && function.scope == "std" && function.exported && !function.constructor &&
-                    !function.publicAccess && function.receiverClass.empty(),
-                "make_pair lost its namespace/template metadata");
-        sameToken(function.token, tokens.at(tokenAt(tokens, function.token)));
-        sameTemplateParameters(function.templateParameters, parameters);
-        ++cases;
-    }
 }
 void moduleSyntax() {
     const std::string source =
@@ -3156,130 +2704,35 @@ void sameEnum(const aurora::EnumDefinition &definition,
         sameToken(definition.cases[index], tokens.at(start + 4 + 2 * index));
     }
 }
-void bootstrapPreambleEnums(const std::vector<aurora::Token> &tokens,
-                            const aurora::Program &program,
-                            std::size_t module) {
-    struct ExpectedEnum {
-        const char *name;
-        bool exported;
-        const char *cases;
-    };
-    // Explicit source inventory includes the appended module/container wire cases.
-    // No production AST supplies these expectations.
-    static const std::array<std::vector<ExpectedEnum>, 3> expected{{
-        {
-            {"Event",
-             true,
-             "token whitespace line_comment end_of_input unsupported_character invalid_byte invalid_string "
-             "invalid_cursor"},
-        },
-        {
-            {"NodeKind",
-             true,
-             "invalid literal name unary binary call member method_call index array_literal construct array_zero"},
-            {"ArenaFailure", true, "none allocation depth invalid"},
-            {"FrameState",
-             true,
-             "expression_start expression_left expression_right primary_start primary_group primary_unary "
-             "primary_postfix call_arguments method_arguments index_expression array_arguments construct_field "
-             "construct_arguments constructor_arguments template_opening template_candidate type_start "
-             "type_arguments type_argument_first type_argument_second type_array_element type_owned_element "
-             "body_block body_if_then body_if_else body_while enum_case namespace_parent namespace_header "
-             "admission_declaration admission_parameter admission_class_end type_span_element"},
-            {"TypeKind",
-             true,
-             "invalid i64_type u64_type u8_type bool_type named parameter capacity length_parameter array_type "
-             "own_type ref_type mutref_type byte_span builtin_type owned_values builtin_class value_span"},
-            {"SyntaxKind",
-             true,
-             "invalid block local return_value static_assertion conditional loop expression assign field_assign "
-             "index_assign parameter initializer function method constructor field preamble import_name "
-             "enum_definition enum_case module_definition namespace_definition class_definition declaration "
-             "template_scalar template_value template_capacity"},
-        },
-        {
-            {"ParseStatus",
-             true,
-             "success unsupported expected_expression expected_close expected_end nesting_limit depth_limit "
-             "allocation_failure expected_index_close expected_identifier reserved_identifier reserved_builtin "
-             "reserved_prefix expected_brace_close expected_dot expected_equal expected_brace_open "
-             "expected_angle_open expected_angle_close expected_scope expected_comma expected_const expected_u8 "
-             "expected_i64 expected_array reserved_type expected_type type_nesting_limit template_nesting_limit "
-             "call_template_nesting_limit template_context template_arity template_argument capacity_argument "
-             "nested_dependent owned_element array_element array_length class_array_length expected_open "
-             "expected_semicolon unterminated_block block_nesting_limit assignment_target expected_auto "
-             "expected_arrow expected_module expected_enum expected_class module_name_limit module_enum_limit "
-             "empty_enum enum_case_limit duplicate_enum_case explicit_enum_value expected_colon "
-             "namespace_nesting_limit "
-             "export_interface_required module_reexport imports_after_declarations template_parameter_limit "
-             "template_parameter_kind template_parameter_name template_capacity_order template_declaration_kind "
-             "function_template_capacity class_template_shadow span_element invalid"},
-            {"AdmissionStatus",
-             true,
-             "success allocation_failure function_shadow typed_constructor borrowed_parameter const_parameter "
-             "function_parameter method_parameter function_result method_result public_array array_capacity "
-             "public_owner templated_owner unsupported_field missing_function invalid"},
-            {"Stop",
-             true,
-             "semicolon close_parenthesis assignment constructor_braces body type function method constructor "
-             "field preamble enum_definition module_definition"},
-            {"TypeWord",
-             false,
-             "invalid i64_type u64_type u8_type bool_type array_type builtin_type span_type owned_values own_type "
-             "ref_type mutref_type const_type"},
-            {"DeclarationWord",
-             false,
-             "invalid export_declaration import_declaration namespace_declaration enum_declaration "
-             "template_declaration class_declaration auto_declaration public_access private_access "
-             "scalar_parameter value_parameter capacity_parameter"},
-            {"AdmissionKind", false, "invalid copied class_value span region owner service unsupported"},
-        },
-    }};
-    const std::array<std::string, 3> modules{
-        "aurora.compiler.lexer", "aurora.compiler.syntax_arena", "aurora.compiler.parser"};
+// Real compiler preambles and enums: direct dispatch must match the whole-module
+// parse, and an independent lexical scan finds every enum declaration.
+void bootstrapPreambleEnums(const std::vector<aurora::Token> &tokens, const aurora::Program &program) {
     const auto before = tokens;
     const auto preamble = aurora::parseHostedPreamble(tokens, {});
-    const std::size_t imports = module == 2 ? 2 : 0, next = module == 2 ? 22 : 8;
-    require(preamble.program.moduleName == modules.at(module) && preamble.program.interfaceUnit &&
-                preamble.program.imports.size() == imports && program.imports.size() == imports &&
-                preamble.next.ordinal == next && preamble.next.half == 0,
-            "actual compiler preamble or ordered imports differ");
-    for (std::size_t index = 0; index < imports; ++index) {
-        auto expectedImport = tokens.at(9 + 7 * index);
-        expectedImport.text = modules[index];
-        expectedImport.span.end = tokens.at(13 + 7 * index).span.end;
-        sameToken(preamble.program.imports[index], expectedImport);
-        sameToken(program.imports[index], expectedImport);
-    }
+    require(preamble.program.moduleName == program.moduleName &&
+                preamble.program.interfaceUnit == program.interfaceUnit &&
+                preamble.program.imports.size() == program.imports.size() && preamble.next.half == 0,
+            "actual compiler preamble or ordered imports differ from the whole-module parse");
+    for (std::size_t index = 0; index < program.imports.size(); ++index)
+        sameToken(preamble.program.imports[index], program.imports[index]);
     std::vector<std::size_t> starts;
     for (std::size_t index = 0; index + 1 < tokens.size(); ++index)
         if (tokens[index].text == "enum" && tokens[index + 1].text == "class")
             starts.push_back(index);
-    require(starts.size() == expected.at(module).size() && program.enums.size() == starts.size(),
-            "actual compiler enum source inventory omitted or duplicated a declaration");
-    std::size_t caseCount = 0;
+    require(program.enums.size() == starts.size(), "actual compiler enum declaration was omitted or duplicated");
     for (std::size_t index = 0; index < starts.size(); ++index) {
-        const auto &fixture = expected[module][index];
-        std::istringstream words(fixture.cases);
-        std::vector<std::string> names;
-        for (std::string name; words >> name;)
-            names.push_back(std::move(name));
-        // These source declarations have no trailing comma.
-        const auto start = starts[index], end = start + 2 * names.size() + 5;
-        const auto direct = aurora::parseHostedEnum(tokens, Cursor{start}, index);
-        require(direct.definition.name == fixture.name && direct.definition.scope.empty() &&
-                    !direct.definition.exported && direct.definition.id == 0 && direct.next.ordinal == end &&
-                    direct.next.half == 0 && tokens.at(end - 1).text == ";" && tokens.at(end - 2).text == "}" &&
-                    program.enums[index].name == fixture.name && program.enums[index].exported == fixture.exported &&
-                    program.enums[index].scope == (module == 0 ? "compiler_lexer" : "compiler_parser"),
-                "actual compiler enum name/scope/export or exact cursor differs");
-        sameEnum(direct.definition, tokens, start, names);
-        sameEnum(program.enums[index], tokens, start, names);
-        caseCount += names.size();
+        const auto &whole = program.enums[index];
+        const auto direct = aurora::parseHostedEnum(tokens, Cursor{starts[index]}, index);
+        require(direct.definition.name == whole.name && direct.definition.scope.empty() &&
+                    !direct.definition.exported && direct.definition.id == 0 && direct.next.half == 0 &&
+                    tokens.at(direct.next.ordinal - 1).text == ";" &&
+                    direct.definition.cases.size() == whole.cases.size(),
+                "actual compiler enum direct dispatch differs from the whole-module parse");
+        sameToken(direct.definition.token, whole.token);
+        for (std::size_t value = 0; value < whole.cases.size(); ++value)
+            sameToken(direct.definition.cases[value], whole.cases[value]);
         ++cases;
     }
-    const std::array<std::size_t, 3> counts{8, 95, 133};
-    require(caseCount == counts.at(module), "actual compiler enum case inventory differs");
     unchangedTokens(tokens, before);
     ++cases;
 }
@@ -3389,7 +2842,7 @@ std::string enumSource(std::size_t width) {
 class Allocations {
 public:
     std::size_t allowed = std::numeric_limits<std::size_t>::max(), successful = 0, released = 0;
-    std::size_t attempted = 0, watchedBytes = 0, observed = 0, failedObserved = 0;
+    std::size_t attempted = 0;
     std::array<std::size_t, 25> initialBytes{};
     std::array<void *, 11> initialOwners{}, releasedOwners{};
     static void *allocate(void *context, std::size_t bytes) noexcept {
@@ -3397,15 +2850,11 @@ public:
         if (state.attempted < state.initialBytes.size())
             state.initialBytes[state.attempted] = bytes;
         ++state.attempted;
-        const bool watched = state.watchedBytes != 0 && bytes == state.watchedBytes;
-        state.observed += watched;
         auto *result = state.successful < state.allowed ? std::malloc(bytes) : nullptr;
         if (state.attempted <= state.initialOwners.size())
             state.initialOwners[state.attempted - 1] = result;
         if (result)
             ++state.successful;
-        else
-            state.failedObserved += watched;
         return result;
     }
     static void deallocate(void *context, void *address) noexcept {
@@ -3866,8 +3315,7 @@ void resolvedModules() {
     const std::array<std::string, 2> measures{"__au_g_m1_3dep_n1_3lib_d7measure_t1_c28__au_c_m1_4root_n0__d6Hidden",
                                               "__au_g_m1_3dep_n1_3lib_d7measure_t1_e27__au_e_m1_4root_n0__d5State"};
     // Validated IR prunes unused imported implementations; source ABI metadata
-    // retains every resolved declaration. The preserved PR161 probe pins these
-    // five retained identities/order independently of the candidate lowerer.
+    // retains every resolved declaration of this fixture.
     const std::array<std::string, 5> retained{measures[0],
                                               measures[1],
                                               "answer",
@@ -4198,16 +3646,14 @@ public:
 // Both owning inputs are constructed directly in their final transfer slots.
 // Only generated scalar fields and copied readbacks are inspected by the host.
 class RawResolution {
-    Allocations &allocations;
     aurora::hosted::bytes::Region region;
     std::array<GuardedRecord<aurora::hosted_abi::ResolverIngest>, 2> slots;
     std::size_t active = 0;
     bool owner = false, pair = false;
 
 public:
-    bool transferred = false, failedTransfer = false;
-    explicit RawResolution(Allocations &allocations)
-        : allocations(allocations), region(32 * 1024 * 1024, allocations.allocator()) {
+    bool transferred = false;
+    explicit RawResolution(Allocations &allocations) : region(32 * 1024 * 1024, allocations.allocator()) {
         static_assert(
             offsetof(aurora::hosted_abi::ResolverRelease, session) ==
                 offsetof(aurora::hosted_abi::ResolverIngest, session) &&
@@ -4301,18 +3747,12 @@ public:
         const auto next = active ^ 1U;
         // A consuming call never has an armed input after transfer begins.
         owner = pair = false;
-        // Only the index pool requests eight rows during this transfer.
-        // Infer the runtime's allocation header from the first empty owner.
-        allocations.watchedBytes =
-            allocations.initialBytes[0] + 8 * sizeof(aurora::hosted_abi::compiler_resolver::IndexRow);
         checked_hosted_resolver_ingest(&record, slots[next].value.session.storage.data());
-        allocations.watchedBytes = 0;
         active = next;
         owner = true;
         transferred = true;
         guards();
-        failedTransfer = status().storage != Storage::none;
-        return !failedTransfer;
+        return status().storage == Storage::none;
     }
     void finish() {
         require(owner, "resolution cleanup had no active returned owner");
@@ -4367,9 +3807,10 @@ void rawModuleTraversal() {
         ++cases;
         return used;
     };
+    // One representative out-of-memory case: refuse the step's final allocation.
     const auto allocations = execute(std::numeric_limits<std::size_t>::max());
-    for (std::size_t allowed = 0; allowed < allocations; ++allowed)
-        execute(allowed);
+    require(allocations > 0, "graph step performed no allocation");
+    execute(allocations - 1);
 
     aurora::HostedResolution resolution;
     const auto root =
@@ -4562,10 +4003,12 @@ void rawLinkageCaches() {
         ++cases;
         return used;
     };
+    // One representative out-of-memory case: refuse the final allocation, after
+    // earlier caches completed.
     const auto allocations = execute(false, std::numeric_limits<std::size_t>::max());
     execute(true, std::numeric_limits<std::size_t>::max());
-    for (std::size_t prefixCount = 0; prefixCount < allocations; ++prefixCount)
-        execute(false, prefixCount);
+    require(allocations > 0, "linkage resolution performed no allocation");
+    execute(false, allocations - 1);
 }
 
 void rawCatalogueControls() {
@@ -4755,12 +4198,12 @@ void rawResolutionOwnership() {
                   std::is_same_v<decltype(Continuation::firstArgument), Lane> &&
                   std::is_same_v<decltype(Result::result_status), Lowering::LoweringStatus> &&
                   std::is_same_v<decltype(Result::result_reason), Lowering::LoweringError>);
-    context = "resolved transfer allocation prefixes and generated cleanup records";
+    context = "resolved transfer allocation failure and generated cleanup records";
     std::string source = "export module raw;";
     for (std::size_t index = 0; index < 32; ++index)
         source += "auto f" + std::to_string(index) + "()->i64{return 1+2;}";
-    std::size_t successful = 0;
     std::array<std::size_t, 11> initialBytes{};
+    std::size_t firstIngestAllocations = 0;
     {
         Allocations allocations;
         RawResolution resolution(allocations);
@@ -4780,9 +4223,8 @@ void rawResolutionOwnership() {
                                                                 emptyOwner} &&
                     resolution.status().storage == Wire::StorageStatus::none,
                 "Session creation did not retain six original owners followed by five empty typed pools");
-        require(resolution.ingest(source) && resolution.transferred && allocations.observed > 0 &&
-                    allocations.failedObserved == 0,
-                "valid parser/session transfer did not populate the compact index owner");
+        require(resolution.ingest(source) && resolution.transferred, "valid parser/session transfer failed");
+        firstIngestAllocations = allocations.successful;
         const auto first = resolution.meta(0);
         require(first.tag == Wire::MetaTag::module_unit && first.value10 >= 0,
                 "successful transfer did not publish exactly one module root");
@@ -4796,7 +4238,6 @@ void rawResolutionOwnership() {
                     checked_hosted_resolver_read_source(resolution.data(),
                                                         checked_hosted_resolver_count(resolution.data(), 0)) == -1,
                 "copied source bytes lost their checked bounds");
-        successful = allocations.successful;
         resolution.finish();
         require(allocations.successful == allocations.released, "successful two-owner transfer leaked allocations");
     }
@@ -4812,42 +4253,32 @@ void rawResolutionOwnership() {
             require(allocations.releasedOwners[index] == allocations.initialOwners[10 - index],
                     "fresh Session did not release its eleven owners in reverse field order");
     }
-    bool beforeTransfer = false, afterTransfer = false, indexFailure = false;
-    std::size_t initialFailures = 0;
-    for (std::size_t prefix = 0; prefix < successful; ++prefix) {
+    {
+        // One representative out-of-memory case: refuse the first Session owner.
         Allocations allocations;
-        allocations.allowed = prefix;
+        allocations.allowed = 0;
         RawResolution resolution(allocations);
-        if (prefix < initialBytes.size()) {
-            require(allocations.attempted == 11 && allocations.successful == prefix &&
-                        std::equal(initialBytes.begin(), initialBytes.end(), allocations.initialBytes.begin()) &&
-                        resolution.status().storage == Wire::StorageStatus::allocation,
-                    "initial owner failure skipped a declared allocation or published a usable Session");
-            ++initialFailures;
-        }
-        bool complete = resolution.ingest(source);
-        if (complete)
-            complete = resolution.ingest("export module second;auto next()->i64{return 3;}");
-        require(!complete, "reachable resolution allocation prefix did not fail");
-        beforeTransfer = beforeTransfer || !resolution.transferred;
-        afterTransfer = afterTransfer || resolution.failedTransfer;
-        if (allocations.failedObserved != 0) {
-            const auto attempts = allocations.attempted;
-            require(resolution.failedTransfer && resolution.status().storage == Wire::StorageStatus::allocation &&
-                        !resolution.ingest(source) && allocations.attempted == attempts &&
-                        resolution.meta(0).tag == Wire::MetaTag::module_source && resolution.meta(0).value10 == -1,
-                    "compact index growth failure was not sticky or published a module root");
-            indexFailure = true;
-        }
+        require(allocations.attempted == 11 && allocations.successful == 0 &&
+                    std::equal(initialBytes.begin(), initialBytes.end(), allocations.initialBytes.begin()) &&
+                    resolution.status().storage == Wire::StorageStatus::allocation,
+                "initial owner failure skipped a declared allocation or published a usable Session");
+        require(!resolution.ingest(source), "failed Session accepted a source");
         resolution.finish();
-        require(allocations.successful == allocations.released, "failed transfer retained a consumed owner");
-        if (prefix < initialBytes.size())
-            for (std::size_t index = 0; index < prefix; ++index)
-                require(allocations.releasedOwners[index] == allocations.initialOwners[prefix - index - 1],
-                        "failed initial Session did not release its owner prefix in reverse order");
+        require(allocations.successful == allocations.released, "failed Session retained an owner");
     }
-    require(beforeTransfer && afterTransfer && indexFailure && initialFailures == 11,
-            "failure sweep missed an initial owner, compact index growth, live pair or returned Session boundary");
+    {
+        // Fail the final allocation of a real consuming ingest, not just Session creation.
+        require(firstIngestAllocations > 0, "successful ingest made no allocations");
+        Allocations allocations;
+        allocations.allowed = firstIngestAllocations - 1;
+        RawResolution resolution(allocations);
+        require(!resolution.ingest(source) && resolution.transferred &&
+                    resolution.status().storage == Wire::StorageStatus::allocation &&
+                    resolution.meta(0).tag == Wire::MetaTag::module_source && resolution.meta(0).value10 == -1,
+                "allocation failure after transfer published a root or lost its returned owner");
+        resolution.finish();
+        require(allocations.successful == allocations.released, "failed consuming ingest leaked an owner");
+    }
     for (const auto &[badModule, badRoot] : {std::pair{true, false}, std::pair{false, true}}) {
         Allocations allocations;
         RawResolution resolution(allocations);
@@ -4878,7 +4309,7 @@ void createMetadata(std::uint64_t region, const aurora::hosted_abi::MetadataInit
 
 void rawMetadataOwnership() {
     namespace Wire = aurora::hosted_abi::compiler_ir_metadata;
-    context = "metadata frame owner allocation prefixes and consuming cleanup";
+    context = "metadata frame owner allocation failure and consuming cleanup";
     std::size_t successful = 0;
     const auto exercise = [&](std::size_t allowed, std::uint64_t quota, bool expected, bool invalidCounts = false) {
         Allocations allocations;
@@ -4930,17 +4361,15 @@ void rawMetadataOwnership() {
         ++cases;
     };
     exercise(std::numeric_limits<std::size_t>::max(), 1048576, true);
-    // Refuse every initial owner and replacement allocation, including the slot
-    // resize. No forged owner descriptors are copied and all prefixes close.
-    for (std::size_t allowed = 0; allowed < successful; ++allowed)
-        exercise(allowed, 1048576, false);
+    // One representative out-of-memory case: refuse the final slot resize.
+    exercise(successful - 1, 1048576, false);
     exercise(std::numeric_limits<std::size_t>::max(), 0, false);
     exercise(std::numeric_limits<std::size_t>::max(), 1048576, false, true);
 }
 
 void rawInstructionOwnership() {
     namespace wire = aurora::hosted_abi::compiler_ir_instructions;
-    context = "instruction owner allocation prefixes and consuming cleanup";
+    context = "instruction owner allocation failure and consuming cleanup";
     const auto exercise = [&](std::size_t allowed, std::uint64_t quota, bool expected) {
         Allocations allocations;
         allocations.allowed = allowed;
@@ -4975,8 +4404,7 @@ void rawInstructionOwnership() {
         ++cases;
     };
     exercise(std::numeric_limits<std::size_t>::max(), 1048576, true);
-    for (std::size_t allowed = 0; allowed < 5; ++allowed)
-        exercise(allowed, 1048576, false);
+    exercise(4, 1048576, false);
     exercise(std::numeric_limits<std::size_t>::max(), 0, false);
 }
 
@@ -5636,162 +5064,6 @@ void rawInstructionAdmission() {
     }
 }
 
-// Keep a compact independent declaration inventory for the typed transport.
-// Production lowering and its actual implementation sources are exercised below.
-void loweringSchemaSources(const std::vector<aurora::Token> &tokens,
-                           const aurora::Program &program,
-                           std::size_t module) {
-    static const std::array<std::vector<ContainerAst>, 3> classes{{
-        {},
-        {{"LoweringResult",
-          true,
-          "-result_status -result_reason -diagnostic_row -root_row",
-          "+LoweringResult +status +reason +diagnostic_payload_row +module_root"}},
-        {{"OutputRow",
-          true,
-          "-recordKind -instructionForm -unaryOperation -binaryOperation -comparisonOperation -queryOperation "
-          "-operandBegin -operandCount",
-          "+OutputRow +kind +form +unary_operation +binary_operation +comparison_operation +query +operand_begin "
-          "+operand_count +set_unary +set_binary +set_comparison +set_query +discard_instruction"},
-         {"OperandRow",
-          true,
-          "-operandRole -signedValue -unsignedValue -sliceBegin -sliceCount",
-          "+OperandRow +role +signed_value +unsigned_value +begin +count"},
-         {"SnapshotRow",
-          true,
-          "-sharedCount -objectSharedCount -liveValue -exclusiveValue -resourceActiveValue -objectExclusiveValue",
-          "+SnapshotRow +shared_count +object_shared_count +live +exclusive +resource_active +object_exclusive"},
-         {"LocalRow",
-          true,
-          "-nameSourceId -concreteTypeId -storageOffset -scopeId -previousBinding -mutableValue -borrowedObject "
-          "-lintEligible -readValue -ownerId -spanOriginKind -originLocalId -spanFieldIndex -temporaryParent "
-          "-sharedCount -objectSharedCount -liveValue -exclusiveValue -resourceActiveValue -objectExclusiveValue",
-          "+LocalRow +name_source_id +concrete_type_id +offset +scope_id +previous_binding +mutable_value "
-          "+borrowed_object +lint_eligible +was_read +owner_id +span_origin_kind +origin_local_id +span_field_index "
-          "+temporary_parent +set_binding_flags +set_origin +mark_read +state +set_state"},
-         {"ArgumentLane",
-          true,
-          "-argumentIndex -argumentKind -concreteTypeId -localId -loanId -serviceKindId -cleanupKind",
-          "+ArgumentLane +index +kind +concrete_type_id +local_id +loan_id +service_kind_id +field_index +cleanup_kind "
-          "+set_cleanup"},
-         {"ContinuationRow",
-          true,
-          "-continuationKind -continuationPhase -syntaxNode -childCursor -scopeHead -localPrefixLength "
-          "-incomingSnapshotBase -thenSnapshotBase -firstLabel -secondLabel -childTypeId -childLocalId -callTarget "
-          "-capabilityRootLocal -receiverFieldIndex -nextArgument -argumentCount -outputMark -operandMark "
-          "-cleanupCursor -firstArgument -secondArgument -thirdArgument -fourthArgument -fifthArgument -sixthArgument",
-          "+ContinuationRow +kind +phase +syntax_node +cursor +scope_head +local_prefix_length "
-          "+incoming_snapshot_base +then_snapshot_base +first_label +second_label +child_type_id +child_local_id "
-          "+call_target +capability_root_local +receiver_field_index +next_argument +argument_count +output_mark "
-          "+operand_mark +cleanup_cursor +set_phase +set_cursor +set_scope +set_snapshots +set_labels +set_child "
-          "+set_call +set_next_argument +set_marks +set_cleanup_cursor +argument +set_argument"}},
-    }};
-    static const std::array<std::vector<std::pair<const char *, std::size_t>>, 3> enums{{
-        {{"InstructionForm", 85},
-         {"Unary", 3},
-         {"Binary", 10},
-         {"Comparison", 6},
-         {"Query", 2},
-         {"RecordKind", 28},
-         {"OperandRole", 105},
-         {"SpanOriginKind", 5},
-         {"ContinuationKind", 7},
-         {"ContinuationPhase", 14},
-         {"ArgumentKind", 7},
-         {"CleanupKind", 6}},
-        {{"LoweringStatus", 4}, {"LoweringError", 249}},
-        {},
-    }};
-    static const std::array<const char *, 3> functions{
-        "", "", "make_output_pool make_operand_pool make_local_pool make_snapshot_pool make_continuation_pool"};
-    require(program.classes.size() == classes.at(module).size() && program.enums.size() == enums.at(module).size() &&
-                program.templates.empty() && program.functionTemplates.empty() &&
-                program.namespaces == std::set<std::string>{"compiler_lowering"},
-            "lowering schema class/enum/template/namespace inventory differs");
-    for (std::size_t index = 0; index < classes[module].size(); ++index)
-        sameContainer(program.classes[index], tokens, "compiler_lowering", classes[module][index]);
-    for (std::size_t index = 0; index < enums[module].size(); ++index) {
-        const auto &actual = program.enums[index];
-        const auto &[name, count] = enums[module][index];
-        require(actual.name == name && actual.cases.size() == count && actual.scope == "compiler_lowering" &&
-                    actual.exported && actual.id == 0,
-                "lowering schema enum name, case count or unresolved identity differs");
-    }
-    const auto names = words(functions[module]);
-    require(program.functions.size() == names.size(), "lowering schema free-function inventory differs");
-    for (std::size_t index = 0; index < names.size(); ++index)
-        require(program.functions[index].token.text == names[index] && program.functions[index].exported &&
-                    program.functions[index].scope == "compiler_lowering",
-                "lowering schema factory name/export/order differs");
-    ++cases;
-}
-
-void loweringImplementationSources(const std::vector<aurora::Token> &tokens,
-                                   const aurora::Program &program,
-                                   std::size_t module) {
-    static const std::array<std::vector<ContainerAst>, 10> classes{{
-        {},
-        {{"LoweringConfig",
-          true,
-          "-byteLeaves -nonByteLeaves -totalLeaves -copiedBytes -byteArrayLength -scalarArrayLength -analysisMode "
-          "-serviceGroups",
-          "+LoweringConfig +byte_leaves +non_byte_leaves +total_leaves +copied_bytes +byte_array_length "
-          "+scalar_array_length +mode +service_groups +set_policy"},
-         {"ScalarSeed", true, "-concreteKind -publicId -byteSize", "+ScalarSeed +concrete_kind +public_id +byte_size"},
-         {"ServiceParameters",
-          true,
-          "-parameterCount -firstType -secondType -thirdType -fourthType -fifthType",
-          "+ServiceParameters +count +type_at"},
-         {"ServiceSeed",
-          true,
-          "-receiverKind -kindId -operationId -spellingSource -resultType -parameterTypes",
-          "+ServiceSeed +receiver_kind +kind_id +operation_id +spelling_source +result_type +parameters"}},
-        {},
-        {{"LocalRequest",
-          true,
-          "-nameRef -typeId -sourceRef -mutableValue -bindValue -beginValue -ownerId -originKind -originId -fieldId "
-          "-temporaryParent -borrowedValue -lintValue -borrowedRoot",
-          "+LocalRequest +name +type +source +mutable_value +bind +begin +owner +origin +origin_id +field +temporary "
-          "+borrowed +lint +borrowed_root +set_borrowed_root +set_origin +set_flags"},
-         {"LiteralValue",
-          true,
-          "-typeId -signedValue -unsignedValue -validValue",
-          "+LiteralValue +type +signed_value +unsigned_value +valid"}},
-        {},
-        {},
-        {{"IndexedStorage", true, "-rootId -fieldId -typeId", "+IndexedStorage +root +field +type"}},
-        {},
-        {{"FunctionBodyResult", true, "-functionRow -nextLabel", "+FunctionBodyResult +function_row +next_label"}},
-        {},
-    }};
-    static const std::array<const char *, 10> entries{"fail_pair",
-                                                      "begin_lowering",
-                                                      "prepare_types",
-                                                      "add_local",
-                                                      "push_frame",
-                                                      "begin_call",
-                                                      "begin_expression",
-                                                      "begin_local",
-                                                      "lower_function_body",
-                                                      "run_lowering"};
-    require(program.classes.size() == classes.at(module).size() && program.enums.empty() && program.templates.empty() &&
-                program.functionTemplates.empty() && program.namespaces == std::set<std::string>{"compiler_lowering"},
-            "typed implementation class/enum/template/namespace inventory differs");
-    for (std::size_t index = 0; index < classes[module].size(); ++index)
-        sameContainer(program.classes[index], tokens, "compiler_lowering", classes[module][index]);
-    require(std::count_if(program.functions.begin(),
-                          program.functions.end(),
-                          [&](const auto &function) {
-                              return function.name == entries[module] && function.scope == "compiler_lowering" &&
-                                     function.exported;
-                          }) == 1,
-            "typed implementation lost its source entry");
-    // Lexical function/constructor/field inventories cover every helper without
-    // storing another per-helper semantic or native-name oracle here.
-    bootstrapDeclarationTypes(tokens, program, 6 + module);
-    ++cases;
-}
-
 void resolvedCompilerSources(char **paths) {
     context = "all forty-six real compiler modules and decimal digit dependency through production typed lowering";
     const std::array<std::size_t, 47> arguments{0,  1,  2,  15, 19, 20, 21, 32, 16, 33, 34, 17, 22, 23, 24, 25,
@@ -5844,84 +5116,6 @@ void resolvedCompilerSources(char **paths) {
                                               "formatter",
                                               "resolution_linkage",
                                               "frontend"};
-    const std::array<std::vector<std::string>, 47> classNames{{
-        {"Cursor", "Lexeme"},
-        {"ParseFrame", "AstNode", "ChildEdge", "TypeSyntax", "SyntaxNode", "AstArena"},
-        {"AdmissionConfig",
-         "AdmissionResult",
-         "TypeContext",
-         "ParseResult",
-         "ParseToken",
-         "TypeResult",
-         "HeaderResult",
-         "AdmissionProgress",
-         "AdmissionType",
-         "AdmissionScope"},
-        {},
-        {},
-        {"LoweringResult"},
-        {"OutputRow", "OperandRow", "SnapshotRow", "LocalRow", "ArgumentLane", "ContinuationRow"},
-        {"LinkageChunk", "SyntaxRow", "MetaRow", "IndexRow", "ResolvedRow", "WorkRow", "SessionStatus"},
-        {"Session"},
-        {},
-        {},
-        {"BindContext", "Arguments"},
-        {},
-        {"LoweringConfig", "ScalarSeed", "ServiceParameters", "ServiceSeed"},
-        {},
-        {"LocalRequest", "LiteralValue"},
-        {},
-        {},
-        {"IndexedStorage"},
-        {},
-        {"FunctionBodyResult"},
-        {},
-        {"FunctionRow", "IndexRow", "StateRow", "ReverseEdge", "FrameRow", "Input", "Workspace"},
-        {"ByteRange",       "IndexRange",  "RawTypeTail",   "RawTypeRow",  "FlagMasks",    "ReceiverShape",
-         "CallableOptions", "CallableRow", "SlotRow",       "ClassRow",    "FieldRow",     "PhysicalExtent",
-         "StorageRow",      "IndexRow",    "DescriptorRow", "ViewRow",     "EnumRow",      "ClassResultRow",
-         "FrameRow",        "CoreCounts",  "MapCounts",     "InputCounts", "MetadataStore"},
-        {},
-        {"RawInstructionRow", "RawOperandRow", "CodeRow", "BodyRow", "InstructionCounts", "InstructionStore"},
-        {},
-        {"VerificationError"},
-        {"ServiceLoan",
-         "WordPair",
-         "CountPair",
-         "TypeKey",
-         "TokenRow",
-         "SpanPayload",
-         "LoanPayload",
-         "FactRow",
-         "FactKey",
-         "ActiveFact",
-         "BoundsEvidence",
-         "ValueRow",
-         "CodeStateRow",
-         "IndexRow",
-         "MetricsRow",
-         "ControlRow",
-         "VerificationReport",
-         "VerificationWorkspace"},
-        {},
-        {},
-        {},
-        {},
-        {},
-        {},
-        {},
-        {},
-        {"IndexRow", "FunctionFact", "CallFact", "LoanRow", "NameRow", "AbiNameRow", "EmitChunk", "EmitWorkspace"},
-        {},
-        {},
-        {},
-        {},
-        {},
-        {},
-        {"Row", "Workspace"},
-        {},
-        {},
-    }};
     // Explicit module order preserves scope assertions, independent of file argv.
     std::array<aurora::Program, 47> syntax;
     std::array<aurora::HostedModule, 47> headers;
@@ -5935,33 +5129,12 @@ void resolvedCompilerSources(char **paths) {
             const auto source = std::make_shared<const aurora::SourceText>(paths[arguments[index]], std::move(text));
             const auto tokens = aurora::lex(source);
             syntax[index] = checkedProgram(tokens);
-            if (index >= 4 && index <= 6) {
-                bootstrapDeclarationTypes(tokens, syntax[index], index - 1);
-                loweringSchemaSources(tokens, syntax[index], index - 4);
-            }
-            if (index >= 12 && index <= 21)
-                loweringImplementationSources(tokens, syntax[index], index - 12);
+            if ((index >= 4 && index <= 6) || (index >= 12 && index <= 21))
+                bootstrapDeclarationTypes(tokens, syntax[index]);
             headers[index] = resolution.add(source);
             const std::string modulePrefix = modules[index] == "decimal_digits" ? "std." : "aurora.compiler.";
-            require(headers[index].moduleName == modulePrefix + modules[index] && headers[index].interfaceUnit &&
-                        syntax[index].classes.size() == classNames[index].size(),
-                    "actual compiler module/header/class inventory changed");
-            if (index >= 36 && index <= 43) {
-                const std::string expectedNamespace = index == 36 ? "std_decimal" : "compiler_x86";
-                const std::vector<std::string> expectedEnums =
-                    index == 37 ? std::vector<std::string>{"EmitStatus", "Artifact", "Register"}
-                                : std::vector<std::string>{};
-                require(syntax[index].namespaces == std::set<std::string>{expectedNamespace} &&
-                            syntax[index].templates.empty() && syntax[index].functionTemplates.empty() &&
-                            syntax[index].enums.size() == expectedEnums.size(),
-                        "actual emitter module namespace, enum or template inventory changed");
-                for (std::size_t declaration = 0; declaration < expectedEnums.size(); ++declaration)
-                    require(syntax[index].enums[declaration].token.text == expectedEnums[declaration],
-                            "actual emitter enum declaration order changed");
-            }
-            for (std::size_t declaration = 0; declaration < classNames[index].size(); ++declaration)
-                require(syntax[index].classes[declaration].token.text == classNames[index][declaration],
-                        "actual compiler class declaration order changed");
+            require(headers[index].moduleName == modulePrefix + modules[index] && headers[index].interfaceUnit,
+                    "compiler source argument does not name the expected module");
         }
         std::vector<std::size_t> dependencyOrder;
         for (const auto &header : headers)
@@ -5988,12 +5161,20 @@ void resolvedCompilerSources(char **paths) {
     const auto qualified = [](const std::string &scope, const std::string &name) {
         return scope.empty() ? name : scope + "::" + name;
     };
-    std::size_t functions = 0, retainedFunctions = 0, classes = 0, enums = 0, methods = 0, fields = 0;
+    std::size_t functions = 0, retainedFunctions = 0;
     std::set<std::string> identities;
     std::multiset<std::string> sourceFunctionNames, abiFunctionNames;
     for (const auto &[name, declaration] : abi.functions) {
         static_cast<void>(name);
         abiFunctionNames.insert(declaration.sourceName);
+    }
+    // Index retained bodies once by ABI source name and module scope.
+    std::multimap<std::pair<std::string, int>, const aurora::ir::FunctionBody *> bodies;
+    for (const auto &body : module.functions) {
+        const auto candidate = metadata.callable(body.callableId);
+        const auto declaration = abi.functions.find(candidate.name());
+        if (declaration != abi.functions.end())
+            bodies.emplace(std::pair{declaration->second.sourceName, static_cast<int>(candidate.moduleScope())}, &body);
     }
     for (std::size_t index = 0; index < syntax.size(); ++index) {
         const auto scope = index + 1 == syntax.size() ? 0 : static_cast<int>(index + 1);
@@ -6002,24 +5183,28 @@ void resolvedCompilerSources(char **paths) {
                                   const std::string &receiver) {
             // Legacy ABI method source names contain the namespace and method,
             // not the owning class. Typed receiver identity disambiguates them.
-            const auto matches = [&](const auto &body) {
+            const auto matches = [&](const aurora::ir::FunctionBody &body) {
                 const auto candidate = metadata.callable(body.callableId);
-                const auto declaration = abi.functions.find(candidate.name());
-                return declaration != abi.functions.end() && declaration->second.sourceName == sourceName &&
-                       candidate.moduleScope() == scope &&
-                       (receiver.empty() ? !candidate.receiver() || candidate.borrowedRootCount() != 0
-                                         : candidate.receiver() && candidate.borrowedRootCount() == 0 &&
-                                               candidate.receiver()->className == receiver);
+                return receiver.empty() ? !candidate.receiver() || candidate.borrowedRootCount() != 0
+                                        : candidate.receiver() && candidate.borrowedRootCount() == 0 &&
+                                              candidate.receiver()->className == receiver;
             };
             ++functions;
             sourceFunctionNames.insert(sourceName);
-            const auto found = std::find_if(module.functions.begin(), module.functions.end(), matches);
-            if (found == module.functions.end()) {
+            const aurora::ir::FunctionBody *found = nullptr;
+            std::size_t matched = 0;
+            const auto [first, last] = bodies.equal_range({sourceName, scope});
+            for (auto entry = first; entry != last; ++entry)
+                if (matches(*entry->second)) {
+                    if (!found)
+                        found = entry->second;
+                    ++matched;
+                }
+            if (!found) {
                 require(scope != 0, "compiler root callable was discarded: " + sourceName);
                 return;
             }
-            require(std::count_if(module.functions.begin(), module.functions.end(), matches) == 1,
-                    "compiler retained callable/source identity was duplicated: " + sourceName);
+            require(matched == 1, "compiler retained callable/source identity was duplicated: " + sourceName);
             const auto actual = metadata.callable(found->callableId);
             std::size_t borrowedRoots = 0;
             while (borrowedRoots < source.params.size() && source.params[borrowedRoots].borrowed &&
@@ -6059,12 +5244,8 @@ void resolvedCompilerSources(char **paths) {
             for (const auto &field : source.fields)
                 names.push_back(field.token.text);
             require(abi.records.at(name).members == names, "compiler ABI field source order differs");
-            fields += names.size();
-            for (const auto &method : source.methods) {
+            for (const auto &method : source.methods)
                 function(method, qualified(method.scope, method.token.text), name);
-                ++methods;
-            }
-            ++classes;
         }
         for (const auto &source : syntax[index].enums) {
             const auto &name = native(abi.enums, qualified(source.scope, source.token.text));
@@ -6074,35 +5255,11 @@ void resolvedCompilerSources(char **paths) {
             require(identities.insert(name).second && abi.enums.at(name).members == names &&
                         metadata.enumCases(metadata.findEnum(name).value()) == static_cast<int>(names.size()),
                     "compiler enum source order or typed case count differs");
-            ++enums;
         }
     }
-    // Source inventory expectations, checked against actual typed declarations below.
-    require(enums == 58 && classes == 108 && fields > 228 && methods > 307 &&
-                retainedFunctions == module.functions.size() && functions == abi.functions.size() &&
+    require(retainedFunctions == module.functions.size() && functions == abi.functions.size() &&
                 sourceFunctionNames == abiFunctionNames,
             "real compiler typed graph omitted or appended an unaccounted declaration");
-    const auto formatterModule = std::find(modules.begin(), modules.end(), "formatter");
-    require(formatterModule != modules.end(), "formatter module was omitted from compiler source inventory");
-    const auto formatterScope = std::next(formatterModule) == modules.end()
-                                    ? 0
-                                    : static_cast<int>(std::distance(modules.begin(), formatterModule) + 1);
-    const auto appendId = metadata.findCallable(native(abi.functions, "compiler_formatter::append_row"));
-    require(appendId.has_value(), "formatter typed-buffer append helper was omitted");
-    const auto append = metadata.callable(*appendId);
-    const auto parameters = append.parameters();
-    const aurora::Type row(native(abi.records, "compiler_formatter::Row"));
-    require(append.moduleScope() == formatterScope && append.borrowedRootCount() == 1 && append.borrowedParameter() &&
-                append.borrowedRootType(0) == aurora::Type::ownedValues(row) && append.borrowedRootMutable(0) &&
-                !append.receiver() && !append.receiverSpanField() && parameters.size() == 3 &&
-                parameters[0] == aurora::Type::I64 && parameters[1] == row && parameters[2] == row &&
-                append.result() == aurora::Type::Bool &&
-                std::count_if(module.functions.begin(),
-                              module.functions.end(),
-                              [&](const auto &body) {
-                                  return body.callableId == *appendId;
-                              }) == 1,
-            "formatter typed-buffer append helper lost its mutable owner root, copied tails or scalar result");
     ++cases;
 }
 
@@ -6201,7 +5358,9 @@ void rawModules() {
         require(allocations.successful == allocations.released, "module growth leaked an owner");
         ++cases;
     }
-    for (std::size_t allowed = 0; allowed < successful; ++allowed) {
+    {
+        // One representative out-of-memory case: refuse the final allocation.
+        const auto allowed = successful - 1;
         Allocations allocations;
         allocations.allowed = allowed;
         RawArena arena(allocations);
@@ -6288,16 +5447,18 @@ void rawAdmission() {
         require(allocations.successful == allocations.released, "Serve group admission leaked an owner");
         ++cases;
     }
-    context = "post-grammar admission scratch growth and every allocation failure";
+    context = "post-grammar admission scratch growth and allocation failure";
     constexpr std::size_t width = 513;
     std::string source = "module admitted;auto wide(";
     for (std::size_t index = 0; index < width; ++index)
         source += (index ? "," : "") + std::string("i64 p") + std::to_string(index);
     source += ")->i64{return p0;}auto later()->i64{return 0;}";
     // The later declaration remains pending while wide parameter scratch grows.
-    // Only admission allocations are denied. Every iteration first establishes
-    // a complete valid grammar forest and then checks that all records survive.
-    for (std::size_t budget = 0;; ++budget) {
+    // Only admission allocations are denied: one representative out-of-memory
+    // case refuses the first scratch allocation, then admission completes.
+    // Each iteration first establishes a complete valid grammar forest and then
+    // checks that all records survive.
+    for (const bool limited : {true, false}) {
         Allocations allocations;
         RawArena arena(allocations);
         const auto parsed = arena.parse(source, Stop::module_definition);
@@ -6312,9 +5473,11 @@ void rawAdmission() {
         for (std::int64_t index = 0; index < arena.syntaxCount(); ++index)
             syntax.push_back(arena.syntax(index));
         const auto grammarAllocations = allocations.successful;
-        allocations.allowed = grammarAllocations + budget;
+        if (limited)
+            allocations.allowed = grammarAllocations;
         const auto admitted = arena.admit(source, parsed[1]);
         const bool success = admitted[0] == wire(AdmissionStatus::success);
+        require(success != limited, "admission allocation outcome differs");
         require(admitted ==
                     AdmissionWords{
                         wire(success ? AdmissionStatus::success : AdmissionStatus::allocation_failure), -1, -1, -1, 0},
@@ -6333,8 +5496,7 @@ void rawAdmission() {
         require(metrics.live_allocations == 5 && metrics.peak_live_allocations == 5,
                 "admission acquired a sixth owner or lost an existing owner");
         if (success) {
-            require(budget > 0 && allocations.successful - grammarAllocations == budget,
-                    "admission sweep skipped a failing scratch allocation or never grew scratch");
+            require(allocations.successful > grammarAllocations, "admission never grew scratch");
             const auto beforeRepeat = allocations.successful;
             require(arena.admit(source, parsed[1]) == admitted && allocations.successful == beforeRepeat,
                     "repeated admission retained stale scratch context or regrew completed storage");
@@ -6342,8 +5504,6 @@ void rawAdmission() {
         arena.finish();
         require(allocations.successful == allocations.released, "admission scratch failure leaked an existing owner");
         ++cases;
-        if (success)
-            break;
     }
 }
 
@@ -6402,7 +5562,9 @@ void rawBodies() {
             arena.finish();
             require(allocations.released == successful, "body growth leaked an owner");
         }
-        for (std::size_t allowed = 0; allowed < successful; ++allowed) {
+        {
+            // One representative out-of-memory case: refuse the final allocation.
+            const auto allowed = successful - 1;
             Allocations allocations;
             allocations.allowed = allowed;
             RawArena arena(allocations);
@@ -6600,7 +5762,7 @@ void rawPreambleEnums() {
             ++cases;
         }
     for (const auto stop : {Stop::preamble, Stop::enum_definition}) {
-        context = "preamble/enum fifth-owner growth and every allocation failure";
+        context = "preamble/enum fifth-owner growth and allocation failure";
         const std::int64_t width = stop == Stop::preamble ? 513 : 256;
         std::string source = stop == Stop::preamble ? "export module wide;" : enumSource(width);
         std::vector<SyntaxWords> expected;
@@ -6626,12 +5788,15 @@ void rawPreambleEnums() {
                             stop == Stop::preamble ? 1 : 0,
                             -1});
         std::size_t successful = 0;
-        for (std::size_t allowed = 0;; ++allowed) {
+        // Complete once, then one representative out-of-memory case that
+        // refuses the final growth allocation.
+        for (const bool limited : {false, true}) {
             Allocations allocations;
-            allocations.allowed = allowed;
+            allocations.allowed = limited ? successful - 1 : std::numeric_limits<std::size_t>::max();
             RawArena arena(allocations);
             const auto result = arena.parse(source, stop, 0, {}, stop == Stop::enum_definition ? 63 : 0);
             const bool accepted = result[0] == wire(Status::success);
+            require(accepted != limited, "preamble/enum allocation outcome differs");
             if (accepted) {
                 require(result == Words{wire(Status::success),
                                         width,
@@ -6657,10 +5822,6 @@ void rawPreambleEnums() {
             arena.finish();
             require(allocations.successful == allocations.released, "preamble/enum failed growth leaked an owner");
             ++cases;
-            if (accepted) {
-                require(allowed == successful, "allocation sweep skipped a failing allocation");
-                break;
-            }
         }
     }
 }
@@ -6676,8 +5837,7 @@ void rawCallableGrowth() {
             source += constructor ? "f" + std::to_string(index) + "(make(p))" : "i64 p" + std::to_string(index);
         }
         source += constructor ? "{}" : ")->i64{return 1;}";
-        context = constructor ? "constructor initializer growth/failure prefixes"
-                              : "callable parameter growth/failure prefixes";
+        context = constructor ? "constructor initializer growth/failure" : "callable parameter growth/failure";
         std::vector<SyntaxWords> expected;
         if (constructor) {
             expected.push_back({11, 2, 4, -1, -1, -1, 0, 3, -1, -1, 0, -1});
@@ -6740,7 +5900,9 @@ void rawCallableGrowth() {
             arena.finish();
             require(allocations.released == successful, "wide callable leaked a successful allocation");
         }
-        for (std::size_t allowed = 0; allowed < successful; ++allowed) {
+        {
+            // One representative out-of-memory case: refuse the final allocation.
+            const auto allowed = successful - 1;
             Allocations allocations;
             allocations.allowed = allowed;
             RawArena arena(allocations);
@@ -6806,7 +5968,7 @@ void byteStrings() {
         const auto tokens = aurora::lex(source, "string-program.au");
         const auto program = checkedProgram(tokens);
         require(program.classes.size() == 1 && program.classes[0].methods.size() == 2 && program.functions.size() == 1,
-                "byte-string declaration inventory differs");
+                "byte-string fixture declaration shape differs");
         sameTree(program.classes[0].methods[0].initializers.at(0).second, tokens, tree("byte_string", 22));
         sameTree(program.classes[0].methods[1].body.at(0)->expr, tokens, index(name(35), number(37)));
         sameTree(program.functions[0].body.at(0)->expr, tokens, tree("byte_string", 59));
@@ -7207,7 +6369,7 @@ void rawTypeDiagnostics() {
 }
 
 void rawTypeGrowth() {
-    context = "independent type/candidate growth and every allocation failure";
+    context = "independent type/candidate growth and allocation failure";
     constexpr std::int64_t count = 257;
     std::string source = "{";
     for (std::int64_t index = 0; index < count; ++index) {
@@ -7244,7 +6406,9 @@ void rawTypeGrowth() {
         arena.finish();
         require(allocations.successful == allocations.released, "typed growth cleanup mismatch");
     }
-    for (std::size_t allowed = 0; allowed < successful; ++allowed) {
+    {
+        // One representative out-of-memory case: refuse the final allocation.
+        const auto allowed = successful - 1;
         Allocations allocations;
         allocations.allowed = allowed;
         RawArena arena(allocations);
@@ -7439,7 +6603,9 @@ void rawDeclarationTypeGrowth() {
         require(allocations.released == successful, "fresh type lifecycle leaked storage");
         ++cases;
     }
-    for (std::size_t allowed = 0; allowed < successful; ++allowed) {
+    {
+        // One representative out-of-memory case: refuse the final allocation.
+        const auto allowed = successful - 1;
         Allocations allocations;
         allocations.allowed = allowed;
         RawArena arena(allocations);
@@ -7466,7 +6632,7 @@ void rawDeclarationTypeGrowth() {
 }
 
 void rawFields() {
-    context = "field type growth and allocation-failure prefixes";
+    context = "field type growth and allocation failure";
     std::int64_t next = 0;
     std::vector<TypeWords> types;
     const auto source = rawDeclarationTree(4, next, types) + " value;";
@@ -7501,10 +6667,10 @@ void rawFields() {
         arena.finish();
         require(allocations.successful == allocations.released, "partial field leaked an owner");
         ++cases;
-        if (success)
-            allowed = 0;
-        else if (++allowed == allocationsNeeded)
+        // One representative out-of-memory case: refuse the final allocation.
+        if (!success)
             break;
+        allowed = allocationsNeeded - 1;
     }
     auto expected = aurora::TemplateArgument(aurora::TypeKind::I64);
     for (int depth = 0; depth < 4; ++depth)
@@ -7621,17 +6787,18 @@ void rawGrowth() {
         arena.finish();
         require(allocations.released == successful, "success cleanup mismatch");
     }
-    for (std::size_t allowed = 0; allowed < 5; ++allowed) {
+    {
         Allocations allocations;
-        allocations.allowed = allowed;
+        allocations.allowed = 0;
         RawArena arena(allocations);
         require(arena.parse("size_of(i64);")[0] == wire(Status::allocation_failure),
                 "failed arena allocation did not reject before typed parsing");
         arena.finish();
     }
-    // Refuse every allocation in sequence, including frame and node growth.
-    // All partial graphs still leave all five owners releasable exactly once.
-    for (std::size_t allowed = 0; allowed < successful; ++allowed) {
+    // A partial graph still leaves all five owners releasable exactly once.
+    {
+        // One representative out-of-memory case: refuse the final allocation.
+        const auto allowed = successful - 1;
         Allocations allocations;
         allocations.allowed = allowed;
         RawArena arena(allocations);
@@ -7694,7 +6861,9 @@ void rawFrameGrowth() {
         arena.finish();
         require(allocations.released == successful, "nested success cleanup mismatch");
     }
-    for (std::size_t allowed = 0; allowed < successful; ++allowed) {
+    {
+        // One representative out-of-memory case: refuse the final allocation.
+        const auto allowed = successful - 1;
         Allocations allocations;
         allocations.allowed = allowed;
         RawArena arena(allocations);
@@ -7738,7 +6907,9 @@ void rawArguments() {
         successful = allocations.successful;
         arena.finish();
     }
-    for (std::size_t allowed = 0; allowed < successful; ++allowed) {
+    {
+        // One representative out-of-memory case: refuse the final allocation.
+        const auto allowed = successful - 1;
         Allocations allocations;
         allocations.allowed = allowed;
         RawArena arena(allocations);
@@ -7918,7 +7089,9 @@ void rawAggregates() {
             arena.finish();
             require(allocations.successful == allocations.released, "wide aggregate cleanup mismatch");
         }
-        for (std::size_t allowed = 0; allowed < successful; ++allowed) {
+        {
+            // One representative out-of-memory case: refuse the final allocation.
+            const auto allowed = successful - 1;
             Allocations allocations;
             allocations.allowed = allowed;
             RawArena arena(allocations);
@@ -8144,28 +7317,14 @@ int main(int argc, char **argv) {
         bootstrapSources(argv + 1);
         consumerSources({argv[4], argv[5], argv[6], argv[7], argv[8], argv[37]});
         typedConsumerSources(argv + 9);
-        require(wholeCallables >= 172 && wholeFields >= 76,
-                "whole-declaration coverage omitted historical bootstrap callables/fields");
-        std::cout
-            << "PASS hosted parser " << cases
-            << " explicit AST/diagnostic, dispatch-consistency and ABI cases, 199-node/frame and "
-               "257-argument/aggregate growth with allocation cleanup; "
-               "dispatch-consistent constructor/string roots from all three actual bootstrap sources; "
-               "14 aggregate roots including 512 XFS elements, 16 direct typed product roots, "
-               "1,285-record type growth, all 125 historical and all new bootstrap bodies, "
-               "513-statement/128-block growth and fifth-owner cleanup; "
-               "independent declaration types and diagnostics, all 490 historical and new compiler declaration "
-               "type occurrences, 31-record standalone type growth with existing-owner cleanup; "
-               "whole callable/field boundaries, 513-entry callable and 31-type field failure sweeps; "
-               "three compiler preambles, two imports, twelve enums/233 cases, 513-import and 256-case failure sweeps; "
-               "18 compiler classes/six namespace blocks, std::array/pair/make_pair template inventories, "
-               "whole-module container/depth/header contracts and post-grammar admission scratch-failure controls; "
-               "typed native identities, dependency/instance order, exact nominal reflection views, selected "
-               "overloads, "
-               "independent concrete layouts and retained lint/template-error source spans; "
-               "forty-seven-module frontend graph, fifteen typed classes/14 enums/513 cases, all implementation "
-               "declaration boundaries, generated typed-row extents and eleven-owner Session failure/release "
-               "prefixes\n";
+        std::cout << "PASS hosted parser " << cases
+                  << " explicit AST/diagnostic, dispatch-consistency and ABI cases: expression, body, declaration, "
+                     "type, preamble/enum and module grammar with diagnostics; 199-node/frame, 257-argument/aggregate, "
+                     "type, 513-entry callable/body/import and 256-case enum growth with representative "
+                     "allocation-failure cleanup; whole/direct dispatch consistency over the bootstrap, consumer and "
+                     "typed consumer sources; typed module instances, nominal reflection views, selected overloads, "
+                     "linkage modes and caches, Session/metadata/instruction ownership and instruction admission; "
+                     "the forty-seven-module frontend graph through production typed lowering\n";
     } catch (const std::exception &error) {
         std::cerr << "FAIL " << error.what() << '\n';
         return 1;

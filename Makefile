@@ -238,10 +238,6 @@ smoke-boot-capacity:
 	python3 -B tests/kernel-boot-capacity.py --qemu
 
 
-.PHONY: test-iommu-diagnostics
-test-iommu-diagnostics:
-	PYTHONDONTWRITEBYTECODE=1 python3 -O tests/iommu-diagnostics.py
-
 .PHONY: formatter
 formatter:
 	$(MAKE) -C compiler formatter

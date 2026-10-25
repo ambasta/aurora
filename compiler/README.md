@@ -90,13 +90,6 @@ reviews the new pin, its hop receipt, the release suite and the batched adoption
 together. Keep every checkpoint commit reachable from main, with its receipt in
 the bump PR, so each one can be rebuilt from the one before it.
 
-The build predecessor (the checkpoint) and the historical C++ emitter oracle are
-separate roles with separate pins; a newer checkpoint never replaces the oracle.
-Review corpus membership changes against the previous supported set; unexplained
-removal or reclassification of a previously supported input fails qualification.
-New accepted oracle inputs extend coverage. Unexpected rejection must not shrink
-the required corpus, and equal rejection is not emission coverage.
-
 ### Source bootstrap
 
 The build has one predecessor stage and a self-check, like GCC's
@@ -108,7 +101,7 @@ checkpoint C0 --compiles--> C1 (aurorac) --compiles--> C2 (aurorac-stage2)
 ```
 
 [`checkpoint.json`](checkpoint.json) pins C0 by source commit, tree and
-executable SHA-256, and pins the historical oracle the same way. C0 is the C2 of
+executable SHA-256. C0 is the C2 of
 main commit `d4cbabb` (typed views), built in one hop from the previous
 checkpoint, the C2 of `2fd30b2`; `history` in `checkpoint.json` lists earlier pins
 and the first one was built from the last historical stage (below). No
@@ -116,28 +109,23 @@ compiler binary is committed or downloaded. Meson's `bootstrap_compiler` option
 names a local copy; `scripts/bootstrap.py select` accepts it only if its bytes
 have the pinned digest, and the frontend generator and initialization probe
 recheck the digest before each run. Ninja tracks the executable, so replacing
-it regenerates the frontend. The optional `historical_oracle` option selects the
-oracle for the two `emitter-differential-*` tests (release suite); without it
-those tests fail as blocked rather than pass.
+it regenerates the frontend.
 
 ```sh
-# Local copies of the pinned executables; only their digests are pinned.
+# A local copy of the pinned executable; only its digest is pinned.
 C0=/workspace/build/checkpoint-d4cbabbb692a/aurorac
-ORACLE=/workspace/build/bootstrap-reseed/oracle/aurorac
-meson setup build/meson . "-Dbootstrap_compiler=$C0" \
-  "-Dhistorical_oracle=$ORACLE" "-Duefi_ld=$UEFI_LD"
-meson setup build/meson-compiler . -Dkernel_images=false \
-  "-Dbootstrap_compiler=$C0" "-Dhistorical_oracle=$ORACLE"
+meson setup build/meson . "-Dbootstrap_compiler=$C0" "-Duefi_ld=$UEFI_LD"
+meson setup build/meson-compiler . -Dkernel_images=false "-Dbootstrap_compiler=$C0"
 MESON_BUILD_DIR=build/meson-compiler python3 -B scripts/meson_test.py \
   --tests hosted-lexer-bootstrap
 ```
 
-`BOOTSTRAP_COMPILER` and `HISTORICAL_ORACLE` request a different selection for
+`BOOTSTRAP_COMPILER` requests a different selection for
 `make test`: the wrapper reconfigures the implicit default build after checking
 the pin, and rejects an explicit `MESON_BUILD_DIR` with the exact reconfigure
 command. A build directory configured with the former `bootstrap_receipt`
 option must be recreated with `meson setup --wipe`, which the wrapper prints.
-The container launcher forwards both variables literally.
+The container launcher forwards it literally.
 
 #### Bumping the checkpoint (one hop)
 
@@ -148,14 +136,14 @@ C0. From the host checkout, then inside the pinned container:
 ```sh
 git worktree add --detach build/hop-src NEW        # host: clean checkout of NEW
 git rev-parse NEW^{tree}                           # host: TREE
-python3 scripts/bootstrap.py hop --compiler "$C0" --oracle "$ORACLE" \
+python3 scripts/bootstrap.py hop --compiler "$C0" \
   --source build/hop-src --commit NEW --tree TREE --output build/checkpoint-NEW
 ```
 
 The hop checks that the checkout's files hash to `TREE`, configures NEW with
-C0 and the fixed options, builds C1 and C2, and runs `hosted-lexer-bootstrap`
-and both emitter differentials. It copies NEW's C2 to `OUTPUT/aurorac`, writes
-`OUTPUT/receipt.json` (source, predecessor and oracle digests, tool versions,
+C0 and the fixed options, builds C1 and C2, and runs `hosted-lexer-bootstrap`.
+It copies NEW's C2 to `OUTPUT/aurorac`, writes
+`OUTPUT/receipt.json` (source and predecessor digests, tool versions,
 commands, logs and timings) and prints the new pin. The bump commit records that
 pin in `checkpoint.json`, moves the old one to `history`, and qualifies with the
 release suite and the merge gates. Adding `--expect SHA256` reproduces a recorded
@@ -165,7 +153,7 @@ hop. To rebuild the current C0 from the previous one (C2 of `2fd30b2`, kept at
 ```sh
 git worktree add --detach build/hop-src d4cbabbb692a5553d8b14641e145a2f5ddc6ca93
 ./scripts/container.sh python3 scripts/bootstrap.py hop --jobs "$(nproc)" \
-  --compiler /workspace/build/bootstrap-reseed/checkpoint/aurorac --oracle "$ORACLE" \
+  --compiler /workspace/build/bootstrap-reseed/checkpoint/aurorac \
   --source /workspace/build/hop-src --commit d4cbabbb692a5553d8b14641e145a2f5ddc6ca93 \
   --tree ea4bba96465978e978646ef67c541df9073328a3 --output /workspace/build/checkpoint-d4cbabbb692a \
   --expect deae50d0f1d339a297608ef5e50f163e68fc32c9d32614e74a99ca6d9542e42e
@@ -180,7 +168,7 @@ at unchanged compiler source equals C0 itself.
 The first checkpoint came from the six-stage source route kept in
 [`bootstrap-history.json`](bootstrap-history.json): a GNU C++ seed and five
 Aurora stages, each built by the previous one, ending at the `borrow` stage
-`672821f`. That stage is also the historical C++ emitter oracle. The route's
+`672821f`. The route's
 driver is `scripts/bootstrap.py` at commit `2fd30b2`, which reads
 `compiler/bootstrap-route.json` at that commit; the history file records every
 stage's commit, tree and reconstructed digest. To rebuild C0 without any binary
@@ -196,7 +184,7 @@ print(bootstrap.prepare_sources(pathlib.Path("cache").resolve(), bootstrap.route
 ./scripts/container.sh bash -c 'cd build/route && python3 scripts/bootstrap.py build \
   --cache "$PWD/cache" --prepared SOURCES'   # six stages; prints RECEIPT
 git worktree add --detach build/hop-src 2fd30b2
-# BORROW: borrow/build/aurorac beside RECEIPT; it is also the oracle.
+# BORROW: borrow/build/aurorac beside RECEIPT.
 ./scripts/container.sh python3 scripts/bootstrap.py hop \
   --compiler BORROW --receipt RECEIPT --source build/hop-src \
   --commit 2fd30b2c252afda5fbf6e78c399bca1cae7bd04e \
@@ -205,9 +193,8 @@ git worktree add --detach build/hop-src 2fd30b2
 ```
 
 `2fd30b2` still selects its predecessor through the six-stage receipt, so this
-first hop passes `--receipt` (which also supplies its oracle) instead of
-`--oracle`. The oracle is that route's `borrow/build/aurorac`. Older receipts
-remain readable as records of their own runs.
+first hop also passes `--receipt`. Older receipts remain readable as records of
+their own runs.
 
 | Stage | Immutable source | Required predecessor capability |
 |---|---|---|
@@ -250,55 +237,13 @@ entry-parameter and static call-site admission.
 Source verification and emission consume the same normalized storage; these
 migrations still await execution qualification.
 
-## Emitter migration qualification
+## Emitter qualification
 
-The last historical stage, `672821f70f37b185c46690791bd00d74d4414403`, retains
-the C++ x86 backend. `checkpoint.json` pins its route-built executable as the
-historical oracle (`-Dhistorical_oracle`), separately from the checkpoint and never
-as a production fallback; checkpoint bumps do not replace it. The
-`emitter-differential-default` and `emitter-differential-closed` tests in the
-`release` suite (run at compiler bumps and releases, not on every merge) compare the historical corpus against it, and unsupported later consumers
-against current C1/C2, in ordinary and closed profiles. To run these guarded tests
-directly:
-
-```sh
-MESON_BUILD_DIR=build/meson-compiler python3 -B scripts/meson_test.py \
-  --tests emitter-differential-default emitter-differential-closed
-```
-
-The evidence directory, kept after a failure and removed after a pass, holds
-compiler hashes, flags, exact commands, diagnostics and assembly/stack/ABI artifacts. Against the historical oracle,
-accepted inputs must match exit status, diagnostics and ABI facts byte for byte;
-assembly and stack facts may differ (a `historical-*-differs.json` marker records
-it), because a frozen emitter must not forbid better code. C1/C2 must match every
-output byte for byte, and machine behavior is checked by the execution suites.
-Rejected inputs must agree and preserve every preexisting output. Any
-mismatch, internal failure or watchdog timeout fails the gate and reports partial
-coverage. Equal rejection is not emission coverage, so the gate also fails if any
-historically supported input outside its fixed list of function-less modules is rejected.
-Historical membership and its exact oracle commit come from
-`tests/compiler/emitter-historical-corpus.txt`. The compiler's own modules adopted
-readonly typed views at `d4cbabb`'s bump, which the oracle predates, so their
-historical members are byte-exact copies of that revision under
-`tests/fixtures/emitter-history/compiler-d4cbabb`, compiled as one graph (with the
-retired modules and the initialization probe); the current compiler modules are
-later consumers. The gate also runs the oracle on
-unlisted inputs and requires a source-language rejection with preserved outputs;
-an accepted omission fails and must extend historical coverage. Unsupported new
-consumers still require successful C1/C2 emission, without per-feature exception
-paths or pinned rejection messages. The corpus is every
-`.au` file under compiler, examples, kernel, library and tests; embedded generated
-fixtures and machine behavior remain covered by their existing native suites.
-The default profile also compares C1/C2 for every historical input, sharing the
-same real observations rather than compiling the source again in a separate
-bootstrap-corpus runner. Each default input runs old, C1 and C2 exactly once; no
-cross-run corpus cache or synthesized observation is used. The fast lexer and
-whole-frontend convergence gate remains independent. Closed symbols and
-referenced-only reflection change emission, so that profile still runs separately.
-These comparisons supplement the final GCC 16 full,
-BIOS/UEFI and affected-profile gates; it does not replace them. Record before/after
-`scripts/compiler-speed.py` time and peak-memory observations before further
-migration work, with every timeout named rather than silently extending limits.
+The C++ x86 backend of the last historical stage, `672821f`, was retired after
+the Aurora emitter matched its acceptance, diagnostics and ABI facts on the whole
+corpus (see Git history). Emission is now checked by C1/C2 convergence in
+`hosted-lexer-bootstrap` and by the execution suites. Record before/after
+`scripts/compiler-speed.py` time and peak-memory observations for emitter changes.
 
 ## Supported source
 

@@ -106,8 +106,8 @@ object-loan provenance, bounds evidence and the bounded FIFO worklist, with no
 native semantic fallback. Bounded multi-owner borrowing enables the emitter
 workspace to read instruction and metadata owners together; the formatter
 shares append through exclusive mutable typed-buffer borrows.
-One pinned checkpoint builds current C1/C2 with convergence; the historical
-C++ emitter remains a separate differential oracle, not a production fallback.
+One pinned checkpoint builds current C1/C2 with convergence; execution and ABI
+tests qualify emission without a production fallback or historical-emitter dependency.
 Qualification requires final-source pinned-container `merge`, normal BIOS/UEFI
 and affected guest gates; releases and compiler bumps also run `release` and
 every guest family, including the

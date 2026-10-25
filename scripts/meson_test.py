@@ -103,13 +103,8 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
             reason + "\nUse ./scripts/container.sh make test for the supported pinned environment; "
             "see docs/local-development.md."
         ) from error
-    # BOOTSTRAP_COMPILER selects the pinned checkpoint; HISTORICAL_ORACLE the
-    # optional historical C++ emitter. Meson checks both against checkpoint.json.
-    requested = {
-        name: env.get(variable)
-        for name, variable in (("bootstrap_compiler", "BOOTSTRAP_COMPILER"), ("historical_oracle", "HISTORICAL_ORACLE"))
-        if env.get(variable) is not None
-    }
+    # BOOTSTRAP_COMPILER selects the pinned checkpoint; Meson checks it against checkpoint.json.
+    requested = {"bootstrap_compiler": env["BOOTSTRAP_COMPILER"]} if env.get("BOOTSTRAP_COMPILER") is not None else {}
     for name, value in requested.items():
         contract.require(
             Path(value).is_absolute(),
@@ -173,7 +168,7 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
         # Meson rejects an unknown -D on reconfigure, so a directory configured
         # before the single-checkpoint options existed must be wiped.
         contract.require(
-            "historical_oracle" in options,
+            "bootstrap_compiler" in options,
             f"{build} predates the single checkpoint; run "
             + shlex.join(
                 [
@@ -216,22 +211,19 @@ def execute(root, scope, targets=(), output=None, *, build_only=False, tests=())
             setup = ["setup", "--reconfigure", str(build), *(f"-D{name}={value}" for name, value in changed.items())]
             contract.require(
                 not supplied,
-                "Configured checkpoint/oracle differs from the request; run "
+                "Configured checkpoint differs from the request; run "
                 + shlex.join([meson, *setup])
                 + " or select a matching MESON_BUILD_DIR",
             )
             try:
-                bootstrap.select(
-                    requested.get("bootstrap_compiler", options["bootstrap_compiler"]),
-                    requested.get("historical_oracle", options["historical_oracle"]),
-                )
+                bootstrap.select(requested.get("bootstrap_compiler", options["bootstrap_compiler"]))
             except ValueError as error:
                 raise contract.ContractError(str(error)) from error
             run(*setup)
             options = {item["name"]: item["value"] for item in introspect("--buildoptions")}
             contract.require(
                 all(options.get(name) == value for name, value in requested.items()),
-                "Meson did not apply the requested checkpoint/oracle",
+                "Meson did not apply the requested checkpoint",
             )
         if tests:
             # Refresh configuration before selecting dependencies, as Meson's

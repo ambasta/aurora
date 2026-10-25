@@ -64,111 +64,111 @@ native_round_robin_object = custom_target('native-round-robin-substitution',
               '@INPUT@', '@OUTPUT@'])
 
 native_host = executable('native-kernel-pages', files('../../tests/kernel-pages.cpp') + [native_bios_object],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: [], link_args: ['-no-pie'])
 test('native-kernel-pages', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-protection', files('../../tests/kernel-protection.cpp') + [native_bios_object],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: [], link_args: ['-no-pie'])
 test('native-kernel-protection', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-program', files('../../tests/kernel-program.cpp') + [native_bios_object],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: [], link_args: ['-no-pie'])
 native_program_host = native_host
 test('native-kernel-program', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-program-layout', files('../../tests/kernel-program-layout.cpp') + [native_bios_object],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: [], link_args: ['-no-pie'])
 native_program_layout_host = native_host
 test('native-kernel-program-layout', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-domain', files('../../tests/kernel-domain.cpp') + [native_bios_object],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: [], link_args: ['-no-pie'])
 test('native-kernel-domain', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-schedule', files('../../tests/kernel-schedule.cpp') + [native_bios_object],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: [], link_args: ['-no-pie'])
 native_schedule_host = native_host
 test('native-kernel-schedule', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-uefi-runtime', files('../../tests/kernel-uefi-runtime.cpp') + [native_bios_object],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page'], link_args: ['-no-pie'])
 test('native-uefi-runtime', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-uefi-multipage-runtime', files('../../tests/kernel-uefi-runtime.cpp') + [native_bios_object],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: ['-DAURORA_RUNTIME_MULTIPAGE=1', '-DAURORA_RUNTIME_IMAGE_POLICY=multipage'], link_args: ['-no-pie'])
 test('native-uefi-multipage-runtime', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-ipc', files('../../tests/kernel-ipc.cpp') + [native_uefi_object],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page'], link_args: ['-no-pie'])
 test('native-kernel-ipc', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-program-mailbox', files('../../tests/kernel-program-mailbox.cpp') + [native_program_console_object],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: [], link_args: ['-no-pie'])
 test('native-kernel-program-mailbox', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-uefi-service-budget', files('../../tests/kernel-uefi-service-budget.cpp') + [native_uefi_object],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page'], link_args: ['-no-pie'])
 test('native-kernel-uefi-service-budget', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-uefi-dispatch-layout', files('../../tests/kernel-uefi-dispatch-layout.cpp') + [native_uefi_object],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page'], link_args: ['-no-pie'])
 test('native-kernel-uefi-dispatch-layout', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-dispatch', files('../../tests/kernel-dispatch.cpp') + [native_uefi_object],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: [], link_args: ['-no-pie'])
 test('native-kernel-dispatch', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-uefi-user-run', files('../../tests/kernel-uefi-user-run.cpp') + [native_uefi_object],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page'], link_args: ['-no-pie'])
 test('native-kernel-uefi-user-run', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-uefi-multipage-user-run', files('../../tests/kernel-uefi-user-run.cpp') + [native_uefi_object],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: ['-DAURORA_RUNTIME_MULTIPAGE=1', '-DAURORA_RUNTIME_IMAGE_POLICY=multipage'], link_args: ['-no-pie'])
 test('native-uefi-multipage-user-run', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-client-disposal', files('../../tests/kernel-client-disposal.cpp') + [native_uefi_object],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: [], link_args: ['-no-pie'])
 test('native-kernel-client-disposal', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-console', files('../../tests/kernel-console.cpp') + [native_console_object],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: [], link_args: ['-no-pie'])
 test('native-kernel-console', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-console-uart', files('../../tests/kernel-console-uart.cpp') + [native_console_object],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: [], link_args: ['-no-pie'])
 test('native-kernel-console-uart', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-generated-uart',
     files('../../tests/kernel-console-uart.cpp') + [native_console_object, native_uart_object],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: ['-DAURORA_GENERATED_UART=1'], link_args: ['-no-pie'])
 test('native-kernel-generated-uart', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-port-session', files('../../tests/kernel-port-session.cpp'),
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: [], link_args: ['-no-pie'])
 test('native-kernel-port-session', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-uefi', files('../../tests/kernel-uefi.cpp'),
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=2'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=2'],
     cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page', '-fno-pie'], link_args: ['-no-pie'])
 test('native-kernel-uefi', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
@@ -176,52 +176,52 @@ test('native-kernel-uefi', native_host, suite: ['full', 'merge', 'slow', 'integr
 foreach variant : [['native-kernel-uefi-handoff', []],
                    ['native-kernel-uefi-handoff-terminal', ['-DAURORA_UEFI_GRAPHICAL_TERMINAL']]]
   native_host = executable(variant[0], files('../../tests/kernel-uefi-handoff.cpp'),
-      native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+      native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
       cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page'] + variant[1], link_args: [])
   test(variant[0], native_host, suite: ['full', 'merge', 'dev'], env: native_test_env, timeout: 60)
 endforeach
 native_host = executable('native-kernel-acpi', files('../../tests/kernel-acpi.cpp'),
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=2'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=2'],
     cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page'], link_args: [])
 test('native-kernel-acpi', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-pci', files('../../tests/kernel-pci.cpp'),
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=2'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=2'],
     cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page'], link_args: [])
 test('native-kernel-pci', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-program-stream', files('../../tests/kernel-program-stream.cpp') + [native_program_console_object],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: [], link_args: ['-no-pie'])
 test('native-kernel-program-stream', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-program-run-authority', files('../../tests/kernel-program-run-authority.cpp'),
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page'], link_args: ['-no-pie'])
 test('native-kernel-program-run-authority', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-uefi-bar', files('../../tests/kernel-uefi-bar.cpp'),
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=2'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=2'],
     cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page', '-DNDEBUG'], link_args: [])
 test('native-kernel-uefi-bar', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-uefi-bar-record', files('../../tests/kernel-uefi-bar-record.cpp'),
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=2'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=2'],
     cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page', '-DNDEBUG'], link_args: [])
 test('native-kernel-uefi-bar-record', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-uefi-ivrs', files('../../tests/kernel-uefi-ivrs.cpp'),
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=2'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=2'],
     cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page', '-DNDEBUG'], link_args: [])
 test('native-kernel-uefi-ivrs', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-owned-bytes', files('../../tests/kernel-owned-bytes.cpp', '../../kernel/owned-bytes.cpp'),
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: ['-DNDEBUG', '-fno-exceptions', '-fno-rtti', '-DAURORA_KERNEL_BYTES_TESTING=1'], link_args: ['-no-pie'])
 test('native-kernel-owned-bytes', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-round-robin-adapter', files('../../tests/kernel-round-robin-adapter.cpp') + [native_round_robin_object],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: [], link_args: ['-no-pie'])
 test('native-round-robin-adapter', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
@@ -256,7 +256,7 @@ native_host = executable('native-display-session', files('../../tests/kernel-dis
 test('native-display-session', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-uefi-console-context', files('../../tests/kernel-uefi-console-context.cpp'),
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page'], link_args: ['-no-pie'])
 test('native-kernel-uefi-console-context', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 180)
@@ -269,7 +269,7 @@ native_owned_object = custom_target('native-owned-bytes-policy',
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
 native_host = executable('native-kernel-uefi-owned-views',
     files('../../tests/kernel-uefi-owned-views.cpp', '../../kernel/owned-bytes.cpp') + [native_owned_object],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: ['-DNDEBUG', '-fno-exceptions', '-fno-rtti'],
     link_args: ['-no-pie', '-Wl,--wrap=__au_runtime_bytes_allocate', '-Wl,--wrap=__au_runtime_bytes_drop'])
 foreach mode : range(17)
@@ -331,7 +331,7 @@ native_host = executable('native-protected-snapshot',
     files('../../tests/kernel-snapshot.cpp', '../../kernel/uefi/snapshot.cpp', '../../kernel/owned-bytes.cpp') +
     [protected_objects['snapshot-client'], protected_objects['snapshot-service'],
      protected_objects['snapshot-checksum'], protected_objects['snapshot-supervisor']],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page', '-DNDEBUG', '-fno-exceptions', '-fno-rtti',
                '-DAURORA_UEFI_SNAPSHOT', '-DAURORA_UEFI_RUNTIME', '-DAURORA_UEFI_IPC', '-DAURORA_UEFI_ACPI',
                '-DAURORA_UEFI_PCI'],
@@ -341,7 +341,7 @@ test('native-protected-snapshot', native_host, suite: ['full', 'merge', 'slow', 
 native_host = executable('native-protected-note', files('../../tests/kernel-program-note.cpp') +
     [protected_objects['note-client'], protected_objects['note-service'], protected_objects['note-supervisor'],
      protected_objects['note-initial'], protected_objects['note-stream'], protected_objects['note-file-service']],
-    native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=3'],
+    native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: ['-DNDEBUG', '-fno-exceptions', '-fno-rtti'], link_args: ['-no-pie'])
 test('native-protected-note', native_host, suite: ['full', 'merge', 'slow', 'integration'],
      env: native_test_env, timeout: 120)
@@ -419,7 +419,7 @@ foreach program : [
     ['kernel-iommu-event-completion', 'kernel-iommu-event-completion.cpp', []],
 ]
   native_host = executable(program[0], files('../../tests/' + program[1]),
-      native: true, install: false, override_options: ['optimization=1', 'debug=true', 'warning_level=2'],
+      native: true, install: false, override_options: ['optimization=1', 'warning_level=2'],
       cpp_args: program[2])
   test(program[0], native_host, suite: ['full', 'merge', 'slow', 'integration'], env: native_test_env, timeout: 120)
 endforeach

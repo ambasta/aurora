@@ -56,8 +56,7 @@ also needs review for unsplittable tokens and exact-layout fixtures.
 The three [historical IOMMU replay fixtures](../tools/qemu-amdvi/README.md#historical-fixtures-and-future-runtime-preparation)
 are exact-byte evidence inputs with pinned imports. Ruff excludes only those
 three files, including when selected explicitly; do not reformat them or refresh
-their hashes. Their static checks and portable mocks remain under ordinary style
-rules.
+their hashes. Their identities remain recorded in `tools/qemu-amdvi/artifacts.json`.
 
 The [Aurora language-tooling plan](../compiler/TOOLING.md) describes the compiler
 work needed for native `.au` support.

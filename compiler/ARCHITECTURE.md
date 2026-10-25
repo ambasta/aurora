@@ -1,10 +1,9 @@
 # Compiler status and ownership
 
 Source-bootstrap builds are restored. x86 text emission runs in Aurora, with one
-source authority and no native fallback. `emitter-differential-*` in `slow` and
-`full` hold its acceptance, diagnostics and ABI facts identical to the predecessor's
-C++ backend and its C1/C2 outputs byte-identical; assembly and stack facts may now
-differ from the predecessor so code generation can improve. Each final source
+source authority and no native fallback. `hosted-lexer-bootstrap` holds its C1/C2
+outputs byte-identical; assembly and stack facts may differ from the predecessor
+so code generation can improve. Each final source
 still needs its own full, convergence and BIOS/UEFI qualification.
 
 | Component | Current source authority | Remaining work |
@@ -19,10 +18,10 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 | Current values, operand stacks, bounds evidence | Aurora whole-function verifier | Final-source qualification; no native fallback |
 | Ownership, provenance and worklist | Aurora whole-function verifier over the original paired source stores | Preserve diagnostic priority, declaration order, bounded FIFO work and nominal type identity |
 | Call graph | Aurora | Validate final integrated behavior |
-| x86 emission | Aurora, fixed native transport | Same acceptance, diagnostics and ABI facts as the C++ backend on the whole corpus, byte-identical C1/C2 (`emitter-differential-*`); inlines single-field getters; owned-value bounds checks and sizes use multiplies, not divq; no register allocation yet |
+| x86 emission | Aurora, fixed native transport | Byte-identical C1/C2 (`hosted-lexer-bootstrap`); inlines single-field getters; owned-value bounds checks and sizes use multiplies, not divq; no register allocation yet |
 | Direct class fields | Aurora source and independent metadata admission share an 8,192-field cap, including empty, nested, resource and array fields | Existing leaf, byte, depth and array-element limits still apply |
 | Private host bridge | One 85-entry table generates Aurora forwarders and host transport declarations; compiler facts supply layouts, symbols and raw enum validation | Preserve fail-closed conversion; native replacement remains incomplete |
-| Bootstrap route | One digest-pinned checkpoint (C2 of `d4cbabb`, one hop from the C2 of `2fd30b2`, which the recorded six-stage source route built), then current C1/C2 with convergence | Bump in one hop: build an accepted main commit with the current checkpoint, pass C1/C2 convergence and the historical-oracle differential, then the release gates ([recipe](README.md#bumping-the-checkpoint-one-hop)) |
+| Bootstrap route | One digest-pinned checkpoint (C2 of `d4cbabb`, one hop from the C2 of `2fd30b2`, which the recorded six-stage source route built), then current C1/C2 with convergence | Bump in one hop: build an accepted main commit with the current checkpoint, pass C1/C2 convergence, then the release gates ([recipe](README.md#bumping-the-checkpoint-one-hop)) |
 | Assembly, linking and hosted runtime | External bootstrap tools/C++ | Native replacements remain incomplete |
 
 ## Hosted Aurora parser
@@ -165,10 +164,9 @@ and native copied strings, remain unmeasured for this source draft.
 `x86.hpp` contains the public interface only; no production fallback remains.
 
 Each checkpoint bump builds with the pinned checkpoint from
-[the bootstrap recipe](README.md#source-bootstrap), compares full assembly and
-both sidecars to the external old compiler, checks all existing backend/host
-artifact gates and C1/C2 convergence, measures time and peak memory, then runs the
-final-source GCC 16 full suite plus normal BIOS/UEFI and affected profiles.
+[the bootstrap recipe](README.md#source-bootstrap), checks the existing backend/host
+artifact gates and C1/C2 convergence, records timings and limits, then runs the
+final-source merge and release suites, every guest family and normal BIOS/UEFI.
 
 ## Compile speed
 
@@ -176,8 +174,8 @@ The nine `ir_verification*.au` modules implement whole-function verification.
 `ir_verify.cpp` retains only the native orchestration of source admission,
 verification, graph checks and publication; `ir_verify.hpp` exposes metrics.
 The obsolete native dynamic verifier and production initialization adapter are
-removed. The byte-exact old initialization source remains solely as a historical
-emitter-corpus fixture, not as a production fallback or current-verifier proof.
+removed. The retired historical emitter corpus remains in Git history, not as
+a production fallback or current-verifier proof.
 Test-only source probes exercise the current workspace without a production
 friend, accessor or widened publication boundary. Final-source generation,
 regressions and performance comparison remain required after this migration.

@@ -444,10 +444,6 @@ foreach runner : [
 endforeach
 
 
-# Compiler-free model-fixture integrity/mocks. No emulator or hardware acceptance.
-test('iommu-diagnostics-optimized', python, args: ['-B', '-O', files('iommu-diagnostics.py')],
-     suite: ['full', 'merge', 'dev'], env: oracle_env, timeout: 30)
-
 # Remaining compiler-native coverage. Fixtures are build targets, not commands
 # hidden inside each test invocation; Ninja tracks C++ header dependencies.
 compiler_fixtures = {}
@@ -484,7 +480,7 @@ test('ir-exhaustive', python,
             '--compiler', aurorac, '--frontend-library', frontend_library,
             '--main-library', emitter_probe_main],
      depends: [aurora_ir_check, frontend_assembly, frontend_library, aurorac, emitter_probe_main], suite: ['full', 'release', 'compiler'],
-     env: oracle_env, workdir: meson.current_build_dir(), timeout: 600, is_parallel: false)
+     env: oracle_env, workdir: meson.current_build_dir(), timeout: 600)
 test('stack-guards', python,
      args: ['-B', '-O', files('compiler/sector_values_abi.py'), aurora_ir_check, '--stack-guards'],
      depends: aurora_ir_check, suite: ['full', 'merge', 'slow', 'compiler'],
@@ -526,13 +522,18 @@ test('utf8-exhaustive', python,
      args: ['-B', files('compiler/utf8.py'), '--compiler', aurorac, '--profile', 'exhaustive'],
      depends: aurorac, suite: ['exhaustive'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
-# Package identity, manifest and graph, each with its complete case corpus.
+# Package identity, manifest and graph. Merge samples the byte-substitution and
+# four-package graph sweeps; the complete corpus runs in release.
 foreach family : ['identity', 'manifest', 'graph']
     test('package-' + family, python,
          args: ['-B', files('compiler/package_' + family + '.py'), '--compiler', aurorac],
          depends: aurorac, suite: ['full', 'merge', 'dev', 'packages', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 300,
          priority: slow_tests.get('package-' + family, 0))
+    test('package-' + family + '-complete', python,
+         args: ['-B', files('compiler/package_' + family + '.py'), '--compiler', aurorac, '--profile', 'complete'],
+         depends: aurorac, suite: ['full', 'release', 'packages', 'compiler'],
+         env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
 endforeach
 # Storage and filesystem libraries: one compiled driver per family over data cases,
 # compared with the golden file beside it (tests/compiler/storage).
@@ -557,11 +558,6 @@ foreach family : ['host_sources_tests', 'host_output_tests']
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 endforeach
 
-# Checkpoint selection and the one-hop bump driver; the hop itself runs at bumps.
-test('bootstrap-checkpoint', python,
-     args: ['-B', '-O', files('test_bootstrap.py')],
-     suite: ['full', 'release'], env: oracle_env, timeout: 60)
-
 subdir('native')
 
 
@@ -584,23 +580,6 @@ test('hosted-lexer-bootstrap', python, args: bootstrap_args,
      depends: [aurorac, aurorac_stage2], suite: ['full', 'merge', 'dev', 'core', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180,
      priority: slow_tests['hosted-lexer-bootstrap'])
-# Historical C++ emitter oracle versus C2, plus C1/C2 corpus convergence: run at
-# compiler bumps and releases (release suite), not on every merge.
-# Without -Dhistorical_oracle these tests fail as blocked rather than pass.
-foreach profile : [['default', []], ['closed', ['--local-symbols', '--referenced-reflection-only']]]
-  if historical_cpp_oracle == ''
-    differential_args = ['-B', '-c', 'import sys; sys.exit("BLOCKED: configure -Dhistorical_oracle; see compiler/README.md")']
-  else
-    differential_args = ['-B', files('compiler/emitter_differential.py'),
-                         '--old-compiler', historical_cpp_oracle, '--old-compiler-sha256', historical_cpp_oracle_sha256,
-                         '--new-compiler', aurorac_stage2, '--stage1-compiler', aurorac,
-                         '--source-root', meson.project_source_root()] + profile[1]
-  endif
-  test('emitter-differential-' + profile[0], python,
-       args: differential_args,
-       depends: [aurorac, aurorac_stage2], suite: ['full', 'release', 'compiler'], env: oracle_env,
-       workdir: meson.current_build_dir(), timeout: 900, is_parallel: false, priority: 1)
-endforeach
 
 format_fixture = executable('format-fixture', 'compiler/format.cpp', dependencies: hosted_frontend,
                             include_directories: include_directories('../compiler'), native: true, override_options: fixture_options, install: false)

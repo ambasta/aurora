@@ -103,9 +103,7 @@ The three files under `tests/iommu/fixtures/` are immutable evidence inputs:
 
 The filenames are retained where exact import pins depend on them. Do not format,
 refactor or change these frozen files to make a newer run pass. This is an explicit
-exception to ordinary source formatting for preserved historical inputs. The
-portable offline mocks alongside them are newly adapted and are not the original
-preparation checks or historical runtime evidence.
+exception to ordinary source formatting for preserved historical inputs.
 
 The access fixture hard-pins the historical combined-v2 binary
 `81eb4ea516d85888112356f6a371c72e8fb1aa6c68a5819ecb5ec4fef8286ea7`.

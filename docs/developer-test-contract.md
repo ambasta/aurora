@@ -11,7 +11,7 @@ no tests of tests. This page says how to run things today.
 
 ```sh
 ./scripts/container.sh bash           # pinned GCC 16 / QEMU / OVMF environment
-meson setup build/meson -Dbootstrap_compiler=... -Dhistorical_oracle=... -Duefi_ld=...
+meson setup build/meson -Dbootstrap_compiler=... -Duefi_ld=...
 make test                            # nproc build/test jobs with memory watchdog
 make test-release                    # opt-in: releases and compiler bumps
 ```
@@ -61,9 +61,8 @@ previous main. Missing tools or skipped gates are reported, never passed.
 
 ## Where tests live
 
-The release suite holds the corpus emitter differential, IR mutation testing
-(`ir-exhaustive`), the bootstrap tooling tests and the complete copies of subset
-tests; everything else is in merge. There are no test inventories, oracle
+The release suite holds IR mutation testing (`ir-exhaustive`) and the complete
+copies of subset tests; everything else is in merge. There are no test inventories, oracle
 self-tests or compiler-identity pins.
 
 Compiler-semantics runners in `tests/compiler` register cases as data on

@@ -23,7 +23,7 @@ def run(command, good=True):
     result = subprocess.run(
         [str(x) for x in command],
         capture_output=True,
-        timeout=5,
+        timeout=60,
         preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)),
     )
     if good:

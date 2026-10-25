@@ -40,8 +40,8 @@ instance:
 - a fresh build must finish in 60 s or less, and an incremental rebuild after a
   one-file change in seconds;
 - the merge suite (`meson test --suite merge`) must finish in 60 s or less;
-- the release suite (`--suite release`) is opt-in and runs before releases and
-  compiler bumps, not on every merge.
+- the release suite (`--suite release`) runs for compiler or host-bridge changes
+  and before releases and compiler bumps, not on unrelated merges.
 
 Every change that touches the build or tests reports fresh-build and merge-suite
 wall time next to the previous main, measured at full concurrency. Growth needs a
@@ -88,18 +88,19 @@ stated safety reason; more checking is not a reason by itself.
    unsupported syntax/semantics.
 4. Develop with incremental builds and focused tests. Before a merge, run the
    merge suite with GCC 16 in the pinned container on the final source, the guest
-   families the change affects, and the normal BIOS and UEFI smokes. Release suite
-   and every guest family run before releases and compiler bumps.
+   families the change affects, and the normal BIOS and UEFI smokes. Changes to
+   compiler/ or the host bridge table also run the release suite. The release
+   suite and every guest family run before releases and compiler bumps.
 5. The pinned container (`scripts/container.sh`: Debian GCC 16, pinned QEMU, OVMF
    and test tooling under /opt) is the reference for merge evidence. Native host
    builds are fine for fast development feedback in their own build directory;
    never share a build directory across toolchains.
 6. Bootstrap: one verified checkpoint compiler builds C1, C1 builds C2, and C1/C2
    convergence is the self-check, like GCC's stage compare. New compiler features
-   are adopted at scheduled bumps; the historical-oracle corpus differential runs
-   at bumps, not on every merge. See compiler/README.md.
+   are adopted at scheduled bumps. See compiler/README.md.
 7. Review changes independently before merge. Record commands, tool versions,
    timings and limits in the commit or PR, not in new per-feature report files.
+   Commit messages say what changed and why, not which PR or tool produced it.
 8. Update implementation docs and the completeness matrix in the same change.
    Keep docs short; history lives in Git.
 9. Use clean squash merges so work-in-progress checkpoints do not enter main.

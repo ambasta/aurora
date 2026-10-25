@@ -470,12 +470,15 @@ def packet(program, operation, values):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--compiler", type=Path, required=True)
+    records.profile(parser)
     args = parser.parse_args()
     cases = all_cases()
     golden = records.load_jsonl(GOLDEN / "package_manifest.jsonl")
     require(len(golden) == len(cases), f"{len(cases)} generated cases, {len(golden)} golden rows")
     for (label, _, _), row in zip(cases, golden):
         require(row["label"] == label, f"golden row {row['label']!r} for case {label!r}")
+    if args.profile == "merge":
+        cases, golden = zip(*((case, row) for case, row in zip(cases, golden) if records.substitution_sampled(case[0])))
     with records.scratch("package-manifest") as scratch:
         driver = records.Driver(args.compiler, scratch)
         program = driver.build(driver_source(), "ManifestInput", kind="u64")
@@ -487,7 +490,9 @@ def main():
             scratch,
         )
         rejections = driver.reject_all(GOLDEN / "package_manifest_rejections.jsonl")
-    print(f"PASS package manifest: {count} cases, {observed} u64 observations, {rejections} rejections")
+    print(
+        f"PASS package manifest ({args.profile}): {count} cases, {observed} u64 observations, {rejections} rejections"
+    )
 
 
 if __name__ == "__main__":

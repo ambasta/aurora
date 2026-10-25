@@ -13,7 +13,7 @@ With Docker or Podman installed, start from the repository root.
 
 Select a local copy of the checkpoint compiler pinned by `compiler/checkpoint.json`.
 Then open the pinned shell with `./scripts/container.sh bash` and configure both
-current Meson graphs with `-Dbootstrap_compiler` and `-Dhistorical_oracle`, following the
+current Meson graphs with `-Dbootstrap_compiler`, following the
 [source-bootstrap recipe](../compiler/README.md#source-bootstrap). Then run:
 
 ```sh
