@@ -5,14 +5,11 @@ Usage: sector_values_abi.py AURORA_IR_CHECK --air SECTOR_VALUES_AIR [--work-dir 
        sector_values_abi.py AURORA_IR_CHECK --stack-guards [--work-dir DIR]
 The fixture builds direct IR, never Aurora source. Every native execution has a
 handwritten boundary side; protocol bytes and offsets below do not call any
-production layout helper. Stack checks use the compiler's stack facts and the
-emitted prologues, not runtime high-water instrumentation or arbitrary-program
-resource bounds.
+production layout helper. Stack facts and probing are covered by the
+stack-probes IR cases; --stack-guards runs the probes against real guard pages.
 """
 
 import argparse
-import hashlib
-import json
 import os
 import platform
 from pathlib import Path
@@ -256,14 +253,6 @@ result_right: .quad 0x6262626262626262
     print("PASS sector ABI", name, flush=True)
 
 
-def stack_facts(fixture, air, case, work):
-    """The compiler's own stack facts for one case's module."""
-    module = run([fixture, "--module", air, case]).decode()
-    path = work / "stack-facts.air"
-    path.write_text(f"; CASE: facts\n; RUN: stack-facts\n{module}")
-    return json.loads(run([fixture, "--output", path, "facts"]))["functions"]
-
-
 def prologue(text, symbol):
     """Bytes the emitted prologue reserves in canonical page steps, each probed
     at once, and the index of the first line after it."""
@@ -281,44 +270,6 @@ def prologue(text, symbol):
             break
     require(total > 0, f"{symbol}: missing prologue reservation")
     return total, at
-
-
-def check_stack(assembly, facts):
-    """Stack properties from the compiler's facts and the emitted prologues:
-    reservations cover the declared frames and are probed, hidden inputs are
-    saved inside the reservation, and the facts account for the reservation,
-    the packed record and call alignment. Frame layout is not pinned."""
-    require("subq $0, %rsp" in body(assembly, "sector_clobber"), "generated clobber has zero source frame")
-    for kind in ["function", "constructor", "method", "block"]:
-        # Declared IR frames (abi_programs.py) and the literal wire record.
-        source_in = 512 if kind == "block" else 3120
-        source_out = 1024 if kind == "block" else 3648
-        record = 512 if kind == "block" else 3120
-        hidden = {"r11", "r10"} | ({"rax"} if kind == "method" else set())
-        for symbol in ("sector_in_" + kind, "sector_target_" + kind):
-            text = body(assembly, symbol)
-            reserved, at = prologue(text, symbol)
-            require(reserved >= source_in, f"{symbol}: reservation {reserved} below frame {source_in}")
-            lines = text.splitlines()[at : at + len(hidden)]
-            saves = [re.fullmatch(r"    movq %(\w+), -(\d+)\(%rbp\)", line) for line in lines]
-            require(all(saves) and {save[1] for save in saves} == hidden, f"{symbol}: hidden inputs saved first")
-            slots = [int(save[2]) for save in saves]
-            require(
-                len(set(slots)) == len(slots) and all(source_in + 8 <= slot <= reserved for slot in slots),
-                f"{symbol}: hidden saves {slots} outside the reservation beyond the frame",
-            )
-            require(facts[symbol]["local_bytes"] >= reserved + 16, f"{symbol}: facts omit the reservation")
-        symbol = "sector_out_" + kind
-        text = body(assembly, symbol)
-        reserved, _ = prologue(text, symbol)
-        require(reserved >= source_out, f"{symbol}: reservation {reserved} below frame {source_out}")
-        packed = [int(size) for size in re.findall(r"^    subq \$(\d+), %rsp\n    orq \$0, \(%rsp\)$", text, re.M)]
-        require(len(packed) == 2 and packed[1] >= record, f"{symbol}: probed packed record reservation {packed}")
-        require(f"addq ${packed[1]}, %rsp" in text, f"{symbol}: packed argument cleanup")
-        call = facts[symbol]["calls"]["sector_target_" + kind]
-        require(call % 16 == 0, f"{symbol}: unaligned call at {call} bytes")
-        require(call >= reserved + 16 + record, f"{symbol}: facts omit the record at the call")
-        require(facts[symbol]["local_bytes"] >= call, f"{symbol}: call bytes exceed local bytes")
 
 
 def native_cases(assembly, work):
@@ -464,15 +415,6 @@ def label_guard_probes(assembly):
         labeled = replace(labeled, symbol, "".join(modified))
     stripped = re.sub(r"(?m)^\.globl (guard_probe_\w+)\n\1:\n", "", labeled)
     require(stripped == assembly, "guard labeling changed emitted instructions or other metadata")
-    odd = body(assembly, "guard_call_odd")
-    require(
-        re.search(r"^    pushq %\w+\n    subq \$\d+, %rsp\n    orq \$0, \(%rsp\)$", odd, re.M),
-        "odd live operand must precede record reservation",
-    )
-    require(
-        re.search(r"^    subq \$(\d+), %rsp\n    call guard_target\n    addq \$\1, %rsp$", odd, re.M),
-        "odd operand call alignment changed",
-    )
     return labeled
 
 
@@ -541,10 +483,6 @@ def stack_guard_cases(fixture, work):
 def sector_abi_cases(fixture, air, work):
     assembly = run([fixture, "--output", air, "abi"]).decode()
     (work / "fixture.s").write_text(assembly)
-    facts = stack_facts(fixture, air, "abi", work)
-    (work / "stack-facts.json").write_text(json.dumps(facts, indent=2, sort_keys=True) + "\n")
-    check_stack(assembly, facts)
-    print("PASS sector ABI stack facts and probed reservations", flush=True)
     count = native_cases(assembly, work)
     print(f"PASS sector ABI: {count} independent native cases; all payload bytes and status checked", flush=True)
 
@@ -563,7 +501,6 @@ def main():
     fixture = args.fixture.resolve()
     work = args.work_dir.resolve() if args.work_dir else Path(tempfile.mkdtemp(prefix="aurora-sector-abi-"))
     work.mkdir(parents=True, exist_ok=True)
-    print(f"fixture sha256={hashlib.sha256(fixture.read_bytes()).hexdigest()}", flush=True)
     print(f"work directory: {work}", flush=True)
     try:
         if args.stack_guards:

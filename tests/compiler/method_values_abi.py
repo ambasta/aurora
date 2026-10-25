@@ -11,7 +11,6 @@ these bootstrap adapters do not add a source-language C ABI.
 
 from pathlib import Path
 import argparse
-import hashlib
 import re
 import resource
 import shutil
@@ -527,7 +526,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     fixture = args.fixture.resolve()
     WORK = Path(tempfile.mkdtemp(prefix="aurora-method-abi-"))
-    print(f"fixture sha256={hashlib.sha256(fixture.read_bytes()).hexdigest()}", flush=True)
     print(f"work directory: {WORK}", flush=True)
     try:
         assembly = run([fixture, "--output", AIR, "abi"]).decode()
