@@ -268,7 +268,10 @@ using ProgramInputSession = console::Session<Serial, ScratchpadInputPlatform>;
                                     ram_command->framing.terminal_reply(),
                                     ram_command->framing.data_count()),
                 "scratchpad settled terminal relation");
-        response.kind = result.kind; // Complete content/missing/saved/refused -> rejected ordinals are exact.
+        // Digest is a distinct result, never ordinary read content. Other terminal ordinals agree.
+        response.kind = result.kind == static_cast<U64>(scratchpad::Result::Kind::checksum)
+                            ? static_cast<U64>(ScratchpadKind::checksum)
+                            : result.kind;
         response.count = result.count;
         response.bytes = result.bytes;
     }
@@ -306,9 +309,9 @@ using ProgramInputSession = console::Session<Serial, ScratchpadInputPlatform>;
         response = ScratchpadResponse{ScratchpadKind::unavailable};
         return false;
     }
-    const auto right = input.command.operation == 0   ? RamFileFraming::Right::read
-                       : input.command.operation == 1 ? RamFileFraming::Right::replace
-                                                      : RamFileFraming::Right::append;
+    const auto right = (input.command.operation == 0 || input.command.operation == 3) ? RamFileFraming::Right::read
+                       : input.command.operation == 1                                 ? RamFileFraming::Right::replace
+                                                                                      : RamFileFraming::Right::append;
     ram_command.emplace(*domains[0].handle,
                         *domains[1].handle,
                         *mailbox->endpoint(*domains[0].handle),

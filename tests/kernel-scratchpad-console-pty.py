@@ -52,6 +52,7 @@ def plans(case, payload):
         need(len(maximum) == 49, "Exact maximal payload")
         return [
             read(None),
+            step("crc", "missing", 2, "normal"),
             append("missing", reply="rejected"),
             read(None),
             append("", reply="rejected"),
@@ -66,6 +67,14 @@ def plans(case, payload):
             read(" x "),
             write(""),
             read(""),
+            step("crc", "crc32c: 00000000", 2, "normal"),
+            write("1234"),
+            step("crc", "crc32c: f63af4ee", 6, "normal"),
+            append("56789"),
+            step("crc", "crc32c: e3069283", 11, "normal"),
+            read("123456789"),
+            write("x" * 49),
+            step("crc", "crc32c: e0de1ddc", 51, "normal"),
             write(maximum),
             read(maximum),
             step("put " + "Z" * 50, oracle.INVALID),
@@ -103,6 +112,12 @@ def plans(case, payload):
             append(suffix),
             read(old + suffix),
         ]
+    if case == "2c":
+        return [baseline, step("crc", oracle.ABORTED, 3, "readloss"), read(old)]
+    if case == "5c":
+        return [baseline, step("crc", oracle.READ_FAILED, len(old) + 2, "badresult"), read(old)]
+    if case == "6c":
+        return [baseline, step("crc", oracle.RESET, len(old) + 2, "reset"), read(None)]
     if case == "3a":
         return [baseline, append(suffix, "commitloss", oracle.COMMITTED_FAILED), read(old + suffix)]
     if case == "4a":
@@ -273,7 +288,9 @@ def run(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", required=True, type=Path)
-    parser.add_argument("--case", choices=["normal", "limit", *"12345678", "1a", "3a", "4a"], default="normal")
+    parser.add_argument(
+        "--case", choices=["normal", "limit", *"12345678", "1a", "3a", "4a", "2c", "5c", "6c"], default="normal"
+    )
     parser.add_argument("--payload", help="1..32 printable bytes chosen after building; default uses current UTC")
     parser.add_argument("--output", type=Path)
     run(parser.parse_args())

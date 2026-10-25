@@ -44,6 +44,10 @@ def source_cases():
     """
     for raw, payload in [
         (b"get", None),
+        (b"crc", None),
+        (b"crc ", False),
+        (b"crc x", False),
+        (b"CRC", False),
         (b"put", b""),
         (b"put ", b""),
         (b"put x", b"x"),
@@ -76,7 +80,13 @@ def source_cases():
         if payload is False:
             body += "if (command.valid()) { return 0u64; }\n"
         else:
-            op = "get" if payload is None else "append" if raw.startswith(b"append") else "put"
+            op = (
+                ("crc" if raw == b"crc" else "get")
+                if payload is None
+                else "append"
+                if raw.startswith(b"append")
+                else "put"
+            )
             expected = payload or b""
             body += f"if (!command.valid() || command.size() != {len(expected)}u64"
             body += f" || command.selection() != console::ScratchpadOperation::{op}) {{ return 0u64; }}\n"
@@ -131,6 +141,15 @@ def source_cases():
             index = index + 1u64;
         }
         if (!result.valid() || !response.valid() || result.append('x') || response.append('x')) { return 0u64; }
+        console::ScratchpadResult digest = console::ScratchpadResult(console::ScratchpadResultKind::checksum);
+        console::ScratchpadResponse shown = console::ScratchpadResponse(console::ScratchpadResponseKind::checksum);
+        if (digest.valid() || shown.valid() || digest.append('g') || shown.append('A')) { return 0u64; }
+        index = 0u64;
+        while (index < 8u64) {
+            if (!digest.append('a') || !shown.append('0')) { return 0u64; }
+            index = index + 1u64;
+        }
+        if (!digest.valid() || !shown.valid() || digest.append('0') || shown.append('f')) { return 0u64; }
         return 42u64;
     """
     yield Case("all canonical copied shapes and bounded constructors", body, 42, imports=imports)
@@ -217,11 +236,26 @@ def client_cases(binary):
             request = reads[index][0]
             for status, value, kind in ((1, 0, 0), (2, 0, 0), (0, 6, 4), (0, 7, 0)):
                 execute(0, b"", reads[:index] + [(request, status, value)], kind=kind)
+                execute(3, b"", reads[:index] + [(request, status, value)], kind=kind)
+    # CRC32C Castagnoli known vectors, independently checked with x86 CRC32.
+    for payload, digest in (
+        (b"", b"00000000"),
+        (b"1234", b"f63af4ee"),
+        (b"123456789", b"e3069283"),
+        (b"x" * 49, b"e0de1ddc"),
+    ):
+        reads = [(1, 0, 1)] + [(2 | (i << 8), 0, 2 | (byte << 8)) for i, byte in enumerate(payload)]
+        execute(3, b"", reads + [(2 | (len(payload) << 8), 0, 3)], digest, 5)
+    execute(3, b"", [(1, 0, 1), (2, 0, 4)], kind=2)
+    execute(3, b"x", [])
     execute(0, b"", [(1, 0, 1), (2, 0, 4)], kind=2)
     for malformed in (0, 1, 5, 7, 2, 2 | (31 << 8), 2 | (127 << 8), 2 | (255 << 8), 2 | (1 << 16), 3 | (1 << 32)):
         execute(0, b"", [(1, 0, 1), (2, 0, malformed)])
+        execute(3, b"", [(1, 0, 1), (2, 0, malformed)])
     execute(0, b"", [(1, 0, 1), (2, 0, 2 | (65 << 8)), (258, 0, 4)])
     execute(0, b"", [(1, 0, 1)] + [(2 | (i << 8), 0, 2 | (65 << 8)) for i in range(50)])
+    execute(3, b"", [(1, 0, 1), (2, 0, 2 | (65 << 8)), (258, 0, 4)])
+    execute(3, b"", [(1, 0, 1)] + [(2 | (i << 8), 0, 2 | (65 << 8)) for i in range(50)])
     for operation, payload, mutation in ((0, b"x", 0), (1, b"x" * 50, 0), (1, b"x", 1), (1, b"x", 2), (1, b"", 3)):
         execute(operation, payload, [], mutation=mutation)
     for payload, mutation in ((b"x" * 50, 0), (b"x", 1), (b"x", 2), (b"", 3)):
@@ -241,6 +275,7 @@ def input_cases(binary):
 
     for raw, payload, kind in (
         (b"get\n", b"", 0),
+        (b"crc\n", b"", 3),
         (b"put\n", b"", 1),
         (b"put \n", b"", 1),
         (b"put  x \r", b" x ", 1),
@@ -262,6 +297,8 @@ def input_cases(binary):
     for invalid in (
         b" get",
         b"get x",
+        b"crc x",
+        b"CRC",
         b"get ",
         b"putx",
         b"appendx",
@@ -302,6 +339,7 @@ def input_cases(binary):
         b"append actual\n",
         b"put actual\n",
         b"get\n",
+        b"crc\n",
         b"help\nget\n",
         b"status\nget\n",
         b"exit\n",
@@ -333,6 +371,7 @@ def output_cases(binary):
     }
     cases = [(kind, b"", expected) for kind, expected in outputs.items()]
     cases += [(1, payload, b"data: " + payload + b"\r\n" + PROMPT) for payload in (b"", b"x", b" a  ", MAXIMUM)]
+    cases += [(12, b"e3069283", b"crc32c: e3069283\r\n" + PROMPT)]
     for kind, payload, expected in cases:
         result = run([binary, kind, payload.decode()])
         require(
@@ -352,6 +391,12 @@ def output_cases(binary):
         (0, b"x", 0),
         (2, b"x", 0),
         (3, b"x", 0),
+        (12, b"", 0),
+        (12, b"0000000", 0),
+        (12, b"000000000", 0),
+        (12, b"E3069283", 0),
+        (12, b"g3069283", 0),
+        (12, b"e3069283", 1),
     ):
         result = run([binary, kind, payload.decode(), (1 << 64) - 1, mutation])
         require(

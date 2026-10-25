@@ -22,18 +22,26 @@ template <class T> auto scrub(T &value) -> void {
             return false;
     return true;
 }
+[[nodiscard]] constexpr auto checksum_payload(const std::array<std::uint8_t, 64> &bytes, std::uint64_t count) -> bool {
+    if (count != 8 || !payload(bytes, count))
+        return false;
+    for (std::size_t index = 0; index < count; ++index)
+        if (!((bytes[index] >= '0' && bytes[index] <= '9') || (bytes[index] >= 'a' && bytes[index] <= 'f')))
+            return false;
+    return true;
+}
 class Command final {
 public:
     enum class Operation : std::uint64_t {
         get = 0,
         put = 1,
-        append = 2
+        append = 2,
+        crc = 3
     };
     std::array<std::uint8_t, 64> bytes{};
     std::uint64_t count{}, operation{};
     [[nodiscard]] constexpr auto valid() const -> bool {
-        return (operation == 0 || operation == 1 || operation == 2) && (operation != 0 || count == 0) &&
-               payload(bytes, count);
+        return (operation <= 3) && ((operation != 0 && operation != 3) || count == 0) && payload(bytes, count);
     }
 };
 class Result final {
@@ -43,23 +51,25 @@ public:
         content = 1,
         missing = 2,
         saved = 3,
-        refused = 4
+        refused = 4,
+        checksum = 5
     };
     std::array<std::uint8_t, 64> bytes{};
     std::uint64_t count{}, kind{};
     [[nodiscard]] constexpr auto valid() const -> bool {
-        return kind <= 4 && (kind == 1 || count == 0) && payload(bytes, count);
+        return kind == 5 ? checksum_payload(bytes, count)
+                         : kind <= 4 && (kind == 1 || count == 0) && payload(bytes, count);
     }
     // Eligibility additionally requires an authenticated clean caller return and
     // retirement. These are only the exhaustive copied/protocol terminal pairs.
     [[nodiscard]] constexpr auto
     terminal_for(std::uint64_t operation, std::uint64_t reply, std::uint64_t data_count) const -> bool {
-        if (!valid() || operation > 2 || data_count > 49)
+        if (!valid() || operation > 3 || data_count > 49)
             return false;
         return (operation == 0 && kind == 1 && reply == 3 && count == data_count) ||
-               (operation == 0 && kind == 2 && reply == 4 && data_count == 0) ||
+               ((operation == 0 || operation == 3) && kind == 2 && reply == 4 && data_count == 0) ||
                ((operation == 1 || operation == 2) && kind == 3 && reply == 5 && data_count == 0) ||
-               (kind == 4 && reply == 6);
+               (operation == 3 && kind == 5 && reply == 3) || (kind == 4 && reply == 6);
     }
 };
 class Submission final {
@@ -90,14 +100,16 @@ public:
         indeterminate_reset = 8,
         reset = 9,
         unavailable = 10,
-        limit = 11
+        limit = 11,
+        checksum = 12
     };
     std::array<std::uint8_t, 64> bytes{};
     std::uint64_t count{}, kind{};
     explicit constexpr Response(Kind selected = Kind::ready) : kind(static_cast<std::uint64_t>(selected)) {
     }
     [[nodiscard]] constexpr auto valid() const -> bool {
-        return kind <= 11 && (kind == 1 || count == 0) && payload(bytes, count);
+        return kind == 12 ? checksum_payload(bytes, count)
+                          : kind <= 11 && (kind == 1 || count == 0) && payload(bytes, count);
     }
 };
 class InputArgument final {
@@ -160,9 +172,10 @@ public:
                                       std::uint64_t count,
                                       Result &output) -> bool {
         scrub(output);
-        if (grant != 0 || !generation || operation > 2 || count > 49 || (operation == 0 && count != 0) ||
-            word(bytes, prefix) != grant || word(bytes, prefix + 8) != generation ||
-            word(bytes, command + 64) != count || word(bytes, command + 72) != operation)
+        if (grant != 0 || !generation || operation > 3 || count > 49 ||
+            ((operation == 0 || operation == 3) && count != 0) || word(bytes, prefix) != grant ||
+            word(bytes, prefix + 8) != generation || word(bytes, command + 64) != count ||
+            word(bytes, command + 72) != operation)
             return false;
         // Recheck the staged canonical command and the entire zero sentinel.
         for (std::size_t index = 0; index < 64; ++index) {

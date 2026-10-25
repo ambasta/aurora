@@ -1,5 +1,6 @@
 export module console.scratchpad_client;
 import console.scratchpad;
+import std.checksum;
 
 export namespace console {
     // Actual command bytes are encoded into the existing scalar Call ABI.
@@ -56,6 +57,11 @@ export namespace console {
             }
             return ScratchpadResult(ScratchpadResultKind::incomplete);
         }
+        const bool checksum = command.selection() == ScratchpadOperation::crc;
+        u64 crc = 0u64;
+        array<u8, 1> byte = {
+            0u8
+        };
         ScratchpadResult result = ScratchpadResult(ScratchpadResultKind::content);
         while (index <= 49u64) {
             const builtin::CallResult received = session.call(2u64 | (index << 8));
@@ -63,6 +69,22 @@ export namespace console {
                 return ScratchpadResult(ScratchpadResultKind::incomplete);
             }
             if (received.value == 3u64) {
+                if (checksum) {
+                    ScratchpadResult digest = ScratchpadResult(ScratchpadResultKind::checksum);
+                    i64 shift = 28;
+                    while (shift >= 0) {
+                        const u8 digit = u8((crc >> shift) & 15u64);
+                        u8 encoded = '0' + digit;
+                        if (digit >= 10u8) {
+                            encoded = 'a' + (digit - 10u8);
+                        }
+                        if (!digest.append(encoded)) {
+                            return ScratchpadResult(ScratchpadResultKind::incomplete);
+                        }
+                        shift = shift - 4;
+                    }
+                    return digest;
+                }
                 return result;
             }
             if (received.value == 4u64 && index == 0u64) {
@@ -74,8 +96,20 @@ export namespace console {
             if ((received.value & 255u64) != 2u64 || received.value >= 65536u64 || index == 49u64) {
                 return ScratchpadResult(ScratchpadResultKind::incomplete);
             }
-            if (!result.append(u8(received.value >> 8))) {
+            byte[0] = u8(received.value >> 8);
+            if (!scratchpad_printable(byte[0])) {
                 return ScratchpadResult(ScratchpadResultKind::incomplete);
+            }
+            if (checksum) {
+                const std::ChecksumResult extended = std::crc32c_extend(crc, borrow_bytes(byte), 0, 1);
+                if (extended.status() != std::ChecksumStatus::success) {
+                    return ScratchpadResult(ScratchpadResultKind::incomplete);
+                }
+                crc = extended.value_or(0u64);
+            } else {
+                if (!result.append(byte[0])) {
+                    return ScratchpadResult(ScratchpadResultKind::incomplete);
+                }
             }
             index = index + 1u64;
         }

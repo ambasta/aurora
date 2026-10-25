@@ -17,9 +17,15 @@ export namespace console {
             return false;
         }
         const ScratchpadResponseKind kind = response.status();
-        if (kind == ScratchpadResponseKind::content) {
-            if (!scratchpad_output_text(session, "data: ")) {
-                return false;
+        if (kind == ScratchpadResponseKind::content || kind == ScratchpadResponseKind::checksum) {
+            if (kind == ScratchpadResponseKind::content) {
+                if (!scratchpad_output_text(session, "data: ")) {
+                    return false;
+                }
+            } else {
+                if (!scratchpad_output_text(session, "crc32c: ")) {
+                    return false;
+                }
             }
             u64 index = 0u64;
             while (index < response.size()) {

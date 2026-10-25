@@ -662,16 +662,16 @@ auto scratchpad_copied_records() -> void {
     Command command;
     Result result;
     check(command.valid() && result.valid(), "scratchpad pristine get/incomplete");
-    for (std::uint64_t operation = 0; operation < 4; ++operation)
-        for (std::uint64_t kind = 0; kind < 6; ++kind)
+    for (std::uint64_t operation = 0; operation < 5; ++operation)
+        for (std::uint64_t kind = 0; kind < 7; ++kind)
             for (std::uint64_t reply = 0; reply < 8; ++reply)
                 for (std::uint64_t count = 0; count < 3; ++count) {
                     scrub(result);
                     result.kind = kind;
                     const bool accepted =
-                        operation <= 2 &&
+                        operation <= 3 &&
                         ((operation == 0 && kind == 1 && reply == 3 && count == 0) ||
-                         (operation == 0 && kind == 2 && reply == 4 && count == 0) ||
+                         ((operation == 0 || operation == 3) && kind == 2 && reply == 4 && count == 0) ||
                          ((operation == 1 || operation == 2) && kind == 3 && reply == 5 && count == 0) ||
                          (kind == 4 && reply == 6));
                     check(result.terminal_for(operation, reply, count) == accepted,
@@ -683,7 +683,29 @@ auto scratchpad_copied_records() -> void {
     check(result.terminal_for(0, 3, 1) && !result.terminal_for(0, 3, 0) && !result.terminal_for(0, 3, 2),
           "scratchpad complete content must match every accepted DATA reply");
     scrub(result);
-    for (std::uint64_t operation = 0; operation <= 3; ++operation)
+    result.kind = 5;
+    result.count = 8;
+    for (unsigned i = 0; i < 8; ++i)
+        result.bytes[i] = 'a';
+    check(result.valid() && result.terminal_for(3, 3, 0) && result.terminal_for(3, 3, 49) &&
+              !result.terminal_for(0, 3, 8) && !result.terminal_for(3, 4, 0) && !result.terminal_for(1, 5, 0) &&
+              !result.terminal_for(3, 3, 50),
+          "scratchpad digest distinct authenticated EOF result");
+    for (unsigned byte = 0; byte <= 255; ++byte) {
+        result.bytes[0] = static_cast<std::uint8_t>(byte);
+        check(result.valid() == ((byte >= '0' && byte <= '9') || (byte >= 'a' && byte <= 'f')),
+              "scratchpad checksum canonical lowercase hex");
+    }
+    result.bytes[0] = '0';
+    for (unsigned length = 0; length <= 49; ++length) {
+        result.count = length;
+        check(result.valid() == (length == 8), "scratchpad checksum exact width");
+    }
+    result.count = 8;
+    result.bytes[8] = '0';
+    check(!result.valid(), "scratchpad checksum zero suffix");
+    scrub(result);
+    for (std::uint64_t operation = 0; operation <= 4; ++operation)
         for (std::uint64_t length = 0; length <= 50; ++length) {
             scrub(command);
             command.operation = operation;
@@ -691,7 +713,7 @@ auto scratchpad_copied_records() -> void {
             for (std::size_t i = 0; i < length; ++i)
                 command.bytes[i] = 32;
             check(command.valid() ==
-                      (operation <= 2 && length <= 49 && (operation == 1 || operation == 2 || length == 0)),
+                      (operation <= 3 && length <= 49 && (operation == 1 || operation == 2 || length == 0)),
                   "scratchpad closed raw operation/count");
         }
     scrub(command);

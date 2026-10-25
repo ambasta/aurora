@@ -21,6 +21,7 @@ HELP = (
     "put [text]  Replace the session scratchpad (0..49 printable ASCII bytes)\n"
     "append [text]  Append to the existing scratchpad (total at most 49 bytes)\n"
     "get         Read the session scratchpad\n"
+    "crc         Compute CRC32C of the session scratchpad\n"
     "help        Show commands\n"
     "status      Show static capacity and service availability\n"
     "exit        Close this session and discard all data"
