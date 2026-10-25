@@ -50,6 +50,8 @@ def run(command):
 def frontend_arguments(compiler, root, output):
     return [
         str(compiler),
+        "--output-mode",
+        "object",
         "--output",
         str(output),
         *(str(source) for source in frontend_modules(root)),
@@ -70,7 +72,6 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
 
     def regenerate(compiler, output):
         stdout, stderr = io.BytesIO(), io.BytesIO()
-        # This whole-frontend emission takes 25-30 seconds even on an idle host.
         # Reuse owned-process cleanup for the wrapper and its compiler child.
         status = run_logged(
             [
@@ -109,11 +110,10 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
     )
     units, diagnostics = [], []
     for number, compiler in enumerate((current1, current2), start=1):
-        output = work / f"frontend-c{number}.s"
+        output = work / f"frontend-c{number}.o"
         diagnostics.append(regenerate(compiler, output))
         units.append(output)
         obj = output.with_suffix(".o")
-        run(["as", "--64", str(output), "-o", str(obj)])
         require(private_exports(obj), "frontend leaked a generated symbol")
         for name in COMPILER_MODULES:
             require(
@@ -128,8 +128,8 @@ def frontend_bootstrap(current1, current2, root, work, built_a, built_b):
             )
     require(diagnostics[0] == diagnostics[1], "whole frontend compiler diagnostics differ")
     for suffix, description in (
-        (".s", "assembly"),
-        (".generated.s", "generated graph"),
+        (".generated.o", "direct source object"),
+        (".stack.json", "stack facts"),
         (".o", "object bytes"),
         (".abi.json", "ABI facts"),
     ):

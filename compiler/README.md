@@ -17,17 +17,22 @@ consumes the admitted source stores; the host retains artifact I/O.
 The same semantic traversal feeds typed x86 forms to the text backend or the
 checked relocatable-object backend selected by `--emit-object`. Object output
 uses a separate typed workspace for code, symbols, labels and relocations. It
-supports the ordinary forms used by the source UART policy; literal storage and
-reflection code generation fail closed rather than falling back to an assembler.
+supports the ordinary source UART and hosted frontend forms, including readonly
+literal data and RIP-relative references. Required reflection code generation
+fails closed rather than falling back to an assembler.
 Use `--referenced-reflection-only` when no reflection entry is required.
 
-The native UART wrapper remains a separate bootstrap adapter. The private
-composition step globalizes only its three fact-selected source entries,
+Native UART and hosted frontend wrappers remain separate bootstrap adapters. The
+private composition step globalizes only their fact-selected source entries,
 assembles the wrapper, partially links, and restores those source entries to
 LOCAL before atomic publication. Existing hidden wrapper exports and port
 imports are unchanged. This adds no Aurora C ABI or public export mechanism.
-GNU assembler/linker and Linux host I/O remain bootstrap dependencies for text
-output, native adapters and final links.
+The pinned predecessor still emits frontend A as text. C1 emits frontend B
+directly as an object linked into C2; C2 emits frontend C for source-object,
+composed-object, ABI/header and stack-fact convergence. No checkpoint bump is
+needed for this adoption. GNU assembler/linker and Linux host I/O remain
+bootstrap dependencies for frontend A, other text output, native adapters and
+final links.
 
 The verifier keeps active facts in a flat, sorted owner-backed prefix and restores
 canonical snapshots directly, without rebuilding a search tree. Binary searches

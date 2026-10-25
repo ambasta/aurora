@@ -136,9 +136,9 @@ export namespace compiler_x86 {
     // branch tests them directly. The 0/1 value stays in %rax for the target.
     auto fused_branch(EmitWorkspace& workspace, ObjectWorkspace& object,
         const compiler_ir_metadata::MetadataStore& metadata, const compiler_ir_instructions::InstructionStore& store,
-        i64 compare, i64 branch) -> bool {
+        i64 compare, i64 target) -> bool {
         const i64 condition = comparison_condition(workspace, metadata, store, compare, true);
-        return emit_branch(workspace, object, condition, 0, operand_value(store, branch, 0));
+        return emit_branch(workspace, object, condition, 0, target);
     }
     // A right operand that x86 can take as an immediate or a frame operand: an
     // imm32 Constant, an EnumConstant, or a 64-bit frame Load. -1 otherwise.
@@ -238,7 +238,7 @@ export namespace compiler_x86 {
     }
     auto emit_scalar(EmitWorkspace& workspace, ObjectWorkspace& object,
         const compiler_ir_metadata::MetadataStore& metadata, const compiler_ir_instructions::InstructionStore& store,
-        i64 instruction) -> bool {
+        i64 instruction, i64 control) -> bool {
         const compiler_ir_instructions::RawInstructionRow row = store.instruction_at(instruction);
         const i64 form = row.form();
         if (form == 5) {
@@ -405,16 +405,22 @@ export namespace compiler_x86 {
             call_query(workspace, object, metadata, row.query(), operand_value(store, instruction, 0));
             return true;
         }
+        i64 label = control;
+        if (form == 40 || form == 41 || form == 42) {
+            if (!object.object_mode()) {
+                label = operand_value(store, instruction, 0);
+            }
+        }
         if (form == 40) {
-            emit_bind_label(workspace, object, 0, operand_value(store, instruction, 0));
+            emit_bind_label(workspace, object, 0, label);
             return true;
         }
         if (form == 41 || form == 42) {
             if (form == 42) {
                 emit_alu_rr(workspace, object, AluOp::test, Register::rax, Register::rax);
-                emit_branch(workspace, object, 4, 0, operand_value(store, instruction, 0));
+                emit_branch(workspace, object, 4, 0, label);
             } else {
-                emit_branch(workspace, object, -1, 0, operand_value(store, instruction, 0));
+                emit_branch(workspace, object, -1, 0, label);
             }
             return true;
         }

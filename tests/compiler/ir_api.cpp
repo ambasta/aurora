@@ -912,8 +912,6 @@ void objectEmissionTests() {
                 "failed object emission poisoned a subsequent supported module");
         ++passed;
     };
-    const auto literal = validate(load("readonly-windows-ir/cases.air", "literal window emission"));
-    rejectUnsupported(literal);
     const auto reflection = validate(
         load("ir-tests/reflection-emission.air", "referenced reflection retains referenced helper bodies and facts"));
     rejectUnsupported(reflection);

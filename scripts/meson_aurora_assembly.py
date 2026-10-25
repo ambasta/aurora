@@ -144,8 +144,15 @@ def compose_object_bridge(path, bridges, facts, assembler="as", linker="ld", obj
             for name in re.findall(r"@([A-Za-z_][A-Za-z_0-9:]*)@", source)
         }
     )
-    if not selected:
-        raise ValueError("Object bridge requires fact-selected private entries")
+    compose_private_object(path, assembly, selected, assembler, linker, objcopy)
+
+
+def compose_private_object(path, assembly, selected, assembler="as", linker="ld", objcopy="objcopy"):
+    """Compose rendered native wrappers with their fact-selected LOCAL targets."""
+    if not selected or len(set(selected)) != len(selected):
+        raise ValueError("Object bridge requires unique fact-selected private entries")
+    if any(not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", name) for name in selected):
+        raise ValueError("Unsupported compiler symbol in private bridge")
 
     def symbol_types(object_path):
         result = subprocess.run(

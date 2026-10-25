@@ -25,7 +25,8 @@ constexpr bool addExtent(std::uint64_t &total, std::uint64_t count, std::uint64_
 constexpr std::uint64_t payloadQuota(std::uint64_t retained,
                                      std::uint64_t views,
                                      std::uint64_t instructions,
-                                     std::uint64_t objectNameWidth = 0) {
+                                     std::uint64_t objectNameWidth = 0,
+                                     std::uint64_t callables = 0) {
     std::uint64_t functions = retained, calls = instructions;
     // Each direct/query call fact has an instruction. A retained function can
     // additionally call each member of the source's bounded runtime vocabulary.
@@ -62,16 +63,16 @@ constexpr std::uint64_t payloadQuota(std::uint64_t retained,
         !addExtent(quota, 64, sizeof(wire::NameRow)))
         return 0;
     if (objectNameWidth != 0) {
-        // Keep six typed owners separate. Final object bytes bound code/names,
-        // symbol entries (24 bytes each), and disjoint rel32 fixups (4 bytes).
-        // Labels need an input-derived bound: an instruction may emit two
-        // receiver labels for each of four roots, plus function returns/traps.
-        std::uint64_t labels = retained;
-        if (!addExtent(labels, instructions, 8) || !addExtent(labels, 4, 1) ||
-            !addExtent(quota, artifactLimit + 4096, 2) || !addExtent(quota, artifactLimit, 2) ||
+        // Object owners have independently checked extents. Generated labels
+        // use at most four ordinals per instruction, each with named slots;
+        // ordinary labels share those indexed rows by normalized body position.
+        if (!addExtent(quota, artifactLimit + 4096, 2) || !addExtent(quota, artifactLimit, 3) ||
             !addExtent(quota, artifactLimit / 24, sizeof(wire::ObjectSymbolRow)) ||
             !addExtent(quota, artifactLimit / 4, sizeof(wire::ObjectFixupRow)) ||
-            !addExtent(quota, labels, sizeof(wire::ObjectLabelRow)))
+            !addExtent(quota, instructions, 4 * sizeof(wire::ObjectLabelRow)) ||
+            !addExtent(quota, callables, sizeof(wire::ObjectIndexRow)) ||
+            !addExtent(quota, instructions, sizeof(wire::ObjectIndexRow)) ||
+            !addExtent(quota, 69, sizeof(wire::ObjectIndexRow)))
             return 0;
     }
     return quota;
@@ -113,7 +114,8 @@ class X86Emitter::State {
         const auto result = payloadQuota(validated.get().functions.size(),
                                          validated.metadata().scopeCount(),
                                          validated.instructionOwner->sourceInstructionCount(validated.metadata()),
-                                         objectNameWidth);
+                                         objectNameWidth,
+                                         validated.metadata().callableCount());
         if (result == 0)
             resourceLimit();
         return result;

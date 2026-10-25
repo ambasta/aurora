@@ -2125,7 +2125,7 @@ export namespace compiler_x86 {
             return false;
         }
         if (object.object_mode()) {
-            object.unsupported_object();
+            object.lea_literal(instruction, target);
             return emit_object_status(w, object);
         }
         return w.lea_literal(instruction, target);
