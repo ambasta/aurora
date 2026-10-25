@@ -43,10 +43,6 @@ fixture_builder = files('../scripts/meson-native-fixture.py')
 # Every test in full is also in exactly one of merge (run on every merge) or
 # release (opt-in: releases and compiler bumps). dev/slow/core/bytes are focused
 # selections; explicit library enumeration is separate in exhaustive.
-# Start the longest merge tests first so they do not form the tail of a run.
-slow_tests = {'json-library': 30, 'package-graph': 20, 'method-values': 20,
-              'package-manifest': 15, 'hosted-parser': 5, 'decimal-values': 10, 'sector-values-abi': 10,
-              'readonly-windows': 5, 'json-string-write': 5, 'composed-values': 5}
 foreach entry : [
     ['frontend', 'compiler/run.py', 'core'],
     ['classes', 'compiler/classes.py', 'core'],
@@ -77,7 +73,6 @@ foreach entry : [
         workdir: meson.current_build_dir(),
         timeout: 300,
         is_parallel: true,
-        priority: slow_tests.get(entry[0], 0),
     )
 endforeach
 
@@ -210,7 +205,6 @@ test(
     env: oracle_env,
     workdir: meson.current_build_dir(),
     timeout: 180,
-    priority: slow_tests['sector-values-abi'],
 )
 
 # Standalone behavioral runners participate in the ordinary full graph.
@@ -537,8 +531,7 @@ foreach family : ['json_library', 'json_owned', 'json_string_read', 'json_string
     test(family.replace('_', '-'), python,
          args: ['-B', files('compiler/' + family + '.py'), '--compiler', aurorac],
          depends: [aurorac] + record_host_targets, suite: ['full', 'merge', 'dev', 'bytes', 'compiler'],
-         env: oracle_env, workdir: meson.current_build_dir(), timeout: 300,
-         priority: slow_tests.get(family.replace('_', '-'), 0))
+         env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
 endforeach
 # Every two-byte input and a native sweep of all code points through the same driver.
 test('utf8-exhaustive', python,
@@ -550,8 +543,7 @@ foreach family : ['identity', 'manifest', 'graph']
     test('package-' + family, python,
          args: ['-B', files('compiler/package_' + family + '.py'), '--compiler', aurorac],
          depends: [aurorac] + record_host_targets, suite: ['full', 'merge', 'dev', 'packages', 'compiler'],
-         env: oracle_env, workdir: meson.current_build_dir(), timeout: 300,
-         priority: slow_tests.get('package-' + family, 0))
+         env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
 endforeach
 # Storage and filesystem libraries: one compiled driver per family over data cases,
 # compared with the golden file beside it (tests/compiler/storage).
@@ -625,8 +617,7 @@ hosted_parser_test = executable(
 )
 test('hosted-parser', hosted_parser_test,
      args: files('compiler/hosted_parser.cases', 'compiler/golden/hosted_parser.golden'),
-     suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120,
-     priority: slow_tests['hosted-parser'])
+     suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
 # The already-built adapter objects with forged Aurora entries; the generated
 # frontend object itself is never linked.
 hosted_parser_invalid = executable(
