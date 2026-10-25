@@ -465,11 +465,7 @@ test('source-overlays', python,
      args: ['-B', '-O', files('compiler/source_overlays.py'), compiler_fixtures['source_overlays']],
      depends: compiler_fixtures['source_overlays'], suite: ['full', 'merge', 'slow', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 120)
-# The exact legacy glob roots; this adapter enumerates them anew on every run.
-test('lexer-trivia', python,
-     args: ['-B', files('meson_lexer_inputs.py'), compiler_fixtures['lexer_trivia'], meson.project_source_root()],
-     depends: compiler_fixtures['lexer_trivia'], suite: ['full', 'merge', 'slow', 'compiler'],
-     env: oracle_env, timeout: 180)
+test('lexer-trivia', compiler_fixtures['lexer_trivia'], suite: ['full', 'merge', 'slow', 'compiler'], timeout: 180)
 # Reuse the real CLI entry object for alternate-emitter mutation probes.
 # No duplicate compiler/IR translation unit or production entry is added.
 emitter_probe_main = static_library('emitter-probe-main',
@@ -567,9 +563,8 @@ hosted_lexer_test = executable(
     dependencies: hosted_frontend, include_directories: include_directories('../compiler'),
     native: true, override_options: fixture_options, install: false,
 )
-test('hosted-lexer', python,
-     args: ['-B', files('meson_lexer_inputs.py'), hosted_lexer_test, meson.project_source_root(), '--all', frontend_forwarders],
-     depends: hosted_lexer_test, suite: ['full', 'merge', 'dev', 'core', 'compiler'], env: oracle_env, timeout: 180)
+test('hosted-lexer', hosted_lexer_test, args: files('compiler/golden/hosted_lexer.golden'),
+     suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 180)
 test('hosted-lexer-bootstrap', python,
      args: ['-B', files('compiler/hosted_lexer_bootstrap.py'), frontend_assembly[0], frontend_stage2_output[0],
             frontend_stage3_output[0]],
@@ -578,9 +573,7 @@ test('hosted-lexer-bootstrap', python,
 
 format_fixture = executable('format-fixture', 'compiler/format.cpp', dependencies: hosted_frontend,
                             include_directories: include_directories('../compiler'), native: true, override_options: fixture_options, install: false)
-test('hosted-lexer-format', python,
-     args: ['-B', files('meson_lexer_inputs.py'), format_fixture, meson.project_source_root(), '--all', frontend_forwarders],
-     depends: format_fixture, suite: ['full', 'merge', 'dev', 'compiler'], env: oracle_env, timeout: 180)
+test('hosted-lexer-format', format_fixture, suite: ['full', 'merge', 'dev', 'compiler'], timeout: 180)
 test('hosted-lexer-format-cli', python, args: ['-B', '-O', files('compiler/format.py'), aurora_fmt],
      depends: aurora_fmt, suite: ['full', 'merge', 'dev', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 180)

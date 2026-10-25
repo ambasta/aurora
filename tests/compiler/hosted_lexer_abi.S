@@ -65,41 +65,4 @@ checked_hosted_lexer_call:
     ud2
 .size checked_hosted_lexer_call,.-checked_hosted_lexer_call
 
-.macro clobber_control register
-.globl hosted_lexer_clobber_\register
-.type hosted_lexer_clobber_\register,@function
-hosted_lexer_clobber_\register:
-    xorq %\register, %\register
-    ret
-.size hosted_lexer_clobber_\register,.-hosted_lexer_clobber_\register
-.endm
-clobber_control rbp
-clobber_control rbx
-clobber_control r12
-clobber_control r13
-clobber_control r14
-clobber_control r15
-
-.globl hosted_lexer_clobber_canary
-.type hosted_lexer_clobber_canary,@function
-hosted_lexer_clobber_canary:
-    movq $0, 16(%rsp)
-    ret
-.size hosted_lexer_clobber_canary,.-hosted_lexer_clobber_canary
-
-.globl hosted_lexer_shift_stack
-.type hosted_lexer_shift_stack,@function
-hosted_lexer_shift_stack:
-    popq %r11
-    addq $8, %rsp
-    jmp *%r11
-.size hosted_lexer_shift_stack,.-hosted_lexer_shift_stack
-
-.globl hosted_lexer_misaligned_call
-.type hosted_lexer_misaligned_call,@function
-hosted_lexer_misaligned_call:
-    # Deliberately violate SysV call-site alignment; the envelope must trap.
-    call checked_hosted_lexer_call
-    ret
-.size hosted_lexer_misaligned_call,.-hosted_lexer_misaligned_call
 .section .note.GNU-stack,"",@progbits

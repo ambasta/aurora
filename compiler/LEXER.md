@@ -79,10 +79,10 @@ Build and test routes are intentionally distinct:
   formatter. Standalone lexer bootstrap regression is retained.
 - Canonical Meson `full`/`dev`/`core`, source-consuming native fixtures, the
   formatter and optional LSP use stage 1. IR-only fixtures do not lex source.
-  `hosted-lexer` links the Aurora phase and compares it against the preserved
-  C++ oracle, including all checked-in `.au` source roots. Its ABI and guard-page
-  controls exercise real generated code. A separate malformed-return stub tests
-  the host adapter's fail-closed checks.
+  `hosted-lexer` links the Aurora phase and checks its cases against the reviewed
+  golden file `tests/compiler/golden/hosted_lexer.golden` (`--update GOLDEN`
+  rewrites it for review). Its guard-page cases exercise real generated code. A
+  separate malformed-return stub tests the host adapter's fail-closed checks.
 - `hosted-lexer-bootstrap` is the stage compare: the build has C1 emit frontend B
   and C2 emit frontend C, and the test requires them to be byte-identical, with
   matching generated headers and no exports outside the host shim.

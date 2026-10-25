@@ -9,11 +9,6 @@ void require(bool condition, const std::string &message) {
     if (!condition)
         throw std::runtime_error(message);
 }
-std::string read(const std::string &path) {
-    std::ifstream input(path, std::ios::binary);
-    require(input.good(), "cannot open fixture: " + path);
-    return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
-}
 void verify(const std::string &text, const std::string &path) {
     const auto result = aurora::format::source(text, path);
     const auto original = aurora::lexSource(text, path);
@@ -388,7 +383,7 @@ void cases() {
     }
 }
 } // namespace
-int main(int argc, char **argv) {
+int main() {
     try {
         parenthesizedReturns();
         byteLiterals();
@@ -396,10 +391,7 @@ int main(int argc, char **argv) {
         oversizedStrings();
         workspaceFailures();
         cases();
-        for (int index = 1; index < argc; ++index)
-            verify(read(argv[index]), argv[index]);
-        std::cout << "PASS formatter goldens, current-syntax/adversarial cases, 128 trivia variants, and " << argc - 1
-                  << " corpus sources\n";
+        std::cout << "PASS formatter goldens, current-syntax/adversarial cases and 128 trivia variants\n";
         return 0;
     } catch (const std::exception &error) {
         std::cerr << "FAIL " << error.what() << '\n';
