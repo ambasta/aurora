@@ -126,7 +126,8 @@ rejection, trusted assembly contracts and interrupt/fault allowances belong to
 the admission checker, not this compiler metadata format.
 
 The counters share the real emission paths: saved RBP, probed frame reservations,
-private ABI saves (16 or 32 bytes), operand pushes/pops, rounded outgoing copied,
+private ABI saves (16 or 32 bytes), compact copy/receiver-zero saves (24 bytes),
+operand pushes/pops, rounded outgoing copied,
 service and resource records, call alignment and the pixel host call's seventh
 argument reservation. They record backend-inserted runtime and reflection calls
 as well as source calls. Reflection helpers are emitted leaf symbols with an

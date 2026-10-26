@@ -388,6 +388,124 @@ class Suite:
         return counts
 
 
+def zero_references(rows):
+    """One GNU reference object: snippets plus native register/byte observations."""
+    snippets, wrappers, data, entries = [], [], [], []
+    registers = (
+        "rax",
+        "rbx",
+        "rcx",
+        "rdx",
+        "rsi",
+        "rdi",
+        "r8",
+        "r9",
+        "r10",
+        "r11",
+        "r12",
+        "r13",
+        "r14",
+        "r15",
+        "rbp",
+        "rsp",
+    )
+    seeds = {name: 0x1234567800000100 + index for index, name in enumerate(registers)}
+    for index, (count, offset) in enumerate(rows):
+        instructions = ""
+        if count:
+            instructions = (
+                "    pushq %rax\n    pushq %rdi\n    pushq %rcx\n"
+                f"    leaq {offset}(%r10), %rdi\n    movl $0, %eax\n"
+                f"    movl ${count}, %ecx\n    cld\n    rep stosb\n"
+                "    popq %rcx\n    popq %rdi\n    popq %rax\n"
+            )
+        snippets.append(instructions)
+        # Reviewed flag patterns exercise both clear/set arithmetic bits with DF
+        # set on entry. The helper must establish forward traversal, not assume it.
+        for flags in (0x402, 0xCD7):
+            name = f"zero_native_{index}_{flags}"
+            entries.append(name)
+            out = [f"{name}:", "movq %rsp, zero_saved_rsp(%rip)"]
+            if count:
+                out += [
+                    f"leaq zero_buffer_{index}(%rip), %rdi",
+                    f"movq ${offset + count + 32}, %rcx",
+                    "movq $165, %rax",
+                    "cld",
+                    "rep stosb",
+                ]
+            out += [f"movabsq ${value}, %{reg}" for reg, value in seeds.items() if reg not in ("r10", "rsp")]
+            out += [f"leaq zero_buffer_{index}+16(%rip), %r10" if count else "movq $0, %r10"]
+            out += [f"pushq ${flags}", "popfq", f"call reference_zero_{index}"]
+            out += [f"movq %{reg}, zero_observed+{at * 8}(%rip)" for at, reg in enumerate(registers)]
+            out += [
+                "pushfq",
+                "popq zero_flags(%rip)",
+                "cld",
+                "movq zero_flags(%rip), %rax",
+                "andq $3285, %rax",
+                f"cmpq ${flags & (0x8D5 if count else 0xCD5)}, %rax",
+                "jne .Lzero_fail",
+            ]
+            for at, reg in enumerate(registers):
+                if reg == "rsp":
+                    out += ["movq zero_saved_rsp(%rip), %rax"]
+                elif reg == "r10":
+                    out += [f"leaq zero_buffer_{index}+16(%rip), %rax" if count else "movq $0, %rax"]
+                else:
+                    out += [f"movabsq ${seeds[reg]}, %rax"]
+                out += [f"cmpq %rax, zero_observed+{at * 8}(%rip)", "jne .Lzero_fail"]
+            if count or offset < 4096:
+                out += [
+                    f"leaq zero_buffer_{index}(%rip), %rdi",
+                    f"leaq zero_expected_{index}(%rip), %rsi",
+                    f"movq ${offset + count + 32}, %rcx",
+                    "repe cmpsb",
+                    "jne .Lzero_fail",
+                ]
+            out += ["movq $42, %rax", "ret"]
+            wrappers.append("\n".join(out))
+        if count or offset < 4096:
+            data += [
+                f"zero_buffer_{index}: .fill {offset + count + 32},1,165",
+                f"zero_expected_{index}: .fill {offset + 16},1,165",
+                f".fill {count},1,0",
+                ".fill 16,1,165",
+            ]
+    start = [".globl _start", "_start:"]
+    for name in entries:
+        start += [f"call {name}", "cmpq $42, %rax", "jne .Lzero_exit_fail"]
+    start += [
+        "movq $60, %rax",
+        "movq $0, %rdi",
+        "syscall",
+        ".Lzero_exit_fail:",
+        "movq $60, %rax",
+        "movq $1, %rdi",
+        "syscall",
+        ".Lzero_fail:",
+        "cld",
+        "movq $-1, %rax",
+        "ret",
+    ]
+    native = "\n".join(
+        wrappers
+        + start
+        + [".data"]
+        + data
+        + [
+            ".bss",
+            ".balign 8",
+            "zero_saved_rsp: .zero 8",
+            "zero_flags: .zero 8",
+            "zero_observed: .zero 128",
+            ".text",
+            "",
+        ]
+    )
+    return snippets, native
+
+
 class OwnedBytesCases(Suite):
     """The owned-bytes and typed-owner program families."""
 
@@ -1382,6 +1500,17 @@ class OwnedBytesCases(Suite):
                 instruction = f"    {mnemonic} ${immediate}, %{narrow if mnemonic == 'movl' else wide}\n"
                 instructions.extend([instruction] * (2 if kind == "i64" else 1))
             references.append("".join(instructions))
+        zero_rows = [
+            tuple(map(int, line.split()))
+            for line in (ROOT / "tests/compiler/emitter_zero.cases").read_text().splitlines()
+            if line and not line.startswith("#") and not line.endswith(" reject")
+        ]
+        invalid_zero_rows = [
+            tuple(map(int, line.split()[:2]))
+            for line in (ROOT / "tests/compiler/emitter_zero.cases").read_text().splitlines()
+            if line.endswith(" reject")
+        ]
+        zero_snippets, zero_native = zero_references(zero_rows)
         reference = self.directory / "emitter-mov-reference.s"
         reference.write_text(
             ".text\n"
@@ -1391,6 +1520,13 @@ class OwnedBytesCases(Suite):
                 + f".size reference_{wide},.-reference_{wide}\n"
                 for (wide, _), text in zip(registers, references)
             )
+            + "".join(
+                f".globl reference_zero_{index}\n.type reference_zero_{index},@function\nreference_zero_{index}:\n"
+                + text
+                + f".size reference_zero_{index},.-reference_zero_{index}\n    ret\n"
+                for index, text in enumerate(zero_snippets)
+            )
+            + zero_native
             + '.section .note.GNU-stack,"",@progbits\n'
         )
         reference_object, reference_binary = reference.with_suffix(".o"), reference.with_suffix(".bin")
@@ -1400,8 +1536,12 @@ class OwnedBytesCases(Suite):
         for line in (
             native_runner.command(["nm", "-S", "--defined-only", reference_object]).stdout.decode().splitlines()
         ):
-            offset, size, _, name = line.split()
+            parts = line.split()
+            offset, size, _, name = parts if len(parts) == 4 else [parts[0], "0", parts[1], parts[2]]
             symbols[name] = (int(offset, 16), int(size, 16))
+        native_reference = reference.with_suffix(".native")
+        native_runner.command(["ld", "-o", native_reference, reference_object])
+        native_runner.command([native_reference])
         encoded = reference_binary.read_bytes()
         selections, comparisons = [], []
         for index, ((wide, _), text) in enumerate(zip(registers, references)):
@@ -1410,6 +1550,13 @@ class OwnedBytesCases(Suite):
             literal = '"' + "".join(f"\\x{byte:02x}" for byte in encoded[offset : offset + size]) + '"'
             comparisons.append(
                 f"if(n=={index}){{if(!same_text(w,{json.dumps(text)})||!same_object(o,{literal})){{return -4;}}}}"
+            )
+        zero_comparisons = []
+        for index, text in enumerate(zero_snippets):
+            offset, size = symbols[f"reference_zero_{index}"]
+            literal = '"' + "".join(f"\\x{byte:02x}" for byte in encoded[offset : offset + size]) + '"'
+            zero_comparisons.append(
+                f"if(n=={index}){{if(!same_text(w,{json.dumps(text)})||!same_object(o,{literal})){{return -14;}}}}"
             )
         source = r"""
             module emitter_mov_test;
@@ -1456,7 +1603,45 @@ class OwnedBytesCases(Suite):
                 }
                 return true;
             }
+            auto zero_case(builtin::ByteRegion region,i64 n)->i64 {
+                compiler_x86::EmitWorkspace w=compiler_x86::create(region);
+                compiler_x86::EmitWorkspace v=compiler_x86::create(region);
+                compiler_x86::ObjectWorkspace t=compiler_x86::object_create(region);
+                compiler_x86::ObjectWorkspace o=compiler_x86::object_create(region);
+                if(!w.begin()||!v.begin()||!o.enable_object()
+                    ||!w.begin_function(0,0,0)||!v.begin_function(0,0,0)){return -11;}
+                const array<i64,ZERO_COUNT> counts={ZERO_COUNTS};
+                const array<i64,ZERO_COUNT> offsets={ZERO_OFFSETS};
+                if(!compiler_x86::zero_receiver_bytes(w,t,offsets[n],counts[n])
+                    ||!compiler_x86::zero_receiver_bytes(v,o,offsets[n],counts[n])){return -12;}
+                const compiler_x86::FunctionFact text_fact=w.function_at(0);
+                const compiler_x86::FunctionFact object_fact=v.function_at(0);
+                i64 local=8;
+                if(counts[n]>0){local=32;}
+                if(w.live_stack()!=8||v.live_stack()!=8||w.stack_depth()!=0||v.stack_depth()!=0
+                    ||text_fact.local()!=local||object_fact.local()!=local){return -13;}
+                if(!w.finish_assembly()||!o.seal()){return -15;}
+                ZERO_COMPARISONS
+                return 42;
+            }
+            auto invalid_zero_case(builtin::ByteRegion region,i64 n)->i64 {
+                compiler_x86::EmitWorkspace w=compiler_x86::create(region);
+                compiler_x86::ObjectWorkspace o=compiler_x86::object_create(region);
+                if(!w.begin()||!w.begin_function(0,0,0)){return -21;}
+                const bool object=n>=INVALID_COUNT;
+                if(object&&!o.enable_object()){return -22;}
+                const i64 at=n%INVALID_COUNT;
+                const array<i64,INVALID_COUNT> counts={INVALID_COUNTS};
+                const array<i64,INVALID_COUNT> offsets={INVALID_OFFSETS};
+                if(compiler_x86::zero_receiver_bytes(w,o,offsets[at],counts[at])){return -23;}
+                const compiler_x86::FunctionFact fact=w.function_at(0);
+                if(w.status()!=compiler_x86::EmitStatus::invalid||w.live_stack()!=8||fact.local()!=8){return -24;}
+                if(object){if(!o.seal()||!same_object(o,"")){return -25;}}
+                return 42;
+            }
             auto entry(builtin::ByteRegion region,i64 n,i64 flag)->i64 {
+                if(flag==1){return zero_case(region,n);}
+                if(flag==2){return invalid_zero_case(region,n);}
                 compiler_x86::EmitWorkspace w=compiler_x86::create(region);
                 compiler_x86::ObjectWorkspace o=compiler_x86::object_create(region);
                 if(!w.begin()||!o.enable_object()){return -1;}
@@ -1481,6 +1666,13 @@ class OwnedBytesCases(Suite):
             }
         """
         for name, value in (
+            ("INVALID_COUNTS", ",".join(str(count) for count, _ in invalid_zero_rows)),
+            ("INVALID_OFFSETS", ",".join(str(offset) for _, offset in invalid_zero_rows)),
+            ("INVALID_COUNT", str(len(invalid_zero_rows))),
+            ("ZERO_COMPARISONS", "".join(zero_comparisons)),
+            ("ZERO_COUNTS", ",".join(str(count) for count, _ in zero_rows)),
+            ("ZERO_OFFSETS", ",".join(str(offset) for _, offset in zero_rows)),
+            ("ZERO_COUNT", str(len(zero_rows))),
             ("SELECTIONS", "".join(selections)),
             ("COMPARISONS", "".join(comparisons)),
             ("UNSIGNED_COUNT", str(len(unsigned))),
@@ -1508,6 +1700,28 @@ class OwnedBytesCases(Suite):
                     self.native += 1
 
             self._invoke(executable, [65536, index, 0], check)
+        for index, (count, offset) in enumerate(zero_rows):
+
+            def check(result, count=count, offset=offset):
+                require(result.returncode == 0, f"zero bytes {count}/{offset}: execution failed {result.stderr!r}")
+                observed = [int(part) for part in result.stdout.split()]
+                require(observed[0] == 42, f"zero bytes {count}/{offset}: text/object/facts differ: {observed}")
+                with self.lock:
+                    self.native += 1
+
+            self._invoke(executable, [65536, index, 1], check)
+        for index in range(2 * len(invalid_zero_rows)):
+
+            def check(result, index=index):
+                require(result.returncode == 0, f"invalid zero {index}: execution failed {result.stderr!r}")
+                observed = [int(part) for part in result.stdout.split()]
+                require(
+                    observed[0] == 42, f"invalid zero {index}: bounds or pre-emission rejection differs: {observed}"
+                )
+                with self.lock:
+                    self.native += 1
+
+            self._invoke(executable, [65536, index, 2], check)
 
     def emitter_storage_cases(self):
         # Exercise the real source workspace in the existing region/owner driver.

@@ -167,6 +167,9 @@ from the admitted local slot to the disjoint argument record; all seven words
 and the temporary stack-save facts are retained. Service records clear only
 class gaps, narrow-scalar slack and final alignment padding before publishing
 the fully stored record. Text and object emission use the same recipes.
+Canonical contiguous u8 receiver-array initialization uses a compact exact fill
+from eight bytes upward, preserving registers/arithmetic flags and accounting
+for its 24-byte stack save; no initialized byte or neighboring padding is elided.
 
 The workspace has bounded pools and sticky executable-emission failures. Assembly
 seals first; a named `Artifact` selector prepares one shared optional suffix for

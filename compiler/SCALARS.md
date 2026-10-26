@@ -342,7 +342,13 @@ and descriptor gaps split runs. RSI/RDI/RCX are saved and restored, and the exac
 24-byte transient stack peak is included in emitted stack facts. `CLD` establishes
 the existing clear-direction ABI without changing arithmetic flags. The RSP-based call-record destination is captured in scratch RAX before saves;
 all sources retain stable RBP/R10/R11 bases. This is bounded code-size lowering, not
-copy elision or a runtime-speed claim. Representation padding is zeroed separately;
+copy elision or a runtime-speed claim. Constructor receiver arrays of at least eight
+canonical consecutive u8 leaves use exact forward `REP STOSB`, retaining every
+initialized byte. RAX/RDI/RCX and arithmetic flags are preserved, DF is established
+clear, and the 24-byte transient save is included in stack facts. The receiver
+remains based in R10 across saves; other element types and shorter arrays retain
+scalar stores. No padding or neighboring field is included in the fill.
+Representation padding is zeroed separately;
 no source expression
 can address it. Stack-reservation slack outside
 an object's representation is not a source field or copied payload. Scalar private
