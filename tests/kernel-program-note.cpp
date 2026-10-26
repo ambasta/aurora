@@ -1350,9 +1350,25 @@ auto named_file_cases() -> void {
     // Exhaustion refuses writes/removal/replacement without disabling reads.
     auto exhausted = n.files.saved();
     put_word(exhausted, 264, UINT64_MAX);
-    for (const auto command : {"write a x", "rm a", "write e x", "append a x", "append a "}) {
+    const std::array<std::pair<std::string_view, U64>, 11> exhausted_commands{{{"write a x", 6},
+                                                                               {"rm a", 6},
+                                                                               {"append a x", 6},
+                                                                               {"append a ", 6},
+                                                                               {"copy a b", 6},
+                                                                               {"copy a a", 6},
+                                                                               {"write e x", 7},
+                                                                               {"copy a e", 7},
+                                                                               {"copy absent a", 5},
+                                                                               {"copy note a", 8},
+                                                                               {"copy a .", 6}}};
+    for (const auto &[command, event] : exhausted_commands) {
         const auto result = file_update(exhausted, command);
         require(std::equal(exhausted.begin(), exhausted.end(), result.begin()), "revision exhaustion preserves store");
+        std::array<std::byte, 16> expected_outcome{};
+        put_word(expected_outcome, 0, event);
+        put_word(expected_outcome, 8, 1);
+        require(std::equal(expected_outcome.begin(), expected_outcome.end(), result.begin() + 344),
+                "revision exhaustion preserves the exact rejection and command action");
     }
     const auto exhausted_selection = file_update(exhausted, "upper a");
     Files::ReplaceInput exhausted_replace{};
@@ -1363,8 +1379,29 @@ auto named_file_cases() -> void {
     const auto exhausted_result = file_replace(exhausted_replace);
     require(std::equal(exhausted.begin(), exhausted.end(), exhausted_result.begin()),
             "revision exhaustion rejects selected replacement atomically");
+    std::array<std::byte, 8> invalid_event{};
+    put_word(invalid_event, 0, 6);
+    require(std::equal(invalid_event.begin(), invalid_event.end(), exhausted_result.begin() + 344),
+            "revision exhaustion reports invalid selected replacement");
     const auto readable = file_update(exhausted, "cat a");
     require(std::to_integer<unsigned>(readable[352]) == 2, "revision exhaustion still permits protected read");
+    const auto listed = file_update(exhausted, "ls");
+    require(std::equal(exhausted.begin(), exhausted.end(), readable.begin()) &&
+                std::equal(exhausted.begin(), exhausted.end(), listed.begin()),
+            "read and enumeration at revision exhaustion preserve the store");
+    const std::array<std::pair<std::string_view, U64>, 2> readable_replies{
+        {{"replacement", 2}, {"files: a b c abcdefgh", 4}}};
+    for (unsigned index = 0; index < readable_replies.size(); ++index) {
+        const auto &[text, event] = readable_replies[index];
+        std::array<std::byte, 80> expected_reply{};
+        for (std::size_t byte = 0; byte < text.size(); ++byte)
+            expected_reply[byte] = std::byte(text[byte]);
+        put_word(expected_reply, 64, text.size());
+        put_word(expected_reply, 72, event);
+        const auto &result = index ? listed : readable;
+        require(std::equal(expected_reply.begin(), expected_reply.end(), result.begin() + 272),
+                "read and enumeration at revision exhaustion preserve exact replies and padding");
+    }
     // Dead owner handles alone do not prove the grant table was revoked.
     n.start("upper a");
     n.run();

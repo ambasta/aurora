@@ -5,6 +5,7 @@ import kernel.ipc_transition;
 import std.binary_buffer;
 import std.binary;
 import console.session_note;
+import console.file_namespace;
 import console.session_files;
 import console.protected_files;
 import console.command_stream;

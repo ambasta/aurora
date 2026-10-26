@@ -1,4 +1,5 @@
 export module console.protected_files;
+import console.file_namespace;
 import console.session_files;
 import std.binary_buffer;
 import std.binary;
@@ -37,22 +38,30 @@ export namespace console {
     // The existing four records remain the sole naming/content implementation.
     // Any successful mutation invalidates selections, even for another name.
     class ProtectedFiles {
-        SessionFiles files;
+        FileNamespace files;
         u64 revision;
+        // Keep the constructor's copied input out of the mutation call chain.
+        // The returned adapter is the one tentative namespace, not another owner.
+        auto command_adapter() const -> SessionFiles {
+            const FileNamespace current = files;
+            const SessionFiles result = SessionFiles(current);
+            return result;
+        }
     public:
-        ProtectedFiles(SessionFiles initial) : files(initial), revision(1u64) {
+        ProtectedFiles(FileNamespace initial) : files(initial), revision(1u64) {
         }
         auto submit(std::BinaryBuffer64 command, i64 count) -> FileReply {
-            SessionFiles next = files;
+            SessionFiles next = command_adapter();
             FileReply reply = next.submit(command, count);
-            if (reply.status() == FileEvent::written || reply.status() == FileEvent::removed) {
-                if (revision == 18446744073709551615u64) {
+            if (file_mutated(reply.status())) {
+                if (file_next_revision(revision) == 0u64) {
                     FileReply rejected = FileReply();
                     rejected.select(FileEvent::invalid);
                     return rejected;
                 }
-                files = next;
-                revision = revision + 1u64;
+                const FileNamespace committed = next.snapshot();
+                files = committed;
+                revision = file_next_revision(revision);
             }
             return reply;
         }
@@ -61,13 +70,13 @@ export namespace console {
         auto prepare_append(FileAppendRequest request) const -> FileReply {
             const FileName name = request.selected_name();
             const FileValue suffix = request.appended_value();
-            const FileReply reply = files.prepare_append(name, suffix);
-            if (reply.status() == FileEvent::read && revision == 18446744073709551615u64) {
+            const FileData reply = files.prepare_append(name, suffix);
+            if (reply.status() == FileEvent::read && file_next_revision(revision) == 0u64) {
                 FileReply rejected = FileReply();
                 rejected.select(FileEvent::invalid);
                 return rejected;
             }
-            return reply;
+            return file_data_reply(reply);
         }
         auto select(std::BinaryBuffer64 command, i64 count) const -> FileSelection {
             if (command.starts_with(count, "append ")) {
@@ -102,7 +111,7 @@ export namespace console {
                 length = count - start;
             }
             const FileName name = file_name(command, start, length);
-            const FileReply reply = files.read_file(name);
+            const FileData reply = files.read_file(name);
             u64 version = 0u64;
             u64 writable = 0u64;
             if (reply.status() == FileEvent::read || reply.status() == FileEvent::missing) {
@@ -121,11 +130,11 @@ export namespace console {
                 return rejected;
             }
             const FileName name = selection.selected_name();
-            return files.read_file(name);
+            return file_data_reply(files.read_file(name));
         }
         auto replace(FileSelection selection, std::BinaryBuffer64 output, i64 count) -> FileReply {
             const FileReply current = project(selection);
-            if (!selection.writable() || current.status() != FileEvent::read || revision == 18446744073709551615u64) {
+            if (!selection.writable() || current.status() != FileEvent::read || file_next_revision(revision) == 0u64) {
                 FileReply rejected = FileReply();
                 rejected.select(FileEvent::invalid);
                 return rejected;
@@ -163,7 +172,7 @@ export namespace console {
             }
             const FileEvent event = files.write_file(name, value);
             if (event == FileEvent::written) {
-                revision = revision + 1u64;
+                revision = file_next_revision(revision);
             }
             return file_write_reply(name, reported, event);
         }

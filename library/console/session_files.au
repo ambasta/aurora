@@ -1,22 +1,11 @@
 export module console.session_files;
+import console.file_namespace;
 import std.binary_buffer;
 import std.binary;
 import std.decimal;
 import std.array;
 
 export namespace console {
-    enum class FileEvent {
-        unknown,
-        written,
-        read,
-        removed,
-        listed,
-        missing,
-        invalid,
-        full,
-        reserved
-    };
-
     // Copied response bytes only: no workspace view or session authority escapes.
     class FileReply {
         array<u8, 64> bytes;
@@ -76,106 +65,6 @@ export namespace console {
             return true;
         }
     };
-
-    // Copied inputs are checked by every store operation, independently of parsing.
-    class FileName {
-        std::BinaryBuffer64 bytes;
-        i64 length;
-    public:
-        FileName(std::BinaryBuffer64 source, i64 count) : bytes(source), length(count) {
-        }
-        auto valid() const -> bool {
-            if (length < 1 || length > 8) {
-                return false;
-            }
-            i64 index = 0;
-            while (index < length) {
-                const u8 byte = bytes.at(index);
-                if (!((byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') || (byte >= '0' && byte <= '9')
-                    || byte == '.' || byte == '_' || byte == '-')) {
-                    return false;
-                }
-                index = index + 1;
-            }
-            return !bytes.equal(0, length, ".") && !bytes.equal(0, length, "..");
-        }
-        auto size() const -> i64 {
-            return length;
-        }
-        auto at(i64 index) const -> u8 {
-            if (index < 0 || index >= length || index >= 64) {
-                return '\0';
-            }
-            return bytes.at(index);
-        }
-        auto reserved() const -> bool {
-            return bytes.equal(0, length, "note");
-        }
-        auto matches(std::BinaryBuffer64 record) const -> bool {
-            const i64 count = i64(record.at(0));
-            if (count < 1 || count > 8) {
-                return false;
-            }
-            return bytes.equal(0, length, record.bytes(2, count));
-        }
-    };
-
-    class FileValue {
-        std::BinaryBuffer64 bytes;
-        i64 length;
-    public:
-        FileValue(std::BinaryBuffer64 source, i64 count) : bytes(source), length(count) {
-        }
-        auto valid() const -> bool {
-            if (length < 0 || length > 49) {
-                return false;
-            }
-            i64 index = 0;
-            while (index < length) {
-                const u8 byte = bytes.at(index);
-                if (byte < ' ' || byte > '~') {
-                    return false;
-                }
-                index = index + 1;
-            }
-            return true;
-        }
-        auto size() const -> i64 {
-            return length;
-        }
-        auto at(i64 index) const -> u8 {
-            if (index < 0 || index >= length || index >= 64) {
-                return '\0';
-            }
-            return bytes.at(index);
-        }
-    };
-
-    // Checked slices normalize backing bytes; malformed ranges remain invalid.
-    auto file_name(std::BinaryBuffer64 source, i64 offset, i64 count) -> FileName {
-        std::BinaryBuffer64 bytes = std::BinaryBuffer64();
-        if (offset < 0 || offset > 64 || count < 1 || count > 8 || count > 64 - offset) {
-            return FileName(bytes, -1);
-        }
-        i64 index = 0;
-        while (index < count) {
-            bytes.write_u8(index, source.at(offset + index));
-            index = index + 1;
-        }
-        return FileName(bytes, count);
-    }
-    auto file_value(std::BinaryBuffer64 source, i64 offset, i64 count) -> FileValue {
-        std::BinaryBuffer64 bytes = std::BinaryBuffer64();
-        if (offset < 0 || offset > 64 || count < 0 || count > 49 || count > 64 - offset) {
-            return FileValue(bytes, -1);
-        }
-        i64 index = 0;
-        while (index < count) {
-            bytes.write_u8(index, source.at(offset + index));
-            index = index + 1;
-        }
-        return FileValue(bytes, count);
-    }
 
     // One canonical parser for the existing append grammar, shared by the local
     // store and the protected nonmutating preparation path.
@@ -239,198 +128,67 @@ export namespace console {
         return reply;
     }
 
-    // Four session-local records: name length, content length, name[8],
-    // content[49], zero suffix. Occupancy and all records die with the session.
-    class SessionFiles {
-        array<std::BinaryBuffer64, 4> records;
-        u64 occupied;
-        auto find(FileName name) const -> i64 {
-            i64 slot = 0;
-            while (slot < 4) {
-                if ((occupied & (1u64 << slot)) != 0u64) {
-                    const std::BinaryBuffer64 record = records[slot];
-                    if (name.matches(record)) {
-                        return slot;
-                    }
-                }
-                slot = slot + 1;
-            }
-            return -1;
+    auto file_data_reply(FileData data) -> FileReply {
+        FileReply reply = FileReply();
+        reply.select(data.status());
+        i64 index = 0;
+        while (index < data.size()) {
+            reply.append(data.at(index));
+            index = index + 1;
         }
+        return reply;
+    }
+
+    // Parsing and presentation only. The nested namespace is the sole store;
+    // this adapter preserves the existing copied owner size and lifetime.
+    class SessionFiles {
+        FileNamespace namespace_files;
     public:
-        SessionFiles(std::BinaryBuffer64 empty) : records{
-            empty,
-            empty,
-            empty,
-            empty
-        }, occupied(0u64) {
+        SessionFiles(FileNamespace initial) : namespace_files(initial) {
         }
         auto read_file(FileName name) const -> FileReply {
-            FileReply reply = FileReply();
-            if (!name.valid()) {
-                reply.select(FileEvent::invalid);
-                return reply;
-            }
-            if (name.reserved()) {
-                reply.select(FileEvent::reserved);
-                return reply;
-            }
-            const i64 found = find(name);
-            if (found < 0) {
-                reply.select(FileEvent::missing);
-                return reply;
-            }
-            reply.select(FileEvent::read);
-            const std::BinaryBuffer64 record = records[found];
-            i64 index = 0;
-            while (index < i64(record.at(1))) {
-                reply.append(record.at(10 + index));
-                index = index + 1;
-            }
-            return reply;
+            return file_data_reply(namespace_files.read_file(name));
         }
         auto write_file(FileName name, FileValue value) -> FileEvent {
-            if (!name.valid() || !value.valid()) {
-                return FileEvent::invalid;
-            }
-            if (name.reserved()) {
-                return FileEvent::reserved;
-            }
-            i64 found = find(name);
-            i64 slot = 0;
-            while (found < 0 && slot < 4) {
-                if ((occupied & (1u64 << slot)) == 0u64) {
-                    found = slot;
-                }
-                slot = slot + 1;
-            }
-            if (found < 0) {
-                return FileEvent::full;
-            }
-            // Stage a complete zeroed record before committing any store field.
-            std::BinaryBuffer64 record = std::BinaryBuffer64();
-            record.write_u8(0, u8(name.size()));
-            record.write_u8(1, u8(value.size()));
-            i64 index = 0;
-            while (index < name.size()) {
-                record.write_u8(2 + index, name.at(index));
-                index = index + 1;
-            }
-            index = 0;
-            while (index < value.size()) {
-                record.write_u8(10 + index, value.at(index));
-                index = index + 1;
-            }
-            records[found] = record;
-            occupied = occupied | (1u64 << found);
-            return FileEvent::written;
+            return namespace_files.write_file(name, value);
         }
-        // Validate without constructing a candidate or changing any record.
         auto prepare_append(FileName name, FileValue suffix) const -> FileReply {
-            FileReply reply = FileReply();
-            if (!name.valid() || !suffix.valid()) {
-                reply.select(FileEvent::invalid);
-                return reply;
-            }
-            const FileReply current = read_file(name);
-            if (current.status() != FileEvent::read) {
-                return current;
-            }
-            if (suffix.size() > 49 - current.size()) {
-                FileReply rejected = FileReply();
-                rejected.select(FileEvent::invalid);
-                return rejected;
-            }
-            return current;
+            return file_data_reply(namespace_files.prepare_append(name, suffix));
         }
-        // Append only to an existing record. Stage bytes before the shared atomic
-        // write; even an empty suffix is a successful write for revision purposes.
         auto append_file(FileName name, FileValue suffix) -> FileEvent {
-            if (!name.valid() || !suffix.valid()) {
-                return FileEvent::invalid;
-            }
-            if (name.reserved()) {
-                return FileEvent::reserved;
-            }
-            const i64 found = find(name);
-            if (found < 0) {
-                return FileEvent::missing;
-            }
-            const std::BinaryBuffer64 record = records[found];
-            const i64 length = i64(record.at(1));
-            if (suffix.size() > 49 - length) {
-                return FileEvent::invalid;
-            }
-            std::BinaryBuffer64 bytes = std::BinaryBuffer64();
-            i64 index = 0;
-            while (index < length) {
-                bytes.write_u8(index, record.at(10 + index));
-                index = index + 1;
-            }
-            index = 0;
-            while (index < suffix.size()) {
-                bytes.write_u8(length + index, suffix.at(index));
-                index = index + 1;
-            }
-            return write_file(name, FileValue(bytes, length + suffix.size()));
+            return namespace_files.append_file(name, suffix);
         }
-        // Snapshot the source before the shared atomic write, including self-copy.
-        // A successful copy is a write and invalidates protected selections.
         auto copy_file(FileName source, FileName destination) -> FileReply {
-            FileReply reply = FileReply();
-            if (!source.valid() || !destination.valid()) {
-                reply.select(FileEvent::invalid);
-                return reply;
-            }
-            if (source.reserved() || destination.reserved()) {
-                reply.select(FileEvent::reserved);
-                return reply;
-            }
-            const i64 found = find(source);
-            if (found < 0) {
-                reply.select(FileEvent::missing);
-                return reply;
-            }
-            const std::BinaryBuffer64 record = records[found];
-            const i64 length = i64(record.at(1));
-            const FileValue value = file_value(record, 10, length);
-            const FileEvent event = write_file(destination, value);
-            return file_write_reply(destination, length, event);
+            const FileOutcome outcome = namespace_files.copy_file(source, destination);
+            return file_write_reply(destination, outcome.size(), outcome.status());
         }
         auto remove(FileName name) -> FileEvent {
-            if (!name.valid()) {
-                return FileEvent::invalid;
-            }
-            if (name.reserved()) {
-                return FileEvent::reserved;
-            }
-            const i64 found = find(name);
-            if (found < 0) {
-                return FileEvent::missing;
-            }
-            const std::BinaryBuffer64 empty = std::BinaryBuffer64();
-            records[found] = empty;
-            occupied = occupied & ~(1u64 << found);
-            return FileEvent::removed;
+            return namespace_files.remove(name);
+        }
+        auto snapshot() const -> FileNamespace {
+            const FileNamespace result = namespace_files;
+            return result;
         }
         auto list() const -> FileReply {
             FileReply reply = FileReply();
             reply.select(FileEvent::listed);
             reply.text("files:");
+            bool any = false;
             i64 slot = 0;
             while (slot < 4) {
-                if ((occupied & (1u64 << slot)) != 0u64) {
-                    const std::BinaryBuffer64 record = records[slot];
+                const FileName name = namespace_files.name_at(slot);
+                if (name.size() > 0) {
+                    any = true;
                     reply.append(' ');
                     i64 index = 0;
-                    while (index < i64(record.at(0))) {
-                        reply.append(record.at(2 + index));
+                    while (index < name.size()) {
+                        reply.append(name.at(index));
                         index = index + 1;
                     }
                 }
                 slot = slot + 1;
             }
-            if (occupied == 0u64) {
+            if (!any) {
                 reply.text(" empty (RAM-only).");
             }
             return reply;
@@ -451,7 +209,7 @@ export namespace console {
                 const FileAppendRequest request = file_append_request(command, count);
                 const FileName name = request.selected_name();
                 const FileValue suffix = request.appended_value();
-                const FileEvent event = append_file(name, suffix);
+                const FileEvent event = namespace_files.append_file(name, suffix);
                 return file_write_reply(name, suffix.size(), event);
             }
             if (command.starts_with(count, "write ")) {
@@ -488,18 +246,19 @@ export namespace console {
             }
             const FileName name = file_name(command, start, end - start);
             if (action == FileEvent::read) {
-                return read_file(name);
+                return file_data_reply(namespace_files.read_file(name));
             }
             if (action == FileEvent::removed) {
-                reply.select(remove(name));
+                reply.select(namespace_files.remove(name));
                 return reply;
             }
             if (copying) {
                 const FileName destination = file_name(command, end + 1, count - end - 1);
-                return copy_file(name, destination);
+                const FileOutcome outcome = namespace_files.copy_file(name, destination);
+                return file_write_reply(destination, outcome.size(), outcome.status());
             }
             const FileValue value = file_value(command, end + 1, count - end - 1);
-            const FileEvent event = write_file(name, value);
+            const FileEvent event = namespace_files.write_file(name, value);
             return file_write_reply(name, value.size(), event);
         }
     };

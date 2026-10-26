@@ -4,6 +4,7 @@ import std.binary_buffer;
 import std.binary;
 import console.line;
 import console.session_note;
+import console.file_namespace;
 import console.session_files;
 
 // Desired and committed cells are ordinary private byte storage, never authority.
@@ -381,7 +382,7 @@ auto graphical_console(builtin::ConsoleSession& input, builtin::DisplaySession& 
     console::Line64 line = console::Line64(false);
     const std::BinaryBuffer64 empty = std::BinaryBuffer64();
     console::SessionNote note = console::SessionNote(empty);
-    console::SessionFiles files = console::SessionFiles(empty);
+    console::SessionFiles files = console::SessionFiles(console::FileNamespace(empty));
     TextCells cells = TextCells();
     cells.initialize();
     if (!cells.show_ready()) {

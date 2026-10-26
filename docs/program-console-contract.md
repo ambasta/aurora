@@ -148,9 +148,10 @@ Legacy scalar/snapshot wrapper checks are separate from actual snapshot guests.
 ## Protected named RAM files
 
 The source-native named-file mechanism adds `write <name> <text>`, `cat <name>`,
-`upper <name>`, `append <name> <text>`, `copy <source> <destination>`, `ls` and `rm <name>`. The existing `console::SessionFiles`
-continues to own its exact grammar and four-slot, eight-character-name,
-49-printable-byte content limits; `note` remains reserved for the separate note.
+`upper <name>`, `append <name> <text>`, `copy <source> <destination>`, `ls` and `rm <name>`.
+`console::SessionFiles` owns the grammar and presentation adapter; the shared typed
+`console::FileNamespace` owns the four-slot, eight-character-name,
+49-printable-byte content limits. `note` remains reserved for the separate note.
 An existing file can be replaced when all four slots are occupied. Names are
 case-sensitive, an empty existing file is distinct from missing, and all state
 is volatile and cleared at console exit. Copy runs through the local quiescent
@@ -159,7 +160,9 @@ Production append uses the protected worker path below. Ordinary console consume
 and the opt-in file-call profile retain their local append operation and output.
 
 `console::ProtectedFiles` adds a copied private selection and a session mutation
-revision around that unchanged store. Every successful write/removal/replacement,
+revision around that same typed store. Core operations return copied data/status,
+not English reply text; the revision counter remains only in this protected wrapper.
+This factoring does not move committed storage out of the supervisor. Every successful write/removal/replacement,
 including an identical write or self-copy, invalidates all old selections. This conservative
 rule also invalidates a selection after an unrelated-file mutation. Deletion and
 slot reuse cannot resurrect it. Revision exhaustion refuses mutation without

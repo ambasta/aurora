@@ -68,5 +68,10 @@ host-call arity, documented verifier limits, diagnostics); frames, save slots,
 probe totals, instruction IDs and verifier metrics are checked as bounds and
 relations against the compiler's stack/ABI facts.
 
+The console adapters now share one typed four-record namespace core without
+command parsing or reply presentation. Its copied owner sizes and supervisor-held
+commit boundary are unchanged; a surviving protected namespace owner still needs
+an independently reviewed lifetime and recovery design.
+
 Next dependencies: [roadmap](roadmap.md). Required checks:
 [development and qualification](developer-test-contract.md).

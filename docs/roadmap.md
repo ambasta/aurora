@@ -29,7 +29,9 @@ phase, CR carry and terminal outcome. Native effect execution and authenticated
 lifecycle remain migration dependencies. The BIOS console uses the same Aurora
 editor and sealed ConsoleSession for its bounded three-command session and
 presentation; trusted native code retains interrupt transport and shutdown.
-General terminal sessions and file services remain open.
+General terminal sessions and file services remain open. The shared typed named-file
+core is separate from parsing/presentation and already serves both console paths;
+it does not by itself establish a protected namespace owner's lifetime or recovery.
 
 ## 1. Protected programs and file services
 

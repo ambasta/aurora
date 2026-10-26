@@ -4,6 +4,7 @@ import std.binary;
 import console.io;
 import console.line;
 import console.session_note;
+import console.file_namespace;
 import console.session_files;
 
 auto show_ready(builtin::ConsoleSession& session) -> bool {
@@ -82,7 +83,7 @@ auto console_service(builtin::ConsoleSession& session) -> builtin::ConsoleComple
     console::Line64 line = console::Line64(false);
     const std::BinaryBuffer64 empty = std::BinaryBuffer64();
     console::SessionNote note = console::SessionNote(empty);
-    console::SessionFiles files = console::SessionFiles(empty);
+    console::SessionFiles files = console::SessionFiles(console::FileNamespace(empty));
     if (!show_ready(session)) {
         return builtin::ConsoleCompletion::output_failure;
     }
