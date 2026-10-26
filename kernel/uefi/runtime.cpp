@@ -94,6 +94,7 @@
 #include "user-run-policy.hpp"
 #ifdef AURORA_RAM_FILE
 #include "ram-file-policy.hpp"
+#include "namespace-policy.hpp"
 #endif
 #endif
 #ifdef AURORA_UEFI_SERVICE_BUDGET
@@ -118,6 +119,7 @@
 #include "../console-uart.hpp"
 #ifdef AURORA_RAM_SCRATCHPAD_CONSOLE
 #include "../ram-scratchpad.hpp"
+#include "../namespace-console.hpp"
 #else
 #include "../program-input.hpp"
 #include "../program-stream.hpp"
@@ -156,6 +158,7 @@ using U64 = std::uint64_t;
 #ifdef AURORA_SCRATCHPAD_FIXTURE
 // Explicit test-image controls, absent from the production composition.
 unsigned char scratchpad_probe{};
+unsigned char namespace_probe{};
 unsigned scratchpad_output_left = UINT32_MAX;
 #endif
 #ifdef AURORA_PROGRAM_FIXTURE
@@ -221,6 +224,7 @@ using L = RuntimeLayout;
 enum class Composition : unsigned char {
     ram,
     scratchpad,
+    named_namespace,
     call,
     snapshot,
     text,
@@ -231,7 +235,8 @@ Composition composition{};
 #endif
 #ifdef AURORA_STORAGE_FIXTURE
 [[nodiscard]] auto ram_rows() -> bool { // AURORA_RAM_FILE
-    return composition == Composition::ram || composition == Composition::scratchpad;
+    return composition == Composition::ram || composition == Composition::scratchpad ||
+           composition == Composition::named_namespace;
 }
 [[nodiscard]] auto call_rows() -> bool { // AURORA_BLOCKING_CALL
     return composition == Composition::call;
@@ -486,9 +491,12 @@ auto select_packed_row(const Bytes &h) -> void {
 #ifdef AURORA_STORAGE_FIXTURE
     composition = within(Fixture::ram_baseline, Fixture::ram_root)                    ? Composition::ram
                   : within(Fixture::scratchpad_baseline, Fixture::scratchpad_fixture) ? Composition::scratchpad
+                  : within(Fixture::namespace_console, Fixture::namespace_fixture)    ? Composition::named_namespace
                   : within(Fixture::call_baseline, Fixture::call_site)                ? Composition::call
                                                                                       : Composition::snapshot;
-    if (composition == Composition::snapshot)
+    if (composition == Composition::named_namespace)
+        ImagePagePolicy::choose<ImagePagePolicy::named_namespace>();
+    else if (composition == Composition::snapshot)
         ImagePagePolicy::choose<ImagePagePolicy::one_page>();
     else
         ImagePagePolicy::choose<ImagePagePolicy::call>();
@@ -986,6 +994,7 @@ auto execute(unsigned index, ProgramEvent wanted) -> void {
 // storage-fixture: every composition's flow, selected by run_protected.
 #include "ram-file.inc"
 #include "ram-scratchpad-console.inc"
+#include "namespace-console.inc"
 #include "blocking-call.inc"
 #include "ipc-runtime.inc"
 #include "snapshot-runtime.inc"
@@ -1303,6 +1312,8 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
         run_ram_file();
     else if (composition == Composition::scratchpad)
         run_ram_scratchpad_console();
+    else if (composition == Composition::named_namespace)
+        run_namespace_console();
     else if (composition == Composition::call)
         run_blocking_calls(producer_pool);
     else

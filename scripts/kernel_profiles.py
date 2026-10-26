@@ -146,6 +146,8 @@ UEFI_FAMILIES = [
             "-DAURORA_UEFI_USER_BUDGET",
             "-DAURORA_RAM_FILE",
             "-DAURORA_RAM_SCRATCHPAD_CONSOLE",
+            "-DAURORA_NAMESPACE_CONSOLE",
+            "-DAURORA_NAMESPACE_FIXTURE",
             "-DAURORA_BLOCKING_CALL",
             "-DAURORA_UEFI_SNAPSHOT",
         ],
@@ -233,6 +235,7 @@ FORMER_IMAGES = {
     "user-ram-file-fixture": _RAM + ["-DAURORA_RUNTIME_FIXTURE"],
     "ram-scratchpad-console": _RAM + ["-DAURORA_RAM_SCRATCHPAD_CONSOLE"],
     "ram-scratchpad-console-fixture": _RAM + ["-DAURORA_RAM_SCRATCHPAD_CONSOLE", "-DAURORA_SCRATCHPAD_FIXTURE"],
+    "namespace-console": _RAM + ["-DAURORA_NAMESPACE_CONSOLE"],
     "user-call-fixture": _CALL + ["-DAURORA_RUNTIME_FIXTURE"],
     "snapshot-fixture": [
         "-DAURORA_UEFI_SNAPSHOT",
@@ -258,6 +261,7 @@ PACKED_ROWS = {
         "scratchpad_fixture": "ram-scratchpad-console-fixture",
         "call_": "user-call-fixture",
         "snapshot_": "snapshot-fixture",
+        "namespace_": "namespace-console",
     },
     "text-fixture": {
         "text_": "runtime-owned-text-fixture",
@@ -385,6 +389,7 @@ def user_images(
     file_call=False,
     ram_file=False,
     scratchpad=False,
+    namespace=False,
 ):
     """Exact source/adapter composition; Meson owns every compile/link edge."""
     result = {}
@@ -430,8 +435,14 @@ def user_images(
                 source = "call-client" if index == 0 else "file-call-service"
             if ram_file:
                 source = "ram-file-client" if index == 0 else "ram-file-service"
+            if namespace:
+                source = "namespace-client" if index == 0 else "namespace-service"
             entry = (
-                "kernel/uefi/ram-scratchpad-client-entry.S"
+                "kernel/uefi/namespace-client-entry.S"
+                if namespace and index == 0
+                else "kernel/uefi/namespace-service-entry.S"
+                if namespace and index == 1
+                else "kernel/uefi/ram-scratchpad-client-entry.S"
                 if scratchpad and index == 0
                 else "kernel/uefi/program-client-entry.S"
                 if program and not file_call and index == 0
@@ -440,9 +451,9 @@ def user_images(
                 else "kernel/uefi/ipc-user-entry.S"
             )
             defines = []
-            if (blocking_call or ram_file) and not scratchpad and index == 0:
+            if (blocking_call or ram_file) and not (scratchpad or namespace) and index == 0:
                 defines.append("CALL_CLIENT=1")
-            if ram_file and index == 1:
+            if ram_file and not namespace and index == 1:
                 defines.append("SERVE_SERVICE=1")
             if (snapshot or program or blocking_call) and index == 1 and not (program and not file_call):
                 defines.append(
@@ -450,7 +461,9 @@ def user_images(
                 )
         result[name] = dict(
             source=(
-                "examples/kernel-ram-scratchpad-client.au"
+                "examples/kernel-namespace-client.au"
+                if namespace and index == 0
+                else "examples/kernel-ram-scratchpad-client.au"
                 if scratchpad and index == 0
                 else "tests/kernel-programs/" + source + ".au"
             ),
@@ -618,10 +631,10 @@ def packed_profile(image, flags):
     languages = {}
     if image == "storage-fixture":
         # The snapshot producer is a second closed Aurora object with its own
-        # bridge, local symbols and import policy; the scratchpad object exports
-        # the kernel policies every row calls.
+        # bridge, local symbols and import policy; the single console object shares
+        # scratchpad/namespace input and exports the kernel policies every row calls.
         languages["producer"] = dict(
-            source="examples/kernel-snapshot.au",
+            source="examples/kernel-snapshot-producer.au",
             bridge="kernel/uefi/snapshot-producer-entry.S",
             roots=["kernel/policies", "library"],
         )
@@ -657,19 +670,20 @@ def uefi_profile(profile_mode, flags):
     # as a second closed Aurora object, the graphical terminal that renders it.
     mode = "program-console" if profile_mode == "production" else profile_mode
     terminal = "-DAURORA_UEFI_GRAPHICAL_TERMINAL" in flags
+    namespace = mode == "namespace-console"
     scratchpad = mode in ("ram-scratchpad-console", "ram-scratchpad-console-fixture")
     scratchpad_fixture = mode == "ram-scratchpad-console-fixture"
     service = mode == "service-fixture"
-    runtime = scratchpad or service or mode.startswith(("runtime", "user-", "program-", "snapshot"))
-    ipc = scratchpad or service or mode.startswith(("user-", "program-", "snapshot"))
+    runtime = namespace or scratchpad or service or mode.startswith(("runtime", "user-", "program-", "snapshot"))
+    ipc = namespace or scratchpad or service or mode.startswith(("user-", "program-", "snapshot"))
     console_region = mode.startswith("runtime-console-region")
     owned_text = mode.startswith("runtime-owned-text") or console_region
-    budget = scratchpad or service or mode.startswith(("user-", "program-")) or owned_text
+    budget = namespace or scratchpad or service or mode.startswith(("user-", "program-")) or owned_text
     file_call = mode.startswith("program-file-call")
     blocking_call = mode.startswith("user-call") or file_call
     append_call = "-DAURORA_PROGRAM_APPEND_CALL" in flags
-    ram_file = scratchpad or mode in ("user-ram-file", "user-ram-file-fixture")
-    user_budget = scratchpad or service or mode.startswith(("user-", "program-"))
+    ram_file = namespace or scratchpad or mode in ("user-ram-file", "user-ram-file-fixture")
+    user_budget = namespace or scratchpad or service or mode.startswith(("user-", "program-"))
     program = mode.startswith("program-")
     snapshot = mode.startswith("snapshot")
     console = owned_bytes = mode == "device-fixture"
@@ -713,6 +727,7 @@ def uefi_profile(profile_mode, flags):
             file_call=file_call,
             ram_file=ram_file,
             scratchpad=scratchpad,
+            namespace=namespace,
         )
         if runtime
         else {}
@@ -738,7 +753,9 @@ def uefi_profile(profile_mode, flags):
     if mode == "runtime-console-region-fixture":
         users["clean"]["entry_flags"] += ["--defsym", "AURORA_CONSOLE_FIXTURE=1"]
     image_policy = (
-        "multipage"
+        "named_namespace"
+        if namespace
+        else "multipage"
         if "-DAURORA_RUNTIME_MULTIPAGE" in flags
         else "call"
         if blocking_call or ram_file

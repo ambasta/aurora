@@ -26,8 +26,11 @@ from kernel_profiles import canonical_profile
 need = oracle.need
 
 
-def step(command, reply, exchanges=0, effect="local"):
-    return dict(command=command, reply=reply, exchanges=exchanges, effect=effect)
+def step(command, reply, exchanges=0, effect="local", *, echo=None):
+    result = dict(command=command, reply=reply, exchanges=exchanges, effect=effect)
+    if echo is not None:
+        result["echo"] = echo
+    return result
 
 
 def plans(case, payload):
@@ -154,9 +157,119 @@ def plans(case, payload):
     raise ValueError("Unknown scratchpad test case")
 
 
+def namespace_plans(case, payload):
+    need(
+        type(payload) is str and 1 <= len(payload) <= 32 and all(32 <= ord(c) <= 126 for c in payload),
+        "Choose 1..32 printable ASCII payload bytes after building",
+    )
+
+    def write(name, value, effect="normal", reply=None, exchanges=None):
+        # Reviewed wire grammar: BEGIN, name/value chunks, PREPARE, two revision
+        # words, two echoes and COMMIT. This is expectation data, not a store.
+        count = 7 + (len(name) + 3) // 4 + (len(value) + 3) // 4
+        if reply is None:
+            reply = f"wrote {name}: {len(value)} byte" + ("" if len(value) == 1 else "s")
+        return step("write " + name + " " + value, reply, count if exchanges is None else exchanges, effect)
+
+    def read(name, value, effect="normal", reply=None):
+        count = 5 + (len(name) + 3) // 4 + (0 if value is None else (len(value) + 3) // 4)
+        return step(
+            "cat " + name, (oracle.NAMED_MISSING if value is None else value) if reply is None else reply, count, effect
+        )
+
+    other = "".join("Q" if c != "Q" else "R" for c in payload)
+    if case == "normal":
+        maximum = (payload + " / " + other + " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ" * 2)[:49]
+        return [
+            read("a", None),
+            write("a", payload),
+            step("help", oracle.NAMED_HELP),
+            step("status", oracle.NAMED_STATUS),
+            read("a", payload),
+            write("b", "B " + payload),
+            write("c", ""),
+            write("ABCDEFGH", maximum),
+            read("b", "B " + payload),
+            read("c", ""),
+            read("ABCDEFGH", maximum),
+            write("d", "refused", reply="files: full (4 files)."),
+            read("d", None),
+            write("a", other),
+            read("a", other),
+            write("a", "x"),
+            read("a", "x"),
+            read("b", "B " + payload),
+            read("ABCDEFGH", maximum),
+            write("a", " x "),
+            read("a", " x "),
+            write("a", ""),
+            read("a", ""),
+            step("write a " + "Z" * 50, oracle.NAMED_INVALID),
+            step("write note forbidden", oracle.NAMED_INVALID),
+            step("cat note", oracle.NAMED_INVALID),
+            step("write toolong99 x", oracle.NAMED_INVALID),
+            step("cat a/b", oracle.NAMED_INVALID),
+            step("cat ..", oracle.NAMED_INVALID),
+            step("write a", oracle.NAMED_INVALID),
+            step("bogus", oracle.NAMED_INVALID),
+            step("Z" * 65, oracle.LINE_REJECTED, echo="Z" * 64),
+            step("bad\x01ignored", oracle.LINE_REJECTED, echo="bad"),
+            read("a", ""),
+            read("b", "B " + payload),
+            read("ABCDEFGH", maximum),
+        ]
+    if case == "limit":
+        return (
+            [write("a", payload)]
+            + [read("a", payload) for _ in range(63)]
+            + [step("cat a", oracle.LIMIT, effect="limit")]
+        )
+    old, new = "old " + payload, "new " + payload
+    baseline = write("a", old)
+    replacement = write("a", new)
+    if case == "1":
+        return [baseline, write("a", new, "preloss", oracle.ABORTED, replacement["exchanges"] - 1), read("a", old)]
+    if case == "2":
+        return [baseline, write("a", new, "commitloss", oracle.COMMITTED_FAILED), read("a", new)]
+    if case in {"3", "b"}:
+        effect = "ownerfault" if case == "3" else "ownerbudget"
+        return [baseline, write("a", new, effect, oracle.NAMED_RESET, 3 + (len(new) + 3) // 4), read("a", None)]
+    if case == "4":
+        return [baseline, write("a", new, "servicefault", oracle.NAMED_INDETERMINATE), read("a", None)]
+    if case == "5":
+        return [baseline, read("a", old, "badresult", oracle.READ_FAILED), read("a", old)]
+    if case == "6":
+        return [baseline, read("a", old, "backing", "")]
+    if case == "7":
+        return [baseline, write("a", new, "timeout", "wrote")]
+    if case in {"8", "9"}:
+        return [baseline, write("a", new, "servicewait" if case == "8" else "callerwait"), read("a", new)]
+    if case == "a":
+        return [baseline, write("a", new, "callerbudget", oracle.ABORTED, 0), read("a", old)]
+    if case == "c":
+        return [baseline, write("a", new, "abortbudget", oracle.NAMED_RESET, 2), read("a", None)]
+    if case == "d":
+        return [step("", oracle.NAMED_UNAVAILABLE, effect="startupbudget")]
+    if case == "e":
+        return [
+            read("a", None),
+            write("a", payload, reply="files: invalid name or content.", exchanges=3 + (len(payload) + 3) // 4),
+            read("a", None),
+        ]
+    if case == "f":
+        return [read("a", None), write("a", payload), read("a", payload), write("a", other), read("a", other)]
+    raise ValueError("Unknown namespace test case")
+
+
 def run(args):
+    allowed = (
+        {"normal", "limit", *"123456789abcdef"}
+        if args.namespace
+        else {"normal", "limit", *"12345678", "1a", "3a", "4a", "2c", "5c", "6c"}
+    )
+    need(args.case in allowed, "Case must belong to the selected console")
     fixture = args.case not in {"normal", "limit"}
-    mode = "ram-scratchpad-console" + ("-fixture" if fixture else "")
+    mode = ("namespace-console" if args.namespace else "ram-scratchpad-console") + ("-fixture" if fixture else "")
     build = args.build_dir.resolve(strict=True)
     need(
         build.parts[-3:] == ("kernel-images", "uefi", canonical_profile("uefi", mode)),
@@ -164,7 +277,7 @@ def run(args):
     )
     if args.payload is None:
         args.payload = time.strftime("Scratchpad %H:%M:%S", time.gmtime())
-    plan = plans(args.case, args.payload)
+    plan = (namespace_plans if args.namespace else plans)(args.case, args.payload)
     # The storage image's bank: the images this row runs, by role.
     images = json.loads((build / "user-images.json").read_text())
     chosen = json.loads((build / "user-sets.json").read_text())[mode]
@@ -210,7 +323,7 @@ def run(args):
     start = time.monotonic()
     deadline = start + 180
     process = None
-    result = dict(verified=False, verified_teardown=False, case=args.case)
+    result = dict(verified=False, verified_teardown=False, case=args.case, namespace=args.namespace)
     try:
         with (output / "stderr.log").open("wb") as stderr:
             process = transport.start(argv, stdin=slave, stdout=slave, stderr=stderr)
@@ -238,24 +351,28 @@ def run(args):
                     time.sleep(0.002)
 
             if fixture:
-                until(b"AURORA_SCRATCHPAD_FIXTURE_READY")
+                until(b"AURORA_NAMESPACE_FIXTURE_READY" if args.namespace else b"AURORA_SCRATCHPAD_FIXTURE_READY")
                 tty.setraw(master)
                 send(args.case[0].encode("ascii"))
-            until(b"aurora> ")
+            startup_failure = args.namespace and args.case == "d"
+            if not startup_failure:
+                until(b"aurora> ")
             # QEMU stdio may reenable ONLCR; retain raw startup, reset before input.
             tty.setraw(master)
-            for item in plan:
+            for item in [] if startup_failure else plan:
                 offset = len(transcript)
                 send(item["command"].encode("ascii") + b"\r")
                 if item["effect"] in {"backing", "timeout", "limit"}:
                     break
                 until(b"\r\naurora> ", offset)
-                if args.case == "normal" and item["command"] == "put " + args.payload:
+                if args.case == "normal" and item["command"] == (
+                    "write a " + args.payload if args.namespace else "put " + args.payload
+                ):
                     # Leave source-owned locals parked through many Console wake IRQs.
                     delayed_until = time.monotonic() + 1.25
                     while time.monotonic() < delayed_until:
                         pump()
-            if plan[-1]["effect"] not in {"backing", "timeout", "limit"}:
+            if not startup_failure and plan[-1]["effect"] not in {"backing", "timeout", "limit"}:
                 send(b"exit\r")
             while process.poll() is None:
                 pump()
@@ -271,7 +388,15 @@ def run(args):
                     break
                 transcript.extend(chunk)
             result.update(
-                oracle.validate(process.returncode, transcript.decode("ascii"), plan, metadata, fixture=fixture)
+                oracle.validate(
+                    process.returncode,
+                    transcript.decode("ascii"),
+                    plan,
+                    metadata,
+                    fixture=fixture,
+                    namespace=args.namespace,
+                    case=args.case,
+                )
             )
             result["verified"] = True
     finally:
@@ -295,8 +420,9 @@ def run(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", required=True, type=Path)
+    parser.add_argument("--namespace", action="store_true", help="Exercise the opt-in protected named namespace")
     parser.add_argument(
-        "--case", choices=["normal", "limit", *"12345678", "1a", "3a", "4a", "2c", "5c", "6c"], default="normal"
+        "--case", choices=["normal", "limit", *"123456789abcdef", "1a", "3a", "4a", "2c", "5c", "6c"], default="normal"
     )
     parser.add_argument("--payload", help="1..32 printable bytes chosen after building; default uses current UTC")
     parser.add_argument("--output", type=Path)

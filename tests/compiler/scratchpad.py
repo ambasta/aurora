@@ -158,8 +158,9 @@ def source_cases():
 HOSTS = {}
 
 
-def compile_bridge(compiler, work, mode, source, entry, result_offset):
-    assembly, facts = work / f"{mode}.s", work / f"{mode}.json"
+def compile_bridge(compiler, work, mode, source, entry, result_offset, *, named=False):
+    label = ("namespace-" if named else "") + mode
+    assembly, facts = work / f"{label}.s", work / f"{label}.json"
     result = run(
         [
             compiler,
@@ -179,7 +180,8 @@ def compile_bridge(compiler, work, mode, source, entry, result_offset):
     matches = [(name, row) for name, row in functions.items() if row.get("source_name") == entry]
     require(len(matches) == 1, f"ambiguous source entry {entry}: {matches}")
     name, row = matches[0]
-    require(row["parameter_bytes"] == (24 if mode == "input" else 96), "copied argument width drift")
+    argument_bytes = 24 if mode == "input" else (176 if mode == "client" else 192) if named else 96
+    require(row["parameter_bytes"] == argument_bytes, "copied argument width drift")
     if result_offset is not None:
         require(row["result"]["kind"] == "class", "copied result kind drift")
     bridge = "\n.text\n.globl __au_runtime_group_entry\n__au_runtime_group_entry:\n"
@@ -190,9 +192,9 @@ def compile_bridge(compiler, work, mode, source, entry, result_offset):
     if result_offset is not None:
         bridge += "    movq $42, %rax\n"
     bridge += "    leave\n    ret\n"
-    combined = work / f"{mode}-bridge.s"
+    combined = work / f"{label}-bridge.s"
     combined.write_text(assembly.read_text() + bridge)
-    binary = work / mode
+    binary = work / label
     result = run([*shlex.split(os.environ.get("CXX", "g++")), combined, HOSTS[mode], "-o", binary])
     require(result.returncode == 0, result.stderr.decode())
     return binary
@@ -405,6 +407,229 @@ def output_cases(binary):
         )
 
 
+# Scripted scalar transcripts exercise the actual compiled codec, not a host
+# namespace implementation. The owner semantics remain in namespace_protocol.cases.
+def namespace_client_cases(binary):
+    def word(tag, cursor=0, count=0, payload=0):
+        return tag | (cursor << 8) | (count << 16) | (payload << 24)
+
+    def execute(operation, name, value, steps, expected=b"", event=0, revision=0, mutation=0):
+        data = "".join(f"{request} {status} {reply}\n" for request, status, reply in steps).encode()
+        result = run([binary, "namespace", operation, name, value, mutation], input=data)
+        record(result, expected, len(expected), event)
+        require(f"revision={revision} calls={len(steps)}\n".encode() in result.stderr, "namespace revision/retry drift")
+        require(not result.stdout, "namespace Call client emitted Console bytes")
+
+    # One-byte name/value, then full-width two-word revision and terminal receipt.
+    revision = 0x80000000FFFFFFFF
+    revision_steps = [(6, 0, word(8, 0, 4, 0xFFFFFFFF)), (1030, 0, word(8, 4, 4, 0x80000000))]
+    write = [(65794, 0, 1), (1627455491, 0, 1), (2013331460, 0, 1), (5, 0, 1)] + revision_steps
+    write += [(word(7, 0, 4, 0xFFFFFFFF), 0, 1), (word(7, 4, 4, 0x80000000), 0, 1), (8, 0, 5)]
+    execute(1, "a", "x", write, event=1, revision=revision + 1)
+    empty_write = [(258, 0, 1), (1627455491, 0, 1), (5, 0, 1)] + write[4:]
+    execute(1, "a", "", empty_write, event=1, revision=revision + 1)
+    read = [(257, 0, 1), (1627455491, 0, 1), (5, 0, 1)] + revision_steps
+    execute(0, "a", "", read + [(9, 0, 3)], event=2, revision=revision)
+    execute(0, "a", "", read + [(9, 0, 4)], event=5, revision=revision)
+    execute(0, "a", "", read + [(9, 0, word(2, 0, 1, ord("x"))), (265, 0, 3)], b"x", 2, revision)
+    chunks = [
+        (word(9, i), 0, word(2, i, len(MAXIMUM[i : i + 4]), int.from_bytes(MAXIMUM[i : i + 4], "little")))
+        for i in range(0, 49, 4)
+    ]
+    execute(0, "a", "", read + chunks + [(word(9, 49), 0, 3)], MAXIMUM, 2, revision)
+    for operation, value, script in ((1, "x", write), (0, "", read + chunks + [(word(9, 49), 0, 3)])):
+        for index, (request, _, _) in enumerate(script):
+            for status, reply, event in ((1, 0, 0), (2, 0, 0), (0, 1542, 6), (0, 1798, 7), (0, 2054, 8)):
+                execute(operation, "a", value, script[:index] + [(request, status, reply)], event=event)
+    for malformed in (
+        0,
+        1,
+        5,
+        word(2, 1, 1, 65),
+        word(2, 0, 0),
+        word(2, 0, 5),
+        word(2, 0, 1, 31),
+        word(2, 0, 1, 127),
+        word(2, 0, 1, 0x4141),
+        word(2, 0, 1, 65) | (1 << 56),
+        3 | (1 << 32),
+    ):
+        execute(0, "a", "", read + [(9, 0, malformed)])
+    # No prefix survives a late malformed reply, including DATA after a short
+    # chunk or MISSING after any data. No successful result may carry revision 0.
+    for reply in (word(2, 1, 1, 66), 4):
+        execute(0, "a", "", read + [(9, 0, word(2, 0, 1, 65)), (265, 0, reply)])
+    for reply in (word(8, 0, 3, 1), word(8, 4, 4, 1), word(8, 0, 4, 1) | (1 << 56)):
+        execute(0, "a", "", read[:3] + [(6, 0, reply)])
+    execute(0, "a", "", read[:3] + [(6, 0, word(8, 0, 4)), (1030, 0, word(8, 4, 4))])
+    execute(1, "a", "x", write[:4] + [(6, 0, word(8, 0, 4, 0xFFFFFFFF)), (1030, 0, word(8, 4, 4, 0xFFFFFFFF))])
+    for operation, name, value, mutation in (
+        (0, "a", "x", 0),
+        (1, "", "x", 0),
+        (1, ".", "x", 0),
+        (1, "a/b", "x", 0),
+        (1, "abcdefghi", "x", 0),
+        (1, "a", "x" * 50, 0),
+        (1, "a", "\x1f", 0),
+        (1, "a", "", 3),
+        (1, "a", "", 4),
+    ):
+        execute(operation, name, value, [], mutation=mutation)
+    for status, reply in ((3, 0), (1 << 32, 0), (1, 1), (2, 1)):
+        result = run([binary, "namespace", 0, "a", ""], input=f"257 {status} {reply}\n".encode())
+        require(
+            result.returncode == -signal.SIGILL and b"record=" not in result.stderr,
+            "namespace malformed transport accepted",
+        )
+
+
+def namespace_input_cases(binary):
+    invalid = b"\r\nInvalid command, name or content. Type help; note is reserved.\r\n" + PROMPT
+
+    def execute(raw, *, carry=0, limit=(1 << 64) - 1, samples=None):
+        samples = samples if samples is not None else [(1, byte, 0) for byte in raw]
+        data = "".join(f"{present} {byte} {damage}\n" for present, byte, damage in samples).encode()
+        return run([binary, "namespace", carry, limit], input=data)
+
+    def copied(result, name=b"", value=b"", operation=0, action=0, carry=0):
+        require(result.returncode == 0, f"namespace editor failed: {result.stderr!r}")
+        for label, expected in (("name", name), ("value", value)):
+            match = re.search(label.encode() + rb"=(\d+),([0-9a-f]{128})\n", result.stderr)
+            require(match is not None and int(match[1]) == len(expected), "namespace copied input width")
+            require(
+                bytes.fromhex(match[2].decode()) == expected + bytes(64 - len(expected)),
+                "namespace copied input zero suffix",
+            )
+        require(
+            f"operation={operation} action={action} carry={carry}".encode() in result.stderr,
+            "namespace copied input discriminants",
+        )
+
+    for raw, name, value, operation in (
+        (b"cat a\n", b"a", b"", 0),
+        (b"write a \n", b"a", b"", 1),
+        (b"write a  x \r", b"a", b" x ", 1),
+        (b"write abcdefgh " + MAXIMUM + b"\n", b"abcdefgh", MAXIMUM, 1),
+        (b"write a ab\bc\x7fd\n", b"a", b"ad", 1),
+    ):
+        result = execute(raw)
+        copied(result, name, value, operation, carry=int(raw.endswith(b"\r")))
+        require(result.stdout.endswith(b"\r\n"), "namespace command dispatched before delimiter")
+    result = execute(b"\ncat a\n", carry=1)
+    copied(result, b"a")
+    require(result.stdout == b"cat a\r\n", "namespace copied CRLF submitted extra line")
+    for raw in (
+        b"write a",
+        b"write a " + b"x" * 50,
+        b"cat",
+        b"cat a ",
+        b"cat note",
+        b"write note x",
+        b"cat .",
+        b"cat ..",
+        b"cat a/b",
+        b"cat abcdefghi",
+        b"list",
+        b"append a x",
+        b"remove a",
+    ):
+        result = execute(raw + b"\ncat a\n")
+        copied(result, b"a")
+        require(invalid in result.stdout, "namespace invalid grammar dispatched")
+    for raw in (b"x" * 65 + b"\b" * 65, b"write a x\x00", b"write a x\xff", b"write a x\x1b"):
+        result = execute(raw + b"\ncat a\n")
+        copied(result, b"a")
+        require(REJECTED in result.stdout, "namespace overflow/control line rehabilitated")
+    result = execute(
+        b"", samples=[(1, byte, 0) for byte in b"write a x"] + [(0, 0, 1)] + [(1, byte, 0) for byte in b"\ncat a\n"]
+    )
+    copied(result, b"a")
+    require(REJECTED in result.stdout, "namespace UART damage dispatched")
+    result = execute(b"help\r\nstatus\ncat a\n")
+    copied(result, b"a")
+    require(
+        result.stdout.count(b"write NAME TEXT") == 1
+        and b"capacity=4 files" in result.stdout
+        and b"put [text]" not in result.stdout,
+        "namespace closed help/status",
+    )
+    copied(execute(b"exit\r"), action=1, carry=1)
+    for raw in (b"write a x\n", b"cat a\n", b"exit\n", b"help\ncat a\n"):
+        complete = execute(raw)
+        for limit in range(len(complete.stdout)):
+            result = execute(raw, limit=limit)
+            copied(result, action=2)
+            require(result.stdout == complete.stdout[:limit], "namespace editor output replay")
+            require(f"puts={limit + 1}".encode() in result.stderr, "namespace input resumed after output failure")
+
+
+def namespace_output_cases(binary):
+    maximum = (1 << 64) - 1
+
+    def execute(kind, name="", submitted=0, event=0, revision=0, value=b"", limit=maximum, mutation=0):
+        return run([binary, "namespace", kind, name, submitted, event, revision, value.decode(), limit, mutation])
+
+    outcomes = {
+        0: b"AURORA_NAMESPACE_READY: four named RAM files; all data is lost on owner reset or session exit.\r\n"
+        + PROMPT,
+        2: b"aborted: previous data retained\r\n" + PROMPT,
+        3: b"read failed: output discarded\r\n" + PROMPT,
+        4: b"committed; caller failed: do not retry automatically\r\n" + PROMPT,
+        5: b"commit indeterminate; owner reset: all data lost; do not retry automatically\r\n" + PROMPT,
+        6: b"owner reset: all data lost\r\n" + PROMPT,
+        7: b"namespace unavailable; session closed\r\n",
+        8: b"command limit reached; session closed\r\n",
+    }
+    cases = [((kind, "", 0, 0, 0, b""), expected) for kind, expected in outcomes.items()]
+    cases += [
+        (
+            (1, "a", length, 1, 0x8000000100000000, b""),
+            f"wrote a: {length} byte{'s' if length != 1 else ''}\r\n".encode() + PROMPT,
+        )
+        for length in (0, 1, 49)
+    ]
+    cases += [((1, "a", 0, 2, maximum, value), value + b"\r\n" + PROMPT) for value in (b"", b" x ", MAXIMUM)]
+    cases += [
+        ((1, "a", 0, event, revision, b""), reply + b"\r\n" + PROMPT)
+        for event, revision, reply in (
+            (5, maximum, b"files: not found (RAM-only)."),
+            (6, 0, b"files: invalid name or content."),
+            (7, 0, b"files: full (4 files)."),
+            (8, 0, b"files: note is reserved."),
+        )
+    ]
+    for arguments, expected in cases:
+        result = execute(*arguments)
+        require(
+            result.returncode == 0 and result.stdout == expected and b"success=1" in result.stderr,
+            "namespace exact response transcript",
+        )
+        for limit in range(len(expected)):
+            result = execute(*arguments, limit=limit)
+            require(result.returncode == 0 and result.stdout == expected[:limit], "namespace output replay")
+            require(
+                f"success=0 puts={limit + 1} nexts=0".encode() in result.stderr,
+                "namespace output continued after failed put",
+            )
+    for arguments, mutation in (
+        ((1, "a", 0, 2, 1, b"x"), 1),
+        ((1, "a", 0, 2, 1, b"x"), 2),
+        ((1, "a", 0, 2, 1, b""), 3),
+        ((1, "a", 0, 2, 0, b""), 0),
+        ((1, "a", 0, 2, 1, b"x" * 50), 0),
+        ((1, "a", 0, 3, 0, b""), 0),
+        ((1, "note", 0, 5, 1, b""), 0),
+        ((1, "a", 50, 1, 1, b""), 0),
+        ((0, "a", 0, 0, 0, b""), 0),
+        ((9, "", 0, 0, 0, b""), 0),
+    ):
+        result = execute(*arguments, mutation=mutation)
+        require(
+            result.returncode == 0 and not result.stdout and b"success=0 puts=0" in result.stderr,
+            "namespace invalid response produced partial output",
+        )
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("compiler", type=Path)
@@ -440,8 +665,17 @@ def main():
     supervisor = ROOT / "examples/kernel-ram-scratchpad-console.au"
     input_cases(compile_bridge(compiler, work, "input", supervisor, "read_scratchpad_input", 24))
     output_cases(compile_bridge(compiler, work, "output", supervisor, "present_scratchpad_response", None))
+    namespace_client_cases(
+        compile_bridge(
+            compiler, work, "client", ROOT / "examples/kernel-namespace-client.au", "aurora_user_main", 176, named=True
+        )
+    )
+    namespace_input_cases(compile_bridge(compiler, work, "input", supervisor, "read_namespace_input", 24, named=True))
+    namespace_output_cases(
+        compile_bridge(compiler, work, "output", supervisor, "present_namespace_response", None, named=True)
+    )
     print(
-        f"PASS scratchpad: {len(cases)} generated record/parser cases; client, editor and output transcripts",
+        f"PASS scratchpad/namespace: {len(cases)} generated record/parser cases; client, editor and output transcripts",
         flush=True,
     )
     shutil.rmtree(work)

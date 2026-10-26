@@ -7,6 +7,7 @@ usage() {
         'Profiles: bios, uefi, bios-console, uefi-console, production, program-console, program-*.' \
         'production boots the one production UEFI image; its console is the protected program console.' \
         '--ram-scratchpad-console selects the bounded RAM scratchpad: put/append/get/help/status/exit.' \
+        '--namespace-console selects the opt-in volatile named store: write/cat/help/status/exit.' \
         'Default: bios --smoke. bios-console/uefi-console default to --console; program-* to --smoke.' \
         'bios/uefi --console selects the ordinary interactive console (300 seconds).' \
         'Normal boots are bounded self-tests, not an interactive OS shell (BIOS 15s/UEFI 60s).' \
@@ -30,11 +31,12 @@ case "$profile" in
         exec python3 -B scripts/kernel-uefi-device-run.py "$profile" "$@" ;;
 esac
 if (( $# > 2 )) || [[ $# == 2 && -z "$2" ]]; then usage >&2; exit 2; fi
-action="${2:-}"; protected=false; strict=false; scratchpad=false
+action="${2:-}"; protected=false; strict=false; scratchpad=false; namespace=false
 case "$profile" in
     bios|uefi) platform="$profile"; mode=normal; action="${action:---smoke}" ;;
     bios-console|uefi-console) platform="${profile%-console}"; mode=console; action="${action:---console}" ;;
     --ram-scratchpad-console|ram-scratchpad-console) platform=uefi; mode=ram-scratchpad-console; profile=ram-scratchpad-console; scratchpad=true; strict=true; label='RAM scratchpad Console'; action="${action:---console}" ;;
+    --namespace-console|namespace-console) platform=uefi; mode=namespace-console; profile=namespace-console; namespace=true; strict=true; label='named namespace Console'; action="${action:---console}" ;;
     production) platform=uefi; mode=program-console; protected=true; strict=true; action="${action:---smoke}" ;;
     program-*) platform=uefi; mode="$profile"; protected=true; strict=true; action="${action:---smoke}" ;;
     graphical-console|iommu-event) platform=uefi; mode="$profile"; action="${action:---smoke}" ;;
@@ -42,7 +44,7 @@ case "$profile" in
     *) usage >&2; exit 2 ;;
 esac
 case "$action:$profile" in
-    --console:bios|--console:uefi|--console:bios-console|--console:uefi-console|--console:production|--console:program-*|--console:ram-scratchpad-console|--smoke:*) ;;
+    --console:bios|--console:uefi|--console:bios-console|--console:uefi-console|--console:production|--console:program-*|--console:ram-scratchpad-console|--console:namespace-console|--smoke:*) ;;
     --build-only:iommu-event|--build-only:graphical-console) ;;
     preview:framebuffer) [[ $# == 1 ]] || { usage >&2; exit 2; } ;;
     --full-smoke:framebuffer) action=--smoke ;;
@@ -89,7 +91,7 @@ else
     required=("$qemu" timeout)
     if [[ "$mode" == console ]]; then required+=(python3); fi
 fi
-if [[ "$mode" == console && "$action" == --smoke || "$protected" == true || "$scratchpad" == true ]]; then export QEMU="$qemu"; fi
+if [[ "$mode" == console && "$action" == --smoke || "$protected" == true || "$scratchpad" == true || "$namespace" == true ]]; then export QEMU="$qemu"; fi
 for tool in "${required[@]}"; do
     if ! command -v "$tool" >/dev/null; then
         if [[ "$strict" == true ]]; then profile_blocked "missing dependency: $tool"; fi
@@ -197,6 +199,9 @@ if image_dir="$(build_profile)"; then :; else
     exit "$status"
 fi
 if [[ "$action" == --smoke ]]; then
+    if [[ "$namespace" == true ]]; then
+        exec python3 -B tests/kernel-scratchpad-console-pty.py --namespace --build-dir "$image_dir"
+    fi
     if [[ "$scratchpad" == true ]]; then
         exec python3 -B tests/kernel-scratchpad-console-pty.py --build-dir "$image_dir"
     fi
@@ -239,7 +244,10 @@ if (( ${#qemu_argv[@]} == 0 )); then
     if [[ "$protected" == true ]]; then profile_fail 'empty QEMU command'; fi
     echo 'FAIL: empty QEMU command' >&2; exit 2
 fi
-if [[ "$scratchpad" == true ]]; then
+if [[ "$namespace" == true ]]; then
+    echo 'Named namespace: write NAME TEXT, cat NAME, help, status, exit; four names, 49 printable bytes, 64 commands.'
+    echo 'Opt-in only. All data is lost on owner reset or exit. External timeout is not verified teardown.'
+elif [[ "$scratchpad" == true ]]; then
     echo 'RAM scratchpad: put [text], get, help, status, exit; 49 printable ASCII bytes, 64 commands.'
     echo 'All data is lost on service reset or exit. External five-minute timeout is not verified teardown.'
 elif [[ "$protected" == true ]]; then echo 'Protected Aurora console: upper, then a line of text; exit closes QEMU.'
@@ -254,9 +262,9 @@ if [[ "$protected" == true ]]; then
     echo "FAIL: protected console guest exited $status" >&2
     if [[ "$status" == 0 ]]; then exit 1; fi
 elif [[ "$status" == 124 ]]; then
-    if [[ "$scratchpad" == true ]]; then echo 'Scratchpad external timeout: interrupted session, teardown unverified.' >&2
+    if [[ "$scratchpad" == true || "$namespace" == true ]]; then echo 'Volatile console external timeout: interrupted session, teardown unverified.' >&2
     else echo 'Console session reached its five-minute limit.' >&2; fi
-elif [[ "$scratchpad" == true && "$status" == 0 ]]; then
-    echo 'FAIL: scratchpad guest exited without its verified exit status.' >&2; exit 1
+elif [[ ( "$scratchpad" == true || "$namespace" == true ) && "$status" == 0 ]]; then
+    echo 'FAIL: volatile console guest exited without its verified exit status.' >&2; exit 1
 fi
 exit "$status"

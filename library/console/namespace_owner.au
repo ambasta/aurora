@@ -1,0 +1,151 @@
+export module console.namespace_owner;
+import console.namespace_wire;
+import console.file_namespace;
+import std.binary_buffer;
+import std.binary;
+import std.array;
+
+export namespace console {
+    // All committed state and separate, zero-backed staging belong to this
+    // retained source local. No native checkpoint or namespace copy exists.
+    class NamespaceOwner {
+        FileNamespace files;
+        u64 revision;
+        std::BinaryBuffer64 name;
+        std::BinaryBuffer64 value;
+        u64 name_length;
+        u64 value_length;
+        u64 cursor;
+        u64 mode;
+        u64 phase;
+        u64 prepared;
+        u64 expected;
+    public:
+        NamespaceOwner(FileNamespace initial, std::BinaryBuffer64 empty, u64 initial_revision) : files(initial), revision(initial_revision),
+            name(empty), value(empty), name_length(0u64), value_length(0u64),
+            cursor(0u64), mode(0u64), phase(0u64), prepared(0u64), expected(0u64) {
+        }
+        // Only private cancelled Serve status invokes this; no request opcode
+        // carries cancellation authority. Clear staging before ABORTED.
+        auto cancel() -> u64 {
+            i64 index = 0;
+            while (index < 64) {
+                name.write_u8(index, 0u8);
+                value.write_u8(index, 0u8);
+                index = index + 1;
+            }
+            name_length = 0u64;
+            value_length = 0u64;
+            cursor = 0u64;
+            mode = 0u64;
+            phase = 0u64;
+            prepared = 0u64;
+            expected = 0u64;
+            return 7u64;
+        }
+        auto reject(FileEvent event) -> u64 {
+            cancel();
+            return namespace_rejected(event);
+        }
+        auto staged_name() const -> FileName {
+            const std::BinaryBuffer64 copied = name;
+            return FileName(copied, i64(name_length));
+        }
+        auto staged_value() const -> FileValue {
+            const std::BinaryBuffer64 copied = value;
+            return FileValue(copied, i64(value_length));
+        }
+        auto request(u64 word) -> u64 {
+            const u64 tag = namespace_tag(word);
+            const u64 offset = namespace_cursor(word);
+            const u64 count = namespace_count(word);
+            if (phase == 0u64 && (tag == 1u64 || tag == 2u64) && word < 16777216u64 && offset >= 1u64
+                && offset <= 8u64 && count <= 49u64 && (tag == 2u64 || count == 0u64)) {
+                mode = tag;
+                name_length = offset;
+                value_length = count;
+                phase = 1u64;
+                return 1u64;
+            }
+            if (phase == 1u64 || phase == 2u64) {
+                u64 length = name_length;
+                u64 expected_tag = 3u64;
+                if (phase == 2u64) { length = value_length; expected_tag = 4u64; }
+                if (!namespace_chunk(word, expected_tag, cursor, namespace_chunk_size(length - cursor))) {
+                    return reject(FileEvent::invalid);
+                }
+                const u64 payload = namespace_payload(word);
+                u64 index = 0u64;
+                while (index < count) {
+                    const u8 byte = u8((payload >> i64(index * 8u64)) & 255u64);
+                    if (phase == 1u64) { name.write_u8(i64(cursor + index), byte); }
+                    else { value.write_u8(i64(cursor + index), byte); }
+                    index = index + 1u64;
+                }
+                cursor = cursor + count;
+                if (cursor == length) {
+                    cursor = 0u64;
+                    if (phase == 1u64 && mode == 2u64 && value_length != 0u64) { phase = 2u64; }
+                    else { phase = 3u64; }
+                }
+                return 1u64;
+            }
+            if (phase == 3u64 && word == 5u64) {
+                const FileName selected = staged_name();
+                const FileValue content = staged_value();
+                if (!selected.valid() || !content.valid() || revision == 0u64) { return reject(FileEvent::invalid); }
+                if (selected.reserved()) { return reject(FileEvent::reserved); }
+                if (mode == 2u64 && file_next_revision(revision) == 0u64) { return reject(FileEvent::invalid); }
+                prepared = revision;
+                phase = 4u64;
+                return 1u64;
+            }
+            if ((phase == 4u64 || phase == 5u64) && word == namespace_word(6u64, cursor, 0u64, 0u64)) {
+                const u64 reply = namespace_word(8u64, cursor, 4u64, (prepared >> i64(cursor * 8u64)) & 4294967295u64);
+                cursor = cursor + 4u64;
+                phase = phase + 1u64;
+                if (cursor == 8u64) {
+                    cursor = 0u64;
+                    if (mode == 1u64) { phase = 9u64; }
+                }
+                return reply;
+            }
+            if ((phase == 6u64 || phase == 7u64) && namespace_chunk(word, 7u64, cursor, 4u64)) {
+                expected = expected | (namespace_payload(word) << i64(cursor * 8u64));
+                cursor = cursor + 4u64;
+                phase = phase + 1u64;
+                return 1u64;
+            }
+            if (phase == 8u64 && word == 8u64 && expected == prepared && prepared == revision
+                && revision != 0u64 && file_next_revision(revision) != 0u64) {
+                // No exchange between exact staging/current-revision validation,
+                // the canonical whole-record write, revision advance and COMMITTED.
+                const FileName selected = staged_name();
+                const FileValue content = staged_value();
+                const FileEvent event = files.write_file(selected, content);
+                if (event != FileEvent::written) { return reject(event); }
+                revision = file_next_revision(revision);
+                cancel();
+                return 5u64;
+            }
+            if (phase == 9u64 && word == namespace_word(9u64, cursor, 0u64, 0u64) && prepared == revision) {
+                const FileName selected = staged_name();
+                const FileData data = files.read_file(selected);
+                if (data.status() == FileEvent::missing && cursor == 0u64) { cancel(); return 4u64; }
+                if (data.status() != FileEvent::read || cursor > u64(data.size())) { return reject(FileEvent::invalid); }
+                if (cursor == u64(data.size())) { cancel(); return 3u64; }
+                const u64 length = namespace_chunk_size(u64(data.size()) - cursor);
+                u64 payload = 0u64;
+                u64 index = 0u64;
+                while (index < length) {
+                    payload = payload | (u64(data.at(i64(cursor + index))) << i64(index * 8u64));
+                    index = index + 1u64;
+                }
+                const u64 reply = namespace_word(2u64, cursor, length, payload);
+                cursor = cursor + length;
+                return reply;
+            }
+            return reject(FileEvent::invalid);
+        }
+    };
+}

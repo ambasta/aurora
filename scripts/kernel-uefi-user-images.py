@@ -70,18 +70,31 @@ def image_metadata(prefix, base, budget, owned, console):
             for name in ("append_candidate", "append_producer")
             if facts and any(value["source_name"] == name for value in facts["functions"].values())
         ]
-        if append_roots:
+        namespace_role = prefix.name in ("user-kernel-namespace-client", "user-namespace-service")
+        if append_roots or namespace_role:
             # Each combined production role retains its scalar entry and one
             # live append root. Admit every reachable compiled timer PC from
             # emitted graph facts, not merely the old scalar entry's interval.
             graph = json.loads(prefix.with_suffix(".stack.json").read_text())["functions"]
+            if namespace_role:
+                allowed = {
+                    "__au_runtime_call"
+                    if prefix.name == "user-kernel-namespace-client"
+                    else "__au_runtime_serve_exchange"
+                }
+                imports = {
+                    target for fact in graph.values() for target in fact["calls"] if target.startswith("__au_runtime_")
+                }
+                need(imports == allowed, f"{prefix.name}: namespace role imports differ from its closed authority")
             pending = [compiled] + [abi_function_symbol(facts, name) for name in append_roots]
             reached = set()
             while pending:
                 name = pending.pop()
                 if name in reached or name in ("__au_runtime_call", "__au_runtime_serve_exchange"):
                     continue
-                need(name in graph and name in elf.functions, f"{prefix.name}: missing compiled append node {name}")
+                need(
+                    name in graph and name in elf.functions, f"{prefix.name}: missing compiled closed-role node {name}"
+                )
                 reached.add(name)
                 pending.extend(graph[name]["calls"])
             ranges = [elf.functions[name] for name in reached]
@@ -91,7 +104,7 @@ def image_metadata(prefix, base, budget, owned, console):
             )
             need(
                 meta["return_pc"] < meta["compiled_begin"] < meta["compiled_end"] <= meta["bounds_pc"],
-                f"{prefix.name}: compiled append graph crosses its wrapper/trap boundary",
+                f"{prefix.name}: compiled closed-role graph crosses its wrapper/trap boundary",
             )
     if budget:
         meta.update(context_begin=at("aurora_budget_context_begin"), context_end=at("aurora_budget_context_end"))

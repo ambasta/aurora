@@ -1,6 +1,9 @@
 #include "../kernel/ipc-policy.hpp"
+#include "../kernel/namespace-console.hpp"
 #include "../kernel/ram-scratchpad.hpp"
 #include "../kernel/uefi/ram-file-policy.hpp"
+#include "../kernel/uefi/namespace-policy.hpp"
+#include <algorithm>
 #include <array>
 #include <cstdlib>
 #include <iostream>
@@ -652,6 +655,110 @@ auto retained_file_settlement() -> void {
           "RAM fresh caller cannot inherit revoked endpoint");
 }
 
+auto named_namespace_framing() -> void {
+    using F = aurora::uefi::NamespaceFraming;
+    const auto word = [](unsigned tag, unsigned offset = 0, unsigned count = 0, std::uint64_t bytes = 0) {
+        return std::uint64_t{tag} | (std::uint64_t{offset} << 8) | (std::uint64_t{count} << 16) | (bytes << 24);
+    };
+    const auto exchange = [&](F &framing, std::uint64_t request, std::uint64_t response) {
+        check(framing.publish(request), "namespace exact request publication");
+        check(!framing.publish(request) && !framing.reply(response), "namespace pending request is not delivered");
+        check(!framing.delivered(request ^ (1ULL << 63)) && framing.delivered(request) && !framing.delivered(request),
+              "namespace original delivered word exactly once");
+        check(framing.reply(response) && !framing.reply(response), "namespace exact delivered reply once");
+    };
+    const auto prepare = [&](F &framing, unsigned names, unsigned values, bool write, std::uint64_t revision) {
+        exchange(framing, word(write ? 2 : 1, names, values), 1);
+        for (unsigned offset = 0; offset < names; offset += 4) {
+            const auto count = std::min(4U, names - offset);
+            const auto payload = (1ULL << (count * 8)) - 1;
+            const auto request = word(3, offset, count, payload);
+            check(!framing.permits(request | (1ULL << 56)) && !framing.permits(request ^ 0x100),
+                  "namespace reserved upper byte and wrong name cursor denied");
+            if (count < 4)
+                check(!framing.permits(request | (1ULL << (24 + count * 8))), "namespace unused payload must be zero");
+            exchange(framing, request, 1);
+        }
+        for (unsigned offset = 0; offset < values; offset += 4) {
+            const auto count = std::min(4U, values - offset);
+            check(!framing.permits(5) && !framing.permits(8), "namespace all value chunks precede prepare/commit");
+            exchange(framing, word(4, offset, count, (1ULL << (count * 8)) - 1), 1);
+        }
+        exchange(framing, 5, 1);
+        exchange(framing, 6, word(8, 0, 4, revision & 0xffffffff));
+        exchange(framing, word(6, 4), word(8, 4, 4, revision >> 32));
+        check(framing.revision() == revision, "namespace full unsigned revision width retained");
+    };
+    for (const auto right : {F::Right::read, F::Right::write, static_cast<F::Right>(2), static_cast<F::Right>(-1)}) {
+        for (unsigned names = 0; names <= 9; ++names) {
+            for (unsigned size = 0; size <= 50; ++size) {
+                F framing{right, names, size};
+                const bool valid = names >= 1 && names <= 8 && size <= 49 &&
+                                   (right == F::Right::write || (right == F::Right::read && size == 0));
+                check(framing.permits(word(right == F::Right::read ? 1 : 2, names, size)) == valid,
+                      "namespace closed right, name and value counts");
+            }
+        }
+    }
+    for (unsigned names = 1; names <= 8; ++names) {
+        for (unsigned size = 0; size <= 49; ++size) {
+            F framing{F::Right::write, names, size};
+            check(!framing.permits(word(1, names)) && !framing.permits(word(2, names, size) | (1ULL << 63)),
+                  "namespace write right and canonical BEGIN");
+            prepare(framing, names, size, true, 0x80000000ffffffffULL);
+            check(!framing.permits(8) && !framing.permits(9), "namespace two echoes precede commit and deny read");
+            exchange(framing, word(7, 0, 4, 0xffffffff), 1);
+            exchange(framing, word(7, 4, 4, 0x80000000), 1);
+            check(framing.publish(8) && !framing.commit_delivered(), "namespace pending commit is not delivery");
+            check(framing.delivered(8) && framing.commit_delivered() && !framing.begin_abort(),
+                  "namespace delivered commit cannot be called cancelled");
+            check(!framing.reply(1) && !framing.reply(5 | (1ULL << 56)) && framing.reply(5),
+                  "namespace only canonical COMMITTED finishes publication");
+            check(framing.revision() == 0x8000000100000000ULL && framing.outcome() == F::Outcome::committed &&
+                      framing.state() == F::State::terminal && !framing.permits(word(2, names, size)),
+                  "namespace exactly one full-width revision advance and no reuse");
+            check(framing.count() == 7 + (names + 3) / 4 + (size + 3) / 4 && framing.count() <= 22,
+                  "namespace maximum write has 22 exchanges, no per-exchange renewal");
+        }
+    }
+    for (unsigned size = 0; size <= 49; ++size) {
+        F framing{F::Right::read, 8, 0};
+        prepare(framing, 8, 0, false, UINT64_MAX);
+        check(!framing.permits(8) && !framing.permits(word(7, 0, 4)), "namespace read right cannot commit");
+        for (unsigned offset = 0; offset < size; offset += 4) {
+            const auto count = std::min(4U, size - offset);
+            exchange(framing, word(9, offset), word(2, offset, count, (1ULL << (count * 8)) - 1));
+        }
+        exchange(framing, word(9, size), 3);
+        check(framing.state() == F::State::terminal && framing.outcome() == F::Outcome::completed &&
+                  framing.data_count() == size && framing.revision() == UINT64_MAX && framing.terminal_reply() == 3,
+              "namespace bounded read EOF retains exact full-width revision and length");
+    }
+    F missing{F::Right::read, 1, 0};
+    prepare(missing, 1, 0, false, 1);
+    exchange(missing, 9, 4);
+    check(missing.terminal_reply() == 4 && missing.data_count() == 0, "namespace missing is not empty EOF");
+    for (const auto rejection : {1542ULL, 1798ULL, 2054ULL}) {
+        F framing{F::Right::write, 1, 0};
+        exchange(framing, word(2, 1), rejection);
+        check(framing.outcome() == F::Outcome::rejected && framing.terminal_reply() == rejection &&
+                  !framing.begin_abort(),
+              "namespace exact terminal semantic refusal");
+    }
+    for (const auto malformed : {0ULL, 6ULL, 7ULL, 9ULL, 2302ULL, 1542ULL | (1ULL << 63)}) {
+        F framing{F::Right::write, 1, 0};
+        check(framing.publish(word(2, 1)) && framing.delivered(word(2, 1)) && !framing.reply(malformed),
+              "namespace unknown reply does not become terminal success");
+    }
+    F abort{F::Right::write, 1, 0};
+    prepare(abort, 1, 0, true, 1);
+    exchange(abort, word(7, 0, 4, 1), 1);
+    exchange(abort, word(7, 4, 4), 1);
+    check(abort.publish(8) && abort.begin_abort() && !abort.permits(8) && !abort.acknowledge_abort(7 | (1ULL << 63)) &&
+              abort.acknowledge_abort(7) && !abort.acknowledge_abort(7),
+          "namespace undelivered commit can consume exclusive cancellation once");
+}
+
 auto scratchpad_copied_records() -> void {
     using namespace aurora::scratchpad;
     using S = CopiedStack;
@@ -788,8 +895,143 @@ auto scratchpad_copied_records() -> void {
     }
 }
 
+auto namespace_copied_records() -> void {
+    using namespace aurora::named;
+    using S = CopiedStack;
+    std::array<std::byte, S::reservation> bytes{};
+    const auto put_word = [&](std::size_t at, std::uint64_t value) {
+        for (unsigned i = 0; i < 8; ++i)
+            bytes[at + i] = std::byte{static_cast<unsigned char>(value >> (8 * i))};
+    };
+    const auto scrubbed = [](const Result &value) {
+        const auto raw = std::as_bytes(std::span{&value, 1});
+        return std::all_of(raw.begin(), raw.end(), [](std::byte byte) {
+            return byte == std::byte{0};
+        });
+    };
+    Command command;
+    command.name.count = 1;
+    command.name.bytes[0] = 'a';
+    command.value.count = 1;
+    command.value.bytes[0] = 'x';
+    command.operation = 1;
+    Result result;
+    check(command.valid() && S::stage(bytes, command) && !S::stage(bytes, command),
+          "namespace stages one canonical command in pristine fixed window");
+    constexpr std::uint64_t revision = 0x80000000ffffffffULL;
+    put_word(S::prefix + 8, 23);
+    put_word(S::probe, 9);
+    put_word(S::result + 72, 1);
+    put_word(S::result + 80, revision);
+    check(S::capture(bytes, 0, 23, command, 9, result) && result.event == 1 && result.revision == revision &&
+              result.terminal_for(1, 5, 0, revision),
+          "namespace captures authenticated written receipt with full-width revision");
+    for (const auto slot : std::array<std::uint64_t, 2>{1, UINT64_MAX})
+        check(!S::capture(bytes, slot, 23, command, 9, result) && scrubbed(result),
+              "namespace foreign slot cannot leak prior copied result");
+    check(!S::capture(bytes, 0, 0, command, 9, result) && !S::capture(bytes, 0, 24, command, 9, result) &&
+              !S::capture(bytes, 0, 23, command, 8, result) && scrubbed(result),
+          "namespace zero/stale generation and mismatched probe denied");
+    bytes[S::prefix] = std::byte{1};
+    check(!S::capture(bytes, 0, 23, command, 9, result), "namespace copied grant must match endpoint zero");
+    bytes[S::prefix] = std::byte{0};
+    for (std::size_t at = S::command; at < S::probe; ++at) {
+        bytes[at] ^= std::byte{1};
+        check(!S::capture(bytes, 0, 23, command, 9, result) && scrubbed(result),
+              "namespace entire original name/value/operation is immutable");
+        bytes[at] ^= std::byte{1};
+    }
+    for (std::size_t at = S::sentinel; at < S::reservation; ++at) {
+        bytes[at] = std::byte{1};
+        check(!S::capture(bytes, 0, 23, command, 9, result) && scrubbed(result),
+              "namespace all sentinel bytes remain zero");
+        bytes[at] = std::byte{0};
+    }
+    put_word(S::result + 72, 2);
+    put_word(S::result + 64, 1);
+    bytes[S::result] = std::byte{'Y'};
+    check(S::capture(bytes, 0, 23, command, 9, result) && result.bytes[0] == 'Y' && result.count == 1 &&
+              result.terminal_for(0, 3, 1, revision) && !result.terminal_for(0, 3, 0, revision) &&
+              !result.terminal_for(0, 3, 2, revision) && !result.terminal_for(0, 3, 1, revision + 1) &&
+              !result.terminal_for(1, 3, 1, revision) && !result.terminal_for(0, 4, 1, revision),
+          "namespace exact read bytes/count/revision and terminal relation");
+    for (std::size_t at = 1; at < 64; ++at) {
+        bytes[S::result + at] = std::byte{1};
+        check(!S::capture(bytes, 0, 23, command, 9, result) && scrubbed(result),
+              "namespace noncanonical result suffix discards whole candidate");
+        bytes[S::result + at] = std::byte{0};
+    }
+    for (unsigned byte = 0; byte <= 255; ++byte) {
+        bytes[S::result] = std::byte{static_cast<unsigned char>(byte)};
+        const bool accepted = S::capture(bytes, 0, 23, command, 9, result);
+        check(accepted == (byte >= 32 && byte <= 126) && (accepted || scrubbed(result)),
+              "namespace copied result enforces printable bytes before promotion");
+    }
+    bytes[S::result] = std::byte{0};
+    put_word(S::result + 64, 0);
+    for (const auto event : std::array<std::uint64_t, 5>{3, 4, 9, 255, UINT64_MAX}) {
+        put_word(S::result + 72, event);
+        check(!S::capture(bytes, 0, 23, command, 9, result) && scrubbed(result),
+              "namespace copied result rejects unknown event domain");
+    }
+    put_word(S::result + 72, 5);
+    check(S::capture(bytes, 0, 23, command, 9, result) && result.terminal_for(0, 4, 0, revision) &&
+              !result.terminal_for(0, 4, 1, revision) && !result.terminal_for(0, 4, 0, revision + 1) &&
+              !result.terminal_for(1, 4, 0, revision),
+          "namespace missing is a revision-bound zero-length read, not empty content");
+    put_word(S::result + 80, 0);
+    check(!S::capture(bytes, 0, 23, command, 9, result) && scrubbed(result),
+          "namespace success cannot carry revision zero");
+    for (const auto pair : std::array<std::array<std::uint64_t, 2>, 3>{{{6, 1542}, {7, 1798}, {8, 2054}}}) {
+        put_word(S::result + 72, pair[0]);
+        check(S::capture(bytes, 0, 23, command, 9, result) && result.terminal_for(0, pair[1], 0, 0) &&
+                  result.terminal_for(1, pair[1], 0, 0) && !result.terminal_for(2, pair[1], 0, 0) &&
+                  !result.terminal_for(1, pair[1] | (1ULL << 63), 0, 0),
+              "namespace canonical semantic refusals preserve exact terminal word");
+        put_word(S::result + 80, revision);
+        check(!S::capture(bytes, 0, 23, command, 9, result) && scrubbed(result),
+              "namespace rejection cannot forge a published revision");
+        put_word(S::result + 80, 0);
+    }
+    for (std::size_t at = 0; at < S::reservation; ++at) {
+        bytes.fill(std::byte{0});
+        bytes[at] = std::byte{1};
+        check(!S::stage(bytes, command), "namespace entire staging window must be pristine");
+    }
+    bytes.fill(std::byte{0});
+    command.name.bytes[63] = 'x';
+    check(!command.valid() && !S::stage(bytes, command), "namespace raw copied name suffix denied");
+    command.name.bytes[63] = 0;
+    command.value.bytes[63] = 'x';
+    check(!command.valid() && !S::stage(bytes, command), "namespace raw copied value suffix denied");
+    command.value.bytes[63] = 0;
+    command.operation = 0;
+    check(!command.valid(), "namespace read cannot conceal write value");
+    command.value = {};
+    check(command.valid(), "namespace canonical read admitted");
+    for (const auto count : std::array<std::uint64_t, 3>{0, 9, UINT64_MAX}) {
+        command.name.count = count;
+        check(!command.valid() && !S::stage(bytes, command), "namespace raw name count is bounded and nonzero");
+    }
+    command.name.count = 1;
+    command.operation = 2;
+    check(!command.valid(), "namespace raw operation is closed");
+    Submission submission;
+    submission.command = command;
+    submission.command.operation = 0;
+    check(submission.valid(), "namespace command submission has complete copied input");
+    submission.action = 1;
+    check(!submission.valid(), "namespace exit cannot hide a named command");
+    submission.command = {};
+    check(submission.valid(), "namespace exit has canonical empty command");
+    submission.after_cr = 2;
+    check(!submission.valid(), "namespace carry flag is bounded");
+}
+
 auto main() -> int {
     scratchpad_copied_records();
+    namespace_copied_records();
+    named_namespace_framing();
     retained_file_framing();
     retained_file_settlement();
     lifecycle_and_copies();

@@ -10,7 +10,7 @@ from pathlib import Path
 import shutil
 import tempfile
 
-from unsigned_oracle import Case, NativeRunner, Rejection
+from unsigned_oracle import Case, Rejection, Suite
 
 
 IMPORTS = ("console.volatile_file",)
@@ -221,10 +221,13 @@ def main():
     rejections = list(privacy_cases())
     work = Path(tempfile.mkdtemp(prefix="volatile-file-"))
     print(f"artifacts={work}", flush=True)
-    runner = NativeRunner(work, compiler, 10)
-    runner.cases(cases)
+    suite = Suite(compiler, "retained-file-protocol", timeout=10, directory=work)
+    for item in cases:
+        suite.value(item.name, item.body, item.expected, result=item.result_type, imports=item.imports)
     for rejection in rejections:
-        runner.rejection(rejection)
+        suite.reject(rejection.name, rejection.source)
+    suite.load(Path(__file__).with_name("namespace_protocol.cases"))
+    suite.finish()
     print(f"PASS volatile file: {len(cases)} generated-code cases, {len(rejections)} source rejections", flush=True)
     shutil.rmtree(work)
 

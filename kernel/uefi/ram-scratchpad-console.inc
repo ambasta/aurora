@@ -21,6 +21,7 @@ std::optional<ScratchpadTransfer> scratchpad_transfer;
 bool scratchpad_console_owned{};
 auto scratchpad_discard() -> void {
     ram_clear(scratchpad_transfer);
+    namespace_discard();
 }
 auto scratchpad_clear_inactive_accounting() -> void {
     require(!timer_armed && !timer_draining && !timer_owner && !run_authority, "scratchpad inactive accounting");
@@ -82,13 +83,13 @@ auto scratchpad_clear_inactive_accounting() -> void {
            timer_quiet(0x100, false) && timer_quiet(0x200, false);
 }
 [[nodiscard]] auto scratchpad_idle(bool waiting = false) -> bool {
-    return scratchpad_mechanism_quiet(waiting) && ram_state == RamState::idle && !ram_command && !scratchpad_transfer &&
+    return scratchpad_mechanism_quiet(waiting) && ram_state == RamState::idle && !ram_command && !scratchpad_transfer && namespace_transfer_empty() &&
            scratchpad_empty_caller() && mailbox && mailbox->revoked() && mailbox->scrubbed() &&
            scratchpad_parked_service();
 }
 [[nodiscard]] auto scratchpad_retired() -> bool {
     if (!scratchpad_mechanism_quiet(false) || ram_state != RamState::absent || ram_lifetime || ram_command ||
-        scratchpad_transfer || !scratchpad_empty_caller() || frames.used() != 0 || (mailbox && !mailbox->revoked()) ||
+        scratchpad_transfer || !namespace_transfer_empty() || !scratchpad_empty_caller() || frames.used() != 0 || (mailbox && !mailbox->revoked()) ||
         domains[1].handle || domains[1].contract || domains[1].tables || ram_service_wait.context ||
         ram_service_wait.authority || ram_service_wait.service || ram_service_wait.endpoint.slot() ||
         ram_service_wait.endpoint.generation() || ram_service_wait.ticket || ram_service_wait.remaining ||
@@ -153,19 +154,30 @@ using ProgramInputSession = console::Session<Serial, ScratchpadInputPlatform>;
     require(result <= 1 && (retired ? scratchpad_retired() : scratchpad_idle()), "scratchpad released output boundary");
     return result == 1;
 }
-[[nodiscard]] auto scratchpad_caller_window() -> scratchpad::CopiedStack::Window {
-    require(!scratchpad_console_owned && ram_state == RamState::command && ram_command_valid() && scratchpad_transfer &&
+// Borrow only this command's original identity. The view never survives the
+// immediate checked copy and does not own or cache a backing-page admission.
+struct RetainedCallerBindingView final {
+    const user::DomainHandle &caller, &service;
+    const user::ProgramContract &contract;
+    const U64 &caller_root, &service_root, &service_generation, &cleanup;
+    const ipc::Endpoint &endpoint;
+    const std::array<U64, 4> &backing;
+};
+[[nodiscard, gnu::noinline]] auto retained_caller_backing(const RetainedCallerBindingView &copy,
+                                                       std::size_t reservation,
+                                                       std::size_t envelope) -> U64 {
+    require(!scratchpad_console_owned && ram_state == RamState::command && ram_command_valid() &&
                 root() == kernel_root && irq_off() && active == L::domain_count && !timer_armed && !timer_draining &&
                 !timer_owner && !timer_owner_epoch && !run_authority && !program.running() && !saved_rsp &&
-                domains[0].contract && domains[0].tables && registry.ready(scratchpad_transfer->caller) &&
-                registry.index(scratchpad_transfer->caller) == 0 && registry.index(scratchpad_transfer->service) == 1 &&
-                user::same_contract(scratchpad_transfer->contract, *domains[0].contract) &&
-                domains[0].tables->root() == scratchpad_transfer->caller_root &&
-                ram_lifetime->root == scratchpad_transfer->service_root &&
-                ram_lifetime->generation == scratchpad_transfer->service_generation &&
-                ram_command->cleanup_epoch == scratchpad_transfer->cleanup &&
-                ram_command->caller_endpoint.slot() == scratchpad_transfer->endpoint.slot() &&
-                ram_command->caller_endpoint.generation() == scratchpad_transfer->endpoint.generation(),
+                domains[0].contract && domains[0].tables && registry.ready(copy.caller) &&
+                registry.index(copy.caller) == 0 && registry.index(copy.service) == 1 &&
+                user::same_contract(copy.contract, *domains[0].contract) &&
+                domains[0].tables->root() == copy.caller_root &&
+                ram_lifetime->root == copy.service_root &&
+                ram_lifetime->generation == copy.service_generation &&
+                ram_command->cleanup_epoch == copy.cleanup &&
+                ram_command->caller_endpoint.slot() == copy.endpoint.slot() &&
+                ram_command->caller_endpoint.generation() == copy.endpoint.generation(),
             "scratchpad fixed-copy original identity");
     const PageTables kernel{kernel_root, static_cast<std::size_t>(handoff->get(96))};
     require(interrupt_admission && kernel.verify(arena, *handoff, &*interrupt_admission),
@@ -173,23 +185,39 @@ using ProgramInputSession = console::Session<Serial, ScratchpadInputPlatform>;
     const auto &layout = domains[0].contract->layout();
     const auto top = layout.user_stack_top();
     require(top % L::page_size == 0 && top >= layout.user_stack_bottom() &&
-                top - layout.user_stack_bottom() >=
-                    scratchpad::CopiedStack::reservation + scratchpad::CopiedStack::envelope &&
-                scratchpad::CopiedStack::reservation <= L::page_size,
+                top - layout.user_stack_bottom() >= reservation + envelope &&
+                reservation <= L::page_size,
             "scratchpad disjoint fixed stack ranges");
     for (unsigned index = 0; index < 4; ++index) {
         require(domains[0].stacks[index].has_value(), "scratchpad original caller lease");
         const auto physical = frames.address(*domains[0].stacks[index]);
-        require(physical && *physical == scratchpad_transfer->backing[index] &&
+        require(physical && *physical == copy.backing[index] &&
                     (kernel.entry(*physical) & ~RuntimeTables::accessed_dirty) == (*physical | 3 | RuntimeTables::nx) &&
                     (domains[0].tables->entry(layout.user_stack_bottom() + index * L::page_size) &
                      ~RuntimeTables::accessed_dirty) == (*physical | 7 | RuntimeTables::nx),
                 "scratchpad exact private RW/NX stack aliases");
     }
-    return scratchpad::CopiedStack::Window{reinterpret_cast<std::byte *>(scratchpad_transfer->backing.back() +
-                                                                         L::page_size -
-                                                                         scratchpad::CopiedStack::reservation),
-                                           scratchpad::CopiedStack::reservation};
+    return copy.backing.back();
+}
+template <class Stack, class Transfer>
+[[nodiscard]] auto retained_caller_window(const Transfer &copy) -> typename Stack::Window {
+    static_assert(std::is_same_v<Stack, scratchpad::CopiedStack> || std::is_same_v<Stack, named::CopiedStack>);
+    const RetainedCallerBindingView binding{copy.caller,
+                                            copy.service,
+                                            copy.contract,
+                                            copy.caller_root,
+                                            copy.service_root,
+                                            copy.service_generation,
+                                            copy.cleanup,
+                                            copy.endpoint,
+                                            copy.backing};
+    const auto backing = retained_caller_backing(binding, Stack::reservation, Stack::envelope);
+    return typename Stack::Window{reinterpret_cast<std::byte *>(backing + L::page_size - Stack::reservation),
+                                  Stack::reservation};
+}
+[[nodiscard]] auto scratchpad_caller_window() -> scratchpad::CopiedStack::Window {
+    require(scratchpad_transfer.has_value(), "scratchpad transfer exists");
+    return retained_caller_window<scratchpad::CopiedStack>(*scratchpad_transfer);
 }
 [[gnu::noinline]] auto scratchpad_stage(scratchpad::Submission &input) -> void {
     require(input.valid() && input.action == 0 && !scratchpad_transfer && ram_command_valid(),

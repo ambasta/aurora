@@ -320,4 +320,44 @@ counter; ordinary commands use the same adapter on a tentative copy. Protected
 reads and replacements use the core directly. The 264-byte namespace, 272-byte
 protected owner, four-slot order and native authenticated one-shot authority are
 unchanged. Copied values carry policy data, never mailbox authority. This split
-prepares a future protected owner; committed storage still lives in the supervisor.
+leaves the existing production-console store in the supervisor. The opt-in path
+below uses the same core with a different, protected lifetime.
+
+## Protected volatile namespace
+
+The storage fixture's `namespace-console` row retains one CPL3 Aurora
+`NamespaceOwner` across fresh per-command Call-only callers. `write NAME TEXT`
+creates or replaces a file; `cat NAME` reads it. `help`, `status` and `exit` are
+local console commands. There is no list, remove, append or durable-storage command.
+Four files fit; names are 1..8 ASCII letters, digits, `_`, `-` or `.`, excluding
+`.` and `..`; `note` is reserved. Values are 0..49 printable ASCII bytes;
+`write a ` creates a present empty file. The editor accepts at most 64 bytes,
+and at most 64 protected commands run per session. Idle input waits through
+Console timer wakeups. The launcher has an external five-minute timeout;
+reaching it interrupts the session and does not establish verified teardown.
+
+The owner holds committed file contents and revision; native code retains
+authority, framing and budgets, not a checkpoint of those contents. A caller
+losing authority before COMMIT discards its candidate and preserves old data.
+After the supervisor authenticates the owner's COMMITTED receipt, caller failure
+reports a known commit and must not trigger automatic retry. Owner failure or
+failed cleanup resets the owner and discards the entire volatile namespace. If
+COMMIT was delivered but no conclusive receipt was authenticated before owner
+failure, the outcome is reported as indeterminate, never cancelled or
+automatically replayed. Session exit also loses all data.
+
+The row uses the existing fixed arena and two domains, a two-page caller,
+three-page owner and one-page auxiliary cap, and the sixteen-page storage bank.
+Copied request/result windows remain 288 bytes with a 48-byte envelope; each
+retained-window authentication checks original context, root, epoch and page
+leases before copying. The shared storage image must pass the ordinary capped
+link and full image/W^X/stack admission before execution.
+
+`scripts/kernel-run.sh namespace-console --smoke` exercises the baseline through the
+existing PTY driver. The same storage image's `namespace-console-fixture` row
+selects faults `1`..`f`: caller/owner loss around commit, bad captured result or
+backing, partial output, finite and exhausted timer budgets, startup/abort failure,
+revision exhaustion and full-width carry. Native namespace protocol cases and
+copied-window checks use the existing volatile-file and kernel-IPC drivers.
+These checks establish only their recorded source/toolchain/emulator outcomes;
+they do not qualify physical hardware, restart recovery or a general filesystem.

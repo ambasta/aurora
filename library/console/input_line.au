@@ -1,0 +1,96 @@
+export module console.input_line;
+import console.io;
+import console.line;
+
+export namespace console {
+    enum class InputLineKind {
+        command,
+        requested_exit,
+        output_failure
+    };
+
+    // Copied editor state, never a Console loan or protected command authority.
+    class InputLine {
+        Line64 line;
+        InputLineKind kind;
+    public:
+        InputLine(Line64 value, InputLineKind outcome) : line(value), kind(outcome) {
+        }
+        auto status() const -> InputLineKind {
+            return kind;
+        }
+        auto after_cr_pending() const -> bool {
+            return line.after_cr_pending();
+        }
+        auto command_line() const -> Line64 {
+            const Line64 result = line;
+            return result;
+        }
+    };
+
+    auto input_text(builtin::ConsoleSession& session, builtin::span<const u8> text) -> bool {
+        const WriteResult result = write_bytes(session, text);
+        return result.complete();
+    }
+
+    // Both retained-owner consumers share the same editor, transport and local
+    // command loop. The closed source-selected profile changes only static help
+    // and status text; command parsing and dispatch remain in their typed adapters.
+    auto read_input_line(builtin::ConsoleSession& session, bool after_cr, bool named) -> InputLine {
+        Line64 line = Line64(after_cr);
+        while (true) {
+            const builtin::ConsoleSample sample = session.next();
+            if (sample.damaged) {
+                line.reject();
+            }
+            if (sample.byte_present) {
+                const ConsoleEvent event = line.consume(sample.byte);
+                bool okay = true;
+                if (event == ConsoleEvent::echo) {
+                    okay = session.put(sample.byte) == builtin::ConsolePutResult::success;
+                }
+                if (event == ConsoleEvent::erased) {
+                    okay = input_text(session, "\b \b");
+                }
+                if (event == ConsoleEvent::rejected) {
+                    okay = input_text(session,
+                        "\r\nLine rejected: too long, non-ASCII/control byte, or UART error.\r\naurora> ");
+                }
+                if (event == ConsoleEvent::help) {
+                    if (named) {
+                        okay = input_text(session,
+                            "\r\nwrite NAME TEXT  Write a named RAM file (0..49 printable ASCII bytes)\r\ncat NAME         Read a named RAM file\r\nhelp             Show commands\r\nstatus           Show static capacity and owner availability\r\nexit             Close this session and discard all data\r\naurora> ");
+                    } else {
+                        okay = input_text(session,
+                            "\r\nput [text]  Replace the session scratchpad (0..49 printable ASCII bytes)\r\nappend [text]  Append to the existing scratchpad (total at most 49 bytes)\r\nget         Read the session scratchpad\r\ncrc         Compute CRC32C of the session scratchpad\r\nhelp        Show commands\r\nstatus      Show static capacity and service availability\r\nexit        Close this session and discard all data\r\naurora> ");
+                    }
+                }
+                if (event == ConsoleEvent::status) {
+                    if (named) {
+                        okay = input_text(session,
+                            "\r\nstatus: capacity=4 files; names=1..8 characters; values=0..49 printable ASCII bytes; command ceiling=64; retained owner=available\r\naurora> ");
+                    } else {
+                        okay = input_text(session,
+                            "\r\nstatus: capacity=49 printable ASCII bytes; command ceiling=64; retained service=available\r\naurora> ");
+                    }
+                }
+                if (event == ConsoleEvent::exit) {
+                    if (input_text(session, "\r\nAURORA_CONSOLE_EXIT\r\n")) {
+                        return InputLine(line, InputLineKind::requested_exit);
+                    }
+                    okay = false;
+                }
+                if (event == ConsoleEvent::empty) {
+                    okay = input_text(session, "\r\naurora> ");
+                }
+                if (event == ConsoleEvent::unknown) {
+                    return InputLine(line, InputLineKind::command);
+                }
+                if (!okay) {
+                    return InputLine(line, InputLineKind::output_failure);
+                }
+            }
+        }
+        return InputLine(line, InputLineKind::output_failure);
+    }
+}

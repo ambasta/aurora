@@ -23,7 +23,7 @@ image and guest qualification remains revision-specific.
 Boot-exclusive ordinary and RAM callers now use one private typed continuation
 owner with a write-once composition kind, full empty-state admission and member-only
 scrubbing. Overlapping service/console/domain continuations remain independent;
-this does not integrate a protected namespace or establish a mapped-page saving.
+this owner sharing alone establishes no mapped-page saving.
 
 Generated calls preserve complete span descriptors with compact copies and
 initialize service-record gaps without redundant payload clearing. This recovers
@@ -48,7 +48,7 @@ now leaves 14 canonical images (11 UEFI, 3 BIOS): every fault mode is a
 boot-selected fixture case (loader, ACPI, PCI, BAR and IVRS cases through the fw_cfg
 platform fixture; framebuffer, graphical-console, console and owned-bytes rows
 through the display and device fixtures; IPC, budget, dispatcher, user-phase and
-resume rows through the one service fixture; RAM file, RAM scratchpad, blocking-call
+resume rows through the one service fixture; RAM file, RAM scratchpad, protected namespace, blocking-call
 and snapshot rows through the storage fixture; file-call, owned-text and
 console-region rows through the text fixture, each row running its former image's
 user images from a packed bank),
@@ -61,9 +61,10 @@ keeps the program fixture, the text fixture and the storage fixture apart
 ([why](kernel-fixture-consolidation.md#still-separate)). Each image
 build runs one compiler-fact stack check and one image/W^X/symbol-policy check
 in place of the former per-profile admission scripts.
-The storage bank reserves eleven pages after tightening its small blocking-snapshot
-caller to a one-page link/packing cap; actual user mappings and runtime admission
-are unchanged. This reserves no new image and does not qualify namespace integration.
+The storage bank reserves sixteen pages, including the namespace's two-page caller
+and three-page owner, with a closed 2/3/1 row policy. The small blocking-snapshot
+caller retains its one-page cap. The payload reservation, arena and domain limits
+are unchanged; the namespace adds rows, not a new canonical image.
 The compiler-semantics runners now compile one packed program per test through
 `tests/compiler/native_runner.py`, with fixed cases as `.cases` data beside each
 runner; the token-scan, UTF-8, JSON and package library
@@ -83,10 +84,13 @@ host-call arity, documented verifier limits, diagnostics); frames, save slots,
 probe totals, instruction IDs and verifier metrics are checked as bounds and
 relations against the compiler's stack/ABI facts.
 
-The console adapters now share one typed four-record namespace core without
-command parsing or reply presentation. Its copied owner sizes and supervisor-held
-commit boundary are unchanged; a surviving protected namespace owner still needs
-an independently reviewed lifetime and recovery design.
+The console adapters share one typed four-record namespace core without command
+parsing or reply presentation. The opt-in [protected volatile namespace](native-console-service.md#protected-volatile-namespace)
+now retains that core in a CPL3 Aurora owner across bounded `write`/`cat` commands.
+It uses copied caller windows and explicit commit/loss outcomes, never a supervisor
+copy of committed file contents. Owner failure/reset loses all data; this is not
+mounted or durable storage. Production console storage is unchanged. Image/stack
+admission and guest qualification remain revision-specific.
 
 Next dependencies: [roadmap](roadmap.md). Required checks:
 [development and qualification](developer-test-contract.md).
