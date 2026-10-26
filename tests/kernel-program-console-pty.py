@@ -630,7 +630,7 @@ def validate(
         (int(grant), int(length))
         for grant, length in re.findall(
             r"AURORA_PROGRAM_COMMAND_BEGIN: grant=(\d+) length=(\d+) domains=2 "
-            r"kind=(?:upper-file|file|upper-note|upper|note)\r?\n",
+            r"kind=(?:append-file|upper-file|file|upper-note|upper|note)\r?\n",
             text,
         )
     ]
@@ -651,7 +651,7 @@ def validate(
     command_matches = list(
         re.finditer(
             r"AURORA_PROGRAM_COMMAND_BEGIN: grant=\d+ length=(\d+) domains=2 "
-            r"kind=(upper-file|file|upper-note|upper|note)\r?\n(.*?)"
+            r"kind=(append-file|upper-file|file|upper-note|upper|note)\r?\n(.*?)"
             r"AURORA_PROGRAM_COMMAND_END: success=([01]) used=0 epoch=(\d+)\r?\n([^\r\n]*)",
             text,
             re.S,
@@ -669,7 +669,10 @@ def validate(
     for command_index, (length, kind, part, success, ending_epoch, result) in enumerate(command_parts):
         need((kind == "note") == (command_index in expected_reads), "Unexpected note/upper command")
         need((kind == "upper-note") == (command_index in expected_saves), "Unexpected saved-output command")
-        need((kind in ("file", "upper-file")) == (command_index in expected_files), "Unexpected named-file command")
+        need(
+            (kind in ("file", "upper-file", "append-file")) == (command_index in expected_files),
+            "Unexpected named-file command",
+        )
         if kind in ("upper-note", "upper-file"):
             marker = "File saved." if kind == "upper-file" else "Note saved."
             if kind == "upper-note":
@@ -706,11 +709,11 @@ def validate(
             rounds = len(expected or "") + 1
             sources = {"request": 12, "service": 11, "completion": 13}
             missing_count += int(expected is None and success == "1")
-        if kind in ("file", "upper-file"):
+        if kind in ("file", "upper-file", "append-file"):
             planned = expected_files[command_index]
             command = planned["command"]
             expected = planned["value"]
-            parsed = re.fullmatch(r"(cat|upper) ([A-Za-z0-9_.-]{1,8})", command)
+            parsed = re.fullmatch(r"(cat|upper|append) ([A-Za-z0-9_.-]{1,8})(?: (.*))?", command)
             need(parsed and parsed[2] not in ("note", ".", ".."), "Invalid expected file command")
             need(int(length) == len(command), "Named-file trace must retain original command length")
             need(
@@ -718,14 +721,27 @@ def validate(
                 "Unbounded or nonprintable expected file value",
             )
             saving = parsed[1] == "upper" and expected is not None
-            need(kind == ("upper-file" if saving else "file"), "Wrong named-file command kind")
+            appending = parsed[1] == "append"
+            need((parsed[3] is not None) == appending, "Only append carries a canonical suffix")
+            need(
+                kind == ("append-file" if appending else "upper-file" if saving else "file"),
+                "Wrong named-file command kind",
+            )
             rounds = len(expected or "") + 1
-            sources = {"request": 12, "service": 11, "completion": 14 if saving else 13}
+            sources = {"request": 12, "service": 15 if appending else 11, "completion": 14 if saving else 13}
             file_missing_count += int(expected is None and success == "1")
             need(
                 result
                 == (
-                    ("File saved." if saving else "File is missing." if expected is None else "output> " + expected)
+                    (
+                        planned["reply"]
+                        if appending
+                        else "File saved."
+                        if saving
+                        else "File is missing."
+                        if expected is None
+                        else "output> " + expected
+                    )
                     if success == "1"
                     else "Program stopped: checked fault or budget exhausted; output discarded."
                 ),
@@ -819,15 +835,16 @@ def validate(
             "AURORA_UEFI_TIMER_PENDING:" in text and "AURORA_UEFI_TIMER_DRAIN:" in text,
             "Pending IRQ did not drain under the old runtime owner",
         )
-        transforming_parts = [part for _, kind, part, _, _, _ in command_parts if kind == "upper-file"]
-        if transforming_parts:
-            need(
-                any(
-                    "AURORA_UEFI_TIMER_PENDING:" in part and "AURORA_UEFI_TIMER_DRAIN:" in part
-                    for part in transforming_parts
-                ),
-                "Named-file transformation lacks its own pending IRQ ownership/drain evidence",
-            )
+        for changed_kind in ("upper-file", "append-file"):
+            changing_parts = [part for _, kind, part, _, _, _ in command_parts if kind == changed_kind]
+            if changing_parts:
+                need(
+                    any(
+                        "AURORA_UEFI_TIMER_PENDING:" in part and "AURORA_UEFI_TIMER_DRAIN:" in part
+                        for part in changing_parts
+                    ),
+                    "Named-file mutation lacks its own pending IRQ ownership/drain evidence: " + changed_kind,
+                )
     need(text.count("AURORA_PROGRAM_CONSOLE_QUIET: timer=masked isr=0 irr=0 domains=0") == 1, "Missing quiescent exit")
     need(text.count("AURORA_CONSOLE_EXIT") == 1, "Missing single exit")
     return dict(
@@ -884,10 +901,16 @@ def main():
     parser.add_argument("--mode", default="program-console")
     parser.add_argument("--build-dir", type=Path, required=True)
     parser.add_argument("--read-only-recovery", action="store_true")
+    parser.add_argument("--append-recovery", action="store_true")
     args = parser.parse_args()
     need(
         not args.read_only_recovery or args.mode.endswith(("-fault", "-budget")),
         "Read-only recovery requires a fault or budget profile",
+    )
+    need(not (args.append_recovery and args.read_only_recovery), "Choose one recovery command")
+    need(
+        not args.append_recovery or args.mode.endswith(("-fault", "-budget")) or args.mode in FAILSTOP_REASONS,
+        "Append recovery requires an existing fault/budget/hostile profile",
     )
     need(args.mode.startswith("program-"), "Expected a protected program-console profile")
     build = args.build_dir.resolve()
@@ -943,6 +966,7 @@ def main():
         "status": "incomplete",
         "mode": args.mode,
         "read_only_recovery": args.read_only_recovery,
+        "append_recovery": args.append_recovery,
         "clock": "tcg-original-clock",
         "purpose": "guest",
     }
@@ -1093,17 +1117,120 @@ def main():
                     need("output> " + expected + "\r\n" in part, "Actual protected file contents differ")
                     expected_outputs.append(expected)
 
+            def file_append(name, suffix, expected, failure=False):
+                nonlocal commands
+                command = "append " + name + " " + suffix
+                reply = f"wrote {name}: {len(suffix)} byte" + ("" if len(suffix) == 1 else "s")
+                begin = len(transcript)
+                send(command.encode("ascii") + b"\n")
+                receive(b"aurora> ", begin)
+                part = bytes(transcript[begin:]).decode("ascii")
+                expected_files[commands] = {"command": command, "value": expected, "reply": reply}
+                commands += 1
+                need(
+                    "output> " not in part and "File saved." not in part,
+                    "Append has only its existing named-file acknowledgment",
+                )
+                if failure:
+                    need(reply not in part and "output discarded." in part, "Failed append must not publish")
+                else:
+                    need(
+                        part.count("\r\n" + reply + "\r\n") == 1,
+                        "Protected append keeps exact one-shot suffix-count acknowledgment",
+                    )
+                need("kind=append-file" in part, "Append must run real protected participants")
+
             if serial_fixture_byte(args.mode):
                 receive(b"AURORA_FIXTURE_READY", 0)
                 send(bytes([FIXTURE_MODES[args.mode][1]]))
             receive(b"aurora> ", 0)
             tty.setraw(master)
+            if args.mode == "program-append-response":
+                file_write("a", "prefix")
+                begin = len(transcript)
+                send(b"append a suffix\n")
+                receive(b"AURORA_PROGRAM_APPEND_CLEARED: saved=0 revision=1 domains=0 leases=0\r\n", begin)
+                need(transport.wait_exit(process, 5) == 35, "Failed append response did not take terminal exit")
+                while select.select([master], [], [], 0)[0]:
+                    try:
+                        tail = os.read(master, 65536)
+                    except OSError as error:
+                        if error.errno != errno.EIO:
+                            raise
+                        break
+                    if not tail:
+                        break
+                    transcript.extend(tail)
+                text = bytes(transcript).decode("ascii")
+                part = bytes(transcript[begin:]).decode("ascii")
+                settled = re.search(
+                    r"AURORA_PROGRAM_COMMAND_END: success=1 used=0 epoch=(\d+)\r\n"
+                    r"AURORA_PROGRAM_APPEND_SETTLED: operation=1 revision=3\r\n"
+                    r"wrote\r\nAURORA_PROGRAM_APPEND_RESPONSE_FAILED: committed=1 preserved=1\r\n"
+                    r"AURORA_PROGRAM_APPEND_CLEARED: saved=0 revision=1 domains=0 leases=0\r\n$",
+                    part,
+                )
+                need(settled, "Committed append, partial response, retained bytes and final clearing lack exact order")
+                need(
+                    part.count("AURORA_PROGRAM_COMMAND_BEGIN:") == part.count("AURORA_PROGRAM_COMMAND_END:") == 1
+                    and part.count("kind=append-file") == part.count("AURORA_PROGRAM_APPEND_SETTLED:") == 1,
+                    "Response failure replayed or changed the protected append",
+                )
+                runs = re.findall(
+                    r"AURORA_UEFI_USER_RUN: epoch=(\d+) role=(client|service) "
+                    r"phase=(request|service|completion) client=0 transaction=(\d+) source=(\d+) root=\d+",
+                    part,
+                )
+                need(
+                    [(run[1], run[2], run[4]) for run in runs]
+                    == [("client", "request", "12"), ("service", "service", "15"), ("client", "completion", "13")] * 13
+                    and int(settled[1]) == int(runs[-1][0]),
+                    "Append response cut preceded complete authenticated candidate and EOF",
+                )
+                epochs = [int(run[0]) for run in runs]
+                need(all(a < b for a, b in zip(epochs, epochs[1:])), "Response cut reused a runtime epoch")
+                need(
+                    all(
+                        marker not in part
+                        for marker in (
+                            "aurora> ",
+                            "wrote a:",
+                            "File saved.",
+                            "output> ",
+                            "output discarded.",
+                            "AURORA_CONSOLE_EXIT",
+                            "AURORA_PROGRAM_CONSOLE_QUIET:",
+                            "AURORA_UEFI_OK",
+                            "_FAIL:",
+                        )
+                    ),
+                    "Failed acknowledgment reported success, rollback, recovery or another prompt",
+                )
+                events = validate_domain_events(text, admitted["user_images"], admitted["timer"])
+                need(not any(event[0] == 6 for event in events), "Response cut was mistaken for a worker fault")
+                metrics.update(
+                    status="passed",
+                    exit_status=35,
+                    commands=1,
+                    runs=len(runs),
+                    committed_revision=3,
+                    operation=1,
+                    partial_response="wrote",
+                    retained_then_cleared=True,
+                )
+                print("PASS: committed append survives actual partial response failure without replay; exit clears RAM")
+                return
             if args.mode in FAILSTOP_REASONS:
-                begin = len(transcript)
-                send(b"upper\n")
-                receive(b"text> ", begin)
-                begin = len(transcript)
-                send(b"hostile envelope\n")
+                if args.append_recovery:
+                    file_write("hostile", "original")
+                    begin = len(transcript)
+                    send(b"append hostile suffix\n")
+                else:
+                    begin = len(transcript)
+                    send(b"upper\n")
+                    receive(b"text> ", begin)
+                    begin = len(transcript)
+                    send(b"hostile envelope\n")
                 reason = "AURORA_UEFI_RUNTIME_FAIL: " + FAILSTOP_REASONS[args.mode]
                 receive((reason + "\r\n").encode(), begin)
                 status = transport.wait_exit(process, 5)
@@ -1264,8 +1391,8 @@ def main():
                 file_local("append missing x", "files: not found (RAM-only).")
                 file_local("append note x", "files: note is reserved.")
                 file_write("alpha", "Hello,")
-                file_local("append alpha  Aurora", "wrote alpha: 7 bytes")
-                file_local("append alpha ", "wrote alpha: 0 bytes")
+                file_append("alpha", " Aurora", "Hello, Aurora")
+                file_append("alpha", "", "Hello, Aurora")
                 file_local("copy alpha beta", "wrote beta: 13 bytes")
                 file_command("cat", "beta", "Hello, Aurora")
                 file_local("copy missing beta", "files: not found (RAM-only).")
@@ -1283,7 +1410,11 @@ def main():
                 file_write("alpha", "")
                 file_command("upper", "alpha", "")
                 file_command("cat", "alpha", "")
-                file_write("abcdefgh", "z" * 49)
+                file_append("alpha", "", "")
+                file_append("alpha", " spaced ", " spaced ")
+                file_command("cat", "alpha", " spaced ")
+                file_write("abcdefgh", "z" * 48)
+                file_append("abcdefgh", "z", "z" * 49)
                 file_command("cat", "abcdefgh", "z" * 49)
                 file_local("append abcdefgh x", "files: invalid name or content.")
                 file_command("upper", "abcdefgh", "Z" * 49)
@@ -1300,12 +1431,13 @@ def main():
                 file_command("cat", "fifth", None)
                 # Existing selections remain writable even when all slots are full.
                 file_write("alpha", "full store")
-                file_command("upper", "alpha", "FULL STORE")
-                file_command("cat", "alpha", "FULL STORE")
+                file_append("alpha", "!", "full store!")
+                file_command("upper", "alpha", "FULL STORE!")
+                file_command("cat", "alpha", "FULL STORE!")
                 file_command("cat", "beta", "Keep Lower")
                 file_command("cat", "delta", "Last untouched")
                 file_local("write alpha " + "q" * 50, "files: invalid name or content.")
-                file_command("cat", "alpha", "FULL STORE")
+                file_command("cat", "alpha", "FULL STORE!")
                 file_local("rm beta", "files: removed (RAM-only).")
                 file_command("cat", "beta", None)
                 file_write("newfile", "Reused slot")
@@ -1341,8 +1473,9 @@ def main():
             elif args.mode == "program-pending":
                 file_write("pending", "pending file")
                 file_write("other", "Remain lower")
-                file_command("upper", "pending", "PENDING FILE")
-                file_command("cat", "pending", "PENDING FILE")
+                file_append("pending", " append", "pending file append")
+                file_command("upper", "pending", "PENDING FILE APPEND")
+                file_command("cat", "pending", "PENDING FILE APPEND")
                 file_command("cat", "other", "Remain lower")
                 note_write(b"pending note")
                 note_upper("PENDING NOTE")
@@ -1350,12 +1483,18 @@ def main():
             else:
                 file_write("recover", "recover this file")
                 file_write("other", "Remain lower")
-                if args.read_only_recovery:
+                if args.append_recovery:
+                    file_append("recover", " appended", "recover this file appended", failure=True)
+                elif args.read_only_recovery:
                     file_command("cat", "recover", "recover this file", failure=True)
                 else:
                     file_command("upper", "recover", "RECOVER THIS FILE", failure=True)
                 file_command("cat", "recover", "recover this file")
                 file_command("cat", "other", "Remain lower")
+                if args.append_recovery:
+                    file_append("recover", " appended", "recover this file appended")
+                    file_command("cat", "recover", "recover this file appended")
+                    file_write("recover", "recover this file")
                 file_command("upper", "recover", "RECOVER THIS FILE")
                 file_command("cat", "recover", "RECOVER THIS FILE")
                 file_command("cat", "other", "Remain lower")

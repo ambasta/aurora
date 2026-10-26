@@ -10,9 +10,10 @@ export namespace console {
         FileName name;
         u64 revision;
         u64 replacement;
+        FileValue suffix;
     public:
-        FileSelection(FileName selected, u64 version, u64 writable) : name(selected), revision(version),
-            replacement(writable) {
+        FileSelection(FileName selected, u64 version, u64 writable, FileValue addition) : name(selected),
+            revision(version), replacement(writable), suffix(addition) {
         }
         auto selected_name() const -> FileName {
             const FileName result = name;
@@ -22,7 +23,14 @@ export namespace console {
             return revision;
         }
         auto writable() const -> bool {
-            return replacement == 1u64;
+            return replacement == 1u64 || replacement == 2u64;
+        }
+        auto appending() const -> bool {
+            return replacement == 2u64;
+        }
+        auto appended_value() const -> FileValue {
+            const FileValue result = suffix;
+            return result;
         }
     };
 
@@ -48,7 +56,30 @@ export namespace console {
             }
             return reply;
         }
+        // A successful preparation exposes only the frozen prefix; no candidate
+        // is assembled and the store/revision remain unchanged.
+        auto prepare_append(FileAppendRequest request) const -> FileReply {
+            const FileName name = request.selected_name();
+            const FileValue suffix = request.appended_value();
+            const FileReply reply = files.prepare_append(name, suffix);
+            if (reply.status() == FileEvent::read && revision == 18446744073709551615u64) {
+                FileReply rejected = FileReply();
+                rejected.select(FileEvent::invalid);
+                return rejected;
+            }
+            return reply;
+        }
         auto select(std::BinaryBuffer64 command, i64 count) const -> FileSelection {
+            if (command.starts_with(count, "append ")) {
+                const FileAppendRequest request = file_append_request(command, count);
+                const FileName name = request.selected_name();
+                const FileValue suffix = request.appended_value();
+                const FileReply reply = prepare_append(request);
+                if (reply.status() == FileEvent::read) {
+                    return FileSelection(name, revision, 2u64, suffix);
+                }
+                return FileSelection(name, 0u64, 0u64, suffix);
+            }
             i64 start = -1;
             if (command.starts_with(count, "cat ")) {
                 start = 4;
@@ -80,7 +111,8 @@ export namespace console {
             if (upper && reply.status() == FileEvent::read) {
                 writable = 1u64;
             }
-            return FileSelection(name, version, writable);
+            const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+            return FileSelection(name, version, writable, FileValue(empty, 0));
         }
         auto project(FileSelection selection) const -> FileReply {
             if (selection.version() == 0u64 || selection.version() != revision) {
@@ -100,11 +132,40 @@ export namespace console {
             }
             const FileName name = selection.selected_name();
             const FileValue value = FileValue(output, count);
+            i64 reported = value.size();
+            if (selection.appending()) {
+                const FileValue suffix = selection.appended_value();
+                bool valid = suffix.valid() && value.valid();
+                if (valid) {
+                    valid = suffix.size() <= 49 - current.size() && count == current.size() + suffix.size();
+                }
+                i64 index = 0;
+                while (valid && index < current.size()) {
+                    valid = output.at(index) == current.at(index);
+                    index = index + 1;
+                }
+                index = 0;
+                while (valid && index < suffix.size()) {
+                    valid = output.at(current.size() + index) == suffix.at(index);
+                    index = index + 1;
+                }
+                index = count;
+                while (valid && index < 64) {
+                    valid = output.at(index) == '\0';
+                    index = index + 1;
+                }
+                if (!valid) {
+                    FileReply rejected = FileReply();
+                    rejected.select(FileEvent::invalid);
+                    return rejected;
+                }
+                reported = suffix.size();
+            }
             const FileEvent event = files.write_file(name, value);
             if (event == FileEvent::written) {
                 revision = revision + 1u64;
             }
-            return file_write_reply(name, value.size(), event);
+            return file_write_reply(name, reported, event);
         }
     };
 }

@@ -94,9 +94,12 @@ Use `make smoke-console` or `make smoke-console-uefi` for automated PTY checks;
 both belong to `make smoke-all`, while `make test` remains native-only.
 
 The separate [protected-command console](docs/program-console-contract.md) runs
-`upper` and authenticated note and named RAM-file reads/atomic uppercase
-replacement through two CPL3 domains, with revision invalidation and fault/budget
-recovery. Its public commands perform local build/image/stack checks. The same checked
+`upper`, authenticated note and named RAM-file reads/atomic uppercase replacement,
+and named-file append through two CPL3 domains. Append constructs its candidate in
+an isolated worker, then publishes to the surviving supervisor-held store after
+complete acknowledgement and both domain retirements. Revision invalidation and
+fault/budget recovery remain bounded to the session; this is not durable storage.
+Its public commands perform local build/image/stack checks. The same checked
 image can be passed by explicit build directory to the guest oracle; changed
 images still require independent review and final qualification. It is the
 console of the one production UEFI image, which also renders it on the firmware

@@ -3,6 +3,7 @@
 # and response presenter borrow an existing Console grant. Copied records and
 # scalar results carry no authority.
 .text
+# PROGRAM_FILES_ABI: exact closed file store, selection and mutation records.
 # PROGRAM_SESSION_ABI: retained copied session and bounded completion facts.
 .global __au_runtime_program_session
 .hidden __au_runtime_program_session

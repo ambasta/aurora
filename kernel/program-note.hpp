@@ -1,6 +1,7 @@
 #pragma once
 #include "ipc-policy.hpp"
 #include "program-stream.hpp"
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -17,10 +18,12 @@ public:
     using Update = std::array<std::byte, 80>;
     static constexpr std::size_t record_bytes = 96;
     static constexpr std::size_t stack_reservation = 112;
+    static constexpr std::size_t stream_record_bytes = 168;
+    static constexpr std::size_t stream_stack_reservation = 176;
 
 private:
     Value saved_ = empty();
-    Value read_{};
+    Value read_{}, suffix_{};
     std::uint64_t generation_{};
     static constexpr auto empty() -> Value {
         Value result{};
@@ -92,10 +95,11 @@ public:
             input[136 + i] = std::byte((output.length() + 11) >> (8 * i));
         return true;
     }
-    [[nodiscard]] auto bind(const Value &projection, ipc::Endpoint service) -> bool {
-        if (bound() || !closed(projection) || service.slot() != 1 || service.generation() == 0)
+    [[nodiscard]] auto bind(const Value &projection, ipc::Endpoint service, const Value &suffix = {}) -> bool {
+        if (bound() || !closed(projection) || word(suffix, 64) > 49 || service.slot() != 1 || service.generation() == 0)
             return false;
         read_ = projection;
+        suffix_ = suffix;
         generation_ = service.generation();
         return true;
     }
@@ -117,8 +121,20 @@ public:
             output[24 + i] = read_[i];
         return true;
     }
+    [[nodiscard]] auto stage_stream(std::span<std::byte, stream_record_bytes> output,
+                                    ipc::Endpoint service,
+                                    std::uint64_t phase,
+                                    ipc::Request request) const -> bool {
+        if (!stage(output.first<record_bytes>(), service, phase, request))
+            return false;
+        std::copy(suffix_.begin(), suffix_.end(), output.begin() + record_bytes);
+        return true;
+    }
     auto release() -> void {
         generation_ = 0;
+        volatile std::byte *suffix = suffix_.data();
+        for (std::size_t i = 0; i < suffix_.size(); ++i)
+            suffix[i] = std::byte{0};
         volatile std::byte *data = read_.data();
         for (std::size_t i = 0; i < read_.size(); ++i)
             data[i] = std::byte{0};

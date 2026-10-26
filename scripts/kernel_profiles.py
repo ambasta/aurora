@@ -424,6 +424,8 @@ def user_images(
                 defines.append(
                     "SNAPSHOT_SERVICE=1" if snapshot or (blocking_call and not file_call) else "PROGRAM_NOTE_SERVICE=1"
                 )
+            if program and not file_call and index == 1:
+                defines.append("PROGRAM_APPEND_SERVICE=1")
         result[name] = dict(
             source=(
                 "examples/kernel-ram-scratchpad-client.au"

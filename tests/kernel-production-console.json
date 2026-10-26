@@ -9,6 +9,9 @@
     "cat note\r",
     "statuX\u007fs\r",
     "bogus\r",
+    "write a hello\r",
+    "append a  world\r",
+    "cat a\r",
     "ls\r"
   ],
   "console": [
@@ -47,8 +50,14 @@
     "status: protected Aurora programs; bounded copied data; timer budgets; capacity=64",
     "aurora> bogus",
     "Unknown command. Type help.",
+    "aurora> write a hello",
+    "wrote a: 5 bytes",
+    "aurora> append a  world",
+    "wrote a: 6 bytes",
+    "aurora> cat a",
+    "output> hello world",
     "aurora> ls",
-    "files: empty (RAM-only).",
+    "files: a",
     "aurora> "
   ]
 }

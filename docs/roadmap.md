@@ -47,8 +47,14 @@ or scheduler. The opt-in interactive scratchpad supplies real protected command
 input/output and explicit user-facing
 lifecycle outcomes, originally qualified in
 [#235](https://github.com/ambasta/aurora/pull/235), and now includes explicit atomic append
-to the existing volatile file and a read-only caller-computed CRC32C command. General program lifetime, mounted
-durable storage and broader service APIs remain dependencies.
+to the existing volatile file and a read-only caller-computed CRC32C command.
+Production named-file append now constructs its candidate in a fresh CPL3 worker,
+then publishes once to the surviving supervisor-held store after authenticated
+completion and both original domain retirements. This bounded append integration
+preserves the four-file session namespace; the separate scratchpad still loses
+its service-local contents on reset. Final-source qualification remains
+required. General program lifetime, mounted durable storage and broader service
+APIs remain dependencies.
 
 Build capability-scoped blocking request/reply on the bounded two-program
 suspend/resume mechanism, then integrate protected-program startup/lifecycle and file

@@ -4,6 +4,16 @@
 .ifdef PROGRAM_NOTE_SERVICE
 .set COPIED_SERVICE,1
 .endif
+# The program append worker adds one closed copied suffix. Its selected
+# source ABI is checked before this shared entry is assembled.
+.ifdef PROGRAM_APPEND_SERVICE
+.ifndef PROGRAM_NOTE_SERVICE
+.error "Append requires the copied note-service entry"
+.endif
+.set COPIED_RESERVATION,176
+.else
+.set COPIED_RESERVATION,112
+.endif
 .ifdef SERVE_SERVICE
 .ifdef CALL_CLIENT
 .error "Serve and Call entry roles are disjoint"
@@ -43,10 +53,11 @@ aurora_program_entry:
     cmpq $0,-8(%rsp)
     jne bad_entry
 .ifdef COPIED_SERVICE
-    # Fixed 96-byte record at S-112, followed by a 16-byte sentinel gap.
-    # Snapshot ends in zero padding; NoteRead64 owns the final length qword.
+    # Snapshot/file-call keep their 96-byte record at S-112. The append
+    # worker uses a 168-byte record at S-176, with an eight-byte sentinel gap.
+    # Snapshot ends in padding; NoteRead64 owns each explicit length qword.
     # Reserve before the envelope: calls and locals must grow below the record.
-    sub $112,%rsp
+    sub $COPIED_RESERVATION,%rsp
 .endif
     push %rdi
     push %rdx
@@ -185,7 +196,7 @@ skip_context_probe:
     pop %rdx
     pop %rdi
 .ifdef COPIED_SERVICE
-    add $112,%rsp
+    add $COPIED_RESERVATION,%rsp
 .endif
     mov $1,%esi
     int $0x81
