@@ -53,6 +53,9 @@ keeps the program fixture, the text fixture and the storage fixture apart
 ([why](kernel-fixture-consolidation.md#still-separate)). Each image
 build runs one compiler-fact stack check and one image/W^X/symbol-policy check
 in place of the former per-profile admission scripts.
+The storage bank reserves eleven pages after tightening its small blocking-snapshot
+caller to a one-page link/packing cap; actual user mappings and runtime admission
+are unchanged. This reserves no new image and does not qualify namespace integration.
 The compiler-semantics runners now compile one packed program per test through
 `tests/compiler/native_runner.py`, with fixed cases as `.cases` data beside each
 runner; the token-scan, UTF-8, JSON and package library

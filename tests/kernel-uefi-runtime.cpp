@@ -112,13 +112,16 @@ auto main() -> int {
     check(OnePageBank::kernel_flags(0xba000) == 1 && OnePageBank::kernel_flags(0xbb000) == 0 &&
           OnePageBank::table_offset(2) == 0xd0000);
 #endif
-    // The storage and text fixtures pack nine and six slots of their images' own
-    // page caps into twelve pages; only those pages are kernel-read-only, and a
-    // bank past the sixteen-page gap before the stack frames overlaps them.
-    using Packed = aurora::uefi::RuntimeLayoutProfile<2, 9, 3, 12>;
-    check(Packed::valid(0x100000) && aurora::uefi::RuntimeLayoutProfile<2, 6, 3, 16>::valid(0x100000) &&
+    // Storage's small blocking-snapshot caller needs only one packed page:
+    // nine slots use eleven pages, while text's six slots still use twelve.
+    // Only the reserved bank is kernel-read-only; a seventeenth page overlaps stacks.
+    using Storage = aurora::uefi::RuntimeLayoutProfile<2, 9, 3, 11>;
+    using Text = aurora::uefi::RuntimeLayoutProfile<2, 6, 3, 12>;
+    check(Storage::valid(0x100000) && Text::valid(0x100000) &&
+          aurora::uefi::RuntimeLayoutProfile<2, 6, 3, 16>::valid(0x100000) &&
           !aurora::uefi::RuntimeLayoutProfile<2, 9, 3, 17>::valid(0x100000));
-    check(Packed::kernel_flags(0xbb000) == 1 && Packed::kernel_flags(0xbc000) == 0 && Packed::bank_bytes == 0xc000);
+    check(Storage::kernel_flags(0xba000) == 1 && Storage::kernel_flags(0xbb000) == 0 && Storage::bank_bytes == 0xb000);
+    check(Text::kernel_flags(0xbb000) == 1 && Text::kernel_flags(0xbc000) == 0 && Text::bank_bytes == 0xc000);
     check(Layout::stack_frame_offset(15) == 0xcf000 && Layout::stack_frame_offset(16) == Layout::arena_bytes);
     check(Layout::user_stack_begin(0) == 0x10000200000ULL && Layout::user_stack_begin(1) == 0x10000400000ULL);
     check(Layout::user_stack_end(1) == 0x10000404000ULL);
