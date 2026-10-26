@@ -349,3 +349,79 @@ function object_literal_empty_bounds
     EndSpan 64
     Return
 end
+function object_span_arguments
+  result i64
+  frame 64
+  span 64
+    BorrowLiteralSpan "\x00\x80\xff" 64
+    Constant 7
+    Push
+    Constant 11
+    Push
+    Constant 13
+    Push
+    Constant 8 u8
+    Push
+    Constant 1 bool
+    Push
+    AggregateCall object_span_mixed [0*6] 0 [0 0 64 0 0 0]
+    EndSpan 64
+    Return
+end
+function object_span_mixed
+  result i64
+  params [i64 i64 span i64 u8 bool]
+  frame 96
+  span 56
+  slot 64 i64
+  slot 72 i64
+  slot 80 i64
+  slot 81 u8
+  slot 96 bool
+    BindParameter 0 64
+    BindParameter 1 72
+    BindSpanParameter 2 56
+    BindParameter 3 80
+    BindParameter 4 81 u8
+    BindParameter 5 96 bool
+    Load 64
+    Push
+    Constant 7
+    Compare Equal
+    BranchFalse 1
+    Load 72
+    Push
+    Constant 11
+    Compare Equal
+    BranchFalse 1
+    Load 80
+    Push
+    Constant 13
+    Compare Equal
+    BranchFalse 1
+    Load 81 u8
+    Push
+    Constant 8 u8
+    Compare Equal u8
+    BranchFalse 1
+    Load 96 bool
+    BranchFalse 1
+    SpanLength 56
+    Push
+    Constant 3
+    Compare Equal
+    BranchFalse 1
+    Constant 1
+    SpanLoad 56
+    Push
+    Constant 128 u8
+    Compare Equal u8
+    BranchFalse 1
+    EndSpan 56
+    Constant 42
+    Return
+    Label 1
+    EndSpan 56
+    Constant -1
+    Return
+end

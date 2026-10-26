@@ -17,6 +17,26 @@ export namespace compiler_x86 {
     }
     auto object_copy_record_words(EmitWorkspace& workspace, ObjectWorkspace& object, i64 source, i64 destination,
         i64 bytes) -> bool {
+        if (bytes == 56) {
+            // These fixed descriptor calls copy an admitted RBP-local slot to a
+            // fresh, disjoint RSP argument record. Capture RSP before saving the
+            // scalar argument registers, and retain all seven descriptor words.
+            emit_lea(workspace, object, destination, Register::rax);
+            emit_push_register(workspace, object, Register::rsi);
+            emit_push_register(workspace, object, Register::rdi);
+            emit_push_register(workspace, object, Register::rcx);
+            workspace.grow_stack(24);
+            emit_lea(workspace, object, source, Register::rsi);
+            emit_mov_rr(workspace, object, Register::rax, Register::rdi);
+            emit_mov_imm(workspace, object, bytes, Register::rcx);
+            emit_cld(workspace, object);
+            emit_rep_movsb(workspace, object);
+            emit_pop_register(workspace, object, Register::rcx);
+            emit_pop_register(workspace, object, Register::rdi);
+            emit_pop_register(workspace, object, Register::rsi);
+            workspace.shrink_stack(24);
+            return workspace.ok();
+        }
         i64 byte = 0;
         while (byte < bytes) {
             const i64 packed_address13 = workspace.advance_address(source, byte);
@@ -131,7 +151,9 @@ export namespace compiler_x86 {
         const i64 bytes =((payload + 15) / 16) * 16;
         emit_reserve_stack(workspace, object, bytes);
         const i64 packed_address23 = workspace.pack_address(1, 0);
-        clear_bytes(workspace, object, 0, bytes, packed_address23);
+        // Every admitted payload is stored below before the call. Clear only
+        // the record tail and representation gaps, never overwritten payload.
+        clear_bytes(workspace, object, payload, bytes, packed_address23);
         index = 0;
         while (index < count) {
             const i64 type = parameter_type(metadata, target, index);
@@ -169,9 +191,11 @@ export namespace compiler_x86 {
                             const i64 source = operand_lane(store, instruction, 6, index);
                             const i64 packed_address28 = workspace.pack_address(0, source);
                             const i64 packed_address29 = workspace.pack_address(1, offset);
+                            clear_padding(workspace, object, metadata, class_id, packed_address29);
                             copy_class(workspace, object, metadata, class_id, packed_address28, packed_address29);
                         } else {
                             const i64 packed_address30 = workspace.pack_address(1, offset);
+                            clear_bytes(workspace, object, storage_width(metadata, type), 8, packed_address30);
                             store_argument(workspace, object, metadata, type, index, packed_address30);
                         }
                     }

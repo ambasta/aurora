@@ -20,6 +20,11 @@ evidence and sizes private physical-page metadata to each pool's capacity,
 without changing parsing, diagnostics, admission or page-lease ownership. Final
 image and guest qualification remains revision-specific.
 
+Generated calls preserve complete span descriptors with compact copies and
+initialize service-record gaps without redundant payload clearing. This recovers
+production executable-page headroom without changing image caps or call authority;
+qualification and compile-time measurements remain revision-specific.
+
 Component details: [compiler](../compiler/ARCHITECTURE.md),
 [libraries](../library/README.md), [kernel](../kernel/README.md),
 [protected runtime](../kernel/uefi/runtime.md), [allocation](kernel-owned-bytes.md)
