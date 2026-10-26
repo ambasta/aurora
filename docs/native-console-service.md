@@ -32,9 +32,11 @@ are included in `make smoke-all`; the native `make test` graph does not run QEMU
 Hosted sanitizers instrument the C++ adapters, not generated Aurora code.
 
 The ordinary UEFI console's `device-fixture` profile emits its Aurora
-editor/session source directly as checked ELF objects. Their native entry adapter
-selects private source symbols from compiler ABI facts and still uses GNU assembly
-and linking. BIOS, graphical and protected session sources retain their existing
+editor/session source directly as checked ELF objects with LOCAL definitions and
+only referenced reflection helpers. Aurora composes its two existing hidden
+native entries with ABI-fact-selected source symbols; the separately rendered
+wrapper gets an empty non-executable GNU-stack section. GNU assembly and final
+linking remain. BIOS, graphical and protected session sources retain their existing
 text route. Image, W^X, symbol and mixed-stack checks and all reservations remain
 unchanged; direct output is not a performance or full native-binutils claim.
 Missing tools or firmware are blocked verification, never a pass.
@@ -43,7 +45,7 @@ The separate source UART object used by BIOS console, UEFI `device-fixture` and
 the hosted UART driver now uses Aurora's private object composer. Its unchanged
 GNU-as adapter exports only the three existing hidden UART entries; source
 definitions stay LOCAL and port read/write imports remain unchanged. The
-editor/session composer above stays on its GNU route. Final links, runtime
+editor/session composer above preserves its console next/put imports. Final links, runtime
 authority, production UART policy and image/stack limits are unchanged.
 
 ## Input behavior

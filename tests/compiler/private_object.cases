@@ -56,6 +56,11 @@ wrapper-uart-prefix wrapper symbol-name aurora_hosted_private_object_test 0 0 __
 wrapper-uart-initialize-suffix wrapper symbol-name aurora_hosted_private_object_test 0 0 __au_runtime_uart_initialize_x reject
 wrapper-uart-next-suffix wrapper symbol-name aurora_hosted_private_object_test 0 0 __au_runtime_uart_next_x reject
 wrapper-uart-put-suffix wrapper symbol-name aurora_hosted_private_object_test 0 0 __au_runtime_uart_put_x reject
+wrapper-console-prefix wrapper symbol-name aurora_hosted_private_object_test 0 0 __au_runtime_console_ reject
+wrapper-console-entry-suffix wrapper symbol-name aurora_hosted_private_object_test 0 0 __au_runtime_console_entry_x reject
+wrapper-console-value-suffix wrapper symbol-name aurora_hosted_private_object_test 0 0 __au_runtime_console_value_x reject
+wrapper-console-next-export wrapper symbol-name aurora_hosted_private_object_test 0 0 __au_runtime_console_next reject
+wrapper-console-put-export wrapper symbol-name aurora_hosted_private_object_test 0 0 __au_runtime_console_put reject
 wrapper-import-type wrapper symbol object_loop 4 1 18 reject
 wrapper-import-value wrapper symbol object_loop 8 8 1 reject
 wrapper-import-size wrapper symbol object_loop 16 8 1 reject

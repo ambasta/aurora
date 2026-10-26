@@ -22,9 +22,9 @@ literal data and RIP-relative references, plus size/public-field-count reflectio
 helpers with the same defining-module visibility and symbol-selection rules as
 text output. Neither backend adds reflection access to private values.
 
-Native UART and hosted frontend wrappers remain separate bootstrap adapters.
-`private_object.au` composes frontend B/C and the existing BIOS console, UEFI
-device-fixture and hosted UART objects from the source emitter's eight-section
+Native console, UART and hosted frontend wrappers remain separate bootstrap adapters.
+`private_object.au` composes frontend B/C, the ordinary UEFI console/session and
+the existing BIOS console, UEFI device-fixture and hosted UART objects from the source emitter's eight-section
 ELF64LE x86-64 object and a GNU-as wrapper object. It keeps source
 symbol indices and LOCAL bindings unchanged, appends aligned wrapper text and
 hidden exports, and remaps wrapper PLT32 references to the selected source text
@@ -35,16 +35,17 @@ maps and output; the native adapter only lends three readonly byte spans and
 transports results. Artifact reads retain the 64 MiB ceiling and atomic output
 protects all input identities; language-source reads remain limited to 1 MiB.
 Wrapper definitions admit the existing `aurora_hosted_*` names and exactly
-`__au_runtime_uart_initialize`, `__au_runtime_uart_next` and
-`__au_runtime_uart_put`; other runtime exports remain rejected. The standalone
-UEFI console/session composer retains its GNU partial-link route. Existing hidden
+`__au_runtime_uart_initialize`, `__au_runtime_uart_next`, `__au_runtime_uart_put`,
+`__au_runtime_console_entry` and `__au_runtime_console_value`; other runtime
+exports remain rejected. Standalone object wrappers receive their own empty
+non-executable GNU-stack section; shared templates and text rendering are unchanged. Existing hidden
 wrapper exports and runtime imports are unchanged; this adds no Aurora C ABI.
 The pinned predecessor still emits frontend A as text. C1 emits frontend B
 directly as an object linked into C2; C2 emits frontend C for source-object,
 composed-object, ABI/header and stack-fact convergence. The private-object test
-also compares normalized frontend and UART text, readonly data, symbols and
-relocations with GNU composition; the generated UART runs in its existing hosted
-driver and guest families. No checkpoint bump is needed for this adoption.
+also compares normalized frontend, UART and console text, readonly data, symbols
+and relocations with GNU composition; generated console and UART objects run in
+their existing hosted drivers and guest families. No checkpoint bump is needed for this adoption.
 GNU assembler/linker and Linux host I/O remain
 bootstrap dependencies for frontend A, other text output, native adapters and
 final links.
@@ -364,11 +365,13 @@ only helpers directly referenced by runtime metadata queries in retained, valida
 IR. Every source function, including unused imports, is still checked before
 retention; queried helper bodies and scope visibility are unchanged. The default
 keeps all existing external reflection symbols. Closed images must not rely on
-handwritten/native calls to helpers that source queries do not retain. Only the
-protected program-console supervisor and singleton Call caller images opt in;
-their linked admission checks bind every retained helper to a generated source
-query. Call services, other native profiles and other user-program outputs retain
-their existing default inventories.
+handwritten/native calls to helpers that source queries do not retain. Closed
+supervisors and their packed fixtures, source UART objects, the ordinary UEFI
+console/session and the hosted frontend opt in, as do selected closed user images.
+Other outputs retain their existing default inventories. Object composition
+requires this closed reflection inventory and LOCAL source definitions. The compiler
+retains queried helpers; image admission still checks imports, W^X and mixed-stack
+bounds from compiler facts.
 
 ## Temporary machine integration
 

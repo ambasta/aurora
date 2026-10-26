@@ -154,6 +154,8 @@ def main():
             [
                 compiler,
                 "--emit-object",
+                "--local-symbols",
+                "--referenced-reflection-only",
                 "--module-root",
                 ROOT / "library",
                 ROOT / "examples/kernel-console-service.au",
@@ -164,7 +166,9 @@ def main():
             ]
         )
         require(result.returncode == 0, result.stderr.decode())
-        compose_object_bridge(assembly, [ROOT / "kernel/uefi/console-service-entry.S"], json.loads(facts.read_text()))
+        compose_object_bridge(
+            assembly, [ROOT / "kernel/uefi/console-service-entry.S"], json.loads(facts.read_text()), compiler=compiler
+        )
         binary = work / "editor"
         result = link(assembly, HOSTS["console"], binary)
         require(result.returncode == 0, result.stderr.decode())
