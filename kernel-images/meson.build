@@ -82,8 +82,8 @@ foreach profile_id : profile_data['profiles'].split('|')
   foreach root : profile_data[key + '.roots'].split('|')
     root_args += ['--module-root', kernel_source / root]
   endforeach
-  # The closed supervisor exposes only its bridge-declared scalar/native ABI.
-  if sealed
+  # Closed supervisors and the ordinary UEFI console expose only their bridges.
+  if sealed or uefi_console
     root_args += ['--referenced-reflection-only', '--local-symbols']
   endif
   bridge = profile_data[key + '.bridge']
@@ -103,15 +103,15 @@ foreach profile_id : profile_data['profiles'].split('|')
   endif
   language_name = platform == 'bios' ? 'kernel-language' : 'language'
   if uefi_console
-    # Only the ordinary UEFI session source is direct; the native adapter still
-    # uses GNU as and the existing private-object composition helper.
+    # Aurora composes the ordinary UEFI session object and its GNU-as adapter;
+    # the source definitions stay LOCAL and the final image still uses GNU ld.
     language = custom_target(prefix + '-language-object',
       input: files('../' + profile_data[key + '.language']),
       output: ['language.o', 'language.stack.json', 'language.abi.json'],
       build_subdir: object_subdir, depfile: language_name + '.d', depend_files: language_dependencies,
       command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
                 '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--depfile', '@DEPFILE@',
-                '--emit-object', '--assembler', kernel_as, '--linker', kernel_ld, '--objcopy', kernel_objcopy] + root_args)
+                '--emit-object', '--compose-private-object', '--assembler', kernel_as] + root_args)
     objects += {language_name: language}
   else
     language = custom_target(prefix + '-language-assembly',

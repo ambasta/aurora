@@ -193,6 +193,9 @@ def compose_object_bridge(path, bridges, facts, assembler="as", linker="ld", obj
     sources = [bridge.read_text() for bridge in bridges]
     # Rendering validates the copied layouts before any symbol is exposed.
     assembly = "\n".join(render_bridge(source, facts) for source in sources)
+    # Text bridges share the source emitter's note. A standalone wrapper object
+    # needs its own non-executable PROGBITS note without changing that text route.
+    assembly += '\n.section .note.GNU-stack,"",@progbits\n'
     selected = sorted(
         {
             abi_function_symbol(facts, name)

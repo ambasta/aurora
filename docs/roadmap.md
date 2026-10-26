@@ -117,10 +117,9 @@ every guest family, including the
 Host record projection, conversion, quota/report transport and authorized source
 file I/O remain native dependencies; module traversal and x86 text emission run
 in Aurora.
-The bounded frontend B/C and existing console/hosted UART object composer now runs
+The bounded frontend B/C, ordinary UEFI console/session and existing console/hosted UART object composer now runs
 in Aurora: it appends generated wrapper text and remaps selected private references
-without changing source symbol bindings. Standalone UEFI console/session composition,
-general assembler/linker and host runtime/file/process services remain
+without changing source symbol bindings. General assembler/linker and host runtime/file/process services remain
 separate self-hosting dependencies.
 
 Gate: positive, rejection, adversarial, resource and ABI tests with independent
