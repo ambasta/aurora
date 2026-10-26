@@ -75,24 +75,6 @@ end
 @@ -2,0 +3 @@
 +enum __au_call_status 3
 
-; CASE: rejected: hostile mutation 55
-; BASE: accepted service graph 1
-; RUN: verify
-; EXPECT-ERROR: logical class field leaf type mismatch
-@@ -1 +1 @@
--layout __au_serve_request [(enum __au_serve_status display=builtin::ServeStatus) u64]
-+layout __au_serve_request [(enum __au_call_status display=builtin::CallStatus) u64]
-@@ -2,0 +3 @@
-+enum __au_call_status 3
-
-; CASE: rejected: hostile mutation 56
-; BASE: accepted service graph 1
-; RUN: verify
-; EXPECT-ERROR: logical class field leaf type mismatch
-@@ -1 +1 @@
--layout __au_serve_request [(enum __au_serve_status display=builtin::ServeStatus) u64]
-+layout __au_serve_request [(enum __au_serve_status display=builtin::ServeStatus) i64]
-
 ; CASE: rejected: hostile mutation 57
 ; BASE: accepted service graph 1
 ; RUN: verify

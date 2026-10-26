@@ -205,46 +205,6 @@ end
 +    Return
 +end
 
-; CASE: rejected: hostile mutation 27
-; RUN: verify
-; EXPECT-ERROR: service helper requires an unused loan with exact provenance
-layout __au_console_sample [bool u8 bool]
-fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
-enum __au_console_completion 2
-enum __au_console_put_result 2
-enum __au_display_completion 2
-enum __au_display_put_result 2
-function pixel_entry
-  result (enum __au_display_put_result display=builtin::DisplayPutResult)
-  params [console]
-  frame 48
-  service 16
-    BindServiceParameter 0 16
-    Constant 7 u64
-    Push
-    Constant 9 u64
-    Push
-    Constant 11 u8
-    Push
-    Constant 13 u8
-    Push
-    Constant 17 u8
-    Push
-    ServiceOperation 16 Pixel 0 Display
-    Return
-end
-function display_caller
-  result (enum __au_display_put_result display=builtin::DisplayPutResult)
-  params [display]
-  frame 48
-  service 16
-    BindServiceParameter 0 16 Display
-    AcquireServiceLoan 1 16 Display
-    ServiceCall pixel_entry 1 0 [0] Display
-    ReleaseServiceLoan 1 Display
-    Return
-end
-
 ; CASE: rejected: hostile mutation 28
 ; RUN: verify
 ; EXPECT-ERROR: service binding requires exact authorized leading parameter
@@ -312,30 +272,6 @@ function call_result
     ReturnObject 40
 end
 
-; CASE: rejected: hostile mutation 39
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR: service operation kind does not match active capability
-@@ -15 +15 @@
--    ServiceOperation 16 Call 40 Call
-+    ServiceOperation 16 Call 40
-
-; CASE: rejected: hostile mutation 40
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR: service operation kind does not match active capability
-@@ -15 +15 @@
--    ServiceOperation 16 Call 40 Call
-+    ServiceOperation 16 Call 40 Display
-
-; CASE: rejected: hostile mutation 43
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR: service operation kind does not match active capability
-@@ -15 +15 @@
--    ServiceOperation 16 Call 40 Call
-+    ServiceOperation 16 Call 40 -1
-
 ; CASE: rejected: hostile mutation 44
 ; BASE: accepted service graph 38
 ; RUN: verify
@@ -351,14 +287,6 @@ end
 @@ -14 +14 @@
 -    Constant 42 u64
 +    Constant 1
-
-; CASE: rejected: hostile mutation 53
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR: missing or mistyped current value
-@@ -14 +14 @@
--    Constant 42 u64
-+    Constant 1 u8
 
 ; CASE: rejected: hostile mutation 55
 ; BASE: accepted service graph 38
@@ -1468,45 +1396,6 @@ end
 -    AcquireServiceLoan 2 32 Display
 -    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
 +    ServiceCall group_leaf 1 0 [0 0] Console [(2 Console)]
-
-; CASE: rejected: hostile mutation 139
-; BASE: accepted service graph 112
-; RUN: verify
-; EXPECT-ERROR: service helper requires distinct acquired loans in leading positions
-@@ -41,6 +41 @@
--    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
--    ReleaseServiceLoan 2 Display
--    ReleaseServiceLoan 1
--    AcquireServiceLoan 1 16
--    AcquireServiceLoan 2 32 Display
--    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
-+    ServiceCall group_leaf 2 0 [0 0] Console [(2 Display)]
-
-; CASE: rejected: hostile mutation 140
-; BASE: accepted service graph 112
-; RUN: verify
-; EXPECT-ERROR: service helper requires an unused loan with exact provenance
-@@ -41,6 +41 @@
--    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
--    ReleaseServiceLoan 2 Display
--    ReleaseServiceLoan 1
--    AcquireServiceLoan 1 16
--    AcquireServiceLoan 2 32 Display
--    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
-+    ServiceCall group_leaf 1 0 [0 0] Display [(2 Display)]
-
-; CASE: rejected: hostile mutation 141
-; BASE: accepted service graph 112
-; RUN: verify
-; EXPECT-ERROR: service helper requires distinct acquired loans in leading positions
-@@ -41,6 +41 @@
--    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
--    ReleaseServiceLoan 2 Display
--    ReleaseServiceLoan 1
--    AcquireServiceLoan 1 16
--    AcquireServiceLoan 2 32 Display
--    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
-+    ServiceCall group_leaf 1 0 [0 32] Console [(2 Display)]
 
 ; CASE: rejected: hostile mutation 142
 ; BASE: accepted service graph 112

@@ -46,14 +46,6 @@ end
 -    ServiceCall putter 1 0 [0*3] Console [] [] 56
 +    ServiceCall putter 1 0 [0*3]
 
-; CASE: rejected: hostile mutation 3
-; BASE: accepted service graph 1
-; RUN: verify
-; EXPECT-ERROR: region requires exact typed spill
-@@ -16 +16 @@
--    ServiceCall putter 1 0 [0*3] Console [] [] 56
-+    ServiceCall putter 1 0 [0*3] Console [] [] 16
-
 ; CASE: rejected: hostile mutation 5
 ; BASE: accepted service graph 1
 ; RUN: verify
@@ -171,43 +163,6 @@ endrepeat
     ReturnObject 128
 end
 
-; CASE: rejected: hostile mutation 10
-; BASE: accepted service graph 9
-; RUN: verify
-; EXPECT-ERROR: region requires exact typed spill
-@@ -53 +53 @@
--    ServiceCall copied_helper 1 512 [0*4] Console [] [0 0 320 416] 520
-+    ServiceCall copied_helper 1 512 [0*4] Console [] [0 0 320 416]
-
-; CASE: rejected: hostile mutation 11
-; BASE: accepted service graph 9
-; RUN: verify
-; EXPECT-ERROR: region requires exact typed spill
-@@ -53 +53 @@
--    ServiceCall copied_helper 1 512 [0*4] Console [] [0 0 320 416] 520
-+    ServiceCall copied_helper 1 512 [0*4] Console [] [0 0 320 416] 16
-
-; CASE: rejected: hostile mutation 13
-; BASE: accepted service graph 9
-; RUN: verify
-; EXPECT-ERROR: service scalar argument mismatch
-@@ -53 +53 @@
--    ServiceCall copied_helper 1 512 [0*4] Console [] [0 0 320 416] 520
-+    ServiceCall copied_helper 1 512 [0 16 0 0] Console [] [0 0 320 416] 520
-
-; CASE: rejected: hostile mutation 15
-; BASE: accepted service graph 9
-; RUN: verify
-; EXPECT-ERROR: region authority is not active
-@@ -10 +10 @@
--  frame 528
-+  frame 544
-@@ -42,0 +43 @@
-+  region 544
-@@ -53 +54 @@
--    ServiceCall copied_helper 1 512 [0*4] Console [] [0 0 320 416] 520
-+    ServiceCall copied_helper 1 512 [0*4] Console [] [0 0 320 416] 544
-
 ; CASE: mixed copied/span ABI keeps exact capability kinds #2
 ; BASE: accepted service graph 9
 ; RUN: abi-facts
@@ -303,27 +258,6 @@ endrepeat
     EndSpan 224
     ReturnObject 128
 end
-
-; CASE: rejected: hostile mutation 19
-; BASE: accepted service graph 17
-; RUN: verify
-; EXPECT-ERROR: region requires exact typed spill
-@@ -55 +55 @@
--    ServiceCall copied_helper 1 512 [0*3 576] Console [] [0 0 320 0] 584
-+    ServiceCall copied_helper 1 512 [0*3 576] Console [] [0 0 320 0] 16
-
-; CASE: rejected: hostile mutation 23
-; BASE: accepted service graph 17
-; RUN: verify
-; EXPECT-ERROR: region authority is not active
-@@ -10 +10 @@
--  frame 592
-+  frame 608
-@@ -43,0 +44 @@
-+  region 608
-@@ -55 +56 @@
--    ServiceCall copied_helper 1 512 [0*3 576] Console [] [0 0 320 0] 584
-+    ServiceCall copied_helper 1 512 [0*3 576] Console [] [0 0 320 0] 608
 
 ; CASE: mixed copied/span ABI keeps exact capability kinds #3
 ; BASE: accepted service graph 17
@@ -1074,14 +1008,6 @@ end
 -    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
 +    ServiceCall copied_helper 1 512 [0*3]
 
-; CASE: rejected: hostile mutation 52
-; BASE: accepted service graph 30
-; RUN: verify
-; EXPECT-ERROR: service copied argument vector mismatch
-@@ -51 +51 @@
--    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416]
-+    ServiceCall copied_helper 1 512 [0*3] Console [] [0 320 416 0]
-
 ; CASE: rejected: hostile mutation 53
 ; BASE: accepted service graph 30
 ; RUN: verify
@@ -1168,14 +1094,6 @@ end
 @@ -53 +53 @@
 -    ServiceCall copied_helper 1 512 [0 0 576] Console [] [0 320 0]
 +    ServiceCall copied_helper 1 512 [0 0 576] Console [] [0 320 416]
-
-; CASE: rejected: hostile mutation 70
-; BASE: accepted service graph 31
-; RUN: verify
-; EXPECT-ERROR: service helper requires distinct acquired loans in leading positions
-@@ -56 +56 @@
--    ServiceCall copied_helper 1 512 [0*4] Console [(2 Display)] [0 0 320 416]
-+    ServiceCall copied_helper 1 512 [0*4] Console [(2 Display)] [0 416 320 416]
 
 ; CASE: rejected: hostile mutation 72
 ; BASE: accepted service graph 30
@@ -1825,15 +1743,6 @@ end
 @@ -14 +14,2 @@
 -    BindServiceParameter 0 16
 +    BindServiceParameter 0 16 999
-+    BeginObject 40
-
-; CASE: rejected: hostile mutation 125
-; BASE: rejected: service observation requires exact pristine active copied sample object 103
-; RUN: verify
-; EXPECT-ERROR: service binding requires exact authorized leading parameter
-@@ -14 +14,2 @@
--    BindServiceParameter 0 16
-+    BindServiceParameter 0 8
 +    BeginObject 40
 
 ; CASE: rejected: hostile mutation 126

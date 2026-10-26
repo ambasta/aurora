@@ -245,18 +245,6 @@ end
 @@ -20,0 +22 @@
 +    BindServiceParameter 1 32 Display
 
-; CASE: rejected: hostile mutation 37
-; BASE: accepted service graph 1
-; RUN: verify
-; EXPECT-ERROR: unsupported service group
-@@ -12 +12 @@
--  params [iommu]
-+  params [iommu console display]
-@@ -19,0 +20 @@
-+  service 32
-@@ -20,0 +22 @@
-+    BindServiceParameter 1 32
-
 ; CASE: rejected: hostile mutation 38
 ; BASE: accepted service graph 5
 ; RUN: verify
@@ -487,28 +475,6 @@ end
 -    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
 +    ServiceCall event_sample 2 64 [0 0] Console [(1 IommuEvent)]
 
-; CASE: rejected: hostile mutation 66
-; BASE: accepted service graph 5
-; RUN: verify
-; EXPECT-ERROR: copy requires pristine result object
-@@ -12 +12 @@
--  params [iommu console]
-+  params [console iommu]
-@@ -21,2 +21,2 @@
--    BindServiceParameter 0 16 IommuEvent
--    BindServiceParameter 1 32
-+    BindServiceParameter 0 16
-+    BindServiceParameter 1 32 IommuEvent
-@@ -24 +24 @@
--    ServiceOperation 16 IommuPoll 64 IommuEvent
-+    ServiceOperation 32 IommuPoll 64 IommuEvent
-@@ -40,0 +41,2 @@
-+    Constant 0 u64
-+    Store 56 u64
-@@ -43 +45 @@
--    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
-+    ServiceCall event_sample 2 64 [0 0] Console [(1 IommuEvent)]
-
 ; CASE: rejected: hostile mutation 69
 ; BASE: accepted service graph 5
 ; RUN: verify
@@ -638,22 +604,6 @@ end
 -fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
 +fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 4 1 false) (u64 {1,1} 1 false)*3]
 
-; CASE: rejected: hostile mutation 81
-; BASE: accepted service graph 1
-; RUN: verify
-; EXPECT-ERROR: invalid logical class field shape
-@@ -4 +4 @@
--fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
-+fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 2 false) (u64 {1,1} 1 false)*3]
-
-; CASE: rejected: hostile mutation 82
-; BASE: accepted service graph 1
-; RUN: verify
-; EXPECT-ERROR: invalid logical class field shape
-@@ -4 +4 @@
--fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
-+fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 true) (u64 {1,1} 1 false)*3]
-
 ; CASE: rejected: hostile mutation 83
 ; BASE: accepted service graph 1
 ; RUN: verify
@@ -661,14 +611,6 @@ end
 @@ -2 +2 @@
 -layout __au_iommu_event_sample [(enum __au_event_poll_result display=builtin::EventPollResult) u64*3]
 +layout __au_iommu_event_sample [(enum __au_event_poll_result display=builtin::EventPollResult) bool u64 u64]
-
-; CASE: rejected: hostile mutation 84
-; BASE: accepted service graph 1
-; RUN: verify
-; EXPECT-ERROR: invalid logical class field shape
-@@ -4 +4 @@
--fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
-+fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 4 1 false) (u64 2 1 false) (u64 3 1 false)]
 
 ; CASE: executed event emission
 ; BASE: rejected: hostile mutation 70

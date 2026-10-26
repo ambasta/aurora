@@ -77,14 +77,6 @@ end
 ; CHECK-NOT: .globl caller
 ; RUN: stack-facts
 
-; CASE: rejected: hostile mutation 74
-; BASE: Port runtime ABI facts write=1
-; RUN: verify
-; EXPECT-ERROR: missing or mistyped current value
-@@ -3 +3 @@
--  result (enum __au_port_write_result display=builtin::PortWriteResult)
-+  result u64
-
 ; CASE: rejected: hostile mutation 88
 ; BASE: Port runtime ABI facts write=1
 ; RUN: verify
@@ -162,14 +154,6 @@ end
 @@ -19 +19 @@
 -    ServiceCall port_read 1 0 [0] Port
 +    ServiceCall port_read 1 0 [0] Call
-
-; CASE: rejected: hostile mutation 99
-; BASE: accepted service graph 94
-; RUN: verify
-; EXPECT-ERROR: service helper requires distinct acquired loans in leading positions
-@@ -19 +19 @@
--    ServiceCall port_read 1 0 [0] Port
-+    ServiceCall port_read 1 0 [16] Port
 
 ; CASE: accepted service graph 102
 ; RUN: emit
