@@ -395,6 +395,12 @@ def main():
             b"cat a ",
             b"rm a x",
             b"ls extra",
+            b"append",
+            b"append ",
+            b"append a",
+            b"append  a x",
+            b"append a/b x",
+            b"append a " + b"x" * 45,
             b"write",
             b"cat",
             b"rm",
@@ -507,6 +513,7 @@ auto note_contract() -> i64 {
         files_source.write_text("""module files_policy;
 import std.bytes;
 import console.session_files;
+import console.file_namespace;
 import console.protected_files;
 import std.binary_buffer;
 import std.binary;
@@ -574,12 +581,12 @@ auto span_compare_contract() -> i64 {
 }
 auto protected_append_contract() -> i64 {
     const std::BinaryBuffer64 zero = std::BinaryBuffer64();
-    console::SessionFiles initial = console::SessionFiles(zero);
+    console::SessionFiles initial = console::SessionFiles(console::FileNamespace(zero));
     const console::FileReply mutation_1 = initial.submit(pack("write a Old"), 11);
     const console::FileReply mutation_2 = initial.submit(pack("write b keep"), 12);
     const console::FileReply mutation_3 = initial.submit(pack("write c C"), 9);
     const console::FileReply mutation_4 = initial.submit(pack("write d D"), 9);
-    console::ProtectedFiles files = console::ProtectedFiles(initial);
+    console::ProtectedFiles files = console::ProtectedFiles(initial.snapshot());
     const console::FileSelection before = files.select(pack("cat a"), 5);
     const console::FileSelection selected = files.select(pack("append a  new"), 13);
     const console::FileValue suffix = selected.appended_value();
@@ -646,7 +653,7 @@ auto protected_append_contract() -> i64 {
 }
 auto append_contract() -> i64 {
     const std::BinaryBuffer64 zero = std::BinaryBuffer64();
-    console::SessionFiles files = console::SessionFiles(zero);
+    console::SessionFiles files = console::SessionFiles(console::FileNamespace(zero));
     const console::FileName name = console::FileName(pack("abcdefgh"), 8);
     const console::FileName reserved = console::FileName(pack("note"), 4);
     const console::FileValue empty = console::FileValue(zero, 0);
@@ -689,7 +696,7 @@ auto append_contract() -> i64 {
 }
 auto copy_contract() -> i64 {
     const std::BinaryBuffer64 zero = std::BinaryBuffer64();
-    console::SessionFiles files = console::SessionFiles(zero);
+    console::SessionFiles files = console::SessionFiles(console::FileNamespace(zero));
     const console::FileName source = console::FileName(pack("Source"), 6);
     const console::FileName destination = console::FileName(pack("abcdefgh"), 8);
     const console::FileName absent = console::FileName(pack("source"), 6);
@@ -745,7 +752,7 @@ auto copy_contract() -> i64 {
     const console::FileReply reserved_destination = files.copy_file(source, reserved);
     if (reserved_source.status() != console::FileEvent::reserved
         || reserved_destination.status() != console::FileEvent::reserved) { return 6; }
-    console::ProtectedFiles protected_store = console::ProtectedFiles(files);
+    console::ProtectedFiles protected_store = console::ProtectedFiles(files.snapshot());
     const console::FileSelection selected = protected_store.select(pack("upper Source"), 12);
     const console::FileReply rejected = protected_store.submit(pack("copy Source source"), 18);
     const console::FileReply retained = protected_store.project(selected);
@@ -763,6 +770,93 @@ auto copy_contract() -> i64 {
         }
     return 0;
 }
+auto namespace_contract() -> i64 {
+    static_assert(size_of(console::FileNamespace) == 264);
+    static_assert(size_of(console::FileData) == 80 && size_of(console::FileOutcome) == 16);
+    static_assert(field_count(console::FileNamespace) == 0 && field_count(console::SessionFiles) == 0);
+    static_assert(field_count(console::FileData) == 0 && field_count(console::FileOutcome) == 0);
+    static_assert(field_count(console::FileName) == 0 && field_count(console::FileValue) == 0);
+    if (!console::file_mutated(console::FileEvent::written) || !console::file_mutated(console::FileEvent::removed)
+        || console::file_mutated(console::FileEvent::read) || console::file_mutated(console::FileEvent::invalid)
+        || console::file_mutated(console::FileEvent::full) || console::file_mutated(console::FileEvent::missing)
+        || console::file_mutated(console::FileEvent::reserved) || console::file_mutated(console::FileEvent::listed)
+        || console::file_mutated(console::FileEvent::unknown)
+        || console::file_next_revision(1u64) != 2u64
+        || console::file_next_revision(18446744073709551614u64) != 18446744073709551615u64
+        || console::file_next_revision(18446744073709551615u64) != 0u64) { return 13; }
+    const std::BinaryBuffer64 zero = std::BinaryBuffer64();
+    std::BinaryBuffer64 poison = zero;
+    poison.write_u8(0, 255u8);
+    console::FileNamespace files = console::FileNamespace(poison);
+    const console::FileName first = console::FileName(pack("abcdefgh"), 8);
+    const console::FileName second = console::FileName(pack("b"), 1);
+    const console::FileName absent = console::FileName(pack("absent"), 6);
+    const console::FileName reserved = console::FileName(pack("note"), 4);
+    const console::FileName invalid = console::FileName(zero, -1);
+    const console::FileValue empty = console::FileValue(zero, 0);
+    const console::FileValue value = console::FileValue(pack("Old"), 3);
+    const console::FileData missing = files.read_file(first);
+    if (missing.status() != console::FileEvent::missing || missing.size() != 0 || missing.at(0) != '\\0') {
+        return 1;
+    }
+    array<i64, 4> outside = {-9223372036854775808, -1, 4, 9223372036854775807};
+    i64 index = 0;
+    while (index < 4) {
+        const console::FileName vacant = files.name_at(index);
+        const console::FileName rejected = files.name_at(outside[index]);
+        if (vacant.valid() || rejected.valid() || rejected.at(0) != '\\0') { return 2; }
+        index = index + 1;
+    }
+    if (files.write_file(first, value) != console::FileEvent::written) { return 3; }
+    const console::FileData original = files.read_file(first);
+    const console::FileName selected = files.name_at(0);
+    const console::FileData prepared = files.prepare_append(first, console::FileValue(pack(" new"), 4));
+    if (selected.size() != 8 || selected.at(7) != 'h' || original.status() != console::FileEvent::read
+        || original.size() != 3 || original.at(0) != 'O' || original.at(-1) != '\\0'
+        || original.at(3) != '\\0' || prepared.status() != console::FileEvent::read
+        || prepared.size() != 3 || prepared.at(2) != 'd') { return 4; }
+    if (files.append_file(first, console::FileValue(pack(" new"), 4)) != console::FileEvent::written) { return 5; }
+    const console::FileData appended = files.read_file(first);
+    const console::FileOutcome copied = files.copy_file(first, second);
+    const console::FileOutcome self = files.copy_file(first, first);
+    if (appended.size() != 7 || appended.at(3) != ' ' || appended.at(6) != 'w'
+        || original.size() != 3 || original.at(2) != 'd' || prepared.size() != 3
+        || copied.status() != console::FileEvent::written || copied.size() != 7
+        || self.status() != console::FileEvent::written || self.size() != 7) { return 6; }
+    const console::FileEvent third = files.write_file(console::FileName(pack("c"), 1), empty);
+    const console::FileEvent fourth = files.write_file(console::FileName(pack("d"), 1), empty);
+    const console::FileOutcome full = files.copy_file(first, absent);
+    const console::FileOutcome not_found = files.copy_file(absent, second);
+    const console::FileOutcome protected_name = files.copy_file(first, reserved);
+    const console::FileOutcome malformed = files.copy_file(invalid, reserved);
+    if (third != console::FileEvent::written || fourth != console::FileEvent::written
+        || full.status() != console::FileEvent::full || full.size() != 0
+        || not_found.status() != console::FileEvent::missing || not_found.size() != 0
+        || protected_name.status() != console::FileEvent::reserved || protected_name.size() != 0
+        || malformed.status() != console::FileEvent::invalid || malformed.size() != 0) { return 7; }
+    if (files.write_file(first, empty) != console::FileEvent::written
+        || files.append_file(first, empty) != console::FileEvent::written) { return 8; }
+    const console::FileData blank = files.read_file(first);
+    const console::FileOutcome empty_copy = files.copy_file(first, second);
+    const console::FileData blank_copy = files.read_file(second);
+    if (blank.status() != console::FileEvent::read || blank.size() != 0 || blank.at(0) != '\\0'
+        || empty_copy.status() != console::FileEvent::written || empty_copy.size() != 0
+        || blank_copy.status() != console::FileEvent::read || blank_copy.size() != 0) { return 9; }
+    if (files.remove(first) != console::FileEvent::removed) { return 10; }
+    const console::FileName hole = files.name_at(0);
+    const console::FileName retained = files.name_at(1);
+    const console::FileData removed = files.read_file(first);
+    if (hole.valid() || retained.size() != 1 || retained.at(0) != 'b'
+        || removed.status() != console::FileEvent::missing || removed.size() != 0
+        || files.write_file(absent, value) != console::FileEvent::written) { return 11; }
+    const console::FileName reused = files.name_at(0);
+    const console::FileData reserved_read = files.read_file(reserved);
+    const console::FileData invalid_read = files.read_file(invalid);
+    if (reused.size() != 6 || reused.at(0) != 'a' || reused.at(5) != 't'
+        || reserved_read.status() != console::FileEvent::reserved || reserved_read.size() != 0
+        || invalid_read.status() != console::FileEvent::invalid || invalid_read.size() != 0) { return 12; }
+    return 0;
+}
 auto typed_files_contract() -> i64 {
     const std::BinaryBuffer64 zero = std::BinaryBuffer64();
     const std::BinaryBuffer64 a = pack("a");
@@ -770,7 +864,7 @@ auto typed_files_contract() -> i64 {
     const std::BinaryBuffer64 dot = pack(".");
     const std::BinaryBuffer64 dots = pack("..");
     const std::BinaryBuffer64 note = pack("note");
-    console::SessionFiles files = console::SessionFiles(zero);
+    console::SessionFiles files = console::SessionFiles(console::FileNamespace(zero));
     const console::FileName name = console::FileName(a, 1);
     const console::FileValue empty = console::file_value(zero, 64, 0);
     const console::FileValue saved = console::FileValue(saved_bytes, 5);
@@ -844,12 +938,14 @@ auto typed_files_contract() -> i64 {
     std::BinaryBuffer64 malformed = zero;
     malformed.write_u8(0, 255u8);
     if (name.matches(malformed)) { return 14; }
+    const i64 core = namespace_contract();
+    if (core != 0) { return 20 + core; }
     return 0;
 }
 auto files_contract() -> i64 {
     if (size_of(console::SessionFiles) != 264 || size_of(console::FileReply) != 80) { return 1; }
     const std::BinaryBuffer64 zero = std::BinaryBuffer64();
-    console::SessionFiles files = console::SessionFiles(zero);
+    console::SessionFiles files = console::SessionFiles(console::FileNamespace(zero));
     std::BinaryBuffer64 command = std::BinaryBuffer64();
     array<u8, 64> maximum = "write abcdefgh xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
     i64 index = 0;
@@ -894,7 +990,7 @@ auto files_contract() -> i64 {
         || current.at(64) != '\\0') { return 5; }
     std::BinaryBuffer64 poison = std::BinaryBuffer64();
     poison.write_u8(0, 255u8);
-    console::SessionFiles hidden = console::SessionFiles(poison);
+    console::SessionFiles hidden = console::SessionFiles(console::FileNamespace(poison));
     array<u8, 2> list = "ls";
     const std::BinaryBuffer64 command_empty = pack(borrow_bytes(list));
     const console::FileReply empty = hidden.submit(command_empty, 2);
@@ -905,7 +1001,7 @@ auto files_contract() -> i64 {
 }
 auto files_snapshot(i64 stage) -> console::SessionFiles {
     const std::BinaryBuffer64 zero = std::BinaryBuffer64();
-    console::SessionFiles files = console::SessionFiles(zero);
+    console::SessionFiles files = console::SessionFiles(console::FileNamespace(zero));
     if (stage > 0) {
         array<u8, 64> maximum = "write abcdefgh xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
         const std::BinaryBuffer64 command_written = pack(borrow_bytes(maximum));

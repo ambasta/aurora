@@ -86,6 +86,9 @@ failed output byte and never retries a command or committed update.
 - [JSON](../docs/json.md): bounded validation, scalar/integer codecs, lookup and transactional string encoding/decoding
 - [Package metadata](../docs/packages.md): identity, manifest grammar and catalog ordering
 - [Offline XFS](../docs/xfs.md): narrow integrity/geometry/directory/file interpretation
+- `console.file_namespace` is the canonical typed four-record owner, immediately
+  used by the ordinary and protected console adapters without command parsing or
+  reply presentation in its core; protected storage remains supervisor-held.
 - Named RAM files support atomic `append_file` and `append NAME TEXT` through the
   shared session/protected store, with a 49-byte total limit and no creation on missing names.
 - Named RAM files also support atomic `copy_file` and `copy SOURCE DESTINATION`,

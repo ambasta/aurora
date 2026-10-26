@@ -1,5 +1,6 @@
 module program_note_initial;
 import console.session_note;
+import console.file_namespace;
 import console.session_files;
 import console.protected_files;
 import std.binary_buffer;
@@ -11,7 +12,7 @@ auto initial_note() -> console::SessionNote {
 }
 auto initial_files() -> console::ProtectedFiles {
     const std::BinaryBuffer64 empty = std::BinaryBuffer64();
-    const console::SessionFiles records = console::SessionFiles(empty);
-    const console::ProtectedFiles files = console::ProtectedFiles(records);
+    const console::SessionFiles records = console::SessionFiles(console::FileNamespace(empty));
+    const console::ProtectedFiles files = console::ProtectedFiles(records.snapshot());
     return files;
 }

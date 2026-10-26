@@ -7,6 +7,7 @@ import kernel.client_disposal;
 import kernel.file_service;
 import std.binary_buffer;
 import std.binary;
+import console.file_namespace;
 import console.session_files;
 import console.protected_files;
 import console.program_input;

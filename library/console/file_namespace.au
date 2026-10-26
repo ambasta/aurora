@@ -1,0 +1,365 @@
+export module console.file_namespace;
+import std.binary_buffer;
+import std.binary;
+import std.array;
+
+export namespace console {
+    enum class FileEvent {
+        unknown,
+        written,
+        read,
+        removed,
+        listed,
+        missing,
+        invalid,
+        full,
+        reserved
+    };
+
+    // Copied inputs are checked by every store operation, independently of parsing.
+    class FileName {
+        std::BinaryBuffer64 bytes;
+        i64 length;
+    public:
+        FileName(std::BinaryBuffer64 source, i64 count) : bytes(source), length(count) {
+        }
+        auto valid() const -> bool {
+            if (length < 1 || length > 8) {
+                return false;
+            }
+            i64 index = 0;
+            while (index < length) {
+                const u8 byte = bytes.at(index);
+                if (!((byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') || (byte >= '0' && byte <= '9')
+                    || byte == '.' || byte == '_' || byte == '-')) {
+                    return false;
+                }
+                index = index + 1;
+            }
+            return !bytes.equal(0, length, ".") && !bytes.equal(0, length, "..");
+        }
+        auto size() const -> i64 {
+            return length;
+        }
+        auto at(i64 index) const -> u8 {
+            if (index < 0 || index >= length || index >= 64) {
+                return '\0';
+            }
+            return bytes.at(index);
+        }
+        auto reserved() const -> bool {
+            return bytes.equal(0, length, "note");
+        }
+        auto matches(std::BinaryBuffer64 record) const -> bool {
+            const i64 count = i64(record.at(0));
+            if (count < 1 || count > 8) {
+                return false;
+            }
+            return bytes.equal(0, length, record.bytes(2, count));
+        }
+    };
+
+    class FileValue {
+        std::BinaryBuffer64 bytes;
+        i64 length;
+    public:
+        FileValue(std::BinaryBuffer64 source, i64 count) : bytes(source), length(count) {
+        }
+        auto valid() const -> bool {
+            if (length < 0 || length > 49) {
+                return false;
+            }
+            i64 index = 0;
+            while (index < length) {
+                const u8 byte = bytes.at(index);
+                if (byte < ' ' || byte > '~') {
+                    return false;
+                }
+                index = index + 1;
+            }
+            return true;
+        }
+        auto size() const -> i64 {
+            return length;
+        }
+        auto at(i64 index) const -> u8 {
+            if (index < 0 || index >= length || index >= 64) {
+                return '\0';
+            }
+            return bytes.at(index);
+        }
+    };
+
+    // Checked slices normalize backing bytes; malformed ranges remain invalid.
+    auto file_name(std::BinaryBuffer64 source, i64 offset, i64 count) -> FileName {
+        std::BinaryBuffer64 bytes = std::BinaryBuffer64();
+        if (offset < 0 || offset > 64 || count < 1 || count > 8 || count > 64 - offset) {
+            return FileName(bytes, -1);
+        }
+        i64 index = 0;
+        while (index < count) {
+            bytes.write_u8(index, source.at(offset + index));
+            index = index + 1;
+        }
+        return FileName(bytes, count);
+    }
+    auto file_value(std::BinaryBuffer64 source, i64 offset, i64 count) -> FileValue {
+        std::BinaryBuffer64 bytes = std::BinaryBuffer64();
+        if (offset < 0 || offset > 64 || count < 0 || count > 49 || count > 64 - offset) {
+            return FileValue(bytes, -1);
+        }
+        i64 index = 0;
+        while (index < count) {
+            bytes.write_u8(index, source.at(offset + index));
+            index = index + 1;
+        }
+        return FileValue(bytes, count);
+    }
+
+    // Copied data is not a command reply: failures contain no display text.
+    class FileData {
+        array<u8, 64> bytes;
+        i64 length;
+        FileEvent event;
+    public:
+        FileData() : bytes{}, length(0), event(FileEvent::unknown) {
+        }
+        auto status() const -> FileEvent {
+            return event;
+        }
+        auto size() const -> i64 {
+            return length;
+        }
+        auto at(i64 index) const -> u8 {
+            if (index < 0 || index >= length) {
+                return '\0';
+            }
+            return bytes[index];
+        }
+        auto append(u8 byte) -> bool {
+            if (length == 64) {
+                return false;
+            }
+            bytes[length] = byte;
+            length = length + 1;
+            return true;
+        }
+        auto select(FileEvent value) -> bool {
+            event = value;
+            return true;
+        }
+    };
+
+    // Mutations need only status and a byte count, not another record copy.
+    class FileOutcome {
+        FileEvent event;
+        i64 length;
+    public:
+        FileOutcome(FileEvent result, i64 count) : event(result), length(count) {
+        }
+        auto status() const -> FileEvent {
+            return event;
+        }
+        auto size() const -> i64 {
+            return length;
+        }
+    };
+
+    // Revision storage belongs to the caller that needs invalidation. Zero is
+    // the exhausted/invalid selection sentinel; successful writes include empty
+    // append and self-copy, while rejected operations never advance a revision.
+    auto file_mutated(FileEvent event) -> bool {
+        return event == FileEvent::written || event == FileEvent::removed;
+    }
+    auto file_next_revision(u64 revision) -> u64 {
+        if (revision == 18446744073709551615u64) {
+            return 0u64;
+        }
+        return revision + 1u64;
+    }
+
+    // Four session-local records: name length, content length, name[8],
+    // content[49], zero suffix. Occupancy and all records die with the session.
+    class FileNamespace {
+        array<std::BinaryBuffer64, 4> records;
+        u64 occupied;
+        auto find(FileName name) const -> i64 {
+            i64 slot = 0;
+            while (slot < 4) {
+                if ((occupied & (1u64 << slot)) != 0u64) {
+                    const std::BinaryBuffer64 record = records[slot];
+                    if (name.matches(record)) {
+                        return slot;
+                    }
+                }
+                slot = slot + 1;
+            }
+            return -1;
+        }
+    public:
+        FileNamespace(std::BinaryBuffer64 empty) : records{
+            empty,
+            empty,
+            empty,
+            empty
+        }, occupied(0u64) {
+        }
+        auto read_file(FileName name) const -> FileData {
+            FileData reply = FileData();
+            if (!name.valid()) {
+                reply.select(FileEvent::invalid);
+                return reply;
+            }
+            if (name.reserved()) {
+                reply.select(FileEvent::reserved);
+                return reply;
+            }
+            const i64 found = find(name);
+            if (found < 0) {
+                reply.select(FileEvent::missing);
+                return reply;
+            }
+            reply.select(FileEvent::read);
+            const std::BinaryBuffer64 record = records[found];
+            i64 index = 0;
+            while (index < i64(record.at(1))) {
+                reply.append(record.at(10 + index));
+                index = index + 1;
+            }
+            return reply;
+        }
+        auto write_file(FileName name, FileValue value) -> FileEvent {
+            if (!name.valid() || !value.valid()) {
+                return FileEvent::invalid;
+            }
+            if (name.reserved()) {
+                return FileEvent::reserved;
+            }
+            i64 found = find(name);
+            i64 slot = 0;
+            while (found < 0 && slot < 4) {
+                if ((occupied & (1u64 << slot)) == 0u64) {
+                    found = slot;
+                }
+                slot = slot + 1;
+            }
+            if (found < 0) {
+                return FileEvent::full;
+            }
+            // Stage a complete zeroed record before committing any store field.
+            std::BinaryBuffer64 record = std::BinaryBuffer64();
+            record.write_u8(0, u8(name.size()));
+            record.write_u8(1, u8(value.size()));
+            i64 index = 0;
+            while (index < name.size()) {
+                record.write_u8(2 + index, name.at(index));
+                index = index + 1;
+            }
+            index = 0;
+            while (index < value.size()) {
+                record.write_u8(10 + index, value.at(index));
+                index = index + 1;
+            }
+            records[found] = record;
+            occupied = occupied | (1u64 << found);
+            return FileEvent::written;
+        }
+        // Validate without constructing a candidate or changing any record.
+        auto prepare_append(FileName name, FileValue suffix) const -> FileData {
+            FileData reply = FileData();
+            if (!name.valid() || !suffix.valid()) {
+                reply.select(FileEvent::invalid);
+                return reply;
+            }
+            const FileData current = read_file(name);
+            if (current.status() != FileEvent::read) {
+                return current;
+            }
+            if (suffix.size() > 49 - current.size()) {
+                FileData rejected = FileData();
+                rejected.select(FileEvent::invalid);
+                return rejected;
+            }
+            return current;
+        }
+        // Append only to an existing record. Stage bytes before the shared atomic
+        // write; even an empty suffix is a successful write for revision purposes.
+        auto append_file(FileName name, FileValue suffix) -> FileEvent {
+            if (!name.valid() || !suffix.valid()) {
+                return FileEvent::invalid;
+            }
+            if (name.reserved()) {
+                return FileEvent::reserved;
+            }
+            const i64 found = find(name);
+            if (found < 0) {
+                return FileEvent::missing;
+            }
+            const std::BinaryBuffer64 record = records[found];
+            const i64 length = i64(record.at(1));
+            if (suffix.size() > 49 - length) {
+                return FileEvent::invalid;
+            }
+            std::BinaryBuffer64 bytes = std::BinaryBuffer64();
+            i64 index = 0;
+            while (index < length) {
+                bytes.write_u8(index, record.at(10 + index));
+                index = index + 1;
+            }
+            index = 0;
+            while (index < suffix.size()) {
+                bytes.write_u8(length + index, suffix.at(index));
+                index = index + 1;
+            }
+            return write_file(name, FileValue(bytes, length + suffix.size()));
+        }
+        // Snapshot the source before the shared atomic write, including self-copy.
+        // A successful copy is a write and invalidates protected selections.
+        auto copy_file(FileName source, FileName destination) -> FileOutcome {
+            if (!source.valid() || !destination.valid()) {
+                return FileOutcome(FileEvent::invalid, 0);
+            }
+            if (source.reserved() || destination.reserved()) {
+                return FileOutcome(FileEvent::reserved, 0);
+            }
+            const i64 found = find(source);
+            if (found < 0) {
+                return FileOutcome(FileEvent::missing, 0);
+            }
+            const std::BinaryBuffer64 record = records[found];
+            const i64 length = i64(record.at(1));
+            const FileValue value = file_value(record, 10, length);
+            const FileEvent event = write_file(destination, value);
+            if (event != FileEvent::written) {
+                return FileOutcome(event, 0);
+            }
+            return FileOutcome(event, length);
+        }
+        auto remove(FileName name) -> FileEvent {
+            if (!name.valid()) {
+                return FileEvent::invalid;
+            }
+            if (name.reserved()) {
+                return FileEvent::reserved;
+            }
+            const i64 found = find(name);
+            if (found < 0) {
+                return FileEvent::missing;
+            }
+            const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+            records[found] = empty;
+            occupied = occupied & ~(1u64 << found);
+            return FileEvent::removed;
+        }
+        // Enumeration exposes one copied checked name, never record storage.
+        // Empty and out-of-range slots both have an invalid, zero-backed name.
+        auto name_at(i64 slot) const -> FileName {
+            const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+            if (slot < 0 || slot >= 4 || (occupied & (1u64 << slot)) == 0u64) {
+                return FileName(empty, 0);
+            }
+            const std::BinaryBuffer64 record = records[slot];
+            return file_name(record, 2, i64(record.at(0)));
+        }
+    };
+}

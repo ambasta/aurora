@@ -309,11 +309,15 @@ not actual UART hardware fault induction. Hostile source/IR and fake-port UART
 controls remain separate. Historical passes cover only their recorded source,
 toolchain and emulator; they do not qualify a later image or prove OS readiness.
 
-`SessionFiles` exposes checked copied `FileName` and `FileValue` inputs for const
-reads and atomic writes/removals. Names retain the eight-byte grammar and values
-the 49-byte printable-ASCII limit; invalid values cannot alias a valid empty file.
-The console `submit` adapter preserves the same transcripts and four-slot order.
-`ProtectedFiles` selects a copied name and projects it directly without copying
-the store or synthesizing commands. Replacements use the same typed write path;
-revision invalidation/exhaustion and native authenticated one-shot authority are
-unchanged. These copied values carry policy data, never mailbox authority.
+`console.file_namespace` owns the sole four-record `FileNamespace`, checked copied
+`FileName`/`FileValue` inputs, typed reads and mutation outcomes, enumeration and
+revision advancement/overflow policy. It imports no command parser, English reply
+text or decimal presenter. Names retain the eight-byte grammar and values the
+49-byte printable-ASCII limit; invalid values cannot alias a valid empty file.
+`SessionFiles` wraps that owner with the existing grammar and reply presentation.
+`ProtectedFiles` holds the same typed owner directly and keeps its one revision
+counter; ordinary commands use the same adapter on a tentative copy. Protected
+reads and replacements use the core directly. The 264-byte namespace, 272-byte
+protected owner, four-slot order and native authenticated one-shot authority are
+unchanged. Copied values carry policy data, never mailbox authority. This split
+prepares a future protected owner; committed storage still lives in the supervisor.

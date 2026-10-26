@@ -240,8 +240,9 @@ def validate_program_copied_abi(facts, service=False, replacement=False, client=
     record("std::BinaryBuffer64", 64, [("elements", "u8", 64)], alignment=1)
     for source in ("console::FileName", "console::FileValue"):
         record(source, 72, [("bytes", "std::BinaryBuffer64", 0), ("length", "i64", 0)])
-    record("console::SessionFiles", 264, [("records", "std::BinaryBuffer64", 4), ("occupied", "u64", 0)])
-    record("console::ProtectedFiles", 272, [("files", "console::SessionFiles", 0), ("revision", "u64", 0)])
+    record("console::FileNamespace", 264, [("records", "std::BinaryBuffer64", 4), ("occupied", "u64", 0)])
+    record("console::SessionFiles", 264, [("namespace_files", "console::FileNamespace", 0)])
+    record("console::ProtectedFiles", 272, [("files", "console::FileNamespace", 0), ("revision", "u64", 0)])
     record(
         "console::FileSelection",
         160,
