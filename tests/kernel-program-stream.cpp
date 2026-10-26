@@ -1,15 +1,19 @@
 #include "../kernel/program-stream.hpp"
 #include "../kernel/program-input.hpp"
+#include "../kernel/program-note.hpp"
 #include <array>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <fstream>
+#include <sstream>
 #include <limits>
 #include <string>
 #include <string_view>
 #include <type_traits>
 #include <vector>
 
+extern "C" void __au_runtime_note_update(const void *, void *);
 extern "C" void __au_runtime_program_input(const void *, void *);
 extern "C" std::uint64_t __au_runtime_program_response(const void *);
 
@@ -440,6 +444,97 @@ auto program_response() -> void {
          "reader/response copied transcript and CRLF carry");
 }
 
+using ProgramSession = aurora::program::Session;
+using SessionEvent = ProgramSession::Event;
+using SessionEffect = ProgramSession::Effect;
+
+auto session_cases(const char *path) -> void {
+    std::ifstream cases{path};
+    need(cases.is_open(), "session case data");
+    ProgramSession session;
+    std::string line;
+    while (std::getline(cases, line)) {
+        if (line.empty() || line[0] == '#')
+            continue;
+        if (line == "new") {
+            session = ProgramSession{};
+            continue;
+        }
+        std::istringstream row{line};
+        std::uint64_t event{}, value{}, carry{}, effect{}, next_carry{}, outcome{};
+        need(static_cast<bool>(row >> event >> value >> carry >> effect >> next_carry >> outcome), "session case row");
+        const auto before = session;
+        need(session.advance(static_cast<SessionEvent>(event), value, carry) == static_cast<SessionEffect>(effect) &&
+                 session.after_cr() == next_carry && session.outcome() == outcome,
+             "session case: " + line);
+        if (effect == 0)
+            need(std::memcmp(&session, &before, sizeof(session)) == 0, "rejected progression changed session");
+    }
+    // Exercise the actual copied entry with disjoint input and guarded output.
+    const std::array<std::uint64_t, 7> argument{};
+    const auto before = argument;
+    std::array<std::uint64_t, 9> result;
+    result.fill(maximum);
+    __au_runtime_program_session(argument.data(), result.data() + 1);
+    need(argument == before && result.front() == maximum && result.back() == maximum && result[5] == 1 &&
+             result[6] == 0 && result[7] == 0,
+         "session copied entry input immutability, output bounds and ready facts");
+}
+
+auto session_note_update(aurora::program::Note &note, const Submission &input) -> std::uint64_t {
+    aurora::program::Note::UpdateInput copied{};
+    std::copy(note.saved().begin(), note.saved().end(), copied.begin());
+    for (std::size_t index = 0; index < input.bytes().size(); ++index)
+        copied[72 + index] = std::byte(input.bytes()[index]);
+    for (unsigned index = 0; index < 8; ++index)
+        copied[136 + index] = std::byte(input.length() >> (8 * index));
+    aurora::program::Note::Update result{};
+    __au_runtime_note_update(copied.data(), result.data());
+    const auto event = note.commit(result);
+    need(event.has_value(), "composed session note update");
+    return *event;
+}
+
+auto session_failures() -> void {
+    const std::string command = "write note x";
+    const std::string response = "Note saved.\r\naurora> ";
+    for (std::size_t position = 0; position < 2 + response.size(); ++position) {
+        ProgramSession session;
+        aurora::program::Note note;
+        const auto absent = note.saved();
+        need(session.advance(SessionEvent::begin) == SessionEffect::ready &&
+                 session.advance(SessionEvent::response, 1) == SessionEffect::input,
+             "session initial output");
+        script(command + "\r\nnext\n", command.size() + position);
+        auto copied = read_input(session.after_cr());
+        const auto effect =
+            session.advance(SessionEvent::input, static_cast<std::uint64_t>(copied.action()), copied.after_cr());
+        if (position < 2) {
+            need(effect == SessionEffect::failed && note.saved() == absent, "delimiter failure dispatched a mutation");
+        } else {
+            need(effect == SessionEffect::note &&
+                     session.advance(SessionEvent::note, session_note_update(note, copied)) ==
+                         SessionEffect::note_saved,
+                 "source selected note before files");
+            copied.scrub();
+            const auto committed = note.saved();
+            need(committed[0] == std::byte{'x'} && committed[64] == std::byte{1}, "note mutation completed");
+            need(session.advance(SessionEvent::response,
+                                 present_response(copied_response(response_record(ResponseKind::note_saved)))) ==
+                         SessionEffect::failed &&
+                     note.saved() == committed,
+                 "failed acknowledgment changed a completed mutation");
+        }
+        copied.scrub();
+        need(session.outcome() == 2 && session.after_cr() == 1 && sample_index == command.size() + 1 &&
+                 output_attempts == command.size() + position + 1 &&
+                 session.advance(SessionEvent::response, 1) == SessionEffect::invalid &&
+                 session.advance(SessionEvent::input, 0) == SessionEffect::invalid &&
+                 session.advance(SessionEvent::note, 1) == SessionEffect::invalid,
+             "failed session retried output, dispatched work or consumed later input");
+    }
+}
+
 auto input(std::string_view text) -> StreamBytes {
     StreamBytes bytes{};
     need(text.size() <= bytes.size(), "test input capacity");
@@ -710,6 +805,54 @@ public:
         return false;
     }
 };
+auto session_recovery() -> void {
+    ProgramSession session;
+    Stream stream;
+    need(session.advance(SessionEvent::begin) == SessionEffect::ready &&
+             session.advance(SessionEvent::response, 1) == SessionEffect::input,
+         "recovery session ready");
+    script("upper\nhi\r\nupper\nok\r\nexit\n");
+    auto copied = read_input(session.after_cr());
+    expect_input(copied, "hi", Action::upper_payload, 1);
+    need(session.advance(SessionEvent::input, static_cast<std::uint64_t>(copied.action()), copied.after_cr()) ==
+                 SessionEffect::upper &&
+             stream.begin(copied.bytes(), copied.length()),
+         "session upper handoff");
+    copied.scrub();
+    byte_round(stream, 0, 'h', 'H');
+    need(stream.cancel() && stream.scrubbed(), "recoverable command discarded staged output");
+    need(session.advance(SessionEvent::response,
+                         present_response(copied_response(response_record(ResponseKind::stopped)))) ==
+                 SessionEffect::input &&
+             session.after_cr() == 1,
+         "recovery response preserved CR carry");
+    copied = read_input(session.after_cr());
+    expect_input(copied, "ok", Action::upper_payload, 1);
+    need(session.advance(SessionEvent::input, static_cast<std::uint64_t>(copied.action()), copied.after_cr()) ==
+                 SessionEffect::upper &&
+             stream.begin(copied.bytes(), copied.length()),
+         "healthy command after recovery");
+    copied.scrub();
+    byte_round(stream, 0, 'o', 'O');
+    byte_round(stream, 1, 'k', 'K');
+    const auto output = stream.finish();
+    need(output.has_value(), "healthy command completed");
+    check_output(*output, input("OK"), 2);
+    need(session.advance(SessionEvent::response,
+                         present_response(copied_response(response_record(ResponseKind::output, "OK")))) ==
+             SessionEffect::input,
+         "healthy response after recovery");
+    copied = read_input(session.after_cr());
+    expect_input(copied, "", Action::requested_exit, 0);
+    need(session.advance(SessionEvent::input, static_cast<std::uint64_t>(copied.action()), copied.after_cr()) ==
+                 SessionEffect::exited &&
+             session.outcome() == 1 && sample_index == samples.size() &&
+             transcript == "upper\r\ntext> hi\r\n"
+                           "Program stopped: checked fault or budget exhausted; output discarded.\r\naurora> "
+                           "upper\r\ntext> ok\r\noutput> OK\r\naurora> exit\r\nAURORA_CONSOLE_EXIT\r\n",
+         "session recovery/healthy/exit transcript or CRLF boundary");
+}
+
 auto generated_model() -> void {
     Stream stream;
     Model model;
@@ -790,7 +933,11 @@ extern "C" std::uint64_t __au_runtime_console_put(const void *grant, std::uint64
     return InputSession::put(grant, generation, byte);
 }
 
-auto main() -> int {
+auto main(int argc, char **argv) -> int {
+    need(argc == 2, "session cases path");
+    session_cases(argv[1]);
+    session_failures();
+    session_recovery();
     program_input();
     submission_records();
     program_response();
@@ -865,7 +1012,8 @@ auto main() -> int {
     }
     read_streams();
     generated_model();
-    std::cout << "PASS: source input/response turns, copied record validation, per-byte output failure, copied-byte "
+    std::cout << "PASS: retained source sessions, input/response turns, copied record validation, per-byte output "
+                 "failure, copied-byte "
                  "and authenticated "
                  "read/transform streams, ordered one-shot request/reply/ack, output staging and scrub; "
                  "40000 scalar model steps\n";

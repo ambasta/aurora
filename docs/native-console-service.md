@@ -11,7 +11,7 @@ qualification. Do not write these images to a physical disk or change a bootload
 | BIOS | Aurora-owned `help`, `status`, `exit` session; IRQ4-woken serial editor | Sealed ConsoleSession and Com1UartGrant; Aurora UART policy, trusted PIC/byte I/O |
 | Simple UEFI | Aurora-owned editor, commands, RAM note and four named RAM files | Sealed ConsoleSession and Com1UartGrant; Aurora UART policy, trusted boot/LAPIC/wake checks |
 | [Graphical](framebuffer-console.md) | Same RAM commands, two text rows and dirty-cell drawing; serial input | Separate ConsoleSession/DisplaySession grants; bounded emulator fixture |
-| [Protected commands](program-console-contract.md) | `upper`, protected note read and uppercase replacement | Aurora input turns through ConsoleSession; native dispatch and authenticated two-domain IPC |
+| [Protected commands](program-console-contract.md) | `upper`, protected note read and uppercase replacement | Aurora input turns through ConsoleSession; Aurora session routing and native authenticated two-domain IPC |
 
 ## Developer commands
 

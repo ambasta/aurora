@@ -569,78 +569,80 @@ __attribute__((noinline)) auto run_program_console() -> void {
 #ifdef AURORA_UEFI_GRAPHICAL_TERMINAL
     terminal_install();
 #endif
-    program::Response ready{program::Response::Kind::ready};
+    using Event = program::Session::Event;
+    using Effect = program::Session::Effect;
+    program::Session session;
 #ifdef AURORA_FILE_CALL
-    ready = program::Response{program::Response::Kind::file_reply};
-    constexpr std::string_view banner = "AURORA_FILE_CALL_READY: file storage, peek/wc/crc <name>";
-    require(ready.payload(std::as_bytes(std::span{banner.data(), banner.size()})), "file call banner");
-#endif
-    bool okay = program_write_response(ready);
-    program::Submission copied;
-    U64 after_cr = 0;
-    while (okay) {
-        program_read_input(copied, after_cr);
-        after_cr = copied.after_cr(); // Carry a submitted CR across protected execution.
-        const auto action = copied.action();
-        if (action == program::Submission::Action::upper_payload) {
-#ifdef AURORA_FILE_CALL
-            program::Response unsupported{program::Response::Kind::unknown};
-            copied.scrub();
-            okay = program_write_response(unsupported);
-            continue;
+    auto effect = session.advance(Event::begin, 1);
 #else
-            okay = program_command(copied);
-            continue;
+    auto effect = session.advance(Event::begin, 0);
 #endif
-        }
-        if (action == program::Submission::Action::requested_exit ||
-            action == program::Submission::Action::output_failure) {
-            okay = action != program::Submission::Action::output_failure;
+    program::Submission copied;
+    program::Response response;
+    while (effect != Effect::exited && effect != Effect::failed) {
+        switch (effect) {
+        case Effect::input:
+            program_read_input(copied, session.after_cr());
+            effect = session.advance(Event::input, static_cast<U64>(copied.action()), copied.after_cr());
+            continue;
+        case Effect::files:
+            response = program::Response{program::Response::Kind::unknown};
+            effect = session.advance(Event::files, program_files_update(copied, response));
+            continue;
+#ifndef AURORA_FILE_CALL
+        case Effect::ready:
+            response = program::Response{program::Response::Kind::ready};
+            break;
+        case Effect::note:
+            effect = session.advance(Event::note, program_note_update(copied));
+            continue;
+        case Effect::upper:
+            effect = session.advance(Event::response, program_command(copied));
+            continue;
+        case Effect::read_note:
+            effect = session.advance(Event::response, program_command(copied, true));
+            continue;
+        case Effect::upper_note:
+            effect = session.advance(Event::response, program_command(copied, false, true));
+            continue;
+        case Effect::file:
+            effect = session.advance(Event::response, program_command(copied, true, false, true));
+            continue;
+        case Effect::note_saved:
+            response = program::Response{program::Response::Kind::note_saved};
+            break;
+#else
+        case Effect::file_ready: {
+            response = program::Response{program::Response::Kind::file_reply};
+            constexpr std::string_view banner = "AURORA_FILE_CALL_READY: file storage, peek/wc/crc <name>";
+            require(response.payload(std::as_bytes(std::span{banner.data(), banner.size()})), "file call banner");
             break;
         }
-#ifndef AURORA_FILE_CALL
-        const auto note_event = program_note_update(copied);
-        if (note_event != 0) {
-            if (note_event == 1) {
-                program::Response response{program::Response::Kind::note_saved};
-                copied.scrub();
-                okay = program_write_response(response);
-            } else
-                okay = program_command(copied, note_event != 4, note_event == 4);
-            copied.scrub();
+        case Effect::peek:
+            effect = session.advance(Event::response, program_file_call(copied, false, false));
             continue;
-        }
-#endif
-        program::Response response{program::Response::Kind::unknown};
-        const auto file_event = program_files_update(copied, response);
-        if (file_event != 0) {
-#ifdef AURORA_FILE_CALL
-            if (file_event >= 4 && file_event <= 6)
-                okay = program_file_call(copied, file_event != 4, file_event == 6);
-            else if (file_event >= 2) {
-                command_files.abort();
-                copied.scrub();
-                okay = program_write_response(response);
-            }
-#else
-            if (file_event >= 4 && file_event <= 6) {
-                command_files.abort();
-                copied.scrub();
-                okay = program_write_response(response);
-            } else if (file_event >= 2)
-                okay = program_command(copied, true, false, true);
-#endif
-            else {
-                copied.scrub();
-                okay = program_write_response(response);
-            }
-            response.scrub();
-            copied.scrub();
+        case Effect::wc:
+            effect = session.advance(Event::response, program_file_call(copied, true, false));
             continue;
+        case Effect::crc:
+            effect = session.advance(Event::response, program_file_call(copied, true, true));
+            continue;
+#endif
+        case Effect::abort_file:
+            command_files.abort();
+            [[fallthrough]];
+        case Effect::unknown:
+            response = program::Response{program::Response::Kind::unknown};
+            break;
+        case Effect::file_reply:
+            break; // The store already supplied the copied response.
+        default:
+            stop("program session effect");
         }
         copied.scrub();
-        okay = program_write_response(response);
+        effect = session.advance(Event::response, program_write_response(response));
     }
+    response.scrub();
     copied.scrub();
     require(ProgramInputPlatform::quiet(), "program console exit boundary");
 #ifdef AURORA_FILE_CALL
@@ -655,7 +657,7 @@ __attribute__((noinline)) auto run_program_console() -> void {
 #endif
     command_note.clear();
     command_files.clear();
-    if (!okay) {
+    if (session.outcome() == 2) {
         // A partial response cannot be rolled back or replayed. Leave through
         // the existing failure device without using the failed channel.
         hardware::Io::write(0xf4, 0x11);

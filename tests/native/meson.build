@@ -153,7 +153,8 @@ native_host = executable('native-kernel-port-session', files('../../tests/kernel
 test('native-kernel-port-session', native_host, suite: native_kernel_suites, env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-program-stream', files('../../tests/kernel-program-stream.cpp') + [native_program_console_object],
     native: true, install: false, override_options: native_options, link_args: ['-no-pie'])
-test('native-kernel-program-stream', native_host, suite: native_kernel_suites, env: native_test_env, timeout: 180)
+test('native-kernel-program-stream', native_host, args: [native_root / 'tests/kernel-program-session.cases'],
+     suite: native_kernel_suites, env: native_test_env, timeout: 180)
 native_host = executable('native-kernel-owned-bytes', files('../../tests/kernel-owned-bytes.cpp', '../../kernel/owned-bytes.cpp'),
     native: true, install: false, override_options: native_options,
     cpp_args: ['-DNDEBUG', '-fno-exceptions', '-fno-rtti', '-DAURORA_KERNEL_BYTES_TESTING=1'], link_args: ['-no-pie'])
