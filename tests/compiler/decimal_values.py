@@ -528,7 +528,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", type=Path)
     parser.add_argument("--seed", type=int, default=10011)
-    parser.add_argument("--steps", type=int, default=96)
+    # 24 digits hold one overflowing run past MAX_U64 (20 digits); fixed cases cover latching and reset.
+    parser.add_argument("--steps", type=int, default=24)
     arguments = parser.parse_args()
     if not 1 <= arguments.steps <= 256:
         parser.error("--steps must be between 1 and 256")

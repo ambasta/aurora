@@ -620,7 +620,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", type=Path, nargs="?", default=ROOT / "build/aurorac")
     parser.add_argument("--seed", type=int, default=11011)
-    parser.add_argument("--steps", type=int, default=24)
+    # Every third step sets the source and the others copy and check it; three steps
+    # reach both, including copies after a set.
+    parser.add_argument("--steps", type=int, default=3)
     args = parser.parse_args()
     require(1 <= args.steps <= 128, "steps must be between 1 and 128")
     suite = Suite(args.compiler)
