@@ -505,7 +505,7 @@ end
 ; CASE: guard cannot merge with unguarded branch
 ; BASE: repeated source creates independent elements
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: missing or mistyped current value
 @@ -25 +25 @@
 -    InitializeClassArray 64 0 [16 16]
 +    InitializeClassArray 64 0 [16 32]
@@ -775,7 +775,7 @@ end
 ; CASE: stale current lifetime guard
 ; BASE: repeated source creates independent elements
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: missing or mistyped current value
 @@ -25 +25 @@
 -    InitializeClassArray 64 0 [16 16]
 +    InitializeClassArray 64 0 [16 32]

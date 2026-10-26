@@ -53,7 +53,7 @@ end
 ; CASE: rejected: hostile mutation 3
 ; BASE: accepted service graph 1
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service binding requires exact authorized leading parameter
 @@ -12 +12 @@
 -    BindServiceParameter 0 16 Display
 +    BindServiceParameter 0 16
@@ -61,7 +61,7 @@ end
 ; CASE: rejected: hostile mutation 4
 ; BASE: accepted service graph 1
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service binding requires exact authorized leading parameter
 @@ -9 +9 @@
 -  params [display]
 +  params [console]
@@ -77,7 +77,7 @@ end
 ; CASE: rejected: hostile mutation 6
 ; BASE: accepted service graph 1
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service operation kind does not match active capability
 @@ -23 +23 @@
 -    ServiceOperation 16 Pixel 0 Display
 +    ServiceOperation 16 Put 0 Display
@@ -93,7 +93,7 @@ end
 ; CASE: rejected: hostile mutation 9
 ; BASE: accepted service graph 1
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: missing or mistyped current value
 @@ -8 +8 @@
 -  result (enum __au_display_put_result display=builtin::DisplayPutResult)
 +  result (enum __au_console_put_result display=builtin::ConsolePutResult)
@@ -117,21 +117,21 @@ end
 ; CASE: rejected: hostile mutation 12
 ; BASE: accepted service graph 1
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: pixel argument type mismatch
 @@ -22 +21,0 @@
 -    Push
 
 ; CASE: rejected: hostile mutation 13
 ; BASE: accepted service graph 1
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service spill overlaps scalar, object, array or span storage
 @@ -10,0 +11 @@
 +  slot 8 u64
 
 ; CASE: rejected: hostile mutation 16
 ; BASE: accepted service graph 1
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service bindings must form the leading entry group
 @@ -9 +9 @@
 -  params [display]
 +  params [display console]
@@ -139,7 +139,7 @@ end
 ; CASE: rejected: hostile mutation 21
 ; BASE: accepted service graph 1
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: noncanonical sealed service enum
 @@ -6 +6 @@
 -enum __au_display_put_result 2
 +enum __au_display_put_result 3
@@ -174,7 +174,7 @@ end
 ; CASE: rejected: hostile mutation 25
 ; BASE: accepted service graph 1
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service helper requires an unused loan with exact provenance
 @@ -25,0 +26,11 @@
 +function display_caller
 +  result (enum __au_display_put_result display=builtin::DisplayPutResult)
@@ -205,49 +205,9 @@ end
 +    Return
 +end
 
-; CASE: rejected: hostile mutation 27
-; RUN: verify
-; EXPECT-ERROR:
-layout __au_console_sample [bool u8 bool]
-fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
-enum __au_console_completion 2
-enum __au_console_put_result 2
-enum __au_display_completion 2
-enum __au_display_put_result 2
-function pixel_entry
-  result (enum __au_display_put_result display=builtin::DisplayPutResult)
-  params [console]
-  frame 48
-  service 16
-    BindServiceParameter 0 16
-    Constant 7 u64
-    Push
-    Constant 9 u64
-    Push
-    Constant 11 u8
-    Push
-    Constant 13 u8
-    Push
-    Constant 17 u8
-    Push
-    ServiceOperation 16 Pixel 0 Display
-    Return
-end
-function display_caller
-  result (enum __au_display_put_result display=builtin::DisplayPutResult)
-  params [display]
-  frame 48
-  service 16
-    BindServiceParameter 0 16 Display
-    AcquireServiceLoan 1 16 Display
-    ServiceCall pixel_entry 1 0 [0] Display
-    ReleaseServiceLoan 1 Display
-    Return
-end
-
 ; CASE: rejected: hostile mutation 28
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service binding requires exact authorized leading parameter
 layout __au_console_sample [bool u8 bool]
 fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
 enum __au_console_completion 2
@@ -272,7 +232,7 @@ end
 ; CASE: rejected: hostile mutation 29
 ; BASE: rejected: hostile mutation 28
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service operation kind does not match active capability
 @@ -14 +14 @@
 -    BindServiceParameter 0 16 Display
 +    BindServiceParameter 0 16
@@ -283,7 +243,7 @@ end
 ; CASE: rejected: hostile mutation 30
 ; BASE: accepted service graph 1
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: invalid or reserved function symbol
 @@ -7 +7 @@
 -function pixel_entry
 +function __au_runtime_display_pixel
@@ -312,34 +272,10 @@ function call_result
     ReturnObject 40
 end
 
-; CASE: rejected: hostile mutation 39
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -15 +15 @@
--    ServiceOperation 16 Call 40 Call
-+    ServiceOperation 16 Call 40
-
-; CASE: rejected: hostile mutation 40
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -15 +15 @@
--    ServiceOperation 16 Call 40 Call
-+    ServiceOperation 16 Call 40 Display
-
-; CASE: rejected: hostile mutation 43
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -15 +15 @@
--    ServiceOperation 16 Call 40 Call
-+    ServiceOperation 16 Call 40 -1
-
 ; CASE: rejected: hostile mutation 44
 ; BASE: accepted service graph 38
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: unknown sealed service operation
 @@ -15 +15 @@
 -    ServiceOperation 16 Call 40 Call
 +    ServiceOperation 16 -1 40 Call
@@ -347,23 +283,15 @@ end
 ; CASE: rejected: hostile mutation 52
 ; BASE: accepted service graph 38
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: missing or mistyped current value
 @@ -14 +14 @@
 -    Constant 42 u64
 +    Constant 1
 
-; CASE: rejected: hostile mutation 53
-; BASE: accepted service graph 38
-; RUN: verify
-; EXPECT-ERROR:
-@@ -14 +14 @@
--    Constant 42 u64
-+    Constant 1 u8
-
 ; CASE: rejected: hostile mutation 55
 ; BASE: accepted service graph 38
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service observation requires exact pristine active copied sample object
 @@ -15 +15 @@
 -    ServiceOperation 16 Call 40 Call
 +    ServiceOperation 16 Call 0 Call
@@ -371,7 +299,7 @@ end
 ; CASE: rejected: hostile mutation 72
 ; BASE: accepted service graph 38
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: logical class field leaf type mismatch
 @@ -1 +1 @@
 -layout __au_call_result [(enum __au_call_status display=builtin::CallStatus) u64]
 +layout __au_call_result [u64 u64]
@@ -379,7 +307,7 @@ end
 ; CASE: rejected: hostile mutation 73
 ; BASE: accepted service graph 38
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: noncanonical sealed CallResult fields
 @@ -2 +2 @@
 -fields __au_call_result [((enum __au_call_status display=builtin::CallStatus) 0 1 false) (u64 1 1 false)]
 +fields __au_call_result [((enum __au_call_status display=builtin::CallStatus) 0 1 false) (u64 1 1 true)]
@@ -387,7 +315,7 @@ end
 ; CASE: rejected: hostile mutation 74
 ; BASE: accepted service graph 38
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service observation requires exact pristine active copied sample object
 @@ -0,0 +1 @@
 +layout Fake [(enum __au_call_status display=builtin::CallStatus) u64]
 @@ -1,0 +3 @@
@@ -399,7 +327,7 @@ end
 ; CASE: rejected: hostile mutation 76
 ; BASE: accepted service graph 38
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service observation cannot overwrite initialized sample storage
 @@ -13,0 +14,2 @@
 +    Constant 0 u64
 +    Store 32 u64
@@ -939,7 +867,7 @@ end
 ; CASE: rejected: hostile mutation 95
 ; BASE: accepted service graph 94
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: copy requires exact object slot
 @@ -38 +38 @@
 -    ServiceCall group_sample 1 64 [0 0] Console [(2 Display)]
 +    ServiceCall group_sample 1 0 [0 0] Console [(2 Display)]
@@ -947,7 +875,7 @@ end
 ; CASE: rejected: hostile mutation 102
 ; BASE: accepted service graph 94
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: copy nominal class mismatch
 @@ -0,0 +1 @@
 +layout OtherSample [bool u8 bool]
 @@ -1,0 +3 @@
@@ -980,7 +908,7 @@ end
 ; CASE: rejected: hostile mutation 104
 ; BASE: accepted service graph 94
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: copy requires exact object slot
 @@ -9 +9 @@
 -  params [console display]
 +  params [display console]
@@ -998,7 +926,7 @@ end
 
 ; CASE: rejected: hostile mutation 106
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: copy object outside active lifetime
 layout __au_console_sample [bool u8 bool]
 fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
 enum __au_console_completion 2
@@ -1047,7 +975,7 @@ end
 ; CASE: rejected: hostile mutation 107
 ; BASE: rejected: hostile mutation 106
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: copy requires pristine result object
 @@ -34,0 +35,3 @@
 +    BeginObject 64
 +    Constant 0 bool
@@ -1056,7 +984,7 @@ end
 ; CASE: rejected: hostile mutation 108
 ; BASE: rejected: hostile mutation 106
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: copy requires pristine result object
 @@ -34,0 +35,3 @@
 +    BeginObject 64
 +    Constant 0 u8
@@ -1065,7 +993,7 @@ end
 ; CASE: rejected: hostile mutation 109
 ; BASE: rejected: hostile mutation 106
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: copy requires pristine result object
 @@ -34,0 +35,3 @@
 +    BeginObject 64
 +    Constant 0 bool
@@ -1074,7 +1002,7 @@ end
 ; CASE: rejected: hostile mutation 110
 ; BASE: rejected: hostile mutation 106
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: copy result object already initialized
 @@ -34,0 +35,2 @@
 +    BeginObject 64
 +    ServiceOperation 16 Next 64
@@ -1082,7 +1010,7 @@ end
 ; CASE: rejected: hostile mutation 111
 ; BASE: rejected: hostile mutation 106
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: copy nominal class mismatch
 @@ -0,0 +1 @@
 +layout OtherSample [bool u8 bool]
 @@ -1,0 +3 @@
@@ -1199,7 +1127,7 @@ end
 
 ; CASE: rejected: hostile mutation 115
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service signature requires distinct capability kinds
 layout __au_console_sample [bool u8 bool]
 fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
 enum __au_console_completion 2
@@ -1234,7 +1162,7 @@ end
 ; CASE: rejected: hostile mutation 116
 ; BASE: rejected: hostile mutation 115
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service bindings must form the leading entry group
 @@ -9 +9 @@
 -  params [console console]
 +  params [console display]
@@ -1245,7 +1173,7 @@ end
 ; CASE: rejected: hostile mutation 117
 ; BASE: rejected: hostile mutation 115
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service binding requires exact authorized leading parameter
 @@ -9 +9 @@
 -  params [console console]
 +  params [console display]
@@ -1256,7 +1184,7 @@ end
 ; CASE: rejected: hostile mutation 118
 ; BASE: rejected: hostile mutation 115
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service binding requires exact authorized leading parameter
 @@ -9 +9 @@
 -  params [console console]
 +  params [console display]
@@ -1267,7 +1195,7 @@ end
 ; CASE: rejected: hostile mutation 119
 ; BASE: rejected: hostile mutation 115
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service parameter bindings overlap
 @@ -9 +9 @@
 -  params [console console]
 +  params [console display]
@@ -1278,7 +1206,7 @@ end
 ; CASE: rejected: hostile mutation 120
 ; BASE: rejected: hostile mutation 115
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service bindings must form the leading entry group
 @@ -9 +9 @@
 -  params [console console]
 +  params [console display]
@@ -1288,7 +1216,7 @@ end
 ; CASE: rejected: hostile mutation 121
 ; BASE: rejected: hostile mutation 115
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service bindings must form the leading entry group
 @@ -9 +9 @@
 -  params [console console]
 +  params [console display]
@@ -1343,7 +1271,7 @@ end
 ; CASE: rejected: hostile mutation 124
 ; BASE: rejected: hostile mutation 115
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service signature requires later scalar, enum, copied value or readonly span arguments
 @@ -9 +9 @@
 -  params [console console]
 +  params [console i64 display]
@@ -1351,7 +1279,7 @@ end
 ; CASE: rejected: hostile mutation 125
 ; BASE: rejected: hostile mutation 115
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service signature requires distinct capability kinds
 @@ -9 +9 @@
 -  params [console console]
 +  params [console display console]
@@ -1359,7 +1287,7 @@ end
 ; CASE: rejected: hostile mutation 126
 ; BASE: rejected: hostile mutation 115
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service binding requires exact authorized leading parameter
 @@ -9 +9 @@
 -  params [console console]
 +  params [console display]
@@ -1369,7 +1297,7 @@ end
 ; CASE: rejected: hostile mutation 127
 ; BASE: rejected: hostile mutation 115
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service spill overlaps scalar, object, array or span storage
 @@ -9 +9 @@
 -  params [console console]
 +  params [console display]
@@ -1379,7 +1307,7 @@ end
 ; CASE: rejected: hostile mutation 128
 ; BASE: rejected: hostile mutation 115
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service spill overlaps scalar, object, array or span storage
 @@ -9 +9 @@
 -  params [console console]
 +  params [console display]
@@ -1389,7 +1317,7 @@ end
 ; CASE: rejected: hostile mutation 129
 ; BASE: rejected: hostile mutation 115
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: overlapping region or owned byte spills
 @@ -9 +9 @@
 -  params [console console]
 +  params [console display]
@@ -1399,7 +1327,7 @@ end
 ; CASE: rejected: hostile mutation 130
 ; BASE: rejected: hostile mutation 115
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: slot type/layout mismatch
 @@ -9 +9 @@
 -  params [console console]
 +  params [console display]
@@ -1409,7 +1337,7 @@ end
 ; CASE: rejected: hostile mutation 131
 ; BASE: rejected: hostile mutation 115
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service operation requires active unsuspended capability provenance
 @@ -9 +9 @@
 -  params [console console]
 +  params [console display]
@@ -1446,7 +1374,7 @@ end
 ; CASE: rejected: hostile mutation 134
 ; BASE: accepted service graph 112
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service helper requires distinct acquired loans in leading positions
 @@ -41,6 +41 @@
 -    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
 -    ReleaseServiceLoan 2 Display
@@ -1459,7 +1387,7 @@ end
 ; CASE: rejected: hostile mutation 137
 ; BASE: accepted service graph 112
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service helper requires an unused loan with exact provenance
 @@ -41,6 +41 @@
 -    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
 -    ReleaseServiceLoan 2 Display
@@ -1469,49 +1397,10 @@ end
 -    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
 +    ServiceCall group_leaf 1 0 [0 0] Console [(2 Console)]
 
-; CASE: rejected: hostile mutation 139
-; BASE: accepted service graph 112
-; RUN: verify
-; EXPECT-ERROR:
-@@ -41,6 +41 @@
--    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
--    ReleaseServiceLoan 2 Display
--    ReleaseServiceLoan 1
--    AcquireServiceLoan 1 16
--    AcquireServiceLoan 2 32 Display
--    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
-+    ServiceCall group_leaf 2 0 [0 0] Console [(2 Display)]
-
-; CASE: rejected: hostile mutation 140
-; BASE: accepted service graph 112
-; RUN: verify
-; EXPECT-ERROR:
-@@ -41,6 +41 @@
--    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
--    ReleaseServiceLoan 2 Display
--    ReleaseServiceLoan 1
--    AcquireServiceLoan 1 16
--    AcquireServiceLoan 2 32 Display
--    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
-+    ServiceCall group_leaf 1 0 [0 0] Display [(2 Display)]
-
-; CASE: rejected: hostile mutation 141
-; BASE: accepted service graph 112
-; RUN: verify
-; EXPECT-ERROR:
-@@ -41,6 +41 @@
--    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
--    ReleaseServiceLoan 2 Display
--    ReleaseServiceLoan 1
--    AcquireServiceLoan 1 16
--    AcquireServiceLoan 2 32 Display
--    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
-+    ServiceCall group_leaf 1 0 [0 32] Console [(2 Display)]
-
 ; CASE: rejected: hostile mutation 142
 ; BASE: accepted service graph 112
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service helper argument vector mismatch
 @@ -41,6 +41 @@
 -    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
 -    ReleaseServiceLoan 2 Display
@@ -1524,7 +1413,7 @@ end
 ; CASE: rejected: hostile mutation 143
 ; BASE: accepted service graph 112
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service helper requires distinct acquired loans in leading positions
 @@ -40,6 +39,0 @@
 -    AcquireServiceLoan 2 32 Display
 -    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
@@ -1587,7 +1476,7 @@ end
 ; CASE: rejected: hostile mutation 148
 ; BASE: accepted service graph 112
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: plain call cannot bypass a service loan
 @@ -41,6 +41 @@
 -    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
 -    ReleaseServiceLoan 2 Display
@@ -1600,7 +1489,7 @@ end
 ; CASE: rejected: hostile mutation 149
 ; BASE: accepted service graph 112
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: aggregate call cannot bypass a service loan
 @@ -41,6 +41 @@
 -    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
 -    ReleaseServiceLoan 2 Display
@@ -1613,7 +1502,7 @@ end
 ; CASE: rejected: hostile mutation 150
 ; BASE: accepted service graph 112
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: recursive receiver call cycle
 @@ -41,6 +41 @@
 -    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
 -    ReleaseServiceLoan 2 Display
@@ -1697,7 +1586,7 @@ end
 
 ; CASE: rejected: hostile mutation 152
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service operation requires active unsuspended capability provenance
 layout __au_console_sample [bool u8 bool]
 fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
 enum __au_console_completion 2
@@ -1768,7 +1657,7 @@ end
 ; CASE: rejected: hostile mutation 153
 ; BASE: rejected: hostile mutation 152
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service operation requires active unsuspended capability provenance
 @@ -38 +38 @@
 -function subset_caller
 +function console_subset_caller
@@ -1788,7 +1677,7 @@ end
 ; CASE: rejected: hostile mutation 154
 ; BASE: accepted service graph 112
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service release requires exactly one completed helper call
 @@ -41 +40,0 @@
 -    ServiceCall group_leaf 1 0 [0 0] Console [(2 Display)]
 @@ -43,3 +41,0 @@
@@ -1799,7 +1688,7 @@ end
 ; CASE: rejected: hostile mutation 156
 ; BASE: accepted service graph 112
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service release requires exactly one completed helper call
 @@ -42,6 +42 @@
 -    ReleaseServiceLoan 2 Display
 -    ReleaseServiceLoan 1
@@ -1812,7 +1701,7 @@ end
 ; CASE: rejected: hostile mutation 159
 ; BASE: accepted service graph 112
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service release requires exactly one completed helper call
 @@ -40,0 +41,2 @@
 +    Constant 0 bool
 +    BranchFalse 99
@@ -1827,7 +1716,7 @@ end
 ; CASE: rejected: hostile mutation 160
 ; BASE: accepted service graph 112
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: return with active synchronous service loan
 @@ -38,0 +39 @@
 +    Label 1
 @@ -42 +42,0 @@

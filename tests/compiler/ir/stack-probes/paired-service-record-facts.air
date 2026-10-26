@@ -23,7 +23,7 @@ end
 ; CASE: wrong service role
 ; BASE: paired service record order and scalar widths
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service signature requires distinct capability kinds
 @@ -3 +3 @@
 -  params [console display u64 u64]
 +  params [display display u64 u64]

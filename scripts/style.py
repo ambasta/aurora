@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Run pinned host formatters on explicitly selected source files."""
+"""Run pinned host formatters on explicitly selected source files, or on every tracked one."""
 
 import argparse
 import os
 from pathlib import Path
 import shutil
+import struct
 import subprocess
 import sys
 
@@ -31,8 +32,40 @@ def select_files(paths):
     return sorted(python_files), sorted(cpp_files)
 
 
+def indexed_paths():
+    """Tracked paths from the checkout's git index (versions 2 and 3, SHA-1), or
+    None without a readable index; the pinned container has no git binary."""
+    git = ROOT / ".git"
+    if git.is_file():
+        git = (ROOT / git.read_text().removeprefix("gitdir:").strip()).resolve()
+    try:
+        data = (git / "index").read_bytes()
+    except OSError:
+        return None
+    signature, version, count = struct.unpack_from(">4sII", data)
+    if signature != b"DIRC" or version not in (2, 3):
+        raise ValueError(f"unsupported git index version {version}; run with explicit files")
+    paths, at = [], 12
+    for _ in range(count):
+        # 62 fixed bytes (two more with v3 extended flags), the path, then 1-8
+        # NULs padding the entry to a multiple of eight bytes.
+        fixed = 64 if struct.unpack_from(">H", data, at + 60)[0] & 0x4000 else 62
+        end = data.index(b"\0", at + fixed)
+        paths.append(data[at + fixed : end].decode())
+        at += (end - at + 8) // 8 * 8
+    return paths
+
+
 def tree_files():
-    """Every host source in the checkout, outside build products and hidden directories."""
+    """Every tracked host source, or every one outside build products and hidden
+    directories when there is no git index (an exported tree)."""
+    paths = indexed_paths()
+    if paths is not None:
+        for path in paths:
+            # Deleted or sparse entries stay in the index without a file.
+            if (Path(path).suffix == ".py" or Path(path).suffix in CPP_SUFFIXES) and (ROOT / path).is_file():
+                yield str(ROOT / path)
+        return
     for directory, subdirectories, names in os.walk(ROOT):
         subdirectories[:] = sorted(name for name in subdirectories if name not in SKIPPED and name[0] != ".")
         for name in sorted(names):
@@ -73,19 +106,26 @@ def main():
     # Resolve every dependency before format mode can modify any selected file.
     ruff = find_tool("ruff") if python_files else None
     clang_format = find_tool("clang-format") if cpp_files else None
-    commands = []
+    ruff_commands, format_commands = [], []
     if python_files:
         options = ["--config", str(ROOT / "ruff.toml"), "--no-cache"]
         check = ["--check"] if args.mode == "check" else []
-        commands.append([ruff, "format", *options, *check, "--", *python_files])
-        commands.append([ruff, "check", *options, "--", *python_files])
+        ruff_commands.append([ruff, "format", *options, *check, "--", *python_files])
+        ruff_commands.append([ruff, "check", *options, "--", *python_files])
     if cpp_files:
+        # clang-format is single-threaded; one process per CPU over interleaved slices.
         options = ["--dry-run", "--Werror"] if args.mode == "check" else ["-i"]
-        commands.append([clang_format, f"--style=file:{ROOT / '.clang-format'}", *options, "--", *cpp_files])
+        jobs = min(len(os.sched_getaffinity(0)), len(cpp_files))
+        for part in range(jobs):
+            files = cpp_files[part::jobs]
+            format_commands.append([clang_format, f"--style=file:{ROOT / '.clang-format'}", *options, "--", *files])
+    # The two ruff steps run in order (format, then check) beside the clang-format slices.
+    processes = [subprocess.Popen(command, cwd=ROOT) for command in format_commands]
     failed = False
-    for command in commands:
-        result = subprocess.run(command, cwd=ROOT, timeout=120)
-        failed = failed or result.returncode != 0
+    for command in ruff_commands:
+        failed = subprocess.run(command, cwd=ROOT, timeout=120).returncode != 0 or failed
+    for process in processes:
+        failed = process.wait(timeout=120) != 0 or failed
     return int(failed)
 
 

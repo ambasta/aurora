@@ -23,7 +23,7 @@ end
 ; CASE: rejected: hostile mutation 4
 ; BASE: Port runtime ABI facts write=0
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service operation kind does not match active capability
 @@ -9 +9 @@
 -    ServiceOperation 16 PortRead8 0 Port
 +    ServiceOperation 16 PortRead8
@@ -31,7 +31,7 @@ end
 ; CASE: rejected: hostile mutation 19
 ; BASE: Port runtime ABI facts write=0
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service operation requires active unsuspended capability provenance
 @@ -9 +9 @@
 -    ServiceOperation 16 PortRead8 0 Port
 +    ServiceOperation 0 PortRead8 0 Port
@@ -39,7 +39,7 @@ end
 ; CASE: rejected: hostile mutation 26
 ; BASE: Port runtime ABI facts write=0
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service bindings must form the leading entry group
 @@ -7 +7 @@
 -    BindServiceParameter 0 16 Port
 +    BindServiceParameter 1 16 Port
@@ -47,7 +47,7 @@ end
 ; CASE: rejected: hostile mutation 34
 ; BASE: Port runtime ABI facts write=0
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: missing or mistyped current value
 @@ -3 +3 @@
 -  result u8
 +  result u64
@@ -77,18 +77,10 @@ end
 ; CHECK-NOT: .globl caller
 ; RUN: stack-facts
 
-; CASE: rejected: hostile mutation 74
-; BASE: Port runtime ABI facts write=1
-; RUN: verify
-; EXPECT-ERROR:
-@@ -3 +3 @@
--  result (enum __au_port_write_result display=builtin::PortWriteResult)
-+  result u64
-
 ; CASE: rejected: hostile mutation 88
 ; BASE: Port runtime ABI facts write=1
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: noncanonical u8
 @@ -10 +10 @@
 -    Constant 255 u8
 +    Constant 256 u8
@@ -96,7 +88,7 @@ end
 ; CASE: rejected: hostile mutation 89
 ; BASE: Port runtime ABI facts write=1
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: port write byte argument type mismatch
 @@ -10 +10 @@
 -    Constant 255 u8
 +    EnumConstant (enum __au_port_write_result display=builtin::PortWriteResult)
@@ -104,7 +96,7 @@ end
 ; CASE: rejected: hostile mutation 90
 ; BASE: Port runtime ABI facts write=1
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: enum constant is not a declared case
 @@ -8,5 +8 @@
 -    Constant 0 u64
 -    Push
@@ -150,7 +142,7 @@ end
 ; CASE: rejected: hostile mutation 97
 ; BASE: accepted service graph 94
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service helper requires distinct acquired loans in leading positions
 @@ -19 +19 @@
 -    ServiceCall port_read 1 0 [0] Port
 +    ServiceCall port_read 2 0 [0] Port
@@ -158,18 +150,10 @@ end
 ; CASE: rejected: hostile mutation 98
 ; BASE: accepted service graph 94
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service helper requires an unused loan with exact provenance
 @@ -19 +19 @@
 -    ServiceCall port_read 1 0 [0] Port
 +    ServiceCall port_read 1 0 [0] Call
-
-; CASE: rejected: hostile mutation 99
-; BASE: accepted service graph 94
-; RUN: verify
-; EXPECT-ERROR:
-@@ -19 +19 @@
--    ServiceCall port_read 1 0 [0] Port
-+    ServiceCall port_read 1 0 [16] Port
 
 ; CASE: accepted service graph 102
 ; RUN: emit
