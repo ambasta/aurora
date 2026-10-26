@@ -236,7 +236,7 @@ end
 ; CASE: rejected: hostile mutation 36
 ; BASE: accepted service graph 1
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: unsupported service group
 @@ -12 +12 @@
 -  params [iommu]
 +  params [iommu display]
@@ -248,7 +248,7 @@ end
 ; CASE: rejected: hostile mutation 37
 ; BASE: accepted service graph 1
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: unsupported service group
 @@ -12 +12 @@
 -  params [iommu]
 +  params [iommu console display]
@@ -260,7 +260,7 @@ end
 ; CASE: rejected: hostile mutation 38
 ; BASE: accepted service graph 5
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service helper requires an unused loan with exact provenance
 @@ -43 +43 @@
 -    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
 +    ServiceCall event_sample 1 64 [0 0] Display [(2 Console)]
@@ -268,7 +268,7 @@ end
 ; CASE: rejected: hostile mutation 41
 ; BASE: accepted service graph 5
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: plain call cannot bypass a service loan
 @@ -43 +43 @@
 -    ServiceCall event_sample 1 64 [0 0] IommuEvent [(2 Console)]
 +    Call event_sample
@@ -283,7 +283,7 @@ end
 ; CASE: rejected: hostile mutation 46
 ; BASE: accepted service graph 3
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: unsupported service group
 @@ -12 +12 @@
 -  params [console iommu]
 +  params [display iommu]
@@ -294,7 +294,7 @@ end
 ; CASE: rejected: hostile mutation 48
 ; BASE: accepted service graph 5
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service helper requires an unused loan with exact provenance
 @@ -12 +12 @@
 -  params [iommu console]
 +  params [console iommu]
@@ -313,7 +313,7 @@ end
 ; CASE: rejected: hostile mutation 49
 ; BASE: accepted service graph 5
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service helper requires distinct acquired loans in leading positions
 @@ -12 +12 @@
 -  params [iommu console]
 +  params [console iommu]
@@ -332,7 +332,7 @@ end
 ; CASE: rejected: hostile mutation 50
 ; BASE: accepted service graph 5
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: copy requires exact object slot
 @@ -12 +12 @@
 -  params [iommu console]
 +  params [console iommu]
@@ -351,7 +351,7 @@ end
 ; CASE: rejected: hostile mutation 51
 ; BASE: accepted service graph 5
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: plain call cannot bypass a service loan
 @@ -12 +12 @@
 -  params [iommu console]
 +  params [console iommu]
@@ -370,7 +370,7 @@ end
 ; CASE: rejected: hostile mutation 52
 ; BASE: accepted service graph 5
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: return with active synchronous service loan
 @@ -12 +12 @@
 -  params [iommu console]
 +  params [console iommu]
@@ -390,7 +390,7 @@ end
 ; CASE: rejected: hostile mutation 53
 ; BASE: accepted service graph 5
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service release requires exactly one completed helper call
 @@ -12 +12 @@
 -  params [iommu console]
 +  params [console iommu]
@@ -411,7 +411,7 @@ end
 ; CASE: rejected: hostile mutation 54
 ; BASE: accepted service graph 5
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service operation requires active unsuspended capability provenance
 @@ -12 +12 @@
 -  params [iommu console]
 +  params [console iommu]
@@ -452,7 +452,7 @@ end
 ; CASE: rejected: hostile mutation 60
 ; BASE: accepted service graph 5
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service release requires exactly one completed helper call
 @@ -44 +44 @@
 -    ReleaseServiceLoan 2
 +    ReleaseServiceLoan 2 Display
@@ -460,7 +460,7 @@ end
 ; CASE: rejected: hostile mutation 61
 ; BASE: accepted service graph 5
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service loan requires unsuspended parameter authority
 @@ -41 +41 @@
 -    AcquireServiceLoan 1 16 IommuEvent
 +    AcquireServiceLoan 1 32 IommuEvent
@@ -468,7 +468,7 @@ end
 ; CASE: rejected: hostile mutation 65
 ; BASE: accepted service graph 5
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: copy requires pristine result object
 @@ -12 +12 @@
 -  params [iommu console]
 +  params [console iommu]
@@ -490,7 +490,7 @@ end
 ; CASE: rejected: hostile mutation 66
 ; BASE: accepted service graph 5
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: copy requires pristine result object
 @@ -12 +12 @@
 -  params [iommu console]
 +  params [console iommu]
@@ -512,7 +512,7 @@ end
 ; CASE: rejected: hostile mutation 69
 ; BASE: accepted service graph 5
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service release requires exactly one completed helper call
 @@ -12 +12 @@
 -  params [iommu console]
 +  params [console iommu]
@@ -532,7 +532,7 @@ end
 
 ; CASE: rejected: hostile mutation 70
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service loan requires unsuspended parameter authority
 layout __au_console_sample [bool u8 bool]
 layout __au_iommu_event_sample [(enum __au_event_poll_result display=builtin::EventPollResult) u64*3]
 fields __au_console_sample [(bool 0 1 false) (u8 1 1 false) (bool 2 1 false)]
@@ -586,7 +586,7 @@ end
 ; CASE: rejected: hostile mutation 71
 ; BASE: rejected: hostile mutation 70
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service release requires exactly one completed helper call
 @@ -41 +41 @@
 -    AcquireServiceLoan 1 32 IommuEvent
 +    AcquireServiceLoan 1 16 IommuEvent
@@ -596,7 +596,7 @@ end
 ; CASE: rejected: hostile mutation 72
 ; BASE: rejected: hostile mutation 70
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service helper requires an unused loan with exact provenance
 @@ -41 +41 @@
 -    AcquireServiceLoan 1 32 IommuEvent
 +    AcquireServiceLoan 1 16 IommuEvent
@@ -606,7 +606,7 @@ end
 ; CASE: rejected: hostile mutation 73
 ; BASE: rejected: hostile mutation 70
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: service loan requires unsuspended parameter authority
 @@ -41 +41,2 @@
 -    AcquireServiceLoan 1 32 IommuEvent
 +    AcquireServiceLoan 1 16 IommuEvent
@@ -633,7 +633,7 @@ end
 ; CASE: rejected: hostile mutation 80
 ; BASE: accepted service graph 1
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: invalid logical class field shape
 @@ -4 +4 @@
 -fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
 +fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 4 1 false) (u64 {1,1} 1 false)*3]
@@ -641,7 +641,7 @@ end
 ; CASE: rejected: hostile mutation 81
 ; BASE: accepted service graph 1
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: invalid logical class field shape
 @@ -4 +4 @@
 -fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
 +fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 2 false) (u64 {1,1} 1 false)*3]
@@ -649,7 +649,7 @@ end
 ; CASE: rejected: hostile mutation 82
 ; BASE: accepted service graph 1
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: invalid logical class field shape
 @@ -4 +4 @@
 -fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
 +fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 true) (u64 {1,1} 1 false)*3]
@@ -657,7 +657,7 @@ end
 ; CASE: rejected: hostile mutation 83
 ; BASE: accepted service graph 1
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: logical class field leaf type mismatch
 @@ -2 +2 @@
 -layout __au_iommu_event_sample [(enum __au_event_poll_result display=builtin::EventPollResult) u64*3]
 +layout __au_iommu_event_sample [(enum __au_event_poll_result display=builtin::EventPollResult) bool u64 u64]
@@ -665,7 +665,7 @@ end
 ; CASE: rejected: hostile mutation 84
 ; BASE: accepted service graph 1
 ; RUN: verify
-; EXPECT-ERROR:
+; EXPECT-ERROR: invalid logical class field shape
 @@ -4 +4 @@
 -fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 {1,1} 1 false)*3]
 +fields __au_iommu_event_sample [((enum __au_event_poll_result display=builtin::EventPollResult) 0 1 false) (u64 4 1 false) (u64 2 1 false) (u64 3 1 false)]
