@@ -16,6 +16,7 @@ import argparse
 from enum import Enum
 from pathlib import Path
 import random
+import re
 
 from native_runner import DIAGNOSTIC, Suite as Runner, require
 
@@ -270,8 +271,11 @@ def byte_run_cases(suite):
 
 
 def compact_copy(assembly):
-    require("movq $67, %rcx\n    cld\n    rep movsb" in assembly, "compact run stopped at representation padding")
-    require("movq $80, %rcx\n    cld\n    rep movsb" not in assembly, "compact copy included representation padding")
+    # Observe the copy count, not the width used to materialize it: these
+    # nonnegative counts have the same RCX value after either MOV form.
+    counts = [int(value) for value in re.findall(r"mov(?:abs)?[ql] \$(\d+), %[er]cx\n\s+cld\n\s+rep movsb", assembly)]
+    require(67 in counts, "compact run stopped at representation padding")
+    require(80 not in counts, "compact copy included representation padding")
 
 
 def scalar_and_layout_cases(suite):

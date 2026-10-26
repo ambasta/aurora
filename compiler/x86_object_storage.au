@@ -994,6 +994,11 @@ export namespace compiler_x86 {
         }
         auto mov_imm(i64 value, Register target) -> bool {
             const i64 dst = hardware_register(target);
+            if (value >= 0 && value <= 4294967295) {
+                rex(false, 0, dst, 0, false);
+                byte(u8(184 + dst % 8));
+                return emit_little(u64(value), 4);
+            }
             if (value >= -2147483648 && value <= 2147483647) {
                 rex(true, 0, dst, 0, false);
                 byte(u8(199));
@@ -1005,12 +1010,15 @@ export namespace compiler_x86 {
             return emit_little(signed_bits(value), 8);
         }
         auto mov_abs(i64 value, Register target) -> bool {
-            const i64 dst = hardware_register(target);
-            rex(true, 0, dst, 0, false);
-            byte(u8(184 + dst % 8));
-            return emit_little(signed_bits(value), 8);
+            return mov_imm(value, target);
         }
         auto mov_uimm(u64 value, Register target) -> bool {
+            if (value <= 4294967295u64) {
+                return mov_imm(i64(value), target);
+            }
+            if (value >= 18446744071562067968u64) {
+                return mov_imm(-1 - i64(18446744073709551615u64 - value), target);
+            }
             const i64 dst = hardware_register(target);
             rex(true, 0, dst, 0, false);
             byte(u8(184 + dst % 8));

@@ -296,6 +296,13 @@ corpus (see Git history). Emission is now checked by C1/C2 convergence in
 `hosted-lexer-bootstrap` and by the execution suites. Record before/after
 `scripts/compiler-speed.py` time and peak-memory observations for emitter changes.
 
+Numeric register immediates use flag-preserving MOV encodings: nonnegative u32
+patterns write the 32-bit register and zero-extend; negative i32 patterns use
+the sign-extending immediate form; other patterns retain full-width `movabs`.
+Text and direct-object emission make the same choice, including unsigned values
+with a negative-i32 bit pattern. Symbol-address materialization and relocation
+policy are unchanged; the emitter rebuilds offsets for the compact output.
+
 ## Supported source
 
 - A file starts with `module name;` or `export module name;`; direct named imports

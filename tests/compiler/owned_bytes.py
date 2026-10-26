@@ -1349,6 +1349,166 @@ class OwnedBytesCases(Suite):
             "typed-imported-wrong-result", imported.replace("left::Node copied", "right::Node copied"), modules=modules
         )
 
+    def emitter_mov_cases(self):
+        # All helpers and closed register aliases run in this existing packed
+        # driver. GNU as assembles the reviewed data once, never one program per
+        # value. Equality with MOV-only reference bytes also checks that zero
+        # loads preserve flags instead of becoming a flags-changing idiom.
+        registers = (
+            ("rax", "eax"),
+            ("rbx", "ebx"),
+            ("rcx", "ecx"),
+            ("rdx", "edx"),
+            ("rsi", "esi"),
+            ("rdi", "edi"),
+            ("r8", "r8d"),
+            ("r9", "r9d"),
+            ("r10", "r10d"),
+            ("r11", "r11d"),
+            ("rbp", "ebp"),
+            ("rsp", "esp"),
+        )
+        rows = [
+            line.split()
+            for line in (ROOT / "tests/compiler/emitter_mov.cases").read_text().splitlines()
+            if line and not line.startswith("#")
+        ]
+        signed = [value for kind, value, _, _ in rows if kind == "i64"]
+        unsigned = [value + "u64" for kind, value, _, _ in rows if kind == "u64"]
+        references = []
+        for wide, narrow in registers:
+            instructions = []
+            for kind, _, mnemonic, immediate in rows:
+                instruction = f"    {mnemonic} ${immediate}, %{narrow if mnemonic == 'movl' else wide}\n"
+                instructions.extend([instruction] * (2 if kind == "i64" else 1))
+            references.append("".join(instructions))
+        reference = self.directory / "emitter-mov-reference.s"
+        reference.write_text(
+            ".text\n"
+            + "".join(
+                f".globl reference_{wide}\n.type reference_{wide},@function\nreference_{wide}:\n"
+                + text
+                + f".size reference_{wide},.-reference_{wide}\n"
+                for (wide, _), text in zip(registers, references)
+            )
+            + '.section .note.GNU-stack,"",@progbits\n'
+        )
+        reference_object, reference_binary = reference.with_suffix(".o"), reference.with_suffix(".bin")
+        native_runner.command(["as", "--64", reference, "-o", reference_object])
+        native_runner.command(["objcopy", "-O", "binary", "--only-section=.text", reference_object, reference_binary])
+        symbols = {}
+        for line in (
+            native_runner.command(["nm", "-S", "--defined-only", reference_object]).stdout.decode().splitlines()
+        ):
+            offset, size, _, name = line.split()
+            symbols[name] = (int(offset, 16), int(size, 16))
+        encoded = reference_binary.read_bytes()
+        selections, comparisons = [], []
+        for index, ((wide, _), text) in enumerate(zip(registers, references)):
+            selections.append(f"if(n=={index}){{target=compiler_x86::Register::{wide};}}")
+            offset, size = symbols["reference_" + wide]
+            literal = '"' + "".join(f"\\x{byte:02x}" for byte in encoded[offset : offset + size]) + '"'
+            comparisons.append(
+                f"if(n=={index}){{if(!same_text(w,{json.dumps(text)})||!same_object(o,{literal})){{return -4;}}}}"
+            )
+        source = r"""
+            module emitter_mov_test;
+            import aurora.compiler.x86_storage;
+            import aurora.compiler.x86_object_storage;
+            auto same_text(const compiler_x86::EmitWorkspace& w,builtin::span<const u8> expected)->bool {
+                if(w.artifact_size(compiler_x86::Artifact::assembly)!=expected.size()){return false;}
+                i64 offset=0;
+                while(offset<expected.size()) {
+                    const compiler_x86::EmitChunk chunk=w.chunk(compiler_x86::Artifact::assembly,offset);
+                    if(chunk.size()<=0){return false;}
+                    i64 at=0;
+                    while(at<chunk.size()) {
+                        if(chunk.at(at)!=expected.at(offset+at)){return false;}
+                        at=at+1;
+                    }
+                    offset=offset+chunk.size();
+                }
+                return true;
+            }
+            auto object_word(const compiler_x86::ObjectWorkspace& o,i64 offset)->i64 {
+                const compiler_x86::EmitChunk chunk=o.chunk(offset);
+                u64 value=0u64;
+                i64 at=0;
+                while(at<8){value=value|(u64(chunk.at(at))<<(at*8));at=at+1;}
+                return i64(value);
+            }
+            auto same_object(const compiler_x86::ObjectWorkspace& o,builtin::span<const u8> expected)->bool {
+                // Read the ELF64 section-table address and .text section fields,
+                // rather than pinning any generated code or file offsets.
+                const i64 section=object_word(o,40)+64;
+                const i64 start=object_word(o,section+24);
+                if(object_word(o,section+32)!=expected.size()){return false;}
+                i64 offset=0;
+                while(offset<expected.size()) {
+                    const compiler_x86::EmitChunk chunk=o.chunk(start+offset);
+                    i64 at=0;
+                    while(at<chunk.size()&&offset+at<expected.size()) {
+                        if(chunk.at(at)!=expected.at(offset+at)){return false;}
+                        at=at+1;
+                    }
+                    if(at==0){return false;}
+                    offset=offset+at;
+                }
+                return true;
+            }
+            auto entry(builtin::ByteRegion region,i64 n,i64 flag)->i64 {
+                compiler_x86::EmitWorkspace w=compiler_x86::create(region);
+                compiler_x86::ObjectWorkspace o=compiler_x86::object_create(region);
+                if(!w.begin()||!o.enable_object()){return -1;}
+                compiler_x86::Register target=compiler_x86::Register::rax;
+                SELECTIONS
+                const array<i64,SIGNED_COUNT> signed_values={SIGNED_VALUES};
+                const array<u64,UNSIGNED_COUNT> unsigned_values={UNSIGNED_VALUES};
+                i64 at=0;
+                while(at<SIGNED_COUNT) {
+                    if(!w.mov_imm(signed_values[at],target)||!o.mov_imm(signed_values[at],target)
+                        ||!w.mov_abs(signed_values[at],target)||!o.mov_abs(signed_values[at],target)){return -2;}
+                    at=at+1;
+                }
+                at=0;
+                while(at<UNSIGNED_COUNT) {
+                    if(!w.mov_uimm(unsigned_values[at],target)||!o.mov_uimm(unsigned_values[at],target)){return -2;}
+                    at=at+1;
+                }
+                if(!w.finish_assembly()||!o.seal()){return -3;}
+                COMPARISONS
+                return 42;
+            }
+        """
+        for name, value in (
+            ("SELECTIONS", "".join(selections)),
+            ("COMPARISONS", "".join(comparisons)),
+            ("UNSIGNED_COUNT", str(len(unsigned))),
+            ("SIGNED_COUNT", str(len(signed))),
+            ("UNSIGNED_VALUES", ",".join(unsigned)),
+            ("SIGNED_VALUES", ",".join(signed)),
+        ):
+            source = source.replace(name, value)
+        executable = self.compile(
+            "emitter-numeric-mov",
+            source,
+            modules={
+                "aurora.compiler.x86_storage": (ROOT / "compiler/x86_storage.au").read_text(),
+                "aurora.compiler.x86_object_storage": (ROOT / "compiler/x86_object_storage.au").read_text(),
+            },
+        )
+        for index, (wide, _) in enumerate(registers):
+
+            def check(result, wide=wide):
+                require(result.returncode == 0, f"numeric MOV {wide}: execution failed {result.stderr!r}")
+                observed = [int(part) for part in result.stdout.split()]
+                require(observed[0] == 42, f"numeric MOV {wide}: text or GNU object bytes differ: {observed}")
+                # The common host verifies zero live allocations and every free.
+                with self.lock:
+                    self.native += 1
+
+            self._invoke(executable, [65536, index, 0], check)
+
     def emitter_storage_cases(self):
         # Exercise the real source workspace in the existing region/owner driver.
         # Large logical bounds need no million-row allocation or IR fixture.
@@ -1464,6 +1624,7 @@ class OwnedBytesCases(Suite):
     def cases(self):
         self.typed_cases()
         self.emitter_storage_cases()
+        self.emitter_mov_cases()
         dynamic = self.compile(
             "dynamic-two-owners",
             program(f"""

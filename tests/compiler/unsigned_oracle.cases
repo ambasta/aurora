@@ -22,3 +22,105 @@ export module values;export namespace values{class Cell{u64 n;public:Cell(u64 x)
 @case unsigned and signed array metadata separate
 @expect 8
 module app;  auto test() -> i64 { static_assert(type_id(array<u64,1>)!=type_id(array<i64,1>));static_assert(type_id(array<u64,1>)!=type_id(array<bool,1>));static_assert(type_id(u64)!=type_id(i64));return reflect_size(8)+reflect_field_count(8); }
+@case numeric MOV boundary i64 -9223372036854775808
+@expect -9223372036854775808
+module app;auto test()->i64{return -9223372036854775808;}
+@case numeric MOV boundary i64 -9223372036854775807
+@expect -9223372036854775807
+module app;auto test()->i64{return -9223372036854775807;}
+@case numeric MOV boundary i64 -2147483649
+@expect -2147483649
+module app;auto test()->i64{return -2147483649;}
+@case numeric MOV boundary i64 -2147483648
+@expect -2147483648
+module app;auto test()->i64{return -2147483648;}
+@case numeric MOV boundary i64 -2147483647
+@expect -2147483647
+module app;auto test()->i64{return -2147483647;}
+@case numeric MOV boundary i64 -1
+@expect -1
+module app;auto test()->i64{return -1;}
+@case numeric MOV boundary i64 0
+@expect 0
+module app;auto test()->i64{return 0;}
+@case numeric MOV boundary i64 1
+@expect 1
+module app;auto test()->i64{return 1;}
+@case numeric MOV boundary i64 2147483647
+@expect 2147483647
+module app;auto test()->i64{return 2147483647;}
+@case numeric MOV boundary i64 2147483648
+@expect 2147483648
+module app;auto test()->i64{return 2147483648;}
+@case numeric MOV boundary i64 2147483649
+@expect 2147483649
+module app;auto test()->i64{return 2147483649;}
+@case numeric MOV boundary i64 4294967294
+@expect 4294967294
+module app;auto test()->i64{return 4294967294;}
+@case numeric MOV boundary i64 4294967295
+@expect 4294967295
+module app;auto test()->i64{return 4294967295;}
+@case numeric MOV boundary i64 4294967296
+@expect 4294967296
+module app;auto test()->i64{return 4294967296;}
+@case numeric MOV boundary i64 4294967297
+@expect 4294967297
+module app;auto test()->i64{return 4294967297;}
+@case numeric MOV boundary i64 9223372036854775806
+@expect 9223372036854775806
+module app;auto test()->i64{return 9223372036854775806;}
+@case numeric MOV boundary i64 9223372036854775807
+@expect 9223372036854775807
+module app;auto test()->i64{return 9223372036854775807;}
+@case numeric MOV boundary u64 0
+@expect 0
+module app;auto test()->u64{return 0u64;}
+@case numeric MOV boundary u64 1
+@expect 1
+module app;auto test()->u64{return 1u64;}
+@case numeric MOV boundary u64 2147483647
+@expect 2147483647
+module app;auto test()->u64{return 2147483647u64;}
+@case numeric MOV boundary u64 2147483648
+@expect 2147483648
+module app;auto test()->u64{return 2147483648u64;}
+@case numeric MOV boundary u64 2147483649
+@expect 2147483649
+module app;auto test()->u64{return 2147483649u64;}
+@case numeric MOV boundary u64 4294967294
+@expect 4294967294
+module app;auto test()->u64{return 4294967294u64;}
+@case numeric MOV boundary u64 4294967295
+@expect 4294967295
+module app;auto test()->u64{return 4294967295u64;}
+@case numeric MOV boundary u64 4294967296
+@expect 4294967296
+module app;auto test()->u64{return 4294967296u64;}
+@case numeric MOV boundary u64 4294967297
+@expect 4294967297
+module app;auto test()->u64{return 4294967297u64;}
+@case numeric MOV boundary u64 9223372036854775807
+@expect 9223372036854775807
+module app;auto test()->u64{return 9223372036854775807u64;}
+@case numeric MOV boundary u64 9223372036854775808
+@expect 9223372036854775808
+module app;auto test()->u64{return 9223372036854775808u64;}
+@case numeric MOV boundary u64 9223372036854775809
+@expect 9223372036854775809
+module app;auto test()->u64{return 9223372036854775809u64;}
+@case numeric MOV boundary u64 18446744071562067967
+@expect 18446744071562067967
+module app;auto test()->u64{return 18446744071562067967u64;}
+@case numeric MOV boundary u64 18446744071562067968
+@expect 18446744071562067968
+module app;auto test()->u64{return 18446744071562067968u64;}
+@case numeric MOV boundary u64 18446744071562067969
+@expect 18446744071562067969
+module app;auto test()->u64{return 18446744071562067969u64;}
+@case numeric MOV boundary u64 18446744073709551614
+@expect 18446744073709551614
+module app;auto test()->u64{return 18446744073709551614u64;}
+@case numeric MOV boundary u64 18446744073709551615
+@expect 18446744073709551615
+module app;auto test()->u64{return 18446744073709551615u64;}
