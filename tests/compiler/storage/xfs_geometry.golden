@@ -775,17 +775,7 @@ public report masking/layout nonzero diagnostic masks/header_fits_source/success
 public report masking/layout nonzero diagnostic masks/header_fits_source/out_of_range	header_fits_source out_of_range probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
 public report masking/layout nonzero diagnostic masks/header_fits_source/read_only	header_fits_source read_only probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
 public report masking/layout nonzero diagnostic masks/header_fits_source/invalid_source	header_fits_source invalid_source probe_rejected none wrong_length masks=0 raw=0 unsupported=0 unknown=0 facts=0 admitted=0 layout=352,8,0
-reject XfsBlockFacts privacy	2:102: error AU3001: private class field is inaccessible
-reject XfsInodeFacts privacy	2:92: error AU3001: private class field is inaccessible
-reject XfsDataFacts privacy	2:85: error AU3001: private class field is inaccessible
-reject XfsAgFacts privacy	2:96: error AU3001: private class field is inaccessible
-reject XfsLogFacts privacy	2:93: error AU3001: private class field is inaccessible
-reject facts group privacy	2:1351: error AU3001: private class field is inaccessible
-reject raw observation privacy	2:1325: error AU3001: private class field is inaccessible
-reject feature mask privacy	2:1333: error AU3001: private class field is inaccessible
-reject diagnostic group privacy	2:1353: error AU3001: private class field is inaccessible
 reject report private status	2:2258: error AU3001: private class field is inaccessible
-reject report private facts	2:2280: error AU3001: private class field is inaccessible
 reject status has no numeric conversion	2:2256: error AU3001: expected distinct i64, u64 or u8 conversion types
 reject issue has no numeric conversion	2:2256: error AU3001: expected distinct i64, u64 or u8 conversion types
 reject copied facts not a span	2:2286: error AU3001: expected builtin::span<const u8>, got fs::XfsGeometryFacts

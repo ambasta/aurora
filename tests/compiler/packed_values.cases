@@ -1,0 +1,80 @@
+# Fixed packed_values.py cases; the format is native_runner.Suite.load's.
+@prelude PAIR
+template<Value T,Value U>class Pair{public:T first;U second;Pair(T a,U b):first(a),second(b){} };
+@prelude BOX_IDENTITY
+const Box<u8> first=Box<u8>(255u8);const Box<u8> second=identity(first);static_assert(size_of(Box<u8>)==1);return u64(second.get());
+@prelude CELL_CALLS
+auto preserve(Cell a,u8 b,Cell c,u64 d,Cell e,bool f)->Cell{return a;}auto identity(Cell value)->Cell{return value;}auto clobber()->u8{Cell a=Cell(11u8);Cell b=identity(a);return b.get();}
+@prelude CELL
+class Cell{u8 value;public:Cell(u8 n):value(n){}auto get()const->u8{return value;}auto set(u8 n)->u8{value=n;return value;}auto snapshot()const->Cell{const Cell result=Cell(value);return result;}};
+@prelude BYTES4
+class Bytes4{builtin::array<u8,4> data;public:Bytes4():data{}{}auto at(i64 index)const->u8{return data[index];}auto set(i64 index,u8 value)->u8{data[index]=value;return data[index];}auto snapshot()const->Bytes4{Bytes4 result=Bytes4();i64 i=0;while(i<4){result.set(i,data[i]);i=i+1;}return result;}};
+@case u8 uses one byte while bool and enum retain eight-byte storage
+module packed;enum class Status{ok,error};class Flags{public:u8 first;bool flag;u8 last;Status code;Flags(u8 a,bool b,u8 c,Status d):first(a),flag(b),last(c),code(d){} };auto identity(Flags value)->Flags{return value;}auto test()->u64{static_assert(size_of(u8)==1);static_assert(size_of(bool)==1);static_assert(size_of(array<bool,1>)==8);static_assert(size_of(Status)==8);static_assert(size_of(Flags)==32);const Flags a=Flags(255u8,true,128u8,Status::error);Flags b=identity(a);if(b.first!=255u8){return 1u64;}if(!b.flag){return 2u64;}if(b.last!=128u8){return 3u64;}if(b.code!=Status::error){return 4u64;}b.flag=false;if(b.flag){return 5u64;}if(!a.flag){return 6u64;}if(b.first!=255u8){return 7u64;}if(b.last!=128u8){return 8u64;}return 42u64;}
+@case Scalar template instantiates compact u8 storage
+@expect 255
+module packed;template<Scalar T>class Box{T value;public:Box(T n):value(n){}auto get()const->T{return value;}};auto identity(Box<u8> value)->Box<u8>{return value;}auto test()->u64{${BOX_IDENTITY}}
+@case Value template instantiates compact u8 storage
+@expect 255
+module packed;template<Value T>class Box{T value;public:Box(T n):value(n){}auto get()const->T{return value;}};auto identity(Box<u8> value)->Box<u8>{return value;}auto test()->u64{${BOX_IDENTITY}}
+@case one-byte call result cannot overlap caller or argument snapshots
+@expect 255
+module packed;${CELL}${CELL_CALLS}auto test()->u64{Cell before=Cell(17u8);Cell original=Cell(128u8);Cell after=Cell(19u8);Cell copy=preserve(original,original.set(255u8),original,18446744073709551615u64,original,true);if(before.get()!=17u8){return 1u64;}if(after.get()!=19u8){return 2u64;}if(original.get()!=255u8){return 3u64;}if(copy.get()!=128u8){return 4u64;}copy.set(1u8);return u64(original.get());}
+@case one-byte constructor snapshot survives later returned temporary
+@expect 32779
+module packed;${CELL}${PAIR}${CELL_CALLS}auto test()->u64{Cell item=Cell(128u8);const Pair<Cell,u8> value=Pair<Cell,u8>(item,clobber());item.set(255u8);const Cell saved=value.first;return u64(saved.get())*256u64+u64(value.second);}
+@case one-byte returned locals remain independent across nested scopes and loops
+@expect 496
+module packed;${CELL}${CELL_CALLS}auto test()->u64{Cell outside=Cell(255u8);i64 i=0;u64 total=0u64;while(i<32){Cell source=Cell(u8(i));Cell a=identity(source);const Cell b=a.snapshot();a.set(128u8);source.set(129u8);{Cell a=identity(b);total=total+u64(a.get());}if(outside.get()!=255u8){return 1u64;}i=i+1;}return total;}
+@case constructor byte snapshots follow expression order
+@expect 32769
+module packed;${CELL}${PAIR}auto test()->u64{Cell item=Cell(128u8);const Pair<Cell,u8> early=Pair<Cell,u8>(item,item.set(255u8));const Pair<u8,Cell> late=Pair<u8,Cell>(item.set(1u8),item);const Cell a=early.first;const Cell b=late.second;return u64(a.get())*256u64+u64(b.get());}
+@case empty siblings preserve old word layouts beside byte layouts
+module packed;${EMPTY}${PAIR}class Legacy{public:i64 first;Pair<Empty,Empty> empty;i64 last;Legacy(i64 a,Pair<Empty,Empty> b,i64 c):first(a),empty(b),last(c){} };auto identity(Legacy value)->Legacy{return value;}auto test()->u64{Empty e=Empty();const Pair<Empty,Empty> pair=Pair<Empty,Empty>(e,e);const Legacy legacy=Legacy(19,pair,23);const Legacy copy=identity(legacy);static_assert(size_of(Pair<Empty,Empty>)==8);static_assert(size_of(Legacy)==16);const Pair<Empty,Empty> projected=copy.empty;const Empty a=projected.first;const Empty b=projected.second;if(a.answer()!=b.answer()){return 1u64;}return u64(copy.first+copy.last);}
+@case private byte remains inaccessible
+@error
+module packed;${CELL}auto test()->u64{Cell a=Cell(1u8);return u64(a.value);}
+@case const byte receiver cannot mutate
+@error
+module packed;${CELL}auto test()->u64{const Cell a=Cell(1u8);return u64(a.set(2u8));}
+@case byte argument snapshot is readonly
+@error
+module packed;${CELL}auto mutate(Cell a)->u64{return u64(a.set(2u8));}auto test()->u64{Cell a=Cell(1u8);return mutate(a);}
+@case private packed array remains inaccessible
+@error
+module packed;${BYTES4}auto test()->u64{Bytes4 a=Bytes4();return u64(a.data[0]);}
+@case packed array element type stays exact
+@error
+module packed;${BYTES4}auto test()->u64{Bytes4 a=Bytes4();return u64(a.set(0,1u64));}
+@case const packed array cannot mutate
+@error
+module packed;auto test()->u64{const array<u8,3> a={1u8,2u8,3u8};a[1]=4u8;return 42u64;}
+@case packed value copy remains nominal
+@error
+module packed;${CELL}class Other{u8 value;public:Other(u8 n):value(n){}auto get()const->u8{return value;}auto set(u8 n)->u8{value=n;return value;}auto snapshot()const->Other{const Other result=Other(value);return result;}};auto test()->u64{Cell a=Cell(1u8);Other b=a;return 42u64;}
+@case byte constructor requires complete fields
+@error
+module packed;class Bad{u8 a;u8 b;public:Bad(u8 n):a(n){} };auto test()->u64{return 42u64;}
+@case byte constructor rejects repeated initialization
+@error
+module packed;class Bad{u8 a;public:Bad(u8 n):a(n),a(n){} };auto test()->u64{return 42u64;}
+@case packed array requires initialization
+@error
+module packed;class Bad{array<u8,4> a;public:Bad(){} };auto test()->u64{return 42u64;}
+@case zero-size embedded class still requires initialization
+@error
+module packed;${EMPTY}class Bad{u8 first;Empty empty;u8 last;public:Bad():first(1u8),last(2u8){} };auto test()->u64{return 42u64;}
+@case zero-size embedded class requires nominal source
+@error
+module packed;${EMPTY}class Bad{u8 first;Empty empty;public:Bad():first(1u8),empty{}{} };auto test()->u64{return 42u64;}
+@case missing designated byte remains incomplete
+@error
+module packed;class Bad{public:u8 first;u8 last;};auto test()->u64{const Bad a=Bad{.first=1u8};return 42u64;}
+@case enum stays outside Scalar constraint
+@error
+module packed;enum class State{ok,error};template<Scalar T>class Box{T value;public:Box(T n):value(n){} };auto test()->u64{const Box<State> a=Box<State>(State::ok);return 42u64;}
+@case enum is not a builtin scalar-array element
+@error
+module packed;enum class State{ok,error};auto test()->u64{array<State,1> a={State::ok};return 42u64;}
+@case packed class method parameter copies independent result
+module packed;${CELL}class Receiver{public:Receiver(){}auto take(Cell a)const->Cell{return a;}};auto test()->u64{Cell source=Cell(42u8);Receiver receiver=Receiver();Cell result=receiver.take(source);source.set(0u8);return u64(result.get());}

@@ -73,60 +73,6 @@ def native_cases(suite):
         ("method result temporary class argument", "return receiver.inspect(receiver.copy(source));", ""),
     ):
         suite.check(label, p("Counter source=Counter(42);Counter receiver=Counter(0);" + body, COUNTER, helpers))
-    suite.check(
-        "direct method nested class-result argument",
-        p("return 42;", COUNTER, "auto forward(Counter source)->Counter{return source.copy(source.copy(source));}"),
-    )
-    suite.check(
-        "temporary copied result from direct copied field receiver",
-        p(
-            "Counter source=Counter(42);Holder holder=Holder(source);Counter receiver=Counter(0);"
-            "return receiver.inspect(holder.item.copy(source));",
-            COUNTER + "class Holder{public:Counter item;Holder(Counter source):item(source){}};",
-        ),
-    )
-    suite.check(
-        "array exchange temporary replacement",
-        p(
-            "std::array<u8,3> receiver=std::array<u8,3>();std::array<u8,3> old=receiver.exchange(std::array<u8,3>());"
-            "return 42;",
-            imports="import std.array;",
-        ),
-    )
-    for label, body in (
-        ("inline", "Counter saved=receiver.replace(receiver.copy(Counter(receiver.add(1))));"),
-        (
-            "explicit locals",
-            "const Counter initial=Counter(receiver.add(1));const Counter copied=receiver.copy(initial);"
-            "Counter saved=receiver.replace(copied);",
-        ),
-    ):
-        suite.check(
-            "nested mutable receiver effect and snapshots " + label,
-            p("Counter receiver=Counter(20);" + body + "return saved.get()+receiver.get();", COUNTER),
-        )
-    suite.check(
-        "temporary empty nested constructor and method results",
-        p(
-            "Receiver receiver=Receiver();Empty result=receiver.copy(make(),Empty());return result.answer();",
-            EMPTY + "class Receiver{public:Receiver(){}auto copy(Empty a,Empty b)const->Empty{return b;}};",
-            "auto make()->Empty{return Empty();}",
-        ),
-    )
-    suite.check(
-        "temporary packed array and enum constructor payload",
-        p(
-            "Receiver receiver=Receiver();"
-            "Packet result=receiver.copy(Packet(7u8,std::array<u8,3>(),Status::ready,Empty(),2u8));"
-            "const std::array<u8,3> saved=result.data;const Empty zero=result.zero;"
-            "if(saved.at(2)!=0u8||result.state!=Status::ready||result.head!=7u8||result.tail!=2u8){return 0;}"
-            "return zero.answer();",
-            ENUMS + EMPTY + "class Packet{public:u8 head;std::array<u8,3> data;Status state;Empty zero;u8 tail;"
-            "Packet(u8 h,std::array<u8,3> b,Status s,Empty e,u8 t):head(h),data(b),state(s),zero(e),tail(t){} };"
-            "class Receiver{public:Receiver(){}auto copy(Packet value)const->Packet{return value;}};",
-            imports="import std.array;",
-        ),
-    )
     for receiver_const in (False, True):
         for argument_const in (False, True):
             for result_const in (False, True):
@@ -142,37 +88,6 @@ def native_cases(suite):
                         COUNTER,
                     ),
                 )
-    suite.check(
-        "parenthesized named-local argument retains independent copy semantics",
-        p(
-            "Counter source=Counter(42);Counter receiver=Counter(0);Counter result=receiver.copy((source));"
-            "source.set(7);return result.get();",
-            COUNTER,
-        ),
-    )
-    suite.check(
-        "mutable receiver and returned parameter are independent",
-        p(
-            "Counter receiver=Counter(20);Counter source=Counter(22);"
-            "Counter old=receiver.replace(source);source.set(99);old.add(1);"
-            "if(source.get()!=99){return 1;}return old.get()+receiver.get()-1;",
-            COUNTER,
-        ),
-    )
-    suite.check(
-        "mutable self argument copied before receiver acquisition",
-        p(
-            "Counter receiver=Counter(42);Counter old=receiver.replace(receiver);receiver.set(7);return old.get();",
-            COUNTER,
-        ),
-    )
-    suite.check(
-        "readonly self argument and class result are distinct",
-        p(
-            "Counter receiver=Counter(42);Counter saved=receiver.copy(receiver);receiver.set(7);return saved.get();",
-            COUNTER,
-        ),
-    )
     six = (
         "class Six{ i64 value; public:Six(i64 n):value(n){}"
         "auto mix(Counter a,i64 n,Counter b,Status state,u64 big,u8 byte)->Counter{"
@@ -211,45 +126,6 @@ def native_cases(suite):
             order,
         ),
     )
-    suite.check(
-        "scalar side effect before first class argument is visible",
-        p(
-            "Counter source=Counter(1);Reader reader=Reader();return reader.inspect(source.add(1),source);",
-            COUNTER + "class Reader{public:Reader(){}auto inspect(i64 n,Counter copy)const->i64{"
-            "if(n!=2){return 1;}if(copy.get()!=2){return 2;}return 42;}};",
-        ),
-    )
-    suite.check(
-        "repeated class snapshots independently copied into mutable locals",
-        p(
-            "Counter source=Counter(20);Reader reader=Reader();return reader.inspect(source,source);",
-            COUNTER + "class Reader{public:Reader(){}auto inspect(Counter a,Counter b)const->i64{"
-            "Counter changed=a;changed.add(2);return changed.get()+b.get();}};",
-        ),
-    )
-    suite.check(
-        "inner result binding reads outer same-name argument and receiver",
-        p(
-            "Counter value=Counter(42);if(true){Counter value=value.copy(value);value.set(0);}return value.get();",
-            COUNTER,
-        ),
-    )
-    suite.check(
-        "class parameter shadows receiver scalar field",
-        p(
-            "Counter source=Counter(42);Shadow receiver=Shadow(99);return receiver.inspect(source);",
-            COUNTER + "class Shadow{i64 source;public:Shadow(i64 n):source(n){}"
-            "auto inspect(Counter source)const->i64{return source.get();}};",
-        ),
-    )
-    suite.check(
-        "local class shadows readonly method parameter in inner scope",
-        p(
-            "Counter source=Counter(42);Reader receiver=Reader();return receiver.inspect(source);",
-            COUNTER + "class Reader{public:Reader(){}auto inspect(Counter source)const->i64{"
-            "if(true){Counter source=source;source.add(1);}return source.get();}};",
-        ),
-    )
     sibling = (
         "class Sibling{i64 value;auto take(Counter source,i64 extra)const->Counter{"
         "const Counter result=Counter(source.get()+extra+value);return result;}"
@@ -267,27 +143,6 @@ def native_cases(suite):
                 COUNTER + sibling,
             ),
         )
-    suite.check(
-        "method parameter forwarded through ordinary function and receiver restored",
-        p(
-            (
-                "Counter source=Counter(20);Forward receiver=Forward(22);Counter result=receiver.take(source);r"
-                "eturn result.get();"
-            ),
-            COUNTER + "class Forward{i64 value;public:Forward(i64 n):value(n){}"
-            "auto take(Counter source)const->Counter{Counter result=identit"
-            "y(source);result.add(value);return result;}};",
-            "auto identity(Counter source)->Counter{return source;}",
-        ),
-    )
-    suite.check(
-        "class-result destination independent across loop lifetimes",
-        p(
-            "Counter source=Counter(20);Counter receiver=Counter(0);i64 total=0;i64 i=0;"
-            "while(i<2){Counter result=receiver.copy(source);total=total+result.add(1);i=i+1;}return total;",
-            COUNTER,
-        ),
-    )
     for scalar, value in (("i64", -(1 << 63)), ("u64", (1 << 64) - 1), ("u8", 255), ("bool", True)):
         definition = (
             f"class Value{{{scalar} item;public:Value({scalar} n):item(n){{}}"
@@ -302,25 +157,6 @@ def native_cases(suite):
             ),
             expected=int(value),
         )
-    suite.check(
-        "nominal enum result with copied class parameter",
-        p(
-            "Tagged source=Tagged(Status::ready);Tagged receiver=Tagged(Status::failed);"
-            "if(receiver.status(source)!=Status::ready){return 1;}return 42;",
-            ENUMS + "class Tagged{Status value;public:Tagged(Status n):value(n){}"
-            "auto status(Tagged source)const->Status{return source.value;}};",
-        ),
-    )
-    suite.check(
-        "empty parameter and result preserve nominal completeness",
-        p(
-            (
-                "Empty source=Empty();Receiver receiver=Receiver();Empty result=receiver.copy(source,source);re"
-                "turn result.answer();"
-            ),
-            EMPTY + "class Receiver{public:Receiver(){}auto copy(Empty a,Empty b)const->Empty{return b;}};",
-        ),
-    )
     direct = p(
         "std::array<u8,3> bytes=std::array<u8,3>();bytes.set(0,255u8);bytes.set(2,40u8);"
         "Empty empty=Empty();Packet source=Packet(7u8,bytes,Status::ready,empty,2u8);"
@@ -348,16 +184,6 @@ def native_cases(suite):
         equivalent_source=direct.replace("return item;", "const Packet result=item;return result;"),
     )
     suite.check(
-        "class template injected self supports ordinary copied parameter",
-        p(
-            "Box<i64> source=Box<i64>(20);Box<i64> receiver=Box<i64>(22);"
-            "Box<i64> old=receiver.exchange(source);source.set(99);return old.get()+receiver.get();",
-            "template<Scalar T>class Box{T value;public:Box(T n):value(n){}"
-            "auto get()const->T{return value;}auto set(T n)->T{value=n;return value;}"
-            "auto exchange(Box source)->Box{const Box old=Box(value);value=source.get();return old;}};",
-        ),
-    )
-    suite.check(
         "qualified wrapper self means exact active instance and bare array stays storage",
         p(
             "std::array<u8,1> one=std::array<u8,1>();std::array<u64,3> three=std::array<u64,3>();"
@@ -370,27 +196,6 @@ def native_cases(suite):
         ),
         # Its own root-level std namespace; a pack would nest it and import std.array beside it.
         standalone=True,
-    )
-    suite.check(
-        "Value substitution method argument and result use exact nested type",
-        p(
-            "Counter source=Counter(42);Box<Counter> receiver=Box<Counter>(source);"
-            "Counter result=receiver.copy(source);source.set(99);return result.get();",
-            COUNTER + "template<Value T>class Box{T item;public:Box(T n):item(n){}"
-            "auto copy(T source)const->T{return source;}};",
-        ),
-    )
-    suite.check(
-        "nested class template argument copied through ordinary method",
-        p(
-            "std::array<u8,3> bytes=std::array<u8,3>();bytes.set(2,40u8);"
-            "std::pair<std::array<u8,3>,u8> source=std::pair<std::array<u8,3>,u8>(bytes,2u8);"
-            "Receiver receiver=Receiver();const std::pair<std::array<u8,3>,u8> result=receiver.copy(source);"
-            "const std::array<u8,3> saved=result.first;return i64(saved.at(2))+i64(result.second);",
-            "class Receiver{public:Receiver(){}auto copy(std::pair<std::array<u8,3>,u8> value)const"
-            "->std::pair<std::array<u8,3>,u8>{return value;}};",
-            imports="import std.array;import std.utility;",
-        ),
     )
 
     direct = p(
@@ -466,17 +271,6 @@ def native_cases(suite):
         "direct method return closes live array and span",
         loan,
         equivalent_source=loan.replace("return take(source);", "const Counter result=take(source);return result;"),
-    )
-    suite.check(
-        "direct empty method result retains initialization",
-        p(
-            "Empty source=Empty();Empty result=source.forward(source);return result.answer();",
-            EMPTY.replace(
-                "};",
-                "auto copy(Empty source)const->Empty{return source;}"
-                "auto forward(Empty source)const->Empty{return copy(source);}};",
-            ),
-        ),
     )
 
     holder = "class Holder{public:Counter item;Holder(Counter source):item(source){}};"
@@ -611,16 +405,6 @@ def native_cases(suite):
             "n=n+1;return item;", "n=n+1;const Counter result=item;return result;"
         ).replace("}return item;", "}const Counter result=item;return result;"),
     )
-    suite.check(
-        "copied parameter return shadows receiver class field",
-        p(
-            "Counter initial=Counter(20);Counter source=Counter(22);const Holder holder=Holder(initial);"
-            "Counter result=holder.copy(source);if(result.get()!=22){return 1;}result.set(42);"
-            "if(holder.get()!=20){return 2;}return result.get();",
-            COUNTER + "class Holder{Counter item;public:Holder(Counter source):item(source){}"
-            "auto get()const->i64{return item.get();}auto copy(Counter item)const->Counter{return item;}};",
-        ),
-    )
 
 
 def model_cases(suite, seed, steps):
@@ -704,30 +488,6 @@ def boundary_cases(suite):
             suite.check(f"six copied arguments each with {leaves} scalar leaves", source)
         else:
             suite.reject("method parameter rejects 65 scalar leaves", source)
-    suite.check(
-        "six maximum-width class args plus receiver and class result",
-        p(
-            "std::array<u64,64> source=std::array<u64,64>();source.set(63,1"
-            "8446744073709551615u64);"
-            "Receiver receiver=Receiver(42);const std::array<u64,64> result"
-            "=receiver.pick(source,source,source,source,source,source);"
-            "if(result.at(63)!=18446744073709551615u64){return 1;}return receiver.get();",
-            "class Receiver{i64 value;public:Receiver(i64 n):value(n){}auto get()const->i64{return value;}"
-            "auto pick(std::array<u64,64> a,std::array<u64,64> b,std::array<u64,64> c,"
-            "std::array<u64,64> d,std::array<u64,64> e,std::array<u64,64> f)const->std::array<u64,64>{return f;}};",
-            imports="import std.array;",
-        ),
-    )
-    suite.reject(
-        "seventh explicit class method parameter exceeds limit",
-        p(
-            "return 42;",
-            COUNTER + "class Receiver{public:Receiver(){}auto bad(Counter a,Counter b"
-            ",Counter c,Counter d,Counter e,Counter f,Counter g)"
-            "const->i64{return 42;}};",
-        ),
-        error="six",
-    )
     for depth in (4, 5):
         definitions = COUNTER
         body = "Counter value0=Counter(42);"
@@ -865,38 +625,8 @@ def rejection_cases(suite):
         error="nested owning class fields are unsupported",
     )
     suite.reject(
-        "direct service operation result dispatch remains rejected",
-        p(
-            "return 42;",
-            helpers="auto forward(builtin::ConsoleSession& session)->builtin::ConsoleSample{return session.next();}",
-        ),
-        error="ordinary method",
-    )
-    suite.reject(
-        "equal-layout nominal mismatch remains rejected",
-        p(
-            prefix + "Other source2=Other{.value=42};return receiver.inspect(source2);",
-            COUNTER + "class Other{public:i64 value;};",
-        ),
-    )
-    suite.reject(
         "wrong nominal class result destination",
         p(prefix + "Other result=receiver.copy(source);return 42;", COUNTER + "class Other{public:i64 value;};"),
-    )
-    suite.reject(
-        "nested field argument requires projected named local",
-        p(
-            prefix + "Holder outer=Holder(source);return receiver.inspect(outer.item);",
-            COUNTER + "class Holder{public:Counter item;Holder(Counter x):item(x){} };",
-        ),
-    )
-    suite.reject(
-        "private field remains inaccessible through copied parameter",
-        p(
-            "Counter source=Counter(42);Reader receiver=Reader();return receiver.inspect(source);",
-            COUNTER + "class Reader{public:Reader(){}auto inspect(Counter source)const->i64{return source.value;}};",
-        ),
-        error="private",
     )
     for label, code in (
         ("mutable method on readonly class parameter", "return source.add(1);"),
@@ -918,24 +648,6 @@ def rejection_cases(suite):
                 imports="import std.array;",
             ),
         )
-    suite.reject(
-        "mutable receiver method rejects const receiver with copied arg",
-        p(
-            (
-                "const Counter receiver=Counter(0);Counter source=Counter(42);Counter result=receiver.replace(s"
-                "ource);return 42;"
-            ),
-            COUNTER,
-        ),
-    )
-    suite.reject(
-        "const sibling cannot forward to mutable sibling",
-        p(
-            "return 42;",
-            COUNTER + "class Receiver{public:Receiver(){}auto take(Counter x)->Counter{return x;}"
-            "auto bad(Counter x)const->Counter{const Counter result=take(x);return result;}};",
-        ),
-    )
     for type_name in ("own<i64>", "ref<i64>", "mut<i64>", "builtin::array<u8,1>", "builtin::span<u8>"):
         suite.reject(
             "unsupported ordinary method parameter " + type_name,
@@ -944,33 +656,6 @@ def rejection_cases(suite):
                 f"class Receiver{{public:Receiver(){{}}auto take({type_name} x)const->i64{{return 42;}}}};",
             ),
         )
-    suite.reject(
-        "copied parameter name shadows sibling method callable",
-        p(
-            "return 42;",
-            COUNTER + "class Receiver{auto select(Counter source)const->Counter{return source;}public:Receiver(){}"
-            "auto take(Counter select)const->Counter{const Counter result=select(select);return result;}};",
-        ),
-    )
-    suite.reject(
-        "scalar parameter in copied signature remains immutable",
-        p(
-            "return 42;",
-            COUNTER + "class Receiver{public:Receiver(){}auto take(Counter source,i64 n)const->i64{n=42;return n;}};",
-        ),
-    )
-    suite.reject(
-        "enum parameter in copied signature remains immutable",
-        p(
-            "return 42;",
-            ENUMS
-            + COUNTER
-            + (
-                "class Receiver{public:Receiver(){}auto take(Counter source,Status state)const->i64{state=Statu"
-                "s::failed;return 42;}};"
-            ),
-        ),
-    )
     for spelling in ("array", "builtin::array"):
         for position, declaration in (
             ("parameter", f"auto take({spelling} source)const->i64{{return 42;}}"),
@@ -990,30 +675,6 @@ def rejection_cases(suite):
                     + "};}",
                 ),
             )
-    suite.reject(
-        "qualified wrapper name outside template still requires type arguments",
-        p("std::array value=std::array();return 42;", imports="import std.array;"),
-    )
-    suite.reject(
-        "qualified injected wrapper self rejects another active instance",
-        p(
-            "std::array<u8,1> one=std::array<u8,1>();std::array<u8,2> two=std::array<u8,2>();"
-            "std::array<u8,1> result=one.copy(two);return 42;",
-            "namespace std{template<Scalar T,i64 N>class array{builtin::array<T,N> elements;public:array():elements{}{}"
-            "auto copy(std::array source)const->std::array{return source;}};}",
-        ),
-    )
-    suite.reject(
-        "generic methods remain unsupported",
-        p("return 42;", "class Receiver{public:Receiver(){}template<Value T>auto copy(T x)const->T{return x;}};"),
-    )
-    suite.reject(
-        "readonly class field reassignment remains rejected",
-        p(
-            "Counter source=Counter(42);const Holder value=Holder(source);value.item=source;return 42;",
-            COUNTER + "class Holder{public:Counter item;Holder(Counter x):item(x){} };",
-        ),
-    )
     for label, parameter, body, error in (
         ("scalar parameter", "i64 item", "return item;", "expected Counter"),
         ("wrong nominal local", "", "Other item=Other(42);return item;", "expected Counter"),
@@ -1050,73 +711,6 @@ def rejection_cases(suite):
             ),
             error=error,
         )
-    for label, methods, helpers in (
-        ("direct receiver cycle", "auto take(Counter x)const->Counter{return take(x);}", ""),
-        (
-            "mutual receiver cycle",
-            "auto take(Counter x)const->Counter{const Counter result=other(x);return result;}"
-            "auto other(Counter x)const->Counter{const Counter result=take(x);return result;}",
-            "",
-        ),
-        (
-            "ordinary helper receiver cycle",
-            "auto take(Counter x)const->Counter{const Counter result=helper(x);return result;}",
-            "auto helper(Counter x)->Counter{Receiver receiver=Receiver();"
-            "Counter result=receiver.take(x);return result;}",
-        ),
-    ):
-        suite.reject(
-            label,
-            p("return 42;", COUNTER + "class Receiver{public:Receiver(){}" + methods + "};", helpers),
-            error="cycle",
-        )
-    suite.reject(
-        "self containment still rejected",
-        p(
-            "return 42;",
-            "class Bad{Bad field;public:Bad(Bad x):field(x){}auto copy(Bad source)const->Bad{return source;}};",
-        ),
-    )
-    suite.reject(
-        "enum method argument retains exact nominal type",
-        p(
-            "Counter source=Counter(42);Receiver receiver=Receiver();return receiver.take(source,Other::ready);",
-            ENUMS
-            + COUNTER
-            + "class Receiver{public:Receiver(){}auto take(Counter x,Status s)const->i64{return x.get();}};",
-        ),
-    )
-    for label, body in (
-        (
-            "const receiver",
-            (
-                "const std::array<u8,3> receiver=std::array<u8,3>();std::array<u8,3> source=std::array<u8,3>();"
-                "std::array<u8,3> old=receiver.exchange(source);"
-            ),
-        ),
-        (
-            "capacity mismatch",
-            (
-                "std::array<u8,3> receiver=std::array<u8,3>();std::array<u8,2> source=std::array<u8,2>();std::a"
-                "rray<u8,3> old=receiver.exchange(source);"
-            ),
-        ),
-        (
-            "scalar type mismatch",
-            (
-                "std::array<u8,3> receiver=std::array<u8,3>();std::array<i64,3> source=std::array<i64,3>();std:"
-                ":array<u8,3> old=receiver.exchange(source);"
-            ),
-        ),
-        (
-            "private storage stays private",
-            (
-                "std::array<u8,3> receiver=std::array<u8,3>();std::array<u8,3> old=receiver.exchange(receiver);"
-                "return old.elements[0];"
-            ),
-        ),
-    ):
-        suite.reject("array exchange " + label, p(body + "return 42;", imports="import std.array;"))
 
 
 def module_cases(suite):
@@ -1146,69 +740,6 @@ def module_cases(suite):
         ),
         modules=modules,
     )
-    private_type = "class Hidden{public:i64 value;};"
-    for signature in (
-        "auto inspect(Hidden value)const->i64{return value.value;}",
-        "auto copy(Hidden value)const->Hidden{return value;}",
-    ):
-        suite.reject(
-            "exported public method cannot expose private type "
-            + ("result" if "->Hidden" in signature else "parameter"),
-            p("return 42;", imports="import api;"),
-            modules={
-                "api": "export module api;"
-                + private_type
-                + "export class Receiver{public:Receiver(){}"
-                + signature
-                + "};"
-            },
-        )
-    suite.reject(
-        "public copied method signature cannot hide private nested template argument",
-        p("return 42;", imports="import api;"),
-        modules={
-            "api": "export module api;import std.utility;"
-            + private_type
-            + "export class Receiver{public:Receiver(){}auto take(std::pair<Hidden,u8> source)const->i64{return 42;}};"
-        },
-    )
-    suite.check(
-        "private copied method may use defining-module private type",
-        p("Receiver receiver=Receiver();return receiver.answer();", imports="import api;"),
-        modules={
-            "api": "export module api;" + private_type + "export class Receiver{"
-            "auto inspect(Hidden value)const->i64{return value.value;}public:Receiver(){}"
-            "auto answer()const->i64{Hidden value=Hidden{.value=42};return inspect(value);}};"
-        },
-    )
-    suite.reject(
-        "private copied method inaccessible to importing caller",
-        p(
-            "Counter value=Counter(42);Receiver receiver=Receiver();return receiver.inspect(value);",
-            imports="import api;",
-        ),
-        modules={
-            "api": "export module api;export "
-            + COUNTER
-            + "export class Receiver{auto inspect(Counter value)const->i64{return value.get();}"
-            "public:Receiver(){} };"
-        },
-    )
-    suite.check(
-        "namespace private sibling binding cannot be hijacked by caller helper",
-        p(
-            "api::Value source=api::Value(42);api::Receiver receiver=api::Receiver();"
-            "api::Value result=receiver.copy(source);return result.get();",
-            helpers="auto internal(api::Value value)->api::Value{const api::Value wrong=api::Value(0);return wrong;}",
-            imports="import api;",
-        ),
-        modules={
-            "api": "export module api;namespace api{auto hidden(i64 value)->i64{return value;}"
-            "export class Value{i64 value;public:Value(i64 n):value(n){}auto get()const->i64{return value;}};"
-            "export class Receiver{auto internal(Value value)const->Value{return value;}public:Receiver(){}"
-            "auto copy(Value value)const->Value{return internal(value);}};}"
-        },
-    )
     same = {
         "left": "export module left;export namespace left{" + COUNTER + "}",
         "right": "export module right;export namespace right{" + COUNTER + "}",
@@ -1223,33 +754,6 @@ def module_cases(suite):
             imports="import left;import right;",
         ),
         modules=same,
-    )
-    suite.check(
-        "imported class-template injected self parameter and result",
-        p(
-            "api::Box<i64> source=api::Box<i64>(42);api::Box<i64> receiver=api::Box<i64>(0);"
-            "api::Box<i64> result=receiver.copy(source);return result.get();",
-            imports="import api;",
-        ),
-        modules={
-            "api": "export module api;export namespace api{template<Scalar T>class"
-            " Box{T value;public:Box(T n):value(n){}"
-            "auto get()const->T{return value;}auto copy(Box source)const->Box{return source;}};}"
-        },
-    )
-    suite.check(
-        "module class result and caller mutable copies preserve privacy",
-        p(
-            "api::Secret source=api::make();api::Receiver receiver=api::Receiver();"
-            "api::Secret result=receiver.copy(source);return result.get();",
-            imports="import api;",
-        ),
-        modules={
-            "api": "export module api;export namespace api{class Secret{i64 value;public:Secret(i64 n):value(n){}"
-            "auto get()const->i64{return value;}auto copy(Secret value)const->Secret{return value;}};"
-            "auto make()->Secret{Secret value=Secret(42);return value;}"
-            "class Receiver{public:Receiver(){}auto copy(Secret value)const->Secret{return value;}};}"
-        },
     )
 
 
@@ -1269,76 +773,18 @@ def trap_cases(suite):
                 ),
                 expected=Trap.BOUNDS,
             )
-    suite.check(
-        "class snapshot then scalar argument overflow precedes callee trap",
-        p(
-            "Counter source=Counter(9223372036854775807);Receiver receiver=Receiver();"
-            "return receiver.inspect(source,source.add(1));",
-            COUNTER
-            + "class Receiver{public:Receiver(){}auto inspect(Counter value,i64 ignored)const->i64{return 1/0;}};",
-        ),
-        expected=Trap.OVERFLOW,
-    )
-    suite.check(
-        "early scalar bounds trap precedes later scalar overflow",
-        p(
-            "Counter source=Counter(9223372036854775807);std::array<i64,1> values=std::array<i64,1>();"
-            "Receiver receiver=Receiver();return receiver.inspect(source,values.at(1),source.add(1));",
-            COUNTER
-            + (
-                "class Receiver{public:Receiver(){}auto inspect(Counter value,i64 first,i64 second)const->i64{r"
-                "eturn 42;}};"
-            ),
-            imports="import std.array;",
-        ),
-        expected=Trap.BOUNDS,
-    )
-    suite.check(
-        "checked arithmetic on mutable copy of readonly method parameter",
-        p(
-            "Counter source=Counter(9223372036854775807);Receiver receiver=Receiver();return receiver.inspect(source);",
-            COUNTER
-            + (
-                "class Receiver{public:Receiver(){}auto inspect(Counter value)const->i64{Counter copy=value;ret"
-                "urn copy.add(1);}};"
-            ),
-        ),
-        expected=Trap.OVERFLOW,
-    )
-    suite.check(
-        "class-result method trap has no successful scalar observation",
-        p(
-            (
-                "Counter source=Counter(9223372036854775807);Receiver receiver=Receiver();Counter result=receiv"
-                "er.inspect(source);return result.get();"
-            ),
-            COUNTER
-            + (
-                "class Receiver{public:Receiver(){}auto inspect(Counter value)const->Counter{Counter copy=value"
-                ";copy.add(1);return copy;}};"
-            ),
-        ),
-        expected=Trap.OVERFLOW,
-    )
-    suite.check(
-        "exchange result retains exact independent bounds behavior",
-        p(
-            "std::array<u8,64> source=std::array<u8,64>();std::array<u8,64> receiver=std::array<u8,64>();"
-            "std::array<u8,64> old=receiver.exchange(source);return i64(old.at(64));",
-            imports="import std.array;",
-        ),
-        expected=Trap.BOUNDS,
-    )
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", type=Path, nargs="?", default=ROOT / "build/aurorac")
     parser.add_argument("--seed", type=int, default=22022)
-    parser.add_argument("--steps", type=int, default=12)
+    # Three steps cover self-exchange and both cross directions (step % 3, step % 2).
+    parser.add_argument("--steps", type=int, default=3)
     args = parser.parse_args()
     require(1 <= args.steps <= 48, "steps must be between 1 and 48")
     suite = MethodSuite(args.compiler, "method values", ignore_case=True, pack_templates=32)
+    suite.load(Path(__file__).with_suffix(".cases"), COUNTER=COUNTER, EMPTY=EMPTY, ENUMS=ENUMS)
     native_cases(suite)
     model_cases(suite, args.seed, args.steps)
     boundary_cases(suite)

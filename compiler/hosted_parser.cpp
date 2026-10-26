@@ -910,7 +910,8 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             if (type.tag != TypeSyntaxKind::array_type) {
                 if (!element.isClass() || !element.templateArguments.empty())
                     invalid();
-                value = type.tag == TypeSyntaxKind::owned_values ? Type::ownedValues(element) : Type::valueSpan(element);
+                value =
+                    type.tag == TypeSyntaxKind::owned_values ? Type::ownedValues(element) : Type::valueSpan(element);
             } else {
                 const auto &length = types[static_cast<std::size_t>(type.second_child)];
                 if (elementSyntax.tag == TypeSyntaxKind::capacity ||

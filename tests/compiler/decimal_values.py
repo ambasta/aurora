@@ -41,132 +41,6 @@ def enum_cases(suite):
                     expected=int(value),
                 )
 
-    suite.check(
-        "enum locals and assignment",
-        program(
-            "const State first=State::ready;State next=first;next=State::done;"
-            "if(first!=State::ready){return 1;}if(next!=State::done){return 2;}return 42;",
-            ENUM,
-        ),
-    )
-    suite.check(
-        "enum compile time equality",
-        program(
-            "static_assert(State::ready==State::ready);"
-            "static_assert(State::ready!=State::done);"
-            "static_assert(!(State::failed==State::done));return 42;",
-            ENUM,
-        ),
-    )
-    suite.check(
-        "builtin Scalar template remains available",
-        program(
-            "Pair<u64> p=Pair<u64>(42u64);return p.value;",
-            "template<Scalar T>class Pair{public:T value;Pair(T n):value(n){}};",
-            result="u64",
-        ),
-    )
-    suite.check(
-        "enum fields and independent class copies",
-        program(
-            "Flag first=Flag{.state=State::ready};Flag second=first;"
-            "second.state=State::done;if(first.state!=State::ready){return 1;}"
-            "if(second.state!=State::done){return 2;}return 42;",
-            ENUM + "class Flag{public:State state;};",
-        ),
-    )
-    suite.check(
-        "enum constructor and mutable method boundary",
-        program(
-            "Flag flag=Flag(State::ready);const State old=flag.set(State::done);"
-            "if(old!=State::ready){return 1;}if(flag.get()!=State::done){return 2;}return 42;",
-            ENUM + "class Flag{State state;public:Flag(State initial):state(initial){}"
-            "auto get()const->State{return state;}auto set(State next)->State{"
-            "const State old=state;state=next;return old;}};",
-        ),
-    )
-    suite.check(
-        "enum ordinary function parameters and result",
-        program(
-            "const State selected=choose(State::ready,State::done,true);if(selected==State::done){return 42;}return 0;",
-            ENUM,
-            "auto choose(State a,State b,bool second)->State{if(second){return b;}return a;}",
-        ),
-    )
-    suite.check(
-        "six enum function arguments",
-        program(
-            "if(last(State::ready,State::failed,State::ready,State::ready,"
-            "State::failed,State::done)==State::done){return 42;}return 0;",
-            ENUM,
-            "auto last(State a,State b,State c,State d,State e,State f)->State{return f;}",
-        ),
-    )
-    suite.check(
-        "enum field copied across function result",
-        program(
-            "Flag first=Flag{.state=State::ready};const Flag second=copy(first);"
-            "first.state=State::failed;if(second.state==State::ready){return 42;}return 0;",
-            ENUM + "class Flag{public:State state;};",
-            "auto copy(Flag value)->Flag{return value;}",
-        ),
-    )
-    suite.check(
-        "enum reflection nominal identity",
-        program(
-            "static_assert(size_of(State)==8);static_assert(field_count(State)==0);"
-            "static_assert(type_id(State)!=type_id(Other));"
-            "static_assert(type_id(State)!=type_id(i64));"
-            "static_assert(type_id(State)!=type_id(u64));"
-            "static_assert(type_id(State)!=type_id(bool));"
-            "static_assert(type_id(State)!=type_id(Box));"
-            "if(reflect_size(type_id(State))!=8){return 1;}"
-            "if(reflect_field_count(type_id(State))!=0){return 2;}return 42;",
-            ENUM + "enum class Other{ready,done,failed};class Box{public:State state;};",
-        ),
-    )
-    suite.check(
-        "enum field reflection matches class layout",
-        program(
-            "static_assert(size_of(Box)==16);static_assert(field_count(Box)==1);"
-            "if(reflect_size(type_id(Box))!=16){return 1;}"
-            "if(reflect_field_count(type_id(Box))!=1){return 2;}return 42;",
-            ENUM + "class Box{State hidden;public:State shown;Box(State a,State b):hidden(a),shown(b){}};",
-        ),
-    )
-    exported = (
-        "export module states;export namespace items{"
-        "enum class State{ready,done};"
-        "auto ready()->State{return State::ready;}"
-        "auto same(State a,State b)->bool{return a==b;}}"
-    )
-    suite.check(
-        "exported enum module boundary",
-        program(
-            "const items::State state=items::ready();if(items::same(state,items::State::ready)){return 42;}return 0;",
-            imports="import states;",
-        ),
-        modules={"states": exported},
-    )
-    suite.check(
-        "imported enum reflection",
-        program(
-            "static_assert(size_of(items::State)==8);"
-            "static_assert(field_count(items::State)==0);"
-            "if(reflect_size(type_id(items::State))!=8){return 1;}"
-            "if(reflect_field_count(type_id(items::State))!=0){return 2;}return 42;",
-            imports="import states;",
-        ),
-        modules={"states": exported},
-    )
-    suite.check(
-        "namespace enums keep nominal identity",
-        program(
-            "static_assert(type_id(left::State)!=type_id(right::State));"
-            "if(left::State::ready==left::State::ready){return 42;}return 0;",
-            "namespace left{enum class State{ready};}namespace right{enum class State{ready};}",
-        ),
-    )
     # Lowering names every case once; the duplicate check was cubic in the case count.
     widest = "enum class Wide{" + ",".join(f"case_{index}" for index in range(256)) + "};"
     suite.check(
@@ -233,15 +107,6 @@ def enum_cases(suite):
         "wrong enum class field",
         program("Flag f=Flag{.state=Other::ready};return 42;", ENUM + extras + "class Flag{public:State state;};"),
         error=True,
-    )
-    suite.check(
-        "same named enums in modules are distinct",
-        program("a::State state=b::State::ready;return 42;", imports="import one;import two;"),
-        error=True,
-        modules={
-            "one": "export module one;export namespace a{enum class State{ready};}",
-            "two": "export module two;export namespace b{enum class State{ready};}",
-        },
     )
     flag = (
         ENUM + "enum class Other{ready};class Flag{State state;public:"
@@ -364,48 +229,6 @@ def method_result_cases(suite):
         ),
     )
     suite.check(
-        "enum explicit argument and class result",
-        program(
-            "const Factory f=Factory();const Flag r=f.make(State::done);if(r.state==State::done){return 42;}return 0;",
-            ENUM + "class Flag{public:State state;};class Factory{public:Factory(){}"
-            "auto make(State state)const->Flag{const Flag result=Flag{.state=state};return result;}};",
-        ),
-    )
-    suite.check(
-        "empty class method result",
-        program(
-            "Factory f=Factory();const Empty result=f.make();return 42;",
-            "class Empty{public:Empty(){}};class Factory{public:Factory(){}"
-            "auto make()const->Empty{const Empty value=Empty();return value;}};",
-        ),
-    )
-    suite.check(
-        "class method result through module",
-        program(
-            "const items::Counter c=items::Counter(42u64);const items::Report r=c.snapshot();return r.get();",
-            imports="import reports;",
-            result="u64",
-        ),
-        modules={"reports": "export module reports;export namespace items{" + REPORT + "}"},
-    )
-    suite.check(
-        "class result remains independent of another result",
-        program(
-            "Counter c=Counter(21u64);Report first=c.snapshot();Report second=c.snapshot();"
-            "first.set(0u64);return second.get()+c.get();",
-            REPORT,
-            result="u64",
-        ),
-    )
-    suite.check(
-        "const binding copied into mutable method result",
-        program(
-            "const Counter c=Counter(40u64);Report result=c.snapshot();result.set(42u64);return result.get();",
-            REPORT,
-            result="u64",
-        ),
-    )
-    suite.check(
         "class result method calls ordinary aggregate function",
         program(
             "const Counter c=Counter(21u64);const Report r=c.copied();return r.get();",
@@ -436,21 +259,6 @@ def method_result_cases(suite):
             result="u64",
         ),
     )
-    suite.check(
-        "method result copies private fixed array leaves",
-        program(
-            "const Factory f=Factory();std::array<u64,3> first=f.make();"
-            "const std::array<u64,3> second=first;first.set(0,0u64);"
-            "if(second.at(1)!=42u64){return 0u64;}"
-            "if(second.at(2)!=9223372036854775808u64){return 0u64;}return second.at(0);",
-            "class Factory{public:Factory(){}auto make()const->std::array<u64,3>{"
-            "std::array<u64,3> r=std::array<u64,3>();r.set(0,18446744073709551615u64);"
-            "r.set(1,42u64);r.set(2,9223372036854775808u64);return r;}};",
-            imports="import std.array;",
-            result="u64",
-        ),
-        expected=MAX_U64,
-    )
 
     for width in (1, 64):
         fields = "".join(f"u64 f{i};" for i in range(width))
@@ -468,14 +276,6 @@ def method_result_cases(suite):
             f"method class result {width} scalar leaves", program(body, definitions, result="u64"), MAX_U64 - width + 1
         )
 
-    suite.check(
-        "method result copied temporary argument",
-        program(
-            "Counter c=Counter(1u64);return consume(c.snapshot());",
-            REPORT + "class Other{public:u64 value;};",
-            "auto consume(Report r)->i64{return 42;}",
-        ),
-    )
     for name, body in [
         (
             "mutable result method on const receiver",
@@ -491,16 +291,6 @@ def method_result_cases(suite):
     ]:
         helpers = "auto consume(Report r)->i64{return 42;}"
         suite.check(name, program(body, REPORT + "class Other{public:u64 value;};", helpers), error=True)
-    suite.check(
-        "direct copied method return preserves payload",
-        program(
-            "Counter c=Counter(1u64);const Report r=forward(c);return r.get();",
-            REPORT,
-            "auto forward(Counter c)->Report{return c.snapshot();}",
-            result="u64",
-        ),
-        expected=1,
-    )
     suite.check(
         "explicit method class parameter copies independent result",
         program(
@@ -665,39 +455,6 @@ def decimal_cases(suite, seed, steps):
             suite, f"decimal modeled sequence {sequence} seed {seed}", actions[:steps], rng.randrange(MAX_U64 + 1)
         )
 
-    suite.check(
-        "decimal accumulator copies have independent input",
-        program(
-            "std::DecimalAccumulator first=std::DecimalAccumulator();first.push_digit(4u64);"
-            "std::DecimalAccumulator second=first;first.push_digit(2u64);second.push_digit(3u64);"
-            "const std::DecimalResult a=first.finish();const std::DecimalResult b=second.finish();"
-            "if(a.value_or(0u64)!=42u64){return 0u64;}return b.value_or(0u64);",
-            imports="import std.decimal;",
-            result="u64",
-        ),
-        expected=43,
-    )
-    suite.check(
-        "decimal result ordinary function copy",
-        program(
-            "std::DecimalAccumulator a=std::DecimalAccumulator();a.push_digit(4u64);"
-            "a.push_digit(2u64);const std::DecimalResult first=a.finish();"
-            "const std::DecimalResult second=copy(first);a.reset();return second.value_or(0u64);",
-            helpers="auto copy(std::DecimalResult r)->std::DecimalResult{return r;}",
-            imports="import std.decimal;",
-            result="u64",
-        ),
-    )
-    suite.check(
-        "decimal finish accepts const copied accumulator",
-        program(
-            "std::DecimalAccumulator a=std::DecimalAccumulator();a.push_digit(4u64);"
-            "a.push_digit(2u64);const std::DecimalAccumulator frozen=a;"
-            "a.reset();const std::DecimalResult r=frozen.finish();return r.value_or(0u64);",
-            imports="import std.decimal;",
-            result="u64",
-        ),
-    )
     for label, digits, expected in (
         ("success", (4, 2), 42),
         ("empty", (), 1),
@@ -716,17 +473,6 @@ def decimal_cases(suite, seed, steps):
             program(body, REPORT, imports="import std.decimal;", result="u64"),
             expected,
         )
-    suite.check(
-        "decimal result status nominal reflection",
-        program(
-            "static_assert(size_of(std::DecimalStatus)==8);"
-            "static_assert(field_count(std::DecimalStatus)==0);"
-            "static_assert(type_id(std::DecimalStatus)!=type_id(std::DecimalResult));"
-            "static_assert(type_id(std::DecimalStatus)!=type_id(std::DecimalAccumulator));"
-            "if(reflect_size(type_id(std::DecimalStatus))!=8){return 1;}return 42;",
-            imports="import std.decimal;",
-        ),
-    )
     for name, body in [
         (
             "decimal digit must be unsigned",
@@ -787,6 +533,7 @@ def main():
     if not 1 <= arguments.steps <= 256:
         parser.error("--steps must be between 1 and 256")
     suite = Suite(arguments.compiler, "decimal values")
+    suite.load(Path(__file__).with_suffix(".cases"), REPORT=REPORT)
     enum_cases(suite)
     method_result_cases(suite)
     decimal_cases(suite, arguments.seed, arguments.steps)

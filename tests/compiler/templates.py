@@ -123,14 +123,6 @@ identity_checks += "".join(
     for name in concrete_types
 )
 check("ordered argument tuple nominal identity and runtime metadata", program(identity_checks + "return 42;"))
-check(
-    "repeated specialization shares one nominal type",
-    program(
-        "Pair<i64,u64> p=Pair<i64,u64>(20,22u64);const Pair< i64 , u64 > q=p;"
-        "static_assert(type_id(Pair<i64,u64>)==type_id(Pair< i64 , u64 >));"
-        "return q.first+i64(q.second);"
-    ),
-)
 matrix_helpers = ""
 matrix_body = ""
 for index, (first, second) in enumerate(product(SCALARS, repeat=2)):
@@ -152,24 +144,6 @@ check(
     program(matrix_body + "return 42;", helpers=matrix_helpers),
 )
 check(
-    "three getter and local substitutions coexist without AST aliasing",
-    program(
-        "Box<i64> signed_value=Box<i64>(-9223372036854775808);"
-        "Box<u64> unsigned_value=Box<u64>(18446744073709551615u64);"
-        "Box<bool> flag=Box<bool>(true);"
-        "if(signed_value.get()!=-9223372036854775808){return 1;}"
-        "if(unsigned_value.get()!=18446744073709551615u64){return 2;}"
-        "if(flag.get()!=true){return 3;}"
-        "if(signed_value.echo(42)!=42){return 4;}"
-        "if(unsigned_value.echo(9223372036854775808u64)!=9223372036854775808u64){return 5;}"
-        "if(flag.echo(false)!=false){return 6;}"
-        "flag.set(false);unsigned_value.set(42u64);signed_value.set(-42);"
-        "if(flag.get()!=false){return 7;}if(unsigned_value.get()!=42u64){return 8;}"
-        "if(signed_value.get()!=-42){return 9;}return 42;",
-        BOX,
-    ),
-)
-check(
     "generic constructor parameter shadows same-named field",
     program(
         "Box<i64> b=Box<i64>(42);return b.get();",
@@ -181,41 +155,6 @@ check(
     program(
         "Pair<i64,u64> p=Pair<i64,u64>{.first=20,.second=22u64};return p.first+i64(p.second);",
         PAIR[: PAIR.index("    Pair(")] + "};",
-    ),
-)
-check(
-    "generic empty class has bounded layout",
-    program(
-        "Empty<bool> e=Empty<bool>();Empty<bool> copy=identity(e);"
-        "static_assert(size_of(Empty<bool>)==8);"
-        "return reflect_size(type_id(Empty<bool>))+34;",
-        "template<Scalar T>class Empty{public:Empty(){}};",
-        "auto identity(Empty<bool> e)->Empty<bool>{return e;}",
-    ),
-)
-check(
-    "generic argument snapshot precedes later receiver mutation",
-    program(
-        "Box<i64> b=Box<i64>(20);return sum(b,b.set(22));",
-        BOX,
-        "auto sum(Box<i64> b,i64 later)->i64{return b.get()+later;}",
-    ),
-)
-check(
-    "generic six mixed ordinary parameters preserve complete values",
-    program(
-        "Pair<i64,u64> a=Pair<i64,u64>(10,11u64);Pair<bool,i64> b=Pair<bool,i64>(true,20);return sum(a,1,b,2u64,a,-2);",
-        helpers="auto sum(Pair<i64,u64> a,i64 x,Pair<bool,i64> b,u64 y,"
-        "Pair<i64,u64> c,i64 z)->i64{if(b.first){"
-        "return a.first+x+b.second+i64(y)+c.first+z+1;}return 0;}",
-    ),
-)
-check(
-    "generic result lifetime repeats through loop",
-    program(
-        "i64 i=0;i64 total=0;while(i<2){const Box<i64> b=make(21);total=total+b.get();i=i+1;}return total;",
-        BOX,
-        "auto make(i64 n)->Box<i64>{const Box<i64> b=Box<i64>(n);return b;}",
     ),
 )
 wide_fields = "".join(f"T f{i};" for i in range(64))
@@ -242,37 +181,10 @@ check(
     {"boxes": MODULE_BOX},
 )
 check(
-    "namespace generic constructor and qualified signature",
-    program(
-        "items::Box<i64> b=make();return b.get();",
-        "",
-        "auto make()->items::Box<i64>{items::Box<i64> b=items::Box<i64>(42);return b;}",
-        "import boxes;",
-    ),
-    {"boxes": "export module boxes;export namespace items{" + BOX + "}"},
-)
-lexical_box = BOX.replace("return local; }", "return adjust(local); }", 1)
-check(
-    "defining module private helper beats root shadow",
-    program("Box<i64> b=Box<i64>(40);return b.get();", "", "auto adjust(i64 n)->i64{return 999;}", "import boxes;"),
-    {"boxes": "export module boxes;auto adjust(i64 n)->i64{return n+2;}export " + lexical_box},
-)
-check(
-    "generic helper cannot resolve into caller",
-    program("Box<i64> b=Box<i64>(40);return b.get();", "", "auto adjust(i64 n)->i64{return 42;}", "import boxes;"),
-    {"boxes": "export module boxes;export " + lexical_box},
-    error="unknown function",
-)
-check(
     "private template unavailable to importing caller",
     program("Box<i64> b=Box<i64>(42);return b.get();", "", imports="import boxes;"),
     {"boxes": "export module boxes;" + BOX},
     error=("private", "unknown", "visible"),
-)
-check(
-    "private generic usable inside defining module",
-    program("return answer();", "", imports="import boxes;"),
-    {"boxes": "export module boxes;" + BOX + "export auto answer()->i64{Box<i64> b=Box<i64>(42);return b.get();}"},
 )
 for signature in (
     "export auto make()->Box<i64>{Box<i64> b=Box<i64>(42);return b;}",
@@ -307,110 +219,7 @@ check(
         TRANSITIVE, consumer="export module consumer;import boxes;export auto consume(Box<i64> b)->i64{return b.get();}"
     ),
 )
-check(
-    "private generic metadata hidden in caller view",
-    program("return reflect_size(hidden_id())+reflect_field_count(hidden_id())+42;", "", imports="import boxes;"),
-    {"boxes": "export module boxes;" + BOX + "export auto hidden_id()->i64{return type_id(Box<i64>);}"},
-)
 
-for definitions, imports, modules, error, label in [
-    (PAIR + PAIR, "", None, "duplicate", "duplicate template definition"),
-    (PAIR + "class Pair{public:i64 n;};", "", None, ("duplicate", "conflict"), "template ordinary class collision"),
-    (
-        PAIR + "auto Pair()->i64{return 42;}",
-        "",
-        None,
-        ("duplicate", "conflict", "reserved"),
-        "template function collision",
-    ),
-    (
-        "",
-        "import left;import right;",
-        {"left": "export module left;export " + PAIR, "right": "export module right;export " + PAIR},
-        ("ambiguous", "ambiguity"),
-        "imported template ambiguity",
-    ),
-]:
-    check(
-        label,
-        program("Pair<i64,u64> p=Pair<i64,u64>(20,22u64);return 42;", definitions, imports=imports),
-        modules,
-        error=error,
-    )
-check(
-    "qualified different template definitions retain identity",
-    program(
-        "left::Pair<i64,u64> a=left::Pair<i64,u64>(20,22u64);"
-        "right::Pair<i64,u64> b=right::Pair<i64,u64>(20,22u64);"
-        "static_assert(type_id(left::Pair<i64,u64>)!=type_id(right::Pair<i64,u64>));"
-        "return a.first+i64(b.second);",
-        "",
-        imports="import left;import right;",
-    ),
-    {
-        "left": "export module left;export namespace left{" + PAIR + "}",
-        "right": "export module right;export namespace right{" + PAIR + "}",
-    },
-)
-
-check(
-    "temporary generic argument",
-    program("return consume(Pair<i64,u64>(1,2u64));", PAIR, "auto consume(Pair<i64,u64> p)->i64{return 42;}"),
-)
-for label, body, helpers, error in [
-    ("copy cross specialization", "Pair<i64,u64> a=Pair<i64,u64>(1,2u64);Pair<u64,i64> b=a;return 42;", "", "expected"),
-    (
-        "argument cross specialization",
-        "Pair<i64,u64> a=Pair<i64,u64>(1,2u64);return consume(a);",
-        "auto consume(Pair<u64,i64> p)->i64{return 42;}",
-        "expected",
-    ),
-    (
-        "result cross specialization",
-        "Pair<u64,i64> a=make();return 42;",
-        "auto make()->Pair<u64,i64>{Pair<i64,u64> p=Pair<i64,u64>(1,2u64);return p;}",
-        "expected",
-    ),
-    (
-        "constructor cross specialization",
-        "Pair<i64,u64> a=Pair<u64,i64>(1u64,2);return 42;",
-        "",
-        ("expected", "constructor"),
-    ),
-    ("constructor substituted scalar argument", "Pair<i64,u64> a=Pair<i64,u64>(1,2);return 42;", "", "expected"),
-    ("constructor omitted argument", "Pair<i64,u64> a=Pair<i64,u64>(1);return 42;", "", "argument count"),
-    (
-        "constructor designated initialization bypass",
-        "Pair<i64,u64> a=Pair<i64,u64>{.first=1,.second=2u64};return 42;",
-        "",
-        "designated",
-    ),
-    (
-        "constructor deduction unsupported",
-        "Pair<i64,u64> a=Pair(1,2u64);return 42;",
-        "",
-        ("template", "constructor", "argument"),
-    ),
-    (
-        "direct generic result nominal mismatch",
-        "Pair<u64,i64> a=make();return 42;",
-        "auto make()->Pair<u64,i64>{return Pair<i64,u64>(1,2u64);}",
-        "expected",
-    ),
-    (
-        "immutable generic parameter",
-        "Pair<i64,u64> a=Pair<i64,u64>(1,2u64);return change(a);",
-        "auto change(Pair<i64,u64> p)->i64{p.first=42;return 42;}",
-        "mutable class local",
-    ),
-    (
-        "const generic field write",
-        "const Pair<i64,u64> a=Pair<i64,u64>(1,2u64);a.first=42;return 42;",
-        "",
-        "mutable class local",
-    ),
-]:
-    check(label, program(body, helpers=helpers), error=error)
 
 for label, body, error in [
     ("private substituted field read", "Box<i64> b=Box<i64>(42);return b.value;", "private class field"),
@@ -631,12 +440,6 @@ auto test()->u64 { const Holder<u64> x=Holder<u64>{.value=0u64}; return x.comput
     expected=(1 << 64) - 1,
 )
 
-check(
-    "direct generic constructor result",
-    program(
-        "Pair<i64,u64> a=make();return a.first+i64(a.second);",
-        helpers="auto make()->Pair<i64,u64>{return Pair<i64,u64>(20,22u64);}",
-    ),
-)
 
+SUITE.load(Path(__file__).with_suffix(".cases"), BOX=BOX, PAIR=PAIR)
 SUITE.finish()

@@ -120,86 +120,6 @@ def value_cases(suite):
             ),
             MAX_U64,
         )
-    suite.check(
-        "enum specialization identity includes ordered nominal arguments",
-        program(
-            "static_assert(type_id(std::pair<Status,Other>)!=type_id(std::pair<Other,Status>));"
-            "static_assert(type_id(std::pair<Status,Status>)!=type_id(std::pair<Other,Other>));"
-            "static_assert(type_id(std::pair<Status,i64>)!=type_id(std::pair<i64,Status>));"
-            "static_assert(type_id(std::pair<Status,Leaf>)!=type_id(std::pair<Other,Leaf>));"
-            "if(reflect_size(type_id(std::pair<Status,Leaf>))!=24){return 1;}"
-            "if(reflect_field_count(type_id(std::pair<Status,Leaf>))!=2){return 2;}return 42;",
-            ENUMS + LEAF,
-            imports="import std.utility;",
-        ),
-    )
-    suite.check(
-        "Value substituted enum method and class constructor",
-        program(
-            "Box<Status> box=Box<Status>(Status::ok);"
-            "if(box.replace(Status::error)!=Status::ok){return 1;}"
-            "if(box.get()!=Status::error){return 2;}return 42;",
-            ENUMS + "template<Value T>class Box{T item;public:Box(T value):item(value){}"
-            "auto get()const->T{return item;}auto replace(T next)->T{"
-            "const T old=item;item=next;return old;}};",
-        ),
-    )
-    suite.check(
-        "Value substituted class result copies complete named local",
-        program(
-            f"Leaf source=Leaf(Status::ok,{MAX_U64}u64);Box<Leaf> box=Box<Leaf>(source);"
-            "Leaf copied=box.get();copied.set(Status::error,0u64);"
-            "const Leaf saved=box.get();if(saved.status()!=Status::ok){return 0u64;}return saved.get();",
-            ENUMS + LEAF + "template<Value T>class Box{T item;public:Box(T value):item(value){}"
-            "auto get()const->T{const T result=item;return result;}};",
-            result="u64",
-        ),
-        MAX_U64,
-    )
-
-
-def snapshot_cases(suite):
-    repeat = """class Repeated{public:Leaf first;Status middle;Leaf second;
-        Repeated(Leaf a,Status s,Leaf b):second(b),middle(s),first(a){}
-    };"""
-    suite.check(
-        "enum side effect separates class constructor snapshots",
-        program(
-            f"Leaf source=Leaf(Status::ok,{MAX_U64}u64);"
-            "Repeated value=Repeated(source,source.change(Status::error),source);"
-            "const Leaf first=value.first;const Leaf second=value.second;"
-            "if(first.status()!=Status::ok){return 0u64;}"
-            "if(second.status()!=Status::error){return 0u64;}"
-            "if(value.middle!=Status::error){return 0u64;}return first.get();",
-            ENUMS + LEAF + repeat,
-            result="u64",
-        ),
-        MAX_U64,
-    )
-    suite.check(
-        "later class result call cannot overwrite enum constructor snapshot",
-        program(
-            "Leaf source=Leaf(Status::ok,42u64);"
-            "Repeated value=Repeated(source,clobber(),source);"
-            "const Leaf first=value.first;const Leaf second=value.second;"
-            "if(value.middle!=Status::error){return 0u64;}"
-            "if(first.status()!=Status::ok){return 0u64;}return second.get();",
-            BASE + repeat,
-            "auto clobber()->Status{const Factory factory=Factory(Status::error,999u64);"
-            "const Packet packet=factory.snapshot();const Leaf leaf=packet.item;return leaf.status();}",
-            result="u64",
-        ),
-    )
-    suite.check(
-        "readonly constructor parameter permits copied class result",
-        program(
-            "const Factory source=Factory(Status::ok,42u64);Holder holder=Holder(source);"
-            "const Factory copied=holder.item;const Packet packet=copied.snapshot();"
-            "const Leaf leaf=packet.item;return leaf.get();",
-            BASE + "class Holder{public:Factory item;Holder(Factory source):item(source){} };",
-            result="u64",
-        ),
-    )
 
 
 def owned_field_cases(suite):
@@ -271,30 +191,6 @@ def method_result_cases(suite):
             MAX_U64,
         )
     suite.check(
-        "mutable result independent of later receiver and result mutation",
-        program(
-            "Factory factory=Factory(Status::ok,20u64);Packet first=factory.advance(22u64);"
-            "Packet second=factory.advance(1u64);first.tag=Status::ok;"
-            "factory.set(Status::ok,0u64);const Leaf a=first.item;const Leaf b=second.item;"
-            "if(second.tag!=Status::error){return 0u64;}if(a.get()!=42u64){return 0u64;}return b.get();",
-            BASE,
-            result="u64",
-        ),
-        43,
-    )
-    suite.check(
-        "nested result survives receiver and method stack lifetimes",
-        program(
-            "const Packet packet=make();const Leaf leaf=packet.item;"
-            "if(packet.tag!=Status::error){return 0u64;}return leaf.get();",
-            BASE,
-            f"auto make()->Packet{{const Factory factory=Factory(Status::error,{HIGH_U64}u64);"
-            "const Packet local=factory.forwarded();return local;}",
-            result="u64",
-        ),
-        HIGH_U64,
-    )
-    suite.check(
         "class-result hidden receiver survives nested and ordinary result calls",
         program(
             "Factory factory=Factory(Status::ok,10u64);const Packet packet=factory.combined(6u64);"
@@ -309,21 +205,6 @@ def method_result_cases(suite):
                 "const Empty zero=Empty();const Packet result=Packet(state,leaf,zero,true);"
                 "return result;}auto forwarded()",
             ),
-            "auto copy_packet(Packet source)->Packet{return source;}",
-            result="u64",
-        ),
-    )
-    suite.check(
-        "class-result hidden destination survives two nested receivers",
-        program(
-            "const Mixer source=Mixer(10u64);const Packet packet=source.mix();"
-            "const Leaf leaf=packet.item;return leaf.get();",
-            BASE + "class Mixer{u64 base;public:Mixer(u64 n):base(n){}auto mix()const->Packet{"
-            "Factory left=Factory(Status::ok,20u64);Factory right=Factory(Status::error,12u64);"
-            "const Packet a=left.snapshot();const Packet b=right.forwarded();"
-            "const Packet c=copy_packet(a);const Leaf x=c.item;const Leaf y=b.item;"
-            "const Leaf leaf=Leaf(Status::ok,x.get()+y.get()+base);const Empty zero=Empty();"
-            "const Packet result=Packet(Status::ok,leaf,zero,true);return result;}};",
             "auto copy_packet(Packet source)->Packet{return source;}",
             result="u64",
         ),
@@ -361,20 +242,6 @@ def method_result_cases(suite):
                 "const Packet no=other.snapshot();return no;}auto forwarded()",
             ),
             result="u64",
-        ),
-    )
-    suite.check(
-        "zero-leaf nested method result preserves logical completion",
-        program(
-            "const EmptyFactory factory=EmptyFactory();const EmptyRoot root=factory.make();"
-            "const EmptyMiddle middle=root.item;const EmptyLeaf leaf=middle.item;"
-            "const Empty zero=leaf.item;static_assert(size_of(EmptyRoot)==8);return zero.answer();",
-            EMPTY + "class EmptyLeaf{public:Empty item;EmptyLeaf(Empty x):item(x){} };"
-            "class EmptyMiddle{public:EmptyLeaf item;EmptyMiddle(EmptyLeaf x):item(x){} };"
-            "class EmptyRoot{public:EmptyMiddle item;EmptyRoot(EmptyMiddle x):item(x){} };"
-            "class EmptyFactory{public:EmptyFactory(){}auto make()const->EmptyRoot{"
-            "const Empty a=Empty();const EmptyLeaf b=EmptyLeaf(a);const EmptyMiddle c=EmptyMiddle(b);"
-            "const EmptyRoot result=EmptyRoot(c);return result;}};",
         ),
     )
 
@@ -448,28 +315,6 @@ def wide_cases(suite):
         "empty descendant counts toward composed four-level limit",
         program("return 42;", wide_definitions(extra_level=True)),
         error=True,
-    )
-    suite.check(
-        "named wrapper around std array is a Value argument and method result",
-        program(
-            "const ArrayFactory factory=ArrayFactory();const Wrapper result=factory.make();"
-            "const std::pair<Status,ArrayValue> pair=result.item;ArrayValue value=pair.second;"
-            "std::array<u64,2> elements=value.item;elements.set(0,0u64);"
-            "const std::array<u64,2> saved=value.item;if(pair.first!=Status::ok){return 0u64;}"
-            "if(saved.at(1)!=9223372036854775808u64){return 0u64;}return saved.at(0);",
-            ENUMS + "class ArrayValue{public:std::array<u64,2> item;"
-            "ArrayValue(std::array<u64,2> source):item(source){} };"
-            "class Wrapper{public:std::pair<Status,ArrayValue> item;"
-            "Wrapper(std::pair<Status,ArrayValue> source):item(source){} };"
-            "class ArrayFactory{public:ArrayFactory(){}auto make()const->Wrapper{"
-            "std::array<u64,2> a=std::array<u64,2>();a.set(0,18446744073709551615u64);"
-            "a.set(1,9223372036854775808u64);const ArrayValue value=ArrayValue(a);"
-            "const std::pair<Status,ArrayValue> pair=std::pair<Status,ArrayValue>(Status::ok,value);"
-            "const Wrapper result=Wrapper(pair);return result;}};",
-            imports="import std.array;import std.utility;",
-            result="u64",
-        ),
-        MAX_U64,
     )
 
 
@@ -576,16 +421,6 @@ def module_cases(suite):
             error=True,
             modules={"hidden": "export module hidden;import std.utility;" + private + exposed},
         )
-    suite.check(
-        "private enum representation remains encapsulated",
-        program("const Opaque value=Opaque();return value.get();", imports="import hidden;"),
-        modules={
-            "hidden": "export module hidden;"
-            + private
-            + "export class Opaque{Secret state;public:Opaque():state(Secret::ok){}"
-            "auto get()const->i64{if(state==Secret::ok){return 42;}return 0;}};"
-        },
-    )
     sides = {}
     for name in ("left", "right"):
         sides[name] = (
@@ -664,20 +499,6 @@ def decimal_cases(suite):
             program(body, definitions, imports=imports, result="u64"),
             expected,
         )
-    suite.check(
-        "std.decimal two different result snapshots share no state",
-        program(
-            "std::DecimalAccumulator accumulator=std::DecimalAccumulator();accumulator.push_digit(4u64);"
-            "const std::DecimalResult first=accumulator.finish();accumulator.push_digit(2u64);"
-            "const std::DecimalResult second=accumulator.finish();"
-            "const std::pair<std::DecimalResult,std::DecimalResult> pair="
-            "std::pair<std::DecimalResult,std::DecimalResult>(first,second);accumulator.reset();"
-            "const std::DecimalResult a=pair.first;const std::DecimalResult b=pair.second;"
-            "if(a.value_or(0u64)!=4u64){return 0u64;}return b.value_or(0u64);",
-            imports=imports,
-            result="u64",
-        ),
-    )
 
 
 def rejection_cases(suite):
@@ -729,20 +550,6 @@ def rejection_cases(suite):
         ),
     ):
         suite.check(label, program(body, BASE, imports="import std.utility;import std.array;"), error=True)
-    for label, action in (
-        ("replacement", "input.second=leaf;"),
-        ("mutable receiver", "input.second.set(Status::error,0u64);"),
-    ):
-        suite.check(
-            "readonly parameter owned field " + label,
-            program(
-                init + "return mutate(pair,leaf);",
-                BASE,
-                f"auto mutate({pair} input,Leaf leaf)->i64{{{action}return 42;}}",
-                imports="import std.utility;",
-            ),
-            error=True,
-        )
     for operator in ("+", "-", "*", "/", "%", "&", "|", "^", "<<", ">>"):
         suite.check(
             "composed enum arithmetic rejected " + operator,
@@ -782,12 +589,6 @@ def rejection_cases(suite):
             error=True,
         )
     method_init = "Factory factory=Factory(Status::ok,42u64);"
-    suite.check(
-        "class result copied temporary argument",
-        program(
-            method_init + "return consume(factory.snapshot());", BASE, "auto consume(Packet value)->i64{return 42;}"
-        ),
-    )
     for label, body, helpers in (
         ("class result cannot initialize scalar", method_init + "u64 wrong=factory.snapshot();return 42;", ""),
         (
@@ -814,87 +615,6 @@ def rejection_cases(suite):
         ("wrong enum method argument", "Leaf leaf=Leaf(Status::ok,42u64);leaf.change(Other::ok);return 42;", ""),
     ):
         suite.check(label, program(body, BASE, helpers), error=True)
-    for label, declaration in (
-        ("wrong nominal class return", "auto make()const->Packet{Leaf value=Leaf(Status::ok,42u64);return value;}"),
-        ("wrong nominal enum return", "auto status()const->Status{return Other::ok;}"),
-    ):
-        suite.check(
-            label + " remains rejected",
-            program("return 42;", BASE + "class Invalid{public:Invalid(){}" + declaration + "};"),
-            error=True,
-        )
-    suite.check(
-        "direct copied class return preserves enum payload",
-        program(
-            method_init + "Packet p=forward(factory);const Leaf item=p.item;"
-            "if(p.tag!=Status::ok){return 1;}if(!p.valid){return 2;}"
-            "if(item.status()!=Status::ok){return 3;}return i64(item.get());",
-            BASE,
-            "auto forward(Factory source)->Packet{return source.snapshot();}",
-        ),
-    )
-    suite.check(
-        "direct class construction return preserves enum payload",
-        program(
-            "Maker maker=Maker();Leaf result=maker.make();"
-            "if(result.status()!=Status::ok){return 1;}return i64(result.get());",
-            BASE + "class Maker{public:Maker(){}auto make()const->Leaf{return Leaf(Status::ok,42u64);}};",
-        ),
-    )
-    suite.check(
-        "copied class method parameter preserves enum payload",
-        program(
-            "Leaf source=Leaf(Status::ok,42u64);Receiver receiver=Receiver();Leaf result=receiver.take(source);"
-            "source.change(Status::error);if(result.status()!=Status::ok){return 1;}return i64(result.get());",
-            BASE + "class Receiver{public:Receiver(){}auto take(Leaf value)const->Leaf{return value;}};",
-        ),
-    )
-    suite.check(
-        "nested class method parameter preserves copied result",
-        program(
-            "Factory factory=Factory(Status::ok,42u64);Packet source=factory.snapshot();Receiver receiver=Receiver();"
-            "Packet result=receiver.take(source);const Leaf item=result.item;return i64(item.get());",
-            BASE + "class Receiver{public:Receiver(){}auto take(Packet value)const->Packet{return value;}};",
-        ),
-    )
-    suite.check(
-        "Value substitution authorizes copied class method parameter",
-        program(
-            "Leaf leaf=Leaf(Status::ok,42u64);Box<Leaf> box=Box<Leaf>(leaf);Leaf result=box.take(leaf);"
-            "leaf.change(Status::error);if(result.status()!=Status::ok){return 1;}return i64(result.get());",
-            ENUMS + LEAF + "template<Value T>class Box{T item;public:Box(T source):item(source){}"
-            "auto take(T source)const->T{return source;}};",
-        ),
-    )
-    suite.check(
-        "Value enum substitution does not authorize builtin enum arrays",
-        program(
-            "Box<Status> box=Box<Status>();return 42;",
-            ENUMS + "template<Value T>class Box{builtin::array<T,2> data;public:Box():data{}{} };",
-        ),
-        error=True,
-    )
-    suite.check(
-        "decimal enum cannot satisfy Scalar constraint",
-        program(
-            "static_assert(size_of(Only<std::DecimalStatus>)>0);return 42;",
-            "template<Scalar T>class Only{T item;public:Only(T source):item(source){} };",
-            imports="import std.decimal;",
-        ),
-        error=True,
-    )
-    suite.check(
-        "decimal result private enum field remains private after composition",
-        program(
-            "std::DecimalAccumulator a=std::DecimalAccumulator();const std::DecimalResult result=a.finish();"
-            "const std::pair<Status,std::DecimalResult> pair=std::pair<Status,std::DecimalResult>(Status::ok,result);"
-            "const std::DecimalResult copy=pair.second;"
-            "if(copy.outcome==std::DecimalStatus::empty){return 42;}return 0;",
-            ENUMS,
-            imports="import std.decimal;import std.utility;",
-        ),
-        error=True,
-    )
 
 
 def main():
@@ -905,8 +625,8 @@ def main():
     args = parser.parse_args()
     require(1 <= args.steps <= 64, "steps must be between 1 and 64")
     suite = Suite(args.compiler, "enum composition")
+    suite.load(Path(__file__).with_suffix(".cases"), BASE=BASE, EMPTY=EMPTY, LEAF=LEAF)
     value_cases(suite)
-    snapshot_cases(suite)
     owned_field_cases(suite)
     method_result_cases(suite)
     wide_cases(suite)

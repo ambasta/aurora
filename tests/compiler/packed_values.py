@@ -24,13 +24,6 @@ ROOT = Path(__file__).resolve().parents[2]
 CAPACITIES = (1, 3, 4, 7, 8, 9, 64)
 MAX_U64 = (1 << 64) - 1
 EMPTY = "class Empty{public:Empty(){}auto answer()const->i64{return 42;}};"
-PAIR = "template<Value T,Value U>class Pair{public:T first;U second;Pair(T a,U b):first(a),second(b){} };"
-CELL = (
-    "class Cell{u8 value;public:Cell(u8 n):value(n){}"
-    "auto get()const->u8{return value;}"
-    "auto set(u8 n)->u8{value=n;return value;}"
-    "auto snapshot()const->Cell{const Cell result=Cell(value);return result;}};"
-)
 
 
 class Trap(Enum):
@@ -303,22 +296,6 @@ def scalar_and_layout_cases(suite):
             f"Old(u8 a,{scalar} b,u8 c):first(a),value(b),last(c){{}}}};",
             helpers="auto identity(Old value)->Old{return value;}",
         )
-    suite.check(
-        "u8 uses one byte while bool and enum retain eight-byte storage",
-        "static_assert(size_of(u8)==1);static_assert(size_of(bool)==1);"
-        "static_assert(size_of(array<bool,1>)==8);"
-        "static_assert(size_of(Status)==8);static_assert(size_of(Flags)==32);"
-        "const Flags a=Flags(255u8,true,128u8,Status::error);Flags b=identity(a);"
-        "if(b.first!=255u8){return 1u64;}if(!b.flag){return 2u64;}"
-        "if(b.last!=128u8){return 3u64;}if(b.code!=Status::error){return 4u64;}"
-        "b.flag=false;if(b.flag){return 5u64;}if(!a.flag){return 6u64;}"
-        "if(b.first!=255u8){return 7u64;}if(b.last!=128u8){return 8u64;}"
-        "return 42u64;",
-        definitions="enum class Status{ok,error};"
-        "class Flags{public:u8 first;bool flag;u8 last;Status code;"
-        "Flags(u8 a,bool b,u8 c,Status d):first(a),flag(b),last(c),code(d){} };",
-        helpers="auto identity(Flags value)->Flags{return value;}",
-    )
     definitions = (
         "class Inner{public:u8 first;u64 word;u8 last;"
         "Inner(u8 a,u64 b,u8 c):last(c),word(b),first(a){} };"
@@ -365,65 +342,6 @@ def scalar_and_layout_cases(suite):
         "u64(saved.at(2))*256u64+u64(saved.at(3));",
         expected=0xFF80112A,
         definitions=definitions,
-    )
-    for constraint in ("Scalar", "Value"):
-        suite.check(
-            f"{constraint} template instantiates compact u8 storage",
-            "const Box<u8> first=Box<u8>(255u8);const Box<u8> second=identity(first);"
-            "static_assert(size_of(Box<u8>)==1);return u64(second.get());",
-            expected=255,
-            definitions=f"template<{constraint} T>class Box{{T value;public:"
-            "Box(T n):value(n){}auto get()const->T{return value;}};",
-            helpers="auto identity(Box<u8> value)->Box<u8>{return value;}",
-        )
-
-
-def small_call_cases(suite):
-    helpers = (
-        "auto preserve(Cell a,u8 b,Cell c,u64 d,Cell e,bool f)->Cell{return a;}"
-        "auto identity(Cell value)->Cell{return value;}"
-        "auto clobber()->u8{Cell a=Cell(11u8);Cell b=identity(a);return b.get();}"
-    )
-    suite.check(
-        "one-byte call result cannot overlap caller or argument snapshots",
-        "Cell before=Cell(17u8);Cell original=Cell(128u8);Cell after=Cell(19u8);"
-        "Cell copy=preserve(original,original.set(255u8),original,"
-        f"{MAX_U64}u64,original,true);"
-        "if(before.get()!=17u8){return 1u64;}if(after.get()!=19u8){return 2u64;}"
-        "if(original.get()!=255u8){return 3u64;}if(copy.get()!=128u8){return 4u64;}"
-        "copy.set(1u8);return u64(original.get());",
-        expected=255,
-        definitions=CELL,
-        helpers=helpers,
-    )
-    suite.check(
-        "one-byte constructor snapshot survives later returned temporary",
-        "Cell item=Cell(128u8);const Pair<Cell,u8> value=Pair<Cell,u8>(item,clobber());"
-        "item.set(255u8);const Cell saved=value.first;"
-        "return u64(saved.get())*256u64+u64(value.second);",
-        expected=32779,
-        definitions=CELL + PAIR,
-        helpers=helpers,
-    )
-    suite.check(
-        "one-byte returned locals remain independent across nested scopes and loops",
-        "Cell outside=Cell(255u8);i64 i=0;u64 total=0u64;while(i<32){"
-        "Cell source=Cell(u8(i));Cell a=identity(source);const Cell b=a.snapshot();"
-        "a.set(128u8);source.set(129u8);"
-        "{Cell a=identity(b);total=total+u64(a.get());}"
-        "if(outside.get()!=255u8){return 1u64;}i=i+1;}return total;",
-        expected=496,
-        definitions=CELL,
-        helpers=helpers,
-    )
-    suite.check(
-        "constructor byte snapshots follow expression order",
-        "Cell item=Cell(128u8);const Pair<Cell,u8> early=Pair<Cell,u8>(item,item.set(255u8));"
-        "const Pair<u8,Cell> late=Pair<u8,Cell>(item.set(1u8),item);"
-        "const Cell a=early.first;const Cell b=late.second;"
-        "return u64(a.get())*256u64+u64(b.get());",
-        expected=32769,
-        definitions=CELL + PAIR,
     )
 
 
@@ -489,18 +407,6 @@ def empty_cases(suite):
         expected=33023,
         definitions=definitions,
         helpers=helpers,
-    )
-    suite.check(
-        "empty siblings preserve old word layouts beside byte layouts",
-        "Empty e=Empty();const Pair<Empty,Empty> pair=Pair<Empty,Empty>(e,e);"
-        "const Legacy legacy=Legacy(19,pair,23);const Legacy copy=identity(legacy);"
-        "static_assert(size_of(Pair<Empty,Empty>)==8);static_assert(size_of(Legacy)==16);"
-        "const Pair<Empty,Empty> projected=copy.empty;const Empty a=projected.first;"
-        "const Empty b=projected.second;if(a.answer()!=b.answer()){return 1u64;}"
-        "return u64(copy.first+copy.last);",
-        definitions=EMPTY + PAIR + "class Legacy{public:i64 first;Pair<Empty,Empty> empty;i64 last;"
-        "Legacy(i64 a,Pair<Empty,Empty> b,i64 c):first(a),empty(b),last(c){} };",
-        helpers="auto identity(Legacy value)->Legacy{return value;}",
     )
 
 
@@ -579,85 +485,6 @@ def bounds_cases(suite):
 
 
 def rejection_cases(suite):
-    for name, body, definitions, helpers in (
-        ("private byte remains inaccessible", "Cell a=Cell(1u8);return u64(a.value);", CELL, ""),
-        ("const byte receiver cannot mutate", "const Cell a=Cell(1u8);return u64(a.set(2u8));", CELL, ""),
-        (
-            "byte argument snapshot is readonly",
-            "Cell a=Cell(1u8);return mutate(a);",
-            CELL,
-            "auto mutate(Cell a)->u64{return u64(a.set(2u8));}",
-        ),
-        (
-            "private packed array remains inaccessible",
-            "Bytes4 a=Bytes4();return u64(a.data[0]);",
-            byte_storage("Bytes4", 4),
-            "",
-        ),
-        (
-            "packed array element type stays exact",
-            "Bytes4 a=Bytes4();return u64(a.set(0,1u64));",
-            byte_storage("Bytes4", 4),
-            "",
-        ),
-        ("const packed array cannot mutate", "const array<u8,3> a={1u8,2u8,3u8};a[1]=4u8;return 42u64;", "", ""),
-        (
-            "packed value copy remains nominal",
-            "Cell a=Cell(1u8);Other b=a;return 42u64;",
-            CELL + CELL.replace("Cell", "Other"),
-            "",
-        ),
-        (
-            "byte constructor requires complete fields",
-            "return 42u64;",
-            "class Bad{u8 a;u8 b;public:Bad(u8 n):a(n){} };",
-            "",
-        ),
-        (
-            "byte constructor rejects repeated initialization",
-            "return 42u64;",
-            "class Bad{u8 a;public:Bad(u8 n):a(n),a(n){} };",
-            "",
-        ),
-        ("packed array requires initialization", "return 42u64;", "class Bad{array<u8,4> a;public:Bad(){} };", ""),
-        (
-            "zero-size embedded class still requires initialization",
-            "return 42u64;",
-            EMPTY + "class Bad{u8 first;Empty empty;u8 last;public:Bad():first(1u8),last(2u8){} };",
-            "",
-        ),
-        (
-            "zero-size embedded class requires nominal source",
-            "return 42u64;",
-            EMPTY + "class Bad{u8 first;Empty empty;public:Bad():first(1u8),empty{}{} };",
-            "",
-        ),
-        (
-            "missing designated byte remains incomplete",
-            "const Bad a=Bad{.first=1u8};return 42u64;",
-            "class Bad{public:u8 first;u8 last;};",
-            "",
-        ),
-        (
-            "enum stays outside Scalar constraint",
-            "const Box<State> a=Box<State>(State::ok);return 42u64;",
-            "enum class State{ok,error};template<Scalar T>class Box{T value;public:Box(T n):value(n){} };",
-            "",
-        ),
-        (
-            "enum is not a builtin scalar-array element",
-            "array<State,1> a={State::ok};return 42u64;",
-            "enum class State{ok,error};",
-            "",
-        ),
-    ):
-        suite.reject(name, body, definitions, helpers)
-    suite.check(
-        "packed class method parameter copies independent result",
-        "Cell source=Cell(42u8);Receiver receiver=Receiver();Cell result=receiver.take(source);"
-        "source.set(0u8);return u64(result.get());",
-        definitions=CELL + "class Receiver{public:Receiver(){}auto take(Cell a)const->Cell{return a;}};",
-    )
     for capacity in (0, 513):
         suite.reject(
             f"packed array capacity {capacity} remains unsupported", "return 42u64;", byte_storage("Bad", capacity)
@@ -673,10 +500,10 @@ def main():
     args = parser.parse_args()
     require(args.timeout > 0 and 1 <= args.steps <= 128, "invalid timeout or steps")
     suite = Suite(args.compiler, args.timeout)
+    suite.runner.load(Path(__file__).with_suffix(".cases"), EMPTY=EMPTY)
     array_cases(suite)
     byte_run_cases(suite)
     scalar_and_layout_cases(suite)
-    small_call_cases(suite)
     maximum_leaf_cases(suite)
     empty_cases(suite)
     model_cases(suite, args.seed, args.steps)

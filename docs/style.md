@@ -30,6 +30,7 @@ From the repository root, check or format explicitly selected files:
 python3 -B scripts/style.py check tests/compiler/runtime_records.py tests/compiler/package_graph.py
 python3 -B scripts/style.py format tests/compiler/runtime_records.py tests/compiler/package_graph.py
 python3 -B scripts/style.py check compiler/lexer.hpp compiler/parser.hpp
+python3 -B scripts/style.py check --tree   # every host source; the merge suite's `style` test
 ```
 
 The entrypoint checks exact tool versions, rejects non-host files, and delegates

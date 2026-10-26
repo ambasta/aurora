@@ -131,40 +131,7 @@ def contexts(s):
             p("Trace c=Trace();return combine(" + arguments + ");", defs + helper),
             sum(range(1, prefix + 1)) + 1,
         )
-    s.check(
-        "bool array initializer and checked assignment",
-        p(
-            "array<bool,4> a={false,true||false,false||true,true&&true};a[0]=a[1]&&(a[2]||false);return a[0]&&a[3];",
-            result="bool",
-        ),
-        True,
-    )
-    s.check(
-        "checked array index before logical RHS",
-        p("array<bool,1> a={false};a[1]=true || (1/0==0);return 0;"),
-        Trap.BOUNDS,
-    )
     s.check("nested binary saved operands", p("return 11+choose(3==3 && (false||true))*31;", defs), 42)
-    s.check(
-        "mutable reference RHS runs once",
-        p(
-            (
-                "own<i64> value=own(0);{mutref<i64> r=borrow_mut(value);const bool b=false||(write(r,42)==42);i"
-                "f(!b){return 0;}}return read(value);"
-            )
-        ),
-        42,
-    )
-    s.check(
-        "mutable reference skipped RHS",
-        p(
-            (
-                "own<i64> value=own(42);{mutref<i64> r=borrow_mut(value);const bool b=true||(write(r,0)==0);if("
-                "!b){return 0;}}return read(value);"
-            )
-        ),
-        42,
-    )
     for left in ("true", "false"):
         s.check(
             "temporary whole span cleanup " + left,
@@ -228,34 +195,6 @@ def contexts(s):
         p("Counter c=Counter(0);while(c.get()<42&&c.add(1)<=42){}return c.get();", COUNTER),
         42,
     )
-    s.check(
-        "static assertion composed predicates",
-        p("static_assert((size_of(i64)==8&&field_count(i64)==0)||false);static_assert(!false && true);return 42;"),
-        42,
-    )
-    s.check(
-        "overloaded bool exact selection",
-        p(
-            "return pick(false||true);",
-            "auto pick(bool b)->i64{if(b){return 42;}return 0;}auto pick(i64 b)->i64{return 0;}",
-        ),
-        42,
-    )
-    s.check(
-        "function template bool specialization",
-        p(
-            "return logic<bool>(false,true);",
-            "template<Scalar T>auto logic(T a,T b)->bool{return a||b;}",
-            result="bool",
-        ),
-        True,
-    )
-    s.check(
-        "imported logical function",
-        p("return api::logic(false,true);", imports="import logic; ", result="bool"),
-        True,
-        modules={"logic": "export module logic;export namespace api{auto logic(bool a,bool b)->bool{return a||b;}}"},
-    )
 
 
 def traps(s):
@@ -278,12 +217,6 @@ def traps(s):
     for rhs in ("(1u64<<64)==0u64", "u8(256)==0u8"):
         s.check("skipped shift or conversion " + rhs, p("return true||" + rhs + ";", result="bool"), True)
         s.check("skipped shift or conversion and " + rhs, p("return false&&" + rhs + ";", result="bool"), False)
-    for operator, left in (("&&", "true"), ("||", "false")):
-        s.check(
-            "required narrowing conversion " + operator,
-            p("return " + left + operator + "(u8(256)==0u8);", result="bool"),
-            Trap.OVERFLOW,
-        )
     s.check("left trap wins over right trap", p(f"return ({MAX_I64}+1==0) || (1/0==0);", result="bool"), Trap.OVERFLOW)
     s.check("short-circuit does not suppress later trap", p("const bool b=false&&(1/0==0);return 1/0;"), Trap.ZERO)
 
@@ -365,17 +298,6 @@ def rejections(s):
         )
     for text in ("true &&", "|| true", "true ||| false", "true &&& false"):
         s.reject("malformed logical " + text, p("return " + text + ";", result="bool"), "expected expression")
-    # The logical condition does not relax the surrounding branch/loop move rule.
-    s.reject(
-        "conditional move after logical condition",
-        p("own<i64> x=own(42);if(true||false){own<i64> y=move(x);}return read(x);"),
-        "use after move",
-    )
-    s.reject(
-        "outer move on logical loop backedge",
-        p("own<i64> x=own(42);while(false&&true){own<i64> y=move(x);}return read(x);"),
-        "loop backedge",
-    )
 
 
 def resource_cases(s):
@@ -406,6 +328,7 @@ def main():
     parser.add_argument("--seed", type=int, default=24024)
     args = parser.parse_args()
     suite = Suite(args.compiler, "short circuit", ignore_case=True)
+    suite.load(Path(__file__).with_suffix(".cases"))
     truth_and_order(suite, args.seed)
     contexts(suite)
     traps(suite)

@@ -744,21 +744,24 @@ class OwnedBytesCases(Suite):
             ),
             (
                 "mutable-call-while-receiver-view",
-                f"Pool pool = Pool(region, move(values)); const {span} rows = pool.view(); pool.put(0, fill); return 0;",
+                f"Pool pool = Pool(region, move(values)); const {span} rows = pool.view();"
+                " pool.put(0, fill); return 0;",
                 "",
                 "cannot mutate or move an owner while a readonly span is live",
             ),
             (
                 "mutable-method-result",
                 "return 0;",
-                f"class Bad {{ {owner} rows; public: Bad(builtin::ByteRegion region, {owner} owned) : rows(move(owned)) {{}}"
+                f"class Bad {{ {owner} rows; public:"
+                f" Bad(builtin::ByteRegion region, {owner} owned) : rows(move(owned)) {{}}"
                 f" auto view() -> {span} {{ const {span} all = borrow_values(rows); return all; }} }};",
                 "span results require a const non-template class method",
             ),
             (
                 "borrowed-object-field",
                 "return 0;",
-                f"auto peek(const Pool& pool) -> i64 {{ const {span} rows = borrow_values(pool.rows); return rows.size(); }}",
+                f"auto peek(const Pool& pool) -> i64 {{ const {span} rows = borrow_values(pool.rows);"
+                " return rows.size(); }",
                 "borrowed object parameters support public methods, not field access",
             ),
             (

@@ -1,0 +1,116 @@
+# Fixed function_templates.py cases; the format is native_runner.Suite.load's.
+@prelude RECEIVER_SHADOW
+template<Scalar T>class Receiver{public:Receiver(){}auto helper(i64 x)const->i64{return x;}auto get()const->i64{return helper(42);}};
+@prelude SHADOWED_HELPER
+template<Scalar U>auto helper(U x)->U{return x;}template<Scalar T>class Receiver{public:Receiver(){}auto helper(i64 x)const->i64{return x;}auto get()const->i64{return helper<i64>(42);}};
+@prelude QUALIFIED_HELPER
+namespace api{template<Scalar U>auto helper(U x)->U{return x;}}template<Scalar T>class Receiver{public:Receiver(){}auto helper(i64 x)const->i64{return x;}auto get()const->i64{return api::helper<i64>(42);}};
+@case mixed Scalar Value constraints and namespace-qualified explicit call
+module app;import std.utility;import std.array;${LEAF}namespace tools{template<Scalar T,Value U>auto pack(T x,U y)->std::pair<T,U>{const std::pair<T,U> result=std::pair<T,U>(x,y);return result;}}auto test()->i64{Leaf leaf=Leaf(40u8);std::pair<u8,Leaf> value=tools::pack<u8,Leaf>(2u8,leaf);const Leaf result=value.second;return i64(value.first)+i64(result.get());}
+@case explicit calls in ordinary constructor initializer and method
+module app;${COPY}class Ordinary{u8 value;public:Ordinary(u8 x):value(copy<u8>(x)){}auto get()const->u8{return copy<u8>(value);}};auto test()->i64{Ordinary value=Ordinary(42u8);return i64(value.get());}
+@case class-template receiver method shadows local function-template name
+module app;template<Scalar U>auto helper(U x)->i64{return 999;}${RECEIVER_SHADOW}auto test()->i64{const Receiver<i64> value=Receiver<i64>();return value.get();}
+@case class-template receiver method shadows imported function-template name
+module app;import helpers;${RECEIVER_SHADOW}auto test()->i64{const Receiver<i64> value=Receiver<i64>();return value.get();}
+@module helpers
+export module helpers;export template<Scalar U>auto helper(U x)->i64{return 999;}
+@case same template many scalar specializations have independent substituted ASTs
+module app;${COPY}auto test()->i64{if(copy<i64>(-1)!=-1){return 1;}if(copy<u8>(255u8)!=255u8){return 2;}if(copy<bool>(true)!=true){return 3;}if(copy<u64>(18446744073709551615u64)!=18446744073709551615u64){return 4;}return copy<i64>(42);}
+@case Value closed nominal enum copies and pair fields
+module app;import std.utility;import std.array;enum class Status{ready,failed};${COPY}auto test()->i64{Status original=Status::ready;Status copied=copy<Status>(original);std::pair<Status,u8> value=std::make_pair<Status,u8>(copied,42u8);if(value.first!=Status::ready){return 1;}return i64(value.second);}
+@case Value named private class snapshots and independent returned copy
+module app;import std.utility;import std.array;${LEAF}${COPY}auto test()->i64{Leaf original=Leaf(20u8);Leaf copied=copy<Leaf>(original);original.set(1u8);copied.set(22u8);Leaf saved=copy<Leaf>(copied);copied.set(3u8);return i64(saved.get())+19+i64(original.get());}
+@case fully concrete nested class argument inside function template
+module app;import std.utility;import std.array;template<Value T>auto wrap(std::pair<std::array<u8,3>,u8> source,T last)->std::pair<std::pair<std::array<u8,3>,u8>,T>{const std::pair<std::pair<std::array<u8,3>,u8>,T> result=std::pair<std::pair<std::array<u8,3>,u8>,T>(source,last);return result;}auto test()->i64{std::array<u8,3> bytes=std::array<u8,3>();bytes.set(2,40u8);std::pair<std::array<u8,3>,u8> inner=std::make_pair<std::array<u8,3>,u8>(bytes,2u8);std::pair<std::pair<std::array<u8,3>,u8>,u8> outer=wrap<u8>(inner,0u8);const std::pair<std::array<u8,3>,u8> saved=outer.first;const std::array<u8,3> copy=saved.first;return i64(copy.at(2))+i64(saved.second);}
+@case function argument syntax supports adjacent and spaced nested closers
+module app;import std.utility;import std.array;${COPY}auto test()->i64{std::array<u8,03> source=std::array<u8,3>();source.set(2,42u8);const std::array<u8,3> a=copy<std::array<u8,03>>(source);const std::array<u8,3> b=copy< std::array< u8, 3 > >(a);return i64(b.at(2));}
+@case left-to-right scalar argument side effects
+module app;import std.utility;import std.array;${LEAF}auto test()->i64{Leaf leaf=Leaf(0u8);std::pair<u8,u8> result=std::make_pair<u8,u8>(leaf.set(20u8),leaf.set(22u8));return i64(result.first)+i64(result.second);}
+@case left-to-right class snapshot precedes later argument mutation
+module app;import std.utility;import std.array;${LEAF}auto test()->i64{Leaf leaf=Leaf(20u8);std::pair<Leaf,u8> result=std::make_pair<Leaf,u8>(leaf,leaf.set(22u8));const Leaf saved=result.first;return i64(saved.get())+i64(result.second);}
+@case left-to-right array snapshot precedes later argument mutation
+module app;import std.utility;import std.array;auto test()->i64{std::array<u8,1> bytes=std::array<u8,1>();bytes.set(0,20u8);std::pair<std::array<u8,1>,u8> result=std::make_pair<std::array<u8,1>,u8>(bytes,bytes.set(0,22u8));const std::array<u8,1> saved=result.first;return i64(saved.at(0))+i64(result.second);}
+@case repeated class source arguments become independent snapshots
+module app;import std.utility;import std.array;${LEAF}auto test()->i64{Leaf source=Leaf(20u8);std::pair<Leaf,Leaf> pair=std::make_pair<Leaf,Leaf>(source,source);Leaf first=pair.first;Leaf second=pair.second;first.set(22u8);source.set(1u8);return i64(first.get())+i64(second.get());}
+@case function result binding observes outer same-name source
+module app;import std.utility;import std.array;${LEAF}${COPY}auto test()->i64{Leaf source=Leaf(42u8);{Leaf source=copy<Leaf>(source);if(source.get()!=42u8){return 1;}}return i64(source.get());}
+@case returned class survives template frame and repeated loop calls
+module app;import std.utility;import std.array;${LEAF}${COPY}auto test()->i64{Leaf source=Leaf(20u8);i64 i=0;while(i<12){Leaf saved=copy<Leaf>(source);saved.set(22u8);if(source.get()!=20u8){return 1;}i=i+1;}Leaf result=copy<Leaf>(source);return i64(result.get())+22;}
+@case function template parameter count 1
+module app;${COPY}auto test()->i64{return copy<i64>(42);}
+@case function template parameter count 2
+module app;template<Scalar T,Scalar U>auto choose(T x,U y)->T{return x;}auto test()->i64{return choose<i64,u8>(42,0u8);}
+@case substitution produces exactly four nominal template levels
+module app;template<Value T>class Tag{public:Tag(){} };template<Value T>auto expanded()->i64{static_assert(size_of(Tag<T>)==8);return 42;}auto test()->i64{return expanded<Tag<Tag<Tag<i64>>>>();}
+@case substitution cannot conceal fifth nominal template level
+@error depth
+@error four
+@error 4
+@error nesting
+@error nested
+module app;template<Value T>class Tag{public:Tag(){} };template<Value T>auto expanded()->i64{static_assert(size_of(Tag<T>)==8);return 42;}auto test()->i64{return expanded<Tag<Tag<Tag<Tag<i64>>>>>();}
+@case instantiated function exactly six ordinary scalar parameters
+module app;template<Scalar T>auto sum(T a0,T a1,T a2,T a3,T a4,T a5)->T{return a0+a1+a2+a3+a4+a5;}auto test()->i64{return sum<i64>(7,7,7,7,7,7);}
+@case instantiated function seven ordinary parameters
+@error six
+@error parameter
+module app;template<Scalar T>auto sum(T a0,T a1,T a2,T a3,T a4,T a5,T a6)->T{return a0+a1+a2+a3+a4+a5+a6;}auto test()->i64{return sum<i64>(7,7,7,7,7,7,7);}
+@case instantiated function exactly six independent class parameters
+module app;${LEAF}template<Value T>auto last(T a,T b,T c,T d,T e,T f)->T{return f;}auto test()->i64{Leaf source=Leaf(42u8);Leaf result=last<Leaf>(source,source,source,source,source,source);return i64(result.get());}
+@case receiver method cannot conceal explicit unqualified function-template call unused
+@error
+module app;${SHADOWED_HELPER}auto test()->i64{return 42;}
+@case receiver method cannot conceal explicit unqualified function-template call requested
+@error
+module app;${SHADOWED_HELPER}auto test()->i64{const Receiver<i64> value=Receiver<i64>();return value.get();}
+@case receiver method cannot conceal explicit qualified function-template call unused
+@error
+module app;${QUALIFIED_HELPER}auto test()->i64{return 42;}
+@case receiver method cannot conceal explicit qualified function-template call requested
+@error
+module app;${QUALIFIED_HELPER}auto test()->i64{const Receiver<i64> value=Receiver<i64>();return value.get();}
+@case class return constructor copies complete value
+module app;import std.utility;import std.array;${LEAF}template<Value T>auto make(T x)->Leaf{return Leaf(42u8);}auto test()->i64{Leaf source=Leaf(42u8);Leaf result=make<Leaf>(source);source.set(0u8);return i64(result.get());}
+@case direct copied template call preserves exact nominal result
+module app;import std.utility;import std.array;${LEAF}${COPY}auto wrap(Leaf x)->Leaf{return copy<Leaf>(x);}auto test()->i64{Leaf source=Leaf(42u8);Leaf result=wrap(source);source.set(0u8);return i64(result.get());}
+@case direct copied call inside function template
+module app;import std.utility;import std.array;${LEAF}auto identity(Leaf x)->Leaf{return x;}template<Value T>auto forward(T x)->T{return identity(x);}auto test()->i64{Leaf source=Leaf(42u8);Leaf result=forward<Leaf>(source);source.set(0u8);return i64(result.get());}
+@case class parameter publicly writable field is still readonly
+@error
+module app;class Public{public:u8 value;Public(u8 n):value(n){} };template<Value T>auto mutate(T x)->i64{x.value=0u8;return 42;}auto test()->i64{Public source=Public(42u8);return mutate<Public>(source);}
+@case private method stays private after type substitution
+@error
+module app;class Leaf{u8 value;auto secret()const->u8{return value;}public:Leaf(u8 n):value(n){} };template<Value T>auto expose(T x)->i64{return i64(x.secret());}auto test()->i64{Leaf source=Leaf(42u8);return expose<Leaf>(source);}
+@case equal-layout reordered nominal function arguments stay distinct
+@error
+module app;import std.utility;import std.array;${COPY}auto test()->i64{std::pair<i64,u64> source=std::pair<i64,u64>(20,22u64);std::pair<u64,i64> result=copy<std::pair<u64,i64>>(source);return 42;}
+@case function template cannot become a value pointer
+@error
+module app;${COPY}auto test()->i64{const i64 address=copy<i64>;return address;}
+@case exported template accepts caller-private nominal class without member access
+module app;import generic;${LEAF}auto test()->i64{Leaf source=Leaf(42u8);const Leaf result=copy<Leaf>(source);return i64(result.get());}
+@module generic
+export module generic;export ${COPY}
+@case exported template accepts caller-private nominal enum
+module app;import generic;enum class Status{ready,failed};auto test()->i64{Status source=Status::ready;Status result=copy<Status>(source);if(result==Status::ready){return 42;}return 0;}
+@module generic
+export module generic;export ${COPY}
+@case exported template accepts caller-private class inside concrete tree
+module app;import generic;import std.utility;${LEAF}auto test()->i64{Leaf leaf=Leaf(40u8);std::pair<Leaf,u8> source=std::make_pair<Leaf,u8>(leaf,2u8);const std::pair<Leaf,u8> result=copy<std::pair<Leaf,u8>>(source);const Leaf value=result.first;return i64(value.get())+i64(result.second);}
+@module generic
+export module generic;export ${COPY}
+@case exported template signature cannot launder private template declaration
+@error private
+@error visible
+@error export
+module app;import hidden;auto test()->i64{return 42;}
+@module hidden
+export module hidden;template<Value T>class Box{public:T item;Box(T x):item(x){} };export template<Value T>auto bad(Box<T> x)->T{const T result=x.item;return result;}
+@case imported generic copy confers no private member access
+@error
+module app;import generic;${LEAF}auto test()->i64{Leaf source=Leaf(42u8);Leaf result=copy<Leaf>(source);return i64(result.value);}
+@module generic
+export module generic;export ${COPY}
+@case explicit type argument parsing preserves ordinary comparisons
+module app;${COPY}auto test()->i64{const i64 value=copy<i64>(40);if(value<41){if(value<=40){if(value>39){if(value>=40){return 42;}}}}return 0;}

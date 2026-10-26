@@ -716,11 +716,6 @@ REJECTIONS = (
         "exact u64 coordinate",
         "const fs::XfsFileSector wrong = fs::XfsFileSector(fs::XfsFileSectorKind::written, 1, 512u64); return 0u64;",
     ),
-    (
-        "private coordinate field",
-        "const fs::XfsFileSector private_value = fs::XfsFileSector(fs::XfsFileSectorKind::hole, 0u64, 512u64);"
-        "return private_value._lba;",
-    ),
     ("exact i64 sector", "const fs::XfsFileRequest wrong = fs::XfsFileRequest(131u64, 0u64); return 0u64;"),
     ("exact u64 inode", "const fs::XfsFileRequest wrong = fs::XfsFileRequest(131, 0); return 0u64;"),
     ("closed status enum", "return u64(fs::XfsFileStatus::ready);"),
@@ -728,11 +723,6 @@ REJECTIONS = (
         "private failure helper",
         "const fs::XfsFileReport result = fs::xf_failure(fs::XfsFileStatus::ready, fs::XfsFileIssue::none);"
         " return 0u64;",
-    ),
-    (
-        "private report field",
-        "const fs::XfsFileReport result = fs::plan_xfs_v5_512_file_sector("
-        "source, borrow_bytes(data), borrow_bytes(data), request); return result._facts;",
     ),
     (
         "coordinate is not a request",

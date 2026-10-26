@@ -79,8 +79,7 @@ bool expect_failed_borrow = false;
 } // namespace
 extern "C" [[noreturn]] void __au_runtime_bytes_kernel_fault(std::uint64_t reason) noexcept {
     if (!expect_failed_borrow || reason != 2 || active == nullptr || active->region.metrics() != fault_metrics ||
-        !active->region.is_open() || active->region.faulted() || active->pool.used() != 8 ||
-        !active->pages_match(0)) {
+        !active->region.is_open() || active->region.faulted() || active->pool.used() != 8 || !active->pages_match(0)) {
         std::fputs("FAIL generated kernel owned spans: unexpected fault or changed failure state\n", stderr);
         std::_Exit(90);
     }

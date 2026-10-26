@@ -115,58 +115,6 @@ def native_cases(suite, seed, steps):
             ),
         )
 
-    suite.check(
-        "injected self snapshot and substituted class result copies",
-        p(
-            "std::array<u8,3> source=std::array<u8,3>();source.set(2,40u8);"
-            "Box<std::array<u8,3>> inner=Box<std::array<u8,3>>(source);"
-            "Box<Box<std::array<u8,3>>> outer=Box<Box<std::array<u8,3>>>(inner);"
-            "const Box<Box<std::array<u8,3>>> saved=outer.snapshot();"
-            "Box<std::array<u8,3>> extracted=saved.get();std::array<u8,3> changed=extracted.get();"
-            "changed.set(2,2u8);const Box<std::array<u8,3>> preserved=saved.item;"
-            "const std::array<u8,3> bytes=preserved.item;return i64(bytes.at(2))+i64(changed.at(2));",
-            BOX,
-        ),
-    )
-    suite.check(
-        "ordinary class private nested specialized field and method result",
-        p(
-            "std::array<u8,3> source=std::array<u8,3>();source.set(2,40u8);"
-            "std::pair<std::array<u8,3>,u8> pair=std::pair<std::array<u8,3>,u8>(source,2u8);"
-            "Holder holder=Holder(pair);const std::pair<std::array<u8,3>,u8> result=holder.copy();"
-            "const std::array<u8,3> bytes=result.first;return i64(bytes.at(2))+i64(result.second);",
-            "class Holder{std::pair<std::array<u8,3>,u8> value;public:"
-            "Holder(std::pair<std::array<u8,3>,u8> source):value(source){}"
-            "auto copy()const->std::pair<std::array<u8,3>,u8>{"
-            "const std::pair<std::array<u8,3>,u8> result=value;return result;}};",
-        ),
-    )
-    suite.check(
-        "empty nested descendants survive complete copy and method result",
-        p(
-            "Empty empty=Empty();Box<Empty> one=Box<Empty>(empty);"
-            "Box<Box<Empty>> two=Box<Box<Empty>>(one);"
-            "const Box<Box<Empty>> saved=two.snapshot();const Box<Empty> inner=saved.get();"
-            "const Empty copy=inner.get();static_assert(field_count(Box<Box<Empty>>)==1);"
-            "return copy.answer();",
-            EMPTY + BOX,
-        ),
-    )
-    suite.check(
-        "adjacent and spaced closers canonicalize in all type positions",
-        p(
-            "std::pair<i64,u8> inner=std::pair<i64,u8>(40,2u8);"
-            "std::pair<std::pair<i64,u8>,u8> value=std::pair<std::pair<i64,u8>,u8>(inner,0u8);"
-            "const std::pair< std::pair< i64, u8 >, u8 > copied=identity(value);"
-            "const std::pair<i64,u8> result=copied.first;"
-            "static_assert(type_id(std::array<u8,03>)==type_id(std::array<u8,3>));"
-            "static_assert(type_id(std::pair<std::array<u8,03>,u8>)=="
-            "type_id(std::pair<std::array<u8,3>,u8>));return result.first+i64(result.second);",
-            helpers="auto identity(std::pair< std::pair<i64,u8>,u8 > value)"
-            "->std::pair<std::pair<i64,u8>,u8>{return value;}",
-        ),
-    )
-
     # Predict state solely with ordinary Python lists. A saved outer object and
     # extracted mutable bytes must never share storage with source/projections.
     rng = random.Random(seed)
@@ -194,28 +142,6 @@ def native_cases(suite, seed, steps):
             p("".join(body), helpers=f"auto identity({outer} value)->{outer}{{return value;}}"),
         )
 
-    # Snapshot side effects are scalar expressions after the named class input.
-    suite.check(
-        "left-to-right constructor snapshot before later array mutation",
-        p(
-            "std::array<u8,1> source=std::array<u8,1>();source.set(0,20u8);"
-            "std::pair<std::array<u8,1>,u8> value=std::pair<std::array<u8,1>,u8>(source,source.set(0,22u8));"
-            "const std::array<u8,1> copy=value.first;return i64(copy.at(0))+i64(value.second);"
-        ),
-    )
-    suite.check(
-        "left-to-right ordinary function snapshot before later mutation",
-        p(
-            "std::array<u8,1> source=std::array<u8,1>();source.set(0,20u8);"
-            "std::pair<std::array<u8,1>,u8> value=std::pair<std::array<u8,1>,u8>(source,20u8);"
-            "Snapshot snapshot=Snapshot(value,20u8);return consume(snapshot,snapshot.bump());",
-            "class Snapshot{std::pair<std::array<u8,1>,u8> item;u8 count;public:"
-            "Snapshot(std::pair<std::array<u8,1>,u8> input,u8 n):item(input),count(n){}"
-            "auto bump()->u8{count=count+2u8;return count;}auto get()const->u8{return count;}};",
-            helpers="auto consume(Snapshot value,u8 extra)->i64{return i64(value.get())+i64(extra);}",
-        ),
-    )
-
 
 def boundary_cases(suite):
     for levels in (3, 4, 5):
@@ -229,28 +155,6 @@ def boundary_cases(suite):
             suite.reject(
                 "template-id syntax depth five with zero-leaf classes", source, error=("depth", "four", "4", "nested")
             )
-    for leaf_class in (False, True):
-        concrete = "Leaf" if leaf_class else "u8"
-        body = "Leaf value0=Leaf(42u8);" if leaf_class else "u8 value0=42u8;"
-        for level in range(1, 5):
-            concrete = f"Box<{concrete}>"
-            body += f"{concrete} value{level}={concrete}(value{level - 1});"
-        if leaf_class:
-            body += "return 42;"
-        else:
-            child = concrete
-            for level in range(3, -1, -1):
-                child = child[4:-1]
-                origin = "value4" if level == 3 else f"copy{level + 1}"
-                body += f"const {child} copy{level}={origin}.item;"
-            body += "return i64(copy0);"
-        source = p(body, LEAF + BOX, imports="")
-        if leaf_class:
-            suite.reject(
-                "four template ids plus named class exceeds containment depth", source, error=("depth", "four", "4")
-            )
-        else:
-            suite.check("four template ids and exactly four containment levels", source)
     for leaves in (63, 64, 65):
         capacity = leaves - 1
         inner = f"std::array<u8,{capacity}>"
@@ -448,16 +352,6 @@ def rejection_cases(suite):
         ("constructor", f"{bb} wrong={bb}(inner,0u8);return 42;", ""),
     ):
         suite.reject("equal-byte reordered nested nominal " + label, p(prefix + body, helpers=helpers))
-    suite.check(
-        "nested class method parameters make independent snapshots",
-        p(
-            "std::array<u8,3> bytes=std::array<u8,3>();bytes.set(2,40u8);"
-            "std::pair<std::array<u8,3>,u8> source=std::pair<std::array<u8,3>,u8>(bytes,2u8);"
-            "Receiver receiver=Receiver();return receiver.consume(source);",
-            "class Receiver{public:Receiver(){}auto consume(std::pair<std::array<u8,3>,u8> value)const->i64{"
-            "const std::array<u8,3> bytes=value.first;return i64(bytes.at(2))+i64(value.second);}};",
-        ),
-    )
     suite.reject(
         "direct nested projection result remains unsupported",
         p(
@@ -655,15 +549,6 @@ def trap_and_shift_cases(suite):
             ),
             expected=expected,
         )
-    suite.check(
-        "nested type expressions do not change ordinary comparison parsing",
-        p(
-            "std::pair<i64,u8> inner=std::pair<i64,u8>(40,2u8);"
-            "std::pair<std::pair<i64,u8>,u8> value=std::pair<std::pair<i64,u8>,u8>(inner,0u8);"
-            "const std::pair<i64,u8> copy=value.first;"
-            "if(copy.first>=40){if(copy.first>39){if(copy.first<41){if(copy.first<=40){return 42;}}}}return 0;"
-        ),
-    )
 
 
 def main():
@@ -677,6 +562,7 @@ def main():
     args = parser.parse_args()
     require(1 <= args.steps <= 128, "steps must be between 1 and 128")
     suite = Suite(args.compiler, "nested values")
+    suite.load(Path(__file__).with_suffix(".cases"), BOX=BOX, LEAF=LEAF)
     sections = {
         "native": lambda: native_cases(suite, args.seed, args.steps),
         "boundaries": lambda: boundary_cases(suite),

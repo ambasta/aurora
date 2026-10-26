@@ -1,0 +1,114 @@
+# Fixed templates.py cases; the format is native_runner.Suite.load's.
+@prelude LEXICAL_BOX
+template <Scalar T> class Box {
+    T value;
+public:
+    Box(T initial): value(initial) {}
+    auto get() const -> T { const T local=value; return adjust(local); }
+    auto set(T replacement) -> T { value=replacement; return value; }
+    auto echo(T argument) const -> T { T local=argument; return local; }
+    auto facts() const -> i64 {
+        static_assert(size_of(T)>0);
+        static_assert(field_count(T)==0);
+        return type_id(T)+reflect_size(type_id(T))+reflect_field_count(type_id(T));
+    }
+};
+@case repeated specialization shares one nominal type
+module app;${PAIR}auto test()->i64{Pair<i64,u64> p=Pair<i64,u64>(20,22u64);const Pair< i64 , u64 > q=p;static_assert(type_id(Pair<i64,u64>)==type_id(Pair< i64 , u64 >));return q.first+i64(q.second);}
+@case three getter and local substitutions coexist without AST aliasing
+module app;${BOX}auto test()->i64{Box<i64> signed_value=Box<i64>(-9223372036854775808);Box<u64> unsigned_value=Box<u64>(18446744073709551615u64);Box<bool> flag=Box<bool>(true);if(signed_value.get()!=-9223372036854775808){return 1;}if(unsigned_value.get()!=18446744073709551615u64){return 2;}if(flag.get()!=true){return 3;}if(signed_value.echo(42)!=42){return 4;}if(unsigned_value.echo(9223372036854775808u64)!=9223372036854775808u64){return 5;}if(flag.echo(false)!=false){return 6;}flag.set(false);unsigned_value.set(42u64);signed_value.set(-42);if(flag.get()!=false){return 7;}if(unsigned_value.get()!=42u64){return 8;}if(signed_value.get()!=-42){return 9;}return 42;}
+@case generic empty class has bounded layout
+module app;template<Scalar T>class Empty{public:Empty(){}};auto identity(Empty<bool> e)->Empty<bool>{return e;}auto test()->i64{Empty<bool> e=Empty<bool>();Empty<bool> copy=identity(e);static_assert(size_of(Empty<bool>)==8);return reflect_size(type_id(Empty<bool>))+34;}
+@case generic argument snapshot precedes later receiver mutation
+module app;${BOX}auto sum(Box<i64> b,i64 later)->i64{return b.get()+later;}auto test()->i64{Box<i64> b=Box<i64>(20);return sum(b,b.set(22));}
+@case generic six mixed ordinary parameters preserve complete values
+module app;${PAIR}auto sum(Pair<i64,u64> a,i64 x,Pair<bool,i64> b,u64 y,Pair<i64,u64> c,i64 z)->i64{if(b.first){return a.first+x+b.second+i64(y)+c.first+z+1;}return 0;}auto test()->i64{Pair<i64,u64> a=Pair<i64,u64>(10,11u64);Pair<bool,i64> b=Pair<bool,i64>(true,20);return sum(a,1,b,2u64,a,-2);}
+@case generic result lifetime repeats through loop
+module app;${BOX}auto make(i64 n)->Box<i64>{const Box<i64> b=Box<i64>(n);return b;}auto test()->i64{i64 i=0;i64 total=0;while(i<2){const Box<i64> b=make(21);total=total+b.get();i=i+1;}return total;}
+@case namespace generic constructor and qualified signature
+module app;import boxes;auto make()->items::Box<i64>{items::Box<i64> b=items::Box<i64>(42);return b;}auto test()->i64{items::Box<i64> b=make();return b.get();}
+@module boxes
+export module boxes;export namespace items{${BOX}}
+@case defining module private helper beats root shadow
+module app;import boxes;auto adjust(i64 n)->i64{return 999;}auto test()->i64{Box<i64> b=Box<i64>(40);return b.get();}
+@module boxes
+export module boxes;auto adjust(i64 n)->i64{return n+2;}export ${LEXICAL_BOX}
+@case generic helper cannot resolve into caller
+@error unknown function
+module app;import boxes;auto adjust(i64 n)->i64{return 42;}auto test()->i64{Box<i64> b=Box<i64>(40);return b.get();}
+@module boxes
+export module boxes;export ${LEXICAL_BOX}
+@case private generic usable inside defining module
+module app;import boxes;auto test()->i64{return answer();}
+@module boxes
+export module boxes;${BOX}export auto answer()->i64{Box<i64> b=Box<i64>(42);return b.get();}
+@case private generic metadata hidden in caller view
+module app;import boxes;auto test()->i64{return reflect_size(hidden_id())+reflect_field_count(hidden_id())+42;}
+@module boxes
+export module boxes;${BOX}export auto hidden_id()->i64{return type_id(Box<i64>);}
+@case duplicate template definition
+@error duplicate
+module app;${PAIR}${PAIR}auto test()->i64{Pair<i64,u64> p=Pair<i64,u64>(20,22u64);return 42;}
+@case template ordinary class collision
+@error duplicate
+@error conflict
+module app;${PAIR}class Pair{public:i64 n;};auto test()->i64{Pair<i64,u64> p=Pair<i64,u64>(20,22u64);return 42;}
+@case template function collision
+@error duplicate
+@error conflict
+@error reserved
+module app;${PAIR}auto Pair()->i64{return 42;}auto test()->i64{Pair<i64,u64> p=Pair<i64,u64>(20,22u64);return 42;}
+@case imported template ambiguity
+@error ambiguous
+@error ambiguity
+module app;import left;import right;auto test()->i64{Pair<i64,u64> p=Pair<i64,u64>(20,22u64);return 42;}
+@module left
+export module left;export ${PAIR}
+@module right
+export module right;export ${PAIR}
+@case qualified different template definitions retain identity
+module app;import left;import right;auto test()->i64{left::Pair<i64,u64> a=left::Pair<i64,u64>(20,22u64);right::Pair<i64,u64> b=right::Pair<i64,u64>(20,22u64);static_assert(type_id(left::Pair<i64,u64>)!=type_id(right::Pair<i64,u64>));return a.first+i64(b.second);}
+@module left
+export module left;export namespace left{${PAIR}}
+@module right
+export module right;export namespace right{${PAIR}}
+@case temporary generic argument
+module app;${PAIR}auto consume(Pair<i64,u64> p)->i64{return 42;}auto test()->i64{return consume(Pair<i64,u64>(1,2u64));}
+@case copy cross specialization
+@error expected
+module app;${PAIR}auto test()->i64{Pair<i64,u64> a=Pair<i64,u64>(1,2u64);Pair<u64,i64> b=a;return 42;}
+@case argument cross specialization
+@error expected
+module app;${PAIR}auto consume(Pair<u64,i64> p)->i64{return 42;}auto test()->i64{Pair<i64,u64> a=Pair<i64,u64>(1,2u64);return consume(a);}
+@case result cross specialization
+@error expected
+module app;${PAIR}auto make()->Pair<u64,i64>{Pair<i64,u64> p=Pair<i64,u64>(1,2u64);return p;}auto test()->i64{Pair<u64,i64> a=make();return 42;}
+@case constructor cross specialization
+@error expected
+@error constructor
+module app;${PAIR}auto test()->i64{Pair<i64,u64> a=Pair<u64,i64>(1u64,2);return 42;}
+@case constructor substituted scalar argument
+@error expected
+module app;${PAIR}auto test()->i64{Pair<i64,u64> a=Pair<i64,u64>(1,2);return 42;}
+@case constructor omitted argument
+@error argument count
+module app;${PAIR}auto test()->i64{Pair<i64,u64> a=Pair<i64,u64>(1);return 42;}
+@case constructor designated initialization bypass
+@error designated
+module app;${PAIR}auto test()->i64{Pair<i64,u64> a=Pair<i64,u64>{.first=1,.second=2u64};return 42;}
+@case constructor deduction unsupported
+@error template
+@error constructor
+@error argument
+module app;${PAIR}auto test()->i64{Pair<i64,u64> a=Pair(1,2u64);return 42;}
+@case direct generic result nominal mismatch
+@error expected
+module app;${PAIR}auto make()->Pair<u64,i64>{return Pair<i64,u64>(1,2u64);}auto test()->i64{Pair<u64,i64> a=make();return 42;}
+@case immutable generic parameter
+@error mutable class local
+module app;${PAIR}auto change(Pair<i64,u64> p)->i64{p.first=42;return 42;}auto test()->i64{Pair<i64,u64> a=Pair<i64,u64>(1,2u64);return change(a);}
+@case const generic field write
+@error mutable class local
+module app;${PAIR}auto test()->i64{const Pair<i64,u64> a=Pair<i64,u64>(1,2u64);a.first=42;return 42;}
+@case direct generic constructor result
+module app;${PAIR}auto make()->Pair<i64,u64>{return Pair<i64,u64>(20,22u64);}auto test()->i64{Pair<i64,u64> a=make();return a.first+i64(a.second);}

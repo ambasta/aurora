@@ -1,0 +1,41 @@
+# Fixed classes.py cases; the format is native_runner.Suite.load's.
+@case public aggregate method
+module app; class Pair {public:i64 x;i64 y;auto sum() const -> i64{return x+y;}}; auto test() -> i64 {Pair p = Pair{.x=20,.y=22};return p.sum();}
+@case bool receiver field canonical
+module app; class Flag {bool value;public:Flag(bool v):value(v){}auto get() const -> bool{return value;}}; auto test() -> i64 {Flag f=Flag(true);if(f.get()){return 42;}return 0;}
+@case six scalar method arguments
+module app; class Six {i64 value;public:Six(i64 x):value(x){}auto sum(i64 a,i64 b,i64 c,i64 d,i64 e,i64 f)->i64{return value+a+b+c+d+e+f;}}; auto test() -> i64 {Six x=Six(1);return x.sum(1,2,3,4,5,26);}
+@case private public reflection count
+module app; ${COUNTER} auto test() -> i64 {Counter c=Counter(42);static_assert(field_count(Counter)==0);return reflect_field_count(type_id(Counter))+c.get();}
+@case imported helper lexical identity
+module app; import counters; auto checked_add(i64 x)->i64{return 999;}auto test()->i64{Counter c=Counter(40);return c.add(2);}
+@module counters
+export module counters; export ${COUNTER}
+@case freestanding accumulator library
+module app; import std.numeric; auto test() -> i64 { std::Accumulator sum=std::Accumulator(0);i64 n=0;while(n<7){sum.add(n);n=n+1;}return sum.value()*2; }
+@case accumulator private state
+@error private class field
+module app; import std.numeric; auto test() -> i64 { std::Accumulator sum=std::Accumulator(42);return sum.total; }
+@case accumulator checked overflow
+@trap overflow
+module app; import std.numeric; auto test() -> i64 { std::Accumulator sum=std::Accumulator(9223372036854775807);return sum.add(1); }
+@case loop-local const aggregate lifetimes
+module app; class Point{public:i64 value;}; auto test() -> i64 {i64 n=0;i64 total=0;while(n<2){const Point p=Point{.value=21};total=total+p.value;n=n+1;}return total;}
+@case branch constructor lifetimes
+module app; ${COUNTER} auto test() -> i64 {i64 total=0;if(true){Counter c=Counter(20);total=c.add(1);}else{Counter c=Counter(0);total=c.get();}Counter c=Counter(total);return c.add(total);}
+@case six argument nested receiver calls
+module app; class Six {i64 value;public:Six(i64 x):value(x){}auto sum(i64 a,i64 b,i64 c,i64 d,i64 e,i64 f)->i64{return value+a+b+c+d+e+f;}};auto id(i64 x)->i64{return x;} auto test() -> i64 {Six x=Six(1);return 1+x.sum(id(1),id(2),id(3),id(4),id(5),id(25));}
+@case constructor multiple declaration-order fields
+module app; class Pair {i64 a;i64 b;public:Pair(i64 x,i64 y):b(y),a(x){}auto sum() const -> i64{return a+b;}}; auto test() -> i64 {Pair p=Pair(20,22);return p.sum();}
+@case method caller owner lifetime preserved
+module app; ${COUNTER} auto test() -> i64 {own<i64> n=own(20);Counter c=Counter(read(n));{const ref<i64> r=borrow(n);c.add(read(r));}own<i64> moved=move(n);return c.get()+read(moved)-18;}
+@case method private fields of independent same-class local
+module app; class Counter {i64 value;public:Counter(i64 x):value(x){}auto get() const -> i64{Counter other=Counter(40);other.value=other.value+2;return other.value;}}; auto test() -> i64 {Counter c=Counter(0);return c.get();}
+@case const method cannot mutate const local
+@error mutable class local
+module app; class Counter {i64 value;public:Counter(i64 x):value(x){}auto get() const -> i64{const Counter other=Counter(40);other.value=42;return other.value;}}; auto test() -> i64 {Counter c=Counter(0);return c.get();}
+@case pure scalar recursion preserved
+module app; ${COUNTER}auto sum(i64 n)->i64{if(n==0){return 0;}return n+sum(n-1);} auto test() -> i64 {Counter c=Counter(sum(6));return c.doubled();}
+@case constructor return type rejected
+@error constructor cannot have a return type
+module app; class Wrong {public:auto Wrong()->i64{return 42;}}; auto test() -> i64 {return 42;}

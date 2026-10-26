@@ -72,71 +72,6 @@ def native_cases(suite, seed, steps):
             expected=BITS[scalar],
         )
     suite.check(
-        "mixed Scalar Value constraints and namespace-qualified explicit call",
-        p(
-            "Leaf leaf=Leaf(40u8);std::pair<u8,Leaf> value=tools::pack<u8,Leaf>(2u8,leaf);"
-            "const Leaf result=value.second;return i64(value.first)+i64(result.get());",
-            LEAF + "namespace tools{template<Scalar T,Value U>auto pack(T x,U y)->std::pair<T,U>{"
-            "const std::pair<T,U> result=std::pair<T,U>(x,y);return result;}}",
-        ),
-    )
-    suite.check(
-        "explicit calls in ordinary constructor initializer and method",
-        p(
-            "Ordinary value=Ordinary(42u8);return i64(value.get());",
-            COPY + "class Ordinary{u8 value;public:Ordinary(u8 x):value(copy<u8>(x)){}"
-            "auto get()const->u8{return copy<u8>(value);}};",
-            imports="",
-        ),
-    )
-    receiver_shadow = (
-        "template<Scalar T>class Receiver{public:Receiver(){}"
-        "auto helper(i64 x)const->i64{return x;}auto get()const->i64{return helper(42);}};"
-    )
-    namespace_helper = "template<Scalar U>auto helper(U x)->i64{return 999;}"
-    suite.check(
-        "class-template receiver method shadows local function-template name",
-        p(
-            "const Receiver<i64> value=Receiver<i64>();return value.get();",
-            namespace_helper + receiver_shadow,
-            imports="",
-        ),
-    )
-    suite.check(
-        "class-template receiver method shadows imported function-template name",
-        p("const Receiver<i64> value=Receiver<i64>();return value.get();", receiver_shadow, imports="import helpers;"),
-        modules={"helpers": "export module helpers;export " + namespace_helper},
-    )
-    suite.check(
-        "same template many scalar specializations have independent substituted ASTs",
-        p(
-            "if(copy<i64>(-1)!=-1){return 1;}if(copy<u8>(255u8)!=255u8){return 2;}"
-            "if(copy<bool>(true)!=true){return 3;}"
-            "if(copy<u64>(18446744073709551615u64)!=18446744073709551615u64){return 4;}"
-            "return copy<i64>(42);",
-            COPY,
-            imports="",
-        ),
-    )
-    suite.check(
-        "Value closed nominal enum copies and pair fields",
-        p(
-            "Status original=Status::ready;Status copied=copy<Status>(original);"
-            "std::pair<Status,u8> value=std::make_pair<Status,u8>(copied,42u8);"
-            "if(value.first!=Status::ready){return 1;}return i64(value.second);",
-            "enum class Status{ready,failed};" + COPY,
-        ),
-    )
-    suite.check(
-        "Value named private class snapshots and independent returned copy",
-        p(
-            "Leaf original=Leaf(20u8);Leaf copied=copy<Leaf>(original);original.set(1u8);"
-            "copied.set(22u8);Leaf saved=copy<Leaf>(copied);copied.set(3u8);"
-            "return i64(saved.get())+19+i64(original.get());",
-            LEAF + COPY,
-        ),
-    )
-    suite.check(
         "Value empty class result retains initialization and const methods",
         p(
             "Empty source=Empty();Empty result=copy<Empty>(source);"
@@ -151,79 +86,6 @@ def native_cases(suite, seed, steps):
             "Leaf leaf=Leaf(40u8);std::pair<Leaf,u8> value=make<Leaf,u8>(leaf,2u8);"
             "const Leaf result=value.first;return i64(result.get())+i64(value.second);",
             LEAF + MAKE,
-        ),
-    )
-    suite.check(
-        "fully concrete nested class argument inside function template",
-        p(
-            "std::array<u8,3> bytes=std::array<u8,3>();bytes.set(2,40u8);"
-            "std::pair<std::array<u8,3>,u8> inner=std::make_pair<std::array<u8,3>,u8>(bytes,2u8);"
-            "std::pair<std::pair<std::array<u8,3>,u8>,u8> outer=wrap<u8>(inner,0u8);"
-            "const std::pair<std::array<u8,3>,u8> saved=outer.first;"
-            "const std::array<u8,3> copy=saved.first;return i64(copy.at(2))+i64(saved.second);",
-            "template<Value T>auto wrap(std::pair<std::array<u8,3>,u8> source,T last)"
-            "->std::pair<std::pair<std::array<u8,3>,u8>,T>{"
-            "const std::pair<std::pair<std::array<u8,3>,u8>,T> result="
-            "std::pair<std::pair<std::array<u8,3>,u8>,T>(source,last);return result;}",
-        ),
-    )
-    suite.check(
-        "function argument syntax supports adjacent and spaced nested closers",
-        p(
-            "std::array<u8,03> source=std::array<u8,3>();source.set(2,42u8);"
-            "const std::array<u8,3> a=copy<std::array<u8,03>>(source);"
-            "const std::array<u8,3> b=copy< std::array< u8, 3 > >(a);return i64(b.at(2));",
-            COPY,
-        ),
-    )
-    suite.check(
-        "left-to-right scalar argument side effects",
-        p(
-            "Leaf leaf=Leaf(0u8);std::pair<u8,u8> result=std::make_pair<u8,u8>(leaf.set(20u8),leaf.set(22u8));"
-            "return i64(result.first)+i64(result.second);",
-            LEAF,
-        ),
-    )
-    suite.check(
-        "left-to-right class snapshot precedes later argument mutation",
-        p(
-            "Leaf leaf=Leaf(20u8);std::pair<Leaf,u8> result=std::make_pair<Leaf,u8>(leaf,leaf.set(22u8));"
-            "const Leaf saved=result.first;return i64(saved.get())+i64(result.second);",
-            LEAF,
-        ),
-    )
-    suite.check(
-        "left-to-right array snapshot precedes later argument mutation",
-        p(
-            "std::array<u8,1> bytes=std::array<u8,1>();bytes.set(0,20u8);"
-            "std::pair<std::array<u8,1>,u8> result=std::make_pair<std::array<u8,1>,u8>(bytes,bytes.set(0,22u8));"
-            "const std::array<u8,1> saved=result.first;return i64(saved.at(0))+i64(result.second);"
-        ),
-    )
-    suite.check(
-        "repeated class source arguments become independent snapshots",
-        p(
-            "Leaf source=Leaf(20u8);std::pair<Leaf,Leaf> pair=std::make_pair<Leaf,Leaf>(source,source);"
-            "Leaf first=pair.first;Leaf second=pair.second;first.set(22u8);source.set(1u8);"
-            "return i64(first.get())+i64(second.get());",
-            LEAF,
-        ),
-    )
-    suite.check(
-        "function result binding observes outer same-name source",
-        p(
-            "Leaf source=Leaf(42u8);{Leaf source=copy<Leaf>(source);if(source.get()!=42u8){return 1;}}"
-            "return i64(source.get());",
-            LEAF + COPY,
-        ),
-    )
-    suite.check(
-        "returned class survives template frame and repeated loop calls",
-        p(
-            "Leaf source=Leaf(20u8);i64 i=0;while(i<12){Leaf saved=copy<Leaf>(source);"
-            "saved.set(22u8);if(source.get()!=20u8){return 1;}i=i+1;}"
-            "Leaf result=copy<Leaf>(source);return i64(result.get())+22;",
-            LEAF + COPY,
         ),
     )
     range_class = (
@@ -275,10 +137,6 @@ def native_cases(suite, seed, steps):
 
 
 def boundary_cases(suite):
-    for count in (1, 2):
-        signature = COPY if count == 1 else "template<Scalar T,Scalar U>auto choose(T x,U y)->T{return x;}"
-        call = "copy<i64>(42)" if count == 1 else "choose<i64,u8>(42,0u8)"
-        suite.check(f"function template parameter count {count}", p("return " + call + ";", signature, imports=""))
     for depth in (3, 4, 5):
         concrete = "i64"
         for _ in range(depth):
@@ -289,23 +147,6 @@ def boundary_cases(suite):
         else:
             suite.reject(
                 "function argument nominal template depth five rejected",
-                source,
-                error=("depth", "four", "4", "nesting", "nested"),
-            )
-    for depth in (3, 4):
-        concrete = "i64"
-        for _ in range(depth):
-            concrete = f"Tag<{concrete}>"
-        source = p(
-            f"return expanded<{concrete}>();",
-            TAG + "template<Value T>auto expanded()->i64{static_assert(size_of(Tag<T>)==8);return 42;}",
-            imports="",
-        )
-        if depth == 3:
-            suite.check("substitution produces exactly four nominal template levels", source)
-        else:
-            suite.reject(
-                "substitution cannot conceal fifth nominal template level",
                 source,
                 error=("depth", "four", "4", "nesting", "nested"),
             )
@@ -334,30 +175,6 @@ def boundary_cases(suite):
             COPY,
         )
         suite.check(f"function-template copied byte result flattened leaves {leaves}", source)
-    for count in (6, 7):
-        parameters = ",".join(f"T a{i}" for i in range(count))
-        arguments = ",".join("7" for _ in range(count))
-        body = "+".join(f"a{i}" for i in range(count))
-        source = p(
-            f"return sum<i64>({arguments});",
-            f"template<Scalar T>auto sum({parameters})->T{{return {body};}}",
-            imports="",
-        )
-        if count == 6:
-            suite.check("instantiated function exactly six ordinary scalar parameters", source)
-        else:
-            suite.reject("instantiated function seven ordinary parameters", source, error=("six", "parameter"))
-    suite.check(
-        "instantiated function exactly six independent class parameters",
-        p(
-            (
-                "Leaf source=Leaf(42u8);Leaf result=last<Leaf>(source,source,source,source,source,source);retur"
-                "n i64(result.get());"
-            ),
-            LEAF + "template<Value T>auto last(T a,T b,T c,T d,T e,T f)->T{return f;}",
-            imports="",
-        ),
-    )
     for leaves in (4095, 4096):
         body = "const array<i64,4096> first={" + ",".join(["0"] * 4096) + "};"
         body += f"const array<i64,{leaves}> second={{" + ",".join(["0"] * leaves) + "};"
@@ -629,26 +446,6 @@ def rejection_cases(suite):
             "unused class template forbids function-template call in " + label,
             p("return 42;", COPY + "template<Value T>class Bad{public:Bad(){}auto get()const->i64{" + body + "}};"),
         )
-    for qualified in (False, True):
-        helper = "template<Scalar U>auto helper(U x)->U{return x;}"
-        spelling = "api::helper" if qualified else "helper"
-        definition = (
-            ("namespace api{" + helper + "}" if qualified else helper)
-            + "template<Scalar T>class Receiver{public:Receiver(){}"
-            "auto helper(i64 x)const->i64{return x;}auto get()const->i64{return " + spelling + "<i64>(42);}};"
-        )
-        for used in (False, True):
-            suite.reject(
-                "receiver method cannot conceal explicit "
-                + ("qualified" if qualified else "unqualified")
-                + " function-template call "
-                + ("requested" if used else "unused"),
-                p(
-                    "const Receiver<i64> value=Receiver<i64>();return value.get();" if used else "return 42;",
-                    definition,
-                    imports="",
-                ),
-            )
     suite.reject(
         "unused class constructor forbids function-template initializer call",
         p("return 42;", COPY + "template<Value T>class Bad{i64 value;public:Bad():value(copy<i64>(42)){} };"),
@@ -673,29 +470,6 @@ def rejection_cases(suite):
             + "auto forward(Leaf value)->Leaf{return value.copied();}",
         ),
     )
-    suite.check(
-        "class return constructor copies complete value",
-        p(
-            prefix + "Leaf result=make<Leaf>(source);source.set(0u8);return i64(result.get());",
-            LEAF + "template<Value T>auto make(T x)->Leaf{return Leaf(42u8);}",
-        ),
-    )
-    suite.check(
-        "direct copied template call preserves exact nominal result",
-        p(
-            prefix + "Leaf result=wrap(source);source.set(0u8);return i64(result.get());",
-            LEAF + COPY + "auto wrap(Leaf x)->Leaf{return copy<Leaf>(x);}",
-        ),
-    )
-    suite.check(
-        "direct copied call inside function template",
-        p(
-            prefix + "Leaf result=forward<Leaf>(source);source.set(0u8);return i64(result.get());",
-            LEAF
-            + "auto identity(Leaf x)->Leaf{return x;}"
-            + "template<Value T>auto forward(T x)->T{return identity(x);}",
-        ),
-    )
     for label, body, generic in (
         (
             "mutable parameter field",
@@ -717,73 +491,11 @@ def rejection_cases(suite):
         ("resource result", "return bad<i64>(42);", "template<Value T>auto bad(T x)->own<i64>{return new i64(x);}"),
     ):
         suite.reject("ordinary value restrictions preserved " + label, p(prefix + body, LEAF + EMPTY + generic))
-    suite.reject(
-        "class parameter publicly writable field is still readonly",
-        p(
-            "Public source=Public(42u8);return mutate<Public>(source);",
-            "class Public{public:u8 value;Public(u8 n):value(n){} };"
-            "template<Value T>auto mutate(T x)->i64{x.value=0u8;return 42;}",
-            imports="",
-        ),
-    )
-    suite.reject(
-        "private method stays private after type substitution",
-        p(
-            prefix + "return expose<Leaf>(source);",
-            "class Leaf{u8 value;auto secret()const->u8{return value;}public:Leaf(u8 n):value(n){} };"
-            "template<Value T>auto expose(T x)->i64{return i64(x.secret());}",
-            imports="",
-        ),
-    )
-    suite.reject(
-        "equal-layout reordered nominal function arguments stay distinct",
-        p(
-            "std::pair<i64,u64> source=std::pair<i64,u64>(20,22u64);"
-            "std::pair<u64,i64> result=copy<std::pair<u64,i64>>(source);return 42;",
-            COPY,
-        ),
-    )
     suite.reject("function template is not a class reflection type", p("return type_id(copy<i64>);", COPY, imports=""))
-    suite.reject(
-        "function template cannot become a value pointer",
-        p("const i64 address=copy<i64>;return address;", COPY, imports=""),
-    )
 
 
 def module_cases(suite):
     generic = {"generic": "export module generic;export " + COPY}
-    suite.check(
-        "exported template accepts caller-private nominal class without member access",
-        p(
-            "Leaf source=Leaf(42u8);const Leaf result=copy<Leaf>(source);return i64(result.get());",
-            LEAF,
-            imports="import generic;",
-        ),
-        modules=generic,
-    )
-    suite.check(
-        "exported template accepts caller-private nominal enum",
-        p(
-            (
-                "Status source=Status::ready;Status result=copy<Status>(source);if(result==Status::ready){retur"
-                "n 42;}return 0;"
-            ),
-            "enum class Status{ready,failed};",
-            imports="import generic;",
-        ),
-        modules=generic,
-    )
-    suite.check(
-        "exported template accepts caller-private class inside concrete tree",
-        p(
-            "Leaf leaf=Leaf(40u8);std::pair<Leaf,u8> source=std::make_pair<Leaf,u8>(leaf,2u8);"
-            "const std::pair<Leaf,u8> result=copy<std::pair<Leaf,u8>>(source);"
-            "const Leaf value=result.first;return i64(value.get())+i64(result.second);",
-            LEAF,
-            imports="import generic;import std.utility;",
-        ),
-        modules=generic,
-    )
     helpers = {
         "generic": "export module generic;auto helper()->i64{return 22;}"
         "export template<Scalar T>auto plus_helper(T x)->i64{return i64(x)+helper();}"
@@ -862,16 +574,6 @@ def module_cases(suite):
                 modules={"hidden": "export module hidden;import std.utility;" + hidden + "export " + template},
                 error=("private", "visible", "export"),
             )
-    suite.reject(
-        "exported template signature cannot launder private template declaration",
-        p("return 42;", imports="import hidden;"),
-        modules={
-            "hidden": "export module hidden;"
-            + BOX
-            + "export template<Value T>auto bad(Box<T> x)->T{const T result=x.item;return result;}"
-        },
-        error=("private", "visible", "export"),
-    )
     signature_modules = {
         "types": "export module types;export " + LEAF,
         "generic": (
@@ -945,15 +647,6 @@ def module_cases(suite):
         ),
         modules=same_names,
     )
-    suite.reject(
-        "imported generic copy confers no private member access",
-        p(
-            "Leaf source=Leaf(42u8);Leaf result=copy<Leaf>(source);return i64(result.value);",
-            LEAF,
-            imports="import generic;",
-        ),
-        modules=generic,
-    )
     exposed = {"generic": "export module generic;export template<Value T>auto expose(T x)->u8{return x.value;}"}
     suite.reject(
         "imported template cannot inspect private caller class field",
@@ -1014,17 +707,6 @@ def trap_cases(suite):
             p(f"return copy<{scalar}>({value}) >> {shift};", COPY, imports="", result=scalar),
             expected=expected,
         )
-    suite.check(
-        "explicit type argument parsing preserves ordinary comparisons",
-        p(
-            (
-                "const i64 value=copy<i64>(40);if(value<41){if(value<=40){if(value>39){if(value>=40){return 42;"
-                "}}}}return 0;"
-            ),
-            COPY,
-            imports="",
-        ),
-    )
 
 
 def main():
@@ -1035,6 +717,7 @@ def main():
     args = parser.parse_args()
     require(1 <= args.steps <= 128, "steps must be between 1 and 128")
     suite = Suite(args.compiler, "function templates", ignore_case=True, pack_templates=32)
+    suite.load(Path(__file__).with_suffix(".cases"), COPY=COPY, LEAF=LEAF)
     native_cases(suite, args.seed, args.steps)
     boundary_cases(suite)
     rejection_cases(suite)
