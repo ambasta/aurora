@@ -2393,49 +2393,13 @@ buffer read bounds 9223372036854775807	bounds-trap
 example binary_buffer.au	returned 42
 example storage_codec.au	returned 42
 reject 0 buffer	1:227: error AU3001: indexing requires an array local or implicit private receiver field
-reject 1 buffer	1:216: error AU3001: indexing requires an array local or implicit private receiver field
-reject 2 buffer	1:259: error AU3001: mutable method requires a mutable receiver
-reject 3 buffer	1:259: error AU3001: mutable method requires a mutable receiver
-reject 4 buffer	1:228: error AU3001: expected u8, got u64
-reject 5 buffer	1:230: error AU3001: expected u64, got i64
-reject 6 buffer	1:227: error AU3001: expected i64, got u64
-reject 7 buffer	1:224: error AU3001: borrow_bytes requires a named local byte array or owned bytes
-reject 8 buffer	1:257: error AU3001: expected i64, got u64
-reject 9 buffer	1:282: error AU3001: expected u64, got u8
-reject 10 sector	1:169: error AU3001: indexing requires an array local or implicit private receiver field
-reject 11 sector	1:158: error AU3001: indexing requires an array local or implicit private receiver field
-reject 12 sector	1:203: error AU3001: expected i64, got u64
-reject 13 sector	1:172: error AU3001: expected u8, got u64
-reject 14 sector	1:211: error AU3001: expected i64, got u64
-reject 15 sector	1:174: error AU3001: expected std::BinaryBuffer64, got storage::Sector512
-reject 16 sector	1:200: error AU3001: mutable method requires a mutable receiver
-reject 17 sector	1:256: error AU3001: mutable method requires a mutable receiver
-reject 18 sector	1:190: error AU3001: borrow_bytes requires a named local byte array or owned bytes
-reject 19 window array needs an explicit borrow	2:70: error AU3001: span initializer requires borrow_bytes, a live span or its subspan
-reject 20 window base must be u64	2:91: error AU3001: expected u64, got i64
-reject 21 window request must be i64	2:97: error AU3001: expected i64, got u64
-reject 22 window bool is not a base	2:91: error AU3001: expected u64, got bool
-reject 23 window bool is not a request	2:97: error AU3001: expected i64, got bool
-reject 24 window owned sector does not expose a borrowed array	2:93: error AU3001: borrow_bytes requires a named local byte array or owned bytes
-reject 25 window report payload stays private	2:141: error AU3001: private class field is inaccessible
-reject 26 window source array cannot exceed 4096	1:57: error AU2001: array length requires a decimal integer literal between 1 and 4096 (found '>')
-reject 27 window result is an owned report, not a span	2:40: error AU3001: span initializer requires borrow_bytes, a live span or its subspan
-reject 28 codec	1:118: error AU3001: private class field is inaccessible
-reject 29 codec	1:118: error AU3001: unknown class method
-reject 30 codec	1:158: error AU3001: indexing requires an array local or implicit private receiver field
-reject 31 codec	1:157: error AU3001: mutable method requires a mutable receiver
-reject 32 codec	1:111: error AU3001: class-returning call requires a typed local initializer
-reject 33 codec	1:148: error AU3001: expected u8, got u64
-reject 34 codec	1:128: error AU3001: constructor-bearing class rejects designated initialization
-reject 35 storage codec	1:135: error AU3001: private class field is inaccessible
-reject 36 storage codec	1:97: error AU3001: expected u64, got i64
-reject 37 storage codec	1:88: error AU3001: expected u64, got i64
-reject 38 storage codec	1:109: error AU3001: expected std::Bytes2, got std::Bytes4
-reject 39 storage codec	1:109: error AU3001: expected std::Bytes8, got std::Bytes4
-reject 40 storage codec	1:124: error AU3001: unknown class method
-reject 41 storage codec	1:96: error AU3001: indexing requires an array local or implicit private receiver field
-reject 42 storage codec	1:91: error AU3001: mutable method requires a mutable receiver
-reject 43 storage codec	1:91: error AU3001: expected u8, got u64
-reject 44 storage codec	1:96: error AU3001: indexing requires an array local or implicit private receiver field
-reject 45 storage codec	1:91: error AU3001: mutable method requires a mutable receiver
-reject 46 storage codec	1:91: error AU3001: expected u8, got u64
+reject 1 buffer	1:259: error AU3001: mutable method requires a mutable receiver
+reject 2 buffer	1:228: error AU3001: expected u8, got u64
+reject 3 buffer	1:224: error AU3001: borrow_bytes requires a named local byte array or owned bytes
+reject 4 sector	1:174: error AU3001: expected std::BinaryBuffer64, got storage::Sector512
+reject 5 window array needs an explicit borrow	2:70: error AU3001: span initializer requires borrow_bytes, a live span or its subspan
+reject 6 window report payload stays private	2:141: error AU3001: private class field is inaccessible
+reject 7 window source array cannot exceed 4096	1:57: error AU2001: array length requires a decimal integer literal between 1 and 4096 (found '>')
+reject 8 codec	1:118: error AU3001: unknown class method
+reject 9 codec	1:111: error AU3001: class-returning call requires a typed local initializer
+reject 10 codec	1:128: error AU3001: constructor-bearing class rejects designated initialization

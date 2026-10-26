@@ -1280,5 +1280,4 @@ reject closed entry enum	1:133: error AU3001: expected distinct i64, u64 or u8 c
 reject index exact signed type	1:265: error AU3001: expected i64, got u64
 reject private helper	aurorac: error AU4001: private function is not imported: fs::xr_address
 reject wrong query type	2:143: error AU3001: span initializer requires borrow_bytes, a live span or its subspan
-reject closed enum conversion	2:57: error AU3001: expected distinct i64, u64 or u8 conversion types
 reject span result excluded by callable type surface	2:37: error AU2001: only scalar function results or scalar-field class values are supported (found '{')

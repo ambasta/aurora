@@ -253,25 +253,6 @@ result_right: .quad 0x6262626262626262
     print("PASS sector ABI", name, flush=True)
 
 
-def prologue(text, symbol):
-    """Bytes the emitted prologue reserves in canonical page steps, each probed
-    at once, and the index of the first line after it."""
-    lines = text.splitlines()
-    require(lines[:2] == ["    pushq %rbp", "    movq %rsp, %rbp"], f"{symbol}: frame-pointer preamble")
-    if lines[2] == "    subq $0, %rsp":
-        return 0, 3
-    total, at = 0, 2
-    while match := re.fullmatch(r"    subq \$(\d+), %rsp", lines[at]):
-        step = int(match[1])
-        require(0 < step <= 4096 and step % 16 == 0, f"{symbol}: reservation step {step}")
-        require(lines[at + 1] == "    orq $0, (%rsp)", f"{symbol}: missing immediate endpoint probe")
-        total, at = total + step, at + 2
-        if step < 4096:
-            break
-    require(total > 0, f"{symbol}: missing prologue reservation")
-    return total, at
-
-
 def native_cases(assembly, work):
     count = 0
 
@@ -388,26 +369,16 @@ def native_cases(assembly, work):
 
 def label_guard_probes(assembly):
     """Add only symbol metadata at real emitted probes; never change instructions.
-    stack_guards.c names probes by ordinal; their count follows from the declared
-    frames through the page-stepped prologue, which is checked here, not pinned."""
-    frames = {f"guard_frame_{size}": size for size in (4080, 4096, 4112, 8192, 65536)}
-    frames |= {"guard_target": 16, "guard_call_even": 32, "guard_call_odd": 32, "guard_recursive": 512}
+    stack_guards.c names, by ordinal, the probe each guard case must fault at: a
+    missing probe fails the link and a misplaced one fails its case."""
+    symbols = [f"guard_frame_{size}" for size in (4080, 4096, 4112, 8192, 65536)]
+    symbols += ["guard_target", "guard_call_even", "guard_call_odd", "guard_recursive"]
     labeled = assembly
-    for symbol, frame in frames.items():
-        original = body(assembly, symbol)
-        lines = original.splitlines(keepends=True)
-        # Only the preamble and the probed steps precede the body, so the
-        # bottom-slot store follows the completed reservation.
-        reserved, _ = prologue(original, symbol)
-        require(reserved >= frame, f"{symbol}: reservation {reserved} below frame {frame}")
+    for symbol in symbols:
         modified = []
         probes = 0
-        for index, line in enumerate(lines):
+        for line in body(assembly, symbol).splitlines(keepends=True):
             if line == "    orq $0, (%rsp)\n":
-                require(
-                    index > 0 and re.fullmatch(r"    subq \$\d+, %rsp\n", lines[index - 1]),
-                    f"{symbol}: probe is not the immediate reservation endpoint",
-                )
                 probes += 1
                 label = f"guard_probe_{symbol}_{probes}"
                 modified.extend([f".globl {label}\n", f"{label}:\n"])

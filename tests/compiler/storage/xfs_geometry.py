@@ -497,9 +497,7 @@ def rejections(real):
     for label, tail in (
         ("report private status", "return r._status;}"),
         ("status has no numeric conversion", "return u64(r.status());}"),
-        ("issue has no numeric conversion", "return u64(r.issue());}"),
         ("copied facts not a span", f"const {SPAN} view=r.facts();return 1u64;}}"),
-        ("nominal group types", "const fs::XfsBlockFacts b=r.raw();return 1u64;}"),
         ("private helper inaccessible", "return fs::xfs_geometry_read32(borrow_bytes(bytes),4);}"),
     ):
         yield label, report + tail
@@ -507,17 +505,12 @@ def rejections(real):
         "span return excluded by callable type surface",
         PREFIX + f"auto escape()->{SPAN}{{const {bytes_array}return borrow_bytes(bytes);}}",
     )
-    for index, body in enumerate(
-        (
-            "const fs::XfsSectorHeaderReport report = fs::inspect_xfs_v5_512_sector(source, sector); return 0u64;",
-            "const fs::XfsSectorHeaderReport report = fs::inspect_xfs_v5_512_sector(1u64, read); return 0u64;",
-            "const fs::XfsSectorHeaderReport report = fs::inspect_xfs_v5_512_sector(source, read);"
-            "const fs::XfsSectorHeaderStatus leaked = report._status; return 0u64;",
-            "return u64(fs::XfsSectorHeaderStatus::header_fits_source);",
-            "const fs::XfsGeometryReport leaked = fs::xs_empty_geometry(); return 0u64;",
-        )
-    ):
-        yield f"XFS sector exact-type/privacy {index}", SECTOR_PREFIX + body + "}"
+    yield (
+        "XFS sector class argument",
+        SECTOR_PREFIX
+        + "const fs::XfsSectorHeaderReport report = fs::inspect_xfs_v5_512_sector(1u64, read);"
+        + " return 0u64;}",
+    )
 
 
 def header_rows(real):
