@@ -11,6 +11,12 @@ auto select_fixture(Fixture first, Fixture last) -> void {
 auto select_fixture(Fixture first, Fixture last) -> void {
     const auto selected = read_fixture(first, last);
     require(selected.has_value(), "fixture selector outside image family");
+#ifdef AURORA_PROGRAM_FIXTURE
+    require((*selected >= Fixture::program_append_construct_fault &&
+             *selected <= Fixture::program_append_service_backing) ||
+                (*selected >= Fixture::program_request_fault && *selected <= Fixture::program_append_site),
+            "fixture selector outside image family");
+#endif
     fixture = *selected;
 }
 #endif

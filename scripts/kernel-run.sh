@@ -57,7 +57,7 @@ if [[ "$mode" == iommu-event ]]; then
 fi
 if [[ "$protected" == true ]]; then
     case "$mode" in
-        program-file-call|program-file-call-fault|program-file-call-budget|program-console|program-request-fault|program-service-fault|program-completion-fault|program-request-budget|program-service-budget|program-completion-budget|program-pending|program-owner|program-ordinal|program-unknown|program-transaction|program-append-response|program-append-before-fault|program-append-before-budget|program-append-eof-fault|program-append-eof-budget|program-append-copy|program-append-backing|program-append-root|program-append-site) ;;
+        program-file-call|program-file-call-fault|program-file-call-budget|program-console|program-request-fault|program-service-fault|program-completion-fault|program-request-budget|program-service-budget|program-completion-budget|program-pending|program-owner|program-ordinal|program-unknown|program-transaction|program-append-response|program-append-before-fault|program-append-before-budget|program-append-eof-fault|program-append-eof-budget|program-append-copy|program-append-backing|program-append-root|program-append-site|program-append-construct-fault|program-append-construct-budget|program-append-producer-return|program-append-terminal-budget|program-append-cancel-pending|program-append-cancel-delivered|program-append-cancel-replied|program-append-cancel-terminal|program-append-service-site|program-append-service-root|program-append-service-backing) ;;
         *) profile_fail "unknown profile: $mode" ;;
     esac
     if [[ "$action" == --console && "$mode" != program-console && "$mode" != program-file-call ]]; then profile_fail 'fault profiles are smoke-only'; fi

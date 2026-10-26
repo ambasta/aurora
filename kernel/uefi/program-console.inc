@@ -139,6 +139,7 @@ public:
                frames.used() == 0 &&
 #ifdef AURORA_PROGRAM_APPEND_CALL
                !call_wait.context && !call_wait.authority && !call_wait.ticket && !append_origin && !append_operation &&
+               !append_service_wait.context && !append_service_wait.authority && !append_service_wait.ticket &&
                !command_appending &&
 #endif
 #endif
@@ -290,6 +291,7 @@ auto program_console_envelope(const Bytes &captured, U64 result) -> void {
 }
 #ifdef AURORA_PROGRAM_APPEND_CALL
 #include "blocking-call.inc"
+#include "append-service.inc"
 #endif
 [[nodiscard]] auto program_execute(unsigned index, ipc::Phase phase, U64 source, U64 byte, U64 ordinal) -> bool {
     require(command_owned && program_boundary() && index < 2 && selected_client == 0, "program launch boundary");
@@ -322,7 +324,9 @@ auto program_console_envelope(const Bytes &captured, U64 result) -> void {
     require(root() == kernel_root && saved_rsp == 0 && active == L::domain_count && !program.running(),
             "program restored authority");
     const auto okay = program.event() == ProgramEvent::returned;
-    require(okay || recoverable_program_event() || (command_appending && call_wait.context && index == 0),
+    require(okay || recoverable_program_event() ||
+                (command_appending &&
+                 (index == 0 ? call_wait.context.has_value() : append_service_wait.context.has_value())),
             "program terminal outcome");
     if (command_appending) {
         if (index == 1) {
@@ -428,24 +432,69 @@ auto program_console_envelope(const Bytes &captured, U64 result) -> void {
         const auto ticket = call_wait.ticket, epoch = call_wait.authority->epoch();
         const auto ticks = call_wait.ticks, remaining = call_wait.remaining;
 #ifdef AURORA_PROGRAM_FIXTURE
-        require(!call_resume(previous) && !call_resume(ticket), "append stale/unready wake");
+        require(!call_resume(previous) && !call_resume(ticket) && !append_service_resume(ticket, caller.call_count - 1),
+                "append stale/unready wake");
+        if (!console_probe_used && fixture == Fixture::program_append_cancel_pending && caller.call_count == 2) {
+            console_probe_used = true;
+            success = false;
+            break;
+        }
 #endif
         const auto endpoint = mailbox->endpoint(*domains[1].handle);
         require(endpoint.has_value(), "append authority");
         const auto request = mailbox->receive(*domains[1].handle, ipc::Phase::service, *endpoint, ticket);
         require(request && request->first() == caller.call_count - 1 && request->second() == 0, "append request");
-        static_cast<void>(program_execute(
-            1, ipc::Phase::service, program_source(ipc::Phase::service, request->first()), 1, request->first()));
+#ifdef AURORA_PROGRAM_FIXTURE
+        if (!console_probe_used && fixture == Fixture::program_append_cancel_delivered && caller.call_count == 2) {
+            console_probe_used = true;
+            success = false;
+            break;
+        }
+        if (request->first() != 0)
+            append_service_wake_controls(ticket, request->first());
+#endif
+        if (request->first() == 0) {
+            require(!append_service_wait.context, "append one producer");
+            U64 service_probe = 0;
+#ifdef AURORA_PROGRAM_FIXTURE
+            if (!console_probe_used) {
+                if (fixture == Fixture::program_service_fault)
+                    service_probe = 4;
+                if (fixture == Fixture::program_service_budget)
+                    service_probe = 5;
+                if (fixture == Fixture::program_append_construct_fault)
+                    service_probe = 22;
+                if (fixture == Fixture::program_append_construct_budget)
+                    service_probe = 23;
+                if (fixture == Fixture::program_append_producer_return)
+                    service_probe = 24;
+            }
+#endif
+            Serial::text("AURORA_APPEND_LAUNCH: operation=");
+            Serial::number(append_operation);
+            Serial::text("\r\n");
+            static_cast<void>(program_execute(1, ipc::Phase::service, 17, service_probe, 0));
+        } else
+            require(append_service_resume(ticket, request->first()), "append service wake");
         require(timer_epoch > epoch && call_wait.ticks == ticks && call_wait.remaining == remaining,
                 "append allowance");
         // Latch failure before a resume can restore the caller's timer state.
-        if (timer_exhausted || program.event() != ProgramEvent::returned) {
+        if (timer_exhausted || !append_service_wait.context || program.event() == ProgramEvent::returned) {
             success = false;
             break;
         }
         require(mailbox->state() == ipc::State::replied, "append authority");
 #ifdef AURORA_PROGRAM_FIXTURE
-        require(!call_resume(previous), "append stale ready wake");
+        require(!call_resume(previous) && !append_service_resume(ticket, request->first()) &&
+                    (!command_append.terminal() || !append_service_resume(ticket + 1, request->first() + 1)),
+                "append stale ready wake");
+        if (!console_probe_used &&
+            ((fixture == Fixture::program_append_cancel_replied && caller.call_count == 2) ||
+             (fixture == Fixture::program_append_cancel_terminal && command_append.terminal()))) {
+            console_probe_used = true;
+            success = false;
+            break;
+        }
 #endif
         require(call_resume(ticket), "append authority");
 #ifdef AURORA_PROGRAM_FIXTURE
@@ -458,9 +507,12 @@ auto program_console_envelope(const Bytes &captured, U64 result) -> void {
 #endif
     }
     success = success && !timer_exhausted && program.event() == ProgramEvent::returned && program.value() == 1 &&
-              !call_wait.context && command_append.terminal();
+              !call_wait.context && command_append.terminal() && append_service_wait.context;
 #ifdef AURORA_PROGRAM_FIXTURE
-    if (probe && !success)
+    if (!success &&
+        (probe || fixture == Fixture::program_service_fault || fixture == Fixture::program_service_budget ||
+         fixture == Fixture::program_append_construct_fault || fixture == Fixture::program_append_construct_budget ||
+         fixture == Fixture::program_append_producer_return))
         console_probe_used = true;
 #endif
     require(program_boundary(), "append return");
@@ -476,11 +528,7 @@ auto program_console_envelope(const Bytes &captured, U64 result) -> void {
     if (fixture == Fixture::program_append_backing)
         append_backing[0] += L::page_size;
 #endif
-    for (unsigned role = 0; role < 2; ++role)
-        for (unsigned page = 0; page < 4; ++page) {
-            const auto physical = frames.address(*domains[role].stacks[page]);
-            require(physical && *physical == append_backing[role * 4 + page], "append backing");
-        }
+    require(append_backings_valid(), "append backing");
     const Bytes result{
         view(program_stack_tail(0) - program::AppendCall::stack_reservation, program::AppendCall::stack_reservation)};
     if (result.get(72) != 0)
@@ -506,7 +554,7 @@ auto program_console_envelope(const Bytes &captured, U64 result) -> void {
     Serial::number(command_append.run());
     Serial::text(" calls=");
     Serial::number(caller.call_count);
-    Serial::text(" launches=1 eof=1 clean=1\r\n");
+    Serial::text(" launches=1 producer_launches=1 terminal_park=1 eof=1 clean=1\r\n");
     return true;
 }
 auto program_cleanup(bool success) -> void {
@@ -526,12 +574,25 @@ auto program_cleanup(bool success) -> void {
                     "program cancellation consumption");
         }
     }
+    // EOF is a terminal park, never a request for a cleanup continuation.
+    // Both wait records are invalidated while the original domains still live.
+#ifdef AURORA_PROGRAM_FIXTURE
+    const auto retired_ticket = append_service_wait.ticket;
+#endif
+    append_service_wait.clear();
     command_note.release();
     if (!success && command_file && command_transform)
         command_files.abort();
     require(mailbox->scrubbed() && mailbox->revoke(ipc::Phase::inactive) && retire(0) && retire(1) &&
                 frames.used() == 0,
             "program revoke/retire/scrub");
+#ifdef AURORA_PROGRAM_FIXTURE
+    if (command_appending)
+        require(!append_service_resume(retired_ticket, 0) && !call_resume(retired_ticket) &&
+                    !append_service_wait.context && !append_service_wait.authority && !append_service_wait.service &&
+                    !append_service_wait.ticket && !call_wait.context && !call_wait.authority && !call_wait.ticket,
+                "append retired incarnations cannot wake");
+#endif
     if (command_file) {
         if (command_transform) {
             if (success)

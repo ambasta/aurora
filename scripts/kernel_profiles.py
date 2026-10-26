@@ -17,14 +17,24 @@ FIXTURES = read_table(Path(__file__).resolve().parents[1] / "kernel/uefi/runtime
 
 
 def check_fixture_families(rows):
-    """read_fixture admits one value interval per image, so each image's rows are consecutive values."""
+    """Keep every fixture image within its explicitly admitted selector interval(s)."""
     values = [value for _, _, value in rows.values()]
     if len(set(values)) != len(values) or not all(0 < value < 256 for value in values):
         raise ValueError("Fixture selectors must be distinct bytes")
     for image in {image for _, image, _ in rows.values()}:
         family = sorted(value for _, owner, value in rows.values() if owner == image)
-        if family != list(range(family[0], family[0] + len(family))):
-            raise ValueError("Fixture family is not one selector interval: " + image)
+        if image == "program-fixture":
+            # The private program selector admits only these two closed ranges;
+            # filling an old catalog gap does not renumber existing selectors.
+            intervals = (
+                ("program_append_construct_fault", "program_append_service_backing"),
+                ("program_request_fault", "program_append_site"),
+            )
+            expected = [value for first, last in intervals for value in range(rows[first][2], rows[last][2] + 1)]
+        else:
+            expected = list(range(family[0], family[0] + len(family)))
+        if family != expected:
+            raise ValueError("Fixture family differs from its admitted selector intervals: " + image)
 
 
 check_fixture_families(FIXTURES)
@@ -425,6 +435,8 @@ def user_images(
                 if scratchpad and index == 0
                 else "kernel/uefi/program-client-entry.S"
                 if program and not file_call and index == 0
+                else "kernel/uefi/program-service-entry.S"
+                if program and not file_call and index == 1
                 else "kernel/uefi/ipc-user-entry.S"
             )
             defines = []
@@ -432,12 +444,10 @@ def user_images(
                 defines.append("CALL_CLIENT=1")
             if ram_file and index == 1:
                 defines.append("SERVE_SERVICE=1")
-            if (snapshot or program or blocking_call) and index == 1:
+            if (snapshot or program or blocking_call) and index == 1 and not (program and not file_call):
                 defines.append(
                     "SNAPSHOT_SERVICE=1" if snapshot or (blocking_call and not file_call) else "PROGRAM_NOTE_SERVICE=1"
                 )
-            if program and not file_call and index == 1:
-                defines.append("PROGRAM_APPEND_SERVICE=1")
         result[name] = dict(
             source=(
                 "examples/kernel-ram-scratchpad-client.au"

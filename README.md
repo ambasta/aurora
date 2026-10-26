@@ -95,10 +95,11 @@ both belong to `make smoke-all`, while `make test` remains native-only.
 
 The separate [protected-command console](docs/program-console-contract.md) runs
 `upper`, authenticated note and named RAM-file reads/atomic uppercase replacement,
-and named-file append through two CPL3 domains. Append uses one live compiled
-Call-only caller to collect an isolated worker's candidate across suspension.
-Only authenticated EOF, clean caller return and both domain retirements permit
-publication to the surviving supervisor-held store. Revision invalidation and
+and named-file append through two CPL3 domains. Append launches one live compiled
+Call-only caller and one Serve-only producer per command. The producer constructs
+its candidate once; both retain source state across exchanges. Only terminal EOF
+parking, clean caller return and both domain retirements permit publication to
+the surviving supervisor-held store. Revision invalidation and
 fault/budget recovery remain bounded to the session; this is not durable storage.
 Its public commands perform local build/image/stack checks. The same checked
 image can be passed by explicit build directory to the guest oracle; changed

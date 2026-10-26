@@ -102,6 +102,9 @@ auto release_call_source() -> void {
 #ifdef AURORA_STORAGE_FIXTURE
     if (fixture == Fixture::call_pending)
         force_timer_pending();
+#elif defined(AURORA_PROGRAM_FIXTURE)
+    if (fixture == Fixture::program_pending)
+        force_timer_pending();
 #endif
     park_run(*domains[0].handle);
     Serial::text("AURORA_CALL_PARK: ticket=");
@@ -116,6 +119,16 @@ auto release_call_source() -> void {
     return 1;
 }
 auto call_envelope(const Bytes &captured, U64 result) -> void {
+#ifdef AURORA_PROGRAM_APPEND_CALL
+    // A live producer may only reply by parking at its admitted Serve site.
+    // Any ordinary return (including a printable scalar) is command failure.
+    if (command_appending && active == 1)
+        return;
+    // Final copied-result capture must pay for the caller's last partial
+    // interval too; EOF does not turn exhaustion into a clean publication.
+    if (command_appending && program.event() == ProgramEvent::returned && !call_boundary_debit())
+        return;
+#endif
     if (domains[0].call_limit > 1 && active == 1 && !call_boundary_debit()) {
         domains[0].call_closed = true;
         return; // Delivered transaction is cancelled by the quiescent driver.

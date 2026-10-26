@@ -88,6 +88,9 @@ def validate_domain_events(text, images, timer, returning=False):
         if line.startswith("AURORA_CALL_PARK:"):
             need(returning and live_epoch == caller_epoch, "Invalid parked owner")
             terminal_seen = True
+        if line.startswith("AURORA_APPEND_PARK:"):
+            need(returning and live_epoch is not None and live_epoch != caller_epoch, "Invalid parked producer")
+            terminal_seen = True
         if re.fullmatch(r"AURORA_(?:UEFI_TIMER_TICK|WC_DEBIT): epoch=\d+ used=\d+ remaining=0(?: .*)?", line):
             terminal_seen = True
         event = event_pattern.fullmatch(line)
@@ -125,7 +128,8 @@ def validate_domain_events(text, images, timer, returning=False):
                 "Invalid active-domain frame",
             )
             if vector == 130:
-                need(live_epoch == caller_epoch and pc == images["clean"]["call_pc"], "Unknown call site/owner")
+                site = images["clean"]["call_pc"] if live_epoch == caller_epoch else images["bounds"]["serve_pc"]
+                need(returning and pc == site, "Unknown role-specific Call/Serve site")
             if vector == 129:
                 need(pc == live_image["return_pc"], "Unknown user return site")
                 terminal_seen = True
@@ -602,9 +606,8 @@ def validate_file_call(text, mode, expected, service_results, images, timer):
     return dict(file_calls=len(parts), call_local_sum=40)
 
 
-# Append is one live caller rather than the scalar request/service/completion
-# stream below. The final copied value is checked against the host-owned command
-# plan and subsequent protected readback; payload bytes are not runtime tracing.
+# Append owns one live caller and one live producer, never scalar per-byte
+# reentry. Exact public readback consumes the resulting replies after retirement.
 def validate_append(part, mode, expected, success, ending_epoch, images):
     need(expected is not None and len(expected) <= 49, "Append selects a present bounded file")
     runs = list(
@@ -620,13 +623,34 @@ def validate_append(part, mode, expected, success, ending_epoch, images):
     services = runs[1:]
     parks = list(re.finditer(r"AURORA_CALL_PARK: ticket=(\d+) epoch=(\d+) ticks=(\d+) remaining=(\d+)", part))
     resumes = list(re.finditer(r"AURORA_CALL_RESUME: epoch=(\d+) ticks=(\d+) remaining=(\d+)", part))
-    before = not success and "-before-" in mode
-    request_failure = not success and mode in ("program-request-fault", "program-request-budget")
-    service_failure = not success and mode in ("program-service-fault", "program-service-budget")
-    completion_failure = not success and mode in ("program-completion-fault", "program-completion-budget")
-    calls = 0 if before else 1 if request_failure else 2 if service_failure or completion_failure else len(expected) + 1
-    need(len(parks) == len(services) == calls <= 50, "Append bounds bytes plus terminal EOF")
-    need(len(resumes) == calls - int(service_failure), "Every successful peer reply resumes the original caller")
+    producer_parks = list(re.finditer(r"AURORA_APPEND_PARK: ticket=(\d+) terminal=([01])", part))
+    producer_resumes = list(re.finditer(r"AURORA_APPEND_RESUME: ticket=(\d+)", part))
+    launches = list(re.finditer(r"AURORA_APPEND_LAUNCH: operation=(\d+)", part))
+    failed_mode = "" if success else mode
+    before = "-before-" in failed_mode
+    request_failure = failed_mode in ("program-request-fault", "program-request-budget")
+    service_failure = failed_mode in ("program-service-fault", "program-service-budget")
+    construction_failure = failed_mode in ("program-append-construct-fault", "program-append-construct-budget")
+    producer_return = failed_mode == "program-append-producer-return"
+    completion_failure = failed_mode in ("program-completion-fault", "program-completion-budget")
+    terminal_budget = failed_mode == "program-append-terminal-budget"
+    cancelled = failed_mode.removeprefix("program-append-cancel-") if "-cancel-" in failed_mode else ""
+    calls = (
+        0
+        if before
+        else 1
+        if request_failure or construction_failure or producer_return
+        else 2
+        if service_failure or completion_failure or cancelled in ("pending", "delivered", "replied")
+        else len(expected) + 1
+    )
+    activations = calls - int(cancelled in ("pending", "delivered"))
+    replies = activations - int(service_failure or construction_failure or producer_return or terminal_budget)
+    completions = replies - int(cancelled in ("replied", "terminal"))
+    need(len(parks) == calls <= 50 and len(services) == activations, "Append bounds bytes plus terminal EOF")
+    need(len(producer_parks) == replies and len(resumes) == completions, "Only accepted peer replies resume the caller")
+    need(len(launches) == int(activations != 0), "Append launches one producer only after a real request")
+    need(len(producer_resumes) == max(0, activations - 1), "Later producer activations resume its retained locals")
     tickets = [int(park[1]) for park in parks]
     need(all(ticket > 0 for ticket in tickets) and tickets == sorted(set(tickets)), "Append tickets never repeat")
     service_epochs = [int(run[1]) for run in services]
@@ -634,46 +658,66 @@ def validate_append(part, mode, expected, success, ending_epoch, images):
         service_epochs == sorted(set(service_epochs)) and all(epoch > caller for epoch in service_epochs),
         "Append service activations allocate fresh epochs",
     )
-    for index, (park, service) in enumerate(zip(parks, services)):
-        source = (
-            4
-            if service_failure and index == 1 and mode.endswith("fault")
-            else 5
-            if service_failure and index == 1
-            else 15
-        )
+    terminal = replies == len(expected) + 1
+    need(
+        [int(park[2]) for park in producer_parks] == [0] * (replies - int(terminal)) + [1] * int(terminal),
+        "Only the complete candidate emits one terminal producer park",
+    )
+    for index, service in enumerate(services):
+        park = parks[index]
         need(
-            service[2] == service[3] == "service" and int(service[4]) == tickets[index] and int(service[5]) == source,
-            "Append isolated worker uses the original transaction and source",
+            service[2] == service[3] == "service" and int(service[4]) == tickets[index] and service[5] == "17",
+            "Append producer owns the current delivered transaction and private source entry",
         )
         need(int(park[2]) == caller and park.start() < service.start(), "Append suspends before activating its peer")
-        if index < len(resumes):
+        if index == 0:
+            need(park.start() < launches[0].start() < service.start(), "Producer cannot launch before request zero")
+        else:
+            need(
+                int(producer_resumes[index - 1][1]) == tickets[index]
+                and service.start() < producer_resumes[index - 1].start(),
+                "Fresh activation resumes the exact new ticket",
+            )
+        if index < replies:
+            need(
+                int(producer_parks[index][1]) == tickets[index] and service.start() < producer_parks[index].start(),
+                "Producer parks each accepted reply once",
+            )
+        if index < completions:
             resume = resumes[index]
             need(
-                park.groups()[1:] == resume.groups() and service.start() < resume.start(),
-                "Append restores the exact caller epoch and remaining allowance",
+                park.groups()[1:] == resume.groups() and producer_parks[index].start() < resume.start(),
+                "Append restores the exact caller epoch and remaining allowance after producer park",
             )
             if index + 1 < len(parks):
                 need(resume.start() < parks[index + 1].start(), "Append next request follows its prior reply")
-    traps = list(re.finditer(r"AURORA_UEFI_DOMAIN_EVENT: vector=130 ", part))
+    traps = list(re.finditer(r"AURORA_UEFI_DOMAIN_EVENT: vector=130 error=0 pc=(\d+) ", part))
+    call_traps = [trap for trap in traps if int(trap[1]) == images["clean"]["call_pc"]]
+    serve_traps = [trap for trap in traps if int(trap[1]) == images["bounds"]["serve_pc"]]
     need(
-        len(traps) == calls and all(trap.start() < park.start() for trap, park in zip(traps, parks)),
-        "Append publishes one exact-site trap per request",
+        len(call_traps) == calls and all(trap.start() < park.start() for trap, park in zip(call_traps, parks)),
+        "Append publishes one exact Call trap per request",
+    )
+    need(
+        len(serve_traps) == replies + int(terminal_budget)
+        and len(traps) == len(call_traps) + len(serve_traps)
+        and all(trap.start() < park.start() for trap, park in zip(serve_traps, producer_parks)),
+        "Append publishes one exact Serve trap per attempted producer reply",
     )
     terminals = [
         tuple(map(int, match.groups()))
         for match in re.finditer(r"AURORA_UEFI_DOMAIN_EVENT: vector=(6|129) error=0 pc=(\d+) ", part)
     ]
-    wanted = [(129, images["bounds"]["return_pc"]) for _ in services]
-    if service_failure:
-        wanted.pop()
-        if mode.endswith("fault"):
-            wanted.append((6, images["bounds"]["bounds_pc"]))
+    wanted = []
+    if producer_return:
+        wanted.append((129, images["bounds"]["return_pc"]))
+    elif (service_failure or construction_failure) and mode.endswith("fault"):
+        wanted.append((6, images["bounds"]["bounds_pc"]))
     elif not success and mode.endswith("fault"):
         wanted.append((6, images["clean"]["bounds_pc"]))
     elif success or mode in ("program-append-copy", "program-append-backing"):
         wanted.append((129, images["clean"]["return_pc"]))
-    need(terminals == wanted, "Append requires exact peer and clean caller return sites")
+    need(terminals == wanted, "No producer return can replace terminal park and clean caller return")
     used = {"caller": 0, "service": 0}
     arms = 0
     for line in part.splitlines():
@@ -706,32 +750,40 @@ def validate_append(part, mode, expected, success, ending_epoch, images):
                 epoch in [caller] + service_epochs and ticks == used["caller" if epoch == caller else "service"],
                 "Append final drain preserves cumulative use",
             )
-    need(arms == 1 + calls, "Append never relaunches or replenishes its caller")
+    need(arms == 1 + activations, "Append never relaunches or replenishes either worker")
     quiets = list(re.finditer(r"AURORA_UEFI_TIMER_QUIET: epoch=(\d+) ", part))
     wanted_quiets = [caller]
     for index, epoch in enumerate(service_epochs):
         wanted_quiets.append(epoch)
-        if index < len(resumes):
+        if index < completions:
             wanted_quiets.append(caller)
     need([int(quiet[1]) for quiet in quiets] == wanted_quiets, "Append drains every parked or terminal original owner")
     need(int(ending_epoch) == wanted_quiets[-1], "Append retirement follows its final authenticated drain")
     receipts = list(
-        re.finditer(r"AURORA_PROGRAM_APPEND_CALLER: operation=(\d+) calls=(\d+) launches=1 eof=1 clean=1", part)
+        re.finditer(
+            r"AURORA_PROGRAM_APPEND_CALLER: operation=(\d+) calls=(\d+) "
+            r"launches=1 producer_launches=1 terminal_park=1 eof=1 clean=1",
+            part,
+        )
     )
-    need(len(receipts) == int(success), "Only EOF plus clean caller return can capture append output")
+    need(len(receipts) == int(success), "Only terminal park plus clean caller return can capture append output")
     if success:
         need(
-            int(receipts[0][1]) > 0 and int(receipts[0][2]) == calls and quiets[-1].end() < receipts[0].start(),
+            int(receipts[0][1]) == int(launches[0][1]) > 0
+            and int(receipts[0][2]) == calls
+            and quiets[-1].end() < receipts[0].start(),
             "Append fixed result is captured only after final caller drain",
         )
     if not success and mode.endswith("budget"):
         need(
-            used["service" if service_failure else "caller"] == 128, "Append exhausts its original cumulative allowance"
+            used["service" if service_failure or construction_failure or terminal_budget else "caller"] == 128,
+            "Append exhausts its original cumulative allowance",
         )
-        need(
-            re.search(r"AURORA_UEFI_TIMER_QUIET: epoch=\d+ ticks=128 drains=\d+ compiled=[1-9]\d* ", part),
-            "Append budget has actual compiled-PC timer evidence",
-        )
+        if not terminal_budget:
+            need(
+                re.search(r"AURORA_UEFI_TIMER_QUIET: epoch=\d+ ticks=128 drains=\d+ compiled=[1-9]\d* ", part),
+                "Append budget has actual compiled-PC timer evidence",
+            )
     return int(receipts[0][1]) if receipts else None
 
 
@@ -892,6 +944,9 @@ def validate(
             "AURORA_CALL_PARK:" not in part
             and "AURORA_CALL_RESUME:" not in part
             and "AURORA_PROGRAM_APPEND_CALLER:" not in part
+            and "AURORA_APPEND_PARK:" not in part
+            and "AURORA_APPEND_RESUME:" not in part
+            and "AURORA_APPEND_LAUNCH:" not in part
             and "AURORA_UEFI_DOMAIN_EVENT: vector=130 " not in part,
             "Only active append can enter the returning Call transport",
         )
@@ -1018,15 +1073,26 @@ APPEND_RECOVERY_MODES = {
     "program-append-eof-fault",
     "program-append-eof-budget",
     "program-append-copy",
+    "program-append-construct-fault",
+    "program-append-construct-budget",
+    "program-append-producer-return",
+    "program-append-terminal-budget",
+    "program-append-cancel-pending",
+    "program-append-cancel-delivered",
+    "program-append-cancel-replied",
+    "program-append-cancel-terminal",
 }
 APPEND_FAILSTOP_REASONS = {
     "program-owner": "call envelope",
     "program-ordinal": "call envelope",
-    "program-transaction": "call envelope",
+    "program-transaction": "append service authority",
     "program-unknown": "exception site authority",
     "program-append-backing": "append backing",
     "program-append-root": "exception root authority",
     "program-append-site": "call exact site and endpoint",
+    "program-append-service-site": "append Serve site",
+    "program-append-service-root": "exception root authority",
+    "program-append-service-backing": "append service authority",
 }
 
 FAILSTOP_REASONS = {
@@ -1048,11 +1114,22 @@ def validate_failstop(part, mode, status, images, *, append=False, full_text="")
         "Malformed authority exposed output or recovered",
     )
     need(part.count("AURORA_PROGRAM_COMMAND_BEGIN:") == 1, "Malformed command restarted")
-    image = images["bounds" if mode == "program-transaction" else "clean"]
-    vector = 130 if mode in ("program-append-root", "program-append-site") else 6 if mode == "program-unknown" else 129
+    service_probe = mode.startswith("program-append-service-") or (append and mode == "program-transaction")
+    image = images["bounds" if mode == "program-transaction" or service_probe else "clean"]
+    vector = (
+        130
+        if mode in ("program-append-root", "program-append-site") or service_probe
+        else 6
+        if mode == "program-unknown"
+        else 129
+    )
     # program-unknown: the fixture resumes the client at its wrapper's bad_entry
     # ud2, just after the return site, which is no registered site.
-    pc = image["call_pc"] if vector == 130 else image["return_pc"] + (2 if mode == "program-unknown" else 0)
+    pc = (
+        image["serve_pc" if service_probe else "call_pc"]
+        if vector == 130
+        else image["return_pc"] + (2 if mode == "program-unknown" else 0)
+    )
     need(
         mode != "program-unknown"
         or pc
@@ -1076,11 +1153,18 @@ def validate_failstop(part, mode, status, images, *, append=False, full_text="")
                 part.count("AURORA_UEFI_DOMAIN_EVENT: vector=130 ") == 1 and " role=service " not in part,
                 "Wrong root/site must be rejected before publishing the first request",
             )
+        if service_probe:
+            need(
+                part.count("AURORA_UEFI_DOMAIN_EVENT: vector=130 ") == 2
+                and part.count(" role=service ") == 1
+                and "AURORA_APPEND_PARK:" not in part,
+                "Wrong producer authority rejects its first Serve reply",
+            )
         if mode == "program-append-backing":
             quiet = re.findall(r"AURORA_UEFI_TIMER_QUIET: epoch=(\d+) ", part)
             need(bool(quiet), "Original-backing probe follows authenticated final drain")
             validate_append(part, mode, "originalsuffix", False, quiet[-1], images)
-    if mode == "program-append-root":
+    if mode in ("program-append-root", "program-append-service-root"):
         arena = re.findall(r"AURORA_UEFI_OWNERSHIP_OK: arena=(\d+)", full_text)
         need(len(arena) == 1, "Root probe retains one admitted arena")
         need(
@@ -1100,10 +1184,8 @@ def main():
     parser.add_argument("--read-only-recovery", action="store_true")
     parser.add_argument("--append-recovery", action="store_true")
     args = parser.parse_args()
-    args.append_recovery |= args.mode in APPEND_RECOVERY_MODES or args.mode in (
-        "program-append-backing",
-        "program-append-root",
-        "program-append-site",
+    args.append_recovery |= args.mode in APPEND_RECOVERY_MODES or (
+        args.mode.startswith("program-append-") and args.mode in APPEND_FAILSTOP_REASONS
     )
     need(
         not args.read_only_recovery or args.mode.endswith(("-fault", "-budget")),
@@ -1415,11 +1497,7 @@ def main():
                 )
                 print("PASS: committed append survives actual partial response failure without replay; exit clears RAM")
                 return
-            if args.mode in FAILSTOP_REASONS or args.mode in (
-                "program-append-backing",
-                "program-append-root",
-                "program-append-site",
-            ):
+            if args.mode in FAILSTOP_REASONS or args.mode in APPEND_FAILSTOP_REASONS:
                 if args.append_recovery:
                     file_write("hostile", "original")
                     begin = len(transcript)
@@ -1691,6 +1769,10 @@ def main():
                 file_write("recover", "recover this file")
                 file_write("other", "Remain lower")
                 if args.append_recovery:
+                    file_write("empty", "")
+                    file_write("fourth", "Last unchanged")
+                    file_local("ls", "files: recover other empty fourth")
+                if args.append_recovery:
                     file_append("recover", " appended", "recover this file appended", failure=True)
                 elif args.read_only_recovery:
                     file_command("cat", "recover", "recover this file", failure=True)
@@ -1699,6 +1781,9 @@ def main():
                 file_command("cat", "recover", "recover this file")
                 file_command("cat", "other", "Remain lower")
                 if args.append_recovery:
+                    file_command("cat", "empty", "")
+                    file_command("cat", "fourth", "Last unchanged")
+                    file_local("ls", "files: recover other empty fourth")
                     file_append("recover", " appended", "recover this file appended")
                     file_command("cat", "recover", "recover this file appended")
                     file_write("recover", "recover this file")

@@ -1,0 +1,32 @@
+# name prefix suffix prefix_length suffix_length phase offset probe action action_after expected_bytes outcome
+# action: 0 next, 1 cancelled, 2 duplicate, 3 skipped, 4 wide offset,
+# 5 invalid status, 6 resume EOF, 7 poison launch copy, 8 bad prefix, 9 bad suffix,
+# 10 nonzero cancelled payload. EOF always stays parked except the explicit hostile row.
+normal "old" " new" 3 4 17 0 0 0 0 "old new" eof
+empty "" "" 0 0 17 0 0 0 0 "" eof
+empty_append "retained" "" 8 0 17 0 0 0 0 "retained" eof
+empty_prefix "" "suffix" 0 6 17 0 0 0 0 "suffix" eof
+maximum "abcdefghijklmnopqrstuvwxyz" "ABCDEFGHIJKLMNOPQRSTUVW" 26 23 17 0 0 0 0 "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVW" eof
+poison_launch "retained" " candidate" 8 10 17 0 0 7 0 "retained candidate" eof
+missing_prefix "" "x" -1 1 17 0 0 0 0 "" return
+wide_prefix "x" "" 50 0 17 0 0 0 0 "" return
+wide_suffix "" "x" 0 50 17 0 0 0 0 "" return
+negative_suffix "x" "" 1 -1 17 0 0 0 0 "" return
+overflow "abcdefghijklmnopqrstuvwxyz" "ABCDEFGHIJKLMNOPQRSTUVWX" 26 24 17 0 0 0 0 "" return
+wrong_phase "old" "new" 3 3 15 0 0 0 0 "" return
+nonzero_first "old" "new" 3 3 17 1 0 0 0 "" return
+negative_first "old" "new" 3 3 17 -1 0 0 0 "" return
+bad_prefix "old" "new" 3 3 17 0 0 8 0 "" return
+bad_suffix "old" "new" 3 3 17 0 0 9 0 "" return
+construction_fault "old" "new" 3 3 17 0 22 0 0 "" fault
+premature_return "old" "new" 3 3 17 0 24 0 0 "" return
+mid_fault "old" "new" 3 3 17 0 4 0 0 "o" fault
+cancelled "old" "new" 3 3 17 0 0 1 1 "o" return
+cancelled_late "old" "new" 3 3 17 0 0 1 4 "oldn" return
+duplicate_offset "old" "new" 3 3 17 0 0 2 1 "o" return
+skipped_offset "old" "new" 3 3 17 0 0 3 1 "o" return
+wide_offset "old" "new" 3 3 17 0 0 4 1 "o" return
+bad_status "old" "new" 3 3 17 0 0 5 1 "o" fault
+bad_cancelled_payload "old" "new" 3 3 17 0 0 10 1 "o" fault
+hostile_eof_resume "a" "b" 1 1 17 0 0 6 0 "ab" return_after_eof
+hostile_empty_eof_resume "" "" 0 0 17 0 0 6 0 "" return_after_eof

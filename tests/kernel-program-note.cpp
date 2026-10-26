@@ -5,10 +5,14 @@
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
+#include <iomanip>
 #include <limits>
+#include <sstream>
 #include <span>
 #include <string>
 #include <string_view>
@@ -41,6 +45,7 @@ extern "C" U64 file_call_test_service(const void *);
 extern "C" U64 note_test_service(const void *);
 extern "C" I64 note_test_client(I64, I64, I64);
 extern "C" void append_test_client(const void *, void *);
+extern "C" I64 append_test_service(const void *);
 
 class AppendReply final {
 public:
@@ -50,12 +55,54 @@ static_assert(sizeof(AppendReply) == 16);
 namespace {
 std::array<AppendReply, 50> append_replies{};
 std::size_t append_reply_count{}, append_reply_cursor{};
+AppendReply (*append_call_forward)(U64, U64, U64) = nullptr;
+// Hosted execution transport only. A child invokes the generated producer once;
+// its exchange callback parks on a pipe until the next copied request arrives.
+// EOF retirement closes that pipe and exits the child without resuming source.
+int producer_request_fd = -1, producer_reply_fd = -1;
+std::array<std::byte, 216> producer_input{}, producer_original{};
+U64 producer_slot{}, producer_generation{}, producer_exchanges{};
+bool producer_poison_input{};
+
+auto transfer(int fd, void *buffer, std::size_t count, bool writing) -> bool {
+    auto *cursor = static_cast<std::byte *>(buffer);
+    while (count) {
+        const auto done = writing ? ::write(fd, cursor, count) : ::read(fd, cursor, count);
+        if (done < 0 && errno == EINTR)
+            continue;
+        if (done <= 0)
+            return false;
+        cursor += done;
+        count -= static_cast<std::size_t>(done);
+    }
+    return true;
+}
 } // namespace
 extern "C" AppendReply __au_runtime_call(U64 slot, U64 generation, U64 offset) {
+    if (append_call_forward)
+        return append_call_forward(slot, generation, offset);
     if (slot != 0xC011 || generation != 91 || offset != append_reply_cursor ||
         append_reply_cursor >= append_reply_count)
         std::abort();
     return append_replies[append_reply_cursor++];
+}
+extern "C" AppendReply __au_runtime_serve_exchange(U64 slot, U64 generation, U64 reply) {
+    if (slot != producer_slot || generation != producer_generation || producer_input != producer_original)
+        std::abort();
+    ++producer_exchanges;
+    // Input bytes are copied data, not a source from which a later native entry
+    // can rebuild the candidate. Keep the borrowed capability prefix intact.
+    if (producer_poison_input && producer_exchanges == 1) {
+        std::fill(producer_input.begin() + 32, producer_input.begin() + 200, std::byte{0xa5});
+        producer_original = producer_input;
+    }
+    std::array<U64, 3> event{1, reply, producer_exchanges};
+    if (!transfer(producer_reply_fd, event.data(), sizeof(event), true))
+        std::abort();
+    AppendReply request{};
+    if (!transfer(producer_request_fd, &request, sizeof(request), false))
+        std::_Exit(0); // Host retirement never returns into the parked producer.
+    return request;
 }
 
 namespace {
@@ -74,6 +121,106 @@ auto require(bool good, const char *why) -> void {
 auto put_word(std::span<std::byte> bytes, std::size_t offset, U64 value) -> void {
     for (unsigned byte = 0; byte < 8; ++byte)
         bytes[offset + byte] = std::byte(value >> (byte * 8));
+}
+
+class Producer final {
+    int requests_ = -1, replies_ = -1;
+    pid_t child_{};
+    std::array<U64, 3> event_{};
+
+    auto observe() -> void {
+        if (transfer(replies_, event_.data(), sizeof(event_), false))
+            return;
+        int status = 0;
+        require(waitpid(child_, &status, 0) == child_, "producer child outcome");
+        child_ = 0;
+        event_ = {3, WIFSIGNALED(status) ? U64(WTERMSIG(status)) : 0, 0};
+    }
+
+public:
+    using Input = std::array<std::byte, 184>;
+    Producer() = default;
+    Producer(const Producer &) = delete;
+    auto operator=(const Producer &) -> Producer & = delete;
+    ~Producer() {
+        stop();
+    }
+    [[nodiscard]] auto started() const -> bool {
+        return requests_ != -1;
+    }
+    [[nodiscard]] auto event() const -> const std::array<U64, 3> & {
+        return event_;
+    }
+    auto start(const Input &input, bool poison = false) -> void {
+        require(!started(), "one producer source invocation");
+        int requests[2], replies[2];
+        require(pipe(requests) == 0 && pipe(replies) == 0, "producer hosted transport pipes");
+        child_ = fork();
+        require(child_ >= 0, "producer hosted invocation");
+        if (child_ == 0) {
+            close(requests[1]);
+            close(replies[0]);
+            producer_request_fd = requests[0];
+            producer_reply_fd = replies[1];
+            producer_input.fill(std::byte{0xa5});
+            std::copy(input.begin(), input.end(), producer_input.begin() + 16);
+            producer_original = producer_input;
+            producer_slot = 0;
+            producer_generation = 0;
+            for (unsigned i = 0; i < 8; ++i) {
+                producer_slot |= U64(std::to_integer<unsigned char>(input[i])) << (8 * i);
+                producer_generation |= U64(std::to_integer<unsigned char>(input[8 + i])) << (8 * i);
+            }
+            producer_exchanges = 0;
+            producer_poison_input = poison;
+            const auto returned = append_test_service(producer_input.data() + 16);
+            if (producer_input != producer_original)
+                std::abort();
+            std::array<U64, 3> event{2, U64(returned), producer_exchanges};
+            if (!transfer(producer_reply_fd, event.data(), sizeof(event), true))
+                std::abort();
+            std::_Exit(0);
+        }
+        close(requests[0]);
+        close(replies[1]);
+        requests_ = requests[1];
+        replies_ = replies[0];
+        observe();
+    }
+    auto step(AppendReply request) -> void {
+        require(started() && child_ && event_[0] == 1, "host resume consumes one parked source exchange");
+        require(transfer(requests_, &request, sizeof(request), true), "host copied Serve request");
+        observe();
+    }
+    auto stop() -> void {
+        if (!started())
+            return;
+        close(requests_);
+        close(replies_);
+        if (child_) {
+            int status = 0;
+            require(waitpid(child_, &status, 0) == child_ && WIFEXITED(status) && WEXITSTATUS(status) == 0,
+                    "parked producer retired without a source resume");
+        }
+        requests_ = replies_ = -1;
+        child_ = 0;
+        event_ = {};
+    }
+};
+
+Producer *coupled_producer = nullptr;
+Producer::Input coupled_input{};
+bool coupled_poison{};
+auto coupled_append_reply(U64 slot, U64 generation, U64 offset) -> AppendReply {
+    require(coupled_producer && slot == 0xC011 && generation == 91 && offset == append_reply_cursor,
+            "actual caller requests exact sequential offset from live producer");
+    if (offset == 0)
+        coupled_producer->start(coupled_input, coupled_poison);
+    else
+        coupled_producer->step({0, offset});
+    require(coupled_producer->event()[0] == 1, "actual producer reply feeds actual caller");
+    ++append_reply_cursor;
+    return {0, coupled_producer->event()[1]};
 }
 
 auto update(const Note::UpdateInput &input) -> Note::Update {
@@ -131,6 +278,7 @@ public:
     bool reading = true;
     bool transforming = false;
     bool appending = false;
+    Producer producer;
     alignas(16) std::array<std::byte, Note::stream_record_bytes + 32> storage{};
     explicit Fixture(U64 run_ceiling = UINT64_MAX) : stream(run_ceiling) {
     }
@@ -175,18 +323,39 @@ public:
         require(!stream.finish(), "no partial output after request");
     }
 
-    auto receive(U64 phase) -> U64 {
+    auto receive(U64 phase, bool live_call = false) -> U64 {
         const auto grant = *mailbox.endpoint(service);
         const auto request = mailbox.receive(service, ipc::Phase::service, grant, transaction);
-        require(request && request->second() == ordinal && mailbox.scrubbed(), "actual mailbox receive and scrub");
+        require(request && mailbox.scrubbed() &&
+                    (live_call ? request->first() == ordinal && request->second() == 0 : request->second() == ordinal),
+                "actual mailbox receive and scrub");
         storage.fill(std::byte{0xa5});
         const std::span<std::byte, Note::stream_record_bytes> record{storage.data() + 16, Note::stream_record_bytes};
-        require(note.stage_stream(record, grant, phase, *request), "authenticated fixed copied record");
+        require(note.stage_stream(record, grant, phase, live_call ? ipc::Request{1, ordinal} : *request),
+                "authenticated fixed copied record");
         if (!reading)
             for (std::size_t index = 24; index < record.size(); ++index)
                 require(record[index] == std::byte{0}, "upper service receives no saved-note projection");
         const auto before = storage;
-        const auto result = note_test_service(record.data());
+        U64 result = 0;
+        if (phase == 15) {
+            if (!producer.started()) {
+                Producer::Input input{};
+                put_word(input, 0, grant.slot());
+                put_word(input, 8, grant.generation());
+                std::copy(record.begin(), record.end(), input.begin() + 16);
+                put_word(input, 16, 17);
+                put_word(input, 24, 0);
+                require(ordinal == 0, "producer launch waits for first delivered request");
+                producer.start(input);
+            } else {
+                producer.step({0, ordinal});
+            }
+            require(producer.event()[0] == 1, "actual live producer parks with a byte or EOF");
+            result = producer.event()[1];
+        } else {
+            result = note_test_service(record.data());
+        }
         require(storage == before, "actual service leaves full copied input immutable");
         for (std::size_t index = 0; index < 16; ++index)
             require(storage[index] == std::byte{0xa5} &&
@@ -251,6 +420,7 @@ public:
                 static_cast<void>(consume());
             }
         }
+        producer.stop();
         require(registry.ready(client) && registry.ready(service), "participants quiescent before retirement");
         note.release();
         require(mailbox.scrubbed() && mailbox.revoke(ipc::Phase::inactive) && registry.destroy(client) &&
@@ -1401,18 +1571,28 @@ public:
         require(named.files.bind_append(f.registry, f.mailbox, f.client, f.service, call),
                 "live append binds exact receipt run");
     }
-    auto round(U64 expected) -> void {
+    auto request() -> void {
         auto &f = named.f;
         f.ordinal = call.length();
         require(call.request(f.ordinal), "live append copied request offset");
         const auto ticket =
-            f.mailbox.submit(f.client, ipc::Phase::request, *f.mailbox.endpoint(f.client), ipc::Request{1, f.ordinal});
+            f.mailbox.submit(f.client, ipc::Phase::request, *f.mailbox.endpoint(f.client), ipc::Request{f.ordinal, 0});
         require(ticket.has_value(), "live append real mailbox request");
         f.transaction = *ticket;
-        const auto result = f.receive(15);
-        require(result == expected && call.reply(result), "live append actual worker reply matches golden word");
-        require(f.mailbox.reply(f.service, ipc::Phase::service, *f.mailbox.endpoint(f.service), *ticket, result),
-                "live append authenticated reply");
+    }
+    auto reply(U64 result) -> void {
+        auto &f = named.f;
+        require(
+            call.reply(result) &&
+                f.mailbox.reply(f.service, ipc::Phase::service, *f.mailbox.endpoint(f.service), f.transaction, result),
+            "live append authenticated reply");
+    }
+    auto round(U64 expected) -> void {
+        request();
+        auto &f = named.f;
+        const auto result = f.receive(15, true);
+        require(result == expected, "live append actual worker reply matches golden word");
+        reply(result);
         require(f.consume() == expected && f.mailbox.recycle(ipc::Phase::inactive),
                 "live append terminal consumption and scrub");
     }
@@ -1434,7 +1614,14 @@ public:
         const auto saved = named.files.saved();
         named.files.abort();
         call.cancel();
-        named.f.retire();
+        auto &f = named.f;
+        if (f.mailbox.state() == ipc::State::pending || f.mailbox.state() == ipc::State::delivered)
+            require(f.mailbox.cancel(ipc::Phase::inactive), "live append outstanding request cancelled");
+        if (f.mailbox.state() == ipc::State::replied || f.mailbox.state() == ipc::State::cancelled)
+            require(f.mailbox.consume(f.client, ipc::Phase::completion, *f.mailbox.endpoint(f.client), f.transaction)
+                        .has_value(),
+                    "live append exact terminal receipt consumed before retirement");
+        f.retire();
         require(call.scrubbed() && named.files.saved() == saved, "live append cancellation preserves committed store");
     }
     auto save(std::string_view expected, bool delivered = true) -> void {
@@ -1476,22 +1663,22 @@ public:
 
 // Executable generated-caller ABI coverage. These are copied scalar replies,
 // not a host implementation of its accumulation or termination algorithm.
+auto append_client_copy(U64 probe = 0) -> program::AppendCall::Value {
+    const std::array<U64, 3> argument{0xC011, 91, probe};
+    const auto original = argument;
+    std::array<std::byte, 104> result{};
+    result.fill(std::byte{0xa5});
+    append_reply_cursor = 0;
+    append_test_client(argument.data(), result.data() + 16);
+    require(argument == original, "append caller leaves copied argument immutable");
+    for (unsigned index = 0; index < 16; ++index)
+        require(result[index] == std::byte{0xa5} && result[88 + index] == std::byte{0xa5},
+                "append caller exact copied-result canaries");
+    program::AppendCall::Value value{};
+    std::copy_n(result.begin() + 16, value.size(), value.begin());
+    return value;
+}
 auto generated_append_caller_cases() -> void {
-    auto invoke = [](U64 probe = 0) {
-        const std::array<U64, 3> argument{0xC011, 91, probe};
-        const auto original = argument;
-        std::array<std::byte, 104> result{};
-        result.fill(std::byte{0xa5});
-        append_reply_cursor = 0;
-        append_test_client(argument.data(), result.data() + 16);
-        require(argument == original, "append caller leaves copied argument immutable");
-        for (unsigned index = 0; index < 16; ++index)
-            require(result[index] == std::byte{0xa5} && result[88 + index] == std::byte{0xa5},
-                    "append caller exact copied-result canaries");
-        program::AppendCall::Value value{};
-        std::copy_n(result.begin() + 16, value.size(), value.begin());
-        return value;
-    };
     auto replies = [](std::string_view text, AppendReply terminal = {0, 2}) {
         append_replies = {};
         append_reply_count = 0;
@@ -1501,7 +1688,7 @@ auto generated_append_caller_cases() -> void {
     };
     for (const auto &text : {std::string{}, std::string{"A"}, std::string{"with spaces ~!"}, std::string(49, 'x')}) {
         replies(text);
-        require(invoke() == AppendFixture::value(text) && append_reply_cursor == text.size() + 1,
+        require(append_client_copy() == AppendFixture::value(text) && append_reply_cursor == text.size() + 1,
                 "generated append caller preserves locals across exact sequential byte-and-EOF calls");
     }
     program::AppendCall::Value failed{};
@@ -1520,23 +1707,129 @@ auto generated_append_caller_cases() -> void {
     for (const auto terminal : refusals)
         for (const auto text : {std::string_view{}, std::string_view{"partial"}}) {
             replies(text, terminal);
-            require(invoke() == failed && append_reply_cursor == text.size() + 1,
+            require(append_client_copy() == failed && append_reply_cursor == text.size() + 1,
                     "generated append caller discards partial bytes on malformed or failed reply");
         }
     replies(std::string(49, 'x'), {0, 1 | ('y' << 8)});
-    require(invoke() == failed && append_reply_cursor == 50, "generated append caller refuses a 50th data byte");
+    require(append_client_copy() == failed && append_reply_cursor == 50,
+            "generated append caller refuses a 50th data byte");
     for (const U64 probe : {20, 8, 10, 18}) {
         replies("AB");
         const auto child = fork();
         require(child >= 0, "generated append caller fault child");
         if (child == 0) {
-            static_cast<void>(invoke(probe));
+            static_cast<void>(append_client_copy(probe));
             std::_Exit(3);
         }
         int status = 0;
         require(waitpid(child, &status, 0) == child && WIFSIGNALED(status) && WTERMSIG(status) == SIGILL,
                 "generated caller faults before, during and after terminal EOF");
     }
+}
+
+// Cases are data for this one generated service image and native driver. A
+// returned scalar is failure; success is an observed EOF whose source stays
+// parked until retirement. Privileged frame/timer authority is a guest gate.
+auto generated_append_producer_cases(const char *path) -> void {
+    std::ifstream data(path);
+    require(bool(data), "append producer case data");
+    std::string line;
+    unsigned cases = 0;
+    while (std::getline(data, line)) {
+        if (line.empty() || line.front() == '#')
+            continue;
+        std::string name, prefix, suffix, expected, outcome;
+        I64 prefix_length, suffix_length, phase, offset, probe;
+        unsigned action, after;
+        std::istringstream row(line);
+        require(bool(row >> name >> std::quoted(prefix) >> std::quoted(suffix) >> prefix_length >> suffix_length >>
+                     phase >> offset >> probe >> action >> after >> std::quoted(expected) >> outcome),
+                "parse append producer data row");
+        std::string trailing;
+        require(!(row >> trailing) && prefix.size() <= 64 && suffix.size() <= 64 && expected.size() <= 49,
+                "bounded append producer data row");
+        Producer::Input input{};
+        put_word(input, 0, 0x5345525645);
+        put_word(input, 8, 91);
+        put_word(input, 16, U64(phase));
+        put_word(input, 24, U64(probe));
+        put_word(input, 32, U64(offset));
+        for (std::size_t index = 0; index < prefix.size(); ++index)
+            input[40 + index] = std::byte(prefix[index]);
+        put_word(input, 104, U64(prefix_length));
+        for (std::size_t index = 0; index < suffix.size(); ++index)
+            input[112 + index] = std::byte(suffix[index]);
+        put_word(input, 176, U64(suffix_length));
+        if (action == 8)
+            input[40] = std::byte{31};
+        if (action == 9)
+            input[112] = std::byte{127};
+        const auto original = input;
+        Producer producer;
+        producer.start(input, action == 7);
+        unsigned exchanges = 0;
+        bool eof = false;
+        for (;;) {
+            const auto event = producer.event();
+            if (event[0] != 1) {
+                require(exchanges == expected.size() + (eof ? 1 : 0), "producer exact partial reply count");
+                if (outcome == "fault")
+                    require(event[0] == 3 && event[1] == SIGILL, "actual producer emitted bounds fault");
+                else
+                    require((outcome == "return" || outcome == "return_after_eof") && event[0] == 2 && event[1] == 0 &&
+                                event[2] == exchanges,
+                            "producer rejects malformed sequence or premature/postterminal return");
+                break;
+            }
+            require(!eof && event[2] == U64(exchanges + 1), "one producer invocation has a live exchange cursor");
+            const U64 wanted =
+                exchanges < expected.size() ? 1 | (U64(static_cast<unsigned char>(expected[exchanges])) << 8) : 2;
+            require(event[1] == wanted, "actual retained producer reply matches reviewed golden byte or EOF");
+            ++exchanges;
+            eof = event[1] == 2;
+            if (eof && action != 6) {
+                require(outcome == "eof" && exchanges == expected.size() + 1, "producer complete terminal park");
+                break;
+            }
+            AppendReply request{0, exchanges};
+            if (exchanges == after) {
+                if (action == 1)
+                    request = {1, 0};
+                if (action == 2)
+                    --request.value;
+                if (action == 3)
+                    ++request.value;
+                if (action == 4)
+                    request.value = UINT64_MAX;
+                if (action == 5)
+                    request.status = 2;
+                if (action == 10)
+                    request = {1, 1};
+            }
+            producer.step(request);
+        }
+        require(input == original, "copied Serve launch input and caller canaries remain immutable");
+        producer.stop();
+        if (outcome == "eof") {
+            // The generated caller now drives one separately live generated
+            // producer. The native bridge only forwards offsets and replies;
+            // neither candidate construction nor accumulation happens here.
+            coupled_producer = &producer;
+            coupled_input = input;
+            coupled_poison = action == 7;
+            append_call_forward = coupled_append_reply;
+            const auto result = append_client_copy();
+            append_call_forward = nullptr;
+            coupled_producer = nullptr;
+            coupled_input = {};
+            require(result == AppendFixture::value(expected) && append_reply_cursor == expected.size() + 1 &&
+                        producer.event()[0] == 1 && producer.event()[1] == 2,
+                    "actual caller copied result depends on retained producer replies and terminal park");
+            producer.stop();
+        }
+        ++cases;
+    }
+    require(cases != 0, "executed append producer data rows");
 }
 
 auto live_append_receipt_cases() -> void {
@@ -1611,11 +1904,20 @@ auto live_append_receipt_cases() -> void {
     live.run("");
     live.save("");
     live.named.read("c", "");
-    for (unsigned cut = 0; cut < 3; ++cut) {
+    for (unsigned cut = 0; cut < 7; ++cut) {
         live.start("append a !");
-        if (cut == 1)
+        if (cut >= 1 && cut < 6)
             live.round(1 | ('o' << 8));
-        if (cut == 2)
+        if (cut >= 2 && cut < 6)
+            live.request();
+        U64 reply = 0;
+        if (cut >= 3 && cut < 6)
+            reply = live.named.f.receive(15, true);
+        if (cut >= 4 && cut < 6)
+            live.reply(reply);
+        if (cut == 5)
+            static_cast<void>(live.named.f.consume());
+        if (cut == 6)
             live.run("oldnew!");
         const auto stale = *live.named.f.mailbox.endpoint(live.named.f.client);
         live.cancel();
@@ -1690,7 +1992,9 @@ auto live_append_receipt_cases() -> void {
 
 } // namespace
 
-auto main() -> int {
+auto main(int argc, char **argv) -> int {
+    require(argc == 2, "one append producer data file");
+    generated_append_producer_cases(argv[1]);
     require(command_stream_contract() == 0, "shared Aurora stream behavioral fixture");
     file_byte_reply_cases();
     named_read_lifetime_cases();
@@ -1709,8 +2013,8 @@ auto main() -> int {
     upper_cancellation_cases();
     emitted_faults();
     upper_regression();
-    std::printf(
-        "PASS: %llu source-native note/file checks; real Mailbox bytes/EOF, live append caller, one-shot publication; "
-        "emitted SIGILL probes and hosted cleanup separately scoped\n",
-        static_cast<unsigned long long>(checks));
+    std::printf("PASS: %llu source-native note/file checks; real Mailbox bytes/EOF, live append caller/producer, "
+                "one-shot publication; "
+                "emitted SIGILL probes and hosted cleanup separately scoped\n",
+                static_cast<unsigned long long>(checks));
 }
