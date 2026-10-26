@@ -162,6 +162,12 @@ The internal C++ `stackFacts()` compatibility map and JSON decoder are removed;
 Tests inspect the requested JSON independently. No JSON is serialized or decoded
 on an ordinary compile without a sidecar request, and no IR owner is retained.
 
+Outgoing 56-byte span descriptors use one register-preserving contiguous copy
+from the admitted local slot to the disjoint argument record; all seven words
+and the temporary stack-save facts are retained. Service records clear only
+class gaps, narrow-scalar slack and final alignment padding before publishing
+the fully stored record. Text and object emission use the same recipes.
+
 The workspace has bounded pools and sticky executable-emission failures. Assembly
 seals first; a named `Artifact` selector prepares one shared optional suffix for
 stack or ABI JSON. A new request discards only that suffix and ABI name ingress,

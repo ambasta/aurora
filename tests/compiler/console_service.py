@@ -19,6 +19,32 @@ def service_bridge(facts):
     return render_bridge((ROOT / "kernel/uefi/console-service-entry.S").read_text(), json.loads(facts.read_text()))
 
 
+def observe_service_padding(assembly, facts):
+    # Literal private layouts for the existing mixed graph below: ConsoleSample
+    # is 24 bytes; Payload adds three bytes and an aligned enum (40 total).
+    # Check outgoing gaps before poisoning them for the repeated same-depth call.
+    # The real helper still runs, receiving deliberately noncanonical padding.
+    functions = json.loads(facts.read_text())["functions"]
+    for name, gaps in (
+        ("forward", ((25, 32), (43, 48), (136, 144))),
+        ("leaf", ((17, 24), (33, 40), (51, 56), (136, 144))),
+    ):
+        symbols = [symbol for symbol, row in functions.items() if row["source_name"] == name]
+        require(len(symbols) == 1, "one mixed service observer target: " + name)
+        symbol = symbols[0]
+        label = symbol + ":\n"
+        require(assembly.count(label) == 1, "one mixed service body: " + name)
+        checks = ""
+        for begin, end in gaps:
+            for offset in range(begin, end):
+                checks += f"    cmpb $0, {offset}(%r11)\n    jne .Lservice_padding_fail\n"
+        for begin, end in gaps:
+            for offset in range(begin, end):
+                checks += f"    movb $165, {offset}(%r11)\n"
+        assembly = assembly.replace(label, label + checks, 1)
+    return assembly + "\n.text\n.Lservice_padding_fail:\n    ud2\n"
+
+
 def require(value, message):
     if not value:
         raise RuntimeError(message)
@@ -1003,10 +1029,12 @@ checked_files_snapshot:
         Payload original = Payload(sample);
         original.initialize();
         const Reply result = forward(session, original, "xyz", 41, true, Marker::okay);
+        const Reply repeated = forward(session, original, "xyz", 41, true, Marker::okay);
         const builtin::ConsoleSample report = result.sample();
         const Payload copied = result.payload();
         if (!original.matches('A', Marker::okay) || !copied.matches('B', Marker::wrong)
-            || !report.byte_present || report.byte != 'Q' || report.damaged || result.count() != 41 || \
+            || !report.byte_present || report.byte != 'Q' || report.damaged || result.count() != 41
+            || repeated.count() != 41 || \
 odd(session) != 8) {
             session.put('?');
         }
@@ -1018,11 +1046,13 @@ odd(session) != 8) {
         abi_facts = work / "mixed-abi.json"
         result = run([compiler, abi_source, "-o", abi_assembly, "--abi-facts", abi_facts])
         require(result.returncode == 0, result.stderr.decode())
-        abi_assembly.write_text(abi_assembly.read_text() + service_bridge(abi_facts))
+        abi_assembly.write_text(
+            observe_service_padding(abi_assembly.read_text(), abi_facts) + service_bridge(abi_facts)
+        )
         abi_binary = work / "mixed-abi"
         result = link(abi_assembly, HOSTS["console"], abi_binary)
         require(result.returncode == 0, result.stderr.decode())
-        result = run([abi_binary], input=b"1 81 0\n")
+        result = run([abi_binary], input=b"1 81 0\n1 81 0\n")
         require(
             result.returncode == 0 and result.stdout == b"z", "mixed copied service input/result/span/odd-depth failure"
         )

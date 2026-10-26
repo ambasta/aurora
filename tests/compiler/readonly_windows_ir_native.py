@@ -111,8 +111,9 @@ def main():
             "object_literal",
             "object_literal_repeated",
             "object_literal_empty",
+            "object_span_arguments",
         ]
-        expected = [MIN_I64, (1 << 64) - 1, -42, -1, 8, 21, 21, 128, 42, 21, 127, 128, 0]
+        expected = [MIN_I64, (1 << 64) - 1, -42, -1, 8, 21, 21, 128, 42, 21, 127, 128, 0, 42]
         object_traps = [
             ("object_bounds", Trap.BOUNDS),
             ("object_zero", Trap.ZERO),
