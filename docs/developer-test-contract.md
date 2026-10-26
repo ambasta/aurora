@@ -37,6 +37,10 @@ the build on a violation:
   edge, and bounds the entry path plus the worst interrupt, every interrupt
   window (functions with STI) and every user trap entry by one limit per image
   (`stack_cap`, 15360 bytes, in `kernel/bootstrap-layout-values.inc`).
+  GCC alias relations must resolve without conflicts or cycles to a bounded
+  compiled body; every alias and its body must be defined executable ELF
+  functions with the same unique address and extent. They share the body's
+  complete frame and calls; different-address thunks remain unsupported.
 - `scripts/kernel_image_check.py` checks PE32+ and ELF format and W^X, entry in
   an executable section, no imports, DIR64-only PE relocations, PC-relative
   payload objects and no undefined symbols.

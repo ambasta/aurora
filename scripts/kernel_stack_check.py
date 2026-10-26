@@ -84,8 +84,8 @@ def direct_target(args):
 
 
 def compiler_facts(paths):
-    """Compiler frames and call edges keyed by assembler name, plus C++ signatures."""
-    frames, edges, signatures = {}, {}, {}
+    """Compiler frames, call edges, signatures and separate GCC alias relations."""
+    frames, edges, signatures, aliases = {}, {}, {}, {}
     for path in map(Path, paths):
         if path.name.endswith(".stack.json"):
             document = json.loads(path.read_text())
@@ -105,14 +105,20 @@ def compiler_facts(paths):
         def name_of(title):
             return title.removeprefix(source + ":").removeprefix("*")
 
+        graph_aliases, graph_edges = set(), {}
         for line in lines[1:-1]:
             node = re.fullmatch(
-                r"node: \{ title: (" + QUOTED + ") label: (" + QUOTED + r")( shape : ellipse)? \}", line
+                r"node: \{ title: (" + QUOTED + ") label: (" + QUOTED + r")(?: shape : (ellipse|triangle))? \}",
+                line,
             )
             if node:
-                if node[3]:
+                if node[3] == "ellipse":
                     continue  # Defined elsewhere; its own facts or decoding supply its frame.
                 name = name_of(json.loads(node[1]))
+                if node[3] == "triangle":
+                    need(name not in graph_aliases, f"{path}: duplicate alias {name}")
+                    graph_aliases.add(name)
+                    continue
                 signature, _, bound = json.loads(node[2]).split("\n")
                 match = re.fullmatch(r"([0-9]+) bytes \((static|dynamic,bounded)\)", bound)
                 need(match, f"{path}: unbounded stack frame in {signature}")
@@ -124,9 +130,20 @@ def compiler_facts(paths):
                 line,
             )
             need(edge, f"{path}: malformed callgraph line: {line[:80]}")
+            caller, callee = name_of(json.loads(edge[1])), name_of(json.loads(edge[2]))
+            graph_edges.setdefault(caller, []).append(callee)
+        for name in graph_aliases:
+            targets = graph_edges.pop(name, [])
+            need(len(targets) == 1, f"{path}: alias {name} needs exactly one target edge")
+            target = targets[0]
+            need(aliases.setdefault(name, target) == target, f"{path}: conflicting alias target for {name}")
+        for caller, callees in graph_edges.items():
             # GCC retains the caller's full frame across every call.
-            edges.setdefault(name_of(json.loads(edge[1])), {}).setdefault(name_of(json.loads(edge[2])), None)
-    return frames, edges, signatures
+            for callee in callees:
+                edges.setdefault(caller, {}).setdefault(callee, None)
+    for name in aliases:
+        need(name not in frames and name not in edges, f"alias {name} conflicts with compiled body facts")
+    return frames, edges, signatures, aliases
 
 
 class Image:
@@ -134,7 +151,7 @@ class Image:
         self.path, self.user = Path(path), user
         self.elf = Elf(path)
         self.code = disassemble(path)
-        self.frames, self.edges, self.signatures = compiler_facts(facts)
+        self.frames, self.edges, self.signatures, aliases = compiler_facts(facts)
         self.callbacks = [entry.partition("=")[::2] for entry in policy.get("callbacks", [])]
         self.user_traps = policy.get("user_traps", [])
         self.reachable = [] if user else policy.get("reachable", [])
@@ -158,6 +175,7 @@ class Image:
             )
         self.label = {a: min(symbols, key=lambda s: (s.bind == 0, s.name)).name for a, symbols in starts.items()}
         self.address_names = {a: [s.name for s in symbols] for a, symbols in starts.items()}
+        self.check_aliases(aliases)
         self.compiled = {a for a in ordered if any(name in self.frames for name in self.address_names[a])}
         # Trap and site labels inside compiled functions are not separate functions.
         spans = sorted((a, self.extent[a]) for a in self.compiled)
@@ -165,6 +183,53 @@ class Image:
             a for a in ordered if a not in self.compiled and not any(begin < a < end for begin, end in spans)
         }
         self.functions, self.memo, self.windows = {}, {}, set()
+
+    def check_aliases(self, aliases):
+        """Only same-body ELF aliases may use a bounded terminal's complete facts."""
+        symbols, spans = {}, {}
+        for symbol in self.elf.symbols:
+            symbols.setdefault(symbol.name, []).append(symbol)
+
+        def span(name):
+            if name not in spans:
+                matches = symbols.get(name, [])
+                need(matches, self.where(f"alias relation has no linked symbol for {name}"))
+                for symbol in matches:
+                    need(
+                        symbol.kind == 2 and 0 < symbol.section < len(self.elf.sections) and symbol.size > 0,
+                        self.where(f"alias relation needs a defined, sized function: {name}"),
+                    )
+                    section = self.elf.sections[symbol.section]
+                    need(
+                        section.flags & SHF_EXECINSTR
+                        and section.address
+                        <= symbol.address
+                        < symbol.address + symbol.size
+                        <= section.address + section.size,
+                        self.where(f"alias relation needs an executable function: {name}"),
+                    )
+                extents = {(s.address, s.address + s.size) for s in matches}
+                need(len(extents) == 1, self.where(f"ambiguous linked alias relation for {name}"))
+                address, end = spans[name] = extents.pop()
+                need(
+                    self.names.get(name) == {address} and self.extent.get(address) == end,
+                    self.where(f"conflicting linked alias extent for {name}"),
+                )
+            return spans[name]
+
+        for alias in aliases:
+            chain, terminal = set(), alias
+            while terminal in aliases:
+                need(terminal not in chain, self.where(f"cyclic alias relation at {terminal}"))
+                chain.add(terminal)
+                terminal = aliases[terminal]
+            need(terminal in self.frames, self.where(f"alias {alias} has no bounded compiled body: {terminal}"))
+            body = span(terminal)
+            for name in chain:
+                need(span(name) == body, self.where(f"alias {name} does not share the body of {terminal}"))
+                self.signatures[name] = self.signatures.get(terminal, terminal)
+            # Address grouping supplies the body's full frame and call edges. The
+            # alias relation is not a call, but real calls to an alias remain calls.
 
     def describe(self, address):
         name = self.label.get(address, hex(address))
