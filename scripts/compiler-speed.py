@@ -64,7 +64,10 @@ def main():
     print("Compiler flags:", " ".join(compiler_flags) or "(default)")
     with tempfile.TemporaryDirectory(prefix="aurora-compiler-speed-") as temporary:
         work = Path(temporary)
-        stage_modules(work / "modules", [*(ROOT / "compiler").glob("*.au"), ROOT / "library/std/decimal_digits.au"])
+        stage_modules(
+            work / "modules",
+            [*(ROOT / "compiler").glob("*.au"), ROOT / "library/std/decimal_digits.au", ROOT / "library/std/binary.au"],
+        )
         ratios = []
         rss_unit = {"linux": "KiB", "darwin": "bytes"}.get(sys.platform, "platform units")
         print(f"Peak RSS: maximum per-child wait4 ru_maxrss in {rss_unit} on {sys.platform}")

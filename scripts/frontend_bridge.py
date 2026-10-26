@@ -13,6 +13,38 @@ import sys
 # (name:fields[:scalar lanes]), and host policy (noexcept/discard/consume[:alias]).
 ROWS = (
     (
+        "private_object_create(builtin::ByteRegion region) -> compiler_private_object::Workspace",
+        "move compiler_private_object::create(region)",
+        "PrivateObjectCreate:region",
+        "noexcept",
+    ),
+    (
+        "private_object_release(builtin::ByteRegion region, compiler_private_object::Workspace workspace) -> i64",
+        "direct compiler_private_object::release(region, move(workspace))",
+        "PrivateObjectRelease:region,workspace",
+        "noexcept,discard",
+    ),
+    (
+        "private_object_run(compiler_private_object::Workspace& workspace, builtin::span<const u8> source, "
+        "builtin::span<const u8> wrapper, builtin::span<const u8> selected) -> compiler_x86::EmitStatus",
+        "direct compiler_private_object::run(workspace, source, wrapper, selected)",
+        "PrivateObjectRun:source,wrapper,selected",
+        "noexcept",
+    ),
+    (
+        "private_object_size(const compiler_private_object::Workspace& workspace) -> i64",
+        "direct workspace.size()",
+        "",
+        "noexcept",
+    ),
+    (
+        "private_object_chunk(const compiler_private_object::Workspace& workspace, i64 offset) -> "
+        "compiler_x86::EmitChunk",
+        "copy workspace.chunk(offset)",
+        "",
+        "noexcept",
+    ),
+    (
         "formatter_create(builtin::ByteRegion region) -> compiler_formatter::Workspace",
         "move compiler_formatter::create(region)",
         "FormatterCreate:region",

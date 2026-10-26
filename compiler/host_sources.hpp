@@ -47,7 +47,7 @@ public:
 };
 class ReadLimit : public Error {
 public:
-    ReadLimit() : Error("bounded source read limit exceeded") {
+    explicit ReadLimit(const std::string &message = "bounded source read limit exceeded") : Error(message) {
     }
 };
 inline std::string systemMessage(int error) {
@@ -73,6 +73,29 @@ inline FileStatus regular(int descriptor) {
         throw Error("source is not a regular file");
     return status;
 }
+inline constexpr std::size_t artifactLimit = 64 * 1024 * 1024;
+namespace detail {
+// Both input authorities use the same hardened descriptor and bounded read loop.
+inline std::string readAtMost(int descriptor, std::size_t limit, const char *limitMessage) {
+    std::array<char, 4096> buffer{};
+    std::string result;
+    int interruptions = 0;
+    while (true) {
+        const auto requested = std::min(buffer.size(), limit - result.size() + 1);
+        const auto count = ::read(descriptor, buffer.data(), requested);
+        if (count < 0) {
+            if (errno == EINTR && ++interruptions <= 128)
+                continue;
+            throw Error("cannot read opened source: " + systemMessage(errno));
+        }
+        if (count == 0)
+            return result;
+        if (static_cast<std::size_t>(count) > limit - result.size())
+            throw ReadLimit(limitMessage);
+        result.append(buffer.data(), static_cast<std::size_t>(count));
+    }
+}
+} // namespace detail
 class SourceFile {
     Handle descriptor;
 
@@ -96,23 +119,26 @@ public:
     std::string readAtMost(std::size_t limit) {
         if (limit > 1024 * 1024)
             throw Error("source read bound exceeds adapter limit");
-        std::array<char, 4096> buffer{};
-        std::string result;
-        int interruptions = 0;
-        while (true) {
-            const auto requested = std::min(buffer.size(), limit - result.size() + 1);
-            const auto count = ::read(descriptor.get(), buffer.data(), requested);
-            if (count < 0) {
-                if (errno == EINTR && ++interruptions <= 128)
-                    continue;
-                throw Error("cannot read opened source: " + systemMessage(errno));
-            }
-            if (count == 0)
-                return result;
-            if (static_cast<std::size_t>(count) > limit - result.size())
-                throw ReadLimit();
-            result.append(buffer.data(), static_cast<std::size_t>(count));
-        }
+        return detail::readAtMost(descriptor.get(), limit, "bounded source read limit exceeded");
+    }
+};
+// Binary inputs are not source files: their independent bound is the existing
+// artifact ceiling, while SourceFile remains capped at 1 MiB.
+class ArtifactFile {
+    Handle descriptor;
+
+public:
+    Identity identity;
+    explicit ArtifactFile(const std::filesystem::path &path) : descriptor(openPolicy(AT_FDCWD, path, false, false)) {
+        if (descriptor.get() < 0)
+            throw Error("cannot open artifact input under no-symlink policy: " + systemMessage(errno));
+        const auto status = regular(descriptor.get());
+        identity = {static_cast<std::uint64_t>(status.st_dev), static_cast<std::uint64_t>(status.st_ino)};
+    }
+    std::string readAtMost(std::size_t limit = artifactLimit) {
+        if (limit > artifactLimit)
+            throw Error("artifact read bound exceeds adapter limit");
+        return detail::readAtMost(descriptor.get(), limit, "bounded artifact read limit exceeded");
     }
 };
 class Directory {
@@ -168,7 +194,7 @@ class ArtifactWriter {
     };
     Phase phase = Phase::Empty;
     static inline std::atomic<std::uint64_t> sequence{0};
-    static constexpr std::size_t maxArtifactBytes = 64 * 1024 * 1024;
+    static constexpr std::size_t maxArtifactBytes = artifactLimit;
     static Identity identityOf(const FileStatus &status) {
         return {static_cast<std::uint64_t>(status.st_dev), static_cast<std::uint64_t>(status.st_ino)};
     }

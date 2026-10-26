@@ -117,8 +117,10 @@ every guest family, including the
 Host record projection, conversion, quota/report transport and authorized source
 file I/O remain native dependencies; module traversal and x86 text emission run
 in Aurora.
-Native assembler/linker and host runtime/file/process services remain separate
-self-hosting dependencies.
+The bounded frontend B/C object composer now runs in Aurora: it appends generated
+wrapper text and remaps selected private references without changing source symbol
+bindings. General assembler/linker and host runtime/file/process services remain
+separate self-hosting dependencies.
 
 Gate: positive, rejection, adversarial, resource and ABI tests with independent
 review; no unchecked assertion, visibility bypass or resource duplication. Then

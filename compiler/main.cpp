@@ -1,4 +1,5 @@
 #include "frontend.hpp"
+#include "hosted_private_object.hpp"
 #include "x86.hpp"
 #include <iostream>
 
@@ -8,12 +9,21 @@ int main(int argc, char **argv) {
     // earlier option is invalid. Values of path-taking options are not flags.
     for (int index = 1; index < argc; ++index) {
         const std::string option = argv[index];
-        if (option == "--module-root" || option == "-o" || option == "--stack-facts" || option == "--abi-facts")
+        if (option == "--compose-private-object")
+            index += 3;
+        else if (option == "--module-root" || option == "-o" || option == "--stack-facts" || option == "--abi-facts")
             ++index;
         else if (option == "--diagnostics=json")
             jsonDiagnostics = true;
     }
     try {
+        if (argc > 1 && std::string_view(argv[1]) == "--compose-private-object") {
+            if (argc != 7 || std::string_view(argv[5]) != "-o")
+                throw aurora::Error(aurora::DiagnosticCode::CommandLine,
+                                    "usage: aurorac --compose-private-object SOURCE WRAPPER SELECTED -o OUTPUT");
+            aurora::composePrivateObjectFiles(argv[2], argv[3], argv[4], argv[6]);
+            return 0;
+        }
         std::filesystem::path inputPath;
         std::filesystem::path outputPath;
         std::filesystem::path stackFactsPath, abiFactsPath;
