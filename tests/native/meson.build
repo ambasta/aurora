@@ -218,7 +218,7 @@ foreach fixture : [
     ['note-client', 'tests/kernel-programs/program-upper-client.au',
      policies_root + ['--bridge', native_root / 'tests/program-append-client-entry.S', '--localize-reflection']],
     ['note-service', 'tests/kernel-programs/program-stream-service.au',
-     policies_root + ['--assemble-with', native_root / 'tests/kernel-program-note-entry.S', '--localize-reflection']],
+     policies_root + ['--bridge', native_root / 'tests/program-append-service-entry.S', '--localize-reflection']],
     ['note-supervisor', 'examples/kernel-program-console.au',
      policies_root + library_root + ['--local-symbols', '--bridge', native_root / 'kernel/uefi/program-note-entry.S',
      '--assemble-with', native_root / 'kernel/uefi/kernel-policy-entry.S']],
@@ -250,8 +250,8 @@ native_host = executable('native-protected-note', files('../../tests/kernel-prog
      protected_objects['note-initial'], protected_objects['note-stream'], protected_objects['note-file-service']],
     native: true, install: false, override_options: ['optimization=1', 'warning_level=3'],
     cpp_args: ['-DNDEBUG', '-fno-exceptions', '-fno-rtti'], link_args: ['-no-pie'])
-test('native-protected-note', native_host, suite: ['full', 'merge', 'slow', 'integration'],
-     env: native_test_env, timeout: 120)
+test('native-protected-note', native_host, args: [files('../../tests/kernel-program-append-service.cases')],
+     suite: ['full', 'merge', 'slow', 'integration'], env: native_test_env, timeout: 120)
 # Kernel policies: the real generated UEFI policy object is linked once with the
 # C++ observers (cases of uefi-policy-models), whose fixed vector families are
 # compared with a golden file. Copy

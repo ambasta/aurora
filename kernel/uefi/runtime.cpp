@@ -323,6 +323,9 @@ public:
 #endif
 #ifdef AURORA_BLOCKING_CALL
 constinit ParkedRun call_wait;
+#ifdef AURORA_PROGRAM_APPEND_CALL
+constinit ParkedRun append_service_wait;
+#endif
 [[nodiscard]] auto call_retire(unsigned index) -> bool;
 #endif
 class Domain final {
@@ -1047,7 +1050,9 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
     if (vector != 130 || !console_rows()) {
 #endif
 #ifdef AURORA_PROGRAM_FIXTURE
-        if (vector == 130 && command_appending && fixture == Fixture::program_append_root)
+        if (vector == 130 && command_appending &&
+            (fixture == Fixture::program_append_root ||
+             (active == 1 && fixture == Fixture::program_append_service_root)))
             asm volatile("mov %0,%%cr3" ::"r"(kernel_root) : "memory");
 #endif
         U64 cr2;
@@ -1109,8 +1114,8 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
         return call_rows() ? call_trap(frame) : console_rows() ? console_region_trap(frame) : text_trap(frame);
 #elif defined(AURORA_PROGRAM_APPEND_CALL)
     if (vector == 130) {
-        require(call_rows(), "append-only Call gate");
-        return call_trap(frame);
+        require(call_rows(), "append exchange gate");
+        return active == 0 ? call_trap(frame) : append_service_trap(frame);
     }
 #elif defined(AURORA_STORAGE_FIXTURE)
     // Only the timed rows' gate admits INT 0x82 from CPL3 (install_architecture).
@@ -1298,7 +1303,7 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
         initialize_service_timer();
 #else
 #ifdef AURORA_PROGRAM_FIXTURE
-    select_fixture(Fixture::program_request_fault, Fixture::program_append_site);
+    select_fixture(Fixture::program_append_construct_fault, Fixture::program_append_site);
 #endif
     initialize_service_timer();
 #endif

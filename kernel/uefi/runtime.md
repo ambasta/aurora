@@ -187,29 +187,43 @@ For multipage, Call and snapshot admission, the shared linked discovery gate
 rejects a parser-to-PCI call path and bounds the wrapper, parser and PCI frames.
 Stack and fault-reserve caps are unchanged.
 
-## Production append caller lifetime
+## Production append worker lifetimes
 
 The [protected command console](../../docs/program-console-contract.md#protected-append-and-surviving-commits)
-uses the shared blocking Call transport for one bounded append operation, without
-importing the RAM service's retained-store lifetime. Its combined one-page client
-launches once; compiled Aurora locals own sequential byte requests, EOF validation
-and candidate accumulation while the native adapter schedules the original pair.
-The one-page service still constructs the candidate from a frozen prefix/suffix
-on each fresh entry. Both roles retain cumulative 128-unit allowances across
-exchanges. Call admission is restricted to the exact active append operation;
-other production commands keep their original scalar path.
+launches one Call-only caller and one Serve-only producer per append, without
+importing the RAM service's retained-store/startup/abort protocol. Both combined
+images keep their scalar entries and one-page caps; there are still two domains.
+The caller's live locals own sequential requests, reply validation and
+accumulation. Only after receiving its first nonzero Mailbox transaction does the
+producer enter phase 17 with the frozen prefix/suffix. It constructs the candidate
+once and retains it and its cursor across exchanges; its first reply is a byte or
+EOF, never READY. Its exact private ABI is a 184-byte record at `[S-192,S-8)`,
+comprising a sealed 16-byte Serve prefix and 168 copied bytes, with the zero
+sentinel at `[S-8,S)`.
 
-Only authenticated EOF plus a clean caller return after final timer drain can
-produce the fixed copied result. Original caller authority, contract/root, eight
-stack backing identities and live leases, and exact user/kernel mappings bind
-capture. A nonwrapping private receipt permits one extraction only after Mailbox
-revocation/scrubbing and both original domains' retirement. The surviving
-supervisor then applies the existing source name/revision and exact-prefix-plus-
-suffix commit checks. Fault after EOF or malformed output cannot publish, and a
-lost postcommit response never replays the operation. The four-file namespace
-remains supervisor-owned and session-local; this is neither a general scheduler
-nor a service-owned or durable filesystem. Final-source qualification remains
-required.
+Each service wake consumes one dormant frame and requires the next delivered
+ticket, original incarnation/root/contract/backing leases, endpoint, append run
+and exact Serve site. Dormant identity authenticates lifetime, not a new
+transaction. Producer activations mint fresh epochs from the nonwrapping
+watermark; caller resumes retain their original epoch. Both roles keep cumulative
+128-unit allowances, including boundary debits. Shared frame/activation/timer
+mechanisms drain pending IRQs under the outgoing owner before peer execution.
+
+EOF is a terminal producer park: it is never resumed for another request,
+cleanup or return. Any ordinary producer return is failure. Only authenticated
+EOF, a clean caller return and final timer drain can produce the fixed copied
+result. Original caller authority, contract/root, all eight stack backing
+identities and live leases, and exact user/kernel mappings bind capture. Failure
+before terminal park, caller failure after EOF or malformed output cannot publish.
+
+The private nonwrapping receipt permits one extraction only after Mailbox
+settlement/revocation, scrubbing both wait records and physically retiring both
+original domains with zero leases. The supervisor then applies the existing
+source name/revision and exact-prefix-plus-suffix commit checks. A lost postcommit
+response never replays the operation. The four-file namespace remains
+supervisor-owned and session-local; this is neither a general scheduler nor a
+surviving protected namespace owner or durable filesystem. Final-source
+qualification remains required.
 
 ## Bounded retained volatile RAM file
 

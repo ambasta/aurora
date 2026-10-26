@@ -48,12 +48,14 @@ input/output and explicit user-facing
 lifecycle outcomes, originally qualified in
 [#235](https://github.com/ambasta/aurora/pull/235), and now includes explicit atomic append
 to the existing volatile file and a read-only caller-computed CRC32C command.
-Production named-file append now has one live compiled Call-only caller owning
-sequential requests, EOF validation and candidate accumulation across suspension.
-Its isolated service still constructs the candidate; the independent supervisor
-publishes once only after authenticated EOF, clean caller return and both original
-domain retirements. This bounded use of blocking request/reply preserves the
-four-file session namespace; the separate scratchpad still loses its service-local
+Production named-file append pairs one live compiled Call-only caller with one
+live Serve-only producer per command. The producer constructs the frozen
+prefix-plus-suffix candidate once and retains its sequential cursor across
+requests; the caller retains reply validation and accumulation. Terminal EOF parks
+the producer permanently. Only clean caller return and both original domain
+retirements allow the independent supervisor to publish once. This bounded
+lifetime step preserves the four-file session namespace but does not make either
+worker its surviving owner; the separate scratchpad still loses its service-local
 contents on reset. Final-source qualification remains required.
 
 Extend this capability-scoped blocking request/reply foundation toward protected

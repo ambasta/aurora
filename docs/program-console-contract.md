@@ -16,8 +16,9 @@ and prints `HELLO, AURORA 42!` once before returning to `aurora>`. The uppercase
 transformation executes in a separately compiled, one-page RX Aurora CPL3 client.
 A separate CPL3 stream service validates and returns its requested output byte.
 The same production console executes `append NAME TEXT` through one live compiled
-Call-only caller and that isolated candidate-producing service. Publication stays
-with the surviving supervisor store.
+Call-only caller and one live Serve-only candidate producer per command. Both
+retain source state across exchanges; publication stays with the supervisor store
+after both workers retire.
 This is an embedded bounded application demonstration, not a general process or
 syscall ABI, filesystem, terminal emulator, or hardware qualification.
 
@@ -87,12 +88,14 @@ length, with -1 representing missing. The small dependency-free module adds no
 console, storage or runtime authority to CPL3. The service receives three scalar
 launch words, that 72-byte value and a 72-byte suffix projection in an exact
 168-byte record at stack-top-176. Note reads and uppercase commands receive a zero
-suffix; only append receives the selected suffix. The wrapper reserves 176 bytes
-before its 48-byte envelope so generated calls grow below the copied record; the
-final eight bytes remain a zero sentinel gap. The separate file-call and snapshot
-profiles retain their 96-byte records and 112-byte reservation, including the
-snapshot's original zero-padding contract. Upper receives a zero read placeholder,
-without copying the saved note into that command's domain.
+suffix; only append receives the selected suffix. The combined production service
+wrapper reserves 192 bytes before its 48-byte envelope: the private append entry
+has a 16-byte Serve capability prefix before that copied record, and the final
+eight bytes remain a zero sentinel gap. Generated calls grow below the envelope.
+The scalar entry does not receive the capability prefix. The separate file-call
+and snapshot profiles retain their 96-byte records and 112-byte reservation,
+including the snapshot's original zero-padding contract. Upper receives a zero
+read placeholder, without copying the saved note into that command's domain.
 
 Fresh endpoint generations bind each frozen read. After authenticated receive,
 the adapter stages it through the retained, verified last stack-page lease under
@@ -266,21 +269,42 @@ file's prefix and the canonical suffix, and admits an append-only selection.
 Missing, reserved, malformed, oversized and exhausted requests preserve every
 saved record and the revision. Empty suffixes remain successful mutations.
 
-Only the selected prefix and suffix reach the fresh CPL3 service, never the
-four-file store or writable committed pages. At phase 15, its compiled Aurora code
-constructs and validates the entire candidate on every invocation, bounded to
-49 printable bytes. A phase-16 compiled caller launches once and uses only
-`CallSession`: its live locals own sequential offsets, reply validation and the
-complete accumulated candidate across suspensions. At most 49 byte replies plus
-EOF are admitted; present-empty output still requires EOF. Native code schedules
-the fixed pair and authenticates scalar framing, not a per-byte candidate buffer.
-Append no longer relaunches client phases 12/13 or uses their Stream staging.
+Only the selected prefix and suffix reach the fresh CPL3 producer, never the
+four-file store or writable committed pages. A phase-16 compiled caller launches
+once and uses only `CallSession`: its live locals own sequential offsets, reply
+validation and complete accumulation. After its offset-zero request has been
+received as a real nonzero Mailbox transaction, the phase-17 producer launches
+once. It constructs and validates the candidate outside the exchange loop,
+bounded to 49 printable bytes, then retains that candidate and a sequential cursor
+through `ServeSession`. Its first exchange emits a byte or EOF, never READY.
+At most 49 byte replies plus EOF are admitted; present-empty output still requires
+EOF. Native code authenticates scalar framing and schedules the fixed pair, not
+a per-byte candidate builder. Append uses neither scalar phase-15 reentry nor the
+older client phases 12/13 and their Stream staging.
 
-The shared bounded Call transport admits the exact active append operation only.
-Both roles retain cumulative 128-unit allowances, including discarded-interval
-boundary debits; neither service reentry nor caller resumption replenishes them.
-The service stack is scrubbed on each fresh entry; the caller stack and source
-locals remain live. A terminal reply alone cannot authorize publication.
+Each later request consumes one dormant producer continuation and resumes it with
+the exact next offset under the current delivered ticket. Admission authenticates
+the frame/site, original incarnation, root/contract, all original backing leases,
+endpoint and append run. The old frame is lifetime evidence, not new transaction
+authority. Producer activations mint fresh epochs from the nonwrapping watermark;
+caller resumes retain their original epoch. Both roles retain cumulative 128-unit
+allowances, including discarded-interval boundary debits. Neither resumption
+replenishes quota or clears live source locals. Every outgoing run unwinds and
+drains pending IRQs before its peer executes.
+
+The source marks EOF terminal before `exchange(2)`. Once accepted, that producer
+is never resumed, including for cleanup or an ordinary return. An ordinary
+producer return, fault or budget exhaustion before terminal park fails the append.
+Only the caller resumes for EOF; its clean exact return and final timer drain
+are both required. Caller failure or cancellation after EOF still cannot publish.
+
+The same one-page service image preserves its scalar entry for other commands.
+Compiler facts admit the private append signature: a sealed 16-byte
+`ServeSession` prefix plus the 168-byte copied phase/probe/offset/prefix/suffix
+record, exactly 184 bytes at `[S-192,S-8)`, with `[S-8,S)` a zero sentinel.
+Only the native wrapper supplies the capability prefix; no user pointer selects
+its input. The source root, exact Serve trap and all reachable compiled timer
+ranges are admitted from the generated facts.
 
 The combined one-page client retains the scalar entry for other commands and a
 separate Call-only copied-result entry. Compiler ABI facts admit its fixed
@@ -296,10 +320,10 @@ or malformed copied output cannot publish.
 Native `Files` binds the private noncopyable `AppendCall` receipt and its
 nonwrapping run to the original participants and Mailbox generation. The receipt
 keeps only scalar protocol facts during traversal; it captures candidate bytes
-once after the authenticated final return. An idle scrubbed Mailbox, grant
-revocation and physical retirement of both original domains precede one-shot
-extraction. At the quiescent commit boundary, Aurora rechecks the selected
-name/revision and requires the candidate to equal exactly the authorized prefix
+once after the authenticated final return. Mailbox settlement and scrubbing,
+grant revocation, scrubbing/invalidation of both wait records and physical
+retirement of both original domains with zero leases precede one-shot extraction.
+At the quiescent commit boundary, Aurora rechecks the selected name/revision and requires the candidate to equal exactly the authorized prefix
 followed by the suffix. Copied success or printable bytes alone grant no append
 authority, and a read-only selection cannot publish. A whole-record write advances
 revision once, including an empty append; unrelated records remain unchanged.
@@ -324,20 +348,22 @@ review gates; implementation is not a qualification claim.
 
 The existing native generated-code driver and boot-selected program fixtures
 exercise this path alongside the note/scalar regressions. Shared launch, copied
-stack-mapping and Call helpers, referenced-only reflection and closed source policy
-roots retain the unchanged image/stack caps. Both copied-value bridges use the
-shared image/ABI/stack admission workflow; no new test-image family or admission
-workflow is introduced. Hosted checks and transcript controls do not establish a booted named-file image. Changed source
-still requires final linked-image, actual guest, full-native and independent-review
-qualification.
+stack-mapping and Call/Serve mechanisms, referenced-only reflection and closed
+source policy roots retain the unchanged two-domain composition, one-page image
+caps and stack bounds. The private copied-value bridges use the shared
+image/ABI/stack admission workflow; no new test-image family or admission workflow
+is introduced. Hosted checks and transcript controls do not establish a booted
+named-file image. Changed source still requires final linked-image, actual guest,
+full-native and independent-review qualification.
 
 ## Shared copied command ledger
 
 `console::CommandStream` owns scalar/uppercase/read copied bytes and
 request/reply/ack, read-terminal, finish/cancel and scrub transitions. Production
-append instead uses the live caller and private final-result receipt above. For
-Stream commands, native code retains only the opaque value, noncopyable stream identity and nonwrapping run generation, with no duplicate
-transition implementation. Scalar commands remain bounded to 64 bytes, reads to
+append instead uses the live caller/producer pair and private final-result receipt
+above. For Stream commands, native code retains only the opaque value, noncopyable
+stream identity and nonwrapping run generation, with no duplicate transition
+implementation. Scalar commands remain bounded to 64 bytes, reads to
 53 bytes plus an acknowledged terminal round, and named-file publication to 49.
 
 For Stream-based replacement, `Files` binds the exact stream and run, requires an
@@ -441,9 +467,11 @@ recipe is duplicated there. Scalar policy exports live in `kernel-policy-entry.S
 imported library helpers stay local. Compiler-local frames, spills and return
 paths are not duplicated in their admission checks. The append caller additionally
 checks the existing sealed 16-byte `CallSession` prefix, its scalar argument and
-72-byte copied result as one exact private signature; this grants no generic
-padded, owning, capability or receiver bridge. Version 1 remains supported only for
-stack accounting; it cannot supply a copied-record boundary contract. These facts
+72-byte copied result as one exact private signature. The producer separately
+checks its sealed 16-byte `ServeSession` prefix and 168-byte copied input; neither
+entry grants a generic padded, owning, capability or receiver bridge. Version 1
+remains supported only for stack accounting; it cannot supply a copied-record
+boundary contract. These facts
 trust compiler lowering; executable copy/canary and guest tests remain necessary.
 
 Ordinary commands build and check the selected native profile before running the
@@ -497,16 +525,26 @@ next command. Empty/one-byte inputs do not consume the probe; only actual inject
 sets its one-shot flag. The note/uppercase recovery cases must also verify that
 partial progress preserved the saved value and that retry uses fresh domains.
 
-Append recovery reuses those rows with the live caller rather than a triplet
-loop. Additional `program-append-*` rows in the same `program-fixture` cover
-before-first-request and after-EOF caller faults/budgets, malformed copied results,
-and original backing/root/site rejection. Deliberate stale, unready and duplicate
-wake probes remain fixture-only; production validates every actual wake through
-the same transport. Recoverable precommit cases must preserve the whole namespace
-and permit a healthy fresh-authority command; authority mismatches fail stop.
-The oracle checks a single caller launch across exchanges, authenticated runs,
-resumes and final drain/return, retirement and exact visible readback. It does not
-claim per-reply payload logging; generated-code tests cover reply encodings.
+Append recovery reuses those rows with the live caller/producer pair rather than
+a triplet loop. Additional `program-append-*` rows in the same `program-fixture`
+cover construction and midstream producer faults/budgets, premature return,
+terminal boundary exhaustion, before-first-request and after-EOF caller
+faults/budgets, malformed copied results, pending/delivered/replied/terminal
+cancellation, and original backing/root/site rejection. Deliberate stale,
+duplicate, unready, foreign, changed-operation/contract/endpoint and post-EOF wake
+probes remain fixture-only; production validates every actual wake through the
+same transport. Recoverable precommit cases must preserve the whole namespace and
+permit a healthy fresh-authority command; authority mismatches fail stop.
+The oracle checks one caller and one producer launch, authenticated producer
+resumes, terminal producer parking, final caller drain/return, both retirements
+and exact visible readback. It does not claim per-reply payload logging.
+
+The existing generated-code driver exercises exact Serve input/canaries, retained
+candidate/cursor state and actual caller accumulation from producer replies.
+Its host pipe transport parks one source invocation and closes it at retirement
+without resuming EOF. Hosted malformed and deliberate post-EOF source probes test
+source rejection only; they do not replace privileged wake, frame, timer or
+retirement qualification, and production never resumes a terminal producer.
 
 The `program-append-response` row (selector 167) reuses `program-fixture`; it adds
 no production output hook or image. After authenticated EOF, clean caller return,

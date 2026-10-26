@@ -176,6 +176,8 @@ def validate_program_copied_abi(facts, service=False, replacement=False, client=
             return dict(bytes=8, kind=source)
         if source == "builtin::CallSession":
             return dict(bytes=16, kind="service")
+        if source == "builtin::ServeSession":
+            return dict(bytes=16, kind="service", type_name=source)
         group = "enums" if source == "console::FileEvent" else "records"
         symbol, value = abi_declaration(facts, group, source)
         return dict(
@@ -229,6 +231,11 @@ def validate_program_copied_abi(facts, service=False, replacement=False, client=
     if service:
         record("kernel::NoteRead64", 72, [("bytes", "u8", 64), ("length", "i64", 0)])
         entry("aurora_user_main", ["i64", "i64", "i64", "kernel::NoteRead64", "kernel::NoteRead64"], "i64")
+        entry(
+            "append_producer",
+            ["builtin::ServeSession", "i64", "i64", "i64", "kernel::NoteRead64", "kernel::NoteRead64"],
+            "i64",
+        )
         return
     record("std::BinaryBuffer64", 64, [("elements", "u8", 64)], alignment=1)
     for source in ("console::FileName", "console::FileValue"):
@@ -282,6 +289,8 @@ def validate_selected_source_abi(source, facts):
 def render_bridge(source, facts):
     if "# PROGRAM_APPEND_CLIENT_ABI:" in source:
         validate_program_copied_abi(facts, client=True)
+    if "# PROGRAM_APPEND_SERVICE_ABI:" in source:
+        validate_program_copied_abi(facts, service=True)
     if "# PROGRAM_FILES_ABI:" in source:
         validate_program_copied_abi(facts, replacement="@replace_files@" in source)
     if "# PROGRAM_SESSION_ABI:" in source:

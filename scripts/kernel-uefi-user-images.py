@@ -65,18 +65,23 @@ def image_metadata(prefix, base, budget, owned, console):
         need(compiled in elf.functions, f"{prefix.name}: compiled entry {compiled} is not a linked function")
         function = elf.functions[compiled]
         meta.update(compiled_begin=function.address, compiled_end=function.address + function.size)
-        if facts and any(value["source_name"] == "append_candidate" for value in facts["functions"].values()):
-            # The combined production caller has two source roots. Count timer
-            # PCs from their real emitted call graph, including the live Call
-            # loop/probes, rather than claiming its old scalar entry covers it.
+        append_roots = [
+            name
+            for name in ("append_candidate", "append_producer")
+            if facts and any(value["source_name"] == name for value in facts["functions"].values())
+        ]
+        if append_roots:
+            # Each combined production role retains its scalar entry and one
+            # live append root. Admit every reachable compiled timer PC from
+            # emitted graph facts, not merely the old scalar entry's interval.
             graph = json.loads(prefix.with_suffix(".stack.json").read_text())["functions"]
-            pending = [compiled, abi_function_symbol(facts, "append_candidate")]
+            pending = [compiled] + [abi_function_symbol(facts, name) for name in append_roots]
             reached = set()
             while pending:
                 name = pending.pop()
-                if name in reached or name == "__au_runtime_call":
+                if name in reached or name in ("__au_runtime_call", "__au_runtime_serve_exchange"):
                     continue
-                need(name in graph and name in elf.functions, f"{prefix.name}: missing compiled caller node {name}")
+                need(name in graph and name in elf.functions, f"{prefix.name}: missing compiled append node {name}")
                 reached.add(name)
                 pending.extend(graph[name]["calls"])
             ranges = [elf.functions[name] for name in reached]
@@ -86,7 +91,7 @@ def image_metadata(prefix, base, budget, owned, console):
             )
             need(
                 meta["return_pc"] < meta["compiled_begin"] < meta["compiled_end"] <= meta["bounds_pc"],
-                f"{prefix.name}: compiled caller graph crosses its wrapper/trap boundary",
+                f"{prefix.name}: compiled append graph crosses its wrapper/trap boundary",
             )
     if budget:
         meta.update(context_begin=at("aurora_budget_context_begin"), context_end=at("aurora_budget_context_end"))
