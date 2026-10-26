@@ -81,17 +81,14 @@ auto file_service_poison() -> void {
     require(file_service_transition(2) == 5, "file service poisoned lifecycle");
 }
 [[nodiscard]] auto file_service_quiet() -> bool {
+    if (!caller_continuation.ordinary_empty())
+        return false;
     const auto &caller = domains[0];
     if (caller.handle || caller.contract || caller.tables || caller.call_count || caller.call_limit != 1 ||
-        caller.call_service_used || caller.call_closed || call_wait.context || call_wait.authority ||
-        call_wait.service || call_wait.ticket || call_wait.endpoint.slot() || call_wait.endpoint.generation() ||
-        call_wait.remaining || call_wait.ticks)
+        caller.call_service_used || caller.call_closed)
         return false;
     for (const auto &lease : caller.stacks)
         if (lease)
-            return false;
-    for (const auto word : call_wait.launch)
-        if (word)
             return false;
     const auto &service = domains[1];
     if (!service.handle) {
@@ -138,7 +135,7 @@ public:
 #else
                frames.used() == 0 &&
 #ifdef AURORA_PROGRAM_APPEND_CALL
-               !call_wait.context && !call_wait.authority && !call_wait.ticket && !append_origin && !append_operation &&
+               caller_continuation.ordinary_empty() && !append_origin && !append_operation &&
                !append_service_wait.context && !append_service_wait.authority && !append_service_wait.ticket &&
                !command_appending &&
 #endif
@@ -294,13 +291,15 @@ auto program_console_envelope(const Bytes &captured, U64 result) -> void {
 #include "append-service.inc"
 #endif
 [[nodiscard]] auto program_execute(unsigned index, ipc::Phase phase, U64 source, U64 byte, U64 ordinal) -> bool {
+    if (!caller_continuation.ordinary())
+        return false;
     require(command_owned && program_boundary() && index < 2 && selected_client == 0, "program launch boundary");
     auto &domain = domains[index];
     require(domain.handle && domain.contract && verify(domain), "program launch domain");
     const auto endpoint = mailbox->endpoint(*domain.handle);
     require(endpoint.has_value(), "program launch grant");
     if (command_appending)
-        transaction = index == 1 ? call_wait.ticket : 0;
+        transaction = index == 1 ? caller_continuation.ordinary()->ticket : 0;
     launch = {source,
               byte,
               endpoint->slot(),
@@ -325,8 +324,8 @@ auto program_console_envelope(const Bytes &captured, U64 result) -> void {
             "program restored authority");
     const auto okay = program.event() == ProgramEvent::returned;
     require(okay || recoverable_program_event() ||
-                (command_appending &&
-                 (index == 0 ? call_wait.context.has_value() : append_service_wait.context.has_value())),
+                (command_appending && (index == 0 ? caller_continuation.ordinary()->context.has_value()
+                                                  : append_service_wait.context.has_value())),
             "program terminal outcome");
     if (command_appending) {
         if (index == 1) {
@@ -383,6 +382,8 @@ auto program_console_envelope(const Bytes &captured, U64 result) -> void {
 // A fixed two-role scheduler only. Aurora owns traversal and accumulation;
 // the supervisor authenticates each copied exchange and the final return.
 [[nodiscard]] [[gnu::noinline]] auto program_append_call() -> bool {
+    if (!caller_continuation.ordinary_empty())
+        return false;
     require(append_call_authority() && program_boundary(), "append authority");
     auto &caller = domains[0];
     caller.call_limit = 50;
@@ -418,19 +419,26 @@ auto program_console_envelope(const Bytes &captured, U64 result) -> void {
     bool success = true;
     // The only caller entry: later work resumes its live source locals.
     static_cast<void>(program_execute(0, ipc::Phase::request, 16, probe, 0));
-    if (call_wait.context) {
-        require(call_wait.authority && !append_origin, "call owner");
-        append_origin.emplace(*call_wait.authority);
+    if (caller_continuation.ordinary()->context) {
+        require(caller_continuation.ordinary()->authority && !append_origin, "call owner");
+        append_origin.emplace(*caller_continuation.ordinary()->authority);
     }
 #ifdef AURORA_PROGRAM_FIXTURE
     U64 previous = 0;
 #endif
-    while (call_wait.context) {
-        require(append_call_authority() && call_wait.authority && call_wait.ticket && caller.call_count &&
-                    caller.call_count <= 50,
-                "append authority");
-        const auto ticket = call_wait.ticket, epoch = call_wait.authority->epoch();
-        const auto ticks = call_wait.ticks, remaining = call_wait.remaining;
+    while (caller_continuation.ordinary()->context) {
+        U64 ticket, epoch;
+        unsigned ticks, remaining;
+        {
+            const auto &saved = caller_continuation.ordinary_checked();
+            require(append_call_authority() && saved.authority && saved.ticket && caller.call_count &&
+                        caller.call_count <= 50,
+                    "append authority");
+            ticket = saved.ticket;
+            epoch = saved.authority->epoch();
+            ticks = saved.ticks;
+            remaining = saved.remaining;
+        }
 #ifdef AURORA_PROGRAM_FIXTURE
         require(!call_resume(previous) && !call_resume(ticket) && !append_service_resume(ticket, caller.call_count - 1),
                 "append stale/unready wake");
@@ -476,8 +484,10 @@ auto program_console_envelope(const Bytes &captured, U64 result) -> void {
             static_cast<void>(program_execute(1, ipc::Phase::service, 17, service_probe, 0));
         } else
             require(append_service_resume(ticket, request->first()), "append service wake");
-        require(timer_epoch > epoch && call_wait.ticks == ticks && call_wait.remaining == remaining,
-                "append allowance");
+        {
+            const auto &saved = caller_continuation.ordinary_checked();
+            require(timer_epoch > epoch && saved.ticks == ticks && saved.remaining == remaining, "append allowance");
+        }
         // Latch failure before a resume can restore the caller's timer state.
         if (timer_exhausted || !append_service_wait.context || program.event() == ProgramEvent::returned) {
             success = false;
@@ -507,7 +517,7 @@ auto program_console_envelope(const Bytes &captured, U64 result) -> void {
 #endif
     }
     success = success && !timer_exhausted && program.event() == ProgramEvent::returned && program.value() == 1 &&
-              !call_wait.context && command_append.terminal() && append_service_wait.context;
+              !caller_continuation.ordinary()->context && command_append.terminal() && append_service_wait.context;
 #ifdef AURORA_PROGRAM_FIXTURE
     if (!success &&
         (probe || fixture == Fixture::program_service_fault || fixture == Fixture::program_service_budget ||
@@ -558,6 +568,7 @@ auto program_console_envelope(const Bytes &captured, U64 result) -> void {
     return true;
 }
 auto program_cleanup(bool success) -> void {
+    static_cast<void>(caller_continuation.ordinary_checked());
     require(command_owned && program_boundary() && mailbox, "program cleanup boundary");
     if (!success) {
         if (command_appending) {
@@ -590,7 +601,7 @@ auto program_cleanup(bool success) -> void {
     if (command_appending)
         require(!append_service_resume(retired_ticket, 0) && !call_resume(retired_ticket) &&
                     !append_service_wait.context && !append_service_wait.authority && !append_service_wait.service &&
-                    !append_service_wait.ticket && !call_wait.context && !call_wait.authority && !call_wait.ticket,
+                    !append_service_wait.ticket && caller_continuation.ordinary_empty(),
                 "append retired incarnations cannot wake");
 #endif
     if (command_file) {

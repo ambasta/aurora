@@ -8,7 +8,7 @@ enum class RamState {
     poisoned
 };
 RamState ram_state = RamState::absent;
-constinit ParkedRun ram_caller_wait, ram_service_wait;
+constinit ParkedRun ram_service_wait;
 // Healthy transitions never replace the Domain's four move-only stack leases.
 // Their original owner handle and allocator validation remain the backing proof.
 struct RamLifetime final {
@@ -41,6 +41,10 @@ U64 ram_generation_watermark{}, ram_run_epoch{};
 unsigned ram_commands{};
 [[nodiscard]] auto ram_active_authority() -> bool;
 [[nodiscard]] auto ram_service_admitted() -> bool {
+    auto *record = caller_continuation.ram();
+    if (!record)
+        return false;
+    auto &ram_caller_wait = *record;
     return (ram_state == RamState::booting && !ram_command && transaction == 0) ||
            (ram_state == RamState::aborting && ram_command && ram_command->caller_disabled && mailbox &&
             mailbox->revoked() && transaction == 0) ||

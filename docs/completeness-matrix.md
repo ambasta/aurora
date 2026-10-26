@@ -20,6 +20,11 @@ evidence and sizes private physical-page metadata to each pool's capacity,
 without changing parsing, diagnostics, admission or page-lease ownership. Final
 image and guest qualification remains revision-specific.
 
+Boot-exclusive ordinary and RAM callers now use one private typed continuation
+owner with a write-once composition kind, full empty-state admission and member-only
+scrubbing. Overlapping service/console/domain continuations remain independent;
+this does not integrate a protected namespace or establish a mapped-page saving.
+
 Generated calls preserve complete span descriptors with compact copies and
 initialize service-record gaps without redundant payload clearing. This recovers
 production executable-page headroom without changing image caps or call authority;

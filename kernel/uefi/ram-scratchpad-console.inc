@@ -35,16 +35,10 @@ auto scratchpad_clear_inactive_accounting() -> void {
 
 [[nodiscard]] auto scratchpad_empty_caller() -> bool {
     const auto &caller = domains[0];
-    if (caller.handle || caller.contract || caller.tables || ram_caller_wait.context || ram_caller_wait.authority ||
-        ram_caller_wait.service || ram_caller_wait.endpoint.slot() || ram_caller_wait.endpoint.generation() ||
-        ram_caller_wait.ticket || ram_caller_wait.remaining || ram_caller_wait.ticks || ram_caller_wait.resumes ||
-        ram_caller_wait.compiled || ram_caller_wait.contexts)
+    if (!caller_continuation.ram_empty() || caller.handle || caller.contract || caller.tables)
         return false;
     for (const auto &lease : caller.stacks)
         if (lease)
-            return false;
-    for (const auto word : ram_caller_wait.launch)
-        if (word)
             return false;
     return true;
 }
@@ -278,6 +272,8 @@ using ProgramInputSession = console::Session<Serial, ScratchpadInputPlatform>;
     require(response.valid() && scratchpad_idle(), "scratchpad one-way settled response idle");
 }
 [[nodiscard]] auto scratchpad_restart() -> bool {
+    if (!caller_continuation.ram())
+        return false;
     scratchpad_clear_inactive_accounting();
     const bool started = ram_start();
     scratchpad_clear_inactive_accounting();
@@ -401,6 +397,7 @@ auto scratchpad_shutdown() -> void {
     require(scratchpad_retired(), "scratchpad session transport released");
 }
 [[gnu::noinline]] auto run_ram_scratchpad_console() -> void {
+    static_cast<void>(caller_continuation.ram_checked());
     Serial::initialize_input();
     // Only the fixture row takes the in-session probe selector; the baseline is the product.
     if (fixture == Fixture::scratchpad_fixture) {

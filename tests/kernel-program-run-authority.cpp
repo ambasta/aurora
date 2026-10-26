@@ -1,4 +1,8 @@
 #include "../kernel/uefi/user-run-policy.hpp"
+#include "../kernel/uefi/service-budget-policy.hpp"
+#include "../kernel/uefi/handoff.hpp"
+#include <memory>
+#include <type_traits>
 #include <cstdlib>
 #include <iostream>
 
@@ -26,6 +30,166 @@ auto contract(unsigned domain) -> user::ProgramContract {
     const auto pc = L::user_code + domain * 16384;
     return user::ProgramContract{*layout, pc, 128, pc + 32, pc + 64, pc + 66, pc + 68, pc + 70};
 }
+// Exercise the same concrete owner as the adapter, in the existing component driver.
+// The fixture friend can inspect fields only after the real family/capacity gates.
+using uefi::Bytes;
+using uefi::ProgramRunAuthority;
+using uefi::ServiceContext;
+using U64 = std::uint64_t;
+constexpr std::size_t launch_words = 7;
+#include "../kernel/uefi/parked-run.inc"
+#define AURORA_CALLER_CONTINUATION_TESTING
+#include "../kernel/uefi/caller-continuation.inc"
+#undef AURORA_CALLER_CONTINUATION_TESTING
+static_assert(!std::is_copy_constructible_v<CallerContinuation> && !std::is_move_constructible_v<CallerContinuation>);
+static_assert(!std::is_copy_assignable_v<CallerContinuation> && !std::is_move_assignable_v<CallerContinuation>);
+static_assert(!std::is_copy_constructible_v<ParkedRun> && !std::is_move_constructible_v<ParkedRun>);
+constinit CallerContinuation initial_caller;
+class CallerContinuationProbe final {
+    using Kind = CallerContinuation::Kind;
+    static auto slot(CallerContinuation &owner, Kind kind, bool empty = false) -> ParkedRun * {
+        if (kind == Kind::ordinary)
+            return !empty || owner.ordinary_empty() ? owner.ordinary() : nullptr;
+        return !empty || owner.ram_empty() ? owner.ram() : nullptr;
+    }
+    static auto scrubbed(const ParkedRun &run) -> bool {
+        const auto *bytes = reinterpret_cast<const unsigned char *>(&run);
+        for (std::size_t i = 0; i < sizeof(run); ++i)
+            if (bytes[i])
+                return false;
+        return true;
+    }
+
+public:
+    static auto run() -> void {
+        check(!initial_caller.ordinary() && !initial_caller.ram() && !initial_caller.ordinary_empty() &&
+              !initial_caller.ram_empty());
+        for (const auto kind : {Kind::none, Kind::ordinary, Kind::ram}) {
+            CallerContinuation owner;
+            check(!owner.initialize(Kind::uninitialized));
+            check(owner.initialize(kind));
+            for (const auto retry : {Kind::uninitialized, Kind::none, Kind::ordinary, Kind::ram})
+                check(!owner.initialize(retry));
+            check(bool(owner.ordinary()) == (kind == Kind::ordinary));
+            check(bool(owner.ram()) == (kind == Kind::ram));
+            check(bool(owner.ordinary_empty()) == (kind == Kind::ordinary));
+            check(bool(owner.ram_empty()) == (kind == Kind::ram));
+            if (kind == Kind::none)
+                continue;
+            const auto wrong = kind == Kind::ordinary ? Kind::ram : Kind::ordinary;
+            user::DomainRegistry registry;
+            const auto caller = registry.create(), service = registry.create();
+            check(caller && service && registry.activate(*caller));
+            const auto image = contract(0);
+            const auto authority = A::authorize(registry,
+                                                *caller,
+                                                A::Role::client,
+                                                ipc::Phase::request,
+                                                0,
+                                                0,
+                                                16,
+                                                arena,
+                                                arena + L::table_offset(0),
+                                                image,
+                                                17,
+                                                128);
+            check(authority.has_value());
+            std::array<U64, ServiceContext::word_count> words{};
+            for (unsigned i = 0; i < 15; ++i)
+                words[i] = UINT64_MAX - i;
+            words[15] = 130;
+            words[17] = image.entry() + 80;
+            words[18] = 0x1b;
+            words[19] = 0x202;
+            words[20] = image.layout().user_stack_top() - 8;
+            words[21] = 0x23;
+            const auto context = ServiceContext::capture_call(
+                words, image.layout().entry_stack_top() - ServiceContext::byte_count, image, words[17]);
+            check(context.has_value());
+            check(registry.deactivate(*caller));
+            ipc::Mailbox mailbox(registry);
+            check(mailbox.bind(*caller, *service));
+            const auto ce = mailbox.endpoint(*caller), se = mailbox.endpoint(*service);
+            check(ce && se);
+            U64 previous = 0;
+            for (unsigned round = 0; round < 3; ++round) {
+                check(slot(owner, kind, true) && !slot(owner, wrong) && !slot(owner, wrong, true));
+                const auto ticket = mailbox.submit(*caller, ipc::Phase::request, *ce, ipc::Request{round, 0});
+                check(ticket && *ticket > previous);
+                {
+                    auto &saved = *slot(owner, kind, true);
+                    saved.context.emplace(*context);
+                    saved.authority.emplace(*authority);
+                    saved.service = *service;
+                    saved.endpoint = *ce;
+                    saved.ticket = *ticket;
+                    saved.launch = {16, 0, ce->slot(), ce->generation(), 0, 0, 0x202};
+                    saved.remaining = 127;
+                    saved.ticks = 1;
+                    saved.resumes = 2;
+                    saved.compiled = 3;
+                    saved.contexts = 4;
+                }
+                check(!slot(owner, kind, true) && !slot(owner, wrong) && !slot(owner, wrong, true));
+                for (const auto retry : {Kind::none, Kind::ordinary, Kind::ram})
+                    check(!owner.initialize(retry));
+                check(slot(owner, kind)->context->words() == words && slot(owner, kind)->ticket == *ticket);
+                check(!mailbox.consume(*caller, ipc::Phase::completion, *ce, previous));
+                const auto request = mailbox.receive(*service, ipc::Phase::service, *se, *ticket);
+                check(request && request->first() == round);
+                check(mailbox.reply(*service, ipc::Phase::service, *se, *ticket, round + 1));
+                const auto reply = mailbox.consume(*caller, ipc::Phase::completion, *ce, *ticket);
+                check(reply && reply->value() == round + 1);
+                check(slot(owner, kind)->authority->ready_owner(registry, *caller, 17));
+                check(slot(owner, kind)->context->call_frame(image, words[17]));
+                slot(owner, kind)->clear();
+                check(slot(owner, kind, true) && scrubbed(*slot(owner, kind)));
+                check(!slot(owner, wrong) && !owner.initialize(wrong));
+                check(!mailbox.consume(*caller, ipc::Phase::completion, *ce, *ticket));
+                check(mailbox.recycle(ipc::Phase::inactive));
+                previous = *ticket;
+            }
+            // Every accounting field and launch word independently prevents capture.
+            constexpr std::array accounting{&ParkedRun::remaining,
+                                            &ParkedRun::ticks,
+                                            &ParkedRun::resumes,
+                                            &ParkedRun::compiled,
+                                            &ParkedRun::contexts};
+            for (const auto field : accounting) {
+                slot(owner, kind)->*field = 1;
+                check(!slot(owner, kind, true));
+                slot(owner, kind)->clear();
+                check(slot(owner, kind, true) && scrubbed(*slot(owner, kind)));
+            }
+            for (std::size_t i = 0; i < launch_words; ++i) {
+                slot(owner, kind)->launch[i] = UINT64_MAX;
+                check(!slot(owner, kind, true));
+                slot(owner, kind)->clear();
+            }
+            slot(owner, kind)->ticket = previous;
+            check(!slot(owner, kind, true));
+            slot(owner, kind)->clear();
+            slot(owner, kind)->endpoint = *ce;
+            check(!slot(owner, kind, true));
+            slot(owner, kind)->clear();
+            slot(owner, kind)->service = *service;
+            check(!slot(owner, kind, true));
+            slot(owner, kind)->clear();
+            slot(owner, kind)->authority.emplace(*authority);
+            check(!slot(owner, kind, true));
+            slot(owner, kind)->clear();
+            slot(owner, kind)->context.emplace(*context);
+            check(!slot(owner, kind, true));
+            slot(owner, kind)->clear();
+            check(slot(owner, kind, true) && scrubbed(*slot(owner, kind)));
+            check(mailbox.revoke(ipc::Phase::inactive) && registry.destroy(*caller));
+            const auto fresh = registry.create();
+            check(fresh && !authority->ready_owner(registry, *fresh, 17));
+            check(slot(owner, kind, true) && !slot(owner, wrong) && !owner.initialize(kind));
+        }
+    }
+};
+
 auto retained_service_authority() -> void {
     using R = uefi::ProgramRunAuthority;
     user::DomainRegistry registry, foreign;
@@ -221,6 +385,7 @@ auto retained_service_authority() -> void {
 }
 
 auto main() -> int {
+    CallerContinuationProbe::run();
     retained_service_authority();
     user::DomainRegistry registry;
     const auto c = registry.create(), s = registry.create(), third = registry.create();
