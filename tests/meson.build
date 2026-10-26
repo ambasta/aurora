@@ -437,7 +437,8 @@ graphical_terminal_object = custom_target('graphical-terminal-painter',
     depfile: 'graphical-terminal-painter.d',
     command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',
               '--module-root', meson.project_source_root() / 'library', '--local-symbols',
-              '--referenced-reflection-only', '--bridge', files('../kernel/uefi/graphical-terminal-entry.S'),
+              '--referenced-reflection-only', '--emit-object', '--compose-private-object',
+              '--bridge', files('../kernel/uefi/graphical-terminal-entry.S'),
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
 graphical_terminal_host = executable('graphical-terminal-host', 'kernel-graphical-terminal.cpp',
     graphical_terminal_object, cpp_args: ['-DAURORA_RUNTIME_IMAGE_POLICY=one_page'], link_args: ['-no-pie'],
@@ -584,8 +585,9 @@ subdir('native')
 test('private-object', python,
      args: ['-B', files('compiler/private_object.py'), private_object_test, aurorac, private_object_wrapper,
             '--frontend', frontend_stage2_output[1], frontend_stage2_output[0], frontend_stage2_output[2],
-            '--uart', native_uart_object],
-     depends: [private_object_test, private_object_wrapper, aurorac, frontend_stage2_output, native_uart_object],
+            '--uart', native_uart_object, '--terminal', graphical_terminal_object],
+     depends: [private_object_test, private_object_wrapper, aurorac, frontend_stage2_output,
+               native_uart_object, graphical_terminal_object],
      suite: ['full', 'merge', 'dev', 'core', 'compiler'], env: oracle_env, timeout: 120)
 
 

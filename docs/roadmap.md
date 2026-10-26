@@ -117,11 +117,14 @@ every guest family, including the
 Host record projection, conversion, quota/report transport and authorized source
 file I/O remain native dependencies; module traversal and x86 text emission run
 in Aurora.
-The bounded frontend B/C, ordinary UEFI console/session and existing console/hosted UART object composer now runs
+The bounded frontend B/C, ordinary UEFI console/session, production terminal painter
+and existing console/hosted UART object composer now runs
 in Aurora: it appends generated wrapper text and remaps selected private references
 without changing source symbol bindings. Frontend B/C also emit their bounded
 register-move/tail-jump wrappers directly from the same table/ABI-derived recipe
-used by predecessor/reference text; console/UART wrappers still use GNU as.
+used by predecessor/reference text; console/UART/painter wrappers still use GNU as.
+The painter emits its source object directly and retains its existing Display-only
+import and private entry ABI; production UART, diagnostics and timer policy stay native.
 General assembler/linker and host runtime/file/process services remain
 separate self-hosting dependencies.
 

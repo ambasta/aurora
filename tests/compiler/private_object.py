@@ -120,6 +120,7 @@ def main():
     parser.add_argument("wrapper", type=Path)
     parser.add_argument("--frontend", nargs=3, type=Path, metavar=("SOURCE", "COMPOSED", "FACTS"))
     parser.add_argument("--uart", type=Path, metavar="COMPOSED")
+    parser.add_argument("--terminal", type=Path, metavar="COMPOSED")
     args = parser.parse_args()
     args.driver, args.compiler, args.wrapper = (path.resolve() for path in (args.driver, args.compiler, args.wrapper))
     with tempfile.TemporaryDirectory(prefix="aurora-private-object-") as temporary:
@@ -238,49 +239,43 @@ def main():
             if (directory / "uart-cli.o").read_bytes() != args.uart.read_bytes():
                 raise RuntimeError("real UART private CLI differs from its build artifact")
             print("PASS real UART private composition matches GNU and the artifact CLI")
-        raw, facts_path, assembly, wrapper, names, actual = (
-            directory / name
-            for name in (
-                "console-source.o",
-                "console.abi.json",
-                "console.s",
-                "console.o",
-                "console.names",
-                "console-composed.o",
+        consumers = [("console", "console-service", ("console_service", "aurora_kernel_value"), None)]
+        if args.terminal:
+            consumers.append(("terminal", "graphical-terminal", ("paint_terminal_cell",), args.terminal.resolve()))
+        for label, stem, entries, artifact in consumers:
+            raw, facts_path, assembly, wrapper, names = (
+                directory / (label + suffix) for suffix in ("-source.o", ".abi.json", ".s", ".o", ".names")
             )
-        )
-        run(
-            args.compiler,
-            "--emit-object",
-            "--local-symbols",
-            "--referenced-reflection-only",
-            "--module-root",
-            ROOT / "library",
-            "--abi-facts",
-            facts_path,
-            ROOT / "examples/kernel-console-service.au",
-            "-o",
-            raw,
-        )
-        facts = json.loads(facts_path.read_text())
-        bridge = ROOT / "kernel/uefi/console-service-entry.S"
-        assembly.write_text(render_bridge(bridge.read_text(), facts) + '\n.section .note.GNU-stack,"",@progbits\n')
-        names.write_text(
-            "".join(
-                name + "\n"
-                for name in sorted(
-                    abi_function_symbol(facts, entry) for entry in ("console_service", "aurora_kernel_value")
-                )
+            run(
+                args.compiler,
+                "--emit-object",
+                "--local-symbols",
+                "--referenced-reflection-only",
+                "--module-root",
+                ROOT / "library",
+                "--abi-facts",
+                facts_path,
+                ROOT / ("examples/kernel-" + stem + ".au"),
+                "-o",
+                raw,
             )
-        )
-        run("as", "--64", assembly, "-o", wrapper)
-        actual.write_bytes(raw.read_bytes())
-        compose_object_bridge(actual, [bridge], facts, compiler=args.compiler)
-        reference(args.driver, raw, wrapper, names, actual, directory)
-        run(args.compiler, "--compose-private-object", raw, wrapper, names, "-o", directory / "console-cli.o")
-        if (directory / "console-cli.o").read_bytes() != actual.read_bytes():
-            raise RuntimeError("real console private CLI differs from its bridge-helper artifact")
-        print("PASS real console private composition matches GNU and the artifact CLI")
+            facts = json.loads(facts_path.read_text())
+            bridge = ROOT / ("kernel/uefi/" + stem + "-entry.S")
+            assembly.write_text(render_bridge(bridge.read_text(), facts) + '\n.section .note.GNU-stack,"",@progbits\n')
+            names.write_text(
+                "".join(name + "\n" for name in sorted(abi_function_symbol(facts, entry) for entry in entries))
+            )
+            run("as", "--64", assembly, "-o", wrapper)
+            actual = artifact or directory / (label + "-composed.o")
+            if artifact is None:
+                actual.write_bytes(raw.read_bytes())
+                compose_object_bridge(actual, [bridge], facts, compiler=args.compiler)
+            reference(args.driver, raw, wrapper, names, actual, directory)
+            cli = directory / (label + "-cli.o")
+            run(args.compiler, "--compose-private-object", raw, wrapper, names, "-o", cli)
+            if cli.read_bytes() != actual.read_bytes():
+                raise RuntimeError("real " + label + " private CLI differs from its bridge-helper artifact")
+            print("PASS real " + label + " private composition matches GNU and the artifact CLI")
 
 
 if __name__ == "__main__":
