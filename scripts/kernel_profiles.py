@@ -574,6 +574,10 @@ def packed_profile(image, flags):
     """A test image co-hosting former images' compositions, each run by its rows."""
     formers = {name: uefi_profile(name, FORMER_IMAGES[name]) for name in dict.fromkeys(PACKED_ROWS[image].values())}
     users, sets = packed_users(image, formers)
+    if image == "storage-fixture":
+        # This small ordinary caller has a one-page link/packing cap. The row's
+        # Call admission stays unchanged; a larger fixture must fail the link.
+        users["call-snapshot-client"] = dict(users["call-snapshot-client"], max_pages=1)
     # The kernel admits, per row, its former image's page policy; the widest
     # bounds the layout and each slot keeps its image's own link-time cap.
     policies = {

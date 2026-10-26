@@ -334,11 +334,20 @@ the epoch source, the budget, the timer and exchange gates, and the flow. Snapsh
 rows stay untimed as their image was (no LAPIC leaf, no CPL3 `INT 0x82` gate).
 The former images are build data (`kernel_profiles.FORMER_IMAGES`, `PACKED_ROWS`):
 each row runs its former image's user images, compiler options and metadata from a
-packed bank of slots of their own page caps (`AURORA_RUNTIME_BANK_PAGES`,
-`images::slot_offsets`, 12 pages each), and admits its former image's page policy
+packed bank of slots of their own link-time page caps (`AURORA_RUNTIME_BANK_PAGES`,
+`images::slot_offsets`, 11 storage pages and 12 text pages), and admits its former
+image's page policy
 (`AURORA_RUNTIME_ROW_POLICY`, chosen before any domain exists), so no row's user
 image admission widens. Kernel-read sites (call/serve PCs, compiled ranges,
 owned-byte and Console sites) are per-slot records (`images::slot_sites`).
+Storage's ordinary `call-snapshot-client` has a one-page link/packing cap, separate
+from the unchanged two-page caller ceiling of the runtime Call policy. Its actual
+image already maps one page; metadata and user mappings use actual image bytes,
+not reserved slot capacity. The bank ends at arena + `0xbb000`, leaving five pages
+before the unchanged stack pool at +`0xc0000`. The three following image backings
+move down one page; virtual entries, trap sites, roots and stacks do not change.
+Future caller growth beyond one page now fails the stricter link gate; this
+contraction grants no runtime authority and establishes no new image's fit.
 The storage image's snapshot producer is a second closed Aurora object
 (`imports:producer`); the scratchpad object exports the kernel policies every row
 calls. Both images build at -Os (production keeps its own options). Payloads are
