@@ -163,8 +163,8 @@ foreach profile_id : profile_data['profiles'].split('|')
       command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
                 '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--abi-facts', '@OUTPUT2@',
                 '--depfile', '@DEPFILE@', '--module-root', kernel_source / 'kernel/policies',
-                '--local-symbols', '--referenced-reflection-only', '--emit-object',
-                '--assembler', kernel_as, '--linker', kernel_ld, '--objcopy', kernel_objcopy,
+                '--local-symbols', '--referenced-reflection-only', '--emit-object', '--compose-private-object',
+                '--assembler', kernel_as,
                 '--bridge', kernel_source / 'kernel/uart-policy-entry.S'])
     stack_facts += [uart_object[1]]
     objects += {'kernel-uart': uart_object}

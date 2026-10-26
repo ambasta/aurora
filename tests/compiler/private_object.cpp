@@ -168,6 +168,13 @@ void mutations(const std::string &source,
                                                  : "object-loop\n";
         } else if (location == "truncate") {
             changed.resize(offset);
+        } else if (location == "symbol-name") {
+            const Elf elf(changed);
+            const auto symbol = elf.symbol(elf.symbolIndex(record));
+            const auto original = elf.symbolName(symbol);
+            require(valueText.size() <= original.size(), "replacement name exceeds fixture symbol");
+            const auto base = elf.section(".strtab").sh_offset + symbol.st_name;
+            changed.replace(base, original.size(), valueText + std::string(original.size() - valueText.size(), '\0'));
         } else {
             const Elf elf(changed);
             const std::uint64_t value = valueText.starts_with("name:")

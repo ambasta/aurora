@@ -3,7 +3,7 @@ import std.binary;
 import aurora.compiler.x86_object_storage;
 
 // Closed bootstrap composition, not an ELF linker. The two inputs are the
-// source emitter's private object and GNU as's generated frontend wrappers.
+// source emitter's private object and GNU as's frontend or UART wrappers.
 export namespace compiler_private_object {
     class NameRow {
     public:
@@ -414,7 +414,10 @@ export namespace compiler_private_object {
                 const i64 symbol = p.symbols + row.symbol * 24;
                 const i64 sectionIndex = number(bytes, symbol + 6, 2);
                 if ((!wrapper && sectionIndex == 0 && !prefix(bytes, row, "__au_runtime_")) || (wrapper && sectionIndex
-                    == 1 && !prefix(bytes, row, "aurora_hosted_"))) {
+                    == 1 && !prefix(bytes, row, "aurora_hosted_")
+                    && !equal(bytes, row.offset, row.length, "__au_runtime_uart_initialize")
+                    && !equal(bytes, row.offset, row.length, "__au_runtime_uart_next")
+                    && !equal(bytes, row.offset, row.length, "__au_runtime_uart_put"))) {
                     return compiler_x86::EmitStatus::invalid;
                 }
                 if (!set_row(pool, index, row)) {
