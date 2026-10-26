@@ -47,13 +47,14 @@
     defined(AURORA_UEFI_BAR_CAPTURE) || defined(AURORA_UEFI_NVME_PREPARE) || defined(AURORA_UEFI_IVRS) ||              \
     defined(AURORA_UEFI_IOMMU_EVENT) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_DISPATCH) ||               \
     defined(AURORA_UEFI_OWNED_BYTES) || defined(AURORA_UEFI_PINS) || defined(AURORA_UEFI_TABLES) ||                    \
-    defined(AURORA_UEFI_SNAPSHOT) || defined(AURORA_BLOCKING_CALL) || defined(AURORA_FILE_CALL) ||                     \
-    defined(AURORA_RAM_FILE) || defined(AURORA_RAM_SCRATCHPAD_CONSOLE) || defined(AURORA_OWNED_TEXT) ||                \
-    defined(AURORA_CONSOLE_REGION) || defined(AURORA_USER_RESUME) || defined(AURORA_DORMANT_TABLE_TESTING) ||          \
-    defined(AURORA_PIN_LEDGER_TESTING) || defined(AURORA_KERNEL_BYTES_TESTING) ||                                      \
-    defined(AURORA_NVME_QUEUE_TESTING) || defined(AURORA_NVME_QUEUE_GENERATION_LIMIT) ||                               \
-    defined(AURORA_SERVICE_FIXTURE) || defined(AURORA_STORAGE_FIXTURE) || defined(AURORA_TEXT_FIXTURE) ||              \
-    defined(AURORA_RUNTIME_BANK_PAGES) || defined(AURORA_RUNTIME_ROW_POLICY)
+    defined(AURORA_UEFI_SNAPSHOT) || (defined(AURORA_BLOCKING_CALL) && !defined(AURORA_PROGRAM_APPEND_CALL)) ||        \
+    defined(AURORA_FILE_CALL) || defined(AURORA_RAM_FILE) || defined(AURORA_RAM_SCRATCHPAD_CONSOLE) ||                 \
+    defined(AURORA_OWNED_TEXT) || defined(AURORA_CONSOLE_REGION) || defined(AURORA_USER_RESUME) ||                     \
+    defined(AURORA_DORMANT_TABLE_TESTING) || defined(AURORA_PIN_LEDGER_TESTING) ||                                     \
+    defined(AURORA_KERNEL_BYTES_TESTING) || defined(AURORA_NVME_QUEUE_TESTING) ||                                      \
+    defined(AURORA_NVME_QUEUE_GENERATION_LIMIT) || defined(AURORA_SERVICE_FIXTURE) ||                                  \
+    defined(AURORA_STORAGE_FIXTURE) || defined(AURORA_TEXT_FIXTURE) || defined(AURORA_RUNTIME_BANK_PAGES) ||           \
+    defined(AURORA_RUNTIME_ROW_POLICY)
 #error "Graphical terminal rejects test, fixture, capture and probe flags and other compositions"
 #endif
 #endif

@@ -1,5 +1,6 @@
 #pragma once
 #include "program-note.hpp"
+#include "program-append.hpp"
 #include <algorithm>
 
 namespace aurora::program {
@@ -19,6 +20,7 @@ private:
         idle,
         selected,
         bound,
+        append_bound,
         read_bound,
         retained_read_bound,
         completed,
@@ -36,6 +38,7 @@ private:
     bool writable_{}, appending_{};
     State state_ = State::idle;
     Stream *completed_stream_{};
+    AppendCall *completed_append_{};
     std::uint64_t stream_run_{};
 
     static auto word(std::span<const std::byte> bytes, std::size_t offset) -> std::uint64_t {
@@ -176,6 +179,38 @@ public:
         stream_run_ = stream.run();
         return true;
     }
+    [[nodiscard]] auto bind_append(const user::DomainRegistry &registry,
+                                   const ipc::Mailbox &mailbox,
+                                   user::DomainHandle client,
+                                   user::DomainHandle service,
+                                   AppendCall &call) -> bool {
+        if (!writable_ || !appending_ || !call.awaiting() ||
+            !bind_participants(registry, mailbox, client, service, State::append_bound))
+            return false;
+        completed_append_ = &call;
+        stream_run_ = call.run();
+        return true;
+    }
+    [[nodiscard]] auto matches_append(const user::DomainRegistry &registry,
+                                      const ipc::Mailbox &mailbox,
+                                      user::DomainHandle caller,
+                                      ipc::Endpoint endpoint,
+                                      const AppendCall &call) const -> bool {
+        return state_ == State::append_bound && registry_ == &registry && mailbox_ == &mailbox && writable_ &&
+               appending_ && completed_append_ == &call && stream_run_ == call.run() &&
+               matching(registry, mailbox, caller, endpoint);
+    }
+    [[nodiscard]] auto complete_append(const user::DomainRegistry &registry,
+                                       const ipc::Mailbox &mailbox,
+                                       user::DomainHandle caller,
+                                       ipc::Endpoint endpoint,
+                                       AppendCall &call) -> bool {
+        if (!matches_append(registry, mailbox, caller, endpoint, call) || !registry.ready(client_) ||
+            !registry.ready(service_) || mailbox.state() != ipc::State::idle || !mailbox.scrubbed() || !call.captured())
+            return false;
+        state_ = State::completed;
+        return true;
+    }
     // A read grant binds only this frozen selection's participant lifetime.
     // It promises neither a complete stream nor any particular number of bytes.
     [[nodiscard]] auto bind_read(const user::DomainRegistry &registry,
@@ -263,6 +298,20 @@ public:
         input = next;
         return true;
     }
+    [[nodiscard]] auto replacement(AppendCall &call, ReplaceInput &input) -> bool {
+        if (state_ != State::retired || completed_append_ != &call || stream_run_ != call.run() || !appending_)
+            return false;
+        // The fixed copied record already has the exact bytes/length layout
+        // of the replacement's trailing field; no second stack-sized copy.
+        state_ = State::publishing;
+        if (!call.finish(std::span<std::byte, 72>{input.data() + 432, 72})) {
+            abort();
+            return false;
+        }
+        std::copy(saved_.begin(), saved_.end(), input.begin());
+        std::copy(selection_.begin(), selection_.end(), input.begin() + 272);
+        return true;
+    }
     [[nodiscard]] auto publish(const Mutation &result) -> bool {
         if (state_ != State::publishing)
             return false;
@@ -305,6 +354,7 @@ public:
         writable_ = false;
         appending_ = false;
         completed_stream_ = nullptr;
+        completed_append_ = nullptr;
         stream_run_ = 0;
         state_ = State::idle;
     }

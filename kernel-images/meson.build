@@ -324,6 +324,11 @@ foreach profile_id : profile_data['profiles'].split('|')
   foreach name : cpp_names
     source = files('../' + profile_data[key + '.cpp.' + name])
     flags = ['-fstack-usage', '-fcallgraph-info=su'] + kernel_flags + ['-UNDEBUG'] + profile_flags
+    # The production append composition retains the same image/stack caps. GCC's
+    # strongest size recipe applies only to its native objects, after Meson's -Os.
+    if '-DAURORA_PROGRAM_APPEND_CALL' in profile_flags
+      flags += ['-Oz']
+    endif
     flags += platform == 'bios' ? ['-fno-pie'] : ['-fpie', '-fvisibility=hidden']
     # Keep the BIOS console's conservative exception closure directly auditable.
     if bios_console

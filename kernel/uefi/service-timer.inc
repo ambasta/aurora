@@ -231,7 +231,7 @@ auto timer_begin(unsigned index) -> void {
         require(timer_epoch_watermark != UINT64_MAX, "run epoch exhaustion");
         next_epoch = ++timer_epoch_watermark;
     }
-#elif defined(AURORA_USER_RESUME)
+#elif defined(AURORA_USER_RESUME) || defined(AURORA_PROGRAM_APPEND_CALL)
     require(timer_epoch_watermark != UINT64_MAX, "run epoch exhaustion");
     const auto next_epoch = ++timer_epoch_watermark;
 #else
@@ -407,7 +407,7 @@ auto timer_begin(unsigned index) -> void {
 [[nodiscard]] auto call_boundary_debit() -> bool {
     require(domains[0].call_limit > 1 && timer_armed && !timer_exhausted && timer_remaining && timer_initial == 128 &&
                 timer_ticks + timer_remaining == 128,
-            "wc boundary allowance");
+            "call allowance");
 #ifdef AURORA_FILE_CALL
     // Test-only conservative charging, never a quota reset or simulated IRQ.
     // Exercise exhaustion at the actual pre-publication boundaries after two bytes.
@@ -436,7 +436,7 @@ auto timer_begin(unsigned index) -> void {
 #endif
     const auto encoded = language_budget_tick(timer_initial, timer_remaining, timer_ticks);
     const auto next = BudgetTransition::decode(encoded, timer_initial, timer_remaining, timer_ticks);
-    require(next.has_value(), "wc boundary policy");
+    require(next.has_value(), "call debit");
     timer_ticks = next->used();
     timer_remaining = next->remaining();
     Serial::text("AURORA_WC_DEBIT: epoch=");

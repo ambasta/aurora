@@ -91,8 +91,18 @@ UEFI_FAMILIES = [
             # The one production UEFI image: this full protected stack with the
             # program console rendered by the graphical terminal, and no fixture
             # selector, test hook or capture handshake.
-            "production": ["-DAURORA_PRODUCTION", "-DAURORA_UEFI_GRAPHICAL_TERMINAL"],
-            "program-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_PROGRAM_FIXTURE"],
+            "production": [
+                "-DAURORA_PRODUCTION",
+                "-DAURORA_UEFI_GRAPHICAL_TERMINAL",
+                "-DAURORA_PROGRAM_APPEND_CALL",
+                "-DAURORA_BLOCKING_CALL",
+            ],
+            "program-fixture": [
+                "-DAURORA_RUNTIME_FIXTURE",
+                "-DAURORA_PROGRAM_FIXTURE",
+                "-DAURORA_PROGRAM_APPEND_CALL",
+                "-DAURORA_BLOCKING_CALL",
+            ],
         },
     ),
     # The protected file-call console and the owned-text and console-region
@@ -413,6 +423,8 @@ def user_images(
             entry = (
                 "kernel/uefi/ram-scratchpad-client-entry.S"
                 if scratchpad and index == 0
+                else "kernel/uefi/program-client-entry.S"
+                if program and not file_call and index == 0
                 else "kernel/uefi/ipc-user-entry.S"
             )
             defines = []
@@ -437,6 +449,7 @@ def user_images(
             entry=entry,
             entry_flags=[value for define in defines for value in ("--defsym", define)],
             combined=ram_file
+            or (program and not file_call and index == 0)
             or ((snapshot or program or blocking_call) and index == 1)
             or (blocking_call and index == 0),
         )
@@ -640,6 +653,7 @@ def uefi_profile(profile_mode, flags):
     budget = scratchpad or service or mode.startswith(("user-", "program-")) or owned_text
     file_call = mode.startswith("program-file-call")
     blocking_call = mode.startswith("user-call") or file_call
+    append_call = "-DAURORA_PROGRAM_APPEND_CALL" in flags
     ram_file = scratchpad or mode in ("user-ram-file", "user-ram-file-fixture")
     user_budget = scratchpad or service or mode.startswith(("user-", "program-"))
     program = mode.startswith("program-")
@@ -728,7 +742,7 @@ def uefi_profile(profile_mode, flags):
         owned = owned_users and name == "clean"
         call_client = image["combined"] and blocking_call
         image.update(
-            reflection_only=(call_client and name == "clean") or owned or ram_file,
+            reflection_only=append_call or (call_client and name == "clean") or owned or ram_file,
             local_symbols=owned,
             abi=program or call_client or owned or ram_file,
             byte_stubs=owned,
@@ -766,9 +780,9 @@ def uefi_profile(profile_mode, flags):
         )
         if owned_text:
             runtime_flags += ["--defsym", "AURORA_OWNED_TEXT=1"]
-        if service or blocking_call or ram_file or console_region:
+        if service or blocking_call or append_call or ram_file or console_region:
             runtime_flags += ["--defsym", "AURORA_USER_RESUME=1"]
-        if blocking_call or ram_file:
+        if blocking_call or append_call or ram_file:
             runtime_flags += ["--defsym", "AURORA_BLOCKING_CALL=1"]
         if mode == "runtime-fixture":
             runtime_flags += ["--defsym", "AURORA_RUNTIME_PROBES=1"]
@@ -778,7 +792,7 @@ def uefi_profile(profile_mode, flags):
         assembly["runtime-exceptions"] = dict(
             source="kernel/exceptions.S",
             flags=["--64", "--defsym", "AURORA_RELATIVE_ONLY=1"]
-            + (["--defsym", "AURORA_BLOCKING_CALL=1"] if blocking_call or ram_file else [])
+            + (["--defsym", "AURORA_BLOCKING_CALL=1"] if blocking_call or append_call or ram_file else [])
             + (["--defsym", "AURORA_OWNED_TEXT=1"] if owned_text else []),
         )
         runtime_objects = ["runtime-entry", "runtime-exceptions"]

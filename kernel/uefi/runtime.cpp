@@ -14,7 +14,7 @@
 #if defined(AURORA_PROGRAM_FIXTURE) &&                                                                                 \
     (!defined(AURORA_RUNTIME_FIXTURE) || !defined(AURORA_UEFI_PROGRAM_CONSOLE) || !defined(AURORA_UEFI_RUNTIME) ||     \
      !defined(AURORA_UEFI_IPC) || !defined(AURORA_UEFI_SERVICE_BUDGET) || !defined(AURORA_UEFI_USER_BUDGET) ||         \
-     defined(AURORA_BLOCKING_CALL) || defined(AURORA_UEFI_DISPATCH))
+     !defined(AURORA_PROGRAM_APPEND_CALL) || !defined(AURORA_BLOCKING_CALL) || defined(AURORA_UEFI_DISPATCH))
 #error "Program fixture requires the original two-domain streaming console"
 #endif
 // The storage test image co-hosts the RAM file service, the RAM scratchpad
@@ -27,7 +27,8 @@
     (!defined(AURORA_TEXT_FIXTURE) &&                                                                                  \
      (defined(AURORA_FILE_CALL) || defined(AURORA_OWNED_TEXT) || defined(AURORA_CONSOLE_REGION))) ||                   \
     (!defined(AURORA_STORAGE_FIXTURE) && !defined(AURORA_TEXT_FIXTURE) &&                                              \
-     (defined(AURORA_BLOCKING_CALL) || defined(AURORA_RUNTIME_BANK_PAGES) || defined(AURORA_RUNTIME_ROW_POLICY)))
+     ((defined(AURORA_BLOCKING_CALL) && !defined(AURORA_PROGRAM_APPEND_CALL)) || defined(AURORA_RUNTIME_BANK_PAGES) || \
+      defined(AURORA_RUNTIME_ROW_POLICY)))
 #error "Packed compositions and row page policies belong only to the storage and text fixture images"
 #endif
 #if defined(AURORA_STORAGE_FIXTURE) &&                                                                                 \
@@ -60,6 +61,11 @@
      defined(AURORA_UEFI_SNAPSHOT) || defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_BLOCKING_CALL) ||         \
      defined(AURORA_RAM_FILE) || defined(AURORA_OWNED_TEXT))
 #error "Service fixture requires its one three-domain image with every boot-selected composition"
+#endif
+#if defined(AURORA_PROGRAM_APPEND_CALL) &&                                                                             \
+    (!defined(AURORA_UEFI_PROGRAM_CONSOLE) || !defined(AURORA_BLOCKING_CALL) || defined(AURORA_FILE_CALL) ||           \
+     defined(AURORA_STORAGE_FIXTURE) || defined(AURORA_TEXT_FIXTURE))
+#error "Append Call belongs only to the original production/program pair"
 #endif
 #include "runtime.hpp"
 #ifdef AURORA_UEFI_RUNTIME
@@ -117,6 +123,9 @@
 #include "../program-stream.hpp"
 #include "../program-note.hpp"
 #include "../program-files.hpp"
+#ifdef AURORA_PROGRAM_APPEND_CALL
+#include "../program-append.hpp"
+#endif
 #include "../file-service-transport.hpp"
 #endif
 #endif
@@ -239,6 +248,12 @@ Composition composition{};
 }
 [[nodiscard]] auto call_rows() -> bool { // AURORA_BLOCKING_CALL, AURORA_FILE_CALL and the program console
     return composition == Composition::file;
+}
+#endif
+#ifdef AURORA_PROGRAM_APPEND_CALL
+bool command_appending{};
+[[nodiscard]] auto call_rows() -> bool {
+    return command_appending;
 }
 #endif
 #ifdef AURORA_SERVICE_FIXTURE
@@ -472,6 +487,15 @@ static_assert(images::bank_pages == AURORA_RUNTIME_BANK_PAGES && images::slot_of
 }
 [[nodiscard]] auto image_sites(std::size_t image) -> images::Sites {
     return image_slot(image) < L::image_slots ? images::slot_sites[image_slot(image)] : images::Sites{};
+}
+#endif
+#ifdef AURORA_BLOCKING_CALL
+[[nodiscard]] auto call_site() -> U64 {
+#ifdef AURORA_PROGRAM_APPEND_CALL
+    return images::clean_call_pc;
+#else
+    return image_sites(0).call_pc;
+#endif
 }
 #endif
 #if defined(AURORA_STORAGE_FIXTURE) || defined(AURORA_TEXT_FIXTURE)
@@ -778,7 +802,7 @@ auto install_architecture() -> void {
 #ifdef AURORA_STORAGE_FIXTURE
              // Only the timed rows' former images admitted the CPL3 exchange gate.
              || (vector == 130 && timed())
-#elif defined(AURORA_TEXT_FIXTURE)
+#elif defined(AURORA_TEXT_FIXTURE) || defined(AURORA_PROGRAM_APPEND_CALL)
              || vector == 130
 #endif
                  )
@@ -1022,6 +1046,10 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
     // Console-region byte operations share the console UART; the other rows report every event.
     if (vector != 130 || !console_rows()) {
 #endif
+#ifdef AURORA_PROGRAM_FIXTURE
+        if (vector == 130 && command_appending && fixture == Fixture::program_append_root)
+            asm volatile("mov %0,%%cr3" ::"r"(kernel_root) : "memory");
+#endif
         U64 cr2;
         asm volatile("mov %%cr2,%0" : "=r"(cr2));
         Serial::text("AURORA_UEFI_DOMAIN_EVENT: vector=");
@@ -1079,6 +1107,11 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
 #ifdef AURORA_TEXT_FIXTURE
     if (vector == 130)
         return call_rows() ? call_trap(frame) : console_rows() ? console_region_trap(frame) : text_trap(frame);
+#elif defined(AURORA_PROGRAM_APPEND_CALL)
+    if (vector == 130) {
+        require(call_rows(), "append-only Call gate");
+        return call_trap(frame);
+    }
 #elif defined(AURORA_STORAGE_FIXTURE)
     // Only the timed rows' gate admits INT 0x82 from CPL3 (install_architecture).
     if (vector == 130)
@@ -1148,7 +1181,12 @@ auto dispatch(U64 vector, U64 error, U64 pc, U64 cs, U64 frame, U64 result) -> U
     if (call_rows())
         call_envelope(captured, result);
 #elif defined(AURORA_UEFI_PROGRAM_CONSOLE)
-    program_console_envelope(captured, result);
+#ifdef AURORA_PROGRAM_APPEND_CALL
+    if (call_rows())
+        call_envelope(captured, result);
+    else
+#endif
+        program_console_envelope(captured, result);
 #else
 #ifdef AURORA_UEFI_DISPATCH
     if (dispatching())
@@ -1260,7 +1298,7 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
         initialize_service_timer();
 #else
 #ifdef AURORA_PROGRAM_FIXTURE
-    select_fixture(Fixture::program_request_fault, Fixture::program_append_response);
+    select_fixture(Fixture::program_request_fault, Fixture::program_append_site);
 #endif
     initialize_service_timer();
 #endif

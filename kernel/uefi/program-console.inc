@@ -7,6 +7,14 @@ program::Stream command_stream;
 #endif
 program::Note command_note;
 program::Files command_files;
+#ifdef AURORA_PROGRAM_APPEND_CALL
+program::AppendCall command_append;
+// Captured once at the original caller's first suspension, before a service
+// activation. Later exchanges cannot replace its identity or backing receipt.
+std::optional<ProgramRunAuthority> append_origin;
+std::array<U64, 8> append_backing{};
+U64 append_operation{};
+#endif
 #ifdef AURORA_PROGRAM_FIXTURE
 // Retained test-image evidence, never an additional production store or stack copy.
 program::Files::Value program_append_checkpoint{};
@@ -129,6 +137,10 @@ public:
                file_service_quiet() &&
 #else
                frames.used() == 0 &&
+#ifdef AURORA_PROGRAM_APPEND_CALL
+               !call_wait.context && !call_wait.authority && !call_wait.ticket && !append_origin && !append_operation &&
+               !command_appending &&
+#endif
 #endif
                !command_note.bound() && program_boundary();
     }
@@ -238,12 +250,55 @@ auto program_console_envelope(const Bytes &captured, U64 result) -> void {
                 "program completion authority/ack");
     }
 }
+#ifdef AURORA_PROGRAM_APPEND_CALL
+[[nodiscard]] auto append_call_authority() -> bool {
+    if (!command_appending || !command_owned || !domains[0].handle || !mailbox)
+        return false;
+    const auto endpoint = mailbox->endpoint(*domains[0].handle);
+    return endpoint && command_files.matches_append(registry, *mailbox, *domains[0].handle, *endpoint, command_append);
+}
+[[nodiscard]] auto append_call_reply(U64 result) -> bool {
+    if (!append_call_authority() || !command_append.reply(result))
+        return false;
+    domains[0].call_closed = command_append.terminal();
+    return true;
+}
+#endif
+// One exact final-page lease check shared by copied service input and caller
+// output. A physical address alone is never permission to read the kernel alias.
+[[nodiscard]] [[gnu::noinline]] auto program_stack_tail(unsigned index) -> U64 {
+    const auto &domain = domains[index];
+    const auto physical = frames.address(*domain.stacks.back());
+    const auto virtual_page = domain.contract->layout().user_stack_top() - L::page_size;
+    require(physical && (domain.tables->entry(virtual_page) & ~0x60ULL) == (*physical | 7 | RuntimeTables::nx) &&
+                (PageTables{kernel_root, static_cast<std::size_t>(handoff->get(96))}.entry(*physical) & ~0x60ULL) ==
+                    (*physical | 3 | RuntimeTables::nx),
+            "program copied stack");
+    return *physical + L::page_size;
+}
+[[gnu::noinline]] auto program_stage_note(U64 source, U64 byte, U64 ordinal) -> void {
+    const auto endpoint = mailbox->endpoint(*domains[1].handle);
+    require(endpoint && mailbox->state() == ipc::State::delivered && command_note.matches(*endpoint),
+            "note authenticated publication");
+    auto *record = reinterpret_cast<std::byte *>(program_stack_tail(1) - program::Note::stream_stack_reservation);
+    require(command_note.stage_stream(
+                std::span<std::byte, program::Note::stream_record_bytes>{record, program::Note::stream_record_bytes},
+                *endpoint,
+                source,
+                ipc::Request{byte, ordinal}),
+            "note fixed copied record");
+}
+#ifdef AURORA_PROGRAM_APPEND_CALL
+#include "blocking-call.inc"
+#endif
 [[nodiscard]] auto program_execute(unsigned index, ipc::Phase phase, U64 source, U64 byte, U64 ordinal) -> bool {
     require(command_owned && program_boundary() && index < 2 && selected_client == 0, "program launch boundary");
     auto &domain = domains[index];
     require(domain.handle && domain.contract && verify(domain), "program launch domain");
     const auto endpoint = mailbox->endpoint(*domain.handle);
     require(endpoint.has_value(), "program launch grant");
+    if (command_appending)
+        transaction = index == 1 ? call_wait.ticket : 0;
     launch = {source,
               byte,
               endpoint->slot(),
@@ -259,30 +314,22 @@ auto program_console_envelope(const Bytes &captured, U64 result) -> void {
         fill(*address, 0);
     }
     if (phase == ipc::Phase::service) {
-        require(index == 1 && mailbox->state() == ipc::State::delivered && command_note.matches(*endpoint),
-                "note authenticated publication");
-        const auto physical = frames.address(*domain.stacks.back());
-        const auto virtual_page = domain.contract->layout().user_stack_top() - L::page_size;
-        require(physical && (domain.tables->entry(virtual_page) & ~0x60ULL) == (*physical | 7 | RuntimeTables::nx) &&
-                    (PageTables{kernel_root, static_cast<std::size_t>(handoff->get(96))}.entry(*physical) & ~0x60ULL) ==
-                        (*physical | 3 | RuntimeTables::nx),
-                "note exact retained stack mapping");
-        auto *record =
-            reinterpret_cast<std::byte *>(*physical + L::page_size - program::Note::stream_stack_reservation);
-        require(
-            command_note.stage_stream(
-                std::span<std::byte, program::Note::stream_record_bytes>{record, program::Note::stream_record_bytes},
-                *endpoint,
-                source,
-                ipc::Request{byte, ordinal}),
-            "note fixed copied record");
+        require(index == 1, "note service role");
+        program_stage_note(source, byte, ordinal);
     }
     require(launch_domain(index, *domain.handle), "program continuation");
     timer_finish();
     require(root() == kernel_root && saved_rsp == 0 && active == L::domain_count && !program.running(),
             "program restored authority");
     const auto okay = program.event() == ProgramEvent::returned;
-    require(okay || recoverable_program_event(), "program terminal outcome");
+    require(okay || recoverable_program_event() || (command_appending && call_wait.context && index == 0),
+            "program terminal outcome");
+    if (command_appending) {
+        if (index == 1) {
+            domains[0].call_service_used = timer_ticks;
+        }
+        transaction = 0;
+    }
     launch = {};
     selected_phase = ipc::Phase::inactive;
     require(program_boundary(), "program post-run quiescence");
@@ -329,10 +376,147 @@ auto program_console_envelope(const Bytes &captured, U64 result) -> void {
 #endif
     return normal;
 }
+// A fixed two-role scheduler only. Aurora owns traversal and accumulation;
+// the supervisor authenticates each copied exchange and the final return.
+[[nodiscard]] [[gnu::noinline]] auto program_append_call() -> bool {
+    require(append_call_authority() && program_boundary(), "append authority");
+    auto &caller = domains[0];
+    caller.call_limit = 50;
+    U64 probe = 0;
+#ifdef AURORA_PROGRAM_FIXTURE
+    if (!console_probe_used) {
+        if (fixture == Fixture::program_request_fault)
+            probe = 8;
+        if (fixture == Fixture::program_completion_fault)
+            probe = 10;
+        if (fixture == Fixture::program_request_budget)
+            probe = 6;
+        if (fixture == Fixture::program_completion_budget)
+            probe = 7;
+        if (fixture == Fixture::program_append_before_fault)
+            probe = 20;
+        if (fixture == Fixture::program_append_before_budget)
+            probe = 21;
+        if (fixture == Fixture::program_append_eof_fault)
+            probe = 18;
+        if (fixture == Fixture::program_append_eof_budget)
+            probe = 19;
+    }
+#endif
+    require(!append_origin && !append_operation, "call owner");
+    append_operation = command_append.run();
+    for (unsigned role = 0; role < 2; ++role)
+        for (unsigned page = 0; page < 4; ++page) {
+            const auto physical = frames.address(*domains[role].stacks[page]);
+            require(physical.has_value(), "append backing");
+            append_backing[role * 4 + page] = *physical;
+        }
+    bool success = true;
+    // The only caller entry: later work resumes its live source locals.
+    static_cast<void>(program_execute(0, ipc::Phase::request, 16, probe, 0));
+    if (call_wait.context) {
+        require(call_wait.authority && !append_origin, "call owner");
+        append_origin.emplace(*call_wait.authority);
+    }
+#ifdef AURORA_PROGRAM_FIXTURE
+    U64 previous = 0;
+#endif
+    while (call_wait.context) {
+        require(append_call_authority() && call_wait.authority && call_wait.ticket && caller.call_count &&
+                    caller.call_count <= 50,
+                "append authority");
+        const auto ticket = call_wait.ticket, epoch = call_wait.authority->epoch();
+        const auto ticks = call_wait.ticks, remaining = call_wait.remaining;
+#ifdef AURORA_PROGRAM_FIXTURE
+        require(!call_resume(previous) && !call_resume(ticket), "append stale/unready wake");
+#endif
+        const auto endpoint = mailbox->endpoint(*domains[1].handle);
+        require(endpoint.has_value(), "append authority");
+        const auto request = mailbox->receive(*domains[1].handle, ipc::Phase::service, *endpoint, ticket);
+        require(request && request->first() == caller.call_count - 1 && request->second() == 0, "append request");
+        static_cast<void>(program_execute(
+            1, ipc::Phase::service, program_source(ipc::Phase::service, request->first()), 1, request->first()));
+        require(timer_epoch > epoch && call_wait.ticks == ticks && call_wait.remaining == remaining,
+                "append allowance");
+        // Latch failure before a resume can restore the caller's timer state.
+        if (timer_exhausted || program.event() != ProgramEvent::returned) {
+            success = false;
+            break;
+        }
+        require(mailbox->state() == ipc::State::replied, "append authority");
+#ifdef AURORA_PROGRAM_FIXTURE
+        require(!call_resume(previous), "append stale ready wake");
+#endif
+        require(call_resume(ticket), "append authority");
+#ifdef AURORA_PROGRAM_FIXTURE
+        require(!call_resume(ticket), "append duplicate wake");
+#endif
+        require(timer_epoch == epoch && timer_ticks >= ticks && timer_initial == timer_ticks + timer_remaining,
+                "append allowance");
+#ifdef AURORA_PROGRAM_FIXTURE
+        previous = ticket;
+#endif
+    }
+    success = success && !timer_exhausted && program.event() == ProgramEvent::returned && program.value() == 1 &&
+              !call_wait.context && command_append.terminal();
+#ifdef AURORA_PROGRAM_FIXTURE
+    if (probe && !success)
+        console_probe_used = true;
+#endif
+    require(program_boundary(), "append return");
+    if (!success)
+        return false;
+    require(append_call_authority() && append_origin && append_operation == command_append.run() && caller.handle &&
+                caller.contract && verify(caller) && verify(domains[1]) &&
+                append_origin->ready_owner(registry, *caller.handle, timer_epoch) &&
+                append_origin->root() == caller.tables->root() &&
+                user::same_contract(append_origin->contract(), *caller.contract) && registry.ready(*domains[1].handle),
+            "call owner");
+#ifdef AURORA_PROGRAM_FIXTURE
+    if (fixture == Fixture::program_append_backing)
+        append_backing[0] += L::page_size;
+#endif
+    for (unsigned role = 0; role < 2; ++role)
+        for (unsigned page = 0; page < 4; ++page) {
+            const auto physical = frames.address(*domains[role].stacks[page]);
+            require(physical && *physical == append_backing[role * 4 + page], "append backing");
+        }
+    const Bytes result{
+        view(program_stack_tail(0) - program::AppendCall::stack_reservation, program::AppendCall::stack_reservation)};
+    if (result.get(72) != 0)
+        return false;
+    program::AppendCall::Value copied{};
+    for (std::size_t index = 0; index < copied.size(); ++index)
+        copied[index] = std::byte(result.get(index, 1));
+#ifdef AURORA_PROGRAM_FIXTURE
+    if (fixture == Fixture::program_append_copy && !console_probe_used) {
+        copied[64] = std::byte{50};
+        console_probe_used = true;
+    }
+#endif
+    const bool captured = command_append.capture(copied);
+    program_scrub_copy(copied);
+    if (!captured)
+        return false;
+    const auto endpoint = mailbox->endpoint(*caller.handle);
+    require(endpoint && mailbox->recycle(ipc::Phase::inactive) &&
+                command_files.complete_append(registry, *mailbox, *caller.handle, *endpoint, command_append),
+            "append return");
+    Serial::text("AURORA_PROGRAM_APPEND_CALLER: operation=");
+    Serial::number(command_append.run());
+    Serial::text(" calls=");
+    Serial::number(caller.call_count);
+    Serial::text(" launches=1 eof=1 clean=1\r\n");
+    return true;
+}
 auto program_cleanup(bool success) -> void {
     require(command_owned && program_boundary() && mailbox, "program cleanup boundary");
     if (!success) {
-        require(command_stream.cancel(), "program stream cancellation");
+        if (command_appending) {
+            command_append.cancel();
+            require(call_retire(0), "append cancellation");
+        } else
+            require(command_stream.cancel(), "program stream cancellation");
         if (mailbox->state() == ipc::State::pending || mailbox->state() == ipc::State::delivered) {
             require(mailbox->cancel(ipc::Phase::inactive), "program fault cancel");
             const auto endpoint = mailbox->endpoint(*domains[0].handle);
@@ -361,6 +545,10 @@ auto program_cleanup(bool success) -> void {
     selected_client = 2;
     require(program_boundary(), "program retirement quiescence");
     command_owned = false;
+    command_appending = false;
+    append_origin.reset();
+    program_scrub_copy(append_backing);
+    append_operation = 0;
     ProgramSerial::text("AURORA_PROGRAM_COMMAND_END: success=");
     ProgramSerial::number(success ? 1 : 0);
     ProgramSerial::text(" used=0 epoch=");
@@ -392,7 +580,9 @@ __attribute__((noinline)) auto program_save_note(program::Output &output) -> voi
 __attribute__((noinline)) auto program_save_file(program::Response &response) -> void {
     require(!command_owned && !mailbox && frames.used() == 0 && program_boundary(), "file quiescent replacement");
     program::Files::ReplaceInput copied{};
-    require(command_files.replacement(command_stream, copied), "file one-shot complete replacement");
+    require(command_files.appending() ? command_files.replacement(command_append, copied)
+                                      : command_files.replacement(command_stream, copied),
+            "file one-shot complete replacement");
     program::Files::Mutation result{};
     __au_runtime_files_replace(copied.data(), result.data());
     require(command_files.publish(result), "file Aurora replacement accepted");
@@ -400,7 +590,7 @@ __attribute__((noinline)) auto program_save_file(program::Response &response) ->
         response = program::Response{program::Response::Kind::file_reply};
         const auto count = Bytes{result}.get(336);
         require(count <= 64 && response.payload(std::span<const std::byte>{result}.subspan(272, count)),
-                "append committed response bytes");
+                "append response");
     } else
         response = program::Response{program::Response::Kind::file_saved};
     program_scrub_copy(copied);
@@ -429,8 +619,10 @@ program_command(program::Submission &input, bool reading = false, bool saving = 
     command_file = file;
     command_transform = file && command_files.writable();
     const auto input_length = file ? input.length() : saving ? program_begin_upper_note() : input.length();
-    require(saving || (reading ? command_stream.begin_read(command_transform && !command_files.appending())
-                               : command_stream.begin(input.bytes(), input.length())),
+    command_appending = file && command_files.appending();
+    require(command_appending ? command_append.begin()
+                              : saving || (reading ? command_stream.begin_read(command_transform)
+                                                   : command_stream.begin(input.bytes(), input.length())),
             "program command admission");
     input.scrub(); // The stream now owns the only retained command-input copy.
     command_owned = true;
@@ -450,7 +642,9 @@ program_command(program::Submission &input, bool reading = false, bool saving = 
                 command_note.bind(projection, *service_grant, file ? command_files.suffix() : program::Note::Value{}),
             "note frozen publication");
     if (file)
-        require(command_transform
+        require(command_appending ? command_files.bind_append(
+                                        registry, *mailbox, *domains[0].handle, *domains[1].handle, command_append)
+                : command_transform
                     ? command_files.bind(registry, *mailbox, *domains[0].handle, *domains[1].handle, command_stream)
                     : command_files.bind_read(registry, *mailbox, *domains[0].handle, *domains[1].handle),
                 "file command grants");
@@ -468,39 +662,42 @@ program_command(program::Submission &input, bool reading = false, bool saving = 
                         : saving  ? " domains=2 kind=upper-note\r\n"sv
                                   : " domains=2 kind=upper\r\n"sv);
     bool success = true;
-    while (const auto next = command_stream.next_input()) {
-        const auto ordinal = next->ordinal();
-        if (!program_execute(
-                0, ipc::Phase::request, program_source(ipc::Phase::request, ordinal), next->byte(), ordinal)) {
-            success = false;
-            break;
+    if (command_appending)
+        success = program_append_call();
+    else
+        while (const auto next = command_stream.next_input()) {
+            const auto ordinal = next->ordinal();
+            if (!program_execute(
+                    0, ipc::Phase::request, program_source(ipc::Phase::request, ordinal), next->byte(), ordinal)) {
+                success = false;
+                break;
+            }
+            const auto service = mailbox->endpoint(*domains[1].handle);
+            require(service.has_value(), "program service endpoint");
+            const auto request = mailbox->receive(*domains[1].handle, ipc::Phase::service, *service, transaction);
+            require(request && request->second() == ordinal && mailbox->scrubbed(), "program copied request");
+            if (!program_execute(
+                    1, ipc::Phase::service, program_source(ipc::Phase::service, ordinal), request->first(), ordinal)) {
+                success = false;
+                break;
+            }
+            const auto client = mailbox->endpoint(*domains[0].handle);
+            require(client.has_value(), "program completion endpoint");
+            const auto completion = mailbox->consume(*domains[0].handle, ipc::Phase::completion, *client, transaction);
+            require(completion && completion->outcome() == ipc::Outcome::replied && mailbox->scrubbed(),
+                    "program copied completion");
+            if (!program_execute(0,
+                                 ipc::Phase::completion,
+                                 program_source(ipc::Phase::completion, ordinal),
+                                 completion->value(),
+                                 ordinal)) {
+                success = false;
+                break;
+            }
+            require(mailbox->recycle(ipc::Phase::inactive), "program consumed recycle");
+            transaction = 0;
         }
-        const auto service = mailbox->endpoint(*domains[1].handle);
-        require(service.has_value(), "program service endpoint");
-        const auto request = mailbox->receive(*domains[1].handle, ipc::Phase::service, *service, transaction);
-        require(request && request->second() == ordinal && mailbox->scrubbed(), "program copied request");
-        if (!program_execute(
-                1, ipc::Phase::service, program_source(ipc::Phase::service, ordinal), request->first(), ordinal)) {
-            success = false;
-            break;
-        }
-        const auto client = mailbox->endpoint(*domains[0].handle);
-        require(client.has_value(), "program completion endpoint");
-        const auto completion = mailbox->consume(*domains[0].handle, ipc::Phase::completion, *client, transaction);
-        require(completion && completion->outcome() == ipc::Outcome::replied && mailbox->scrubbed(),
-                "program copied completion");
-        if (!program_execute(0,
-                             ipc::Phase::completion,
-                             program_source(ipc::Phase::completion, ordinal),
-                             completion->value(),
-                             ordinal)) {
-            success = false;
-            break;
-        }
-        require(mailbox->recycle(ipc::Phase::inactive), "program consumed recycle");
-        transaction = 0;
-    }
-    if (success && command_transform) {
+    if (success && command_transform && !command_appending) {
         const auto endpoint = mailbox->endpoint(*domains[0].handle);
         require(endpoint && command_files.complete(registry, *mailbox, *domains[0].handle, *endpoint, command_stream),
                 "file complete replacement authority");
@@ -529,7 +726,7 @@ program_command(program::Submission &input, bool reading = false, bool saving = 
             output->scrub();
         }
     } else {
-        require(command_stream.scrubbed(), "program cancelled output scrub");
+        require(command_append.scrubbed() && command_stream.scrubbed(), "program cancelled output scrub");
     }
     // A replacement may already be committed. A failed acknowledgment never
     // retries the command or claims to roll that replacement back.

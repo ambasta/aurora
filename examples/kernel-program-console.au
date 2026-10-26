@@ -1,9 +1,7 @@
 module kernel_program_console;
 import kernel.terminal_event;
 import kernel.interrupt_budget;
-import kernel.round_robin;
 import kernel.ipc_transition;
-import kernel.client_disposal;
 import std.binary_buffer;
 import std.binary;
 import console.session_note;
@@ -62,19 +60,6 @@ auto aurora_kernel_budget_tick(u64 initial, u64 remaining, u64 used) -> u64 {
     return (action << 16) | (decision.used() << 8) | decision.remaining();
 }
 
-// Private bootstrap transport of copied selection facts, never mailbox authority.
-auto aurora_kernel_round_robin_next(u64 cursor, u64 eligible_mask) -> u64 {
-    const kernel::SelectionDecision decision = kernel::round_robin_next(cursor, eligible_mask);
-    if (decision.action() == kernel::SelectionAction::rejected) {
-        return 0u64;
-    }
-    u64 action = 1u64;
-    if (decision.action() == kernel::SelectionAction::selected) {
-        action = 2u64;
-    }
-    return action | (decision.selected() << 8) | (decision.next() << 16);
-}
-
 // Private copied transaction transport. Payload and authority stay in the host.
 auto aurora_kernel_ipc_transition(u64 operation, u64 phase, u64 state, u64 scrubbed) -> u64 {
     const kernel::TransactionSnapshot snapshot = kernel::TransactionSnapshot(phase, state, scrubbed);
@@ -108,31 +93,6 @@ auto aurora_kernel_ipc_transition(u64 operation, u64 phase, u64 state, u64 scrub
         effect = 7u64;
     }
     return 2u64 | (decision.next() << 8) | (effect << 16);
-}
-
-// Private recovery-plan transport; no receipt, payload or authority is copied.
-auto aurora_kernel_client_disposal(u64 phase, u64 state) -> u64 {
-    const kernel::DisposalDecision decision = kernel::client_disposal(phase, state);
-    if (decision.action() == kernel::DisposalAction::invalid) {
-        return 0u64;
-    }
-    if (decision.action() == kernel::DisposalAction::refused) {
-        return 1u64;
-    }
-    u64 effect = 0u64;
-    if (decision.effect() == kernel::DisposalEffect::empty) {
-        effect = 1u64;
-    }
-    if (decision.effect() == kernel::DisposalEffect::retained_receipt) {
-        effect = 2u64;
-    }
-    if (decision.effect() == kernel::DisposalEffect::cancel_consume) {
-        effect = 3u64;
-    }
-    if (decision.effect() == kernel::DisposalEffect::consume_terminal) {
-        effect = 4u64;
-    }
-    return 2u64 | (effect << 8);
 }
 
 // Private bootstrap transport of copied facts; enum ordinals are not the wire.
