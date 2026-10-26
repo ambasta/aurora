@@ -95,7 +95,9 @@ Composition. The image links two closed Aurora objects with separate bridges and
 import policies: the program console (`examples/kernel-program-console.au`,
 Console imports only) and the terminal painter
 (`examples/kernel-graphical-terminal.au`, whose only import is the Display pixel
-service; `imports:terminal` in the image policy). The protected program console
+service; `imports:terminal` in the image policy). The painter emits its object
+directly and Aurora composes the separately assembled private wrapper, preserving
+LOCAL source definitions and its checked six-qword entry ABI. The protected program console
 is the only owner of COM1 input and of the LAPIC timer and stays the command
 surface: there is one input consumer and one timer user, so nothing is routed
 between consoles. Every byte its sealed Console session delivers is also copied
@@ -304,7 +306,7 @@ and v2. The payload runs only its row's subsystem; the graphical console decides
 capture mode (capture gate, counters, no exit write) from its row, and the one
 `__au_runtime_display_pixel` import reaches the framebuffer session until the
 graphical console has entered. The second Aurora object of each image (the
-display service, the owned-bytes graph) is compiled like the production terminal,
+display service, the owned-bytes graph) retains full-source assembly with its private bridge,
 with local symbols, referenced reflection only and its own `imports:STEM` policy.
 Payloads are 117,393 and 147,472 bytes; stack totals are 8,247 and 13,743 of
 15,360 bytes. The framebuffer, graphical, console-PTY, console-service and

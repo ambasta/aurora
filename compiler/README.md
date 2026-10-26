@@ -17,7 +17,8 @@ consumes the admitted source stores; the host retains artifact I/O.
 The same semantic traversal feeds typed x86 forms to the text backend or the
 checked relocatable-object backend selected by `--emit-object`. Object output
 uses a separate typed workspace for code, symbols, labels and relocations. It
-supports the ordinary source UART and hosted frontend forms, including readonly
+supports the source UART, ordinary UEFI console/session, production terminal painter
+and hosted frontend forms, including readonly
 literal data and RIP-relative references, plus size/public-field-count reflection
 helpers with the same defining-module visibility and symbol-selection rules as
 text output. Neither backend adds reflection access to private values.
@@ -33,11 +34,12 @@ The existing `ObjectWorkspace` owns encoding, fixups and ELF output; native code
 only lends recipe bytes and transports the result. Invalid/reused workspaces
 cannot expose output, and allocation failure releases every owner.
 
-`private_object.au` composes frontend B/C, the ordinary UEFI console/session and
-existing BIOS console, UEFI device-fixture and hosted UART objects. The source
+`private_object.au` composes frontend B/C, the ordinary UEFI console/session,
+production terminal painter and existing BIOS console, UEFI device-fixture and
+hosted UART objects. The source
 input retains its eight-section ELF64LE x86-64 profile. Frontend wrappers use an
 explicit eight-section profile with empty readonly data, no LOCAL definitions,
-byte-aligned text and only hidden `aurora_hosted_*` exports. GNU console/UART
+byte-aligned text and only hidden `aurora_hosted_*` exports. GNU console/UART/painter
 wrappers retain their existing nine-section profile with empty data/BSS.
 Composition preserves source symbol indices and LOCAL bindings, appends wrapper
 text and exports, and remaps PLT32 references to selected source text symbols.
@@ -47,7 +49,10 @@ before output is sealed. Artifact reads retain the 64 MiB ceiling and atomic
 output protects all input identities; language-source reads remain limited to
 1 MiB. The GNU profile additionally admits exactly the existing
 `__au_runtime_uart_initialize`, `__au_runtime_uart_next`, `__au_runtime_uart_put`,
-`__au_runtime_console_entry` and `__au_runtime_console_value` exports.
+`__au_runtime_console_entry`, `__au_runtime_console_value` and
+`__au_runtime_terminal_paint` exports. The painter keeps its six-qword private
+entry ABI and only its existing Display pixel runtime import; no console, UART
+or timer authority moves with object production.
 
 The pinned predecessor still emits frontend A as text. C1 emits frontend B and
 its wrappers directly as objects linked into C2; C2 emits frontend C for
@@ -55,10 +60,10 @@ source-object, composed-object, ABI/header and stack-fact convergence. One
 private-object test driver compares normalized wrapper and composed text,
 readonly data, symbols and relocations with GNU references, checks malformed
 recipe/ELF data and every allocation failure, and preserves source LOCAL
-identity. Console and UART objects run in their existing hosted drivers and
+identity. Console, UART and painter objects run in their existing hosted drivers and
 guest families. No checkpoint bump is needed. GNU assembler/linker and Linux
 host I/O remain dependencies for frontend A, other text output, native
-console/UART adapters and final links. This adds no Aurora C ABI.
+console/UART/painter adapters and final links. This adds no Aurora C ABI.
 
 The verifier keeps active facts in a flat, sorted owner-backed prefix and restores
 canonical snapshots directly, without rebuilding a search tree. Binary searches

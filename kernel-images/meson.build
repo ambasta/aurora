@@ -138,20 +138,36 @@ foreach profile_id : profile_data['profiles'].split('|')
       foreach root : profile_data[extra_key + '.roots'].split('|')
         extra_roots += ['--module-root', kernel_source / root]
       endforeach
-      extra_assembly = custom_target(prefix + '-' + stem + '-assembly',
-        input: files('../' + profile_data[extra_key + '.source']),
-        output: [stem + '.s', stem + '.stack.json', stem + '.abi.json'],
-        build_subdir: output_subdir, depfile: stem + '.d',
-        depend_files: compiler_files + files('../' + extra_bridge, '../scripts/bootstrap_frontend.py'),
-        command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
-                  '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--abi-facts', '@OUTPUT2@',
-                  '--depfile', '@DEPFILE@'] + extra_roots + ['--local-symbols', '--referenced-reflection-only',
-                  '--bridge', kernel_source / extra_bridge])
-      stack_facts += [extra_assembly[1]]
-      objects += {stem: custom_target(prefix + '-' + stem + '-object',
-        input: extra_assembly[0], output: stem + '.o', build_subdir: object_subdir,
-        command: [kernel_as, '--64', '@INPUT@', '-o', '@OUTPUT@'])}
-      language_objects += [objects[stem]]
+      if stem == 'terminal'
+        # The production painter fits the checked direct-object profile. Only
+        # its existing private adapter is assembled; Aurora preserves LOCALs.
+        extra_language = custom_target(prefix + '-' + stem + '-object',
+          input: files('../' + profile_data[extra_key + '.source']),
+          output: [stem + '.o', stem + '.stack.json', stem + '.abi.json'],
+          build_subdir: object_subdir, depfile: stem + '.d',
+          depend_files: compiler_files + files('../' + extra_bridge, '../scripts/bootstrap_frontend.py'),
+          command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
+                    '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--abi-facts', '@OUTPUT2@',
+                    '--depfile', '@DEPFILE@'] + extra_roots + ['--local-symbols', '--referenced-reflection-only',
+                    '--emit-object', '--compose-private-object', '--assembler', kernel_as,
+                    '--bridge', kernel_source / extra_bridge])
+        objects += {stem: extra_language}
+      else
+        extra_language = custom_target(prefix + '-' + stem + '-assembly',
+          input: files('../' + profile_data[extra_key + '.source']),
+          output: [stem + '.s', stem + '.stack.json', stem + '.abi.json'],
+          build_subdir: output_subdir, depfile: stem + '.d',
+          depend_files: compiler_files + files('../' + extra_bridge, '../scripts/bootstrap_frontend.py'),
+          command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
+                    '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--abi-facts', '@OUTPUT2@',
+                    '--depfile', '@DEPFILE@'] + extra_roots + ['--local-symbols', '--referenced-reflection-only',
+                    '--bridge', kernel_source / extra_bridge])
+        objects += {stem: custom_target(prefix + '-' + stem + '-object',
+          input: extra_language[0], output: stem + '.o', build_subdir: object_subdir,
+          command: [kernel_as, '--64', '@INPUT@', '-o', '@OUTPUT@'])}
+      endif
+      stack_facts += [extra_language[1]]
+      language_objects += [objects[stem][0]]
     endforeach
   endif
   if bios_console or uefi_console
