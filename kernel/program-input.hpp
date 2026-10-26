@@ -6,7 +6,82 @@
 #include <span>
 #include <type_traits>
 
+extern "C" void __au_runtime_program_session(const void *, void *);
+
 namespace aurora::program {
+// Only Aurora interprets the retained state. Native code executes a returned
+// effect once and feeds back that operation's bounded completion fact.
+class Session final {
+public:
+    enum class Event : std::uint64_t {
+        begin,
+        response,
+        input,
+        note,
+        files
+    };
+    enum class Effect : std::uint64_t {
+        invalid,
+        ready,
+        file_ready,
+        input,
+        note,
+        files,
+        upper,
+        read_note,
+        upper_note,
+        file,
+        peek,
+        wc,
+        crc,
+        unknown,
+        note_saved,
+        file_reply,
+        abort_file,
+        exited,
+        failed
+    };
+
+private:
+    using State = std::array<std::uint64_t, 4>;
+    class Argument final {
+    public:
+        State state;
+        std::uint64_t event, value, carry;
+    };
+    class Result final {
+    public:
+        State state;
+        std::uint64_t effect, carry, outcome;
+    };
+    State state_{};
+    std::uint64_t carry_{}, outcome_{};
+    static_assert(sizeof(Argument) == 56 && offsetof(Argument, event) == 32 && offsetof(Argument, value) == 40 &&
+                  offsetof(Argument, carry) == 48);
+    static_assert(sizeof(Result) == 56 && offsetof(Result, effect) == 32 && offsetof(Result, carry) == 40 &&
+                  offsetof(Result, outcome) == 48);
+
+public:
+    [[nodiscard]] auto advance(Event event, std::uint64_t value = 0, std::uint64_t carry = 0) -> Effect {
+        const Argument argument{state_, static_cast<std::uint64_t>(event), value, carry};
+        Result result{};
+        __au_runtime_program_session(&argument, &result);
+        if (result.effect == 0 || result.effect > static_cast<std::uint64_t>(Effect::failed) || result.carry > 1 ||
+            result.outcome > 2)
+            return Effect::invalid;
+        state_ = result.state;
+        carry_ = result.carry;
+        outcome_ = result.outcome;
+        return static_cast<Effect>(result.effect);
+    }
+    [[nodiscard]] auto after_cr() const -> std::uint64_t {
+        return carry_;
+    }
+    [[nodiscard]] auto outcome() const -> std::uint64_t {
+        return outcome_;
+    }
+};
+
 // Private supervisor bridge records. Only the argument carries a checked
 // Console grant; the copied result contains no address or authority.
 class SubmissionArgument final {

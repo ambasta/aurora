@@ -11,6 +11,7 @@ import console.session_files;
 import console.protected_files;
 import console.program_input;
 import console.program_output;
+import console.program_session;
 import kernel.note_read;
 
 // A private sealed Console turn; only its ordinary copied submission returns.
@@ -25,6 +26,14 @@ auto read_program_input(builtin::ConsoleSession& session, bool after_cr) -> cons
 auto present_program_response(builtin::ConsoleSession& session, console::ProgramResponse response) -> bool {
     static_assert(size_of(console::ProgramResponse) == 80);
     return console::present_program_response(session, response);
+}
+
+// One retained copied session chooses effects; native code keeps all authority.
+auto update_program_session(console::ProgramSession current, u64 event, u64 value, u64 carry)
+    -> console::ProgramSessionUpdate {
+    static_assert(size_of(console::ProgramSession) == 32);
+    static_assert(size_of(console::ProgramSessionUpdate) == 56);
+    return console::advance_program_session(current, event, value, carry);
 }
 
 auto aurora_kernel_value() -> i64 {

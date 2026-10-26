@@ -29,7 +29,12 @@ input and the words `help`, `status` and `exit`. The one-bit CR carry crosses
 turns so a queued LF after a protected command does not submit another line.
 
 The native adapter validates the copied result and releases the console grant
-before note/file mutation or protected execution. It retains command dispatch,
+before note/file mutation or protected execution. A retained
+`console::ProgramSession` owns the session phase, CR carry, fixed profile and
+terminal outcome. Bounded input, note/file-selection and response-completion facts
+choose the next effect: production checks the note before files, while file-call
+admits its returning read commands. Invalid or post-terminal progression refuses
+without changing state. Native code executes those effects and retains
 authenticated lifecycle/publication and note/file commits. `console.program_output`
 then presents a copied, bounded `ProgramResponse` and the following prompt through
 the same sealed capability. Ready, saved, missing, stopped and unknown responses
@@ -52,8 +57,11 @@ commit; the session follows its existing quiet failure exit and clears session
 stores. Native lifecycle and authority diagnostics remain outside these turns.
 
 The private entries use compiler ABI facts alongside the existing linked-image
-stack checks. These migrations are source-only; generated ABI, stack limits and
-actual boots still need final-source qualification.
+stack checks. Session records are copied scalars, not grants; the bridge checks
+their native-dependent shape and effect encoding. The existing compiled stream
+driver exercises session transition data, delimiter/response failures, committed
+mutation preservation and CRLF carry through recovery. Actual boots and complete
+qualification remain final-source gates.
 
 ## Session-local protected note
 

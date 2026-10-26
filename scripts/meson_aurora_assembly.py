@@ -113,7 +113,63 @@ def validate_terminal_paint_abi(facts):
         raise ValueError("Terminal paint entry shape does not match compiler facts")
 
 
+def validate_program_session_abi(facts):
+    """The session state is opaque; native code reads only the returned facts."""
+    from bootstrap_frontend import abi_declaration, normalize_function_abi
+
+    state_symbol, state = abi_declaration(facts, "records", "console::ProgramSession")
+    effect_symbol, effect = abi_declaration(facts, "enums", "console::ProgramEffect")
+    result_symbol, result = abi_declaration(facts, "records", "console::ProgramSessionUpdate")
+    effects = (
+        "invalid ready file_ready input note files upper read_note upper_note file peek wc crc unknown "
+        "note_saved file_reply abort_file exited failed"
+    ).split()
+    if effect["cases"] != dict(zip(effects, range(len(effects)))):
+        raise ValueError("Program session effect encoding does not match its native executor")
+    if (state["size"], state["alignment"], state["reserved"]) != (32, 8, 32) or len(state["fields"]) != 4:
+        raise ValueError("Program session state must occupy four copied scalar words")
+    for index, field in enumerate(state["fields"]):
+        if {key: value for key, value in field.items() if key != "name"} != {
+            "offset": index * 8,
+            "bytes": 8,
+            "array_length": 0,
+            "kind": "u64",
+        }:
+            raise ValueError("Program session initial representation must contain only scalar words")
+    fields = [
+        dict(name="session", offset=0, bytes=32, array_length=0, kind="class", type_name=state_symbol),
+        dict(name="effect", offset=32, bytes=8, array_length=0, kind="enum", type_name=effect_symbol),
+        dict(name="after_cr", offset=40, bytes=8, array_length=0, kind="u64"),
+        dict(name="outcome", offset=48, bytes=8, array_length=0, kind="u64"),
+    ]
+    if result != dict(source_name="console::ProgramSessionUpdate", size=56, alignment=8, reserved=56, fields=fields):
+        raise ValueError("Program session result layout does not match its native executor")
+    _, function = abi_declaration(facts, "functions", "update_program_session")
+    expected = {
+        "source_name": "update_program_session",
+        "receiver": None,
+        "receiver_mutable": None,
+        "borrowed_root_count": 0,
+        "borrowed_roots": [],
+        "borrowed_root_abi": {
+            "kind": "none",
+            "register": None,
+            "tuple_payload_bytes": 0,
+            "tuple_reserved_bytes": 0,
+            "saved_root_reserved_bytes": 0,
+        },
+        "parameter_bytes": 56,
+        "parameters": [dict(offset=0, bytes=32, kind="class", type_name=state_symbol)]
+        + [dict(offset=offset, bytes=8, kind="u64") for offset in (32, 40, 48)],
+        "result": dict(bytes=56, kind="class", type_name=result_symbol),
+    }
+    if normalize_function_abi(facts, function) != expected:
+        raise ValueError("Program session entry shape does not match its native executor")
+
+
 def render_bridge(source, facts):
+    if "# PROGRAM_SESSION_ABI:" in source:
+        validate_program_session_abi(facts)
     if "# UART_POLICY_ABI:" in source:
         validate_uart_policy_abi(facts)
     if "# TERMINAL_PAINT_ABI:" in source:

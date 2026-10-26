@@ -1,0 +1,120 @@
+# event value carry -> effect next-carry outcome (wire enums in program-input.hpp).
+# Each new block starts an empty session; invalid effects must preserve its state.
+new
+# Cannot consume any completion before begin, or choose an unknown profile.
+1 1 0 0 0 0
+2 0 0 0 0 0
+0 2 0 0 0 0
+0 0 1 0 0 0
+0 0 0 1 0 0
+0 1 0 0 0 0
+1 2 0 0 0 0
+1 1 1 0 0 0
+1 1 0 3 0 0
+1 1 0 0 0 0
+# Note precedence, invalid completion and CR retention.
+2 0 1 4 1 0
+2 0 0 0 1 0
+4 1 0 0 1 0
+3 5 0 0 1 0
+3 1 1 0 1 0
+3 1 0 14 1 0
+3 1 0 0 1 0
+1 1 0 3 1 0
+2 0 0 4 0 0
+3 2 0 7 0 0
+1 1 0 3 0 0
+2 0 1 4 1 0
+3 3 0 7 1 0
+1 1 0 3 1 0
+2 0 0 4 0 0
+3 4 0 8 0 0
+1 1 0 3 0 0
+# Only a declined note is offered to files; profile selects command effects.
+2 0 1 4 1 0
+3 0 0 5 1 0
+4 7 0 0 1 0
+4 0 0 13 1 0
+1 1 0 3 1 0
+2 0 0 4 0 0
+3 0 0 5 0 0
+4 1 0 15 0 0
+4 1 0 0 0 0
+1 1 0 3 0 0
+2 0 1 4 1 0
+3 0 0 5 1 0
+4 2 0 9 1 0
+1 1 0 3 1 0
+2 0 0 4 0 0
+3 0 0 5 0 0
+4 3 0 9 0 0
+1 1 0 3 0 0
+2 0 0 4 0 0
+3 0 0 5 0 0
+4 4 0 16 0 0
+1 1 0 3 0 0
+2 0 0 4 0 0
+3 0 0 5 0 0
+4 5 0 16 0 0
+1 1 0 3 0 0
+2 0 0 4 0 0
+3 0 0 5 0 0
+4 6 0 16 0 0
+1 1 0 3 0 0
+2 1 1 6 1 0
+1 1 0 3 1 0
+2 4 0 0 1 0
+2 2 2 0 1 0
+2 2 0 17 0 1
+0 0 0 0 0 1
+1 1 0 0 0 1
+2 0 0 0 0 1
+3 0 0 0 0 1
+4 0 0 0 0 1
+new
+# File-call skips the note and rejects protected-console-only selections.
+0 1 0 2 0 0
+1 1 0 3 0 0
+2 0 1 5 1 0
+3 1 0 0 1 0
+4 0 0 13 1 0
+1 1 0 3 1 0
+2 0 0 5 0 0
+4 1 0 15 0 0
+1 1 0 3 0 0
+2 0 0 5 0 0
+4 2 0 16 0 0
+1 1 0 3 0 0
+2 0 0 5 0 0
+4 3 0 16 0 0
+1 1 0 3 0 0
+2 0 1 5 1 0
+4 4 0 10 1 0
+1 1 0 3 1 0
+2 0 0 5 0 0
+4 5 0 11 0 0
+1 1 0 3 0 0
+2 0 0 5 0 0
+4 6 0 12 0 0
+1 1 0 3 0 0
+2 1 1 13 1 0
+1 0 0 18 1 2
+0 0 0 0 1 2
+1 1 0 0 1 2
+2 0 0 0 1 2
+3 0 0 0 1 2
+4 0 0 0 1 2
+new
+# Failed initial output and failed input delimiters are terminal.
+0 0 0 1 0 0
+1 0 0 18 0 2
+2 0 0 0 0 2
+new
+0 0 0 1 0 0
+1 1 0 3 0 0
+5 0 0 0 0 0
+18446744073709551615 0 0 0 0 0
+2 18446744073709551615 0 0 0 0
+2 3 1 18 1 2
+1 1 0 0 1 2
+2 0 0 0 1 2

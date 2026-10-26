@@ -23,7 +23,9 @@ and four named session-local RAM files; the [graphical console](framebuffer-cons
 adds Aurora-owned presentation. This state lasts for the session, not across
 reboots. The protected-console source also uses ConsoleSession for individual
 input and response turns, exercised by the production-console qualification in
-[9aa7b5d](https://github.com/ambasta/aurora/commit/9aa7b5dd72e005ead6053e7ec5742f5663786fa9); native dispatch and
+[9aa7b5d](https://github.com/ambasta/aurora/commit/9aa7b5dd72e005ead6053e7ec5742f5663786fa9);
+its retained `ProgramSession` now selects protected-console commands and owns
+phase, CR carry and terminal outcome. Native effect execution and authenticated
 lifecycle remain migration dependencies. The BIOS console uses the same Aurora
 editor and sealed ConsoleSession for its bounded three-command session and
 presentation; trusted native code retains interrupt transport and shutdown.

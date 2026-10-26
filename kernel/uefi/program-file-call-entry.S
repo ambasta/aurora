@@ -3,6 +3,19 @@
 # and response presenter borrow an existing Console grant. Copied records and
 # scalar results carry no authority.
 .text
+# PROGRAM_SESSION_ABI: retained copied session and bounded completion facts.
+.global __au_runtime_program_session
+.hidden __au_runtime_program_session
+.type __au_runtime_program_session,@function
+__au_runtime_program_session:
+    pushq %rbp
+    movq %rsp,%rbp
+    movq %rdi,%r11
+    movq %rsi,%r10
+    call @update_program_session@
+    leave
+    ret
+.size __au_runtime_program_session,.-__au_runtime_program_session
 .global __au_runtime_program_input
 .hidden __au_runtime_program_input
 .type __au_runtime_program_input,@function
