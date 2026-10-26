@@ -185,6 +185,22 @@ ir_api = executable('ir-api', 'compiler/ir_api.cpp',
 test('ir-api', ir_api, args: [meson.current_source_dir() / 'compiler' / 'ir'],
      suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
 
+
+# One driver consumes existing IR data and one preassembled wrapper; malformed
+# inputs and allocation failures reuse that admitted pair without recompilation.
+private_object_wrapper = custom_target(
+    'private-object-wrapper', input: 'compiler/private_object.S', output: 'private-object-wrapper.o',
+    command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '@INPUT@', '-o', '@OUTPUT@'],
+)
+private_object_test = executable('private-object-test', 'compiler/private_object.cpp',
+    dependencies: hosted_frontend, link_with: ir_text, include_directories: include_directories('../compiler'),
+    native: true, override_options: fixture_options, install: false)
+test('private-object', python,
+     args: ['-B', files('compiler/private_object.py'), private_object_test, aurorac, private_object_wrapper,
+            '--frontend', frontend_stage2_output[1], frontend_stage2_output[0], frontend_stage2_output[2]],
+     depends: [private_object_test, private_object_wrapper, aurorac, frontend_stage2_output],
+     suite: ['full', 'merge', 'dev', 'core', 'compiler'], env: oracle_env, timeout: 120)
+
 test(
     'owned-mutation-abi',
     python,

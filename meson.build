@@ -41,7 +41,8 @@ frontend_inputs = files('compiler/formatter.au', 'compiler/lexer.au', 'compiler/
                         'compiler/x86_storage.au', 'compiler/x86_object_storage.au',
                         'compiler/x86_helpers.au', 'compiler/x86_scalar.au',
                         'compiler/x86_objects.au', 'compiler/x86_resources.au', 'compiler/x86_facts.au',
-                        'compiler/x86_module.au', 'library/std/decimal_digits.au',
+                        'compiler/x86_module.au', 'compiler/private_object.au',
+                        'library/std/decimal_digits.au', 'library/std/binary.au',
                         'compiler/lowering_common.au', 'compiler/lowering_configuration.au',
                         'compiler/lowering_types.au', 'compiler/lowering_values.au', 'compiler/lowering_frames.au',
                         'compiler/lowering_calls.au', 'compiler/lowering_expressions.au',
@@ -72,7 +73,7 @@ frontend_adapter_sources = files('compiler/hosted_parser.cpp', 'compiler/hosted_
                                  'compiler/hosted_ir_metadata.cpp', 'compiler/hosted_ir_instructions.cpp',
                                  'compiler/ir_verify.cpp', 'runtime/hosted_bytes.cpp')
 frontend_host_sources = frontend_adapter_sources + files('compiler/hosted_lexer.cpp', 'compiler/hosted_graph.cpp',
-                                                         'compiler/hosted_x86.cpp')
+                                                         'compiler/hosted_x86.cpp', 'compiler/hosted_private_object.cpp')
 frontend_library = static_library(
   'hosted-frontend', [frontend_host_sources, frontend_object, frontend_assembly[3]],
   cpp_args: frontend_args, native: true, install: false,
@@ -97,7 +98,7 @@ frontend_stage2_output = custom_target(
            'hosted-frontend-stage2.stack.json'],
   command: [python, '-B', files('scripts/bootstrap_frontend.py'), aurorac,
             '--output-mode', 'object', '--output', '@OUTPUT0@', '@INPUT@'],
-  depend_files: bridge_table + files('scripts/meson_aurora_assembly.py'),
+  depend_files: bridge_table,
   build_by_default: false,
 )
 frontend_stage2_library = static_library(
@@ -118,7 +119,7 @@ frontend_stage3_output = custom_target(
            'hosted-frontend-stage3.stack.json'],
   command: [python, '-B', files('scripts/bootstrap_frontend.py'), aurorac_stage2,
             '--output-mode', 'object', '--output', '@OUTPUT0@', '@INPUT@'],
-  depend_files: bridge_table + files('scripts/meson_aurora_assembly.py'),
+  depend_files: bridge_table,
   build_by_default: false,
 )
 

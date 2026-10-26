@@ -140,7 +140,12 @@ export namespace compiler_frontend {
 """)
     modules = directory / "modules"
     bootstrap.stage_modules(
-        modules, [*sorted((ROOT / "compiler").glob("*.au")), ROOT / "library/std/decimal_digits.au"]
+        modules,
+        [
+            *sorted((ROOT / "compiler").glob("*.au")),
+            ROOT / "library/std/decimal_digits.au",
+            ROOT / "library/std/binary.au",
+        ],
     )
     transfer = modules / "aurora/compiler/ir_verification_transfer.au"
     original_transfer = transfer.read_text()
@@ -332,7 +337,12 @@ export namespace compiler_frontend {
 """)
     modules = directory / "modules"
     bootstrap.stage_modules(
-        modules, [*sorted((ROOT / "compiler").glob("*.au")), ROOT / "library/std/decimal_digits.au"]
+        modules,
+        [
+            *sorted((ROOT / "compiler").glob("*.au")),
+            ROOT / "library/std/decimal_digits.au",
+            ROOT / "library/std/binary.au",
+        ],
     )
     storage = modules / "aurora/compiler/ir_instruction_storage.au"
     scalar = modules / "aurora/compiler/x86_scalar.au"

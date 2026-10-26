@@ -1,0 +1,764 @@
+export module aurora.compiler.private_object;
+import std.binary;
+import aurora.compiler.x86_object_storage;
+
+// Closed bootstrap composition, not an ELF linker. The two inputs are the
+// source emitter's private object and GNU as's generated frontend wrappers.
+export namespace compiler_private_object {
+    class NameRow {
+    public:
+        i64 offset;
+        i64 length;
+        i64 symbol;
+        NameRow(i64 at, i64 count, i64 index) : offset(at), length(count), symbol(index) {
+        }
+    };
+    auto names(builtin::ByteRegion region) -> builtin::OwnedValues<NameRow> {
+        const NameRow empty = NameRow(0, 0, 0);
+        builtin::OwnedValues<NameRow> result = region.try_allocate(0, empty);
+        return move(result);
+    }
+    auto extent(builtin::span<const u8> bytes, i64 offset, i64 size) -> bool {
+        return offset >= 0 && size >= 0 && offset <= bytes.size() && size <= bytes.size() - offset;
+    }
+    auto number(builtin::span<const u8> bytes, i64 at, i64 width) -> i64 {
+        u64 value = 18446744073709551615u64;
+        if (width == 2) {
+            const std::ByteReadResult read = std::read_le16(bytes, at);
+            value = read.value_or(value);
+        }
+        if (width == 4) {
+            const std::ByteReadResult read = std::read_le32(bytes, at);
+            value = read.value_or(value);
+        }
+        if (width == 8) {
+            const std::ByteReadResult read = std::read_le64(bytes, at);
+            value = read.value_or(value);
+        }
+        if (value > 67108864u64) {
+            return -1;
+        }
+        return i64(value);
+    }
+    auto zeroes(builtin::span<const u8> bytes, i64 at, i64 count) -> bool {
+        if (!extent(bytes, at, count)) {
+            return false;
+        }
+        i64 index = 0;
+        while (index < count) {
+            if (bytes.at(at + index) != u8(0)) {
+                return false;
+            }
+            index = index + 1;
+        }
+        return true;
+    }
+    auto equal(builtin::span<const u8> bytes, i64 at, i64 count, builtin::span<const u8> expected) -> bool {
+        if (count != expected.size() || !extent(bytes, at, count)) {
+            return false;
+        }
+        i64 index = 0;
+        while (index < count) {
+            if (bytes.at(at + index) != expected.at(index)) {
+                return false;
+            }
+            index = index + 1;
+        }
+        return true;
+    }
+    auto compare(builtin::span<const u8> left, NameRow a, builtin::span<const u8> right, NameRow b) -> i64 {
+        i64 index = 0;
+        while (index < a.length && index < b.length) {
+            if (left.at(a.offset + index) < right.at(b.offset + index)) {
+                return -1;
+            }
+            if (left.at(a.offset + index) > right.at(b.offset + index)) {
+                return 1;
+            }
+            index = index + 1;
+        }
+        if (a.length < b.length) {
+            return -1;
+        }
+        if (a.length > b.length) {
+            return 1;
+        }
+        return 0;
+    }
+    auto greater(builtin::span<const u8> bytes, NameRow a, NameRow b, bool lexical) -> bool {
+        if (lexical) {
+            return compare(bytes, a, bytes, b) > 0;
+        }
+        return a.offset > b.offset;
+    }
+    class Profile {
+    public:
+        i64 text;
+        i64 textSize;
+        i64 rodata;
+        i64 rodataSize;
+        i64 relocations;
+        i64 relocationSize;
+        i64 symbols;
+        i64 symbolSize;
+        i64 strings;
+        i64 stringSize;
+        i64 locals;
+        i64 alignment;
+        bool valid;
+        Profile() : text(0), textSize(0), rodata(0), rodataSize(0), relocations(0), relocationSize(0), symbols(0),
+            symbolSize(0), strings(0), stringSize(0), locals(0), alignment(0), valid(false) {
+        }
+    };
+    class Section {
+    public:
+        i64 kind;
+        i64 flags;
+        i64 link;
+        i64 info;
+        i64 alignment;
+        i64 entry;
+        Section(i64 type, i64 attributes, i64 linked, i64 extra, i64 align, i64 stride) : kind(type), flags(attributes),
+            link(linked), info(extra), alignment(align), entry(stride) {
+        }
+    };
+    auto section(builtin::span<const u8> bytes, i64 table, i64 index, NameRow strings, builtin::span<const u8> name,
+        Section expected) -> bool {
+        const i64 row = table + index * 64;
+        const i64 offset = number(bytes, row, 4);
+        return offset >= 0 && offset < strings.length && name.size() < strings.length - offset && equal(bytes,
+            strings.offset + offset, name.size(), name) && bytes.at(strings.offset + offset + name.size()) == u8(0)
+            && number(bytes, row + 4, 4) == expected.kind && number(bytes, row + 8, 8) == expected.flags
+            && zeroes(bytes, row + 16, 8) && number(bytes, row + 40, 4) == expected.link && number(bytes, row + 44, 4)
+            == expected.info && number(bytes, row + 48, 8) == expected.alignment && number(bytes, row + 56, 8)
+            == expected.entry;
+    }
+    auto profile(builtin::span<const u8> bytes, bool wrapper) -> Profile {
+        Profile result = Profile();
+        i64 count = 8;
+        i64 sym = 3;
+        i64 str = 4;
+        i64 shstr = 5;
+        i64 stack = 6;
+        if (wrapper) {
+            count = 9;
+            sym = 6;
+            str = 7;
+            shstr = 8;
+            stack = 5;
+        }
+        if (bytes.size() > 67108864 || !equal(bytes, 0, 16, "\x7fELF\x02\x01\x01\0\0\0\0\0\0\0\0\0") || number(bytes,
+            16, 2) != 1 || number(bytes, 18, 2) != 62 || number(bytes, 20, 4) != 1 || !zeroes(bytes, 24, 16)
+            || !zeroes(bytes, 48, 4) || number(bytes, 52, 2) != 64 || !zeroes(bytes, 54, 4) || number(bytes, 58, 2)
+            != 64 || number(bytes, 60, 2) != count || number(bytes, 62, 2) != shstr) {
+            return result;
+        }
+        const i64 table = number(bytes, 40, 8);
+        if (table < 64 || table % 8 != 0 || !extent(bytes, table, count * 64) || table + count * 64 != bytes.size()
+            || !zeroes(bytes, table, 64)) {
+            return result;
+        }
+        i64 at = 1;
+        while (at < count) {
+            const i64 row = table + at * 64;
+            const i64 offset = number(bytes, row + 24, 8);
+            const i64 size = number(bytes, row + 32, 8);
+            const i64 alignment = number(bytes, row + 48, 8);
+            if (offset < 64 || size < 0 || offset > table || size > table - offset || (alignment != 1 && alignment != 2
+                && alignment != 4 && alignment != 8 && alignment != 16) || offset % alignment != 0) {
+                return result;
+            }
+            i64 before = 1;
+            while (before < at && size > 0) {
+                const i64 previous = table + before * 64;
+                const i64 start = number(bytes, previous + 24, 8);
+                const i64 length = number(bytes, previous + 32, 8);
+                if (length > 0 && offset < start + length && start < offset + size) {
+                    return result;
+                }
+                before = before + 1;
+            }
+            at = at + 1;
+        }
+        const i64 namesAt = number(bytes, table + shstr * 64 + 24, 8);
+        const i64 namesSize = number(bytes, table + shstr * 64 + 32, 8);
+        result.text = number(bytes, table + 64 + 24, 8);
+        result.textSize = number(bytes, table + 64 + 32, 8);
+        result.alignment = number(bytes, table + 64 + 48, 8);
+        result.relocations = number(bytes, table + 128 + 24, 8);
+        result.relocationSize = number(bytes, table + 128 + 32, 8);
+        result.symbols = number(bytes, table + sym * 64 + 24, 8);
+        result.symbolSize = number(bytes, table + sym * 64 + 32, 8);
+        result.locals = number(bytes, table + sym * 64 + 44, 4);
+        result.strings = number(bytes, table + str * 64 + 24, 8);
+        result.stringSize = number(bytes, table + str * 64 + 32, 8);
+        if (result.textSize == 0 || result.symbolSize < 24 || result.symbolSize % 24 != 0 || result.relocationSize % 24
+            != 0 || result.locals < 1 || result.locals > result.symbolSize / 24 || result.stringSize < 1
+            || bytes.at(result.strings) != u8(0) || bytes.at(result.strings + result.stringSize - 1) != u8(0)
+            || namesSize < 1 || bytes.at(namesAt) != u8(0) || !section(bytes, table, 1, NameRow(namesAt, namesSize, 0),
+            ".text", Section(1, 6, 0, 0, result.alignment, 0)) || !section(bytes, table, 2, NameRow(namesAt, namesSize,
+            0), ".rela.text", Section(4, 64, sym, 1, 8, 24)) || !section(bytes, table, sym, NameRow(namesAt, namesSize,
+            0), ".symtab", Section(2, 0, str, result.locals, 8, 24)) || !section(bytes, table, str, NameRow(namesAt,
+            namesSize, 0), ".strtab", Section(3, 0, 0, 0, 1, 0)) || !section(bytes, table, shstr, NameRow(namesAt,
+            namesSize, 0), ".shstrtab", Section(3, 0, 0, 0, 1, 0)) || !section(bytes, table, stack, NameRow(namesAt,
+            namesSize, 0), ".note.GNU-stack", Section(1, 0, 0, 0, 1, 0)) || number(bytes, table + stack * 64 + 32, 8)
+            != 0 || !zeroes(bytes, result.symbols, 24)) {
+            return result;
+        }
+        if (wrapper) {
+            if (result.locals != 1 || !section(bytes, table, 3, NameRow(namesAt, namesSize, 0), ".data", Section(1, 3,
+                0, 0, 1, 0)) || !section(bytes, table, 4, NameRow(namesAt, namesSize, 0), ".bss", Section(8, 3, 0, 0, 1,
+                0)) || number(bytes, table + 3 * 64 + 32, 8) != 0 || number(bytes, table + 4 * 64 + 32, 8) != 0) {
+                return result;
+            }
+        } else {
+            result.rodata = number(bytes, table + 7 * 64 + 24, 8);
+            result.rodataSize = number(bytes, table + 7 * 64 + 32, 8);
+            if (result.alignment != 16 || !section(bytes, table, 7, NameRow(namesAt, namesSize, 0), ".rodata",
+                Section(1, 2, 0, 0, 1, 0))) {
+                return result;
+            }
+        }
+        result.valid = true;
+        return result;
+    }
+    auto identifier(u8 byte, bool first) -> bool {
+        return byte == '_' || (byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') || (!first && byte >= '0'
+            && byte <= '9');
+    }
+    auto prefix(builtin::span<const u8> bytes, NameRow name, builtin::span<const u8> start) -> bool {
+        return name.length > start.size() && equal(bytes, name.offset, start.size(), start);
+    }
+    class Workspace {
+        builtin::OwnedBytes output;
+        builtin::OwnedValues<NameRow> sourceNames;
+        builtin::OwnedValues<NameRow> wrapperNames;
+        builtin::OwnedValues<NameRow> selectedNames;
+        builtin::OwnedValues<compiler_x86::ObjectIndexRow> wrapperMap;
+        compiler_x86::EmitStatus outcome;
+        i64 outputSize;
+        i64 cursor;
+    public:
+        Workspace(builtin::ByteRegion region) : output(region.try_allocate(0)), sourceNames(names(region)),
+            wrapperNames(names(region)), selectedNames(names(region)),
+            wrapperMap(compiler_x86::ObjectIndexRow_pool(region)), outcome(compiler_x86::EmitStatus::pending),
+            outputSize(0), cursor(0) {
+        }
+    private:
+        auto fail() -> bool {
+            if (outcome == compiler_x86::EmitStatus::running || outcome == compiler_x86::EmitStatus::pending) {
+                outcome = compiler_x86::EmitStatus::invalid;
+            }
+            return false;
+        }
+        auto allocation() -> bool {
+            outcome = compiler_x86::EmitStatus::allocation;
+            return false;
+        }
+        auto row_count(i64 pool) const -> i64 {
+            if (pool == 0) {
+                return sourceNames.size();
+            }
+            if (pool == 1) {
+                return wrapperNames.size();
+            }
+            return selectedNames.size();
+        }
+        auto read_row(i64 pool, i64 index) const -> NameRow {
+            if (pool == 0) {
+                return sourceNames.at(index);
+            }
+            if (pool == 1) {
+                return wrapperNames.at(index);
+            }
+            return selectedNames.at(index);
+        }
+        auto set_row(i64 pool, i64 index, NameRow row) -> bool {
+            if (pool == 0) {
+                return sourceNames.set(index, row);
+            }
+            if (pool == 1) {
+                return wrapperNames.set(index, row);
+            }
+            return selectedNames.set(index, row);
+        }
+        auto resize_rows(i64 pool, i64 count) -> bool {
+            const NameRow empty = NameRow(0, 0, 0);
+            if (pool == 0) {
+                return sourceNames.try_resize(count, empty);
+            }
+            return wrapperNames.try_resize(count, empty);
+        }
+        auto sift(i64 pool, builtin::span<const u8> bytes, i64 root, i64 end, bool lexical) -> bool {
+            i64 parent = root;
+            bool done = false;
+            while (parent < end / 2 && !done) {
+                i64 child = parent * 2 + 1;
+                if (child + 1 < end && greater(bytes, read_row(pool, child + 1), read_row(pool, child), lexical)) {
+                    child = child + 1;
+                }
+                const NameRow old = read_row(pool, parent);
+                if (greater(bytes, read_row(pool, child), old, lexical)) {
+                    if (!set_row(pool, parent, read_row(pool, child)) || !set_row(pool, child, old)) {
+                        return false;
+                    }
+                    parent = child;
+                } else {
+                    done = true;
+                }
+            }
+            return true;
+        }
+        auto sort(i64 pool, builtin::span<const u8> bytes, bool lexical) -> bool {
+            i64 at = row_count(pool) / 2;
+            while (at > 0) {
+                at = at - 1;
+                if (!sift(pool, bytes, at, row_count(pool), lexical)) {
+                    return false;
+                }
+            }
+            i64 end = row_count(pool);
+            while (end > 1) {
+                end = end - 1;
+                const NameRow first = read_row(pool, 0);
+                if (!set_row(pool, 0, read_row(pool, end)) || !set_row(pool, end, first) || !sift(pool, bytes, 0, end,
+                    lexical)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        auto find(i64 pool, builtin::span<const u8> bytes, builtin::span<const u8> query, NameRow name) -> i64 {
+            i64 low = 0;
+            i64 high = row_count(pool);
+            while (low < high) {
+                const i64 middle = low + (high - low) / 2;
+                const i64 order = compare(bytes, read_row(pool, middle), query, name);
+                if (order == 0) {
+                    return middle;
+                }
+                if (order < 0) {
+                    low = middle + 1;
+                } else {
+                    high = middle;
+                }
+            }
+            return -1;
+        }
+        auto admit_symbols(i64 pool, builtin::span<const u8> bytes, Profile p,
+            bool wrapper) -> compiler_x86::EmitStatus {
+            if (!resize_rows(pool, p.symbolSize / 24 - 1)) {
+                return compiler_x86::EmitStatus::allocation;
+            }
+            i64 index = 1;
+            while (index < p.symbolSize / 24) {
+                const i64 at = p.symbols + index * 24;
+                const i64 name = number(bytes, at, 4);
+                const i64 info = i64(bytes.at(at + 4));
+                const i64 visibility = i64(bytes.at(at + 5));
+                const i64 sectionIndex = number(bytes, at + 6, 2);
+                const i64 value = number(bytes, at + 8, 8);
+                const i64 size = number(bytes, at + 16, 8);
+                if (name <= 0 || name >= p.stringSize || bytes.at(p.strings + name - 1) != u8(0) || value < 0 || size
+                    < 0) {
+                    return compiler_x86::EmitStatus::invalid;
+                }
+                if (wrapper) {
+                    if (!((info == 18 && visibility == 2 && sectionIndex == 1 && size > 0) || (info == 16 && visibility
+                        == 0 && sectionIndex == 0 && value == 0 && size == 0))) {
+                        return compiler_x86::EmitStatus::invalid;
+                    }
+                } else {
+                    if (visibility != 0 || !((index < p.locals && (info == 0 || info == 2) && (sectionIndex == 1
+                        || (sectionIndex == 7 && info == 0))) || (index >= p.locals && info == 16 && sectionIndex == 0
+                        && value == 0 && size == 0))) {
+                        return compiler_x86::EmitStatus::invalid;
+                    }
+                }
+                i64 sectionSize = p.textSize;
+                if (sectionIndex == 7) {
+                    sectionSize = p.rodataSize;
+                }
+                if (sectionIndex != 0 && (value > sectionSize || size > sectionSize - value)) {
+                    return compiler_x86::EmitStatus::invalid;
+                }
+                if (!set_row(pool, index - 1, NameRow(p.strings + name, 0, index))) {
+                    return compiler_x86::EmitStatus::invalid;
+                }
+                index = index + 1;
+            }
+            // Sort offsets first: disjoint, terminated names make total string
+            // scanning bounded by the input, even for malicious repeated indices.
+            if (!sort(pool, bytes, false)) {
+                return compiler_x86::EmitStatus::invalid;
+            }
+            index = 0;
+            while (index < row_count(pool)) {
+                NameRow row = read_row(pool, index);
+                i64 end = p.strings + p.stringSize;
+                if (index + 1 < row_count(pool)) {
+                    const NameRow next = read_row(pool, index + 1);
+                    end = next.offset;
+                }
+                i64 at = row.offset;
+                while (at < end && bytes.at(at) != u8(0)) {
+                    if (!identifier(bytes.at(at), at == row.offset) && bytes.at(at) != '.') {
+                        return compiler_x86::EmitStatus::invalid;
+                    }
+                    at = at + 1;
+                }
+                if (at == end || at == row.offset) {
+                    return compiler_x86::EmitStatus::invalid;
+                }
+                row.length = at - row.offset;
+                const i64 symbol = p.symbols + row.symbol * 24;
+                const i64 sectionIndex = number(bytes, symbol + 6, 2);
+                if ((!wrapper && sectionIndex == 0 && !prefix(bytes, row, "__au_runtime_")) || (wrapper && sectionIndex
+                    == 1 && !prefix(bytes, row, "aurora_hosted_"))) {
+                    return compiler_x86::EmitStatus::invalid;
+                }
+                if (!set_row(pool, index, row)) {
+                    return compiler_x86::EmitStatus::invalid;
+                }
+                index = index + 1;
+            }
+            if (!sort(pool, bytes, true)) {
+                return compiler_x86::EmitStatus::invalid;
+            }
+            index = 1;
+            while (index < row_count(pool)) {
+                if (compare(bytes, read_row(pool, index - 1), bytes, read_row(pool, index)) == 0) {
+                    return compiler_x86::EmitStatus::invalid;
+                }
+                index = index + 1;
+            }
+            return compiler_x86::EmitStatus::complete;
+        }
+        auto select(builtin::span<const u8> selected, builtin::span<const u8> source, Profile p) -> bool {
+            if (selected.size() < 2 || selected.size() > 67108864) {
+                return fail();
+            }
+            i64 count = 0;
+            i64 at = 0;
+            while (at < selected.size()) {
+                if (selected.at(at) == '\n') {
+                    count = count + 1;
+                }
+                at = at + 1;
+            }
+            const NameRow empty = NameRow(0, 0, 0);
+            if (count == 0 || count > selected.size() / 2 || selected.at(selected.size() - 1) != '\n') {
+                return fail();
+            }
+            if (!selectedNames.try_resize(count, empty)) {
+                return allocation();
+            }
+            at = 0;
+            i64 index = 0;
+            while (index < count) {
+                const i64 begin = at;
+                while (at < selected.size() && selected.at(at) != '\n') {
+                    if (!identifier(selected.at(at), at == begin)) {
+                        return fail();
+                    }
+                    at = at + 1;
+                }
+                NameRow row = NameRow(begin, at - begin, 0);
+                if (row.length == 0 || (index > 0 && compare(selected, read_row(2, index - 1), selected, row) >= 0)) {
+                    return fail();
+                }
+                const i64 found = find(0, source, selected, row);
+                if (found < 0) {
+                    return fail();
+                }
+                const NameRow target = sourceNames.at(found);
+                row.symbol = target.symbol;
+                if (row.symbol >= p.locals || number(source, p.symbols + row.symbol * 24 + 6, 2) != 1
+                    || !selectedNames.set(index, row)) {
+                    return fail();
+                }
+                at = at + 1;
+                index = index + 1;
+            }
+            return at == selected.size();
+        }
+        auto map(builtin::span<const u8> source, Profile s, builtin::span<const u8> wrapper, Profile w,
+            builtin::span<const u8> selected) -> i64 {
+            const compiler_x86::ObjectIndexRow empty = compiler_x86::ObjectIndexRow(-1);
+            if (!wrapperMap.try_resize(w.symbolSize / 24, empty)) {
+                allocation();
+                return -1;
+            }
+            i64 exports = 0;
+            i64 index = 0;
+            // Sorted name lookup never rescans the complete source symbol table.
+            while (index < wrapperNames.size()) {
+                const NameRow row = wrapperNames.at(index);
+                const i64 symbol = w.symbols + row.symbol * 24;
+                if (number(wrapper, symbol + 6, 2) == 0) {
+                    const i64 found = find(2, selected, wrapper, row);
+                    if (found < 0) {
+                        fail();
+                        return -1;
+                    }
+                    NameRow target = selectedNames.at(found);
+                    const compiler_x86::ObjectIndexRow mapped = compiler_x86::ObjectIndexRow(target.symbol);
+                    if (target.symbol <= 0 || !wrapperMap.set(row.symbol, mapped)) {
+                        fail();
+                        return -1;
+                    }
+                    target.symbol = -target.symbol;
+                    if (!selectedNames.set(found, target)) {
+                        fail();
+                        return -1;
+                    }
+                } else {
+                    if (find(0, source, wrapper, row) >= 0) {
+                        fail();
+                        return -1;
+                    }
+                    exports = exports + 1;
+                }
+                index = index + 1;
+            }
+            index = 0;
+            while (index < selectedNames.size()) {
+                const NameRow selectedRow = selectedNames.at(index);
+                if (selectedRow.symbol >= 0) {
+                    fail();
+                    return -1;
+                }
+                index = index + 1;
+            }
+            // Only wrapper definitions are appended, in their original order.
+            i64 next = s.symbolSize / 24;
+            index = 1;
+            while (index < w.symbolSize / 24) {
+                if (number(wrapper, w.symbols + index * 24 + 6, 2) == 1) {
+                    const compiler_x86::ObjectIndexRow mapped = compiler_x86::ObjectIndexRow(next);
+                    if (!wrapperMap.set(index, mapped)) {
+                        fail();
+                        return -1;
+                    }
+                    next = next + 1;
+                }
+                index = index + 1;
+            }
+            return exports;
+        }
+        auto mapped_symbol(i64 index) const -> i64 {
+            const compiler_x86::ObjectIndexRow row = wrapperMap.at(index);
+            return row.index();
+        }
+        auto relocations(builtin::span<const u8> bytes, Profile p, bool wrapper) -> bool {
+            i64 at = 0;
+            i64 previous = -4;
+            while (at < p.relocationSize) {
+                const i64 position = number(bytes, p.relocations + at, 8);
+                const i64 kind = number(bytes, p.relocations + at + 8, 4);
+                const i64 symbol = number(bytes, p.relocations + at + 12, 4);
+                const std::ByteReadResult addend = std::read_le64(bytes, p.relocations + at + 16);
+                if (position < previous + 4 || position > p.textSize || p.textSize - position < 4 || symbol <= 0
+                    || symbol >= p.symbolSize / 24 || addend.value_or(0u64) != 18446744073709551612u64) {
+                    return fail();
+                }
+                const i64 sectionIndex = number(bytes, p.symbols + symbol * 24 + 6, 2);
+                if (wrapper) {
+                    if (kind != 4 || sectionIndex != 0 || mapped_symbol(symbol) < 1) {
+                        return fail();
+                    }
+                } else {
+                    if (!((kind == 2 && sectionIndex == 7) || (kind == 4 && (sectionIndex == 1 || sectionIndex
+                        == 0)))) {
+                        return fail();
+                    }
+                }
+                previous = position;
+                at = at + 24;
+            }
+            return true;
+        }
+        auto byte(u8 value) -> bool {
+            if (cursor >= outputSize || !output.set(cursor, value)) {
+                return fail();
+            }
+            cursor = cursor + 1;
+            return true;
+        }
+        auto little(u64 value, i64 width) -> bool {
+            i64 index = 0;
+            u64 remaining = value;
+            while (index < width) {
+                if (!byte(u8(remaining & 255u64))) {
+                    return false;
+                }
+                remaining = remaining >> 8;
+                index = index + 1;
+            }
+            return true;
+        }
+        auto copy(builtin::span<const u8> bytes, i64 at, i64 count) -> bool {
+            i64 index = 0;
+            while (index < count) {
+                if (!byte(bytes.at(at + index))) {
+                    return false;
+                }
+                index = index + 1;
+            }
+            return true;
+        }
+        auto pad(i64 end) -> bool {
+            while (cursor < end) {
+                if (!byte(u8(0))) {
+                    return false;
+                }
+            }
+            return cursor == end;
+        }
+        auto section(i64 name, i64 offset, i64 size, Section value) -> bool {
+            return little(u64(name), 4) && little(u64(value.kind), 4) && little(u64(value.flags), 8) && little(0u64, 8)
+                && little(u64(offset), 8) && little(u64(size), 8) && little(u64(value.link), 4)
+                && little(u64(value.info), 4) && little(u64(value.alignment), 8) && little(u64(value.entry), 8);
+        }
+        auto compose(builtin::span<const u8> source, Profile s, builtin::span<const u8> wrapper, Profile w,
+            i64 exports) -> bool {
+            const i64 base =(s.textSize + w.alignment - 1) / w.alignment * w.alignment;
+            const i64 textSize = base + w.textSize;
+            const i64 rodata = 64 + textSize;
+            const i64 rela =(rodata + s.rodataSize + 7) / 8 * 8;
+            const i64 relocationSize = s.relocationSize + w.relocationSize;
+            const i64 symbols = rela + relocationSize;
+            const i64 symbolSize = s.symbolSize + exports * 24;
+            const i64 strings = symbols + symbolSize;
+            const i64 stringSize = s.stringSize + w.stringSize;
+            const i64 sectionStrings = strings + stringSize;
+            const i64 table =(sectionStrings + 68 + 7) / 8 * 8;
+            outputSize = table + 8 * 64;
+            // Each term is derived from <=64 MiB admitted inputs; arithmetic
+            // cannot overflow i64. The final artifact keeps the existing ceiling.
+            if (outputSize > 67108864) {
+                outcome = compiler_x86::EmitStatus::limit;
+                return false;
+            }
+            if (!output.try_resize(outputSize)) {
+                return allocation();
+            }
+            if (!copy(source, 0, 40) || !little(u64(table), 8) || !copy(source, 48, 16) || !copy(source, s.text,
+                s.textSize) || !pad(64 + base) || !copy(wrapper, w.text, w.textSize) || !copy(source, s.rodata,
+                s.rodataSize) || !pad(rela) || !copy(source, s.relocations, s.relocationSize)) {
+                return false;
+            }
+            i64 at = 0;
+            while (at < w.relocationSize) {
+                const i64 symbol = number(wrapper, w.relocations + at + 12, 4);
+                if (!little(u64(base + number(wrapper, w.relocations + at, 8)), 8) || !copy(wrapper, w.relocations + at
+                    + 8, 4) || !little(u64(mapped_symbol(symbol)), 4) || !copy(wrapper, w.relocations + at + 16, 8)) {
+                    return false;
+                }
+                at = at + 24;
+            }
+            if (!copy(source, s.symbols, s.symbolSize)) {
+                return false;
+            }
+            at = 1;
+            while (at < w.symbolSize / 24) {
+                const i64 row = w.symbols + at * 24;
+                if (number(wrapper, row + 6, 2) == 1) {
+                    if (!little(u64(s.stringSize + number(wrapper, row, 4)), 4) || !copy(wrapper, row + 4, 4)
+                        || !little(u64(base + number(wrapper, row + 8, 8)), 8) || !copy(wrapper, row + 16, 8)) {
+                        return false;
+                    }
+                }
+                at = at + 1;
+            }
+            if (!copy(source, s.strings, s.stringSize) || !copy(wrapper, w.strings, w.stringSize)
+                || !copy("\0.text\0.rela.text\0.symtab\0.strtab\0.shstrtab\0.note.GNU-stack\0.rodata\0", 0, 68)
+                || !pad(table + 64)) {
+                return false;
+            }
+            return section(1, 64, textSize, Section(1, 6, 0, 0, 16, 0)) && section(7, rela, relocationSize, Section(4,
+                64, 3, 1, 8, 24)) && section(18, symbols, symbolSize, Section(2, 0, 4, s.locals, 8, 24)) && section(26,
+                strings, stringSize, Section(3, 0, 0, 0, 1, 0)) && section(34, sectionStrings, 68, Section(3, 0, 0, 0,
+                1, 0)) && section(44, sectionStrings + 68, 0, Section(1, 0, 0, 0, 1, 0)) && section(60, rodata,
+                s.rodataSize, Section(1, 2, 0, 0, 1, 0)) && cursor == outputSize;
+        }
+    public:
+        auto run(builtin::span<const u8> source, builtin::span<const u8> wrapper,
+            builtin::span<const u8> selected) -> compiler_x86::EmitStatus {
+            if (outcome != compiler_x86::EmitStatus::pending) {
+                if (outcome == compiler_x86::EmitStatus::complete) {
+                    outcome = compiler_x86::EmitStatus::invalid;
+                }
+                fail();
+                return outcome;
+            }
+            outcome = compiler_x86::EmitStatus::running;
+            if (!output.ok() || !sourceNames.ok() || !wrapperNames.ok() || !selectedNames.ok() || !wrapperMap.ok()) {
+                allocation();
+                return outcome;
+            }
+            const Profile s = profile(source, false);
+            const Profile w = profile(wrapper, true);
+            if (!s.valid || !w.valid) {
+                fail();
+                return outcome;
+            }
+            const compiler_x86::EmitStatus sourceStatus = admit_symbols(0, source, s, false);
+            if (sourceStatus != compiler_x86::EmitStatus::complete) {
+                outcome = sourceStatus;
+                return outcome;
+            }
+            const compiler_x86::EmitStatus wrapperStatus = admit_symbols(1, wrapper, w, true);
+            if (wrapperStatus != compiler_x86::EmitStatus::complete) {
+                outcome = wrapperStatus;
+                return outcome;
+            }
+            if (!select(selected, source, s)) {
+                fail();
+                return outcome;
+            }
+            const i64 exports = map(source, s, wrapper, w, selected);
+            if (exports < 1 || !relocations(source, s, false) || !relocations(wrapper, w, true) || !compose(source, s,
+                wrapper, w, exports)) {
+                fail();
+                return outcome;
+            }
+            outcome = compiler_x86::EmitStatus::complete;
+            return outcome;
+        }
+        auto size() const -> i64 {
+            if (outcome != compiler_x86::EmitStatus::complete) {
+                return -1;
+            }
+            return outputSize;
+        }
+        auto chunk(i64 offset) const -> compiler_x86::EmitChunk {
+            compiler_x86::EmitChunk result = compiler_x86::EmitChunk();
+            if (outcome != compiler_x86::EmitStatus::complete || offset < 0 || offset > outputSize) {
+                result.invalidate();
+                return result;
+            }
+            i64 count = outputSize - offset;
+            if (count > 512) {
+                count = 512;
+            }
+            i64 at = 0;
+            while (at < count) {
+                result.append(output.at(offset + at));
+                at = at + 1;
+            }
+            return result;
+        }
+    };
+    auto create(builtin::ByteRegion region) -> Workspace {
+        Workspace result = Workspace(region);
+        return move(result);
+    }
+    auto release(builtin::ByteRegion region, Workspace workspace) -> i64 {
+        return 0;
+    }
+    auto run(Workspace& workspace, builtin::span<const u8> source, builtin::span<const u8> wrapper,
+        builtin::span<const u8> selected) -> compiler_x86::EmitStatus {
+        return workspace.run(source, wrapper, selected);
+    }
+}

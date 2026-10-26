@@ -13,6 +13,7 @@ import hashlib
 import json
 import subprocess
 import sys
+import tempfile
 
 
 # Admission tools also load this module by file path from outside scripts/.
@@ -310,14 +311,14 @@ def lowering_messages(source, facts):
         )
     return [
         "namespace aurora::hosted_abi::compiler_lowering {",
-        "enum class MessageOrigin : std::uint8_t { source_or_synthetic, synthetic, unlocated };",
+        "enum class MessageOrigin : ::std::uint8_t { source_or_synthetic, synthetic, unlocated };",
         "struct LoweringMessage {",
         "    const char *text;",
         "    MessageOrigin origin;",
         "    bool integrity;",
-        "    std::array<OperandRole, 2> values;",
+        "    ::std::array<OperandRole, 2> values;",
         "};",
-        f"inline constexpr std::array<LoweringMessage, {len(rows)}> loweringMessages{{{{",
+        f"inline constexpr ::std::array<LoweringMessage, {len(rows)}> loweringMessages{{{{",
         *rows,
         "}};",
         "}",
@@ -573,6 +574,8 @@ def verification_abi(facts):
 def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_source=None, verification_source=None):
     """Render compiler-described classes and enums without a second field schema."""
     frontend_abi_entries(facts)
+    # Library modules may declare their own std namespace. Host standard types
+    # remain globally qualified rather than resolving through a source namespace.
     lines = [
         "// Generated from compiler ABI facts; do not edit.",
         "#pragma once",
@@ -608,7 +611,7 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
         namespace, _, name = names[symbol].rpartition("::")
         lines += [
             "namespace aurora::hosted_abi" + ("::" + namespace if namespace else "") + " {",
-            f"enum class {name} : std::int64_t {{",
+            f"enum class {name} : ::std::int64_t {{",
         ]
         for case, value in declaration["cases"].items():
             identifier(case)
@@ -618,7 +621,7 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
         lines += [
             "};",
             f"inline constexpr bool validRaw({name} value) {{",
-            "    switch (static_cast<std::int64_t>(value)) {",
+            "    switch (static_cast<::std::int64_t>(value)) {",
         ]
         for value in sorted(set(declaration["cases"].values())):
             lines.append(f"    case {value}: return true;")
@@ -644,12 +647,12 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
                 raise ValueError("overlapping private ABI fields")
             if offset > cursor:
                 lines.append(
-                    f"    std::array<std::byte, {offset - cursor}> {padding_name(f'abi_padding_{index}')}{{}};"
+                    f"    ::std::array<::std::byte, {offset - cursor}> {padding_name(f'abi_padding_{index}')}{{}};"
                 )
             lines.append(f"    {cpp} {field}{{}};")
             cursor = offset + width
         if cursor < size:
-            lines.append(f"    std::array<std::byte, {size - cursor}> {padding_name('abi_tail_padding')}{{}};")
+            lines.append(f"    ::std::array<::std::byte, {size - cursor}> {padding_name('abi_tail_padding')}{{}};")
         lines += ["};", f"static_assert(sizeof({name}) == {size} && alignof({name}) == {alignment});"]
         for offset, width, _, field in members:
             lines.append(f"static_assert(offsetof({name}, {field}) == {offset});")
@@ -666,7 +669,7 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
             length = number(field["array_length"])
             if kind != "u8" or not 1 <= length <= 512 or width != length:
                 raise ValueError("private copied array requires bounded exact bytes")
-            return f"std::array<std::uint8_t, {length}>"
+            return f"::std::array<::std::uint8_t, {length}>"
         if kind in ("enum", "class"):
             symbol = field["type_name"]
             if kind == "class":
@@ -677,7 +680,7 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
             return cpp_name(symbol)
         if kind not in ("i64", "u64", "u8", "bool") or width != (1 if kind == "u8" else 8):
             raise ValueError("unsupported private copied field")
-        return "std::uint8_t" if kind == "u8" else "std::uint64_t" if kind == "u64" else "std::int64_t"
+        return "::std::uint8_t" if kind == "u8" else "::std::uint64_t" if kind == "u64" else "::std::int64_t"
 
     def emit_record(symbol):
         if symbol in emitted:
@@ -697,7 +700,7 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
         lines.append("namespace aurora::hosted_abi" + ("::" + namespace if namespace else "") + " {")
         if opaque:
             size = number(declaration["reserved"])
-            members = [(0, size, f"std::array<std::byte, {size}>", "storage")]
+            members = [(0, size, f"::std::array<::std::byte, {size}>", "storage")]
         record(name, declaration["reserved"], declaration["alignment"], members)
         lines.append("}")
         active.remove(symbol)
@@ -747,8 +750,8 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
         if width != 32 or field.get("array_length", 0) or offset + width > metadata_store["size"]:
             raise ValueError("private metadata owner descriptor changed: " + field_name)
         lines += [
-            f"inline constexpr std::size_t metadataStore_{field_name}Offset = {offset};",
-            f"inline constexpr std::size_t metadataStore_{field_name}Bytes = {width};",
+            f"inline constexpr ::std::size_t metadataStore_{field_name}Offset = {offset};",
+            f"inline constexpr ::std::size_t metadataStore_{field_name}Bytes = {width};",
         ]
         if row_name is not None:
             symbol, row = abi_declaration(facts, "records", "compiler_ir_metadata::" + row_name)
@@ -757,7 +760,7 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
             if stride == 0 or stride > 520 or stride != row["reserved"] or row["alignment"] != 8:
                 raise ValueError("private metadata row stride changed: " + row_name)
             lines += [
-                f"inline constexpr std::size_t metadata{row_name}PhysicalBytes = {stride};",
+                f"inline constexpr ::std::size_t metadata{row_name}PhysicalBytes = {stride};",
                 f"static_assert(sizeof({cpp_name(symbol)}) == metadata{row_name}PhysicalBytes);",
             ]
     _, instruction_store = abi_declaration(facts, "records", "compiler_ir_instructions::InstructionStore")
@@ -777,8 +780,8 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
         if width != 32 or field.get("array_length", 0) or offset + width > instruction_store["size"]:
             raise ValueError("private instruction owner descriptor changed: " + field_name)
         lines += [
-            f"inline constexpr std::size_t instructionStore_{field_name}Offset = {offset};",
-            f"inline constexpr std::size_t instructionStore_{field_name}Bytes = {width};",
+            f"inline constexpr ::std::size_t instructionStore_{field_name}Offset = {offset};",
+            f"inline constexpr ::std::size_t instructionStore_{field_name}Bytes = {width};",
         ]
         if row_name is not None:
             symbol, row = abi_declaration(facts, "records", "compiler_ir_instructions::" + row_name)
@@ -787,7 +790,7 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
             if stride == 0 or stride > 520 or stride != row["reserved"] or row["alignment"] != 8:
                 raise ValueError("private instruction row stride changed: " + row_name)
             lines += [
-                f"inline constexpr std::size_t instruction{row_name}PhysicalBytes = {stride};",
+                f"inline constexpr ::std::size_t instruction{row_name}PhysicalBytes = {stride};",
                 f"static_assert(sizeof({cpp_name(symbol)}) == instruction{row_name}PhysicalBytes);",
             ]
     verification_records, verification_run = verification_abi(facts)
@@ -801,12 +804,12 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
             "VerificationError": "verificationErrorBytes",
         }.get(row_name, "verification" + row_name + "PhysicalBytes")
         lines += [
-            f"inline constexpr std::size_t {constant} = {size};",
+            f"inline constexpr ::std::size_t {constant} = {size};",
             f"static_assert(sizeof({cpp_name(symbol)}) == {constant});",
         ]
         if row_name in ("VerificationWorkspace", "VerificationReport"):
             name = "verification" + row_name.removeprefix("Verification") + "Alignment"
-            lines.append(f"inline constexpr std::size_t {name} = {number(row['alignment'])};")
+            lines.append(f"inline constexpr ::std::size_t {name} = {number(row['alignment'])};")
         # Copied report lanes remain integer words, including Aurora bool. Host
         # validation can reject noncanonical 0/1 without reading a native bool.
         if row_name in ("VerificationReport", "VerificationError", "MetricsRow"):
@@ -814,14 +817,14 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
             for field in row["fields"]:
                 field_name = identifier(field["name"])
                 lines += [
-                    f"inline constexpr std::size_t {prefix}_{field_name}Offset = {number(field['offset'])};",
-                    f"inline constexpr std::size_t {prefix}_{field_name}Bytes = {number(field['bytes'])};",
+                    f"inline constexpr ::std::size_t {prefix}_{field_name}Offset = {number(field['offset'])};",
+                    f"inline constexpr ::std::size_t {prefix}_{field_name}Bytes = {number(field['bytes'])};",
                 ]
     root_abi = verification_run["borrowed_root_abi"]
     lines += [
-        f"inline constexpr std::size_t verificationRunRootCount = {verification_run['borrowed_root_count']};",
-        f"inline constexpr std::size_t verificationRunTuplePayloadBytes = {root_abi['tuple_payload_bytes']};",
-        f"inline constexpr std::size_t verificationRunTupleReservedBytes = {root_abi['tuple_reserved_bytes']};",
+        f"inline constexpr ::std::size_t verificationRunRootCount = {verification_run['borrowed_root_count']};",
+        f"inline constexpr ::std::size_t verificationRunTuplePayloadBytes = {root_abi['tuple_payload_bytes']};",
+        f"inline constexpr ::std::size_t verificationRunTupleReservedBytes = {root_abi['tuple_reserved_bytes']};",
     ]
     record(
         "VerificationRunRoots",
@@ -841,11 +844,11 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
         56,
         8,
         [
-            (0, 8, "std::uint64_t", "kind"),
+            (0, 8, "::std::uint64_t", "kind"),
             (8, 8, "const char *", "backing"),
-            (16, 24, "std::array<std::uint64_t, 3>", "reserved"),
-            (40, 8, "std::int64_t", "start"),
-            (48, 8, "std::int64_t", "length"),
+            (16, 24, "::std::array<::std::uint64_t, 3>", "reserved"),
+            (40, 8, "::std::int64_t", "start"),
+            (48, 8, "::std::int64_t", "length"),
         ],
     )
     pass_records = tuple(
@@ -860,15 +863,15 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
         members = []
         for field, parameter in zip(fields, function["parameters"]):
             kind = parameter["kind"]
-            cpp = "BuiltinSpan" if kind == "span" else "std::uint64_t" if kind == "region" else copied_type(parameter)
+            cpp = "BuiltinSpan" if kind == "span" else "::std::uint64_t" if kind == "region" else copied_type(parameter)
             members.append((parameter["offset"], parameter["bytes"], cpp, field))
         record(name, function["parameter_bytes"], 8, members)
     lines += [
-        "inline constexpr std::size_t frameBytes = sizeof(compiler_parser::ParseFrame);",
-        "inline constexpr std::size_t arenaBytes = sizeof(compiler_parser::AstArena);",
-        "inline constexpr std::size_t arenaAlignment = alignof(compiler_parser::AstArena);",
-        "inline constexpr std::size_t sessionBytes = sizeof(compiler_resolver::Session);",
-        "inline constexpr std::size_t sessionAlignment = alignof(compiler_resolver::Session);",
+        "inline constexpr ::std::size_t frameBytes = sizeof(compiler_parser::ParseFrame);",
+        "inline constexpr ::std::size_t arenaBytes = sizeof(compiler_parser::AstArena);",
+        "inline constexpr ::std::size_t arenaAlignment = alignof(compiler_parser::AstArena);",
+        "inline constexpr ::std::size_t sessionBytes = sizeof(compiler_resolver::Session);",
+        "inline constexpr ::std::size_t sessionAlignment = alignof(compiler_resolver::Session);",
         "static_assert(offsetof(ResolverRelease, session) == offsetof(ResolverIngest, session));",
         "static_assert(sizeof(ResolverRelease) == offsetof(ResolverIngest, parsed));",
         "static_assert(offsetof(ResolverReleasePair, session) == offsetof(ResolverIngest, session));",
@@ -933,14 +936,14 @@ def pass_bridges(facts):
             else:
                 if len(parameters) > 4 or any(parameter["kind"] not in scalar for parameter in parameters):
                     raise ValueError("unsupported private scalar tail: " + alias)
-                arguments += ["std::int64_t"] * len(parameters)
+                arguments += ["::std::int64_t"] * len(parameters)
                 moves += [(registers[index + 1], registers[index]) for index in range(len(parameters))]
                 if result == "class":
                     arguments.append("void *")
                     moves.append((registers[len(parameters) + 1], "%r11"))
                 elif result not in scalar:
                     raise ValueError("unsupported private scalar result: " + alias)
-        returned = "void" if discard or result == "class" else "std::int64_t"
+        returned = "void" if discard or result == "class" else "::std::int64_t"
         declarations.append(f"{returned} {host}({', '.join(arguments)}){' noexcept' if noexcept else ''};")
         assembly += [f".globl {host}", f".hidden {host}", f".type {host}, @function", f"{host}:"]
         assembly += [f"    movq {source}, {destination}" for source, destination in moves]
@@ -1036,13 +1039,27 @@ def emit(
     # Symbol spellings come from this emitted module; only register moves are trusted.
     bridge = frontend_bridge(None, facts)
     if output_mode == "object":
-        from meson_aurora_assembly import compose_private_object
-
+        # The current compiler owns only this closed frontend composition. Other
+        # native consumers retain their existing GNU partial-link route.
         selected = sorted(abi_function_symbol(facts, "compiler_frontend::" + alias) for alias in PASS_ENTRIES)
-        pending = output.with_suffix(".pending.o")
-        shutil.copyfile(raw, pending)
-        compose_private_object(pending, bridge + '.section .note.GNU-stack,"",@progbits\n', selected)
-        pending.replace(output)
+        with tempfile.TemporaryDirectory(prefix=".aurora-frontend-", dir=output.parent) as directory:
+            work = Path(directory)
+            wrapper_source, wrapper_object, selection = work / "wrapper.s", work / "wrapper.o", work / "selected.txt"
+            wrapper_source.write_text(bridge + '.section .note.GNU-stack,"",@progbits\n')
+            selection.write_text("\n".join(selected) + "\n")
+            subprocess.run(["as", "--64", str(wrapper_source), "-o", str(wrapper_object)], check=True)
+            subprocess.run(
+                [
+                    str(compiler.resolve()),
+                    "--compose-private-object",
+                    str(raw.resolve()),
+                    str(wrapper_object.resolve()),
+                    str(selection.resolve()),
+                    "-o",
+                    str(output.resolve()),
+                ],
+                check=True,
+            )
     else:
         output.write_bytes(b"\n".join([raw.read_bytes(), bridge.encode()]))
 
