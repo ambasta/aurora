@@ -22,33 +22,43 @@ literal data and RIP-relative references, plus size/public-field-count reflectio
 helpers with the same defining-module visibility and symbol-selection rules as
 text output. Neither backend adds reflection access to private values.
 
-Native console, UART and hosted frontend wrappers remain separate bootstrap adapters.
+Native console, UART and hosted frontend wrappers remain private bootstrap adapters.
+For frontend B/C, `frontend_wrapper.au` emits the 97 wrappers directly, using the
+same table/ABI-derived recipe that renders predecessor frontend A and the GNU
+reference. The closed recipe admits at most 256 sorted hidden exports, 1024-byte
+identifier names and six ordered register moves or readonly record-lane loads
+per wrapper, followed by one symbolic PLT32 tail jump. It has no assembly parser,
+stack operations, stores, calls, conditional branches or arbitrary external resolution.
+The existing `ObjectWorkspace` owns encoding, fixups and ELF output; native code
+only lends recipe bytes and transports the result. Invalid/reused workspaces
+cannot expose output, and allocation failure releases every owner.
+
 `private_object.au` composes frontend B/C, the ordinary UEFI console/session and
-the existing BIOS console, UEFI device-fixture and hosted UART objects from the source emitter's eight-section
-ELF64LE x86-64 object and a GNU-as wrapper object. It keeps source
-symbol indices and LOCAL bindings unchanged, appends aligned wrapper text and
-hidden exports, and remaps wrapper PLT32 references to the selected source text
-symbols. It does not evaluate relocations or provide a general linker. Admission
-rejects unsupported sections, writable payload, executable stacks, symbols and
-relocations before sealing output. One owning workspace holds typed name/index
-maps and output; the native adapter only lends three readonly byte spans and
-transports results. Artifact reads retain the 64 MiB ceiling and atomic output
-protects all input identities; language-source reads remain limited to 1 MiB.
-Wrapper definitions admit the existing `aurora_hosted_*` names and exactly
+existing BIOS console, UEFI device-fixture and hosted UART objects. The source
+input retains its eight-section ELF64LE x86-64 profile. Frontend wrappers use an
+explicit eight-section profile with empty readonly data, no LOCAL definitions,
+byte-aligned text and only hidden `aurora_hosted_*` exports. GNU console/UART
+wrappers retain their existing nine-section profile with empty data/BSS.
+Composition preserves source symbol indices and LOCAL bindings, appends wrapper
+text and exports, and remaps PLT32 references to selected source text symbols.
+It does not evaluate relocations or provide a general linker. Unsupported
+sections, writable payload, executable stacks, symbols and relocations reject
+before output is sealed. Artifact reads retain the 64 MiB ceiling and atomic
+output protects all input identities; language-source reads remain limited to
+1 MiB. The GNU profile additionally admits exactly the existing
 `__au_runtime_uart_initialize`, `__au_runtime_uart_next`, `__au_runtime_uart_put`,
-`__au_runtime_console_entry` and `__au_runtime_console_value`; other runtime
-exports remain rejected. Standalone object wrappers receive their own empty
-non-executable GNU-stack section; shared templates and text rendering are unchanged. Existing hidden
-wrapper exports and runtime imports are unchanged; this adds no Aurora C ABI.
-The pinned predecessor still emits frontend A as text. C1 emits frontend B
-directly as an object linked into C2; C2 emits frontend C for source-object,
-composed-object, ABI/header and stack-fact convergence. The private-object test
-also compares normalized frontend, UART and console text, readonly data, symbols
-and relocations with GNU composition; generated console and UART objects run in
-their existing hosted drivers and guest families. No checkpoint bump is needed for this adoption.
-GNU assembler/linker and Linux host I/O remain
-bootstrap dependencies for frontend A, other text output, native adapters and
-final links.
+`__au_runtime_console_entry` and `__au_runtime_console_value` exports.
+
+The pinned predecessor still emits frontend A as text. C1 emits frontend B and
+its wrappers directly as objects linked into C2; C2 emits frontend C for
+source-object, composed-object, ABI/header and stack-fact convergence. One
+private-object test driver compares normalized wrapper and composed text,
+readonly data, symbols and relocations with GNU references, checks malformed
+recipe/ELF data and every allocation failure, and preserves source LOCAL
+identity. Console and UART objects run in their existing hosted drivers and
+guest families. No checkpoint bump is needed. GNU assembler/linker and Linux
+host I/O remain dependencies for frontend A, other text output, native
+console/UART adapters and final links. This adds no Aurora C ABI.
 
 The verifier keeps active facts in a flat, sorted owner-backed prefix and restores
 canonical snapshots directly, without rebuilding a search tree. Binary searches

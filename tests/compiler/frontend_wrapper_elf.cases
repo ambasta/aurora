@@ -1,0 +1,11 @@
+# Native-wrapper profile additions reuse the single private-object case driver.
+# name input record-kind record-name byte-offset width value expectation
+native-wrapper-section-count wrapper header - 60 2 9 reject
+native-wrapper-locals wrapper section .symtab 44 4 2 reject
+native-wrapper-source-alignment wrapper section .text 48 8 16 reject
+native-wrapper-rodata-payload wrapper section .rodata 32 8 1 reject
+native-wrapper-writable-rodata wrapper section .rodata 8 8 3 reject
+native-wrapper-executable-stack wrapper section .note.GNU-stack 8 8 4 reject
+native-wrapper-visible-export wrapper symbol aurora_hosted_emitter_wrapper_run 5 1 0 reject
+native-wrapper-runtime-export wrapper symbol-name aurora_hosted_emitter_wrapper_run 0 0 __au_runtime_uart_initialize reject
+native-wrapper-absolute-relocation wrapper payload .rela.text 8 4 1 reject

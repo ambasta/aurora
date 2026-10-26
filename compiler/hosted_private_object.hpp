@@ -15,4 +15,9 @@ void composePrivateObjectFiles(const std::filesystem::path &source,
                                const std::filesystem::path &wrapper,
                                const std::filesystem::path &selected,
                                const std::filesystem::path &output);
+// The native side lends recipe bytes; Aurora validates the closed instruction
+// envelope and emits the wrapper object through its ordinary owning workspace.
+std::string emitFrontendWrapper(std::string_view recipe,
+                                hosted::bytes::Allocator allocator = hosted::bytes::system_allocator());
+void emitFrontendWrapperFile(const std::filesystem::path &recipe, const std::filesystem::path &output);
 } // namespace aurora

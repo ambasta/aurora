@@ -88,6 +88,68 @@ public:
         return result;
     }
 };
+// Recipe names and the final object each need at most twice their logical
+// extent while growing. The fixed allowance covers the bounded instruction,
+// symbol/fixup and index pools, headers, padding and initial capacity blocks.
+std::uint64_t wrapperQuota(std::size_t recipe) {
+    if (recipe > host::artifactLimit)
+        throw Error("frontend wrapper recipe exceeds 67108864 bytes");
+    std::uint64_t result = 512 * 1024;
+    addExtent(result, recipe, 4);
+    return result;
+}
+class WrapperOperation {
+    hosted::bytes::Region region;
+    hosted_abi::EmitterObjectRelease owner{};
+
+public:
+    WrapperOperation(std::size_t recipe, hosted::bytes::Allocator allocator) : region(wrapperQuota(recipe), allocator) {
+        if (!region.is_open())
+            throw Error(DiagnosticCode::Internal, "frontend wrapper region allocation failed");
+        owner.region = region.id();
+        hosted_abi::EmitterObjectCreate input{};
+        input.region = region.id();
+        aurora_hosted_emitter_object_create(&input, data());
+    }
+    ~WrapperOperation() {
+        aurora_hosted_emitter_object_release(&owner);
+    }
+    WrapperOperation(const WrapperOperation &) = delete;
+    WrapperOperation &operator=(const WrapperOperation &) = delete;
+    void *data() {
+        return owner.workspace.storage.data();
+    }
+    std::string run(std::string_view recipe) {
+        hosted_abi::EmitterWrapperInput input{};
+        input.recipe.backing = recipe.data();
+        input.recipe.length = static_cast<std::int64_t>(recipe.size());
+        const auto status = aurora_hosted_emitter_wrapper_run(data(), &input);
+        if (status == static_cast<std::int64_t>(Status::allocation))
+            throw Error(DiagnosticCode::Internal, "frontend wrapper allocation failed");
+        if (status == static_cast<std::int64_t>(Status::limit))
+            throw Error("frontend wrapper exceeds its bounded output or workspace");
+        if (status == static_cast<std::int64_t>(Status::invalid) ||
+            status == static_cast<std::int64_t>(Status::unsupported))
+            throw Error("frontend wrapper recipe does not match the admitted instruction envelope");
+        if (status != static_cast<std::int64_t>(Status::complete))
+            invalidTransport();
+        const auto size = aurora_hosted_emitter_object_size(data());
+        if (size < 0 || static_cast<std::uint64_t>(size) > host::artifactLimit)
+            invalidTransport();
+        std::string result;
+        result.reserve(static_cast<std::size_t>(size));
+        for (std::int64_t offset = 0; offset < size;) {
+            hosted_abi::compiler_x86::EmitChunk chunk{};
+            aurora_hosted_emitter_object_chunk(data(), offset, &chunk);
+            if (chunk.byteCount != std::min<std::int64_t>(512, size - offset))
+                invalidTransport();
+            result.append(reinterpret_cast<const char *>(chunk.payload.data()),
+                          static_cast<std::size_t>(chunk.byteCount));
+            offset += chunk.byteCount;
+        }
+        return result;
+    }
+};
 } // namespace
 
 std::string composePrivateObject(std::string_view source,
@@ -106,6 +168,17 @@ void composePrivateObjectFiles(const std::filesystem::path &sourcePath,
     const auto selected = selectedFile.readAtMost();
     const auto result = composePrivateObject(source, wrapper, selected);
     host::ArtifactWriter output(outputPath, {sourceFile.identity, wrapperFile.identity, selectedFile.identity});
+    output.write(result);
+    output.commit();
+}
+std::string emitFrontendWrapper(std::string_view recipe, hosted::bytes::Allocator allocator) {
+    return WrapperOperation(recipe.size(), allocator).run(recipe);
+}
+void emitFrontendWrapperFile(const std::filesystem::path &recipePath, const std::filesystem::path &outputPath) {
+    host::ArtifactFile recipeFile(recipePath);
+    const auto recipe = recipeFile.readAtMost();
+    const auto result = emitFrontendWrapper(recipe);
+    host::ArtifactWriter output(outputPath, {recipeFile.identity});
     output.write(result);
     output.commit();
 }

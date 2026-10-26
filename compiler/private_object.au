@@ -3,7 +3,7 @@ import std.binary;
 import aurora.compiler.x86_object_storage;
 
 // Closed bootstrap composition, not an ELF linker. The two inputs are the
-// source emitter's private object and GNU as's frontend, UART or console wrappers.
+// source emitter's private object and source-native frontend or GNU UART/console wrappers.
 export namespace compiler_private_object {
     class NameRow {
     public:
@@ -140,7 +140,8 @@ export namespace compiler_private_object {
         i64 str = 4;
         i64 shstr = 5;
         i64 stack = 6;
-        if (wrapper) {
+        const bool nativeWrapper = wrapper && number(bytes, 60, 2) == 8;
+        if (wrapper && !nativeWrapper) {
             count = 9;
             sym = 6;
             str = 7;
@@ -205,7 +206,7 @@ export namespace compiler_private_object {
             != 0 || !zeroes(bytes, result.symbols, 24)) {
             return result;
         }
-        if (wrapper) {
+        if (wrapper && !nativeWrapper) {
             if (result.locals != 1 || !section(bytes, table, 3, NameRow(namesAt, namesSize, 0), ".data", Section(1, 3,
                 0, 0, 1, 0)) || !section(bytes, table, 4, NameRow(namesAt, namesSize, 0), ".bss", Section(8, 3, 0, 0, 1,
                 0)) || number(bytes, table + 3 * 64 + 32, 8) != 0 || number(bytes, table + 4 * 64 + 32, 8) != 0) {
@@ -214,10 +215,13 @@ export namespace compiler_private_object {
         } else {
             result.rodata = number(bytes, table + 7 * 64 + 24, 8);
             result.rodataSize = number(bytes, table + 7 * 64 + 32, 8);
-            if (result.alignment != 16 || !section(bytes, table, 7, NameRow(namesAt, namesSize, 0), ".rodata",
-                Section(1, 2, 0, 0, 1, 0))) {
+            if ((!nativeWrapper && result.alignment != 16) || (nativeWrapper && result.alignment != 1)
+                || !section(bytes, table, 7, NameRow(namesAt, namesSize, 0), ".rodata", Section(1, 2, 0, 0, 1, 0))) {
                 return result;
             }
+        }
+        if (nativeWrapper && (result.locals != 1 || result.rodataSize != 0)) {
+            return result;
         }
         result.valid = true;
         return result;
@@ -414,12 +418,15 @@ export namespace compiler_private_object {
                 const i64 symbol = p.symbols + row.symbol * 24;
                 const i64 sectionIndex = number(bytes, symbol + 6, 2);
                 if ((!wrapper && sectionIndex == 0 && !prefix(bytes, row, "__au_runtime_")) || (wrapper && sectionIndex
-                    == 1 && !prefix(bytes, row, "aurora_hosted_")
-                    && !equal(bytes, row.offset, row.length, "__au_runtime_uart_initialize")
-                    && !equal(bytes, row.offset, row.length, "__au_runtime_uart_next")
-                    && !equal(bytes, row.offset, row.length, "__au_runtime_uart_put")
-                    && !equal(bytes, row.offset, row.length, "__au_runtime_console_entry")
-                    && !equal(bytes, row.offset, row.length, "__au_runtime_console_value"))) {
+                    == 1 && !prefix(bytes, row, "aurora_hosted_") && !equal(bytes, row.offset, row.length,
+                    "__au_runtime_uart_initialize") && !equal(bytes, row.offset, row.length, "__au_runtime_uart_next")
+                    && !equal(bytes, row.offset, row.length, "__au_runtime_uart_put") && !equal(bytes, row.offset,
+                    row.length, "__au_runtime_console_entry") && !equal(bytes, row.offset, row.length,
+                    "__au_runtime_console_value"))) {
+                    return compiler_x86::EmitStatus::invalid;
+                }
+                if (wrapper && number(bytes, 60, 2) == 8 && sectionIndex == 1 && !prefix(bytes, row,
+                    "aurora_hosted_")) {
                     return compiler_x86::EmitStatus::invalid;
                 }
                 if (!set_row(pool, index, row)) {

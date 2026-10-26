@@ -41,7 +41,7 @@ frontend_inputs = files('compiler/formatter.au', 'compiler/lexer.au', 'compiler/
                         'compiler/x86_storage.au', 'compiler/x86_object_storage.au',
                         'compiler/x86_helpers.au', 'compiler/x86_scalar.au',
                         'compiler/x86_objects.au', 'compiler/x86_resources.au', 'compiler/x86_facts.au',
-                        'compiler/x86_module.au', 'compiler/private_object.au',
+                        'compiler/x86_module.au', 'compiler/private_object.au', 'compiler/frontend_wrapper.au',
                         'library/std/decimal_digits.au', 'library/std/binary.au',
                         'compiler/lowering_common.au', 'compiler/lowering_configuration.au',
                         'compiler/lowering_types.au', 'compiler/lowering_values.au', 'compiler/lowering_frames.au',

@@ -13,7 +13,14 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
-from bootstrap_frontend import PASS_ENTRIES, abi_function_symbol, frontend_bridge  # noqa: E402
+from bootstrap_frontend import (  # noqa: E402
+    PASS_ENTRIES,
+    abi_function_symbol,
+    frontend_bridge,
+    frontend_wrapper_recipe,
+    encode_frontend_recipes,
+    render_frontend_recipes,
+)
 from meson_aurora_assembly import compose_object_bridge, render_bridge  # noqa: E402
 
 
@@ -30,34 +37,39 @@ def reference(driver, source, wrapper, selected, actual, directory):
     return combined
 
 
-def cli_checks(compiler, source, wrapper, selected, composed, directory):
-    output = directory / "cli.o"
-    command = [compiler, "--compose-private-object", source, wrapper, selected, "-o"]
+def cli_checks(command, inputs, expected, directory, label):
+    output = directory / (label + "-cli.o")
     run(*command, output)
-    if output.read_bytes() != composed.read_bytes():
-        raise RuntimeError("CLI and in-process composition differ")
-    for input_path in (source, wrapper, selected):
+    if output.read_bytes() != expected.read_bytes():
+        raise RuntimeError("CLI and in-process " + label + " differ")
+    for input_path in inputs:
         before = input_path.read_bytes()
-        alias = directory / "alias"
+        alias, symlink = directory / "alias", directory / "symlink"
         os.link(input_path, alias)
-        for destination in (input_path, alias):
+        symlink.symlink_to(input_path)
+        for destination in (input_path, alias, symlink):
             result = subprocess.run([*map(str, command), str(destination)], capture_output=True, timeout=20)
             if result.returncode != 1 or input_path.read_bytes() != before:
                 raise RuntimeError("CLI input alias accepted or damaged")
         alias.unlink()
-    invalid = directory / "invalid.o"
-    invalid.write_bytes(b"not an ELF object")
-    for previous in (None, b"previous artifact"):
-        output.unlink(missing_ok=True)
-        if previous is not None:
-            output.write_bytes(previous)
-        result = subprocess.run(
-            [str(compiler), "--compose-private-object", str(invalid), str(wrapper), str(selected), "-o", str(output)],
-            capture_output=True,
-            timeout=20,
-        )
-        if result.returncode != 1 or (output.read_bytes() if output.exists() else None) != previous:
-            raise RuntimeError("CLI published malformed composition")
+        symlink.unlink()
+    invalid, oversized = directory / "invalid-input", directory / "oversized-input"
+    invalid.write_bytes(b"not an admitted artifact")
+    with oversized.open("wb") as stream:
+        stream.truncate(64 * 1024 * 1024 + 1)
+    for rejected_input in (invalid, oversized):
+        rejected_command = [*command]
+        rejected_command[2] = rejected_input
+        for previous in (None, b"previous artifact"):
+            output.unlink(missing_ok=True)
+            if previous is not None:
+                output.write_bytes(previous)
+            result = subprocess.run([*map(str, rejected_command), str(output)], capture_output=True, timeout=20)
+            if result.returncode != 1 or (output.read_bytes() if output.exists() else None) != previous:
+                raise RuntimeError("CLI published rejected " + label)
+        if rejected_input == oversized and b"bounded artifact read limit exceeded" not in result.stderr:
+            raise RuntimeError("CLI did not report its artifact-size limit")
+    oversized.unlink()
     output.write_bytes(b"previous artifact")
 
     def output_limit():
@@ -69,7 +81,36 @@ def cli_checks(compiler, source, wrapper, selected, composed, directory):
         raise RuntimeError("CLI partial write changed the destination")
     if list(directory.glob(".aurora-output-*.tmp")):
         raise RuntimeError("CLI left an abandoned artifact temporary")
-    print("PASS private object CLI aliases, rejection and partial-write atomicity")
+    print("PASS " + label + " CLI aliases, artifact limit, rejection and partial-write atomicity")
+
+
+def wrapper_boundaries(driver, directory):
+    shapes = []
+    for line in (ROOT / "tests/compiler/frontend_wrapper_valid.cases").read_text().splitlines():
+        if not line or line.startswith("#"):
+            continue
+        name, *operations, expected = line.split()
+        if expected != "accept":
+            raise ValueError("unknown wrapper recipe expectation: " + name)
+        shapes.append(tuple(tuple(int(part) for part in operation.split(":")) for operation in operations))
+    # One packed recipe reaches both independent bounds. Cases are instruction
+    # data; GNU as, rather than a second encoder, remains the byte oracle.
+    entries = [
+        (
+            (f"aurora_hosted_boundary_{index:03}_").ljust(1024, "x"),
+            (f"boundary_target_{index:03}_").ljust(1024, "x"),
+            shapes[index % len(shapes)],
+        )
+        for index in range(256)
+    ]
+    recipe, assembly, reference, actual = (
+        directory / name for name in ("boundary.recipe", "boundary.s", "boundary-gnu.o", "boundary-native.o")
+    )
+    recipe.write_bytes(encode_frontend_recipes(entries))
+    assembly.write_text("\n".join(render_frontend_recipes(entries)) + '\n.section .note.GNU-stack,"",@progbits\n')
+    run("as", "--64", assembly, "-o", reference)
+    run(driver, "--wrapper-boundaries", recipe, reference, actual)
+    print("PASS frontend wrapper all transport shapes at 256 rows and 1024-byte names")
 
 
 def main():
@@ -107,7 +148,13 @@ def main():
             )
             run(executable)
         print("PASS private object native local calls, literal relocation and wrapper entry")
-        cli_checks(args.compiler, source, args.wrapper, selected, composed, directory)
+        cli_checks(
+            [args.compiler, "--compose-private-object", source, args.wrapper, selected, "-o"],
+            (source, args.wrapper, selected),
+            composed,
+            directory,
+            "private-object",
+        )
         if args.frontend:
             raw, actual, facts_path = (path.resolve() for path in args.frontend)
             facts = json.loads(facts_path.read_text())
@@ -122,13 +169,42 @@ def main():
                 )
             )
             run("as", "--64", assembly, "-o", wrapper)
+            recipe, native_wrapper = directory / "frontend.recipe", directory / "frontend-native.o"
+            recipe.write_bytes(frontend_wrapper_recipe(facts))
+            run(
+                args.driver,
+                "--wrapper",
+                recipe,
+                ROOT / "tests/compiler/frontend_wrapper.cases",
+                ROOT / "tests/compiler/frontend_wrapper_elf.cases",
+                wrapper,
+                raw,
+                names,
+                native_wrapper,
+            )
+            wrapper_boundaries(args.driver, directory)
+            cli_checks(
+                [args.compiler, "--emit-frontend-wrapper", recipe, "-o"],
+                (recipe,),
+                native_wrapper,
+                directory,
+                "frontend-wrapper",
+            )
             reference(args.driver, raw, wrapper, names, actual, directory)
             # The real frontend exceeds the language-source cap. This exercises
             # the distinct artifact read through the actual private CLI.
-            run(args.compiler, "--compose-private-object", raw, wrapper, names, "-o", directory / "frontend-cli.o")
+            run(
+                args.compiler,
+                "--compose-private-object",
+                raw,
+                native_wrapper,
+                names,
+                "-o",
+                directory / "frontend-cli.o",
+            )
             if (directory / "frontend-cli.o").read_bytes() != actual.read_bytes():
                 raise RuntimeError("real frontend private CLI differs from its build artifact")
-            print("PASS real frontend private composition matches GNU and the artifact CLI")
+            print("PASS real frontend emitted wrapper and private composition match GNU and the artifact CLI")
         if args.uart:
             raw, facts_path, assembly, wrapper, names = (
                 directory / name for name in ("uart-source.o", "uart.abi.json", "uart.s", "uart.o", "uart.names")
