@@ -47,7 +47,7 @@ def compile_codec_probe(directory):
     # Both inventories are authoritative: generated source forms and the one
     # parameterized operation variant. No independently maintained opcode list.
     generated = (directory / GENERATED_HEADERS[0]).read_text()
-    declaration = re.search(r"enum class InstructionForm\s*:\s*std::int64_t\s*\{(.*?)\};", generated, re.DOTALL)
+    declaration = re.search(r"enum class InstructionForm\s*:\s*(?:::)?std::int64_t\s*\{(.*?)\};", generated, re.DOTALL)
     if declaration is None:
         raise AssertionError("could not locate generated instruction forms")
     forms = re.findall(r"([A-Za-z_][A-Za-z0-9_]*)\s*=", declaration[1])
@@ -478,7 +478,7 @@ def dispatch_checks(directory):
         raise AssertionError(f"instruction codec missing specific unknown variant rejection:\n{result.stderr}")
     print("PASS IR exhaustive unknown variant rejected by instruction codec")
     (directory / "ir.hpp").write_text(original)
-    form_pattern = re.compile(r"(enum class InstructionForm\s*:\s*std::int64_t\s*\{)(.*?)(\};)", re.DOTALL)
+    form_pattern = re.compile(r"(enum class InstructionForm\s*:\s*(?:::)?std::int64_t\s*\{)(.*?)(\};)", re.DOTALL)
     if len(form_pattern.findall(enum_original)) != 1:
         raise AssertionError("could not uniquely locate generated instruction forms")
     generated_header.write_text(
