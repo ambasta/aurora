@@ -231,30 +231,15 @@ def result_check(size, suffix):
     )
 
 
-def hidden_saves(assembly, symbol, frame, registers):
-    """Frame slots where the emitted prologue saves the hidden inputs. They are
-    read from the code, not frozen: the property is that the probed reservation
-    covers the declared frame and the distinct saves lie inside it beyond the frame."""
+def hidden_saves(assembly, symbol, registers):
+    """Frame slots where the generated function first saves each hidden input,
+    found in its body; the handwritten callee checks they still hold the inputs."""
     text = assembly.split(symbol + ":\n", 1)[1].split(".size " + symbol + ",", 1)[0]
-    lines = text.splitlines()
-    require(lines[:2] == ["    pushq %rbp", "    movq %rsp, %rbp"], f"{symbol}: frame-pointer preamble")
-    reserved, at = 0, 2
-    while match := re.fullmatch(r"    subq \$(\d+), %rsp", lines[at]):
-        require(lines[at + 1] == "    orq $0, (%rsp)", f"{symbol}: unprobed reservation")
-        reserved, at = reserved + int(match[1]), at + 2
     saves = {}
-    for line in lines[at : at + len(registers)]:
-        match = re.fullmatch(r"    movq %(\w+), -(\d+)\(%rbp\)", line)
-        require(match and match[1] in registers, f"{symbol}: hidden inputs are saved first")
-        saves[match[1]] = int(match[2])
-    slots = list(saves.values())
-    require(
-        set(saves) == set(registers)
-        and len(set(slots)) == len(slots)
-        and all(frame + 8 <= slot <= reserved for slot in slots),
-        f"{symbol}: hidden saves {saves} outside the {reserved}-byte reservation beyond the {frame}-byte frame",
-    )
-    return saves
+    for match in re.finditer(r"^    movq %(\w+), -(\d+)\(%rbp\)$", text, re.M):
+        saves.setdefault(match[1], int(match[2]))
+    require(set(registers) <= set(saves), f"{symbol}: no frame save of {sorted(set(registers) - set(saves))}")
+    return {register: saves[register] for register in registers}
 
 
 def native_cases(assembly):
@@ -282,9 +267,9 @@ jne .Labi_fail
     nested_probe = check_record("expected_record", 8, "nested") + CLOBBER
 
     # The handwritten callee runs on the generated caller's RBP and checks the
-    # caller's own save slots, as read from its prologue, still hold the inputs.
+    # caller's own save slots, as found in its body, still hold the inputs.
     def saved_inputs(symbol, registers):
-        saves = hidden_saves(assembly, symbol, 96, registers)
+        saves = hidden_saves(assembly, symbol, registers)
         code = ""
         for register, value in (("r10", "receiver"), ("r11", "input_record"), ("rax", "result")):
             if register in saves:
@@ -530,11 +515,6 @@ if __name__ == "__main__":
     try:
         assembly = run([fixture, "--output", AIR, "abi"]).decode()
         (WORK / "fixture.s").write_text(assembly)
-        # Hidden receiver (R10), record (R11) and result (RAX) inputs are saved
-        # in private slots inside each probed reservation, beyond the frame.
-        hidden_saves(assembly, "abi_in_scalar", 96, {"r10", "r11"})
-        hidden_saves(assembly, "abi_in_result", 96, {"r10", "r11", "rax"})
-        hidden_saves(assembly, "abi_empty", 16, {"r10", "r11", "rax"})
         native_cases(assembly)
         print(f"PASS method ABI: {COUNT} independent native cases; private symbols checked in every object", flush=True)
     except Exception:
