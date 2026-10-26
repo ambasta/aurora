@@ -1306,6 +1306,10 @@ export namespace compiler_x86 {
             byte(u8(243));
             return byte(u8(164));
         }
+        auto rep_stosb() -> bool {
+            byte(u8(243));
+            return byte(u8(170));
+        }
         auto return_instruction() -> bool {
             return byte(u8(195));
         }

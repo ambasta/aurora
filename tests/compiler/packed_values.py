@@ -149,6 +149,34 @@ def array_cases(suite):
         )
 
 
+def receiver_zero_cases(suite):
+    # All cases join the existing packed source program. Reusing the same local
+    # dirties every array byte before its next construction. Mixed-width fields
+    # retain declaration-order initialization; the emitter harness independently
+    # observes neighboring dirty bytes before any later field initialization.
+    for capacity in (1, 6, 7, 8, 9, 64, 512):
+        definitions = (
+            "class ZeroBox{u8 lead;u64 before;"
+            f"array<u8,{capacity}> bytes;u8 tail;u64 after;public:"
+            "ZeroBox(u8 a,u64 b,u8 c,u64 d):"
+            "after(d),tail(c),bytes{},before(b),lead(a){}"
+            "auto intact()const->bool{return lead==173u8&&before==18446744073709551615u64"
+            "&&tail==211u8&&after==9223372036854775809u64;}"
+            "auto at(i64 i)const->u8{return bytes[i];}"
+            "auto set(i64 i,u8 value)->u8{bytes[i]=value;return value;}};"
+        )
+        suite.check(
+            f"receiver array zero {capacity}: dirty reuse and adjacent mixed-width fields",
+            "i64 pass=0;while(pass<3){"
+            "ZeroBox value=ZeroBox(173u8,18446744073709551615u64,211u8,9223372036854775809u64);"
+            "if(!value.intact()){return 1u64;}i64 i=0;"
+            f"while(i<{capacity}){{if(value.at(i)!=0u8){{return 2u64;}}"
+            "value.set(i,255u8);i=i+1;}if(!value.intact()){return 3u64;}"
+            "pass=pass+1;}return 42u64;",
+            definitions=definitions,
+        )
+
+
 def byte_run_cases(suite):
     # Each boundary compiles once and observes every byte in loops. The empty
     # case is already exercised by empty_cases; zero-capacity arrays stay invalid.
@@ -507,6 +535,7 @@ def main():
     suite.runner.load(Path(__file__).with_suffix(".cases"), EMPTY=EMPTY)
     array_cases(suite)
     byte_run_cases(suite)
+    receiver_zero_cases(suite)
     scalar_and_layout_cases(suite)
     maximum_leaf_cases(suite)
     empty_cases(suite)

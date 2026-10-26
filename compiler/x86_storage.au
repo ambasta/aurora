@@ -720,6 +720,9 @@ export namespace compiler_x86 {
         auto rep_movsb() -> bool {
             return line("rep movsb");
         }
+        auto rep_stosb() -> bool {
+            return line("rep stosb");
+        }
         auto return_instruction() -> bool {
             return line("ret");
         }
@@ -2058,6 +2061,41 @@ export namespace compiler_x86 {
             return emit_object_status(w, object);
         }
         return w.rep_movsb();
+    }
+    auto emit_rep_stosb(EmitWorkspace& w, ObjectWorkspace& object) -> bool {
+        if (!emit_object_status(w, object)) {
+            return false;
+        }
+        if (object.object_mode()) {
+            object.rep_stosb();
+            return emit_object_status(w, object);
+        }
+        return w.rep_stosb();
+    }
+    // R10 already holds the admitted receiver, independent of RSP movement.
+    // Preserve every GPR and arithmetic flag; the private ABI requires forward
+    // string operations, so establish clear DF rather than trusting the caller.
+    auto zero_receiver_bytes(EmitWorkspace& w, ObjectWorkspace& object, i64 offset, i64 count) -> bool {
+        if (offset < 0 || offset > 2147483647 || count < 0 || count > 2147483647 - offset) {
+            return w.fail();
+        }
+        if (count == 0) {
+            return w.ok();
+        }
+        emit_push_register(w, object, Register::rax);
+        emit_push_register(w, object, Register::rdi);
+        emit_push_register(w, object, Register::rcx);
+        w.grow_stack(24);
+        emit_lea_base(w, object, Register::r10, offset, Register::rdi);
+        emit_mov_imm(w, object, 0, Register::rax);
+        emit_mov_imm(w, object, count, Register::rcx);
+        emit_cld(w, object);
+        emit_rep_stosb(w, object);
+        emit_pop_register(w, object, Register::rcx);
+        emit_pop_register(w, object, Register::rdi);
+        emit_pop_register(w, object, Register::rax);
+        w.shrink_stack(24);
+        return w.ok();
     }
     auto emit_return_instruction(EmitWorkspace& w, ObjectWorkspace& object) -> bool {
         if (!emit_object_status(w, object)) {

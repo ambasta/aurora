@@ -648,6 +648,31 @@ export namespace compiler_x86 {
         }
         return false;
     }
+    auto contiguous_receiver_bytes(const compiler_ir_metadata::MetadataStore& metadata, i64 class_id,
+        i64 field) -> bool {
+        if (class_field_array(metadata, class_id, field) == 0
+            || type_kind(metadata, class_field_type(metadata, class_id, field)) != 10) {
+            return false;
+        }
+        const i64 first = class_field_first(metadata, class_id, field);
+        const i64 count = class_field_length(metadata, class_id, field);
+        const i64 offset = class_field_offset(metadata, class_id, field);
+        const i64 leaves = class_leaf_count(metadata, class_id);
+        const i64 size = class_size(metadata, class_id);
+        if (first < 0 || first > leaves || count < 0 || count > leaves - first
+            || offset < 0 || offset > size || count > size - offset) {
+            return false;
+        }
+        i64 element = 0;
+        while (element < count) {
+            if (type_kind(metadata, class_leaf_type(metadata, class_id, first + element)) != 10
+                || class_leaf_offset(metadata, class_id, first + element) != offset + element) {
+                return false;
+            }
+            element = element + 1;
+        }
+        return true;
+    }
     auto emit_receiver_payload(EmitWorkspace& workspace, ObjectWorkspace& object,
         const compiler_ir_metadata::MetadataStore& metadata, const compiler_ir_instructions::InstructionStore& store,
         i64 instruction) -> bool {
@@ -685,8 +710,16 @@ export namespace compiler_x86 {
         if (form == 34) {
             const i64 first = class_field_first(metadata, class_id, field);
             const i64 count = class_field_length(metadata, class_id, field);
+            if (count == 0) {
+                return true;
+            }
             const i64 address_token27 = workspace.pack_address(0, save);
             emit_load(workspace, object, address_token27, Register::r10, false);
+            // Eight scalar byte stores cost at least 32 bytes. The preserved
+            // exact fill costs at most 26, including a full disp32 address.
+            if (count >= 8 && contiguous_receiver_bytes(metadata, class_id, field)) {
+                return zero_receiver_bytes(workspace, object, field_offset, count);
+            }
             i64 element = 0;
             while (element < count) {
                 const i64 offset = class_leaf_offset(metadata, class_id, first + element);
