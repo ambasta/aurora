@@ -187,6 +187,28 @@ For multipage, Call and snapshot admission, the shared linked discovery gate
 rejects a parser-to-PCI call path and bounds the wrapper, parser and PCI frames.
 Stack and fault-reserve caps are unchanged.
 
+## Boot-owned caller continuation
+
+Ordinary blocking Call and retained-RAM callers share one private, noncopyable,
+nonmovable owner containing one `ParkedRun`. Its kind is initialized exactly once
+after verified boot-row selection and before timer/domain admission: no caller,
+ordinary caller, or RAM caller. Storage/text rows cannot change that selection;
+production/program images select ordinary caller even between append commands.
+RAM service restart changes its incarnation, never the caller owner's kind.
+
+Distinct private family accessors reject uninitialized, no-caller and wrong-family
+access before capture, transport or reset effects. New capture requires every
+continuation field to be empty. Resume restores the original caller authority,
+frame and cumulative accounting, then destroys, volatile-byte-scrubs and
+reconstructs only the `ParkedRun` member before activation. Live disposal still
+requires the existing authenticated settlement/retirement path; there is no
+owner-reset operation. RAM/append service waits, console reads and resumable-domain
+records remain separate because their lifetimes can overlap the caller.
+
+This removes duplicate retained caller storage, not protocol checks, page caps
+or namespace state. Exact linked RX/RO/RW and stack costs remain qualification
+inputs; a smaller object alone does not establish a mapped-page reduction.
+
 ## Production append worker lifetimes
 
 The [protected command console](../../docs/program-console-contract.md#protected-append-and-surviving-commits)

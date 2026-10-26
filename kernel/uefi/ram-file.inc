@@ -26,6 +26,10 @@ template <class T> auto ram_clear(std::optional<T> &record) -> void {
            registry.index(*domains[0].handle) == std::optional<std::size_t>{0} && verify(domains[0]);
 }
 [[nodiscard]] auto ram_active_authority() -> bool {
+    auto *record = caller_continuation.ram();
+    if (!record)
+        return false;
+    auto &ram_caller_wait = *record;
     if (!ram_lifetime_valid() || !run_authority || active > 1 || !verify(domains[active]))
         return false;
     if (active == 0)
@@ -97,6 +101,8 @@ template <class T> auto ram_clear(std::optional<T> &record) -> void {
     return *context;
 }
 auto ram_trap(U64 frame) -> U64 {
+    auto &ram_caller_wait = caller_continuation.ram_checked();
+    require(active != 0 || ram_caller_wait.empty(), "RAM caller owner");
     if (active == 1 && ram_state == RamState::booting) {
         auto *words = reinterpret_cast<U64 *>(frame);
         if (fixture == Fixture::ram_grant)
@@ -217,6 +223,7 @@ auto ram_finish_execution(unsigned index) -> void {
     transaction = 0;
 }
 auto ram_launch(unsigned index, U64 phase, U64 epoch) -> void {
+    static_cast<void>(caller_continuation.ram_checked());
     require(index < 2 && root() == kernel_root && active == L::domain_count && irq_off() && !timer_armed &&
                 !program.running() && !saved_rsp && domains[index].handle && verify(domains[index]),
             "RAM fresh launch boundary");
@@ -239,6 +246,7 @@ auto ram_launch(unsigned index, U64 phase, U64 epoch) -> void {
 // Service activation always mints a new active identity; the dormant frame never
 // confers a previous command's run authority or a renewed normal allowance.
 auto ram_resume_service(U64 status, U64 word, U64 epoch) -> void {
+    auto &ram_caller_wait = caller_continuation.ram_checked();
     require(root() == kernel_root && active == L::domain_count && irq_off() && !timer_armed && !saved_rsp &&
                 !program.running() && ram_lifetime_valid() && ram_service_wait.context &&
                 ram_service_wait.context->call_frame(ram_lifetime->contract, image_sites(1).serve_pc),
@@ -267,38 +275,47 @@ auto ram_resume_service(U64 status, U64 word, U64 epoch) -> void {
     ram_finish_execution(1);
 }
 [[nodiscard]] auto ram_resume_caller(U64 ticket) -> bool {
-    auto &saved = ram_caller_wait;
-    if (ram_state != RamState::command || !ram_command_valid() || ram_command->caller_disabled ||
-        root() != kernel_root || active != L::domain_count || !irq_off() || timer_armed || saved_rsp ||
-        program.running() || !saved.context || !saved.authority || !ticket || ticket != saved.ticket ||
-        !saved.authority->ready_owner(registry, ram_command->caller, saved.authority->epoch()) ||
-        !saved.context->call_frame(*domains[0].contract, image_sites(0).call_pc) ||
-        !saved.context->call_frame(saved.authority->contract(), image_sites(0).call_pc) || saved.remaining == 0 ||
-        saved.ticks >= 128 || saved.remaining != 128 - saved.ticks ||
-        saved.endpoint.slot() != ram_command->caller_endpoint.slot() ||
-        saved.endpoint.generation() != ram_command->caller_endpoint.generation() ||
-        saved.launch[2] != saved.endpoint.slot() || saved.launch[3] != saved.endpoint.generation() ||
-        saved.launch[0] != saved.authority->source_phase() || saved.authority->transaction() != 0 ||
-        saved.authority->root() != domains[0].tables->root() || saved.authority->owned_arena() != arena ||
-        saved.authority->role() != SelectedRunAuthority::Role::client || mailbox->state() != ipc::State::replied)
-        return false;
-    const auto completion = mailbox->consume(ram_command->caller, ipc::Phase::completion, saved.endpoint, ticket);
-    if (!completion || completion->outcome() != ipc::Outcome::replied)
-        return false; // Never translate post-COMMIT uncertainty to cancelled.
-    launch = saved.launch;
-    selected_client = 0;
-    selected_role = SelectedRunAuthority::Role::client;
-    selected_phase = ipc::Phase::request;
-    transaction = 0;
-    run_authority.emplace(*saved.authority);
-    timer_owner = ram_command->caller;
-    timer_owner_epoch = timer_epoch = saved.authority->epoch();
-    timer_initial = 128;
-    const auto frame = restore_parked_run(saved);
-    auto *words = reinterpret_cast<U64 *>(frame);
-    words[14] = 0;
-    words[11] = completion->value();
-    saved.clear();
+    U64 frame;
+    {
+        auto *record = caller_continuation.ram();
+        if (!record)
+            return false;
+        auto &saved = *record;
+        if (ram_state != RamState::command || !ram_command_valid() || ram_command->caller_disabled ||
+            root() != kernel_root || active != L::domain_count || !irq_off() || timer_armed || saved_rsp ||
+            program.running() || !saved.context || !saved.authority || !ticket || ticket != saved.ticket ||
+            !saved.authority->ready_owner(registry, ram_command->caller, saved.authority->epoch()) ||
+            !saved.context->call_frame(*domains[0].contract, image_sites(0).call_pc) ||
+            !saved.context->call_frame(saved.authority->contract(), image_sites(0).call_pc) || saved.remaining == 0 ||
+            saved.ticks >= 128 || saved.remaining != 128 - saved.ticks ||
+            saved.endpoint.slot() != ram_command->caller_endpoint.slot() ||
+            saved.endpoint.generation() != ram_command->caller_endpoint.generation() ||
+            saved.launch[2] != saved.endpoint.slot() || saved.launch[3] != saved.endpoint.generation() ||
+            saved.launch[0] != saved.authority->source_phase() || saved.authority->transaction() != 0 ||
+            saved.authority->root() != domains[0].tables->root() || saved.authority->owned_arena() != arena ||
+            saved.authority->role() != SelectedRunAuthority::Role::client ||
+            saved.authority->phase() != ipc::Phase::request || saved.authority->client() != 0 ||
+            saved.authority->budget() != 128 || registry.index(saved.authority->owner()) != 0 ||
+            mailbox->state() != ipc::State::replied)
+            return false;
+        const auto completion = mailbox->consume(ram_command->caller, ipc::Phase::completion, saved.endpoint, ticket);
+        if (!completion || completion->outcome() != ipc::Outcome::replied)
+            return false; // Never translate post-COMMIT uncertainty to cancelled.
+        launch = saved.launch;
+        selected_client = 0;
+        selected_role = SelectedRunAuthority::Role::client;
+        selected_phase = ipc::Phase::request;
+        transaction = 0;
+        run_authority.emplace(*saved.authority);
+        timer_owner = ram_command->caller;
+        timer_owner_epoch = timer_epoch = saved.authority->epoch();
+        timer_initial = 128;
+        frame = restore_parked_run(saved);
+        auto *words = reinterpret_cast<U64 *>(frame);
+        words[14] = 0;
+        words[11] = completion->value();
+        saved.clear();
+    }
     activate_parked_run(0);
     require(current_run_identity(), "RAM caller original quota authority");
     timer_armed = true;
@@ -309,6 +326,7 @@ auto ram_resume_service(U64 status, U64 word, U64 epoch) -> void {
 // Disable execution first, but keep both original registry incarnations until
 // the exact pending receipt is consumed. This is settlement, not caller revival.
 auto ram_settle_caller() -> void {
+    auto &ram_caller_wait = caller_continuation.ram_checked();
     require(ram_command_valid() && root() == kernel_root && active == L::domain_count && !timer_armed,
             "RAM settlement identities");
     ram_command->caller_disabled = true;
@@ -327,6 +345,7 @@ auto ram_settle_caller() -> void {
     require(retire(0), "RAM retired caller scrub");
 }
 auto ram_reset() -> void {
+    static_cast<void>(caller_continuation.ram_checked());
     scratchpad_discard(); // No candidate can cross a reset or a new incarnation.
     require(ram_state == RamState::poisoned && ram_lifetime_valid(), "RAM authenticated reset only");
     const bool uncertain = ram_command && ram_command->framing.commit_delivered() &&
@@ -345,6 +364,8 @@ auto ram_reset() -> void {
                            : std::string_view{"AURORA_RAM_FILE_RESET: outcome=reset data_lost=1\r\n"});
 }
 [[nodiscard]] auto ram_start() -> bool {
+    if (!caller_continuation.ram())
+        return false;
     require(ram_state == RamState::absent && !ram_lifetime && !ram_command && !ram_service_wait.context && mailbox &&
                 mailbox->revoked() && frames.used() == 0,
             "RAM absent lifetime");
@@ -375,7 +396,9 @@ auto ram_reset() -> void {
 }
 // Shared scenario-free exchange mechanism; fixture selection stays in its caller.
 auto ram_exchange_commands() -> void {
-    while (ram_caller_wait.context && !ram_command->caller_disabled && ram_state != RamState::poisoned) {
+    static_cast<void>(caller_continuation.ram_checked());
+    while (caller_continuation.ram()->context && !ram_command->caller_disabled && ram_state != RamState::poisoned) {
+        const auto ticket = caller_continuation.ram_checked().ticket;
         const auto epoch = ram_mint_epoch();
         if (!epoch) {
             ram_command->caller_disabled = true;
@@ -384,8 +407,10 @@ auto ram_exchange_commands() -> void {
         require(ram_lifetime_valid() && ram_command_valid() && ram_service_wait.context &&
                     ram_service_wait.context->call_frame(ram_lifetime->contract, image_sites(1).serve_pc),
                 "RAM pre-delivery continuation authority");
-        const auto request = mailbox->receive(
-            ram_command->service, ipc::Phase::service, ram_command->service_endpoint, ram_caller_wait.ticket);
+        const auto request = mailbox->receive(ram_command->service,
+                                              ipc::Phase::service,
+                                              ram_command->service_endpoint,
+                                              caller_continuation.ram()->ticket);
         require(request && request->second() == 0 && ram_command->framing.delivered(request->first()),
                 "RAM exact one-shot delivery");
         ram_command->delivered = true;
@@ -409,14 +434,15 @@ auto ram_exchange_commands() -> void {
             ram_command->caller_disabled = true;
             break;
         }
-        const auto ticket = ram_caller_wait.ticket;
         require(!ram_resume_caller((ticket == UINT64_MAX ? ticket - 1 : ticket + 1)) && ram_resume_caller(ticket),
                 "RAM exact reply wake");
     }
 }
 [[nodiscard]] auto ram_command_run(U64 scenario, RamFileFraming::Right right) -> bool {
+    if (!caller_continuation.ram())
+        return false;
     require(ram_state == RamState::idle && ram_lifetime_valid() && ram_service_wait.context && !ram_command &&
-                !domains[0].handle && !ram_caller_wait.context && mailbox->revoked(),
+                !domains[0].handle && caller_continuation.ram_empty() && mailbox->revoked(),
             "RAM command idle exclusivity");
     if (ram_commands >= 64)
         return false;
@@ -491,7 +517,7 @@ auto ram_exchange_commands() -> void {
     }
     ram_clear(ram_command);
     ram_state = RamState::idle;
-    require(frames.used() == 4 && !domains[0].handle && !ram_caller_wait.context && mailbox->revoked(),
+    require(frames.used() == 4 && !domains[0].handle && caller_continuation.ram_empty() && mailbox->revoked(),
             "RAM healthy idle retained service");
     Serial::text("AURORA_RAM_FILE_COMMAND: phase=");
     Serial::number(scenario);
@@ -527,6 +553,7 @@ auto run_ram_baseline() -> void {
     }
 }
 auto run_ram_file() -> void {
+    static_cast<void>(caller_continuation.ram_checked());
     mailbox.emplace(registry);
     const bool baseline = ram_fixture_is(Fixture::ram_baseline);
     if (!baseline)

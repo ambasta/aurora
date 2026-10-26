@@ -2,6 +2,7 @@
 // owns a fresh caller/read grant; a healthy scrubbed service incarnation is reused.
 [[nodiscard]] [[gnu::noinline]] auto program_file_call(program::Submission &input, bool count_words, bool checksum)
     -> bool {
+    static_cast<void>(caller_continuation.ordinary_checked());
     require(ProgramInputPlatform::quiet() && command_files.selected() && !command_files.writable(),
             "file call boundary");
     require(!checksum || count_words, "CRC sequential selection");
@@ -41,21 +42,31 @@
     Serial::text("\r\n");
     U64 result = 0;
     call_execute(0, checksum ? 48 : count_words ? 32 : 16, 0, 0);
-    require(count_words || (call_wait.context && call_wait.ticks > 0), "file caller live suspension");
+    require(count_words || (caller_continuation.ordinary()->context && caller_continuation.ordinary()->ticks > 0),
+            "file caller live suspension");
     U64 previous = 0;
-    while (call_wait.context) {
-        require(call_wait.authority && call_wait.ticket && caller.call_count > 0 &&
-                    caller.call_count <= caller.call_limit,
-                "file bounded live suspension");
-        const auto ticket = call_wait.ticket, epoch = call_wait.authority->epoch();
-        const auto ticks = call_wait.ticks, remaining = call_wait.remaining;
+    while (caller_continuation.ordinary()->context) {
+        U64 ticket, epoch;
+        unsigned ticks, remaining;
+        {
+            const auto &saved = caller_continuation.ordinary_checked();
+            require(saved.authority && saved.ticket && caller.call_count > 0 && caller.call_count <= caller.call_limit,
+                    "file bounded live suspension");
+            ticket = saved.ticket;
+            epoch = saved.authority->epoch();
+            ticks = saved.ticks;
+            remaining = saved.remaining;
+        }
         require(!call_resume(previous) && !call_resume(ticket), "file stale and unready wake");
         const auto request = mailbox->receive(*domains[1].handle, ipc::Phase::service, *endpoint, ticket);
         require(request && request->first() == caller.call_count - 1 && request->second() == 0,
                 "file sequential copied offset");
         call_execute(1, 11, request->first(), request->second());
-        require(timer_epoch > epoch && call_wait.ticks == ticks && call_wait.remaining == remaining,
-                "file isolated cumulative allowance");
+        {
+            const auto &saved = caller_continuation.ordinary_checked();
+            require(timer_epoch > epoch && saved.ticks == ticks && saved.remaining == remaining,
+                    "file isolated cumulative allowance");
+        }
         if (timer_exhausted || program.event() != ProgramEvent::returned) {
             file_service_poison();
             caller.call_closed = true;
@@ -107,7 +118,7 @@
     } else
         require(retire(1) && frames.used() == 0 && command_files.release_read(registry, *mailbox),
                 "file call authenticated retirement");
-    require(!call_wait.context && !call_wait.ticket && !command_note.bound(), "file call scrubbed");
+    require(caller_continuation.ordinary_empty() && !command_note.bound(), "file call scrubbed");
     mailbox.reset();
     selected_client = 2;
     command_owned = false;

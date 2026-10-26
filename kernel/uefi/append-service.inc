@@ -15,6 +15,7 @@
     return true;
 }
 [[nodiscard]] auto append_service_trap(U64 frame) -> U64 {
+    auto &call_wait = caller_continuation.ordinary_checked();
 #ifdef AURORA_PROGRAM_FIXTURE
     if (fixture == Fixture::program_transaction)
         ++launch[4];
@@ -75,6 +76,10 @@
     return 1;
 }
 [[nodiscard]] auto append_service_resume(U64 ticket, U64 offset) -> bool {
+    auto *record = caller_continuation.ordinary();
+    if (!record)
+        return false;
+    auto &call_wait = *record;
     auto &saved = append_service_wait;
     auto &domain = domains[1];
     if (!program_boundary() || !append_call_authority() || !append_backings_valid() || command_append.terminal() ||

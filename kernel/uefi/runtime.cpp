@@ -289,40 +289,11 @@ constexpr std::size_t launch_words = 7;
 #endif
 #if defined(AURORA_USER_RESUME) || defined(AURORA_BLOCKING_CALL) || defined(AURORA_RAM_FILE) ||                        \
     defined(AURORA_CONSOLE_REGION)
-// Saved transport state is shared; each caller retains its distinct authority checks.
-class ParkedRun final {
-public:
-    std::optional<ServiceContext> context;
-#ifdef AURORA_USER_RESUME
-    std::optional<RunAuthority> authority;
-#else
-    std::optional<ProgramRunAuthority> authority;
-    std::optional<user::DomainHandle> service;
-    ipc::Endpoint endpoint;
-    U64 ticket{};
-#ifdef AURORA_CONSOLE_REGION
-    // The console-region rows' parked read; the file-call rows use the fields above.
-    std::optional<user::DomainHandle> owner;
-    U64 root{}, region{}, generation{}, epoch{};
-    unsigned initial{};
-#endif
-#endif
-    std::array<U64, launch_words> launch{};
-    unsigned remaining{}, ticks{}, resumes{}, compiled{}, contexts{};
-#ifdef AURORA_CONSOLE_REGION
-    std::optional<console::RawSample> ready;
-#endif
-    auto clear() -> void {
-        std::destroy_at(this);
-        auto *bytes = reinterpret_cast<volatile std::byte *>(this);
-        for (std::size_t i = 0; i < sizeof(ParkedRun); ++i)
-            bytes[i] = std::byte{0};
-        std::construct_at(this);
-    }
-};
+#include "parked-run.inc"
 #endif
 #ifdef AURORA_BLOCKING_CALL
-constinit ParkedRun call_wait;
+#include "caller-continuation.inc"
+constinit CallerContinuation caller_continuation;
 #ifdef AURORA_PROGRAM_APPEND_CALL
 constinit ParkedRun append_service_wait;
 #endif
@@ -531,6 +502,21 @@ auto select_packed_row(const Bytes &h) -> void {
         ImagePagePolicy::choose<ImagePagePolicy::owned_text>();
 #endif
     select_images();
+}
+#endif
+#ifdef AURORA_BLOCKING_CALL
+auto initialize_caller() -> void {
+    using Kind = CallerContinuation::Kind;
+#ifdef AURORA_STORAGE_FIXTURE
+    const auto kind = ram_rows() ? Kind::ram : call_rows() ? Kind::ordinary : Kind::none;
+#elif defined(AURORA_TEXT_FIXTURE)
+    const auto kind = call_rows() ? Kind::ordinary : Kind::none;
+#else
+    // Production/program append is an ordinary-caller IMAGE even between
+    // commands, when the transient call_rows()/command_appending is false.
+    constexpr auto kind = Kind::ordinary;
+#endif
+    require(caller_continuation.initialize(kind), "caller boot owner");
 }
 #endif
 #ifdef AURORA_SERVICE_FIXTURE
@@ -1278,6 +1264,7 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
         return false;
 #if defined(AURORA_STORAGE_FIXTURE) || defined(AURORA_TEXT_FIXTURE)
     select_packed_row(h);
+    initialize_caller();
 #endif
     install_architecture();
 #if defined(AURORA_RUNTIME_CONTROL_FIXTURE)
@@ -1304,6 +1291,9 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
 #else
 #ifdef AURORA_PROGRAM_FIXTURE
     select_fixture(Fixture::program_append_construct_fault, Fixture::program_append_site);
+#endif
+#ifdef AURORA_PROGRAM_APPEND_CALL
+    initialize_caller();
 #endif
     initialize_service_timer();
 #endif
