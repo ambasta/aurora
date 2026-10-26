@@ -476,6 +476,34 @@ export namespace compiler_ir_instructions {
         auto operand_count() const -> i64 {
             return operandCount;
         }
+        auto set_unary(i64 value) -> bool {
+            if (recordKind != 1 || instructionForm != 11 || value < 0 || value > 2) {
+                return false;
+            }
+            unaryOperation = value;
+            return true;
+        }
+        auto set_binary(i64 value) -> bool {
+            if (recordKind != 1 || instructionForm != 12 || value < 0 || value > 9) {
+                return false;
+            }
+            binaryOperation = value;
+            return true;
+        }
+        auto set_comparison(i64 value) -> bool {
+            if (recordKind != 1 || instructionForm != 14 || value < 0 || value > 5) {
+                return false;
+            }
+            comparisonOperation = value;
+            return true;
+        }
+        auto set_query(i64 value) -> bool {
+            if (recordKind != 1 || instructionForm != 39 || value < 0 || value > 1) {
+                return false;
+            }
+            queryOperation = value;
+            return true;
+        }
     };
     class RawOperandRow {
         i64 operandRole;
@@ -978,6 +1006,53 @@ export namespace compiler_ir_instructions {
         }
         auto error() const -> InstructionError {
             return errorValue;
+        }
+        // Only pending ingress may write the immutable raw pools. Later source
+        // phases retain their existing narrowly scoped CFG mutation methods.
+        auto ingress_instruction(i64 index, RawInstructionRow value) -> bool {
+            if (statusValue != InstructionStatus::pending) {
+                return false;
+            }
+            if (index < 0 || index >= instructions.size() || !instructions.ok() || !instructions.set(index, value)) {
+                return reject(InstructionError::integrity);
+            }
+            return true;
+        }
+        auto ingress_operand(i64 index, RawOperandRow value) -> bool {
+            if (statusValue != InstructionStatus::pending) {
+                return false;
+            }
+            if (index < 0 || index >= operands.size() || !operands.ok() || !operands.set(index, value)) {
+                return reject(InstructionError::integrity);
+            }
+            return true;
+        }
+        auto ingress_literal(i64 index, u8 value) -> bool {
+            if (statusValue != InstructionStatus::pending) {
+                return false;
+            }
+            if (index < 0 || index >= literals.size() || !literals.ok() || !literals.set(index, value)) {
+                return reject(InstructionError::integrity);
+            }
+            return true;
+        }
+        auto ingress_code(i64 index, CodeRow value) -> bool {
+            if (statusValue != InstructionStatus::pending) {
+                return false;
+            }
+            if (index < 0 || index >= codeOrder.size() || !codeOrder.ok() || !codeOrder.set(index, value)) {
+                return reject(InstructionError::integrity);
+            }
+            return true;
+        }
+        auto ingress_body(i64 index, BodyRow value) -> bool {
+            if (statusValue != InstructionStatus::pending) {
+                return false;
+            }
+            if (index < 0 || index >= bodies.size() || !bodies.ok() || !bodies.set(index, value)) {
+                return reject(InstructionError::integrity);
+            }
+            return true;
         }
         auto instruction_count() const -> i64 {
             return instructions.size();

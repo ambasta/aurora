@@ -1,0 +1,509 @@
+export module aurora.compiler.lowering_projection_identity;
+import aurora.compiler.lowering_projection_storage;
+import aurora.compiler.resolution_arena;
+import aurora.compiler.resolution_rows;
+import aurora.compiler.resolution_kinds;
+import aurora.compiler.lowering_kinds;
+import aurora.compiler.lowering_storage;
+import aurora.compiler.ir_metadata_storage;
+import aurora.compiler.syntax_arena;
+import aurora.compiler.lowering_errors;
+import aurora.compiler.lexer;
+
+// Readonly conversion of identities already chosen by resolution/lowering.
+// Display spelling is checked but never stored; durable names are linkage bytes.
+export namespace compiler_lowering_projection {
+    auto int_value(i64 value) -> bool {
+        return value >= -2147483648 && value <= 2147483647;
+    }
+    auto source_range(const compiler_resolver::Session& session, i64 reference) -> bool {
+        const compiler_resolver::MetaRow value = session.view_meta(reference);
+        return value.kind() == compiler_resolver::MetaTag::source_reference && value.word(1) >= 0 && value.word(2)
+            >= value.word(1) && value.word(2) <= session.source_size();
+    }
+    // Counting is based on the actual published spelling contributors, not a
+    // product of entire source/metadata/output pools. Invalid unused candidates
+    // contribute nothing; accessing one later still fails its exact domain check.
+    auto prefix_capacity(const compiler_resolver::Session& session, i64 prefix) -> i64 {
+        i64 result = 0;
+        i64 at = prefix;
+        while (at != -1) {
+            const compiler_resolver::MetaRow row = session.view_meta(at);
+            const compiler_resolver::MetaRow atom = session.view_meta(row.word(1));
+            if (row.kind() != compiler_resolver::MetaTag::prefix || row.word(0) < -1 || row.word(0) >= at || atom.kind()
+                != compiler_resolver::MetaTag::atom || !source_range(session, atom.word(2))) {
+                return -1;
+            }
+            const compiler_resolver::MetaRow source = session.view_meta(atom.word(2));
+            result = sum(result, sum(source.word(2) - source.word(1), 2));
+            if (result < 0) {
+                return -1;
+            }
+            at = row.word(0);
+        }
+        return result;
+    }
+    auto name_capacity(const compiler_resolver::Session& session) -> i64 {
+        i64 total = 0;
+        i64 maximum = 0;
+        i64 at = 0;
+        while (at < session.meta_count()) {
+            const compiler_resolver::MetaRow row = session.view_meta(at);
+            i64 length = 0;
+            if (row.kind() == compiler_resolver::MetaTag::symbol) {
+                const compiler_resolver::MetaRow source = session.view_meta(row.word(0));
+                if (source.kind() == compiler_resolver::MetaTag::source_reference && source.word(0) == -1
+                    && source.word(9) == at && source.word(1) >= 0 && source.word(2) > source.word(1) && source.word(2)
+                    <= session.source_size()) {
+                    length = source.word(2) - source.word(1);
+                }
+            } else {
+                if (row.kind() == compiler_resolver::MetaTag::concrete_type && (row.type_kind()
+                    == compiler_resolver::ResolvedTypeKind::class_value || row.type_kind()
+                    == compiler_resolver::ResolvedTypeKind::enum_value) && row.word(1) <= -2 && row.word(1)
+                    != -9223372036854775807 - 1) {
+                    const i64 candidate = prefix_capacity(session, -row.word(1) - 2);
+                    if (candidate >= 0) {
+                        length = candidate;
+                    }
+                }
+            }
+            total = sum(total, length);
+            if (total < 0) {
+                return -1;
+            }
+            if (length > maximum) {
+                maximum = length;
+            }
+            at = at + 1;
+        }
+        i64 carriers = 0;
+        at = 0;
+        while (at < session.output_count()) {
+            const compiler_lowering::OutputRow row = session.view_output(at);
+            if (row.kind() == compiler_lowering::RecordKind::Carrier) {
+                carriers = sum(carriers, 1);
+            }
+            at = at + 1;
+        }
+        // @array: + nominal + : + the longest signed int32 decimal spelling.
+        // The final candidate allowance also covers a deduplication probe built
+        // after the retained scratch prefix; it is not a second retained copy.
+        const i64 candidate = sum(maximum, 19);
+        return sum(sum(total, product(carriers, candidate)), candidate);
+    }
+    auto identifier(const compiler_resolver::Session& session, ProjectionWorkspace& workspace, i64 reference) -> bool {
+        if (!workspace.good() || !source_range(session, reference)) {
+            return workspace.fail();
+        }
+        const compiler_resolver::MetaRow value = session.view_meta(reference);
+        if (value.word(0) == -1) {
+            return true;
+        }
+        if (value.word(0) < 0 || value.word(0) >= session.module_count()) {
+            return workspace.fail();
+        }
+        const compiler_resolver::MetaRow unit = session.view_meta(value.word(0));
+        if ((unit.kind() != compiler_resolver::MetaTag::module_source && unit.kind()
+            != compiler_resolver::MetaTag::module_unit) || unit.word(0) < 0 || unit.word(1) < 0 || !range(unit.word(0),
+            unit.word(1), session.source_size()) || value.word(1) < unit.word(0) || value.word(2) - unit.word(0)
+            > unit.word(1) || !int_value(value.word(3)) || !int_value(value.word(4)) || !int_value(value.word(7))
+            || !int_value(value.word(8)) || value.word(3) < 1 || value.word(4) < 1 || value.word(7) < value.word(3)
+            || value.word(8) < 1) {
+            return workspace.fail();
+        }
+        return true;
+    }
+    auto module_scope(const compiler_resolver::Session& session, ProjectionWorkspace& workspace, i64 scope) -> bool {
+        if (!workspace.good() || scope < 0 || !int_value(scope)) {
+            return workspace.fail();
+        }
+        i64 at = 0;
+        while (at < session.module_count()) {
+            const compiler_resolver::MetaRow row = session.view_meta(at);
+            if (row.kind() == compiler_resolver::MetaTag::module_unit && row.word(13) == scope) {
+                return true;
+            }
+            at = at + 1;
+        }
+        return workspace.fail();
+    }
+    auto validate_prefix(const compiler_resolver::Session& session, ProjectionWorkspace& workspace,
+        i64 prefix) -> bool {
+        i64 at = prefix;
+        while (at != -1 && workspace.good()) {
+            const compiler_resolver::MetaRow row = session.view_meta(at);
+            const compiler_resolver::MetaRow atom = session.view_meta(row.word(1));
+            if (row.kind() != compiler_resolver::MetaTag::prefix || row.word(0) < -1 || row.word(0) >= at || atom.kind()
+                != compiler_resolver::MetaTag::atom || !identifier(session, workspace, atom.word(2))) {
+                return workspace.fail();
+            }
+            at = row.word(0);
+        }
+        return workspace.good();
+    }
+    auto append_source(const compiler_resolver::Session& session, ProjectionWorkspace& workspace, i64 begin,
+        i64 length) -> bool {
+        if (!range(begin, length, session.source_size())) {
+            return workspace.fail();
+        }
+        i64 at = 0;
+        while (at < length && workspace.good()) {
+            const i64 byte = session.view_source(begin + at);
+            if (byte < 0 || byte > 255 || !workspace.append_text(u8(byte))) {
+                return workspace.fail();
+            }
+            at = at + 1;
+        }
+        return workspace.good();
+    }
+    // Domains: callable, nominal class, nominal enum, synthetic prefix.
+    auto resolve_name(const compiler_resolver::Session& session, ProjectionWorkspace& workspace, i64 identity,
+        i64 domain) -> bool {
+        if (!workspace.good() || domain < 0 || domain > 3) {
+            return workspace.fail();
+        }
+        if (domain == 3 && identity == -1) {
+            return workspace.set_name_result(compiler_ir_metadata::ByteRange(workspace.name_size(), 0));
+        }
+        const compiler_resolver::MetaRow row = session.view_meta(identity);
+        if (domain == 3) {
+            if (row.kind() != compiler_resolver::MetaTag::prefix) {
+                return workspace.fail();
+            }
+        } else {
+            if (row.kind() != compiler_resolver::MetaTag::symbol) {
+                return workspace.fail();
+            }
+            const compiler_resolver::DeclarationKind kind = row.declaration_kind();
+            if ((domain == 0 && kind != compiler_resolver::DeclarationKind::function && kind
+                != compiler_resolver::DeclarationKind::method && kind
+                != compiler_resolver::DeclarationKind::constructor) || (domain == 1 && kind
+                != compiler_resolver::DeclarationKind::class_value) || (domain == 2 && kind
+                != compiler_resolver::DeclarationKind::enumeration)) {
+                return workspace.fail();
+            }
+            const compiler_resolver::NativeMode mode = row.native_mode();
+            if ((mode != compiler_resolver::NativeMode::root_entry && mode != compiler_resolver::NativeMode::function
+                && mode != compiler_resolver::NativeMode::value_function && mode
+                != compiler_resolver::NativeMode::ordinary_overload && mode
+                != compiler_resolver::NativeMode::class_value && mode != compiler_resolver::NativeMode::class_template
+                && mode != compiler_resolver::NativeMode::function_template && mode
+                != compiler_resolver::NativeMode::enumeration && mode != compiler_resolver::NativeMode::method && mode
+                != compiler_resolver::NativeMode::constructor && mode != compiler_resolver::NativeMode::sealed_builtin)
+                || (mode != compiler_resolver::NativeMode::sealed_builtin && (row.word(1) < 0 || row.word(1)
+                >= session.module_count()))) {
+                return workspace.fail();
+            }
+        }
+        const IdentityCache cached = workspace.cache(identity);
+        const compiler_ir_metadata::ByteRange old_name = cached.name();
+        if (old_name.begin() >= 0) {
+            return workspace.set_name_result(old_name);
+        }
+        if (!workspace.start_text()) {
+            return false;
+        }
+        if (domain != 3) {
+            const compiler_resolver::MetaRow name = session.view_meta(row.word(0));
+            if (name.kind() != compiler_resolver::MetaTag::source_reference || name.word(0) != -1 || name.word(9)
+                != identity || name.word(1) < 0 || name.word(2) <= name.word(1) || name.word(2) > session.source_size()
+                || !append_source(session, workspace, name.word(1), name.word(2) - name.word(1))) {
+                return workspace.fail();
+            }
+        } else {
+            const i64 base = workspace.work_count();
+            i64 at = identity;
+            while (at != -1 && workspace.good()) {
+                const compiler_resolver::MetaRow part = session.view_meta(at);
+                const compiler_resolver::MetaRow atom = session.view_meta(part.word(1));
+                if (part.kind() != compiler_resolver::MetaTag::prefix || part.word(0) < -1 || part.word(0) >= at
+                    || atom.kind() != compiler_resolver::MetaTag::atom || !identifier(session, workspace, atom.word(2))
+                    || !workspace.push_work(atom.word(2))) {
+                    return workspace.fail();
+                }
+                at = part.word(0);
+            }
+            at = workspace.work_count();
+            bool nonempty = false;
+            while (at > base && workspace.good()) {
+                at = at - 1;
+                const compiler_resolver::MetaRow part = session.view_meta(workspace.work_at(at));
+                if (nonempty && (!workspace.append_text(':') || !workspace.append_text(':'))) {
+                    return false;
+                }
+                if (!append_source(session, workspace, part.word(1), part.word(2) - part.word(1))) {
+                    return false;
+                }
+                if (part.word(2) > part.word(1)) {
+                    nonempty = true;
+                }
+            }
+            if (!workspace.truncate_work(base)) {
+                return false;
+            }
+        }
+        if (!workspace.finish_text()) {
+            return false;
+        }
+        const IdentityCache updated = IdentityCache(cached.state(), workspace.name_result(), cached.type());
+        return workspace.set_cache(identity, updated);
+    }
+    auto scalar_kind(compiler_resolver::ResolvedTypeKind kind) -> i64 {
+        if (kind == compiler_resolver::ResolvedTypeKind::i64_value) {
+            return 0;
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::bool_value) {
+            return 1;
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::owner) {
+            return 2;
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::reference) {
+            return 3;
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::mutable_reference) {
+            return 4;
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::u64_value) {
+            return 7;
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::u8_value) {
+            return 10;
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::byte_span) {
+            return 11;
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::byte_region) {
+            return 12;
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::owned_bytes) {
+            return 13;
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::console_session) {
+            return 14;
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::display_session) {
+            return 15;
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::event_session) {
+            return 16;
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::call_session) {
+            return 18;
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::port_range) {
+            return 19;
+        }
+        if (kind == compiler_resolver::ResolvedTypeKind::serve_session) {
+            return 20;
+        }
+        return -1;
+    }
+    auto push_type(ProjectionWorkspace& workspace, i64 identity, i64 base) -> bool {
+        // Match the native construction-depth boundary, including cached visits.
+        if ((workspace.work_count() - base) / 4 >= 128) {
+            return workspace.fail();
+        }
+        return workspace.push_work(identity) && workspace.push_work(0) && workspace.push_work(0)
+            && workspace.push_work(-1);
+    }
+    auto complete_type(ProjectionWorkspace& workspace, i64 identity) -> bool {
+        const IdentityCache cached = workspace.cache(identity);
+        const IdentityCache finished = IdentityCache(2, cached.name(), cached.type());
+        return workspace.set_cache(identity, finished) && workspace.truncate_work(workspace.work_count() - 4);
+    }
+    auto resolve_type(const compiler_resolver::Session& session, ProjectionWorkspace& workspace, i64 identity) -> bool {
+        // Session is readonly for the complete projection lifetime. Once a
+        // concrete identity and its display/domain dependencies were checked,
+        // subsequent occurrences need neither another DFS frame nor MetaRow.
+        const IdentityCache ready = workspace.cache(identity);
+        if (!workspace.good()) {
+            return false;
+        }
+        if (ready.state() == 2) {
+            return workspace.set_type_result(ready.type());
+        }
+        const i64 base = workspace.work_count();
+        if (!workspace.good() || !push_type(workspace, identity, base)) {
+            return workspace.fail();
+        }
+        while (workspace.work_count() > base && workspace.good()) {
+            const i64 frame = workspace.work_count() - 4;
+            const i64 current = workspace.work_at(frame);
+            const i64 phase = workspace.work_at(frame + 1);
+            const compiler_resolver::MetaRow row = session.view_meta(current);
+            const IdentityCache cached = workspace.cache(current);
+            if (row.kind() != compiler_resolver::MetaTag::concrete_type || cached.state() < 0) {
+                return workspace.fail();
+            }
+            const compiler_resolver::ResolvedTypeKind kind = row.type_kind();
+            if (phase == 0) {
+                if (cached.state() == 2) {
+                    if (!workspace.truncate_work(frame)) {
+                        return false;
+                    }
+                } else {
+                    if (cached.state() != 0) {
+                        return workspace.fail();
+                    }
+                    const IdentityCache active = IdentityCache(1, cached.name(), cached.type());
+                    if (!workspace.set_cache(current, active)) {
+                        return false;
+                    }
+                    const i64 scalar = scalar_kind(kind);
+                    if (scalar >= 0) {
+                        const compiler_ir_metadata::RawTypeRow type = compiler_ir_metadata::RawTypeRow(scalar,
+                            compiler_ir_metadata::ByteRange(workspace.name_size(), 0),
+                            compiler_ir_metadata::RawTypeTail(0, 0, 0u64, 0u64, 0u64));
+                        const IdentityCache done = IdentityCache(2, cached.name(), type);
+                        if (!workspace.set_cache(current, done) || !workspace.truncate_work(frame)) {
+                            return false;
+                        }
+                    } else {
+                        if (kind == compiler_resolver::ResolvedTypeKind::class_value || kind
+                            == compiler_resolver::ResolvedTypeKind::enum_value) {
+                            i64 metadata_kind = 5;
+                            if (row.word(1) < 0) {
+                                if (row.word(1) == -1 || row.word(1) == -9223372036854775807 - 1
+                                    || !resolve_name(session, workspace, -row.word(1) - 2, 3)) {
+                                    return workspace.fail();
+                                }
+                            } else {
+                                i64 domain = 1;
+                                if (kind == compiler_resolver::ResolvedTypeKind::enum_value) {
+                                    domain = 2;
+                                    metadata_kind = 9;
+                                }
+                                if (!resolve_name(session, workspace, row.word(1), domain)) {
+                                    return false;
+                                }
+                            }
+                            const compiler_ir_metadata::RawTypeRow type = compiler_ir_metadata::RawTypeRow(
+                                metadata_kind, workspace.name_result(), compiler_ir_metadata::RawTypeTail(0, 0, 0u64,
+                                0u64, 0u64));
+                            const IdentityCache waiting = IdentityCache(1, cached.name(), type);
+                            if (!workspace.set_cache(current, waiting)) {
+                                return false;
+                            }
+                            if (row.word(1) < 0) {
+                                if (!complete_type(workspace, current)) {
+                                    return false;
+                                }
+                            } else {
+                                const compiler_resolver::MetaRow nominal = session.view_meta(row.word(1));
+                                i64 instance = -1;
+                                if (nominal.native_mode() == compiler_resolver::NativeMode::sealed_builtin) {
+                                    const compiler_resolver::MetaRow descriptor = session.view_meta(nominal.word(8));
+                                    if (descriptor.kind() != compiler_resolver::MetaTag::context
+                                        || !validate_prefix(session, workspace, descriptor.word(1))) {
+                                        return workspace.fail();
+                                    }
+                                } else {
+                                    if (!validate_prefix(session, workspace, nominal.word(3))) {
+                                        return false;
+                                    }
+                                    instance = nominal.word(9);
+                                    if (instance >= 0) {
+                                        const compiler_resolver::MetaRow arguments = session.view_meta(instance);
+                                        if (arguments.kind() != compiler_resolver::MetaTag::instance
+                                            || arguments.word(1) < 1 || arguments.word(1) > 2) {
+                                            return workspace.fail();
+                                        }
+                                    }
+                                }
+                                if (instance < 0) {
+                                    if (!complete_type(workspace, current)) {
+                                        return false;
+                                    }
+                                } else {
+                                    if (!workspace.set_work(frame + 1, 1) || !workspace.set_work(frame + 3, instance)) {
+                                        return false;
+                                    }
+                                }
+                            }
+                        } else {
+                            if (kind != compiler_resolver::ResolvedTypeKind::array_value && kind
+                                != compiler_resolver::ResolvedTypeKind::owned_values && kind
+                                != compiler_resolver::ResolvedTypeKind::value_span) {
+                                return workspace.fail();
+                            }
+                            if (!workspace.set_work(frame + 1, 2) || !push_type(workspace, row.word(2), base)) {
+                                return false;
+                            }
+                        }
+                    }
+                }
+            } else {
+                if (phase == 1) {
+                    const compiler_resolver::MetaRow arguments = session.view_meta(workspace.work_at(frame + 3));
+                    const i64 next = workspace.work_at(frame + 2);
+                    if (next == arguments.word(1)) {
+                        if (!complete_type(workspace, current)) {
+                            return false;
+                        }
+                    } else {
+                        if (next < 0 || next >= arguments.word(1)) {
+                            return workspace.fail();
+                        }
+                        const i64 argument = arguments.word(next + 2);
+                        if (!workspace.set_work(frame + 2, next + 1)) {
+                            return false;
+                        }
+                        if (argument < 0) {
+                            if (argument < -65 || argument > -2) {
+                                return workspace.fail();
+                            }
+                        } else {
+                            if (!push_type(workspace, argument, base)) {
+                                return false;
+                            }
+                        }
+                    }
+                } else {
+                    if (phase != 2) {
+                        return workspace.fail();
+                    }
+                    const IdentityCache element_cache = workspace.cache(row.word(2));
+                    const compiler_ir_metadata::RawTypeRow element = element_cache.type();
+                    if (element_cache.state() != 2) {
+                        return workspace.fail();
+                    }
+                    if (kind == compiler_resolver::ResolvedTypeKind::array_value) {
+                        if (!int_value(row.word(3))) {
+                            return workspace.fail();
+                        }
+                        const compiler_ir_metadata::RawTypeTail old_tail = element.tail();
+                        const compiler_ir_metadata::RawTypeTail tail = compiler_ir_metadata::RawTypeTail(element.kind(),
+                            row.word(3), 0u64, 0u64, old_tail.template_argument_count());
+                        const compiler_ir_metadata::RawTypeRow type = compiler_ir_metadata::RawTypeRow(6,
+                            element.name(), tail);
+                        const IdentityCache finished = IdentityCache(2, cached.name(), type);
+                        if (!workspace.set_cache(current, finished)) {
+                            return false;
+                        }
+                    } else {
+                        i64 metadata_kind = 17;
+                        if (kind == compiler_resolver::ResolvedTypeKind::value_span) {
+                            metadata_kind = 21;
+                        }
+                        const compiler_ir_metadata::RawTypeRow type = compiler_ir_metadata::RawTypeRow(metadata_kind,
+                            element.name(), element.tail());
+                        const IdentityCache finished = IdentityCache(2, cached.name(), type);
+                        if (!workspace.set_cache(current, finished)) {
+                            return false;
+                        }
+                    }
+                    if (!workspace.truncate_work(frame)) {
+                        return false;
+                    }
+                }
+            }
+        }
+        if (!workspace.good()) {
+            return false;
+        }
+        const IdentityCache result = workspace.cache(identity);
+        return workspace.set_type_result(result.type());
+    }
+}

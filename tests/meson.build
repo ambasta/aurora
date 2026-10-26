@@ -638,6 +638,15 @@ hosted_parser_test = executable(
 test('hosted-parser', hosted_parser_test,
      args: files('compiler/hosted_parser.cases', 'compiler/golden/hosted_parser.golden'),
      suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
+# One compiled raw lowering projection driver; cases include every instruction
+# form and malformed source-owned transport without rebuilding per case.
+hosted_lowering_test = executable(
+    'hosted-lowering-test', 'compiler/hosted_lowering.cpp',
+    dependencies: hosted_frontend, include_directories: include_directories('../compiler'),
+    native: true, override_options: fixture_options, install: false,
+)
+test('hosted-lowering', hosted_lowering_test, args: files('compiler/hosted_lowering.cases'),
+     suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
 # The already-built adapter objects with forged Aurora entries; the generated
 # frontend object itself is never linked.
 hosted_parser_invalid = executable(
