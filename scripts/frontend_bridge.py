@@ -439,6 +439,70 @@ ROWS = (
         "noexcept",
     ),
     (
+        "projection_name_capacity(const compiler_resolver::Session& session) -> i64",
+        "direct compiler_lowering_projection::name_capacity(session)",
+        "",
+        "noexcept",
+    ),
+    (
+        "projection_create(builtin::ByteRegion region, i64 outputs, i64 operands, i64 metadata, i64 nameCapacity) -> "
+        "compiler_lowering_projection::ProjectionWorkspace",
+        "move compiler_lowering_projection::create(region, outputs, operands, metadata, nameCapacity)",
+        "ProjectionCreate:region,outputs,operands,metadata,nameCapacity",
+        "noexcept",
+    ),
+    (
+        "projection_release(builtin::ByteRegion region, compiler_lowering_projection::ProjectionWorkspace workspace) "
+        "-> i64",
+        "direct compiler_lowering_projection::release(region, move(workspace))",
+        "ProjectionRelease:region,workspace",
+        "noexcept,discard",
+    ),
+    (
+        "projection_measure(const compiler_resolver::Session& session, "
+        "compiler_lowering_projection::ProjectionWorkspace& workspace, "
+        "compiler_ir_metadata::MetadataStore& metadata, compiler_ir_instructions::InstructionStore& instructions, "
+        "i64 root, i64 diagnostic) -> i64",
+        "direct compiler_lowering_projection::measure(session, workspace, metadata, instructions, root, diagnostic)",
+        "",
+        "noexcept",
+    ),
+    (
+        "projection_fill(const compiler_resolver::Session& session, "
+        "compiler_lowering_projection::ProjectionWorkspace& workspace, "
+        "compiler_ir_metadata::MetadataStore& metadata, "
+        "compiler_ir_instructions::InstructionStore& instructions) -> i64",
+        "direct compiler_lowering_projection::fill(session, workspace, metadata, instructions)",
+        "",
+        "noexcept",
+    ),
+    (
+        "projection_metadata_counts(const compiler_lowering_projection::ProjectionWorkspace& workspace) -> "
+        "compiler_ir_metadata::InputCounts",
+        "copy compiler_lowering_projection::metadata_counts(workspace)",
+        "",
+        "noexcept",
+    ),
+    (
+        "projection_instruction_counts(const compiler_lowering_projection::ProjectionWorkspace& workspace) -> "
+        "compiler_ir_instructions::InstructionCounts",
+        "copy compiler_lowering_projection::instruction_counts(workspace)",
+        "",
+        "noexcept",
+    ),
+    (
+        "projection_count(const compiler_lowering_projection::ProjectionWorkspace& workspace, i64 pool) -> i64",
+        "direct workspace.count(pool)",
+        "",
+        "noexcept",
+    ),
+    (
+        "projection_lint(const compiler_lowering_projection::ProjectionWorkspace& workspace, i64 index) -> i64",
+        "direct compiler_lowering_projection::lint(workspace, index)",
+        "",
+        "noexcept",
+    ),
+    (
         "graph_create_input(builtin::ByteRegion region, i64 functions, i64 edges) -> compiler_ir_graph::Input",
         "move compiler_ir_graph::create_input(region, functions, edges)",
         "GraphCreateInput:region,functions,edges",

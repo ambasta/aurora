@@ -66,6 +66,40 @@ struct ModuleSource {
     std::int64_t sourceBegin = 0;
     int scope = 0;
 };
+Token retainedSourceToken(const void *session,
+                          const std::vector<ModuleSource> &sources,
+                          std::int64_t sourceBytes,
+                          const wire::MetaRow &value) {
+    if (value.tag != MetaTag::source_reference)
+        invalidResolution();
+    if (value.value1 < 0 || value.value2 < value.value1 || value.value2 > sourceBytes)
+        invalidResolution();
+    if (value.value0 == -1) {
+        std::string text;
+        text.reserve(sizeValue(value.value2 - value.value1));
+        for (auto at = value.value1; at < value.value2; ++at) {
+            const auto byte = aurora_hosted_resolver_read_source(session, at);
+            if (byte < 0 || byte > 255)
+                invalidResolution();
+            text.push_back(static_cast<char>(byte));
+        }
+        return Token(std::move(text), 0);
+    }
+    if (value.value0 < 0 || sizeValue(value.value0) >= sources.size())
+        invalidResolution();
+    const auto &unit = sources[sizeValue(value.value0)];
+    if (value.value1 < unit.sourceBegin ||
+        value.value2 - unit.sourceBegin > static_cast<std::int64_t>(unit.source->text.size()))
+        invalidResolution();
+    const auto begin = sizeValue(value.value1 - unit.sourceBegin), end = sizeValue(value.value2 - unit.sourceBegin);
+    SourceSpan span;
+    span.source = unit.source;
+    span.begin = {begin, intValue(value.value3), intValue(value.value4)};
+    span.end = {end, intValue(value.value7), intValue(value.value8)};
+    if (span.begin.line < 1 || span.begin.column < 1 || span.end.line < span.begin.line || span.end.column < 1)
+        invalidResolution();
+    return Token(unit.source->text.substr(begin, end - begin), std::move(span));
+}
 class Projection {
     const void *session;
     const std::vector<ModuleSource> &sources;
@@ -144,32 +178,7 @@ class Projection {
         return result;
     }
     Token sourceToken(std::int64_t reference) const {
-        const auto &value = meta(reference, MetaTag::source_reference);
-        if (value.value1 < 0 || value.value2 < value.value1 || value.value2 > sourceBytes)
-            invalidResolution();
-        if (value.value0 == -1) {
-            std::string text;
-            text.reserve(sizeValue(value.value2 - value.value1));
-            for (auto at = value.value1; at < value.value2; ++at) {
-                const auto byte = aurora_hosted_resolver_read_source(session, at);
-                if (byte < 0 || byte > 255)
-                    invalidResolution();
-                text.push_back(static_cast<char>(byte));
-            }
-            return Token(std::move(text), 0);
-        }
-        const auto &unit = module(value.value0);
-        if (value.value1 < unit.sourceBegin ||
-            value.value2 - unit.sourceBegin > static_cast<std::int64_t>(unit.source->text.size()))
-            invalidResolution();
-        const auto begin = sizeValue(value.value1 - unit.sourceBegin), end = sizeValue(value.value2 - unit.sourceBegin);
-        SourceSpan span;
-        span.source = unit.source;
-        span.begin = {begin, intValue(value.value3), intValue(value.value4)};
-        span.end = {end, intValue(value.value7), intValue(value.value8)};
-        if (span.begin.line < 1 || span.begin.column < 1 || span.end.line < span.begin.line || span.end.column < 1)
-            invalidResolution();
-        return Token(unit.source->text.substr(begin, end - begin), std::move(span));
+        return retainedSourceToken(session, sources, sourceBytes, meta(reference, MetaTag::source_reference));
     }
     std::string prefix(std::int64_t index) const {
         std::vector<std::string> parts;
@@ -610,53 +619,6 @@ public:
         default:
             invalidResolution();
         }
-    }
-    HostedLoweringServices loweringServices(const std::vector<service::Kind> &kinds) {
-        HostedLoweringServices result;
-        result.type = [&](auto identity) {
-            return type(identity);
-        };
-        result.functionName = [&](auto identity) {
-            return callableName(identity);
-        };
-        result.className = [&](auto identity) {
-            return nominalName(identity, DeclarationKind::class_value);
-        };
-        result.enumName = [&](auto identity) {
-            return nominalName(identity, DeclarationKind::enumeration);
-        };
-        result.identifier = [&](auto identity) {
-            return sourceToken(identity);
-        };
-        result.checkModuleScope = [&](auto scope) {
-            if (std::none_of(sources.begin(), sources.end(), [&](const auto &source) {
-                    return source.scope == scope;
-                }))
-                invalidResolution();
-        };
-        result.serviceKind = [&kinds](auto identity) {
-            for (auto kind : kinds)
-                if (static_cast<std::int64_t>(kind) == identity)
-                    return kind;
-            invalidResolution();
-        };
-        result.serviceOperation = [&kinds](auto identity) {
-            if (identity < 0 || sizeValue(identity) >= service::operations.size())
-                invalidResolution();
-            const auto &operation = service::operations[sizeValue(identity)];
-            if (std::find(kinds.begin(), kinds.end(), operation.kind) == kinds.end())
-                invalidResolution();
-            return operation.operation;
-        };
-        result.literalByte = [&](std::int64_t at) {
-            if (at < 0 || at >= sourceBytes)
-                invalidResolution();
-            const auto byte = aurora_hosted_resolver_read_source(session, at);
-            if (byte < 0 || byte > 255)
-                invalidResolution();
-            return static_cast<std::uint8_t>(byte);
-        };
-        return result;
     }
     std::int64_t sourceByteCount() const {
         return sourceBytes;
@@ -1600,36 +1562,53 @@ class HostedResolution::Impl {
                    result.result_reason == lowering::LoweringError::none) {
             invalidResolution();
         }
-        auto output = [&] {
-            // Lowering interns additional concrete types/source references. The
-            // resolver-era cache is gone; load one fresh shared metadata snapshot.
+        if (!success) {
+            // Rejections retain their native identity spelling and fixed report
+            // transport. No success path loads this diagnostic metadata snapshot.
             Projection projection(owner.data(), sources, owner.usedBytes());
-            std::vector<lowering::OutputRow> rows;
-            std::vector<lowering::OperandRow> operands;
-            const auto load = [&](auto &values, std::int64_t pool, std::size_t reportCount, auto read) {
-                const auto published = sizeValue(aurora_hosted_lowering_count(owner.data(), pool));
-                const auto count = success ? published : reportCount;
-                using Value = typename std::remove_reference_t<decltype(values)>::value_type;
-                if (count > published || published > owner.usedBytes() / sizeof(Value) || count > values.max_size())
-                    invalidResolution();
-                values.resize(count);
-                for (std::size_t index = 0; index < count; ++index)
-                    read(owner.data(), static_cast<std::int64_t>(index), &values[index]);
-            };
-            load(rows, 0, 1, aurora_hosted_lowering_read_output);
-            load(operands, 1, 3, aurora_hosted_lowering_read_operand);
-            HostedLoweringInput input{
-                rows, operands, projection.sourceByteCount(), result.root_row, result.diagnostic_row};
-            if (!success)
-                throw Error(renderHostedLoweringDiagnostic(result, input, projection.diagnosticServices()));
-            return projectHostedLowering(input, projection.loweringServices(serviceKinds));
-        }();
+            const auto outputs = aurora_hosted_lowering_count(owner.data(), 0);
+            const auto operands = aurora_hosted_lowering_count(owner.data(), 1);
+            if (outputs < 1 || operands < 3 ||
+                static_cast<std::uint64_t>(outputs) > owner.usedBytes() / sizeof(lowering::OutputRow) ||
+                static_cast<std::uint64_t>(operands) > owner.usedBytes() / sizeof(lowering::OperandRow))
+                invalidResolution();
+            std::array<lowering::OutputRow, 1> rows{};
+            std::array<lowering::OperandRow, 3> values{};
+            aurora_hosted_lowering_read_output(owner.data(), 0, &rows[0]);
+            for (std::size_t index = 0; index < values.size(); ++index)
+                aurora_hosted_lowering_read_operand(owner.data(), static_cast<std::int64_t>(index), &values[index]);
+            const HostedLoweringInput input{
+                rows, values, projection.sourceByteCount(), result.root_row, result.diagnostic_row};
+            throw Error(renderHostedLoweringDiagnostic(result, input, projection.diagnosticServices()));
+        }
+        auto output = projectHostedLowering(owner.data(), owner.usedBytes(), result.root_row, result.diagnostic_row);
+        std::vector<Diagnostic> diagnostics;
+        diagnostics.reserve(output.lintReferences.size());
+        const auto sourceBytes = aurora_hosted_resolver_count(owner.data(), 0);
+        const auto metadataCount = aurora_hosted_resolver_count(owner.data(), 2);
+        if (sourceBytes < 0 || static_cast<std::uint64_t>(sourceBytes) > owner.usedBytes() || metadataCount < 0 ||
+            static_cast<std::uint64_t>(metadataCount) > owner.usedBytes() / sizeof(wire::MetaRow))
+            invalidResolution();
+        for (const auto reference : output.lintReferences) {
+            if (reference < 0 || reference >= metadataCount)
+                invalidResolution();
+            wire::MetaRow row{};
+            aurora_hosted_resolver_read_meta(owner.data(), reference, &row);
+            auto identifier = retainedSourceToken(owner.data(), sources, sourceBytes, row);
+            diagnostics.push_back({DiagnosticCode::UnreadLocal,
+                                   "local binding '" + identifier.text + "' is never read",
+                                   std::move(identifier.span),
+                                   DiagnosticSeverity::Warning});
+        }
+        std::sort(diagnostics.begin(), diagnostics.end(), [](const auto &left, const auto &right) {
+            return left.span.begin.offset < right.span.begin.offset;
+        });
         // The result owns one pending metadata/instruction bundle.
         // Destroy all transport views and free Session before source admission
         // of every signature, the single publication, and native body checks.
         owner.release();
         auto verified = ir::validate(std::move(output.instructions));
-        return {std::move(verified), std::move(output.diagnostics), std::move(declarations)};
+        return {std::move(verified), std::move(diagnostics), std::move(declarations)};
     }
 
 public:

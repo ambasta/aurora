@@ -714,6 +714,25 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
     # A closed host binding, not general access to owning objects. Source review
     # binds each pool name to its row type; predecessor facts provide the physical
     # offsets and copied row shape, but do not claim to encode owner element identity.
+    # Trusted hostile-ingress fixtures populate actual Session owners through
+    # the checked runtime, then publish matching counts. These generated facts
+    # add no source mutation surface; production projection remains readonly.
+    _, projection_session = abi_declaration(facts, "records", "compiler_resolver::Session")
+    session_fields = {field["name"]: field for field in projection_session["fields"]}
+    for field_name in ("sources", "metadata", "outputRows", "outputOperands"):
+        field = session_fields[field_name]
+        if field["kind"] != "owner" or number(field["bytes"]) != 32:
+            raise ValueError("private projection fixture Session owner changed: " + field_name)
+        lines.append(
+            f"inline constexpr ::std::size_t projectionSession_{field_name}Offset = {number(field['offset'])};"
+        )
+    for field_name in ("source_used", "meta_used", "output_used", "operand_used", "modules"):
+        field = session_fields[field_name]
+        if field["kind"] != "i64" or number(field["bytes"]) != 8:
+            raise ValueError("private projection fixture Session count changed: " + field_name)
+        lines.append(
+            f"inline constexpr ::std::size_t projectionSession_{field_name}Offset = {number(field['offset'])};"
+        )
     _, metadata_store = abi_declaration(facts, "records", "compiler_ir_metadata::MetadataStore")
     metadata_pools = {
         "bytes": None,

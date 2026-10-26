@@ -1,0 +1,648 @@
+export module aurora.compiler.lowering_projection_storage;
+import aurora.compiler.ir_metadata_storage;
+
+// One temporary owner holds only identities, ordering, ownership marks and
+// interned spelling. No lowering payload or executable IR is duplicated here.
+export namespace compiler_lowering_projection {
+    auto sum(i64 left, i64 right) -> i64 {
+        if (left < 0 || right < 0 || left > 9223372036854775807 - right) {
+            return -1;
+        }
+        return left + right;
+    }
+    auto product(i64 left, i64 right) -> i64 {
+        if (left < 0 || right < 0 || (right != 0 && left > 9223372036854775807 / right)) {
+            return -1;
+        }
+        return left * right;
+    }
+    auto range(i64 begin, i64 count, i64 limit) -> bool {
+        return begin >= 0 && count >= 0 && begin <= limit && count <= limit - begin;
+    }
+    class ProjectionRow {
+        i64 claimedValue;
+        i64 stateValue;
+        compiler_ir_metadata::ByteRange nameValue;
+    public:
+        ProjectionRow(i64 claimed, i64 state, compiler_ir_metadata::ByteRange name) : claimedValue(claimed),
+            stateValue(state), nameValue(name) {
+        }
+        auto claimed() const -> i64 {
+            return claimedValue;
+        }
+        auto state() const -> i64 {
+            return stateValue;
+        }
+        auto name() const -> compiler_ir_metadata::ByteRange {
+            const compiler_ir_metadata::ByteRange result = nameValue;
+            return result;
+        }
+    };
+    class IdentityCache {
+        i64 stateValue;
+        compiler_ir_metadata::ByteRange nameValue;
+        compiler_ir_metadata::RawTypeRow typeValue;
+    public:
+        IdentityCache(i64 state, compiler_ir_metadata::ByteRange name,
+            compiler_ir_metadata::RawTypeRow type) : stateValue(state), nameValue(name), typeValue(type) {
+        }
+        auto state() const -> i64 {
+            return stateValue;
+        }
+        auto name() const -> compiler_ir_metadata::ByteRange {
+            const compiler_ir_metadata::ByteRange result = nameValue;
+            return result;
+        }
+        auto type() const -> compiler_ir_metadata::RawTypeRow {
+            const compiler_ir_metadata::RawTypeRow result = typeValue;
+            return result;
+        }
+    };
+    class NameEntry {
+        compiler_ir_metadata::ByteRange spelling;
+        i64 destination;
+        u64 hashValue;
+        i64 copiedValue;
+    public:
+        NameEntry(compiler_ir_metadata::ByteRange text, i64 output, u64 hash, i64 copied) : spelling(text),
+            destination(output), hashValue(hash), copiedValue(copied) {
+        }
+        auto name() const -> compiler_ir_metadata::ByteRange {
+            const compiler_ir_metadata::ByteRange result = spelling;
+            return result;
+        }
+        auto output() const -> i64 {
+            return destination;
+        }
+        auto hash() const -> u64 {
+            return hashValue;
+        }
+        auto copied() const -> i64 {
+            return copiedValue;
+        }
+    };
+    auto row_pool(builtin::ByteRegion region) -> builtin::OwnedValues<ProjectionRow> {
+        const ProjectionRow fill = ProjectionRow(0, -1, compiler_ir_metadata::ByteRange(-1, 0));
+        builtin::OwnedValues<ProjectionRow> result = region.try_allocate(0, fill);
+        return move(result);
+    }
+    auto cache_pool(builtin::ByteRegion region) -> builtin::OwnedValues<IdentityCache> {
+        const IdentityCache fill = IdentityCache(0, compiler_ir_metadata::ByteRange(-1, 0),
+            compiler_ir_metadata::invalid_type());
+        builtin::OwnedValues<IdentityCache> result = region.try_allocate(0, fill);
+        return move(result);
+    }
+    auto name_pool(builtin::ByteRegion region) -> builtin::OwnedValues<NameEntry> {
+        const NameEntry fill = NameEntry(compiler_ir_metadata::ByteRange(-1, 0), -1, 0u64, 0);
+        builtin::OwnedValues<NameEntry> result = region.try_allocate(0, fill);
+        return move(result);
+    }
+    auto index_pool(builtin::ByteRegion region) -> builtin::OwnedValues<compiler_ir_metadata::IndexRow> {
+        const compiler_ir_metadata::IndexRow fill = compiler_ir_metadata::IndexRow(0);
+        builtin::OwnedValues<compiler_ir_metadata::IndexRow> result = region.try_allocate(0, fill);
+        return move(result);
+    }
+    class ProjectionWorkspace {
+        builtin::OwnedValues<ProjectionRow> rows;
+        builtin::OwnedBytes operands;
+        builtin::OwnedValues<IdentityCache> identities;
+        builtin::OwnedValues<NameEntry> names;
+        builtin::OwnedBytes text;
+        builtin::OwnedValues<compiler_ir_metadata::IndexRow> order;
+        builtin::OwnedValues<compiler_ir_metadata::IndexRow> counts;
+        builtin::OwnedValues<compiler_ir_metadata::IndexRow> work;
+        i64 statusValue;
+        i64 textUsed;
+        i64 textLimit;
+        i64 candidateSize;
+        i64 workUsed;
+        bool building;
+        bool frozen;
+        u64 candidateHash;
+        i64 nameResultBegin;
+        i64 nameResultCount;
+        i64 resultKind;
+        i64 resultNameBegin;
+        i64 resultNameCount;
+        i64 resultElement;
+        i64 resultLength;
+        u64 resultElementParameter;
+        u64 resultLengthParameter;
+        u64 resultArguments;
+        i64 lastNameBegin;
+        i64 lastNamePosition;
+
+        auto resize_text(i64 needed) -> bool {
+            if (needed < 0 || needed > textLimit) {
+                return fail();
+            }
+            if (needed <= text.size()) {
+                return true;
+            }
+            i64 capacity = sum(product(text.size(), 2), 8);
+            if (capacity < 0 || capacity > textLimit) {
+                capacity = textLimit;
+            }
+            if (capacity < needed) {
+                capacity = needed;
+            }
+            if (!text.try_resize(capacity)) {
+                return allocation_fail();
+            }
+            return true;
+        }
+        auto hash_byte(u64 old, u8 value) const -> u64 {
+            return (old & 1099511627775u64) * 131u64 + u64(value);
+        }
+        auto equal_text(compiler_ir_metadata::ByteRange left, compiler_ir_metadata::ByteRange right) const -> bool {
+            if (left.count() != right.count()) {
+                return false;
+            }
+            i64 at = 0;
+            while (at < left.count()) {
+                if (text.at(left.begin() + at) != text.at(right.begin() + at)) {
+                    return false;
+                }
+                at = at + 1;
+            }
+            return true;
+        }
+        auto lookup(compiler_ir_metadata::ByteRange value, u64 hash) const -> i64 {
+            if (names.size() <= 0) {
+                return -1;
+            }
+            i64 position = i64(hash % u64(names.size()));
+            i64 seen = 0;
+            while (seen < names.size()) {
+                const NameEntry entry = names.at(position);
+                const compiler_ir_metadata::ByteRange spelling = entry.name();
+                if (spelling.begin() == -1 || (entry.hash() == hash && equal_text(spelling, value))) {
+                    return position;
+                }
+                position = position + 1;
+                if (position == names.size()) {
+                    position = 0;
+                }
+                seen = seen + 1;
+            }
+            return -1;
+        }
+        auto name_position(compiler_ir_metadata::ByteRange spelling) -> i64 {
+            if (spelling.begin() == lastNameBegin && lastNamePosition >= 0) {
+                const NameEntry cached = names.at(lastNamePosition);
+                const compiler_ir_metadata::ByteRange cached_name = cached.name();
+                if (cached_name.count() == spelling.count()) {
+                    return lastNamePosition;
+                }
+                fail();
+                return -1;
+            }
+            u64 hash = 0u64;
+            i64 at = 0;
+            while (at < spelling.count()) {
+                hash = hash_byte(hash, text.at(spelling.begin() + at));
+                at = at + 1;
+            }
+            const i64 position = lookup(spelling, hash);
+            if (position < 0) {
+                fail();
+                return -1;
+            }
+            const NameEntry found = names.at(position);
+            const compiler_ir_metadata::ByteRange existing = found.name();
+            if (existing.begin() < 0) {
+                fail();
+                return -1;
+            }
+            lastNameBegin = spelling.begin();
+            lastNamePosition = position;
+            return position;
+        }
+    public:
+        ProjectionWorkspace(builtin::ByteRegion region) : rows(row_pool(region)), operands(region.try_allocate(0)),
+            identities(cache_pool(region)), names(name_pool(region)), text(region.try_allocate(0)),
+            order(index_pool(region)), counts(index_pool(region)), work(index_pool(region)), statusValue(0),
+            textUsed(0), textLimit(0), candidateSize(0), workUsed(0), building(false), frozen(false),
+            candidateHash(0u64), nameResultBegin(-1), nameResultCount(0), resultKind(-1), resultNameBegin(-1),
+            resultNameCount(0), resultElement(0), resultLength(0), resultElementParameter(0u64),
+            resultLengthParameter(0u64), resultArguments(0u64), lastNameBegin(-1), lastNamePosition(-1) {
+        }
+        auto initialize(i64 output_count, i64 operand_count, i64 metadata_count, i64 name_capacity) -> bool {
+            if (statusValue != 0 || counts.size() != 0) {
+                return fail();
+            }
+            const i64 candidates = sum(sum(metadata_count, output_count), 1);
+            const i64 table_count = product(candidates, 2);
+            const i64 order_count = sum(output_count, product(operand_count, 2));
+            const i64 work_count = sum(metadata_count, 512);
+            if (output_count < 0 || operand_count < 0 || metadata_count < 0 || name_capacity < 0 || table_count < 0
+                || order_count < 0 || work_count < 0) {
+                return fail();
+            }
+            textLimit = name_capacity;
+            if (!rows.ok() || !operands.ok() || !identities.ok() || !names.ok() || !text.ok() || !order.ok()
+                || !counts.ok() || !work.ok()) {
+                return allocation_fail();
+            }
+            const ProjectionRow empty_row = ProjectionRow(0, -1, compiler_ir_metadata::ByteRange(-1, 0));
+            const IdentityCache empty_cache = IdentityCache(0, compiler_ir_metadata::ByteRange(-1, 0),
+                compiler_ir_metadata::invalid_type());
+            const NameEntry empty_name = NameEntry(compiler_ir_metadata::ByteRange(-1, 0), -1, 0u64, 0);
+            const compiler_ir_metadata::IndexRow empty_index = compiler_ir_metadata::IndexRow(0);
+            if (!rows.try_resize(output_count, empty_row) || !operands.try_resize(operand_count)
+                || !identities.try_resize(metadata_count, empty_cache) || !names.try_resize(table_count, empty_name)
+                || !order.try_resize(order_count, empty_index) || !counts.try_resize(52, empty_index)
+                || !work.try_resize(work_count, empty_index)) {
+                return allocation_fail();
+            }
+            return true;
+        }
+        auto status() const -> i64 {
+            return statusValue;
+        }
+        auto good() const -> bool {
+            return statusValue < 3;
+        }
+        auto fail() -> bool {
+            if (statusValue < 3) {
+                statusValue = 3;
+            }
+            return false;
+        }
+        auto allocation_fail() -> bool {
+            if (statusValue < 3) {
+                statusValue = 4;
+            }
+            return false;
+        }
+        auto set_status(i64 value) -> bool {
+            if (!good() || value < statusValue || value > 2) {
+                return fail();
+            }
+            statusValue = value;
+            return true;
+        }
+        auto count(i64 pool) const -> i64 {
+            if (pool < 0 || pool >= counts.size()) {
+                return -1;
+            }
+            const compiler_ir_metadata::IndexRow row = counts.at(pool);
+            return row.value();
+        }
+        auto set_count(i64 pool, i64 value) -> bool {
+            const compiler_ir_metadata::IndexRow row = compiler_ir_metadata::IndexRow(value);
+            if (!good() || pool < 0 || pool >= counts.size() || !counts.set(pool, row)) {
+                return fail();
+            }
+            return true;
+        }
+        auto add_count(i64 pool, i64 delta) -> bool {
+            const i64 value = sum(count(pool), delta);
+            if (value < 0) {
+                return fail();
+            }
+            return set_count(pool, value);
+        }
+        auto reset_counts() -> bool {
+            i64 pool = 1;
+            while (pool < 17) {
+                if (!set_count(pool, 0)) {
+                    return false;
+                }
+                pool = pool + 1;
+            }
+            return good();
+        }
+        auto row_count() const -> i64 {
+            return rows.size();
+        }
+        auto operand_count() const -> i64 {
+            return operands.size();
+        }
+        auto row_state(i64 id) const -> i64 {
+            if (id < 0 || id >= rows.size()) {
+                return -1;
+            }
+            const ProjectionRow row = rows.at(id);
+            return row.state();
+        }
+        auto set_row_state(i64 id, i64 value) -> bool {
+            if (!good() || id < 0 || id >= rows.size()) {
+                return fail();
+            }
+            const ProjectionRow old = rows.at(id);
+            const ProjectionRow row = ProjectionRow(old.claimed(), value, old.name());
+            return rows.set(id, row);
+        }
+        auto row_name(i64 id) const -> compiler_ir_metadata::ByteRange {
+            if (id < 0 || id >= rows.size()) {
+                return compiler_ir_metadata::ByteRange(-1, 0);
+            }
+            const ProjectionRow row = rows.at(id);
+            return row.name();
+        }
+        auto set_row_name(i64 id, compiler_ir_metadata::ByteRange value) -> bool {
+            if (!good() || id < 0 || id >= rows.size()) {
+                return fail();
+            }
+            const ProjectionRow old = rows.at(id);
+            const ProjectionRow row = ProjectionRow(old.claimed(), old.state(), value);
+            return rows.set(id, row);
+        }
+        auto row_claimed(i64 id) const -> bool {
+            if (id < 0 || id >= rows.size()) {
+                return false;
+            }
+            const ProjectionRow row = rows.at(id);
+            return row.claimed() != 0;
+        }
+        auto claim_row(i64 id) -> bool {
+            if (!good() || id < 0 || id >= rows.size()) {
+                return fail();
+            }
+            const ProjectionRow old = rows.at(id);
+            if (old.claimed() != 0) {
+                return fail();
+            }
+            const ProjectionRow row = ProjectionRow(1, old.state(), old.name());
+            return rows.set(id, row);
+        }
+        auto claim_operands(i64 begin, i64 length) -> bool {
+            if (!good() || !range(begin, length, operands.size())) {
+                return fail();
+            }
+            i64 at = 0;
+            while (at < length) {
+                if (operands.at(begin + at) != 0u8 || !operands.set(begin + at, 1u8)) {
+                    return fail();
+                }
+                at = at + 1;
+            }
+            return true;
+        }
+        auto reset_claims() -> bool {
+            if (!good()) {
+                return false;
+            }
+            i64 at = 0;
+            while (at < rows.size()) {
+                const ProjectionRow old = rows.at(at);
+                const ProjectionRow row = ProjectionRow(0, old.state(), old.name());
+                if (!rows.set(at, row)) {
+                    return fail();
+                }
+                at = at + 1;
+            }
+            at = 0;
+            while (at < operands.size()) {
+                if (!operands.set(at, 0u8)) {
+                    return fail();
+                }
+                at = at + 1;
+            }
+            return true;
+        }
+        auto scratch_size() const -> i64 {
+            return order.size();
+        }
+        auto scratch_at(i64 index) const -> i64 {
+            if (index < 0 || index >= order.size()) {
+                return -1;
+            }
+            const compiler_ir_metadata::IndexRow row = order.at(index);
+            return row.value();
+        }
+        auto set_scratch(i64 index, i64 value) -> bool {
+            const compiler_ir_metadata::IndexRow row = compiler_ir_metadata::IndexRow(value);
+            if (!good() || index < 0 || index >= order.size() || !order.set(index, row)) {
+                return fail();
+            }
+            return true;
+        }
+        auto cache(i64 index) const -> IdentityCache {
+            if (index < 0 || index >= identities.size()) {
+                return IdentityCache(-1, compiler_ir_metadata::ByteRange(-1, 0), compiler_ir_metadata::invalid_type());
+            }
+            const IdentityCache result = identities.at(index);
+            return result;
+        }
+        auto set_cache(i64 index, IdentityCache value) -> bool {
+            if (!good() || index < 0 || index >= identities.size() || !identities.set(index, value)) {
+                return fail();
+            }
+            return true;
+        }
+        auto name_result() const -> compiler_ir_metadata::ByteRange {
+            return compiler_ir_metadata::ByteRange(nameResultBegin, nameResultCount);
+        }
+        auto set_name_result(compiler_ir_metadata::ByteRange value) -> bool {
+            nameResultBegin = value.begin();
+            nameResultCount = value.count();
+            return good();
+        }
+        auto type_result() const -> compiler_ir_metadata::RawTypeRow {
+            return compiler_ir_metadata::RawTypeRow(resultKind, compiler_ir_metadata::ByteRange(resultNameBegin,
+                resultNameCount), compiler_ir_metadata::RawTypeTail(resultElement, resultLength, resultElementParameter,
+                resultLengthParameter, resultArguments));
+        }
+        auto set_type_result(compiler_ir_metadata::RawTypeRow value) -> bool {
+            const compiler_ir_metadata::ByteRange name = value.name();
+            const compiler_ir_metadata::RawTypeTail tail = value.tail();
+            resultKind = value.kind();
+            resultNameBegin = name.begin();
+            resultNameCount = name.count();
+            resultElement = tail.element_kind();
+            resultLength = tail.length();
+            resultElementParameter = tail.element_parameter_bytes();
+            resultLengthParameter = tail.length_parameter_bytes();
+            resultArguments = tail.template_argument_count();
+            return good();
+        }
+        auto name_size() const -> i64 {
+            return textUsed;
+        }
+        auto name_byte(i64 index) const -> i64 {
+            if (index < 0 || index >= textUsed) {
+                return -1;
+            }
+            return i64(text.at(index));
+        }
+        auto compare_names(compiler_ir_metadata::ByteRange left, compiler_ir_metadata::ByteRange right) const -> i64 {
+            if (!range(left.begin(), left.count(), textUsed) || !range(right.begin(), right.count(), textUsed)) {
+                return -2;
+            }
+            i64 at = 0;
+            while (at < left.count() && at < right.count()) {
+                const u8 a = text.at(left.begin() + at);
+                const u8 b = text.at(right.begin() + at);
+                if (a < b) {
+                    return -1;
+                }
+                if (a > b) {
+                    return 1;
+                }
+                at = at + 1;
+            }
+            if (left.count() < right.count()) {
+                return -1;
+            }
+            if (left.count() > right.count()) {
+                return 1;
+            }
+            return 0;
+        }
+        auto start_text() -> bool {
+            if (!good() || building) {
+                return fail();
+            }
+            building = true;
+            candidateSize = 0;
+            candidateHash = 0u64;
+            return true;
+        }
+        auto append_text(u8 byte) -> bool {
+            const i64 position = sum(textUsed, candidateSize);
+            if (!good() || !building || position < 0 || !resize_text(sum(position, 1))) {
+                return false;
+            }
+            if (!text.set(position, byte)) {
+                return fail();
+            }
+            candidateHash = hash_byte(candidateHash, byte);
+            candidateSize = candidateSize + 1;
+            return true;
+        }
+        auto finish_text() -> bool {
+            if (!good() || !building) {
+                return fail();
+            }
+            building = false;
+            if (candidateSize == 0) {
+                return set_name_result(compiler_ir_metadata::ByteRange(textUsed, 0));
+            }
+            const compiler_ir_metadata::ByteRange candidate = compiler_ir_metadata::ByteRange(textUsed, candidateSize);
+            const i64 position = lookup(candidate, candidateHash);
+            if (position < 0) {
+                return fail();
+            }
+            const NameEntry found = names.at(position);
+            const compiler_ir_metadata::ByteRange old = found.name();
+            if (old.begin() >= 0) {
+                lastNameBegin = old.begin();
+                lastNamePosition = position;
+                return set_name_result(old);
+            }
+            const NameEntry entry = NameEntry(candidate, -1, candidateHash, 0);
+            if (frozen || !names.set(position, entry)) {
+                return fail();
+            }
+            textUsed = textUsed + candidateSize;
+            lastNameBegin = candidate.begin();
+            lastNamePosition = position;
+            set_name_result(candidate);
+            return true;
+        }
+        auto freeze_names() -> bool {
+            if (!good() || building) {
+                return fail();
+            }
+            frozen = true;
+            return true;
+        }
+        auto retain_name(compiler_ir_metadata::ByteRange spelling) -> compiler_ir_metadata::ByteRange {
+            if (!good() || !range(spelling.begin(), spelling.count(), textUsed)) {
+                fail();
+                return compiler_ir_metadata::ByteRange(-1, 0);
+            }
+            if (spelling.count() == 0) {
+                return compiler_ir_metadata::ByteRange(count(0), 0);
+            }
+            const i64 position = name_position(spelling);
+            if (position < 0) {
+                fail();
+                return compiler_ir_metadata::ByteRange(-1, 0);
+            }
+            const NameEntry found = names.at(position);
+            const compiler_ir_metadata::ByteRange old = found.name();
+            if (old.begin() < 0) {
+                fail();
+                return compiler_ir_metadata::ByteRange(-1, 0);
+            }
+            if (found.output() >= 0) {
+                return compiler_ir_metadata::ByteRange(found.output(), spelling.count());
+            }
+            const i64 destination = count(0);
+            const NameEntry entry = NameEntry(found.name(), destination, found.hash(), 0);
+            if (frozen || !add_count(0, spelling.count()) || !names.set(position, entry)) {
+                fail();
+                return compiler_ir_metadata::ByteRange(-1, 0);
+            }
+            return compiler_ir_metadata::ByteRange(destination, spelling.count());
+        }
+        auto mark_copy_name(compiler_ir_metadata::ByteRange spelling) -> bool {
+            if (!good() || !frozen || !range(spelling.begin(), spelling.count(), textUsed)) {
+                return fail();
+            }
+            if (spelling.count() == 0) {
+                return false;
+            }
+            const i64 position = name_position(spelling);
+            if (position < 0) {
+                return fail();
+            }
+            const NameEntry found = names.at(position);
+            if (found.output() < 0) {
+                return fail();
+            }
+            if (found.copied() != 0) {
+                return false;
+            }
+            const NameEntry marked = NameEntry(found.name(), found.output(), found.hash(), 1);
+            if (!names.set(position, marked)) {
+                return fail();
+            }
+            return true;
+        }
+        auto work_count() const -> i64 {
+            return workUsed;
+        }
+        auto work_at(i64 index) const -> i64 {
+            if (index < 0 || index >= workUsed) {
+                return -1;
+            }
+            const compiler_ir_metadata::IndexRow row = work.at(index);
+            return row.value();
+        }
+        auto push_work(i64 value) -> bool {
+            const compiler_ir_metadata::IndexRow row = compiler_ir_metadata::IndexRow(value);
+            if (!good() || workUsed >= work.size() || !work.set(workUsed, row)) {
+                return fail();
+            }
+            workUsed = workUsed + 1;
+            return true;
+        }
+        auto set_work(i64 index, i64 value) -> bool {
+            const compiler_ir_metadata::IndexRow row = compiler_ir_metadata::IndexRow(value);
+            if (!good() || index < 0 || index >= workUsed || !work.set(index, row)) {
+                return fail();
+            }
+            return true;
+        }
+        auto truncate_work(i64 count) -> bool {
+            if (!good() || count < 0 || count > workUsed) {
+                return fail();
+            }
+            workUsed = count;
+            return true;
+        }
+    };
+    auto create(builtin::ByteRegion region, i64 outputs, i64 operands, i64 metadata,
+        i64 name_capacity) -> ProjectionWorkspace {
+        ProjectionWorkspace result = ProjectionWorkspace(region);
+        result.initialize(outputs, operands, metadata, name_capacity);
+        return move(result);
+    }
+    auto release(builtin::ByteRegion region, ProjectionWorkspace workspace) -> i64 {
+        return 0;
+    }
+}

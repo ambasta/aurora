@@ -1,0 +1,125 @@
+# One compiled driver: every shape is exercised retained and explicitly discarded.
+# Ordered roles are reviewed against the independent native IR codec.
+# shape FORM NAME ROLE...; reject NAME MUTATION; accept NAME VARIANT
+shape 0 BindServiceParameter 1 2 3
+shape 1 AcquireServiceLoan 4 2 3
+shape 2 ReleaseServiceLoan 4 3
+shape 3 ServiceOperation 2 5 6 3
+shape 4 ServiceCall 7 4 6 8 3 9 21 34
+shape 5 Constant 10 12
+shape 6 EnumConstant 12 13
+shape 7 Load 2 12
+shape 8 Store 2 12
+shape 9 Push
+shape 10 Pop
+shape 11 UnaryValue 14
+shape 12 BinaryValue 14
+shape 13 Convert 15 16
+shape 14 Compare 14
+shape 15 BoundsGuard 2 17 18
+shape 16 IndexLoad 2 17 18
+shape 17 IndexStore 2 17 18
+shape 18 BorrowHandle 19 20
+shape 19 Call 7
+shape 20 AggregateCall 7 21 6 8
+shape 21 BeginObject 2
+shape 22 InitializeEmptyObject 2
+shape 23 EndObject 2
+shape 24 CopyObject 22 6
+shape 25 ObjectFieldCopy 22 23 6
+shape 26 AssignObjectField 24 23 22
+shape 27 InitializeObjectField 24 23 22
+shape 28 InitializeClassArray 24 23 25
+shape 29 ClassArrayBoundsGuard 24 23
+shape 30 ClassArrayCopy 24 23 6
+shape 31 ClassArrayAssign 24 23 22
+shape 32 ReceiverLoad 23 12
+shape 33 ReceiverStore 23 12
+shape 34 ReceiverArrayZero 23
+shape 35 ReceiverBoundsGuard 23
+shape 36 ReceiverIndexLoad 23
+shape 37 ReceiverIndexStore 23
+shape 38 MethodCall 7 26 21 6 27 8
+shape 39 MetadataQuery 28
+shape 40 Label 29
+shape 41 Jump 30
+shape 42 BranchFalse 30
+shape 43 Return
+shape 44 ReturnObject 2
+shape 45 BindParameter 1 2 12
+shape 46 BindObjectParameter 1 2 31
+shape 47 BeginArray 2
+shape 48 EndArray 2
+shape 49 BorrowSpan 32 6
+shape 50 BorrowReceiverArraySpan 23 6
+shape 51 BorrowLiteralSpan 33 6
+shape 52 BorrowOwnedSpan 2 23 6
+shape 53 ReturnSpan 2
+shape 54 ReborrowSpan 22 6
+shape 55 Subspan 22 6
+shape 56 EndSpan 2
+shape 57 SpanLength 2
+shape 58 SpanLoad 2
+shape 59 BindSpanParameter 1 2
+shape 60 BeginBytes 2
+shape 61 AllocateBytes 34 6
+shape 62 AllocateValues 34 6 35
+shape 63 ValuesLoad 2 23 6
+shape 64 ValuesStore 2 23 36
+shape 65 ValuesResize 2 23 35
+shape 66 MoveBytes 22 6
+shape 67 BytesOk 2 23
+shape 68 BytesLength 2 23
+shape 69 BytesLoad 2 23
+shape 70 BytesStore 2 23
+shape 71 BytesResize 2 23
+shape 72 EndBytes 2
+shape 73 BindRegionParameter 1 2
+shape 74 BindBytesParameter 1 2
+shape 75 ResourceCall 7 34 37 6 26
+shape 76 ReturnBytes 2
+shape 77 InitializeBytesField 24 23 22
+shape 78 MoveObject 22 6
+shape 79 BindOwnedObjectParameter 1 2 31
+shape 80 ReturnOwnedObject 2
+shape 81 AcquireObjectLoan 4 38 39 23
+shape 82 ReleaseObjectLoan 4
+shape 83 BorrowedCall 7 102 21 6 8
+shape 84 SpanValuesLoad 2 6
+accept source-lifetime lifetime
+accept unsigned-high-bit unsigned
+accept synthetic-prefix synthetic
+accept nominal-array-carrier carrier
+accept all-declaration-rows declarations
+accept unused-function empty-body
+accept canonical-ordering ordering
+accept template-nominal-identity nominal
+reject duplicate-instruction duplicate-row
+reject prefix-overlap overlap-prefix
+reject nested-list-overlap overlap-list
+reject negative-row negative-row
+reject foreign-row foreign-row
+reject malformed-prefix-range bad-range
+reject wrong-active-role bad-role
+reject wrong-type-domain bad-type
+reject cyclic-concrete-type type-cycle
+reject unknown-concrete-tag type-kind
+reject wrong-callable-domain name-domain
+reject corrupt-linkage-reference name-reference
+reject unknown-scope scope
+reject invalid-unary unary
+reject invalid-binary binary
+reject invalid-comparison comparison
+reject invalid-query query
+reject malformed-discarded discarded
+reject malformed-discarded-literal discarded-literal
+reject malformed-service-identity service
+reject malformed-service-operation operation
+reject malformed-boolean boolean
+reject malformed-offset integer
+reject malformed-roots roots
+reject unsigned-payload-type constant-role
+reject orphan-output orphan
+reject duplicate-class-name class-duplicate
+reject duplicate-carrier-name carrier-duplicate
+reject identifier-outside-module identifier

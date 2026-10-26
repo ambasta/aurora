@@ -1,5 +1,6 @@
 #pragma once
 #include "hosted_lowering.hpp"
+#include <functional>
 
 namespace aurora {
 // Mechanical, bounded views of identities already selected by Aurora. Each

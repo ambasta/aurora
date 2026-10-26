@@ -1,4 +1,5 @@
 #include "hosted_ir_instructions.hpp"
+#include "hosted_lowering_ingress.hpp"
 #include "hosted_ir_verification_budget.hpp"
 #include "ir_verify.hpp"
 #include "../runtime/hosted_bytes.hpp"
@@ -330,8 +331,9 @@ public:
     std::array<std::span<const std::byte>, static_cast<std::size_t>(Pool::count)> pools;
     const Metadata *metadata = nullptr;
     bool published = false;
-    explicit State(const wire::InstructionCounts &input)
-        : region(quota(capacities(input))), owner(region.id(), input), counts(input), limits(capacities(input)) {
+    explicit State(const wire::InstructionCounts &input, bytes::Allocator allocator = bytes::system_allocator())
+        : region(quota(capacities(input)), allocator), owner(region.id(), input), counts(input),
+          limits(capacities(input)) {
     }
     template <Pool pool> void set(std::int64_t at, const RowType<pool> &value) {
         auto descriptor = owner.descriptor(pool);
@@ -384,6 +386,63 @@ InstructionIngress &InstructionIngress::operator=(InstructionIngress &&other) no
         instructions_ = std::move(other.instructions_);
     }
     return *this;
+}
+
+std::int64_t detail::LoweringIngress::measure(
+    const void *session, void *workspace, std::int64_t root, std::int64_t diagnostic, bytes::Allocator allocator) {
+    if (!session || !workspace)
+        invalidInstructions();
+    // Counting and filling share one source field walk. The empty pending pair
+    // supplies its typed roots, never payload storage; count mode cannot write.
+    // Only the existing four metadata normalization frames allocate bytes here.
+    LoweringIngress empty({}, 0, 0, 0, {}, allocator);
+    const std::array<const void *, 4> roots{
+        session, workspace, empty.metadataOwner(), empty.instructions_->state_->owner.data()};
+    return aurora_hosted_projection_measure(roots.data(), root, diagnostic);
+}
+detail::LoweringIngress::LoweringIngress(const hosted_abi::compiler_ir_metadata::InputCounts &metadata,
+                                         std::int64_t callableCount,
+                                         std::int64_t slotCount,
+                                         std::int64_t instructionBegin,
+                                         const wire::InstructionCounts &instructions,
+                                         bytes::Allocator allocator) {
+    if (instructions.bodyCount != callableCount)
+        invalidInstructions();
+    // Validate the entire second grant before constructing either destination.
+    // Partial source allocations still belong to these capsules on every exit.
+    (void)quota(capacities(instructions));
+    allocateMetadata(metadata, callableCount, slotCount, instructionBegin, allocator);
+    instructions_.reset(new Instructions);
+    instructions_->state_ = std::make_unique<Instructions::State>(instructions, allocator);
+    const auto allocated = aurora_hosted_instructions_allocated(instructions_->state_->owner.data());
+    if (allocated == 0)
+        allocationFailure();
+    if (allocated != 1)
+        invalidInstructions();
+}
+detail::LoweringIngress::~LoweringIngress() = default;
+void detail::LoweringIngress::fill(const void *session, void *workspace) {
+    if (started_ || !session || !workspace || !instructions_ || !instructions_->state_) {
+        complete_ = false;
+        invalidInstructions();
+    }
+    started_ = true;
+    const std::array<const void *, 4> roots{session, workspace, metadataOwner(), instructions_->state_->owner.data()};
+    const auto status = aurora_hosted_projection_fill(roots.data());
+    if (status == 4)
+        throw Error(DiagnosticCode::Internal, "hosted lowering projection allocation failed");
+    if (status != 2)
+        throw Error(DiagnosticCode::Internal, "invalid hosted lowering result");
+    complete_ = true;
+}
+InstructionIngress detail::LoweringIngress::take() && {
+    if (!complete_ || !instructions_ || !instructions_->state_)
+        invalidInstructions();
+    InstructionIngress result;
+    result.metadata_ = std::move(metadata_);
+    result.instructions_ = std::move(instructions_);
+    complete_ = false;
+    return result;
 }
 
 std::int64_t detail::InstructionWriter::count(std::size_t value) {

@@ -1,0 +1,830 @@
+export module aurora.compiler.lowering_projection_instructions;
+import aurora.compiler.resolution_arena;
+import aurora.compiler.resolution_rows;
+import aurora.compiler.resolution_kinds;
+import aurora.compiler.lexer;
+import aurora.compiler.syntax_arena;
+import aurora.compiler.lowering_errors;
+import aurora.compiler.lowering_kinds;
+import aurora.compiler.lowering_storage;
+import aurora.compiler.ir_metadata_storage;
+import aurora.compiler.ir_instruction_storage;
+import aurora.compiler.lowering_projection_storage;
+import aurora.compiler.lowering_projection_identity;
+import aurora.compiler.lowering_projection_common;
+
+// The source projection owns the closed lowering instruction shapes. Seven-bit
+// role lanes describe only the active prefix; nested payloads retain their own
+// checked domains. The independent durable codec/admission runs after Session
+// destruction and never trusts this projection as semantic authority.
+export namespace compiler_lowering_projection {
+    class InstructionShape {
+        i64 formValue;
+        u64 roleLanes;
+    public:
+        InstructionShape(i64 form, u64 roles) : formValue(form), roleLanes(roles) {
+        }
+        auto form() const -> i64 {
+            return formValue;
+        }
+        auto roles() const -> u64 {
+            return roleLanes;
+        }
+    };
+    auto instruction_shape(compiler_lowering::InstructionForm form) -> InstructionShape {
+        if (form == compiler_lowering::InstructionForm::BindServiceParameter) {
+            // Index, Offset, ServiceKindId.
+            return InstructionShape(0, 49409u64);
+        }
+        if (form == compiler_lowering::InstructionForm::AcquireServiceLoan) {
+            // LoanId, Offset, ServiceKindId.
+            return InstructionShape(1, 49412u64);
+        }
+        if (form == compiler_lowering::InstructionForm::ReleaseServiceLoan) {
+            // LoanId, ServiceKindId.
+            return InstructionShape(2, 388u64);
+        }
+        if (form == compiler_lowering::InstructionForm::ServiceOperation) {
+            // Offset, ServiceOperationId, ResultOffset, ServiceKindId.
+            return InstructionShape(3, 6390402u64);
+        }
+        if (form == compiler_lowering::InstructionForm::ServiceCall) {
+            // CalleeSymbolId, LoanId, ResultOffset, SpanArguments, ServiceKindId,
+            // AdditionalServices, ObjectArguments, RegionOffset.
+            return InstructionShape(4, 19232967452885511u64);
+        }
+        if (form == compiler_lowering::InstructionForm::Constant) {
+            // SignedConstant, TypeId.
+            return InstructionShape(5, 1546u64);
+        }
+        if (form == compiler_lowering::InstructionForm::EnumConstant) {
+            // TypeId, CaseIndex.
+            return InstructionShape(6, 1676u64);
+        }
+        if (form == compiler_lowering::InstructionForm::Load) {
+            // Offset, TypeId.
+            return InstructionShape(7, 1538u64);
+        }
+        if (form == compiler_lowering::InstructionForm::Store) {
+            // Offset, TypeId.
+            return InstructionShape(8, 1538u64);
+        }
+        if (form == compiler_lowering::InstructionForm::Push) {
+            // Empty prefix.
+            return InstructionShape(9, 0u64);
+        }
+        if (form == compiler_lowering::InstructionForm::Pop) {
+            // Empty prefix.
+            return InstructionShape(10, 0u64);
+        }
+        if (form == compiler_lowering::InstructionForm::UnaryValue) {
+            // OperandTypeId.
+            return InstructionShape(11, 14u64);
+        }
+        if (form == compiler_lowering::InstructionForm::BinaryValue) {
+            // OperandTypeId.
+            return InstructionShape(12, 14u64);
+        }
+        if (form == compiler_lowering::InstructionForm::Convert) {
+            // SourceTypeId, ResultTypeId.
+            return InstructionShape(13, 2063u64);
+        }
+        if (form == compiler_lowering::InstructionForm::Compare) {
+            // OperandTypeId.
+            return InstructionShape(14, 14u64);
+        }
+        if (form == compiler_lowering::InstructionForm::BoundsGuard) {
+            // Offset, Length, ElementTypeId.
+            return InstructionShape(15, 297090u64);
+        }
+        if (form == compiler_lowering::InstructionForm::IndexLoad) {
+            // Offset, Length, ElementTypeId.
+            return InstructionShape(16, 297090u64);
+        }
+        if (form == compiler_lowering::InstructionForm::IndexStore) {
+            // Offset, Length, ElementTypeId.
+            return InstructionShape(17, 297090u64);
+        }
+        if (form == compiler_lowering::InstructionForm::BorrowHandle) {
+            // OwnerOffset, ReferenceTypeId.
+            return InstructionShape(18, 2579u64);
+        }
+        if (form == compiler_lowering::InstructionForm::Call) {
+            // CalleeSymbolId.
+            return InstructionShape(19, 7u64);
+        }
+        if (form == compiler_lowering::InstructionForm::AggregateCall) {
+            // CalleeSymbolId, ObjectArguments, ResultOffset, SpanArguments.
+            return InstructionShape(20, 16878215u64);
+        }
+        if (form == compiler_lowering::InstructionForm::BeginObject) {
+            // Offset.
+            return InstructionShape(21, 2u64);
+        }
+        if (form == compiler_lowering::InstructionForm::InitializeEmptyObject) {
+            // Offset.
+            return InstructionShape(22, 2u64);
+        }
+        if (form == compiler_lowering::InstructionForm::EndObject) {
+            // Offset.
+            return InstructionShape(23, 2u64);
+        }
+        if (form == compiler_lowering::InstructionForm::CopyObject) {
+            // SourceOffset, ResultOffset.
+            return InstructionShape(24, 790u64);
+        }
+        if (form == compiler_lowering::InstructionForm::ObjectFieldCopy) {
+            // SourceOffset, FieldIndex, ResultOffset.
+            return InstructionShape(25, 101270u64);
+        }
+        if (form == compiler_lowering::InstructionForm::AssignObjectField) {
+            // ObjectOffset, FieldIndex, SourceOffset.
+            return InstructionShape(26, 363416u64);
+        }
+        if (form == compiler_lowering::InstructionForm::InitializeObjectField) {
+            // ObjectOffset, FieldIndex, SourceOffset.
+            return InstructionShape(27, 363416u64);
+        }
+        if (form == compiler_lowering::InstructionForm::InitializeClassArray) {
+            // ObjectOffset, FieldIndex, Sources.
+            return InstructionShape(28, 412568u64);
+        }
+        if (form == compiler_lowering::InstructionForm::ClassArrayBoundsGuard) {
+            // ObjectOffset, FieldIndex.
+            return InstructionShape(29, 2968u64);
+        }
+        if (form == compiler_lowering::InstructionForm::ClassArrayCopy) {
+            // ObjectOffset, FieldIndex, ResultOffset.
+            return InstructionShape(30, 101272u64);
+        }
+        if (form == compiler_lowering::InstructionForm::ClassArrayAssign) {
+            // ObjectOffset, FieldIndex, SourceOffset.
+            return InstructionShape(31, 363416u64);
+        }
+        if (form == compiler_lowering::InstructionForm::ReceiverLoad) {
+            // FieldIndex, TypeId.
+            return InstructionShape(32, 1559u64);
+        }
+        if (form == compiler_lowering::InstructionForm::ReceiverStore) {
+            // FieldIndex, TypeId.
+            return InstructionShape(33, 1559u64);
+        }
+        if (form == compiler_lowering::InstructionForm::ReceiverArrayZero) {
+            // FieldIndex.
+            return InstructionShape(34, 23u64);
+        }
+        if (form == compiler_lowering::InstructionForm::ReceiverBoundsGuard) {
+            // FieldIndex.
+            return InstructionShape(35, 23u64);
+        }
+        if (form == compiler_lowering::InstructionForm::ReceiverIndexLoad) {
+            // FieldIndex.
+            return InstructionShape(36, 23u64);
+        }
+        if (form == compiler_lowering::InstructionForm::ReceiverIndexStore) {
+            // FieldIndex.
+            return InstructionShape(37, 23u64);
+        }
+        if (form == compiler_lowering::InstructionForm::MethodCall) {
+            // CalleeSymbolId, ReceiverOffset, ObjectArguments, ResultOffset, ReceiverFieldIndex, SpanArguments.
+            return InstructionShape(38, 282138594567u64);
+        }
+        if (form == compiler_lowering::InstructionForm::MetadataQuery) {
+            // ModuleScope.
+            return InstructionShape(39, 28u64);
+        }
+        if (form == compiler_lowering::InstructionForm::Label) {
+            // LabelId.
+            return InstructionShape(40, 29u64);
+        }
+        if (form == compiler_lowering::InstructionForm::Jump) {
+            // Target.
+            return InstructionShape(41, 30u64);
+        }
+        if (form == compiler_lowering::InstructionForm::BranchFalse) {
+            // Target.
+            return InstructionShape(42, 30u64);
+        }
+        if (form == compiler_lowering::InstructionForm::Return) {
+            // Empty prefix.
+            return InstructionShape(43, 0u64);
+        }
+        if (form == compiler_lowering::InstructionForm::ReturnObject) {
+            // Offset.
+            return InstructionShape(44, 2u64);
+        }
+        if (form == compiler_lowering::InstructionForm::BindParameter) {
+            // Index, Offset, TypeId.
+            return InstructionShape(45, 196865u64);
+        }
+        if (form == compiler_lowering::InstructionForm::BindObjectParameter) {
+            // Index, Offset, ClassNominalId.
+            return InstructionShape(46, 508161u64);
+        }
+        if (form == compiler_lowering::InstructionForm::BeginArray) {
+            // Offset.
+            return InstructionShape(47, 2u64);
+        }
+        if (form == compiler_lowering::InstructionForm::EndArray) {
+            // Offset.
+            return InstructionShape(48, 2u64);
+        }
+        if (form == compiler_lowering::InstructionForm::BorrowSpan) {
+            // ArrayOffset, ResultOffset.
+            return InstructionShape(49, 800u64);
+        }
+        if (form == compiler_lowering::InstructionForm::BorrowReceiverArraySpan) {
+            // FieldIndex, ResultOffset.
+            return InstructionShape(50, 791u64);
+        }
+        if (form == compiler_lowering::InstructionForm::BorrowLiteralSpan) {
+            // LiteralBytes, ResultOffset.
+            return InstructionShape(51, 801u64);
+        }
+        if (form == compiler_lowering::InstructionForm::BorrowOwnedSpan) {
+            // Offset, FieldIndex, ResultOffset.
+            return InstructionShape(52, 101250u64);
+        }
+        if (form == compiler_lowering::InstructionForm::ReturnSpan) {
+            // Offset.
+            return InstructionShape(53, 2u64);
+        }
+        if (form == compiler_lowering::InstructionForm::ReborrowSpan) {
+            // SourceOffset, ResultOffset.
+            return InstructionShape(54, 790u64);
+        }
+        if (form == compiler_lowering::InstructionForm::Subspan) {
+            // SourceOffset, ResultOffset.
+            return InstructionShape(55, 790u64);
+        }
+        if (form == compiler_lowering::InstructionForm::EndSpan) {
+            // Offset.
+            return InstructionShape(56, 2u64);
+        }
+        if (form == compiler_lowering::InstructionForm::SpanLength) {
+            // Offset.
+            return InstructionShape(57, 2u64);
+        }
+        if (form == compiler_lowering::InstructionForm::SpanLoad) {
+            // Offset.
+            return InstructionShape(58, 2u64);
+        }
+        if (form == compiler_lowering::InstructionForm::BindSpanParameter) {
+            // Index, Offset.
+            return InstructionShape(59, 257u64);
+        }
+        if (form == compiler_lowering::InstructionForm::BeginBytes) {
+            // Offset.
+            return InstructionShape(60, 2u64);
+        }
+        if (form == compiler_lowering::InstructionForm::AllocateBytes) {
+            // RegionOffset, ResultOffset.
+            return InstructionShape(61, 802u64);
+        }
+        if (form == compiler_lowering::InstructionForm::AllocateValues) {
+            // RegionOffset, ResultOffset, FillOffset.
+            return InstructionShape(62, 574242u64);
+        }
+        if (form == compiler_lowering::InstructionForm::ValuesLoad) {
+            // Offset, FieldIndex, ResultOffset.
+            return InstructionShape(63, 101250u64);
+        }
+        if (form == compiler_lowering::InstructionForm::ValuesStore) {
+            // Offset, FieldIndex, ValueOffset.
+            return InstructionShape(64, 592770u64);
+        }
+        if (form == compiler_lowering::InstructionForm::ValuesResize) {
+            // Offset, FieldIndex, FillOffset.
+            return InstructionShape(65, 576386u64);
+        }
+        if (form == compiler_lowering::InstructionForm::MoveBytes) {
+            // SourceOffset, ResultOffset.
+            return InstructionShape(66, 790u64);
+        }
+        if (form == compiler_lowering::InstructionForm::BytesOk) {
+            // Offset, FieldIndex.
+            return InstructionShape(67, 2946u64);
+        }
+        if (form == compiler_lowering::InstructionForm::BytesLength) {
+            // Offset, FieldIndex.
+            return InstructionShape(68, 2946u64);
+        }
+        if (form == compiler_lowering::InstructionForm::BytesLoad) {
+            // Offset, FieldIndex.
+            return InstructionShape(69, 2946u64);
+        }
+        if (form == compiler_lowering::InstructionForm::BytesStore) {
+            // Offset, FieldIndex.
+            return InstructionShape(70, 2946u64);
+        }
+        if (form == compiler_lowering::InstructionForm::BytesResize) {
+            // Offset, FieldIndex.
+            return InstructionShape(71, 2946u64);
+        }
+        if (form == compiler_lowering::InstructionForm::EndBytes) {
+            // Offset.
+            return InstructionShape(72, 2u64);
+        }
+        if (form == compiler_lowering::InstructionForm::BindRegionParameter) {
+            // Index, Offset.
+            return InstructionShape(73, 257u64);
+        }
+        if (form == compiler_lowering::InstructionForm::BindBytesParameter) {
+            // Index, Offset.
+            return InstructionShape(74, 257u64);
+        }
+        if (form == compiler_lowering::InstructionForm::ResourceCall) {
+            // CalleeSymbolId, RegionOffset, OwnerArguments, ResultOffset, ReceiverOffset.
+            return InstructionShape(75, 6992515335u64);
+        }
+        if (form == compiler_lowering::InstructionForm::ReturnBytes) {
+            // Offset.
+            return InstructionShape(76, 2u64);
+        }
+        if (form == compiler_lowering::InstructionForm::InitializeBytesField) {
+            // ObjectOffset, FieldIndex, SourceOffset.
+            return InstructionShape(77, 363416u64);
+        }
+        if (form == compiler_lowering::InstructionForm::MoveObject) {
+            // SourceOffset, ResultOffset.
+            return InstructionShape(78, 790u64);
+        }
+        if (form == compiler_lowering::InstructionForm::BindOwnedObjectParameter) {
+            // Index, Offset, ClassNominalId.
+            return InstructionShape(79, 508161u64);
+        }
+        if (form == compiler_lowering::InstructionForm::ReturnOwnedObject) {
+            // Offset.
+            return InstructionShape(80, 2u64);
+        }
+        if (form == compiler_lowering::InstructionForm::AcquireObjectLoan) {
+            // LoanId, Root, MutableValue, FieldIndex.
+            return InstructionShape(81, 48878340u64);
+        }
+        if (form == compiler_lowering::InstructionForm::ReleaseObjectLoan) {
+            // LoanId.
+            return InstructionShape(82, 4u64);
+        }
+        if (form == compiler_lowering::InstructionForm::BorrowedCall) {
+            // CalleeSymbolId, BorrowedRoots, ObjectArguments, ResultOffset, SpanArguments.
+            return InstructionShape(83, 2160423687u64);
+        }
+        if (form == compiler_lowering::InstructionForm::SpanValuesLoad) {
+            // Offset, ResultOffset.
+            return InstructionShape(84, 770u64);
+        }
+        return InstructionShape(-1, 0u64);
+    }
+    // The known schema role selects a balanced scalar decision tree. Only a
+    // typed enum equality is performed at its leaf; unknown roles never acquire
+    // an ordinal through an unchecked conversion.
+    auto instruction_role_matches(compiler_lowering::OperandRole role, i64 expected) -> bool {
+        if (expected < 21) {
+            if (expected < 11) {
+                if (expected < 6) {
+                    if (expected < 3) {
+                        if (expected < 2) {
+                            return expected == 1 && role == compiler_lowering::OperandRole::Index;
+                        }
+                        return expected == 2 && role == compiler_lowering::OperandRole::Offset;
+                    }
+                    if (expected < 4) {
+                        return expected == 3 && role == compiler_lowering::OperandRole::ServiceKindId;
+                    }
+                    if (expected < 5) {
+                        return expected == 4 && role == compiler_lowering::OperandRole::LoanId;
+                    }
+                    return expected == 5 && role == compiler_lowering::OperandRole::ServiceOperationId;
+                }
+                if (expected < 8) {
+                    if (expected < 7) {
+                        return expected == 6 && role == compiler_lowering::OperandRole::ResultOffset;
+                    }
+                    return expected == 7 && role == compiler_lowering::OperandRole::CalleeSymbolId;
+                }
+                if (expected < 9) {
+                    return expected == 8 && role == compiler_lowering::OperandRole::SpanArguments;
+                }
+                if (expected < 10) {
+                    return expected == 9 && role == compiler_lowering::OperandRole::AdditionalServices;
+                }
+                return expected == 10 && role == compiler_lowering::OperandRole::SignedConstant;
+            }
+            if (expected < 16) {
+                if (expected < 13) {
+                    if (expected < 12) {
+                        return expected == 11 && role == compiler_lowering::OperandRole::UnsignedConstant;
+                    }
+                    return expected == 12 && role == compiler_lowering::OperandRole::TypeId;
+                }
+                if (expected < 14) {
+                    return expected == 13 && role == compiler_lowering::OperandRole::CaseIndex;
+                }
+                if (expected < 15) {
+                    return expected == 14 && role == compiler_lowering::OperandRole::OperandTypeId;
+                }
+                return expected == 15 && role == compiler_lowering::OperandRole::SourceTypeId;
+            }
+            if (expected < 18) {
+                if (expected < 17) {
+                    return expected == 16 && role == compiler_lowering::OperandRole::ResultTypeId;
+                }
+                return expected == 17 && role == compiler_lowering::OperandRole::Length;
+            }
+            if (expected < 19) {
+                return expected == 18 && role == compiler_lowering::OperandRole::ElementTypeId;
+            }
+            if (expected < 20) {
+                return expected == 19 && role == compiler_lowering::OperandRole::OwnerOffset;
+            }
+            return expected == 20 && role == compiler_lowering::OperandRole::ReferenceTypeId;
+        }
+        if (expected < 31) {
+            if (expected < 26) {
+                if (expected < 23) {
+                    if (expected < 22) {
+                        return expected == 21 && role == compiler_lowering::OperandRole::ObjectArguments;
+                    }
+                    return expected == 22 && role == compiler_lowering::OperandRole::SourceOffset;
+                }
+                if (expected < 24) {
+                    return expected == 23 && role == compiler_lowering::OperandRole::FieldIndex;
+                }
+                if (expected < 25) {
+                    return expected == 24 && role == compiler_lowering::OperandRole::ObjectOffset;
+                }
+                return expected == 25 && role == compiler_lowering::OperandRole::Sources;
+            }
+            if (expected < 28) {
+                if (expected < 27) {
+                    return expected == 26 && role == compiler_lowering::OperandRole::ReceiverOffset;
+                }
+                return expected == 27 && role == compiler_lowering::OperandRole::ReceiverFieldIndex;
+            }
+            if (expected < 29) {
+                return expected == 28 && role == compiler_lowering::OperandRole::ModuleScope;
+            }
+            if (expected < 30) {
+                return expected == 29 && role == compiler_lowering::OperandRole::LabelId;
+            }
+            return expected == 30 && role == compiler_lowering::OperandRole::Target;
+        }
+        if (expected < 36) {
+            if (expected < 33) {
+                if (expected < 32) {
+                    return expected == 31 && role == compiler_lowering::OperandRole::ClassNominalId;
+                }
+                return expected == 32 && role == compiler_lowering::OperandRole::ArrayOffset;
+            }
+            if (expected < 34) {
+                return expected == 33 && role == compiler_lowering::OperandRole::LiteralBytes;
+            }
+            if (expected < 35) {
+                return expected == 34 && role == compiler_lowering::OperandRole::RegionOffset;
+            }
+            return expected == 35 && role == compiler_lowering::OperandRole::FillOffset;
+        }
+        if (expected < 39) {
+            if (expected < 37) {
+                return expected == 36 && role == compiler_lowering::OperandRole::ValueOffset;
+            }
+            if (expected < 38) {
+                return expected == 37 && role == compiler_lowering::OperandRole::OwnerArguments;
+            }
+            return expected == 38 && role == compiler_lowering::OperandRole::Root;
+        }
+        if (expected < 79) {
+            return expected == 39 && role == compiler_lowering::OperandRole::MutableValue;
+        }
+        if (expected < 102) {
+            return expected == 79 && role == compiler_lowering::OperandRole::ServiceLoanId;
+        }
+        return expected == 102 && role == compiler_lowering::OperandRole::BorrowedRoots;
+    }
+    auto unary_code(compiler_lowering::Unary value) -> i64 {
+        if (value == compiler_lowering::Unary::CheckedNegate) {
+            return 0;
+        }
+        if (value == compiler_lowering::Unary::LogicalNot) {
+            return 1;
+        }
+        if (value == compiler_lowering::Unary::BitNot) {
+            return 2;
+        }
+        return -1;
+    }
+    auto binary_code(compiler_lowering::Binary value) -> i64 {
+        if (value == compiler_lowering::Binary::CheckedAdd) {
+            return 0;
+        }
+        if (value == compiler_lowering::Binary::CheckedSubtract) {
+            return 1;
+        }
+        if (value == compiler_lowering::Binary::CheckedMultiply) {
+            return 2;
+        }
+        if (value == compiler_lowering::Binary::CheckedDivide) {
+            return 3;
+        }
+        if (value == compiler_lowering::Binary::CheckedRemainder) {
+            return 4;
+        }
+        if (value == compiler_lowering::Binary::BitAnd) {
+            return 5;
+        }
+        if (value == compiler_lowering::Binary::BitOr) {
+            return 6;
+        }
+        if (value == compiler_lowering::Binary::BitXor) {
+            return 7;
+        }
+        if (value == compiler_lowering::Binary::ShiftLeft) {
+            return 8;
+        }
+        if (value == compiler_lowering::Binary::ShiftRight) {
+            return 9;
+        }
+        return -1;
+    }
+    auto comparison_code(compiler_lowering::Comparison value) -> i64 {
+        if (value == compiler_lowering::Comparison::Equal) {
+            return 0;
+        }
+        if (value == compiler_lowering::Comparison::NotEqual) {
+            return 1;
+        }
+        if (value == compiler_lowering::Comparison::Less) {
+            return 2;
+        }
+        if (value == compiler_lowering::Comparison::Greater) {
+            return 3;
+        }
+        if (value == compiler_lowering::Comparison::LessEqual) {
+            return 4;
+        }
+        if (value == compiler_lowering::Comparison::GreaterEqual) {
+            return 5;
+        }
+        return -1;
+    }
+    auto query_code(compiler_lowering::Query value) -> i64 {
+        if (value == compiler_lowering::Query::Size) {
+            return 0;
+        }
+        if (value == compiler_lowering::Query::PublicFieldCount) {
+            return 1;
+        }
+        return -1;
+    }
+    auto instruction_type_role(i64 role) -> bool {
+        return role == 12 || role == 14 || role == 15 || role == 16 || role == 18 || role == 20;
+    }
+    auto instruction_list_role(i64 role) -> bool {
+        return role == 8 || role == 9 || role == 21 || role == 25 || role == 37 || role == 102;
+    }
+    // Mode 0 counts, mode 1 fills, mode 2 validates an explicitly discarded row.
+    // Discarded rows still claim all active operands and validate every identity
+    // and byte interval, but never retain a destination name/type/payload.
+    auto project_instruction(const compiler_resolver::Session& session, ProjectionWorkspace& workspace,
+        compiler_ir_metadata::MetadataStore& metadata, compiler_ir_instructions::InstructionStore& instructions, i64 id,
+        i64 mode) -> bool {
+        if (mode < 0 || mode > 2) {
+            return workspace.fail();
+        }
+        compiler_lowering::RecordKind kind = compiler_lowering::RecordKind::Instruction;
+        if (mode == 2) {
+            kind = compiler_lowering::RecordKind::DiscardedInstruction;
+        }
+        if (!claim_record(session, workspace, id, kind)) {
+            return false;
+        }
+        const compiler_lowering::OutputRow header = session.view_output(id);
+        const InstructionShape shape = instruction_shape(header.form());
+        if (shape.form() < 0) {
+            return workspace.fail();
+        }
+        u64 lanes = shape.roles();
+        i64 prefix_count = 0;
+        while (lanes != 0u64) {
+            prefix_count = prefix_count + 1;
+            lanes = lanes >> 7;
+        }
+        if (header.operand_count() != prefix_count) {
+            return workspace.fail();
+        }
+        const i64 begin = workspace.count(14);
+        if (mode != 2 && !workspace.add_count(14, prefix_count)) {
+            return false;
+        }
+        compiler_ir_instructions::RawInstructionRow output = compiler_ir_instructions::RawInstructionRow(1,
+            shape.form(), begin, prefix_count);
+        if (shape.form() == 11 && !output.set_unary(unary_code(header.unary_operation()))) {
+            return workspace.fail();
+        }
+        if (shape.form() == 12 && !output.set_binary(binary_code(header.binary_operation()))) {
+            return workspace.fail();
+        }
+        if (shape.form() == 14 && !output.set_comparison(comparison_code(header.comparison_operation()))) {
+            return workspace.fail();
+        }
+        if (shape.form() == 39 && !output.set_query(query_code(header.query()))) {
+            return workspace.fail();
+        }
+        lanes = shape.roles();
+        i64 ordinal = 0;
+        while (ordinal < prefix_count) {
+            i64 role = i64(lanes & 127u64);
+            const compiler_lowering::OperandRow source = session.view_operand(header.operand_begin() + ordinal);
+            if (role == 10) {
+                const compiler_lowering::OperandRow type_operand = item(session, id, 1);
+                if (type_operand.role() != compiler_lowering::OperandRole::TypeId || !resolve_type(session, workspace,
+                    type_operand.signed_value())) {
+                    return workspace.fail();
+                }
+                const compiler_ir_metadata::RawTypeRow type = workspace.type_result();
+                if (type.kind() == 7) {
+                    role = 11;
+                }
+            }
+            if (!instruction_role_matches(source.role(), role)) {
+                return workspace.fail();
+            }
+            i64 durable_role = role;
+            i64 signed_value = source.signed_value();
+            u64 unsigned_value = 0u64;
+            i64 range_begin = 0;
+            i64 range_count = 0;
+            if (instruction_type_role(role)) {
+                const i64 destination = workspace.count(1);
+                if (mode == 2) {
+                    if (!resolve_type(session, workspace, source.signed_value())) {
+                        return false;
+                    }
+                } else {
+                    if (!emit_type(session, workspace, metadata, source.signed_value(), destination, mode == 1)) {
+                        return false;
+                    }
+                }
+                signed_value = destination;
+            } else {
+                if (role == 7 || role == 31) {
+                    i64 domain = 0;
+                    durable_role = 100;
+                    if (role == 31) {
+                        domain = 1;
+                        durable_role = 101;
+                    }
+                    if (!resolve_name(session, workspace, source.signed_value(), domain)) {
+                        return false;
+                    }
+                    const compiler_ir_metadata::ByteRange spelling = workspace.name_result();
+                    if (mode != 2) {
+                        const compiler_ir_metadata::ByteRange retained = workspace.retain_name(spelling);
+                        if (!copy_text(workspace, metadata, spelling.begin(), retained.begin(), spelling.count(), mode
+                            == 1)) {
+                            return false;
+                        }
+                        signed_value = 0;
+                        range_begin = retained.begin();
+                        range_count = retained.count();
+                    }
+                } else {
+                    if (instruction_list_role(role)) {
+                        if (!bound(source.begin(), source.count(), session.operand_count())
+                            || !workspace.claim_operands(source.begin(), source.count())) {
+                            return workspace.fail();
+                        }
+                        if (role == 9 && source.count() % 2 != 0) {
+                            return workspace.fail();
+                        }
+                        if (role == 102 && (source.count() == 0 || source.count() > 18 || source.count() % 3 != 0)) {
+                            return workspace.fail();
+                        }
+                        const i64 nested = workspace.count(14);
+                        if (mode != 2 && !workspace.add_count(14, source.count())) {
+                            return false;
+                        }
+                        i64 entry = 0;
+                        while (entry < source.count()) {
+                            const compiler_lowering::OperandRow leaf = session.view_operand(source.begin() + entry);
+                            i64 leaf_role = 2;
+                            if (role == 9) {
+                                leaf_role = 79;
+                                if (entry % 2 == 1) {
+                                    leaf_role = 3;
+                                }
+                            }
+                            if (role == 102) {
+                                leaf_role = 38;
+                                if (entry % 3 == 1) {
+                                    leaf_role = 4;
+                                }
+                                if (entry % 3 == 2) {
+                                    leaf_role = 23;
+                                }
+                            }
+                            if (!instruction_role_matches(leaf.role(), leaf_role)) {
+                                return workspace.fail();
+                            }
+                            if (leaf_role == 3) {
+                                if (!service_kind(workspace, leaf.signed_value())) {
+                                    return false;
+                                }
+                            } else {
+                                if (!integer(leaf.signed_value())) {
+                                    return workspace.fail();
+                                }
+                            }
+                            if (mode == 1 && !instructions.ingress_operand(nested + entry,
+                                compiler_ir_instructions::RawOperandRow(leaf_role, leaf.signed_value(), 0u64, 0, 0))) {
+                                return workspace.fail();
+                            }
+                            entry = entry + 1;
+                        }
+                        signed_value = 0;
+                        range_begin = nested;
+                        range_count = source.count();
+                    } else {
+                        if (role == 33) {
+                            if (!bound(source.begin(), source.count(), session.source_size())) {
+                                return workspace.fail();
+                            }
+                            const i64 literal = workspace.count(15);
+                            if (mode != 2 && !workspace.add_count(15, source.count())) {
+                                return false;
+                            }
+                            if (mode != 0) {
+                                i64 at = 0;
+                                while (at < source.count()) {
+                                    const i64 byte = session.view_source(source.begin() + at);
+                                    if (byte < 0 || byte > 255) {
+                                        return workspace.fail();
+                                    }
+                                    if (mode == 1 && !instructions.ingress_literal(literal + at, u8(byte))) {
+                                        return workspace.fail();
+                                    }
+                                    at = at + 1;
+                                }
+                            }
+                            signed_value = 0;
+                            range_begin = literal;
+                            range_count = source.count();
+                        } else {
+                            if (role == 11) {
+                                signed_value = 0;
+                                unsigned_value = source.unsigned_value();
+                            } else {
+                                if (role == 3) {
+                                    if (!service_kind(workspace, source.signed_value())) {
+                                        return false;
+                                    }
+                                } else {
+                                    if (role == 5) {
+                                        if (!service_operation(workspace, source.signed_value())) {
+                                            return false;
+                                        }
+                                    } else {
+                                        if (role == 28) {
+                                            if (!module_scope(session, workspace, source.signed_value())) {
+                                                return false;
+                                            }
+                                        } else {
+                                            if (role == 39) {
+                                                if (!boolean(source.signed_value())) {
+                                                    return workspace.fail();
+                                                }
+                                            } else {
+                                                if (role != 10 && !integer(source.signed_value())) {
+                                                    return workspace.fail();
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            const compiler_ir_instructions::RawOperandRow value = compiler_ir_instructions::RawOperandRow(durable_role,
+                signed_value, unsigned_value, range_begin, range_count);
+            if (mode == 1 && !instructions.ingress_operand(begin + ordinal, value)) {
+                return workspace.fail();
+            }
+            ordinal = ordinal + 1;
+            lanes = lanes >> 7;
+        }
+        if (mode != 2) {
+            const i64 position = workspace.count(13);
+            if (!workspace.add_count(13, 1)) {
+                return false;
+            }
+            if (mode == 1 && (!instructions.ingress_instruction(position, output)
+                || !instructions.ingress_code(position, compiler_ir_instructions::CodeRow(position + 1, -1, 0u64,
+                0)))) {
+                return workspace.fail();
+            }
+        }
+        return workspace.good();
+    }
+}

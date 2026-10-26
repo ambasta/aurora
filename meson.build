@@ -47,6 +47,9 @@ frontend_inputs = files('compiler/formatter.au', 'compiler/lexer.au', 'compiler/
                         'compiler/lowering_types.au', 'compiler/lowering_values.au', 'compiler/lowering_frames.au',
                         'compiler/lowering_calls.au', 'compiler/lowering_expressions.au',
                         'compiler/lowering_statements.au', 'compiler/lowering_body.au', 'compiler/lowering.au',
+                        'compiler/lowering_projection_storage.au', 'compiler/lowering_projection_identity.au',
+                        'compiler/lowering_projection_common.au', 'compiler/lowering_projection_instructions.au',
+                        'compiler/lowering_projection.au',
                         )
 frontend_forwarders = custom_target(
   'frontend-forwarders', input: 'compiler/frontend.au', output: 'frontend.au',

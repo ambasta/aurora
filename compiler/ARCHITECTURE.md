@@ -11,8 +11,8 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 | Module traversal | Aurora owns discovery requests, duplicate/cycle/depth/file limits and dependency postorder; C++ retains authorized file opening and bytes | Native runtime/file I/O migration |
 | Formatting | Aurora owns syntax roles, layout and findings; native host retains source transport and token/comment/reparse/idempotence checks | Final-source qualification required |
 | Lexing and parsing | Aurora | Complete final-source predecessor/current convergence |
-| Resolution, immutable linkage spelling and typed lowering | Aurora; native projection reads bounded copied name chunks; hash-chained index lookups, AVL order only for the two walked domains | Validate final integrated behavior and paired compile-time/output gates |
-| Metadata, callable and frame admission | Aurora owns frame size and disjoint slot domains; C++ transports raw declarations | Retain host conversion, quota arithmetic and transport bounds |
+| Resolution, immutable linkage spelling and typed lowering | Aurora, including successful lowering-record projection into pending source stores; native ABI/error rendering still reads bounded name chunks | Validate final integrated behavior and paired compile-time/output gates |
+| Metadata, callable and frame admission | Aurora owns frame size and disjoint slot domains; successful source projection writes pending raw declarations | Retain independent admission, native allocation/quota arithmetic and hand-built IR ingress |
 | Instruction storage and static admission | Aurora owns service argument-vector shape and copied-argument contracts | Preserve admission before whole-function verification |
 | Initialization and synchronous service loans | Aurora verification workspace | Final integrated allocation, cleanup and semantic qualification |
 | Current values, operand stacks, bounds evidence | Aurora whole-function verifier | Final-source qualification; no native fallback |
@@ -20,7 +20,7 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 | Call graph | Aurora | Validate final integrated behavior |
 | x86 emission | Aurora, fixed native transport | Byte-identical C1/C2 (`hosted-lexer-bootstrap`); inlines single-field getters; owned-value bounds checks and sizes use multiplies, not divq; no register allocation yet |
 | Direct class fields | Aurora source and independent metadata admission share an 8,192-field cap, including empty, nested, resource and array fields | Existing leaf, byte, depth and array-element limits still apply |
-| Private host bridge | One 97-entry table generates Aurora forwarders, host transport declarations and a closed wrapper recipe; compiler facts supply layouts, symbols and raw enum validation | Preserve fail-closed conversion; native replacement remains incomplete |
+| Private host bridge | One 106-entry table generates Aurora forwarders, host transport declarations and a closed wrapper recipe; compiler facts supply layouts, symbols and raw enum validation | Preserve fail-closed conversion; native replacement remains incomplete |
 | Bootstrap route | One digest-pinned checkpoint (C2 of `d4cbabb`, one hop from the C2 of `2fd30b2`, which the recorded six-stage source route built), then current C1/C2 with convergence | Bump in one hop: build an accepted main commit with the current checkpoint, pass C1/C2 convergence, then the release gates ([recipe](README.md#bumping-the-checkpoint-one-hop)) |
 | Assembly, linking and hosted runtime | External bootstrap tools/C++ | Native replacements remain incomplete |
 
@@ -48,6 +48,25 @@ checks happen at each edge, and depth precedes active/completed checks. Host ope
 inode authority, byte quotas, overlays and header/interface admission remain native.
 The explicit-order in-memory resolver API remains separate compatibility transport,
 not a fallback traversal. No additional owner, callback or runtime capability is used.
+
+Successful lowering-record projection borrows the readonly resolver Session and
+one mutable `ProjectionWorkspace`. Aurora checks row ownership, exclusive operand
+ranges (including discarded instruction payloads), nominal/type domains and all
+85 active instruction shapes. Canonical row-ID ordering preserves callable IDs,
+class/enum byte order, numeric descriptor/scope order and frame-slot ordering.
+Interned names and literals are copied into the durable owners; no Session view
+or scratch owner survives projection.
+
+The same traversal counts against private empty pending capsules, destroys them,
+then fills exactly allocated metadata/instruction capacities. The native factory
+rechecks arithmetic and retains existing normalization tails, quotas and RAII;
+measurement never writes or admits a destination. Scratch grants use published
+row widths and a source-computed bound over actual name contributors, not a new
+row ceiling. Fill checks every count and pending state before returning. Session
+and projection scratch are released before independent metadata, instruction,
+CFG, lifetime and graph admission. No native success fallback remains. Native
+layout-order seeding, optional ABI declarations, semantic errors and lint spans
+remain deliberately separate boundaries.
 
 Metadata and instruction-flow masks share the source-owned `FlagMasks` table.
 Its existing generated ABI bridge supplies native readers; structural passes

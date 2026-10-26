@@ -1,6 +1,6 @@
 export module aurora.compiler.ir_metadata_storage;
 
-// Durable metadata storage. Native ingress fills the exact raw prefixes once;
+// Durable metadata storage. Pending ingress fills the exact raw prefixes once;
 // independent verification only appends normalization tails and writes results.
 // No source accessor exposes a descriptor, payload address or mutable raw row.
 export namespace compiler_ir_metadata {
@@ -1130,6 +1130,110 @@ export namespace compiler_ir_metadata {
         }
         auto error() const -> MetadataError {
             return errorValue;
+        }
+        // Projection writes only pending raw input prefixes. Admission owns the
+        // normalization tails and becomes the sole writer as soon as begin runs.
+        auto ingress_writable() const -> bool {
+            return !started && statusValue == MetadataStatus::pending && instructionTypeBegin >= 0;
+        }
+        auto ingress_byte(i64 index, u8 value) -> bool {
+            if (!ingress_writable()) {
+                return false;
+            }
+            if (index < 0 || index >= bytes.size() || !bytes.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            return true;
+        }
+        auto ingress_type(i64 index, RawTypeRow value) -> bool {
+            if (!ingress_writable()) {
+                return false;
+            }
+            if (index < 0 || index >= types.size() || !types.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            return true;
+        }
+        auto ingress_class(i64 index, ClassRow value) -> bool {
+            if (!ingress_writable()) {
+                return false;
+            }
+            if (index < 0 || index >= classes.size() || !classes.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            return true;
+        }
+        auto ingress_field(i64 index, FieldRow value) -> bool {
+            if (!ingress_writable()) {
+                return false;
+            }
+            if (index < 0 || index >= inputFields || !fields.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            return true;
+        }
+        auto ingress_storage(i64 index, StorageRow value) -> bool {
+            if (!ingress_writable()) {
+                return false;
+            }
+            if (index < 0 || index >= inputStorage || !storage.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            return true;
+        }
+        auto ingress_index(i64 index, IndexRow value) -> bool {
+            if (!ingress_writable()) {
+                return false;
+            }
+            if (index < 0 || index >= inputIndices || !indices.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            return true;
+        }
+        auto ingress_descriptor(i64 index, DescriptorRow value) -> bool {
+            if (!ingress_writable()) {
+                return false;
+            }
+            if (index < 0 || index >= descriptors.size() || !descriptors.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            return true;
+        }
+        auto ingress_view(i64 index, ViewRow value) -> bool {
+            if (!ingress_writable()) {
+                return false;
+            }
+            if (index < 0 || index >= views.size() || !views.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            return true;
+        }
+        auto ingress_enum(i64 index, EnumRow value) -> bool {
+            if (!ingress_writable()) {
+                return false;
+            }
+            if (index < 0 || index >= enums.size() || !enums.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            return true;
+        }
+        auto ingress_callable(i64 index, CallableRow value) -> bool {
+            if (!ingress_writable()) {
+                return false;
+            }
+            if (index < 0 || index >= callables.size() || !callables.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            return true;
+        }
+        auto ingress_slot(i64 index, SlotRow value) -> bool {
+            if (!ingress_writable()) {
+                return false;
+            }
+            if (index < 0 || index >= slots.size() || !slots.set(index, value)) {
+                return reject(MetadataError::integrity);
+            }
+            return true;
         }
         auto writable() const -> bool {
             return started && statusValue == MetadataStatus::pending;

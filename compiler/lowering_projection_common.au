@@ -1,0 +1,136 @@
+export module aurora.compiler.lowering_projection_common;
+import aurora.compiler.resolution_arena;
+import aurora.compiler.resolution_rows;
+import aurora.compiler.resolution_kinds;
+import aurora.compiler.lexer;
+import aurora.compiler.syntax_arena;
+import aurora.compiler.lowering_errors;
+import aurora.compiler.lowering_kinds;
+import aurora.compiler.lowering_storage;
+import aurora.compiler.lowering_configuration;
+import aurora.compiler.lowering_projection_storage;
+import aurora.compiler.lowering_projection_identity;
+import aurora.compiler.ir_metadata_storage;
+
+// Projection checks transport domains, not semantic legality. The independently
+// admitted stores remain pending throughout this count/fill walk.
+export namespace compiler_lowering_projection {
+    auto bound(i64 begin, i64 count, i64 limit) -> bool {
+        return begin >= 0 && count >= 0 && begin <= limit && count <= limit - begin;
+    }
+    auto integer(i64 value) -> bool {
+        return value >= -2147483648 && value <= 2147483647;
+    }
+    auto boolean(i64 value) -> bool {
+        return value == 0 || value == 1;
+    }
+    auto check(ProjectionWorkspace& workspace, bool condition) -> bool {
+        if (!condition) {
+            return workspace.fail();
+        }
+        return workspace.good();
+    }
+    auto item(const compiler_resolver::Session& session, i64 id, i64 ordinal) -> compiler_lowering::OperandRow {
+        const compiler_lowering::OutputRow row = session.view_output(id);
+        if (id < 0 || id >= session.output_count() || !bound(row.operand_begin(), row.operand_count(),
+            session.operand_count()) || ordinal < 0 || ordinal >= row.operand_count()) {
+            return compiler_lowering::OperandRow(compiler_lowering::OperandRole::invalid, 0, 0u64, 0, 0);
+        }
+        const compiler_lowering::OperandRow result = session.view_operand(row.operand_begin() + ordinal);
+        return result;
+    }
+    auto expect(const compiler_resolver::Session& session, ProjectionWorkspace& workspace, i64 id, i64 ordinal,
+        compiler_lowering::OperandRole role) -> bool {
+        const compiler_lowering::OperandRow value = item(session, id, ordinal);
+        return check(workspace, value.role() == role);
+    }
+    auto claim_record(const compiler_resolver::Session& session, ProjectionWorkspace& workspace, i64 id,
+        compiler_lowering::RecordKind kind) -> bool {
+        const compiler_lowering::OutputRow row = session.view_output(id);
+        if (id < 0 || id >= session.output_count() || row.kind() != kind || !bound(row.operand_begin(),
+            row.operand_count(), session.operand_count())) {
+            return workspace.fail();
+        }
+        return workspace.claim_row(id) && workspace.claim_operands(row.operand_begin(), row.operand_count());
+    }
+    auto fixed(const compiler_resolver::Session& session, ProjectionWorkspace& workspace, i64 id,
+        compiler_lowering::RecordKind kind, i64 count) -> bool {
+        const compiler_lowering::OutputRow row = session.view_output(id);
+        return check(workspace, row.operand_count() == count) && claim_record(session, workspace, id, kind);
+    }
+    auto list(const compiler_resolver::Session& session, ProjectionWorkspace& workspace, i64 begin, i64 count,
+        compiler_lowering::OperandRole role) -> bool {
+        if (!bound(begin, count, session.operand_count()) || !workspace.claim_operands(begin, count)) {
+            return workspace.fail();
+        }
+        i64 at = 0;
+        while (at < count) {
+            const compiler_lowering::OperandRow entry = session.view_operand(begin + at);
+            if (entry.role() != role) {
+                return workspace.fail();
+            }
+            at = at + 1;
+        }
+        return workspace.good();
+    }
+    auto service_kind(ProjectionWorkspace& workspace, i64 value) -> bool {
+        const i64 groups = workspace.count(39);
+        const bool active = value >= 0 && value <= 2 || value == 3 && compiler_lowering::has_call_service(groups)
+            || value == 4 && compiler_lowering::has_port_service(groups) || value == 5
+            && compiler_lowering::has_serve_service(groups);
+        return check(workspace, active);
+    }
+    auto service_operation(ProjectionWorkspace& workspace, i64 value) -> bool {
+        const i64 groups = workspace.count(39);
+        const bool active = value >= 0 && value <= 4 || value == 5 && compiler_lowering::has_call_service(groups)
+            || (value == 6 || value == 7) && compiler_lowering::has_port_service(groups) || value == 8
+            && compiler_lowering::has_serve_service(groups);
+        return check(workspace, active);
+    }
+    auto copy_text(ProjectionWorkspace& workspace, compiler_ir_metadata::MetadataStore& metadata, i64 source_begin,
+        i64 destination_begin, i64 count, bool fill) -> bool {
+        if (!bound(source_begin, count, workspace.name_size()) || destination_begin < 0) {
+            return workspace.fail();
+        }
+        if (fill && workspace.mark_copy_name(compiler_ir_metadata::ByteRange(source_begin, count))) {
+            i64 at = 0;
+            while (at < count) {
+                const i64 byte = workspace.name_byte(source_begin + at);
+                if (byte < 0 || byte > 255 || !metadata.ingress_byte(destination_begin + at, u8(byte))) {
+                    return workspace.fail();
+                }
+                at = at + 1;
+            }
+        }
+        return workspace.good();
+    }
+    auto emit_raw_type(ProjectionWorkspace& workspace, compiler_ir_metadata::MetadataStore& metadata, i64 position,
+        bool fill) -> bool {
+        const compiler_ir_metadata::RawTypeRow source = workspace.type_result();
+        const compiler_ir_metadata::ByteRange scratch = source.name();
+        const compiler_ir_metadata::ByteRange name = workspace.retain_name(scratch);
+        if (!copy_text(workspace, metadata, scratch.begin(), name.begin(), scratch.count(), fill)) {
+            return false;
+        }
+        const compiler_ir_metadata::RawTypeRow value = compiler_ir_metadata::RawTypeRow(source.kind(), name,
+            source.tail());
+        if (fill && !metadata.ingress_type(position, value)) {
+            return workspace.fail();
+        }
+        return workspace.add_count(1, 1);
+    }
+    auto emit_type(const compiler_resolver::Session& session, ProjectionWorkspace& workspace,
+        compiler_ir_metadata::MetadataStore& metadata, i64 identity, i64 position, bool fill) -> bool {
+        if (!resolve_type(session, workspace, identity)) {
+            return false;
+        }
+        return emit_raw_type(workspace, metadata, position, fill);
+    }
+    auto emit_index(ProjectionWorkspace& workspace, compiler_ir_metadata::MetadataStore& metadata, i64 value,
+        bool fill) -> bool {
+        if (fill && !metadata.ingress_index(workspace.count(6), compiler_ir_metadata::IndexRow(value))) {
+            return workspace.fail();
+        }
+        return workspace.add_count(6, 1);
+    }
+}

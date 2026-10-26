@@ -114,9 +114,11 @@ Qualification requires final-source pinned-container `merge`, normal BIOS/UEFI
 and affected guest gates; releases and compiler bumps also run `release` and
 every guest family, including the
 [source-bootstrap gates](../compiler/README.md#source-bootstrap) for bumps.
-Host record projection, conversion, quota/report transport and authorized source
-file I/O remain native dependencies; module traversal and x86 text emission run
-in Aurora.
+Successful lowering-record projection now runs in Aurora, preserving exact
+identity/ordering and filling pending metadata/instruction owners before independent
+admission. Host allocation/quota/report transport, ABI/layout seeding, diagnostics
+and authorized source file I/O remain native dependencies; module traversal and
+x86 text emission also run in Aurora.
 The bounded frontend B/C, ordinary UEFI console/session, production terminal painter
 and existing console/hosted UART object composer now runs
 in Aurora: it appends generated wrapper text and remaps selected private references

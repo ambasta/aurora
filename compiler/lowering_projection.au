@@ -1,0 +1,1148 @@
+export module aurora.compiler.lowering_projection;
+import aurora.compiler.resolution_arena;
+import aurora.compiler.resolution_rows;
+import aurora.compiler.resolution_kinds;
+import aurora.compiler.lexer;
+import aurora.compiler.syntax_arena;
+import aurora.compiler.lowering_errors;
+import aurora.compiler.lowering_kinds;
+import aurora.compiler.lowering_storage;
+import aurora.compiler.lowering_configuration;
+import aurora.compiler.lowering_projection_storage;
+import aurora.compiler.lowering_projection_identity;
+import aurora.compiler.lowering_projection_common;
+import aurora.compiler.lowering_projection_instructions;
+import aurora.compiler.ir_metadata_storage;
+import aurora.compiler.ir_instruction_storage;
+
+// A single checked traversal measures and fills pending source owners. Ordering
+// retains source row identities only; no second instruction or metadata IR is
+// materialized. Native allocation is exact and independent admission follows
+// destruction of this workspace and the readonly resolver Session.
+export namespace compiler_lowering_projection {
+    auto scalar(const compiler_resolver::Session& session, i64 id, i64 ordinal) -> i64 {
+        const compiler_lowering::OperandRow value = item(session, id, ordinal);
+        return value.signed_value();
+    }
+    auto list_id(const compiler_resolver::Session& session, compiler_lowering::OperandRow values, i64 ordinal) -> i64 {
+        if (ordinal < 0 || ordinal >= values.count() || !bound(values.begin(), values.count(),
+            session.operand_count())) {
+            return -1;
+        }
+        const compiler_lowering::OperandRow value = session.view_operand(values.begin() + ordinal);
+        return value.signed_value();
+    }
+    auto name_for(const compiler_resolver::Session& session, ProjectionWorkspace& workspace, i64 id,
+        i64 ordinal) -> bool {
+        const compiler_lowering::OperandRow value = item(session, id, ordinal);
+        if (value.role() == compiler_lowering::OperandRole::ClassNominalId) {
+            return resolve_name(session, workspace, value.signed_value(), 1);
+        }
+        if (value.role() != compiler_lowering::OperandRole::CarrierId || value.signed_value() < 0
+            || value.signed_value() >= session.output_count()) {
+            return workspace.fail();
+        }
+        const compiler_lowering::OutputRow row = session.view_output(value.signed_value());
+        const compiler_ir_metadata::ByteRange name = workspace.row_name(value.signed_value());
+        if (row.kind() != compiler_lowering::RecordKind::Carrier || name.begin() < 0) {
+            return workspace.fail();
+        }
+        return workspace.set_name_result(name);
+    }
+    auto carrier(const compiler_resolver::Session& session, ProjectionWorkspace& workspace, i64 id) -> bool {
+        if (!fixed(session, workspace, id, compiler_lowering::RecordKind::Carrier, 2) || !expect(session, workspace, id,
+            0, compiler_lowering::OperandRole::ElementTypeId) || !expect(session, workspace, id, 1,
+            compiler_lowering::OperandRole::ElementCount) || !resolve_type(session, workspace, scalar(session, id,
+            0))) {
+            return false;
+        }
+        const compiler_ir_metadata::RawTypeRow type = workspace.type_result();
+        const compiler_ir_metadata::ByteRange name = type.name();
+        const i64 count = scalar(session, id, 1);
+        if (type.kind() != 5 || !integer(count) || !workspace.start_text()) {
+            return workspace.fail();
+        }
+        if (!workspace.append_text(64u8) || !workspace.append_text(97u8) || !workspace.append_text(114u8)
+            || !workspace.append_text(114u8) || !workspace.append_text(97u8) || !workspace.append_text(121u8)
+            || !workspace.append_text(58u8)) {
+            return false;
+        }
+        i64 at = 0;
+        while (at < name.count()) {
+            const i64 byte = workspace.name_byte(name.begin() + at);
+            if (byte < 0 || byte > 255 || !workspace.append_text(u8(byte))) {
+                return workspace.fail();
+            }
+            at = at + 1;
+        }
+        if (!workspace.append_text(58u8)) {
+            return false;
+        }
+        i64 number = count;
+        if (number < 0) {
+            if (!workspace.append_text(45u8)) {
+                return false;
+            }
+            number = -number;
+        }
+        i64 divisor = 1;
+        while (number / divisor >= 10) {
+            divisor = divisor * 10;
+        }
+        while (divisor > 0) {
+            if (!workspace.append_text(u8(48 + number / divisor % 10))) {
+                return false;
+            }
+            divisor = divisor / 10;
+        }
+        if (!workspace.finish_text()) {
+            return false;
+        }
+        return workspace.set_row_name(id, workspace.name_result());
+    }
+    // key kinds: 0 nominal rows, 1 public descriptor/scope, 2 frame slots,
+    // 3 callable-name suffix (values are original function ordinals), 4 integers.
+    auto order_before(const compiler_resolver::Session& session, ProjectionWorkspace& workspace, i64 left, i64 right,
+        i64 kind, i64 function_begin) -> bool {
+        if (kind == 4) {
+            return left < right;
+        }
+        if (kind == 0 || kind == 3) {
+            i64 a = left;
+            i64 b = right;
+            if (kind == 3) {
+                a = workspace.scratch_at(function_begin + left);
+                b = workspace.scratch_at(function_begin + right);
+            } else {
+                if (a < 0) {
+                    a = -a - 1;
+                }
+                if (b < 0) {
+                    b = -b - 1;
+                }
+            }
+            const i64 compared = workspace.compare_names(workspace.row_name(a), workspace.row_name(b));
+            return compared < 0 || compared == 0 && left < right;
+        }
+        if (kind == 2) {
+            const compiler_lowering::OutputRow a = session.view_output(left);
+            const compiler_lowering::OutputRow b = session.view_output(right);
+            const i64 ak = slot_kind(a.kind());
+            const i64 bk = slot_kind(b.kind());
+            if (ak != bk) {
+                return ak < bk;
+            }
+        }
+        const i64 a = scalar(session, left, 0);
+        const i64 b = scalar(session, right, 0);
+        return a < b || a == b && left < right;
+    }
+    auto sort_rows(const compiler_resolver::Session& session, ProjectionWorkspace& workspace, i64 begin, i64 count,
+        i64 kind, i64 functions) -> bool {
+        if (!bound(begin, count, workspace.scratch_size())) {
+            return workspace.fail();
+        }
+        // In-place heapsort: bounded O(N log N), no recursion or extra owners.
+        i64 start = count / 2;
+        i64 end = count;
+        while (end > 1) {
+            if (start > 0) {
+                start = start - 1;
+            } else {
+                end = end - 1;
+                const i64 saved = workspace.scratch_at(begin + end);
+                if (!workspace.set_scratch(begin + end, workspace.scratch_at(begin)) || !workspace.set_scratch(begin,
+                    saved)) {
+                    return false;
+                }
+            }
+            i64 root = start;
+            while (root < end / 2) {
+                i64 child = root * 2 + 1;
+                const i64 left_child = workspace.scratch_at(begin + child);
+                const i64 right_child = workspace.scratch_at(begin + child + 1);
+                if (child + 1 < end && order_before(session, workspace, left_child, right_child, kind, functions)) {
+                    child = child + 1;
+                }
+                const i64 root_value = workspace.scratch_at(begin + root);
+                const i64 child_value = workspace.scratch_at(begin + child);
+                if (!order_before(session, workspace, root_value, child_value, kind, functions)) {
+                    root = end;
+                } else {
+                    const i64 saved = workspace.scratch_at(begin + root);
+                    if (!workspace.set_scratch(begin + root, workspace.scratch_at(begin + child))
+                        || !workspace.set_scratch(begin + child, saved)) {
+                        return false;
+                    }
+                    root = child;
+                }
+            }
+        }
+        return workspace.good();
+    }
+    auto slot_kind(compiler_lowering::RecordKind kind) -> i64 {
+        if (kind == compiler_lowering::RecordKind::ScalarSlot) {
+            return 10;
+        }
+        if (kind == compiler_lowering::RecordKind::ObjectSlot) {
+            return 11;
+        }
+        if (kind == compiler_lowering::RecordKind::ArraySlot) {
+            return 12;
+        }
+        if (kind == compiler_lowering::RecordKind::SpanSlot) {
+            return 13;
+        }
+        if (kind == compiler_lowering::RecordKind::ServiceSlot) {
+            return 14;
+        }
+        if (kind == compiler_lowering::RecordKind::RegionSlot) {
+            return 15;
+        }
+        if (kind == compiler_lowering::RecordKind::ByteSlot) {
+            return 16;
+        }
+        if (kind == compiler_lowering::RecordKind::OwnedValueType) {
+            return 17;
+        }
+        if (kind == compiler_lowering::RecordKind::SpanValueType) {
+            return 27;
+        }
+        return -1;
+    }
+    auto prelude(const compiler_resolver::Session& session, ProjectionWorkspace& workspace) -> bool {
+        const i64 root = workspace.count(34);
+        if (workspace.count(35) != 0 || session.output_count() < 15 || root < 15 || !fixed(session, workspace, 0,
+            compiler_lowering::RecordKind::DiagnosticPayload, 3)) {
+            return workspace.fail();
+        }
+        const compiler_lowering::OutputRow report = session.view_output(0);
+        if (report.operand_begin() != 0 || !expect(session, workspace, 0, 0,
+            compiler_lowering::OperandRole::NoDiagnosticSource) || !expect(session, workspace, 0, 1,
+            compiler_lowering::OperandRole::NoDiagnosticValue) || !expect(session, workspace, 0, 2,
+            compiler_lowering::OperandRole::NoDiagnosticValue) || !fixed(session, workspace, 1,
+            compiler_lowering::RecordKind::Configuration, 8)) {
+            return false;
+        }
+        if (!expect(session, workspace, 1, 0, compiler_lowering::OperandRole::MaximumCopiedByteLeaves)
+            || !expect(session, workspace, 1, 1, compiler_lowering::OperandRole::MaximumCopiedNonByteLeaves)
+            || !expect(session, workspace, 1, 2, compiler_lowering::OperandRole::MaximumCopiedLeaves)
+            || !expect(session, workspace, 1, 3, compiler_lowering::OperandRole::MaximumCopiedBytes) || !expect(session,
+            workspace, 1, 4, compiler_lowering::OperandRole::MaximumByteArrayLength) || !expect(session, workspace, 1,
+            5, compiler_lowering::OperandRole::MaximumScalarArrayLength) || !expect(session, workspace, 1, 6,
+            compiler_lowering::OperandRole::AnalysisMode) || !expect(session, workspace, 1, 7,
+            compiler_lowering::OperandRole::SupportedServiceGroups)) {
+            return false;
+        }
+        i64 at = 0;
+        while (at < 6) {
+            const i64 value = scalar(session, 1, at);
+            if (value < 0 || !integer(value)) {
+                return workspace.fail();
+            }
+            at = at + 1;
+        }
+        const i64 groups = scalar(session, 1, 7);
+        if (!boolean(scalar(session, 1, 6)) || !compiler_lowering::valid_service_groups(groups)
+            || !workspace.set_count(39, groups)) {
+            return workspace.fail();
+        }
+        i64 layout = 14;
+        if (compiler_lowering::has_call_service(groups)) {
+            layout = layout + 1;
+        }
+        if (compiler_lowering::has_port_service(groups)) {
+            layout = layout + 2;
+        }
+        if (compiler_lowering::has_serve_service(groups)) {
+            layout = layout + 1;
+        }
+        if (layout >= session.output_count() || root <= layout || !workspace.set_count(38, layout)) {
+            return workspace.fail();
+        }
+        at = 2;
+        while (at < 9) {
+            if (!fixed(session, workspace, at, compiler_lowering::RecordKind::ScalarContract, 3) || !expect(session,
+                workspace, at, 0, compiler_lowering::OperandRole::TypeId) || !expect(session, workspace, at, 1,
+                compiler_lowering::OperandRole::PublicDescriptorId) || !expect(session, workspace, at, 2,
+                compiler_lowering::OperandRole::Size) || !resolve_type(session, workspace, scalar(session, at, 0))
+                || scalar(session, at, 1) < 0 || !integer(scalar(session, at, 1))) {
+                return workspace.fail();
+            }
+            at = at + 1;
+        }
+        while (at < layout) {
+            if (!fixed(session, workspace, at, compiler_lowering::RecordKind::ServiceContract, 6) || !expect(session,
+                workspace, at, 0, compiler_lowering::OperandRole::TypeId) || !expect(session, workspace, at, 1,
+                compiler_lowering::OperandRole::ServiceKindId) || !expect(session, workspace, at, 2,
+                compiler_lowering::OperandRole::ServiceOperationId) || !expect(session, workspace, at, 3,
+                compiler_lowering::OperandRole::IdentifierSourceRef) || !expect(session, workspace, at, 4,
+                compiler_lowering::OperandRole::ResultTypeId) || !expect(session, workspace, at, 5,
+                compiler_lowering::OperandRole::ParameterTypes) || !resolve_type(session, workspace, scalar(session, at,
+                0)) || !service_kind(workspace, scalar(session, at, 1)) || !service_operation(workspace, scalar(session,
+                at, 2)) || !identifier(session, workspace, scalar(session, at, 3)) || !resolve_type(session, workspace,
+                scalar(session, at, 4))) {
+                return false;
+            }
+            const compiler_lowering::OperandRow parameters = item(session, at, 5);
+            if (!list(session, workspace, parameters.begin(), parameters.count(),
+                compiler_lowering::OperandRole::TypeId)) {
+                return false;
+            }
+            i64 parameter = 0;
+            while (parameter < parameters.count()) {
+                if (!resolve_type(session, workspace, list_id(session, parameters, parameter))) {
+                    return false;
+                }
+                parameter = parameter + 1;
+            }
+            at = at + 1;
+        }
+        if (!fixed(session, workspace, layout, compiler_lowering::RecordKind::InitialLayoutOrder, 1) || !expect(session,
+            workspace, layout, 0, compiler_lowering::OperandRole::InitialLayoutSymbols)) {
+            return false;
+        }
+        const compiler_lowering::OperandRow symbols = item(session, layout, 0);
+        if (!list(session, workspace, symbols.begin(), symbols.count(),
+            compiler_lowering::OperandRole::ClassNominalId)) {
+            return false;
+        }
+        at = 0;
+        while (at < symbols.count()) {
+            if (!resolve_name(session, workspace, list_id(session, symbols, at), 1)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+
+    auto project_slot(const compiler_resolver::Session& session, ProjectionWorkspace& workspace,
+        compiler_ir_metadata::MetadataStore& metadata, i64 id, bool fill) -> bool {
+        const compiler_lowering::OutputRow header = session.view_output(id);
+        const i64 kind = slot_kind(header.kind());
+        i64 fields = 1;
+        if (kind == 10 || kind == 12 || kind == 16 || kind == 17 || kind == 27) {
+            fields = 2;
+        }
+        if (kind == 11) {
+            fields = 3;
+        }
+        if (kind < 0 || !fixed(session, workspace, id, header.kind(), fields) || !expect(session, workspace, id, 0,
+            compiler_lowering::OperandRole::Offset) || !integer(scalar(session, id, 0))) {
+            return workspace.fail();
+        }
+        i64 type = 0;
+        i64 length = 0;
+        i64 mutable_value = 0;
+        if (kind == 10) {
+            type = workspace.count(1);
+            if (!expect(session, workspace, id, 1, compiler_lowering::OperandRole::TypeId) || !emit_type(session,
+                workspace, metadata, scalar(session, id, 1), type, fill)) {
+                return false;
+            }
+        }
+        if (kind == 11 || kind == 17 || kind == 27) {
+            const compiler_lowering::OperandRow nominal = item(session, id, 1);
+            if ((kind != 11 && nominal.role() != compiler_lowering::OperandRole::ClassNominalId) || !name_for(session,
+                workspace, id, 1)) {
+                return workspace.fail();
+            }
+            type = workspace.count(1);
+            i64 type_kind = 5;
+            i64 element_kind = 0;
+            if (kind == 17) {
+                type_kind = 17;
+            }
+            if (kind == 27) {
+                type_kind = 21;
+            }
+            const compiler_ir_metadata::RawTypeRow value = compiler_ir_metadata::RawTypeRow(type_kind,
+                workspace.name_result(), compiler_ir_metadata::RawTypeTail(element_kind, 0, 0u64, 0u64, 0u64));
+            if (!workspace.set_type_result(value) || !emit_raw_type(workspace, metadata, type, fill)) {
+                return false;
+            }
+        }
+        if (kind == 12) {
+            length = scalar(session, id, 1);
+            if (!expect(session, workspace, id, 1, compiler_lowering::OperandRole::Length) || !integer(length)) {
+                return workspace.fail();
+            }
+        }
+        if (kind == 11 || kind == 16) {
+            i64 position = 1;
+            if (kind == 11) {
+                position = 2;
+            }
+            mutable_value = scalar(session, id, position);
+            if (!expect(session, workspace, id, position, compiler_lowering::OperandRole::MutableValue)
+                || !boolean(mutable_value)) {
+                return workspace.fail();
+            }
+        }
+        const compiler_ir_metadata::SlotRow result = compiler_ir_metadata::SlotRow(kind, scalar(session, id, 0), type,
+            length, mutable_value);
+        if (fill && !metadata.ingress_slot(workspace.count(11), result)) {
+            return workspace.fail();
+        }
+        return workspace.add_count(11, 1);
+    }
+    auto project_function(const compiler_resolver::Session& session, ProjectionWorkspace& workspace,
+        compiler_ir_metadata::MetadataStore& metadata, i64 id, i64 scratch, bool fill) -> bool {
+        if (!fixed(session, workspace, id, compiler_lowering::RecordKind::Function, 11) || !expect(session, workspace,
+            id, 0, compiler_lowering::OperandRole::FunctionSymbolId) || !expect(session, workspace, id, 1,
+            compiler_lowering::OperandRole::ModuleScope) || !expect(session, workspace, id, 2,
+            compiler_lowering::OperandRole::ResultTypeId) || !expect(session, workspace, id, 3,
+            compiler_lowering::OperandRole::ParameterTypes) || !expect(session, workspace, id, 4,
+            compiler_lowering::OperandRole::Slots) || !expect(session, workspace, id, 6,
+            compiler_lowering::OperandRole::BorrowedRootCount) || !expect(session, workspace, id, 7,
+            compiler_lowering::OperandRole::BorrowedRootMutability) || !expect(session, workspace, id, 9,
+            compiler_lowering::OperandRole::FrameBytes) || !expect(session, workspace, id, 10,
+            compiler_lowering::OperandRole::Code) || !resolve_name(session, workspace, scalar(session, id, 0), 0)
+            || !module_scope(session, workspace, scalar(session, id, 1))) {
+            return false;
+        }
+        const compiler_ir_metadata::ByteRange spelling = workspace.name_result();
+        const compiler_ir_metadata::ByteRange name = workspace.retain_name(spelling);
+        if (!copy_text(workspace, metadata, spelling.begin(), name.begin(), spelling.count(), fill)) {
+            return false;
+        }
+        const i64 types_begin = workspace.count(1);
+        if (!emit_type(session, workspace, metadata, scalar(session, id, 2), types_begin, fill)) {
+            return false;
+        }
+        const compiler_lowering::OperandRow parameters = item(session, id, 3);
+        if (!list(session, workspace, parameters.begin(), parameters.count(), compiler_lowering::OperandRole::TypeId)
+            || parameters.count() == 9223372036854775807) {
+            return workspace.fail();
+        }
+        i64 at = 0;
+        while (at < parameters.count()) {
+            const i64 type_position = workspace.count(1);
+            if (!emit_type(session, workspace, metadata, list_id(session, parameters, at), type_position, fill)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        const compiler_lowering::OperandRow slots = item(session, id, 4);
+        if (!list(session, workspace, slots.begin(), slots.count(), compiler_lowering::OperandRole::OutputRowId)
+            || !bound(scratch, slots.count(), workspace.scratch_size())) {
+            return workspace.fail();
+        }
+        at = 0;
+        while (at < slots.count()) {
+            const i64 slot = list_id(session, slots, at);
+            const compiler_lowering::OutputRow header = session.view_output(slot);
+            if (slot_kind(header.kind()) < 0 || !expect(session, workspace, slot, 0,
+                compiler_lowering::OperandRole::Offset) || !workspace.set_scratch(scratch + at, slot)) {
+                return workspace.fail();
+            }
+            at = at + 1;
+        }
+        if (!sort_rows(session, workspace, scratch, slots.count(), 2, 0)) {
+            return false;
+        }
+        const i64 slots_begin = workspace.count(11);
+        at = 0;
+        while (at < slots.count()) {
+            const i64 slot_id = workspace.scratch_at(scratch + at);
+            if (!project_slot(session, workspace, metadata, slot_id, fill)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        i64 receiver_begin = 0;
+        i64 receiver_count = 0;
+        u64 receiver_attributes = 0u64;
+        u64 flags = 0u64;
+        const compiler_lowering::OperandRow receiver_ref = item(session, id, 5);
+        if (receiver_ref.role() == compiler_lowering::OperandRole::ReceiverRef) {
+            const i64 selected = receiver_ref.signed_value();
+            if (!fixed(session, workspace, selected, compiler_lowering::RecordKind::Receiver, 4) || !expect(session,
+                workspace, selected, 0, compiler_lowering::OperandRole::ClassNominalId) || !expect(session, workspace,
+                selected, 1, compiler_lowering::OperandRole::MutableValue) || !expect(session, workspace, selected, 2,
+                compiler_lowering::OperandRole::Constructor) || !expect(session, workspace, selected, 3,
+                compiler_lowering::OperandRole::PublicAccess) || !resolve_name(session, workspace, scalar(session,
+                selected, 0), 1)) {
+                return false;
+            }
+            const compiler_ir_metadata::ByteRange receiver_spelling = workspace.name_result();
+            const compiler_ir_metadata::ByteRange receiver_name = workspace.retain_name(receiver_spelling);
+            if (!copy_text(workspace, metadata, receiver_spelling.begin(), receiver_name.begin(),
+                receiver_spelling.count(), fill) || !boolean(scalar(session, selected, 1)) || !boolean(scalar(session,
+                selected, 2)) || !boolean(scalar(session, selected, 3))) {
+                return workspace.fail();
+            }
+            const u64 receiver_flags = u64(scalar(session, selected, 1)) + u64(scalar(session, selected, 2)) * 2u64
+                + u64(scalar(session, selected, 3)) * 4u64;
+            receiver_begin = receiver_name.begin();
+            receiver_count = receiver_name.count();
+            receiver_attributes = receiver_flags;
+            flags = 1u64;
+        } else {
+            if (receiver_ref.role() != compiler_lowering::OperandRole::NoReceiver) {
+                return workspace.fail();
+            }
+        }
+        i64 span = 0;
+        const compiler_lowering::OperandRow span_ref = item(session, id, 8);
+        if (span_ref.role() == compiler_lowering::OperandRole::ReceiverSpanField) {
+            span = span_ref.signed_value();
+            if (!integer(span)) {
+                return workspace.fail();
+            }
+            flags = flags | 8u64;
+        } else {
+            if (span_ref.role() != compiler_lowering::OperandRole::NoReceiverSpan) {
+                return workspace.fail();
+            }
+        }
+        const compiler_lowering::OperandRow code = item(session, id, 10);
+        if (!integer(scalar(session, id, 9)) || !list(session, workspace, code.begin(), code.count(),
+            compiler_lowering::OperandRole::OutputRowId)) {
+            return workspace.fail();
+        }
+        const compiler_ir_metadata::CallableRow result = compiler_ir_metadata::CallableRow(name,
+            compiler_ir_metadata::IndexRange(types_begin, 1 + parameters.count()), scalar(session, id, 1),
+            compiler_ir_metadata::ReceiverShape(compiler_ir_metadata::ByteRange(receiver_begin, receiver_count),
+            receiver_attributes), compiler_ir_metadata::CallableOptions(flags, span, scalar(session, id, 9),
+            scalar(session, id, 6), scalar(session, id, 7)), compiler_ir_metadata::IndexRange(slots_begin,
+            slots.count()));
+        if (fill && !metadata.ingress_callable(workspace.count(10), result)) {
+            return workspace.fail();
+        }
+        return workspace.add_count(10, 1);
+    }
+    auto project_field(const compiler_resolver::Session& session, ProjectionWorkspace& workspace,
+        compiler_ir_metadata::MetadataStore& metadata, i64 id, bool fill) -> bool {
+        if (!fixed(session, workspace, id, compiler_lowering::RecordKind::ClassField, 5) || !expect(session, workspace,
+            id, 0, compiler_lowering::OperandRole::ElementTypeId) || !expect(session, workspace, id, 1,
+            compiler_lowering::OperandRole::FirstLeaf) || !expect(session, workspace, id, 2,
+            compiler_lowering::OperandRole::Length) || !expect(session, workspace, id, 3,
+            compiler_lowering::OperandRole::Array) || !expect(session, workspace, id, 4,
+            compiler_lowering::OperandRole::ElementCount) || !integer(scalar(session, id, 1))
+            || !integer(scalar(session, id, 2)) || !boolean(scalar(session, id, 3)) || !integer(scalar(session, id,
+            4))) {
+            return workspace.fail();
+        }
+        i64 type = workspace.count(3);
+        if (fill) {
+            type = type + workspace.count(21);
+        }
+        if (!emit_type(session, workspace, metadata, scalar(session, id, 0), type, fill)) {
+            return false;
+        }
+        const compiler_ir_metadata::FieldRow result = compiler_ir_metadata::FieldRow(type, scalar(session, id, 1),
+            scalar(session, id, 2), scalar(session, id, 3), scalar(session, id, 4));
+        if (fill && !metadata.ingress_field(workspace.count(3), result)) {
+            return workspace.fail();
+        }
+        return workspace.add_count(3, 1);
+    }
+    auto project_offsets(const compiler_resolver::Session& session, ProjectionWorkspace& workspace,
+        compiler_ir_metadata::MetadataStore& metadata, i64 begin, i64 count, bool fill) -> bool {
+        if (!list(session, workspace, begin, count, compiler_lowering::OperandRole::Offset)) {
+            return false;
+        }
+        i64 at = 0;
+        while (at < count) {
+            const compiler_lowering::OperandRow entry = session.view_operand(begin + at);
+            if (!integer(entry.signed_value()) || !emit_index(workspace, metadata, entry.signed_value(), fill)) {
+                return workspace.fail();
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto project_storage(const compiler_resolver::Session& session, ProjectionWorkspace& workspace,
+        compiler_ir_metadata::MetadataStore& metadata, i64 id, bool fill) -> bool {
+        if (!fixed(session, workspace, id, compiler_lowering::RecordKind::ClassStorage, 5) || !expect(session,
+            workspace, id, 0, compiler_lowering::OperandRole::LeafOffsets) || !expect(session, workspace, id, 1,
+            compiler_lowering::OperandRole::FieldOffsets) || !expect(session, workspace, id, 2,
+            compiler_lowering::OperandRole::SizeBytes) || !expect(session, workspace, id, 3,
+            compiler_lowering::OperandRole::Alignment) || !expect(session, workspace, id, 4,
+            compiler_lowering::OperandRole::ReservedBytes) || !integer(scalar(session, id, 2))
+            || !integer(scalar(session, id, 3)) || !integer(scalar(session, id, 4))) {
+            return workspace.fail();
+        }
+        const compiler_lowering::OperandRow leaves = item(session, id, 0);
+        const compiler_lowering::OperandRow fields = item(session, id, 1);
+        const i64 leaf_begin = workspace.count(6);
+        if (!project_offsets(session, workspace, metadata, leaves.begin(), leaves.count(), fill)) {
+            return false;
+        }
+        const i64 field_begin = workspace.count(6);
+        if (!project_offsets(session, workspace, metadata, fields.begin(), fields.count(), fill)) {
+            return false;
+        }
+        const compiler_ir_metadata::StorageRow result = compiler_ir_metadata::StorageRow(
+            compiler_ir_metadata::IndexRange(leaf_begin, leaves.count()), compiler_ir_metadata::IndexRange(field_begin,
+            fields.count()), compiler_ir_metadata::PhysicalExtent(scalar(session, id, 2), scalar(session, id, 3),
+            scalar(session, id, 4)));
+        if (fill && !metadata.ingress_storage(workspace.count(5), result)) {
+            return workspace.fail();
+        }
+        return workspace.add_count(5, 1);
+    }
+    auto project_class(const compiler_resolver::Session& session, ProjectionWorkspace& workspace,
+        compiler_ir_metadata::MetadataStore& metadata, i64 selected, bool fill) -> bool {
+        i64 id = selected;
+        if (id < 0) {
+            id = -id - 1;
+        }
+        const compiler_ir_metadata::ByteRange spelling = workspace.row_name(id);
+        const compiler_ir_metadata::ByteRange name = workspace.retain_name(spelling);
+        if (!copy_text(workspace, metadata, spelling.begin(), name.begin(), spelling.count(), fill)) {
+            return false;
+        }
+        const i64 leaf_begin = workspace.count(4);
+        const i64 field_begin = workspace.count(3);
+        i64 storage = -1;
+        u64 flags = 0u64;
+        if (selected < 0 || workspace.row_state(id) == 1) {
+            flags = 8u64;
+        }
+        if (selected >= 0) {
+            if (!fixed(session, workspace, id, compiler_lowering::RecordKind::Class, 4) || !name_for(session, workspace,
+                id, 0) || workspace.compare_names(spelling, workspace.name_result()) != 0 || !expect(session, workspace,
+                id, 1, compiler_lowering::OperandRole::LeafTypes) || !expect(session, workspace, id, 2,
+                compiler_lowering::OperandRole::Fields) || !expect(session, workspace, id, 3,
+                compiler_lowering::OperandRole::StorageRef)) {
+                return workspace.fail();
+            }
+            const compiler_lowering::OperandRow leaves = item(session, id, 1);
+            if (!list(session, workspace, leaves.begin(), leaves.count(), compiler_lowering::OperandRole::TypeId)) {
+                return false;
+            }
+            i64 at = 0;
+            while (at < leaves.count()) {
+                const i64 leaf_position = workspace.count(4);
+                if (!emit_type(session, workspace, metadata, list_id(session, leaves, at), leaf_position, fill)
+                    || !workspace.add_count(4, 1)) {
+                    return false;
+                }
+                at = at + 1;
+            }
+            const compiler_lowering::OperandRow fields = item(session, id, 2);
+            if (!list(session, workspace, fields.begin(), fields.count(),
+                compiler_lowering::OperandRole::OutputRowId)) {
+                return false;
+            }
+            at = 0;
+            while (at < fields.count()) {
+                if (!project_field(session, workspace, metadata, list_id(session, fields, at), fill)) {
+                    return false;
+                }
+                at = at + 1;
+            }
+            storage = workspace.count(5);
+            if (!project_storage(session, workspace, metadata, scalar(session, id, 3), fill)) {
+                return false;
+            }
+            flags = flags | 7u64;
+        }
+        const compiler_ir_metadata::ClassRow result = compiler_ir_metadata::ClassRow(name,
+            compiler_ir_metadata::IndexRange(leaf_begin, workspace.count(4) - leaf_begin),
+            compiler_ir_metadata::IndexRange(field_begin, workspace.count(3) - field_begin), storage, flags);
+        if (fill && !metadata.ingress_class(workspace.count(2), result)) {
+            return workspace.fail();
+        }
+        return workspace.add_count(2, 1);
+    }
+    auto project_descriptor(const compiler_resolver::Session& session, ProjectionWorkspace& workspace,
+        compiler_ir_metadata::MetadataStore& metadata, i64 id, bool fill) -> bool {
+        if (!fixed(session, workspace, id, compiler_lowering::RecordKind::Descriptor, 3) || !expect(session, workspace,
+            id, 0, compiler_lowering::OperandRole::PublicDescriptorId) || !expect(session, workspace, id, 1,
+            compiler_lowering::OperandRole::Size) || !expect(session, workspace, id, 2,
+            compiler_lowering::OperandRole::PublicFields) || scalar(session, id, 0) < 0 || !integer(scalar(session, id,
+            0))) {
+            return workspace.fail();
+        }
+        const compiler_ir_metadata::DescriptorRow result = compiler_ir_metadata::DescriptorRow(scalar(session, id, 0),
+            scalar(session, id, 1), scalar(session, id, 2));
+        if (fill && !metadata.ingress_descriptor(workspace.count(7), result)) {
+            return workspace.fail();
+        }
+        return workspace.add_count(7, 1);
+    }
+    auto project_enum(const compiler_resolver::Session& session, ProjectionWorkspace& workspace,
+        compiler_ir_metadata::MetadataStore& metadata, i64 id, bool fill) -> bool {
+        if (!fixed(session, workspace, id, compiler_lowering::RecordKind::EnumCases, 2) || !expect(session, workspace,
+            id, 0, compiler_lowering::OperandRole::EnumNominalId) || !expect(session, workspace, id, 1,
+            compiler_lowering::OperandRole::CaseCount) || !resolve_name(session, workspace, scalar(session, id, 0), 2)
+            || !integer(scalar(session, id, 1))) {
+            return workspace.fail();
+        }
+        const compiler_ir_metadata::ByteRange spelling = workspace.name_result();
+        const compiler_ir_metadata::ByteRange name = workspace.retain_name(spelling);
+        if (!copy_text(workspace, metadata, spelling.begin(), name.begin(), spelling.count(), fill)) {
+            return false;
+        }
+        const compiler_ir_metadata::EnumRow result = compiler_ir_metadata::EnumRow(name, scalar(session, id, 1));
+        if (fill && !metadata.ingress_enum(workspace.count(9), result)) {
+            return workspace.fail();
+        }
+        return workspace.add_count(9, 1);
+    }
+
+    auto descriptor_exists(const compiler_resolver::Session& session, ProjectionWorkspace& workspace,
+        i64 identity) -> bool {
+        i64 begin = 0;
+        i64 end = workspace.count(41);
+        while (begin < end) {
+            const i64 middle = begin + (end - begin) / 2;
+            const i64 value = scalar(session, workspace.scratch_at(workspace.count(40) + middle), 0);
+            if (value < identity) {
+                begin = middle + 1;
+            } else {
+                end = middle;
+            }
+        }
+        return begin < workspace.count(41) && scalar(session, workspace.scratch_at(workspace.count(40) + begin), 0)
+            == identity;
+    }
+    auto project_view(const compiler_resolver::Session& session, ProjectionWorkspace& workspace,
+        compiler_ir_metadata::MetadataStore& metadata, i64 id, bool fill) -> bool {
+        if (!fixed(session, workspace, id, compiler_lowering::RecordKind::DescriptorView, 2) || !expect(session,
+            workspace, id, 0, compiler_lowering::OperandRole::ModuleScope) || !expect(session, workspace, id, 1,
+            compiler_lowering::OperandRole::VisibleDescriptors) || !module_scope(session, workspace, scalar(session, id,
+            0))) {
+            return false;
+        }
+        const compiler_lowering::OperandRow values = item(session, id, 1);
+        const i64 scratch = workspace.count(42);
+        if (!list(session, workspace, values.begin(), values.count(),
+            compiler_lowering::OperandRole::PublicDescriptorId) || !bound(scratch, values.count(),
+            workspace.scratch_size())) {
+            return workspace.fail();
+        }
+        i64 at = 0;
+        while (at < values.count()) {
+            const i64 value = list_id(session, values, at);
+            if (value < 0 || !integer(value) || !descriptor_exists(session, workspace, value)
+                || !workspace.set_scratch(scratch + at, value)) {
+                return workspace.fail();
+            }
+            at = at + 1;
+        }
+        if (!sort_rows(session, workspace, scratch, values.count(), 4, 0)) {
+            return false;
+        }
+        const i64 first = workspace.count(6);
+        at = 0;
+        while (at < values.count()) {
+            const i64 value = workspace.scratch_at(scratch + at);
+            if (at > 0 && workspace.scratch_at(scratch + at - 1) == value || !emit_index(workspace, metadata, value,
+                fill)) {
+                return workspace.fail();
+            }
+            at = at + 1;
+        }
+        const compiler_ir_metadata::ViewRow result = compiler_ir_metadata::ViewRow(scalar(session, id, 0),
+            compiler_ir_metadata::IndexRange(first, values.count()));
+        if (fill && !metadata.ingress_view(workspace.count(8), result)) {
+            return workspace.fail();
+        }
+        return workspace.add_count(8, 1);
+    }
+    auto root_role(i64 ordinal) -> compiler_lowering::OperandRole {
+        if (ordinal == 0) {
+            return compiler_lowering::OperandRole::Functions;
+        }
+        if (ordinal == 1) {
+            return compiler_lowering::OperandRole::Classes;
+        }
+        if (ordinal == 2) {
+            return compiler_lowering::OperandRole::Carriers;
+        }
+        if (ordinal == 3) {
+            return compiler_lowering::OperandRole::Descriptors;
+        }
+        if (ordinal == 4) {
+            return compiler_lowering::OperandRole::DescriptorViews;
+        }
+        if (ordinal == 5) {
+            return compiler_lowering::OperandRole::Enumerations;
+        }
+        if (ordinal == 6) {
+            return compiler_lowering::OperandRole::LintDiagnostics;
+        }
+        return compiler_lowering::OperandRole::invalid;
+    }
+    auto prepare_order(const compiler_resolver::Session& session, ProjectionWorkspace& workspace) -> bool {
+        const i64 root = workspace.count(34);
+        if (!fixed(session, workspace, root, compiler_lowering::RecordKind::Module, 7)) {
+            return false;
+        }
+        i64 ordinal = 0;
+        while (ordinal < 7) {
+            if (!expect(session, workspace, root, ordinal, root_role(ordinal))) {
+                return false;
+            }
+            const compiler_lowering::OperandRow values = item(session, root, ordinal);
+            if (!list(session, workspace, values.begin(), values.count(),
+                compiler_lowering::OperandRole::OutputRowId)) {
+                return false;
+            }
+            ordinal = ordinal + 1;
+        }
+        const compiler_lowering::OperandRow functions = item(session, root, 0);
+        const compiler_lowering::OperandRow classes = item(session, root, 1);
+        const compiler_lowering::OperandRow carriers = item(session, root, 2);
+        const compiler_lowering::OperandRow descriptors = item(session, root, 3);
+        const compiler_lowering::OperandRow views = item(session, root, 4);
+        const compiler_lowering::OperandRow enums = item(session, root, 5);
+        const compiler_lowering::OperandRow lints = item(session, root, 6);
+        const i64 carrier_begin = functions.count();
+        const i64 class_begin = sum(carrier_begin, carriers.count());
+        const i64 class_count = sum(classes.count(), carriers.count());
+        const i64 descriptor_begin = sum(class_begin, class_count);
+        const i64 view_begin = sum(descriptor_begin, descriptors.count());
+        const i64 enum_begin = sum(view_begin, views.count());
+        const i64 lint_begin = sum(enum_begin, enums.count());
+        const i64 lookup_begin = sum(lint_begin, lints.count());
+        const i64 temporary = sum(lookup_begin, functions.count());
+        if (temporary < 0 || temporary > workspace.scratch_size() || !workspace.set_count(40, descriptor_begin)
+            || !workspace.set_count(41, descriptors.count()) || !workspace.set_count(42, temporary)
+            || !workspace.set_count(43, 0) || !workspace.set_count(44, functions.count()) || !workspace.set_count(45,
+            class_begin) || !workspace.set_count(46, class_count) || !workspace.set_count(47, view_begin)
+            || !workspace.set_count(48, views.count()) || !workspace.set_count(49, enum_begin)
+            || !workspace.set_count(50, enums.count()) || !workspace.set_count(51, lookup_begin)
+            || !workspace.set_count(36, lint_begin) || !workspace.set_count(37, lints.count())) {
+            return workspace.fail();
+        }
+        i64 at = 0;
+        while (at < functions.count()) {
+            const i64 id = list_id(session, functions, at);
+            const compiler_lowering::OutputRow header = session.view_output(id);
+            if (header.kind() != compiler_lowering::RecordKind::Function || !expect(session, workspace, id, 0,
+                compiler_lowering::OperandRole::FunctionSymbolId) || !resolve_name(session, workspace, scalar(session,
+                id, 0), 0) || !workspace.set_row_name(id, workspace.name_result()) || !workspace.set_scratch(at, id)
+                || !workspace.set_scratch(lookup_begin + at, at)) {
+                return workspace.fail();
+            }
+            at = at + 1;
+        }
+        if (!sort_rows(session, workspace, lookup_begin, functions.count(), 3, 0)) {
+            return false;
+        }
+        at = 0;
+        while (at < carriers.count()) {
+            const i64 id = list_id(session, carriers, at);
+            if (!carrier(session, workspace, id) || !workspace.set_scratch(carrier_begin + at, id)
+                || !workspace.set_scratch(class_begin + classes.count() + at, -id - 1)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        if (!sort_rows(session, workspace, carrier_begin, carriers.count(), 0, 0)) {
+            return false;
+        }
+        at = 1;
+        while (at < carriers.count()) {
+            const compiler_ir_metadata::ByteRange left = workspace.row_name(workspace.scratch_at(carrier_begin + at
+                - 1));
+            const compiler_ir_metadata::ByteRange right = workspace.row_name(workspace.scratch_at(carrier_begin + at));
+            if (workspace.compare_names(left, right) == 0) {
+                return workspace.fail();
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < classes.count()) {
+            const i64 id = list_id(session, classes, at);
+            const compiler_lowering::OutputRow header = session.view_output(id);
+            if (header.kind() != compiler_lowering::RecordKind::Class || !name_for(session, workspace, id, 0)
+                || !workspace.set_row_name(id, workspace.name_result()) || !workspace.set_row_state(id, 0)
+                || !workspace.set_scratch(class_begin + at, id)) {
+                return workspace.fail();
+            }
+            at = at + 1;
+        }
+        if (!sort_rows(session, workspace, class_begin, class_count, 0, 0)) {
+            return false;
+        }
+        i64 retained = 0;
+        at = 0;
+        while (at < class_count) {
+            i64 selected = workspace.scratch_at(class_begin + at);
+            i64 name_id = selected;
+            if (name_id < 0) {
+                name_id = -name_id - 1;
+            }
+            const compiler_ir_metadata::ByteRange name = workspace.row_name(name_id);
+            bool is_carrier = selected < 0;
+            at = at + 1;
+            bool same_name = true;
+            while (at < class_count && same_name) {
+                const i64 next = workspace.scratch_at(class_begin + at);
+                i64 next_name = next;
+                if (next_name < 0) {
+                    next_name = -next_name - 1;
+                }
+                if (workspace.compare_names(name, workspace.row_name(next_name)) != 0) {
+                    same_name = false;
+                } else {
+                    if (selected >= 0 && next >= 0 || is_carrier && next < 0) {
+                        return workspace.fail();
+                    }
+                    if (next < 0) {
+                        is_carrier = true;
+                    } else {
+                        selected = next;
+                    }
+                    at = at + 1;
+                }
+            }
+            if (selected >= 0 && is_carrier && !workspace.set_row_state(selected, 1)) {
+                return false;
+            }
+            if (!workspace.set_scratch(class_begin + retained, selected)) {
+                return false;
+            }
+            retained = retained + 1;
+        }
+        if (!workspace.set_count(46, retained)) {
+            return false;
+        }
+        ordinal = 3;
+        while (ordinal < 6) {
+            const compiler_lowering::OperandRow values = item(session, root, ordinal);
+            i64 begin = descriptor_begin;
+            compiler_lowering::RecordKind kind = compiler_lowering::RecordKind::Descriptor;
+            compiler_lowering::OperandRole role = compiler_lowering::OperandRole::PublicDescriptorId;
+            if (ordinal == 4) {
+                begin = view_begin;
+                kind = compiler_lowering::RecordKind::DescriptorView;
+                role = compiler_lowering::OperandRole::ModuleScope;
+            }
+            if (ordinal == 5) {
+                begin = enum_begin;
+                kind = compiler_lowering::RecordKind::EnumCases;
+                role = compiler_lowering::OperandRole::EnumNominalId;
+            }
+            at = 0;
+            while (at < values.count()) {
+                const i64 id = list_id(session, values, at);
+                const compiler_lowering::OutputRow header = session.view_output(id);
+                if (header.kind() != kind || !expect(session, workspace, id, 0, role) || scalar(session, id, 0) < 0
+                    || (ordinal != 5 && !integer(scalar(session, id, 0))) || !workspace.set_scratch(begin + at, id)) {
+                    return workspace.fail();
+                }
+                if (ordinal == 5 && (!resolve_name(session, workspace, scalar(session, id, 0), 2)
+                    || !workspace.set_row_name(id, workspace.name_result()))) {
+                    return false;
+                }
+                at = at + 1;
+            }
+            i64 sort_kind = 1;
+            if (ordinal == 5) {
+                sort_kind = 0;
+            }
+            if (!sort_rows(session, workspace, begin, values.count(), sort_kind, 0)) {
+                return false;
+            }
+            at = 1;
+            while (at < values.count()) {
+                const i64 left = workspace.scratch_at(begin + at - 1);
+                const i64 right = workspace.scratch_at(begin + at);
+                if (ordinal == 5) {
+                    if (workspace.compare_names(workspace.row_name(left), workspace.row_name(right)) == 0) {
+                        return workspace.fail();
+                    }
+                } else {
+                    if (scalar(session, left, 0) == scalar(session, right, 0)) {
+                        return workspace.fail();
+                    }
+                }
+                at = at + 1;
+            }
+            ordinal = ordinal + 1;
+        }
+        return workspace.good();
+    }
+    auto walk(const compiler_resolver::Session& session, ProjectionWorkspace& workspace,
+        compiler_ir_metadata::MetadataStore& metadata, compiler_ir_instructions::InstructionStore& instructions,
+        bool fill) -> bool {
+        if (!prelude(session, workspace) || !prepare_order(session, workspace)) {
+            return false;
+        }
+        i64 at = 0;
+        while (at < workspace.count(46)) {
+            const i64 selected = workspace.scratch_at(workspace.count(45) + at);
+            if (!project_class(session, workspace, metadata, selected, fill)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < workspace.count(41)) {
+            const i64 selected = workspace.scratch_at(workspace.count(40) + at);
+            if (!project_descriptor(session, workspace, metadata, selected, fill)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < workspace.count(48)) {
+            const i64 selected = workspace.scratch_at(workspace.count(47) + at);
+            if (!project_view(session, workspace, metadata, selected, fill)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < workspace.count(50)) {
+            const i64 selected = workspace.scratch_at(workspace.count(49) + at);
+            if (!project_enum(session, workspace, metadata, selected, fill)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < workspace.count(44)) {
+            const i64 selected = workspace.scratch_at(at);
+            const i64 temporary = workspace.count(42);
+            if (!project_function(session, workspace, metadata, selected, temporary, fill)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < workspace.count(44)) {
+            const i64 lookup = workspace.scratch_at(workspace.count(51) + at);
+            if (!emit_index(workspace, metadata, lookup, fill)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        if (!workspace.set_count(12, workspace.count(1))) {
+            return false;
+        }
+        at = 0;
+        while (at < workspace.count(44)) {
+            const compiler_lowering::OperandRow code = item(session, workspace.scratch_at(at), 10);
+            const i64 begin = workspace.count(13);
+            i64 instruction = 0;
+            i64 mode = 0;
+            if (fill) {
+                mode = 1;
+            }
+            while (instruction < code.count()) {
+                if (!project_instruction(session, workspace, metadata, instructions, list_id(session, code,
+                    instruction), mode)) {
+                    return false;
+                }
+                instruction = instruction + 1;
+            }
+            const compiler_ir_instructions::BodyRow body = compiler_ir_instructions::BodyRow(begin, workspace.count(13)
+                - begin, workspace.count(13) - begin, 0);
+            if (fill && !instructions.ingress_body(at, body)) {
+                return workspace.fail();
+            }
+            if (!workspace.add_count(16, 1)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        const compiler_lowering::OperandRow lints = item(session, workspace.count(34), 6);
+        at = 0;
+        while (at < lints.count()) {
+            const i64 id = list_id(session, lints, at);
+            if (!fixed(session, workspace, id, compiler_lowering::RecordKind::UnreadLocal, 1) || !expect(session,
+                workspace, id, 0, compiler_lowering::OperandRole::IdentifierSourceRef) || !identifier(session,
+                workspace, scalar(session, id, 0)) || !workspace.set_scratch(workspace.count(36) + at, scalar(session,
+                id, 0))) {
+                return false;
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < session.output_count()) {
+            if (!workspace.row_claimed(at)) {
+                const compiler_lowering::OutputRow row = session.view_output(at);
+                if (row.kind() != compiler_lowering::RecordKind::DiscardedInstruction || !project_instruction(session,
+                    workspace, metadata, instructions, at, 2)) {
+                    return workspace.fail();
+                }
+            }
+            at = at + 1;
+        }
+        return workspace.good();
+    }
+    auto measure(const compiler_resolver::Session& session, ProjectionWorkspace& workspace,
+        compiler_ir_metadata::MetadataStore& metadata, compiler_ir_instructions::InstructionStore& instructions,
+        i64 root, i64 diagnostic) -> i64 {
+        if (workspace.status() != 0 || !metadata.ingress_writable() || !metadata.allocated()
+            || !instructions.allocated() || metadata.status() != compiler_ir_metadata::MetadataStatus::pending
+            || instructions.status() != compiler_ir_instructions::InstructionStatus::pending || metadata.type_count()
+            != 0 || metadata.byte_count() != 0 || instructions.instruction_count() != 0 || !workspace.set_count(34,
+            root) || !workspace.set_count(35, diagnostic) || !walk(session, workspace, metadata, instructions, false)) {
+            if (workspace.good()) {
+                workspace.fail();
+            }
+            return workspace.status();
+        }
+        i64 pool = 0;
+        while (pool < 17) {
+            if (!workspace.set_count(17 + pool, workspace.count(pool))) {
+                return workspace.status();
+            }
+            pool = pool + 1;
+        }
+        if (!workspace.freeze_names() || !workspace.set_status(1)) {
+            return workspace.status();
+        }
+        return 1;
+    }
+    auto fill(const compiler_resolver::Session& session, ProjectionWorkspace& workspace,
+        compiler_ir_metadata::MetadataStore& metadata,
+        compiler_ir_instructions::InstructionStore& instructions) -> i64 {
+        if (workspace.status() != 1 || !metadata.ingress_writable() || metadata.status()
+            != compiler_ir_metadata::MetadataStatus::pending || instructions.status()
+            != compiler_ir_instructions::InstructionStatus::pending || !metadata.allocated()
+            || !instructions.allocated() || metadata.byte_count() != workspace.count(17) || metadata.type_count()
+            != workspace.count(18) || metadata.class_count() != workspace.count(19) || metadata.input_field_count()
+            != workspace.count(20) || metadata.leaf_count() != workspace.count(21) || metadata.input_storage_count()
+            != workspace.count(22) || metadata.input_index_count() != workspace.count(23) || metadata.descriptor_count()
+            != workspace.count(24) || metadata.view_count() != workspace.count(25) || metadata.enum_count()
+            != workspace.count(26) || metadata.callable_count() != workspace.count(27) || metadata.slot_count()
+            != workspace.count(28) || metadata.instruction_type_begin() != workspace.count(29)
+            || instructions.instruction_count() != workspace.count(30) || instructions.code_count()
+            != workspace.count(30) || instructions.operand_count() != workspace.count(31)
+            || instructions.literal_count() != workspace.count(32) || instructions.body_count() != workspace.count(33)
+            || !workspace.reset_counts() || !workspace.reset_claims() || !walk(session, workspace, metadata,
+            instructions, true)) {
+            if (workspace.good()) {
+                workspace.fail();
+            }
+            return workspace.status();
+        }
+        i64 pool = 0;
+        while (pool < 17) {
+            if (workspace.count(pool) != workspace.count(17 + pool)) {
+                workspace.fail();
+                return workspace.status();
+            }
+            pool = pool + 1;
+        }
+        workspace.set_status(2);
+        return workspace.status();
+    }
+    auto metadata_counts(const ProjectionWorkspace& workspace) -> compiler_ir_metadata::InputCounts {
+        return compiler_ir_metadata::InputCounts(compiler_ir_metadata::CoreCounts(workspace.count(0),
+            workspace.count(1), workspace.count(2), workspace.count(3), workspace.count(4)),
+            compiler_ir_metadata::MapCounts(workspace.count(5), workspace.count(6), workspace.count(7),
+            workspace.count(8), workspace.count(9)));
+    }
+    auto instruction_counts(const ProjectionWorkspace& workspace) -> compiler_ir_instructions::InstructionCounts {
+        return compiler_ir_instructions::InstructionCounts(workspace.count(13), workspace.count(14),
+            workspace.count(15), workspace.count(16));
+    }
+    auto lint(const ProjectionWorkspace& workspace, i64 index) -> i64 {
+        if (workspace.status() != 2 || index < 0 || index >= workspace.count(37)) {
+            return -1;
+        }
+        return workspace.scratch_at(workspace.count(36) + index);
+    }
+}
