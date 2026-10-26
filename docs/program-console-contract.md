@@ -132,7 +132,7 @@ guest and full qualification; historical results do not transfer to changed code
 Pre-guest checks cover aggregate/bridge/inventory consistency, real Mailbox
 lifecycle and Aurora constructor equivalence, alongside source/ABI/stack and
 transcript controls. Hosted ASan/UBSan does not instrument generated Aurora.
-Every variant retains the 131,072-byte mapped-image limit and 15,360-byte
+Every variant retains the 155,648-byte mapped-image limit and 15,360-byte
 supervisor-plus-fault cap within the 16 KiB stack. Fresh exact-image accounting
 must establish the current peaks; historical measurements cannot admit a rebuild.
 Legacy scalar/snapshot wrapper checks are separate from actual snapshot guests.
