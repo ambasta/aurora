@@ -118,6 +118,25 @@ ROWS = (
         "noexcept",
     ),
     (
+        "emitter_wrapper_run(compiler_x86::ObjectWorkspace& workspace, builtin::span<const u8> recipe) -> "
+        "compiler_x86::EmitStatus",
+        "direct compiler_frontend_wrapper::run(workspace, recipe)",
+        "EmitterWrapperInput:recipe",
+        "noexcept",
+    ),
+    (
+        "emitter_object_size(const compiler_x86::ObjectWorkspace& workspace) -> i64",
+        "direct workspace.size()",
+        "",
+        "noexcept",
+    ),
+    (
+        "emitter_object_chunk(const compiler_x86::ObjectWorkspace& workspace, i64 offset) -> compiler_x86::EmitChunk",
+        "copy workspace.chunk(offset)",
+        "",
+        "noexcept",
+    ),
+    (
         "emitter_enable_object(compiler_x86::ObjectWorkspace& workspace) -> bool",
         "direct workspace.enable_object()",
         "",

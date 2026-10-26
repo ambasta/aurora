@@ -11,7 +11,8 @@ int main(int argc, char **argv) {
         const std::string option = argv[index];
         if (option == "--compose-private-object")
             index += 3;
-        else if (option == "--module-root" || option == "-o" || option == "--stack-facts" || option == "--abi-facts")
+        else if (option == "--emit-frontend-wrapper" || option == "--module-root" || option == "-o" ||
+                 option == "--stack-facts" || option == "--abi-facts")
             ++index;
         else if (option == "--diagnostics=json")
             jsonDiagnostics = true;
@@ -22,6 +23,13 @@ int main(int argc, char **argv) {
                 throw aurora::Error(aurora::DiagnosticCode::CommandLine,
                                     "usage: aurorac --compose-private-object SOURCE WRAPPER SELECTED -o OUTPUT");
             aurora::composePrivateObjectFiles(argv[2], argv[3], argv[4], argv[6]);
+            return 0;
+        }
+        if (argc > 1 && std::string_view(argv[1]) == "--emit-frontend-wrapper") {
+            if (argc != 5 || std::string_view(argv[3]) != "-o")
+                throw aurora::Error(aurora::DiagnosticCode::CommandLine,
+                                    "usage: aurorac --emit-frontend-wrapper RECIPE -o OUTPUT");
+            aurora::emitFrontendWrapperFile(argv[2], argv[4]);
             return 0;
         }
         std::filesystem::path inputPath;

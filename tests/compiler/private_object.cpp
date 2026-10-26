@@ -1,4 +1,4 @@
-// One driver: real emitter input, malformed ELF data, allocation failure, and
+// One driver: real emitter input, closed wrapper recipes, malformed data, and
 // semantic comparison against GNU ld -r. ELF decoding here is test observation,
 // not a second composer or a production admission path.
 #include "../tools/air_cases.hpp"
@@ -7,6 +7,7 @@
 #include "ir_verify.hpp"
 #include "x86.hpp"
 #include <algorithm>
+#include <array>
 #include <cstdlib>
 #include <cstring>
 #include <elf.h>
@@ -141,6 +142,48 @@ void compare(const std::string &source, const std::string &actual, const std::st
             "source LOCAL symbol prefix changed");
     std::cout << "PASS private object normalized GNU text/data/symbols/relocations and source-index preservation\n";
 }
+void compareWrapper(const std::string &actual, const std::string &reference) {
+    const Elf wrapper(actual), gnu(reference);
+    require(wrapper.header().e_shnum == 8 && wrapper.section(".symtab").sh_info == 1 &&
+                wrapper.section(".rodata").sh_size == 0,
+            "native wrapper changed its closed ELF profile");
+    require(wrapper.payload(wrapper.section(".text")) == gnu.payload(gnu.section(".text")), "GNU wrapper text differs");
+    require(wrapper.symbols() == gnu.symbols(), "GNU wrapper symbols differ");
+    require(wrapper.relocations() == gnu.relocations(), "GNU wrapper relocations differ");
+    for (std::size_t index = 1; index < wrapper.header().e_shnum; ++index)
+        require((wrapper.section(index).sh_flags & SHF_WRITE) == 0, "native wrapper has writable section");
+    require(wrapper.section(".note.GNU-stack").sh_flags == 0, "native wrapper requests executable stack");
+    const auto relocations = wrapper.payload(wrapper.section(".rela.text"));
+    std::size_t exports = 0;
+    for (std::size_t index = 1; index < wrapper.section(".symtab").sh_size / sizeof(Elf64_Sym); ++index) {
+        const auto symbol = wrapper.symbol(index);
+        if (symbol.st_shndx == SHN_UNDEF)
+            continue;
+        require(symbol.st_info == ELF64_ST_INFO(STB_GLOBAL, STT_FUNC) && symbol.st_other == STV_HIDDEN,
+                "native wrapper export is not a hidden global function");
+        std::size_t found = 0;
+        for (std::size_t offset = 0; offset < relocations.size(); offset += sizeof(Elf64_Rela)) {
+            const auto relocation = read<Elf64_Rela>(relocations, offset);
+            if (relocation.r_offset < symbol.st_value || relocation.r_offset >= symbol.st_value + symbol.st_size)
+                continue;
+            require(ELF64_R_TYPE(relocation.r_info) == R_X86_64_PLT32 && relocation.r_addend == -4 &&
+                        relocation.r_offset + 4 == symbol.st_value + symbol.st_size &&
+                        wrapper.symbol(ELF64_R_SYM(relocation.r_info)).st_shndx == SHN_UNDEF,
+                    "native wrapper lacks a terminal selected-target PLT32 relocation");
+            ++found;
+        }
+        require(found == 1, "native wrapper must have one tail relocation per export");
+        ++exports;
+    }
+    require(exports > 0 && exports * sizeof(Elf64_Rela) == relocations.size(),
+            "native wrapper relocation count differs from exports");
+    std::cout << "PASS frontend wrapper normalized GNU text/symbols/relocations and closed ELF profile\n";
+}
+void writeLittle(std::string &bytes, std::size_t offset, std::size_t width, std::uint64_t value) {
+    require(width <= 8 && offset <= bytes.size() && width <= bytes.size() - offset, "mutation out of fixture bounds");
+    for (std::size_t byte = 0; byte < width; ++byte)
+        bytes[offset + byte] = static_cast<char>(value >> (byte * 8));
+}
 void mutations(const std::string &source,
                const std::string &wrapper,
                const std::string &selected,
@@ -191,9 +234,7 @@ void mutations(const std::string &source,
                 base = elf.section(record).sh_offset + elf.section(record).sh_size - 1;
             } else
                 require(location == "header", "unknown private object mutation");
-            require(width <= 8 && base + offset + width <= changed.size(), "mutation out of fixture bounds");
-            for (std::size_t byte = 0; byte < width; ++byte)
-                changed[base + offset + byte] = static_cast<char>(value >> (byte * 8));
+            writeLittle(changed, base + offset, width, value);
         }
         bool rejected = false;
         try {
@@ -255,34 +296,205 @@ public:
         return hosted::bytes::Allocator{this, allocate, deallocate};
     }
 };
-void allocationFailures(const std::string &source,
-                        const std::string &wrapper,
-                        const std::string &selected,
-                        const std::string &expected) {
+template <class Operation>
+void allocationFailures(Operation operation, const std::string &expected, std::string_view component) {
     AllocationFailure successful;
-    require(composePrivateObject(source, wrapper, selected, successful.allocator()) == expected,
-            "allocator transport changed output");
-    require(successful.live == 0 && successful.calls > 0, "successful composition leaked allocation");
+    require(operation(successful.allocator()) == expected, "allocator transport changed output");
+    require(successful.live == 0 && successful.calls > 0, "successful operation leaked allocation");
     for (std::size_t fail = 1; fail <= successful.calls; ++fail) {
         AllocationFailure failing;
         failing.fail = fail;
         bool rejected = false;
         try {
-            (void)composePrivateObject(source, wrapper, selected, failing.allocator());
+            (void)operation(failing.allocator());
         } catch (const Error &error) {
             rejected = std::string(error.what()).find("allocation failed") != std::string::npos;
         }
         require(rejected && failing.live == 0, "allocation failure did not close all workspace owners");
     }
-    std::cout << "PASS private object every allocation failure releases owners\n";
+    std::cout << "PASS " << component << " every allocation failure releases owners\n";
+}
+void wrapperRepeatedRun(const std::string &recipe) {
+    using Status = hosted_abi::compiler_x86::EmitStatus;
+    const std::array cases = {
+        std::tuple{std::uint64_t(64 * 1024 * 1024), false, Status::invalid},
+        std::tuple{std::uint64_t(64 * 1024 * 1024), true, Status::complete},
+        std::tuple{std::uint64_t(0), true, Status::allocation},
+        std::tuple{std::uint64_t(4096), true, Status::allocation},
+    };
+    for (const auto &[quota, initiallyValid, expected] : cases) {
+        hosted::bytes::Region region(quota);
+        require(region.is_open(), "wrapper repeated-run region allocation failed");
+        hosted_abi::EmitterObjectRelease owner{};
+        owner.region = region.id();
+        hosted_abi::EmitterObjectCreate create{};
+        create.region = region.id();
+        auto *workspace = owner.workspace.storage.data();
+        aurora_hosted_emitter_object_create(&create, workspace);
+        hosted_abi::EmitterWrapperInput input{};
+        input.recipe.backing = recipe.data();
+        input.recipe.length = initiallyValid ? recipe.size() : 1;
+        const auto first = aurora_hosted_emitter_wrapper_run(workspace, &input);
+        input.recipe.length = recipe.size();
+        const auto again = aurora_hosted_emitter_wrapper_run(workspace, &input);
+        const auto size = aurora_hosted_emitter_object_size(workspace);
+        hosted_abi::compiler_x86::EmitChunk chunk{};
+        aurora_hosted_emitter_object_chunk(workspace, 0, &chunk);
+        aurora_hosted_emitter_object_release(&owner);
+        require(first == static_cast<std::int64_t>(expected) &&
+                    again == static_cast<std::int64_t>(expected == Status::complete ? Status::invalid : expected) &&
+                    size == -1 && chunk.byteCount == -1 && region.metrics().live_allocations == 0,
+                "wrapper repeated run exposed output or retained owners");
+    }
+    std::cout << "PASS frontend wrapper invalid/quota failure stays sticky and completed workspace cannot be reused\n";
+}
+// Recipe offsets below describe the versioned transport, not generated code.
+// Mutation cases select real table entries, so additions do not re-pin ordinals.
+void wrapperMutations(const std::string &recipe,
+                      const std::string &source,
+                      const std::string &selected,
+                      const std::string &path) {
+    const auto count = read<std::uint32_t>(recipe, 8);
+    const std::size_t strings = 16 + count * 48;
+    const auto selectedRow = [&](const std::string &selector) -> std::size_t {
+        if (selector == "first")
+            return 16;
+        if (selector == "last")
+            return 16 + (count - 1) * 48;
+        for (std::size_t index = 0; index < count; ++index) {
+            const auto row = 16 + index * 48;
+            const auto moves = read<std::uint32_t>(recipe, row + 16);
+            if (selector == "copied" && moves == 2 && recipe[row + 26] == 8)
+                return row;
+            for (std::size_t move = 0; move < moves; ++move)
+                if (selector == "record" && recipe[row + 24 + move * 4] == 1)
+                    return row;
+        }
+        throw Error("missing recipe mutation selector " + selector);
+    };
+    std::istringstream cases(readFile(path));
+    std::string line;
+    std::size_t checked = 0;
+    while (std::getline(cases, line)) {
+        if (line.empty() || line[0] == '#')
+            continue;
+        std::istringstream fields(line);
+        std::string description, location, selector, expected;
+        std::size_t offset, width;
+        std::uint64_t value;
+        require(bool(fields >> description >> location >> selector >> offset >> width >> value >> expected),
+                "malformed wrapper recipe case " + line);
+        auto changed = recipe;
+        if (location == "truncate") {
+            changed.resize(offset);
+        } else if (location == "append") {
+            changed.push_back(static_cast<char>(value));
+        } else if (location == "collision") {
+            const auto targetRow = selector == "earlier" ? 16 + (count - 1) * 48 : 16;
+            const auto hostRow = selector == "later" ? 16 + (count - 1) * 48 : 16;
+            const auto host = read<std::uint32_t>(recipe, hostRow);
+            const auto hostSize = read<std::uint32_t>(recipe, hostRow + 4);
+            const auto target = read<std::uint32_t>(recipe, targetRow + 8);
+            const auto targetSize = read<std::uint32_t>(recipe, targetRow + 12);
+            const auto delta = std::int64_t(hostSize) - targetSize;
+            changed.replace(strings + target, targetSize, recipe.substr(strings + host, hostSize));
+            writeLittle(changed, targetRow + 12, 4, hostSize);
+            for (std::size_t index = 0; index < count; ++index)
+                for (const std::size_t field : {0, 8}) {
+                    const auto at = 16 + index * 48 + field;
+                    const auto before = read<std::uint32_t>(recipe, at);
+                    if (before > target)
+                        writeLittle(changed, at, 4, std::int64_t(before) + delta);
+                }
+            writeLittle(changed, 12, 4, changed.size() - strings);
+        } else if (location == "duplicate") {
+            bool found = false;
+            for (std::size_t first = 0; first < count && !found; ++first) {
+                const auto a = 16 + first * 48;
+                const auto field = selector == "target" ? 8 : 0;
+                const auto length = read<std::uint32_t>(recipe, a + field + 4);
+                for (std::size_t second = first + 1; second < count; ++second) {
+                    const auto b = 16 + second * 48;
+                    if (length == read<std::uint32_t>(recipe, b + field + 4)) {
+                        changed.replace(strings + read<std::uint32_t>(recipe, b + field),
+                                        length,
+                                        recipe.substr(strings + read<std::uint32_t>(recipe, a + field), length));
+                        found = true;
+                        break;
+                    }
+                }
+            }
+            require(found, "fixture needs equal-width exports for duplicate-name case");
+        } else {
+            std::size_t base = 0;
+            if (location != "header") {
+                base = selectedRow(selector);
+                if (location == "export" || location == "target") {
+                    const auto field = base + (location == "target" ? 8 : 0);
+                    base = strings + read<std::uint32_t>(recipe, field);
+                } else if (location == "load") {
+                    const auto moves = read<std::uint32_t>(recipe, base + 16);
+                    const auto first = base + 24;
+                    base = 0;
+                    for (std::size_t move = 0; move < moves; ++move)
+                        if (recipe[first + move * 4] == 1) {
+                            base = first + move * 4;
+                            break;
+                        }
+                    require(base != 0, "fixture needs a record load");
+                } else
+                    require(location == "row", "unknown recipe mutation location");
+            }
+            writeLittle(changed, base + offset, width, value);
+        }
+        require(expected == "reject" || expected == "compose-reject", "unknown recipe mutation expectation");
+        bool rejected = false;
+        if (expected == "reject") {
+            try {
+                (void)emitFrontendWrapper(changed);
+            } catch (const Error &) {
+                rejected = true;
+            }
+        } else {
+            const auto wrapper = emitFrontendWrapper(changed);
+            try {
+                (void)composePrivateObject(source, wrapper, selected);
+            } catch (const Error &) {
+                rejected = true;
+            }
+        }
+        require(rejected, description + ": malformed wrapper recipe or foreign target accepted");
+        ++checked;
+    }
+    std::cout << "PASS frontend wrapper " << checked << " malformed recipe and foreign-target data cases\n";
 }
 } // namespace
 int main(int argc, char **argv) {
     try {
         if (argc == 5 && std::string_view(argv[1]) == "--compare") {
             compare(readFile(argv[2]), readFile(argv[3]), readFile(argv[4]));
+        } else if (argc == 5 && std::string_view(argv[1]) == "--wrapper-boundaries") {
+            const auto wrapper = emitFrontendWrapper(readFile(argv[2]));
+            compareWrapper(wrapper, readFile(argv[3]));
+            writeFile(argv[4], wrapper);
+        } else if (argc == 9 && std::string_view(argv[1]) == "--wrapper") {
+            const auto recipe = readFile(argv[2]), source = readFile(argv[6]), selected = readFile(argv[7]);
+            const auto wrapper = emitFrontendWrapper(recipe);
+            compareWrapper(wrapper, readFile(argv[5]));
+            wrapperMutations(recipe, source, selected, argv[3]);
+            mutations(source, wrapper, selected, argv[4]);
+            allocationFailures(
+                [&](auto allocator) {
+                    return emitFrontendWrapper(recipe, allocator);
+                },
+                wrapper,
+                "frontend wrapper");
+            wrapperRepeatedRun(recipe);
+            writeFile(argv[8], wrapper);
         } else {
-            require(argc == 5, "expected IR CASES WRAPPER OUTPUT-DIRECTORY or --compare SOURCE ACTUAL GNU");
+            require(argc == 5,
+                    "expected IR CASES WRAPPER OUTPUT-DIRECTORY, --compare SOURCE ACTUAL GNU or "
+                    "--wrapper RECIPE RECIPE-CASES ELF-CASES GNU SOURCE SELECTED OUTPUT");
             const auto module = validate(test::air::loadCase(argv[1], "native object values"));
             const auto source =
                 X86Emitter{}.emit(module, SymbolBinding::Local, ReflectionEmission::Referenced, CodeEmission::Object);
@@ -290,7 +502,12 @@ int main(int argc, char **argv) {
             const std::string selected = "object_literal\nobject_loop\nobject_six_arguments\n";
             const auto composed = composePrivateObject(source, wrapper, selected);
             mutations(source, wrapper, selected, argv[2]);
-            allocationFailures(source, wrapper, selected, composed);
+            allocationFailures(
+                [&](auto allocator) {
+                    return composePrivateObject(source, wrapper, selected, allocator);
+                },
+                composed,
+                "private object");
             repeatedRun(source, wrapper, selected);
             const std::string directory = argv[4];
             writeFile(directory + "/source.o", source);

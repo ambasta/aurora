@@ -1,6 +1,7 @@
 export module aurora.compiler.frontend;
 import aurora.compiler.lexer;
 import aurora.compiler.private_object;
+import aurora.compiler.frontend_wrapper;
 import aurora.compiler.formatter;
 import aurora.compiler.syntax_arena;
 import aurora.compiler.parser;

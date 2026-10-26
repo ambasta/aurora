@@ -1,0 +1,196 @@
+export module aurora.compiler.frontend_wrapper;
+import aurora.compiler.private_object;
+import aurora.compiler.x86_object_storage;
+
+// A closed recipe for the private host bridge, not assembly syntax. The table
+// and compiler ABI facts select transport; this module admits its bounded shape
+// and owns instruction encoding, names, fixups and the complete ELF artifact.
+export namespace compiler_frontend_wrapper {
+    auto word(builtin::span<const u8> recipe, i64 at) -> i64 {
+        return compiler_private_object::number(recipe, at, 4);
+    }
+    auto operation(builtin::span<const u8> recipe, i64 at, i64 kind, i64 source, i64 target, i64 lane) -> bool {
+        return i64(recipe.at(at)) == kind && i64(recipe.at(at + 1)) == source && i64(recipe.at(at + 2)) == target
+            && i64(recipe.at(at + 3)) == lane;
+    }
+    auto moves(builtin::span<const u8> recipe, i64 row, i64 count) -> bool {
+        if (count < 1 || count > 6 || !compiler_private_object::zeroes(recipe, row + 24 + count * 4,(6 - count) * 4)) {
+            return false;
+        }
+        // Copied argument/result record, optionally a separate copied result.
+        if (operation(recipe, row + 24, 0, 1, 8, 0)) {
+            return count == 1 || (count == 2 && operation(recipe, row + 28, 0, 2, 7, 0));
+        }
+        if (!operation(recipe, row + 24, 0, 1, 7, 0)) {
+            return false;
+        }
+        if (count == 1) {
+            return true;
+        }
+        // Preserve the record base before reading its consecutive scalar lanes.
+        if (operation(recipe, row + 28, 0, 2, 8, 0)) {
+            i64 index = 2;
+            while (index < count && operation(recipe, row + 24 + index * 4, 1, 8, index - 1, index - 2)) {
+                index = index + 1;
+            }
+            return index == count || (count == 3 && operation(recipe, row + 32, 0, 3, 0, 0));
+        }
+        // Scalar tail moves left in argument order; a copied result, if any,
+        // comes last. This excludes reads of registers already overwritten.
+        i64 index = 1;
+        while (index < count && index <= 4 && operation(recipe, row + 24 + index * 4, 0, index + 1, index, 0)) {
+            index = index + 1;
+        }
+        return index == count || (index == count - 1 && index <= 5 && operation(recipe, row + 24 + index * 4, 0, index
+            + 1, 8, 0));
+    }
+    auto name(builtin::span<const u8> recipe, i64 offset, i64 length) -> bool {
+        if (length < 1 || length > 1024 || !compiler_private_object::extent(recipe, offset, length)) {
+            return false;
+        }
+        i64 at = 0;
+        while (at < length) {
+            if (!compiler_private_object::identifier(recipe.at(offset + at), at == 0)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto admit(builtin::span<const u8> recipe) -> i64 {
+        if (recipe.size() > 67108864 || !compiler_private_object::equal(recipe, 0, 8, "AURFW001")) {
+            return -1;
+        }
+        const i64 count = word(recipe, 8);
+        const i64 strings = word(recipe, 12);
+        if (count < 1 || count > 256 || strings < 0 || !compiler_private_object::extent(recipe, 16, count * 48)
+            || strings != recipe.size() - 16 - count * 48) {
+            return -1;
+        }
+        const i64 names = 16 + count * 48;
+        i64 cursor = 0;
+        i64 index = 0;
+        while (index < count) {
+            const i64 row = 16 + index * 48;
+            const i64 host = word(recipe, row);
+            const i64 hostSize = word(recipe, row + 4);
+            const i64 target = word(recipe, row + 8);
+            const i64 targetSize = word(recipe, row + 12);
+            const i64 instructions = word(recipe, row + 16);
+            const compiler_private_object::NameRow current = compiler_private_object::NameRow(names + host, hostSize,
+                0);
+            if (host != cursor || target != host + hostSize || !name(recipe, names + host, hostSize) || !name(recipe,
+                names + target, targetSize) || !compiler_private_object::prefix(recipe, current, "aurora_hosted_")
+                || word(recipe, row + 20) != 0 || !moves(recipe, row, instructions)) {
+                return -1;
+            }
+            if (index > 0) {
+                const compiler_private_object::NameRow previous = compiler_private_object::NameRow(names + word(recipe,
+                    row - 48), word(recipe, row - 44), 0);
+                if (compiler_private_object::compare(recipe, previous, recipe, current) >= 0) {
+                    return -1;
+                }
+            }
+            // One foreign target identity per exported adapter. Bound this
+            // duplicate scan by the closed 256-row and 1024-byte name limits.
+            i64 before = 0;
+            while (before <= index) {
+                const i64 old = 16 + before * 48;
+                const compiler_private_object::NameRow earlier = compiler_private_object::NameRow(names + word(recipe,
+                    old + 8), word(recipe, old + 12), 0);
+                const compiler_private_object::NameRow exported = compiler_private_object::NameRow(names + word(recipe,
+                    old), word(recipe, old + 4), 0);
+                const compiler_private_object::NameRow destination = compiler_private_object::NameRow(names + target,
+                    targetSize, 0);
+                if ((before < index && compiler_private_object::compare(recipe, earlier, recipe, destination) == 0)
+                    || compiler_private_object::compare(recipe, exported, recipe, destination) == 0
+                    || compiler_private_object::compare(recipe, earlier, recipe, current) == 0) {
+                    return -1;
+                }
+                before = before + 1;
+            }
+            cursor = target + targetSize;
+            index = index + 1;
+        }
+        if (cursor != strings) {
+            return -1;
+        }
+        return count;
+    }
+    auto register_value(i64 code) -> compiler_x86::Register {
+        if (code == 1) {
+            return compiler_x86::Register::rdi;
+        }
+        if (code == 2) {
+            return compiler_x86::Register::rsi;
+        }
+        if (code == 3) {
+            return compiler_x86::Register::rdx;
+        }
+        if (code == 4) {
+            return compiler_x86::Register::rcx;
+        }
+        if (code == 5) {
+            return compiler_x86::Register::r8;
+        }
+        if (code == 6) {
+            return compiler_x86::Register::r9;
+        }
+        if (code == 7) {
+            return compiler_x86::Register::r10;
+        }
+        if (code == 8) {
+            return compiler_x86::Register::r11;
+        }
+        return compiler_x86::Register::rax;
+    }
+    auto run(compiler_x86::ObjectWorkspace& workspace, builtin::span<const u8> recipe) -> compiler_x86::EmitStatus {
+        if (workspace.status() != compiler_x86::EmitStatus::pending) {
+            workspace.fail();
+            return workspace.status();
+        }
+        if (!workspace.allocated()) {
+            workspace.allocation_failure();
+            return workspace.status();
+        }
+        const i64 count = admit(recipe);
+        if (count < 0) {
+            workspace.fail();
+            return workspace.status();
+        }
+        if (!workspace.enable_wrapper() || !workspace.configure_labels(0, count * 2, 0)) {
+            return workspace.status();
+        }
+        const i64 names = 16 + count * 48;
+        i64 index = 0;
+        while (index < count && workspace.ok()) {
+            const i64 row = 16 + index * 48;
+            const builtin::span<const u8> target = recipe.subspan(names + word(recipe, row + 8), word(recipe, row
+                + 12));
+            const builtin::span<const u8> host = recipe.subspan(names + word(recipe, row), word(recipe, row + 4));
+            workspace.begin_object_external(0, index);
+            workspace.object_name_text(target);
+            workspace.end_object_symbol_name();
+            workspace.begin_function_labels(0);
+            workspace.begin_object_symbol(0, count + index, false);
+            workspace.object_name_text(host);
+            workspace.end_object_symbol_name();
+            i64 instruction = 0;
+            while (instruction < word(recipe, row + 16) && workspace.ok()) {
+                const i64 at = row + 24 + instruction * 4;
+                const compiler_x86::Register destination = register_value(i64(recipe.at(at + 2)));
+                if (recipe.at(at) == u8(0)) {
+                    workspace.mov_rr(register_value(i64(recipe.at(at + 1))), destination);
+                } else {
+                    workspace.load(3000000000 + i64(recipe.at(at + 3)) * 8, destination, false);
+                }
+                instruction = instruction + 1;
+            }
+            workspace.object_tail_jump(index);
+            workspace.end_object_symbol();
+            index = index + 1;
+        }
+        workspace.seal();
+        return workspace.status();
+    }
+}

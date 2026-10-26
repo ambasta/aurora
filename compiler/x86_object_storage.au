@@ -296,6 +296,7 @@ export namespace compiler_x86 {
         i64 functionFixupStart;
         EmitStatus outcome;
         bool objectMode;
+        bool hiddenDefinitions;
         bool objectNameCapture;
         i64 outputSize;
         i64 artifactLimit;
@@ -315,9 +316,9 @@ export namespace compiler_x86 {
             generatedSymbols(ObjectIndexRow_pool(region)), literalSymbols(ObjectIndexRow_pool(region)),
             trapPositions(ObjectIndexRow_pool(region)), literalBytes(region.try_allocate(0)), literalSize(0),
             literalCurrentSymbol(-1), returnPosition(-1), functionFixupStart(0), outcome(EmitStatus::pending),
-            objectMode(false), objectNameCapture(false), outputSize(0), artifactLimit(67108864), objectNameSize(0),
-            objectSymbolSize(0), objectLabelSize(0), objectLabelLimit(0), objectFixupSize(0), objectCurrentSymbol(-1),
-            objectCaptureSymbol(-1), functionIndex(0) {
+            objectMode(false), hiddenDefinitions(false), objectNameCapture(false), outputSize(0),
+            artifactLimit(67108864), objectNameSize(0), objectSymbolSize(0), objectLabelSize(0), objectLabelLimit(0),
+            objectFixupSize(0), objectCurrentSymbol(-1), objectCaptureSymbol(-1), functionIndex(0) {
         }
         auto allocated() const -> bool {
             return output.ok() && objectNames.ok() && objectCode.ok() && objectSymbols.ok() && objectLabels.ok()
@@ -331,6 +332,15 @@ export namespace compiler_x86 {
             objectMode = true;
             outcome = EmitStatus::running;
             return object_name_byte(u8(0));
+        }
+        // Only the closed frontend wrapper recipe enables hidden definitions.
+        // Ordinary source emission retains its existing visibility and layout.
+        auto enable_wrapper() -> bool {
+            if (!enable_object()) {
+                return false;
+            }
+            hiddenDefinitions = true;
+            return true;
         }
         auto configure_labels(i64 instructions, i64 functions, i64 descriptors) -> bool {
             if (descriptors < 0 || descriptors > 67108864 || instructions < 0 || instructions > 67108864 || functions
@@ -737,6 +747,17 @@ export namespace compiler_x86 {
                 return fail();
             }
             byte(u8(232));
+            return object_fixup(0, -1, callable, 0);
+        }
+        auto object_tail_jump(i64 callable) -> bool {
+            if (!hiddenDefinitions || !objectMode || callable < 0 || object_symbol_index(0, callable) < 0) {
+                return fail();
+            }
+            const ObjectSymbolRow target = objectSymbols.at(object_symbol_index(0, callable));
+            if (target.position() >= 0) {
+                return fail();
+            }
+            byte(u8(233));
             return object_fixup(0, -1, callable, 0);
         }
         auto lea_literal(i64 instruction, Register target) -> bool {
@@ -1374,6 +1395,9 @@ export namespace compiler_x86 {
             if (name == 1) {
                 flags = 6;
                 alignment = 16;
+                if (hiddenDefinitions) {
+                    alignment = 1;
+                }
             }
             if (kind == 2 || kind == 4) {
                 alignment = 8;
@@ -1581,7 +1605,11 @@ export namespace compiler_x86 {
                             value = row.position();
                         }
                         byte(u8(info));
-                        byte(u8(0));
+                        i64 visibility = 0;
+                        if (hiddenDefinitions && row.position() >= 0 && row.local() == 0) {
+                            visibility = 2;
+                        }
+                        byte(u8(visibility));
                         emit_little(u64(section), 2);
                         emit_little(u64(value), 8);
                         emit_little(u64(row.size()), 8);

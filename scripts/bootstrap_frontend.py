@@ -11,6 +11,7 @@ import shutil
 import importlib.util
 import hashlib
 import json
+import struct
 import subprocess
 import sys
 import tempfile
@@ -892,9 +893,17 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
     return "\n".join(lines) + "\n"
 
 
-def pass_bridges(facts):
-    """Render only the five existing transports; no source ABI is introduced."""
-    declarations, assembly = ['extern "C" {'], [".text"]
+# Wire register ordinals are private recipe data, not Aurora enum ordinals.
+WRAPPER_REGISTERS = ("%rax", "%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9", "%r10", "%r11")
+
+
+def register_move(source, destination):
+    return (0, WRAPPER_REGISTERS.index(source), WRAPPER_REGISTERS.index(destination), 0)
+
+
+def frontend_recipes(facts):
+    """Select the five existing transports once, for text and closed object recipes."""
+    declarations, recipes = ['extern "C" {'], []
     registers = ("%rdi", "%rsi", "%rdx", "%rcx", "%r8", "%r9")
     scalar = {"i64", "u64", "u8", "bool", "enum"}
     policy = {row[0]: row[6:] for row in ENTRIES}
@@ -908,47 +917,94 @@ def pass_bridges(facts):
             if record is None:
                 if parameters or result != "class" or discard:
                     raise ValueError("unsupported private result-only transport: " + alias)
-                arguments, moves = ["void *"], [("%rdi", "%r10")]
+                arguments, moves = ["void *"], [register_move("%rdi", "%r10")]
             else:
                 if result != "class" and not (result in scalar and discard):
                     raise ValueError("unsupported private copied transport: " + alias)
-                arguments, moves = ["void *" if discard or consume else "const void *"], [("%rdi", "%r11")]
+                arguments, moves = ["void *" if discard or consume else "const void *"], [register_move("%rdi", "%r11")]
                 if not discard:
                     arguments.append("void *")
-                    moves.append(("%rsi", "%r10"))
+                    moves.append(register_move("%rsi", "%r10"))
         else:
             if discard:
                 raise ValueError("unsupported private discarded root result: " + alias)
             arguments = ["void *" if len(roots) == 1 and roots[0][1] else "const void *"]
-            moves = [("%rdi", "%r10")]
+            moves = [register_move("%rdi", "%r10")]
             if record is not None:
                 arguments.append("const void *")
-                moves.append(("%rsi", "%r11"))
+                moves.append(register_move("%rsi", "%r11"))
                 for index in loads:
-                    if not 0 <= index < len(parameters) or parameters[index]["kind"] not in scalar:
+                    if (
+                        not 0 <= index < min(4, len(parameters))
+                        or parameters[index]["kind"] not in scalar
+                        or parameters[index]["offset"] != 8 * index
+                    ):
                         raise ValueError("unsupported private record scalar lane: " + alias)
-                    moves.append((str(parameters[index]["offset"]) + "(%r11)", registers[index]))
+                    moves.append((1, WRAPPER_REGISTERS.index("%r11"), WRAPPER_REGISTERS.index(registers[index]), index))
                 if result == "class":
                     arguments.append("void *")
-                    moves.append(("%rdx", "%rax"))
+                    moves.append(register_move("%rdx", "%rax"))
                 elif result not in scalar:
                     raise ValueError("unsupported private root record result: " + alias)
             else:
                 if len(parameters) > 4 or any(parameter["kind"] not in scalar for parameter in parameters):
                     raise ValueError("unsupported private scalar tail: " + alias)
                 arguments += ["::std::int64_t"] * len(parameters)
-                moves += [(registers[index + 1], registers[index]) for index in range(len(parameters))]
+                moves += [register_move(registers[index + 1], registers[index]) for index in range(len(parameters))]
                 if result == "class":
                     arguments.append("void *")
-                    moves.append((registers[len(parameters) + 1], "%r11"))
+                    moves.append(register_move(registers[len(parameters) + 1], "%r11"))
                 elif result not in scalar:
                     raise ValueError("unsupported private scalar result: " + alias)
         returned = "void" if discard or result == "class" else "::std::int64_t"
         declarations.append(f"{returned} {host}({', '.join(arguments)}){' noexcept' if noexcept else ''};")
+        recipes.append((host, target, tuple(moves)))
+    return declarations + ["}"], sorted(recipes)
+
+
+def render_frontend_recipes(recipes):
+    assembly = [".text"]
+    for host, target, moves in recipes:
         assembly += [f".globl {host}", f".hidden {host}", f".type {host}, @function", f"{host}:"]
-        assembly += [f"    movq {source}, {destination}" for source, destination in moves]
+        for kind, source, destination, lane in moves:
+            operand = WRAPPER_REGISTERS[source] if kind == 0 else f"{8 * lane}(%r11)"
+            assembly.append(f"    movq {operand}, {WRAPPER_REGISTERS[destination]}")
         assembly += [f"    jmp {target}", f".size {host}, .-{host}"]
-    return declarations + ["}"], assembly
+    return assembly
+
+
+def encode_frontend_recipes(recipes):
+    """Serialize the fixed recipe envelope; Aurora admits and encodes its contents."""
+    if not 1 <= len(recipes) <= 256:
+        raise ValueError("unsupported frontend wrapper count")
+    rows, strings = bytearray(), bytearray()
+    previous = ""
+    for host, target, moves in recipes:
+        names = []
+        if host <= previous or not 1 <= len(moves) <= 6:
+            raise ValueError("unsupported frontend wrapper recipe")
+        previous = host
+        for name in (host, target):
+            encoded = name.encode("ascii")
+            if not 1 <= len(encoded) <= 1024:
+                raise ValueError("unsupported frontend wrapper name")
+            names += [len(strings), len(encoded)]
+            strings += encoded
+        rows += struct.pack("<6I", *names, len(moves), 0)
+        for operation in moves:
+            rows += bytes(operation)
+        rows += bytes(4 * (6 - len(moves)))
+    return b"AURFW001" + struct.pack("<2I", len(recipes), len(strings)) + rows + strings
+
+
+def frontend_wrapper_recipe(facts):
+    frontend_abi_entries(facts)
+    return encode_frontend_recipes(frontend_recipes(facts)[1])
+
+
+def pass_bridges(facts):
+    declarations, recipes = frontend_recipes(facts)
+    return declarations, render_frontend_recipes(recipes)
 
 
 def frontend_bridge(bridge, facts):
@@ -1037,17 +1093,18 @@ def emit(
         verification_source=verification_source,
     )
     # Symbol spellings come from this emitted module; only register moves are trusted.
-    bridge = frontend_bridge(None, facts)
     if output_mode == "object":
         # The current compiler owns only this closed frontend composition. Other
         # native consumers retain their existing GNU partial-link route.
         selected = sorted(abi_function_symbol(facts, "compiler_frontend::" + alias) for alias in PASS_ENTRIES)
         with tempfile.TemporaryDirectory(prefix=".aurora-frontend-", dir=output.parent) as directory:
             work = Path(directory)
-            wrapper_source, wrapper_object, selection = work / "wrapper.s", work / "wrapper.o", work / "selected.txt"
-            wrapper_source.write_text(bridge + '.section .note.GNU-stack,"",@progbits\n')
+            recipe, wrapper_object, selection = work / "wrapper.recipe", work / "wrapper.o", work / "selected.txt"
+            recipe.write_bytes(frontend_wrapper_recipe(facts))
             selection.write_text("\n".join(selected) + "\n")
-            subprocess.run(["as", "--64", str(wrapper_source), "-o", str(wrapper_object)], check=True)
+            subprocess.run(
+                [str(compiler.resolve()), "--emit-frontend-wrapper", str(recipe), "-o", str(wrapper_object)], check=True
+            )
             subprocess.run(
                 [
                     str(compiler.resolve()),
@@ -1061,7 +1118,7 @@ def emit(
                 check=True,
             )
     else:
-        output.write_bytes(b"\n".join([raw.read_bytes(), bridge.encode()]))
+        output.write_bytes(b"\n".join([raw.read_bytes(), frontend_bridge(None, facts).encode()]))
 
 
 def main():
