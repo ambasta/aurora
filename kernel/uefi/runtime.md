@@ -34,8 +34,10 @@ each row selects the two slots acting as images 0 and 1; `service-fixture`
 installs eleven one-page slots packed one page apart up to +0xbb000, and each
 row selects the slots acting as its two or three images. Link metadata, exact entry, segment permissions and every trap site
 are validated before installation. `runtime-fixture` admits three pages per
-image, which its multipage row needs; its other bank images are linked at one page. Blocking-call profiles admit two pages for the caller and one for the
-service; owned-text profiles (including console-region) admit three pages for
+image, which its multipage row needs; its other bank images are linked at one page.
+The opt-in file/snapshot/RAM Call profiles admit two pages for the caller and one
+for the service. Production append keeps its combined caller and service at one
+page each; owned-text profiles (including console-region) admit three pages for
 the first image and one for the second. Other profiles retain one-page image
 allowances. Metadata cannot select its own allowance. The linker, image validator, loader and runtime independently
 enforce the selected bound; BIOS remains one page. The loader zeros all slots
@@ -69,9 +71,10 @@ the adapter also checks every expected leaf so a missing mapping cannot pass.
 PGE and PCID remain disabled; every root switch performs an actual CR3 load.
 
 The payload installs its own GDT, TSS and IDT in owned memory. TSS.RSP0 and IST
-are guarded supervisor stacks, the I/O bitmap is beyond the TSS limit, and only
-the exact scalar-return interrupt gate is callable from CPL3. The image's
-return PC must match its validated `int 0x81`/UD2 trampoline. Exact emitted
+are guarded supervisor stacks and the I/O bitmap is beyond the TSS limit. The
+plain runtime admits only the scalar-return interrupt gate from CPL3; selected
+Call/Serve compositions additionally admit their exact `INT 0x82; ret` sites.
+The image's return PC must match its validated `int 0x81`/UD2 trampoline. Exact emitted
 bounds/overflow/division/shift UD2 sites are distinct and bounded. Matching an
 address alone does not grant fault-containment authority.
 
@@ -183,6 +186,30 @@ using the existing noinline preparation route and arena-owned MCFG snapshot.
 For multipage, Call and snapshot admission, the shared linked discovery gate
 rejects a parser-to-PCI call path and bounds the wrapper, parser and PCI frames.
 Stack and fault-reserve caps are unchanged.
+
+## Production append caller lifetime
+
+The [protected command console](../../docs/program-console-contract.md#protected-append-and-surviving-commits)
+uses the shared blocking Call transport for one bounded append operation, without
+importing the RAM service's retained-store lifetime. Its combined one-page client
+launches once; compiled Aurora locals own sequential byte requests, EOF validation
+and candidate accumulation while the native adapter schedules the original pair.
+The one-page service still constructs the candidate from a frozen prefix/suffix
+on each fresh entry. Both roles retain cumulative 128-unit allowances across
+exchanges. Call admission is restricted to the exact active append operation;
+other production commands keep their original scalar path.
+
+Only authenticated EOF plus a clean caller return after final timer drain can
+produce the fixed copied result. Original caller authority, contract/root, eight
+stack backing identities and live leases, and exact user/kernel mappings bind
+capture. A nonwrapping private receipt permits one extraction only after Mailbox
+revocation/scrubbing and both original domains' retirement. The surviving
+supervisor then applies the existing source name/revision and exact-prefix-plus-
+suffix commit checks. Fault after EOF or malformed output cannot publish, and a
+lost postcommit response never replays the operation. The four-file namespace
+remains supervisor-owned and session-local; this is neither a general scheduler
+nor a service-owned or durable filesystem. Final-source qualification remains
+required.
 
 ## Bounded retained volatile RAM file
 

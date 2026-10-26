@@ -48,17 +48,18 @@ input/output and explicit user-facing
 lifecycle outcomes, originally qualified in
 [#235](https://github.com/ambasta/aurora/pull/235), and now includes explicit atomic append
 to the existing volatile file and a read-only caller-computed CRC32C command.
-Production named-file append now constructs its candidate in a fresh CPL3 worker,
-then publishes once to the surviving supervisor-held store after authenticated
-completion and both original domain retirements. This bounded append integration
-preserves the four-file session namespace; the separate scratchpad still loses
-its service-local contents on reset. Final-source qualification remains
-required. General program lifetime, mounted durable storage and broader service
-APIs remain dependencies.
+Production named-file append now has one live compiled Call-only caller owning
+sequential requests, EOF validation and candidate accumulation across suspension.
+Its isolated service still constructs the candidate; the independent supervisor
+publishes once only after authenticated EOF, clean caller return and both original
+domain retirements. This bounded use of blocking request/reply preserves the
+four-file session namespace; the separate scratchpad still loses its service-local
+contents on reset. Final-source qualification remains required.
 
-Build capability-scoped blocking request/reply on the bounded two-program
-suspend/resume mechanism, then integrate protected-program startup/lifecycle and file
-services with explicit resource limits, cancellation, partial I/O and reclamation.
+Extend this capability-scoped blocking request/reply foundation toward protected
+program startup/lifecycle and file services with explicit resource limits,
+cancellation, partial I/O and reclamation. General program lifetimes, a surviving
+protected store owner and mounted durable storage remain separate dependencies.
 Use RAM-backed service tests before claiming durable device-backed operation.
 Gate: real compiled programs exercise allowed operations; foreign/stale authority,
 exhaustion, restart and interrupted operations fail safely without cross-domain

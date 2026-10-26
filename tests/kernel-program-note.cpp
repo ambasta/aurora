@@ -39,7 +39,24 @@ extern "C" void __au_runtime_files_update(const void *, void *);
 extern "C" void __au_runtime_files_replace(const void *, void *);
 extern "C" U64 file_call_test_service(const void *);
 extern "C" U64 note_test_service(const void *);
-extern "C" I64 aurora_user_main(I64, I64, I64);
+extern "C" I64 note_test_client(I64, I64, I64);
+extern "C" void append_test_client(const void *, void *);
+
+class AppendReply final {
+public:
+    U64 status{}, value{};
+};
+static_assert(sizeof(AppendReply) == 16);
+namespace {
+std::array<AppendReply, 50> append_replies{};
+std::size_t append_reply_count{}, append_reply_cursor{};
+} // namespace
+extern "C" AppendReply __au_runtime_call(U64 slot, U64 generation, U64 offset) {
+    if (slot != 0xC011 || generation != 91 || offset != append_reply_cursor ||
+        append_reply_cursor >= append_reply_count)
+        std::abort();
+    return append_replies[append_reply_cursor++];
+}
 
 namespace {
 U64 checks = 0;
@@ -149,7 +166,7 @@ public:
         const auto next = stream.next_input();
         require(next.has_value() && !stream.finish(), "no partial output before request");
         ordinal = next->ordinal();
-        const auto result = aurora_user_main(reading ? 12 : 0, next->byte(), static_cast<I64>(ordinal));
+        const auto result = note_test_client(reading ? 12 : 0, next->byte(), static_cast<I64>(ordinal));
         require(result >= 0 && stream.accept_request(static_cast<U64>(result), ordinal), "actual client request");
         const auto ticket = mailbox.submit(
             client, ipc::Phase::request, *mailbox.endpoint(client), ipc::Request{static_cast<U64>(result), ordinal});
@@ -196,7 +213,7 @@ public:
     }
 
     auto acknowledge(U64 result) -> void {
-        const auto accepted = aurora_user_main(transforming ? 14
+        const auto accepted = note_test_client(transforming ? 14
                                                : reading    ? 13
                                                             : 2,
                                                static_cast<I64>(result),
@@ -440,12 +457,12 @@ auto reply_controls() -> void {
                              I64{0xff01},
                              I64{0x10001},
                              (I64{1} << 62)})
-        require(aurora_user_main(13, value, 0) == -1, "actual client rejects non-closed/nonprintable reply");
-    require(aurora_user_main(13, 0x2001, 0) == 0x2001 && aurora_user_main(13, 0x7e01, 52) == 0x7e01 &&
-                aurora_user_main(13, 2, 53) == 2 && aurora_user_main(13, 3, 0) == 3 &&
-                aurora_user_main(13, 3, 1) == -1 && aurora_user_main(13, 0x6101, 53) == -1 &&
-                aurora_user_main(13, 2, -1) == -1 && aurora_user_main(13, 2, 54) == -1 &&
-                aurora_user_main(12, 1, -1) == -1 && aurora_user_main(12, 1, 54) == -1,
+        require(note_test_client(13, value, 0) == -1, "actual client rejects non-closed/nonprintable reply");
+    require(note_test_client(13, 0x2001, 0) == 0x2001 && note_test_client(13, 0x7e01, 52) == 0x7e01 &&
+                note_test_client(13, 2, 53) == 2 && note_test_client(13, 3, 0) == 3 &&
+                note_test_client(13, 3, 1) == -1 && note_test_client(13, 0x6101, 53) == -1 &&
+                note_test_client(13, 2, -1) == -1 && note_test_client(13, 2, 54) == -1 &&
+                note_test_client(12, 1, -1) == -1 && note_test_client(12, 1, 54) == -1,
             "actual client byte/EOF/missing/ordinal boundaries");
     Fixture f;
     submit(f.note, "write note x", 1);
@@ -656,7 +673,7 @@ auto emitted_faults() -> void {
                 if (phase == 4)
                     static_cast<void>(note_test_service(record.data()));
                 else
-                    static_cast<void>(aurora_user_main(phase, 1, 1));
+                    static_cast<void>(note_test_client(phase, 1, 1));
                 std::_Exit(3);
             }
             int status = 0;
@@ -1326,7 +1343,7 @@ auto protected_append_cases() -> void {
             if (phase == 4)
                 static_cast<void>(note_test_service(record.data()));
             else
-                static_cast<void>(aurora_user_main(phase, 1, 1));
+                static_cast<void>(note_test_client(phase, 1, 1));
             std::_Exit(3);
         }
         int status = 0;
@@ -1360,6 +1377,317 @@ auto protected_append_cases() -> void {
     exhausted.files.abort();
 }
 
+// Protocol facts are independent of the caller's copied result. This fixture
+// executes the real candidate-producing service, but deliberately never builds
+// a candidate in the native per-reply path; the final value is reviewed data.
+class AppendFixture final {
+public:
+    NamedFixture named;
+    program::AppendCall call;
+    explicit AppendFixture(U64 ceiling = UINT64_MAX) : call(ceiling) {
+    }
+
+    auto start(std::string_view command) -> void {
+        named.submit(command);
+        auto &f = named.f;
+        const auto client = f.registry.create(), service = f.registry.create();
+        require(client && service && call.begin(), "live append fresh receipt and participants");
+        f.client = *client;
+        f.service = *service;
+        f.reading = true;
+        require(f.mailbox.bind(f.client, f.service) &&
+                    f.note.bind(named.files.projection(), *f.mailbox.endpoint(f.service), named.files.suffix()),
+                "live append original grants and frozen inputs");
+        require(named.files.bind_append(f.registry, f.mailbox, f.client, f.service, call),
+                "live append binds exact receipt run");
+    }
+    auto round(U64 expected) -> void {
+        auto &f = named.f;
+        f.ordinal = call.length();
+        require(call.request(f.ordinal), "live append copied request offset");
+        const auto ticket =
+            f.mailbox.submit(f.client, ipc::Phase::request, *f.mailbox.endpoint(f.client), ipc::Request{1, f.ordinal});
+        require(ticket.has_value(), "live append real mailbox request");
+        f.transaction = *ticket;
+        const auto result = f.receive(15);
+        require(result == expected && call.reply(result), "live append actual worker reply matches golden word");
+        require(f.mailbox.reply(f.service, ipc::Phase::service, *f.mailbox.endpoint(f.service), *ticket, result),
+                "live append authenticated reply");
+        require(f.consume() == expected && f.mailbox.recycle(ipc::Phase::inactive),
+                "live append terminal consumption and scrub");
+    }
+    auto run(std::string_view expected) -> void {
+        for (const auto byte : expected)
+            round(1 | (static_cast<U64>(byte) << 8));
+        round(2);
+        require(call.terminal() && call.length() == expected.size() && !call.captured(),
+                "live append EOF is not copied-result authority");
+    }
+    static auto value(std::string_view expected) -> program::AppendCall::Value {
+        program::AppendCall::Value result{};
+        for (std::size_t index = 0; index < expected.size(); ++index)
+            result[index] = std::byte(expected[index]);
+        put_word(result, 64, expected.size());
+        return result;
+    }
+    auto cancel() -> void {
+        const auto saved = named.files.saved();
+        named.files.abort();
+        call.cancel();
+        named.f.retire();
+        require(call.scrubbed() && named.files.saved() == saved, "live append cancellation preserves committed store");
+    }
+    auto save(std::string_view expected, bool delivered = true) -> void {
+        auto &f = named.f;
+        auto &files = named.files;
+        const auto endpoint = *f.mailbox.endpoint(f.client);
+        require(!files.complete_append(f.registry, f.mailbox, f.client, endpoint, call),
+                "EOF cannot complete before clean-result capture");
+        require(call.capture(value(expected)) && !call.capture(value(expected)), "live append result captured once");
+        program::AppendCall other;
+        require(other.begin() && !files.complete_append(f.registry, f.mailbox, f.client, endpoint, other),
+                "foreign append receipt cannot complete");
+        require(!files.complete_append(f.registry, f.mailbox, f.service, endpoint, call) &&
+                    !files.complete_append(
+                        f.registry, f.mailbox, f.client, ipc::Endpoint{0, endpoint.generation() + 1}, call),
+                "live append exact caller and generation");
+        require(files.complete_append(f.registry, f.mailbox, f.client, endpoint, call) &&
+                    !files.complete_append(f.registry, f.mailbox, f.client, endpoint, call),
+                "live append completion consumed once");
+        Files::ReplaceInput input{};
+        require(!files.replacement(call, input) && !files.retire(f.registry, f.mailbox),
+                "live append result cannot publish while workers live");
+        f.retire();
+        require(files.retire(f.registry, f.mailbox) && !files.retire(f.registry, f.mailbox),
+                "live append exact original retirement consumed once");
+        require(!files.replacement(other, input) && files.replacement(call, input) && call.scrubbed() &&
+                    !files.replacement(call, input),
+                "live append extraction retains receipt identity and is one shot");
+        const auto result = file_replace(input);
+        require(files.publish(result) && !files.publish(result), "live append exact-content publication once");
+        const auto committed = files.saved();
+        files.abort();
+        require(files.settled() && files.saved() == committed && files.operation() == call.run(),
+                "live append response receipt survives cancellation");
+        require(files.response_complete(delivered) && !files.response_complete(delivered) && files.saved() == committed,
+                "live append response failure never replays or rolls back commit");
+    }
+};
+
+// Executable generated-caller ABI coverage. These are copied scalar replies,
+// not a host implementation of its accumulation or termination algorithm.
+auto generated_append_caller_cases() -> void {
+    auto invoke = [](U64 probe = 0) {
+        const std::array<U64, 3> argument{0xC011, 91, probe};
+        const auto original = argument;
+        std::array<std::byte, 104> result{};
+        result.fill(std::byte{0xa5});
+        append_reply_cursor = 0;
+        append_test_client(argument.data(), result.data() + 16);
+        require(argument == original, "append caller leaves copied argument immutable");
+        for (unsigned index = 0; index < 16; ++index)
+            require(result[index] == std::byte{0xa5} && result[88 + index] == std::byte{0xa5},
+                    "append caller exact copied-result canaries");
+        program::AppendCall::Value value{};
+        std::copy_n(result.begin() + 16, value.size(), value.begin());
+        return value;
+    };
+    auto replies = [](std::string_view text, AppendReply terminal = {0, 2}) {
+        append_replies = {};
+        append_reply_count = 0;
+        for (const auto byte : text)
+            append_replies[append_reply_count++] = {0, 1 | (U64(static_cast<unsigned char>(byte)) << 8)};
+        append_replies[append_reply_count++] = terminal;
+    };
+    for (const auto &text : {std::string{}, std::string{"A"}, std::string{"with spaces ~!"}, std::string(49, 'x')}) {
+        replies(text);
+        require(invoke() == AppendFixture::value(text) && append_reply_cursor == text.size() + 1,
+                "generated append caller preserves locals across exact sequential byte-and-EOF calls");
+    }
+    program::AppendCall::Value failed{};
+    put_word(failed, 64, UINT64_MAX);
+    constexpr std::array<AppendReply, 11> refusals{{{1, 0},
+                                                    {2, 0},
+                                                    {0, 0},
+                                                    {0, 1},
+                                                    {0, 3},
+                                                    {0, 4},
+                                                    {0, 1 | (31 << 8)},
+                                                    {0, 1 | (127 << 8)},
+                                                    {0, 1 | (255 << 8)},
+                                                    {0, 0x1000000000002001},
+                                                    {0, 0x2002}}};
+    for (const auto terminal : refusals)
+        for (const auto text : {std::string_view{}, std::string_view{"partial"}}) {
+            replies(text, terminal);
+            require(invoke() == failed && append_reply_cursor == text.size() + 1,
+                    "generated append caller discards partial bytes on malformed or failed reply");
+        }
+    replies(std::string(49, 'x'), {0, 1 | ('y' << 8)});
+    require(invoke() == failed && append_reply_cursor == 50, "generated append caller refuses a 50th data byte");
+    for (const U64 probe : {20, 8, 10, 18}) {
+        replies("AB");
+        const auto child = fork();
+        require(child >= 0, "generated append caller fault child");
+        if (child == 0) {
+            static_cast<void>(invoke(probe));
+            std::_Exit(3);
+        }
+        int status = 0;
+        require(waitpid(child, &status, 0) == child && WIFSIGNALED(status) && WTERMSIG(status) == SIGILL,
+                "generated caller faults before, during and after terminal EOF");
+    }
+}
+
+auto live_append_receipt_cases() -> void {
+    using program::AppendCall;
+    static_assert(!std::is_copy_constructible_v<AppendCall> && !std::is_move_constructible_v<AppendCall>);
+    AppendCall facts(2);
+    AppendCall::Value out{};
+    out.fill(std::byte{0xa5});
+    const auto untouched = out;
+    require(!facts.request(0) && !facts.reply(2) && !facts.capture({}) && !facts.finish(out) && out == untouched,
+            "idle append has no request, terminal, capture or extraction authority");
+    require(facts.begin() && facts.run() == 1 && !facts.begin() && facts.awaiting(), "append admits one live run");
+    require(!facts.request(1) && facts.request(0) && !facts.request(0), "append sequential one-pending request");
+    for (const auto word : {U64{0},
+                            U64{1},
+                            U64{3},
+                            U64{4},
+                            U64{1 | (31 << 8)},
+                            U64{1 | (127 << 8)},
+                            U64{1 | (255 << 8)},
+                            U64{0x1000000000002001}})
+        require(!facts.reply(word), "append closed printable byte-or-EOF framing");
+    require(facts.reply(1 | ('A' << 8)) && !facts.reply(2) && facts.request(1) && facts.reply(2),
+            "append byte then separate terminal EOF");
+    require(!facts.request(1) && !facts.reply(2) && !facts.finish(out) && out == untouched,
+            "terminal EOF does not expose bytes or reopen traversal");
+    auto malformed = AppendFixture::value("AA");
+    require(!facts.capture(malformed) && !facts.capture(AppendFixture::value("A")) && !facts.finish(out),
+            "malformed copied result consumes its one capture attempt");
+    facts.cancel();
+    require(facts.scrubbed() && facts.begin() && facts.run() == 2 && facts.request(0) && facts.reply(2) &&
+                facts.capture({}) && facts.finish(out) && out == AppendCall::Value{} && !facts.finish(out),
+            "present-empty append still requires EOF then one clean capture");
+    require(facts.scrubbed() && !facts.begin() && facts.run() == 2, "append run exhaustion never wraps");
+    for (unsigned bad = 0; bad < 4; ++bad) {
+        AppendCall rejected;
+        require(rejected.begin() && rejected.request(0) && rejected.reply(1 | ('A' << 8)) && rejected.request(1) &&
+                    rejected.reply(2),
+                "malformed-copy setup");
+        auto value = AppendFixture::value("A");
+        if (bad == 0)
+            value[0] = std::byte{31};
+        if (bad == 1)
+            value[0] = std::byte{127};
+        if (bad == 2)
+            value[1] = std::byte{'x'};
+        if (bad == 3)
+            value[71] = std::byte{255};
+        require(!rejected.capture(value) && !rejected.captured(), "malformed final return cannot authorize append");
+        rejected.cancel();
+        require(rejected.scrubbed(), "malformed final copy scrubbed");
+    }
+    AppendCall full;
+    require(full.begin(), "49-byte append receipt begins");
+    for (U64 index = 0; index < 49; ++index)
+        require(full.request(index) && full.reply(1 | ('x' << 8)), "49-byte append bounded protocol");
+    require(!full.request(50) && full.request(49) && !full.reply(1 | ('x' << 8)) && full.reply(2) &&
+                full.capture(AppendFixture::value(std::string(49, 'x'))) && full.finish(out),
+            "50th exchange must be EOF, never another byte");
+
+    AppendFixture live;
+    live.named.submit("write a old");
+    live.named.submit("write b Preserve");
+    live.named.submit("write c ");
+    live.named.submit("write d fourth");
+    live.start("append a new");
+    live.run("oldnew");
+    live.save("oldnew", false);
+    live.named.read("a", "oldnew");
+    live.named.read("b", "Preserve");
+    live.start("append c ");
+    live.run("");
+    live.save("");
+    live.named.read("c", "");
+    for (unsigned cut = 0; cut < 3; ++cut) {
+        live.start("append a !");
+        if (cut == 1)
+            live.round(1 | ('o' << 8));
+        if (cut == 2)
+            live.run("oldnew!");
+        const auto stale = *live.named.f.mailbox.endpoint(live.named.f.client);
+        live.cancel();
+        live.start("append a ");
+        auto &f = live.named.f;
+        require(!live.named.files.matches_append(f.registry, f.mailbox, f.client, stale, live.call),
+                "later live append rejects stale wake authority");
+        live.run("oldnew");
+        live.save("oldnew");
+    }
+    live.named.read("a", "oldnew");
+    live.named.read("b", "Preserve");
+    live.named.read("d", "fourth");
+
+    live.start("append a ");
+    auto &f = live.named.f;
+    const auto endpoint = *f.mailbox.endpoint(f.client);
+    live.call.cancel();
+    require(live.call.begin() && !live.named.files.matches_append(f.registry, f.mailbox, f.client, endpoint, live.call),
+            "same-address restarted append receipt cannot reuse original grant");
+    live.cancel();
+
+    for (const auto command : {"cat a", "upper a"}) {
+        NamedFixture other;
+        other.submit("write a x");
+        other.submit(command);
+        const auto client = other.f.registry.create(), service = other.f.registry.create();
+        AppendCall wrong;
+        require(client && service && wrong.begin() && other.f.mailbox.bind(*client, *service) &&
+                    !other.files.bind_append(other.f.registry, other.f.mailbox, *client, *service, wrong),
+                "read and uppercase selections cannot mint append Call authority");
+        require(other.f.mailbox.revoke(ipc::Phase::inactive) && other.f.registry.destroy(*client) &&
+                    other.f.registry.destroy(*service),
+                "wrong append mode fixture retirement");
+        other.files.abort();
+        wrong.cancel();
+    }
+
+    live.start("append a ");
+    live.run("oldnew");
+    require(
+        live.call.capture(AppendFixture::value("oldnew")) &&
+            live.named.files.complete_append(f.registry, f.mailbox, f.client, *f.mailbox.endpoint(f.client), live.call),
+        "stale extraction setup");
+    f.retire();
+    require(live.named.files.retire(f.registry, f.mailbox), "stale extraction original retirement");
+    live.call.cancel();
+    require(live.call.begin(), "fresh operation replaces retired receipt at same address");
+    Files::ReplaceInput stale{};
+    stale.fill(std::byte{0xa5});
+    const auto untouched_stale = stale;
+    require(!live.named.files.replacement(live.call, stale) && stale == untouched_stale,
+            "same-address new append run rejects retired extraction authority");
+    live.named.files.abort();
+    live.call.cancel();
+
+    // A valid-length printable candidate is insufficient: Aurora still checks
+    // exact selected prefix plus suffix before changing the committed record.
+    live.start("append a !");
+    const auto saved = live.named.files.saved();
+    live.run("oldnew!");
+    require(
+        live.call.capture(AppendFixture::value("changed")) &&
+            live.named.files.complete_append(f.registry, f.mailbox, f.client, *f.mailbox.endpoint(f.client), live.call),
+        "canonical copy remains distinct from append-specific content authority");
+    f.retire();
+    Files::ReplaceInput copied{};
+    require(live.named.files.retire(f.registry, f.mailbox) && live.named.files.replacement(live.call, copied) &&
+                !live.named.files.publish(file_replace(copied)) && live.named.files.saved() == saved,
+            "source exact append check rejects canonical but unauthorized candidate");
+}
+
 } // namespace
 
 auto main() -> int {
@@ -1370,6 +1698,8 @@ auto main() -> int {
     file_service_transition_cases();
     named_file_cases();
     protected_append_cases();
+    live_append_receipt_cases();
+    generated_append_caller_cases();
     command_cases();
     representation_controls();
     reply_controls();
@@ -1380,7 +1710,7 @@ auto main() -> int {
     emitted_faults();
     upper_regression();
     std::printf(
-        "PASS: %llu source-native note checks; real Mailbox bytes/EOF, retained note, cancellation and upper save; "
-        "nine emitted SIGILL probes, hosted cleanup separately scoped\n",
+        "PASS: %llu source-native note/file checks; real Mailbox bytes/EOF, live append caller, one-shot publication; "
+        "emitted SIGILL probes and hosted cleanup separately scoped\n",
         static_cast<unsigned long long>(checks));
 }

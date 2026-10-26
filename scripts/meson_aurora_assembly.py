@@ -167,13 +167,15 @@ def validate_program_session_abi(facts):
         raise ValueError("Program session entry shape does not match its native executor")
 
 
-def validate_program_copied_abi(facts, service=False, replacement=False):
+def validate_program_copied_abi(facts, service=False, replacement=False, client=False):
     """Admit the fixed private file/append records before an adapter can copy them."""
     from bootstrap_frontend import abi_declaration, normalize_function_abi
 
     def shape(source):
         if source in ("i64", "u64", "u8"):
             return dict(bytes=8, kind=source)
+        if source == "builtin::CallSession":
+            return dict(bytes=16, kind="service")
         group = "enums" if source == "console::FileEvent" else "records"
         symbol, value = abi_declaration(facts, group, source)
         return dict(
@@ -219,6 +221,11 @@ def validate_program_copied_abi(facts, service=False, replacement=False):
         ):
             raise ValueError("Protected copied entry differs from its native boundary: " + source)
 
+    if client:
+        record("kernel::NoteRead64", 72, [("bytes", "u8", 64), ("length", "i64", 0)])
+        entry("aurora_user_main", ["i64", "i64", "i64"], "i64")
+        entry("append_candidate", ["builtin::CallSession", "i64"], "kernel::NoteRead64")
+        return
     if service:
         record("kernel::NoteRead64", 72, [("bytes", "u8", 64), ("length", "i64", 0)])
         entry("aurora_user_main", ["i64", "i64", "i64", "kernel::NoteRead64", "kernel::NoteRead64"], "i64")
@@ -266,11 +273,15 @@ def validate_program_copied_abi(facts, service=False, replacement=False):
 def validate_selected_source_abi(source, facts):
     # This existing compiled image has one exact private launch record. Other
     # uses of ipc-user-entry.S (snapshot, file-call, Call/Serve) retain theirs.
+    if Path(source).name == "program-upper-client.au":
+        validate_program_copied_abi(facts, client=True)
     if Path(source).name == "program-stream-service.au":
         validate_program_copied_abi(facts, service=True)
 
 
 def render_bridge(source, facts):
+    if "# PROGRAM_APPEND_CLIENT_ABI:" in source:
+        validate_program_copied_abi(facts, client=True)
     if "# PROGRAM_FILES_ABI:" in source:
         validate_program_copied_abi(facts, replacement="@replace_files@" in source)
     if "# PROGRAM_SESSION_ABI:" in source:

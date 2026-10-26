@@ -58,12 +58,36 @@ def image_metadata(prefix, base, budget, owned, console):
     if at("aurora_serve_return_pc"):
         meta["serve_pc"] = at("aurora_serve_return_pc")
     abi = prefix.with_suffix(".abi.json")
-    compiled = abi_function_symbol(json.loads(abi.read_text()), "aurora_user_main") if abi.exists() else None
+    facts = json.loads(abi.read_text()) if abi.exists() else None
+    compiled = abi_function_symbol(facts, "aurora_user_main") if facts else None
     if budget or owned:
         compiled = compiled or "aurora_user_main"
         need(compiled in elf.functions, f"{prefix.name}: compiled entry {compiled} is not a linked function")
         function = elf.functions[compiled]
         meta.update(compiled_begin=function.address, compiled_end=function.address + function.size)
+        if facts and any(value["source_name"] == "append_candidate" for value in facts["functions"].values()):
+            # The combined production caller has two source roots. Count timer
+            # PCs from their real emitted call graph, including the live Call
+            # loop/probes, rather than claiming its old scalar entry covers it.
+            graph = json.loads(prefix.with_suffix(".stack.json").read_text())["functions"]
+            pending = [compiled, abi_function_symbol(facts, "append_candidate")]
+            reached = set()
+            while pending:
+                name = pending.pop()
+                if name in reached or name == "__au_runtime_call":
+                    continue
+                need(name in graph and name in elf.functions, f"{prefix.name}: missing compiled caller node {name}")
+                reached.add(name)
+                pending.extend(graph[name]["calls"])
+            ranges = [elf.functions[name] for name in reached]
+            meta.update(
+                compiled_begin=min(value.address for value in ranges),
+                compiled_end=max(value.address + value.size for value in ranges),
+            )
+            need(
+                meta["return_pc"] < meta["compiled_begin"] < meta["compiled_end"] <= meta["bounds_pc"],
+                f"{prefix.name}: compiled caller graph crosses its wrapper/trap boundary",
+            )
     if budget:
         meta.update(context_begin=at("aurora_budget_context_begin"), context_end=at("aurora_budget_context_end"))
     if owned:

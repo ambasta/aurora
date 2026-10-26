@@ -1,18 +1,8 @@
 module program_upper_client;
+import kernel.note_read;
 auto aurora_user_main(i64 phase, i64 value, i64 ordinal) -> i64 {
-    if (phase == 6 || phase == 7) {
-        i64 toggle = 0;
-        while (true) {
-            toggle = 1 - toggle;
-        }
-    }
-    if (phase == 8 || phase == 10) {
-        const array<i64, 2> items = {
-            1,
-            2
-        };
-        return items[10];
-    }
+    append_probe(phase, 8, 6);
+    append_probe(phase, 10, 7);
     // Completion accepts actual service bytes/EOF, never an expected payload.
     // Phase 14 retains that reply alongside the client-transformed output byte.
     if (phase == 12) {
@@ -54,4 +44,63 @@ auto aurora_user_main(i64 phase, i64 value, i64 ordinal) -> i64 {
         return value;
     }
     return -1;
+}
+
+// One live Call-only invocation owns its request sequence and complete staging.
+// The native pair scheduler sees offsets and scalar replies, not these locals.
+auto append_probe(i64 probe, i64 fault, i64 budget) -> bool {
+    if (probe == fault) {
+        const array<i64, 2> items = {1, 2};
+        return items[10] == 0;
+    }
+    if (probe == budget) {
+        i64 toggle = 0;
+        while (true) {
+            toggle = 1 - toggle;
+        }
+    }
+    return true;
+}
+auto append_candidate(builtin::CallSession& session, i64 probe) -> kernel::NoteRead64 {
+    kernel::NoteRead64 staged = kernel::NoteRead64(0);
+    i64 count = 0;
+    bool active = true;
+    bool complete = false;
+    append_probe(probe, 20, 21);
+    while (active && count <= 49) {
+        if (count == 1) {
+            append_probe(probe, 8, 6);
+        }
+        const builtin::CallResult reply = session.call(u64(count));
+        if (count == 1) {
+            append_probe(probe, 10, 7);
+        }
+        if (reply.status != builtin::CallStatus::replied) {
+            active = false;
+        } else {
+            if (reply.value == 2u64) {
+                append_probe(probe, 18, 19);
+                complete = true;
+                active = false;
+            } else {
+                if (count == 49 || (reply.value & 255u64) != 1u64 || (reply.value >> 8) < 32u64
+                    || (reply.value >> 8) > 126u64) {
+                    active = false;
+                } else {
+                    staged.set(count, u8(reply.value >> 8));
+                    count = count + 1;
+                }
+            }
+        }
+    }
+    if (complete) {
+        kernel::NoteRead64 result = kernel::NoteRead64(count);
+        i64 index = 0;
+        while (index < count) {
+            result.set(index, staged.at(index));
+            index = index + 1;
+        }
+        return result;
+    }
+    return kernel::NoteRead64(-1);
 }
