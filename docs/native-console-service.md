@@ -39,6 +39,13 @@ text route. Image, W^X, symbol and mixed-stack checks and all reservations remai
 unchanged; direct output is not a performance or full native-binutils claim.
 Missing tools or firmware are blocked verification, never a pass.
 
+The separate source UART object used by BIOS console, UEFI `device-fixture` and
+the hosted UART driver now uses Aurora's private object composer. Its unchanged
+GNU-as adapter exports only the three existing hidden UART entries; source
+definitions stay LOCAL and port read/write imports remain unchanged. The
+editor/session composer above stays on its GNU route. Final links, runtime
+authority, production UART policy and image/stack limits are unchanged.
+
 ## Input behavior
 
 The 64-byte ASCII editor echoes printable bytes; backspace and DEL erase one

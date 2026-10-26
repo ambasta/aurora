@@ -195,11 +195,6 @@ private_object_wrapper = custom_target(
 private_object_test = executable('private-object-test', 'compiler/private_object.cpp',
     dependencies: hosted_frontend, link_with: ir_text, include_directories: include_directories('../compiler'),
     native: true, override_options: fixture_options, install: false)
-test('private-object', python,
-     args: ['-B', files('compiler/private_object.py'), private_object_test, aurorac, private_object_wrapper,
-            '--frontend', frontend_stage2_output[1], frontend_stage2_output[0], frontend_stage2_output[2]],
-     depends: [private_object_test, private_object_wrapper, aurorac, frontend_stage2_output],
-     suite: ['full', 'merge', 'dev', 'core', 'compiler'], env: oracle_env, timeout: 120)
 
 test(
     'owned-mutation-abi',
@@ -585,6 +580,13 @@ foreach family : ['host_sources_tests', 'host_output_tests']
 endforeach
 
 subdir('native')
+
+test('private-object', python,
+     args: ['-B', files('compiler/private_object.py'), private_object_test, aurorac, private_object_wrapper,
+            '--frontend', frontend_stage2_output[1], frontend_stage2_output[0], frontend_stage2_output[2],
+            '--uart', native_uart_object],
+     depends: [private_object_test, private_object_wrapper, aurorac, frontend_stage2_output, native_uart_object],
+     suite: ['full', 'merge', 'dev', 'core', 'compiler'], env: oracle_env, timeout: 120)
 
 
 # This fixture always links the Aurora phase; the C++ scanner is only its oracle.

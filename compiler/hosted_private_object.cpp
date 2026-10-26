@@ -68,7 +68,7 @@ public:
             throw Error("private object composition exceeds its bounded output or workspace");
         if (status == static_cast<std::int64_t>(Status::invalid) ||
             status == static_cast<std::int64_t>(Status::unsupported))
-            throw Error("private object inputs do not match the admitted frontend profiles");
+            throw Error("private object inputs do not match the admitted private object profiles");
         if (status != static_cast<std::int64_t>(Status::complete))
             invalidTransport();
         const auto size = aurora_hosted_private_object_size(data());

@@ -1,4 +1,4 @@
-# name input record-kind record-name byte-offset width unsigned-value expectation
+# name input record-kind record-name byte-offset width value expectation
 # Offsets are ELF64 ABI fields, not generated instruction or layout offsets.
 short-header source truncate - 63 0 0 reject
 bad-magic source header - 0 1 0 reject
@@ -51,6 +51,11 @@ wrapper-executable-stack wrapper section .note.GNU-stack 8 8 4 reject
 duplicate-wrapper-symbol wrapper symbol object_six_arguments 0 4 name:object_loop reject
 wrapper-visible-export wrapper symbol aurora_hosted_private_object_test 5 1 0 reject
 wrapper-local-export wrapper symbol aurora_hosted_private_object_test 4 1 2 reject
+wrapper-runtime-export wrapper symbol-name aurora_hosted_private_object_test 0 0 __au_runtime_unrelated reject
+wrapper-uart-prefix wrapper symbol-name aurora_hosted_private_object_test 0 0 __au_runtime_uart_ reject
+wrapper-uart-initialize-suffix wrapper symbol-name aurora_hosted_private_object_test 0 0 __au_runtime_uart_initialize_x reject
+wrapper-uart-next-suffix wrapper symbol-name aurora_hosted_private_object_test 0 0 __au_runtime_uart_next_x reject
+wrapper-uart-put-suffix wrapper symbol-name aurora_hosted_private_object_test 0 0 __au_runtime_uart_put_x reject
 wrapper-import-type wrapper symbol object_loop 4 1 18 reject
 wrapper-import-value wrapper symbol object_loop 8 8 1 reject
 wrapper-import-size wrapper symbol object_loop 16 8 1 reject

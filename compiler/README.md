@@ -23,8 +23,9 @@ helpers with the same defining-module visibility and symbol-selection rules as
 text output. Neither backend adds reflection access to private values.
 
 Native UART and hosted frontend wrappers remain separate bootstrap adapters.
-`private_object.au` composes frontend B/C from the source emitter's eight-section
-ELF64LE x86-64 object and the generated GNU-as wrapper object. It keeps source
+`private_object.au` composes frontend B/C and the existing BIOS console, UEFI
+device-fixture and hosted UART objects from the source emitter's eight-section
+ELF64LE x86-64 object and a GNU-as wrapper object. It keeps source
 symbol indices and LOCAL bindings unchanged, appends aligned wrapper text and
 hidden exports, and remaps wrapper PLT32 references to the selected source text
 symbols. It does not evaluate relocations or provide a general linker. Admission
@@ -33,14 +34,18 @@ relocations before sealing output. One owning workspace holds typed name/index
 maps and output; the native adapter only lends three readonly byte spans and
 transports results. Artifact reads retain the 64 MiB ceiling and atomic output
 protects all input identities; language-source reads remain limited to 1 MiB.
-Other native consumers retain their GNU partial-link route. Existing hidden
+Wrapper definitions admit the existing `aurora_hosted_*` names and exactly
+`__au_runtime_uart_initialize`, `__au_runtime_uart_next` and
+`__au_runtime_uart_put`; other runtime exports remain rejected. The standalone
+UEFI console/session composer retains its GNU partial-link route. Existing hidden
 wrapper exports and runtime imports are unchanged; this adds no Aurora C ABI.
 The pinned predecessor still emits frontend A as text. C1 emits frontend B
 directly as an object linked into C2; C2 emits frontend C for source-object,
 composed-object, ABI/header and stack-fact convergence. The private-object test
-also compares normalized text, readonly data, symbols and relocations with GNU
-composition and executes both results. No checkpoint bump is
-needed for this adoption. GNU assembler/linker and Linux host I/O remain
+also compares normalized frontend and UART text, readonly data, symbols and
+relocations with GNU composition; the generated UART runs in its existing hosted
+driver and guest families. No checkpoint bump is needed for this adoption.
+GNU assembler/linker and Linux host I/O remain
 bootstrap dependencies for frontend A, other text output, native adapters and
 final links.
 
