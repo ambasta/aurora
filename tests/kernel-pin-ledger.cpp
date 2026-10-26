@@ -99,7 +99,7 @@ public:
 auto ownership_and_cancellation() -> void {
     Arena arena;
     arena.fill(0xa5);
-    PhysicalPages pool;
+    aurora::memory::PhysicalPagePool<> pool;
     DomainRegistry registry, foreign_registry;
     Scrubber scrub(arena, pool);
     PinLedger ledger(pool, registry, Scrubber::run, &scrub);
@@ -153,7 +153,7 @@ auto ownership_and_cancellation() -> void {
 auto client_lifetimes() -> void {
     Arena arena;
     arena.fill(0x72);
-    PhysicalPages pool;
+    aurora::memory::PhysicalPagePool<> pool;
     check(pool.initialize(arena.base(), Arena::page_count), "lifetime pool");
     DomainRegistry registry;
     const auto owner = registry.create(), peer = registry.create();
@@ -182,7 +182,7 @@ auto client_lifetimes() -> void {
 auto permanent_quarantine() -> void {
     Arena arena;
     arena.fill(0xc1);
-    PhysicalPages pool;
+    aurora::memory::PhysicalPagePool<> pool;
     check(pool.initialize(arena.base(), Arena::page_count), "quarantine pool");
     DomainRegistry registry;
     const auto owner = registry.create(), peer = registry.create();
@@ -218,7 +218,7 @@ auto permanent_quarantine() -> void {
 auto scrub_failure() -> void {
     Arena arena;
     arena.fill(0x39);
-    PhysicalPages pool;
+    aurora::memory::PhysicalPagePool<> pool;
     check(pool.initialize(arena.base(), Arena::page_count), "scrub-failure pool");
     DomainRegistry registry;
     const auto owner = registry.create();
@@ -240,7 +240,7 @@ auto scrub_failure() -> void {
 auto disposal_failure_and_full_quarantine() -> void {
     Arena arena;
     arena.fill(0x85);
-    PhysicalPages pool;
+    aurora::memory::PhysicalPagePool<> pool;
     check(pool.initialize(arena.base(), Arena::page_count), "disposal-failure pool");
     DomainRegistry registry;
     const auto first = registry.create(), second = registry.create();
@@ -275,7 +275,7 @@ auto disposal_failure_and_full_quarantine() -> void {
 auto exhaustion_and_rollback() -> void {
     Arena arena;
     arena.fill(0x63);
-    PhysicalPages pool;
+    aurora::memory::PhysicalPagePool<> pool;
     check(pool.initialize(arena.base(), Arena::page_count), "capacity pool");
     DomainRegistry registry;
     const auto owner = registry.create();
@@ -302,7 +302,7 @@ auto exhaustion_and_rollback() -> void {
 
     Arena small;
     small.fill(0xdd);
-    PhysicalPages small_pool;
+    aurora::memory::PhysicalPagePool<> small_pool;
     check(small_pool.initialize(small.base(), 2), "partial pool");
     auto stack = small_pool.acquire();
     check(stack.has_value(), "partial external stack");
@@ -319,7 +319,7 @@ auto exhaustion_and_rollback() -> void {
 
     Arena failed;
     failed.fill(0xbe);
-    PhysicalPages failed_pool;
+    aurora::memory::PhysicalPagePool<> failed_pool;
     check(failed_pool.initialize(failed.base(), 1), "rollback-failure pool");
     Scrubber fail_scrub(failed, failed_pool);
     fail_scrub.fail_call = 1;
@@ -335,7 +335,7 @@ auto exhaustion_and_rollback() -> void {
 auto reconstruction_guards() -> void {
     Arena arena;
     arena.fill(0x91);
-    PhysicalPages pool;
+    aurora::memory::PhysicalPagePool<> pool;
     check(pool.initialize(arena.base(), Arena::page_count), "rebirth pool");
     DomainRegistry registry;
     const auto owner = registry.create();
@@ -366,7 +366,7 @@ auto reconstruction_guards() -> void {
     // allocator can reuse its claimed arena, so callers MUST forbid it. The
     // ledger additionally refuses to release any new lease on the stale token.
     Arena replaced_arena;
-    std::optional<PhysicalPages> replaced_pool;
+    std::optional<aurora::memory::PhysicalPagePool<>> replaced_pool;
     replaced_pool.emplace();
     check(replaced_pool->initialize(replaced_arena.base(), 2), "original lifetime-violation pool");
     Scrubber replaced_scrub(replaced_arena, *replaced_pool);
@@ -387,7 +387,7 @@ auto reconstruction_guards() -> void {
 auto generation_exhaustion() -> void {
 #if defined(AURORA_PIN_LEDGER_TEST_GENERATION_LIMIT)
     Arena arena;
-    PhysicalPages pool;
+    aurora::memory::PhysicalPagePool<> pool;
     check(pool.initialize(arena.base(), Arena::page_count), "generation pool");
     DomainRegistry registry;
     const auto owner = registry.create();

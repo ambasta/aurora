@@ -32,7 +32,7 @@ std::byte sentinel(std::size_t index) {
     return std::byte{static_cast<unsigned char>(0xa0 + index)};
 }
 struct Fixture {
-    PhysicalPages pool;
+    aurora::memory::PhysicalPagePool<> pool;
     alignas(page_bytes) std::array<std::byte, page_count * page_bytes> backing;
     std::array<std::optional<PageLease>, page_count> holders;
     Region region;

@@ -190,10 +190,40 @@ public:
     bool enabled{}, online_capable{}, extended{};
 };
 
+// Owned facts from a fully parsed MADT, not MMIO authority. Retaining these
+// values does not retain the processor inventory or a view into firmware data.
+class TimerTopology final {
+    friend class Topology;
+    const std::uint64_t apic_;
+    const std::size_t enabled_;
+    const std::uint32_t id_;
+    const bool extended_;
+
+    constexpr TimerTopology(std::uint64_t apic, std::size_t enabled, std::uint32_t id, bool extended)
+        : apic_(apic), enabled_(enabled), id_(id), extended_(extended) {
+    }
+
+public:
+    [[nodiscard]] constexpr auto apic() const -> std::uint64_t {
+        return apic_;
+    }
+    [[nodiscard]] constexpr auto enabled() const -> std::size_t {
+        return enabled_;
+    }
+    [[nodiscard]] constexpr auto id() const -> std::uint32_t {
+        return id_;
+    }
+    [[nodiscard]] constexpr auto extended() const -> bool {
+        return extended_;
+    }
+};
+
 class Topology final {
     std::array<Processor, 256> processors_{};
     std::size_t count_{};
     std::uint64_t apic_{};
+
+    Topology() = default;
 
 public:
     [[nodiscard]] auto count() const -> std::size_t {
@@ -204,6 +234,21 @@ public:
     }
     [[nodiscard]] auto apic() const -> std::uint64_t {
         return apic_;
+    }
+    [[nodiscard]] auto timer_topology() const -> TimerTopology {
+        std::size_t enabled = 0;
+        std::uint32_t id = 0;
+        bool extended = false;
+        for (const auto &processor : processors()) {
+            // Disabled and merely online-capable records do not add running CPUs.
+            if (!processor.enabled)
+                continue;
+            ++enabled;
+            id = processor.id;
+            extended = processor.extended;
+        }
+        // ID and kind are relevant only when there is exactly one enabled CPU.
+        return TimerTopology{apic_, enabled, id, extended};
     }
     [[nodiscard]] static auto parse(std::span<const std::byte> bytes, unsigned physical_bits)
         -> std::optional<Topology> {

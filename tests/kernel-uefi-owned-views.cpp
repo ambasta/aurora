@@ -34,7 +34,7 @@ std::byte sentinel(std::size_t index) {
     return std::byte{static_cast<unsigned char>(0xa0 + index)};
 }
 struct Fixture {
-    PhysicalPages pool;
+    aurora::memory::PhysicalPagePool<> pool;
     alignas(page_bytes) std::array<std::byte, page_count * page_bytes> backing;
     std::array<std::optional<PageLease>, page_count> holders;
     Region region;
@@ -110,7 +110,7 @@ std::span<const std::byte> copied_backing;
 std::size_t copied_releases_checked = 0;
 
 void copied_record(std::int64_t mode) {
-    PhysicalPages pool;
+    aurora::memory::PhysicalPagePool<> pool;
     alignas(page_bytes) std::array<std::byte, page_count * page_bytes> backing;
     std::array<std::optional<PageLease>, page_count> holders;
     Region region;

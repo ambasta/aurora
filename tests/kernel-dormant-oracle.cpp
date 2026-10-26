@@ -60,7 +60,7 @@ class Fixture {
 public:
     static constexpr std::uint64_t base = 0x100000;
     std::array<std::byte, 16 * 4096> bytes{};
-    memory::PhysicalPages pool;
+    memory::PhysicalPagePool<> pool;
     user::DomainRegistry registry;
     memory::PinLedger ledger{pool, registry, scrub, this};
     memory::DormantTables tables{ledger, bytes, base};

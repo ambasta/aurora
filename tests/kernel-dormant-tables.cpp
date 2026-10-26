@@ -39,7 +39,7 @@ auto check(bool value) -> void {
 class Fixture final {
 public:
     alignas(4096) std::array<std::byte, 16 * 4096> bytes{};
-    memory::PhysicalPages pool;
+    memory::PhysicalPagePool<> pool;
     user::DomainRegistry registry;
     std::optional<user::DomainHandle> owner, peer;
     std::array<std::optional<memory::PageLease>, 16> held{};

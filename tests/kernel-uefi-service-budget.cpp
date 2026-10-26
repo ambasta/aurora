@@ -37,6 +37,11 @@ static_assert(!std::is_default_constructible_v<Admission> && !std::is_aggregate_
 static_assert(!std::is_constructible_v<Admission, U64, unsigned, std::uint32_t>);
 static_assert(std::is_copy_constructible_v<Admission> && !std::is_copy_assignable_v<Admission>);
 static_assert(!std::is_move_assignable_v<Admission>);
+static_assert(!std::is_default_constructible_v<Topology> && !std::is_aggregate_v<Topology>);
+static_assert(!std::is_default_constructible_v<TimerTopology> && !std::is_aggregate_v<TimerTopology>);
+static_assert(!std::is_constructible_v<TimerTopology, U64, std::size_t, std::uint32_t, bool>);
+static_assert(std::is_copy_constructible_v<TimerTopology> && !std::is_copy_assignable_v<TimerTopology>);
+static_assert(!std::is_move_assignable_v<TimerTopology>);
 static_assert(!std::is_default_constructible_v<ServiceContext> && !std::is_aggregate_v<ServiceContext>);
 static_assert(!std::is_constructible_v<ServiceContext, Words, U64, ProgramContract>);
 static_assert(std::is_copy_constructible_v<ServiceContext> && !std::is_copy_assignable_v<ServiceContext>);
@@ -112,7 +117,7 @@ auto permit(const Topology &cpus,
             std::uint32_t ebx = cpuid_ebx,
             U64 base = apic_base,
             U64 cache = pat) -> std::optional<Admission> {
-    return Admission::authorize(cpus, map, stride, version, owned_arena, bits, edx, ebx, base, cache);
+    return Admission::authorize(cpus.timer_topology(), map, stride, version, owned_arena, bits, edx, ebx, base, cache);
 }
 auto layout() -> ProgramLayout {
     return *ProgramLayout::create(code, code + 8192, 1, stack, stack + 16384, bottom, top);
@@ -378,6 +383,10 @@ auto main() -> int {
     auto bytes = madt();
     cpu(bytes, 7, 0, 1);
     const auto cpus = topology(bytes);
+    const auto evidence = cpus.timer_topology();
+    check(evidence.apic() == Admission::physical_address && evidence.enabled() == 1 && evidence.id() == 7 &&
+              !evidence.extended(),
+          "compact evidence projects validated LAPIC and sole enabled processor");
     const auto map = memory_map();
     const auto grant = permit(cpus, map);
     check(grant.has_value(), "tested q35 single BSP admitted before MMIO access");
@@ -448,6 +457,12 @@ auto main() -> int {
     auto smp = bytes;
     cpu(smp, 8, 1, 1);
     check(!permit(topology(smp), map), "two enabled CPUs denied");
+    auto maximum_cpus = madt();
+    for (unsigned id = 0; id < 256; ++id)
+        cpu(maximum_cpus, id, id, 1);
+    const auto maximum_topology = topology(maximum_cpus);
+    check(maximum_topology.timer_topology().enabled() == 256 && !permit(maximum_topology, map),
+          "maximum enabled inventory cannot wrap compact evidence into a single BSP");
     auto only_disabled = madt();
     cpu(only_disabled, 7, 0, 2);
     check(!permit(topology(only_disabled), map), "online-capable BSP is not enabled");
@@ -545,9 +560,17 @@ auto main() -> int {
     }
     auto mutable_map = map;
     auto mutable_topology = std::optional{cpus};
+    const auto retained = mutable_topology->timer_topology();
     auto copied = permit(*mutable_topology, mutable_map);
+    mutable_topology.emplace(topology(only_disabled));
+    check(retained.enabled() == 1 && mutable_topology->timer_topology().enabled() == 0,
+          "compact evidence does not alias replaced processor inventory");
     mutable_map.clear();
     mutable_topology.reset();
+    const auto retained_grant =
+        Admission::authorize(retained, map, 40, 1, arena, 40, cpuid_edx, cpuid_ebx, apic_base, pat);
+    check(retained_grant && retained_grant->apic_id() == 7,
+          "compact evidence admits after full parsed topology lifetime ends");
     check(copied && copied->mapping(Admission::virtual_address) == grant->mapping(Admission::virtual_address),
           "grant independent of original evidence lifetime");
 

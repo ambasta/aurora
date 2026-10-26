@@ -74,7 +74,7 @@ class Fixture final {
 public:
     WindowAuthority authority;
     std::optional<WindowTicket> ticket = authority.acquire();
-    PhysicalPages pool;
+    aurora::memory::PhysicalPagePool<> pool;
     alignas(4096) std::array<std::byte, Bundle::pool_pages * Bundle::page_bytes> backing{};
     PciBarSnapshot current = snapshot();
     Fixture() {
@@ -196,10 +196,10 @@ auto admission() -> void {
     alignas(4096) std::array<std::byte, Bundle::pool_pages * Bundle::page_bytes + 1> misaligned{};
     Bundle invalid(f.pool, std::span{misaligned}.subspan(1), pool_base);
     check(!invalid.prepare(grant, f.authority, f.current) && f.pool.used() == 0);
-    PhysicalPages empty;
+    aurora::memory::PhysicalPagePool<> empty;
     Bundle uninitialized(empty, f.backing, pool_base);
     check(!uninitialized.prepare(grant, f.authority, f.current));
-    PhysicalPages short_pool;
+    aurora::memory::PhysicalPagePool<> short_pool;
     check(short_pool.initialize(pool_base, 15));
     Bundle wrong_extent(short_pool, f.backing, pool_base);
     check(!wrong_extent.prepare(grant, f.authority, f.current));

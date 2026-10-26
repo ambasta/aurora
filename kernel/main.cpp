@@ -18,9 +18,9 @@ auto user_program(std::uint64_t entry) -> std::uint64_t asm("aurora_user_program
 #endif
 
 namespace {
-constinit aurora::memory::PhysicalPages pages;
-constinit aurora::memory::PhysicalPages foreign_pages;
-constinit std::array<std::optional<aurora::memory::PageLease>, aurora::memory::PhysicalPages::capacity> leases{};
+constinit aurora::memory::PhysicalPagePool<> pages;
+constinit aurora::memory::PhysicalPagePool<> foreign_pages;
+constinit std::array<std::optional<aurora::memory::PageLease>, aurora::memory::PhysicalPagePool<>::capacity> leases{};
 #ifdef AURORA_BIOS_FIXTURE
 alignas(4096) constinit std::array<std::uint8_t, 4096> nx_probe{};
 #endif
@@ -73,7 +73,7 @@ auto arena_is_usable(std::uint64_t start, std::uint64_t end) -> bool {
 }
 auto page_self_test() -> void {
     constexpr auto base = std::uint64_t{0x100000};
-    constexpr auto count = aurora::memory::PhysicalPages::capacity;
+    constexpr auto count = aurora::memory::PhysicalPagePool<>::capacity;
     constexpr auto page_size = aurora::memory::PhysicalPages::page_size;
     require(arena_is_usable(base, base + count * page_size), "Firmware does not grant bootstrap page arena");
     aurora::hardware::Serial::text("AURORA_E820_OK\r\n");

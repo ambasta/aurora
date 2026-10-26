@@ -33,7 +33,7 @@ void require(bool good, const char *why) {
 
 class Fixture {
 public:
-    memory::PhysicalPages pool;
+    memory::PhysicalPagePool<> pool;
     ipc::SnapshotSlot slot;
     user::DomainRegistry registry;
     user::DomainHandle client;

@@ -155,7 +155,7 @@ auto timer_finish() -> void {
 #endif
 }
 auto initialize_service_timer() -> void {
-    require(root() == kernel_root && irq_off() && discovered_topology().has_value(), "timer discovery boundary");
+    require(root() == kernel_root && irq_off() && discovered_timer_topology().has_value(), "timer discovery boundary");
     std::uint32_t a, b, c, d;
     asm volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(1), "c"(0));
     const auto leaf_ebx = b;
@@ -178,7 +178,7 @@ auto initialize_service_timer() -> void {
         pat ^= 6ULL << 24;
     }
 #endif
-    const auto admitted = LocalApicAdmission::authorize(*discovered_topology(),
+    const auto admitted = LocalApicAdmission::authorize(*discovered_timer_topology(),
                                                         view(arena + Handoff::map_offset, handoff->get(32)),
                                                         handoff->get(40),
                                                         static_cast<std::uint32_t>(handoff->get(48, 4)),

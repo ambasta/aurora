@@ -15,6 +15,11 @@ source and toolchain recorded in the relevant PR; pending checks remain pending.
 The retained-run authority and transcript deduplication passed integrated
 qualification in [PR #242](https://github.com/ambasta/aurora/pull/242).
 
+Native retained state now projects validated ACPI topology into immutable timer
+evidence and sizes private physical-page metadata to each pool's capacity,
+without changing parsing, diagnostics, admission or page-lease ownership. Final
+image and guest qualification remains revision-specific.
+
 Component details: [compiler](../compiler/ARCHITECTURE.md),
 [libraries](../library/README.md), [kernel](../kernel/README.md),
 [protected runtime](../kernel/uefi/runtime.md), [allocation](kernel-owned-bytes.md)
