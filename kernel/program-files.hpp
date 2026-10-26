@@ -8,10 +8,10 @@ namespace aurora::program {
 class Files final {
 public:
     using Value = std::array<std::byte, 272>;
-    using Selection = std::array<std::byte, 88>;
-    using UpdateInput = std::array<std::byte, 344>;
+    using Selection = std::array<std::byte, 160>;
+    using UpdateInput = std::array<std::byte, 352>;
     using Update = std::array<std::byte, 520>;
-    using ReplaceInput = std::array<std::byte, 432>;
+    using ReplaceInput = std::array<std::byte, 504>;
     using Mutation = std::array<std::byte, 352>;
 
 private:
@@ -23,7 +23,8 @@ private:
         retained_read_bound,
         completed,
         retired,
-        publishing
+        publishing,
+        settled
     };
     Value saved_{};
     Selection selection_{};
@@ -32,7 +33,7 @@ private:
     const user::DomainRegistry *registry_{};
     const ipc::Mailbox *mailbox_{};
     std::uint64_t generation_{};
-    bool writable_{};
+    bool writable_{}, appending_{};
     State state_ = State::idle;
     Stream *completed_stream_{};
     std::uint64_t stream_run_{};
@@ -78,7 +79,7 @@ private:
     auto participants_retired(const user::DomainRegistry &registry, const ipc::Mailbox &mailbox) const -> bool {
         return registry_ == &registry && mailbox_ == &mailbox && !registry.index(client_) &&
                !registry.index(service_) && !mailbox.endpoint(client_) && !mailbox.endpoint(service_) &&
-               mailbox.revoked();
+               mailbox.revoked() && mailbox.scrubbed();
     }
 
 public:
@@ -102,26 +103,63 @@ public:
     [[nodiscard]] auto writable() const -> bool {
         return writable_;
     }
+    [[nodiscard]] auto appending() const -> bool {
+        return appending_;
+    }
+    [[nodiscard]] auto suffix() const -> Note::Value {
+        Note::Value result{};
+        if (appending_)
+            std::copy_n(selection_.begin() + 88, result.size(), result.begin());
+        return result;
+    }
+    [[nodiscard]] auto settled() const -> bool {
+        return state_ == State::settled;
+    }
+    [[nodiscard]] auto operation() const -> std::uint64_t {
+        return stream_run_;
+    }
     [[nodiscard]] auto update(const Update &result) -> std::optional<std::uint64_t> {
         if (state_ != State::idle)
             return std::nullopt;
         const auto action = word(result, 352);
-        if (action > 6 || word(result, 336) > 64 || word(result, 344) > 8)
+        if (action > 7 || word(result, 336) > 64 || word(result, 344) > 8)
             return std::nullopt;
         if (action != 1 && !std::equal(saved_.begin(), saved_.end(), result.begin()))
             return std::nullopt;
         if (action >= 2) {
-            const auto length = word(result, 512);
-            if (length != UINT64_MAX && length > 49)
+            const auto event = word(result, 344);
+            const auto length = word(result, 336);
+            if ((event != 2 && event != 5) || (event == 2 && length > 49))
                 return std::nullopt;
-            if (word(result, 432) == 0 || word(result, 440) != (action == 3 ? 1u : 0u))
+            if (word(result, 432) == 0 || word(result, 440) != (action == 7 ? 2u : action == 3 ? 1u : 0u))
                 return std::nullopt;
+        }
+        if (action >= 2) {
+            const auto suffix_length = word(result, 512);
+            if (suffix_length > 49 || (action != 7 && suffix_length != 0) ||
+                (action == 7 && (word(result, 344) != 2 || suffix_length > 49 - word(result, 336))))
+                return std::nullopt;
+            for (std::size_t index = 0; index < 64; ++index) {
+                const auto byte = std::to_integer<unsigned>(result[448 + index]);
+                if (index < suffix_length ? byte < 32 || byte > 126 : byte != 0)
+                    return std::nullopt;
+                if (word(result, 344) == 2) {
+                    const auto prefix = std::to_integer<unsigned>(result[272 + index]);
+                    if (index < word(result, 336) ? prefix < 32 || prefix > 126 : prefix != 0)
+                        return std::nullopt;
+                }
+            }
         }
         std::copy_n(result.begin(), saved_.size(), saved_.begin());
         if (action >= 2) {
             std::copy_n(result.begin() + 360, selection_.size(), selection_.begin());
-            std::copy_n(result.begin() + 448, projection_.size(), projection_.begin());
-            writable_ = action == 3;
+            projection_ = {};
+            const bool present = word(result, 344) == 2;
+            if (present)
+                std::copy_n(result.begin() + 272, 64, projection_.begin());
+            put(projection_, 64, present ? word(result, 336) : UINT64_MAX);
+            writable_ = action == 3 || action == 7;
+            appending_ = action == 7;
             state_ = State::selected;
         }
         return action;
@@ -131,7 +169,7 @@ public:
                             user::DomainHandle client,
                             user::DomainHandle service,
                             Stream &stream) -> bool {
-        if (!writable_ || !stream.awaiting_read(true) ||
+        if (!writable_ || !stream.awaiting_read(!appending_) ||
             !bind_participants(registry, mailbox, client, service, State::bound))
             return false;
         completed_stream_ = &stream;
@@ -209,7 +247,6 @@ public:
         if (state_ != State::retired || completed_stream_ != &stream || stream_run_ != stream.run())
             return false;
         // Consume authority even when extraction fails. Nothing modifies saved_.
-        completed_stream_ = nullptr;
         state_ = State::publishing;
         auto output = stream.finish();
         if (!output || output->missing() || output->length() > 49) {
@@ -220,8 +257,8 @@ public:
         std::copy(saved_.begin(), saved_.end(), next.begin());
         std::copy(selection_.begin(), selection_.end(), next.begin() + 272);
         for (std::size_t i = 0; i < output->length(); ++i)
-            next[360 + i] = std::byte(*output->byte(i));
-        put(next, 424, output->length());
+            next[432 + i] = std::byte(*output->byte(i));
+        put(next, 496, output->length());
         output->scrub();
         input = next;
         return true;
@@ -240,10 +277,24 @@ public:
             return false;
         }
         std::copy_n(result.begin(), saved_.size(), saved_.begin());
+        // Publication settles this exact private run before presentation. Keep
+        // its selected revision/name/request until that response turn ends.
+        state_ = State::settled;
+        return true;
+    }
+    [[nodiscard]] auto response_complete(bool delivered) -> bool {
+        if (state_ != State::settled)
+            return false;
+        // Delivery failure does not undo or re-execute the committed operation.
+        // The session owner takes its existing terminal-failure exit afterward.
+        static_cast<void>(delivered);
+        state_ = State::publishing;
         abort();
         return true;
     }
     [[gnu::noinline]] auto abort() -> void {
+        if (state_ == State::settled)
+            return;
         selection_ = {};
         projection_ = {};
         client_ = {};
@@ -252,11 +303,13 @@ public:
         registry_ = nullptr;
         mailbox_ = nullptr;
         writable_ = false;
+        appending_ = false;
         completed_stream_ = nullptr;
         stream_run_ = 0;
         state_ = State::idle;
     }
     auto clear() -> void {
+        state_ = State::idle;
         abort();
         saved_ = {};
         put(saved_, 264, 1);

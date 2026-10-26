@@ -149,6 +149,10 @@ using U64 = std::uint64_t;
 unsigned char scratchpad_probe{};
 unsigned scratchpad_output_left = UINT32_MAX;
 #endif
+#ifdef AURORA_PROGRAM_FIXTURE
+// Postcommit Console-response cut, never present in the production image.
+unsigned program_output_left = UINT32_MAX;
+#endif
 #if defined(AURORA_UEFI_PROGRAM_CONSOLE) || defined(AURORA_CONSOLE_REGION) || defined(AURORA_RAM_SCRATCHPAD_CONSOLE)
 // Runtime diagnostics and input share the same sticky LSR error latch. A raw
 // hardware::Serial read during a protected command would otherwise erase OE.
@@ -170,6 +174,13 @@ public:
             if (!scratchpad_output_left)
                 return console::PutResult::timeout;
             --scratchpad_output_left;
+        }
+#endif
+#ifdef AURORA_PROGRAM_FIXTURE
+        if (program_output_left != UINT32_MAX) {
+            if (!program_output_left)
+                return console::PutResult::timeout;
+            --program_output_left;
         }
 #endif
         return Uart::try_put(byte);
@@ -1249,7 +1260,7 @@ auto run_protected(U64 owned_arena, const Bytes &h) -> bool {
         initialize_service_timer();
 #else
 #ifdef AURORA_PROGRAM_FIXTURE
-    select_fixture(Fixture::program_request_fault, Fixture::program_unknown);
+    select_fixture(Fixture::program_request_fault, Fixture::program_append_response);
 #endif
     initialize_service_timer();
 #endif

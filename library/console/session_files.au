@@ -177,6 +177,38 @@ export namespace console {
         return FileValue(bytes, count);
     }
 
+    // One canonical parser for the existing append grammar, shared by the local
+    // store and the protected nonmutating preparation path.
+    class FileAppendRequest {
+        FileName name;
+        FileValue suffix;
+    public:
+        FileAppendRequest(FileName selected, FileValue addition) : name(selected), suffix(addition) {
+        }
+        auto selected_name() const -> FileName {
+            const FileName result = name;
+            return result;
+        }
+        auto appended_value() const -> FileValue {
+            const FileValue result = suffix;
+            return result;
+        }
+    };
+    auto file_append_request(std::BinaryBuffer64 command, i64 count) -> FileAppendRequest {
+        i64 end = 7;
+        if (count >= 0 && count <= 64 && command.starts_with(count, "append ")) {
+            while (end < count && command.at(end) != ' ') {
+                end = end + 1;
+            }
+            if (end < count) {
+                return FileAppendRequest(file_name(command, 7, end - 7),
+                    file_value(command, end + 1, count - end - 1));
+            }
+        }
+        const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+        return FileAppendRequest(FileName(empty, -1), FileValue(empty, -1));
+    }
+
     // Shared presentation adapter for ordinary and protected write outcomes.
     auto file_write_reply(FileName name, i64 count, FileEvent event) -> FileReply {
         FileReply reply = FileReply();
@@ -293,6 +325,24 @@ export namespace console {
             occupied = occupied | (1u64 << found);
             return FileEvent::written;
         }
+        // Validate without constructing a candidate or changing any record.
+        auto prepare_append(FileName name, FileValue suffix) const -> FileReply {
+            FileReply reply = FileReply();
+            if (!name.valid() || !suffix.valid()) {
+                reply.select(FileEvent::invalid);
+                return reply;
+            }
+            const FileReply current = read_file(name);
+            if (current.status() != FileEvent::read) {
+                return current;
+            }
+            if (suffix.size() > 49 - current.size()) {
+                FileReply rejected = FileReply();
+                rejected.select(FileEvent::invalid);
+                return rejected;
+            }
+            return current;
+        }
         // Append only to an existing record. Stage bytes before the shared atomic
         // write; even an empty suffix is a successful write for revision purposes.
         auto append_file(FileName name, FileValue suffix) -> FileEvent {
@@ -397,17 +447,19 @@ export namespace console {
             i64 start = 0;
             FileEvent action = FileEvent::unknown;
             const bool copying = command.starts_with(count, "copy ");
-            const bool appending = command.starts_with(count, "append ");
+            if (command.starts_with(count, "append ")) {
+                const FileAppendRequest request = file_append_request(command, count);
+                const FileName name = request.selected_name();
+                const FileValue suffix = request.appended_value();
+                const FileEvent event = append_file(name, suffix);
+                return file_write_reply(name, suffix.size(), event);
+            }
             if (command.starts_with(count, "write ")) {
                 start = 6;
                 action = FileEvent::written;
             }
             if (copying) {
                 start = 5;
-                action = FileEvent::written;
-            }
-            if (appending) {
-                start = 7;
                 action = FileEvent::written;
             }
             if (command.starts_with(count, "cat ")) {
@@ -447,12 +499,7 @@ export namespace console {
                 return copy_file(name, destination);
             }
             const FileValue value = file_value(command, end + 1, count - end - 1);
-            FileEvent event = FileEvent::unknown;
-            if (appending) {
-                event = append_file(name, value);
-            } else {
-                event = write_file(name, value);
-            }
+            const FileEvent event = write_file(name, value);
             return file_write_reply(name, value.size(), event);
         }
     };

@@ -7,6 +7,11 @@ program::Stream command_stream;
 #endif
 program::Note command_note;
 program::Files command_files;
+#ifdef AURORA_PROGRAM_FIXTURE
+// Retained test-image evidence, never an additional production store or stack copy.
+program::Files::Value program_append_checkpoint{};
+U64 program_append_operation{}, program_append_revision{};
+#endif
 #ifndef AURORA_FILE_CALL
 bool command_file{}, command_transform{};
 bool command_reading{};
@@ -262,12 +267,14 @@ auto program_console_envelope(const Bytes &captured, U64 result) -> void {
                     (PageTables{kernel_root, static_cast<std::size_t>(handoff->get(96))}.entry(*physical) & ~0x60ULL) ==
                         (*physical | 3 | RuntimeTables::nx),
                 "note exact retained stack mapping");
-        auto *record = reinterpret_cast<std::byte *>(*physical + L::page_size - program::Note::stack_reservation);
+        auto *record =
+            reinterpret_cast<std::byte *>(*physical + L::page_size - program::Note::stream_stack_reservation);
         require(
-            command_note.stage(std::span<std::byte, program::Note::record_bytes>{record, program::Note::record_bytes},
-                               *endpoint,
-                               source,
-                               ipc::Request{byte, ordinal}),
+            command_note.stage_stream(
+                std::span<std::byte, program::Note::stream_record_bytes>{record, program::Note::stream_record_bytes},
+                *endpoint,
+                source,
+                ipc::Request{byte, ordinal}),
             "note fixed copied record");
     }
     require(launch_domain(index, *domain.handle), "program continuation");
@@ -284,13 +291,14 @@ auto program_console_envelope(const Bytes &captured, U64 result) -> void {
 // Inject only after one byte was fully acknowledged. A note read includes its
 // final EOF round; only an actual injection makes later commands healthy.
 [[nodiscard]] auto program_source(ipc::Phase phase, U64 ordinal) -> U64 {
-    const U64 normal = command_reading ? (phase == ipc::Phase::request   ? 12
-                                          : phase == ipc::Phase::service ? 11
-                                          : command_transform            ? 14
-                                                                         : 13)
-                                       : (phase == ipc::Phase::request   ? 0
-                                          : phase == ipc::Phase::service ? 1
-                                                                         : 2);
+    const U64 normal = command_reading
+                           ? (phase == ipc::Phase::request   ? 12
+                              : phase == ipc::Phase::service ? (command_file && command_files.appending() ? 15 : 11)
+                              : command_transform && !command_files.appending() ? 14
+                                                                                : 13)
+                           : (phase == ipc::Phase::request   ? 0
+                              : phase == ipc::Phase::service ? 1
+                                                             : 2);
     if (console_probe_used || ordinal != 1)
         return normal;
 #ifdef AURORA_PROGRAM_FIXTURE
@@ -381,13 +389,37 @@ __attribute__((noinline)) auto program_save_note(program::Output &output) -> voi
     output.scrub();
     require(program_note_apply(copied) == 1, "note replacement accepted");
 }
-__attribute__((noinline)) auto program_save_file() -> void {
+__attribute__((noinline)) auto program_save_file(program::Response &response) -> void {
     require(!command_owned && !mailbox && frames.used() == 0 && program_boundary(), "file quiescent replacement");
     program::Files::ReplaceInput copied{};
     require(command_files.replacement(command_stream, copied), "file one-shot complete replacement");
     program::Files::Mutation result{};
     __au_runtime_files_replace(copied.data(), result.data());
     require(command_files.publish(result), "file Aurora replacement accepted");
+    if (command_files.appending()) {
+        response = program::Response{program::Response::Kind::file_reply};
+        const auto count = Bytes{result}.get(336);
+        require(count <= 64 && response.payload(std::span<const std::byte>{result}.subspan(272, count)),
+                "append committed response bytes");
+    } else
+        response = program::Response{program::Response::Kind::file_saved};
+    program_scrub_copy(copied);
+    program_scrub_copy(result);
+#ifdef AURORA_PROGRAM_FIXTURE
+    if (fixture == Fixture::program_append_response && command_files.appending()) {
+        require(command_files.settled() && !command_owned && !mailbox && frames.used() == 0 && program_boundary(),
+                "append response cut after settled retirement");
+        program_append_checkpoint = command_files.saved();
+        program_append_operation = command_files.operation();
+        program_append_revision = Bytes{command_files.saved()}.get(264);
+        ProgramSerial::text("AURORA_PROGRAM_APPEND_SETTLED: operation=");
+        ProgramSerial::number(command_files.operation());
+        ProgramSerial::text(" revision=");
+        ProgramSerial::number(Bytes{command_files.saved()}.get(264));
+        ProgramSerial::text("\r\n");
+        program_output_left = 5;
+    }
+#endif
 }
 [[nodiscard]] auto
 program_command(program::Submission &input, bool reading = false, bool saving = false, bool file = false) -> bool {
@@ -397,7 +429,7 @@ program_command(program::Submission &input, bool reading = false, bool saving = 
     command_file = file;
     command_transform = file && command_files.writable();
     const auto input_length = file ? input.length() : saving ? program_begin_upper_note() : input.length();
-    require(saving || (reading ? command_stream.begin_read(command_transform)
+    require(saving || (reading ? command_stream.begin_read(command_transform && !command_files.appending())
                                : command_stream.begin(input.bytes(), input.length())),
             "program command admission");
     input.scrub(); // The stream now owns the only retained command-input copy.
@@ -414,7 +446,9 @@ program_command(program::Submission &input, bool reading = false, bool saving = 
     else if (reading)
         __au_runtime_note_project(command_note.saved().data(), projection.data());
     const auto service_grant = mailbox->endpoint(*domains[1].handle);
-    require(service_grant && command_note.bind(projection, *service_grant), "note frozen publication");
+    require(service_grant &&
+                command_note.bind(projection, *service_grant, file ? command_files.suffix() : program::Note::Value{}),
+            "note frozen publication");
     if (file)
         require(command_transform
                     ? command_files.bind(registry, *mailbox, *domains[0].handle, *domains[1].handle, command_stream)
@@ -427,7 +461,9 @@ program_command(program::Submission &input, bool reading = false, bool saving = 
     ProgramSerial::number(grant->generation());
     ProgramSerial::text(" length=");
     ProgramSerial::number(input_length);
-    ProgramSerial::text(file ? (command_transform ? " domains=2 kind=upper-file\r\n"sv : " domains=2 kind=file\r\n"sv)
+    ProgramSerial::text(file      ? (command_files.appending() ? " domains=2 kind=append-file\r\n"sv
+                                     : command_transform       ? " domains=2 kind=upper-file\r\n"sv
+                                                               : " domains=2 kind=file\r\n"sv)
                         : reading ? " domains=2 kind=note\r\n"sv
                         : saving  ? " domains=2 kind=upper-note\r\n"sv
                                   : " domains=2 kind=upper\r\n"sv);
@@ -472,8 +508,7 @@ program_command(program::Submission &input, bool reading = false, bool saving = 
     program_cleanup(success);
     program::Response response{program::Response::Kind::stopped};
     if (success && command_transform) {
-        program_save_file();
-        response = program::Response{program::Response::Kind::file_saved};
+        program_save_file(response);
     } else if (success) {
         auto output = command_stream.finish();
         require(output && command_stream.scrubbed(), "program complete output");
@@ -498,7 +533,24 @@ program_command(program::Submission &input, bool reading = false, bool saving = 
     }
     // A replacement may already be committed. A failed acknowledgment never
     // retries the command or claims to roll that replacement back.
-    return program_write_response(response);
+    const bool delivered = program_write_response(response);
+#ifdef AURORA_PROGRAM_FIXTURE
+    if (fixture == Fixture::program_append_response && command_files.appending()) {
+        require(!delivered && program_output_left == 0 && command_files.settled() &&
+                    command_files.operation() == program_append_operation &&
+                    Bytes{command_files.saved()}.get(264) == program_append_revision &&
+                    command_files.saved() == program_append_checkpoint && !command_owned && !mailbox &&
+                    frames.used() == 0 && ProgramInputPlatform::quiet(),
+                "append committed store survives actual response failure");
+        program_scrub_copy(program_append_checkpoint);
+        program_append_operation = 0;
+        program_append_revision = 0;
+        ProgramSerial::text("\r\nAURORA_PROGRAM_APPEND_RESPONSE_FAILED: committed=1 preserved=1\r\n");
+    }
+#endif
+    if (success && command_transform)
+        require(command_files.response_complete(delivered), "file settled response completion");
+    return delivered;
 }
 [[nodiscard]] auto program_note_update(const program::Submission &input) -> U64 {
     program::Note::UpdateInput copied{};
@@ -526,6 +578,9 @@ program_command(program::Submission &input, bool reading = false, bool saving = 
         copied[272 + i] = std::byte(input.bytes()[i]);
     for (unsigned i = 0; i < 8; ++i)
         copied[336 + i] = std::byte(input.length() >> (8 * i));
+#ifdef AURORA_FILE_CALL
+    copied[344] = std::byte{1};
+#endif
     program::Files::Update result{};
     __au_runtime_files_update(copied.data(), result.data());
     const auto action = command_files.update(result);
@@ -657,6 +712,18 @@ __attribute__((noinline)) auto run_program_console() -> void {
 #endif
     command_note.clear();
     command_files.clear();
+#ifdef AURORA_PROGRAM_FIXTURE
+    if (fixture == Fixture::program_append_response) {
+        require(session.outcome() == 2 && program_output_left == 0 && frames.used() == 0 &&
+                    ProgramInputPlatform::quiet() && !command_files.settled() && command_files.operation() == 0,
+                "append failed response terminal cleanup");
+        for (std::size_t index = 0; index < command_files.saved().size(); ++index)
+            require(command_files.saved()[index] == std::byte(index == 264 ? 1 : 0) &&
+                        program_append_checkpoint[index] == std::byte{0},
+                    "append session store and checkpoint cleared");
+        ProgramSerial::text("AURORA_PROGRAM_APPEND_CLEARED: saved=0 revision=1 domains=0 leases=0\r\n");
+    }
+#endif
     if (session.outcome() == 2) {
         // A partial response cannot be rolled back or replayed. Leave through
         // the existing failure device without using the failed channel.

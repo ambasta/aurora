@@ -15,6 +15,8 @@ accepts `upper`, then `text> Hello, Aurora 42!`,
 and prints `HELLO, AURORA 42!` once before returning to `aurora>`. The uppercase
 transformation executes in a separately compiled, one-page RX Aurora CPL3 client.
 A separate CPL3 stream service validates and returns its requested output byte.
+The same production console also executes `append NAME TEXT` candidate construction
+in that isolated service, with publication owned by the surviving supervisor store.
 This is an embedded bounded application demonstration, not a general process or
 syscall ABI, filesystem, terminal emulator, or hardware qualification.
 
@@ -82,12 +84,14 @@ fixture checks it. Invalid input preserves the old value.
 Each read freezes an Aurora `NoteRead64` projection: 64 payload bytes and a signed
 length, with -1 representing missing. The small dependency-free module adds no
 console, storage or runtime authority to CPL3. The service receives three scalar
-launch words and that 72-byte value in an exact 96-byte record at stack-top-112.
-The final qword belongs to this explicit note contract; the distinct snapshot
-profile keeps its original zero-padding contract. The wrapper reserves 112 bytes
-before its 48-byte envelope so generated calls grow below the copied record.
-Upper uses the same typed service entry with a zero placeholder, without copying
-the saved note into that command's domain.
+launch words, that 72-byte value and a 72-byte suffix projection in an exact
+168-byte record at stack-top-176. Note reads and uppercase commands receive a zero
+suffix; only append receives the selected suffix. The wrapper reserves 176 bytes
+before its 48-byte envelope so generated calls grow below the copied record; the
+final eight bytes remain a zero sentinel gap. The separate file-call and snapshot
+profiles retain their 96-byte records and 112-byte reservation, including the
+snapshot's original zero-padding contract. Upper receives a zero read placeholder,
+without copying the saved note into that command's domain.
 
 Fresh endpoint generations bind each frozen read. After authenticated receive,
 the adapter stages it through the retained, verified last stack-page lease under
@@ -147,6 +151,8 @@ An existing file can be replaced when all four slots are occupied. Names are
 case-sensitive, an empty existing file is distinct from missing, and all state
 is volatile and cleared at console exit. Copy runs through the local quiescent
 mutation path; it does not launch a protected program or grant new authority.
+Production append uses the protected worker path below. Ordinary console consumers
+and the opt-in file-call profile retain their local append operation and output.
 
 `console::ProtectedFiles` adds a copied private selection and a session mutation
 revision around that unchanged store. Every successful write/removal/replacement,
@@ -243,11 +249,55 @@ only after the entire stream is acknowledged with an idle, scrubbed Mailbox.
 After grants are revoked and both original domain incarnations are retired,
 that receipt alone permits one extraction. Aurora rechecks the selected revision
 and name, validates the complete output and atomically updates only that record.
-The console reports `File saved.` after publication; `cat <name>` gives separate
-protected exact readback. Faults, budgets and cancellation discard staged output
+Uppercase replacement reports `File saved.` after publication; `cat <name>` gives
+separate protected exact readback. Faults, budgets and cancellation discard staged output
 and authority while preserving every old file, then a healthy command starts
 with fresh grants. This is a bounded command service, not a general file API,
 filesystem, persistent store or proof of production security.
+
+### Protected append and surviving commits
+
+Production `append NAME TEXT` shares the existing source grammar and validation,
+but preparation does not mutate the store or assemble the new contents. Aurora
+selects the exact existing name and current store-wide revision, freezes that
+file's prefix and the canonical suffix, and admits an append-only selection.
+Missing, reserved, malformed, oversized and exhausted requests preserve every
+saved record and the revision. Empty suffixes remain successful mutations.
+
+Only the selected prefix and suffix reach the fresh CPL3 service, never the
+four-file store or writable committed pages. At phase 15, its compiled Aurora code
+constructs and validates the entire candidate on every invocation, bounded to
+49 printable bytes. The existing copied byte-plus-EOF request/reply/acknowledgement
+stream returns that candidate; no new general transport or retained worker
+continuation is introduced. Every byte and the final EOF must be authenticated,
+including an EOF-only exchange for empty output. Partial candidates are not
+published or presented.
+
+Native `Files` binds the private operation to the original participants, Mailbox
+generation and exact stream/run. Only complete acknowledgement, a scrubbed/revoked
+Mailbox and physical retirement of both original domains permit one extraction.
+At the quiescent commit boundary, Aurora rechecks the selected name/revision and
+requires the candidate to equal exactly the authorized prefix followed by the
+suffix. Printable replacement bytes alone do not satisfy append authority, and a
+read-only selection cannot publish. A whole-record write then advances revision
+once, including an empty append; unrelated records remain unchanged. The response
+stays `wrote NAME: N byte(s)`, where N is the submitted suffix length.
+
+The supervisor retains the private operation and committed outcome until its
+response turn completes. Duplicate completion/publication cannot repeat the
+append. A lost or partial acknowledgement never rolls back, retries or reports
+cancellation of an already committed operation. Both original workers have
+already retired before publication: relevant interruptions are precommit worker
+failure, postcommit response failure, and a later worker failure. Recoverable
+precommit failures discard staging/authority without changing saved bytes; later
+worker failure preserves the latest commit. Output failure retains the existing
+terminal session exit, which clears all RAM files. A later explicitly submitted
+append is a new operation, not an internal replay.
+
+This production append integration keeps an independent supervisor commit owner. It is not a service-owned namespace, mounted filesystem,
+zero-copy/DMA path, or survival across supervisor/session exit or reboot. Changed
+source still requires final native, exact-image, affected-guest and independent
+review gates; implementation is not a qualification claim.
 
 Existing native generated-code and PTY fixtures cover this path alongside the
 note/scalar regressions. Compact aggregate copies, referenced-only supervisor
@@ -420,13 +470,17 @@ next command. Empty/one-byte inputs do not consume the probe; only actual inject
 sets its one-shot flag. The note/uppercase recovery cases must also verify that
 partial progress preserved the saved value and that retry uses fresh domains.
 
-Independent qualification covers all twelve profiles, their exact source/images
+The `program-append-response` row (selector 167) reuses `program-fixture`; it adds
+no production output hook or image. After complete candidate/EOF acknowledgement,
+both retirements and publication, its transport delivers the first five response
+bytes (`wrote`) and reports timeout to the actual Aurora response presenter. The
+fixture requires the settled operation, revision and complete committed store to
+remain unchanged after that failed response, with no replay, cancellation claim
+or next prompt. The ordinary terminal-failure exit then clears session RAM and
+all transient authority. This is a postcommit response cut, not a fault in an
+original worker that has already retired. Actual guest qualification of this row
+remains a final-source gate.
+
+Independent qualification covers all protected-console profiles, their exact source/images
 and original-clock traces, plus actual normal BIOS/UEFI restoration and the final
 native/review gates. A wrapper's normal-image rebuild is not that restoration boot.
-
-Named-file `append NAME TEXT` uses the same Aurora `SessionFiles.append_file` operation
-as ordinary console consumers. It requires an existing file, preserves the 49-byte
-content bound, and commits at the existing quiescent update boundary. Empty suffixes
-are successful writes; all successful appends advance the protected store revision.
-Rejected appends preserve the complete store and revision. No grant or bridge layout
-changes are involved; protected `cat` and `upper` consume the resulting file normally.

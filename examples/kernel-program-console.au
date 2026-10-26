@@ -208,11 +208,9 @@ class FileUpdate {
     console::FileReply reply;
     u64 action;
     console::FileSelection selection;
-    kernel::NoteRead64 projection;
 public:
-    FileUpdate(console::ProtectedFiles next, console::FileReply result, u64 operation, console::FileSelection selected,
-        kernel::NoteRead64 read) : files(next), reply(result), action(operation), selection(selected),
-        projection(read) {
+    FileUpdate(console::ProtectedFiles next, console::FileReply result, u64 operation, console::FileSelection selected)
+        : files(next), reply(result), action(operation), selection(selected) {
     }
 };
 class FileMutation {
@@ -222,12 +220,19 @@ public:
     FileMutation(console::ProtectedFiles next, console::FileReply result) : files(next), reply(result) {
     }
 };
-auto update_files(console::ProtectedFiles current, std::BinaryBuffer64 command, i64 count) -> FileUpdate {
+auto update_files(console::ProtectedFiles current, std::BinaryBuffer64 command, i64 count, u64 profile) -> FileUpdate {
+    static_assert(size_of(console::FileSelection) == 160);
+    static_assert(size_of(FileUpdate) == 520);
     const console::FileSelection selection = current.select(command, count);
+    if (profile != 0u64) {
+        console::FileReply rejected = console::FileReply();
+        rejected.select(console::FileEvent::invalid);
+        return FileUpdate(current, rejected, 1u64, selection);
+    }
     if (selection.version() != 0u64) {
         const console::FileReply reply = current.project(selection);
         u64 action = 2u64;
-        // A nonzero selection admits only cat, upper, peek, wc or crc.
+        // A nonzero selection admits only checked protected file operations.
         if (command.at(0) == 'p') {
             action = 4u64;
         }
@@ -240,17 +245,15 @@ auto update_files(console::ProtectedFiles current, std::BinaryBuffer64 command, 
         if (selection.writable()) {
             action = 3u64;
         }
-        i64 length = -1;
-        if (reply.status() == console::FileEvent::read) {
-            length = reply.size();
+        if (selection.appending()) {
+            action = 7u64;
         }
-        kernel::NoteRead64 projection = kernel::NoteRead64(length);
-        i64 index = 0;
-        while (index < length) {
-            projection.set(index, reply.at(index));
-            index = index + 1;
-        }
-        return FileUpdate(current, reply, action, selection, projection);
+        return FileUpdate(current, reply, action, selection);
+    }
+    if (command.starts_with(count, "append ")) {
+        const console::FileAppendRequest request = console::file_append_request(command, count);
+        const console::FileReply reply = current.prepare_append(request);
+        return FileUpdate(current, reply, 1u64, selection);
     }
     console::ProtectedFiles next = current;
     console::FileReply reply = next.submit(command, count);
@@ -262,8 +265,7 @@ auto update_files(console::ProtectedFiles current, std::BinaryBuffer64 command, 
         reply.select(console::FileEvent::invalid);
         action = 1u64;
     }
-    const kernel::NoteRead64 absent = kernel::NoteRead64(-1);
-    return FileUpdate(next, reply, action, selection, absent);
+    return FileUpdate(next, reply, action, selection);
 }
 auto replace_files(console::ProtectedFiles current, console::FileSelection selected, std::BinaryBuffer64 output,
     i64 count) -> FileMutation {

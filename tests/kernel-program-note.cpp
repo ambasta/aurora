@@ -113,7 +113,10 @@ public:
     U64 transaction{}, ordinal{};
     bool reading = true;
     bool transforming = false;
-    alignas(16) std::array<std::byte, 128> storage{};
+    bool appending = false;
+    alignas(16) std::array<std::byte, Note::stream_record_bytes + 32> storage{};
+    explicit Fixture(U64 run_ceiling = UINT64_MAX) : stream(run_ceiling) {
+    }
 
     auto start(bool read = true, std::string_view input = {}, bool upper_note = false) -> void {
         reading = read;
@@ -160,8 +163,8 @@ public:
         const auto request = mailbox.receive(service, ipc::Phase::service, grant, transaction);
         require(request && request->second() == ordinal && mailbox.scrubbed(), "actual mailbox receive and scrub");
         storage.fill(std::byte{0xa5});
-        const std::span<std::byte, Note::record_bytes> record{storage.data() + 16, Note::record_bytes};
-        require(note.stage(record, grant, phase, *request), "authenticated fixed copied record");
+        const std::span<std::byte, Note::stream_record_bytes> record{storage.data() + 16, Note::stream_record_bytes};
+        require(note.stage_stream(record, grant, phase, *request), "authenticated fixed copied record");
         if (!reading)
             for (std::size_t index = 24; index < record.size(); ++index)
                 require(record[index] == std::byte{0}, "upper service receives no saved-note projection");
@@ -169,7 +172,9 @@ public:
         const auto result = note_test_service(record.data());
         require(storage == before, "actual service leaves full copied input immutable");
         for (std::size_t index = 0; index < 16; ++index)
-            require(storage[index] == std::byte{0xa5} && storage[112 + index] == std::byte{0xa5}, "record canaries");
+            require(storage[index] == std::byte{0xa5} &&
+                        storage[Note::stream_record_bytes + 16 + index] == std::byte{0xa5},
+                    "record canaries");
         return result;
     }
 
@@ -204,7 +209,7 @@ public:
 
     auto round() -> void {
         request();
-        reply(receive(reading ? 11 : 1));
+        reply(receive(appending ? 15 : reading ? 11 : 1));
         acknowledge(consume());
     }
 
@@ -401,23 +406,23 @@ auto representation_controls() -> void {
     require(note.bind(projection, ipc::Endpoint{1, 17}) && !note.bind(projection, ipc::Endpoint{1, 18}) &&
                 !note.commit(valid) && note.saved() == saved,
             "live publication forbids replacement and rebinding");
-    std::array<std::byte, Note::record_bytes> record{};
+    std::array<std::byte, Note::stream_record_bytes> record{};
     record.fill(std::byte{0xa5});
     const auto before = record;
     for (const auto grant : {ipc::Endpoint{0, 17}, ipc::Endpoint{1, 0}, ipc::Endpoint{1, 18}})
-        require(!note.stage(record, grant, 11, ipc::Request{1, 0}) && record == before,
+        require(!note.stage_stream(record, grant, 11, ipc::Request{1, 0}) && record == before,
                 "foreign or stale stage preserves complete destination");
     note.release();
     require(note.bind(projection, ipc::Endpoint{1, 18}) && !note.matches(ipc::Endpoint{1, 17}) &&
-                !note.stage(record, ipc::Endpoint{1, 17}, 11, ipc::Request{1, 0}) && record == before,
+                !note.stage_stream(record, ipc::Endpoint{1, 17}, 11, ipc::Request{1, 0}) && record == before,
             "fresh publication excludes old generation");
     for (const auto ordinal : {U64{6}, U64{54}, maximum}) {
-        require(note.stage(record, ipc::Endpoint{1, 18}, 11, ipc::Request{1, ordinal}) &&
+        require(note.stage_stream(record, ipc::Endpoint{1, 18}, 11, ipc::Request{1, ordinal}) &&
                     note_test_service(record.data()) == 4,
                 "actual service rejects bad ordinal");
     }
     for (const auto operation : {U64{0}, U64{2}, maximum})
-        require(note.stage(record, ipc::Endpoint{1, 18}, 11, ipc::Request{operation, 0}) &&
+        require(note.stage_stream(record, ipc::Endpoint{1, 18}, 11, ipc::Request{operation, 0}) &&
                     note_test_service(record.data()) == 4,
                 "actual service rejects unknown operation");
     note.release();
@@ -642,8 +647,9 @@ auto emitted_faults() -> void {
                 f.reply(f.receive(saving ? 1 : 11));
                 static_cast<void>(f.consume());
             }
-            std::array<std::byte, Note::record_bytes> record{};
-            require(f.note.stage(record, *f.mailbox.endpoint(f.service), 4, ipc::Request{1, 1}), "actual fault input");
+            std::array<std::byte, Note::stream_record_bytes> record{};
+            require(f.note.stage_stream(record, *f.mailbox.endpoint(f.service), 4, ipc::Request{1, 1}),
+                    "actual fault input");
             const auto child = fork();
             require(child >= 0, "emitted fault child");
             if (child == 0) {
@@ -686,14 +692,15 @@ auto file_update(const Files::Value &saved, std::string_view command) -> Files::
         input[272 + i] = std::byte(command[i]);
     put_word(input, 336, command.size());
     const auto before = input;
-    std::array<std::byte, 552> result{};
+    std::array<std::byte, Files::Update{}.size() + 32> result{};
     result.fill(std::byte{0xa5});
     __au_runtime_files_update(input.data(), result.data() + 16);
     require(input == before, "file update immutable input");
     for (unsigned i = 0; i < 16; ++i)
-        require(result[i] == std::byte{0xa5} && result[536 + i] == std::byte{0xa5}, "file update canaries");
+        require(result[i] == std::byte{0xa5} && result[Files::Update{}.size() + 16 + i] == std::byte{0xa5},
+                "file update canaries");
     Files::Update output{};
-    std::copy_n(result.begin() + 16, 520, output.begin());
+    std::copy_n(result.begin() + 16, output.size(), output.begin());
     return output;
 }
 auto file_replace(const Files::ReplaceInput &input) -> Files::Mutation {
@@ -712,6 +719,8 @@ class NamedFixture final {
 public:
     Files files;
     Fixture f;
+    explicit NamedFixture(U64 run_ceiling = UINT64_MAX) : f(run_ceiling) {
+    }
     auto submit(std::string_view command) -> Files::Update {
         const auto result = file_update(files.saved(), command);
         require(files.update(result).has_value(), "actual file policy update");
@@ -726,11 +735,13 @@ public:
         f.service = *b;
         require(f.mailbox.bind(f.client, f.service), "named mailbox bind");
         f.reading = true;
-        f.transforming = files.writable();
+        f.appending = files.appending();
+        f.transforming = files.writable() && !f.appending;
         require(rejected_mode == 1 ? f.stream.begin({}, 0)
                                    : f.stream.begin_read(rejected_mode == 3 ? !f.transforming : f.transforming),
                 "named starts selected stream mode");
-        require(f.note.bind(files.projection(), *f.mailbox.endpoint(f.service)), "named copied service projection");
+        require(f.note.bind(files.projection(), *f.mailbox.endpoint(f.service), files.suffix()),
+                "named copied service projection");
         if (rejected_mode == 2)
             f.round();
         if (rejected_mode != 0) {
@@ -740,11 +751,11 @@ public:
             f.retire(true);
             return;
         }
-        require(f.transforming ? !files.bind_read(f.registry, f.mailbox, f.client, f.service)
-                               : !files.bind(f.registry, f.mailbox, f.client, f.service, f.stream),
+        require(files.writable() ? !files.bind_read(f.registry, f.mailbox, f.client, f.service)
+                                 : !files.bind(f.registry, f.mailbox, f.client, f.service, f.stream),
                 "selected read and writable bindings remain disjoint");
-        require(f.transforming ? files.bind(f.registry, f.mailbox, f.client, f.service, f.stream)
-                               : files.bind_read(f.registry, f.mailbox, f.client, f.service),
+        require(files.writable() ? files.bind(f.registry, f.mailbox, f.client, f.service, f.stream)
+                                 : files.bind_read(f.registry, f.mailbox, f.client, f.service),
                 "named authenticated file binding");
     }
     auto run() -> void {
@@ -766,7 +777,7 @@ public:
                 "exact protected named readback");
         output->scrub();
     }
-    auto save() -> void {
+    auto save(bool delivered = true) -> void {
         const auto endpoint = *f.mailbox.endpoint(f.client);
         require(!files.complete(f.registry, f.mailbox, f.service, endpoint, f.stream),
                 "foreign caller cannot complete");
@@ -795,6 +806,26 @@ public:
         require(files.publish(result), "Aurora selected-file atomic publication");
         require(!files.publish(result) && !files.replacement(f.stream, input),
                 "publication and extraction cannot replay");
+        const auto committed = files.saved();
+        const auto operation = files.operation();
+        files.abort();
+        require(files.settled() && operation != 0 && files.operation() == operation && files.saved() == committed,
+                "committed outcome survives cancellation until response completion");
+        require(!files.update(file_update(files.saved(), "append a duplicate")),
+                "unresolved committed response prevents new command admission");
+        require(files.response_complete(delivered) && !files.response_complete(delivered) && !files.settled() &&
+                    files.saved() == committed,
+                "response completion consumes outcome once without rolling back commit");
+    }
+    auto append(std::string_view name, std::string_view suffix, bool delivered = true) -> void {
+        const auto old = files.saved();
+        start("append " + std::string(name) + " " + std::string(suffix));
+        require(files.appending() && files.saved() == old, "append preparation selects without mutation");
+        while (f.stream.next_input()) {
+            f.round();
+            require(files.saved() == old, "append staged candidate remains private");
+        }
+        save(delivered);
     }
     auto upper(std::string_view name, std::string_view expected) -> void {
         const auto old = files.saved();
@@ -1085,7 +1116,7 @@ auto named_file_cases() -> void {
     const auto full = n.files.saved();
     n.submit("write e rejected");
     require(n.files.saved() == full, "full store refusal preserves all bytes");
-    n.submit("append a case");
+    n.append("a", "case");
     n.read("a", "lowercase");
     const auto appended = n.files.saved();
     for (const auto command : {"append missing x", "append note x", "append a", "append", "append ../a x"}) {
@@ -1093,12 +1124,12 @@ auto named_file_cases() -> void {
         require(n.files.saved() == appended, "rejected append preserves complete store and revision");
     }
     const auto before_empty = file_update(n.files.saved(), "upper a");
-    n.submit("append a ");
+    n.append("a", "");
     require(n.files.saved() != appended, "empty append advances revision");
     Files::ReplaceInput stale_append{};
     std::copy(n.files.saved().begin(), n.files.saved().end(), stale_append.begin());
-    std::copy_n(before_empty.begin() + 360, 88, stale_append.begin() + 272);
-    put_word(stale_append, 424, 0);
+    std::copy_n(before_empty.begin() + 360, Files::Selection{}.size(), stale_append.begin() + 272);
+    put_word(stale_append, 496, 0);
     const auto stale_append_result = file_replace(stale_append);
     require(std::equal(n.files.saved().begin(), n.files.saved().end(), stale_append_result.begin()),
             "empty append invalidates prior replacement selection");
@@ -1122,9 +1153,9 @@ auto named_file_cases() -> void {
     n.submit("write a replacement");
     Files::ReplaceInput stale{};
     std::copy(n.files.saved().begin(), n.files.saved().end(), stale.begin());
-    std::copy_n(selection.begin() + 360, 88, stale.begin() + 272);
-    stale[360] = std::byte{'X'};
-    put_word(stale, 424, 1);
+    std::copy_n(selection.begin() + 360, Files::Selection{}.size(), stale.begin() + 272);
+    stale[432] = std::byte{'X'};
+    put_word(stale, 496, 1);
     const auto rejected = file_replace(stale);
     require(std::equal(n.files.saved().begin(), n.files.saved().end(), rejected.begin()),
             "stale slot selection preserves store");
@@ -1139,9 +1170,9 @@ auto named_file_cases() -> void {
     const auto exhausted_selection = file_update(exhausted, "upper a");
     Files::ReplaceInput exhausted_replace{};
     std::copy(exhausted.begin(), exhausted.end(), exhausted_replace.begin());
-    std::copy_n(exhausted_selection.begin() + 360, 88, exhausted_replace.begin() + 272);
-    exhausted_replace[360] = std::byte{'X'};
-    put_word(exhausted_replace, 424, 1);
+    std::copy_n(exhausted_selection.begin() + 360, Files::Selection{}.size(), exhausted_replace.begin() + 272);
+    exhausted_replace[432] = std::byte{'X'};
+    put_word(exhausted_replace, 496, 1);
     const auto exhausted_result = file_replace(exhausted_replace);
     require(std::equal(exhausted.begin(), exhausted.end(), exhausted_result.begin()),
             "revision exhaustion rejects selected replacement atomically");
@@ -1228,6 +1259,107 @@ auto named_file_cases() -> void {
         n.read("b", "Keep Me");
     }
 }
+// Golden contents, actual compiled worker and existing native authority owner.
+// A later worker fault is distinct from failure of a committed response turn.
+auto protected_append_cases() -> void {
+    NamedFixture n;
+    n.submit("write a old");
+    n.submit("write b Keep lower");
+    n.submit("write c ");
+    n.submit("write d fourth");
+    n.append("a", " new");
+    n.read("a", "old new");
+    n.read("b", "Keep lower");
+    n.append("c", "");
+    n.read("c", "");
+    n.append("c", " space ");
+    n.read("c", " space ");
+    // Every cancellation cut follows one acknowledged candidate byte and must
+    // preserve the latest commit, not a stale pre-append copy of the namespace.
+    for (unsigned stage = 0; stage < 7; ++stage) {
+        const auto saved = n.files.saved();
+        n.start("append a !");
+        const auto stale = *n.f.mailbox.endpoint(n.f.client);
+        n.f.round();
+        U64 reply = 0;
+        if (stage >= 1)
+            n.f.request();
+        if (stage >= 2)
+            reply = n.f.receive(15);
+        if (stage >= 3)
+            n.f.reply(reply);
+        if (stage >= 4)
+            reply = n.f.consume();
+        if (stage >= 5)
+            n.f.acknowledge(reply);
+        if (stage == 6)
+            n.run();
+        n.files.abort();
+        n.f.retire(true);
+        require(n.files.saved() == saved, "later cancelled append preserves latest complete namespace");
+        n.start("append a ");
+        require(!n.files.complete(n.f.registry, n.f.mailbox, n.f.client, stale, n.f.stream),
+                "later append rejects stale endpoint generation");
+        n.run();
+        n.save();
+        n.read("a", "old new");
+        n.read("b", "Keep lower");
+    }
+    for (const auto phase : {I64{8}, I64{4}, I64{10}}) {
+        const auto saved = n.files.saved();
+        n.start("append a later");
+        n.f.round();
+        if (phase != 8)
+            n.f.request();
+        if (phase == 4)
+            static_cast<void>(n.f.receive(15));
+        if (phase == 10) {
+            n.f.reply(n.f.receive(15));
+            static_cast<void>(n.f.consume());
+        }
+        std::array<std::byte, Note::stream_record_bytes> record{};
+        require(n.f.note.stage_stream(record, *n.f.mailbox.endpoint(n.f.service), 4, ipc::Request{1, 1}),
+                "actual append fault input");
+        const auto child = fork();
+        require(child >= 0, "append emitted fault child");
+        if (child == 0) {
+            if (phase == 4)
+                static_cast<void>(note_test_service(record.data()));
+            else
+                static_cast<void>(aurora_user_main(phase, 1, 1));
+            std::_Exit(3);
+        }
+        int status = 0;
+        require(waitpid(child, &status, 0) == child && WIFSIGNALED(status) && WTERMSIG(status) == SIGILL,
+                "actual later append worker emitted bounds fault");
+        n.files.abort();
+        n.f.retire(true);
+        require(n.files.saved() == saved, "later worker fault preserves latest append commit");
+        n.read("a", "old new");
+    }
+    // This hosted owner observes response failure without pretending a source
+    // worker can fault after its retirement; the guest separately checks exit.
+    n.append("a", "!", false);
+    n.read("a", "old new!");
+    n.read("b", "Keep lower");
+    n.read("c", " space ");
+    n.read("d", "fourth");
+    NamedFixture exhausted(1);
+    exhausted.submit("write a original");
+    const auto saved = exhausted.files.saved();
+    exhausted.start("append a suffix");
+    exhausted.files.abort();
+    exhausted.f.retire(true);
+    exhausted.submit("append a suffix");
+    require(!exhausted.f.stream.begin_read() && exhausted.f.stream.run() == 1 && exhausted.f.stream.scrubbed() &&
+                exhausted.files.saved() == saved,
+            "append run exhaustion refuses without wrap or saved mutation");
+    require(!exhausted.files.bind(
+                exhausted.f.registry, exhausted.f.mailbox, exhausted.f.client, exhausted.f.service, exhausted.f.stream),
+            "exhausted append stream cannot mint publication authority");
+    exhausted.files.abort();
+}
+
 } // namespace
 
 auto main() -> int {
@@ -1237,6 +1369,7 @@ auto main() -> int {
     retained_read_lifetime_cases();
     file_service_transition_cases();
     named_file_cases();
+    protected_append_cases();
     command_cases();
     representation_controls();
     reply_controls();
@@ -1248,6 +1381,6 @@ auto main() -> int {
     upper_regression();
     std::printf(
         "PASS: %llu source-native note checks; real Mailbox bytes/EOF, retained note, cancellation and upper save; "
-        "six emitted SIGILL probes, hosted cleanup separately scoped\n",
+        "nine emitted SIGILL probes, hosted cleanup separately scoped\n",
         static_cast<unsigned long long>(checks));
 }

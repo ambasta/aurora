@@ -185,6 +185,18 @@ values. Full length and address preflight precede it. The source remains
 unchanged, and report/sector copies survive owner mutation and destruction.
 All failures return a zero-initialized owned sector. No view escapes the call.
 
+## Protected console RAM records
+
+The [production console](program-console-contract.md#protected-append-and-surviving-commits)
+keeps four named 49-byte files in its supervisor-held session store, separate from
+the byte/sector APIs above. Its protected append worker receives only a frozen
+selected prefix and suffix. It constructs the candidate in CPL3; source commit
+policy checks exact append contents and revision only after authenticated
+completion and both worker retirements. Worker failure discards staging rather
+than the committed store. Response failure never repeats an append, but ends the
+session and clears all RAM state. This is not mounted storage, a service-owned
+filesystem, or durable/reboot recovery. Final-source qualification is required.
+
 ## Tests
 
 `tests/compiler/storage` holds one Aurora driver per library family (byte values,

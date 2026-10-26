@@ -57,7 +57,7 @@ if [[ "$mode" == iommu-event ]]; then
 fi
 if [[ "$protected" == true ]]; then
     case "$mode" in
-        program-file-call|program-file-call-fault|program-file-call-budget|program-console|program-request-fault|program-service-fault|program-completion-fault|program-request-budget|program-service-budget|program-completion-budget|program-pending|program-owner|program-ordinal|program-unknown|program-transaction) ;;
+        program-file-call|program-file-call-fault|program-file-call-budget|program-console|program-request-fault|program-service-fault|program-completion-fault|program-request-budget|program-service-budget|program-completion-budget|program-pending|program-owner|program-ordinal|program-unknown|program-transaction|program-append-response) ;;
         *) profile_fail "unknown profile: $mode" ;;
     esac
     if [[ "$action" == --console && "$mode" != program-console && "$mode" != program-file-call ]]; then profile_fail 'fault profiles are smoke-only'; fi
@@ -216,6 +216,10 @@ if [[ "$action" == --smoke ]]; then
             program-file-call*) ;;
             program-*-fault|program-*-budget)
                 python3 -B tests/kernel-program-console-pty.py --mode "$mode" --build-dir "$image_dir" --read-only-recovery
+                python3 -B tests/kernel-program-console-pty.py --mode "$mode" --build-dir "$image_dir" --append-recovery
+                ;;
+            program-ordinal|program-owner|program-transaction|program-unknown)
+                python3 -B tests/kernel-program-console-pty.py --mode "$mode" --build-dir "$image_dir" --append-recovery
                 ;;
         esac
     else

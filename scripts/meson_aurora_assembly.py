@@ -167,7 +167,112 @@ def validate_program_session_abi(facts):
         raise ValueError("Program session entry shape does not match its native executor")
 
 
+def validate_program_copied_abi(facts, service=False, replacement=False):
+    """Admit the fixed private file/append records before an adapter can copy them."""
+    from bootstrap_frontend import abi_declaration, normalize_function_abi
+
+    def shape(source):
+        if source in ("i64", "u64", "u8"):
+            return dict(bytes=8, kind=source)
+        group = "enums" if source == "console::FileEvent" else "records"
+        symbol, value = abi_declaration(facts, group, source)
+        return dict(
+            bytes=8 if group == "enums" else value["reserved"],
+            kind="enum" if group == "enums" else "class",
+            type_name=symbol,
+        )
+
+    def record(source, size, fields, alignment=8):
+        _, value = abi_declaration(facts, "records", source)
+        expected, offset = [], 0
+        for name, kind, count in fields:
+            field = shape(kind)
+            # Native bytes are dense byte arrays, not scalar ABI qwords.
+            width = count if kind == "u8" and count else field["bytes"] * max(1, count)
+            expected.append(dict(name=name, offset=offset, array_length=count, **{**field, "bytes": width}))
+            offset += width
+        if offset != size or value != dict(
+            source_name=source, size=size, alignment=alignment, reserved=size, fields=expected
+        ):
+            raise ValueError("Protected copied record differs from its native boundary: " + source)
+
+    def entry(source, parameters, result):
+        _, raw = abi_declaration(facts, "functions", source)
+        expected, offset = [], 0
+        for kind in parameters:
+            field = shape(kind)
+            expected.append(dict(offset=offset, **field))
+            offset += field["bytes"]
+        value = normalize_function_abi(facts, raw)
+        if value != dict(
+            source_name=source,
+            receiver=None,
+            receiver_mutable=None,
+            borrowed_root_count=0,
+            borrowed_roots=[],
+            borrowed_root_abi=dict(
+                kind="none", register=None, tuple_payload_bytes=0, tuple_reserved_bytes=0, saved_root_reserved_bytes=0
+            ),
+            parameter_bytes=offset,
+            parameters=expected,
+            result=shape(result),
+        ):
+            raise ValueError("Protected copied entry differs from its native boundary: " + source)
+
+    if service:
+        record("kernel::NoteRead64", 72, [("bytes", "u8", 64), ("length", "i64", 0)])
+        entry("aurora_user_main", ["i64", "i64", "i64", "kernel::NoteRead64", "kernel::NoteRead64"], "i64")
+        return
+    record("std::BinaryBuffer64", 64, [("elements", "u8", 64)], alignment=1)
+    for source in ("console::FileName", "console::FileValue"):
+        record(source, 72, [("bytes", "std::BinaryBuffer64", 0), ("length", "i64", 0)])
+    record("console::SessionFiles", 264, [("records", "std::BinaryBuffer64", 4), ("occupied", "u64", 0)])
+    record("console::ProtectedFiles", 272, [("files", "console::SessionFiles", 0), ("revision", "u64", 0)])
+    record(
+        "console::FileSelection",
+        160,
+        [
+            ("name", "console::FileName", 0),
+            ("revision", "u64", 0),
+            ("replacement", "u64", 0),
+            ("suffix", "console::FileValue", 0),
+        ],
+    )
+    record("console::FileReply", 80, [("bytes", "u8", 64), ("length", "i64", 0), ("event", "console::FileEvent", 0)])
+    _, event = abi_declaration(facts, "enums", "console::FileEvent")
+    names = "unknown written read removed listed missing invalid full reserved".split()
+    if event["cases"] != dict(zip(names, range(len(names)))):
+        raise ValueError("File reply event encoding differs from its native boundary")
+    record(
+        "FileUpdate",
+        520,
+        [
+            ("files", "console::ProtectedFiles", 0),
+            ("reply", "console::FileReply", 0),
+            ("action", "u64", 0),
+            ("selection", "console::FileSelection", 0),
+        ],
+    )
+    entry("update_files", ["console::ProtectedFiles", "std::BinaryBuffer64", "i64", "u64"], "FileUpdate")
+    if replacement:
+        record("FileMutation", 352, [("files", "console::ProtectedFiles", 0), ("reply", "console::FileReply", 0)])
+        entry(
+            "replace_files",
+            ["console::ProtectedFiles", "console::FileSelection", "std::BinaryBuffer64", "i64"],
+            "FileMutation",
+        )
+
+
+def validate_selected_source_abi(source, facts):
+    # This existing compiled image has one exact private launch record. Other
+    # uses of ipc-user-entry.S (snapshot, file-call, Call/Serve) retain theirs.
+    if Path(source).name == "program-stream-service.au":
+        validate_program_copied_abi(facts, service=True)
+
+
 def render_bridge(source, facts):
+    if "# PROGRAM_FILES_ABI:" in source:
+        validate_program_copied_abi(facts, replacement="@replace_files@" in source)
     if "# PROGRAM_SESSION_ABI:" in source:
         validate_program_session_abi(facts)
     if "# UART_POLICY_ABI:" in source:
@@ -323,6 +428,7 @@ def main():
     subprocess.run(command, check=True)
     if pending_abi:
         facts = json.loads(pending_abi.read_text())
+        validate_selected_source_abi(args.source, facts)
         if args.emit_object and args.bridge:
             compose_object_bridge(
                 temporary,

@@ -113,7 +113,7 @@ export namespace console {
                 }
                 return ProgramEffect::read_note;
             }
-            if (event == files && phase == files && value <= 6u64) {
+            if (event == files && phase == files && value <= 7u64) {
                 phase = response;
                 if (value == 0u64) {
                     return ProgramEffect::unknown;
@@ -122,12 +122,12 @@ export namespace console {
                     return ProgramEffect::file_reply;
                 }
                 if (profile == 0u64) {
-                    if (value <= 3u64) {
+                    if (value <= 3u64 || value == 7u64) {
                         return ProgramEffect::file;
                     }
                     return ProgramEffect::abort_file;
                 }
-                if (value <= 3u64) {
+                if (value <= 3u64 || value == 7u64) {
                     return ProgramEffect::abort_file;
                 }
                 if (value == 4u64) {

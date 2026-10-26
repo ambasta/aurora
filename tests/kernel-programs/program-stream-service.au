@@ -1,6 +1,6 @@
 module program_stream_service;
 import kernel.note_read;
-auto aurora_user_main(i64 phase, i64 value, i64 ordinal, kernel::NoteRead64 note) -> i64 {
+auto aurora_user_main(i64 phase, i64 value, i64 ordinal, kernel::NoteRead64 note, kernel::NoteRead64 suffix) -> i64 {
     if (phase == 5) {
         i64 toggle = 0;
         while (true) {
@@ -13,6 +13,37 @@ auto aurora_user_main(i64 phase, i64 value, i64 ordinal, kernel::NoteRead64 note
             2
         };
         return items[10];
+    }
+    if (phase == 15) {
+        // This isolated worker constructs the complete candidate from the two
+        // frozen inputs. Neither input names or maps committed storage.
+        if (value != 1 || ordinal < 0 || ordinal > 49 || note.size() < 0 || note.size() > 49
+            || suffix.size() < 0 || suffix.size() > 49 - note.size()) {
+            return 4;
+        }
+        const i64 length = note.size() + suffix.size();
+        kernel::NoteRead64 candidate = kernel::NoteRead64(length);
+        i64 index = 0;
+        while (index < length) {
+            u8 byte = '\0';
+            if (index < note.size()) {
+                byte = note.at(index);
+            } else {
+                byte = suffix.at(index - note.size());
+            }
+            if (byte < ' ' || byte > '~') {
+                return 4;
+            }
+            candidate.set(index, byte);
+            index = index + 1;
+        }
+        if (ordinal == candidate.size()) {
+            return 2;
+        }
+        if (ordinal > candidate.size()) {
+            return 4;
+        }
+        return i64(1u64 | (u64(candidate.at(ordinal)) << 8));
     }
     if (phase == 11) {
         if (value != 1 || ordinal < 0 || ordinal > 53) {

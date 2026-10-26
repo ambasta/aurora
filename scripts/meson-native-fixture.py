@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import subprocess
 
-from meson_aurora_assembly import compose_object_bridge, dependencies, render_bridge
+from meson_aurora_assembly import compose_object_bridge, dependencies, render_bridge, validate_selected_source_abi
 
 
 def escaped(path):
@@ -50,11 +50,14 @@ def main():
     if args.referenced_reflection_only:
         command.append("--referenced-reflection-only")
     abi = args.object.with_suffix(".abi.json")
-    if args.bridge:
+    copied_service = args.source.name == "program-stream-service.au"
+    if args.bridge or copied_service:
         command += ["--abi-facts", str(abi)]
     subprocess.run(command + [str(args.source), "-o", str(assembly)], check=True)
-    if args.bridge:
+    if args.bridge or copied_service:
         facts = json.loads(abi.read_text())
+        validate_selected_source_abi(args.source, facts)
+    if args.bridge:
         if args.emit_object:
             compose_object_bridge(
                 assembly, args.bridge, facts, compiler=compiler if args.compose_private_object else None

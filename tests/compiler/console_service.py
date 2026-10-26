@@ -546,6 +546,78 @@ auto span_compare_contract() -> i64 {
     if (buffer.starts_with(64, all.subspan(0, 64))) { return 7; }
     return 0;
 }
+auto protected_append_contract() -> i64 {
+    const std::BinaryBuffer64 zero = std::BinaryBuffer64();
+    console::SessionFiles initial = console::SessionFiles(zero);
+    const console::FileReply mutation_1 = initial.submit(pack("write a Old"), 11);
+    const console::FileReply mutation_2 = initial.submit(pack("write b keep"), 12);
+    const console::FileReply mutation_3 = initial.submit(pack("write c C"), 9);
+    const console::FileReply mutation_4 = initial.submit(pack("write d D"), 9);
+    console::ProtectedFiles files = console::ProtectedFiles(initial);
+    const console::FileSelection before = files.select(pack("cat a"), 5);
+    const console::FileSelection selected = files.select(pack("append a  new"), 13);
+    const console::FileValue suffix = selected.appended_value();
+    const console::FileReply prepared = files.project(selected);
+    const console::FileReply still_current = files.project(before);
+    if (size_of(console::FileSelection) != 160 || !selected.writable() || !selected.appending()
+        || selected.version() != before.version() || suffix.size() != 4 || suffix.at(0) != ' '
+        || prepared.size() != 3 || prepared.at(0) != 'O' || still_current.size() != 3) { return 10; }
+    const console::FileReply wrong_prefix = files.replace(selected, pack("Bad new"), 7);
+    const console::FileReply wrong_suffix = files.replace(selected, pack("Old bad"), 7);
+    const console::FileReply wrong_length = files.replace(selected, pack("Old"), 3);
+    const console::FileReply readonly = files.replace(before, pack("Old new"), 7);
+    std::BinaryBuffer64 hidden = pack("Old new");
+    hidden.write_u8(63, 'x');
+    const console::FileReply wrong_tail = files.replace(selected, hidden, 7);
+    const console::FileReply unchanged = files.project(selected);
+    if (wrong_prefix.status() != console::FileEvent::invalid || wrong_suffix.status() != console::FileEvent::invalid
+        || wrong_length.status() != console::FileEvent::invalid || readonly.status() != console::FileEvent::invalid
+        || wrong_tail.status() != console::FileEvent::invalid || unchanged.size() != 3) { return 11; }
+    const console::FileReply committed = files.replace(selected, pack("Old new"), 7);
+    const console::FileReply replay = files.replace(selected, pack("Old new"), 7);
+    const console::FileSelection fresh = files.select(pack("cat a"), 5);
+    const console::FileReply result = files.project(fresh);
+    const console::FileSelection other = files.select(pack("cat b"), 5);
+    const console::FileReply preserved = files.project(other);
+    if (committed.status() != console::FileEvent::written || committed.size() != 16
+        || committed.at(9) != '4' || replay.status() != console::FileEvent::invalid
+        || fresh.version() != before.version() + 1u64 || result.size() != 7 || result.at(6) != 'w'
+        || preserved.size() != 4 || preserved.at(3) != 'p') { return 12; }
+    const console::FileSelection empty_append = files.select(pack("append a "), 9);
+    const console::FileReply empty_commit = files.replace(empty_append, pack("Old new"), 7);
+    const console::FileSelection after_empty = files.select(pack("cat a"), 5);
+    if (empty_commit.status() != console::FileEvent::written || empty_commit.at(9) != '0'
+        || after_empty.version() != fresh.version() + 1u64) { return 13; }
+    const console::FileSelection stale = files.select(pack("append a x"), 10);
+    const console::FileReply mutation_5 = files.submit(pack("write b changed"), 15);
+    const console::FileReply unrelated = files.replace(stale, pack("Old newx"), 8);
+    const console::FileSelection deleted = files.select(pack("append a x"), 10);
+    const console::FileReply mutation_6 = files.submit(pack("rm a"), 4);
+    const console::FileReply mutation_7 = files.submit(pack("write a replacement"), 19);
+    const console::FileReply reused = files.replace(deleted, pack("Old newx"), 8);
+    if (unrelated.status() != console::FileEvent::invalid || reused.status() != console::FileEvent::invalid) {
+        return 14;
+    }
+    const console::FileAppendRequest missing = console::file_append_request(pack("append absent x"), 15);
+    const console::FileAppendRequest reserved = console::file_append_request(pack("append note x"), 13);
+    const console::FileAppendRequest malformed = console::file_append_request(pack("append a"), 8);
+    const console::FileReply missing_reply = files.prepare_append(missing);
+    const console::FileReply reserved_reply = files.prepare_append(reserved);
+    const console::FileReply malformed_reply = files.prepare_append(malformed);
+    if (missing_reply.status() != console::FileEvent::missing || reserved_reply.status() != console::FileEvent::reserved
+        || malformed_reply.status() != console::FileEvent::invalid) { return 15; }
+    const console::FileReply mutation_8 =
+        files.submit(pack("write a xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"), 56);
+    const console::FileSelection maximum = files.select(pack("append a y"), 10);
+    const console::FileReply full =
+        files.replace(maximum, pack("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxy"), 49);
+    const console::FileSelection too_long = files.select(pack("append a z"), 10);
+    const console::FileAppendRequest overflow = console::file_append_request(pack("append a z"), 10);
+    const console::FileReply overflow_reply = files.prepare_append(overflow);
+    if (full.status() != console::FileEvent::written || too_long.version() != 0u64
+        || overflow_reply.status() != console::FileEvent::invalid) { return 16; }
+    return 0;
+}
 auto append_contract() -> i64 {
     const std::BinaryBuffer64 zero = std::BinaryBuffer64();
     console::SessionFiles files = console::SessionFiles(zero);
@@ -587,7 +659,7 @@ auto append_contract() -> i64 {
     if (files.append_file(name, console::FileValue(zero, 1)) != console::FileEvent::invalid) { return 7; }
     const console::FileReply unchanged = files.read_file(name);
     if (unchanged.size() != 49 || unchanged.at(48) != 'a') { return 8; }
-    return 0;
+    return protected_append_contract();
 }
 auto copy_contract() -> i64 {
     const std::BinaryBuffer64 zero = std::BinaryBuffer64();
