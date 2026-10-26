@@ -104,7 +104,7 @@ auto cpus() -> Topology {
 auto apic_grant(U64 arena) -> std::optional<LocalApicAdmission> {
     Buffer map;
     descriptor(map, arena, 256, 1);
-    return LocalApicAdmission::authorize(cpus(),
+    return LocalApicAdmission::authorize(cpus().timer_topology(),
                                          map,
                                          40,
                                          1,

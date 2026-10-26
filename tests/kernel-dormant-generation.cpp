@@ -22,7 +22,7 @@ public:
 };
 auto main() -> int {
     Memory m;
-    memory::PhysicalPages pool;
+    memory::PhysicalPagePool<> pool;
     require(pool.initialize(m.base(), 16));
     user::DomainRegistry registry;
     const auto owner = registry.create();

@@ -13,8 +13,12 @@ SMP implementation or physical Framework qualification.
 
 ## Discovery and mapping authority
 
-The ACPI path retains an owned immutable copy of its successfully validated MADT
-topology after closing firmware/config windows. Timer admission requires exactly
+The ACPI path fully parses and diagnoses the MADT, then retains only immutable,
+owned timer evidence: the validated LAPIC address, enabled processor count, and
+the sole enabled processor's ID and legacy/x2APIC kind. Only a successfully parsed
+topology can construct this projection; it borrows no inventory or firmware bytes.
+The full inventory's lifetime ends before PCI discovery, and failed discovery
+clears the retained evidence. Timer admission still requires exactly
 one enabled legacy processor record matching the executing CPUID BSP ID, MSR,
 APIC and PAT support, the expected enabled BSP xAPIC base, a valid physical width,
 and a final firmware map owning the complete runtime arena. Disabled or merely

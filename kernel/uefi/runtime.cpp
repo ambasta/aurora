@@ -343,7 +343,7 @@ public:
 #endif
 };
 constinit std::array<Domain, L::domain_count> domains;
-constinit memory::PhysicalPages frames;
+constinit memory::PhysicalPagePool<16> frames;
 constinit user::DomainRegistry registry;
 constinit user::ProgramRun program;
 #ifdef AURORA_UEFI_IPC

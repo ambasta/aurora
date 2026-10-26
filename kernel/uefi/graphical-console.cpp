@@ -223,14 +223,14 @@ using Display = display::Session<DisplayTransport, ServicePlatform>;
 using Entry = graphical::Entry<Service, Display, ServicePlatform>;
 
 auto establish_timer(const Bytes &handoff) -> void {
-    require(Timer::irq_off() && root() == kernel_root && discovered_topology().has_value(), "timer discovery");
+    require(Timer::irq_off() && root() == kernel_root && discovered_timer_topology().has_value(), "timer discovery");
     std::uint32_t a, b, c, d;
     asm volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(1), "c"(0));
     const auto leaf_ebx = b, leaf_edx = d;
     constexpr auto features = (1U << 5) | (1U << 9) | (1U << 16);
     require((leaf_edx & features) == features, "timer features");
     asm volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(0x80000008U), "c"(0));
-    const auto admitted = LocalApicAdmission::authorize(*discovered_topology(),
+    const auto admitted = LocalApicAdmission::authorize(*discovered_timer_topology(),
                                                         view(owned_arena + Handoff::map_offset, handoff.get(32)),
                                                         handoff.get(40),
                                                         static_cast<std::uint32_t>(handoff.get(48, 4)),

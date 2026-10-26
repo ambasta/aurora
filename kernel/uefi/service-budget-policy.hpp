@@ -26,7 +26,7 @@ public:
     static constexpr unsigned pat_index = 3;
     static constexpr std::uint64_t timer_vector = 64;
 
-    [[nodiscard]] static auto authorize(const Topology &topology,
+    [[nodiscard]] static auto authorize(const TimerTopology &topology,
                                         std::span<const std::byte> map,
                                         std::size_t stride,
                                         std::uint32_t version,
@@ -51,15 +51,7 @@ public:
         if (!final_map.owns(arena, Handoff::arena_bytes))
             return std::nullopt;
         const auto bsp_id = cpuid_ebx >> 24;
-        std::size_t enabled = 0;
-        for (const auto &processor : topology.processors()) {
-            // Disabled and merely online-capable records do not add running CPUs.
-            if (!processor.enabled)
-                continue;
-            if (++enabled != 1 || processor.extended || processor.id != bsp_id)
-                return std::nullopt;
-        }
-        if (enabled != 1)
+        if (topology.enabled() != 1 || topology.extended() || topology.id() != bsp_id)
             return std::nullopt;
         for (std::size_t at = 0; at < map.size(); at += stride) {
             const Bytes descriptor{map.subspan(at, stride)};

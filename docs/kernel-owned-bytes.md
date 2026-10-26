@@ -27,8 +27,15 @@ Qualification belongs to the exact final source, image and actual guest run; pre
 The granting kernel validates the handoff, owned memory map, complete page-table
 tree, supervisor RW/NX mapping, private stack and disabled interrupts before
 opening one static `kernel::bytes::Region`. Its backing is exactly the existing
-16-page pool at arena offset `0x50000`. No second allocator, bitmap, page mapping
-or free list is introduced. Four fixed owner records each hold up to sixteen
+16-page pool at arena offset `0x50000`. UEFI pool and runtime-frame owners each
+retain exactly sixteen private metadata slots; BIOS owners retain 128. Both use
+one non-template `PhysicalPages` lease algorithm through noncopyable, nonmoving
+`PhysicalPagePool<N>` owners. Explicit initialization binds the owner's own
+zeroed storage, without static self pointers or caller-supplied metadata. Owner
+identity, full-width generations and a shared monotonic epoch reject stale,
+foreign and same-address-reincarnated leases across capacities. No second
+allocator, bitmap, page mapping or free list is introduced. Four fixed owner
+records each hold up to sixteen
 move-only `PageLease` objects. The region metadata has a compiled 3,072-byte cap;
 the 16 KiB stack, 1 MiB arena and `0x20000` payload image bounds are unchanged.
 

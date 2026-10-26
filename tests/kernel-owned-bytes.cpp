@@ -71,7 +71,7 @@ bool bytes_are(std::span<const std::byte> bytes, std::byte value) noexcept {
 }
 
 struct Arena {
-    PhysicalPages pool;
+    aurora::memory::PhysicalPagePool<> pool;
     alignas(page_bytes) Backing backing;
     std::uint64_t base;
 
@@ -259,9 +259,9 @@ void admission() {
     require(!region.open(arena.pool, arena.backing, arena.base, UINT64_MAX),
             "maximum integer quota cannot bypass the arena bound");
     require(!region.open(arena.pool, {}, arena.base, arena_bytes), "null empty backing is refused");
-    PhysicalPages empty;
+    aurora::memory::PhysicalPagePool<> empty;
     require(!region.open(empty, arena.backing, arena.base, arena_bytes), "uninitialized physical allocator is refused");
-    PhysicalPages short_pool;
+    aurora::memory::PhysicalPagePool<> short_pool;
     require(short_pool.initialize(arena.base, 15), "construct short real allocator");
     require(!region.open(short_pool, arena.backing, arena.base, arena_bytes), "wrong physical extent is refused");
     require(region.metrics() == pristine_metrics && region.id() == 0 && !region.is_open() && arena.pool.used() == 0,

@@ -20,10 +20,10 @@ namespace aurora::uefi {
 
 #if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
 namespace {
-constinit std::optional<Topology> copied_topology;
+constinit std::optional<TimerTopology> copied_timer_topology;
 }
-auto discovered_topology() -> const std::optional<Topology> & {
-    return copied_topology;
+auto discovered_timer_topology() -> const std::optional<TimerTopology> & {
+    return copied_timer_topology;
 }
 #endif
 namespace {
@@ -148,7 +148,7 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
     [[maybe_unused]] constexpr bool pci_row = true, ivrs_row = true;
 #endif
 #if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
-    copied_topology.reset();
+    copied_timer_topology.reset();
 #endif
     std::uint32_t a, b, c, d;
     asm volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(1), "c"(0));
@@ -353,7 +353,7 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
     copied_mcfg_size = mcfg_size;
 #endif
 #if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
-    copied_topology.emplace(*topology);
+    copied_timer_topology.emplace(topology->timer_topology());
 #endif
     return true;
 }
@@ -378,10 +378,10 @@ auto discover_acpi(U64 arena, const Bytes &handoff, [[maybe_unused]] memory::Phy
 #endif
     // ACPI parsing/Topology temporaries have ended before PCI scan construction.
     const bool accepted = discover_pci(arena, handoff, bytes(arena + 0x70000, mcfg_size), physical_bits, pool);
-#ifdef AURORA_UEFI_SERVICE_BUDGET
+#if defined(AURORA_UEFI_SERVICE_BUDGET) || defined(AURORA_UEFI_CONSOLE) || defined(AURORA_UEFI_GRAPHICAL_CONSOLE)
     // Preserve the public success boundary: rejected PCI leaves no timer topology.
     if (!accepted)
-        copied_topology.reset();
+        copied_timer_topology.reset();
 #endif
     return accepted;
 }

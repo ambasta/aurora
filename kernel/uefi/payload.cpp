@@ -36,7 +36,7 @@ auto language_value() -> long long asm("__au_runtime_console_value");
 auto language_value() -> long long asm("aurora_kernel_value");
 #endif
 namespace {
-constinit aurora::memory::PhysicalPages pool;
+constinit aurora::memory::PhysicalPagePool<16> pool;
 #if defined(AURORA_DISPLAY_FIXTURE) || defined(AURORA_DEVICE_FIXTURE)
 using aurora::uefi::loader_fixture::Fixture;
 // The validated handoff row; each subsystem of the image runs only for its own rows.
