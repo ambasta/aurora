@@ -74,17 +74,10 @@ reject 0	1:465: error AU3001: owned bytes require region.try_allocate, move or a
 reject 1	aurorac: error AU3001: private class field is inaccessible
 reject 2	1:483: error AU3001: expected i64, got u64
 reject 3	1:504: error AU3001: expected storage::Sector512, got std::BinaryBuffer64
-reject 4	1:499: error AU3001: expected i64, got u64
-reject 5	1:436: error AU3001: expected storage::SectorFlushMode, got bool
-reject 6	1:436: error AU3001: expected storage::SectorFlushMode, got storage::SectorFlushStatus
-reject 7	1:539: error AU3001: mutable method requires a mutable receiver
-reject 8	1:484: error AU3001: mutable method requires a mutable receiver
-reject 9	1:527: error AU3001: private class field is inaccessible
-reject 10	aurorac: error AU3001: private class field is inaccessible
-reject 11	1:462: error AU3001: borrow_bytes requires a named local byte array or owned bytes
-reject 12	1:430: error AU3001: expected distinct i64, u64 or u8 conversion types
-reject 13	1:455: error AU3001: owning class cannot be copied; use move(named_local)
-reject 14	1:470: error AU3001: use after move of 'device'
-reject 15	1:509: error AU3001: use after move of 'device'
-reject 16	1:470: error AU3001: assignment requires a mutable scalar local
-reject 17	1:470: error AU3001: ownership operation requires a local name
+reject 4	1:539: error AU3001: mutable method requires a mutable receiver
+reject 5	1:462: error AU3001: borrow_bytes requires a named local byte array or owned bytes
+reject 6	1:430: error AU3001: expected distinct i64, u64 or u8 conversion types
+reject 7	1:455: error AU3001: owning class cannot be copied; use move(named_local)
+reject 8	1:470: error AU3001: use after move of 'device'
+reject 9	1:470: error AU3001: assignment requires a mutable scalar local
+reject 10	1:470: error AU3001: ownership operation requires a local name

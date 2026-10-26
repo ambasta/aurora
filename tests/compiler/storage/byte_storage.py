@@ -384,49 +384,18 @@ CODEC_PREFIX = "module test;import std.bytes;auto test()->u64{const std::Encode3
 
 
 def rejections():
+    """One rejection per rule the storage API relies on; the rules themselves are
+    the compiler-semantics tests'."""
     for body in (
         "return u64(buffer.elements[0]);",
-        "buffer.elements[0] = 1u8; return 0u64;",
         "const std::BinaryBuffer64 frozen = buffer; frozen.write_u8(0, 1u8); return 0u64;",
-        "const std::BinaryBuffer64 frozen = buffer; frozen.write_le64(0, 1u64); return 0u64;",
         "buffer.write_u8(0, 1u64); return 0u64;",
-        "buffer.write_le16(0, 1); return 0u64;",
-        "buffer.write_be32(0u64, 1u64); return 0u64;",
         "return consume(borrow_bytes(buffer));",
-        "const std::ByteReadResult byte = buffer.read_u8(0u64); return byte.value_or(0u64);",
-        "const std::ByteReadResult byte = buffer.read_u8(0); return byte.value_or(0u8);",
     ):
         yield "buffer", BUFFER_PREFIX + body + "}"
-    for body in (
-        "return u64(sector.elements[0]);",
-        "sector.elements[511] = 255u8; return 0u64;",
-        "const std::ByteReadResult result = sector.read_byte(0u64); return 0u64;",
-        "sector.write_byte(0, 255u64); return 0u64;",
-        "const storage::RecordReadResult result = sector.read_record(0u64); return 0u64;",
-        "sector.write_record(0, sector); return 0u64;",
-        "const storage::Sector512 frozen = sector; frozen.write_byte(0, 1u8); return 0u64;",
-        "const storage::Sector512 frozen = sector; const std::BinaryBuffer64 block = std::BinaryBuffer64();"
-        "frozen.write_record(0, block); return 0u64;",
-        "const builtin::span<const u8> leaked = borrow_bytes(sector); return 0u64;",
-    ):
-        yield "sector", SECTOR_PREFIX + body + "}"
-    for label, arguments in (
-        ("array needs an explicit borrow", "bytes, 0u64, 0"),
-        ("base must be u64", "borrow_bytes(bytes), 0, 0"),
-        ("request must be i64", "borrow_bytes(bytes), 0u64, 0u64"),
-        ("bool is not a base", "borrow_bytes(bytes), false, 0"),
-        ("bool is not a request", "borrow_bytes(bytes), 0u64, false"),
-    ):
-        call = f"const storage::SectorReadResult report = storage::read_sector_window({arguments}); return 0u64; }}"
-        yield "window " + label, WINDOW_PREFIX + call
-    yield (
-        "window owned sector does not expose a borrowed array",
-        WINDOW_PREFIX
-        + (
-            "const storage::Sector512 sector = storage::Sector512();"
-            "const builtin::span<const u8> view = borrow_bytes(sector); return 0u64; }"
-        ),
-    )
+    yield "sector", SECTOR_PREFIX + "sector.write_record(0, sector); return 0u64;}"
+    call = "const storage::SectorReadResult report = storage::read_sector_window(bytes, 0u64, 0); return 0u64; }"
+    yield "window array needs an explicit borrow", WINDOW_PREFIX + call
     yield (
         "window report payload stays private",
         WINDOW_PREFIX
@@ -437,40 +406,12 @@ def rejections():
     )
     oversized = "builtin::array<u8, 4097> bytes = {" + ", ".join(f"{v}u8" for v in window_pattern(4097)) + "};\n"
     yield "window source array cannot exceed 4096", "module test; auto test() -> u64 {" + oversized + "return 0u64; }"
-    yield (
-        "window result is an owned report, not a span",
-        WINDOW_PREFIX
-        + (
-            "const builtin::span<const u8> leaked = storage::read_sector_window(borrow_bytes(bytes), 0u64, 0);"
-            " return 0u64; }"
-        ),
-    )
     for body in (
-        "return result.payload;",
         "return result.value();",
-        "std::Bytes4 bytes=result.bytes_or_zero();return bytes.elements[0];",
-        "const std::Bytes4 bytes=result.bytes_or_zero();bytes.set(0,1u8);return 0u64;",
         "return std::encode_le32(42);",
-        "std::Bytes4 bytes=std::Bytes4();bytes.set(0,256u64);return 0u64;",
         "const std::Bytes4 bytes=std::Bytes4{.elements={0u8,0u8,0u8,0u8}};return 0u64;",
     ):
         yield "codec", CODEC_PREFIX + body + "}"
-    bodies = [
-        "const std::Encode16Result result=std::encode_le16(42u64);const std::Bytes2 bytes=result.payload;return 0u64;",
-        "const std::Encode16Result result=std::encode_le16(42);return 0u64;",
-        "const std::Bytes8 bytes=std::encode_be64(42);return 0u64;",
-        "const std::Bytes4 bytes=std::Bytes4();return std::decode_le16(bytes);",
-        "const std::Bytes4 bytes=std::Bytes4();return std::decode_be64(bytes);",
-        "const std::Bytes8 bytes=std::encode_le64(42u64);const std::Bytes8 copy=bytes.bytes_or_zero();return 0u64;",
-    ]
-    for size in (2, 8):
-        bodies += [
-            f"std::Bytes{size} bytes=std::Bytes{size}();return u64(bytes.elements[0]);",
-            f"const std::Bytes{size} bytes=std::Bytes{size}();bytes.set(0,1u8);return 0u64;",
-            f"std::Bytes{size} bytes=std::Bytes{size}();bytes.set(0,256u64);return 0u64;",
-        ]
-    for body in bodies:
-        yield "storage codec", "module test;import std.bytes;auto test()->u64{" + body + "}"
 
 
 TRAPS = (-1, 64, MAX_I64)

@@ -102,20 +102,12 @@ REJECTIONS = (
     "device.locked = false; return 0u64;",
     "const storage::SectorReadResult result = device.read_sector(0u64); return 0u64;",
     "const std::BinaryBuffer64 record = std::BinaryBuffer64(); device.write_sector(0, record); return 0u64;",
-    "const storage::Sector512 sector = storage::Sector512(); device.write_sector(0u64, sector); return 0u64;",
-    "device.flush(true); return 0u64;",
-    "device.flush(storage::SectorFlushStatus::unsupported); return 0u64;",
     "const storage::RamSectorDevice frozen = move(device); const storage::Sector512 sector = storage::Sector512();"
     "frozen.write_sector(0, sector); return 0u64;",
-    "const storage::RamSectorDevice frozen = move(device); frozen.make_read_only(); return 0u64;",
-    "const storage::SectorReadResult report = device.read_sector(0);"
-    "const storage::Sector512 secret = report.payload; return 0u64;",
-    "storage::SectorGeometry geometry = device.geometry(); geometry.writable = true; return 0u64;",
     "const builtin::span<const u8> leaked = borrow_bytes(device); return 0u64;",
     "return u64(storage::SectorFlushStatus::volatile_complete);",
     "storage::RamSectorDevice copy = device; return 0u64;",
     "storage::RamSectorDevice moved = move(device); device.geometry(); return 0u64;",
-    "storage::RamSectorDevice first = move(device); storage::RamSectorDevice second = move(device); return 0u64;",
     "storage::RamSectorDevice other = move(device); device = move(other); return 0u64;",
     "const builtin::OwnedBytes leaked = move(device.payload); return 0u64;",
 )

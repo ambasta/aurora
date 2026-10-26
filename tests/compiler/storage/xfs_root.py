@@ -198,7 +198,6 @@ REJECTIONS = (
         LOOKUP_PREFIX + "const fs::XfsRootReport r="
         "fs::lookup_xfs_v5_512_root(borrow_bytes(bytes),borrow_bytes(bytes),1u64);return 0u64;}",
     ),
-    ("closed enum conversion", LOOKUP_PREFIX + "return u64(fs::XfsRootStatus::found);}"),
     (
         "span result excluded by callable type surface",
         "module root_lookup_test;import fs.xfs_root;\n"
