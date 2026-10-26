@@ -444,20 +444,36 @@ export namespace compiler_x86 {
             return end_line();
         }
         auto mov_imm(i64 value, Register target) -> bool {
-            text("    movq $");
+            // A 32-bit register write zero-extends without changing flags.
+            if (value >= 0 && value <= 4294967295) {
+                text("    movl $");
+                number(value);
+                text(", ");
+                dword_register(target);
+                return end_line();
+            }
+            if (value < -2147483648 || value > 2147483647) {
+                text("    movabsq $");
+            } else {
+                text("    movq $");
+            }
             number(value);
             text(", ");
             reg(target);
             return end_line();
         }
         auto mov_abs(i64 value, Register target) -> bool {
-            text("    movabsq $");
-            number(value);
-            text(", ");
-            reg(target);
-            return end_line();
+            return mov_imm(value, target);
         }
         auto mov_uimm(u64 value, Register target) -> bool {
+            if (value <= 4294967295u64) {
+                return mov_imm(i64(value), target);
+            }
+            if (value >= 18446744071562067968u64) {
+                // The difference is at most INT32_MAX, so conversion is checked
+                // and the signed spelling preserves the original 64-bit pattern.
+                return mov_imm(-1 - i64(18446744073709551615u64 - value), target);
+            }
             text("    movabsq $");
             if (value > 9223372036854775807u64) {
                 text("-");
@@ -977,6 +993,45 @@ export namespace compiler_x86 {
             }
             if (base == 4) {
                 return text("(%rax)");
+            }
+            return fail();
+        }
+        auto dword_register(Register value) -> bool {
+            if (value == Register::rax) {
+                return text("%eax");
+            }
+            if (value == Register::rbx) {
+                return text("%ebx");
+            }
+            if (value == Register::rcx) {
+                return text("%ecx");
+            }
+            if (value == Register::rdx) {
+                return text("%edx");
+            }
+            if (value == Register::rsi) {
+                return text("%esi");
+            }
+            if (value == Register::rdi) {
+                return text("%edi");
+            }
+            if (value == Register::r8) {
+                return text("%r8d");
+            }
+            if (value == Register::r9) {
+                return text("%r9d");
+            }
+            if (value == Register::r10) {
+                return text("%r10d");
+            }
+            if (value == Register::r11) {
+                return text("%r11d");
+            }
+            if (value == Register::rbp) {
+                return text("%ebp");
+            }
+            if (value == Register::rsp) {
+                return text("%esp");
             }
             return fail();
         }

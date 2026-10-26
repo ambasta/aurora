@@ -243,8 +243,8 @@ export namespace compiler_x86 {
         const i64 form = row.form();
         if (form == 5) {
             const compiler_ir_instructions::RawOperandRow value = store.operand_at(row.operand_begin());
-            // Native Constant observes the exact 64-bit pattern through int64_t.
-            // Preserve its signed decimal spelling even for a u64 high bit.
+            // Numeric MOV helpers select the shortest flag-preserving encoding
+            // that reproduces this exact 64-bit scalar pattern.
             if (value.role() == 11) {
                 emit_mov_uimm(workspace, object, value.unsigned_value(), Register::rax);
             } else {

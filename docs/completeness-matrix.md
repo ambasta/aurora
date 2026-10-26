@@ -25,6 +25,10 @@ initialize service-record gaps without redundant payload clearing. This recovers
 production executable-page headroom without changing image caps or call authority;
 qualification and compile-time measurements remain revision-specific.
 
+Numeric scalar register immediates select compact, flag-preserving MOV forms in
+both text and direct-object output, without changing scalar bits, stack facts,
+symbol-address materialization or relocation policy. Qualification remains revision-specific.
+
 Component details: [compiler](../compiler/ARCHITECTURE.md),
 [libraries](../library/README.md), [kernel](../kernel/README.md),
 [protected runtime](../kernel/uefi/runtime.md), [allocation](kernel-owned-bytes.md)

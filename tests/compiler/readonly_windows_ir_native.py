@@ -114,6 +114,13 @@ def main():
             "object_span_arguments",
         ]
         expected = [MIN_I64, (1 << 64) - 1, -42, -1, 8, 21, 21, 128, 42, 21, 127, 128, 0, 42]
+        # The same reviewed numeric boundary data is observed as complete 64-bit
+        # results from the IR object sink, not inferred from its instruction text.
+        for line in (AIR.parent.parent.parent / "emitter_mov.cases").read_text().splitlines():
+            if line and not line.startswith("#"):
+                kind, value, _, _ = line.split()
+                names.append(f"object_constant_{kind}_{value.replace('-', 'n')}")
+                expected.append(int(value))
         object_traps = [
             ("object_bounds", Trap.BOUNDS),
             ("object_zero", Trap.ZERO),

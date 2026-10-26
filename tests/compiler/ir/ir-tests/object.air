@@ -425,3 +425,175 @@ function object_span_mixed
     Constant -1
     Return
 end
+
+; Numeric register-immediate boundaries also run through the direct-object sink.
+function object_constant_i64_n9223372036854775808
+  result i64
+    Constant -9223372036854775808 i64
+    Return
+end
+function object_constant_i64_n9223372036854775807
+  result i64
+    Constant -9223372036854775807 i64
+    Return
+end
+function object_constant_i64_n2147483649
+  result i64
+    Constant -2147483649 i64
+    Return
+end
+function object_constant_i64_n2147483648
+  result i64
+    Constant -2147483648 i64
+    Return
+end
+function object_constant_i64_n2147483647
+  result i64
+    Constant -2147483647 i64
+    Return
+end
+function object_constant_i64_n1
+  result i64
+    Constant -1 i64
+    Return
+end
+function object_constant_i64_0
+  result i64
+    Constant 0 i64
+    Return
+end
+function object_constant_i64_1
+  result i64
+    Constant 1 i64
+    Return
+end
+function object_constant_i64_2147483647
+  result i64
+    Constant 2147483647 i64
+    Return
+end
+function object_constant_i64_2147483648
+  result i64
+    Constant 2147483648 i64
+    Return
+end
+function object_constant_i64_2147483649
+  result i64
+    Constant 2147483649 i64
+    Return
+end
+function object_constant_i64_4294967294
+  result i64
+    Constant 4294967294 i64
+    Return
+end
+function object_constant_i64_4294967295
+  result i64
+    Constant 4294967295 i64
+    Return
+end
+function object_constant_i64_4294967296
+  result i64
+    Constant 4294967296 i64
+    Return
+end
+function object_constant_i64_4294967297
+  result i64
+    Constant 4294967297 i64
+    Return
+end
+function object_constant_i64_9223372036854775806
+  result i64
+    Constant 9223372036854775806 i64
+    Return
+end
+function object_constant_i64_9223372036854775807
+  result i64
+    Constant 9223372036854775807 i64
+    Return
+end
+function object_constant_u64_0
+  result u64
+    Constant 0 u64
+    Return
+end
+function object_constant_u64_1
+  result u64
+    Constant 1 u64
+    Return
+end
+function object_constant_u64_2147483647
+  result u64
+    Constant 2147483647 u64
+    Return
+end
+function object_constant_u64_2147483648
+  result u64
+    Constant 2147483648 u64
+    Return
+end
+function object_constant_u64_2147483649
+  result u64
+    Constant 2147483649 u64
+    Return
+end
+function object_constant_u64_4294967294
+  result u64
+    Constant 4294967294 u64
+    Return
+end
+function object_constant_u64_4294967295
+  result u64
+    Constant 4294967295 u64
+    Return
+end
+function object_constant_u64_4294967296
+  result u64
+    Constant 4294967296 u64
+    Return
+end
+function object_constant_u64_4294967297
+  result u64
+    Constant 4294967297 u64
+    Return
+end
+function object_constant_u64_9223372036854775807
+  result u64
+    Constant 9223372036854775807 u64
+    Return
+end
+function object_constant_u64_9223372036854775808
+  result u64
+    Constant -9223372036854775808 u64
+    Return
+end
+function object_constant_u64_9223372036854775809
+  result u64
+    Constant -9223372036854775807 u64
+    Return
+end
+function object_constant_u64_18446744071562067967
+  result u64
+    Constant -2147483649 u64
+    Return
+end
+function object_constant_u64_18446744071562067968
+  result u64
+    Constant -2147483648 u64
+    Return
+end
+function object_constant_u64_18446744071562067969
+  result u64
+    Constant -2147483647 u64
+    Return
+end
+function object_constant_u64_18446744073709551614
+  result u64
+    Constant -2 u64
+    Return
+end
+function object_constant_u64_18446744073709551615
+  result u64
+    Constant -1 u64
+    Return
+end
