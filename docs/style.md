@@ -31,6 +31,7 @@ python3 -B scripts/style.py check tests/compiler/runtime_records.py tests/compil
 python3 -B scripts/style.py format tests/compiler/runtime_records.py tests/compiler/package_graph.py
 python3 -B scripts/style.py check compiler/lexer.hpp compiler/parser.hpp
 python3 -B scripts/style.py check --tree   # every tracked host source; the merge suite's `style` test
+python3 -B scripts/style.py aurora --formatter build/native/aurora-fmt   # Aurora product sources; `aurora-style`
 ```
 
 The entrypoint checks exact tool versions, rejects non-host files, and delegates

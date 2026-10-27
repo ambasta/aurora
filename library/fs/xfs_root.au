@@ -153,7 +153,7 @@ namespace fs {
         const i64 slot_log = i64(sb.at(123));
         const i64 ag_log = i64(sb.at(124));
         const u64 ag = number >> (slot_log + ag_log);
-        const u64 block =(number >> slot_log) & ((1u64 << ag_log) - 1u64);
+        const u64 block = (number >> slot_log) & ((1u64 << ag_log) - 1u64);
         const u64 slot = number & ((1u64 << slot_log) - 1u64);
         const u64 ag_count = xr32(sb, 88);
         const u64 ag_blocks = xr32(sb, 84);

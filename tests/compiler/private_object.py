@@ -58,7 +58,7 @@ def wrapper_boundaries(driver, directory):
     )
     recipe.write_bytes(encode_frontend_recipes(entries))
     assembly.write_text("\n".join(render_frontend_recipes(entries)) + '\n.section .note.GNU-stack,"",@progbits\n')
-    run("as", "--64", assembly, "-o", reference)
+    run("as", "--64", "-mx86-used-note=no", assembly, "-o", reference)
     run(driver, "--wrapper-boundaries", recipe, reference, actual)
     print("PASS frontend wrapper all transport shapes at 256 rows and 1024-byte names")
 
@@ -116,7 +116,7 @@ def main():
                     )
                 )
             )
-            run("as", "--64", assembly, "-o", wrapper)
+            run("as", "--64", "-mx86-used-note=no", assembly, "-o", wrapper)
             recipe, native_wrapper = directory / "frontend.recipe", directory / "frontend-native.o"
             recipe.write_bytes(frontend_wrapper_recipe(facts))
             run(
@@ -177,7 +177,7 @@ def main():
                     )
                 )
             )
-            run("as", "--64", assembly, "-o", wrapper)
+            run("as", "--64", "-mx86-used-note=no", assembly, "-o", wrapper)
             reference(args.driver, raw, wrapper, names, args.uart.resolve(), directory)
             run(args.compiler, "--compose-private-object", raw, wrapper, names, "-o", directory / "uart-cli.o")
             if (directory / "uart-cli.o").read_bytes() != args.uart.read_bytes():
@@ -209,7 +209,7 @@ def main():
             names.write_text(
                 "".join(name + "\n" for name in sorted(abi_function_symbol(facts, entry) for entry in entries))
             )
-            run("as", "--64", assembly, "-o", wrapper)
+            run("as", "--64", "-mx86-used-note=no", assembly, "-o", wrapper)
             actual = artifact or directory / (label + "-composed.o")
             if artifact is None:
                 actual.write_bytes(raw.read_bytes())

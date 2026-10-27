@@ -207,7 +207,7 @@ namespace fs {
             return 0u64;
         }
         // The complete interval fits one actual AG, hence the admitted data-byte bound.
-        const u64 start =(ag * ags.ag_blocks() + block) * blocks.block_bytes();
+        const u64 start = (ag * ags.ag_blocks() + block) * blocks.block_bytes();
         const u64 length = count * blocks.block_bytes();
         if (start < log.log_start_bytes()) {
             if (length > log.log_start_bytes() - start) {
@@ -377,7 +377,7 @@ export namespace fs {
             return failure;
         }
         // Logical block arithmetic stays below 2^55; no untrusted startoff is scaled to bytes.
-        const u64 required =(size - 1u64) / blocks.block_bytes() + 1u64;
+        const u64 required = (size - 1u64) / blocks.block_bytes() + 1u64;
         u64 previous_end = 0u64;
         u64 allocated = 0u64;
         bool trailing = false;
@@ -386,8 +386,8 @@ export namespace fs {
             const i64 position = 176 + record * 16;
             const u64 high = xf64(inode, position);
             const u64 low = xf64(inode, position + 8);
-            const u64 logical =(high >> 9) & 18014398509481983u64;
-            const u64 encoded =((high & 511u64) << 43) | (low >> 21);
+            const u64 logical = (high >> 9) & 18014398509481983u64;
+            const u64 encoded = ((high & 511u64) << 43) | (low >> 21);
             const u64 count = low & 2097151u64;
             if (count == 0u64) {
                 const XfsFileReport failure = xf_failure(XfsFileStatus::invalid_extent, XfsFileIssue::block_count);
@@ -420,7 +420,7 @@ export namespace fs {
             return failure;
         }
         // Complete metadata validation precedes every index, including end and negative indices.
-        const u64 sectors =(size - 1u64) / 512u64 + 1u64;
+        const u64 sectors = (size - 1u64) / 512u64 + 1u64;
         const i64 file_sector = request.file_sector();
         if (file_sector < 0) {
             const XfsFileReport failure = xf_failure(XfsFileStatus::invalid_index, XfsFileIssue::sector_index);
@@ -451,13 +451,13 @@ export namespace fs {
             const i64 position = 176 + record * 16;
             const u64 high = xf64(inode, position);
             const u64 low = xf64(inode, position + 8);
-            const u64 logical =(high >> 9) & 18014398509481983u64;
+            const u64 logical = (high >> 9) & 18014398509481983u64;
             const u64 count = low & 2097151u64;
             if (logical_block >= logical && logical_block - logical < count) {
                 kind = XfsFileSectorKind::unwritten;
                 if ((high >> 63) == 0u64) {
                     kind = XfsFileSectorKind::written;
-                    const u64 encoded =((high & 511u64) << 43) | (low >> 21);
+                    const u64 encoded = ((high & 511u64) << 43) | (low >> 21);
                     const u64 address = xf_address(geometry, encoded, count);
                     // Displacement remains inside the complete physical interval validated above.
                     lba = address / 512u64 + (logical_block - logical) * sectors_per_block;

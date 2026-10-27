@@ -32,6 +32,9 @@ record_host_targets = record_hosts.values()
 # The pinned formatters over every host source; skipped where they are not installed.
 test('style', python, args: ['-B', files('../scripts/style.py'), 'check', '--tree'],
      suite: ['full', 'merge', 'dev'], timeout: 120)
+# aurora-fmt over every tracked Aurora product source (compiler, library, kernel, examples).
+test('aurora-style', python, args: ['-B', files('../scripts/style.py'), 'aurora', '--formatter', aurora_fmt],
+     depends: aurora_fmt, suite: ['full', 'merge', 'dev'], timeout: 120)
 # Shared drivers: golden-output comparison and Aurora fixture objects built once.
 golden_runner = files('golden.py')
 fixture_builder = files('../scripts/meson-native-fixture.py')
@@ -184,7 +187,7 @@ test('ir-api', ir_api, args: [meson.current_source_dir() / 'compiler' / 'ir'],
 # inputs and allocation failures reuse that admitted pair without recompilation.
 private_object_wrapper = custom_target(
     'private-object-wrapper', input: 'compiler/private_object.S', output: 'private-object-wrapper.o',
-    command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '@INPUT@', '-o', '@OUTPUT@'],
+    command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '-Wa,-mx86-used-note=no', '@INPUT@', '-o', '@OUTPUT@'],
 )
 private_object_test = executable('private-object-test', 'compiler/private_object.cpp',
     dependencies: hosted_frontend, link_with: ir_text, include_directories: include_directories('../compiler'),

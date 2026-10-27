@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Run pinned host formatters on explicitly selected source files, or on every tracked one."""
+"""Run pinned host formatters on selected or every tracked host source, or check
+every tracked Aurora product source with aurora-fmt."""
 
 import argparse
+import concurrent.futures
 import os
 from pathlib import Path
 import shutil
@@ -56,21 +58,48 @@ def indexed_paths():
     return paths
 
 
-def tree_files():
-    """Every tracked host source, or every one outside build products and hidden
-    directories when there is no git index (an exported tree)."""
+def tree_files(suffixes=(".py", *CPP_SUFFIXES), directories=None):
+    """Every tracked source with one of SUFFIXES (under DIRECTORIES, when given), or
+    every one outside build products and hidden directories when there is no git
+    index (an exported tree)."""
+
+    def selected(path):
+        inside = directories is None or path.parts[:1] in [(name,) for name in directories]
+        return inside and path.suffix in suffixes
+
     paths = indexed_paths()
     if paths is not None:
         for path in paths:
             # Deleted or sparse entries stay in the index without a file.
-            if (Path(path).suffix == ".py" or Path(path).suffix in CPP_SUFFIXES) and (ROOT / path).is_file():
+            if selected(Path(path)) and (ROOT / path).is_file():
                 yield str(ROOT / path)
         return
     for directory, subdirectories, names in os.walk(ROOT):
         subdirectories[:] = sorted(name for name in subdirectories if name not in SKIPPED and name[0] != ".")
         for name in sorted(names):
-            if Path(name).suffix == ".py" or Path(name).suffix in CPP_SUFFIXES:
-                yield os.path.join(directory, name)
+            path = Path(directory, name)
+            if selected(path.relative_to(ROOT)):
+                yield str(path)
+
+
+# Aurora product sources; test drivers and fixtures keep their own layout.
+AURORA_DIRECTORIES = ("compiler", "library", "kernel", "examples")
+
+
+def aurora_check(formatter):
+    """aurora-fmt --check over every tracked Aurora product source, in parallel."""
+    files = list(tree_files((".au",), AURORA_DIRECTORIES))
+
+    def unformatted(path):
+        result = subprocess.run([formatter, "--check", path], capture_output=True, timeout=120)
+        return result.returncode != 0 and path
+
+    with concurrent.futures.ThreadPoolExecutor(len(os.sched_getaffinity(0))) as pool:
+        failed = [path for path in pool.map(unformatted, files) if path]
+    for path in failed:
+        print(f"unformatted: {Path(path).relative_to(ROOT)} (run {Path(formatter).name} FILE)", file=sys.stderr)
+    print(f"{len(files) - len(failed)} of {len(files)} Aurora files formatted")
+    return int(bool(failed))
 
 
 class MissingTool(ValueError):
@@ -94,12 +123,17 @@ def find_tool(name):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("check", "format"))
+    parser.add_argument("mode", choices=("check", "format", "aurora"))
     parser.add_argument("--tree", action="store_true", help="select every host source in the checkout")
+    parser.add_argument("--formatter", help="aurora-fmt executable, for the aurora mode")
     parser.add_argument(
         "files", nargs="*", help="explicit Python or C++ source files, relative to the current directory"
     )
     args = parser.parse_args()
+    if args.mode == "aurora":
+        if not args.formatter or args.files or args.tree:
+            parser.error("aurora mode takes only --formatter")
+        return aurora_check(args.formatter)
     if args.tree == bool(args.files):
         parser.error("give either --tree or explicit files")
     python_files, cpp_files = select_files(list(tree_files()) if args.tree else args.files)

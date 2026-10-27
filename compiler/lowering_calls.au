@@ -1406,7 +1406,7 @@ export namespace compiler_lowering {
                         return fail(session, LoweringError::ambiguous_exact_overload, staged_source_76);
                     }
                     selected = candidate;
-                    inaccessible =(u64(resolved.word(6)) & (1u64 << ordinal)) != 0u64;
+                    inaccessible = (u64(resolved.word(6)) & (1u64 << ordinal)) != 0u64;
                 }
             }
             ordinal = ordinal + 1;

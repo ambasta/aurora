@@ -464,16 +464,16 @@ export namespace compiler_formatter {
                     }
                     hardBreak = false;
                 } else {
-                    const bool unary =(i64(u64(piece.f) & 1u64)) != 0;
-                    const bool binary =(i64(u64(piece.f) & 2u64)) != 0;
-                    const bool templateOpen =(kind == 16) && !binary;
-                    const bool templateClose =((kind == 17) || (kind == 18)) && !binary;
-                    const bool initializer =(kind == 2) && (i64(u64(piece.f) & 4u64)) != 0 && (i64(u64(piece.f) & 8u64))
-                        == 0;
+                    const bool unary = (i64(u64(piece.f) & 1u64)) != 0;
+                    const bool binary = (i64(u64(piece.f) & 2u64)) != 0;
+                    const bool templateOpen = (kind == 16) && !binary;
+                    const bool templateClose = ((kind == 17) || (kind == 18)) && !binary;
+                    const bool initializer = (kind == 2) && (i64(u64(piece.f) & 4u64)) != 0 && (i64(u64(piece.f)
+                        & 8u64)) == 0;
                     const bool emptyInitializer = initializer && is(index + 1, 1);
-                    const bool closesEmpty =(kind == 3) && (previousKind == 2) && braceCount > 0
+                    const bool closesEmpty = (kind == 3) && (previousKind == 2) && braceCount > 0
                         && braces_field(braceCount - 1, 0) == 1;
-                    const bool label =((kind == 4) || (kind == 5)) && is(index + 1, 4);
+                    const bool label = ((kind == 4) || (kind == 5)) && is(index + 1, 4);
                     if ((kind == 3)) {
                         if (braceCount == 0) {
                             fail(3);
@@ -484,7 +484,7 @@ export namespace compiler_formatter {
                     if (label && depth > 0) {
                         depth = depth - 1;
                     }
-                    const bool structuralBreak =(hardBreak && !(kind == 7) && !(kind == 8) && !(kind == 9) && !(kind
+                    const bool structuralBreak = (hardBreak && !(kind == 7) && !(kind == 8) && !(kind == 9) && !(kind
                         == 10) && !(kind == 11)) || ((kind == 3) && !closesEmpty) || label;
                     if (structuralBreak && !newline()) {
                         return status;
@@ -504,11 +504,13 @@ export namespace compiler_formatter {
                         space = false;
                     }
                     if ((kind == 12) || (kind == 13)) {
-                        space =(previousKind == 19) || (previousKind == 20) || ((kind == 12) && (previousKind == 21))
-                            || ((kind == 12) && previous >= 0 && (i64(u64(pieces_field(previous, 5)) & 2u64)) != 0);
+                        // A parenthesis is spaced after if, while, return, =, a comma or a binary operator.
+                        space = (previousKind == 19) || (previousKind == 20) || ((kind == 12) && ((previousKind == 21)
+                            || (previousKind == 23) || (previousKind == 8))) || ((kind == 12) && previous >= 0
+                            && (i64(u64(pieces_field(previous, 5)) & 2u64)) != 0);
                     }
                     if (templateOpen) {
-                        space =(previousKind == 22);
+                        space = (previousKind == 22);
                     }
                     if ((kind == 6)) {
                         space = !(previousKind == 4) && !(previousKind == 5);

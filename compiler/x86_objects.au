@@ -78,7 +78,7 @@ export namespace compiler_x86 {
             }
         }
         const i64 payload = record_offset(metadata, target, count);
-        const i64 bytes =((payload + 15) / 16) * 16;
+        const i64 bytes = ((payload + 15) / 16) * 16;
         if (bytes != 0) {
             emit_reserve_stack(workspace, object, bytes);
         }
@@ -148,7 +148,7 @@ export namespace compiler_x86 {
             }
         }
         const i64 payload = record_offset(metadata, target, count);
-        const i64 bytes =((payload + 15) / 16) * 16;
+        const i64 bytes = ((payload + 15) / 16) * 16;
         emit_reserve_stack(workspace, object, bytes);
         const i64 packed_address23 = workspace.pack_address(1, 0);
         // Every admitted payload is stored below before the call. Clear only
@@ -162,7 +162,7 @@ export namespace compiler_x86 {
             if (service_type_kind(kind)) {
                 i64 loan = operand_value(store, instruction, 1);
                 if (index != 0) {
-                    loan = operand_lane(store, instruction, 5,(index - 1) * 2);
+                    loan = operand_lane(store, instruction, 5, (index - 1) * 2);
                 }
                 const i64 source = workspace.loan_offset(loan);
                 if (source <= 0) {
@@ -445,7 +445,7 @@ export namespace compiler_x86 {
                     workspace.fail();
                     return true;
                 }
-                root_bytes =((roots * 8 + 15) / 16) * 16;
+                root_bytes = ((roots * 8 + 15) / 16) * 16;
                 emit_reserve_stack(workspace, object, root_bytes);
                 i64 ordinal = 0;
                 while (ordinal < roots) {
@@ -650,8 +650,8 @@ export namespace compiler_x86 {
     }
     auto contiguous_receiver_bytes(const compiler_ir_metadata::MetadataStore& metadata, i64 class_id,
         i64 field) -> bool {
-        if (class_field_array(metadata, class_id, field) == 0
-            || type_kind(metadata, class_field_type(metadata, class_id, field)) != 10) {
+        if (class_field_array(metadata, class_id, field) == 0 || type_kind(metadata, class_field_type(metadata,
+            class_id, field)) != 10) {
             return false;
         }
         const i64 first = class_field_first(metadata, class_id, field);
@@ -659,8 +659,8 @@ export namespace compiler_x86 {
         const i64 offset = class_field_offset(metadata, class_id, field);
         const i64 leaves = class_leaf_count(metadata, class_id);
         const i64 size = class_size(metadata, class_id);
-        if (first < 0 || first > leaves || count < 0 || count > leaves - first
-            || offset < 0 || offset > size || count > size - offset) {
+        if (first < 0 || first > leaves || count < 0 || count > leaves - first || offset < 0 || offset > size || count
+            > size - offset) {
             return false;
         }
         i64 element = 0;

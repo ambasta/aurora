@@ -196,7 +196,7 @@ export namespace compiler_ir_verification {
         const ControlRow control = w.control();
         const i64 ordinal = signature.receiver_span_field();
         const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
-        const bool valid_summary =(compiler_ir_metadata::plain_type(result, 11) || result.kind() == 21)
+        const bool valid_summary = (compiler_ir_metadata::plain_type(result, 11) || result.kind() == 21)
             && compiler_ir_metadata::callable_flag(signature, masks.callable_span_summary()) && control.has_receiver()
             && !receiver_constructor(m, w.callable()) && !receiver_mutable(m, w.callable());
         if (!require(w, valid_summary,

@@ -23,7 +23,7 @@ auto byte_buffer_example(builtin::ByteRegion region, i64 initial_capacity, i64 c
     index = 0;
     while (index < buffer.size()) {
         const std::ByteReadResult byte = buffer.read_u8(index);
-        checksum =(checksum + i64(byte.value_or(0u64))) % 65536;
+        checksum = (checksum + i64(byte.value_or(0u64))) % 65536;
         index = index + 1;
     }
     return checksum;
