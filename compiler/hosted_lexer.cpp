@@ -56,12 +56,7 @@ LexedSource lexSource(std::shared_ptr<const SourceText> source, TriviaRetention 
                  : next.offset == input.cursor.offset))
             throw Error(DiagnosticCode::Internal, "hosted lexer returned an invalid event");
         const SourceSpan span{out.source, begin, position(next.offset, next.line, next.line_start)};
-        if (next.event == Event::unsupported_character)
-            throw Error(DiagnosticCode::UnsupportedCharacter, "unsupported character", span);
-        if (next.event == Event::invalid_byte)
-            throw Error(DiagnosticCode::InvalidByteLiteral, "invalid byte literal", span);
-        if (next.event == Event::invalid_string)
-            throw Error(DiagnosticCode::InvalidByteStringLiteral, "invalid byte-string literal", span);
+        hosted_lexer::rejectLexical(next.event, span);
         if (next.event == Event::end_of_input) {
             out.tokens.emplace_back("<eof>", span);
             return out;

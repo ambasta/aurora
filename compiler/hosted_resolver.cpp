@@ -1290,12 +1290,7 @@ void rejectSource(const std::shared_ptr<const SourceText> &source, const wire::S
                           position(result.end, result.end_line, result.end_column)};
     if (rejections != 1 || span.end.offset < span.begin.offset)
         invalidResolution();
-    if (result.lexical == Event::unsupported_character)
-        throw Error(DiagnosticCode::UnsupportedCharacter, "unsupported character", span);
-    if (result.lexical == Event::invalid_byte)
-        throw Error(DiagnosticCode::InvalidByteLiteral, "invalid byte literal", span);
-    if (result.lexical == Event::invalid_string)
-        throw Error(DiagnosticCode::InvalidByteStringLiteral, "invalid byte-string literal", span);
+    hosted_lexer::rejectLexical(result.lexical, span);
     if (result.lexical != Event::token)
         invalidResolution();
     // An empty cited token is end of input.
