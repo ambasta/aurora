@@ -12,6 +12,7 @@
 namespace aurora::uefi {
 inline auto expected_flags(std::uint64_t offset, const Bytes &h) -> std::uint64_t;
 class PageTables final {
+    static_assert(Handoff::arena_bytes <= (1ULL << 21)); // Bound the identity-table inventory below.
     std::uint64_t base_;
     std::size_t used_ = 1;
     const FramebufferAdmission *framebuffer_ = nullptr;
@@ -283,8 +284,9 @@ public:
     // device authority. Empty v6 staging still uses verify(arena, h); the caller
     // must additionally establish that base_ is the live CR3 before using this
     // proof to open either service. Both source-bound admissions are mandatory.
-    // Source reasoning for the loader's allocation order: <=6 identity pages
-    // for a below-4-GiB 1-MiB arena (including the root), +3 ACPI-window pages,
+    // A page-aligned below-4-GiB arena of at most 2 MiB crosses at most two
+    // 2-MiB regions and two 1-GiB regions: root + PDPT + 2 PD + 2 PT <=6 pages.
+    // Source reasoning for the loader's allocation order: +3 ACPI-window pages,
     // +3 LAPIC pages, then +3 fixture or +4 maximum-geometry graphics pages.
     // Separate high PML4 slots give <=15 fixture / <=16 maximum total pages.
     // The walk checks actual inventory; these bounds are not measured receipts.

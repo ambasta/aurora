@@ -62,6 +62,12 @@ auto main() -> int {
     check(!MemoryMap{raw, 48, 1}.owns(0x100001, 4096));
     check(!MemoryMap{raw, 48, 1}.owns(0x100000, 1));
     check(!MemoryMap{raw, 48, 1}.owns(0xfffffffffffff000ULL, 8192));
+    // Ownership must cover the whole allocation, not just its original low half.
+    const auto owned = std::span{raw}.first(48);
+    descriptor(0, 1, 0x100000, Handoff::arena_bytes / 4096 - 1);
+    check(!MemoryMap{owned, 48, 1}.owns(0x100000, Handoff::arena_bytes));
+    descriptor(0, 1, 0x100000, Handoff::arena_bytes / 4096);
+    check(MemoryMap{owned, 48, 1}.owns(0x100000, Handoff::arena_bytes));
     const auto base = reinterpret_cast<std::uint64_t>(arena.data());
     check(base >= 0x100000 && base < 0x100000000ULL - Handoff::arena_bytes);
     auto h = std::span{arena}.first(Handoff::header);
@@ -82,6 +88,24 @@ auto main() -> int {
     put(h, 96, 1);
     put(h, 104, base + Handoff::payload_offset);
     check(Handoff::valid(h, base));
+    put(h, 80, Handoff::payload_limit);
+    check(Handoff::valid(h, base));
+    put(h, 80, Handoff::payload_limit + 4096);
+    check(!Handoff::valid(h, base));
+    put(h, 80, Handoff::payload_limit);
+    put(h, 56, Handoff::payload_limit + 1);
+    check(!Handoff::valid(h, base));
+    put(h, 56, 8192);
+    constexpr auto last_arena = 0x100000000ULL - Handoff::arena_bytes;
+    for (const auto relocated : {last_arena, last_arena + 4096}) {
+        put(h, 24, relocated);
+        put(h, 88, relocated + Handoff::tables_offset);
+        put(h, 104, relocated + Handoff::payload_offset);
+        check(Handoff::valid(h, relocated) == (relocated == last_arena));
+    }
+    put(h, 24, base);
+    put(h, 88, base + Handoff::tables_offset);
+    put(h, 104, base + Handoff::payload_offset);
     const auto saved = Bytes{h}.get(0);
     put(h, 0, 0);
     check(!Handoff::valid(h, base));
@@ -111,6 +135,17 @@ auto main() -> int {
     }
     put(h, 96, tables.used());
     check(tables.verify(base, Bytes{h}));
+    const auto payload = base + Handoff::payload_offset;
+    check(tables.entry(payload) == (payload | 1));
+    check(tables.entry(payload + 4096) == ((payload + 4096) | 1 | PageTables::nx));
+    check(tables.entry(payload + Handoff::payload_limit - 4096) ==
+          ((payload + Handoff::payload_limit - 4096) | 3 | PageTables::nx));
+    // The old payload/IDT/stack region is now wholly absent, not a writable alias.
+    for (auto offset = Handoff::transition_offset + 4096; offset < Handoff::pool_offset; offset += 4096)
+        check(tables.entry(base + offset) == 0);
+    check(tables.entry(base + Handoff::stack_bottom - 4096) == 0);
+    for (auto offset = Handoff::stack_top; offset < Handoff::arena_bytes; offset += 4096)
+        check(tables.entry(base + offset) == 0);
     check(!tables.map(base, 3 | PageTables::nx));
     check(!tables.map(1, 1));
     check(!tables.map(0x10000, 3));

@@ -318,7 +318,7 @@ foreach profile_id : profile_data['profiles'].split('|')
 
   # Native Meson compiles own C++ dependency files and compile_commands entries.
   # Keep the closed protected supervisor, the scratchpad and the packed test
-  # images within their 152 KiB payload reservation (catalog optimization).
+  # images size-optimized independently of the shared payload reservation.
   profile_options = kernel_options + {'optimization': profile_data[key + '.optimization']}
   cpp_names = profile_data[key + '.cpp'].split('|')
   foreach name : cpp_names
@@ -378,7 +378,8 @@ foreach profile_id : profile_data['profiles'].split('|')
       metadata_outputs += ['service-timer-metadata.json']
     endif
     metadata = custom_target(prefix + '-payload-metadata', input: [elf, binary], output: metadata_outputs,
-      build_subdir: output_subdir, depend_files: check_dependencies,
+      build_subdir: output_subdir,
+      depend_files: check_dependencies + files('../scripts/kernel_layout.py', '../kernel/bootstrap-layout-values.inc'),
       command: [python, '-B', files('../scripts/kernel-uefi-metadata.py'), '--build-dir', output_dir])
     objects += {'embed': custom_target(prefix + '-embed-object', input: metadata[1], output: 'embed.o',
       build_subdir: object_subdir, depends: [binary],

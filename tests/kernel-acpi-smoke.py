@@ -126,7 +126,7 @@ def validate(status, text, mode, selected=None):
     need(
         arena >= 0x100000
         and arena % 4096 == 0
-        and size == 0x100000
+        and size == LAYOUT.arena_bytes
         and arena + size <= 0x100000000
         and 1 <= count <= 512,
         "Invalid failure arena",

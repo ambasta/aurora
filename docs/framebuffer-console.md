@@ -174,7 +174,7 @@ drift rejects. External qualification separately pins q35/TCG, qemu64, one CPU,
 128 MiB, std VGA, QEMU, OVMF and tool data; guest metadata cannot prove host identities.
 
 The mapping starts at `0xffffa00000001000` with absent end guards. Its maximum
-extent needs four extra intermediate pages within the 16-page pool/1 MiB arena.
+extent needs four extra intermediate pages within the 16-page pool/2 MiB arena.
 Leaves must match physical pages and supervisor RW/NX/UC flags. Whole-tree checks
 reject extra leaves, aliases, shared/cyclic paths, changed permissions and missing
 pages. No user mapping or relaxed strict-verifier rule is introduced.
@@ -230,8 +230,8 @@ fill one 64-byte command, but write/read/exit costs 83; clean-exit maximum-name 
 maximum-content cases are separate, and the combined case uses bounded completion.
 
 Handoff v6 independently preflights both grants, paired LAPIC/framebuffer mappings
-and observational timer/interrupt/UART quiet checks. Earlier handoffs are unchanged.
-The arena/page pool/stack remain 1 MiB/16 pages/16 KiB. Exact images must fit normal
+and observational timer/interrupt/UART quiet checks. Handoff record meanings are unchanged.
+The shared arena/page pool/stack are 2 MiB/16 pages/16 KiB. Exact images must fit normal
 plus fault and wait plus IRQ/fault within 15,360 bytes, and IRQ plus fault within
 4,096, including the 176-byte IRQ frame and alignment.
 

@@ -12,7 +12,7 @@ DMA authority, or physical Framework qualification.
 
 The default RuntimeLayoutProfile<2> retains its prior exact mappings. The
 dispatcher rows run in `service-fixture`, whose profile is
-RuntimeLayoutProfile<3, 11, 1>. In the existing owned 1 MiB arena, the third root
+RuntimeLayoutProfile<3, 11, 1>. In the shared owned 2 MiB arena, the third root
 pool occupies offsets 0xd0000..0xe0000 and eleven one-page RX image slots occupy
 0xb0000..0xbb000, of which each row's set names images 0, 1 and 2. The existing 16-frame pool at 0xc0000..0xd0000
 supplies twelve leased user-stack frames. Each root pool remains sixteen pages.

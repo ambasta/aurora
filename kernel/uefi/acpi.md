@@ -26,7 +26,7 @@ After the private CR3 transition, FirmwareRanges admits only complete ranges
 covered by EfiLoaderData, EfiBootServicesData, EfiRuntimeServicesData,
 EfiACPIReclaimMemory or EfiACPIMemoryNVS descriptors supporting write-back memory.
 EFI_MEMORY_NV is rejected independently of the memory type. MMIO, reserved,
-persistent and unaccepted types are rejected. The entire owned 1 MiB kernel arena
+persistent and unaccepted types are rejected. The entire owned 2 MiB kernel arena
 is excluded from source reads, preventing a second alias of its writable pages.
 Runtime and ACPI pages can be readable without being allocatable: this mechanism
 never grants them to PhysicalPages or reclaims them.

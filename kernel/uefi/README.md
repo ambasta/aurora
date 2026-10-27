@@ -46,7 +46,7 @@ revision and CRC, and checks the required service entries. The hardware ABI
 adapter uses the specified x86-64 UEFI calling convention. No such interface is
 exposed in Aurora source, and this does not establish language C compatibility.
 
-AllocatePages allocates one1MiB EfiLoaderCode arena below4GiB. Code allocation
+AllocatePages allocates one 2 MiB EfiLoaderCode arena below 4 GiB. Code allocation
 allows the copied transition to execute under firmware mappings before the
 kernel takes over; final permissions are imposed by our own tables. Firmware
 allocation success establishes ownership. The final memory map independently
@@ -61,12 +61,33 @@ page-aligned arena are fixed and non-overlapping:
 - Firmware descriptor copy at0x1000, maximum64KiB, read-only/NX
 - At most16 private page-table pages at0x11000, supervisor RW/NX
 - Copied position-independent transition/GDT at0x21000, supervisor RX
-- Independent payload at0x22000, at most152KiB, separate RX/R-NX/RW-NX sections
-- Owned IDT at0x48000, supervisor RW/NX
-- Guard at0x49000, then stack0x4a000..0x4e000, supervisor RW/NX; 0x4e000..0x50000 absent
-- Bounded16-page allocation pool at0x50000, supervisor RW/NX
+- Bounded 16-page allocation pool at 0x50000, supervisor RW/NX
+- ACPI snapshots at 0x60000..0x80000 and copied RSDP at 0x80000..0x81000,
+  supervisor RW/NX when the handoff carries ACPI
+- Runtime metadata or the exclusive BAR record at 0x81000, read-only/NX
+- Runtime GDT/TSS at 0x82000; RSP0 at 0x84000..0x88000 and IST at
+  0x89000..0x8d000, supervisor RW/NX, with absent guard pages at 0x83000,
+  0x88000 and 0x8d000
+- Domain table pools at 0x90000..0xb0000 and, for three domains,
+  0xd0000..0xe0000, supervisor RW/NX
+- Packed user-image bank at 0xb0000..0xc0000, actual selected bank extent RX;
+  unused bank pages stay absent
+- Sixteen runtime stack frames at 0xc0000..0xd0000, supervisor RW/NX
+- Framebuffer record at 0xe0000..0xe1000, read-only/NX when present
+- Independent payload at 0x100000..0x180000, at most 512 KiB, with separate
+  RX/R-NX/RW-NX sections; only the actual linked memory extent is mapped
+- Owned IDT at 0x180000, supervisor RW/NX
+- Lower guard at 0x181000, stack at 0x182000..0x186000, supervisor RW/NX,
+  and upper guard at 0x186000
 
-Other arena pages stay absent. The map parser accepts version1 descriptors with
+Optional owners are mapped only by their handoff/profile. Other pages stay
+absent, including the former payload/IDT/stack region 0x22000..0x50000 and the
+tail 0x187000..0x200000. These dimensions come from
+[the shared layout table](../bootstrap-layout-values.inc); the four-page stack
+and its 15,360-byte compiler-fact admission cap are unchanged. Kernel capacity
+is separate from the unchanged three-page protected-user-image ceiling.
+
+The map parser accepts version1 descriptors with
 stride40..256 bytes in multiples of8, at most512 entries and64KiB total. It rejects
 truncation, zero-length/unaligned/overflowing regions, unknown memory types and
 all overlapping descriptors. Grant checks reject runtime-tagged arena records

@@ -79,7 +79,7 @@ scalar language fixture and no Event producer, session, retained DMA backing or
 service bridge. It returns through the existing normal diagnostic exit.
 
 Acceptance is focused hosted positive/negative controls, a fresh GCC 16 image and
-existing linked-image/stack admission under the 152 KiB payload reservation and
+existing linked-image/stack admission under the 512 KiB payload reservation and
 16 KiB stack bounds, followed by an independently reviewed, separately authorized
 read-only emulator plan. No transition writes, new DMA, reset/fallback, physical
 access or recovered lost-run evidence is claimed. Raw observations must precede
@@ -126,7 +126,7 @@ copies stay immutable, EDU zero state is checked around its reduction, and all
 headers/caps and AHCI fields are rechecked before the one-shot post-state
 admission is used.
 
-Focused controls must cover successful ordering, every read/write failure, FR timeout, unexpected AHCI/PCI changes, unsuitable backing and retry refusal. Event image/stack admission retains the 152 KiB payload reservation, 16 KiB stack and 15,360-byte normal-plus-reserve limit. Hosted/admission checks do not establish a real guest result or physical DMA drain.
+Focused controls must cover successful ordering, every read/write failure, FR timeout, unexpected AHCI/PCI changes, unsuitable backing and retry refusal. Event image/stack admission retains the 512 KiB payload reservation, 16 KiB stack and 15,360-byte normal-plus-reserve limit. Hosted/admission checks do not establish a real guest result or physical DMA drain.
 
 ## Mechanism and trust boundary
 

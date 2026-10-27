@@ -89,7 +89,7 @@ public:
         std::array<std::byte, 40> map{};
         put(map, 0, 1, 4);
         put(map, 8, 0x400000);
-        put(map, 24, 256);
+        put(map, 24, Handoff::arena_bytes / 4096);
         const auto probe = NvmeBarProbe::authorize(
             identity, identity, bar, root, 0, map, 40, 0x400000, 0xfee00000, authority, *ticket);
         check(probe.has_value());

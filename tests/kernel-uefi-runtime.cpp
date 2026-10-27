@@ -14,8 +14,8 @@ using namespace aurora::uefi;
 using Layout = RuntimeLayout;
 using Tables = RuntimeTables;
 static_assert(!std::is_copy_constructible_v<Tables> && !std::is_move_constructible_v<Tables>);
-static_assert(Layout::valid(0xfff00000));
-static_assert(!Layout::valid(0xfff01000));
+static_assert(Layout::valid(0x100000000ULL - Layout::arena_bytes));
+static_assert(!Layout::valid(0x100000000ULL - Layout::arena_bytes + Layout::page_size));
 
 class Expected final {
     std::array<std::array<std::uint64_t, 2>, 512> pages_{};
@@ -61,9 +61,14 @@ auto main() -> int {
     constexpr auto absent = [](std::uint64_t) -> std::uint64_t {
         return 0;
     };
-    for (auto base : {0x100000ULL, 0x301000ULL, 0xfff00000ULL})
+    for (auto base : {0x100000ULL, 0x301000ULL, (0x100000000ULL - Layout::arena_bytes)})
         check(Layout::valid(base));
-    for (auto base : {0ULL, 0xff000ULL, 0x100001ULL, 0xfff01000ULL, 0x100000000ULL, 0xffffffffff000000ULL})
+    for (auto base : {0ULL,
+                      0xff000ULL,
+                      0x100001ULL,
+                      (0x100000000ULL - Layout::arena_bytes + Layout::page_size),
+                      0x100000000ULL,
+                      0xffffffffff000000ULL})
         check(!Layout::valid(base));
     check(Layout::valid_interval(0, 4096));
     check(Layout::valid_interval(Layout::lower_limit - 4096, 4096));

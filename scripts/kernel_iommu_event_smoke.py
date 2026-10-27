@@ -71,7 +71,11 @@ def image_receipt(mode, image):
             "Retained Event object must be aligned zero-initialized writable BSS: " + role,
         )
         objects[role] = dict(
-            symbol=name, offset=symbol.address, bytes=size, alignment=alignment, arena_offset=0x22000 + symbol.address
+            symbol=name,
+            offset=symbol.address,
+            bytes=size,
+            alignment=alignment,
+            arena_offset=LAYOUT.kernel_payload_offset + symbol.address,
         )
     backing = dict(objects=objects, payload_rw_begin=begin, payload_memory_end=end)
     layout = {name[2:]: symbols[name].address for name in bounds} | {
