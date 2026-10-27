@@ -4,7 +4,7 @@
 #include "hosted_parser.hpp"
 #include "hosted_lowering_diagnostics.hpp"
 #include "ir_verify.hpp"
-#include "lexer.hpp"
+#include "hosted_lexer_abi.hpp"
 #include "../runtime/hosted_bytes.hpp"
 #include <algorithm>
 #include <array>
@@ -60,10 +60,8 @@ auto words(const wire::MetaRow &row) {
 }
 struct ModuleSource {
     std::shared_ptr<const SourceText> source;
-    HostedModule header;
-    std::vector<std::int64_t> imports;
+    std::string moduleName;
     std::int64_t sourceBegin = 0;
-    int scope = 0;
 };
 Token retainedSourceToken(const void *session,
                           const std::vector<ModuleSource> &sources,
@@ -907,12 +905,12 @@ public:
     case SemanticError::duplicate_overload:
         message = status.diagnostic == SemanticError::duplicate_class ? "duplicate or reserved class name"
                                                                       : "duplicate or reserved function name";
-        message += " in module " + module(status.first).header.moduleName + ": " + prefix(status.second);
+        message += " in module " + module(status.first).moduleName + ": " + prefix(status.second);
         break;
     case SemanticError::ambiguous_visible:
         message = "ambiguous visible declaration";
         if (status.node == -1)
-            message += " in " + module(status.second).header.moduleName;
+            message += " in " + module(status.second).moduleName;
         message += ": " + prefix(status.first);
         break;
     case SemanticError::unknown_resolved_type:
@@ -936,8 +934,8 @@ public:
             invalidResolution();
         location = first.span;
         location.end = last.span.end;
-        message = "unknown function '" + prefix(status.first) + "' in defining module " +
-                  module(status.second).header.moduleName;
+        message =
+            "unknown function '" + prefix(status.first) + "' in defining module " + module(status.second).moduleName;
         break;
     }
     case SemanticError::unexpanded_function:
@@ -1181,16 +1179,16 @@ std::uint64_t resolutionQuota() {
     // most twice it, plus runtime metadata and host snapshots/projected values.
     return add(session, parser);
 }
+// One Session plus the parser arena every source module reuses until resolution.
 class SessionOwner {
     hosted::bytes::Region region;
-    std::array<hosted_abi::ResolverIngest, 2> slots;
-    std::size_t active = 0;
+    hosted_abi::ResolverRelease session;
+    hosted_abi::ParserRelease parser;
     bool sessionLive = false, arenaLive = false;
 
 public:
     SessionOwner() : region(resolutionQuota()) {
-        for (auto &slot : slots)
-            slot.region = region.id();
+        session.region = parser.region = region.id();
         hosted_abi::ResolverCreate input;
         input.region = region.id();
         aurora_hosted_resolver_create(&input, data());
@@ -1199,42 +1197,32 @@ public:
     ~SessionOwner() {
         release();
     }
-    void release() noexcept {
+    void releaseArena() noexcept {
         if (arenaLive)
-            aurora_hosted_resolver_release_pair(&slots[active]);
-        else if (sessionLive)
-            aurora_hosted_resolver_release(&slots[active]);
+            aurora_hosted_parser_release(&parser);
         arenaLive = false;
+    }
+    void release() noexcept {
+        releaseArena();
+        if (sessionLive)
+            aurora_hosted_resolver_release(&session);
         sessionLive = false;
     }
     SessionOwner(const SessionOwner &) = delete;
     SessionOwner &operator=(const SessionOwner &) = delete;
     void *data() {
-        return slots[active].session.storage.data();
+        return session.session.storage.data();
     }
-    void *beginArena() {
-        if (!sessionLive || arenaLive)
+    void *arena() {
+        if (!sessionLive)
             invalidResolution();
-        hosted_abi::ParserCreate input;
-        input.region = region.id();
-        aurora_hosted_parser_create(&input, slots[active].parsed.storage.data());
-        arenaLive = true;
-        return slots[active].parsed.storage.data();
-    }
-    void ingest(std::int64_t module, std::int64_t root) {
-        if (!sessionLive || !arenaLive)
-            invalidResolution();
-        auto &input = slots[active];
-        input.module = module;
-        input.root = root;
-        const auto next = 1 - active;
-        // Callbacks are noexcept and generated faults are fail-stop. Transfer
-        // and rearming therefore have no intervening C++ throwing operation.
-        sessionLive = false;
-        arenaLive = false;
-        aurora_hosted_resolver_ingest(&input, slots[next].session.storage.data());
-        active = next;
-        sessionLive = true;
+        if (!arenaLive) {
+            hosted_abi::ParserCreate input;
+            input.region = region.id();
+            aurora_hosted_parser_create(&input, parser.arena.storage.data());
+            arenaLive = true;
+        }
+        return parser.arena.storage.data();
     }
     std::uint64_t usedBytes() const {
         return region.metrics().used;
@@ -1248,11 +1236,106 @@ hosted_abi::BuiltinSpan span(const std::string &text) {
     result.length = static_cast<std::int64_t>(text.size());
     return result;
 }
+// The trivia-free spelling of text[begin, end), as Aurora names modules.
+std::string sourceName(const std::string &text, std::int64_t begin, std::int64_t end) {
+    hosted_abi::ResolverNameInput input;
+    input.source = span(text);
+    input.begin = begin;
+    input.end = end;
+    std::string name;
+    for (;;) {
+        input.offset = static_cast<std::int64_t>(name.size());
+        wire::LinkageChunk chunk;
+        aurora_hosted_resolver_name_chunk(&input, &chunk);
+        if (chunk.byteCount < 0 || chunk.byteCount > static_cast<std::int64_t>(chunk.payload.size()))
+            invalidResolution();
+        name.append(reinterpret_cast<const char *>(chunk.payload.data()), static_cast<std::size_t>(chunk.byteCount));
+        if (chunk.byteCount < static_cast<std::int64_t>(chunk.payload.size()))
+            return name;
+    }
+}
+// Renders the first rejection of one source with the former adapter's codes,
+// messages and spans; returns only for an admitted module.
+void rejectSource(const std::shared_ptr<const SourceText> &source, const wire::SourceResult &result) {
+    using hosted_lexer::Event;
+    using hosted_parser::AdmissionStatus;
+    using hosted_parser::Status;
+    using hosted_parser::TypeKind;
+    namespace parser = hosted_abi::compiler_parser;
+    if (!hosted_abi::compiler_lexer::validRaw(result.lexical) || !parser::validRaw(result.grammar) ||
+        !parser::validRaw(result.declaration) || !parser::validRaw(result.field_type))
+        invalidResolution();
+    const auto &text = source->text;
+    const auto size = static_cast<std::int64_t>(text.size());
+    const auto range = [&](std::int64_t begin, std::int64_t end) {
+        if (begin < 0 || end < begin || end > size)
+            invalidResolution();
+        return text.substr(static_cast<std::size_t>(begin), static_cast<std::size_t>(end - begin));
+    };
+    const int rejections = (result.lexical != Event::token) + (result.grammar != Status::success) +
+                           (result.declaration != AdmissionStatus::success);
+    if (rejections == 0) {
+        if (range(result.name_begin, result.name_end).empty() || result.detail < 0 || result.detail > 1)
+            invalidResolution();
+        return;
+    }
+    const auto position = [&](std::int64_t offset, std::int64_t line, std::int64_t column) {
+        if (offset < 0 || offset > size || line < 1 || line > std::numeric_limits<int>::max() || column < 1 ||
+            column - 1 > offset)
+            invalidResolution();
+        return SourcePosition{static_cast<std::size_t>(offset), static_cast<int>(line), static_cast<int>(column)};
+    };
+    const SourceSpan span{source,
+                          position(result.begin, result.begin_line, result.begin_column),
+                          position(result.end, result.end_line, result.end_column)};
+    if (rejections != 1 || span.end.offset < span.begin.offset)
+        invalidResolution();
+    if (result.lexical == Event::unsupported_character)
+        throw Error(DiagnosticCode::UnsupportedCharacter, "unsupported character", span);
+    if (result.lexical == Event::invalid_byte)
+        throw Error(DiagnosticCode::InvalidByteLiteral, "invalid byte literal", span);
+    if (result.lexical == Event::invalid_string)
+        throw Error(DiagnosticCode::InvalidByteStringLiteral, "invalid byte-string literal", span);
+    if (result.lexical != Event::token)
+        invalidResolution();
+    // An empty cited token is end of input.
+    const auto cited = range(result.begin, result.text_end);
+    const Token at(cited.empty() ? "<eof>" : cited, span);
+    if (result.grammar != Status::success) {
+        if (result.grammar == Status::unsupported || result.grammar == Status::invalid ||
+            result.grammar == Status::expected_end)
+            invalidResolution();
+        hosted_parser::rejectSyntax(
+            result.grammar,
+            hosted_parser::Stop::module_definition,
+            at,
+            result.grammar == Status::duplicate_enum_case ? range(result.name_begin, result.name_end) : std::string());
+    }
+    std::string fieldType;
+    if (result.declaration == AdmissionStatus::unsupported_field) {
+        if (result.field_type == TypeKind::byte_span)
+            fieldType = "builtin::span<const u8>";
+        else if (result.field_type == TypeKind::value_span)
+            fieldType = "builtin::span<const " + sourceName(text, result.name_begin, result.name_end) + ">";
+        else if (result.field_type == TypeKind::own_type)
+            fieldType = "own<i64>";
+        else if (result.field_type == TypeKind::ref_type)
+            fieldType = "ref<i64>";
+        else if (result.field_type == TypeKind::mutref_type)
+            fieldType = "mutref<i64>";
+        else if (result.field_type == TypeKind::builtin_type)
+            fieldType = sourceName(text, result.name_begin, result.name_end);
+        else
+            invalidResolution();
+    }
+    hosted_parser::rejectDeclaration(result.declaration, result.detail, at, span, fieldType);
+}
 } // namespace
 
 class HostedResolution::Impl {
     SessionOwner owner;
     std::vector<ModuleSource> sources;
+    const hosted_abi::compiler_parser::AdmissionConfig admission = hosted_parser::admissionConfiguration();
     bool finished = false, failed = false;
     std::optional<std::size_t> graphRoot;
     bool graphComplete = false;
@@ -1389,27 +1472,28 @@ public:
         if (finished || failed || graphComplete || !source || sources.size() >= 64)
             invalidResolution();
         try {
-            const auto tokens = lex(source);
-            const auto parsed = parseHostedModuleSyntax(tokens, owner.beginArena());
+            // Aurora lexes, parses and admits the source, then ingests it as the
+            // next module; only its header name and diagnostics cross back.
+            hosted_abi::ParserSourceInput parse;
+            parse.source = span(source->text);
+            parse.configuration = admission;
+            wire::SourceResult result;
+            aurora_hosted_parser_source(owner.arena(), &parse, &result);
+            rejectSource(source, result);
             hosted_abi::ResolverSourceInput input;
-            input.source = span(source->text);
+            input.source = parse.source;
             const auto index = aurora_hosted_resolver_append_source(owner.data(), &input);
             storage();
-            if (index < 0 || sizeValue(index) != sources.size())
-                invalidResolution();
-            wire::MetaRow sourceRow;
-            aurora_hosted_resolver_read_meta(owner.data(), index, &sourceRow);
-            if (sourceRow.tag != MetaTag::module_source || sourceRow.value0 < 0 ||
-                sourceRow.value1 != static_cast<std::int64_t>(source->text.size()))
-                invalidResolution();
-            owner.ingest(index, parsed.root);
+            const std::array<const void *, 2> roots{owner.data(), owner.arena()};
+            const auto base = aurora_hosted_resolver_ingest(roots.data());
             storage();
+            if (index < 0 || sizeValue(index) != sources.size() || base < 0)
+                invalidResolution();
             HostedModule header;
-            header.id = sizeValue(index);
-            header.moduleName = parsed.moduleName;
-            header.interfaceUnit = parsed.interfaceUnit;
-            header.imports = parsed.imports;
-            sources.push_back({std::move(source), header, parsed.importSyntax, sourceRow.value0, 0});
+            header.id = sources.size();
+            header.moduleName = sourceName(source->text, result.name_begin, result.name_end);
+            header.interfaceUnit = result.detail != 0;
+            sources.push_back({std::move(source), header.moduleName, base});
             return header;
         } catch (...) {
             failed = true;
@@ -1425,15 +1509,6 @@ public:
             aurora_hosted_resolver_graph_step(owner.data(), static_cast<std::int64_t>(root), &result);
             storage();
             if (result.value0 == 0) {
-                for (std::size_t index = 0; index < sources.size(); ++index) {
-                    wire::MetaRow row;
-                    aurora_hosted_resolver_read_meta(owner.data(), static_cast<std::int64_t>(index), &row);
-                    if (row.tag != MetaTag::module_unit || row.value12 < 0 ||
-                        sizeValue(row.value12) >= sources.size() || row.value13 < 0 ||
-                        sizeValue(row.value13) >= sources.size() || row.value14 != (index == root))
-                        invalidResolution();
-                    sources[index].scope = intValue(row.value13);
-                }
                 graphComplete = true;
                 return std::nullopt;
             }
@@ -1443,15 +1518,13 @@ public:
                 throw Error("module graph exceeds 64 files");
             if (result.value1 < 0 || sizeValue(result.value1) >= sources.size())
                 invalidResolution();
-            const auto &header = sources[sizeValue(result.value1)].header;
+            const auto &unit = sources[sizeValue(result.value1)];
             if (result.value0 == 3)
-                throw Error("module import cycle involving " + header.moduleName);
-            if (result.value2 < 0 || sizeValue(result.value2) >= header.imports.size())
-                invalidResolution();
-            const auto &name = header.imports[sizeValue(result.value2)].text;
+                throw Error("module import cycle involving " + unit.moduleName);
+            const auto name = sourceName(unit.source->text, result.value2, result.value3);
             if (result.value0 == 2)
-                throw Error("duplicate import in " + header.moduleName + ": " + name);
-            if (result.value0 != 1)
+                throw Error("duplicate import in " + unit.moduleName + ": " + name);
+            if (result.value0 != 1 || name.empty())
                 invalidResolution();
             return name;
         } catch (...) {
@@ -1478,11 +1551,12 @@ public:
                 owner.release();
             }
         } release{owner};
+        owner.releaseArena();
         if (!sourceOrdered) {
             std::vector<bool> seen(sources.size());
             std::map<std::string, std::size_t> names;
             for (std::size_t i = 0; i < sources.size(); ++i)
-                if (!names.emplace(sources[i].header.moduleName, i).second)
+                if (!names.emplace(sources[i].moduleName, i).second)
                     invalidResolution();
             std::int64_t nextScope = 1;
             for (std::size_t ordinal = 0; ordinal < order.size(); ++ordinal) {
@@ -1495,34 +1569,13 @@ public:
                 input.order = static_cast<std::int64_t>(ordinal);
                 input.scope = index == root ? 0 : nextScope++;
                 input.root = index == root;
-                sources[index].scope = intValue(input.scope);
                 if (!aurora_hosted_resolver_order_module(owner.data(), &input)) {
                     storage();
                     invalidResolution();
                 }
             }
-            for (std::size_t index = 0; index < sources.size(); ++index) {
-                const auto &unit = sources[index];
-                wire::MetaRow moduleRow;
-                aurora_hosted_resolver_read_meta(owner.data(), static_cast<std::int64_t>(index), &moduleRow);
-                if (moduleRow.tag != MetaTag::module_unit || unit.imports.size() != unit.header.imports.size())
-                    invalidResolution();
-                for (std::size_t ordinal = 0; ordinal < unit.imports.size(); ++ordinal) {
-                    const auto found = names.find(unit.header.imports[ordinal].text);
-                    if (found == names.end() || unit.imports[ordinal] < 0 || moduleRow.value8 < 0 ||
-                        unit.imports[ordinal] > std::numeric_limits<std::int64_t>::max() - moduleRow.value8)
-                        invalidResolution();
-                    hosted_abi::ResolverImportInput input;
-                    input.module = static_cast<std::int64_t>(index);
-                    input.node = moduleRow.value8 + unit.imports[ordinal];
-                    input.target = static_cast<std::int64_t>(found->second);
-                    if (!aurora_hosted_resolver_bind_import(owner.data(), &input)) {
-                        storage();
-                        invalidResolution();
-                    }
-                }
-            }
         }
+        // Aurora binds any import the graph walk left unbound before resolving.
         const auto result = aurora_hosted_resolver_run(owner.data());
         storage();
         const auto final = status();

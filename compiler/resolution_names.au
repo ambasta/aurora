@@ -482,7 +482,52 @@ export namespace compiler_resolver {
         }
         return session.index_insert(5, module_id, import_node, 0, 0, result) == result;
     }
-    // Frames are transient scratch rows: module, next import syntax, ordinal,
+    // The last module whose header spells this normalized name, or -1.
+    auto module_named(Session& session, i64 name) -> i64 {
+        i64 target = -1;
+        i64 at = 0;
+        while (at < session.module_count() && session.good()) {
+            const MetaRow candidate = session.meta(at);
+            const SyntaxRow candidate_root = session.syntax(candidate.word(10));
+            const SyntaxRow header = session.syntax(candidate_root.word(7));
+            if (source_name_range(session, header.word(0), header.word(6)) == name) {
+                target = at;
+            }
+            at = at + 1;
+        }
+        return target;
+    }
+    // Binds every import the graph walk left unbound, in module and import
+    // order, as explicitly ordered in-memory modules require.
+    auto bind_imports(Session& session) -> bool {
+        i64 module_id = 0;
+        while (module_id < session.module_count() && session.good()) {
+            const MetaRow unit = session.meta(module_id);
+            if (unit.kind() != MetaTag::module_unit) {
+                session.fail_storage(StorageStatus::invalid);
+                return false;
+            }
+            const SyntaxRow definition = session.syntax(unit.word(10));
+            const i64 end = definition.word(7);
+            i64 node = unit.word(8);
+            while (node < end && session.good()) {
+                if (session.index(5, module_id, node, 0, 0) < 0) {
+                    const SyntaxRow imported = session.syntax(node);
+                    const i64 name = source_name_range(session, imported.word(0), imported.word(6));
+                    const i64 target = module_named(session, name);
+                    if (target < 0) {
+                        session.fail_storage(StorageStatus::invalid);
+                        return false;
+                    }
+                    bind_import(session, module_id, node, target);
+                }
+                node = node + 1;
+            }
+            module_id = module_id + 1;
+        }
+        return session.good();
+    }
+    // Frames are transient scratch rows: module, next import syntax, unused,
     // entered. A host source request unwinds all frames before ingest. Replaying
     // unfinished ancestry retains only completed module order and import bindings.
     // The graph bounds (64 files, depth 16) bound this replay without another owner.
@@ -553,6 +598,10 @@ export namespace compiler_resolver {
                         return WorkRow(-1, -1, -1, -1, -1, -1);
                     }
                     const i64 name = source_name_range(session, imported.word(0), imported.word(6));
+                    const MetaRow name_first = session.meta(imported.word(0));
+                    const MetaRow name_last = session.meta(imported.word(6));
+                    const i64 name_begin = name_first.word(1) - unit.word(0);
+                    const i64 name_end = name_last.word(2) - unit.word(0);
                     i64 previous = import_head(session, module_id);
                     while (previous >= 0 && session.good()) {
                         const MetaRow bound = session.meta(previous);
@@ -561,32 +610,21 @@ export namespace compiler_resolver {
                             return WorkRow(-1, -1, -1, -1, -1, -1);
                         }
                         if (bound.word(2) < node && source_name(session, bound.word(3)) == name) {
-                            return WorkRow(2, module_id, frame.word(2), -1, -1, -1);
+                            return WorkRow(2, module_id, name_begin, name_end, -1, -1);
                         }
                         previous = bound.word(4);
                     }
-                    i64 target = -1;
-                    i64 at = 0;
-                    while (at < session.module_count() && session.good()) {
-                        const MetaRow candidate = session.meta(at);
-                        const SyntaxRow candidate_root = session.syntax(candidate.word(10));
-                        const SyntaxRow header = session.syntax(candidate_root.word(7));
-                        if (source_name_range(session, header.word(0), header.word(6)) == name) {
-                            target = at;
-                        }
-                        at = at + 1;
-                    }
+                    const i64 target = module_named(session, name);
                     if (target < 0) {
                         if (session.module_count() >= 64) {
                             return WorkRow(5, -1, -1, -1, -1, -1);
                         }
-                        return WorkRow(1, module_id, frame.word(2), -1, -1, -1);
+                        return WorkRow(1, module_id, name_begin, name_end, -1, -1);
                     }
                     if (session.index(5, module_id, node, 0, 0) < 0) {
                         bind_import(session, module_id, node, target);
                     }
                     frame.set_word(1, node + 1);
-                    frame.set_word(2, frame.word(2) + 1);
                     session.set_work(depth, frame);
                     const WorkRow child = WorkRow(target, -1, 0, 0, -1, -1);
                     session.append_work(child);
@@ -595,7 +633,8 @@ export namespace compiler_resolver {
         }
         return WorkRow(0, -1, -1, -1, -1, -1);
     }
-    // Status: complete, request source, duplicate, cycle, depth, file limit.
+    // Status: complete, request source, duplicate, cycle, depth, file limit;
+    // then the module and the module-relative bytes of the import it names.
     // Copied coordinates are diagnostic/transport observations, not authority.
     auto graph_step(Session& session, i64 root) -> WorkRow {
         if (!session.good() || session.work_count() != 0 || root < 0 || root >= session.module_count()) {

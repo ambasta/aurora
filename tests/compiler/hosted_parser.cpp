@@ -50,10 +50,10 @@ void checked_hosted_parser_type(const void *, std::int64_t, void *);
 std::int64_t checked_hosted_parser_syntax_count(const void *);
 void checked_hosted_parser_syntax(const void *, std::int64_t, void *);
 void checked_hosted_parser_release(void *);
+void checked_hosted_parser_source(void *, const void *, void *);
 void checked_hosted_resolver_create(const void *, void *);
-void checked_hosted_resolver_ingest(void *, void *);
+std::int64_t checked_hosted_resolver_ingest(const void *);
 void checked_hosted_resolver_release(void *);
-void checked_hosted_resolver_release_pair(void *);
 std::int64_t checked_hosted_resolver_append_source(void *, const void *);
 std::int64_t checked_hosted_resolver_count(const void *, std::int64_t);
 std::int64_t checked_hosted_resolver_read_source(const void *, std::int64_t);
@@ -1280,16 +1280,13 @@ void resolvedModules() {
         "  const State state=State::one;\n"
         "  return lib::measure<Hidden>()+lib::measure<State>()+lib::measure<Hidden>();\n"
         "}\n");
-    auto rootTokens = aurora::lex(root);
     const auto resolved = [&] {
         aurora::HostedResolution resolution;
         // Arrival order deliberately differs from dependency/output order.
         const auto main = resolution.add(root), imported = resolution.add(dependency);
         require(main.id != imported.id && main.moduleName == "root" && !main.interfaceUnit &&
-                    main.imports.size() == 1 && main.imports.front().text == "dep" && imported.moduleName == "dep" &&
-                    imported.interfaceUnit && imported.imports.empty(),
-                "copied module header/import identity differs");
-        require(sameTokens({main.imports.front()}, {rootTokens.at(4)}), "copied import token differs from its source");
+                    imported.moduleName == "dep" && imported.interfaceUnit,
+                "copied module header identity differs");
         return resolution.resolve({imported.id, main.id}, main.id, aurora::AnalysisMode::Lint, true);
     }();
     const auto &module = resolved.module.get();
@@ -1415,7 +1412,6 @@ void resolvedModules() {
             "typed root-only lint lost its scalar binding or diagnostic contract");
     const std::weak_ptr<const aurora::SourceText> retainedRoot = root;
     root.reset();
-    rootTokens.clear();
     require(!retainedRoot.expired() && resolved.lintDiagnostics[0].span.source == retainedRoot.lock() &&
                 spanText(resolved.lintDiagnostics[0].span) == "state",
             "typed lint lost immutable source ownership after Session cleanup");
@@ -1591,26 +1587,25 @@ public:
     }
 };
 
-// Both owning inputs are constructed directly in their final transfer slots.
-// Only generated scalar fields and copied readbacks are inspected by the host.
+// The Session and the parser arena each module reuses are constructed directly
+// in their generated release records. Only copied results are inspected.
 class RawResolution {
     aurora::hosted::bytes::Region region;
-    std::array<GuardedRecord<aurora::hosted_abi::ResolverIngest>, 2> slots;
-    std::size_t active = 0;
-    bool owner = false, pair = false;
+    GuardedRecord<aurora::hosted_abi::ResolverRelease> session;
+    GuardedRecord<aurora::hosted_abi::ParserRelease> parser;
+    bool owner = false, arena = false;
+
+    void release() {
+        if (arena)
+            checked_hosted_parser_release(&parser.value);
+        if (owner)
+            checked_hosted_resolver_release(&session.value);
+        arena = owner = false;
+    }
 
 public:
-    bool transferred = false;
     explicit RawResolution(Allocations &allocations) : region(32 * 1024 * 1024, allocations.allocator()) {
-        static_assert(
-            offsetof(aurora::hosted_abi::ResolverRelease, session) ==
-                offsetof(aurora::hosted_abi::ResolverIngest, session) &&
-            sizeof(aurora::hosted_abi::ResolverRelease) == offsetof(aurora::hosted_abi::ResolverIngest, parsed) &&
-            offsetof(aurora::hosted_abi::ResolverReleasePair, parsed) ==
-                offsetof(aurora::hosted_abi::ResolverIngest, parsed) &&
-            sizeof(aurora::hosted_abi::ResolverReleasePair) == offsetof(aurora::hosted_abi::ResolverIngest, module));
-        for (auto &slot : slots)
-            slot.value.region = region.id();
+        session.value.region = parser.value.region = region.id();
         aurora::hosted_abi::ResolverCreate input;
         input.region = region.id();
         checked_hosted_resolver_create(&input, data());
@@ -1618,21 +1613,16 @@ public:
         guards();
     }
     ~RawResolution() {
-        if (owner) {
-            if (pair)
-                checked_hosted_resolver_release_pair(&slots[active].value);
-            else
-                checked_hosted_resolver_release(&slots[active].value);
-        }
+        release();
     }
     RawResolution(const RawResolution &) = delete;
     RawResolution &operator=(const RawResolution &) = delete;
     void *data() {
-        return slots[active].value.session.storage.data();
+        return session.value.session.storage.data();
     }
     void guards() const {
-        for (const auto &slot : slots)
-            slot.check();
+        session.check();
+        parser.check();
     }
     aurora::hosted_abi::compiler_resolver::SessionStatus status() {
         GuardedRecord<aurora::hosted_abi::compiler_resolver::SessionStatus> output;
@@ -1648,71 +1638,52 @@ public:
         guards();
         return output.value;
     }
-    bool ingest(const std::string &source, bool invalidModule = false, bool invalidRoot = false) {
+    // Parses and admits one source in the reused arena, then appends and
+    // ingests it as the next module.
+    bool ingest(const std::string &source) {
         using Storage = aurora::hosted_abi::compiler_resolver::StorageStatus;
         if (status().storage != Storage::none)
             return false;
-        aurora::hosted_abi::ResolverSourceInput sourceInput;
-        sourceInput.source.backing = source.data();
-        sourceInput.source.length = static_cast<std::int64_t>(source.size());
-        const auto module = checked_hosted_resolver_append_source(data(), &sourceInput);
-        if (module < 0)
-            return false;
-        auto &record = slots[active].value;
-        aurora::hosted_abi::ParserCreate create;
-        create.region = region.id();
-        create.capacity = 0;
-        checked_hosted_parser_create(&create, record.parsed.storage.data());
-        pair = true;
-        aurora::hosted_abi::ParserInput input;
-        input.source = sourceInput.source;
-        input.cursor.line = 1;
-        input.stop = Stop::module_definition;
-        GuardedWords<6> parsed;
-        checked_hosted_parser_parse(record.parsed.storage.data(), &input, parsed.value.data());
+        if (!arena) {
+            aurora::hosted_abi::ParserCreate create;
+            create.region = region.id();
+            create.capacity = 0;
+            checked_hosted_parser_create(&create, parser.value.arena.storage.data());
+            arena = true;
+        }
+        aurora::hosted_abi::ParserSourceInput input;
+        input.source.backing = source.data();
+        input.source.length = static_cast<std::int64_t>(source.size());
+        auto &configuration = input.configuration;
+        configuration.scalar_array_limit = admissionConfiguration[0];
+        configuration.byte_array_limit = admissionConfiguration[1];
+        configuration.service_groups = admissionConfiguration[2];
+        configuration.console_mask = admissionConfiguration[3];
+        configuration.display_mask = admissionConfiguration[4];
+        configuration.event_mask = admissionConfiguration[5];
+        GuardedRecord<aurora::hosted_abi::compiler_resolver::SourceResult> parsed;
+        checked_hosted_parser_source(parser.value.arena.storage.data(), &input, &parsed.value);
         parsed.check();
         guards();
-        if (parsed.value[0] != wire(Status::success))
+        if (parsed.value.lexical != aurora::hosted_abi::compiler_lexer::Event::token ||
+            parsed.value.grammar != Status::success || parsed.value.declaration != AdmissionStatus::success)
             return false;
-        GuardedWords<14> admission;
-        admission.value = {0,
-                           static_cast<std::int64_t>(reinterpret_cast<std::uintptr_t>(source.data())),
-                           0,
-                           0,
-                           0,
-                           0,
-                           static_cast<std::int64_t>(source.size()),
-                           parsed.value[1]};
-        std::copy(admissionConfiguration.begin(), admissionConfiguration.end(), admission.value.begin() + 8);
-        GuardedWords<5> admitted;
-        checked_hosted_parser_admit(record.parsed.storage.data(), admission.value.data(), admitted.value.data());
-        admission.check();
-        admitted.check();
-        if (admitted.value[0] != wire(AdmissionStatus::success))
+        aurora::hosted_abi::ResolverSourceInput sourceInput;
+        sourceInput.source = input.source;
+        if (checked_hosted_resolver_append_source(data(), &sourceInput) < 0)
             return false;
-        record.module = invalidModule ? module + 1 : module;
-        record.root = invalidRoot ? -1 : parsed.value[1];
-        const auto next = active ^ 1U;
-        // A consuming call never has an armed input after transfer begins.
-        owner = pair = false;
-        checked_hosted_resolver_ingest(&record, slots[next].value.session.storage.data());
-        active = next;
-        owner = true;
-        transferred = true;
+        const std::array<const void *, 2> roots{data(), parser.value.arena.storage.data()};
+        const auto base = checked_hosted_resolver_ingest(roots.data());
         guards();
-        return status().storage == Storage::none;
+        return base >= 0 && status().storage == Storage::none;
     }
     void finish() {
-        require(owner, "resolution cleanup had no active returned owner");
-        if (pair)
-            checked_hosted_resolver_release_pair(&slots[active].value);
-        else
-            checked_hosted_resolver_release(&slots[active].value);
-        owner = pair = false;
+        require(owner, "resolution cleanup had no live Session");
+        release();
         guards();
         const auto final = region.metrics();
         require(final.used == 0 && final.live_allocations == 0 && final.releases == final.successful_allocations,
-                "resolution transfer or pair cleanup leaked payload or owner metadata");
+                "resolution or arena cleanup leaked payload or owner metadata");
         require(region.close(), "released resolution region did not close");
     }
 };
@@ -2145,23 +2116,23 @@ void rawResolutionOwnership() {
                                                                 emptyOwner} &&
                     resolution.status().storage == Wire::StorageStatus::none,
                 "Session creation did not retain six original owners followed by five empty typed pools");
-        require(resolution.ingest(source) && resolution.transferred, "valid parser/session transfer failed");
+        require(resolution.ingest(source), "valid source ingestion failed");
         firstIngestAllocations = allocations.successful;
         const auto first = resolution.meta(0);
         require(first.tag == Wire::MetaTag::module_unit && first.value10 >= 0,
-                "successful transfer did not publish exactly one module root");
+                "successful ingestion did not publish exactly one module root");
         require(resolution.ingest("export module second;auto next()->i64{return 3;}") &&
                     resolution.meta(0).value10 == first.value10 &&
                     resolution.meta(1).tag == Wire::MetaTag::module_unit &&
                     checked_hosted_resolver_count(resolution.data(), 5) == 2,
-                "alternating owner slots lost an earlier module or the second transfer");
+                "reused arena lost an earlier module or the second ingestion");
         require(checked_hosted_resolver_read_source(resolution.data(), 0) == 'e' &&
                     checked_hosted_resolver_read_source(resolution.data(), -1) == -1 &&
                     checked_hosted_resolver_read_source(resolution.data(),
                                                         checked_hosted_resolver_count(resolution.data(), 0)) == -1,
                 "copied source bytes lost their checked bounds");
         resolution.finish();
-        require(allocations.successful == allocations.released, "successful two-owner transfer leaked allocations");
+        require(allocations.successful == allocations.released, "successful ingestion leaked allocations");
     }
     {
         Allocations allocations;
@@ -2189,35 +2160,25 @@ void rawResolutionOwnership() {
         require(allocations.successful == allocations.released, "failed Session retained an owner");
     }
     {
-        // Fail the final allocation of a real consuming ingest, not just Session creation.
+        // Fail the final allocation of a real ingest, not just Session creation.
         require(firstIngestAllocations > 0, "successful ingest made no allocations");
         Allocations allocations;
         allocations.allowed = firstIngestAllocations - 1;
         RawResolution resolution(allocations);
-        require(!resolution.ingest(source) && resolution.transferred &&
-                    resolution.status().storage == Wire::StorageStatus::allocation &&
+        require(!resolution.ingest(source) && resolution.status().storage == Wire::StorageStatus::allocation &&
                     resolution.meta(0).tag == Wire::MetaTag::module_source && resolution.meta(0).value10 == -1,
-                "allocation failure after transfer published a root or lost its returned owner");
+                "allocation failure during ingest published a root");
         resolution.finish();
-        require(allocations.successful == allocations.released, "failed consuming ingest leaked an owner");
-    }
-    for (const auto &[badModule, badRoot] : {std::pair{true, false}, std::pair{false, true}}) {
-        Allocations allocations;
-        RawResolution resolution(allocations);
-        require(!resolution.ingest(source, badModule, badRoot) && resolution.transferred &&
-                    resolution.status().storage == Wire::StorageStatus::invalid &&
-                    resolution.meta(0).tag == Wire::MetaTag::module_source && resolution.meta(0).value10 == -1,
-                "invalid consumed transfer published a root or lost its returned owner");
-        resolution.finish();
-        require(allocations.successful == allocations.released, "invalid transfer leaked one of its owning inputs");
+        require(allocations.successful == allocations.released, "failed ingest leaked an owner");
     }
     {
         Allocations allocations;
         RawResolution resolution(allocations);
-        require(!resolution.ingest("module broken;auto f()->i64{") && !resolution.transferred,
-                "parser failure crossed the consuming transfer boundary");
+        require(!resolution.ingest("module broken;auto f()->i64{") &&
+                    checked_hosted_resolver_count(resolution.data(), 5) == 0,
+                "parser failure reached Session storage");
         resolution.finish();
-        require(allocations.successful == allocations.released, "parse failure did not release the live owner pair");
+        require(allocations.successful == allocations.released, "parse failure did not release Session and arena");
     }
     ++cases;
 }

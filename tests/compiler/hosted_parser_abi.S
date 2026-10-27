@@ -123,6 +123,7 @@ checked_entry types
 checked_entry type
 checked_entry syntax_count
 checked_entry syntax
+checked_entry source
 checked_entry release
 
 # Resolution uses the same independent register/stack/canary envelope.
@@ -137,10 +138,8 @@ checked_hosted_resolver_\operation:
 checked_resolver_entry create
 checked_resolver_entry ingest
 checked_resolver_entry release
-checked_resolver_entry release_pair
 checked_resolver_entry append_source
 checked_resolver_entry order_module
-checked_resolver_entry bind_import
 checked_resolver_entry count
 checked_resolver_entry read_source
 checked_resolver_entry read_syntax

@@ -1802,7 +1802,4 @@ export namespace compiler_resolver {
     auto release(builtin::ByteRegion region, Session session) -> i64 {
         return 0;
     }
-    auto release_pair(builtin::ByteRegion region, Session session, compiler_parser::AstArena parsed) -> i64 {
-        return 0;
-    }
 }

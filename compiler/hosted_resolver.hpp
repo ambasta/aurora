@@ -27,13 +27,13 @@ struct HostedResolvedSource {
     std::vector<Diagnostic> lintDiagnostics;
     AbiDeclarations abiDeclarations;
 };
-// Only copied source header metadata leaves a parsed module before resolution.
+// Only the copied module header leaves an admitted source before resolution;
+// Aurora keeps its imports and finds them by name.
 class HostedModule {
 public:
     std::size_t id = 0;
     std::string moduleName;
     bool interfaceUnit = false;
-    std::vector<Token> imports;
 };
 
 // Owns the Aurora graph session and the immutable diagnostic source snapshots.

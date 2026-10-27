@@ -94,10 +94,14 @@ Native tests cover the destination/temp-name collision, poisoned partial writes,
 
 ## Loading boundary
 
-Aurora's resolver Session owns import traversal and dependency postorder. Each
-step returns only the next requested module to the host, or completion. Temporary
-ancestry frames are cleared before ingestion; existing order rows and import
-bindings retain progress without a second owner. The host still authorizes and
-opens files, reads bounded bytes or authorized overlays, and validates imported
+Aurora lexes, parses and admits each source in one reused parser arena and
+ingests it into the resolver Session, which keeps its header and imports. Only a
+diagnostic or the header name and interface flag return to the host. The Session
+owns import traversal and dependency postorder: each step returns the next
+requested import as bytes of the requesting source, or completion, and Aurora
+binds every import to the module whose header spells it. Temporary ancestry
+frames are cleared before ingestion; existing order rows and import bindings
+retain progress without a second owner. The host still authorizes and opens
+files, reads bounded bytes or authorized overlays, and validates imported
 headers/interfaces before the next traversal step. Explicit-order in-memory
 resolution remains supported independently of filesystem traversal.

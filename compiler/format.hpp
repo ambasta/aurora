@@ -89,7 +89,7 @@ public:
     Operation &operator=(const Operation &) = delete;
     Result run(const LexedSource &source, bool layout) {
         if (layout)
-            (void)parseHostedModuleSyntax(source.tokens, parser.arena.storage.data());
+            parseHostedModuleSyntax(source.tokens, parser.arena.storage.data());
         const std::array<const void *, 2> roots{formatter.workspace.storage.data(), parser.arena.storage.data()};
         hosted_abi::FormatterInput input;
         input.source.backing = source.source->text.data();

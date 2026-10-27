@@ -90,7 +90,7 @@ std::uint64_t sessionRegion = 0;
 // interpretation or a copy of the generated opaque Session descriptor.
 aurora::hosted::bytes::NativeOwner sessionPayload;
 constexpr std::uint64_t sessionCanary = 0x7265736f6c766564ULL;
-int sessionsCreated = 0, sessionsReleased = 0, transferred = 0, pairsReleased = 0, projectionThrow = 0;
+int sessionsCreated = 0, sessionsReleased = 0, transferred = 0, projectionThrow = 0;
 bool resolverRunning = false, allocationOnIngest = false;
 std::int64_t linkageChunkSize = 1;
 std::int64_t reportedSyntax = 0, reportedMetadata = 0, reportedDecorations = 0, sourceBytes = 0;
@@ -1803,17 +1803,6 @@ std::shared_ptr<const aurora::SourceText> resolutionFixture() {
     auto source =
         std::make_shared<const aurora::SourceText>("resolved-record.au", "module forged;auto f()->i64{return 1;}");
     const auto tokens = aurora::lex(source);
-    records = {{wire(NodeKind::literal), 11, -1, -1, 1, 11, 11}};
-    types = {{wire(TypeKind::i64_type), 8, 8, 16, -1, -1, 4, 3}};
-    statements = {{wire(SyntaxKind::preamble), 1, 3, -1, -1, -1, -1, 1, -1, -1, 0, -1},
-                  {wire(SyntaxKind::return_value), 10, 13, -1, 0, -1, -1, -1, -1, -1, 0, -1},
-                  {wire(SyntaxKind::block), 9, 14, -1, -1, -1, -1, -1, 1, -1, 0, -1},
-                  {wire(SyntaxKind::function), 4, 14, -1, -1, -1, 0, -1, 2, -1, 0, -1},
-                  {wire(SyntaxKind::declaration), 4, 14, -1, -1, -1, -1, -1, 3, -1, 0, -1},
-                  {wire(SyntaxKind::module_definition), 0, 14, -1, -1, -1, -1, -1, 0, 4, 0, -1}};
-    count = typeCount = 1;
-    statementCount = 6;
-    result = {wire(Status::success), 5, 1, 14, static_cast<std::int64_t>(source->text.size()), 0};
     resolutionSyntax.assign(8, resolutionNode(Resolution::SyntaxTag::declaration));
     resolutionSyntax[0] = resolutionNode(Resolution::SyntaxTag::expression);
     resolutionSyntax[0].expression_tag = NodeKind::literal;
@@ -1886,7 +1875,7 @@ std::shared_ptr<const aurora::SourceText> resolutionFixture() {
     resolutionDecorations[1].value2 = 4;
     resolutionStatus = {Resolution::StorageStatus::none, Resolution::SemanticError::none, -1, -1, -1};
     sessionAddress = nullptr;
-    sessionsCreated = sessionsReleased = transferred = pairsReleased = projectionThrow = 0;
+    sessionsCreated = sessionsReleased = transferred = projectionThrow = 0;
     resolverRunning = allocationOnIngest = false;
     reportedSyntax = 8;
     reportedMetadata = 8;
@@ -1923,8 +1912,8 @@ void resolutionControls() {
     {
         aurora::HostedResolution resolution;
         const auto module = resolution.add(source);
-        require(module.id == 0 && module.moduleName == "forged" && !module.interfaceUnit && module.imports.empty(),
-                "session ingestion lost copied parser header metadata");
+        require(module.id == 0 && module.moduleName == "forged" && !module.interfaceUnit,
+                "session ingestion lost the copied module header");
         try {
             static_cast<void>(resolution.resolve({module.id}, module.id, aurora::AnalysisMode::Check, true));
         } catch (const aurora::Error &error) {
@@ -1937,11 +1926,11 @@ void resolutionControls() {
                 diagnostic->message == "at most six parameters supported" && diagnostic->span.source == source &&
                 diagnostic->span.begin.offset == source->text.find("f()") &&
                 diagnostic->span.end.offset == diagnostic->span.begin.offset + 1 && sessionsCreated == 1 &&
-                sessionsReleased == 1 && transferred == 1 && pairsReleased == 0 && created == 1 && parsed == 1 &&
-                admitted == 1 && released == 1 && statementRead == 2 && read == 0 && edgeRead == 0 && typeRead == 0 &&
+                sessionsReleased == 1 && transferred == 1 && created == 1 && parsed == 1 && admitted == 0 &&
+                released == 1 && statementRead == 0 && read == 0 && edgeRead == 0 && typeRead == 0 &&
                 loweringBegun == 1 && loweringRun == 1 && loweringOutputReads == 1 && loweringOperandReads == 3 &&
                 sessionPayload.allocation == 0,
-            "typed failure report lost source, bounded reads, configuration or exact consuming cleanup");
+            "typed failure report lost source, bounded reads, configuration or exact cleanup");
     ++cases;
     const auto reject = [&](const char *label, const std::function<void()> &mutate, bool injected = false) {
         source = resolutionFixture();
@@ -1956,9 +1945,9 @@ void resolutionControls() {
         } catch (const std::runtime_error &error) {
             rejected = injected && std::string(error.what()) == "injected resolved read failure";
         }
-        require(rejected && sessionsCreated == 1 && sessionsReleased == 1 && transferred == 1 && pairsReleased == 0 &&
-                    released == 1 && sessionPayload.allocation == 0,
-                std::string(label) + ": unsafe typed projection escaped or released a consumed owner twice");
+        require(rejected && sessionsCreated == 1 && sessionsReleased == 1 && transferred == 1 && released == 1 &&
+                    sessionPayload.allocation == 0,
+                std::string(label) + ": unsafe typed projection escaped or released an owner twice");
         ++cases;
     };
     reject("negative source byte count", [] {
@@ -2142,23 +2131,23 @@ void resolutionControls() {
         loweringAllocation = true;
     });
 
-    for (const bool afterTransfer : {false, true}) {
+    for (const bool duringIngest : {false, true}) {
         source = resolutionFixture();
-        allocationOnIngest = afterTransfer;
-        throwingAdmission = !afterTransfer;
+        allocationOnIngest = duringIngest;
+        throwingAdmission = !duringIngest;
         bool rejected = false;
         try {
             aurora::HostedResolution resolution;
             static_cast<void>(resolution.add(source));
         } catch (const aurora::Error &error) {
-            rejected = afterTransfer && error.diagnostic.code == DiagnosticCode::Internal &&
+            rejected = duringIngest && error.diagnostic.code == DiagnosticCode::Internal &&
                        error.diagnostic.message == "hosted module resolution allocation failed";
         } catch (const std::runtime_error &error) {
-            rejected = !afterTransfer && std::string(error.what()) == "injected admission failure";
+            rejected = !duringIngest && std::string(error.what()) == "injected admission failure";
         }
-        require(rejected && sessionsReleased == 1 && released == 1 && transferred == int(afterTransfer) &&
-                    pairsReleased == int(!afterTransfer) && sessionPayload.allocation == 0 && loweringRun == 0,
-                "failure on either side of owner consumption selected the wrong cleanup prefix");
+        require(rejected && sessionsReleased == 1 && released == 1 && transferred == int(duringIngest) &&
+                    sessionPayload.allocation == 0 && loweringRun == 0,
+                "failure while admitting or ingesting a source did not release Session and arena once");
         ++cases;
     }
 }
@@ -2311,6 +2300,35 @@ extern "C" void aurora_hosted_parser_admit(void *arena, const void *input, void 
         throw std::runtime_error("injected admission failure");
     std::memcpy(output, admissionResult.data(), sizeof(admissionResult));
 }
+// Resolution sources admit as the forged module header; no syntax is read back.
+extern "C" void aurora_hosted_parser_source(void *arena, const void *input, void *output) {
+    require(arena == arenaAddress, "source admission changed the arena address");
+    const auto &value = *static_cast<const aurora::hosted_abi::ParserSourceInput *>(input);
+    const auto &configuration = value.configuration;
+    require(value.source.kind == 0 && value.source.start == 0 && value.source.length == sourceBytes &&
+                configuration.scalar_array_limit == 64 && configuration.byte_array_limit == 512 &&
+                configuration.service_groups == 4295033150 && configuration.console_mask == 1 &&
+                configuration.display_mask == 2 && configuration.event_mask == 4,
+            "source admission changed its borrowed span or canonical layout/service configuration");
+    ++parsed;
+    if (throwingAdmission)
+        throw std::runtime_error("injected admission failure");
+    Resolution::SourceResult header{};
+    header.lexical = aurora::hosted_abi::compiler_lexer::Event::token;
+    header.field_type = TypeKind::invalid;
+    header.name_begin = 7;
+    header.name_end = 13;
+    std::memcpy(output, &header, sizeof(header));
+}
+extern "C" void aurora_hosted_resolver_name_chunk(const void *input, void *output) {
+    const auto &value = *static_cast<const aurora::hosted_abi::ResolverNameInput *>(input);
+    require(value.source.length == sourceBytes && value.begin == 7 && value.end == 13 && value.offset == 0,
+            "module name read changed its borrowed source range");
+    Resolution::LinkageChunk chunk{};
+    chunk.byteCount = value.end - value.begin;
+    std::memcpy(chunk.payload.data(), value.source.backing + value.begin, static_cast<std::size_t>(chunk.byteCount));
+    std::memcpy(output, &chunk, sizeof(chunk));
+}
 extern "C" std::int64_t aurora_hosted_parser_count(const void *) {
     return count;
 }
@@ -2378,17 +2396,6 @@ void armSession(void *address) {
                 &sessionCanary,
                 sizeof(sessionCanary));
 }
-void consumeParsed(const void *address, std::uint64_t region) {
-    require(address == arenaAddress && region == arenaRegion && created == released + 1,
-            "resolver consumed an inactive parser or crossed its region");
-    std::uint64_t value = 0;
-    std::memcpy(&value,
-                static_cast<const unsigned char *>(address) + aurora::hosted_abi::arenaBytes - sizeof(value),
-                sizeof(value));
-    require(value == arenaCanary, "paired parser owner boundary was corrupted");
-    ++released;
-    arenaAddress = nullptr;
-}
 template <class Row>
 void resolvedRead(const void *session, std::int64_t index, void *output, const std::vector<Row> &rows, int kind) {
     checkSession(session);
@@ -2412,21 +2419,23 @@ extern "C" void aurora_hosted_resolver_create(const void *input, void *output) {
     ++sessionsCreated;
     armSession(output);
 }
-extern "C" void aurora_hosted_resolver_ingest(void *input, void *output) {
-    const auto &record = *static_cast<const aurora::hosted_abi::ResolverIngest *>(input);
-    checkSession(record.session.storage.data());
-    require(record.region == sessionRegion && record.module == 0 && record.root == result[1] &&
-                output != record.session.storage.data() && output != record.parsed.storage.data(),
-            "consuming transfer aliased input/output or changed its copied coordinates");
-    consumeParsed(record.parsed.storage.data(), record.region);
+extern "C" std::int64_t aurora_hosted_resolver_ingest(const void *input) {
+    const auto *roots = static_cast<const void *const *>(input);
+    checkSession(roots[0]);
+    std::uint64_t canary = 0;
+    std::memcpy(&canary,
+                static_cast<const unsigned char *>(roots[1]) + aurora::hosted_abi::arenaBytes - sizeof(canary),
+                sizeof(canary));
+    require(roots[1] == arenaAddress && created == released + 1 && canary == arenaCanary,
+            "ingest did not borrow the live parser arena");
     ++transferred;
-    armSession(output);
-    if (allocationOnIngest)
+    if (allocationOnIngest) {
         resolutionStatus.storage = Resolution::StorageStatus::allocation;
-    else {
-        resolutionMetadata[0].tag = Resolution::MetaTag::module_unit;
-        resolutionMetadata[0].value10 = 7;
+        return -1;
     }
+    resolutionMetadata[0].tag = Resolution::MetaTag::module_unit;
+    resolutionMetadata[0].value10 = 7;
+    return 0;
 }
 extern "C" void aurora_hosted_resolver_release(void *input) {
     const auto &record = *static_cast<const aurora::hosted_abi::ResolverRelease *>(input);
@@ -2434,16 +2443,6 @@ extern "C" void aurora_hosted_resolver_release(void *input) {
     require(record.region == sessionRegion && created == released,
             "Session-only release retained a live parsed owner or lost its region");
     aurora::hosted::bytes::__au_runtime_bytes_drop(&sessionPayload);
-    ++sessionsReleased;
-    sessionAddress = nullptr;
-}
-extern "C" void aurora_hosted_resolver_release_pair(void *input) {
-    const auto &record = *static_cast<const aurora::hosted_abi::ResolverReleasePair *>(input);
-    checkSession(record.session.storage.data());
-    require(record.region == sessionRegion, "paired release changed its Session region");
-    consumeParsed(record.parsed.storage.data(), record.region);
-    aurora::hosted::bytes::__au_runtime_bytes_drop(&sessionPayload);
-    ++pairsReleased;
     ++sessionsReleased;
     sessionAddress = nullptr;
 }
@@ -2461,9 +2460,6 @@ extern "C" std::int64_t aurora_hosted_resolver_order_module(void *session, const
     require(record.module == 0 && record.order == 0 && record.scope == 0 && record.root == 1,
             "resolved root/order/scope inputs differ");
     return 1;
-}
-extern "C" std::int64_t aurora_hosted_resolver_bind_import(void *, const void *) {
-    throw std::runtime_error("import-free resolution fixture acquired an import binding");
 }
 extern "C" void aurora_hosted_resolver_graph_step(void *, std::int64_t, void *) {
     throw std::runtime_error("explicit-order resolution fixture acquired graph traversal");
