@@ -109,7 +109,7 @@ def expected(mode, metadata, arena):
 
 def validate(status, text, mode, metadata):
     need(mode in MODES, "Unknown snapshot mode")
-    # Every snapshot mode, the baseline included, boots storage-fixture: its
+    # Every snapshot mode, the baseline included, boots snapshot-call-fixture: its
     # loader echoes the mode's fw_cfg row before any other record.
     text = loader_selection(text, mode)
     need("AURORA_FIXTURE" not in text, "Snapshot fixture selection")

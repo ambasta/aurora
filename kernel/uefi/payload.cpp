@@ -175,7 +175,7 @@ auto payload_main(U64 arena, U64 size) -> void {
         fail("ACPI discovery");
 #endif
 #ifdef AURORA_UEFI_RUNTIME
-#if defined(AURORA_STORAGE_FIXTURE) || defined(AURORA_TEXT_FIXTURE)
+#if defined(AURORA_SNAPSHOT_FIXTURE) || defined(AURORA_TEXT_FIXTURE)
     if (!aurora::uefi::run_protected(arena, h, pool))
 #else
     if (!aurora::uefi::run_protected(arena, h))

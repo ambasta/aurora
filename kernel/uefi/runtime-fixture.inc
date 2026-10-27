@@ -133,7 +133,7 @@ auto text_fixture_owner(std::size_t operation, aurora::hosted::bytes::NativeOwne
 }
 
 #endif
-#ifdef AURORA_STORAGE_FIXTURE
+#ifdef AURORA_SNAPSHOT_FIXTURE
 auto call_fixture_entry(U64 *words) -> void {
     if (fixture == Fixture::call_owner)
         words[9] ^= 1;

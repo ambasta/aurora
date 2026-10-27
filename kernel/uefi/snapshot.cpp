@@ -11,8 +11,8 @@
 #error "Snapshot producer requires its exact CPU-only protected IPC profile"
 #endif
 
-// The storage fixture image co-hosts both producer consumers, each selected by its rows.
-#if defined(AURORA_BLOCKING_CALL) && ((defined(AURORA_UEFI_SNAPSHOT) && !defined(AURORA_STORAGE_FIXTURE)) ||           \
+// The snapshot-call fixture image co-hosts both producer consumers, each selected by its rows.
+#if defined(AURORA_BLOCKING_CALL) && ((defined(AURORA_UEFI_SNAPSHOT) && !defined(AURORA_SNAPSHOT_FIXTURE)) ||          \
                                       !defined(AURORA_UEFI_SERVICE_BUDGET) || !defined(AURORA_UEFI_USER_BUDGET))
 #error "Call snapshot requires its exact budgeted two-program composition"
 #endif

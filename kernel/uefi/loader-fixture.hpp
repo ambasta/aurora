@@ -5,14 +5,15 @@
 // interval: platform-fixture (loader and device-discovery faults),
 // display-fixture (the framebuffer cases and the standalone graphical console),
 // device-fixture (the UEFI console, its service faults and owned bytes),
-// storage-fixture (the RAM file service, RAM scratchpad console, blocking
-// snapshot call and snapshot producer) and text-fixture (the protected file-call
+// storage-fixture (RAM file, scratchpad and namespace), snapshot-call-fixture
+// (blocking Call and snapshot producer) and text-fixture (the protected file-call
 // console, owned text and the console region). Every later phase of those images
 // branches on the copied row.
 #if defined(AURORA_PLATFORM_FIXTURE) + defined(AURORA_DISPLAY_FIXTURE) + defined(AURORA_DEVICE_FIXTURE) +              \
-        defined(AURORA_STORAGE_FIXTURE) + defined(AURORA_TEXT_FIXTURE) !=                                              \
+        defined(AURORA_STORAGE_FIXTURE) + defined(AURORA_SNAPSHOT_FIXTURE) + defined(AURORA_TEXT_FIXTURE) !=           \
     1
-#error "The fw_cfg loader selector belongs only to the platform, display, device, storage and text fixture images"
+#error                                                                                                                 \
+    "The fw_cfg loader selector belongs only to the platform, display, device, storage, snapshot-call and text fixture images"
 #endif
 #include "fw-cfg-fixture.hpp"
 #include <cstdint>
@@ -32,6 +33,9 @@ static_assert(static_cast<unsigned>(Fixture::framebuffer_stale) + 1 ==
 #elif defined(AURORA_STORAGE_FIXTURE)
 inline constexpr auto first = Fixture::ram_baseline;
 inline constexpr auto last = Fixture::namespace_fixture;
+#elif defined(AURORA_SNAPSHOT_FIXTURE)
+inline constexpr auto first = Fixture::call_baseline;
+inline constexpr auto last = Fixture::snapshot_reply_reserved;
 #elif defined(AURORA_TEXT_FIXTURE)
 inline constexpr auto first = Fixture::text_baseline;
 inline constexpr auto last = Fixture::file_budget;
@@ -42,7 +46,12 @@ inline constexpr auto last = Fixture::owned_bytes_baseline;
 static_assert(static_cast<unsigned>(Fixture::console_service_report) + 1 == static_cast<unsigned>(last));
 #endif
 [[nodiscard]] constexpr auto admitted(std::uint64_t value) -> bool {
-    return value >= static_cast<unsigned>(first) && value <= static_cast<unsigned>(last);
+    return value >= static_cast<unsigned>(first) && value <= static_cast<unsigned>(last)
+#ifdef AURORA_STORAGE_FIXTURE
+           && (value <= static_cast<unsigned>(Fixture::scratchpad_fixture) ||
+               value >= static_cast<unsigned>(Fixture::namespace_console))
+#endif
+        ;
 }
 [[nodiscard]] constexpr auto selected(std::uint64_t value, Fixture fixture) -> bool {
     return admitted(value) && value == static_cast<unsigned>(fixture);
@@ -52,7 +61,8 @@ static_assert(static_cast<unsigned>(Fixture::console_service_report) + 1 == stat
     return admitted(value) ? static_cast<Fixture>(value) : Fixture{};
 }
 [[nodiscard]] inline auto read() -> std::optional<Fixture> {
-    return fw_cfg::FwCfg::read(first, last);
+    const auto selected = fw_cfg::FwCfg::read(first, last);
+    return selected && admitted(static_cast<unsigned>(*selected)) ? selected : std::nullopt;
 }
 #if defined(AURORA_DISPLAY_FIXTURE)
 // The framebuffer rows hand over v5 without ACPI; the graphical console needs ACPI (v6).

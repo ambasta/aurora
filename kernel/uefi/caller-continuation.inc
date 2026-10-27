@@ -48,7 +48,7 @@ class CallerContinuation final {
 #ifndef AURORA_PROGRAM_APPEND_CALL
     friend auto call_execute(unsigned, U64, U64, U64) -> void;
 #endif
-#ifdef AURORA_STORAGE_FIXTURE
+#ifdef AURORA_SNAPSHOT_FIXTURE
     friend auto call_completion_controls(U64) -> void;
     friend auto run_blocking_calls(memory::PhysicalPages &) -> void;
 #endif

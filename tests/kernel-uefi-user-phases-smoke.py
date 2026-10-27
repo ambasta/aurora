@@ -892,7 +892,7 @@ def validate(status, text, mode, metadata):
                 "User selector admission phase",
             )
             text = text.replace(marker, "", 1)
-    # Every RAM-file and call mode, the baselines included, boots storage-fixture:
+    # RAM-file and Call modes, including baselines, boot their loader-selected fixtures:
     # its loader echoes the mode's fw_cfg row before any other record.
     if mode.startswith("user-ram-file"):
         return validate_ram_file(status, loader_selection(text.replace("\r", ""), mode), mode, metadata)

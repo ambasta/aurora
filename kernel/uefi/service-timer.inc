@@ -31,7 +31,7 @@ std::optional<user::DomainHandle> timer_owner;
                                          *domains[active].contract,
                                          timer_owner_epoch)
 #ifdef AURORA_RAM_FILE
-           && (!ram_rows() || ram_active_authority())
+           && ram_active_authority()
 #endif
         ;
 }
@@ -216,22 +216,16 @@ auto initialize_service_timer() -> void {
 }
 auto timer_begin(unsigned index) -> void {
     using namespace std::literals::string_view_literals;
-#ifdef AURORA_STORAGE_FIXTURE
-    U64 next_epoch;
-    if (ram_rows()) {
-        require(ram_run_epoch != 0 && ram_run_epoch <= timer_epoch_watermark, "RAM reserved run epoch");
-        next_epoch = ram_run_epoch;
-    } else {
-        require(timer_epoch_watermark != UINT64_MAX, "run epoch exhaustion");
-        next_epoch = ++timer_epoch_watermark;
-    }
+#ifdef AURORA_RAM_FILE
+    require(ram_run_epoch != 0 && ram_run_epoch <= timer_epoch_watermark, "RAM reserved run epoch");
+    const auto next_epoch = ram_run_epoch;
 #elif defined(AURORA_TEXT_FIXTURE)
     U64 next_epoch = timer_epoch + 1;
     if (!owned_rows()) {
         require(timer_epoch_watermark != UINT64_MAX, "run epoch exhaustion");
         next_epoch = ++timer_epoch_watermark;
     }
-#elif defined(AURORA_USER_RESUME) || defined(AURORA_PROGRAM_APPEND_CALL)
+#elif defined(AURORA_USER_RESUME) || defined(AURORA_BLOCKING_CALL)
     require(timer_epoch_watermark != UINT64_MAX, "run epoch exhaustion");
     const auto next_epoch = ++timer_epoch_watermark;
 #else
@@ -254,53 +248,39 @@ auto timer_begin(unsigned index) -> void {
         text_epoch = next_epoch;
     } else {
 #endif
-        require(index < L::domain_count && domains[index].handle && selected_client < 2 && !timer_armed &&
-#ifdef AURORA_STORAGE_FIXTURE
-                    (ram_rows() || timer_epoch != UINT64_MAX),
-#else
-                    timer_epoch != UINT64_MAX,
+        require(index < L::domain_count && domains[index].handle && selected_client < 2 && !timer_armed
+#ifndef AURORA_RAM_FILE
+                    && timer_epoch != UINT64_MAX
 #endif
+                ,
                 "user timer run boundary");
         const auto budget =
-#ifdef AURORA_STORAGE_FIXTURE
-            // RAM rows keep their retained-session allowances: caller 128, service 120 or 8.
-            ram_rows() ? (index == 0       ? 128U
-                          : launch[0] == 2 ? 120U
-                                           : 8U)
-            :
-#endif
+#ifdef AURORA_RAM_FILE
+            // Retained-session allowances: caller 128, service 120 or 8.
+            index == 0       ? 128U
+            : launch[0] == 2 ? 120U
+                             : 8U;
+#else
 #ifdef AURORA_BLOCKING_CALL
-            domains[0].call_limit > 1 ? 128U
-            :
+            domains[0].call_limit > 1 ? 128U :
 #endif
             (launch[0] == 5 || launch[0] == 6 || launch[0] == 7) ? 3U
                                                                  : 128U;
-#ifdef AURORA_STORAGE_FIXTURE
+#endif
+#ifdef AURORA_RAM_FILE
         // RAM rows' retained sessions have their own startup/abort-only admission.
-        auto authorization = ram_rows() ? SelectedRunAuthority::authorize_retained_session(registry,
-                                                                                           *domains[index].handle,
-                                                                                           selected_role,
-                                                                                           selected_phase,
-                                                                                           selected_client,
-                                                                                           transaction,
-                                                                                           launch[0],
-                                                                                           arena,
-                                                                                           root(),
-                                                                                           *domains[index].contract,
-                                                                                           next_epoch,
-                                                                                           budget)
-                                        : SelectedRunAuthority::authorize(registry,
-                                                                          *domains[index].handle,
-                                                                          selected_role,
-                                                                          selected_phase,
-                                                                          selected_client,
-                                                                          transaction,
-                                                                          launch[0],
-                                                                          arena,
-                                                                          root(),
-                                                                          *domains[index].contract,
-                                                                          next_epoch,
-                                                                          budget);
+        auto authorization = SelectedRunAuthority::authorize_retained_session(registry,
+                                                                              *domains[index].handle,
+                                                                              selected_role,
+                                                                              selected_phase,
+                                                                              selected_client,
+                                                                              transaction,
+                                                                              launch[0],
+                                                                              arena,
+                                                                              root(),
+                                                                              *domains[index].contract,
+                                                                              next_epoch,
+                                                                              budget);
 #else
         auto authorization = SelectedRunAuthority::authorize(registry,
                                                              *domains[index].handle,
@@ -338,7 +318,7 @@ auto timer_begin(unsigned index) -> void {
 #endif
     timer_initial = timer_remaining;
 #ifdef AURORA_RAM_FILE
-    if (ram_rows() && index == 1 && launch[0] == 2) {
+    if (index == 1 && launch[0] == 2) {
         require(ram_command && ram_command->service_used < 120, "RAM cumulative service allowance");
         timer_ticks = ram_command->service_used;
         timer_remaining = 120 - timer_ticks;

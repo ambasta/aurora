@@ -23,13 +23,17 @@ def check_fixture_families(rows):
         raise ValueError("Fixture selectors must be distinct bytes")
     for image in {image for _, image, _ in rows.values()}:
         family = sorted(value for _, owner, value in rows.values() if owner == image)
-        if image == "program-fixture":
-            # The private program selector admits only these two closed ranges;
-            # filling an old catalog gap does not renumber existing selectors.
-            intervals = (
-                ("program_append_construct_fault", "program_append_service_backing"),
-                ("program_request_fault", "program_append_site"),
-            )
+        if image in ("program-fixture", "storage-fixture", "snapshot-call-fixture"):
+            # These loaders/selectors admit only their explicit closed intervals;
+            # moving a row family does not renumber existing selectors.
+            intervals = {
+                "program-fixture": (
+                    ("program_append_construct_fault", "program_append_service_backing"),
+                    ("program_request_fault", "program_append_site"),
+                ),
+                "storage-fixture": (("ram_baseline", "scratchpad_fixture"), ("namespace_console", "namespace_fixture")),
+                "snapshot-call-fixture": (("call_baseline", "snapshot_reply_reserved"),),
+            }[image]
             expected = [value for first, last in intervals for value in range(rows[first][2], rows[last][2] + 1)]
         else:
             expected = list(range(family[0], family[0] + len(family)))
@@ -45,11 +49,18 @@ FIXTURE_MODES = {
 # byte. The loader fixture images read it at loader entry, echo it and hand it
 # over in one handoff word: platform-fixture's loader cases inject before
 # ExitBootServices, while firmware owns the UART, and the display, device,
-# storage and text images co-host subsystems that each need their row from the
+# storage, snapshot-call and text images co-host subsystems that each need their row from the
 # first phase, including interactive console sessions no harness can send a
 # byte to. The Event harness writes serial output to a file.
 LOADER_FIXTURE_IMAGES = frozenset(
-    ("platform-fixture", "display-fixture", "device-fixture", "storage-fixture", "text-fixture")
+    (
+        "platform-fixture",
+        "display-fixture",
+        "device-fixture",
+        "storage-fixture",
+        "snapshot-call-fixture",
+        "text-fixture",
+    )
 )
 FW_CFG_IMAGES = LOADER_FIXTURE_IMAGES | {"iommu-event"}
 BIOS_FIXTURE_MODES = {
@@ -134,8 +145,7 @@ UEFI_FAMILIES = [
         ],
         {"text-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_TEXT_FIXTURE"]},
     ),
-    # The RAM file service, the RAM scratchpad console, the blocking snapshot
-    # call and the snapshot producer, selected likewise (STORAGE_ROWS).
+    # The RAM file service, scratchpad and protected namespace, selected likewise.
     (
         [
             "-DAURORA_UEFI_ACPI",
@@ -148,17 +158,28 @@ UEFI_FAMILIES = [
             "-DAURORA_RAM_SCRATCHPAD_CONSOLE",
             "-DAURORA_NAMESPACE_CONSOLE",
             "-DAURORA_NAMESPACE_FIXTURE",
-            "-DAURORA_BLOCKING_CALL",
-            "-DAURORA_UEFI_SNAPSHOT",
         ],
         {
             "storage-fixture": [
                 "-DAURORA_RUNTIME_FIXTURE",
                 "-DAURORA_SCRATCHPAD_FIXTURE",
-                "-DAURORA_SNAPSHOT_FIXTURE",
                 "-DAURORA_STORAGE_FIXTURE",
             ]
         },
+    ),
+    # The ordinary blocking Call and snapshot producer, without the RAM console.
+    (
+        [
+            "-DAURORA_UEFI_ACPI",
+            "-DAURORA_UEFI_PCI",
+            "-DAURORA_UEFI_RUNTIME",
+            "-DAURORA_UEFI_IPC",
+            "-DAURORA_UEFI_SERVICE_BUDGET",
+            "-DAURORA_UEFI_USER_BUDGET",
+            "-DAURORA_BLOCKING_CALL",
+            "-DAURORA_UEFI_SNAPSHOT",
+        ],
+        {"snapshot-call-fixture": ["-DAURORA_RUNTIME_FIXTURE", "-DAURORA_SNAPSHOT_FIXTURE"]},
     ),
     # The IPC, service-budget, dispatcher, user-run and resume compositions, each
     # selected at boot; its user images are SERVICE_BANK.
@@ -259,9 +280,11 @@ PACKED_ROWS = {
         "ram_": "user-ram-file-fixture",
         "scratchpad_baseline": "ram-scratchpad-console",
         "scratchpad_fixture": "ram-scratchpad-console-fixture",
+        "namespace_": "namespace-console",
+    },
+    "snapshot-call-fixture": {
         "call_": "user-call-fixture",
         "snapshot_": "snapshot-fixture",
-        "namespace_": "namespace-console",
     },
     "text-fixture": {
         "text_": "runtime-owned-text-fixture",
@@ -587,7 +610,7 @@ def packed_profile(image, flags):
     """A test image co-hosting former images' compositions, each run by its rows."""
     formers = {name: uefi_profile(name, FORMER_IMAGES[name]) for name in dict.fromkeys(PACKED_ROWS[image].values())}
     users, sets = packed_users(image, formers)
-    if image == "storage-fixture":
+    if image == "snapshot-call-fixture":
         # This small ordinary caller has a one-page link/packing cap. The row's
         # Call admission stays unchanged; a larger fixture must fail the link.
         users["call-snapshot-client"] = dict(users["call-snapshot-client"], max_pages=1)
@@ -627,17 +650,14 @@ def packed_profile(image, flags):
         assembly[name] = dict(
             assembly[name], flags=["--64"] + [word for define in defines for word in ("--defsym", define)]
         )
-    primary = formers["ram-scratchpad-console" if image == "storage-fixture" else "program-file-call"]
+    primary = formers[
+        {
+            "storage-fixture": "ram-scratchpad-console",
+            "snapshot-call-fixture": "snapshot-fixture",
+            "text-fixture": "program-file-call",
+        }[image]
+    ]
     languages = {}
-    if image == "storage-fixture":
-        # The snapshot producer is a second closed Aurora object with its own
-        # bridge, local symbols and import policy; the single console object shares
-        # scratchpad/namespace input and exports the kernel policies every row calls.
-        languages["producer"] = dict(
-            source="examples/kernel-snapshot-producer.au",
-            bridge="kernel/uefi/snapshot-producer-entry.S",
-            roots=["kernel/policies", "library"],
-        )
     owned_objects = list(dict.fromkeys(name for profile in formers.values() for name in profile["owned_objects"]))
     link = ["payload-entry", "memory", "payload", "acpi", "pci", "runtime", "runtime-entry", "runtime-exceptions"]
     return dict(
@@ -656,7 +676,7 @@ def packed_profile(image, flags):
         user_metadata_options=[],
         link=link + ["language"] + list(languages) + owned_objects,
         closed=primary["closed"],
-        sealed=True,
+        sealed=primary["sealed"],
         optimization="s",
         languages=languages,
         owned_objects=owned_objects,
