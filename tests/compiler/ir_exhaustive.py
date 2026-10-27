@@ -35,7 +35,6 @@ HEADERS = (
     "hosted_ir_instructions.hpp",
     "ir_instruction_codec.hpp",
     "x86.hpp",
-    "byte_literal.hpp",
 )
 GENERATED_HEADERS = ("hosted_frontend_abi.hpp",)
 # Verified textual IR cases; the aurora-ir-check driver prints their assembly.

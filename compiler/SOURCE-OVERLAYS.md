@@ -4,8 +4,7 @@
 lexically normalized filesystem paths to shared immutable `SourceText` snapshots.
 Each snapshot's path must exactly match its map key; repeated separators and
 other spellings that differ from lexical normalization are rejected. The two-argument disk-source
-API remains unchanged. `lexSource(snapshot)` and `lex(snapshot)` preserve the exact
-shared snapshot in tokens, trivia and located errors.
+API remains unchanged. Located errors keep the exact shared snapshot.
 
 An overlay replaces bytes only after the ordinary host adapter opens the root
 or resolves an imported file under its existing no-symlink/beneath-root policy.

@@ -1,107 +1,37 @@
-# Lossless shared lexer
-
-`lexSource(contents, path)` runs the same scanner as the compiler and returns an
-owned immutable source snapshot, canonical tokens and whitespace/line-comment
-trivia. Tokens and trivia carry half-open byte spans into that one snapshot.
-Merging their ranges in offset order reconstructs every input byte exactly.
-EOF is zero width and is not a source spelling to concatenate.
-
-Whitespace is retained in contiguous runs. Only LF starts a new line, matching
-existing compiler diagnostics; CR, tab, vertical tab and form feed retain their
-exact original bytes. A `//` comment runs up to, but not including, LF. Its bytes
-may include Unicode or arbitrary non-LF values, as before. Block comments and
-other unsupported syntax are not newly accepted. Lexical errors remain fatal
-and structured; a failed scan is never presented as a complete lossless result.
-
-Single-quoted [byte literals](SCALARS.md#ascii-byte-character-literals) are one
-lossless token, including escapes and delimiters. Malformed spellings use AU1002
-with the attempted literal span; quote-like bytes inside comments stay trivia.
-Double-quoted [byte-string initializers](SCALARS.md#bounded-byte-string-array-initializers)
-also remain one exact token, including raw UTF-8 and escapes. Their malformed
-spellings use AU1003; literal punctuation never becomes comments or separators.
-
-Binary integer spellings retain their `0b`/`0B` prefix, C++ apostrophe separators
-and exact suffix as one token. Malformed binary digit/separator/suffix attempts
-also stay whole for semantic integer-literal rejection; an apostrophe starting a
-token still begins a byte literal. The [integer contract](SCALARS.md#source-contract)
-defines ranges and keeps array/template capacities decimal-only.
-
-The legacy `lex(contents, path)` API wraps the same scanner with
-`TriviaRetention::Discard` and returns only tokens. Compilation therefore does
-not retain a trivia vector. `Parser` owns a copy of those tokens, so consuming
-nested-template `>>` closers cannot mutate a retained lexical stream or snapshot.
-This is infrastructure for the Aurora formatter/LSP, not a formatter, linter or
-language server by itself. [Existing-file overlays](SOURCE-OVERLAYS.md) now reuse these immutable snapshots.
-Editor version tracking and position-encoding conversion remain separate work.
-
-## Hosted Aurora lexer
+# Aurora lexer
 
 `compiler/lexer.au` implements the entire lexical phase in Aurora. Its
 `next_lexeme(readonly span, copied cursor)` returns one token, whitespace run,
-line-comment run, EOF, or lexical error per call. It uses constant auxiliary
-storage, accepts long identifiers/comments and the existing 1 MiB file limit,
-and validates byte/string escapes and UTF-8 without constructing decoded
-buffers. The 4,096 decoded-byte string bound and complete attempted error spans,
-including suffixes, are unchanged. Numeric range validation remains semantic.
-Classification is explicitly ASCII, matching the compiler's startup C locale;
-comments retain every non-LF byte. C++ still owns source I/O, token/trivia vectors,
-raw spelling copies, semantic constant decoding and diagnostic presentation.
+line-comment run, EOF, or lexical error per call, with the byte offset, line and
+line start after it. Events cover the source contiguously, so merging them in
+offset order reconstructs every input byte exactly; EOF is zero width.
 
-The small `hosted_lexer.cpp` adapter and table-generated register shim form an explicitly trusted
-bootstrap boundary, not a source-language foreign pointer constructor or C ABI.
-It keeps the immutable `SourceText` snapshot alive, imports exactly its backing
-and length into the existing 56-byte contiguous readonly span record (kind 0,
-zero reserved words, zero starting offset), and supplies a separate 24-byte
-copied cursor. The 32-byte copied result never exposes a view or source pointer.
-Bounds, monotonic progress, EOF and checked coordinate narrowing are verified
-before the host reads a returned range. Direct API inputs must fit the existing
-signed line/column representation; file I/O remains limited to 1 MiB.
-Owner-runtime descriptors are never fabricated. Generated helper symbols and
-reflection entries stay local; only the host shim is externally linked.
-The Aurora `Event` declaration is the sole private event list. Meson and Make
-generate the host entries included by `hosted_lexer_abi.hpp` from its declaration
-order; the narrow bootstrap generator rejects unsupported enum syntax. The
-current numeric wire values remain 0 through 7. A generated-code fixture exercises
-all eight cases through independent raw records and compares them with that host enum, including
-invalid cursors. It does not infer parity from matching source text.
+Whitespace is retained in contiguous runs. Only LF starts a new line, matching
+compiler diagnostics; CR, tab, vertical tab and form feed retain their exact
+bytes. A `//` comment runs up to, but not including, LF and may contain any
+non-LF byte. Block comments and other unsupported syntax reject. Lexical errors
+are fatal and structured, with the complete attempted spelling as their span.
 
-The bootstrap invokes `aurorac --local-symbols`, which emits local binding for
-all generated functions and reflection entries without changing their ABI or
-instructions. It then appends the trusted shim verbatim; no assembly-text symbol
-rewriting is needed. The default binding rules are unchanged. This code-emission
-option is rejected with `--check`, and it adds no source-language foreign ABI.
+Single-quoted [byte literals](SCALARS.md#ascii-byte-character-literals) are one
+token, including escapes and delimiters; malformed spellings use AU1002.
+Double-quoted [byte-string initializers](SCALARS.md#bounded-byte-string-array-initializers)
+are one token, including raw UTF-8 and escapes; malformed spellings use AU1003.
+Validation constructs no decoded buffer; the 4,096 decoded-byte string bound
+holds. Binary integer spellings keep their `0b`/`0B` prefix, apostrophe
+separators and exact suffix as one token; malformed attempts stay whole for
+semantic rejection. The [integer contract](SCALARS.md#source-contract) defines
+ranges. Classification is ASCII; numeric range validation is semantic.
 
-Build and test routes are intentionally distinct:
+The resolver and the formatter lex each whole source in Aurora before parsing
+it, so a lexical error anywhere precedes a grammar error. The host renders the
+returned event and coordinates with `hosted_lexer::rejectLexical`; it has no
+lexer or token vector of its own. The Aurora `Event` declaration is the sole
+event list, and the generated header carries its values.
 
-- Ordinary compiler and formatter shortcuts use the predecessor-backed Meson
-  graph configured by the [source-bootstrap recipe](README.md#source-bootstrap).
-  One imported lexer/arena/parser object is shared by the hosted compiler and
-  formatter. Standalone lexer bootstrap regression is retained.
-- Canonical Meson `full`/`dev`/`core`, source-consuming native fixtures, the
-  formatter and optional LSP use stage 1. IR-only fixtures do not lex source.
-  `hosted-lexer` links the Aurora phase and checks its cases against the reviewed
-  golden file `tests/compiler/golden/hosted_lexer.golden` (`--update GOLDEN`
-  rewrites it for review). Its guard-page cases exercise real generated code. A
-  separate malformed-return stub tests the host adapter's fail-closed checks.
-- `hosted-lexer-bootstrap` is the stage compare: the build has C1 emit frontend B
-  and C2 emit frontend C, and the test requires them to be byte-identical, with
-  matching generated headers and no exports outside the host shim.
-- Historical compiler-contract receipts keep their original meaning in Git
-  history; their readers are retired, and legacy executor controls reject with
-  Meson migration instructions. `std.token_scan` is checked against reviewed golden reports
-  (`tests/compiler/golden/token_scan.jsonl`) through one compiled driver.
-
-This is an Aurora-written lexer participating in its own hosted rebuild. The
-statement/declaration grammar, semantic analysis and code generator remain C++. The
-[bounded statement-expression parser](ARCHITECTURE.md#hosted-aurora-expression-parser)
-also runs in Aurora; this is not a self-hosted compiler or native toolchain.
-Focused validation and independent source review are separate from final integrated
-GCC 16 full/image/guest qualification.
-
-The focused `tests/compiler/lexer_trivia.cpp` gate checks independent positions,
-exact reconstruction, bounds, token equivalence, EOF, CRLF/tabs, comment-at-EOF,
-all non-LF byte values in a comment, structured rejection, canonical `>>`, and
-256 deterministic generated scanner inputs. Optional filename arguments extend
-reconstruction checks to a corpus.
-Neither the focused gate nor a bootstrap comparison substitutes for final-source
-GCC 16 full, image and affected guest qualification.
+The private `lexer_next` bridge entry serves only the test drivers. `hosted-lexer`
+reads every event of its cases through it, checks each line/column against an
+independent byte scan, and compares token boundaries or the rendered diagnostic
+with the reviewed golden file `tests/compiler/golden/hosted_lexer.golden`
+(`--update GOLDEN` rewrites it). Its raw-record and guard-page cases exercise the
+generated entry and the event values directly. `hosted-lexer-bootstrap` is the
+C1/C2 stage compare.

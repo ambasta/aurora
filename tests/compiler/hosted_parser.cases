@@ -8,8 +8,11 @@
 #   @step MODE OPTION...  parse step of the current case or variant, in order
 # In @cases, a @variant or @step after source lines starts a new configuration.
 # Modes: expr, body, type, callable, field, preamble, enum (Aurora grammar entries),
-# program and parser (whole module), resolve (whole module through typed lowering),
-# raw (the private parser ABI record, every copied record and optional admission).
+# program and parser (the whole-source lex, parse and admission entry of the resolver
+# and formatter), resolve (whole module through typed lowering), raw (the private
+# parser ABI record, every copied record and optional admission). Diagnostics are
+# rendered as the compiler renders them; records print as expression and type trees
+# and one line per syntax row, and a dump over 64 lines as its line count and digest.
 # Options: stop=NAME, at=N|snippet|next|^K (token ordinal, first token of the line inside
 # its variant wrapper, cursor after the previous successful step, or the K-th marker),
 # types=A,B caps=N fn (captured template context, by first token of that spelling),
@@ -1597,3 +1600,26 @@ module declarations;class C{};
 @variant context
 @step raw stop=module_definition rawctx=0,6,0,0,0,0,1
 export module m;namespace n{template<Scalar T,i64 N>class C{T value;};}
+
+# ---- Diagnostic spans: a declaration type ends before a residual >> half, which a
+# field then rejects at its second byte; a missing module semicolon cites EOF; an
+# unsupported field type spans the whole type under every access.
+@case residual-closer
+@step type
+@step field
+Box<i64>>
+@case module-eof
+@step program
+module sample
+@cases unsupported-field
+@variant plain module x; class Bad { | view; };
+@step program
+@variant public module x; class Bad { public:| view; };
+@step program
+@variant private module x; class Bad { private:| view; };
+@step program
+builtin::span<const u8>
+builtin::ByteRegion
+own<i64>
+ref<i64>
+mutref<i64>

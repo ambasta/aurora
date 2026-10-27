@@ -1,6 +1,5 @@
 #include "format.hpp"
-#include "lexer.hpp"
-#include "parser.hpp"
+#include "lexemes.hpp"
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -11,35 +10,39 @@ void require(bool condition, const std::string &message) {
     if (!condition)
         throw std::runtime_error(message);
 }
+std::string spelling(const std::string &text, const aurora::lexemes::Lexeme &lexeme) {
+    return text.substr(lexeme.begin, lexeme.end - lexeme.begin);
+}
+// Token spellings, and each comment with the number of tokens before it.
+std::pair<std::vector<std::string>, std::vector<std::pair<std::size_t, std::string>>> observe(const std::string &text) {
+    const auto lexemes = aurora::lexemes::scan(text);
+    require(lexemes.back().event == aurora::lexemes::Event::end_of_input, "formatter text does not lex");
+    std::pair<std::vector<std::string>, std::vector<std::pair<std::size_t, std::string>>> out;
+    for (const auto &lexeme : lexemes) {
+        if (lexeme.event == aurora::lexemes::Event::token)
+            out.first.push_back(spelling(text, lexeme));
+        else if (lexeme.event == aurora::lexemes::Event::line_comment)
+            out.second.emplace_back(out.first.size(), spelling(text, lexeme));
+    }
+    return out;
+}
 void verify(const std::string &text, const std::string &path) {
     const auto result = aurora::format::source(text, path);
-    const auto original = aurora::lexSource(text, path);
-    const auto formatted = aurora::lexSource(result.text, path);
     // Independent public-API observations, in addition to formatter safeguards.
-    require(original.tokens.size() == formatted.tokens.size(), "token count differs: " + path);
-    for (std::size_t index = 0; index < original.tokens.size(); ++index)
-        require(original.tokens[index].text == formatted.tokens[index].text, "token spelling differs: " + path);
-    std::vector<std::pair<std::size_t, std::string>> before, after;
-    for (const auto *source : {&original, &formatted}) {
-        auto &list = source == &original ? before : after;
-        for (const auto &trivia : source->trivia) {
-            if (trivia.kind != aurora::TriviaKind::LineComment)
-                continue;
-            std::size_t preceding = 0;
-            for (const auto &token : source->tokens) {
-                if (token.text != "<eof>" && token.span.end.offset <= trivia.span.begin.offset)
-                    ++preceding;
-            }
-            const auto &span = trivia.span;
-            const auto length = span.end.offset - span.begin.offset;
-            list.emplace_back(preceding, span.source->text.substr(span.begin.offset, length));
-        }
-    }
-    require(before == after, "comment bytes or token-relative position differ: " + path);
-    aurora::Parser(formatted.tokens).parse();
+    const auto before = observe(text), after = observe(result.text);
+    require(before.first == after.first, "token spelling differs: " + path);
+    require(before.second == after.second, "comment bytes or token-relative position differ: " + path);
     const auto again = aurora::format::source(result.text, path);
     require(!again.changed && again.text == result.text, "formatter is not idempotent: " + path);
     require(result.changed == (result.text != text), "changed flag differs: " + path);
+}
+// No token pair joined by one of `joiners` is split across lines.
+void unsplit(const std::string &text, std::initializer_list<std::string_view> joiners, const std::string &message) {
+    const auto tokens = aurora::lexemes::tokens(text);
+    for (std::size_t index = 1; index + 1 < tokens.size(); ++index)
+        if (std::find(joiners.begin(), joiners.end(), spelling(text, tokens[index])) != joiners.end())
+            require(tokens[index - 1].endLine == tokens[index].line && tokens[index].endLine == tokens[index + 1].line,
+                    message + text);
 }
 void golden(const std::string &text, const std::string &expected) {
     verify(text, "golden.au");
@@ -57,12 +60,7 @@ void rejected(const std::string &text, aurora::DiagnosticCode expected) {
 void qualifiedNames() {
     const auto unbroken = [](const std::string &text) {
         const auto formatted = aurora::format::source(text);
-        const auto tokens = aurora::lexSource(formatted.text).tokens;
-        for (std::size_t index = 1; index + 1 < tokens.size(); ++index)
-            if (tokens[index].text == "::")
-                require(tokens[index - 1].span.end.line == tokens[index].span.begin.line &&
-                            tokens[index].span.end.line == tokens[index + 1].span.begin.line,
-                        "formatter soft-wrapped inside a qualified name: " + formatted.text);
+        unsplit(formatted.text, {"::"}, "formatter soft-wrapped inside a qualified name: ");
         verify(text, "qualified-boundary.au");
         return formatted;
     };
@@ -104,13 +102,7 @@ void structuralWrapping() {
     const auto check = [](const std::string &input) {
         verify(input, "structural-boundary.au");
         const auto output = aurora::format::source(input);
-        const auto tokens = aurora::lexSource(output.text).tokens;
-        for (std::size_t index = 1; index + 1 < tokens.size(); ++index) {
-            if (tokens[index].text == "." || tokens[index].text == "::")
-                require(tokens[index - 1].span.end.line == tokens[index].span.begin.line &&
-                            tokens[index].span.end.line == tokens[index + 1].span.begin.line,
-                        "member/scope access split at soft limit: " + output.text);
-        }
+        unsplit(output.text, {".", "::"}, "member/scope access split at soft limit: ");
         return output;
     };
     // Move every token boundary across the soft limit, both with nested call
@@ -377,17 +369,13 @@ void cases() {
                         }),
             "missing long-line finding");
     // Randomize only trivia of known accepted source, using the actual lexer.
-    const auto seed =
-        aurora::lexSource("module x;auto f()->i64{A<B<i64> > a=A<B<i64> >{.v=B<i64>{.n=1}};return -(1+2)>>1;}");
+    const auto seed = observe("module x;auto f()->i64{A<B<i64> > a=A<B<i64> >{.v=B<i64>{.n=1}};return -(1+2)>>1;}");
     std::mt19937 random(1708);
     const std::vector<std::string> gaps = {" ", "\t", "\r\n", "\n\n", " // retained\n", "\v\f"};
     for (int sample = 0; sample < 128; ++sample) {
         std::string text;
-        for (const auto &token : seed.tokens) {
-            if (token.text == "<eof>")
-                break;
-            text += gaps[random() % gaps.size()] + token.text;
-        }
+        for (const auto &token : seed.first)
+            text += gaps[random() % gaps.size()] + token;
         verify(text, "random-trivia.au");
     }
 }

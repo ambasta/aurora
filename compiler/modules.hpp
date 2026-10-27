@@ -1,6 +1,5 @@
 #pragma once
 #include "host_sources.hpp"
-#include "lexer.hpp"
 #include "hosted_resolver.hpp"
 #include <filesystem>
 #include <fstream>

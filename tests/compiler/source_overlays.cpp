@@ -56,10 +56,6 @@ void run(const fs::path &directory) {
     write(app, good);
     accept(app, {});
     const auto replacement = snapshot(app, good);
-    const auto lexed = aurora::lexSource(replacement);
-    require(lexed.source == replacement && lexed.tokens.front().span.source == replacement,
-            "shared snapshot overload copied source identity");
-    ++cases;
     write(app, "@");
     accept(app, {}, {{app, replacement}});
     require(read(app) == "@", "checking overlay changed disk source");

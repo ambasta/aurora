@@ -71,20 +71,6 @@ public:
     }
     bool operator==(const TemplateArgument &) const = default;
 };
-enum class TemplateParameterKind {
-    Scalar,
-    Value,
-    Capacity
-};
-class TemplateParameter {
-public:
-    TemplateParameterKind kind = TemplateParameterKind::Scalar;
-    std::string name;
-    TemplateParameter(std::string value) : name(std::move(value)) {
-    }
-    TemplateParameter(TemplateParameterKind kind, std::string value) : kind(kind), name(std::move(value)) {
-    }
-};
 class Type {
 public:
     TypeKind kind = TypeKind::I64;
