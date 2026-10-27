@@ -30,8 +30,8 @@ lifecycle remain migration dependencies. The BIOS console uses the same Aurora
 editor and sealed ConsoleSession for its bounded three-command session and
 presentation; trusted native code retains interrupt transport and shutdown.
 General terminal sessions and file services remain open. The shared typed named-file
-core is separate from parsing/presentation and already serves both console paths;
-it does not by itself establish a protected namespace owner's lifetime or recovery.
+core is separate from parsing/presentation and serves both console paths and the
+opt-in protected volatile namespace described below.
 
 ## 1. Protected programs and file services
 
@@ -60,10 +60,18 @@ lifetime step preserves the four-file session namespace but does not make either
 worker its surviving owner; the separate scratchpad still loses its service-local
 contents on reset. Final-source qualification remains required.
 
+The opt-in [protected namespace console](native-console-service.md#protected-volatile-namespace)
+keeps four named files in one retained CPL3 Aurora owner across fresh bounded
+callers. Copied `write`/`cat` operations retain explicit precommit abort,
+committed-but-response-lost and owner-reset outcomes without replay. Owner failure
+or reset deliberately loses the volatile namespace; it does not recover a
+checkpoint or move production-console storage. Qualification remains specific to
+the final image, native cases and observed guest lifecycle traces.
+
 Extend this capability-scoped blocking request/reply foundation toward protected
 program startup/lifecycle and file services with explicit resource limits,
-cancellation, partial I/O and reclamation. General program lifetimes, a surviving
-protected store owner and mounted durable storage remain separate dependencies.
+cancellation, partial I/O and reclamation. General program lifetimes, restart-safe
+protected storage and mounted durable storage remain separate dependencies.
 Use RAM-backed service tests before claiming durable device-backed operation.
 Gate: real compiled programs exercise allowed operations; foreign/stale authority,
 exhaustion, restart and interrupted operations fail safely without cross-domain

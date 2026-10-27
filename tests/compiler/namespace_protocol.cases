@@ -1,0 +1,1829 @@
+# Generated-code protocol expectations. One retained Aurora owner per case.
+# Cases use the existing native_runner.Suite data format, not a host content model.
+@case missing differs from present-empty; overwrite increments exactly once
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 4u64) { return 0u64; }
+    if (file.request(258u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 3u64) { return 0u64; }
+    if (file.request(196866u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(131277521092612u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(33816583u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 50593800u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 131277521092610u64) { return 0u64; }
+    if (file.request(777u64) != 3u64) { return 0u64; }
+    if (file.request(8u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 50593800u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 131277521092610u64) { return 0u64; }
+    if (file.request(777u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case four independent records; fifth rejected; overwrite does not consume a slot
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(66818u64) != 1u64) { return 0u64; }
+    if (file.request(29397008364339203u64) != 1u64) { return 0u64; }
+    if (file.request(1627456515u64) != 1u64) { return 0u64; }
+    if (file.request(1090584580u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(132098u64) != 1u64) { return 0u64; }
+    if (file.request(27431051525881859u64) != 1u64) { return 0u64; }
+    if (file.request(284575268868u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(33816583u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(197890u64) != 1u64) { return 0u64; }
+    if (file.request(30801037569032195u64) != 1u64) { return 0u64; }
+    if (file.request(1627456515u64) != 1u64) { return 0u64; }
+    if (file.request(73956166139908u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 50593800u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(50593799u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(263426u64) != 1u64) { return 0u64; }
+    if (file.request(32770280023916547u64) != 1u64) { return 0u64; }
+    if (file.request(1627456515u64) != 1u64) { return 0u64; }
+    if (file.request(19215358405902340u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 67371016u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(67371015u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(132354u64) != 1u64) { return 0u64; }
+    if (file.request(32763700167573507u64) != 1u64) { return 0u64; }
+    if (file.request(1744897027u64) != 1u64) { return 0u64; }
+    if (file.request(478586994692u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 84148232u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(84148231u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 1798u64) { return 0u64; }
+    if (file.request(1281u64) != 1u64) { return 0u64; }
+    if (file.request(29397008364339203u64) != 1u64) { return 0u64; }
+    if (file.request(1627456515u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 84148232u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 1090584578u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    if (file.request(1025u64) != 1u64) { return 0u64; }
+    if (file.request(27431051525881859u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 84148232u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 284575268866u64) { return 0u64; }
+    if (file.request(521u64) != 3u64) { return 0u64; }
+    if (file.request(1281u64) != 1u64) { return 0u64; }
+    if (file.request(30801037569032195u64) != 1u64) { return 0u64; }
+    if (file.request(1627456515u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 84148232u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 73956166139906u64) { return 0u64; }
+    if (file.request(777u64) != 3u64) { return 0u64; }
+    if (file.request(1281u64) != 1u64) { return 0u64; }
+    if (file.request(32770280023916547u64) != 1u64) { return 0u64; }
+    if (file.request(1627456515u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 84148232u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 19215358405902338u64) { return 0u64; }
+    if (file.request(1033u64) != 3u64) { return 0u64; }
+    if (file.request(459778u64) != 1u64) { return 0u64; }
+    if (file.request(27431051525881859u64) != 1u64) { return 0u64; }
+    if (file.request(31069348403871748u64) != 1u64) { return 0u64; }
+    if (file.request(110386682725380u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 84148232u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(84148231u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(1025u64) != 1u64) { return 0u64; }
+    if (file.request(27431051525881859u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 100925448u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 31069348403871746u64) { return 0u64; }
+    if (file.request(1033u64) != 110386682725378u64) { return 0u64; }
+    if (file.request(1801u64) != 3u64) { return 0u64; }
+    if (file.request(1281u64) != 1u64) { return 0u64; }
+    if (file.request(29397008364339203u64) != 1u64) { return 0u64; }
+    if (file.request(1627456515u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 100925448u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 1090584578u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    if (file.request(1281u64) != 1u64) { return 0u64; }
+    if (file.request(32763700167573507u64) != 1u64) { return 0u64; }
+    if (file.request(1744897027u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 100925448u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 4u64) { return 0u64; }
+    return 42u64;
+}
+@case eight-character name and 49 printable bytes, shorter overwrite clears suffix
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(3213314u64) != 1u64) { return 0u64; }
+    if (file.request(28256771856662531u64) != 1u64) { return 0u64; }
+    if (file.request(29387087056995331u64) != 1u64) { return 0u64; }
+    if (file.request(14410410652598276u64) != 1u64) { return 0u64; }
+    if (file.request(15540725852931076u64) != 1u64) { return 0u64; }
+    if (file.request(18649062471632900u64) != 1u64) { return 0u64; }
+    if (file.request(19779407854177284u64) != 1u64) { return 0u64; }
+    if (file.request(20909723054510084u64) != 1u64) { return 0u64; }
+    if (file.request(22040038254842884u64) != 1u64) { return 0u64; }
+    if (file.request(23170353455175684u64) != 1u64) { return 0u64; }
+    if (file.request(24300668655508484u64) != 1u64) { return 0u64; }
+    if (file.request(25430983855841284u64) != 1u64) { return 0u64; }
+    if (file.request(27974191982846980u64) != 1u64) { return 0u64; }
+    if (file.request(29104508256921604u64) != 1u64) { return 0u64; }
+    if (file.request(30234823457254404u64) != 1u64) { return 0u64; }
+    if (file.request(1812017156u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(2049u64) != 1u64) { return 0u64; }
+    if (file.request(28256771856662531u64) != 1u64) { return 0u64; }
+    if (file.request(29387087056995331u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 14410410652598274u64) { return 0u64; }
+    if (file.request(1033u64) != 15540725852931074u64) { return 0u64; }
+    if (file.request(2057u64) != 18649062471632898u64) { return 0u64; }
+    if (file.request(3081u64) != 19779407854177282u64) { return 0u64; }
+    if (file.request(4105u64) != 20909723054510082u64) { return 0u64; }
+    if (file.request(5129u64) != 22040038254842882u64) { return 0u64; }
+    if (file.request(6153u64) != 23170353455175682u64) { return 0u64; }
+    if (file.request(7177u64) != 24300668655508482u64) { return 0u64; }
+    if (file.request(8201u64) != 25430983855841282u64) { return 0u64; }
+    if (file.request(9225u64) != 27974191982846978u64) { return 0u64; }
+    if (file.request(10249u64) != 29104508256921602u64) { return 0u64; }
+    if (file.request(11273u64) != 30234823457254402u64) { return 0u64; }
+    if (file.request(12297u64) != 1812017154u64) { return 0u64; }
+    if (file.request(12553u64) != 3u64) { return 0u64; }
+    if (file.request(67586u64) != 1u64) { return 0u64; }
+    if (file.request(28256771856662531u64) != 1u64) { return 0u64; }
+    if (file.request(29387087056995331u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(33816583u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(2049u64) != 1u64) { return 0u64; }
+    if (file.request(28256771856662531u64) != 1u64) { return 0u64; }
+    if (file.request(29387087056995331u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 50593800u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case spaces and printable endpoints retained exactly
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(395266u64) != 1u64) { return 0u64; }
+    if (file.request(12771026215895043u64) != 1u64) { return 0u64; }
+    if (file.request(25467133941253123u64) != 1u64) { return 0u64; }
+    if (file.request(9042925329842180u64) != 1u64) { return 0u64; }
+    if (file.request(139452351492u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(2049u64) != 1u64) { return 0u64; }
+    if (file.request(12771026215895043u64) != 1u64) { return 0u64; }
+    if (file.request(25467133941253123u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 9042925329842178u64) { return 0u64; }
+    if (file.request(1033u64) != 139452351490u64) { return 0u64; }
+    if (file.request(1545u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case canonical rejected name b'note'
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(262914u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(32774678187868164u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(132098u64) != 1u64) { return 0u64; }
+    if (file.request(28556994583724035u64) != 1u64) { return 0u64; }
+    if (file.request(478586994692u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 2054u64) { return 0u64; }
+    if (file.request(769u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 32774678187868162u64) { return 0u64; }
+    if (file.request(1033u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case canonical rejected name b'.'
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(262914u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(32774678187868164u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(131330u64) != 1u64) { return 0u64; }
+    if (file.request(771817475u64) != 1u64) { return 0u64; }
+    if (file.request(478586994692u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1542u64) { return 0u64; }
+    if (file.request(769u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 32774678187868162u64) { return 0u64; }
+    if (file.request(1033u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case canonical rejected name b'..'
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(262914u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(32774678187868164u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(131586u64) != 1u64) { return 0u64; }
+    if (file.request(198340378627u64) != 1u64) { return 0u64; }
+    if (file.request(478586994692u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1542u64) { return 0u64; }
+    if (file.request(769u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 32774678187868162u64) { return 0u64; }
+    if (file.request(1033u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case canonical rejected name b'a/b'
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(262914u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(32774678187868164u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(131842u64) != 1u64) { return 0u64; }
+    if (file.request(107955630571523u64) != 1u64) { return 0u64; }
+    if (file.request(478586994692u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1542u64) { return 0u64; }
+    if (file.request(769u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 32774678187868162u64) { return 0u64; }
+    if (file.request(1033u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case canonical rejected name b'a b'
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(262914u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(32774678187868164u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(131842u64) != 1u64) { return 0u64; }
+    if (file.request(107891206062083u64) != 1u64) { return 0u64; }
+    if (file.request(478586994692u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1542u64) { return 0u64; }
+    if (file.request(769u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 32774678187868162u64) { return 0u64; }
+    if (file.request(1033u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case canonical rejected name b'\x00'
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(262914u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(32774678187868164u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(131330u64) != 1u64) { return 0u64; }
+    if (file.request(65539u64) != 1u64) { return 0u64; }
+    if (file.request(478586994692u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1542u64) { return 0u64; }
+    if (file.request(769u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 32774678187868162u64) { return 0u64; }
+    if (file.request(1033u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case canonical rejected name b'\x7f'
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(262914u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(32774678187868164u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(131330u64) != 1u64) { return 0u64; }
+    if (file.request(2130771971u64) != 1u64) { return 0u64; }
+    if (file.request(478586994692u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1542u64) { return 0u64; }
+    if (file.request(769u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 32774678187868162u64) { return 0u64; }
+    if (file.request(1033u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case nonprintable value 0 rejects before publication
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(262914u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(32774678187868164u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(66306u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(65540u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1542u64) { return 0u64; }
+    if (file.request(769u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 32774678187868162u64) { return 0u64; }
+    if (file.request(1033u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case nonprintable value 31 rejects before publication
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(262914u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(32774678187868164u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(66306u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(520159236u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1542u64) { return 0u64; }
+    if (file.request(769u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 32774678187868162u64) { return 0u64; }
+    if (file.request(1033u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case nonprintable value 127 rejects before publication
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(262914u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(32774678187868164u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(66306u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(2130771972u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1542u64) { return 0u64; }
+    if (file.request(769u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 32774678187868162u64) { return 0u64; }
+    if (file.request(1033u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case nonprintable value 255 rejects before publication
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(262914u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(32774678187868164u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(66306u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(4278255620u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1542u64) { return 0u64; }
+    if (file.request(769u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 32774678187868162u64) { return 0u64; }
+    if (file.request(1033u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case full-width revision 4294967295 round trips and advances
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 4294967295u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 72057594021412872u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(72057594021412871u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 262152u64) { return 0u64; }
+    if (file.request(1030u64) != 17040392u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case full-width revision 9223372036854775808 round trips and advances
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 9223372036854775808u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 262152u64) { return 0u64; }
+    if (file.request(1030u64) != 36028797019227144u64) { return 0u64; }
+    if (file.request(262151u64) != 1u64) { return 0u64; }
+    if (file.request(36028797019227143u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 36028797019227144u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case full-width revision 18446744073709551614 round trips and advances
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 18446744073709551614u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 72057594004635656u64) { return 0u64; }
+    if (file.request(1030u64) != 72057594021413896u64) { return 0u64; }
+    if (file.request(72057594004635655u64) != 1u64) { return 0u64; }
+    if (file.request(72057594021413895u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 72057594021412872u64) { return 0u64; }
+    if (file.request(1030u64) != 72057594021413896u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case max revision remains readable but cannot publish or wrap
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 18446744073709551615u64);
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 72057594021412872u64) { return 0u64; }
+    if (file.request(1030u64) != 72057594021413896u64) { return 0u64; }
+    if (file.request(9u64) != 4u64) { return 0u64; }
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 72057594021412872u64) { return 0u64; }
+    if (file.request(1030u64) != 72057594021413896u64) { return 0u64; }
+    if (file.request(9u64) != 4u64) { return 0u64; }
+    return 42u64;
+}
+@case zero revision fails closed
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 0u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1542u64) { return 0u64; }
+    return 42u64;
+}
+@case stale echoed revision preserves the original complete record
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(262914u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(32774678187868164u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(459522u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(31069348403871748u64) != 1u64) { return 0u64; }
+    if (file.request(110386682725380u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 1542u64) { return 0u64; }
+    if (file.request(769u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 32774678187868162u64) { return 0u64; }
+    if (file.request(1033u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case cancel begin preserves all committed data
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(262914u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(32774678187868164u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(459522u64) != 1u64) { return 0u64; }
+    if (file.cancel() != 7u64) { return 0u64; }
+    if (file.request(769u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 32774678187868162u64) { return 0u64; }
+    if (file.request(1033u64) != 3u64) { return 0u64; }
+    if (file.request(197634u64) != 1u64) { return 0u64; }
+    if (file.request(32783474331222019u64) != 1u64) { return 0u64; }
+    if (file.request(131277521092612u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(33816583u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(1025u64) != 1u64) { return 0u64; }
+    if (file.request(32783474331222019u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 50593800u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 131277521092610u64) { return 0u64; }
+    if (file.request(777u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case cancel name preserves all committed data
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(262914u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(32774678187868164u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(459522u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.cancel() != 7u64) { return 0u64; }
+    if (file.request(769u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 32774678187868162u64) { return 0u64; }
+    if (file.request(1033u64) != 3u64) { return 0u64; }
+    if (file.request(197634u64) != 1u64) { return 0u64; }
+    if (file.request(32783474331222019u64) != 1u64) { return 0u64; }
+    if (file.request(131277521092612u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(33816583u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(1025u64) != 1u64) { return 0u64; }
+    if (file.request(32783474331222019u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 50593800u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 131277521092610u64) { return 0u64; }
+    if (file.request(777u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case cancel value preserves all committed data
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(262914u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(32774678187868164u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(459522u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(31069348403871748u64) != 1u64) { return 0u64; }
+    if (file.request(110386682725380u64) != 1u64) { return 0u64; }
+    if (file.cancel() != 7u64) { return 0u64; }
+    if (file.request(769u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 32774678187868162u64) { return 0u64; }
+    if (file.request(1033u64) != 3u64) { return 0u64; }
+    if (file.request(197634u64) != 1u64) { return 0u64; }
+    if (file.request(32783474331222019u64) != 1u64) { return 0u64; }
+    if (file.request(131277521092612u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(33816583u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(1025u64) != 1u64) { return 0u64; }
+    if (file.request(32783474331222019u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 50593800u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 131277521092610u64) { return 0u64; }
+    if (file.request(777u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case cancel prepared preserves all committed data
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(262914u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(32774678187868164u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(459522u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(31069348403871748u64) != 1u64) { return 0u64; }
+    if (file.request(110386682725380u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.cancel() != 7u64) { return 0u64; }
+    if (file.request(769u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 32774678187868162u64) { return 0u64; }
+    if (file.request(1033u64) != 3u64) { return 0u64; }
+    if (file.request(197634u64) != 1u64) { return 0u64; }
+    if (file.request(32783474331222019u64) != 1u64) { return 0u64; }
+    if (file.request(131277521092612u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(33816583u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(1025u64) != 1u64) { return 0u64; }
+    if (file.request(32783474331222019u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 50593800u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 131277521092610u64) { return 0u64; }
+    if (file.request(777u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case cancel echoed preserves all committed data
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(262914u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(32774678187868164u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(459522u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(31069348403871748u64) != 1u64) { return 0u64; }
+    if (file.request(110386682725380u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(33816583u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.cancel() != 7u64) { return 0u64; }
+    if (file.request(769u64) != 1u64) { return 0u64; }
+    if (file.request(110416881713155u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 32774678187868162u64) { return 0u64; }
+    if (file.request(1033u64) != 3u64) { return 0u64; }
+    if (file.request(197634u64) != 1u64) { return 0u64; }
+    if (file.request(32783474331222019u64) != 1u64) { return 0u64; }
+    if (file.request(131277521092612u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(33816583u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(1025u64) != 1u64) { return 0u64; }
+    if (file.request(32783474331222019u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 50593800u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 131277521092610u64) { return 0u64; }
+    if (file.request(777u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case cancel after committed does not roll back; repeated cancellation is idempotent
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.cancel() != 7u64 || file.cancel() != 7u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case idle malformed word 0 clears only staging
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(0u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case idle malformed word 3 clears only staging
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(3u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case idle malformed word 4 clears only staging
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(4u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case idle malformed word 5 clears only staging
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(5u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case idle malformed word 6 clears only staging
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(6u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case idle malformed word 7 clears only staging
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(7u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case idle malformed word 8 clears only staging
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(8u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case idle malformed word 9 clears only staging
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(9u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case idle malformed word 255 clears only staging
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(255u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case idle malformed word 1 clears only staging
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(1u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case idle malformed word 2305 clears only staging
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(2305u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case idle malformed word 65793 clears only staging
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(65793u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case idle malformed word 3277058 clears only staging
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(3277058u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case idle malformed word 16777473 clears only staging
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(16777473u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case idle malformed word 9223372036854776066 clears only staging
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(9223372036854776066u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case idle malformed word 18446744073709551615 clears only staging
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(18446744073709551615u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case name missing cursor leaves original readable
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(1282u64) != 1u64) { return 0u64; }
+    if (file.request(1627456515u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case name duplicate chunk leaves original readable
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(1282u64) != 1u64) { return 0u64; }
+    if (file.request(28539350656745475u64) != 1u64) { return 0u64; }
+    if (file.request(28539350656745475u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case name count zero leaves original readable
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(258u64) != 1u64) { return 0u64; }
+    if (file.request(3u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case name unused payload leaves original readable
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(258u64) != 1u64) { return 0u64; }
+    if (file.request(422534250499u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case name upper reserved leaves original readable
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(258u64) != 1u64) { return 0u64; }
+    if (file.request(72057595682160643u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case value too-short chunk leaves original readable
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(262402u64) != 1u64) { return 0u64; }
+    if (file.request(1644232707u64) != 1u64) { return 0u64; }
+    if (file.request(109274185531396u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case premature prepare leaves original readable
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(262402u64) != 1u64) { return 0u64; }
+    if (file.request(1644232707u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case premature commit leaves original readable
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(262402u64) != 1u64) { return 0u64; }
+    if (file.request(1644232707u64) != 1u64) { return 0u64; }
+    if (file.request(28256771856662532u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case duplicate revision leaves original readable
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(258u64) != 1u64) { return 0u64; }
+    if (file.request(1644232707u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(6u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case echo before revision leaves original readable
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(258u64) != 1u64) { return 0u64; }
+    if (file.request(1644232707u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(33816583u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case wrong high echo cursor leaves original readable
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(258u64) != 1u64) { return 0u64; }
+    if (file.request(1644232707u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(263175u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case commit reserved leaves original readable
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(258u64) != 1u64) { return 0u64; }
+    if (file.request(1644232707u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(33816583u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(72057594037927944u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case read right cannot echo leaves original readable
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(33816583u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case write right cannot read leaves original readable
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(258u64) != 1u64) { return 0u64; }
+    if (file.request(1644232707u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case read skipped cursor leaves original readable
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(1033u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}
+@case read reserved bit leaves original readable
+module app; import console.namespace_owner; import console.namespace_wire; import console.file_namespace; import std.binary_buffer; import std.binary; import std.array;
+auto test() -> u64 {
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    console::NamespaceOwner file = console::NamespaceOwner(initial, empty, 1u64);
+    if (file.request(65794u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(2013331460u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 17039368u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(17039367u64) != 1u64) { return 0u64; }
+    if (file.request(263175u64) != 1u64) { return 0u64; }
+    if (file.request(8u64) != 5u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9223372036854775817u64) != 1542u64) { return 0u64; }
+    if (file.request(257u64) != 1u64) { return 0u64; }
+    if (file.request(1627455491u64) != 1u64) { return 0u64; }
+    if (file.request(5u64) != 1u64) { return 0u64; }
+    if (file.request(6u64) != 33816584u64) { return 0u64; }
+    if (file.request(1030u64) != 263176u64) { return 0u64; }
+    if (file.request(9u64) != 2013331458u64) { return 0u64; }
+    if (file.request(265u64) != 3u64) { return 0u64; }
+    return 42u64;
+}

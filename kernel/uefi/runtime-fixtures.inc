@@ -241,3 +241,5 @@ AURORA_FIXTURE(snapshot_producer_pages, "snapshot-producer-pages", "storage-fixt
 AURORA_FIXTURE(snapshot_owner, "snapshot-owner", "storage-fixture", 247)
 AURORA_FIXTURE(snapshot_reply_byte, "snapshot-reply-byte", "storage-fixture", 248)
 AURORA_FIXTURE(snapshot_reply_reserved, "snapshot-reply-reserved", "storage-fixture", 249)
+AURORA_FIXTURE(namespace_console, "namespace-console", "storage-fixture", 250)
+AURORA_FIXTURE(namespace_fixture, "namespace-console-fixture", "storage-fixture", 251)

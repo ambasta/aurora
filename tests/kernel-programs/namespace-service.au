@@ -1,0 +1,51 @@
+module namespace_service;
+import console.namespace_owner;
+import console.namespace_wire;
+import console.file_namespace;
+import std.binary_buffer;
+import std.binary;
+import std.array;
+
+// A sealed native fixture selector, never a command payload or service right.
+// Baseline launch passes zero; one shared image contains the actual timer/fault PCs.
+auto aurora_user_main(builtin::ServeSession& session, u64 probe) -> u64 {
+    static_assert(size_of(console::NamespaceOwner) <= 520);
+    const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+    const console::FileNamespace initial = console::FileNamespace(empty);
+    u64 revision = 1u64;
+    if (probe == 7u64) { revision = 18446744073709551615u64; }
+    if (probe == 8u64) { revision = 9223372041149743103u64; }
+    console::NamespaceOwner owner = console::NamespaceOwner(initial, empty, revision);
+    array<u64, 1> fault = { 0u64 };
+    u64 commands = 0u64;
+    u64 reply = 0u64;
+    if (probe == 1u64) {
+        if (!console::namespace_fixture_wait(1000000000u64)) { return 0u64; }
+    }
+    while (true) {
+        const builtin::ServeRequest request = session.exchange(reply);
+        if (request.status == builtin::ServeStatus::cancelled) {
+            if (probe == 6u64) {
+                if (!console::namespace_fixture_wait(1000000000u64)) { return 0u64; }
+            }
+            reply = owner.cancel();
+        } else {
+            if (console::namespace_tag(request.value) == 1u64 || console::namespace_tag(request.value) == 2u64) {
+                commands = commands + 1u64;
+            }
+            if (commands == 2u64 && request.value == 5u64) {
+                if (probe == 3u64) { return fault[i64(probe)]; }
+                if (probe == 2u64 || probe == 5u64) {
+                    u64 limit = 1000000u64;
+                    if (probe == 5u64) { limit = 1000000000u64; }
+                    if (!console::namespace_fixture_wait(limit)) { return 0u64; }
+                }
+            }
+            reply = owner.request(request.value);
+            if (commands == 2u64 && request.value == 8u64 && reply == 5u64 && probe == 4u64) {
+                return fault[i64(probe)];
+            }
+        }
+    }
+    return 0u64;
+}

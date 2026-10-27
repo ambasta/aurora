@@ -1,0 +1,13 @@
+module kernel_snapshot_producer;
+import kernel.snapshot;
+import kernel.snapshot_producer;
+import std.binary;
+import std.binary_buffer;
+import storage.sector;
+import storage.block_io;
+import storage.ram_sector;
+
+auto produce_snapshot(builtin::ByteRegion region, i64 selector) -> kernel::ProducedSnapshot {
+    const kernel::ProducedSnapshot result = kernel::produce_snapshot(region, selector);
+    return result;
+}

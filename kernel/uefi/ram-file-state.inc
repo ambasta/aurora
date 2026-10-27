@@ -21,7 +21,7 @@ struct RamCommand final {
     const user::DomainHandle caller, service;
     const ipc::Endpoint caller_endpoint, service_endpoint;
     const U64 cleanup_epoch;
-    RamFileFraming framing;
+    RetainedFraming framing;
     unsigned service_used{};
     bool caller_disabled{}, delivered{};
     RamCommand(user::DomainHandle c,
@@ -33,6 +33,17 @@ struct RamCommand final {
                unsigned expected_replace_count = 50)
         : caller(c), service(s), caller_endpoint(ce), service_endpoint(se), cleanup_epoch(cleanup),
           framing(right, expected_replace_count) {
+    }
+    RamCommand(user::DomainHandle c,
+               user::DomainHandle s,
+               ipc::Endpoint ce,
+               ipc::Endpoint se,
+               U64 cleanup,
+               NamespaceFraming::Right right,
+               unsigned name_size,
+               unsigned value_size)
+        : caller(c), service(s), caller_endpoint(ce), service_endpoint(se), cleanup_epoch(cleanup),
+          framing(right, name_size, value_size) {
     }
 };
 std::optional<RamLifetime> ram_lifetime;
@@ -55,3 +66,7 @@ bool ram_fixture_injected{};
 U64 ram_epoch_ceiling = UINT64_MAX;
 
 auto scratchpad_discard() -> void;
+
+auto namespace_discard() -> void;
+[[nodiscard]] auto namespace_transfer_empty() -> bool;
+[[nodiscard]] auto namespace_caller_probe() -> U64;

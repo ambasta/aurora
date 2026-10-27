@@ -1,0 +1,212 @@
+export module console.namespace_console;
+import console.namespace_wire;
+import console.file_namespace;
+import console.session_files;
+import console.line;
+import console.input_line;
+import console.io;
+import std.binary_buffer;
+import std.binary;
+import std.array;
+
+export namespace console {
+    enum class NamespaceInputAction {
+        command,
+        requested_exit,
+        output_failure
+    };
+    enum class NamespaceResponseKind {
+        ready,
+        completed,
+        aborted,
+        read_failed,
+        committed_caller_failed,
+        indeterminate_reset,
+        reset,
+        unavailable,
+        limit
+    };
+
+    // Transient copied input/result only. Neither class contains namespace state
+    // or grants authority to commit, cancel, reset or publish a protected run.
+    class NamespaceSubmission {
+        NamespaceCommand command;
+        NamespaceInputAction action;
+        u64 after_cr;
+    public:
+        NamespaceSubmission(NamespaceCommand value, NamespaceInputAction outcome, u64 carry) : command(value),
+            action(outcome), after_cr(carry) {
+        }
+        auto value() const -> NamespaceCommand {
+            const NamespaceCommand result = command;
+            return result;
+        }
+        auto status() const -> NamespaceInputAction {
+            return action;
+        }
+        auto carry() const -> u64 {
+            return after_cr;
+        }
+    };
+
+    class NamespaceResponse {
+        FileName name;
+        u64 submitted_size;
+        NamespaceResult result;
+        NamespaceResponseKind kind;
+    public:
+        NamespaceResponse(FileName selected, u64 count, NamespaceResult outcome, NamespaceResponseKind status)
+            : name(selected), submitted_size(count), result(outcome), kind(status) {
+        }
+        auto valid() const -> bool {
+            if (!result.valid() || submitted_size > 49u64) {
+                return false;
+            }
+            if (kind == NamespaceResponseKind::completed) {
+                return name.valid() && !name.reserved() && result.status() != FileEvent::unknown;
+            }
+            return (kind == NamespaceResponseKind::ready || kind == NamespaceResponseKind::aborted || kind
+                == NamespaceResponseKind::read_failed || kind == NamespaceResponseKind::committed_caller_failed
+                || kind == NamespaceResponseKind::indeterminate_reset || kind == NamespaceResponseKind::reset
+                || kind == NamespaceResponseKind::unavailable || kind == NamespaceResponseKind::limit)
+                && name.size() == 0 && submitted_size == 0u64 && result.status() == FileEvent::unknown
+                && result.size() == 0u64 && result.revision() == 0u64;
+        }
+        auto status() const -> NamespaceResponseKind {
+            return kind;
+        }
+        auto presented() const -> FileReply {
+            if (result.status() == FileEvent::written) {
+                const FileName selected = name;
+                return file_write_reply(selected, i64(submitted_size), FileEvent::written);
+            }
+            FileData data = FileData();
+            data.select(result.status());
+            u64 index = 0u64;
+            while (index < result.size()) {
+                data.append(result.at(index));
+                index = index + 1u64;
+            }
+            return file_data_reply(data);
+        }
+    };
+}
+
+namespace console {
+    auto namespace_text(builtin::ConsoleSession& session, builtin::span<const u8> text) -> bool {
+        const WriteResult result = write_bytes(session, text);
+        return result.complete();
+    }
+    auto namespace_empty_command() -> NamespaceCommand {
+        const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+        return NamespaceCommand(FileName(empty, 0), FileValue(empty, 0), NamespaceOperation::read);
+    }
+    auto parse_namespace_command(Line64 line) -> NamespaceCommand {
+        const i64 count = line.submission_size();
+        std::BinaryBuffer64 bytes = std::BinaryBuffer64();
+        if (count >= 0 && count <= 64) {
+            i64 index = 0;
+            while (index < count) {
+                bytes.write_u8(index, line.submission_byte(index));
+                index = index + 1;
+            }
+            if (bytes.starts_with(count, "write ")) {
+                const FileWriteRequest parsed = file_write_request(bytes, count);
+                return NamespaceCommand(parsed.selected_name(), parsed.written_value(), NamespaceOperation::write);
+            }
+            if (bytes.starts_with(count, "cat ")) {
+                const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+                return NamespaceCommand(file_read_request(bytes, count), FileValue(empty, 0), NamespaceOperation::read);
+            }
+        }
+        return namespace_empty_command();
+    }
+}
+
+export namespace console {
+    auto read_namespace_input(builtin::ConsoleSession& session, bool after_cr) -> NamespaceSubmission {
+        const NamespaceCommand empty = namespace_empty_command();
+        bool pending_cr = after_cr;
+        while (true) {
+            const InputLine input = read_input_line(session, pending_cr, true);
+            pending_cr = input.after_cr_pending();
+            u64 carry = 0u64;
+            if (pending_cr) {
+                carry = 1u64;
+            }
+            if (input.status() == InputLineKind::requested_exit) {
+                return NamespaceSubmission(empty, NamespaceInputAction::requested_exit, carry);
+            }
+            if (input.status() == InputLineKind::output_failure) {
+                return NamespaceSubmission(empty, NamespaceInputAction::output_failure, carry);
+            }
+            const NamespaceCommand command = parse_namespace_command(input.command_line());
+            const FileName selected = command.selected_name();
+            if (command.valid() && !selected.reserved()) {
+                // No command dispatch follows a failed output delimiter.
+                if (!input_text(session, "\r\n")) {
+                    return NamespaceSubmission(empty, NamespaceInputAction::output_failure, carry);
+                }
+                return NamespaceSubmission(command, NamespaceInputAction::command, carry);
+            }
+            if (!input_text(session,
+                "\r\nInvalid command, name or content. Type help; note is reserved.\r\naurora> ")) {
+                return NamespaceSubmission(empty, NamespaceInputAction::output_failure, carry);
+            }
+        }
+        return NamespaceSubmission(empty, NamespaceInputAction::output_failure, 0u64);
+    }
+
+    // Called only after the native adapter has authenticated and settled the
+    // original command receipt and physically retired its caller.
+    auto present_namespace_response(builtin::ConsoleSession& session, NamespaceResponse response) -> bool {
+        if (!response.valid()) {
+            return false;
+        }
+        const NamespaceResponseKind kind = response.status();
+        if (kind == NamespaceResponseKind::completed) {
+            const FileReply reply = response.presented();
+            i64 index = 0;
+            while (index < reply.size()) {
+                if (session.put(reply.at(index)) != builtin::ConsolePutResult::success) {
+                    return false;
+                }
+                index = index + 1;
+            }
+            if (!namespace_text(session, "\r\n")) {
+                return false;
+            }
+        }
+        if (kind == NamespaceResponseKind::ready && !namespace_text(session,
+            "AURORA_NAMESPACE_READY: four named RAM files; all data is lost on owner reset or session exit.\r\n")) {
+            return false;
+        }
+        if (kind == NamespaceResponseKind::aborted && !namespace_text(session,
+            "aborted: previous data retained\r\n")) {
+            return false;
+        }
+        if (kind == NamespaceResponseKind::read_failed && !namespace_text(session,
+            "read failed: output discarded\r\n")) {
+            return false;
+        }
+        if (kind == NamespaceResponseKind::committed_caller_failed && !namespace_text(session,
+            "committed; caller failed: do not retry automatically\r\n")) {
+            return false;
+        }
+        if (kind == NamespaceResponseKind::indeterminate_reset && !namespace_text(session,
+            "commit indeterminate; owner reset: all data lost; do not retry automatically\r\n")) {
+            return false;
+        }
+        if (kind == NamespaceResponseKind::reset && !namespace_text(session,
+            "owner reset: all data lost\r\n")) {
+            return false;
+        }
+        if (kind == NamespaceResponseKind::unavailable) {
+            return namespace_text(session, "namespace unavailable; session closed\r\n");
+        }
+        if (kind == NamespaceResponseKind::limit) {
+            return namespace_text(session, "command limit reached; session closed\r\n");
+        }
+        return namespace_text(session, "aurora> ");
+    }
+}

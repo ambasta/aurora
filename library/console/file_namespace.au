@@ -28,15 +28,19 @@ export namespace console {
                 return false;
             }
             i64 index = 0;
+            bool non_dot = false;
             while (index < length) {
                 const u8 byte = bytes.at(index);
                 if (!((byte >= 'a' && byte <= 'z') || (byte >= 'A' && byte <= 'Z') || (byte >= '0' && byte <= '9')
                     || byte == '.' || byte == '_' || byte == '-')) {
                     return false;
                 }
+                if (byte != '.') {
+                    non_dot = true;
+                }
                 index = index + 1;
             }
-            return !bytes.equal(0, length, ".") && !bytes.equal(0, length, "..");
+            return length > 2 || non_dot;
         }
         auto size() const -> i64 {
             return length;
@@ -48,14 +52,21 @@ export namespace console {
             return bytes.at(index);
         }
         auto reserved() const -> bool {
-            return bytes.equal(0, length, "note");
+            return length == 4 && bytes.at(0) == 'n' && bytes.at(1) == 'o' && bytes.at(2) == 't' && bytes.at(3) == 'e';
         }
         auto matches(std::BinaryBuffer64 record) const -> bool {
             const i64 count = i64(record.at(0));
-            if (count < 1 || count > 8) {
+            if (count < 1 || count > 8 || length != count) {
                 return false;
             }
-            return bytes.equal(0, length, record.bytes(2, count));
+            i64 index = 0;
+            while (index < count) {
+                if (bytes.at(index) != record.at(2 + index)) {
+                    return false;
+                }
+                index = index + 1;
+            }
+            return true;
         }
     };
 

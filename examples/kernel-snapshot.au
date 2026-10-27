@@ -1,5 +1,6 @@
 module kernel_snapshot;
 import kernel.snapshot;
+import kernel.snapshot_producer;
 import kernel.interrupt_budget;
 import kernel.ipc_transition;
 import kernel.terminal_event;
@@ -9,48 +10,9 @@ import storage.sector;
 import storage.block_io;
 import storage.ram_sector;
 
-class ProducedSnapshot {
-    storage::SectorIoStatus outcome;
-    kernel::Snapshot64 payload;
-public:
-    ProducedSnapshot(storage::SectorIoStatus status, kernel::Snapshot64 snapshot) : outcome(status), payload(snapshot) {
-    }
-};
-
-auto produce_snapshot(builtin::ByteRegion region, i64 selector) -> ProducedSnapshot {
-    builtin::OwnedBytes backing = region.try_allocate(512);
-    storage::RamSectorDevice device = storage::RamSectorDevice(region, move(backing));
-    const kernel::Snapshot64 zero = kernel::Snapshot64();
-    const ProducedSnapshot invalid = ProducedSnapshot(storage::SectorIoStatus::invalid_source, zero);
-    if (device.status() != storage::SectorIoStatus::success) {
-        return invalid;
-    }
-    storage::Sector512 sector = storage::Sector512();
-    i64 index = 0;
-    while (index < 64) {
-        if (sector.write_byte(448 + index, u8((index * 53 + 7) % 256)) != std::ByteWriteStatus::success) {
-            return invalid;
-        }
-        index = index + 1;
-    }
-    if (device.write_sector(0, sector) != storage::SectorIoStatus::success) {
-        return invalid;
-    }
-    const storage::SectorReadResult saved = device.read_sector(selector);
-    if (saved.status() != storage::SectorIoStatus::success) {
-        return ProducedSnapshot(saved.status(), zero);
-    }
-    const storage::Sector512 copied = saved.sector_or_zero();
-    kernel::Snapshot64 snapshot = kernel::Snapshot64();
-    index = 0;
-    while (index < 64) {
-        const std::ByteReadResult byte = copied.read_byte(448 + index);
-        if (byte.status() != std::ByteReadStatus::success || !snapshot.set(index, u8(byte.value_or(0u64)))) {
-            return invalid;
-        }
-        index = index + 1;
-    }
-    return ProducedSnapshot(storage::SectorIoStatus::success, snapshot);
+auto produce_snapshot(builtin::ByteRegion region, i64 selector) -> kernel::ProducedSnapshot {
+    const kernel::ProducedSnapshot result = kernel::produce_snapshot(region, selector);
+    return result;
 }
 
 // Only exact assembly trampolines export these private scalar policy seams.

@@ -55,6 +55,7 @@ RULES = [
     {
         "profiles": ["uefi/storage-fixture"],
         "imports:language": ["__au_runtime_console_next", "__au_runtime_console_put"],
+        "reachable": ["__au_runtime_namespace_input", "__au_runtime_namespace_response"],
         "imports:producer": [
             "__au_runtime_bytes_allocate",
             "__au_runtime_bytes_at",

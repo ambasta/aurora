@@ -167,18 +167,28 @@ def validate_program_session_abi(facts):
         raise ValueError("Program session entry shape does not match its native executor")
 
 
-def validate_program_copied_abi(facts, service=False, replacement=False, client=False):
+def validate_program_copied_abi(facts, service=False, replacement=False, client=False, namespace=None):
     """Admit the fixed private file/append records before an adapter can copy them."""
     from bootstrap_frontend import abi_declaration, normalize_function_abi
 
     def shape(source):
-        if source in ("i64", "u64", "u8"):
+        if source in ("i64", "u64", "u8", "bool"):
             return dict(bytes=8, kind=source)
-        if source == "builtin::CallSession":
+        if source in ("builtin::CallSession", "builtin::ConsoleSession"):
             return dict(bytes=16, kind="service")
         if source == "builtin::ServeSession":
             return dict(bytes=16, kind="service", type_name=source)
-        group = "enums" if source == "console::FileEvent" else "records"
+        group = (
+            "enums"
+            if source
+            in (
+                "console::FileEvent",
+                "console::NamespaceOperation",
+                "console::NamespaceInputAction",
+                "console::NamespaceResponseKind",
+            )
+            else "records"
+        )
         symbol, value = abi_declaration(facts, group, source)
         return dict(
             bytes=8 if group == "enums" else value["reserved"],
@@ -222,6 +232,80 @@ def validate_program_copied_abi(facts, service=False, replacement=False, client=
             result=shape(result),
         ):
             raise ValueError("Protected copied entry differs from its native boundary: " + source)
+
+    if namespace == "owner":
+        entry("aurora_user_main", ["builtin::ServeSession", "u64"], "u64")
+        return
+    if namespace:
+        record("std::BinaryBuffer64", 64, [("elements", "u8", 64)], alignment=1)
+        for source in ("console::FileName", "console::FileValue"):
+            record(source, 72, [("bytes", "std::BinaryBuffer64", 0), ("length", "i64", 0)])
+        record(
+            "console::NamespaceCommand",
+            152,
+            [
+                ("name", "console::FileName", 0),
+                ("value", "console::FileValue", 0),
+                ("operation", "console::NamespaceOperation", 0),
+            ],
+        )
+        record(
+            "console::NamespaceResult",
+            88,
+            [
+                ("bytes", "u8", 64),
+                ("count", "u64", 0),
+                ("event", "console::FileEvent", 0),
+                ("generation", "u64", 0),
+            ],
+        )
+        for source, names in (
+            ("console::NamespaceOperation", "read write"),
+            ("console::FileEvent", "unknown written read removed listed missing invalid full reserved"),
+        ):
+            _, value = abi_declaration(facts, "enums", source)
+            if value["cases"] != dict(zip(names.split(), range(len(names.split())))):
+                raise ValueError("Namespace enum differs from its native boundary: " + source)
+        if namespace == "client":
+            entry(
+                "aurora_user_main",
+                ["builtin::CallSession", "console::NamespaceCommand", "u64"],
+                "console::NamespaceResult",
+            )
+        elif namespace == "console":
+            record(
+                "console::NamespaceSubmission",
+                168,
+                [
+                    ("command", "console::NamespaceCommand", 0),
+                    ("action", "console::NamespaceInputAction", 0),
+                    ("after_cr", "u64", 0),
+                ],
+            )
+            record(
+                "console::NamespaceResponse",
+                176,
+                [
+                    ("name", "console::FileName", 0),
+                    ("submitted_size", "u64", 0),
+                    ("result", "console::NamespaceResult", 0),
+                    ("kind", "console::NamespaceResponseKind", 0),
+                ],
+            )
+            for source, names in (
+                ("console::NamespaceInputAction", "command requested_exit output_failure"),
+                (
+                    "console::NamespaceResponseKind",
+                    "ready completed aborted read_failed committed_caller_failed "
+                    "indeterminate_reset reset unavailable limit",
+                ),
+            ):
+                _, value = abi_declaration(facts, "enums", source)
+                if value["cases"] != dict(zip(names.split(), range(len(names.split())))):
+                    raise ValueError("Namespace lifecycle enum differs from its native boundary: " + source)
+            entry("read_namespace_input", ["builtin::ConsoleSession", "bool"], "console::NamespaceSubmission")
+            entry("present_namespace_response", ["builtin::ConsoleSession", "console::NamespaceResponse"], "bool")
+        return
 
     if client:
         record("kernel::NoteRead64", 72, [("bytes", "u8", 64), ("length", "i64", 0)])
@@ -281,6 +365,8 @@ def validate_program_copied_abi(facts, service=False, replacement=False, client=
 def validate_selected_source_abi(source, facts):
     # This existing compiled image has one exact private launch record. Other
     # uses of ipc-user-entry.S (snapshot, file-call, Call/Serve) retain theirs.
+    if Path(source).name == "namespace-service.au":
+        validate_program_copied_abi(facts, namespace="owner")
     if Path(source).name == "program-upper-client.au":
         validate_program_copied_abi(facts, client=True)
     if Path(source).name == "program-stream-service.au":
@@ -288,6 +374,12 @@ def validate_selected_source_abi(source, facts):
 
 
 def render_bridge(source, facts):
+    if "# NAMESPACE_OWNER_ABI:" in source:
+        validate_program_copied_abi(facts, namespace="owner")
+    if "# NAMESPACE_CLIENT_ABI:" in source:
+        validate_program_copied_abi(facts, namespace="client")
+    if "# NAMESPACE_CONSOLE_ABI:" in source:
+        validate_program_copied_abi(facts, namespace="console")
     if "# PROGRAM_APPEND_CLIENT_ABI:" in source:
         validate_program_copied_abi(facts, client=True)
     if "# PROGRAM_APPEND_SERVICE_ABI:" in source:

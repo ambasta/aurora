@@ -31,7 +31,7 @@ static_assert(static_cast<unsigned>(Fixture::framebuffer_stale) + 1 ==
               static_cast<unsigned>(Fixture::graphical_baseline) + 1 == static_cast<unsigned>(last));
 #elif defined(AURORA_STORAGE_FIXTURE)
 inline constexpr auto first = Fixture::ram_baseline;
-inline constexpr auto last = Fixture::snapshot_reply_reserved;
+inline constexpr auto last = Fixture::namespace_fixture;
 #elif defined(AURORA_TEXT_FIXTURE)
 inline constexpr auto first = Fixture::text_baseline;
 inline constexpr auto last = Fixture::file_budget;

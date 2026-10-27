@@ -93,6 +93,12 @@ are shared, but all state disappears at session exit.
 Use `make smoke-console` or `make smoke-console-uefi` for automated PTY checks;
 both belong to `make smoke-all`, while `make test` remains native-only.
 
+The opt-in [protected namespace console](docs/native-console-service.md#protected-volatile-namespace)
+retains four named RAM files in one CPL3 Aurora owner, with a fresh bounded caller
+for each `write` or `cat`. It is a storage-fixture row, not the production console:
+owner failure/reset and session exit discard all data. It provides no durable
+storage, automatic replay or general process service.
+
 The separate [protected-command console](docs/program-console-contract.md) runs
 `upper`, authenticated note and named RAM-file reads/atomic uppercase replacement,
 and named-file append through two CPL3 domains. Append launches one live compiled

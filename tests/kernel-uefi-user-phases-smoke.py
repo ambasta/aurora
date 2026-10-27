@@ -610,7 +610,17 @@ def ram_run_parser(take, peek, arena, metadata, call_pc, serve_pc, mode):
         take(f"AURORA_UEFI_TIMER_ARM: epoch={epoch} budget={remaining} root={roots[domain]}")
 
     def segment(
-        domain, epoch, limit, used=0, compiled=0, terminal=130, probe=False, pending=False, refused=False, denied=False
+        domain,
+        epoch,
+        limit,
+        used=0,
+        compiled=0,
+        terminal=130,
+        probe=False,
+        pending=False,
+        refused=False,
+        denied=False,
+        exhausted=False,
     ):
         nonlocal compiled_total
         image = metadata["images"][NAMES[domain]]
@@ -623,7 +633,8 @@ def ram_run_parser(take, peek, arena, metadata, call_pc, serve_pc, mode):
                     break
                 pc = int(event[3])
                 need(
-                    used + 1 < limit and image["entry"] <= pc < image["entry"] + image["size"],
+                    (used + 1 <= limit if exhausted else used + 1 < limit)
+                    and image["entry"] <= pc < image["entry"] + image["size"],
                     "RAM finite hardware interrupt owned image/allowance",
                 )
                 take(event_line(arena, domain, 64, pc))
@@ -650,7 +661,10 @@ def ram_run_parser(take, peek, arena, metadata, call_pc, serve_pc, mode):
             if terminal == 130
             else image["bounds_pc" if terminal == 6 else "return_pc"]
         )
-        take(event_line(arena, domain, terminal, pc))
+        if exhausted:
+            need(used == limit and compiled > 0, "RAM exhaustion consumes the original allowance through real IRQs")
+        else:
+            take(event_line(arena, domain, terminal, pc))
         if denied:
             reason = (
                 "RAM Serve grant and dormant capacity"
@@ -661,7 +675,7 @@ def ram_run_parser(take, peek, arena, metadata, call_pc, serve_pc, mode):
             )
             take("AURORA_UEFI_RUNTIME_FAIL: " + reason)
             return used, compiled
-        if terminal == 130:
+        if terminal == 130 and not exhausted:
             if probe:
                 take(f"AURORA_RAM_FILE_BUDGET_PROBE: role={domain} initial={limit}")
                 used = limit - 1  # Explicit conservative withholding, never an IRQ claim.

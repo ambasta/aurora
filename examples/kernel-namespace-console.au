@@ -1,0 +1,21 @@
+module kernel_namespace_console;
+import console.namespace_console;
+import console.session_files;
+import console.namespace_wire;
+import console.file_namespace;
+import std.binary_buffer;
+import std.binary;
+import std.array;
+
+// Separate Console-only turns. No namespace owner or Call/Serve authority is
+// admitted through these private copied-value entrypoints.
+auto read_namespace_input(builtin::ConsoleSession& session, bool after_cr) -> console::NamespaceSubmission {
+    static_assert(size_of(console::NamespaceSubmission) == 168);
+    const console::NamespaceSubmission result = console::read_namespace_input(session, after_cr);
+    return result;
+}
+
+auto present_namespace_response(builtin::ConsoleSession& session, console::NamespaceResponse response) -> bool {
+    static_assert(size_of(console::NamespaceResponse) == 176);
+    return console::present_namespace_response(session, response);
+}

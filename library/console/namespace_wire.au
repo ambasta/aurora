@@ -1,0 +1,116 @@
+export module console.namespace_wire;
+import console.file_namespace;
+import std.binary_buffer;
+import std.binary;
+import std.array;
+
+export namespace console {
+    // Closed copied-word transport: tag, cursor, count, four payload bytes,
+    // reserved zero byte. Authority and rights never travel in these words.
+    auto namespace_word(u64 tag, u64 cursor, u64 count, u64 payload) -> u64 {
+        if (tag > 255u64 || cursor > 255u64 || count > 255u64 || payload > 4294967295u64) {
+            return 18446744073709551615u64;
+        }
+        return tag | (cursor << 8) | (count << 16) | (payload << 24);
+    }
+    auto namespace_tag(u64 word) -> u64 { return word & 255u64; }
+    auto namespace_cursor(u64 word) -> u64 { return (word >> 8) & 255u64; }
+    auto namespace_count(u64 word) -> u64 { return (word >> 16) & 255u64; }
+    auto namespace_payload(u64 word) -> u64 { return (word >> 24) & 4294967295u64; }
+    auto namespace_chunk_size(u64 remaining) -> u64 {
+        if (remaining > 4u64) { return 4u64; }
+        return remaining;
+    }
+    auto namespace_chunk(u64 word, u64 tag, u64 cursor, u64 count) -> bool {
+        if (count < 1u64 || count > 4u64 || (word >> 56) != 0u64 || namespace_tag(word) != tag
+            || namespace_cursor(word) != cursor || namespace_count(word) != count) {
+            return false;
+        }
+        return (namespace_payload(word) >> i64(count * 8u64)) == 0u64;
+    }
+    auto namespace_rejected(FileEvent event) -> u64 {
+        if (event == FileEvent::full) { return 1798u64; }
+        if (event == FileEvent::reserved) { return 2054u64; }
+        return 1542u64;
+    }
+    auto namespace_rejection(u64 word) -> FileEvent {
+        if (word == 1798u64) { return FileEvent::full; }
+        if (word == 2054u64) { return FileEvent::reserved; }
+        if (word == 1542u64) { return FileEvent::invalid; }
+        return FileEvent::unknown;
+    }
+
+    // The same actual compiled loop serves fixture-only timer and budget cuts.
+    // Its limit is a sealed launch selector decision, never a request payload.
+    auto namespace_fixture_wait(u64 limit) -> bool {
+        u64 turns = 0u64;
+        u64 checksum = 1u64;
+        while (turns < limit) {
+            checksum = 1u64 - checksum;
+            turns = turns + 1u64;
+        }
+        return checksum == 1u64;
+    }
+
+    enum class NamespaceOperation { read, write };
+    class NamespaceCommand {
+        FileName name;
+        FileValue value;
+        NamespaceOperation operation;
+    public:
+        NamespaceCommand(FileName selected, FileValue content, NamespaceOperation action) : name(selected),
+            value(content), operation(action) {
+        }
+        auto selected_name() const -> FileName { return name; }
+        auto selected_value() const -> FileValue { return value; }
+        auto selection() const -> NamespaceOperation { return operation; }
+        auto valid() const -> bool {
+            return name.valid() && value.valid() && (operation == NamespaceOperation::write
+                || (operation == NamespaceOperation::read && value.size() == 0));
+        }
+    };
+    class NamespaceResult {
+        array<u8, 64> bytes;
+        u64 count;
+        FileEvent event;
+        u64 generation;
+    public:
+        NamespaceResult(FileEvent outcome, u64 revision) : bytes{}, count(0u64), event(outcome), generation(revision) {
+        }
+        auto reset(FileEvent outcome, u64 revision) -> bool {
+            i64 index = 0;
+            while (index < 64) { bytes[index] = 0u8; index = index + 1; }
+            count = 0u64; event = outcome; generation = revision; return true;
+        }
+        auto status() const -> FileEvent { return event; }
+        auto size() const -> u64 { return count; }
+        auto revision() const -> u64 { return generation; }
+        auto at(u64 index) const -> u8 {
+            if (index >= count || index >= 49u64) { return 0u8; }
+            return bytes[i64(index)];
+        }
+        auto append(u8 byte) -> bool {
+            if (event != FileEvent::read || count >= 49u64 || byte < ' ' || byte > '~') { return false; }
+            bytes[i64(count)] = byte;
+            count = count + 1u64;
+            return true;
+        }
+        auto valid() const -> bool {
+            const bool success = event == FileEvent::read || event == FileEvent::written || event == FileEvent::missing;
+            if (count > 49u64 || (event != FileEvent::read && count != 0u64) || (success && generation == 0u64)
+                || (!success && generation != 0u64) || (!success && event != FileEvent::unknown && event
+                != FileEvent::invalid && event != FileEvent::full && event != FileEvent::reserved)) { return false; }
+            u64 index = 0u64;
+            while (index < 64u64) {
+                const u8 byte = bytes[i64(index)];
+                if (index < count) {
+                    if (byte < ' ' || byte > '~') { return false; }
+                } else {
+                    if (byte != 0u8) { return false; }
+                }
+                index = index + 1u64;
+            }
+            return true;
+        }
+    };
+}

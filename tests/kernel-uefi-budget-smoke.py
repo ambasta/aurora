@@ -102,7 +102,9 @@ def metadata_valid(meta, mode, probe_image=None, fixture_image=None):
             need(probes is None, "Unexpected privileged probe")
     ipc.metadata_valid(
         base_images,
-        mode if mode in ("user-call", "user-call-pending", "user-call-owner", "user-call-site") else "ipc-fault",
+        mode
+        if mode in ("user-call", "user-call-pending", "user-call-owner", "user-call-site", "namespace-console")
+        else "ipc-fault",
     )
     kernel = meta["kernel"]
     need(

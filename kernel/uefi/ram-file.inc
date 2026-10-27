@@ -163,6 +163,9 @@ auto ram_trap(U64 frame) -> U64 {
     const bool budget = ram_boundary_debit();
     bool accepted = false;
     if (budget) {
+        // The authenticated dormant frame is retained before accepting a
+        // conclusive protocol result, especially a namespace COMMITTED receipt.
+        save_parked_run(ram_service_wait, context);
         if (ram_state == RamState::booting)
             accepted = words[11] == 0;
         else if (ram_state == RamState::aborting)
@@ -183,8 +186,7 @@ auto ram_trap(U64 frame) -> U64 {
         ram_fixture_injected = true;
         force_timer_pending();
     }
-    // Capture the complete dormant record before publishing any observable reply.
-    save_parked_run(ram_service_wait, context);
+    // The complete dormant record already precedes observable reply publication.
     if (ram_state == RamState::command) {
         require(mailbox->reply(*domains[1].handle,
                                ipc::Phase::service,
@@ -239,6 +241,14 @@ auto ram_launch(unsigned index, U64 phase, U64 epoch) -> void {
     const auto grant = index == 0 ? ram_command->caller_endpoint.slot() : ram_lifetime->grant;
     const auto generation = index == 0 ? ram_command->caller_endpoint.generation() : ram_lifetime->generation;
     launch = {phase, 0, grant, generation, 0, 0, 0x202};
+    if (composition == Composition::named_namespace) {
+        if (index == 0)
+            launch[5] = namespace_caller_probe();
+        else
+            launch[5] = namespace_probe == 'd' ? 1 : namespace_probe == '8' ? 2 : namespace_probe == '3' ? 3 :
+                        namespace_probe == '4' ? 4 : namespace_probe == 'b' ? 5 : namespace_probe == 'c' ? 6 :
+                        namespace_probe == 'e' ? 7 : namespace_probe == 'f' ? 8 : 0;
+    }
     ram_run_epoch = epoch;
     require(launch_domain(index, *domains[index].handle), "RAM launch continuation");
     ram_finish_execution(index);
@@ -420,6 +430,10 @@ auto ram_exchange_commands() -> void {
         require(ram_service_wait.context && mailbox->state() == ipc::State::replied, "RAM parked before caller reply");
         // Exercise caller loss with the real pending receipt. DATA #2 means
         // the unchanged caller already accumulated DATA #1 in its private result.
+        if (namespace_probe == 'c' && ram_commands == 2 && ram_command->framing.count() == 2) {
+            ram_command->caller_disabled = true;
+            break;
+        }
         if (ram_commands == 2 &&
             ((scratchpad_probe == '1' && ram_command->framing.count() == 2) ||
              (scratchpad_probe == '2' && ram_command->framing.data_count() == 2) ||

@@ -98,6 +98,46 @@ export namespace console {
         return FileAppendRequest(FileName(empty, -1), FileValue(empty, -1));
     }
 
+    // The ordinary console and protected namespace consumer share these typed
+    // request parsers. Exactly one separator precedes content; remaining spaces
+    // are bytes. A write requires that separator, including for an empty value.
+    class FileWriteRequest {
+        FileName name;
+        FileValue value;
+    public:
+        FileWriteRequest(FileName selected, FileValue contents) : name(selected), value(contents) {
+        }
+        auto selected_name() const -> FileName {
+            const FileName result = name;
+            return result;
+        }
+        auto written_value() const -> FileValue {
+            const FileValue result = value;
+            return result;
+        }
+    };
+    auto file_write_request(std::BinaryBuffer64 command, i64 count) -> FileWriteRequest {
+        i64 end = 6;
+        if (count >= 0 && count <= 64 && command.starts_with(count, "write ")) {
+            while (end < count && command.at(end) != ' ') {
+                end = end + 1;
+            }
+            if (end < count) {
+                return FileWriteRequest(file_name(command, 6, end - 6),
+                    file_value(command, end + 1, count - end - 1));
+            }
+        }
+        const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+        return FileWriteRequest(FileName(empty, -1), FileValue(empty, -1));
+    }
+    auto file_read_request(std::BinaryBuffer64 command, i64 count) -> FileName {
+        if (count >= 0 && count <= 64 && command.starts_with(count, "cat ")) {
+            return file_name(command, 4, count - 4);
+        }
+        const std::BinaryBuffer64 empty = std::BinaryBuffer64();
+        return FileName(empty, -1);
+    }
+
     // Shared presentation adapter for ordinary and protected write outcomes.
     auto file_write_reply(FileName name, i64 count, FileEvent event) -> FileReply {
         FileReply reply = FileReply();
@@ -213,16 +253,18 @@ export namespace console {
                 return file_write_reply(name, suffix.size(), event);
             }
             if (command.starts_with(count, "write ")) {
-                start = 6;
-                action = FileEvent::written;
+                const FileWriteRequest request = file_write_request(command, count);
+                const FileName name = request.selected_name();
+                const FileValue value = request.written_value();
+                const FileEvent event = namespace_files.write_file(name, value);
+                return file_write_reply(name, value.size(), event);
             }
             if (copying) {
                 start = 5;
                 action = FileEvent::written;
             }
             if (command.starts_with(count, "cat ")) {
-                start = 4;
-                action = FileEvent::read;
+                return file_data_reply(namespace_files.read_file(file_read_request(command, count)));
             }
             if (command.starts_with(count, "rm ")) {
                 start = 3;
@@ -245,9 +287,6 @@ export namespace console {
                 return reply;
             }
             const FileName name = file_name(command, start, end - start);
-            if (action == FileEvent::read) {
-                return file_data_reply(namespace_files.read_file(name));
-            }
             if (action == FileEvent::removed) {
                 reply.select(namespace_files.remove(name));
                 return reply;
@@ -257,9 +296,8 @@ export namespace console {
                 const FileOutcome outcome = namespace_files.copy_file(name, destination);
                 return file_write_reply(destination, outcome.size(), outcome.status());
             }
-            const FileValue value = file_value(command, end + 1, count - end - 1);
-            const FileEvent event = namespace_files.write_file(name, value);
-            return file_write_reply(name, value.size(), event);
+            reply.select(FileEvent::invalid);
+            return reply;
         }
     };
 }

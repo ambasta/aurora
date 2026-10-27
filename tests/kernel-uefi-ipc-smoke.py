@@ -62,7 +62,14 @@ def metadata_valid(metadata, mode):
         )
         size = image["size"]
         call_client = index == 0 and mode in ("user-call", "user-call-pending", "user-call-owner", "user-call-site")
-        need(image["entry"] == base and 4 <= size <= (8192 if call_client else 4096), "IPC image layout widened")
+        pages = (
+            pci.kernel_profiles.IMAGE_POLICIES["named_namespace"][index]
+            if mode == "namespace-console"
+            else 2
+            if call_client
+            else 1
+        )
+        need(image["entry"] == base and 4 <= size <= pages * 4096, "IPC image layout widened")
         sites = [image[k] for k in ("return_pc", "bounds_pc", "overflow_pc", "division_zero_pc", "shift_count_pc")]
         present = [pc for pc in sites if pc]
         need(all(sites[:3]) and len(set(present)) == len(present), "IPC sites missing/aliased")
