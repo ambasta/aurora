@@ -110,8 +110,8 @@ commit messages for each step).
 
 ## Build and check
 
-For a fresh checkout, select a local copy of the pinned checkpoint compiler, or
-rebuild it from the [recorded route](#historical-route), and configure Meson with
+For a fresh checkout, use a local copy of the checkpoint compiler, or rebuild it
+from source with `scripts/bootstrap.py rebuild`, and configure Meson with
 its path using the [setup commands](#source-bootstrap) below. The ordinary
 shortcuts reuse the configured graph:
 
@@ -152,101 +152,61 @@ checkpoint C0 --compiles--> C1 (aurorac) --compiles--> C2 (aurorac-stage2) --com
                             hosted-lexer-bootstrap: C1's frontend B and C2's frontend C identical
 ```
 
-[`checkpoint.json`](checkpoint.json) pins C0 by source commit, tree and
-executable SHA-256. C0 is the C2 of
-main commit `ab255328` (four distinct borrowed roots with per-root mutability),
-built in one hop from the previous checkpoint, the C2 of `d4cbabb`;
-`history` in `checkpoint.json` lists earlier pins
-and the first one was built from the last historical stage (below). No
-compiler binary is committed or downloaded. Meson's `bootstrap_compiler` option
-names a local copy; `scripts/bootstrap.py select` accepts it only if its bytes
-have the pinned digest, and the frontend generator and initialization probe
-recheck the digest before each run. Ninja tracks the executable, so replacing
-it regenerates the frontend.
+[`checkpoint.json`](checkpoint.json) names C0 by source commit and tree. C0 is
+the C2 of main commit `ab255328` (four distinct borrowed roots with per-root
+mutability), built in one hop from the C2 of `d4cbabb`; `history` lists the
+earlier checkpoints. No compiler binary is committed, downloaded or pinned by
+digest. Any C0 built from that source with the supported tools (GCC 16.2.0 or
+newer, binutils 2.47 or newer) is accepted, and `hosted-lexer-bootstrap` checks
+it the way GCC's `make compare` does: C1's frontend B must equal C2's frontend C.
+Meson's `bootstrap_compiler` option names the executable; Ninja tracks it, so
+replacing it regenerates the frontend.
+
+To build C0 from source with no binary at all (host tools and Git):
 
 ```sh
-# A local copy of the pinned executable; only its digest is pinned.
-C0=/workspace/build/checkpoint-ab255328/aurorac
+python3 scripts/bootstrap.py rebuild --output build/checkpoint-ab255328a762
+C0=$PWD/build/checkpoint-ab255328a762/aurorac
 meson setup build/meson . "-Dbootstrap_compiler=$C0" "-Duefi_ld=$UEFI_LD"
 meson setup build/meson-compiler . -Dkernel_images=false "-Dbootstrap_compiler=$C0"
 meson test -C build/meson-compiler hosted-lexer-bootstrap
 ```
 
-To use a different checkpoint, reconfigure the build with
-`meson configure BUILD -Dbootstrap_compiler=PATH`; Meson rechecks the pin.
+`rebuild` builds the historical C++ seed and Aurora stages
+([below](#historical-route)), then every checkpoint in `history` and the current
+one, each with the previous compiler and each passing its stage compare. Every
+source is exported with `git archive` and verified against its recorded tree.
+The recorded sources select their predecessor with an exact-version gate and,
+from `2fd30b2` on, a digest of the binary they were first built with; `rebuild`
+replaces those two scripts in its exported copies with this checkout's
+minimum-version gate and a `select` that accepts the compiler it is given.
+Keep `OUTPUT/aurorac` outside directories you delete, or rerun `rebuild`.
 
 #### Bumping the checkpoint (one hop)
 
 Pick an accepted main commit `NEW` whose compiler adopts the batched features.
-Its `checkpoint.json` still pins the current C0, so its own Meson graph accepts
-C0. From the host checkout, then inside the pinned container:
+Its `checkpoint.json` still names the current C0, so its own Meson graph accepts
+C0:
 
 ```sh
-git worktree add --detach build/hop-src NEW        # host: clean checkout of NEW
-git rev-parse NEW^{tree}                           # host: TREE
-python3 scripts/bootstrap.py hop --compiler "$C0" \
-  --source build/hop-src --commit NEW --tree TREE --output build/checkpoint-NEW
+git worktree add --detach build/hop-src NEW
+python3 scripts/bootstrap.py hop --compiler "$C0" --source build/hop-src \
+  --commit NEW --tree "$(git rev-parse NEW^{tree})" --output build/checkpoint-NEW
 ```
 
-The hop checks that the checkout's files hash to `TREE`, configures NEW with
-C0 and the fixed options, builds C1 and C2, and runs `hosted-lexer-bootstrap`.
-It copies NEW's C2 to `OUTPUT/aurorac`, writes
-`OUTPUT/receipt.json` (source and predecessor digests, tool versions,
-commands, logs and timings) and prints the new pin. The bump commit records that
-pin in `checkpoint.json`, moves the old one to `history`, and qualifies with the
-release suite and the merge gates. Adding `--expect SHA256` reproduces a recorded
-hop. To rebuild the current C0 from the previous one (C2 of `d4cbabb`,
-retained locally or rebuilt through its history entry):
-
-```sh
-git worktree add --detach build/hop-src ab255328a762b859e76b84144cf6515de71303bf
-./scripts/container.sh python3 scripts/bootstrap.py hop --jobs "$(nproc)" \
-  --compiler /workspace/build/checkpoint-d4cbabbb692a/aurorac \
-  --source /workspace/build/hop-src --commit ab255328a762b859e76b84144cf6515de71303bf \
-  --tree ed168629519d1ad76759fba59c8f47c4fef043aa --output /workspace/build/checkpoint-ab255328 \
-  --expect ed5efd0b8dae5a1bf5f808c40f8b4ac08ab3bf05d8255f829850de4231687975
-```
-
-The recorded hop used the exact pinned native tools and a canonical no-RPATH
-compiler wrapper. This is native evidence, not a claim that the container route
-was executed for that receipt.
-
-With the pinned image, builds were byte-identical across build directories:
-all six historical stages matched their earlier receipt, and C2 rebuilt from C0
-at unchanged compiler source equals C0 itself.
+The hop checks that the checkout's files hash to `TREE`, configures NEW with C0
+and the fixed options, builds C1 and C2, runs `hosted-lexer-bootstrap`, copies
+NEW's C2 to `OUTPUT/aurorac` and writes `OUTPUT/receipt.json` (source,
+predecessor, tool versions, commands, logs and timings). The bump commit names
+NEW in `checkpoint.json`, moves the old checkpoint to `history`, and qualifies
+with the release suite and the merge gates.
 
 #### Historical route
 
 The first checkpoint came from the six-stage source route kept in
 [`bootstrap-history.json`](bootstrap-history.json): a GNU C++ seed and five
 Aurora stages, each built by the previous one, ending at the `borrow` stage
-`672821f`. The route's
-driver is `scripts/bootstrap.py` at commit `2fd30b2`, which reads
-`compiler/bootstrap-route.json` at that commit; the history file records every
-stage's commit, tree and reconstructed digest. To rebuild C0 without any binary
-(host, then container; about 13 minutes on 4 cores under load, plus the hop's tests):
-
-```sh
-mkdir -p build/route
-git archive 2fd30b2 scripts/bootstrap.py scripts/meson_toolchain.py \
-  compiler/bootstrap-route.json | tar -x -C build/route
-(cd build/route && python3 -c 'import sys; sys.path.insert(0, "scripts"); import bootstrap, pathlib;
-print(bootstrap.prepare_sources(pathlib.Path("cache").resolve(), bootstrap.route()))')   # host Git
-# SOURCES: the printed sources.json path, under /workspace in the container.
-./scripts/container.sh bash -c 'cd build/route && python3 scripts/bootstrap.py build \
-  --cache "$PWD/cache" --prepared SOURCES'   # six stages; prints RECEIPT
-git worktree add --detach build/hop-src 2fd30b2
-# BORROW: borrow/build/aurorac beside RECEIPT.
-./scripts/container.sh python3 scripts/bootstrap.py hop \
-  --compiler BORROW --receipt RECEIPT --source build/hop-src \
-  --commit 2fd30b2c252afda5fbf6e78c399bca1cae7bd04e \
-  --tree 7850b23a8995b1603422c86575d30ab53dda2527 --output build/checkpoint \
-  --expect 8bcb17f354f8a28e3dfcde0e34ede9ebbbc7447d5395d52a59548d96fc1d619d
-```
-
-`2fd30b2` still selects its predecessor through the six-stage receipt, so this
-first hop also passes `--receipt`. Older receipts remain readable as records of
-their own runs.
+`672821f`, whose C1 built the first checkpoint `2fd30b2`.
 
 | Stage | Immutable source | Required predecessor capability |
 |---|---|---|

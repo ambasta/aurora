@@ -101,7 +101,6 @@ initialization_probe = custom_target(
     output: ['initialization-probe.s', 'initialization-probe.generated.s',
              'initialization-probe.abi.json', 'initialization_probe_abi.hpp'],
     command: [python, '-B', files('compiler/initialization_probe.py'), bootstrap_compiler,
-              '--compiler-sha256', bootstrap_sha256,
               '--output', '@OUTPUT0@', '--frontend-facts', frontend_assembly[2], '@INPUT@'],
     depend_files: bootstrap_depend_files + files('../scripts/bootstrap_frontend.py', '../scripts/frontend_bridge.py'),
 )

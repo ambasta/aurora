@@ -9,7 +9,6 @@ inferred from source spelling.
 """
 
 import argparse
-import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -231,13 +230,10 @@ def fixture_bridges(facts, frontend):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("compiler", type=Path)
-    parser.add_argument("--compiler-sha256", help="digest Meson verified for this predecessor")
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--frontend-facts", required=True, type=Path)
     parser.add_argument("inputs", nargs="+", type=Path)
     args = parser.parse_args()
-    if args.compiler_sha256 and hashlib.sha256(args.compiler.read_bytes()).hexdigest() != args.compiler_sha256:
-        raise ValueError(f"{args.compiler} changed since Meson verified it; reconfigure Meson")
     expected = {
         "initialization_probe.au",
         "ir_verification_errors.au",
