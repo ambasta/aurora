@@ -1254,8 +1254,8 @@ std::string sourceName(const std::string &text, std::int64_t begin, std::int64_t
             return name;
     }
 }
-// Renders the first rejection of one source with the former adapter's codes,
-// messages and spans; returns only for an admitted module.
+} // namespace
+
 void rejectSource(const std::shared_ptr<const SourceText> &source, const wire::SourceResult &result) {
     using hosted_lexer::Event;
     using hosted_parser::AdmissionStatus;
@@ -1325,7 +1325,6 @@ void rejectSource(const std::shared_ptr<const SourceText> &source, const wire::S
     }
     hosted_parser::rejectDeclaration(result.declaration, result.detail, at, span, fieldType);
 }
-} // namespace
 
 class HostedResolution::Impl {
     SessionOwner owner;

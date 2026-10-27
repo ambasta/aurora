@@ -168,7 +168,7 @@ stream. For example, lexical
 `>>` stays one token, while separated `> >` stays two. Valid current syntax is the
 boundary; unsupported or malformed syntax gets the compiler's original rejection.
 
-Before any source bytes are printed, the formatter:
+Before any source bytes are printed, the formatter, in one Aurora call:
 
 1. Uses the shared lexer and parser on the original immutable source.
 2. Changes only inter-token/comment whitespace using AST roles.

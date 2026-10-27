@@ -20,14 +20,14 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 | Call graph | Aurora | Validate final integrated behavior |
 | x86 emission | Aurora, fixed native transport | Byte-identical C1/C2 (`hosted-lexer-bootstrap`); inlines single-field getters; owned-value bounds checks and sizes use multiplies, not divq; no register allocation yet |
 | Direct class fields | Aurora source and independent metadata admission share an 8,192-field cap, including empty, nested, resource and array fields | Existing leaf, byte, depth and array-element limits still apply |
-| Private host bridge | One 101-entry table generates Aurora forwarders, host transport declarations and a closed wrapper recipe; compiler facts supply layouts, symbols and raw enum validation | Preserve fail-closed conversion; native replacement remains incomplete |
+| Private host bridge | One 102-entry table generates Aurora forwarders, host transport declarations and a closed wrapper recipe; compiler facts supply layouts, symbols and raw enum validation | Preserve fail-closed conversion; native replacement remains incomplete |
 | Bootstrap route | One digest-pinned checkpoint (C2 of `d4cbabb`, one hop from the C2 of `2fd30b2`, which the recorded six-stage source route built), then current C1/C2 with convergence | Bump in one hop: build an accepted main commit with the current checkpoint, pass C1/C2 convergence, then the release gates ([recipe](README.md#bumping-the-checkpoint-one-hop)) |
 | Assembly, linking and hosted runtime | External bootstrap tools/C++ | Native replacements remain incomplete |
 
 ## Hosted Aurora parser
 
-Aurora owns the module grammar. The C++ syntax adapter remains for formatting and
-tooling; production lowering does not require a second C++ grammar. See
+Aurora owns the module grammar. The C++ syntax adapter remains only for its tests;
+production lowering and formatting do not require a second C++ grammar. See
 [modules](MODULES.md), [lexing](LEXER.md) and the [source-bootstrap recipe](README.md#source-bootstrap).
 
 ### Hosted Aurora expression parser
@@ -237,15 +237,21 @@ Language contracts: [values](VALUES.md), [ownership](OWNERSHIP.md),
 
 ## Source formatter boundary
 
-The formatter runs one bounded layout operation over the admitted Aurora arena.
-It marks only executable statement/initializer expression trees, preserving the
-former formatter's distinction from type/template expressions. Input is copied
-once through a synchronous span; no input pointer or source owner is retained.
+One Aurora call owns the whole operation: it lexes, parses and admits the source
+(the resolver's `parse_source`), lays it out, relexes the output and requires the
+same tokens and line comments in the same order, parses the output and formats it
+again into a second workspace, requiring identical bytes. Layout marks only
+executable statement/initializer expression trees, preserving the former
+formatter's distinction from type/template expressions. Input is copied once
+through a synchronous span with the admission limits; no input pointer or source
+owner is retained. The workspace moves into the call with the host region, which
+also backs the call's parse arena and second workspace, and moves back.
 Both input and output retain the 1 MiB limit. Each scratch pool has at most
 1,048,577 rows, grows geometrically, and is additionally constrained by the
-count-derived region quota. Findings and output are readable only on completion;
-allocation/output failure and repeated preparation are terminal. Workspace owners
-are released before the parser arena and region. Payload quota excludes allocation
+count-derived region quota. Findings (the source's, then the output's) and output are readable only on
+completion, and the output also after its own rejection; a rejection, a refused
+output, allocation/output failure and repeated preparation are terminal. The
+workspace is released before its region. Payload quota excludes allocation
 headers and transient old/new resizing storage; process peak memory is separate.
 A shared `append_row` helper synchronously borrows each mutable typed row buffer
 for growth and storage. Callers snapshot receiver-derived arguments before the
@@ -254,6 +260,7 @@ with the workspace. The replacement sixth source-bootstrap checkpoint supplies
 this capability without adding a stage. Qualification still requires the final
 integrated-source `full` and applicable boot/emulator gates.
 
-The host retains the existing two parse/layout passes, token/comment equivalence
-and idempotence safeguards. It copies completed chunks and validated finding
-coordinates into source-backed results. Formatting does not resolve imports.
+The host keeps the 1 MiB bound, copies completed chunks and validated finding
+coordinates into source-backed results, and renders a rejection with the
+resolver's `rejectSource` and refusals with the existing messages. Formatting does
+not resolve imports.
