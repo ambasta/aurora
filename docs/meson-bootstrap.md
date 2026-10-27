@@ -8,9 +8,9 @@ targeted compatibility evidence. Previous snapshots do not qualify a new tree.
 
 ## Build and run
 
-Use the supported pinned development container. Advanced native use must match
-its exact pinned tools: GCC 16.2.0, GNU binutils 2.47, Meson 1.12.1 and Ninja
-1.13.2, with Python 3.10+ on a GNU/Linux x86-64 host.
+Use the supported pinned development container. Advanced native use needs GCC
+16.2.0 or newer, GNU binutils 2.47 or newer and the exact pinned Meson 1.12.1 and
+Ninja 1.13.2, with Python 3.10+ on a GNU/Linux x86-64 host.
 Select matching real `gcc` and `g++` on PATH: a stack-guard
 runner invokes bare `gcc`. Keep one stable build directory per toolchain/configuration:
 

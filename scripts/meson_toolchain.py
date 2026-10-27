@@ -8,6 +8,8 @@ import shutil
 import subprocess
 
 
+GCC_MINIMUM = (16, 2, 0)
+BINUTILS_MINIMUM = (2, 47)
 IMPLICIT_SEARCH_ENV = ("CPATH", "CPLUS_INCLUDE_PATH", "C_INCLUDE_PATH", "LIBRARY_PATH")
 
 
@@ -25,31 +27,36 @@ def selected_tool(name):
         raise ValueError(
             "BLOCKED: Missing development tool: " + name + "; select the pinned image or local tool prefix on PATH"
         )
-    return os.path.realpath(selected)
+    # Run the tool as found: launchers such as python-exec dispatch on argv[0].
+    return selected
 
 
 def check(cxx, pe_linker=None):
     explicit_search()
     if not cxx:
         raise ValueError("BLOCKED: Missing configured C++ command")
-    commands = [
-        (cxx, "-dumpfullversion", "16.2.0"),
-        ([selected_tool("gcc")], "-dumpfullversion", "16.2.0"),
-    ]
-    commands += [
-        ([selected_tool(name)], "--version", "2.47") for name in ("as", "ld", "nm", "objcopy", "objdump", "readelf")
-    ]
-    commands += [
-        ([selected_tool("meson")], "--version", "1.12.1"),
-        ([selected_tool("ninja")], "--version", "1.13.2"),
-    ]
+    # GCC and binutils are minimums for native development builds; the pinned
+    # container keeps exactly GCC 16.2.0 and binutils 2.47 for merge evidence.
+    minimums = [(cxx, "-dumpfullversion", GCC_MINIMUM), ([selected_tool("gcc")], "-dumpfullversion", GCC_MINIMUM)]
+    binutils = ("as", "ld", "nm", "objcopy", "objdump", "readelf")
+    minimums += [([selected_tool(name)], "--version", BINUTILS_MINIMUM) for name in binutils]
     if pe_linker:
-        commands.append(([selected_tool(pe_linker)], "--version", "2.47"))
-    for command, flag, expected in commands:
-        lines = subprocess.check_output([*command, flag], text=True, stderr=subprocess.STDOUT, timeout=10).splitlines()
-        version = lines[0] if lines else ""
+        minimums.append(([selected_tool(pe_linker)], "--version", BINUTILS_MINIMUM))
+    for command, flag, minimum in minimums:
+        version = first_line(command, flag).split()[-1:]
+        parts = version[0].split(".") if version else []
+        if not parts or not all(part.isdigit() for part in parts) or tuple(map(int, parts)) < minimum:
+            required = ".".join(map(str, minimum)) + " or newer"
+            raise ValueError("BLOCKED: " + shlex.join(command) + ": require " + required + ", got " + " ".join(version))
+    for command, expected in (([selected_tool("meson")], "1.12.1"), ([selected_tool("ninja")], "1.13.2")):
+        version = first_line(command, "--version")
         if not version or version.split()[-1] != expected:
             raise ValueError("BLOCKED: " + shlex.join(command) + ": require " + expected + ", got " + version)
+
+
+def first_line(command, flag):
+    lines = subprocess.check_output([*command, flag], text=True, stderr=subprocess.STDOUT, timeout=10).splitlines()
+    return lines[0] if lines else ""
 
 
 def main():

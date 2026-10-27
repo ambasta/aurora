@@ -79,9 +79,10 @@ changing a normal boot. Explicit supervised/pinned workflows remain separate.
 
 ## Tools and explicit selections
 
-The setup gate requires GCC and G++ 16.2.0, binutils 2.47, Meson 1.12.1 and
-Ninja 1.13.2 exactly. Other GCC 16 patch versions are rejected too; major-version
-compatibility is not a substitute for these pins. Required tools also include
+The setup gate requires GCC and G++ 16.2.0 or newer, binutils 2.47 or newer, and
+Meson 1.12.1 and Ninja 1.13.2 exactly. Newer GCC or binutils is for native
+development feedback; merge evidence comes from the container, which pins exactly
+GCC 16.2.0 and binutils 2.47. Required tools also include
 GNU Make, Python 3, Bash, coreutils and ripgrep. Image-enabled configurations require a GNU PE
 linker with `i386pep`, including for BIOS-only selection. Select the reviewed
 linker explicitly with `UEFI_LD` or Meson's `-Duefi_ld`; do not rely on an implicit
