@@ -155,47 +155,73 @@ def source_cases():
     yield Case("all canonical copied shapes and bounded constructors", body, 42, imports=imports)
 
 
-HOSTS = {}
-
-
-def compile_bridge(compiler, work, mode, source, entry, result_offset, *, named=False):
-    label = ("namespace-" if named else "") + mode
-    assembly, facts = work / f"{label}.s", work / f"{label}.json"
-    result = run(
-        [
-            compiler,
-            "--module-root",
-            ROOT / "library",
-            "--module-root",
-            ROOT / "kernel/policies",
-            source,
-            "-o",
-            assembly,
-            "--abi-facts",
-            facts,
-        ]
+def compile_bridges(compiler, work, host):
+    """Compile each source once; the host selects its six entries at runtime."""
+    sources = (
+        ("scratchpad-client", "kernel-ram-scratchpad-client.au", ((0, "aurora_user_main", 96, 96),)),
+        ("namespace-client", "kernel-namespace-client.au", ((3, "aurora_user_main", 176, 176),)),
+        (
+            "supervisor",
+            "kernel-ram-scratchpad-console.au",
+            (
+                (1, "read_scratchpad_input", 24, 24),
+                (2, "present_scratchpad_response", 96, None),
+                (4, "read_namespace_input", 24, 24),
+                (5, "present_namespace_response", 192, None),
+            ),
+        ),
     )
-    require(result.returncode == 0, result.stderr.decode())
-    functions = json.loads(facts.read_text())["functions"]
-    matches = [(name, row) for name, row in functions.items() if row.get("source_name") == entry]
-    require(len(matches) == 1, f"ambiguous source entry {entry}: {matches}")
-    name, row = matches[0]
-    argument_bytes = 24 if mode == "input" else (176 if mode == "client" else 192) if named else 96
-    require(row["parameter_bytes"] == argument_bytes, "copied argument width drift")
-    if result_offset is not None:
-        require(row["result"]["kind"] == "class", "copied result kind drift")
-    bridge = "\n.text\n.globl __au_runtime_group_entry\n__au_runtime_group_entry:\n"
-    bridge += "    pushq %rbp\n    movq %rsp, %rbp\n    movq %rdi, %r11\n"
-    if result_offset is not None:
-        bridge += f"    leaq {result_offset}(%rdi), %r10\n"
-    bridge += f"    call {name}\n"
-    if result_offset is not None:
-        bridge += "    movq $42, %rax\n"
-    bridge += "    leave\n    ret\n"
-    combined = work / f"{label}-bridge.s"
-    combined.write_text(assembly.read_text() + bridge)
-    binary = work / label
-    result = run([*shlex.split(os.environ.get("CXX", "g++")), combined, HOSTS[mode], "-o", binary])
+    objects = []
+    for label, source, entries in sources:
+        assembly, facts = work / f"{label}.s", work / f"{label}.json"
+        result = run(
+            [
+                compiler,
+                "--local-symbols",
+                "--module-root",
+                ROOT / "library",
+                "--module-root",
+                ROOT / "kernel/policies",
+                ROOT / "examples" / source,
+                "-o",
+                assembly,
+                "--abi-facts",
+                facts,
+            ]
+        )
+        require(result.returncode == 0, result.stderr.decode())
+        functions = json.loads(facts.read_text())["functions"]
+        bridges = []
+        for selector, entry, argument_bytes, result_offset in entries:
+            matches = [(name, row) for name, row in functions.items() if row.get("source_name") == entry]
+            require(len(matches) == 1, f"ambiguous source entry {entry}: {matches}")
+            name, row = matches[0]
+            require(row["parameter_bytes"] == argument_bytes, "copied argument width drift")
+            if result_offset is not None:
+                require(row["result"]["kind"] == "class", "copied result kind drift")
+            symbol = f"scratchpad_entry_{selector}"
+            bridge = f"\n.text\n.globl {symbol}\n.hidden {symbol}\n{symbol}:\n"
+            bridge += "    pushq %rbp\n    movq %rsp, %rbp\n    movq %rdi, %r11\n"
+            if result_offset is not None:
+                bridge += f"    leaq {result_offset}(%rdi), %r10\n"
+            bridge += f"    call {name}\n"
+            if result_offset is not None:
+                bridge += "    movq $42, %rax\n"
+            bridges.append(bridge + "    leave\n    ret\n")
+        with assembly.open("a") as output:
+            output.write("".join(bridges))
+            if label == "supervisor":
+                # The existing ABI envelope forwards the runtime selector in RSI.
+                output.write(
+                    ".text\n.globl __au_runtime_group_entry\n__au_runtime_group_entry:\n"
+                    + "".join(f"    cmpq ${i}, %rsi\n    je scratchpad_entry_{i}\n" for i in range(6))
+                    + "    ud2\n"
+                )
+        objects.append(work / f"{label}.o")
+        result = run(["as", "--64", assembly, "-o", objects[-1]])
+        require(result.returncode == 0, result.stderr.decode())
+    binary = work / "scratchpad"
+    result = run([*shlex.split(os.environ.get("CXX", "g++")), *objects, host, "-o", binary])
     require(result.returncode == 0, result.stderr.decode())
     return binary
 
@@ -211,7 +237,7 @@ def record(result, expected, count, kind):
 def client_cases(binary):
     def execute(operation, payload, steps, expected=b"", kind=0, mutation=0):
         data = "".join(f"{request} {status} {value}\n" for request, status, value in steps).encode()
-        result = run([binary, operation, payload.decode(), mutation], input=data)
+        result = run([*binary, operation, payload.decode(), mutation], input=data)
         record(result, expected, len(expected), kind)
         require(f"calls={len(steps)}\n".encode() in result.stderr, "unexpected retry/request count")
         require(not result.stdout, "Call client emitted Console bytes")
@@ -265,7 +291,7 @@ def client_cases(binary):
     # Noncanonical host Call status/value combinations must trap, not turn into
     # an outcome enum. The original native service adapter covers exact trap PCs.
     for status, value in ((3, 0), (1 << 32, 0), (1, 1), (2, 1)):
-        result = run([binary, 0, ""], input=f"1 {status} {value}\n".encode())
+        result = run([*binary, 0, ""], input=f"1 {status} {value}\n".encode())
         require(result.returncode == -signal.SIGILL and b"record=" not in result.stderr, "malformed transport accepted")
 
 
@@ -273,7 +299,7 @@ def input_cases(binary):
     def execute(raw, *, carry=0, limit=(1 << 64) - 1, samples=None):
         samples = samples if samples is not None else [(1, byte, 0) for byte in raw]
         data = "".join(f"{present} {byte} {damage}\n" for present, byte, damage in samples).encode()
-        return run([binary, carry, limit], input=data)
+        return run([*binary, carry, limit], input=data)
 
     for raw, payload, kind in (
         (b"get\n", b"", 0),
@@ -375,12 +401,12 @@ def output_cases(binary):
     cases += [(1, payload, b"data: " + payload + b"\r\n" + PROMPT) for payload in (b"", b"x", b" a  ", MAXIMUM)]
     cases += [(12, b"e3069283", b"crc32c: e3069283\r\n" + PROMPT)]
     for kind, payload, expected in cases:
-        result = run([binary, kind, payload.decode()])
+        result = run([*binary, kind, payload.decode()])
         require(
             result.returncode == 0 and result.stdout == expected and b"success=1" in result.stderr, "output transcript"
         )
         for limit in range(len(expected)):
-            result = run([binary, kind, payload.decode(), limit])
+            result = run([*binary, kind, payload.decode(), limit])
             require(
                 result.returncode == 0 and result.stdout == expected[:limit], "output byte replay or prefix mismatch"
             )
@@ -400,7 +426,7 @@ def output_cases(binary):
         (12, b"g3069283", 0),
         (12, b"e3069283", 1),
     ):
-        result = run([binary, kind, payload.decode(), (1 << 64) - 1, mutation])
+        result = run([*binary, kind, payload.decode(), (1 << 64) - 1, mutation])
         require(
             result.returncode == 0 and not result.stdout and b"success=0 puts=0" in result.stderr,
             "malformed copied response produced partial output",
@@ -415,7 +441,7 @@ def namespace_client_cases(binary):
 
     def execute(operation, name, value, steps, expected=b"", event=0, revision=0, mutation=0):
         data = "".join(f"{request} {status} {reply}\n" for request, status, reply in steps).encode()
-        result = run([binary, "namespace", operation, name, value, mutation], input=data)
+        result = run([*binary, "namespace", operation, name, value, mutation], input=data)
         record(result, expected, len(expected), event)
         require(f"revision={revision} calls={len(steps)}\n".encode() in result.stderr, "namespace revision/retry drift")
         require(not result.stdout, "namespace Call client emitted Console bytes")
@@ -476,7 +502,7 @@ def namespace_client_cases(binary):
     ):
         execute(operation, name, value, [], mutation=mutation)
     for status, reply in ((3, 0), (1 << 32, 0), (1, 1), (2, 1)):
-        result = run([binary, "namespace", 0, "a", ""], input=f"257 {status} {reply}\n".encode())
+        result = run([*binary, "namespace", 0, "a", ""], input=f"257 {status} {reply}\n".encode())
         require(
             result.returncode == -signal.SIGILL and b"record=" not in result.stderr,
             "namespace malformed transport accepted",
@@ -489,7 +515,7 @@ def namespace_input_cases(binary):
     def execute(raw, *, carry=0, limit=(1 << 64) - 1, samples=None):
         samples = samples if samples is not None else [(1, byte, 0) for byte in raw]
         data = "".join(f"{present} {byte} {damage}\n" for present, byte, damage in samples).encode()
-        return run([binary, "namespace", carry, limit], input=data)
+        return run([*binary, "namespace", carry, limit], input=data)
 
     def copied(result, name=b"", value=b"", operation=0, action=0, carry=0):
         require(result.returncode == 0, f"namespace editor failed: {result.stderr!r}")
@@ -567,7 +593,7 @@ def namespace_output_cases(binary):
     maximum = (1 << 64) - 1
 
     def execute(kind, name="", submitted=0, event=0, revision=0, value=b"", limit=maximum, mutation=0):
-        return run([binary, "namespace", kind, name, submitted, event, revision, value.decode(), limit, mutation])
+        return run([*binary, "namespace", kind, name, submitted, event, revision, value.decode(), limit, mutation])
 
     outcomes = {
         0: b"AURORA_NAMESPACE_READY: four named RAM files; all data is lost on owner reset or session exit.\r\n"
@@ -633,12 +659,10 @@ def namespace_output_cases(binary):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("compiler", type=Path)
-    for mode in ("client", "input", "output"):
-        parser.add_argument(f"--{mode}-host", type=Path, required=True, help="Meson-built host library")
+    parser.add_argument("--host", type=Path, required=True, help="Meson-built runtime-mode host library")
     args = parser.parse_args()
     compiler = args.compiler.resolve()
-    for mode in ("client", "input", "output"):
-        HOSTS[mode] = getattr(args, f"{mode}_host").resolve(strict=True)
+    host = args.host.resolve(strict=True)
     work = Path(tempfile.mkdtemp(prefix="scratchpad-source-"))
     print(f"artifacts={work}", flush=True)
     runner = NativeRunner(work, compiler, 30)
@@ -658,22 +682,13 @@ def main():
                 f"auto invalid(console::Scratchpad{kind} value) -> u64 {{ return u64(value.{field}); }}",
             )
         )
-    client = compile_bridge(
-        compiler, work, "client", ROOT / "examples/kernel-ram-scratchpad-client.au", "aurora_user_main", 96
-    )
-    client_cases(client)
-    supervisor = ROOT / "examples/kernel-ram-scratchpad-console.au"
-    input_cases(compile_bridge(compiler, work, "input", supervisor, "read_scratchpad_input", 24))
-    output_cases(compile_bridge(compiler, work, "output", supervisor, "present_scratchpad_response", None))
-    namespace_client_cases(
-        compile_bridge(
-            compiler, work, "client", ROOT / "examples/kernel-namespace-client.au", "aurora_user_main", 176, named=True
-        )
-    )
-    namespace_input_cases(compile_bridge(compiler, work, "input", supervisor, "read_namespace_input", 24, named=True))
-    namespace_output_cases(
-        compile_bridge(compiler, work, "output", supervisor, "present_namespace_response", None, named=True)
-    )
+    binary = compile_bridges(compiler, work, host)
+    client_cases((binary, "client"))
+    input_cases((binary, "input"))
+    output_cases((binary, "output"))
+    namespace_client_cases((binary, "client"))
+    namespace_input_cases((binary, "input"))
+    namespace_output_cases((binary, "output"))
     print(
         f"PASS scratchpad/namespace: {len(cases)} generated record/parser cases; client, editor and output transcripts",
         flush=True,

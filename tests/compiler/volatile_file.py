@@ -6,6 +6,7 @@ model. These source checks do not establish retained-domain or guest behavior.
 """
 
 import argparse
+import json
 from pathlib import Path
 import shutil
 import tempfile
@@ -42,6 +43,76 @@ def read(content, variable="file"):
 
 def case(name, body):
     return Case(name, INITIAL + body + "return 42u64;", 42, imports=IMPORTS)
+
+
+def namespace_cases():
+    """Expand reviewed wire transcripts, without predicting any owner response."""
+    tags = (
+        dict(read=1, write=2, name=3, value=4, prepare=5, revision=6, echo=7, commit=8, next=9),
+        dict(ack=1, data=2, end=3, missing=4, written=5, reject=6, cancelled=7, revision=8),
+    )
+
+    def word(text, response=False):
+        fields = text.split(maxsplit=3)
+        if fields[0] == "raw":
+            if len(fields) != 2 or not 0 <= (value := int(fields[1], 0)) < 1 << 64:
+                raise ValueError("invalid raw namespace word")
+            return value
+        tag = tags[response][fields[0]]
+        cursor, count = (int(fields[index], 0) if len(fields) > index else 0 for index in (1, 2))
+        payload = fields[3] if len(fields) == 4 else "0"
+        if payload.startswith('"'):
+            payload = json.loads(payload).encode("latin1")
+            if len(payload) > 4:
+                raise ValueError("namespace payload exceeds four bytes")
+            value = int.from_bytes(payload, "little")
+        else:
+            value = int(payload, 0)
+        if not 0 <= cursor < 256 or not 0 <= count < 256 or not 0 <= value < 1 << 32:
+            raise ValueError("namespace word field exceeds its wire width")
+        return tag | cursor << 8 | count << 16 | value << 24
+
+    imports = (
+        "console.namespace_owner",
+        "console.namespace_wire",
+        "console.file_namespace",
+        "std.binary_buffer",
+        "std.binary",
+        "std.array",
+    )
+    name, revision, body = None, 1, []
+
+    def finish():
+        initial = (
+            "const std::BinaryBuffer64 empty = std::BinaryBuffer64();\n"
+            "const console::FileNamespace initial = console::FileNamespace(empty);\n"
+            f"console::NamespaceOwner file = console::NamespaceOwner(initial, empty, {revision}u64);\n"
+        )
+        return Case(name, initial + "".join(body) + "return 42u64;", 42, imports=imports)
+
+    for line in Path(__file__).with_name("namespace_protocol.cases").read_text().splitlines():
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("@case "):
+            if name is not None:
+                yield finish()
+            name, revision, body = line[6:], 1, []
+        elif name is None:
+            raise ValueError("namespace transcript must begin with @case")
+        elif line.startswith("@revision "):
+            revision = int(line[10:], 0)
+            if body or not 0 <= revision < 1 << 64:
+                raise ValueError("namespace initial revision must precede its transcript")
+        else:
+            request, reply = line.split(" => ")
+            expected = word(reply, response=True)
+            body.append(
+                f"if (file.cancel() != {expected}u64) {{ return 0u64; }}\n"
+                if request == "cancel"
+                else step(word(request), expected)
+            )
+    if name is not None:
+        yield finish()
 
 
 def value_cases():
@@ -217,7 +288,13 @@ def main():
     parser.add_argument("compiler", type=Path)
     args = parser.parse_args()
     compiler = args.compiler.resolve()
-    cases = list(value_cases()) + list(rejection_cases()) + list(cancellation_cases()) + list(append_cases())
+    cases = (
+        list(value_cases())
+        + list(rejection_cases())
+        + list(cancellation_cases())
+        + list(append_cases())
+        + list(namespace_cases())
+    )
     rejections = list(privacy_cases())
     work = Path(tempfile.mkdtemp(prefix="volatile-file-"))
     print(f"artifacts={work}", flush=True)
@@ -226,7 +303,6 @@ def main():
         suite.value(item.name, item.body, item.expected, result=item.result_type, imports=item.imports)
     for rejection in rejections:
         suite.reject(rejection.name, rejection.source)
-    suite.load(Path(__file__).with_name("namespace_protocol.cases"))
     suite.finish()
     print(f"PASS volatile file: {len(cases)} generated-code cases, {len(rejections)} source rejections", flush=True)
     shutil.rmtree(work)

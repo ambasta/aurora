@@ -72,6 +72,9 @@ The compiler-semantics runners now compile one packed program per test through
 `tests/compiler/native_runner.py`, with fixed cases as `.cases` data beside each
 runner; the token-scan, UTF-8, JSON and package library
 tests compile one driver per library surface and stream their cases as data.
+Scratchpad/namespace transcript tests share one runtime-mode host and compile each
+source once; namespace-owner scenarios are readable request/reply data expanded by
+the existing packed runner, with malformed words kept explicit.
 Kernel policy, graphical console, display renderer, IOMMU event, protected
 note/snapshot, pin/NVMe/dormant and executable-semantics tests build once in Meson
 and compare golden results; their Python reimplementation oracles, mutant controls
