@@ -391,7 +391,11 @@ def compose_private_object(path, assembly, selected, assembler="as", *, compiler
         names = work / "selected"
         bridge_source.write_text(assembly)
         names.write_text("".join(name + "\n" for name in selected))
-        subprocess.run([assembler, "--64", str(bridge_source), "-o", str(bridge_object)], check=True)
+        # The composer admits only the plain .text/.data/.bss/.note.GNU-stack layout;
+        # some distributions' as adds .note.gnu.property by default.
+        subprocess.run(
+            [assembler, "--64", "-mx86-used-note=no", str(bridge_source), "-o", str(bridge_object)], check=True
+        )
         # The compiler admits LOCAL targets and writes a distinct artifact;
         # its CLI rejects all input aliases, including the pending source.
         subprocess.run(

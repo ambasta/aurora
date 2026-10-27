@@ -184,7 +184,7 @@ test('ir-api', ir_api, args: [meson.current_source_dir() / 'compiler' / 'ir'],
 # inputs and allocation failures reuse that admitted pair without recompilation.
 private_object_wrapper = custom_target(
     'private-object-wrapper', input: 'compiler/private_object.S', output: 'private-object-wrapper.o',
-    command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '@INPUT@', '-o', '@OUTPUT@'],
+    command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '-Wa,-mx86-used-note=no', '@INPUT@', '-o', '@OUTPUT@'],
 )
 private_object_test = executable('private-object-test', 'compiler/private_object.cpp',
     dependencies: hosted_frontend, link_with: ir_text, include_directories: include_directories('../compiler'),
