@@ -1,10 +1,10 @@
 // Parser cases are data: hosted_parser.cases holds the sources and their
 // parse steps, golden/hosted_parser.golden the reviewed canonical dump of every
-// tree, record and diagnostic (--update rewrites it). The C++ below keeps only
+// Aurora record and diagnostic (--update rewrites it). The C++ below keeps only
 // what is not a parse-this-text case: raw ABI envelopes, growth limits,
 // representative allocation failures, ownership and typed-module controls.
-#include "lexer.hpp"
-#include "parser.hpp"
+#include "lexemes.hpp"
+#include "hosted_lexer_abi.hpp"
 #include "hosted_parser.hpp"
 #include "hosted_resolver.hpp"
 #include "x86.hpp"
@@ -34,9 +34,6 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#if !defined(AURORA_HOSTED_PARSER) || !defined(AURORA_HOSTED_LEXER)
-#error The hosted parser fixture must link the real Aurora frontend
-#endif
 extern "C" {
 void checked_hosted_parser_create(const void *, void *);
 void checked_hosted_parser_parse(void *, const void *, void *);
@@ -91,8 +88,6 @@ void hosted_parser_misaligned_call(const void *, const void *, void *, AbiEntry)
 
 namespace {
 using aurora::hosted_parser::AdmissionStatus;
-using aurora::hosted_parser::Context;
-using aurora::hosted_parser::Cursor;
 using aurora::hosted_parser::NodeKind;
 using aurora::hosted_parser::Status;
 using aurora::hosted_parser::Stop;
@@ -182,6 +177,15 @@ static_assert(sizeof(Words) == sizeof(aurora::hosted_abi::compiler_parser::Parse
               sizeof(std::array<std::int64_t, 19>) == sizeof(aurora::hosted_abi::ParserInput));
 static_assert(sizeof(ContextWords) == offsetof(aurora::hosted_abi::ParserInput, enum_count) -
                                           offsetof(aurora::hosted_abi::ParserInput, context));
+template <class Record> class GuardedRecord {
+public:
+    std::uint64_t before = canary;
+    Record value;
+    std::uint64_t after = canary;
+    void check() const {
+        require(before == canary && after == canary, "generated record write escaped its ABI extent");
+    }
+};
 class RawArena {
     aurora::hosted::bytes::Region region;
     // This storage is never copied or inspected as an owner descriptor. Aurora
@@ -217,7 +221,9 @@ public:
                 Stop stop = Stop::semicolon,
                 std::int64_t offset = 0,
                 ContextWords typeContext = {},
-                std::int64_t enumCount = 0) {
+                std::int64_t enumCount = 0,
+                std::int64_t line = 1,
+                std::int64_t lineStart = 0) {
         GuardedWords<19> input;
         input.value = {0,
                        static_cast<std::int64_t>(reinterpret_cast<std::uintptr_t>(source.data())),
@@ -227,8 +233,8 @@ public:
                        0,
                        static_cast<std::int64_t>(source.size()),
                        offset,
-                       1,
-                       0,
+                       line,
+                       lineStart,
                        static_cast<std::int64_t>(stop)};
         static_assert(sizeof(input.value) == 152);
         input.value[18] = enumCount;
@@ -274,6 +280,19 @@ public:
         guards();
         require(input.value == beforeInput && source == beforeSource,
                 "admission changed its copied source/root/configuration record");
+        return output.value;
+    }
+    // The whole-source entry the resolver and formatter use: lex, parse and
+    // admit one module with the production admission configuration.
+    aurora::hosted_abi::compiler_resolver::SourceResult source(const std::string &source) {
+        aurora::hosted_abi::ParserSourceInput input;
+        input.source.backing = source.data();
+        input.source.length = static_cast<std::int64_t>(source.size());
+        input.configuration = aurora::hosted_parser::admissionConfiguration();
+        GuardedRecord<aurora::hosted_abi::compiler_resolver::SourceResult> output;
+        checked_hosted_parser_source(data(), &input, &output.value);
+        output.check();
+        guards();
         return output.value;
     }
     NodeWords read(std::int64_t index) {
@@ -331,9 +350,9 @@ public:
     }
 };
 
-// ---- Canonical dump. Every span is checked against the case snapshot (byte
-// bounds, line/column, owning source) and every expression depth against its
-// tree; the dump then records offsets, spellings and all non-default fields.
+// ---- Canonical dump of the Aurora records. Every diagnostic span is checked
+// against the case snapshot (byte bounds, line/column, owning source); tokens
+// print as their spelling and byte offset.
 using Snapshot = std::shared_ptr<const aurora::SourceText>;
 Snapshot dumpSource;
 std::vector<aurora::SourcePosition> dumpPositions;
@@ -405,270 +424,260 @@ std::string span(const aurora::SourceSpan &value) {
                 "span line/column differs from its byte offset");
     return "@" + (local ? "" : printable(value.source->path) + ":") + range;
 }
-bool defaultSpan(const aurora::SourceSpan &value) {
-    return !value.source && defaultPosition(value.begin) && defaultPosition(value.end);
-}
-// A token is its spelling and begin offset when it is exactly that source
-// slice; qualified spellings joined across trivia and >> halves show the span.
-std::string token(const aurora::Token &value) {
-    const auto &where = value.span;
-    if (!where.source)
-        return printable(value.text) + span(where) + "/" + std::to_string(value.line);
-    require(value.line == where.begin.line, "token line differs from its span");
-    const auto range = span(where);
-    if (where.source == dumpSource && where.end.offset - where.begin.offset == value.text.size() &&
-        dumpSource->text.compare(where.begin.offset, value.text.size(), value.text) == 0)
-        return printable(value.text) + "@" + std::to_string(where.begin.offset);
-    return printable(value.text) + range;
-}
 std::string diagnostic(const aurora::Diagnostic &value) {
     return std::string(value.severity == aurora::DiagnosticSeverity::Error ? "error " : "warning ") +
            std::string(aurora::diagnosticCode(value.code)) + " " + span(value.span) + " " +
            printable(value.message, 240, true);
 }
 
-constexpr std::array<const char *, 22> typeKinds{"I64",
-                                                 "Bool",
-                                                 "Own",
-                                                 "Ref",
-                                                 "MutRef",
-                                                 "Class",
-                                                 "Array",
-                                                 "U64",
-                                                 "Parameter",
-                                                 "Enum",
-                                                 "U8",
-                                                 "ByteSpan",
-                                                 "ByteRegion",
-                                                 "OwnedBytes",
-                                                 "ConsoleSession",
-                                                 "DisplaySession",
-                                                 "IommuEventSession",
-                                                 "OwnedValues",
-                                                 "CallSession",
-                                                 "Com1UartGrant",
-                                                 "ServeSession",
-                                                 "ValueSpan"};
-static_assert(static_cast<std::size_t>(aurora::TypeKind::ValueSpan) + 1 == typeKinds.size());
-std::string kind(aurora::TypeKind value) {
-    const auto index = static_cast<std::size_t>(value);
-    return index < typeKinds.size() ? typeKinds[index] : "Kind" + std::to_string(index);
-}
-std::string arguments(const std::vector<aurora::TemplateArgument> &values);
-std::string nominal(const std::string &name, const std::string &display, bool resolved) {
-    return (name.empty() ? "" : ":" + printable(name)) + (display.empty() ? "" : "/" + printable(display)) +
-           (resolved ? "!" : "");
-}
-std::string argument(const aurora::TemplateArgument &value) {
-    const bool capacity = value.kind == aurora::TemplateArgumentKind::Value;
-    std::string out = capacity ? "#" + std::to_string(value.value) : kind(value.type);
-    if (capacity && value.type != aurora::TypeKind::I64)
-        out += "@" + kind(value.type);
-    if (!capacity && value.value)
-        out += "=" + std::to_string(value.value);
-    return out + nominal(value.className, value.displayName, value.resolvedClass) + arguments(value.templateArguments);
-}
-std::string arguments(const std::vector<aurora::TemplateArgument> &values) {
-    if (values.empty())
-        return {};
-    std::vector<std::string> out;
-    for (const auto &value : values)
-        out.push_back(argument(value));
-    return "<" + join(out, ",") + ">";
-}
-std::string type(const aurora::Type &value) {
-    std::string out = kind(value.kind) + nominal(value.className, value.displayName, value.resolvedClass);
-    if (value.isArray() || value.elementKind != aurora::TypeKind::I64 || value.length ||
-        !value.elementParameter.empty() || !value.lengthParameter.empty())
-        out += "[" + kind(value.elementKind) + "," + std::to_string(value.length) +
-               (value.elementParameter.empty() ? "" : ",elem=" + printable(value.elementParameter)) +
-               (value.lengthParameter.empty() ? "" : ",len=" + printable(value.lengthParameter)) + "]";
-    return out + arguments(value.templateArguments);
-}
-bool plain(const aurora::Type &value, const aurora::Type &expected) {
-    return value == expected && value.displayName.empty() && !value.resolvedClass;
-}
-std::string names(const std::vector<std::string> &values) {
-    std::vector<std::string> out;
-    for (const auto &value : values)
-        out.push_back(printable(value));
-    return join(out, ",");
-}
-std::string names(const std::set<std::string> &values) {
-    return names(std::vector<std::string>(values.begin(), values.end()));
+using Lines = std::vector<std::string>;
+constexpr std::array<const char *, 12> nodeKinds{"invalid",
+                                                 "literal",
+                                                 "name",
+                                                 "unary",
+                                                 "binary",
+                                                 "call",
+                                                 "member",
+                                                 "method_call",
+                                                 "index",
+                                                 "array_literal",
+                                                 "construct",
+                                                 "array_zero"};
+constexpr std::array<const char *, 18> typeKinds{"invalid",
+                                                 "i64",
+                                                 "u64",
+                                                 "u8",
+                                                 "bool",
+                                                 "named",
+                                                 "parameter",
+                                                 "capacity",
+                                                 "length_parameter",
+                                                 "array",
+                                                 "own",
+                                                 "ref",
+                                                 "mutref",
+                                                 "byte_span",
+                                                 "builtin",
+                                                 "owned_values",
+                                                 "builtin_class",
+                                                 "value_span"};
+constexpr std::array<const char *, 28> syntaxKinds{"invalid",        "block",
+                                                   "local",          "return",
+                                                   "static_assert",  "if",
+                                                   "while",          "expression",
+                                                   "assign",         "field_assign",
+                                                   "index_assign",   "parameter",
+                                                   "initializer",    "function",
+                                                   "method",         "constructor",
+                                                   "field",          "preamble",
+                                                   "import",         "enum",
+                                                   "enum_case",      "module",
+                                                   "namespace",      "class",
+                                                   "declaration",    "template_scalar",
+                                                   "template_value", "template_capacity"};
+static_assert(wire(NodeKind::array_zero) + 1 == nodeKinds.size() &&
+              static_cast<std::size_t>(aurora::hosted_parser::TypeKind::value_span) + 1 == typeKinds.size() &&
+              wire(SyntaxKind::return_value) == 3 && wire(SyntaxKind::enum_case) == 20 &&
+              wire(SyntaxKind::template_capacity) + 1 == syntaxKinds.size());
+template <std::size_t N> std::string kind(std::int64_t value, const std::array<const char *, N> &names) {
+    return value >= 0 && static_cast<std::size_t>(value) < N ? names[static_cast<std::size_t>(value)]
+                                                             : "kind" + std::to_string(value);
 }
 
-int expression(std::string &out, const aurora::ExpressionPtr &value) {
-    require(bool(value), "expression is missing");
-    out += "(" + value->op + " " + token(value->token);
-    if (!value->fieldNames.empty())
-        out += " {" + names(value->fieldNames) + "}";
-    if (!value->templateArguments.empty())
-        out += " " + arguments(value->templateArguments);
-    if (!plain(value->reflectedType, aurora::Type{}))
-        out += " :" + type(value->reflectedType);
-    if (!value->resolvedName.empty())
-        out += " resolved=" + printable(value->resolvedName);
-    if (!value->overloadCandidates.empty())
-        out += " overloads=" + names(value->overloadCandidates);
-    if (!value->inaccessibleOverloads.empty())
-        out += " inaccessible=" + names(value->inaccessibleOverloads);
-    if (value->enumOrdinal != -1)
-        out += " ordinal=" + std::to_string(value->enumOrdinal);
-    int depth = 1;
-    for (const auto &child : value->args) {
-        out += " ";
-        depth = std::max(depth, expression(out, child) + 1);
+// Rows name tokens by ordinal from the step's first token; the dump spells each
+// as its text and byte offset. A >> half is the closing ordinal's odd bit.
+class RowTokens {
+public:
+    const std::vector<aurora::lexemes::Lexeme> *tokens = nullptr;
+    std::size_t first = 0;
+    std::string operator()(std::int64_t ordinal) const {
+        if (ordinal < 0)
+            return "-";
+        if (!tokens)
+            return "#" + std::to_string(ordinal);
+        const auto at = first + static_cast<std::size_t>(ordinal);
+        require(at < tokens->size(), "row token ordinal escapes the source");
+        const auto &lexeme = (*tokens)[at];
+        const auto text = lexeme.begin == lexeme.end ? std::string("<eof>")
+                                                     : dumpSource->text.substr(lexeme.begin, lexeme.end - lexeme.begin);
+        return printable(text, 32) + "@" + std::to_string(lexeme.begin);
     }
-    out += ")";
-    require(value->depth == depth, "expression depth differs from its tree");
-    return depth;
-}
-std::string expression(const aurora::ExpressionPtr &value) {
-    std::string out;
-    expression(out, value);
-    return out;
-}
-void statements(std::string &out, const std::vector<aurora::StatementPtr> &values);
-void statement(std::string &out, const aurora::StatementPtr &value) {
-    require(bool(value), "statement is missing");
-    out += "[" + value->kind + " " + token(value->token);
-    if (!value->name.empty())
-        out += " name=" + printable(value->name);
-    if (!value->fieldName.empty())
-        out += " field=" + printable(value->fieldName);
-    if (value->kind == "let" || !plain(value->type, aurora::Type::I64))
-        out += " type=" + type(value->type);
-    if (!defaultSpan(value->bindingSpan))
-        out += " bind" + span(value->bindingSpan);
-    if (value->mutableValue)
-        out += " mut";
-    if (value->target)
-        out += " target=" + expression(value->target);
-    if (value->expr)
-        out += " " + expression(value->expr);
-    if (!value->body.empty()) {
-        out += " {";
-        statements(out, value->body);
-        out += "}";
-    }
-    if (!value->other.empty()) {
-        out += " else{";
-        statements(out, value->other);
-        out += "}";
-    }
-    out += "]";
-}
-void statements(std::string &out, const std::vector<aurora::StatementPtr> &values) {
-    for (std::size_t index = 0; index < values.size(); ++index) {
-        if (index)
-            out += " ";
-        statement(out, values[index]);
-    }
-}
-using Lines = std::vector<std::string>;
-std::string templateParameters(const std::vector<aurora::TemplateParameter> &values) {
-    std::vector<std::string> out;
-    for (const auto &value : values)
-        out.push_back(std::string(value.kind == aurora::TemplateParameterKind::Scalar  ? "Scalar "
-                                  : value.kind == aurora::TemplateParameterKind::Value ? "Value "
-                                                                                       : "Capacity ") +
-                      printable(value.name));
-    return values.empty() ? "" : " template<" + join(out, ",") + ">";
-}
-void function(Lines &lines, const std::string &indent, const std::string &keyword, const aurora::Function &value) {
-    std::string out = indent + keyword + " " + token(value.token);
-    if (value.name != value.token.text)
-        out += " name=" + printable(value.name);
-    if (!value.scope.empty())
-        out += " scope=" + printable(value.scope);
-    for (const auto &[set, word] : std::array<std::pair<bool, const char *>, 4>{{{value.exported, " export"},
-                                                                                 {value.publicAccess, " public"},
-                                                                                 {value.constructor, " constructor"},
-                                                                                 {value.receiverConst, " const"}}})
-        if (set)
-            out += word;
-    if (!value.receiverClass.empty())
-        out += " receiver=" + printable(value.receiverClass);
-    if (value.moduleScope)
-        out += " module-scope=" + std::to_string(value.moduleScope);
-    out += templateParameters(value.templateParameters);
-    if (!value.templateArguments.empty())
-        out += " arguments" + arguments(value.templateArguments);
-    if (!value.templateTypeAuthority.empty())
-        out += " authority={" + names(value.templateTypeAuthority) + "}";
-    std::vector<std::string> parameters;
-    for (const auto &parameter : value.params)
-        parameters.push_back(printable(parameter.name) + " " + type(parameter.type) + (parameter.borrowed ? " &" : "") +
-                             (parameter.borrowConst ? " const" : "") +
-                             (defaultSpan(parameter.borrowSpan) ? "" : " " + span(parameter.borrowSpan)));
-    lines.push_back(out + " (" + join(parameters, ", ") + ") -> " + type(value.result));
-    for (const auto &[field, initializer] : value.initializers)
-        lines.push_back(indent + "  init " + token(field) + " " + expression(initializer));
-    for (const auto &item : value.body) {
-        std::string text = indent + "  ";
-        statement(text, item);
-        lines.push_back(text);
-    }
-}
-std::string field(const aurora::Field &value) {
-    return "field " + token(value.token) + " " + type(value.type) + (value.publicAccess ? " public" : "") +
-           (value.offset ? " offset=" + std::to_string(value.offset) : "") +
-           (value.index ? " index=" + std::to_string(value.index) : "");
-}
-std::string declaration(const std::string &keyword,
-                        const aurora::Token &name,
-                        const std::string &spelling,
-                        const std::string &scope,
-                        bool exported,
-                        int id) {
-    return keyword + " " + token(name) + (spelling != name.text ? " name=" + printable(spelling) : "") +
-           (scope.empty() ? "" : " scope=" + printable(scope)) + (exported ? " export" : "") +
-           (id ? " id=" + std::to_string(id) : "");
-}
-void definition(Lines &lines, const std::string &keyword, const aurora::ClassDefinition &value) {
-    lines.push_back(declaration(keyword, value.token, value.name, value.scope, value.exported, value.id) +
-                    templateParameters(value.templateParameters) +
-                    (value.templateArguments.empty() ? "" : " arguments" + arguments(value.templateArguments)));
-    for (const auto &item : value.fields)
-        lines.push_back("  " + field(item));
-    for (const auto &method : value.methods)
-        function(lines, "  ", "method", method);
-}
-std::string enumeration(const aurora::EnumDefinition &value) {
-    std::vector<std::string> cases;
-    for (const auto &item : value.cases)
-        cases.push_back(token(item));
-    return declaration("enum", value.token, value.name, value.scope, value.exported, value.id) + " {" +
-           join(cases, ",") + "}";
-}
-void program(Lines &lines, const aurora::Program &value) {
-    lines.push_back("module " + printable(value.moduleName) + (value.interfaceUnit ? " interface" : ""));
-    for (const auto &item : value.imports)
-        lines.push_back("import " + token(item));
-    if (!value.namespaces.empty())
-        lines.push_back("namespaces " + names(value.namespaces));
-    for (const auto &[scope, access] : value.reflectionAccess)
-        lines.push_back("reflection " + std::to_string(scope) + " {" + names(access) + "}");
-    for (const auto &item : value.functions)
-        function(lines, "", "function", item);
-    for (const auto &item : value.functionTemplates)
-        function(lines, "", "function-template", item);
-    for (const auto &item : value.classes)
-        definition(lines, "class", item);
-    for (const auto &item : value.templates)
-        definition(lines, "class-template", item);
-    for (const auto &item : value.enums)
-        lines.push_back(enumeration(item));
-}
-std::string cursor(const Cursor &value) {
-    return "next=" + std::to_string(value.ordinal) + (value.half ? " half=" + std::to_string(value.half) : "");
-}
+};
 template <std::size_t N> std::string words(const std::array<std::int64_t, N> &values) {
     std::string out;
     for (std::size_t index = 0; index < N; ++index)
         out += (index ? " " : "") + std::to_string(values[index]);
     return out;
+}
+// Dumps longer than a review screen are recorded by line count and FNV-1a digest.
+void append(Lines &lines, const Lines &records) {
+    if (records.size() <= 64) {
+        lines.insert(lines.end(), records.begin(), records.end());
+        return;
+    }
+    std::uint64_t hash = 0xcbf29ce484222325ULL;
+    for (const auto &record : records)
+        for (const unsigned char byte : record + "\n")
+            hash = (hash ^ byte) * 0x100000001b3ULL;
+    std::ostringstream out;
+    out << "  <" << records.size() << " records " << std::hex << hash << '>';
+    lines.push_back(out.str());
+}
+// Expressions and types print as trees from their root rows; each syntax row is
+// one line with its expression and type trees inline. Depths and argument
+// positions are checked rather than printed. Rows no root reaches print flat.
+class Dump {
+    RowTokens token;
+    std::vector<NodeWords> nodes;
+    std::vector<EdgeWords> edges;
+    std::vector<TypeWords> types;
+    std::vector<SyntaxWords> syntax;
+    std::vector<bool> nodeUsed, edgeUsed, typeUsed;
+    // Template-argument and reflected type roots, by the token that owns them.
+    std::map<std::int64_t, std::int64_t> templateRoots, reflectedRoots;
+
+    static void field(std::string &out, const char *name, std::int64_t value) {
+        if (value != -1)
+            out += std::string(" ") + name + "=" + std::to_string(value);
+    }
+    std::string type(std::int64_t index) {
+        require(index >= 0 && static_cast<std::size_t>(index) < types.size() && !typeUsed[index],
+                "type row reused or out of range");
+        typeUsed[index] = true;
+        const auto &row = types[index];
+        auto out = "(" + kind(row[0], typeKinds) + " " + token(row[1]);
+        if (row[2] != row[1])
+            out += " last=" + token(row[2]);
+        if (row[3] != 2 * row[1])
+            out += " close=" + token(row[3] / 2) + (row[3] % 2 ? ".5" : "");
+        for (const auto child : {row[4], row[5]})
+            if (child != -1)
+                out += " " + type(child);
+        return out + ")";
+    }
+    std::string expression(std::int64_t index, std::int64_t &depth) {
+        require(index >= 0 && static_cast<std::size_t>(index) < nodes.size() && !nodeUsed[index],
+                "expression row reused or out of range");
+        nodeUsed[index] = true;
+        const auto &row = nodes[index];
+        auto out = "(" + kind(row[0], nodeKinds) + " " + token(row[1]);
+        if (row[5] != row[1])
+            out += " last=" + token(row[5]);
+        if (row[6] != row[1])
+            out += " close=" + token(row[6]);
+        if (const auto found = templateRoots.find(row[1]); found != templateRoots.end())
+            out += " <" + type(found->second) + ">";
+        if (const auto found = reflectedRoots.find(row[1]); found != reflectedRoots.end())
+            out += " :" + type(found->second);
+        depth = 1;
+        const auto child = [&](std::int64_t value) {
+            std::int64_t inner = 0;
+            out += " " + expression(value, inner);
+            depth = std::max(depth, inner + 1);
+            return inner;
+        };
+        const auto kindOf = static_cast<NodeKind>(row[0]);
+        if (kindOf == NodeKind::call || kindOf == NodeKind::method_call || kindOf == NodeKind::array_literal ||
+            kindOf == NodeKind::construct || kindOf == NodeKind::array_zero) {
+            std::vector<std::int64_t> list;
+            for (auto edge = row[2]; edge != -1;) {
+                require(edge >= 0 && static_cast<std::size_t>(edge) < edges.size() && !edgeUsed[edge],
+                        "argument edge reused or out of range");
+                edgeUsed[edge] = true;
+                list.push_back(edge);
+                edge = edges[edge][1];
+            }
+            require(std::ssize(list) == row[3], "argument list length differs from its node");
+            std::int64_t prefix = 1;
+            for (auto edge = list.rbegin(); edge != list.rend(); ++edge) {
+                const auto &argument = edges[*edge];
+                if (argument[4] != -1)
+                    out += " ." + token(argument[4]);
+                prefix = std::max(prefix, child(argument[0]) + 1);
+                require(argument[2] == std::distance(list.rbegin(), edge) + 1 && argument[3] == prefix,
+                        "argument edge position or depth differs from its list");
+            }
+        } else {
+            for (const auto value : {row[2], row[3]})
+                if (value != -1)
+                    child(value);
+        }
+        require(row[4] == depth, "expression depth differs from its tree");
+        return out + ")";
+    }
+    std::string expression(std::int64_t index) {
+        std::int64_t depth = 0;
+        return expression(index, depth);
+    }
+
+public:
+    Dump(RawArena &arena, std::int64_t nodeCount, const RowTokens &tokens) : token(tokens) {
+        for (std::int64_t index = 0; index < nodeCount; ++index)
+            nodes.push_back(arena.read(index));
+        for (std::int64_t index = 0, count = arena.edges(); index < count; ++index)
+            edges.push_back(arena.edge(index));
+        for (std::int64_t index = 0, count = arena.types(); index < count; ++index) {
+            types.push_back(arena.type(index));
+            if (types.back()[7] == 1 || types.back()[7] == 2)
+                (types.back()[7] == 1 ? templateRoots : reflectedRoots)[types.back()[6]] = index;
+        }
+        for (std::int64_t index = 0, count = arena.syntaxCount(); index < count; ++index)
+            syntax.push_back(arena.syntax(index));
+        nodeUsed.assign(nodes.size(), false);
+        edgeUsed.assign(edges.size(), false);
+        typeUsed.assign(types.size(), false);
+    }
+    // `root` is the expression or type root of those stops; syntax stops print
+    // every syntax row.
+    void print(Lines &lines, Stop stop, std::int64_t root) {
+        const bool expressionStop = stop == Stop::semicolon || stop == Stop::close_parenthesis ||
+                                    stop == Stop::assignment || stop == Stop::constructor_braces;
+        if (expressionStop && root >= 0)
+            lines.push_back("  " + expression(root));
+        if (stop == Stop::type && root >= 0)
+            lines.push_back("  " + type(root));
+        for (std::size_t index = 0; index < syntax.size(); ++index) {
+            const auto &row = syntax[index];
+            auto out = "  syntax " + std::to_string(index) + " " + kind(row[0], syntaxKinds) + " " + token(row[1]) +
+                       " end=" + token(row[2]);
+            field(out, "previous", row[3]);
+            if (row[4] != -1)
+                out += " expression=" + expression(row[4]);
+            if (row[5] != -1)
+                out += " target=" + expression(row[5]);
+            if (row[6] != -1) {
+                require(types[row[6]][7] == 3 && types[row[6]][6] == row[1], "declared type has another owner");
+                out += " type=" + type(row[6]);
+            }
+            if (row[7] != -1)
+                out += " binding=" + token(row[7]);
+            field(out, "body", row[8]);
+            field(out, "other", row[9]);
+            if (row[10] != 0)
+                out += " qualifier=" + std::to_string(row[10]);
+            if (row[11] != -1)
+                out += " borrow=" + token(row[11]);
+            lines.push_back(out);
+        }
+        for (std::size_t index = 0; index < nodes.size(); ++index)
+            if (!nodeUsed[index])
+                lines.push_back("  node " + std::to_string(index) + " " + words(nodes[index]));
+        for (std::size_t index = 0; index < edges.size(); ++index)
+            if (!edgeUsed[index])
+                lines.push_back("  edge " + std::to_string(index) + " " + words(edges[index]));
+        for (std::size_t index = 0; index < types.size(); ++index)
+            if (!typeUsed[index])
+                lines.push_back("  type " + std::to_string(index) + " " + words(types[index]));
+    }
+};
+// A step's continuation: a token ordinal and whether its >> is half consumed.
+class Cursor {
+public:
+    std::size_t ordinal = 0;
+    std::int64_t half = 0;
+};
+std::string cursor(const Cursor &value) {
+    return "next=" + std::to_string(value.ordinal) + (value.half ? " half=" + std::to_string(value.half) : "");
 }
 
 // ---- Cases from the cases file, keyed by name in one reviewed golden file.
@@ -923,42 +932,41 @@ public:
             require(used.contains(key), "unknown option " + key + " for " + step.mode);
     }
 };
-std::size_t tokenFrom(const std::vector<aurora::Token> &tokens, std::size_t offset) {
+std::size_t tokenFrom(const std::vector<aurora::lexemes::Lexeme> &tokens, std::size_t offset) {
     for (std::size_t index = 0; index < tokens.size(); ++index)
-        if (tokens[index].span.begin.offset >= offset)
+        if (static_cast<std::size_t>(tokens[index].begin) >= offset)
             return index;
     throw std::runtime_error(context + ": no token at offset " + std::to_string(offset));
 }
-Context capture(Options &options, const std::vector<aurora::Token> &tokens) {
-    Context out;
-    const auto find = [&](const std::string &key, std::vector<aurora::Token> &into) {
+// Template context: the byte ranges of the named parameter tokens (by first
+// spelling) and the template mode, as the parser input record carries them.
+ContextWords capture(Options &options, const std::vector<aurora::lexemes::Lexeme> &tokens) {
+    ContextWords out{};
+    const auto find = [&](const std::string &key, std::size_t first, std::size_t limit) {
+        std::size_t count = 0;
         if (const auto value = options.get(key))
             for (const auto &name : split(*value, ',')) {
                 const auto found = std::find_if(tokens.begin(), tokens.end(), [&](const auto &token) {
-                    return token.text == name;
+                    return dumpSource->text.compare(token.begin, token.end - token.begin, name) == 0;
                 });
-                require(found != tokens.end(), "context names no source token " + name);
-                into.push_back(*found);
+                require(found != tokens.end() && count < limit, "context names no source token " + name);
+                out[first + 2 * count] = found->begin;
+                out[first + 2 * count + 1] = found->end;
+                ++count;
             }
+        return count;
     };
-    find("types", out.typeParameters);
-    find("caps", out.capacityParameters);
-    out.functionTemplate = options.flag("fn");
+    const auto types = find("types", 0, 2);
+    find("caps", 4, 1);
+    const bool function = options.flag("fn");
+    if (types)
+        out[6] = function ? 2 : 1;
     return out;
-}
-bool sameTokens(const std::vector<aurora::Token> &a, const std::vector<aurora::Token> &b) {
-    const auto position = [](const aurora::SourcePosition &left, const aurora::SourcePosition &right) {
-        return left.offset == right.offset && left.line == right.line && left.column == right.column;
-    };
-    return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [&](const auto &left, const auto &right) {
-               return left.text == right.text && left.line == right.line && left.span.source == right.span.source &&
-                      position(left.span.begin, right.span.begin) && position(left.span.end, right.span.end);
-           });
 }
 
 // Raw step: the copied private ABI record through the checked entry, every
 // copied record, optional admission and arena re-entry, then exact cleanup.
-void rawStep(Lines &lines, const Case &item, Options &options) {
+void rawStep(Lines &lines, const Case &item, Options &options, const std::vector<aurora::lexemes::Lexeme> &tokens) {
     const auto stop = stopNamed(options.text("stop", "semicolon"));
     const auto offset = options.integer("offset");
     const auto typeContext = options.integers<7>("rawctx");
@@ -969,21 +977,20 @@ void rawStep(Lines &lines, const Case &item, Options &options) {
     Allocations allocations;
     RawArena arena(allocations);
     const auto result = arena.parse(item.source, stop, offset, typeContext, enumCount);
+    RowTokens token;
+    if (offset >= 0 && static_cast<std::size_t>(offset) <= item.source.size()) {
+        token.first = tokenFrom(tokens, static_cast<std::size_t>(offset));
+        if (tokens[token.first].begin == offset)
+            token.tokens = &tokens;
+    }
     const auto records = [&] {
         Lines out;
-        for (std::int64_t index = 0; index < result[2]; ++index)
-            out.push_back("  node " + words(arena.read(index)));
-        for (std::int64_t index = 0; index < arena.edges(); ++index)
-            out.push_back("  edge " + words(arena.edge(index)));
-        for (std::int64_t index = 0; index < arena.types(); ++index)
-            out.push_back("  type " + words(arena.type(index)));
-        for (std::int64_t index = 0; index < arena.syntaxCount(); ++index)
-            out.push_back("  syntax " + words(arena.syntax(index)));
+        Dump(arena, result[2], token).print(out, stop, result[0] == wire(Status::success) ? result[1] : -1);
         return out;
     };
     const auto committed = records();
     lines.push_back("raw " + words(result));
-    lines.insert(lines.end(), committed.begin(), committed.end());
+    append(lines, committed);
     if (result[0] == wire(Status::success)) {
         const auto metrics = arena.metrics();
         require(metrics.live_allocations == 5 && metrics.peak_live_allocations == 5,
@@ -1001,15 +1008,105 @@ void rawStep(Lines &lines, const Case &item, Options &options) {
     require(allocations.successful == allocations.released, "raw parse leaked an owner");
 }
 
+// A grammar entry from a token cursor: its continuation and records, or the
+// diagnostic the compiler renders for its status at the reported token.
+std::optional<Cursor> parseStep(Lines &lines,
+                                const std::string &mode,
+                                Stop stop,
+                                Cursor start,
+                                const ContextWords &typeContext,
+                                std::int64_t enumCount,
+                                const std::vector<aurora::lexemes::Lexeme> &tokens) {
+    require(start.ordinal < tokens.size(), "cursor beyond the last token");
+    const auto &first = tokens[start.ordinal];
+    Allocations allocations;
+    RawArena arena(allocations, 64 * 1048576);
+    const auto result = arena.parse(dumpSource->text,
+                                    stop,
+                                    first.begin + start.half,
+                                    typeContext,
+                                    enumCount,
+                                    first.line,
+                                    first.begin - first.column + 1);
+    const auto end = start.ordinal + static_cast<std::size_t>(result[3]);
+    const auto half = result[5] | (result[3] == 0 ? start.half : 0);
+    require(result[3] >= 0 && end < tokens.size() && (half == 0 || half == 1) && result[4] == tokens[end].begin + half,
+            "parse result cursor differs from its token");
+    std::optional<Cursor> next;
+    if (result[0] == wire(Status::success)) {
+        next = Cursor{end, half};
+        lines.push_back(mode + " " + cursor(*next));
+        Lines records;
+        Dump(arena, result[2], RowTokens{&tokens, start.ordinal}).print(records, stop, result[1]);
+        append(lines, records);
+    } else {
+        const auto &at = tokens[end];
+        const auto begin = static_cast<std::size_t>(at.begin + half), close = static_cast<std::size_t>(at.end);
+        const aurora::Token token(at.begin == at.end ? "<eof>" : dumpSource->text.substr(begin, close - begin),
+                                  {dumpSource, dumpPositions[begin], dumpPositions[close]});
+        const auto previous = end > start.ordinal ? dumpSource->text.substr(tokens[end - 1].begin,
+                                                                            tokens[end - 1].end - tokens[end - 1].begin)
+                                                  : std::string();
+        try {
+            aurora::hosted_parser::rejectSyntax(static_cast<Status>(result[0]), stop, token, previous);
+        } catch (const aurora::Error &error) {
+            lines.push_back(mode + " " + diagnostic(error.diagnostic));
+        }
+    }
+    arena.finish();
+    require(allocations.successful == allocations.released, "parse leaked an owner");
+    return next;
+}
+
+// The whole-source entry the resolver and formatter use, with the diagnostic
+// the compiler renders for a rejection.
+void programStep(Lines &lines, const std::string &mode, const std::vector<aurora::lexemes::Lexeme> &tokens) {
+    Allocations allocations;
+    RawArena arena(allocations, 64 * 1048576);
+    const auto result = arena.source(dumpSource->text);
+    try {
+        aurora::rejectSource(dumpSource, result);
+        lines.push_back(mode + " module " +
+                        printable(dumpSource->text.substr(result.name_begin, result.name_end - result.name_begin)) +
+                        (result.detail ? " interface" : ""));
+        Lines records;
+        Dump(arena, checked_hosted_parser_count(arena.data()), RowTokens{&tokens, 0})
+            .print(records, Stop::module_definition, -1);
+        append(lines, records);
+    } catch (const aurora::Error &error) {
+        lines.push_back(mode + " " + diagnostic(error.diagnostic));
+    }
+    arena.finish();
+    require(allocations.successful == allocations.released, "whole-source parse leaked an owner");
+}
+
 void runStep(Lines &lines,
              const Case &item,
              const Step &step,
-             const std::vector<aurora::Token> &tokens,
+             const std::vector<aurora::lexemes::Lexeme> &tokens,
              Cursor &next,
              bool &haveNext) {
     Options options(step);
-    if (step.mode == "raw") {
-        rawStep(lines, item, options);
+    const auto &mode = step.mode;
+    if (mode == "raw") {
+        rawStep(lines, item, options, tokens);
+        return;
+    }
+    if (mode == "program" || mode == "parser") {
+        options.done();
+        programStep(lines, mode, tokens);
+        return;
+    }
+    if (mode == "resolve") {
+        options.done();
+        try {
+            aurora::HostedResolution resolution;
+            const auto module = resolution.add(dumpSource);
+            static_cast<void>(resolution.resolve({module.id}, module.id));
+            lines.push_back("resolve ok");
+        } catch (const aurora::Error &error) {
+            lines.push_back(mode + " " + diagnostic(error.diagnostic));
+        }
         return;
     }
     Cursor start;
@@ -1028,75 +1125,29 @@ void runStep(Lines &lines,
     const auto stop = options.get("stop");
     const auto enumCount = options.get("count");
     options.done();
-    const auto &mode = step.mode;
     require((!stop || mode == "expr" || mode == "callable") && (!enumCount || mode == "enum"),
             "stop or count option does not apply to this step");
-    const auto advance = [&](const Cursor &value) {
-        next = value;
+    static const std::map<std::string, Stop> stops{{"body", Stop::body},
+                                                   {"type", Stop::type},
+                                                   {"field", Stop::field},
+                                                   {"preamble", Stop::preamble},
+                                                   {"enum", Stop::enum_definition}};
+    const auto fixed = stops.find(mode);
+    require(fixed != stops.end() || mode == "expr" || mode == "callable", "unknown step mode " + mode);
+    require(start.half == 0 || (mode != "expr" && mode != "body"),
+            "expression or body cursor cannot begin at a half token");
+    if (mode == "callable")
+        require(bool(stop), "callable needs a stop");
+    const auto after = parseStep(lines,
+                                 mode,
+                                 fixed != stops.end() ? fixed->second : stopNamed(stop.value_or("semicolon")),
+                                 start,
+                                 typeContext,
+                                 std::stoll(enumCount.value_or("0")),
+                                 tokens);
+    if (after) {
+        next = *after;
         haveNext = true;
-        return cursor(value);
-    };
-    try {
-        if (mode == "expr" || mode == "body") {
-            require(start.half == 0, "expression or body cursor cannot begin at a half token");
-            std::size_t position = start.ordinal;
-            try {
-                if (mode == "expr") {
-                    const auto parsed = aurora::parseHostedExpression(
-                        tokens, position, stopNamed(stop.value_or("semicolon")), typeContext);
-                    lines.push_back("expr " + advance(Cursor{position}) + " " + expression(parsed));
-                } else {
-                    require(!stop, "body takes no stop");
-                    const auto parsed = aurora::parseHostedBody(tokens, position, typeContext);
-                    lines.push_back("body " + advance(Cursor{position}));
-                    for (const auto &value : parsed) {
-                        std::string text = "  ";
-                        statement(text, value);
-                        lines.push_back(text);
-                    }
-                }
-            } catch (const aurora::Error &) {
-                require(position == start.ordinal, "rejected parse committed its caller cursor");
-                throw;
-            }
-        } else if (mode == "type") {
-            const auto parsed = aurora::parseHostedType(tokens, start, typeContext);
-            lines.push_back("type " + advance(parsed.next) + " " + type(parsed.type));
-        } else if (mode == "callable") {
-            const auto parsed = aurora::parseHostedCallable(tokens, start, stopNamed(stop.value()), typeContext);
-            lines.push_back("callable " + advance(parsed.next));
-            function(lines, "  ", "function", parsed.function);
-        } else if (mode == "field") {
-            const auto parsed = aurora::parseHostedField(tokens, start, typeContext);
-            lines.push_back("field " + advance(parsed.next));
-            lines.push_back("  " + field(parsed.field));
-        } else if (mode == "preamble") {
-            const auto parsed = aurora::parseHostedPreamble(tokens, start);
-            lines.push_back("preamble " + advance(parsed.next));
-            Lines body;
-            program(body, parsed.program);
-            for (const auto &line : body)
-                lines.push_back("  " + line);
-        } else if (mode == "enum") {
-            const auto parsed = aurora::parseHostedEnum(tokens, start, std::stoul(enumCount.value_or("0")));
-            lines.push_back("enum " + advance(parsed.next) + " " + enumeration(parsed.definition));
-        } else if (mode == "program" || mode == "parser") {
-            const auto parsed = mode == "program" ? aurora::parseHostedProgram(tokens) : aurora::Parser(tokens).parse();
-            lines.push_back(mode);
-            Lines body;
-            program(body, parsed);
-            for (const auto &line : body)
-                lines.push_back("  " + line);
-        } else if (mode == "resolve") {
-            aurora::HostedResolution resolution;
-            const auto module = resolution.add(dumpSource);
-            static_cast<void>(resolution.resolve({module.id}, module.id));
-            lines.push_back("resolve ok");
-        } else {
-            require(false, "unknown step mode " + mode);
-        }
-    } catch (const aurora::Error &error) {
-        lines.push_back(mode + " " + diagnostic(error.diagnostic));
     }
 }
 
@@ -1104,20 +1155,29 @@ Lines run(const Case &item) {
     dumpSource = std::make_shared<const aurora::SourceText>("case.au", item.source);
     dumpPositions = positionsOf(item.source);
     Lines lines;
-    std::vector<aurora::Token> tokens;
-    try {
-        tokens = aurora::lex(dumpSource);
-    } catch (const aurora::Error &error) {
-        lines.push_back("lex " + diagnostic(error.diagnostic));
+    const auto lexemes = aurora::lexemes::scan(item.source);
+    std::vector<aurora::lexemes::Lexeme> tokens;
+    for (const auto &lexeme : lexemes)
+        if (!lexeme.trivia())
+            tokens.push_back(lexeme);
+    if (tokens.back().event != aurora::lexemes::Event::end_of_input) {
+        const auto &bad = tokens.back();
+        try {
+            aurora::hosted_lexer::rejectLexical(bad.event,
+                                                {dumpSource,
+                                                 dumpPositions[static_cast<std::size_t>(bad.begin)],
+                                                 dumpPositions[static_cast<std::size_t>(bad.end)]});
+            require(false, "lexer stopped without a rejection");
+        } catch (const aurora::Error &error) {
+            lines.push_back("lex " + diagnostic(error.diagnostic));
+        }
         return lines;
     }
-    const auto before = tokens;
     Cursor next;
     bool haveNext = false;
     for (const auto &step : item.steps) {
         context = item.name + " [" + step.mode + "]";
         runStep(lines, item, step, tokens, next, haveNext);
-        require(sameTokens(tokens, before), "parse changed its caller tokens");
     }
     require(dumpSource->text == item.source, "parse changed its source snapshot");
     return lines;
@@ -1312,9 +1372,6 @@ void resolvedModules() {
                 "retained concrete function order differs");
     for (std::size_t index = 0; index < metadata.classCount(); ++index)
         require(!metadata.isCarrier(metadata.classAt(index)), "typed output added an array carrier");
-    const auto definitionSyntax = aurora::parseHostedProgram(aurora::lex(dependency));
-    const auto &bufferSyntax = definitionSyntax.templates.at(0);
-    require(bufferSyntax.methods.size() == 3, "source Buffer method inventory differs");
     require(abi.records.at(leaf).sourceName == "lib::Leaf" && abi.records.at(hidden).sourceName == "Hidden" &&
                 abi.records.at(leaf).members == std::vector<std::string>{"value"} &&
                 abi.records.at(hidden).members == std::vector<std::string>{"value"} &&
@@ -1356,12 +1413,9 @@ void resolvedModules() {
             "__au_m_m1_3dep_n2_3lib6Buffer_d8own_size_t2_u8_v" + std::to_string(capacity)};
         const std::array<std::string, 3> sourceNames{"lib::Buffer", "lib::size", "lib::own_size"};
         for (std::size_t method = 0; method < names.size(); ++method) {
-            const auto &source = bufferSyntax.methods[method];
             require(abi.functions.at(names[method]).sourceName == sourceNames[method] &&
-                        abi.functions.at(names[method]).members.empty() && source.params.empty() &&
-                        source.result == aurora::Type::I64 && source.constructor == (method == 0) &&
-                        source.receiverConst == (method != 0) && source.publicAccess,
-                    "method/constructor ABI identity or original source signature differs");
+                        abi.functions.at(names[method]).members.empty(),
+                    "method/constructor ABI identity differs");
             if (method)
                 require(std::none_of(module.functions.begin(),
                                      module.functions.end(),
@@ -1575,16 +1629,6 @@ void resolvedLinkageNames() {
             "nested instance inherited prototype cache or changed root spelling");
     ++cases;
 }
-
-template <class Record> class GuardedRecord {
-public:
-    std::uint64_t before = canary;
-    Record value;
-    std::uint64_t after = canary;
-    void check() const {
-        require(before == canary && after == canary, "generated record write escaped its ABI extent");
-    }
-};
 
 // The Session and the parser arena each module reuses are constructed directly
 // in their generated release records. Only copied results are inspected.
@@ -2960,7 +3004,7 @@ void rawModules() {
     for (std::int64_t index = 0; index < width; ++index)
         source += "auto f_" + std::to_string(index) + "()->i64{return g(1,2);}";
     source += std::string(nesting, '}');
-    const auto tokens = aurora::lex(source, "module-growth.au");
+    const auto tokens = aurora::lexemes::tokens(source);
     const auto end = static_cast<std::int64_t>(tokens.size() - 1), syntaxCount = 2 + 2 * nesting + 4 * width;
     std::size_t successful = 0;
     {
@@ -3240,7 +3284,7 @@ void rawPreambleEnums() {
             expected.push_back(
                 {stop == Stop::preamble ? 18 : 20, ordinal, ordinal + 1, index - 1, -1, -1, -1, -1, -1, -1, 0, -1});
         }
-        const auto tokens = aurora::lex(source, "preamble-enum-growth.au");
+        const auto tokens = aurora::lexemes::tokens(source);
         const auto end = static_cast<std::int64_t>(tokens.size() - 1);
         expected.push_back({stop == Stop::preamble ? 17 : 19,
                             2,
@@ -3269,7 +3313,7 @@ void rawPreambleEnums() {
                                         width,
                                         0,
                                         end,
-                                        static_cast<std::int64_t>(tokens.back().span.begin.offset),
+                                        static_cast<std::int64_t>(tokens.back().begin),
                                         0} &&
                             arena.syntaxCount() == width + 1,
                         "wide preamble/enum root or cursor differs");

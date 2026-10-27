@@ -477,7 +477,7 @@ endforeach
 # hidden inside each test invocation; Ninja tracks C++ header dependencies.
 compiler_fixtures = {}
 foreach fixture : [
-    'diagnostics', 'lexer_trivia', 'source_overlays',
+    'diagnostics', 'source_overlays',
 ]
     compiler_fixtures += {fixture: executable(
         fixture.replace('_', '-') + '-fixture', 'compiler/' + fixture + '.cpp',
@@ -494,7 +494,6 @@ test('source-overlays', python,
      args: ['-B', '-O', files('compiler/source_overlays.py'), compiler_fixtures['source_overlays']],
      depends: [compiler_fixtures['source_overlays']] + record_host_targets, suite: ['full', 'merge', 'slow', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 120)
-test('lexer-trivia', compiler_fixtures['lexer_trivia'], suite: ['full', 'merge', 'slow', 'compiler'], timeout: 180)
 # Reuse the real CLI entry object for alternate-emitter mutation probes.
 # No duplicate compiler/IR translation unit or production entry is added.
 emitter_probe_main = static_library('emitter-probe-main',
@@ -588,7 +587,7 @@ test('private-object', python,
      suite: ['full', 'merge', 'dev', 'core', 'compiler'], env: oracle_env, timeout: 120)
 
 
-# This fixture always links the Aurora phase; the C++ scanner is only its oracle.
+# Lexer cases through the raw Aurora lexer entry, checked against a reviewed golden file.
 hosted_lexer_abi = custom_target(
     'hosted-lexer-abi-object', input: 'compiler/hosted_lexer_abi.S', output: 'hosted-lexer-abi.o',
     command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '@INPUT@', '-o', '@OUTPUT@'],
@@ -612,13 +611,6 @@ test('hosted-lexer-format', format_fixture, suite: ['full', 'merge', 'dev', 'com
 test('hosted-lexer-format-cli', python, args: ['-B', '-O', files('compiler/format.py'), aurora_fmt],
      depends: [aurora_fmt] + record_host_targets, suite: ['full', 'merge', 'dev', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 180)
-
-hosted_lexer_invalid = executable(
-    'hosted-lexer-invalid', ['compiler/hosted_lexer_invalid.cpp', '../compiler/hosted_lexer.cpp', frontend_assembly[3]],
-    cpp_args: ['-DAURORA_HOSTED_LEXER'], include_directories: include_directories('../compiler', '..'),
-    native: true, override_options: fixture_options, install: false,
-)
-test('hosted-lexer-invalid', hosted_lexer_invalid, suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 30)
 
 # Parser cases are data (compiler/hosted_parser.cases) checked against a reviewed
 # golden dump; the driver also keeps the private ABI, growth and ownership
@@ -649,7 +641,7 @@ test('hosted-lowering', hosted_lowering_test, args: files('compiler/hosted_lower
 hosted_parser_invalid = executable(
     'hosted-parser-invalid', 'compiler/hosted_parser_invalid.cpp',
     objects: frontend_library.extract_objects(frontend_adapter_sources),
-    dependencies: frontend_headers, cpp_args: frontend_args, include_directories: include_directories('../compiler'),
+    dependencies: frontend_headers, include_directories: include_directories('../compiler'),
     native: true, override_options: fixture_options, install: false,
 )
 test('hosted-parser-invalid', hosted_parser_invalid,

@@ -1,7 +1,7 @@
 // Aurora lexer cases checked against the reviewed golden file hosted_lexer.golden
-// (--update rewrites it). Raw ABI records below deliberately do not use
-// production layouts.
-#include "lexer.hpp"
+// (--update rewrites it). Every case reads the lexer's event rows through its
+// bridge entry; raw ABI records below deliberately do not use production layouts.
+#include "lexemes.hpp"
 #include "hosted_lexer_abi.hpp"
 #include <algorithm>
 #include <array>
@@ -20,23 +20,14 @@
 #include <sstream>
 #include <sys/mman.h>
 
-#ifndef AURORA_HOSTED_LEXER
-#error "hosted lexer fixture requires AURORA_HOSTED_LEXER"
-#endif
-
 using Entry = void (*)(const void *, void *);
-extern "C" void aurora_hosted_lexer_invoke(const void *, void *);
 extern "C" void checked_hosted_lexer_call(const void *, void *, Entry);
 
 namespace {
 using aurora::Diagnostic;
 using aurora::DiagnosticCode;
-using aurora::LexedSource;
 using aurora::SourcePosition;
-using aurora::SourceSpan;
-using aurora::SourceText;
-using aurora::TriviaRetention;
-using Snapshot = std::shared_ptr<const SourceText>;
+using aurora::lexemes::Lexeme;
 using Input = std::array<std::uint64_t, 10>;
 using Event = std::array<std::int64_t, 4>;
 static_assert(sizeof(Input) == 80 && sizeof(Event) == 32);
@@ -78,120 +69,74 @@ std::vector<SourcePosition> positions(const std::string &text) {
     return out;
 }
 
-void samePosition(const SourcePosition &a, const SourcePosition &b) {
-    require(a.offset == b.offset && a.line == b.line && a.column == b.column, "byte position mismatch");
-}
-
-void sameSpan(const SourceSpan &a, const SourceSpan &b) {
-    require(a.source == b.source, "source snapshot identity mismatch");
-    samePosition(a.begin, b.begin);
-    samePosition(a.end, b.end);
-}
-
-void spanBounds(const SourceSpan &span, const Snapshot &source, const std::vector<SourcePosition> &expected) {
-    require(span.source == source, "span lost the caller's source snapshot");
-    require(span.begin.offset <= span.end.offset && span.end.offset <= source->text.size(), "span bounds");
-    samePosition(span.begin, expected.at(span.begin.offset));
-    samePosition(span.end, expected.at(span.end.offset));
-}
-
-void validate(const LexedSource &lexed, const Snapshot &source, TriviaRetention retention) {
-    const auto expected = positions(source->text);
-    require(lexed.source == source, "result lost the caller's source snapshot");
-    require(!lexed.tokens.empty(), "missing EOF");
-    std::vector<SourceSpan> spans;
-    for (std::size_t index = 0; index != lexed.tokens.size(); ++index) {
-        const auto &token = lexed.tokens[index];
-        spanBounds(token.span, source, expected);
-        require(token.line == token.span.begin.line, "legacy token line mismatch");
-        if (index + 1 == lexed.tokens.size()) {
-            require(token.text == "<eof>" && token.span.begin.offset == source->text.size() &&
-                        token.span.end.offset == source->text.size(),
-                    "EOF spelling or zero-width range");
-        } else {
-            require(token.span.begin.offset < token.span.end.offset, "empty non-EOF token");
-            require(token.text ==
-                        source->text.substr(token.span.begin.offset, token.span.end.offset - token.span.begin.offset),
-                    "token does not preserve exact bytes");
-            spans.push_back(token.span);
-        }
-    }
-    for (const auto &trivia : lexed.trivia) {
-        spanBounds(trivia.span, source, expected);
-        require(trivia.span.begin.offset < trivia.span.end.offset, "empty trivia");
-        const auto text =
-            source->text.substr(trivia.span.begin.offset, trivia.span.end.offset - trivia.span.begin.offset);
-        if (trivia.kind == aurora::TriviaKind::Whitespace)
-            require(std::all_of(text.begin(), text.end(), space), "non-ASCII-whitespace in whitespace event");
-        else {
-            require(trivia.kind == aurora::TriviaKind::LineComment, "unknown trivia kind");
-            require(text.starts_with("//") && text.find('\n') == std::string::npos, "comment boundary mismatch");
-        }
-        spans.push_back(trivia.span);
-    }
-    if (retention == TriviaRetention::Discard) {
-        require(lexed.trivia.empty(), "discard mode retained trivia");
-        return;
-    }
-    std::sort(spans.begin(), spans.end(), [](const auto &a, const auto &b) {
-        return a.begin.offset < b.begin.offset;
-    });
-    std::size_t next = 0;
-    std::string rebuilt;
-    for (const auto &span : spans) {
-        require(span.begin.offset == next, "token/trivia gap or overlap");
-        rebuilt.append(source->text, span.begin.offset, span.end.offset - span.begin.offset);
-        next = span.end.offset;
-    }
-    require(next == source->text.size() && rebuilt == source->text, "lossless reconstruction failed");
-}
-
-void sameTokens(const LexedSource &a, const LexedSource &b) {
-    require(a.tokens.size() == b.tokens.size(), "token count mismatch");
-    for (std::size_t index = 0; index != a.tokens.size(); ++index) {
-        require(a.tokens[index].text == b.tokens[index].text && a.tokens[index].line == b.tokens[index].line,
-                "token spelling or legacy line mismatch");
-        sameSpan(a.tokens[index].span, b.tokens[index].span);
-    }
+// Each event's line/column pairs must agree with an independent byte scan.
+void positionsAgree(const Lexeme &lexeme, const std::vector<SourcePosition> &expected) {
+    require(lexeme.begin >= 0 && lexeme.begin <= lexeme.end && static_cast<std::size_t>(lexeme.end) < expected.size(),
+            "event bounds");
+    const auto &begin = expected[static_cast<std::size_t>(lexeme.begin)];
+    const auto &end = expected[static_cast<std::size_t>(lexeme.end)];
+    require(lexeme.line == begin.line && lexeme.column == begin.column && lexeme.endLine == end.line &&
+                lexeme.endColumn == end.column,
+            "event line/column differs from its byte offset");
 }
 
 class Outcome {
 public:
-    std::optional<LexedSource> lexed;
+    std::vector<Lexeme> lexemes;
     std::optional<Diagnostic> error;
-    std::string what;
 };
 
-Outcome scan(const Snapshot &source, TriviaRetention retention) {
-    try {
-        return {aurora::lexSource(source, retention), {}, {}};
-    } catch (const aurora::Error &error) {
-        return {{}, error.diagnostic, error.what()};
+Outcome scan(const std::string &text) {
+    Outcome out{aurora::lexemes::scan(text), {}};
+    const auto expected = positions(text);
+    for (const auto &lexeme : out.lexemes) {
+        positionsAgree(lexeme, expected);
+        const auto bytes = text.substr(lexeme.begin, lexeme.end - lexeme.begin);
+        if (lexeme.event == aurora::lexemes::Event::whitespace)
+            require(std::all_of(bytes.begin(), bytes.end(), space), "non-ASCII-whitespace in whitespace event");
+        else if (lexeme.event == aurora::lexemes::Event::line_comment)
+            require(bytes.starts_with("//") && bytes.find('\n') == std::string::npos, "comment boundary mismatch");
     }
-}
-
-void checkError(const Outcome &outcome, const Snapshot &source) {
-    require(outcome.error.has_value(), "missing diagnostic");
-    spanBounds(outcome.error->span, source, positions(source->text));
-    require(outcome.error->span.begin.offset < outcome.error->span.end.offset, "empty lexical error range");
-    require(outcome.what == outcome.error->message, "what() differs from the diagnostic message");
+    const auto &last = out.lexemes.back();
+    if (last.event == aurora::lexemes::Event::end_of_input) {
+        require(last.begin == static_cast<std::int64_t>(text.size()) && last.end == last.begin,
+                "EOF is not the zero-width end of the source");
+        return out;
+    }
+    require(last.begin < last.end, "empty lexical error range");
+    const auto source = std::make_shared<const aurora::SourceText>("case.au", text);
+    const aurora::SourceSpan span{
+        source, expected[static_cast<std::size_t>(last.begin)], expected[static_cast<std::size_t>(last.end)]};
+    try {
+        aurora::hosted_lexer::rejectLexical(last.event, span);
+    } catch (const aurora::Error &error) {
+        out.error = error.diagnostic;
+    }
+    require(out.error.has_value(), "lexer stopped without end of input or a rejection");
+    return out;
 }
 
 // One golden line per case: token boundaries for accepted input, or the
 // diagnostic code, extent and message. Long token lists keep only their count.
 std::string summary(const Outcome &outcome) {
     std::ostringstream out;
-    if (!outcome.lexed) {
+    if (outcome.error) {
         const auto &error = *outcome.error;
         out << "err " << static_cast<int>(error.code) << ' ' << error.span.begin.offset << '-' << error.span.end.offset
             << ' ' << error.message;
         return out.str();
     }
-    const auto &tokens = outcome.lexed->tokens;
-    out << "ok " << tokens.size() - 1 << " trivia " << outcome.lexed->trivia.size();
-    if (tokens.size() <= 65)
-        for (std::size_t index = 0; index + 1 < tokens.size(); ++index)
-            out << (index ? ',' : ' ') << tokens[index].span.begin.offset << '-' << tokens[index].span.end.offset;
+    std::vector<const Lexeme *> tokens;
+    std::size_t trivia = 0;
+    for (const auto &lexeme : outcome.lexemes) {
+        if (lexeme.event == aurora::lexemes::Event::token)
+            tokens.push_back(&lexeme);
+        trivia += lexeme.trivia();
+    }
+    out << "ok " << tokens.size() << " trivia " << trivia;
+    if (tokens.size() <= 64)
+        for (std::size_t index = 0; index < tokens.size(); ++index)
+            out << (index ? ',' : ' ') << tokens[index]->begin << '-' << tokens[index]->end;
     return out.str();
 }
 
@@ -212,28 +157,13 @@ void expectGolden(const std::string &name, const Outcome &outcome) {
 Outcome verify(const std::string &text, const std::string &name) {
     context = name;
     ++cases;
-    const auto source = std::make_shared<const SourceText>(name, text);
-    const auto keep = scan(source, TriviaRetention::Keep);
-    const auto discard = scan(source, TriviaRetention::Discard);
-    require(keep.lexed.has_value() == discard.lexed.has_value(), "retention changed acceptance");
-    if (keep.lexed) {
-        validate(*keep.lexed, source, TriviaRetention::Keep);
-        validate(*discard.lexed, source, TriviaRetention::Discard);
-        sameTokens(*keep.lexed, *discard.lexed);
-    } else {
-        checkError(keep, source);
-        checkError(discard, source);
-        require(keep.error->code == discard.error->code && keep.error->message == discard.error->message,
-                "retention changed the diagnostic");
-        sameSpan(keep.error->span, discard.error->span);
-    }
-    expectGolden(name, keep);
-    require(source->text == text && source->path == name, "source snapshot mutated");
-    return keep;
+    const auto result = scan(text);
+    expectGolden(name, result);
+    return result;
 }
 
 void valid(const std::string &text, const std::string &name) {
-    require(verify(text, name).lexed.has_value(), "independently valid source was rejected");
+    require(!verify(text, name).error, "independently valid source was rejected");
 }
 
 void invalid(
@@ -244,7 +174,7 @@ void invalid(
     const std::string message = code == DiagnosticCode::InvalidByteLiteral         ? "invalid byte literal"
                                 : code == DiagnosticCode::InvalidByteStringLiteral ? "invalid byte-string literal"
                                                                                    : "unsupported character";
-    require(error.message == message && result.what == message, "independent diagnostic message mismatch");
+    require(error.message == message, "independent diagnostic message mismatch");
     require(error.span.begin.offset == begin && error.span.end.offset == end, "independent diagnostic extent mismatch");
 }
 
@@ -418,7 +348,11 @@ void languageCases() {
                                    "a>>b >= c && d::e",
                                    "_0 A0 a_Z 0123u8",
                                    R"('\\' '\'' '\0' '\a' '\b' '\f' '\n' '\r' '\t' '\v')",
-                                   R"("" "// {} \" \\ \0\xff")"})
+                                   R"("" "// {} \" \\ \0\xff")",
+                                   "// café 😀\r\nmodule x;\v\f",
+                                   "// café\r\n\tmodule demo;\r\n",
+                                   R"('\''/'/'// trailing
+'{'=='{')"})
         valid(text, "language-case");
     const std::vector<std::string> operators = {"->", "==", "!=", "<=", ">=", "::", "<<", ">>", "&&", "||", "(",
                                                 ")",  "{",  "}",  "[",  "]",  ":",  ";",  ",",  "=",  "+",  "-",
@@ -439,9 +373,11 @@ void languageCases() {
                                    "0b1_0",
                                    "0b1u65",
                                    "0xdeadbeef",
-                                   "123abc"}) {
+                                   "123abc",
+                                   "0b1'0u64",
+                                   "0b10001'10001'10001'11111'10001'10001'01110u64"}) {
         const auto out = verify(word + "+'['", "binary-word-boundary");
-        require(out.lexed && out.lexed->tokens.size() == 4 && out.lexed->tokens.front().text == word,
+        require(!out.error && out.lexemes.size() == 4 && out.lexemes.front().end == std::ssize(word),
                 "attempted numeric word split");
     }
     invalid("// before\r\n\t@", "unsupported-location", DiagnosticCode::UnsupportedCharacter, 12, 13);
@@ -473,28 +409,6 @@ void languageCases() {
             source += static_cast<char>(random() & 255);
         verify(source, "generated-bytes-" + std::to_string(sample));
     }
-}
-
-void ownershipCases() {
-    context = "snapshot-lifetime-and-independence";
-    Snapshot source = std::make_shared<const SourceText>("owned.au", "one // opaque\xff\n two");
-    const std::weak_ptr<const SourceText> weak = source;
-    auto first = aurora::lexSource(source);
-    auto second = aurora::lexSource(source);
-    first.tokens.front().text = "changed";
-    first.trivia.clear();
-    require(second.tokens.front().text == "one" && !second.trivia.empty(),
-            "results alias mutable token or trivia storage");
-    source.reset();
-    require(!weak.expired(), "result did not retain source ownership");
-    validate(second, second.source, TriviaRetention::Keep);
-    auto distinct = aurora::lexSource("three", "separate.au");
-    require(distinct.source != second.source && second.tokens.front().text == "one",
-            "later scan changed earlier result");
-    const auto null = scan({}, TriviaRetention::Keep);
-    require(null.error && null.error->code == DiagnosticCode::Internal &&
-                null.error->message == "source snapshot must not be null" && !null.error->span.source,
-            "null source contract mismatch");
 }
 
 Input input(
@@ -549,7 +463,7 @@ void expectRaw(
 void eventAbiCases() {
     using Kind = aurora::hosted_lexer::Event;
     // Observe the real Aurora result through the independent raw record/ABI
-    // envelope, not through lexSource or a source-text enum-order check.
+    // envelope, not through a source-text enum-order check.
     const std::array<std::pair<std::string, Kind>, 8> cases{{
         {"name", Kind::token},
         {" \t\r\n", Kind::whitespace},
@@ -671,7 +585,6 @@ int main(int argc, char **argv) {
         byteCases();
         utf8Cases();
         boundaryCases();
-        ownershipCases();
         for (const char *locale : {"C.utf8", "en_US.utf8", "tr_TR.utf8"}) {
             if (std::setlocale(LC_CTYPE, locale)) {
                 occurrences.clear();

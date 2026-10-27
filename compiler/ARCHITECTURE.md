@@ -26,17 +26,19 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 
 ## Hosted Aurora parser
 
-Aurora owns the module grammar. The C++ syntax adapter remains only for its tests;
-production lowering and formatting do not require a second C++ grammar. See
+Aurora owns the module grammar; the host has no syntax tree, grammar or lexer of
+its own and only renders the statuses Aurora returns. See
 [modules](MODULES.md), [lexing](LEXER.md) and the [source-bootstrap recipe](README.md#source-bootstrap).
 
 ### Hosted Aurora expression parser
 
 Expressions, declarations and bodies are part of the same Aurora parser. The
 legacy C++ expression parser is retired; final-source convergence remains a required gate.
-`hosted-parser` checks each grammar entry against data cases and a reviewed golden
-dump ([test contract](../docs/developer-test-contract.md)); `hosted-parser-invalid`
-links the adapters with forged Aurora entries to test their fail-closed conversion.
+`hosted-parser` checks each grammar entry and the whole-source entry against data
+cases and a reviewed golden dump of the Aurora records and rendered diagnostics
+([test contract](../docs/developer-test-contract.md)); `hosted-parser-invalid`
+links the resolver and lowering adapters with forged Aurora entries to test their
+fail-closed conversion.
 
 ## Current boundaries
 

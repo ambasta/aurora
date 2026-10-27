@@ -238,7 +238,10 @@ The checkpoint emits frontend A for current compiler C1; C1 emits B for current
 compiler C2. The same compilation emits `--abi-facts` metadata for collected
 resolved declarations and the exact emitted module. The closed private bootstrap
 adapter generates its record layouts, enum values and bridge symbol targets from
-those facts; this is not a general exported ABI. Initialization and emission use
+those facts; this is not a general exported ABI. Frontends are emitted with
+`aurorac --local-symbols`, which binds every generated function and reflection
+entry locally without changing ABI or instructions (`--check` rejects it), so
+only the wrappers are external. Initialization and emission use
 one closed entry table in the existing bootstrap adapter for root authority,
 argument-record names, host declarations and the five fixed register transports.
 The facts normalizer accepts up to four distinct concrete owning roots, each
@@ -380,13 +383,13 @@ These temporary register choices are implementation machinery, not a source-leve
 Runtime-sized [typed copied-class owners](OWNERSHIP.md#runtime-sized-copied-class-ownership)
 support the `syntax_arena.au` AST, explicit parser-frame and variable-arity
 argument-edge, unresolved type-syntax and declaration/statement storage. Complete
-module syntax is parsed in one Aurora call and converted through the private
-hosted adapter, including namespaces, templates, classes and their complete members.
-Caller token snapshots remain immutable; a standalone type read returns an explicit
-ordinal/half cursor. Grammar errors precede semantic admission for multiply-invalid
-files, including cross-declaration cases, as
+module syntax, including namespaces, templates, classes and their complete members,
+is parsed in one Aurora call that the resolver ingests directly; no C++ syntax tree
+exists. A standalone type read returns an explicit ordinal/half cursor. Grammar
+errors precede semantic admission for multiply-invalid files, including
+cross-declaration cases, as
 specified in [architecture](ARCHITECTURE.md#hosted-aurora-parser).
-The replaced C++ grammar is removed, including module/container headers. Unresolved
+The replaced C++ grammar, syntax adapter and reference lexer are removed. Unresolved
 declaration admission, module visibility, template resolution and resolved
 type/lifetime analysis run in Aurora. Production lowers the resolved Session
 directly to typed IR, without a resolved C++ AST round trip. The

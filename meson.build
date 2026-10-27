@@ -67,24 +67,22 @@ frontend_object = custom_target(
   'hosted-frontend-object', input: frontend_assembly[0], output: 'hosted-frontend.o',
   command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '@INPUT@', '-o', '@OUTPUT@'],
 )
-frontend_args = ['-DAURORA_HOSTED_LEXER', '-DAURORA_HOSTED_PARSER']
-# The parser-through-IR adapters; hosted-parser-invalid links these objects alone.
+# The resolver-through-IR adapters; hosted-parser-invalid links these objects alone.
 frontend_adapter_sources = files('compiler/hosted_parser.cpp', 'compiler/hosted_resolver.cpp',
                                  'compiler/hosted_lowering.cpp', 'compiler/hosted_lowering_diagnostics.cpp',
                                  'compiler/hosted_ir_metadata.cpp', 'compiler/hosted_ir_instructions.cpp',
                                  'compiler/ir_verify.cpp', 'runtime/hosted_bytes.cpp')
-frontend_host_sources = frontend_adapter_sources + files('compiler/hosted_lexer.cpp', 'compiler/hosted_graph.cpp',
-                                                         'compiler/hosted_x86.cpp', 'compiler/hosted_private_object.cpp')
+frontend_host_sources = frontend_adapter_sources + files('compiler/hosted_graph.cpp', 'compiler/hosted_x86.cpp',
+                                                         'compiler/hosted_private_object.cpp')
 frontend_library = static_library(
   'hosted-frontend', [frontend_host_sources, frontend_object, frontend_assembly[3]],
-  cpp_args: frontend_args, native: true, install: false,
+  native: true, install: false,
 )
 # Operator enums are source-defined. Header-only IR consumers need the generated
 # declarations; every executable calling validate also links hosted_frontend.
 frontend_headers = declare_dependency(sources: frontend_assembly[3],
                                      include_directories: include_directories('.'))
-hosted_frontend = declare_dependency(link_with: frontend_library, dependencies: frontend_headers,
-                                   compile_args: frontend_args)
+hosted_frontend = declare_dependency(link_with: frontend_library, dependencies: frontend_headers)
 aurorac = executable('aurorac', 'compiler/main.cpp', dependencies: hosted_frontend, native: true, install: false)
 aurora_fmt = executable('aurora-fmt', 'compiler/format_main.cpp', dependencies: hosted_frontend,
                         native: true, install: false)
@@ -172,8 +170,7 @@ if get_option('lsp')
     'aurora-lsp', ['compiler/lsp/main.cpp', 'compiler/lsp/check.cpp'],
     dependencies: [lsp_json, hosted_frontend], native: true, install: false,
   )
-  lsp_units = executable('lsp-units', 'tests/lsp-units.cpp', dependencies: hosted_frontend,
-                         native: true, install: false)
+  lsp_units = executable('lsp-units', 'tests/lsp-units.cpp', native: true, install: false)
   test('lsp-units', lsp_units, suite: 'lsp', timeout: 30)
   test('lsp-protocol', python, args: ['-B', files('tests/lsp-protocol.py'), aurora_lsp],
        depends: aurora_lsp, suite: 'lsp', timeout: 120)

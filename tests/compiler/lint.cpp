@@ -1,5 +1,4 @@
 #include "frontend.hpp"
-#include "parser.hpp"
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -16,13 +15,6 @@ void check(const std::filesystem::path &input) {
                              "\tconst i64 unused = 7;\r\n\treturn 42;\r\n}\r\n";
     const auto snapshot = std::make_shared<const SourceText>(path.string(), text);
     const SourceOverlays overlays{{path, snapshot}};
-    const auto parsed = Parser(lexSource(snapshot).tokens).parse();
-    const auto &binding = parsed.functions.at(0).body.at(0);
-    require(binding->bindingSpan.source == snapshot, "binding snapshot identity");
-    require(binding->token.text == "const", "legacy statement token changed");
-    require(binding->bindingSpan.begin.offset == text.find("unused") &&
-                binding->bindingSpan.end.offset == text.find("unused") + 6,
-            "parser identifier-only byte span");
     const auto checked = checkSource(path, {}, overlays);
     require(checked.lintDiagnostics.empty(), "default checking enabled lint");
     const auto linted = checkSource(path, {}, overlays, AnalysisMode::Lint);
@@ -57,7 +49,7 @@ void check(const std::filesystem::path &input) {
                 "failed analysis must preserve source error");
     }
     require(failed, "lint accepted rejected overlay");
-    std::cout << "PASS lint frontend: 13 contract checks\n";
+    std::cout << "PASS lint frontend: 10 contract checks\n";
 }
 } // namespace
 int main(int argc, char **argv) {
