@@ -15,6 +15,9 @@ source and toolchain recorded in the relevant PR; pending checks remain pending.
 The retained-run authority and transcript deduplication passed integrated
 qualification in [PR #242](https://github.com/ambasta/aurora/pull/242).
 
+Native copied-record consumers retain one consolidated artifact-build ABI
+admission over compiler facts; removing those consumers remains future work.
+
 Native retained state now projects validated ACPI topology into immutable timer
 evidence and sizes private physical-page metadata to each pool's capacity,
 without changing parsing, diagnostics, admission or page-lease ownership. Final

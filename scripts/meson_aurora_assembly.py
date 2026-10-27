@@ -113,62 +113,8 @@ def validate_terminal_paint_abi(facts):
         raise ValueError("Terminal paint entry shape does not match compiler facts")
 
 
-def validate_program_session_abi(facts):
-    """The session state is opaque; native code reads only the returned facts."""
-    from bootstrap_frontend import abi_declaration, normalize_function_abi
-
-    state_symbol, state = abi_declaration(facts, "records", "console::ProgramSession")
-    effect_symbol, effect = abi_declaration(facts, "enums", "console::ProgramEffect")
-    result_symbol, result = abi_declaration(facts, "records", "console::ProgramSessionUpdate")
-    effects = (
-        "invalid ready file_ready input note files upper read_note upper_note file peek wc crc unknown "
-        "note_saved file_reply abort_file exited failed"
-    ).split()
-    if effect["cases"] != dict(zip(effects, range(len(effects)))):
-        raise ValueError("Program session effect encoding does not match its native executor")
-    if (state["size"], state["alignment"], state["reserved"]) != (32, 8, 32) or len(state["fields"]) != 4:
-        raise ValueError("Program session state must occupy four copied scalar words")
-    for index, field in enumerate(state["fields"]):
-        if {key: value for key, value in field.items() if key != "name"} != {
-            "offset": index * 8,
-            "bytes": 8,
-            "array_length": 0,
-            "kind": "u64",
-        }:
-            raise ValueError("Program session initial representation must contain only scalar words")
-    fields = [
-        dict(name="session", offset=0, bytes=32, array_length=0, kind="class", type_name=state_symbol),
-        dict(name="effect", offset=32, bytes=8, array_length=0, kind="enum", type_name=effect_symbol),
-        dict(name="after_cr", offset=40, bytes=8, array_length=0, kind="u64"),
-        dict(name="outcome", offset=48, bytes=8, array_length=0, kind="u64"),
-    ]
-    if result != dict(source_name="console::ProgramSessionUpdate", size=56, alignment=8, reserved=56, fields=fields):
-        raise ValueError("Program session result layout does not match its native executor")
-    _, function = abi_declaration(facts, "functions", "update_program_session")
-    expected = {
-        "source_name": "update_program_session",
-        "receiver": None,
-        "receiver_mutable": None,
-        "borrowed_root_count": 0,
-        "borrowed_roots": [],
-        "borrowed_root_abi": {
-            "kind": "none",
-            "register": None,
-            "tuple_payload_bytes": 0,
-            "tuple_reserved_bytes": 0,
-            "saved_root_reserved_bytes": 0,
-        },
-        "parameter_bytes": 56,
-        "parameters": [dict(offset=0, bytes=32, kind="class", type_name=state_symbol)]
-        + [dict(offset=offset, bytes=8, kind="u64") for offset in (32, 40, 48)],
-        "result": dict(bytes=56, kind="class", type_name=result_symbol),
-    }
-    if normalize_function_abi(facts, function) != expected:
-        raise ValueError("Program session entry shape does not match its native executor")
-
-
-def validate_program_copied_abi(facts, service=False, replacement=False, client=False, namespace=None):
-    """Admit the fixed private file/append records before an adapter can copy them."""
+def validate_native_abi(facts, source):
+    """Admit every marked native contract once for the complete bridge artifact."""
     from bootstrap_frontend import abi_declaration, normalize_function_abi
 
     def shape(source):
@@ -183,6 +129,7 @@ def validate_program_copied_abi(facts, service=False, replacement=False, client=
             if source
             in (
                 "console::FileEvent",
+                "console::ProgramEffect",
                 "console::NamespaceOperation",
                 "console::NamespaceInputAction",
                 "console::NamespaceResponseKind",
@@ -233,13 +180,53 @@ def validate_program_copied_abi(facts, service=False, replacement=False, client=
         ):
             raise ValueError("Protected copied entry differs from its native boundary: " + source)
 
-    if namespace == "owner":
+    def enum(source, names):
+        _, value = abi_declaration(facts, "enums", source)
+        names = names.split()
+        if value["cases"] != dict(zip(names, range(len(names)))):
+            raise ValueError("Native enum encoding differs from compiler facts: " + source)
+
+    if "# UART_POLICY_ABI:" in source:
+        validate_uart_policy_abi(facts)
+    if "# TERMINAL_PAINT_ABI:" in source:
+        validate_terminal_paint_abi(facts)
+    if "# PROGRAM_SESSION_ABI:" in source:
+        _, state = abi_declaration(facts, "records", "console::ProgramSession")
+        if (state["size"], state["alignment"], state["reserved"]) != (32, 8, 32) or len(state["fields"]) != 4:
+            raise ValueError("Program session state must occupy four copied scalar words")
+        for index, field in enumerate(state["fields"]):
+            if {key: value for key, value in field.items() if key != "name"} != {
+                "offset": index * 8,
+                "bytes": 8,
+                "array_length": 0,
+                "kind": "u64",
+            }:
+                raise ValueError("Program session initial representation must contain only scalar words")
+        enum(
+            "console::ProgramEffect",
+            "invalid ready file_ready input note files upper read_note upper_note file peek wc crc unknown "
+            "note_saved file_reply abort_file exited failed",
+        )
+        record(
+            "console::ProgramSessionUpdate",
+            56,
+            [
+                ("session", "console::ProgramSession", 0),
+                ("effect", "console::ProgramEffect", 0),
+                ("after_cr", "u64", 0),
+                ("outcome", "u64", 0),
+            ],
+        )
+        entry(
+            "update_program_session", ["console::ProgramSession", "u64", "u64", "u64"], "console::ProgramSessionUpdate"
+        )
+
+    if "# NAMESPACE_OWNER_ABI:" in source:
         entry("aurora_user_main", ["builtin::ServeSession", "u64"], "u64")
-        return
-    if namespace:
+    if "# NAMESPACE_CLIENT_ABI:" in source or "# NAMESPACE_CONSOLE_ABI:" in source:
         record("std::BinaryBuffer64", 64, [("elements", "u8", 64)], alignment=1)
-        for source in ("console::FileName", "console::FileValue"):
-            record(source, 72, [("bytes", "std::BinaryBuffer64", 0), ("length", "i64", 0)])
+        for name in ("console::FileName", "console::FileValue"):
+            record(name, 72, [("bytes", "std::BinaryBuffer64", 0), ("length", "i64", 0)])
         record(
             "console::NamespaceCommand",
             152,
@@ -259,20 +246,18 @@ def validate_program_copied_abi(facts, service=False, replacement=False, client=
                 ("generation", "u64", 0),
             ],
         )
-        for source, names in (
+        for name, names in (
             ("console::NamespaceOperation", "read write"),
             ("console::FileEvent", "unknown written read removed listed missing invalid full reserved"),
         ):
-            _, value = abi_declaration(facts, "enums", source)
-            if value["cases"] != dict(zip(names.split(), range(len(names.split())))):
-                raise ValueError("Namespace enum differs from its native boundary: " + source)
-        if namespace == "client":
+            enum(name, names)
+        if "# NAMESPACE_CLIENT_ABI:" in source:
             entry(
                 "aurora_user_main",
                 ["builtin::CallSession", "console::NamespaceCommand", "u64"],
                 "console::NamespaceResult",
             )
-        elif namespace == "console":
+        if "# NAMESPACE_CONSOLE_ABI:" in source:
             record(
                 "console::NamespaceSubmission",
                 168,
@@ -292,7 +277,7 @@ def validate_program_copied_abi(facts, service=False, replacement=False, client=
                     ("kind", "console::NamespaceResponseKind", 0),
                 ],
             )
-            for source, names in (
+            for name, names in (
                 ("console::NamespaceInputAction", "command requested_exit output_failure"),
                 (
                     "console::NamespaceResponseKind",
@@ -300,98 +285,65 @@ def validate_program_copied_abi(facts, service=False, replacement=False, client=
                     "indeterminate_reset reset unavailable limit",
                 ),
             ):
-                _, value = abi_declaration(facts, "enums", source)
-                if value["cases"] != dict(zip(names.split(), range(len(names.split())))):
-                    raise ValueError("Namespace lifecycle enum differs from its native boundary: " + source)
+                enum(name, names)
             entry("read_namespace_input", ["builtin::ConsoleSession", "bool"], "console::NamespaceSubmission")
             entry("present_namespace_response", ["builtin::ConsoleSession", "console::NamespaceResponse"], "bool")
-        return
 
-    if client:
+    if "# PROGRAM_APPEND_CLIENT_ABI:" in source or "# PROGRAM_APPEND_SERVICE_ABI:" in source:
         record("kernel::NoteRead64", 72, [("bytes", "u8", 64), ("length", "i64", 0)])
+    if "# PROGRAM_APPEND_CLIENT_ABI:" in source:
         entry("aurora_user_main", ["i64", "i64", "i64"], "i64")
         entry("append_candidate", ["builtin::CallSession", "i64"], "kernel::NoteRead64")
-        return
-    if service:
-        record("kernel::NoteRead64", 72, [("bytes", "u8", 64), ("length", "i64", 0)])
+    if "# PROGRAM_APPEND_SERVICE_ABI:" in source:
         entry("aurora_user_main", ["i64", "i64", "i64", "kernel::NoteRead64", "kernel::NoteRead64"], "i64")
         entry(
             "append_producer",
             ["builtin::ServeSession", "i64", "i64", "i64", "kernel::NoteRead64", "kernel::NoteRead64"],
             "i64",
         )
-        return
-    record("std::BinaryBuffer64", 64, [("elements", "u8", 64)], alignment=1)
-    for source in ("console::FileName", "console::FileValue"):
-        record(source, 72, [("bytes", "std::BinaryBuffer64", 0), ("length", "i64", 0)])
-    record("console::FileNamespace", 264, [("records", "std::BinaryBuffer64", 4), ("occupied", "u64", 0)])
-    record("console::SessionFiles", 264, [("namespace_files", "console::FileNamespace", 0)])
-    record("console::ProtectedFiles", 272, [("files", "console::FileNamespace", 0), ("revision", "u64", 0)])
-    record(
-        "console::FileSelection",
-        160,
-        [
-            ("name", "console::FileName", 0),
-            ("revision", "u64", 0),
-            ("replacement", "u64", 0),
-            ("suffix", "console::FileValue", 0),
-        ],
-    )
-    record("console::FileReply", 80, [("bytes", "u8", 64), ("length", "i64", 0), ("event", "console::FileEvent", 0)])
-    _, event = abi_declaration(facts, "enums", "console::FileEvent")
-    names = "unknown written read removed listed missing invalid full reserved".split()
-    if event["cases"] != dict(zip(names, range(len(names)))):
-        raise ValueError("File reply event encoding differs from its native boundary")
-    record(
-        "FileUpdate",
-        520,
-        [
-            ("files", "console::ProtectedFiles", 0),
-            ("reply", "console::FileReply", 0),
-            ("action", "u64", 0),
-            ("selection", "console::FileSelection", 0),
-        ],
-    )
-    entry("update_files", ["console::ProtectedFiles", "std::BinaryBuffer64", "i64", "u64"], "FileUpdate")
-    if replacement:
-        record("FileMutation", 352, [("files", "console::ProtectedFiles", 0), ("reply", "console::FileReply", 0)])
-        entry(
-            "replace_files",
-            ["console::ProtectedFiles", "console::FileSelection", "std::BinaryBuffer64", "i64"],
-            "FileMutation",
+    if "# PROGRAM_FILES_ABI:" in source:
+        record("std::BinaryBuffer64", 64, [("elements", "u8", 64)], alignment=1)
+        for name in ("console::FileName", "console::FileValue"):
+            record(name, 72, [("bytes", "std::BinaryBuffer64", 0), ("length", "i64", 0)])
+        record("console::FileNamespace", 264, [("records", "std::BinaryBuffer64", 4), ("occupied", "u64", 0)])
+        record("console::SessionFiles", 264, [("namespace_files", "console::FileNamespace", 0)])
+        record("console::ProtectedFiles", 272, [("files", "console::FileNamespace", 0), ("revision", "u64", 0)])
+        record(
+            "console::FileSelection",
+            160,
+            [
+                ("name", "console::FileName", 0),
+                ("revision", "u64", 0),
+                ("replacement", "u64", 0),
+                ("suffix", "console::FileValue", 0),
+            ],
         )
-
-
-def validate_selected_source_abi(source, facts):
-    # This existing compiled image has one exact private launch record. Other
-    # uses of ipc-user-entry.S (snapshot, file-call, Call/Serve) retain theirs.
-    if Path(source).name == "namespace-service.au":
-        validate_program_copied_abi(facts, namespace="owner")
-    if Path(source).name == "program-upper-client.au":
-        validate_program_copied_abi(facts, client=True)
-    if Path(source).name == "program-stream-service.au":
-        validate_program_copied_abi(facts, service=True)
+        record(
+            "console::FileReply", 80, [("bytes", "u8", 64), ("length", "i64", 0), ("event", "console::FileEvent", 0)]
+        )
+        enum("console::FileEvent", "unknown written read removed listed missing invalid full reserved")
+        record(
+            "FileUpdate",
+            520,
+            [
+                ("files", "console::ProtectedFiles", 0),
+                ("reply", "console::FileReply", 0),
+                ("action", "u64", 0),
+                ("selection", "console::FileSelection", 0),
+            ],
+        )
+        entry("update_files", ["console::ProtectedFiles", "std::BinaryBuffer64", "i64", "u64"], "FileUpdate")
+        if "@replace_files@" in source:
+            record("FileMutation", 352, [("files", "console::ProtectedFiles", 0), ("reply", "console::FileReply", 0)])
+            entry(
+                "replace_files",
+                ["console::ProtectedFiles", "console::FileSelection", "std::BinaryBuffer64", "i64"],
+                "FileMutation",
+            )
 
 
 def render_bridge(source, facts):
-    if "# NAMESPACE_OWNER_ABI:" in source:
-        validate_program_copied_abi(facts, namespace="owner")
-    if "# NAMESPACE_CLIENT_ABI:" in source:
-        validate_program_copied_abi(facts, namespace="client")
-    if "# NAMESPACE_CONSOLE_ABI:" in source:
-        validate_program_copied_abi(facts, namespace="console")
-    if "# PROGRAM_APPEND_CLIENT_ABI:" in source:
-        validate_program_copied_abi(facts, client=True)
-    if "# PROGRAM_APPEND_SERVICE_ABI:" in source:
-        validate_program_copied_abi(facts, service=True)
-    if "# PROGRAM_FILES_ABI:" in source:
-        validate_program_copied_abi(facts, replacement="@replace_files@" in source)
-    if "# PROGRAM_SESSION_ABI:" in source:
-        validate_program_session_abi(facts)
-    if "# UART_POLICY_ABI:" in source:
-        validate_uart_policy_abi(facts)
-    if "# TERMINAL_PAINT_ABI:" in source:
-        validate_terminal_paint_abi(facts)
+    validate_native_abi(facts, source)
     # Source spellings select compiler facts, never a second mangling recipe.
     from bootstrap_frontend import abi_function_symbol
 
@@ -410,7 +362,7 @@ def compose_object_bridge(path, bridges, facts, assembler="as", *, compiler):
 
     sources = [bridge.read_text() for bridge in bridges]
     # Rendering validates the copied layouts before any symbol is exposed.
-    assembly = "\n".join(render_bridge(source, facts) for source in sources)
+    assembly = render_bridge("\n".join(sources), facts)
     # Text bridges share the source emitter's note. A standalone wrapper object
     # needs its own non-executable PROGBITS note without changing that text route.
     assembly += '\n.section .note.GNU-stack,"",@progbits\n'
@@ -502,7 +454,6 @@ def main():
     subprocess.run(command, check=True)
     if pending_abi:
         facts = json.loads(pending_abi.read_text())
-        validate_selected_source_abi(args.source, facts)
         if args.emit_object and args.bridge:
             compose_object_bridge(
                 temporary,
@@ -511,10 +462,9 @@ def main():
                 args.assembler,
                 compiler=args.compiler.resolve(strict=True),
             )
-        elif not args.emit_object:
+        elif args.bridge and not args.emit_object:
             with temporary.open("a") as output:
-                for bridge in args.bridge:
-                    output.write("\n" + render_bridge(bridge.read_text(), facts))
+                output.write("\n" + render_bridge("\n".join(bridge.read_text() for bridge in args.bridge), facts))
     # A successful command must produce the complete declared pair before any
     # previously admitted assembly/facts/dependencies are replaced.
     temporary.stat()

@@ -93,6 +93,13 @@ forbids fixture or capture state in its linked payload, and
 `guest-uefi-production` (`make smoke-production`) exercises both consoles (see
 below). Capture, probe and BAR/IVRS conformance images remain test images.
 
+Native ABI admission remains an interim artifact-build check while C++ consumes
+these records. The complete marked bridge text is admitted once against the
+compiler-emitted facts, sharing record and entry checks across session, file,
+append and namespace roles; source filenames do not select a second check.
+ProgramSubmission/ProgramResponse and their Console entries remain outside this
+coverage. Runtime value, capability and lifecycle checks are separate properties.
+
 Composition. The image links two closed Aurora objects with separate bridges and
 import policies: the program console (`examples/kernel-program-console.au`,
 Console imports only) and the terminal painter

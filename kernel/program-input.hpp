@@ -216,8 +216,8 @@ static_assert(std::is_standard_layout_v<Submission::Record> && sizeof(Submission
               offsetof(Submission::Record, bytes) == 0 && offsetof(Submission::Record, count) == 64 &&
               offsetof(Submission::Record, action) == 72 && offsetof(Submission::Record, after_cr) == 80);
 static_assert(std::is_standard_layout_v<Submission> && sizeof(Submission) == 88);
-// Native assertions are only one half of the private boundary. Admission pins
-// the generated ProgramResponse fields, enum cases and complete entry ABI too.
+// These native layouts are fixed, but ProgramSubmission/ProgramResponse and
+// their Console entries are not yet covered by the generated ABI admission.
 static_assert(std::is_standard_layout_v<Response::Record> && sizeof(Response::Record) == 80 &&
               offsetof(Response::Record, bytes) == 0 && offsetof(Response::Record, count) == 64 &&
               offsetof(Response::Record, kind) == 72);
