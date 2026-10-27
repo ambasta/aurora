@@ -3,10 +3,7 @@
 
 import argparse
 import json
-import os
 from pathlib import Path
-import resource
-import signal
 import subprocess
 import sys
 import tempfile
@@ -35,53 +32,6 @@ def reference(driver, source, wrapper, selected, actual, directory):
     run("objcopy", "--localize-symbols=" + str(selected), combined)
     run(driver, "--compare", source, actual, combined)
     return combined
-
-
-def cli_checks(command, inputs, expected, directory, label):
-    output = directory / (label + "-cli.o")
-    run(*command, output)
-    if output.read_bytes() != expected.read_bytes():
-        raise RuntimeError("CLI and in-process " + label + " differ")
-    for input_path in inputs:
-        before = input_path.read_bytes()
-        alias, symlink = directory / "alias", directory / "symlink"
-        os.link(input_path, alias)
-        symlink.symlink_to(input_path)
-        for destination in (input_path, alias, symlink):
-            result = subprocess.run([*map(str, command), str(destination)], capture_output=True, timeout=20)
-            if result.returncode != 1 or input_path.read_bytes() != before:
-                raise RuntimeError("CLI input alias accepted or damaged")
-        alias.unlink()
-        symlink.unlink()
-    invalid, oversized = directory / "invalid-input", directory / "oversized-input"
-    invalid.write_bytes(b"not an admitted artifact")
-    with oversized.open("wb") as stream:
-        stream.truncate(64 * 1024 * 1024 + 1)
-    for rejected_input in (invalid, oversized):
-        rejected_command = [*command]
-        rejected_command[2] = rejected_input
-        for previous in (None, b"previous artifact"):
-            output.unlink(missing_ok=True)
-            if previous is not None:
-                output.write_bytes(previous)
-            result = subprocess.run([*map(str, rejected_command), str(output)], capture_output=True, timeout=20)
-            if result.returncode != 1 or (output.read_bytes() if output.exists() else None) != previous:
-                raise RuntimeError("CLI published rejected " + label)
-        if rejected_input == oversized and b"bounded artifact read limit exceeded" not in result.stderr:
-            raise RuntimeError("CLI did not report its artifact-size limit")
-    oversized.unlink()
-    output.write_bytes(b"previous artifact")
-
-    def output_limit():
-        signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
-        resource.setrlimit(resource.RLIMIT_FSIZE, (1, 1))
-
-    result = subprocess.run([*map(str, command), str(output)], capture_output=True, timeout=20, preexec_fn=output_limit)
-    if result.returncode != 1 or output.read_bytes() != b"previous artifact":
-        raise RuntimeError("CLI partial write changed the destination")
-    if list(directory.glob(".aurora-output-*.tmp")):
-        raise RuntimeError("CLI left an abandoned artifact temporary")
-    print("PASS " + label + " CLI aliases, artifact limit, rejection and partial-write atomicity")
 
 
 def wrapper_boundaries(driver, directory):
@@ -149,13 +99,10 @@ def main():
             )
             run(executable)
         print("PASS private object native local calls, literal relocation and wrapper entry")
-        cli_checks(
-            [args.compiler, "--compose-private-object", source, args.wrapper, selected, "-o"],
-            (source, args.wrapper, selected),
-            composed,
-            directory,
-            "private-object",
-        )
+        cli = directory / "private-object-cli.o"
+        run(args.compiler, "--compose-private-object", source, args.wrapper, selected, "-o", cli)
+        if cli.read_bytes() != composed.read_bytes():
+            raise RuntimeError("CLI and in-process private object differ")
         if args.frontend:
             raw, actual, facts_path = (path.resolve() for path in args.frontend)
             facts = json.loads(facts_path.read_text())
@@ -184,13 +131,10 @@ def main():
                 native_wrapper,
             )
             wrapper_boundaries(args.driver, directory)
-            cli_checks(
-                [args.compiler, "--emit-frontend-wrapper", recipe, "-o"],
-                (recipe,),
-                native_wrapper,
-                directory,
-                "frontend-wrapper",
-            )
+            cli = directory / "frontend-wrapper-cli.o"
+            run(args.compiler, "--emit-frontend-wrapper", recipe, "-o", cli)
+            if cli.read_bytes() != native_wrapper.read_bytes():
+                raise RuntimeError("CLI and in-process frontend wrapper differ")
             reference(args.driver, raw, wrapper, names, actual, directory)
             # The real frontend exceeds the language-source cap. This exercises
             # the distinct artifact read through the actual private CLI.

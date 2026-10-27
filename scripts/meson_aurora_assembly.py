@@ -404,7 +404,7 @@ def render_bridge(source, facts):
     return re.sub(r"@([A-Za-z_][A-Za-z_0-9:]*)@", symbol, source)
 
 
-def compose_object_bridge(path, bridges, facts, assembler="as", linker="ld", objcopy="objcopy", *, compiler=None):
+def compose_object_bridge(path, bridges, facts, assembler="as", *, compiler):
     """Keep native adapters separate and preserve private source bindings."""
     from bootstrap_frontend import abi_function_symbol
 
@@ -421,73 +421,39 @@ def compose_object_bridge(path, bridges, facts, assembler="as", linker="ld", obj
             for name in re.findall(r"@([A-Za-z_][A-Za-z_0-9:]*)@", source)
         }
     )
-    compose_private_object(path, assembly, selected, assembler, linker, objcopy, compiler=compiler)
+    compose_private_object(path, assembly, selected, assembler, compiler=compiler)
 
 
-def compose_private_object(path, assembly, selected, assembler="as", linker="ld", objcopy="objcopy", *, compiler=None):
+def compose_private_object(path, assembly, selected, assembler="as", *, compiler):
     """Compose rendered native wrappers with their fact-selected LOCAL targets."""
     if not selected or len(set(selected)) != len(selected):
         raise ValueError("Object bridge requires unique fact-selected private entries")
     if any(not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", name) for name in selected):
         raise ValueError("Unsupported compiler symbol in private bridge")
 
-    def symbol_types(object_path):
-        result = subprocess.run(
-            ["nm", "-P", "--defined-only", str(object_path)], check=True, capture_output=True, text=True
-        )
-        return {fields[0]: fields[1] for fields in map(str.split, result.stdout.splitlines()) if len(fields) >= 2}
-
     with tempfile.TemporaryDirectory(prefix=".aurora-bridge-", dir=path.parent) as directory:
         work = Path(directory)
-        source_object = work / "source.o"
         bridge_source = work / "bridge.s"
         bridge_object = work / "bridge.o"
         combined = work / "combined.o"
+        names = work / "selected"
         bridge_source.write_text(assembly)
+        names.write_text("".join(name + "\n" for name in selected))
         subprocess.run([assembler, "--64", str(bridge_source), "-o", str(bridge_object)], check=True)
-        if compiler is not None:
-            names = work / "selected"
-            names.write_text("".join(name + "\n" for name in selected))
-            # The compiler admits LOCAL targets and writes a distinct artifact;
-            # its CLI rejects all input aliases, including the pending source.
-            subprocess.run(
-                [
-                    str(compiler),
-                    "--compose-private-object",
-                    str(path),
-                    str(bridge_object),
-                    str(names),
-                    "-o",
-                    str(combined),
-                ],
-                check=True,
-            )
-            combined.replace(path)
-            return
-        before = symbol_types(path)
-        if any(before.get(name) != "t" for name in selected):
-            raise ValueError("Object bridge targets must be defined LOCAL text symbols")
-        subprocess.run(
-            [objcopy, *["--globalize-symbol=" + name for name in selected], str(path), str(source_object)], check=True
-        )
+        # The compiler admits LOCAL targets and writes a distinct artifact;
+        # its CLI rejects all input aliases, including the pending source.
         subprocess.run(
             [
-                linker,
-                "-m",
-                "elf_x86_64",
-                "-r",
-                "--build-id=none",
-                str(source_object),
+                str(compiler),
+                "--compose-private-object",
+                str(path),
                 str(bridge_object),
+                str(names),
                 "-o",
                 str(combined),
             ],
             check=True,
         )
-        subprocess.run([objcopy, *["--localize-symbol=" + name for name in selected], str(combined)], check=True)
-        after = symbol_types(combined)
-        if any(after.get(name) != "t" for name in selected):
-            raise ValueError("Object bridge did not restore private source bindings")
         combined.replace(path)
 
 
@@ -509,15 +475,10 @@ def main():
     parser.add_argument("--referenced-reflection-only", action="store_true")
     parser.add_argument("--local-symbols", action="store_true")
     parser.add_argument("--emit-object", action="store_true")
-    parser.add_argument("--compose-private-object", action="store_true")
     parser.add_argument("--assembler", default="as")
-    parser.add_argument("--linker", default="ld")
-    parser.add_argument("--objcopy", default="objcopy")
     args = parser.parse_args()
     if args.bridge and not args.abi_facts:
         parser.error("--bridge requires --abi-facts")
-    if args.compose_private_object and not (args.emit_object and args.bridge):
-        parser.error("--compose-private-object requires --emit-object and --bridge")
     inputs = dependencies(args.source, args.module_root)
     inputs += [bridge.absolute() for bridge in args.bridge]
     inputs += [Path(__file__).with_name("bootstrap_frontend.py"), Path(__file__).with_name("frontend_bridge.py")]
@@ -548,9 +509,7 @@ def main():
                 args.bridge,
                 facts,
                 args.assembler,
-                args.linker,
-                args.objcopy,
-                compiler=args.compiler.resolve(strict=True) if args.compose_private_object else None,
+                compiler=args.compiler.resolve(strict=True),
             )
         elif not args.emit_object:
             with temporary.open("a") as output:

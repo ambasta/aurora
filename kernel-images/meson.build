@@ -111,7 +111,7 @@ foreach profile_id : profile_data['profiles'].split('|')
       build_subdir: object_subdir, depfile: language_name + '.d', depend_files: language_dependencies,
       command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
                 '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--depfile', '@DEPFILE@',
-                '--emit-object', '--compose-private-object', '--assembler', kernel_as] + root_args)
+                '--emit-object', '--assembler', kernel_as] + root_args)
     objects += {language_name: language}
   else
     language = custom_target(prefix + '-language-assembly',
@@ -149,7 +149,7 @@ foreach profile_id : profile_data['profiles'].split('|')
           command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
                     '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--abi-facts', '@OUTPUT2@',
                     '--depfile', '@DEPFILE@'] + extra_roots + ['--local-symbols', '--referenced-reflection-only',
-                    '--emit-object', '--compose-private-object', '--assembler', kernel_as,
+                    '--emit-object', '--assembler', kernel_as,
                     '--bridge', kernel_source / extra_bridge])
         objects += {stem: extra_language}
       else
@@ -179,7 +179,7 @@ foreach profile_id : profile_data['profiles'].split('|')
       command: [python, '-B', kernel_assembly_helper, '--compiler', kernel_image_compiler, '--source', '@INPUT@',
                 '--output', '@OUTPUT0@', '--stack-facts', '@OUTPUT1@', '--abi-facts', '@OUTPUT2@',
                 '--depfile', '@DEPFILE@', '--module-root', kernel_source / 'kernel/policies',
-                '--local-symbols', '--referenced-reflection-only', '--emit-object', '--compose-private-object',
+                '--local-symbols', '--referenced-reflection-only', '--emit-object',
                 '--assembler', kernel_as,
                 '--bridge', kernel_source / 'kernel/uart-policy-entry.S'])
     stack_facts += [uart_object[1]]
