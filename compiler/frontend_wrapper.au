@@ -14,7 +14,7 @@ export namespace compiler_frontend_wrapper {
             && i64(recipe.at(at + 3)) == lane;
     }
     auto moves(builtin::span<const u8> recipe, i64 row, i64 count) -> bool {
-        if (count < 1 || count > 6 || !compiler_private_object::zeroes(recipe, row + 24 + count * 4,(6 - count) * 4)) {
+        if (count < 1 || count > 6 || !compiler_private_object::zeroes(recipe, row + 24 + count * 4, (6 - count) * 4)) {
             return false;
         }
         // Copied argument/result record, optionally a separate copied result.

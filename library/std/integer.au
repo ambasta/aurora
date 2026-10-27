@@ -43,7 +43,7 @@ export namespace std {
             return 0;
         }
         const i64 factor = gcd(a, b);
-        const i64 product =(a / factor) * b;
+        const i64 product = (a / factor) * b;
         if (product < 0) {
             return -product;
         }

@@ -579,7 +579,7 @@ namespace fs {
                 XfsGeometryIssue::ag_geometry);
             return failure;
         }
-        const u64 tail_base =(ag_count - 1u64) * ag_blocks;
+        const u64 tail_base = (ag_count - 1u64) * ag_blocks;
         if (tail_base > data_blocks) {
             const XfsGeometryVerdict failure = XfsGeometryVerdict(XfsGeometryStatus::inconsistent_header,
                 XfsGeometryIssue::ag_geometry);
@@ -779,7 +779,7 @@ namespace fs {
         const u64 ag_blocks = xfs_geometry_read32(bytes, 84);
         const u64 ag_count = xfs_geometry_read32(bytes, 88);
         const u64 ag_log = u64(bytes.at(124));
-        const u64 tail_base =(ag_count - 1u64) * ag_blocks;
+        const u64 tail_base = (ag_count - 1u64) * ag_blocks;
         const u64 data_bytes = data_blocks * block_bytes;
         const u64 encoded_start = xfs_geometry_read64(bytes, 48);
         const u64 log_ag = encoded_start >> i64(ag_log);

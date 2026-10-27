@@ -11,7 +11,8 @@ export namespace kernel {
         storage::SectorIoStatus outcome;
         kernel::Snapshot64 payload;
     public:
-        ProducedSnapshot(storage::SectorIoStatus status, kernel::Snapshot64 snapshot) : outcome(status), payload(snapshot) {
+        ProducedSnapshot(storage::SectorIoStatus status, kernel::Snapshot64 snapshot) : outcome(status),
+            payload(snapshot) {
         }
     };
 

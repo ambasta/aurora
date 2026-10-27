@@ -53,7 +53,7 @@ export namespace std {
             i64 bit = 0;
             while (bit < 8) {
                 if ((remainder & 1u64) != 0u64) {
-                    remainder =(remainder >> 1) ^ 2197175160u64;
+                    remainder = (remainder >> 1) ^ 2197175160u64;
                 } else {
                     remainder = remainder >> 1;
                 }

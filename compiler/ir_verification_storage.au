@@ -1471,7 +1471,7 @@ export namespace compiler_ir_verification {
             // Loan IDs are values, never indices or allocation extents.
             if (serviceCapacity != 0) {
                 const ServiceLoan empty = ServiceLoan(0, 0, 0, 0);
-                const i64 service_rows =(next + 1) * serviceCapacity;
+                const i64 service_rows = (next + 1) * serviceCapacity;
                 if (!initialization_resize_allowed(3, service_rows, wordCount)) {
                     return allocation_failure();
                 }
@@ -2864,7 +2864,7 @@ export namespace compiler_ir_verification {
             if (!valid_retained(id)) {
                 return -1;
             }
-            const i64 first =(id + 1) * serviceCapacity;
+            const i64 first = (id + 1) * serviceCapacity;
             i64 at = 0;
             while (at < serviceCapacity) {
                 const ServiceLoan current = serviceLoans.at(at);
@@ -2930,8 +2930,8 @@ export namespace compiler_ir_verification {
             }
             const WordPair old = currentWords.at(index / 64);
             const u64 mask = 1u64 << (index % 64);
-            const bool must =(old.must_bits() & mask) != 0u64;
-            const bool may =(old.may_bits() & mask) != 0u64;
+            const bool must = (old.must_bits() & mask) != 0u64;
+            const bool may = (old.may_bits() & mask) != 0u64;
             if (!must && !may) {
                 return true;
             }

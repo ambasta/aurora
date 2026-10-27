@@ -647,7 +647,7 @@ export namespace compiler_lowering {
         if (cursor < 0 || cursor > 65536) {
             return fail(session, LoweringError::ir_storage_extent_limit, -1);
         }
-        const i64 reserved =((cursor + 7) / 8) * 8;
+        const i64 reserved = ((cursor + 7) / 8) * 8;
         const i64 field_begin = session.operand_count();
         at = 0;
         while (at < fields.count() && session.good()) {

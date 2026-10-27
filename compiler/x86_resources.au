@@ -68,7 +68,7 @@ export namespace compiler_x86 {
             }
             index = index - 1;
         }
-        const i64 record_bytes =((record_offset(m, target, count) + 15) / 16) * 16;
+        const i64 record_bytes = ((record_offset(m, target, count) + 15) / 16) * 16;
         emit_reserve_stack(w, object, record_bytes);
         const i64 packed_address54 = w.pack_address(1, 0);
         clear_bytes(w, object, 0, record_bytes, packed_address54);
@@ -399,7 +399,7 @@ export namespace compiler_x86 {
         const u64 divisor = u64(stride);
         const u64 scaled = u64(power - stride) * 4294967296u64;
         const u64 high = scaled / divisor;
-        const u64 low =(scaled % divisor) * 4294967296u64 / divisor;
+        const u64 low = (scaled % divisor) * 4294967296u64 / divisor;
         const u64 magic = high * 4294967296u64 + low + 1u64;
         emit_mov_rr(w, object, Register::rax, Register::rcx);
         emit_mov_uimm(w, object, magic, Register::rdx);

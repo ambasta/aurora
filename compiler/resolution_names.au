@@ -547,8 +547,8 @@ export namespace compiler_resolver {
                     session.truncate_work(depth);
                 } else {
                     const SyntaxRow imported = session.syntax(node);
-                    if (imported.declaration_kind() != compiler_parser::SyntaxKind::import_name
-                        || imported.word(11) != module_id) {
+                    if (imported.declaration_kind() != compiler_parser::SyntaxKind::import_name || imported.word(11)
+                        != module_id) {
                         session.fail_storage(StorageStatus::invalid);
                         return WorkRow(-1, -1, -1, -1, -1, -1);
                     }
@@ -609,5 +609,4 @@ export namespace compiler_resolver {
         }
         return result;
     }
-
 }

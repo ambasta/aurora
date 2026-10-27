@@ -580,7 +580,7 @@ export namespace compiler_ir_verification {
             if (capability.array_field() >= 0) {
                 ordinal = capability.array_field();
             }
-            if (!require(w,(token.kind() == TokenKind::none && capability.array_field() < 0) || capability.origin()
+            if (!require(w, (token.kind() == TokenKind::none && capability.array_field() < 0) || capability.origin()
                 != root || (field != -2 && ordinal != field),
                 first_error(VerificationErrorFirst::owned_byte_or_root_mutation_with_live_readonly_span))) {
                 return false;

@@ -6,7 +6,8 @@ import std.binary_buffer;
 import std.binary;
 import std.array;
 
-auto aurora_user_main(builtin::CallSession& session, console::NamespaceCommand command, u64 probe) -> console::NamespaceResult {
+auto aurora_user_main(builtin::CallSession& session, console::NamespaceCommand command,
+    u64 probe) -> console::NamespaceResult {
     static_assert(size_of(console::NamespaceCommand) == 152);
     static_assert(size_of(console::NamespaceResult) == 88);
     const console::NamespaceResult result = console::run_namespace_command(session, command, probe);

@@ -142,6 +142,8 @@ void structuralWrapping() {
 }
 void parenthesizedReturns() {
     golden("module x;auto f()->i64{return(1+2);}", "module x;\nauto f() -> i64 {\n    return (1 + 2);\n}\n");
+    golden("module x;auto f(i64 a)->i64{const i64 b=(a^(a>>2));return g(a,(b));}",
+           "module x;\nauto f(i64 a) -> i64 {\n    const i64 b = (a ^ (a >> 2));\n    return g(a, (b));\n}\n");
     golden("module x;auto f()->bool{return(true)&&(false);}",
            "module x;\nauto f() -> bool {\n    return (true) && (false);\n}\n");
     // Function calls keep their tight opening parenthesis.

@@ -40,7 +40,7 @@ export namespace console {
 
         auto request(u64 word) -> u64 {
             const u64 tag = volatile_file_tag(word);
-            const u64 offset =(word >> 8) & 255u64;
+            const u64 offset = (word >> 8) & 255u64;
             if (mode == 0u64 && word == 1u64) {
                 mode = 1u64;
                 return 1u64;

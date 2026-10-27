@@ -1022,7 +1022,7 @@ export namespace compiler_x86 {
         if (receiver) {
             const compiler_ir_metadata::ReceiverShape shape = row.first_receiver();
             const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::flag_masks();
-            fact_emit_bool(workspace,(shape.attributes() & masks.receiver_mutable()) != 0u64);
+            fact_emit_bool(workspace, (shape.attributes() & masks.receiver_mutable()) != 0u64);
         } else {
             workspace.text("null");
         }
@@ -1055,8 +1055,8 @@ export namespace compiler_x86 {
         if (roots > 1) {
             payload = roots * 8;
         }
-        const i64 reserved =((payload + 15) / 16) * 16;
-        const i64 saved =((roots * 8 + 15) / 16) * 16;
+        const i64 reserved = ((payload + 15) / 16) * 16;
+        const i64 saved = ((roots * 8 + 15) / 16) * 16;
         workspace.text("],\"borrowed_root_abi\":{\"kind\":");
         if (roots == 0) {
             workspace.text("\"none\"");

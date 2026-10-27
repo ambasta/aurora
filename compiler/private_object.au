@@ -635,17 +635,17 @@ export namespace compiler_private_object {
         }
         auto compose(builtin::span<const u8> source, Profile s, builtin::span<const u8> wrapper, Profile w,
             i64 exports) -> bool {
-            const i64 base =(s.textSize + w.alignment - 1) / w.alignment * w.alignment;
+            const i64 base = (s.textSize + w.alignment - 1) / w.alignment * w.alignment;
             const i64 textSize = base + w.textSize;
             const i64 rodata = 64 + textSize;
-            const i64 rela =(rodata + s.rodataSize + 7) / 8 * 8;
+            const i64 rela = (rodata + s.rodataSize + 7) / 8 * 8;
             const i64 relocationSize = s.relocationSize + w.relocationSize;
             const i64 symbols = rela + relocationSize;
             const i64 symbolSize = s.symbolSize + exports * 24;
             const i64 strings = symbols + symbolSize;
             const i64 stringSize = s.stringSize + w.stringSize;
             const i64 sectionStrings = strings + stringSize;
-            const i64 table =(sectionStrings + 68 + 7) / 8 * 8;
+            const i64 table = (sectionStrings + 68 + 7) / 8 * 8;
             outputSize = table + 8 * 64;
             // Each term is derived from <=64 MiB admitted inputs; arithmetic
             // cannot overflow i64. The final artifact keeps the existing ceiling.

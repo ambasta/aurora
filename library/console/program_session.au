@@ -51,8 +51,8 @@ export namespace console {
             const u64 note = 3u64;
             const u64 files = 4u64;
             const u64 terminal = 5u64;
-            if (phase > terminal || after_cr > 1u64 || profile > 1u64 || outcome > 2u64 || event > files
-                || (event != input && carry != 0u64)) {
+            if (phase > terminal || after_cr > 1u64 || profile > 1u64 || outcome > 2u64 || event > files || (event
+                != input && carry != 0u64)) {
                 return ProgramEffect::invalid;
             }
             if (phase == terminal || outcome != 0u64) {
