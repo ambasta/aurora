@@ -27,64 +27,34 @@ public:
     };
 
 private:
+    // Overlay limits; Aurora charges every captured source against the same
+    // per-file and per-graph limits, which the host capture bound covers.
     static constexpr std::size_t maxFileBytes = 1024 * 1024;
     static constexpr std::size_t maxGraphBytes = 4 * 1024 * 1024;
     std::vector<host::Directory> roots;
     SourceOverlays overlays;
-    std::size_t bytesRead = 0;
     Graph graph;
     std::shared_ptr<const SourceText> read(host::SourceFile file) {
         graph.sourceIdentities.insert(file.identity);
-        const auto remaining = maxGraphBytes - bytesRead;
-        try {
-            const auto overlay = overlays.empty()
-                                     ? overlays.end()
-                                     : overlays.find(std::filesystem::absolute(file.displayPath).lexically_normal());
-            std::shared_ptr<const SourceText> snapshot;
-            if (overlay != overlays.end()) {
-                snapshot = overlay->second;
-                if (snapshot->text.size() > std::min(maxFileBytes, remaining))
-                    throw host::ReadLimit();
-            } else {
-                auto contents = file.readAtMost(std::min(maxFileBytes, remaining));
-                snapshot = std::make_shared<const SourceText>(file.displayPath.string(), std::move(contents));
-            }
-            bytesRead += snapshot->text.size();
-            return snapshot;
-        } catch (const host::ReadLimit &) {
-            throw Error(remaining < maxFileBytes ? "module graph exceeds 4194304 bytes"
-                                                 : "module file exceeds 1048576 bytes");
+        if (!overlays.empty()) {
+            const auto overlay = overlays.find(std::filesystem::absolute(file.displayPath).lexically_normal());
+            if (overlay != overlays.end())
+                return overlay->second;
         }
+        auto contents = file.capture(maxFileBytes);
+        return std::make_shared<const SourceText>(file.displayPath.string(), std::move(contents));
     }
-    host::SourceFile resolve(const std::string &name) {
-        if (roots.empty())
-            throw Error("imports require an explicit --module-root");
-        std::filesystem::path relative;
-        std::size_t start = 0, components = 0;
-        while (start < name.size()) {
-            auto end = name.find('.', start);
-            const auto part = name.substr(start, end == std::string::npos ? name.size() - start : end - start);
-            if (part.empty() || part.size() > 128 || ++components > 32)
-                throw Error("invalid or excessive module name");
-            for (char c : part)
-                if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'))
-                    throw Error("invalid module path component");
-            relative /= part;
-            if (end == std::string::npos)
-                break;
-            start = end + 1;
-        }
-        relative += ".au";
+    host::SourceFile open(const HostedImport &request) {
         std::vector<host::SourceFile> found;
         for (const auto &root : roots) {
-            auto file = root.open(relative);
+            auto file = root.open(request.path);
             if (file)
                 found.push_back(std::move(*file));
         }
         if (found.empty())
-            throw Error("module not found in explicit roots: " + name);
+            throw Error("module not found in explicit roots: " + request.name);
         if (found.size() != 1)
-            throw Error("ambiguous module found in multiple roots: " + name);
+            throw Error("ambiguous module found in multiple roots: " + request.name);
         return std::move(found.front());
     }
 
@@ -116,18 +86,13 @@ public:
     }
     Graph load(const std::filesystem::path &rootPath) {
         graph.root = graph.resolution->add(read(host::SourceFile::explicitPath(rootPath))).id;
-        while (const auto name = graph.resolution->nextImport(graph.root)) {
-            auto file = resolve(*name);
-            HostedModule imported;
+        while (const auto request = graph.resolution->nextImport(graph.root, roots.size())) {
+            auto file = open(*request);
             try {
-                imported = graph.resolution->add(read(std::move(file)));
+                graph.resolution->add(read(std::move(file)));
             } catch (const Error &error) {
-                throw error.withContext("module " + *name + ": ");
+                throw error.withContext("module " + request->name + ": ");
             }
-            if (imported.moduleName != *name)
-                throw Error("module header mismatch: expected " + *name + ", got " + imported.moduleName);
-            if (!imported.interfaceUnit)
-                throw Error("imported module requires an export module interface: " + *name);
         }
         return std::move(graph);
     }

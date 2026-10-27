@@ -96,12 +96,17 @@ Native tests cover the destination/temp-name collision, poisoned partial writes,
 
 Aurora lexes, parses and admits each source in one reused parser arena and
 ingests it into the resolver Session, which keeps its header and imports. Only a
-diagnostic or the header name and interface flag return to the host. The Session
+diagnostic or the header name returns to the host. The Session
 owns import traversal and dependency postorder: each step returns the next
 requested import as bytes of the requesting source, or completion, and Aurora
 binds every import to the module whose header spells it. Temporary ancestry
 frames are cleared before ingestion; existing order rows and import bindings
-retain progress without a second owner. The host still authorizes and opens
-files, reads bounded bytes or authorized overlays, and validates imported
-headers/interfaces before the next traversal step. Explicit-order in-memory
+retain progress without a second owner. Aurora owns the module policy: it
+requires an explicit root, validates the requested name and maps it to its
+relative path, charges each source against the file and graph byte limits, and
+at the next step checks that the requested module's header spells the name in
+an `export module` interface, recording each request in one Session index entry.
+The host only opens that path under each root (rejecting a missing or ambiguous
+module), captures at most one byte past the file limit or supplies an
+authorized overlay, and renders the rejections. Explicit-order in-memory
 resolution remains supported independently of filesystem traversal.

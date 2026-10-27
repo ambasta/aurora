@@ -1912,8 +1912,7 @@ void resolutionControls() {
     {
         aurora::HostedResolution resolution;
         const auto module = resolution.add(source);
-        require(module.id == 0 && module.moduleName == "forged" && !module.interfaceUnit,
-                "session ingestion lost the copied module header");
+        require(module.id == 0 && module.moduleName == "forged", "session ingestion lost the copied module header");
         try {
             static_cast<void>(resolution.resolve({module.id}, module.id, aurora::AnalysisMode::Check, true));
         } catch (const aurora::Error &error) {
@@ -2461,7 +2460,7 @@ extern "C" std::int64_t aurora_hosted_resolver_order_module(void *session, const
             "resolved root/order/scope inputs differ");
     return 1;
 }
-extern "C" void aurora_hosted_resolver_graph_step(void *, std::int64_t, void *) {
+extern "C" void aurora_hosted_resolver_graph_step(void *, std::int64_t, std::int64_t, void *) {
     throw std::runtime_error("explicit-order resolution fixture acquired graph traversal");
 }
 extern "C" std::int64_t aurora_hosted_resolver_run(void *session) {

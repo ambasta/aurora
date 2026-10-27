@@ -41,14 +41,17 @@ links the adapters with forged Aurora entries to test their fail-closed conversi
 ## Current boundaries
 
 Each source is lexed, parsed, admitted and ingested by Aurora; the host receives
-only its header name and interface flag or the rejection's status and coordinates,
+only its header name or the rejection's status and coordinates,
 which it renders with the existing messages. Module loading advances through
 source-owned graph steps in the existing resolver Session. Transient scratch frames
 track active ancestry and are cleared before ingestion. Completed module
 order/scopes and import bindings persist; resumption replays unfinished ancestry,
 bounded by 64 files and depth 16. Duplicate
-checks happen at each edge, and depth precedes active/completed checks. Host opening,
-inode authority, byte quotas, overlays and header/interface admission remain native.
+checks happen at each edge, and depth precedes active/completed checks. Aurora also
+validates each requested name, maps it to its relative path, charges every source
+against the 1 MiB file and 4 MiB graph limits and, at the next step, checks that the
+requested module's header spells the name in an interface unit. Host opening,
+not-found/ambiguity across roots, inode authority and overlays remain native.
 The explicit-order in-memory resolver API remains separate compatibility transport,
 not a fallback traversal. No additional owner, callback or runtime capability is used.
 

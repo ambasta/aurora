@@ -308,10 +308,10 @@ ROWS = (
         "",
     ),
     (
-        "resolver_name_chunk(builtin::span<const u8> source, i64 begin, i64 end, i64 offset) -> "
+        "resolver_name_chunk(builtin::span<const u8> source, i64 begin, i64 end, i64 offset, bool path) -> "
         "compiler_resolver::LinkageChunk",
-        "copy compiler_resolver::name_chunk(source, begin, end, offset)",
-        "ResolverNameInput:source,begin,end,offset",
+        "copy compiler_resolver::name_chunk(source, begin, end, offset, path)",
+        "ResolverNameInput:source,begin,end,offset,path",
         "",
     ),
     (
@@ -322,8 +322,8 @@ ROWS = (
         "",
     ),
     (
-        "resolver_graph_step(compiler_resolver::Session& session, i64 root) -> compiler_resolver::WorkRow",
-        "copy compiler_resolver::graph_step(session, root)",
+        "resolver_graph_step(compiler_resolver::Session& session, i64 root, i64 roots) -> compiler_resolver::WorkRow",
+        "copy compiler_resolver::graph_step(session, root, roots)",
         "",
         "",
     ),

@@ -1284,8 +1284,7 @@ void resolvedModules() {
         aurora::HostedResolution resolution;
         // Arrival order deliberately differs from dependency/output order.
         const auto main = resolution.add(root), imported = resolution.add(dependency);
-        require(main.id != imported.id && main.moduleName == "root" && !main.interfaceUnit &&
-                    imported.moduleName == "dep" && imported.interfaceUnit,
+        require(main.id != imported.id && main.moduleName == "root" && imported.moduleName == "dep",
                 "copied module header identity differs");
         return resolution.resolve({imported.id, main.id}, main.id, aurora::AnalysisMode::Lint, true);
     }();
@@ -1703,7 +1702,7 @@ void rawModuleTraversal() {
         if (allowance != std::numeric_limits<std::size_t>::max())
             allocations.allowed = baseline + allowance;
         GuardedRecord<Wire::WorkRow> result;
-        aurora_hosted_resolver_graph_step(resolution.data(), 0, &result.value);
+        aurora_hosted_resolver_graph_step(resolution.data(), 0, 1, &result.value);
         result.check();
         const auto status = resolution.status();
         const auto used = allocations.successful - baseline;
@@ -1734,7 +1733,7 @@ void rawModuleTraversal() {
     aurora::HostedResolution resolution;
     const auto root =
         resolution.add(std::make_shared<const aurora::SourceText>("root.au", "module root;auto f()->i64{return 0;}"));
-    require(!resolution.nextImport(root.id), "empty graph requested an import");
+    require(!resolution.nextImport(root.id, 0), "empty graph requested an import");
     bool rejected = false;
     try {
         resolution.add(std::make_shared<const aurora::SourceText>("late.au", "export module late;"));
