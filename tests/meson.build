@@ -81,19 +81,14 @@ test('volatile-file-source-native', python,
     depends: [aurorac] + record_host_targets, suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'],
     env: oracle_env, workdir: meson.current_build_dir(), timeout: 120, is_parallel: true)
 
-# The scratchpad host in its three modes, built once; the runner links each generated root.
-scratchpad_hosts = []
-scratchpad_args = []
-foreach mode : ['client', 'input', 'output']
-  scratchpad_hosts += static_library('scratchpad-' + mode + '-host',
-      ['compiler/scratchpad_host.cpp', 'compiler/service_group_abi.S'],
-      cpp_args: mode == 'output' ? [] : ['-DAURORA_SCRATCHPAD_' + mode.to_upper() + '_TEST'],
-      native: true, override_options: fixture_options)
-  scratchpad_args += ['--' + mode + '-host', scratchpad_hosts[-1].full_path()]
-endforeach
+# One scratchpad host and one linked driver; modes and transcripts are runtime data.
+scratchpad_host = static_library('scratchpad-host',
+    ['compiler/scratchpad_host.cpp', 'compiler/service_group_abi.S'],
+    native: true, override_options: fixture_options)
 test('scratchpad-source-native', python,
-    args: ['-B', '-O', files('compiler/scratchpad.py'), aurorac] + scratchpad_args,
-    depends: [aurorac] + scratchpad_hosts + record_host_targets, suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'],
+    args: ['-B', '-O', files('compiler/scratchpad.py'), aurorac, '--host', scratchpad_host.full_path()],
+    depends: [aurorac, scratchpad_host] + record_host_targets,
+    suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'],
     env: oracle_env, workdir: meson.current_build_dir(), timeout: 180, is_parallel: true)
 
 # Model and ownership checks use one standalone source graph. No production
