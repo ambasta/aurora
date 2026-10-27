@@ -69,7 +69,7 @@ int main() {
     std::array<std::byte, 80> map{};
     put(map, 0, 1, 4);
     put(map, 8, 0x1000000);
-    put(map, 24, 256);
+    put(map, 24, Handoff::arena_bytes / 4096);
     put(map, 40, 11, 4);
     put(map, 48, 0xc0000000);
     put(map, 64, 768);
@@ -113,7 +113,7 @@ int main() {
             need(!custom_grant(*g, conflict));
         }
     }
-    for (U64 base : {U64{0x1000000}, U64{0x10ff000}, U64{0xfff000}}) {
+    for (U64 base : {U64{0x1000000}, U64{0x1000000 + Handoff::arena_bytes - 4096}, U64{0xfff000}}) {
         const auto g = geometry(base, 8192, 1024, 2, 1024);
         need(g.has_value());
         need(!custom_grant(*g, map));

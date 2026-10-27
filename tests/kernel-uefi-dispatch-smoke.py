@@ -360,9 +360,9 @@ def validate(status, text, mode, meta):
                         and r == kernel
                         and arena + LAYOUT.kernel_stack_bottom <= f <= arena + LAYOUT.kernel_stack_top - 176
                         and f % 8 == 0
-                        and arena + 0x22000 + meta["kernel"]["drain_begin"]
+                        and arena + LAYOUT.kernel_payload_offset + meta["kernel"]["drain_begin"]
                         <= pc
-                        <= arena + 0x22000 + meta["kernel"]["drain_end"],
+                        <= arena + LAYOUT.kernel_payload_offset + meta["kernel"]["drain_end"],
                         "Wrong kernel drain frame",
                     )
                 continue

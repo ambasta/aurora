@@ -274,16 +274,17 @@ def validate(status, text, mode, meta):
                     )
                     if mode == "budget-forged":
                         need(
-                            root == service and pc == arena + 0x22000 + meta["kernel"]["forged_pc"],
+                            root == service
+                            and pc == arena + LAYOUT.kernel_payload_offset + meta["kernel"]["forged_pc"],
                             "Forged interrupt site",
                         )
                     else:
                         need(
                             terminal
                             and root == kernel
-                            and arena + 0x22000 + meta["kernel"]["drain_begin"]
+                            and arena + LAYOUT.kernel_payload_offset + meta["kernel"]["drain_begin"]
                             <= pc
-                            <= arena + 0x22000 + meta["kernel"]["drain_end"],
+                            <= arena + LAYOUT.kernel_payload_offset + meta["kernel"]["drain_end"],
                             "Unauthorized kernel drain",
                         )
                 continue

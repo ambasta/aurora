@@ -112,18 +112,22 @@ public:
         if (stack_pages == 0 || domain_count > stack_frame_count / stack_pages || image_count != domain_count ||
             table_offset(0) != tables_offset)
             return false;
-        // The first range reserves the complete preceding loader/kernel layout.
-        std::array<std::array<std::uint64_t, 2>, 7 + domain_count> ranges{
+        // The first range reserves the low loader, allocation and ACPI storage.
+        // The upper kernel reservation is checked separately from runtime owners.
+        std::array<std::array<std::uint64_t, 2>, 10 + domain_count> ranges{
             {{0, metadata_offset},
              {metadata_offset, page_size},
              {gdt_offset, page_size},
              {rsp0_bottom, rsp0_top - rsp0_bottom},
              {ist_bottom, ist_top - ist_bottom},
              {image_offset, bank_bytes},
-             {stack_frames_offset, stack_frame_count * page_size}}};
+             {stack_frames_offset, stack_frame_count * page_size},
+             {kernel_payload_offset, kernel_payload_limit},
+             {kernel_idt_offset, page_size},
+             {kernel_stack_bottom, kernel_stack_top - kernel_stack_bottom}}};
         for (std::size_t domain = 0; domain < domain_count; ++domain)
-            ranges[7 + domain] = {table_offset(domain), table_pages * page_size};
-        constexpr std::array guards{rsp0_guard, ist_guard, ist_top};
+            ranges[10 + domain] = {table_offset(domain), table_pages * page_size};
+        constexpr std::array guards{rsp0_guard, ist_guard, ist_top, kernel_stack_bottom - page_size, kernel_stack_top};
         for (std::size_t i = 0; i < guards.size(); ++i) {
             if (!valid_interval(guards[i], page_size) || guards[i] >= arena_bytes ||
                 page_size > arena_bytes - guards[i] || !valid_interval(arena + guards[i], page_size))

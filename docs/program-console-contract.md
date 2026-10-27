@@ -140,7 +140,7 @@ guest and full qualification; historical results do not transfer to changed code
 Pre-guest checks cover aggregate/bridge/inventory consistency, real Mailbox
 lifecycle and Aurora constructor equivalence, alongside source/ABI/stack and
 transcript controls. Hosted ASan/UBSan does not instrument generated Aurora.
-Every variant retains the 155,648-byte mapped-image limit and 15,360-byte
+Every variant uses the shared 512 KiB mapped-image limit and unchanged 15,360-byte
 supervisor-plus-fault cap within the 16 KiB stack. Fresh exact-image accounting
 must establish the current peaks; historical measurements cannot admit a rebuild.
 Legacy scalar/snapshot wrapper checks are separate from actual snapshot guests.
@@ -455,7 +455,7 @@ absolute paths, with source hashes and coordinates retained. Escaping symlinks,
 other include roots/GCC versions and historical unbound header frames reject.
 This recognizes the standard-library implementation already trusted when inlined;
 it is a provenance/review scope, not an additional security proof. Protected
-program profiles use size optimization within the 152 KiB payload reservation.
+program profiles use size optimization within the 512 KiB payload reservation.
 The production/program append profiles select GCC `-Oz` for native objects only;
 other profiles keep their own optimization recipe. Exact compiler frame/edge
 facts, image admission and stack limits still apply.

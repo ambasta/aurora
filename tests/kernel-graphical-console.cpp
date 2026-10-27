@@ -226,7 +226,7 @@ auto run_case(const Case &test) -> void {
     std::array<std::byte, 80> map{};
     put(map, 0, 1, 4);
     put(map, 8, 0x1000000);
-    put(map, 24, 256);
+    put(map, 24, Handoff::arena_bytes / 4096);
     put(map, 40, 11, 4);
     put(map, 48, 0xc0000000);
     put(map, 64, size / 4096);

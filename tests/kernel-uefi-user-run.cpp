@@ -614,7 +614,7 @@ auto arena_and_interval_boundaries() -> void {
     DomainRegistry registry;
     const auto owners = handles(registry);
     check(registry.activate(owners[0]), "activate interval owner");
-    for (const auto base : std::array<U64, 4>{0x100000, arena, 0x80000000, 0xfff00000}) {
+    for (const auto base : std::array<U64, 4>{0x100000, arena, 0x80000000, (0x100000000ULL - L::arena_bytes)}) {
         Launch launch{owners[0], 0};
         launch.owned_arena = base;
         launch.root = base + L::table_offset(0);

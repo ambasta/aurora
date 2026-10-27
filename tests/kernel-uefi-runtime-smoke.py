@@ -94,7 +94,7 @@ def validate_console_region(status, text, metadata, mode):
     text = loader_projection(text.replace("\r", ""), mode)
     validate_region_metadata(metadata, True)
     need(status == 33 and text.endswith(SUFFIX), "Protected console natural successful exit")
-    arenas = re.findall(r"AURORA_UEFI_OWNERSHIP_OK: arena=(\d+) bytes=1048576 descriptors=\d+", text)
+    arenas = re.findall(rf"AURORA_UEFI_OWNERSHIP_OK: arena=(\d+) bytes={LAYOUT.arena_bytes} descriptors=\d+", text)
     need(len(arenas) == 1, "Single protected application arena")
     arena = int(arenas[0])
     incarnations = 2 if mode.endswith("cancel") else 1
@@ -269,7 +269,7 @@ def validate_owned_text(status, text, metadata, mode):
     validate_region_metadata(metadata)
     image = metadata["clean"]
     sites = {value for key, value in image.items() if key.startswith("bytes_")}
-    owned = re.findall(r"AURORA_UEFI_OWNERSHIP_OK: arena=(\d+) bytes=1048576 descriptors=\d+", text)
+    owned = re.findall(rf"AURORA_UEFI_OWNERSHIP_OK: arena=(\d+) bytes={LAYOUT.arena_bytes} descriptors=\d+", text)
     need(len(owned) == 1, "One owned arena")
     arena = int(owned[0])
     kernel, domain = arena + LAYOUT.kernel_tables_offset, arena + LAYOUT.tables_offset

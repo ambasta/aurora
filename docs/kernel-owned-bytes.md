@@ -37,7 +37,8 @@ foreign and same-address-reincarnated leases across capacities. No second
 allocator, bitmap, page mapping or free list is introduced. Four fixed owner
 records each hold up to sixteen
 move-only `PageLease` objects. The region metadata has a compiled 3,072-byte cap;
-the 16 KiB stack, 1 MiB arena and `0x20000` payload image bounds are unchanged.
+the shared layout provides a 16 KiB stack, 2 MiB arena and 512 KiB kernel payload
+reservation, independently of the owned-byte quotas.
 
 The trusted caller must establish exclusive CPU backing for the exact pool range.
 Pool, backing and region storage must outlive every registered or retained owner.
@@ -143,8 +144,7 @@ qualification.
 
 
 The private 32-byte owner ABI, four fixed allocation records, sixteen PageLease
-pool pages, 3,072-byte Region metadata cap, supervisor mapping, 16 KiB stack and
-1 MiB arena remain unchanged. An empty existing record becomes private preparing
+pool pages, 3,072-byte Region metadata cap, supervisor mapping, 16 KiB stack remain unchanged within the shared 2 MiB arena. An empty existing record becomes private preparing
 storage. Public allocation is not called: final logical quota is checked as
 new_length <= quota - (used - old_length), and staging does not charge used or
 live_allocations. Region::page validates backing and that record's actual lease;

@@ -57,17 +57,19 @@ test baselines are baseline selectors of their fixtures, and `uefi/production`
 is the one fixture-free production UEFI image: the protected program console,
 rendered on the firmware (GOP) framebuffer by the graphical terminal, under a
 v7 handoff and a firmware-described framebuffer admission exercised only under
-QEMU/OVMF (no physical display qualification). The 152 KiB payload reservation
-keeps the program fixture, the text fixture and the storage fixture apart
-([why](kernel-fixture-consolidation.md#still-separate)). Each image
+QEMU/OVMF (no physical display qualification). The shared 2 MiB arena now reserves
+512 KiB for the kernel, with relocated IDT and guarded main stack; low owners,
+user-image caps and the 15,360-byte stack admission cap do not change. Existing
+fixture compositions remain [separate](kernel-fixture-consolidation.md#still-separate). Each image
 build runs one compiler-fact stack check and one image/W^X/symbol-policy check
 in place of the former per-profile admission scripts.
 The storage bank reserves twelve pages for seven slots, including the namespace's
 two-page caller and three-page owner under its closed 2/3/1 row policy. The separate
 snapshot-call bank holds four one-page slots; its small Call client retains the
 stricter one-page link cap and the unchanged 2/1/1 runtime Call policy. The shared
-runtime is not forked. Payload, arena and domain limits are unchanged; this
-fixture-composition capacity prerequisite adds no product storage/restart behavior.
+runtime is not forked. The layout capacity change and fixture composition add no
+product storage/restart behavior; final linked images and guests require fresh
+qualification rather than inherited receipts.
 The compiler-semantics runners now compile one packed program per test through
 `tests/compiler/native_runner.py`, with fixed cases as `.cases` data beside each
 runner; the token-scan, UTF-8, JSON and package library

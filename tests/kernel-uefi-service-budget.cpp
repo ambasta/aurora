@@ -495,14 +495,20 @@ auto main() -> int {
     for (const auto stride : {40U, 48U, 256U})
         check(permit(cpus, memory_map(stride), stride).has_value(), "valid extended descriptor stride");
     check(!permit(cpus, std::span{map}.first(map.size() - 1)), "partial descriptor rejected");
-    for (const auto base :
-         std::array<U64, 7>{0, 0xff000, arena + 1, 0xfff01000, 0x100000000ULL, maximum - 4095, maximum})
+    for (const auto base : std::array<U64, 7>{0,
+                                              0xff000,
+                                              arena + 1,
+                                              0x100000000ULL - Handoff::arena_bytes + 4096,
+                                              0x100000000ULL,
+                                              maximum - 4095,
+                                              maximum})
         check(!permit(cpus, map, 40, 1, base), "unowned or malformed arena rejected");
     auto at_apic = Buffer{};
-    descriptor(at_apic, 40, 1, Admission::physical_address, 256, 8);
+    descriptor(at_apic, 40, 1, Admission::physical_address, Handoff::arena_bytes / 4096, 8);
     check(!permit(cpus, at_apic, 40, 1, Admission::physical_address), "owned arena cannot overlap APIC");
     auto before_apic = Buffer{};
-    descriptor(before_apic, 40, 1, Admission::physical_address - Handoff::arena_bytes + 4096, 256, 8);
+    descriptor(
+        before_apic, 40, 1, Admission::physical_address - Handoff::arena_bytes + 4096, Handoff::arena_bytes / 4096, 8);
     check(!permit(cpus, before_apic, 40, 1, Admission::physical_address - Handoff::arena_bytes + 4096),
           "partial arena/APIC overlap rejected");
     for (unsigned type = 0; type <= 16; ++type) {

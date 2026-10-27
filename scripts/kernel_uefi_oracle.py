@@ -128,7 +128,7 @@ def validate(status, text, mode):
     need(
         arena >= 0x100000
         and arena % 4096 == 0
-        and size == 0x100000
+        and size == LAYOUT.arena_bytes
         and arena + size <= 0x100000000
         and 1 <= count <= 512,
         "Invalid arena/map",
@@ -189,7 +189,7 @@ def validate(status, text, mode):
         need(fault and text.count("AURORA_UEFI_EXCEPTION:") == 1, "Missing/duplicate hardware fault")
         vector, error, rip, cr2 = map(int, fault.groups())
         need(vector == 14 and error == (3 if mode == "wp" else 17), "Wrong protection error")
-        need(cr2 == arena + (0x22000 if mode == "wp" else 0x50000), "Wrong fault target")
+        need(cr2 == arena + (LAYOUT.kernel_payload_offset if mode == "wp" else 0x50000), "Wrong fault target")
         if mode == "nx":
             need(rip == cr2, "NX RIP mismatch")
         else:

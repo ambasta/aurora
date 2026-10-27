@@ -146,7 +146,11 @@ public:
 // can carry both records without one page having two owners.
 static_assert(RuntimeLayoutProfile<2>::kernel_flags(Handoff::framebuffer_record_offset) == 0 &&
               RuntimeLayoutProfile<3>::kernel_flags(Handoff::framebuffer_record_offset) == 0 &&
-              Handoff::framebuffer_record_offset != RuntimeLayout::metadata_offset);
+              Handoff::framebuffer_record_offset != RuntimeLayout::metadata_offset &&
+              RuntimeLayout::disjoint(Handoff::framebuffer_record_offset,
+                                      BootstrapLayout::page_size,
+                                      Handoff::payload_offset,
+                                      Handoff::stack_top + BootstrapLayout::page_size - Handoff::payload_offset));
 inline auto put(std::span<std::byte> bytes, std::size_t at, std::uint64_t value, unsigned width = 8) -> void {
     for (unsigned i = 0; i < width; ++i)
         bytes[at + i] = std::byte(value >> (8 * i));

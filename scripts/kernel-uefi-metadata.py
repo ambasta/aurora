@@ -9,6 +9,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from kernel_elf import Elf  # noqa: E402
+from kernel_layout import LAYOUT  # noqa: E402
 
 
 def assembly_path(path: Path) -> str:
@@ -45,7 +46,11 @@ def main() -> None:
     ):
         faults = {mode: symbols[name] for mode, name in probes if name in symbols}
         (build / f"{kind}-metadata.json").write_text(
-            json.dumps(dict(offset=0x22000, bytes=symbols["__payload_text_end"], fault_offsets=faults), indent=2) + "\n"
+            json.dumps(
+                dict(offset=LAYOUT.kernel_payload_offset, bytes=symbols["__payload_text_end"], fault_offsets=faults),
+                indent=2,
+            )
+            + "\n"
         )
     if "uefi_service_drain_begin" in symbols:
         (build / "service-timer-metadata.json").write_text(

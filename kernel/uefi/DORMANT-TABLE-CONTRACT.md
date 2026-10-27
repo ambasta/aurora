@@ -33,8 +33,9 @@ result qualifies this emulator as an architectural isolation oracle.
 
 ## Actual ownership and trusted adapter
 
-The existing1MiB arena,16-frame pool, two user roots, two RX images, guarded user
-stacks, guarded kernel-entry/IST stacks and16KiB bootstrap stack are unchanged.
+Within the shared 2 MiB arena, the 16-frame pool, two user roots, two RX images,
+guarded user stacks, guarded kernel-entry/IST stacks and 16 KiB bootstrap stack
+retain their existing capacities.
 Eight pool frames remain owned by the two user stacks. Dormant construction uses
 at most five additional frames and three of the existing four ledger entries.
 No fragmented DTE pair is accepted and no allocator limit is enlarged.

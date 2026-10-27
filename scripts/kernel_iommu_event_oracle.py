@@ -64,11 +64,18 @@ def ownership(serial):
     rows = re.findall(rb"(?:^|\r\n)(AURORA_UEFI_OWNERSHIP_OK:[^\r\n]*)\r\n", serial)
     need(len(rows) == 1 and serial.count(b"AURORA_UEFI_OWNERSHIP_OK") == 1, "unique ownership record")
     match = re.fullmatch(
-        rb"AURORA_UEFI_OWNERSHIP_OK: arena=([1-9][0-9]*) bytes=1048576 descriptors=([1-9][0-9]*)", rows[0]
+        rf"AURORA_UEFI_OWNERSHIP_OK: arena=([1-9][0-9]*) bytes={LAYOUT.arena_bytes} descriptors=([1-9][0-9]*)".encode(),
+        rows[0],
     )
     need(match is not None, "ownership syntax")
     arena, descriptors = map(int, match.groups())
-    need(arena % 4096 == 0 and 0x100000 <= arena <= 127 * 1024**2 and 1 <= descriptors <= 512, "ownership bounds")
+    need(
+        arena % 4096 == 0
+        and 0x100000 <= arena
+        and arena + LAYOUT.arena_bytes <= 128 * 1024**2
+        and 1 <= descriptors <= 512,
+        "ownership bounds",
+    )
     return arena, descriptors
 
 
@@ -96,7 +103,7 @@ def capture_layout(receipt):
             and offset % alignment == 0
             and begin <= offset
             and offset + size <= end
-            and row["arena_offset"] == 0x22000 + offset,
+            and row["arena_offset"] == LAYOUT.kernel_payload_offset + offset,
             "retained allocation: " + role,
         )
         start = row["arena_offset"]
@@ -115,7 +122,7 @@ def boot_prefix(lines, arena, descriptors):
         r"AURORA_BAR_DESCRIPTOR: kind=root bytes=140 data=[0-9a-f]{280}",
         r"AURORA_UEFI_EXIT_OK: attempts=1",
         r"AURORA_UEFI_PAYLOAD_ENTRY",
-        f"AURORA_UEFI_OWNERSHIP_OK: arena={arena} bytes=1048576 descriptors={descriptors}",
+        f"AURORA_UEFI_OWNERSHIP_OK: arena={arena} bytes={LAYOUT.arena_bytes} descriptors={descriptors}",
         rf"AURORA_UEFI_PROTECTION_OK: root={arena + 0x11000} stack=([0-9]+)",
         r"AURORA_UEFI_LANGUAGE_OK: value=42",
         r"AURORA_ACPI_CPU: id=0 uid=0 enabled=1 capable=0 x2=0",
@@ -152,7 +159,11 @@ def boot_prefix(lines, arena, descriptors):
 def validate_handoff(header, receipt, arena, descriptors):
     u = lambda at, width=8: int.from_bytes(header[at : at + width], "little")
     need(
-        u(0) == 0x41524F5255454649 and u(8, 4) == 4 and u(12, 4) == 128 and u(16) == 1048576 and u(24) == arena,
+        u(0) == 0x41524F5255454649
+        and u(8, 4) == 4
+        and u(12, 4) == 128
+        and u(16) == LAYOUT.arena_bytes
+        and u(24) == arena,
         "handoff identity",
     )
     need(
@@ -180,7 +191,7 @@ def validate_handoff(header, receipt, arena, descriptors):
     need(
         u(88) == arena + 0x11000
         and 0 < u(96) <= 16
-        and u(104) == arena + 0x22000
+        and u(104) == arena + LAYOUT.kernel_payload_offset
         and 0 < u(112) < 128 * 1024**2
         and u(120) == arena + 0x81000,
         "handoff table/payload/firmware binding",

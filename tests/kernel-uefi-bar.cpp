@@ -375,8 +375,8 @@ auto main() -> int {
                 const auto identity = snapshot(config(address));
                 bool expected = (address % (pages * 4096) == 0);
                 for (std::uint64_t page = address / 4096; page < address / 4096 + pages; ++page)
-                    if ((page >= 1024 && page < 1280) || (page >= 0xe0000 && page < 0xf0000) || page == 0xfec00 ||
-                        page == 0xfee00)
+                    if ((page >= 1024 && page - 1024 < Handoff::arena_bytes / 4096) ||
+                        (page >= 0xe0000 && page < 0xf0000) || page == 0xfec00 || page == 0xfee00)
                         expected = false;
                 check(admit(identity, identity, *described, *all_memory, map).has_value() == expected);
             }

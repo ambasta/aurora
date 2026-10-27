@@ -174,7 +174,7 @@ def validate(status, serial, mode, payload=None):
         r"AURORA_UEFI_ENTRY",
         r"AURORA_UEFI_EXIT_OK: attempts=1",
         r"AURORA_UEFI_PAYLOAD_ENTRY",
-        r"AURORA_UEFI_OWNERSHIP_OK: arena=" + DEC + r" bytes=1048576 descriptors=" + DEC,
+        r"AURORA_UEFI_OWNERSHIP_OK: arena=" + DEC + rf" bytes={LAYOUT.arena_bytes} descriptors=" + DEC,
         r"AURORA_UEFI_PROTECTION_OK: root=" + DEC + r" stack=" + DEC,
         r"AURORA_ACPI_CPU: id=0 uid=0 enabled=1 capable=0 x2=0",
         r"AURORA_ACPI_TOPOLOGY: records=1 enabled=1 capable=0 lapic=4276092928",
@@ -190,7 +190,7 @@ def validate(status, serial, mode, payload=None):
     pci.validate(33, "\n".join(before + SUFFIX) + "\n", "pci")
     arena = int(re.search(r"arena=([0-9]+)", before[3])[1])
     if base is not None:
-        need(not (base < arena + 0x100000 and arena < base + length), "BAR overlaps owned arena")
+        need(not (base < arena + LAYOUT.arena_bytes and arena < base + length), "BAR overlaps owned arena")
     if mode == "bar-state":
         need(
             tail
@@ -274,7 +274,7 @@ def validate(status, serial, mode, payload=None):
         probe = faults.get(mode)
         need(
             type(offset) is int
-            and offset == 0x22000
+            and offset == LAYOUT.kernel_payload_offset
             and type(extent) is int
             and 0 < extent <= LAYOUT.kernel_payload_limit
             and type(probe) is int

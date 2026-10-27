@@ -4,10 +4,11 @@
 
 namespace kernel_uefi_console_context {
 namespace {
+using aurora::uefi::Handoff;
 using Context = aurora::uefi::ConsoleWakeContext;
 using U64 = std::uint64_t;
-constexpr U64 arena = 0x1000000, stack = arena + 0x4de08, frame = (stack & ~U64{15}) - 176;
-constexpr U64 begin = arena + 0x22100;
+constexpr U64 arena = 0x1000000, stack = arena + Handoff::stack_top - 504, frame = (stack & ~U64{15}) - 176;
+constexpr U64 begin = arena + Handoff::payload_offset + 256;
 constexpr U64 expected_flags = 0x10ad7; // Independent test oracle, not the production constant.
 unsigned observations{};
 auto need(bool value) -> void {
@@ -54,7 +55,7 @@ int main() {
         changed[19] = flags;
         need(valid(changed) == ((flags & 0x202) == 0x202 && (flags & ~expected_flags) == 0));
     }
-    for (const auto location : {U64{0}, frame - 8, frame + 8, UINT64_MAX, arena + 0x4a000}) {
+    for (const auto location : {U64{0}, frame - 8, frame + 8, UINT64_MAX, arena + Handoff::stack_bottom}) {
         need(!valid(words, location));
     }
     for (const auto saved : {U64{0}, stack - 8, stack + 8, UINT64_MAX}) {

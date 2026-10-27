@@ -27,7 +27,7 @@ int main() {
     put(h, 0, Handoff::magic);
     put(h, 8, 5, 4);
     put(h, 12, 128, 4);
-    put(h, 16, 0x100000);
+    put(h, 16, Handoff::arena_bytes);
     put(h, 24, arena);
     put(h, 32, 80);
     put(h, 40, 40);
@@ -39,7 +39,7 @@ int main() {
     put(h, 80, 12288);
     put(h, 88, arena + 0x11000);
     put(h, 96, 1);
-    put(h, 104, arena + 0x22000);
+    put(h, 104, arena + Handoff::payload_offset);
     put(h, 120, arena + 0xe0000);
     need(Handoff::valid(h, arena));
     for (U64 version : {1ULL, 2ULL, 3ULL, 4ULL}) {
@@ -54,7 +54,7 @@ int main() {
     std::array<std::byte, 80> map{};
     put(map, 0, 1, 4);
     put(map, 8, arena);
-    put(map, 24, 256);
+    put(map, 24, Handoff::arena_bytes / 4096);
     put(map, 40, 11, 4);
     put(map, 48, 0xc0000000);
     put(map, 64, 768);

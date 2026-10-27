@@ -21,6 +21,32 @@ auto need(bool value, std::string_view why) -> void {
         std::abort();
     }
 }
+auto maximum_table_inventory() -> void {
+    // Logical leaf addresses straddle 1 GiB. Only the model's own table backing
+    // is dereferenced; this is a path-capacity case, not an ownership handoff.
+    constexpr U64 logical_arena = 0x3ff00000;
+    const auto backing = reinterpret_cast<U64>(storage.data());
+    std::array<std::byte, Handoff::header> header{};
+    put(header, 8, 6, 4);
+    put(header, 64, 4096);
+    put(header, 72, 8192);
+    put(header, 80, Handoff::payload_limit);
+    PageTables tables{backing + Handoff::tables_offset};
+    for (U64 offset = 0; offset < Handoff::arena_bytes; offset += 4096)
+        if (const auto flags = expected_flags(offset, Bytes{header}))
+            need(tables.map(logical_arena + offset, flags), "maximum identity reservation");
+    need(tables.used() == 6, "1-GiB crossing requires two PD and two PT pages");
+    need(tables.prepare_window() && tables.prepare_interrupts(), "maximum window and LAPIC paths");
+    const auto graphics = FramebufferGeometry::parse(0xc0000000, 0x300000, 1024, 768, 1024, 0, 40);
+    need(graphics && graphics->mapped_bytes() == FramebufferGeometry::max_mapped_bytes,
+         "maximum supported framebuffer extent");
+    need(tables.prepare_framebuffer(*graphics) && tables.used() == Handoff::table_pages,
+         "maximum kernel paths fit exactly sixteen pages");
+    need(tables.entry(logical_arena + Handoff::stack_bottom - 4096) == 0 &&
+             tables.entry(logical_arena + Handoff::stack_top) == 0,
+         "relocated kernel stack guards stay absent");
+    storage.fill(std::byte{});
+}
 auto paired_storage_cases() -> void {
     // These are integer intervals only. Never forge an overlapping PageTables,
     // bitmap or closure object, and never dereference a hostile test address.
@@ -103,7 +129,7 @@ auto cpus() -> Topology {
 }
 auto apic_grant(U64 arena) -> std::optional<LocalApicAdmission> {
     Buffer map;
-    descriptor(map, arena, 256, 1);
+    descriptor(map, arena, Handoff::arena_bytes / 4096, 1);
     return LocalApicAdmission::authorize(cpus().timer_topology(),
                                          map,
                                          40,
@@ -119,7 +145,7 @@ auto graphics_grant(U64 arena, U64 physical = 0xc0000000) -> std::optional<Frame
     auto geometry = FramebufferGeometry::parse(physical, 0x300000, 1024, 768, 1024, 0, 40);
     need(geometry.has_value(), "geometry fixture");
     Buffer map;
-    descriptor(map, arena, 256, 1);
+    descriptor(map, arena, Handoff::arena_bytes / 4096, 1);
     descriptor(map, physical, 768, 11);
     return FramebufferAdmission::authorize_described(
         *geometry, map, 40, 1, arena, 40, (1U << 5) | (1U << 16), 0x0007040600070406ULL);
@@ -133,6 +159,7 @@ auto slot(U64 root, U64 address, unsigned level = 0) -> U64 & {
 int main() {
     static_assert(!std::is_default_constructible_v<LocalApicAdmission>);
     static_assert(!std::is_default_constructible_v<FramebufferAdmission>);
+    maximum_table_inventory();
     paired_storage_cases();
     const auto arena = reinterpret_cast<U64>(storage.data());
     need(RuntimeLayout::valid(arena), "model requires below-4-GiB non-PIE arena");
@@ -140,7 +167,7 @@ int main() {
     put(h, 0, Handoff::magic);
     put(h, 8, 6, 4);
     put(h, 12, 128, 4);
-    put(h, 16, 0x100000);
+    put(h, 16, Handoff::arena_bytes);
     put(h, 24, arena);
     put(h, 32, 80);
     put(h, 40, 40);
@@ -152,7 +179,7 @@ int main() {
     put(h, 80, 12288);
     put(h, 88, arena + 0x11000);
     put(h, 96, 1);
-    put(h, 104, arena + 0x22000);
+    put(h, 104, arena + Handoff::payload_offset);
     put(h, 112, arena + 0x60000);
     put(h, 120, arena + 0xe0000);
     auto apic = apic_grant(arena), foreign_apic = apic_grant(0x20000000);
@@ -226,8 +253,12 @@ int main() {
              "captured base must match the bounded owned table arena before dereference");
     need(!tables.verify_graphical(arena + 4096, Bytes{h}, &*apic, &*graphics), "wrong caller arena");
     constexpr U64 first = 0xffffa00000001000ULL, end = first + 0x300000;
-    for (U64 address :
-         {U64{0xffff900000000000ULL}, first, first + 510 * 4096, first + 511 * 4096, end - 4096, arena + 0x22000}) {
+    for (U64 address : {U64{0xffff900000000000ULL},
+                        first,
+                        first + 510 * 4096,
+                        first + 511 * 4096,
+                        end - 4096,
+                        arena + Handoff::payload_offset}) {
         auto &entry = slot(root, address);
         const auto saved = entry;
         for (unsigned bit = 0; bit < 64; ++bit) {

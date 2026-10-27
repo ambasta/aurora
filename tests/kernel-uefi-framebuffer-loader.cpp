@@ -100,7 +100,7 @@ int main() {
     std::array<std::byte, 40> map{};
     put(map, 0, 1, 4);
     put(map, 8, 0x1000000);
-    put(map, 24, 256);
+    put(map, 24, Handoff::arena_bytes / 4096);
     need(!FramebufferAdmission::authorize_described(
         capture->geometry(), map, 40, 1, 0x1000000, 36, (1U << 5) | (1U << 16), 0x0007040600070406ULL));
     // Proposed platform rule is tested independently, not enabled in a guest.

@@ -145,11 +145,13 @@ the kernel, pins the std-VGA environment. Hosted cases: `graphical-terminal-nati
 cell bounds, a foreign Console grant), `uefi-framebuffer-loader` (the firmware
 rule as data) and the compile-fail guards.
 
-Payload reservation. The production payload had reached the former 128 KiB
-reservation exactly, so it is now 152 KiB (`kernel_payload_limit` 0x26000): the
-IDT moves to 0x48000, the guard to 0x49000 and the 16 KiB kernel stack to
-0x4a000..0x4e000, with 0x4e000..0x50000 still absent above it. Oracles read these
-values from `kernel/bootstrap-layout-values.inc`.
+Payload reservation. The shared 2 MiB arena reserves 512 KiB for the kernel at
+0x100000..0x180000, followed by the IDT, a lower guard, the unchanged 16 KiB
+stack and an upper guard. Low runtime owners do not move. Oracles read
+`kernel/bootstrap-layout-values.inc`; see the [complete arena map](../kernel/uefi/README.md#ownership-and-wire-contract).
+Only the actual linked payload extent is mapped, and its stack still must pass
+the 15,360-byte admission cap. This deliberate capacity change does not enlarge
+protected user-image caps or merge fixture compositions.
 
 ## Moved checks
 
@@ -198,15 +200,12 @@ profiles; the clock catalog and launch lists reject the retired modes.
 ## Still separate
 
 - The protected program, text, storage and snapshot/Call compositions remain
-  separate under the unchanged 152 KiB payload reservation. The storage image
-  reached that complete mapped reservation after namespace admission; extracting
-  the snapshot producer and ordinary Call paths provides bounded capacity without
-  pruning exercised recipes or increasing caps. Actual mapped headroom and build
-  cost are qualification results, not deductions from smaller bank reservations.
-- `display-fixture` and `device-fixture` cannot share one image: their union
-  (graphical console, framebuffer, console service, UART policy and owned bytes:
-  the two payloads less one shared 17 KiB base, about 242 KiB) exceeds the
-  152 KiB payload reservation, and `device-fixture` alone is 147,472 bytes.
+  separate. The wider kernel payload reservation does not change their packed
+  image banks, per-row admission policies or exercised recipes. Actual mapped
+  headroom and build cost require fresh qualification, not deductions from the
+  reservation size.
+- `display-fixture` and `device-fixture` retain their existing compositions;
+  widening the shared layout does not consolidate their mechanisms or gates.
 
 ## BIOS program bank
 
@@ -339,8 +338,8 @@ closed 2/3/1 policy. Snapshot/Call has four slots/four reserved pages; snapshots
 admit one page per image, and ordinary Call keeps its 2/1/1 runtime policy with
 the stricter one-page caller link/packing cap. Text keeps six slots/twelve pages.
 Every user mapping uses actual validated bytes, never reserved bank capacity.
-The 1 MiB arena, two domains, fixed tables/stack pool, 152 KiB payload cap and
-15,360-byte kernel stack bound do not change.
+The shared 2 MiB arena and 512 KiB kernel payload reservation leave two domains,
+fixed tables/stack pool and the 15,360-byte kernel stack bound unchanged.
 
 The storage primary is the existing scratchpad/namespace console. Snapshot/Call
 uses the former snapshot primary and its existing entry bridge, with its original
