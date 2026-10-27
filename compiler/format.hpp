@@ -1,9 +1,10 @@
 #pragma once
-#include "lexer.hpp"
-#include "parser.hpp"
+#include "hosted_parser.hpp"
+#include "hosted_resolver.hpp"
 #include "../runtime/hosted_bytes.hpp"
 #include <algorithm>
-#include <string_view>
+#include <array>
+#include <memory>
 
 namespace aurora::format {
 inline constexpr std::size_t sourceLimit = 1024 * 1024;
@@ -22,47 +23,14 @@ public:
     std::vector<Finding> remainingFindings;
 };
 
-inline std::string_view spelling(const SourceSpan &span) {
-    return std::string_view(span.source->text).substr(span.begin.offset, span.end.offset - span.begin.offset);
-}
-inline std::vector<std::string> comments(const LexedSource &source) {
-    std::vector<std::string> result;
-    for (const auto &trivia : source.trivia) {
-        if (trivia.kind == TriviaKind::LineComment)
-            result.emplace_back(spelling(trivia.span));
-    }
-    return result;
-}
-inline bool equivalent(const LexedSource &left, const LexedSource &right) {
-    if (left.tokens.size() != right.tokens.size() || comments(left) != comments(right))
-        return false;
-    for (std::size_t index = 0; index < left.tokens.size(); ++index) {
-        if (left.tokens[index].text != right.tokens[index].text)
-            return false;
-    }
-    // A comment may not move across a token, even when all comment bytes survive.
-    const auto anchors = [](const LexedSource &source) {
-        std::vector<std::size_t> result;
-        std::size_t token = 0;
-        for (const auto &trivia : source.trivia) {
-            if (trivia.kind != TriviaKind::LineComment)
-                continue;
-            while (token < source.tokens.size() && source.tokens[token].span.end.offset <= trivia.span.begin.offset &&
-                   source.tokens[token].text != "<eof>")
-                ++token;
-            result.push_back(token);
-        }
-        return result;
-    };
-    return anchors(left) == anchors(right);
-}
-
-// One operation owns all layout and finding decisions. The host retains source
-// snapshots, parser diagnostics and copied publication through the generated ABI.
+// One Aurora call parses the source, lays it out, checks that the output keeps
+// every token and comment in place and formats to itself. The host bounds the
+// source, copies the output and findings and renders the diagnostics.
 class Operation {
     hosted::bytes::Region region;
-    hosted_abi::ParserRelease parser{};
     hosted_abi::FormatterRelease formatter{};
+    // One text's parse arena and workspace; a run formats the source and then
+    // its output, which the source bound also bounds.
     static std::uint64_t quota(std::size_t bytes) {
         using namespace hosted_abi::compiler_parser;
         constexpr auto records = sizeof(AstNode) + sizeof(ChildEdge) + sizeof(TypeSyntax) + sizeof(SyntaxNode);
@@ -70,44 +38,78 @@ class Operation {
         return 2 * bytes * (records + hosted_abi::frameBytes + rows) + 8 * (records + rows) +
                (2 * hosted_parser::maximumLiveFrames + 8) * hosted_abi::frameBytes + 5 * sourceLimit;
     }
+    [[noreturn]] void reject(const std::shared_ptr<const SourceText> &text) {
+        hosted_abi::compiler_resolver::SourceResult rejection;
+        aurora_hosted_formatter_rejection(formatter.workspace.storage.data(), &rejection);
+        rejectSource(text, rejection);
+        throw Error(DiagnosticCode::Internal, "invalid hosted formatter result");
+    }
+    std::vector<Finding>
+    findings(const std::shared_ptr<const SourceText> &text, std::int64_t first, std::int64_t count) {
+        constexpr std::array codes{"AUF1001", "AUF1002", "AUF1003"};
+        constexpr std::array messages{"line exceeds 120 byte columns; comments and tokens are never split",
+                                      "trailing whitespace",
+                                      "indentation must use groups of four spaces"};
+        const auto length = static_cast<std::int64_t>(text->text.size());
+        std::vector<Finding> result;
+        for (auto index = first; index < first + count; ++index) {
+            hosted_abi::compiler_formatter::Row row;
+            aurora_hosted_formatter_finding(formatter.workspace.storage.data(), index, &row);
+            if (row.a < 1 || row.a > 3 || row.b < 0 || row.c < row.b || row.c > length || row.d < 1 ||
+                row.d > length + 1 || row.e < 1 || row.e > row.b + 1 || row.f < row.e || row.f - row.e != row.c - row.b)
+                throw Error(DiagnosticCode::Internal, "invalid hosted formatter finding");
+            result.push_back({codes[row.a - 1],
+                              messages[row.a - 1],
+                              {text,
+                               {static_cast<std::size_t>(row.b), static_cast<int>(row.d), static_cast<int>(row.e)},
+                               {static_cast<std::size_t>(row.c), static_cast<int>(row.d), static_cast<int>(row.f)}}});
+        }
+        return result;
+    }
 
 public:
-    explicit Operation(std::size_t bytes) : region(quota(bytes)) {
-        parser.region = formatter.region = region.id();
-        hosted_abi::ParserCreate parse;
-        parse.region = region.id();
-        aurora_hosted_parser_create(&parse, parser.arena.storage.data());
+    explicit Operation(std::size_t bytes) : region(quota(bytes) + quota(sourceLimit)) {
+        formatter.region = region.id();
         hosted_abi::FormatterCreate create;
         create.region = region.id();
         aurora_hosted_formatter_create(&create, formatter.workspace.storage.data());
     }
     ~Operation() {
         aurora_hosted_formatter_release(&formatter);
-        aurora_hosted_parser_release(&parser);
     }
     Operation(const Operation &) = delete;
     Operation &operator=(const Operation &) = delete;
-    Result run(const LexedSource &source, bool layout) {
-        if (layout)
-            parseHostedModuleSyntax(source.tokens, parser.arena.storage.data());
-        const std::array<const void *, 2> roots{formatter.workspace.storage.data(), parser.arena.storage.data()};
+    // Without layout only the source's style findings are produced.
+    Result run(const std::shared_ptr<const SourceText> &source, bool layout) {
         hosted_abi::FormatterInput input;
-        input.source.backing = source.source->text.data();
-        input.source.length = static_cast<std::int64_t>(source.source->text.size());
+        input.source.backing = source->text.data();
+        input.source.length = static_cast<std::int64_t>(source->text.size());
+        input.configuration = hosted_parser::admissionConfiguration();
         if (aurora_hosted_formatter_prepare(formatter.workspace.storage.data(), &input) != 1)
             throw Error(DiagnosticCode::Internal, "formatter workspace allocation failed");
+        // The workspace moves through the call and back; the copy left in `run` is dead.
+        hosted_abi::FormatterRun run;
+        run.region = region.id();
+        run.workspace = formatter.workspace;
+        run.layout = layout;
+        aurora_hosted_formatter_run(&run, formatter.workspace.storage.data());
         hosted_abi::compiler_formatter::Row report;
-        const auto status = aurora_hosted_formatter_run(roots.data(), layout);
         aurora_hosted_formatter_finding(formatter.workspace.storage.data(), -1, &report);
-        if (status != report.a)
-            throw Error(DiagnosticCode::Internal, "invalid hosted formatter status");
-        if (report.a != 4)
+        // 6 and 7 reject the source and the output, 8 and 9 refuse the output.
+        if (report.a == 6)
+            reject(source);
+        if (report.a == 8)
+            throw Error(DiagnosticCode::Internal, "formatter refused a token/comment change");
+        if (report.a == 9)
+            throw Error(DiagnosticCode::Internal, "formatter refused non-idempotent output");
+        if (report.a != 4 && report.a != 7)
             throw Error(DiagnosticCode::Internal,
                         report.a == 2   ? "formatted output exceeds 1 MiB bound"
                         : report.a == 1 ? "formatter workspace allocation failed"
                                         : "invalid hosted formatter result");
-        if (report.b < 0 || report.b > static_cast<std::int64_t>(sourceLimit) || report.c < 0 ||
-            report.c > static_cast<std::int64_t>(sourceLimit) || report.d || report.e || report.f)
+        constexpr auto limit = static_cast<std::int64_t>(sourceLimit);
+        if (report.b < 0 || report.b > limit || report.c < 0 || report.c > limit || report.d < 0 || report.d > limit ||
+            report.e || report.f)
             throw Error(DiagnosticCode::Internal, "invalid hosted formatter extents");
         Result result;
         for (std::int64_t offset = 0; offset < report.b;) {
@@ -118,45 +120,24 @@ public:
             result.text.append(reinterpret_cast<const char *>(chunk.payload.data()), chunk.byteCount);
             offset += chunk.byteCount;
         }
-        constexpr std::array codes{"AUF1001", "AUF1002", "AUF1003"};
-        constexpr std::array messages{"line exceeds 120 byte columns; comments and tokens are never split",
-                                      "trailing whitespace",
-                                      "indentation must use groups of four spaces"};
-        for (std::int64_t index = 0; index < report.c; ++index) {
-            hosted_abi::compiler_formatter::Row row;
-            aurora_hosted_formatter_finding(formatter.workspace.storage.data(), index, &row);
-            if (row.a < 1 || row.a > 3 || row.b < 0 || row.c < row.b || row.c > input.source.length || row.d < 1 ||
-                row.d > input.source.length + 1 || row.e < 1 || row.e > row.b + 1 || row.f < row.e ||
-                row.f - row.e != row.c - row.b)
-                throw Error(DiagnosticCode::Internal, "invalid hosted formatter finding");
-            result.findings.push_back(
-                {codes[row.a - 1],
-                 messages[row.a - 1],
-                 {source.source,
-                  {static_cast<std::size_t>(row.b), static_cast<int>(row.d), static_cast<int>(row.e)},
-                  {static_cast<std::size_t>(row.c), static_cast<int>(row.d), static_cast<int>(row.f)}}});
-        }
+        const auto output = std::make_shared<const SourceText>(source->path, result.text);
+        if (report.a == 7)
+            reject(output);
+        result.findings = findings(source, 0, report.c);
+        result.remainingFindings = findings(output, report.c, report.d);
         return result;
     }
 };
-inline std::vector<Finding> styleFindings(const LexedSource &source) {
-    if (source.source->text.size() > sourceLimit)
+inline std::vector<Finding> styleFindings(const std::string &text) {
+    if (text.size() > sourceLimit)
         throw Error(DiagnosticCode::Module, "formatter input exceeds 1 MiB source bound");
-    return Operation(source.source->text.size()).run(source, false).findings;
+    return Operation(text.size()).run(std::make_shared<const SourceText>("", text), false).findings;
 }
 inline Result source(const std::string &contents, const std::string &path = {}) {
     if (contents.size() > sourceLimit)
         throw Error(DiagnosticCode::Module, "formatter input exceeds 1 MiB source bound");
-    const auto original = lexSource(contents, path);
-    auto result = Operation(contents.size()).run(original, true);
-    const auto formatted = lexSource(result.text, path);
-    if (!equivalent(original, formatted))
-        throw Error(DiagnosticCode::Internal, "formatter refused a token/comment change");
-    auto again = Operation(result.text.size()).run(formatted, true);
-    if (again.text != result.text)
-        throw Error(DiagnosticCode::Internal, "formatter refused non-idempotent output");
+    auto result = Operation(contents.size()).run(std::make_shared<const SourceText>(path, contents), true);
     result.changed = contents != result.text;
-    result.remainingFindings = std::move(again.findings);
     return result;
 }
 } // namespace aurora::format

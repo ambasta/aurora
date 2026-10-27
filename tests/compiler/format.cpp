@@ -1,4 +1,6 @@
 #include "format.hpp"
+#include "lexer.hpp"
+#include "parser.hpp"
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -28,7 +30,9 @@ void verify(const std::string &text, const std::string &path) {
                 if (token.text != "<eof>" && token.span.end.offset <= trivia.span.begin.offset)
                     ++preceding;
             }
-            list.emplace_back(preceding, std::string(aurora::format::spelling(trivia.span)));
+            const auto &span = trivia.span;
+            const auto length = span.end.offset - span.begin.offset;
+            list.emplace_back(preceding, span.source->text.substr(span.begin.offset, length));
         }
     }
     require(before == after, "comment bytes or token-relative position differ: " + path);
@@ -208,12 +212,12 @@ void oversizedStrings() {
     };
     const std::string literal = "\"" + std::string(119, 'x') + "\""; // 121 source bytes
     for (const auto &suffix : {";", ");", "));", ",", "]);"}) {
-        const auto findings = aurora::format::styleFindings(aurora::lexSource("        " + literal + suffix + "\n"));
+        const auto findings = aurora::format::styleFindings("        " + literal + suffix + "\n");
         require(findings.empty(), "standalone oversized literal was not exempted");
     }
     for (const auto &line :
          {"        \"" + std::string(118, 'x') + "\";", std::string(24, ' ') + "\"" + std::string(100, 'x') + "\";"}) {
-        require(aurora::format::styleFindings(aurora::lexSource(line + "\n")).empty(),
+        require(aurora::format::styleFindings(line + "\n").empty(),
                 "standalone literal at canonical indentation was not exempted");
     }
     for (const auto &line : {std::string(120, ' ') + literal + ";", // indentation itself is too wide
@@ -225,10 +229,10 @@ void oversizedStrings() {
                              "        " + literal + "; // comment",
                              "        " + std::string(121, 'x') + ";",
                              "        // " + literal}) {
-        require(has(aurora::format::styleFindings(aurora::lexSource(line + "\n")), "AUF1001"),
+        require(has(aurora::format::styleFindings(line + "\n"), "AUF1001"),
                 "non-literal excess incorrectly exempted: " + line);
     }
-    const auto whitespace = aurora::format::styleFindings(aurora::lexSource(" " + literal + "; \n"));
+    const auto whitespace = aurora::format::styleFindings(" " + literal + "; \n");
     require(has(whitespace, "AUF1002") && has(whitespace, "AUF1003"), "literal hid whitespace findings");
     const auto formatted = aurora::format::source("module x;auto f()->i64{return g(" + literal + ");}");
     require(formatted.changed, "literal exception hid noncanonical layout");
@@ -335,6 +339,9 @@ void cases() {
     }
     verify(bytes, "opaque-comment.au");
     rejected("module x;auto f()->i64{return @;}", aurora::DiagnosticCode::UnsupportedCharacter);
+    // A lexical error anywhere precedes an earlier grammar error, as in the compiler.
+    rejected("module x;auto f()->i64{return ;} @", aurora::DiagnosticCode::UnsupportedCharacter);
+    rejected("module x;class C{own<i64> value;};", aurora::DiagnosticCode::UnsupportedFieldType);
     rejected("module x;auto f()->i64{return ;}", aurora::DiagnosticCode::UnexpectedToken);
     rejected("module x;auto f()->i64{/* no block comments */return 1;}", aurora::DiagnosticCode::UnexpectedToken);
     rejected(std::string(aurora::format::sourceLimit + 1, ' '), aurora::DiagnosticCode::Module);

@@ -1,13 +1,17 @@
 export module aurora.compiler.formatter;
 import aurora.compiler.lexer;
 import aurora.compiler.syntax_arena;
+import aurora.compiler.parser;
+import aurora.compiler.resolution_rows;
+import aurora.compiler.resolution_ingest;
 import aurora.compiler.x86_storage;
 import aurora.compiler.x86_object_storage;
 
 export namespace compiler_formatter {
     // Private fixed-width scratch and copied result row. Finding rows carry
     // code, begin/end offsets, line, begin/end columns; summary (-1) carries
-    // status, output bytes and finding count. No row contains an owner or pointer.
+    // status, output bytes and the source's and the output's finding counts.
+    // No row contains an owner or pointer.
     class Row {
     public:
         i64 a;
@@ -23,6 +27,11 @@ export namespace compiler_formatter {
     auto pool(builtin::ByteRegion region) -> builtin::OwnedValues<Row> {
         const Row empty = Row(0, 0, 0, 0, 0, 0);
         builtin::OwnedValues<Row> result = region.try_allocate(0, empty);
+        return move(result);
+    }
+    auto rejections(builtin::ByteRegion region) -> builtin::OwnedValues<compiler_resolver::SourceResult> {
+        const compiler_resolver::SourceResult empty = compiler_resolver::SourceResult();
+        builtin::OwnedValues<compiler_resolver::SourceResult> result = region.try_allocate(0, empty);
         return move(result);
     }
     auto append_row(builtin::OwnedValues<Row>& rows, i64 count, Row row, Row fill) -> bool {
@@ -63,11 +72,14 @@ export namespace compiler_formatter {
         builtin::OwnedBytes output;
         builtin::OwnedBytes joined;
         builtin::OwnedBytes input;
+        builtin::OwnedValues<compiler_resolver::SourceResult> rejected;
+        compiler_parser::AdmissionConfig configuration;
         i64 pieceCount;
         i64 tokenCount;
         i64 breakCount;
         i64 braceCount;
         i64 findingCount;
+        i64 remainingCount;
         i64 outputSize;
         i64 column;
         i64 lineStart;
@@ -259,10 +271,11 @@ export namespace compiler_formatter {
             return marked.at(index);
         }
     public:
-        Workspace(builtin::ByteRegion region) : pieces(pool(region)), breaks(pool(region)), braces(pool(region)),
-            findings(pool(region)), tokens(pool(region)), marked(region.try_allocate(0)),
-            output(region.try_allocate(0)), joined(region.try_allocate(0)), input(region.try_allocate(0)),
-            pieceCount(0), tokenCount(0), breakCount(0), braceCount(0), findingCount(0), outputSize(0), column(0),
+        Workspace(builtin::ByteRegion region, compiler_parser::AdmissionConfig limits) : pieces(pool(region)),
+            breaks(pool(region)), braces(pool(region)), findings(pool(region)), tokens(pool(region)),
+            marked(region.try_allocate(0)), output(region.try_allocate(0)), joined(region.try_allocate(0)),
+            input(region.try_allocate(0)), rejected(rejections(region)), configuration(limits), pieceCount(0),
+            tokenCount(0), breakCount(0), braceCount(0), findingCount(0), remainingCount(0), outputSize(0), column(0),
             lineStart(0), status(0) {
         }
         auto scan(builtin::span<const u8> source) -> bool {
@@ -291,7 +304,9 @@ export namespace compiler_formatter {
                     }
                 } else {
                     if (next.kind() != compiler_lexer::Event::whitespace) {
-                        return fail(3);
+                        // The parser reports the lexical error; formatting refuses to start.
+                        status = 3;
+                        return true;
                     }
                 }
                 offset = next.next_offset();
@@ -697,14 +712,15 @@ export namespace compiler_formatter {
             }
             return true;
         }
-        auto begin(builtin::span<const u8> source) -> bool {
+        auto begin(builtin::span<const u8> source, compiler_parser::AdmissionConfig limits) -> bool {
             if (status != 0) {
                 return fail(3);
             }
             if (source.size() > 1048576 || !pieces.ok() || !breaks.ok() || !braces.ok() || !findings.ok()
-                || !tokens.ok() || !marked.ok() || !output.ok() || !joined.ok() || !input.ok()) {
+                || !tokens.ok() || !marked.ok() || !output.ok() || !joined.ok() || !input.ok() || !rejected.ok()) {
                 return fail(1);
             }
+            configuration = limits;
             if (!input.try_resize(source.size())) {
                 return fail(1);
             }
@@ -716,7 +732,9 @@ export namespace compiler_formatter {
             if (!scan(source)) {
                 return false;
             }
-            status = 5;
+            if (status == 0) {
+                status = 5;
+            }
             return true;
         }
         auto append_source(i64 begin, i64 end, i64 depth) -> bool {
@@ -759,8 +777,47 @@ export namespace compiler_formatter {
         auto state() const -> i64 {
             return status;
         }
+        auto limits() const -> compiler_parser::AdmissionConfig {
+            const compiler_parser::AdmissionConfig result = configuration;
+            return result;
+        }
+        auto original() const -> builtin::span<const u8> {
+            const builtin::span<const u8> all = borrow_bytes(input);
+            return all;
+        }
+        auto formatted() const -> builtin::span<const u8> {
+            const builtin::span<const u8> all = borrow_bytes(output);
+            const builtin::span<const u8> visible = all.subspan(0, outputSize);
+            return visible;
+        }
+        // Status 6 rejects the source, 7 the output (whose text stays readable).
+        auto reject(compiler_resolver::SourceResult result, i64 reason) -> bool {
+            if (!rejected.try_resize(1, result)) {
+                return fail(1);
+            }
+            rejected.set(0, result);
+            return fail(reason);
+        }
+        auto rejection() const -> compiler_resolver::SourceResult {
+            if ((status != 6 && status != 7) || rejected.size() != 1) {
+                const compiler_resolver::SourceResult invalid = compiler_resolver::SourceResult();
+                return invalid;
+            }
+            const compiler_resolver::SourceResult result = rejected.at(0);
+            return result;
+        }
+        // Appends a finding of the formatted output after the source's own.
+        auto remaining(Row row) -> bool {
+            const i64 count = findingCount + remainingCount;
+            const Row empty = Row(0, 0, 0, 0, 0, 0);
+            if (!append_row(findings, count, row, empty)) {
+                return fail(1);
+            }
+            remainingCount = remainingCount + 1;
+            return true;
+        }
         auto report() const -> Row {
-            const Row result = Row(status, outputSize, findingCount, 0, 0, 0);
+            const Row result = Row(status, outputSize, findingCount, remainingCount, 0, 0);
             return result;
         }
         auto read_finding(i64 index) const -> Row {
@@ -768,7 +825,7 @@ export namespace compiler_formatter {
                 const Row summary = report();
                 return summary;
             }
-            if (status != 4 || index < 0 || index >= findingCount) {
+            if (status != 4 || index < 0 || index >= findingCount + remainingCount) {
                 const Row invalid = Row(-1, 0, 0, 0, 0, 0);
                 return invalid;
             }
@@ -777,7 +834,7 @@ export namespace compiler_formatter {
         }
         auto chunk(i64 offset) const -> compiler_x86::EmitChunk {
             compiler_x86::EmitChunk result = compiler_x86::EmitChunk();
-            if (status != 4 || offset < 0 || offset > outputSize) {
+            if ((status != 4 && status != 7) || offset < 0 || offset > outputSize) {
                 result.invalidate();
                 return result;
             }
@@ -866,20 +923,143 @@ export namespace compiler_formatter {
         }
         return true;
     }
-    auto run(Workspace& workspace, const compiler_parser::AstArena& arena, bool format) -> i64 {
-        if (workspace.start() && workspace.style()) {
-            if (format) {
-                if (roles(workspace, arena)) {
-                    workspace.layout();
-                }
+    // Whether `after` spells the same tokens and line comments in the same
+    // order as `before`: no token changed and no comment moved across a token.
+    auto preserved(builtin::span<const u8> before, builtin::span<const u8> after) -> bool {
+        i64 left = 0;
+        i64 leftLine = 1;
+        i64 leftStart = 0;
+        i64 right = 0;
+        i64 rightLine = 1;
+        i64 rightStart = 0;
+        bool scanning = true;
+        while (scanning) {
+            const compiler_lexer::Lexeme first = compiler_lexer::next_lexeme(before, compiler_lexer::Cursor(left,
+                leftLine, leftStart));
+            const compiler_lexer::Lexeme second = compiler_lexer::next_lexeme(after, compiler_lexer::Cursor(right,
+                rightLine, rightStart));
+            if (first.kind() == compiler_lexer::Event::whitespace) {
+                left = first.next_offset();
+                leftLine = first.next_line();
+                leftStart = first.next_line_start();
             } else {
-                workspace.complete();
+                if (second.kind() == compiler_lexer::Event::whitespace) {
+                    right = second.next_offset();
+                    rightLine = second.next_line();
+                    rightStart = second.next_line_start();
+                } else {
+                    if (first.kind() != second.kind() || first.next_offset() - left != second.next_offset() - right) {
+                        return false;
+                    }
+                    if (first.kind() == compiler_lexer::Event::end_of_input) {
+                        return true;
+                    }
+                    if (first.kind() != compiler_lexer::Event::token && first.kind()
+                        != compiler_lexer::Event::line_comment) {
+                        return false;
+                    }
+                    i64 at = 0;
+                    while (at < first.next_offset() - left) {
+                        if (before.at(left + at) != after.at(right + at)) {
+                            return false;
+                        }
+                        at = at + 1;
+                    }
+                    left = first.next_offset();
+                    leftLine = first.next_line();
+                    leftStart = first.next_line_start();
+                    right = second.next_offset();
+                    rightLine = second.next_line();
+                    rightStart = second.next_line_start();
+                }
             }
         }
-        return workspace.state();
+        return false;
+    }
+    auto same(builtin::span<const u8> first, builtin::span<const u8> second) -> bool {
+        if (first.size() != second.size()) {
+            return false;
+        }
+        i64 at = 0;
+        while (at < first.size()) {
+            if (first.at(at) != second.at(at)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    auto lay_out(Workspace& workspace, const compiler_parser::AstArena& arena) -> bool {
+        return workspace.start() && workspace.style() && roles(workspace, arena) && workspace.layout() == 4;
+    }
+    auto adopt(Workspace& workspace, const Workspace& again) -> bool {
+        const Row summary = again.read_finding(-1);
+        i64 at = 0;
+        while (at < summary.c) {
+            const Row row = again.read_finding(at);
+            if (!workspace.remaining(row)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return true;
+    }
+    // Formats the prepared source as one operation: parse and admit it, lay it
+    // out, require the output to keep every token and line comment in place,
+    // and require formatting the output to reproduce it. The output's style
+    // findings follow the source's. Style findings alone need no parse.
+    auto run(builtin::ByteRegion region, Workspace workspace, bool format) -> Workspace {
+        if (!format) {
+            if (workspace.start() && workspace.style()) {
+                workspace.complete();
+            }
+            return move(workspace);
+        }
+        const compiler_parser::AdmissionConfig limits = workspace.limits();
+        compiler_parser::AstArena arena = compiler_parser::create(region, 0);
+        const compiler_resolver::SourceResult parsed = compiler_resolver::parse_source(arena, workspace.original(),
+            limits);
+        if (!parsed.admitted()) {
+            workspace.reject(parsed, 6);
+            return move(workspace);
+        }
+        if (!lay_out(workspace, arena)) {
+            return move(workspace);
+        }
+        // As when the output was lexed first, its lexical errors precede a moved token.
+        const compiler_resolver::SourceResult reparsed = compiler_resolver::parse_source(arena, workspace.formatted(),
+            limits);
+        if (reparsed.lexically_rejected()) {
+            workspace.reject(reparsed, 7);
+            return move(workspace);
+        }
+        if (!preserved(workspace.original(), workspace.formatted())) {
+            workspace.fail(8);
+            return move(workspace);
+        }
+        if (!reparsed.admitted()) {
+            workspace.reject(reparsed, 7);
+            return move(workspace);
+        }
+        Workspace again = Workspace(region, limits);
+        if (!again.begin(workspace.formatted(), limits)) {
+            workspace.fail(1);
+            return move(workspace);
+        }
+        if (!lay_out(again, arena)) {
+            workspace.fail(again.state());
+            return move(workspace);
+        }
+        if (!same(workspace.formatted(), again.formatted())) {
+            workspace.fail(9);
+            return move(workspace);
+        }
+        adopt(workspace, again);
+        return move(workspace);
     }
     auto create(builtin::ByteRegion region) -> Workspace {
-        Workspace result = Workspace(region);
+        const compiler_parser::AdmissionConfig none = compiler_parser::AdmissionConfig(0, 0, 0, 0, 0, 0);
+        Workspace result = Workspace(region, none);
         return move(result);
     }
     auto release(builtin::ByteRegion region, Workspace workspace) -> i64 {
