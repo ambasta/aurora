@@ -2,7 +2,6 @@
 // throughout each synchronous call; no owner descriptor or payload pointer is
 // constructed, copied or inspected here.
 #include "hosted_parser.hpp"
-#include "services.hpp"
 #include "../runtime/hosted_bytes.hpp"
 #include <algorithm>
 #include <array>
@@ -75,16 +74,22 @@ Token cursorToken(const std::vector<Token> &tokens, hosted_parser::Cursor cursor
     }
     return token;
 }
-// Shared layout/service policy remains authoritative in the existing compiler
-// helpers. Aurora performs declaration admission using this copied configuration.
+// Layout limits remain authoritative in the existing compiler helpers; the
+// service masks and the full supported group set come from the Aurora catalog.
 hosted_abi::compiler_parser::AdmissionConfig admissionConfiguration() {
+    using hosted_abi::compiler_catalog::ServiceKind;
+    hosted_abi::compiler_catalog::Summary catalog;
+    aurora_hosted_catalog_summary(&catalog);
+    const auto mask = [](ServiceKind kind) {
+        return std::int64_t{1} << static_cast<int>(kind);
+    };
     hosted_abi::compiler_parser::AdmissionConfig configuration;
     configuration.scalar_array_limit = maximumClassScalarArrayLength;
     configuration.byte_array_limit = maximumClassByteArrayLength;
-    configuration.console_mask = 1;
-    configuration.display_mask = 2;
-    configuration.event_mask = 4;
-    configuration.service_groups = service::supportedGroupBitmap(true, true, true);
+    configuration.console_mask = mask(ServiceKind::Console);
+    configuration.display_mask = mask(ServiceKind::Display);
+    configuration.event_mask = mask(ServiceKind::IommuEvent);
+    configuration.service_groups = catalog.serviceGroups;
     return configuration;
 }
 class ImportedSyntax {
@@ -400,52 +405,6 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             if (preamble.tag != SyntaxKind::preamble || preamble.qualifier < 0 || preamble.qualifier > 1)
                 invalid();
             ParsedModuleSyntax parsed;
-            // Inspect admitted syntax, never raw source spellings: comments,
-            // strings and unrelated user names cannot enable a builtin family.
-            const auto callName = [](const std::string &value) {
-                return value == "CallSession" || value == "CallResult" || value == "CallStatus";
-            };
-            const auto serveName = [](const std::string &value) {
-                return value == "ServeSession" || value == "ServeRequest" || value == "ServeStatus";
-            };
-            const auto portName = [](const std::string &value) {
-                return value == "Com1UartGrant" || value == "PortWriteResult";
-            };
-            for (std::int64_t index = 0; index < typeCount; ++index) {
-                TypeSyntax type;
-                aurora_hosted_parser_type(arena.data(), index, &type);
-                if (type.token_index < 0 || type.name_end < type.token_index || type.name_end >= tokenCount)
-                    invalid();
-                if ((type.tag == TypeSyntaxKind::builtin_type || type.tag == TypeSyntaxKind::builtin_class) &&
-                    callName(text(type.name_end)))
-                    parsed.callFamily = true;
-                if ((type.tag == TypeSyntaxKind::builtin_type || type.tag == TypeSyntaxKind::builtin_class) &&
-                    portName(text(type.name_end)))
-                    parsed.portFamily = true;
-                if ((type.tag == TypeSyntaxKind::builtin_type || type.tag == TypeSyntaxKind::builtin_class) &&
-                    serveName(text(type.name_end)))
-                    parsed.serveFamily = true;
-            }
-            // Enum cases can appear without a declaration/type node, including
-            // in an uninstantiated template body.
-            for (std::int64_t index = 0; index < result.node_count; ++index) {
-                Node node;
-                aurora_hosted_parser_read(arena.data(), index, &node);
-                if (node.token_index < 0 || node.name_end < node.token_index || node.name_end >= tokenCount)
-                    invalid();
-                if ((node.tag == NodeKind::name || node.tag == NodeKind::call || node.tag == NodeKind::construct) &&
-                    node.name_end >= node.token_index + 2 && text(node.token_index) == "builtin" &&
-                    text(node.token_index + 1) == "::" && callName(text(node.token_index + 2)))
-                    parsed.callFamily = true;
-                if ((node.tag == NodeKind::name || node.tag == NodeKind::call || node.tag == NodeKind::construct) &&
-                    node.name_end >= node.token_index + 2 && text(node.token_index) == "builtin" &&
-                    text(node.token_index + 1) == "::" && portName(text(node.token_index + 2)))
-                    parsed.portFamily = true;
-                if ((node.tag == NodeKind::name || node.tag == NodeKind::call || node.tag == NodeKind::construct) &&
-                    node.name_end >= node.token_index + 2 && text(node.token_index) == "builtin" &&
-                    text(node.token_index + 1) == "::" && serveName(text(node.token_index + 2)))
-                    parsed.serveFamily = true;
-            }
             parsed.root = result.root_node;
             parsed.moduleName = name(preamble.token_index, preamble.binding_token);
             parsed.interfaceUnit = preamble.qualifier != 0;
@@ -865,42 +824,18 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                 value = Type::DisplaySession;
             else if (builtin == "Com1UartGrant")
                 value = Type::Com1UartGrant;
-            else if (builtin == "PortWriteResult")
-                value = service::portWriteResultType();
             else if (builtin == "ServeSession")
                 value = Type::ServeSession;
-            else if (builtin == "ServeRequest")
-                value = service::serveRequestType();
-            else if (builtin == "ServeStatus")
-                value = service::serveStatusType();
             else if (builtin == "CallSession")
                 value = Type::CallSession;
-            else if (builtin == "CallResult")
-                value = service::callResultType();
-            else if (builtin == "CallStatus")
-                value = service::callStatusType();
             else if (builtin == "IommuEventSession")
                 value = Type::IommuEventSession;
-            else if (builtin == "ConsoleSample")
-                value = service::sampleType();
-            else if (builtin == "ConsolePutResult")
-                value = service::putResultType();
-            else if (builtin == "ConsoleCompletion")
-                value = service::completionType();
-            else if (builtin == "DisplayPutResult")
-                value = service::displayPutResultType();
-            else if (builtin == "DisplayCompletion")
-                value = service::displayCompletionType();
-            else if (builtin == "IommuEventSample")
-                value = service::eventSampleType();
-            else if (builtin == "EventPollResult")
-                value = service::eventPollResultType();
-            else if (builtin == "EventAckResult")
-                value = service::eventAckResultType();
-            else if (builtin == "EventIntakeCompletion")
-                value = service::eventIntakeCompletionType();
-            else
-                invalid();
+            else {
+                // Aurora admits the remaining copied service classes and enums.
+                value = type.tag == TypeSyntaxKind::builtin_class ? Type("builtin::" + builtin)
+                                                                  : Type::enumeration("builtin::" + builtin);
+                value.displayName = value.className;
+            }
         } else if (type.tag == TypeSyntaxKind::byte_span) {
             value = Type::ByteSpan;
         } else if (type.tag == TypeSyntaxKind::array_type || type.tag == TypeSyntaxKind::owned_values ||

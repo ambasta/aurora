@@ -10,6 +10,7 @@ import aurora.compiler.lowering_storage;
 import aurora.compiler.syntax_arena;
 import aurora.compiler.parser;
 import aurora.compiler.lexer;
+import aurora.compiler.builtin_catalog;
 
 export namespace compiler_resolver {
     // Metadata indices are identities, never addresses. These private index
@@ -1542,7 +1543,7 @@ export namespace compiler_resolver {
         return copied_root;
     }
 
-    // Sealed descriptor input is supplied once from the existing host helpers.
+    // Sealed descriptors are seeded once from compiler_catalog when run starts.
     // Descriptor words [90,source-prefix,-1,native-source,member-head,member-tail].
     // Member words [91,name-source,type-or-case-ordinal,next].
     auto seed_descriptor(Session& session, i64 name, i64 native, ResolvedTypeKind kind) -> i64 {
@@ -1606,20 +1607,152 @@ export namespace compiler_resolver {
         }
         return seed_type(session, value.type_kind(), descriptor);
     }
-    // Host input uses copied typed rows and canonical spelling references.
-    // Input word1 is the full source spelling reference, word3 the native
-    // spelling reference. The return value is the canonical concrete TypeId.
-    auto seed_builtin(Session& session, MetaRow input) -> i64 {
-        const i64 name = source_name(session, input.word(1));
-        const i64 descriptor = seed_descriptor(session, name, input.word(3), input.type_kind());
-        return seed_type(session, input.type_kind(), descriptor);
+    // The concrete TypeId of a seeded catalog type, or -1.
+    auto catalog_type(Session& session, i64 type) -> i64 {
+        return session.index(43, type, 0, 0, 0);
     }
-    // Input words: owner TypeId, member-name SourceRef, field TypeId or case
-    // ordinal. The owning descriptor decides which interpretation applies.
-    auto seed_member(Session& session, MetaRow input) -> i64 {
-        const i64 owner = mw(session, input.word(0), 1);
-        const i64 descriptor = mw(session, owner, 8);
-        return append_seed_member(session, descriptor, input.word(1), input.word(2));
+    auto family_seeded(Session& session, i64 family) -> bool {
+        i64 type = 0;
+        while (type < compiler_catalog::type_count()) {
+            if (compiler_catalog::type_family(type) == family) {
+                return catalog_type(session, type) >= 0;
+            }
+            type = type + 1;
+        }
+        return false;
+    }
+    // Seeds one catalog family in catalog order: every type, then the members of
+    // its nominal types. Index (43, type) holds each seeded type's concrete TypeId.
+    auto seed_family(Session& session, i64 family) -> bool {
+        i64 type = 0;
+        while (type < compiler_catalog::type_count() && session.good()) {
+            if (compiler_catalog::type_family(type) == family) {
+                const ResolvedTypeKind kind = compiler_catalog::type_kind(type);
+                const i64 spelling = compiler_catalog::type_word(session, type, 0, -1, 0);
+                i64 native = -1;
+                if (compiler_catalog::nominal(type)) {
+                    native = compiler_catalog::type_word(session, type, 1, -1, 0);
+                }
+                const i64 name = source_name(session, spelling);
+                const i64 descriptor = seed_descriptor(session, name, native, kind);
+                const i64 seeded = seed_type(session, kind, descriptor);
+                session.index_insert(43, type, 0, 0, 0, seeded);
+            }
+            type = type + 1;
+        }
+        type = 0;
+        while (type < compiler_catalog::type_count() && session.good()) {
+            if (compiler_catalog::type_family(type) == family && compiler_catalog::nominal(type)) {
+                const i64 concrete = catalog_type(session, type);
+                const i64 owner = mw(session, concrete, 1);
+                const i64 descriptor = mw(session, owner, 8);
+                i64 member = 0;
+                while (member < compiler_catalog::member_count(type) && session.good()) {
+                    const i64 name = compiler_catalog::type_word(session, type, 2 + member, -1, 0);
+                    i64 value = member;
+                    if (compiler_catalog::type_kind(type) == ResolvedTypeKind::class_value) {
+                        value = catalog_type(session, compiler_catalog::field_type(type, member));
+                    }
+                    append_seed_member(session, descriptor, name, value);
+                    member = member + 1;
+                }
+            }
+            type = type + 1;
+        }
+        return session.good();
+    }
+    // The optional family named by source bytes [begin, end), or 0.
+    auto named_family(Session& session, i64 begin, i64 end) -> i64 {
+        i64 type = 0;
+        while (type < compiler_catalog::type_count() && session.good()) {
+            const i64 family = compiler_catalog::type_family(type);
+            if (family != 0 && compiler_catalog::type_word(session, type, 0, begin, end) == 1) {
+                return family;
+            }
+            type = type + 1;
+        }
+        return 0;
+    }
+    // The optional family named by the third token of a `builtin :: Name`
+    // spelling between token references first and last, or 0.
+    auto qualified_family(Session& session, i64 first, i64 last) -> i64 {
+        if (first < 0 || last < 0) {
+            return 0;
+        }
+        const MetaRow head = session.meta(first);
+        const MetaRow tail = session.meta(last);
+        if (head.kind() != MetaTag::source_reference || tail.kind() != MetaTag::source_reference || tail.word(5)
+            < head.word(5) + 2 || tail.word(2) <= head.word(1) || compiler_catalog::use_word(session, "builtin", 0,
+            head.word(1), head.word(2)) != 1) {
+            return 0;
+        }
+        const i64 base = head.word(1);
+        const i64 count = tail.word(2) - base;
+        i64 offset = head.word(2) - base;
+        i64 line = 1;
+        i64 start = 0;
+        bool scope = false;
+        while (session.good()) {
+            const compiler_lexer::Lexeme token = session.scan_range(base, count, compiler_lexer::Cursor(offset, line,
+                start));
+            if (token.kind() == compiler_lexer::Event::token) {
+                if (scope) {
+                    return named_family(session, base + offset, base + token.next_offset());
+                }
+                if (token.next_offset() - offset != 2 || session.source_byte(base + offset) != ':'
+                    || session.source_byte(base + offset + 1) != ':') {
+                    return 0;
+                }
+                scope = true;
+            } else {
+                if ((token.kind() != compiler_lexer::Event::whitespace && token.kind()
+                    != compiler_lexer::Event::line_comment) || token.next_offset() <= offset) {
+                    return 0;
+                }
+            }
+            offset = token.next_offset();
+            line = token.next_line();
+            start = token.next_line_start();
+        }
+        return 0;
+    }
+    // Seeds the base family, then each optional family that admitted syntax of
+    // an ingested module names: a builtin type, or a builtin-qualified name,
+    // call or construct expression. Comments, strings and user names never do.
+    auto seed_catalog(Session& session) -> bool {
+        bool call = false;
+        bool port = false;
+        bool serve = false;
+        i64 at = 0;
+        while (at < session.syntax_count() && session.good()) {
+            const SyntaxRow row = session.syntax(at);
+            i64 family = 0;
+            if (row.kind() == SyntaxTag::type && (row.type_kind() == compiler_parser::TypeKind::builtin_type
+                || row.type_kind() == compiler_parser::TypeKind::builtin_class) && row.word(1) >= 0) {
+                const MetaRow name = session.meta(row.word(1));
+                family = named_family(session, name.word(1), name.word(2));
+            }
+            if (row.kind() == SyntaxTag::expression && (row.expression_kind() == compiler_parser::NodeKind::name
+                || row.expression_kind() == compiler_parser::NodeKind::call || row.expression_kind()
+                == compiler_parser::NodeKind::construct)) {
+                family = qualified_family(session, row.word(0), row.word(4));
+            }
+            call = call || family == 1;
+            port = port || family == 2;
+            serve = serve || family == 3;
+            at = at + 1;
+        }
+        seed_family(session, 0);
+        if (call) {
+            seed_family(session, 1);
+        }
+        if (port) {
+            seed_family(session, 2);
+        }
+        if (serve) {
+            seed_family(session, 3);
+        }
+        return session.good();
     }
     class Arguments {
         i64 size;
@@ -3524,9 +3657,12 @@ export namespace compiler_resolver {
     // One invocation is the only production source-resolution authority. Every
     // output remains tentative until the final successful context is returned.
     auto run(Session& session) -> i64 {
-        // Optional Call seeding means admitted syntax referenced this family.
-        // Create resolution state only after every source module is ingested:
-        // its syntax-count snapshot bounds subsequent template cloning.
+        // Create resolution state only after every source module is ingested
+        // and the catalog is seeded: its syntax-count snapshot bounds subsequent
+        // template cloning.
+        if (!seed_catalog(session)) {
+            return -1;
+        }
         const i64 status = state(session);
         const i64 call_rank = type_rank(ResolvedTypeKind::call_session);
         if (session.index(34, call_rank, -1, -1, 0) >= 0 || session.index(34, type_rank(ResolvedTypeKind::port_range),

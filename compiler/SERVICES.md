@@ -64,7 +64,7 @@ forwarded while another root is suspended. This deliberately rejects `helper(ses
 A caller without its own service parameter cannot supply authority. Ordinary copied
 result enums remain data and can cross helpers/modules independently of authority.
 
-The closed compiler operation table in `services.hpp` owns host linkage:
+The closed operation table in `builtin_catalog.au` owns these contracts:
 
 - `next()` returns `ConsoleSample`: public `byte_present: bool`, `byte: u8`,
   `damaged: bool`. Absent byte is canonical zero. The sample is an ordinary copied

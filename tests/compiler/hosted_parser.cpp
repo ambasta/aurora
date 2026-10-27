@@ -1776,20 +1776,9 @@ void rawModuleTraversal() {
 
 void rawLinkageModes() {
     namespace Wire = aurora::hosted_abi::compiler_resolver;
-    context = "every linkage mode including sealed seeds and cloned template names";
+    context = "every linkage mode including sealed catalog types and cloned template names";
     Allocations allocations;
     RawResolution resolution(allocations);
-    const auto text = [&](const std::string &spelling) {
-        aurora::hosted_abi::ResolverTextInput input{};
-        input.text.backing = spelling.data();
-        input.text.length = static_cast<std::int64_t>(spelling.size());
-        return aurora_hosted_resolver_append_text(resolution.data(), &input);
-    };
-    aurora::hosted_abi::ResolverSeedBuiltinInput seed{};
-    seed.definition.value1 = text("builtin::Frozen");
-    seed.definition.value3 = text("frozen_name");
-    seed.definition.concrete_tag = Wire::ResolvedTypeKind::class_value;
-    require(aurora_hosted_resolver_seed_builtin(resolution.data(), &seed) >= 0, "linkage seed rejected");
     require(resolution.ingest("module mode;namespace n {"
                               "enum class E{one};class C{i64 value;public:C():value(0){}"
                               "auto m()->i64{return value;}};"
@@ -1829,7 +1818,16 @@ void rawLinkageModes() {
         {Wire::NativeMode::enumeration, {"__au_e" + base + "1E"}},
         {Wire::NativeMode::method, {"__au_m_m1_4mode_n2_1n1C_d1m"}},
         {Wire::NativeMode::constructor, {"__au_k_m1_4mode_n2_1n1C_d1C"}},
-        {Wire::NativeMode::sealed_builtin, {"frozen_name"}}};
+        {Wire::NativeMode::sealed_builtin,
+         {"__au_console_sample",
+          "__au_console_put_result",
+          "__au_console_completion",
+          "__au_display_put_result",
+          "__au_display_completion",
+          "__au_iommu_event_sample",
+          "__au_event_poll_result",
+          "__au_event_ack_result",
+          "__au_event_intake_completion"}}};
     require(actual == expected, "source linkage changed a native mode or inherited a prototype cache");
     resolution.finish();
     require(allocations.successful == allocations.released, "linkage mode caches leaked");
@@ -1888,7 +1886,9 @@ void rawLinkageCaches() {
                     {Wire::NativeMode::class_value, "__au_c" + base + "C"},
                     {Wire::NativeMode::function, "__au_f" + base + "f"},
                     {Wire::NativeMode::root_entry, "answer"}};
-                require(expected.contains(symbol.native_tag) && bytes == expected.at(symbol.native_tag),
+                // Sealed catalog types keep their native spelling as linkage.
+                require(symbol.native_tag == Wire::NativeMode::sealed_builtin ||
+                            (expected.contains(symbol.native_tag) && bytes == expected.at(symbol.native_tag)),
                         "failed fragment corrupted an earlier immutable cache");
             }
         } else {
@@ -1936,10 +1936,10 @@ void rawLinkageCaches() {
             }
             if (fail) {
                 const auto attempts = allocations.attempted;
-                aurora::hosted_abi::ResolverTextInput text{};
-                text.text.backing = "x";
-                text.text.length = 1;
-                require(aurora_hosted_resolver_append_text(resolution.data(), &text) == -1 &&
+                aurora::hosted_abi::ResolverSourceInput text{};
+                text.source.backing = "x";
+                text.source.length = 1;
+                require(aurora_hosted_resolver_append_source(resolution.data(), &text) == -1 &&
                             allocations.attempted == attempts && resolution.status().diagnostic == status.diagnostic &&
                             resolution.status().node == status.node && resolution.status().first == status.first &&
                             resolution.status().second == status.second,
@@ -1960,109 +1960,83 @@ void rawLinkageCaches() {
 }
 
 void rawCatalogueControls() {
-    context = "exact historical and optional Call/Port/Serve lowering preludes";
-    namespace Wire = aurora::hosted_abi::compiler_resolver;
+    context = "catalog-seeded historical and optional Call/Port/Serve lowering preludes";
     namespace Lowering = aurora::hosted_abi::compiler_lowering;
-    for (const std::int64_t groups :
-         std::vector<std::int64_t>{62, 318, 65598, 65854, 4294967358, 4294967614, 4295032894, 4295033150}) {
+    using Role = Lowering::OperandRole;
+    // Comments and user names never enable an optional family.
+    const std::string base = "module m;class CallStatus{};auto answer()->i64{return 0;} // builtin::CallStatus\n";
+    for (int families = 0; families < 8; ++families) {
+        std::string source = base;
+        std::int64_t groups = 62;
         std::vector<std::int64_t> operations{0, 1, 2, 3, 4};
-        if ((groups & 256) != 0)
+        if ((families & 1) != 0) {
+            source += "auto c(builtin::CallStatus status)->i64{return 0;}";
+            groups += 256;
             operations.push_back(5);
-        if ((groups & 65536) != 0)
-            operations.insert(operations.end(), {6, 7});
-        if ((groups & (std::int64_t{1} << 32)) != 0)
-            operations.push_back(8);
-        const auto count = static_cast<std::int64_t>(operations.size());
-        for (int delta : {-1, 0, 1}) {
-            Allocations allocations;
-            RawResolution resolution(allocations);
-            aurora::hosted_abi::LoweringBeginInput begin{};
-            begin.configuration = {4096, 512, 4096, 65536, 4096, 512, 0, groups};
-            require(aurora_hosted_lowering_begin(resolution.data(), &begin) == 1, "catalogue begin failed");
-            const std::array kinds{Wire::ResolvedTypeKind::i64_value,
-                                   Wire::ResolvedTypeKind::bool_value,
-                                   Wire::ResolvedTypeKind::owner,
-                                   Wire::ResolvedTypeKind::reference,
-                                   Wire::ResolvedTypeKind::mutable_reference,
-                                   Wire::ResolvedTypeKind::u64_value,
-                                   Wire::ResolvedTypeKind::u8_value};
-            const std::array<std::int64_t, 7> identities{1, 2, 3, 4, 5, 8, 11};
-            for (std::size_t at = 0; at < kinds.size(); ++at) {
-                aurora::hosted_abi::LoweringScalarInput scalar{};
-                scalar.seed = {kinds[at], identities[at], at == 1 || at == 6 ? 1 : 8};
-                require(aurora_hosted_lowering_seed_scalar(resolution.data(), &scalar) ==
-                            static_cast<std::int64_t>(at) + 2,
-                        "catalogue scalar prefix failed");
-            }
-            Lowering::OutputRow scalarRow;
-            Lowering::OperandRow scalarType;
-            aurora_hosted_lowering_read_output(resolution.data(), 2, &scalarRow);
-            aurora_hosted_lowering_read_operand(resolution.data(), scalarRow.operandBegin, &scalarType);
-            const std::string spelling = "operation";
-            aurora::hosted_abi::ResolverTextInput text{};
-            text.text.backing = spelling.data();
-            text.text.length = static_cast<std::int64_t>(spelling.size());
-            const auto name = aurora_hosted_resolver_append_text(resolution.data(), &text);
-            const std::array receivers{Wire::ResolvedTypeKind::console_session,
-                                       Wire::ResolvedTypeKind::console_session,
-                                       Wire::ResolvedTypeKind::display_session,
-                                       Wire::ResolvedTypeKind::event_session,
-                                       Wire::ResolvedTypeKind::event_session,
-                                       Wire::ResolvedTypeKind::call_session,
-                                       Wire::ResolvedTypeKind::port_range,
-                                       Wire::ResolvedTypeKind::port_range,
-                                       Wire::ResolvedTypeKind::serve_session};
-            const std::array<std::int64_t, 9> serviceKinds{0, 0, 1, 2, 2, 3, 4, 4, 5};
-            for (std::int64_t at = 0; at < count + delta; ++at) {
-                aurora::hosted_abi::LoweringServiceInput service{};
-                const auto index =
-                    static_cast<std::size_t>(operations[static_cast<std::size_t>(std::min(at, count - 1))]);
-                service.seed.receiverKind = receivers[index];
-                service.seed.kindId = serviceKinds[index];
-                service.seed.operationId = operations[static_cast<std::size_t>(std::min(at, count - 1))];
-                service.seed.spellingSource = name;
-                service.seed.resultType = scalarType.signedValue;
-                const auto accepted = aurora_hosted_lowering_seed_service(resolution.data(), &service);
-                require(accepted == (at < count ? at + 9 : -1), "catalogue accepted an extra operation");
-            }
-            Lowering::LoweringResult result;
-            aurora_hosted_lowering_run(resolution.data(), &result);
-            // This deliberately lacks a resolved graph: it tests only whether
-            // exact setup can seal, never claims a valid semantic module.
-            const auto rows = aurora_hosted_lowering_count(resolution.data(), 0);
-            require(rows == 9 + count + (delta == -1 ? -1 : delta == 0 ? 1 : 0), "wrong catalogue/prelude extent");
-            if (delta == 0) {
-                Lowering::OutputRow layout;
-                aurora_hosted_lowering_read_output(resolution.data(), 9 + count, &layout);
-                require(layout.recordKind == Lowering::RecordKind::InitialLayoutOrder,
-                        "exact catalogue failed to seal");
-            }
-            resolution.finish();
-            ++cases;
         }
-    }
-    for (const std::int64_t groups : std::vector<std::int64_t>{0,
-                                                               54,
-                                                               61,
-                                                               63,
-                                                               317,
-                                                               319,
-                                                               65535,
-                                                               4294967296,
-                                                               4294967357,
-                                                               4294967359,
-                                                               62 | (std::int64_t{1} << 31),
-                                                               62 | (std::int64_t{1} << 33),
-                                                               62 | (std::int64_t{1} << 48),
-                                                               std::numeric_limits<std::int64_t>::max(),
-                                                               -1}) {
+        if ((families & 2) != 0) {
+            source += "auto p(builtin::PortWriteResult result)->i64{return 0;}";
+            groups += 65536;
+            operations.insert(operations.end(), {6, 7});
+        }
+        if ((families & 4) != 0) {
+            source += "auto v()->i64{return size_of(builtin::ServeRequest);}";
+            groups += std::int64_t{1} << 32;
+            operations.push_back(8);
+        }
         Allocations allocations;
         RawResolution resolution(allocations);
+        require(resolution.ingest(source), "catalogue fixture failed ingestion");
+        aurora::hosted_abi::ResolverOrderInput order{};
+        order.root = 1;
+        require(aurora_hosted_resolver_order_module(resolution.data(), &order) == 1 &&
+                    aurora_hosted_resolver_run(resolution.data()) == 0,
+                "catalogue fixture failed resolution");
         aurora::hosted_abi::LoweringBeginInput begin{};
-        begin.configuration = {4096, 512, 4096, 65536, 4096, 512, 0, groups};
-        require(aurora_hosted_lowering_begin(resolution.data(), &begin) == -1 &&
-                    resolution.status().storage == Wire::StorageStatus::invalid,
-                "noncanonical catalogue bitmap accepted");
+        begin.configuration = {4096, 512, 4096, 65536, 4096, 512, 0};
+        require(aurora_hosted_lowering_begin(resolution.data(), &begin) == 1, "catalogue begin failed");
+        const auto operand = [&](std::int64_t row, std::int64_t ordinal) {
+            Lowering::OutputRow output;
+            Lowering::OperandRow value;
+            aurora_hosted_lowering_read_output(resolution.data(), row, &output);
+            aurora_hosted_lowering_read_operand(resolution.data(), output.operandBegin + ordinal, &value);
+            return value;
+        };
+        const auto count = static_cast<std::int64_t>(operations.size());
+        require(aurora_hosted_lowering_count(resolution.data(), 0) == 10 + count &&
+                    operand(1, 7).operandRole == Role::SupportedServiceGroups && operand(1, 7).signedValue == groups,
+                "wrong catalogue prelude extent or service groups");
+        const std::array<std::int64_t, 7> identities{1, 2, 3, 4, 5, 8, 11}, sizes{8, 1, 8, 8, 8, 8, 1};
+        for (std::int64_t at = 0; at < 7; ++at)
+            require(operand(at + 2, 1).signedValue == identities[static_cast<std::size_t>(at)] &&
+                        operand(at + 2, 2).signedValue == sizes[static_cast<std::size_t>(at)],
+                    "catalogue scalar descriptor changed");
+        const std::array<std::int64_t, 9> kinds{0, 0, 1, 2, 2, 3, 4, 4, 5};
+        for (std::int64_t at = 0; at < count; ++at) {
+            const auto operation = operations[static_cast<std::size_t>(at)];
+            require(operand(at + 9, 1).signedValue == kinds[static_cast<std::size_t>(operation)] &&
+                        operand(at + 9, 2).signedValue == operation,
+                    "catalogue service operation changed");
+        }
+        // Initial layout order lists every class declaration by ascending native name.
+        Lowering::OutputRow layout;
+        aurora_hosted_lowering_read_output(resolution.data(), 9 + count, &layout);
+        const auto symbols = operand(9 + count, 0);
+        std::string previous;
+        for (std::int64_t at = 0; at < symbols.sliceCount; ++at) {
+            Lowering::OperandRow symbol;
+            aurora_hosted_lowering_read_operand(resolution.data(), symbols.sliceBegin + at, &symbol);
+            GuardedRecord<aurora::hosted_abi::compiler_resolver::LinkageChunk> chunk;
+            aurora_hosted_resolver_linkage_chunk(resolution.data(), symbol.signedValue, 0, &chunk.value);
+            chunk.check();
+            const std::string name(reinterpret_cast<const char *>(chunk.value.payload.data()),
+                                   static_cast<std::size_t>(chunk.value.byteCount));
+            require(symbol.operandRole == Role::ClassNominalId && (at == 0 || previous < name),
+                    "catalogue layout order is not sorted by native name");
+            previous = name;
+        }
+        require(layout.recordKind == Lowering::RecordKind::InitialLayoutOrder && symbols.sliceCount >= 1,
+                "catalogue layout order lost a class");
         resolution.finish();
         ++cases;
     }

@@ -12,7 +12,11 @@ selects retained functions. Aurora also owns independent metadata/layout, callab
 and frame admission, structural CFG normalization, entry-parameter and static
 call-site admission and whole-function value, lifetime and provenance verification.
 Successful lowering-record projection into pending metadata and instruction owners
-also runs in Aurora. Module file loading, ABI/layout seeding, diagnostic rendering,
+also runs in Aurora. `builtin_catalog.au` is the only copy of the built-in type,
+scalar descriptor and sealed service catalog: the resolver seeds its descriptors
+and lowering its scalar, service and initial layout prelude from it, and the host
+takes service kinds/operations from the generated header and quota extents from
+`catalog_summary`. Module file loading, ABI declarations, diagnostic rendering,
 allocation and quota/report transport checks remain C++23. The Aurora-native x86-64 emitter
 consumes the admitted source stores; the host retains artifact I/O.
 The same semantic traversal feeds typed x86 forms to the text backend or the
@@ -25,7 +29,7 @@ helpers with the same defining-module visibility and symbol-selection rules as
 text output. Neither backend adds reflection access to private values.
 
 Native console, UART and hosted frontend wrappers remain private bootstrap adapters.
-For frontend B/C, `frontend_wrapper.au` emits the 106 wrappers directly, using the
+For frontend B/C, `frontend_wrapper.au` emits the 101 wrappers directly, using the
 same table/ABI-derived recipe that renders predecessor frontend A and the GNU
 reference. The closed recipe admits at most 256 sorted hidden exports, 1024-byte
 identifier names and six ordered register moves or readonly record-lane loads
@@ -241,8 +245,8 @@ C1/C2 corpus diagnostics/output. No compiler binary or generated frontend is
 committed. The candidate's independent module graph pass runs in Aurora after all
 source whole-function checks and before import pruning, without a C++ graph fallback.
 Successful lowering-record projection runs in Aurora without native traversal or
-per-value callbacks. Module file loading, optional ABI declarations, pre-lowering
-layout seeding, diagnostics and quota/report transport remain native. Aurora now owns complete x86 text emission, including
+per-value callbacks. Module file loading, optional ABI declarations, diagnostics
+and quota/report transport remain native. Aurora now owns complete x86 text emission, including
 stack facts and ABI JSON; its host adapter lends the two admitted owners and
 copies bounded sealed output, with no native opcode fallback. Aurora owns metadata/layout,
 callable/frame admission, durable instruction storage, structural CFG checks and

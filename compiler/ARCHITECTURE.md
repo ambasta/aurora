@@ -20,7 +20,7 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 | Call graph | Aurora | Validate final integrated behavior |
 | x86 emission | Aurora, fixed native transport | Byte-identical C1/C2 (`hosted-lexer-bootstrap`); inlines single-field getters; owned-value bounds checks and sizes use multiplies, not divq; no register allocation yet |
 | Direct class fields | Aurora source and independent metadata admission share an 8,192-field cap, including empty, nested, resource and array fields | Existing leaf, byte, depth and array-element limits still apply |
-| Private host bridge | One 106-entry table generates Aurora forwarders, host transport declarations and a closed wrapper recipe; compiler facts supply layouts, symbols and raw enum validation | Preserve fail-closed conversion; native replacement remains incomplete |
+| Private host bridge | One 101-entry table generates Aurora forwarders, host transport declarations and a closed wrapper recipe; compiler facts supply layouts, symbols and raw enum validation | Preserve fail-closed conversion; native replacement remains incomplete |
 | Bootstrap route | One digest-pinned checkpoint (C2 of `d4cbabb`, one hop from the C2 of `2fd30b2`, which the recorded six-stage source route built), then current C1/C2 with convergence | Bump in one hop: build an accepted main commit with the current checkpoint, pass C1/C2 convergence, then the release gates ([recipe](README.md#bumping-the-checkpoint-one-hop)) |
 | Assembly, linking and hosted runtime | External bootstrap tools/C++ | Native replacements remain incomplete |
 
@@ -64,9 +64,9 @@ measurement never writes or admits a destination. Scratch grants use published
 row widths and a source-computed bound over actual name contributors, not a new
 row ceiling. Fill checks every count and pending state before returning. Session
 and projection scratch are released before independent metadata, instruction,
-CFG, lifetime and graph admission. No native success fallback remains. Native
-layout-order seeding, optional ABI declarations, semantic errors and lint spans
-remain deliberately separate boundaries.
+CFG, lifetime and graph admission. No native success fallback remains. Lowering
+sorts the initial layout order itself; optional ABI declarations, semantic errors
+and lint spans remain deliberately separate native boundaries.
 
 Metadata and instruction-flow masks share the source-owned `FlagMasks` table.
 Its existing generated ABI bridge supplies native readers; structural passes

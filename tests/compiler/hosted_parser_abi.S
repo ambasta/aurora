@@ -139,7 +139,6 @@ checked_resolver_entry ingest
 checked_resolver_entry release
 checked_resolver_entry release_pair
 checked_resolver_entry append_source
-checked_resolver_entry append_text
 checked_resolver_entry order_module
 checked_resolver_entry bind_import
 checked_resolver_entry count
@@ -148,7 +147,5 @@ checked_resolver_entry read_syntax
 checked_resolver_entry read_meta
 checked_resolver_entry read_resolved
 checked_resolver_entry status
-checked_resolver_entry seed_builtin
-checked_resolver_entry seed_member
 checked_resolver_entry run
 .section .note.GNU-stack,"",@progbits

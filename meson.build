@@ -27,7 +27,7 @@ frontend_inputs = files('compiler/formatter.au', 'compiler/lexer.au', 'compiler/
                         'compiler/resolution_kinds.au', 'compiler/lowering_errors.au', 'compiler/lowering_kinds.au',
                         'compiler/lowering_storage.au', 'compiler/resolution_rows.au', 'compiler/resolution_arena.au',
                         'compiler/resolution_names.au', 'compiler/resolution_linkage.au',
-                        'compiler/resolution_ingest.au', 'compiler/resolver.au',
+                        'compiler/resolution_ingest.au', 'compiler/builtin_catalog.au', 'compiler/resolver.au',
                         'compiler/ir_graph.au',
                         'compiler/ir_metadata_storage.au', 'compiler/ir_metadata.au',
                         'compiler/ir_instruction_storage.au', 'compiler/ir_instructions.au',

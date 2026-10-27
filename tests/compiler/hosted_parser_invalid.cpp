@@ -5,7 +5,6 @@
 #include "hosted_resolver.hpp"
 #include "lexer.hpp"
 #include "lexer_reference.hpp"
-#include "services.hpp"
 #include "../../runtime/bytes_abi.hpp"
 #include <algorithm>
 #include <array>
@@ -94,14 +93,13 @@ constexpr std::uint64_t sessionCanary = 0x7265736f6c766564ULL;
 int sessionsCreated = 0, sessionsReleased = 0, transferred = 0, pairsReleased = 0, projectionThrow = 0;
 bool resolverRunning = false, allocationOnIngest = false;
 std::int64_t linkageChunkSize = 1;
-std::int64_t reportedSyntax = 0, reportedMetadata = 0, reportedDecorations = 0, sourceBytes = 0, seedIdentity = 0;
+std::int64_t reportedSyntax = 0, reportedMetadata = 0, reportedDecorations = 0, sourceBytes = 0;
 namespace Lowering = aurora::hosted_abi::compiler_lowering;
 Lowering::LoweringResult loweringResult{};
 Lowering::OutputRow loweringReport{};
 std::array<Lowering::OperandRow, 3> loweringOperands{};
 std::int64_t reportedOutputs = 1, reportedOperands = 3;
 int loweringBegun = 0, loweringRun = 0, loweringOutputReads = 0, loweringOperandReads = 0;
-int scalarSeeds = 0, serviceSeeds = 0;
 bool loweringAllocation = false;
 std::size_t cases = 0;
 void require(bool value, const std::string &message) {
@@ -437,7 +435,7 @@ void conversionControls() {
         },
         [](const auto &tree, const auto &) {
             require(tree->reflectedType.isClass() && tree->reflectedType.displayName == "builtin::ConsoleSample" &&
-                        tree->reflectedType.className == "__au_console_sample" && !tree->reflectedType.resolvedClass,
+                        tree->reflectedType.className == "builtin::ConsoleSample" && !tree->reflectedType.resolvedClass,
                     "builtin Type lost its semantic mapping");
         });
 }
@@ -1901,7 +1899,6 @@ std::shared_ptr<const aurora::SourceText> resolutionFixture() {
     resolutionMetadata[8].value9 = 5;
     reportedMetadata = 9;
     linkageChunkSize = 1;
-    seedIdentity = 0;
     loweringResult = {
         Lowering::LoweringStatus::semantic_failure, Lowering::LoweringError::function_parameter_limit, 0, -1};
     loweringReport = {};
@@ -1914,7 +1911,7 @@ std::shared_ptr<const aurora::SourceText> resolutionFixture() {
     loweringOperands[1].operandRole = loweringOperands[2].operandRole = Lowering::OperandRole::NoDiagnosticValue;
     reportedOutputs = 1;
     reportedOperands = 3;
-    loweringBegun = loweringRun = loweringOutputReads = loweringOperandReads = scalarSeeds = serviceSeeds = 0;
+    loweringBegun = loweringRun = loweringOutputReads = loweringOperandReads = 0;
     loweringAllocation = false;
     return source;
 }
@@ -1941,9 +1938,9 @@ void resolutionControls() {
                 diagnostic->span.begin.offset == source->text.find("f()") &&
                 diagnostic->span.end.offset == diagnostic->span.begin.offset + 1 && sessionsCreated == 1 &&
                 sessionsReleased == 1 && transferred == 1 && pairsReleased == 0 && created == 1 && parsed == 1 &&
-                admitted == 1 && released == 1 && statementRead == 2 && read == 1 && edgeRead == 0 && typeRead == 1 &&
-                loweringBegun == 1 && loweringRun == 1 && scalarSeeds == 7 && serviceSeeds == 5 &&
-                loweringOutputReads == 1 && loweringOperandReads == 3 && sessionPayload.allocation == 0,
+                admitted == 1 && released == 1 && statementRead == 2 && read == 0 && edgeRead == 0 && typeRead == 0 &&
+                loweringBegun == 1 && loweringRun == 1 && loweringOutputReads == 1 && loweringOperandReads == 3 &&
+                sessionPayload.allocation == 0,
             "typed failure report lost source, bounded reads, configuration or exact consuming cleanup");
     ++cases;
     const auto reject = [&](const char *label, const std::function<void()> &mutate, bool injected = false) {
@@ -2098,11 +2095,6 @@ void resolutionControls() {
         loweringResult.result_status = Lowering::LoweringStatus::success;
         loweringResult.result_reason = Lowering::LoweringError::none;
     });
-    reject("success publishes a prelude row", [] {
-        loweringResult.result_status = Lowering::LoweringStatus::success;
-        loweringResult.result_reason = Lowering::LoweringError::none;
-        loweringResult.root_row = 14;
-    });
     reject("storage failure lacks an allocation status", [] {
         loweringResult.result_status = Lowering::LoweringStatus::storage_failure;
     });
@@ -2213,6 +2205,12 @@ extern "C" std::int64_t aurora_hosted_projection_count(const void *, std::int64_
 }
 extern "C" std::int64_t aurora_hosted_projection_lint(const void *, std::int64_t) noexcept {
     unexpectedMetadataEntry();
+}
+extern "C" void aurora_hosted_catalog_summary(void *output) noexcept {
+    // Quota and admission inputs only; this fixture seeds no catalog.
+    aurora::hosted_abi::compiler_catalog::Summary summary{};
+    summary.serviceGroups = 4295033150;
+    std::memcpy(output, &summary, sizeof(summary));
 }
 extern "C" void aurora_hosted_metadata_flag_masks(void *output) noexcept {
     // Projection failures precede construction. This fixture grants no flag
@@ -2457,21 +2455,6 @@ extern "C" std::int64_t aurora_hosted_resolver_append_source(void *session, cons
             "source ingestion changed its borrowed contiguous span");
     return 0;
 }
-extern "C" std::int64_t aurora_hosted_resolver_append_text(void *session, const void *input) {
-    checkSession(session);
-    const auto &record = *static_cast<const aurora::hosted_abi::ResolverTextInput *>(input);
-    require(record.text.kind == 0 && record.text.start == 0 && record.text.length > 0,
-            "canonical seed spelling lost its copied source span");
-    return 0;
-}
-extern "C" std::int64_t aurora_hosted_resolver_seed_builtin(void *session, const void *) {
-    checkSession(session);
-    return seedIdentity++;
-}
-extern "C" std::int64_t aurora_hosted_resolver_seed_member(void *session, const void *) {
-    checkSession(session);
-    return 0;
-}
 extern "C" std::int64_t aurora_hosted_resolver_order_module(void *session, const void *input) {
     checkSession(session);
     const auto &record = *static_cast<const aurora::hosted_abi::ResolverOrderInput *>(input);
@@ -2546,29 +2529,10 @@ extern "C" std::int64_t aurora_hosted_lowering_begin(void *session, const void *
                 configuration.copiedBytes == aurora::maximumCopiedClassBytes &&
                 configuration.byteArrayLength == aurora::maximumClassByteArrayLength &&
                 configuration.scalarArrayLength == aurora::maximumClassScalarArrayLength &&
-                configuration.analysisMode == 0 && configuration.serviceGroups == 62,
+                configuration.analysisMode == 0,
             "lowering received a changed copied configuration");
     ++loweringBegun;
     return 1;
-}
-extern "C" std::int64_t aurora_hosted_lowering_seed_scalar(void *session, const void *input) noexcept {
-    checkSession(session);
-    const auto &seed = static_cast<const aurora::hosted_abi::LoweringScalarInput *>(input)->seed;
-    require(seed.publicId > 0 && (seed.byteSize == 1 || seed.byteSize == 8), "invalid copied scalar seed");
-    return ++scalarSeeds + 1;
-}
-extern "C" std::int64_t aurora_hosted_lowering_seed_service(void *session, const void *input) noexcept {
-    checkSession(session);
-    const auto &seed = static_cast<const aurora::hosted_abi::LoweringServiceInput *>(input)->seed;
-    require(seed.operationId == serviceSeeds && seed.kindId >= 0 && seed.kindId < 4 &&
-                seed.parameterTypes.parameterCount >= 0 && seed.parameterTypes.parameterCount <= 5,
-            "invalid copied service seed");
-    return ++serviceSeeds + 8;
-}
-extern "C" std::int64_t aurora_hosted_lowering_seed_layout_symbol(void *session, std::int64_t) noexcept {
-    checkSession(session);
-    // This fixture has no nominal layout. An unexpected seed must fail closed.
-    return -1;
 }
 extern "C" void aurora_hosted_lowering_run(void *session, void *output) noexcept {
     checkSession(session);

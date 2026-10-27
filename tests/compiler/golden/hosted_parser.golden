@@ -343,13 +343,13 @@ expr-reflect/query size_of(builtin::span<const u8>)
 expr-reflect/query size_of(builtin::OwnedValues<ns::Value>)
   expr next=11 (call size_of@0 :OwnedValues:ns::Value)
 expr-reflect/query size_of(array<builtin::ConsoleSample,2>)
-  expr next=11 (call size_of@0 :Array:__au_console_sample/builtin::ConsoleSample[Class,2])
+  expr next=11 (call size_of@0 :Array:builtin::ConsoleSample/builtin::ConsoleSample[Class,2])
 expr-reflect/query size_of(array<builtin::IommuEventSample,64>)
-  expr next=11 (call size_of@0 :Array:__au_iommu_event_sample/builtin::IommuEventSample[Class,64])
+  expr next=11 (call size_of@0 :Array:builtin::IommuEventSample/builtin::IommuEventSample[Class,64])
 expr-reflect/query size_of(builtin::OwnedValues<builtin::IommuEventSample>)
-  expr next=11 (call size_of@0 :OwnedValues:__au_iommu_event_sample/builtin::IommuEventSample)
+  expr next=11 (call size_of@0 :OwnedValues:builtin::IommuEventSample/builtin::IommuEventSample)
 expr-reflect/query size_of(builtin::OwnedValues<builtin::ConsoleSample>)
-  expr next=11 (call size_of@0 :OwnedValues:__au_console_sample/builtin::ConsoleSample)
+  expr next=11 (call size_of@0 :OwnedValues:builtin::ConsoleSample/builtin::ConsoleSample)
 expr-reflect/query size_of(builtin::ByteRegion)
   expr next=6 (call size_of@0 :ByteRegion)
 expr-reflect/query size_of(builtin::OwnedBytes)
@@ -357,27 +357,27 @@ expr-reflect/query size_of(builtin::OwnedBytes)
 expr-reflect/query size_of(builtin::ConsoleSession)
   expr next=6 (call size_of@0 :ConsoleSession)
 expr-reflect/query size_of(builtin::ConsoleSample)
-  expr next=6 (call size_of@0 :Class:__au_console_sample/builtin::ConsoleSample)
+  expr next=6 (call size_of@0 :Class:builtin::ConsoleSample/builtin::ConsoleSample)
 expr-reflect/query size_of(builtin::ConsolePutResult)
-  expr next=6 (call size_of@0 :Enum:__au_console_put_result/builtin::ConsolePutResult)
+  expr next=6 (call size_of@0 :Enum:builtin::ConsolePutResult/builtin::ConsolePutResult)
 expr-reflect/query size_of(builtin::ConsoleCompletion)
-  expr next=6 (call size_of@0 :Enum:__au_console_completion/builtin::ConsoleCompletion)
+  expr next=6 (call size_of@0 :Enum:builtin::ConsoleCompletion/builtin::ConsoleCompletion)
 expr-reflect/query size_of(builtin::DisplaySession)
   expr next=6 (call size_of@0 :DisplaySession)
 expr-reflect/query size_of(builtin::DisplayPutResult)
-  expr next=6 (call size_of@0 :Enum:__au_display_put_result/builtin::DisplayPutResult)
+  expr next=6 (call size_of@0 :Enum:builtin::DisplayPutResult/builtin::DisplayPutResult)
 expr-reflect/query size_of(builtin::DisplayCompletion)
-  expr next=6 (call size_of@0 :Enum:__au_display_completion/builtin::DisplayCompletion)
+  expr next=6 (call size_of@0 :Enum:builtin::DisplayCompletion/builtin::DisplayCompletion)
 expr-reflect/query size_of(builtin::IommuEventSession)
   expr next=6 (call size_of@0 :IommuEventSession)
 expr-reflect/query size_of(builtin::IommuEventSample)
-  expr next=6 (call size_of@0 :Class:__au_iommu_event_sample/builtin::IommuEventSample)
+  expr next=6 (call size_of@0 :Class:builtin::IommuEventSample/builtin::IommuEventSample)
 expr-reflect/query size_of(builtin::EventPollResult)
-  expr next=6 (call size_of@0 :Enum:__au_event_poll_result/builtin::EventPollResult)
+  expr next=6 (call size_of@0 :Enum:builtin::EventPollResult/builtin::EventPollResult)
 expr-reflect/query size_of(builtin::EventAckResult)
-  expr next=6 (call size_of@0 :Enum:__au_event_ack_result/builtin::EventAckResult)
+  expr next=6 (call size_of@0 :Enum:builtin::EventAckResult/builtin::EventAckResult)
 expr-reflect/query size_of(builtin::EventIntakeCompletion)
-  expr next=6 (call size_of@0 :Enum:__au_event_intake_completion/builtin::EventIntakeCompletion)
+  expr next=6 (call size_of@0 :Enum:builtin::EventIntakeCompletion/builtin::EventIntakeCompletion)
 expr-reflect/query type_id(i64)
   expr next=4 (call type_id@0)
 expr-reflect/query type_id(u64)
@@ -415,13 +415,13 @@ expr-reflect/query type_id(builtin::span<const u8>)
 expr-reflect/query type_id(builtin::OwnedValues<ns::Value>)
   expr next=11 (call type_id@0 :OwnedValues:ns::Value)
 expr-reflect/query type_id(array<builtin::ConsoleSample,2>)
-  expr next=11 (call type_id@0 :Array:__au_console_sample/builtin::ConsoleSample[Class,2])
+  expr next=11 (call type_id@0 :Array:builtin::ConsoleSample/builtin::ConsoleSample[Class,2])
 expr-reflect/query type_id(array<builtin::IommuEventSample,64>)
-  expr next=11 (call type_id@0 :Array:__au_iommu_event_sample/builtin::IommuEventSample[Class,64])
+  expr next=11 (call type_id@0 :Array:builtin::IommuEventSample/builtin::IommuEventSample[Class,64])
 expr-reflect/query type_id(builtin::OwnedValues<builtin::IommuEventSample>)
-  expr next=11 (call type_id@0 :OwnedValues:__au_iommu_event_sample/builtin::IommuEventSample)
+  expr next=11 (call type_id@0 :OwnedValues:builtin::IommuEventSample/builtin::IommuEventSample)
 expr-reflect/query type_id(builtin::OwnedValues<builtin::ConsoleSample>)
-  expr next=11 (call type_id@0 :OwnedValues:__au_console_sample/builtin::ConsoleSample)
+  expr next=11 (call type_id@0 :OwnedValues:builtin::ConsoleSample/builtin::ConsoleSample)
 expr-reflect/query type_id(builtin::ByteRegion)
   expr next=6 (call type_id@0 :ByteRegion)
 expr-reflect/query type_id(builtin::OwnedBytes)
@@ -429,27 +429,27 @@ expr-reflect/query type_id(builtin::OwnedBytes)
 expr-reflect/query type_id(builtin::ConsoleSession)
   expr next=6 (call type_id@0 :ConsoleSession)
 expr-reflect/query type_id(builtin::ConsoleSample)
-  expr next=6 (call type_id@0 :Class:__au_console_sample/builtin::ConsoleSample)
+  expr next=6 (call type_id@0 :Class:builtin::ConsoleSample/builtin::ConsoleSample)
 expr-reflect/query type_id(builtin::ConsolePutResult)
-  expr next=6 (call type_id@0 :Enum:__au_console_put_result/builtin::ConsolePutResult)
+  expr next=6 (call type_id@0 :Enum:builtin::ConsolePutResult/builtin::ConsolePutResult)
 expr-reflect/query type_id(builtin::ConsoleCompletion)
-  expr next=6 (call type_id@0 :Enum:__au_console_completion/builtin::ConsoleCompletion)
+  expr next=6 (call type_id@0 :Enum:builtin::ConsoleCompletion/builtin::ConsoleCompletion)
 expr-reflect/query type_id(builtin::DisplaySession)
   expr next=6 (call type_id@0 :DisplaySession)
 expr-reflect/query type_id(builtin::DisplayPutResult)
-  expr next=6 (call type_id@0 :Enum:__au_display_put_result/builtin::DisplayPutResult)
+  expr next=6 (call type_id@0 :Enum:builtin::DisplayPutResult/builtin::DisplayPutResult)
 expr-reflect/query type_id(builtin::DisplayCompletion)
-  expr next=6 (call type_id@0 :Enum:__au_display_completion/builtin::DisplayCompletion)
+  expr next=6 (call type_id@0 :Enum:builtin::DisplayCompletion/builtin::DisplayCompletion)
 expr-reflect/query type_id(builtin::IommuEventSession)
   expr next=6 (call type_id@0 :IommuEventSession)
 expr-reflect/query type_id(builtin::IommuEventSample)
-  expr next=6 (call type_id@0 :Class:__au_iommu_event_sample/builtin::IommuEventSample)
+  expr next=6 (call type_id@0 :Class:builtin::IommuEventSample/builtin::IommuEventSample)
 expr-reflect/query type_id(builtin::EventPollResult)
-  expr next=6 (call type_id@0 :Enum:__au_event_poll_result/builtin::EventPollResult)
+  expr next=6 (call type_id@0 :Enum:builtin::EventPollResult/builtin::EventPollResult)
 expr-reflect/query type_id(builtin::EventAckResult)
-  expr next=6 (call type_id@0 :Enum:__au_event_ack_result/builtin::EventAckResult)
+  expr next=6 (call type_id@0 :Enum:builtin::EventAckResult/builtin::EventAckResult)
 expr-reflect/query type_id(builtin::EventIntakeCompletion)
-  expr next=6 (call type_id@0 :Enum:__au_event_intake_completion/builtin::EventIntakeCompletion)
+  expr next=6 (call type_id@0 :Enum:builtin::EventIntakeCompletion/builtin::EventIntakeCompletion)
 expr-reflect/query field_count(i64)
   expr next=4 (call field_count@0)
 expr-reflect/query field_count(u64)
@@ -487,13 +487,13 @@ expr-reflect/query field_count(builtin::span<const u8>)
 expr-reflect/query field_count(builtin::OwnedValues<ns::Value>)
   expr next=11 (call field_count@0 :OwnedValues:ns::Value)
 expr-reflect/query field_count(array<builtin::ConsoleSample,2>)
-  expr next=11 (call field_count@0 :Array:__au_console_sample/builtin::ConsoleSample[Class,2])
+  expr next=11 (call field_count@0 :Array:builtin::ConsoleSample/builtin::ConsoleSample[Class,2])
 expr-reflect/query field_count(array<builtin::IommuEventSample,64>)
-  expr next=11 (call field_count@0 :Array:__au_iommu_event_sample/builtin::IommuEventSample[Class,64])
+  expr next=11 (call field_count@0 :Array:builtin::IommuEventSample/builtin::IommuEventSample[Class,64])
 expr-reflect/query field_count(builtin::OwnedValues<builtin::IommuEventSample>)
-  expr next=11 (call field_count@0 :OwnedValues:__au_iommu_event_sample/builtin::IommuEventSample)
+  expr next=11 (call field_count@0 :OwnedValues:builtin::IommuEventSample/builtin::IommuEventSample)
 expr-reflect/query field_count(builtin::OwnedValues<builtin::ConsoleSample>)
-  expr next=11 (call field_count@0 :OwnedValues:__au_console_sample/builtin::ConsoleSample)
+  expr next=11 (call field_count@0 :OwnedValues:builtin::ConsoleSample/builtin::ConsoleSample)
 expr-reflect/query field_count(builtin::ByteRegion)
   expr next=6 (call field_count@0 :ByteRegion)
 expr-reflect/query field_count(builtin::OwnedBytes)
@@ -501,27 +501,27 @@ expr-reflect/query field_count(builtin::OwnedBytes)
 expr-reflect/query field_count(builtin::ConsoleSession)
   expr next=6 (call field_count@0 :ConsoleSession)
 expr-reflect/query field_count(builtin::ConsoleSample)
-  expr next=6 (call field_count@0 :Class:__au_console_sample/builtin::ConsoleSample)
+  expr next=6 (call field_count@0 :Class:builtin::ConsoleSample/builtin::ConsoleSample)
 expr-reflect/query field_count(builtin::ConsolePutResult)
-  expr next=6 (call field_count@0 :Enum:__au_console_put_result/builtin::ConsolePutResult)
+  expr next=6 (call field_count@0 :Enum:builtin::ConsolePutResult/builtin::ConsolePutResult)
 expr-reflect/query field_count(builtin::ConsoleCompletion)
-  expr next=6 (call field_count@0 :Enum:__au_console_completion/builtin::ConsoleCompletion)
+  expr next=6 (call field_count@0 :Enum:builtin::ConsoleCompletion/builtin::ConsoleCompletion)
 expr-reflect/query field_count(builtin::DisplaySession)
   expr next=6 (call field_count@0 :DisplaySession)
 expr-reflect/query field_count(builtin::DisplayPutResult)
-  expr next=6 (call field_count@0 :Enum:__au_display_put_result/builtin::DisplayPutResult)
+  expr next=6 (call field_count@0 :Enum:builtin::DisplayPutResult/builtin::DisplayPutResult)
 expr-reflect/query field_count(builtin::DisplayCompletion)
-  expr next=6 (call field_count@0 :Enum:__au_display_completion/builtin::DisplayCompletion)
+  expr next=6 (call field_count@0 :Enum:builtin::DisplayCompletion/builtin::DisplayCompletion)
 expr-reflect/query field_count(builtin::IommuEventSession)
   expr next=6 (call field_count@0 :IommuEventSession)
 expr-reflect/query field_count(builtin::IommuEventSample)
-  expr next=6 (call field_count@0 :Class:__au_iommu_event_sample/builtin::IommuEventSample)
+  expr next=6 (call field_count@0 :Class:builtin::IommuEventSample/builtin::IommuEventSample)
 expr-reflect/query field_count(builtin::EventPollResult)
-  expr next=6 (call field_count@0 :Enum:__au_event_poll_result/builtin::EventPollResult)
+  expr next=6 (call field_count@0 :Enum:builtin::EventPollResult/builtin::EventPollResult)
 expr-reflect/query field_count(builtin::EventAckResult)
-  expr next=6 (call field_count@0 :Enum:__au_event_ack_result/builtin::EventAckResult)
+  expr next=6 (call field_count@0 :Enum:builtin::EventAckResult/builtin::EventAckResult)
 expr-reflect/query field_count(builtin::EventIntakeCompletion)
-  expr next=6 (call field_count@0 :Enum:__au_event_intake_completion/builtin::EventIntakeCompletion)
+  expr next=6 (call field_count@0 :Enum:builtin::EventIntakeCompletion/builtin::EventIntakeCompletion)
 expr-typed-error/direct f<T)>(0);
   expr error AU2001 @3-4 expected '>' (found ')')
 expr-typed-error/return f<T)>(0);
@@ -1736,21 +1736,21 @@ type/alone builtin::OwnedValues<ns::Value>
 type/nested builtin::OwnedValues<ns::Value>
   type next=9 OwnedValues:ns::Value
 type/alone array<builtin::ConsoleSample,2>
-  type next=8 Array:__au_console_sample/builtin::ConsoleSample[Class,2]
+  type next=8 Array:builtin::ConsoleSample/builtin::ConsoleSample[Class,2]
 type/nested array<builtin::ConsoleSample,2>
-  type next=9 Array:__au_console_sample/builtin::ConsoleSample[Class,2]
+  type next=9 Array:builtin::ConsoleSample/builtin::ConsoleSample[Class,2]
 type/alone array<builtin::IommuEventSample,64>
-  type next=8 Array:__au_iommu_event_sample/builtin::IommuEventSample[Class,64]
+  type next=8 Array:builtin::IommuEventSample/builtin::IommuEventSample[Class,64]
 type/nested array<builtin::IommuEventSample,64>
-  type next=9 Array:__au_iommu_event_sample/builtin::IommuEventSample[Class,64]
+  type next=9 Array:builtin::IommuEventSample/builtin::IommuEventSample[Class,64]
 type/alone builtin::OwnedValues<builtin::IommuEventSample>
-  type next=8 OwnedValues:__au_iommu_event_sample/builtin::IommuEventSample
+  type next=8 OwnedValues:builtin::IommuEventSample/builtin::IommuEventSample
 type/nested builtin::OwnedValues<builtin::IommuEventSample>
-  type next=9 OwnedValues:__au_iommu_event_sample/builtin::IommuEventSample
+  type next=9 OwnedValues:builtin::IommuEventSample/builtin::IommuEventSample
 type/alone builtin::OwnedValues<builtin::ConsoleSample>
-  type next=8 OwnedValues:__au_console_sample/builtin::ConsoleSample
+  type next=8 OwnedValues:builtin::ConsoleSample/builtin::ConsoleSample
 type/nested builtin::OwnedValues<builtin::ConsoleSample>
-  type next=9 OwnedValues:__au_console_sample/builtin::ConsoleSample
+  type next=9 OwnedValues:builtin::ConsoleSample/builtin::ConsoleSample
 type/alone builtin::ByteRegion
   type next=3 ByteRegion
 type/nested builtin::ByteRegion
@@ -1764,49 +1764,49 @@ type/alone builtin::ConsoleSession
 type/nested builtin::ConsoleSession
   type next=4 ConsoleSession
 type/alone builtin::ConsoleSample
-  type next=3 Class:__au_console_sample/builtin::ConsoleSample
+  type next=3 Class:builtin::ConsoleSample/builtin::ConsoleSample
 type/nested builtin::ConsoleSample
-  type next=4 Class:__au_console_sample/builtin::ConsoleSample
+  type next=4 Class:builtin::ConsoleSample/builtin::ConsoleSample
 type/alone builtin::ConsolePutResult
-  type next=3 Enum:__au_console_put_result/builtin::ConsolePutResult
+  type next=3 Enum:builtin::ConsolePutResult/builtin::ConsolePutResult
 type/nested builtin::ConsolePutResult
-  type next=4 Enum:__au_console_put_result/builtin::ConsolePutResult
+  type next=4 Enum:builtin::ConsolePutResult/builtin::ConsolePutResult
 type/alone builtin::ConsoleCompletion
-  type next=3 Enum:__au_console_completion/builtin::ConsoleCompletion
+  type next=3 Enum:builtin::ConsoleCompletion/builtin::ConsoleCompletion
 type/nested builtin::ConsoleCompletion
-  type next=4 Enum:__au_console_completion/builtin::ConsoleCompletion
+  type next=4 Enum:builtin::ConsoleCompletion/builtin::ConsoleCompletion
 type/alone builtin::DisplaySession
   type next=3 DisplaySession
 type/nested builtin::DisplaySession
   type next=4 DisplaySession
 type/alone builtin::DisplayPutResult
-  type next=3 Enum:__au_display_put_result/builtin::DisplayPutResult
+  type next=3 Enum:builtin::DisplayPutResult/builtin::DisplayPutResult
 type/nested builtin::DisplayPutResult
-  type next=4 Enum:__au_display_put_result/builtin::DisplayPutResult
+  type next=4 Enum:builtin::DisplayPutResult/builtin::DisplayPutResult
 type/alone builtin::DisplayCompletion
-  type next=3 Enum:__au_display_completion/builtin::DisplayCompletion
+  type next=3 Enum:builtin::DisplayCompletion/builtin::DisplayCompletion
 type/nested builtin::DisplayCompletion
-  type next=4 Enum:__au_display_completion/builtin::DisplayCompletion
+  type next=4 Enum:builtin::DisplayCompletion/builtin::DisplayCompletion
 type/alone builtin::IommuEventSession
   type next=3 IommuEventSession
 type/nested builtin::IommuEventSession
   type next=4 IommuEventSession
 type/alone builtin::IommuEventSample
-  type next=3 Class:__au_iommu_event_sample/builtin::IommuEventSample
+  type next=3 Class:builtin::IommuEventSample/builtin::IommuEventSample
 type/nested builtin::IommuEventSample
-  type next=4 Class:__au_iommu_event_sample/builtin::IommuEventSample
+  type next=4 Class:builtin::IommuEventSample/builtin::IommuEventSample
 type/alone builtin::EventPollResult
-  type next=3 Enum:__au_event_poll_result/builtin::EventPollResult
+  type next=3 Enum:builtin::EventPollResult/builtin::EventPollResult
 type/nested builtin::EventPollResult
-  type next=4 Enum:__au_event_poll_result/builtin::EventPollResult
+  type next=4 Enum:builtin::EventPollResult/builtin::EventPollResult
 type/alone builtin::EventAckResult
-  type next=3 Enum:__au_event_ack_result/builtin::EventAckResult
+  type next=3 Enum:builtin::EventAckResult/builtin::EventAckResult
 type/nested builtin::EventAckResult
-  type next=4 Enum:__au_event_ack_result/builtin::EventAckResult
+  type next=4 Enum:builtin::EventAckResult/builtin::EventAckResult
 type/alone builtin::EventIntakeCompletion
-  type next=3 Enum:__au_event_intake_completion/builtin::EventIntakeCompletion
+  type next=3 Enum:builtin::EventIntakeCompletion/builtin::EventIntakeCompletion
 type/nested builtin::EventIntakeCompletion
-  type next=4 Enum:__au_event_intake_completion/builtin::EventIntakeCompletion
+  type next=4 Enum:builtin::EventIntakeCompletion/builtin::EventIntakeCompletion
 type/alone ns::Box<other::array<bool,1>>
   type next=12 Class:ns::Box<Class:other::array<Bool,#1>>
 type/nested ns::Box<other::array<bool,1>>
@@ -2679,14 +2679,14 @@ field/wrapped builtin::OwnedValues<Item> items;
       field items@69 OwnedValues:Item
 field/alone builtin::ConsoleSample sample;
   field next=5
-    field sample@23 Class:__au_console_sample/builtin::ConsoleSample
+    field sample@23 Class:builtin::ConsoleSample/builtin::ConsoleSample
 field/wrapped builtin::ConsoleSample sample;
   field next=12
-    field sample@65 Class:__au_console_sample/builtin::ConsoleSample
+    field sample@65 Class:builtin::ConsoleSample/builtin::ConsoleSample
   program
     module field_contract interface
     class Holder@35
-      field sample@65 Class:__au_console_sample/builtin::ConsoleSample
+      field sample@65 Class:builtin::ConsoleSample/builtin::ConsoleSample
 field/alone i64 count;
   field next=3
     field count@4 I64

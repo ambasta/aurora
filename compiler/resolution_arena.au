@@ -1758,9 +1758,6 @@ export namespace compiler_resolver {
     auto append_source(Session& session, builtin::span<const u8> source) -> i64 {
         return session.append_source(source);
     }
-    auto append_text(Session& session, builtin::span<const u8> text) -> i64 {
-        return session.append_text(text);
-    }
     auto count(const Session& session, i64 pool) -> i64 {
         if (pool == 0) {
             return session.source_size();

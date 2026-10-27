@@ -9,11 +9,13 @@ import aurora.compiler.lowering_kinds;
 import aurora.compiler.lowering_errors;
 import aurora.compiler.lowering_storage;
 import aurora.compiler.lowering_common;
+import aurora.compiler.builtin_catalog;
 
 // A bounded immutable setup contract. It is not a semantic query surface.
-// Row0 reserves diagnostics; row1 has limits/mode; rows2..8 have scalar
-// descriptors; the next five through nine rows hold the exact selected service
-// catalog, followed by initial layout order and then semantic output.
+// Row0 reserves diagnostics; row1 has limits, mode and service groups; rows2..8
+// have the catalog scalar descriptors; the next five through nine rows hold the
+// catalog operations of the seeded service families, followed by initial
+// layout order and then semantic output.
 export namespace compiler_lowering {
     class LoweringConfig {
         i64 byteLeaves;
@@ -23,11 +25,10 @@ export namespace compiler_lowering {
         i64 byteArrayLength;
         i64 scalarArrayLength;
         i64 analysisMode;
-        i64 serviceGroups;
     public:
         LoweringConfig(i64 bytes, i64 non_bytes, i64 total, i64 storage, i64 byte_array,
             i64 scalar_array) : byteLeaves(bytes), nonByteLeaves(non_bytes), totalLeaves(total), copiedBytes(storage),
-            byteArrayLength(byte_array), scalarArrayLength(scalar_array), analysisMode(0), serviceGroups(0) {
+            byteArrayLength(byte_array), scalarArrayLength(scalar_array), analysisMode(0) {
         }
         auto byte_leaves() const -> i64 {
             return byteLeaves;
@@ -50,230 +51,178 @@ export namespace compiler_lowering {
         auto mode() const -> i64 {
             return analysisMode;
         }
-        auto service_groups() const -> i64 {
-            return serviceGroups;
-        }
-        auto set_policy(i64 mode, i64 groups) -> bool {
-            if (mode < 0 || mode > 1 || !valid_service_groups(groups)) {
-                return false;
-            }
-            analysisMode = mode;
-            serviceGroups = groups;
-            return true;
-        }
-    };
-    class ScalarSeed {
-        compiler_resolver::ResolvedTypeKind concreteKind;
-        i64 publicId;
-        i64 byteSize;
-    public:
-        ScalarSeed(compiler_resolver::ResolvedTypeKind kind, i64 id, i64 size) : concreteKind(kind), publicId(id),
-            byteSize(size) {
-        }
-        auto concrete_kind() const -> compiler_resolver::ResolvedTypeKind {
-            return concreteKind;
-        }
-        auto public_id() const -> i64 {
-            return publicId;
-        }
-        auto byte_size() const -> i64 {
-            return byteSize;
-        }
-    };
-    class ServiceParameters {
-        i64 parameterCount;
-        compiler_resolver::ResolvedTypeKind firstType;
-        compiler_resolver::ResolvedTypeKind secondType;
-        compiler_resolver::ResolvedTypeKind thirdType;
-        compiler_resolver::ResolvedTypeKind fourthType;
-        compiler_resolver::ResolvedTypeKind fifthType;
-    public:
-        ServiceParameters(i64 count, compiler_resolver::ResolvedTypeKind first,
-            compiler_resolver::ResolvedTypeKind second, compiler_resolver::ResolvedTypeKind third,
-            compiler_resolver::ResolvedTypeKind fourth,
-            compiler_resolver::ResolvedTypeKind fifth) : parameterCount(count), firstType(first), secondType(second),
-            thirdType(third), fourthType(fourth), fifthType(fifth) {
-        }
-        auto count() const -> i64 {
-            return parameterCount;
-        }
-        auto type_at(i64 index) const -> compiler_resolver::ResolvedTypeKind {
-            if (index == 0) {
-                return firstType;
-            }
-            if (index == 1) {
-                return secondType;
-            }
-            if (index == 2) {
-                return thirdType;
-            }
-            if (index == 3) {
-                return fourthType;
-            }
-            if (index == 4) {
-                return fifthType;
-            }
-            return compiler_resolver::ResolvedTypeKind::invalid;
-        }
-    };
-    class ServiceSeed {
-        compiler_resolver::ResolvedTypeKind receiverKind;
-        i64 kindId;
-        i64 operationId;
-        i64 spellingSource;
-        i64 resultType;
-        ServiceParameters parameterTypes;
-    public:
-        ServiceSeed(compiler_resolver::ResolvedTypeKind receiver, i64 kind, i64 operation, i64 spelling, i64 result,
-            ServiceParameters parameters) : receiverKind(receiver), kindId(kind), operationId(operation),
-            spellingSource(spelling), resultType(result), parameterTypes(parameters) {
-        }
-        auto receiver_kind() const -> compiler_resolver::ResolvedTypeKind {
-            return receiverKind;
-        }
-        auto kind_id() const -> i64 {
-            return kindId;
-        }
-        auto operation_id() const -> i64 {
-            return operationId;
-        }
-        auto spelling_source() const -> i64 {
-            return spellingSource;
-        }
-        auto result_type() const -> i64 {
-            return resultType;
-        }
-        auto parameters() const -> ServiceParameters {
-            const ServiceParameters result = parameterTypes;
-            return result;
-        }
     };
     auto setup_invalid(compiler_resolver::Session& session) -> i64 {
         return session.fail_storage(compiler_resolver::StorageStatus::invalid);
     }
-    // Permanent group-bit identities: legacy groups, optional singleton Call,
-    // optional singleton Port and Serve. Selected contract row positions are not IDs.
-    auto base_service_groups() -> i64 {
-        return 62;
-    }
-    auto call_service_group() -> i64 {
-        return 256;
-    }
-    auto port_service_group() -> i64 {
-        return 65536;
-    }
-    auto serve_service_group() -> i64 {
-        return 4294967296;
-    }
-    auto valid_service_groups(i64 groups) -> bool {
-        const i64 base = base_service_groups();
-        const i64 call = call_service_group();
-        const i64 port = port_service_group();
-        const i64 serve = serve_service_group();
-        return groups == base || groups == base + call || groups == base + port || groups == base + call + port
-            || groups == base + serve || groups == base + call + serve || groups == base + port + serve || groups
-            == base + call + port + serve;
-    }
     auto has_call_service(i64 groups) -> bool {
-        const i64 mask = call_service_group();
+        const i64 mask = compiler_catalog::call_service_group();
         return (u64(groups) & u64(mask)) != 0u64;
     }
     auto has_port_service(i64 groups) -> bool {
-        const i64 mask = port_service_group();
+        const i64 mask = compiler_catalog::port_service_group();
         return (u64(groups) & u64(mask)) != 0u64;
     }
     auto has_serve_service(i64 groups) -> bool {
-        const i64 mask = serve_service_group();
+        const i64 mask = compiler_catalog::serve_service_group();
         return (u64(groups) & u64(mask)) != 0u64;
+    }
+    auto valid_service_groups(i64 groups) -> bool {
+        return groups >= 0 && groups == compiler_catalog::service_groups(has_call_service(groups),
+            has_port_service(groups), has_serve_service(groups));
+    }
+    auto active_service_kind(i64 groups, i64 kind) -> bool {
+        if (kind < 0 || kind > 5) {
+            return false;
+        }
+        const i64 family = compiler_catalog::kind_family(kind);
+        return family == 0 || (family == 1 && has_call_service(groups)) || (family == 2 && has_port_service(groups))
+            || (family == 3 && has_serve_service(groups));
+    }
+    auto active_service_operation(i64 groups, i64 operation) -> bool {
+        return operation >= 0 && operation < compiler_catalog::operation_count() && active_service_kind(groups,
+            compiler_catalog::operation_kind(operation));
+    }
+    auto service_operation_count(i64 groups) -> i64 {
+        i64 count = 0;
+        i64 operation = 0;
+        while (operation < compiler_catalog::operation_count()) {
+            if (active_service_operation(groups, operation)) {
+                count = count + 1;
+            }
+            operation = operation + 1;
+        }
+        return count;
     }
     auto service_contract_count(compiler_resolver::Session& session) -> i64 {
         const i64 groups = record_signed(session, 1, OperandRole::SupportedServiceGroups);
         if (!valid_service_groups(groups)) {
             return setup_invalid(session);
         }
-        i64 count = 5;
-        if (has_call_service(groups)) {
-            count = count + 1;
-        }
-        if (has_port_service(groups)) {
-            count = count + 2;
-        }
-        if (has_serve_service(groups)) {
-            count = count + 1;
-        }
-        return count;
-    }
-    auto selected_operation_id(compiler_resolver::Session& session, i64 ordinal) -> i64 {
-        if (ordinal < 0 || ordinal >= service_contract_count(session)) {
-            return setup_invalid(session);
-        }
-        const i64 groups = record_signed(session, 1, OperandRole::SupportedServiceGroups);
-        if (ordinal < 5) {
-            return ordinal;
-        }
-        i64 next = ordinal - 5;
-        if (has_call_service(groups)) {
-            if (next == 0) {
-                return 5;
-            }
-            next = next - 1;
-        }
-        if (has_port_service(groups)) {
-            if (next < 2) {
-                return 6 + next;
-            }
-            next = next - 2;
-        }
-        if (has_serve_service(groups) && next == 0) {
-            return 8;
-        }
-        return setup_invalid(session);
-    }
-    auto operation_kind_id(i64 operation) -> i64 {
-        if (operation == 0 || operation == 1) {
-            return 0;
-        }
-        if (operation == 2) {
-            return 1;
-        }
-        if (operation == 3 || operation == 4) {
-            return 2;
-        }
-        if (operation == 5) {
-            return 3;
-        }
-        if (operation == 6 || operation == 7) {
-            return 4;
-        }
-        if (operation == 8) {
-            return 5;
-        }
-        return -1;
-    }
-    auto service_receiver_kind(i64 kind) -> compiler_resolver::ResolvedTypeKind {
-        if (kind == 0) {
-            return compiler_resolver::ResolvedTypeKind::console_session;
-        }
-        if (kind == 1) {
-            return compiler_resolver::ResolvedTypeKind::display_session;
-        }
-        if (kind == 2) {
-            return compiler_resolver::ResolvedTypeKind::event_session;
-        }
-        if (kind == 3) {
-            return compiler_resolver::ResolvedTypeKind::call_session;
-        }
-        if (kind == 4) {
-            return compiler_resolver::ResolvedTypeKind::port_range;
-        }
-        if (kind == 5) {
-            return compiler_resolver::ResolvedTypeKind::serve_session;
-        }
-        return compiler_resolver::ResolvedTypeKind::invalid;
+        return service_operation_count(groups);
     }
     auto lowering_prelude_rows(compiler_resolver::Session& session) -> i64 {
         return 10 + service_contract_count(session);
     }
+    auto seed_scalar(compiler_resolver::Session& session, i64 scalar) -> i64 {
+        const i64 begin = session.operand_count();
+        const i64 type = compiler_resolver::scalar_type(session, compiler_catalog::scalar_kind(scalar));
+        put(session, OperandRole::TypeId, type);
+        put(session, OperandRole::PublicDescriptorId, compiler_catalog::scalar_public_id(scalar));
+        put(session, OperandRole::Size, compiler_catalog::scalar_size(scalar));
+        return record(session, RecordKind::ScalarContract, begin, 3);
+    }
+    auto seed_service(compiler_resolver::Session& session, i64 operation) -> i64 {
+        const i64 kind = compiler_catalog::operation_kind(operation);
+        const i64 spelling = compiler_catalog::append_spelling(session, operation);
+        const i64 result = compiler_resolver::catalog_type(session, compiler_catalog::operation_result(operation));
+        const i64 count = compiler_catalog::parameter_count(operation);
+        const i64 arguments = session.operand_count();
+        i64 at = 0;
+        while (at < count && session.good()) {
+            const i64 type = compiler_resolver::scalar_type(session, compiler_catalog::parameter_kind(operation, at));
+            put(session, OperandRole::TypeId, type);
+            at = at + 1;
+        }
+        const i64 begin = session.operand_count();
+        const i64 receiver = compiler_resolver::scalar_type(session, compiler_catalog::kind_receiver(kind));
+        put(session, OperandRole::TypeId, receiver);
+        put(session, OperandRole::ServiceKindId, kind);
+        put(session, OperandRole::ServiceOperationId, operation);
+        put(session, OperandRole::IdentifierSourceRef, spelling);
+        put(session, OperandRole::ResultTypeId, result);
+        put_slice(session, OperandRole::ParameterTypes, arguments, count);
+        return record(session, RecordKind::ServiceContract, begin, 6);
+    }
+    // Work row [symbol, native-begin, native-end] ordering by native name bytes.
+    auto native_before(compiler_resolver::Session& session, compiler_resolver::WorkRow left,
+        compiler_resolver::WorkRow right) -> bool {
+        i64 at = 0;
+        while (left.word(1) + at < left.word(2) && right.word(1) + at < right.word(2) && session.good()) {
+            const u8 first = session.source_byte(left.word(1) + at);
+            const u8 second = session.source_byte(right.word(1) + at);
+            if (first != second) {
+                return first < second;
+            }
+            at = at + 1;
+        }
+        return left.word(2) - left.word(1) < right.word(2) - right.word(1);
+    }
+    auto smaller(i64 left, i64 right) -> i64 {
+        if (left < right) {
+            return left;
+        }
+        return right;
+    }
+    // Initial layout order: every class declaration, sorted by native name with a
+    // bottom-up merge sort over two work-row runs.
+    auto seed_layout_order(compiler_resolver::Session& session) -> i64 {
+        const i64 base = session.work_count();
+        const i64 resolved = session.index(60, 0, 0, 0, 0);
+        i64 count = 0;
+        i64 link = compiler_resolver::mw(session, resolved, 2);
+        while (link >= 0 && session.good()) {
+            const i64 symbol = compiler_resolver::mw(session, link, 0);
+            const i64 native = compiler_resolver::mw(session, symbol, 0);
+            const compiler_resolver::MetaRow name = session.meta(native);
+            session.append_work(compiler_resolver::WorkRow(symbol, name.word(1), name.word(2), 0, 0, 0));
+            count = count + 1;
+            link = compiler_resolver::mw(session, link, 1);
+        }
+        i64 at = 0;
+        while (at < count && session.good()) {
+            session.append_work(compiler_resolver::WorkRow(-1, 0, 0, 0, 0, 0));
+            at = at + 1;
+        }
+        i64 from = base;
+        i64 to = base + count;
+        i64 width = 1;
+        while (width < count && session.good()) {
+            i64 low = 0;
+            while (low < count && session.good()) {
+                const i64 middle = smaller(low + width, count);
+                const i64 high = smaller(low + 2 * width, count);
+                i64 left = low;
+                i64 right = middle;
+                at = low;
+                while (at < high && session.good()) {
+                    bool take_left = left < middle;
+                    if (take_left && right < high) {
+                        const compiler_resolver::WorkRow first = session.work(from + left);
+                        const compiler_resolver::WorkRow second = session.work(from + right);
+                        take_left = !native_before(session, second, first);
+                    }
+                    i64 source = right;
+                    if (take_left) {
+                        source = left;
+                        left = left + 1;
+                    } else {
+                        right = right + 1;
+                    }
+                    const compiler_resolver::WorkRow row = session.work(from + source);
+                    session.set_work(to + at, row);
+                    at = at + 1;
+                }
+                low = high;
+            }
+            const i64 sorted = to;
+            to = from;
+            from = sorted;
+            width = width * 2;
+        }
+        const i64 first = session.operand_count();
+        at = 0;
+        while (at < count && session.good()) {
+            const compiler_resolver::WorkRow row = session.work(from + at);
+            put(session, OperandRole::ClassNominalId, row.word(0));
+            at = at + 1;
+        }
+        session.truncate_work(base);
+        const i64 prefix = session.operand_count();
+        put_slice(session, OperandRole::InitialLayoutSymbols, first, count);
+        return record(session, RecordKind::InitialLayoutOrder, prefix, 1);
+    }
+    // Publishes the whole prelude from the host limits and the seeded catalog.
     auto begin_lowering(compiler_resolver::Session& session, LoweringConfig config) -> i64 {
         if (!session.reserve_diagnostic_payload()) {
             return -1;
@@ -282,9 +231,11 @@ export namespace compiler_lowering {
             || config.copied_bytes() < 1 || config.byte_array_length() < 1 || config.scalar_array_length() < 1
             || config.byte_leaves() > 8192 || config.non_byte_leaves() > 8192 || config.total_leaves() > 8192
             || config.copied_bytes() > 65536 || config.byte_array_length() > 8192 || config.scalar_array_length() > 8192
-            || config.mode() < 0 || config.mode() > 1 || !valid_service_groups(config.service_groups())) {
+            || config.mode() < 0 || config.mode() > 1) {
             return setup_invalid(session);
         }
+        const i64 groups = compiler_catalog::service_groups(compiler_resolver::family_seeded(session, 1),
+            compiler_resolver::family_seeded(session, 2), compiler_resolver::family_seeded(session, 3));
         const i64 begin = session.operand_count();
         put(session, OperandRole::MaximumCopiedByteLeaves, config.byte_leaves());
         put(session, OperandRole::MaximumCopiedNonByteLeaves, config.non_byte_leaves());
@@ -293,161 +244,37 @@ export namespace compiler_lowering {
         put(session, OperandRole::MaximumByteArrayLength, config.byte_array_length());
         put(session, OperandRole::MaximumScalarArrayLength, config.scalar_array_length());
         put(session, OperandRole::AnalysisMode, config.mode());
-        put(session, OperandRole::SupportedServiceGroups, config.service_groups());
-        return record(session, RecordKind::Configuration, begin, 8);
-    }
-    auto scalar_seed_kind(i64 ordinal) -> compiler_resolver::ResolvedTypeKind {
-        if (ordinal == 0) {
-            return compiler_resolver::ResolvedTypeKind::i64_value;
-        }
-        if (ordinal == 1) {
-            return compiler_resolver::ResolvedTypeKind::bool_value;
-        }
-        if (ordinal == 2) {
-            return compiler_resolver::ResolvedTypeKind::owner;
-        }
-        if (ordinal == 3) {
-            return compiler_resolver::ResolvedTypeKind::reference;
-        }
-        if (ordinal == 4) {
-            return compiler_resolver::ResolvedTypeKind::mutable_reference;
-        }
-        if (ordinal == 5) {
-            return compiler_resolver::ResolvedTypeKind::u64_value;
-        }
-        if (ordinal == 6) {
-            return compiler_resolver::ResolvedTypeKind::u8_value;
-        }
-        return compiler_resolver::ResolvedTypeKind::invalid;
-    }
-    auto seed_scalar(compiler_resolver::Session& session, ScalarSeed seed) -> i64 {
-        const i64 next = session.output_count();
-        if (next < 2 || next >= 9 || seed.concrete_kind() != scalar_seed_kind(next - 2) || seed.public_id() < 1
-            || seed.public_id() >= 100 || seed.byte_size() < 1 || seed.byte_size() > 65536) {
-            return setup_invalid(session);
-        }
-        const i64 type = compiler_resolver::scalar_type(session, seed.concrete_kind());
-        const i64 begin = session.operand_count();
-        put(session, OperandRole::TypeId, type);
-        put(session, OperandRole::PublicDescriptorId, seed.public_id());
-        put(session, OperandRole::Size, seed.byte_size());
-        return record(session, RecordKind::ScalarContract, begin, 3);
-    }
-    auto seed_service(compiler_resolver::Session& session, ServiceSeed seed) -> i64 {
-        const i64 next = session.output_count();
-        const ServiceParameters parameters = seed.parameters();
-        if (next < 9 || next >= lowering_prelude_rows(session) - 1 || seed.receiver_kind()
-            != service_receiver_kind(seed.kind_id()) || seed.kind_id() < 0 || seed.kind_id()
-            != operation_kind_id(seed.operation_id()) || seed.operation_id() != selected_operation_id(session, next - 9)
-            || seed.spelling_source() < 0 || seed.result_type() < 0 || parameters.count() < 0 || parameters.count()
-            > 5) {
-            return setup_invalid(session);
-        }
-        const compiler_resolver::MetaRow spelling = session.meta(seed.spelling_source());
-        const compiler_resolver::MetaRow result = session.meta(seed.result_type());
-        if (spelling.kind() != compiler_resolver::MetaTag::source_reference || result.kind()
-            != compiler_resolver::MetaTag::concrete_type) {
-            return setup_invalid(session);
-        }
-        const i64 receiver = compiler_resolver::scalar_type(session, seed.receiver_kind());
-        const i64 arguments = session.operand_count();
+        put(session, OperandRole::SupportedServiceGroups, groups);
+        const i64 configuration = record(session, RecordKind::Configuration, begin, 8);
         i64 at = 0;
-        while (at < parameters.count() && session.good()) {
-            const compiler_resolver::ResolvedTypeKind kind = parameters.type_at(at);
-            if (!compiler_resolver::scalar_kind(kind)) {
-                return setup_invalid(session);
-            }
-            const i64 type = compiler_resolver::scalar_type(session, kind);
-            put(session, OperandRole::TypeId, type);
+        while (at < compiler_catalog::scalar_count() && session.good()) {
+            seed_scalar(session, at);
             at = at + 1;
         }
-        const i64 begin = session.operand_count();
-        put(session, OperandRole::TypeId, receiver);
-        put(session, OperandRole::ServiceKindId, seed.kind_id());
-        put(session, OperandRole::ServiceOperationId, seed.operation_id());
-        put(session, OperandRole::IdentifierSourceRef, seed.spelling_source());
-        put(session, OperandRole::ResultTypeId, seed.result_type());
-        put_slice(session, OperandRole::ParameterTypes, arguments, parameters.count());
-        return record(session, RecordKind::ServiceContract, begin, 6);
-    }
-    auto seed_layout_symbol(compiler_resolver::Session& session, i64 symbol) -> i64 {
-        if (session.output_count() != lowering_prelude_rows(session) - 1 || symbol < 0) {
-            return setup_invalid(session);
-        }
-        const compiler_resolver::MetaRow value = session.meta(symbol);
-        if (value.kind() != compiler_resolver::MetaTag::symbol || value.declaration_kind()
-            != compiler_resolver::DeclarationKind::class_value) {
-            return setup_invalid(session);
-        }
-        return put(session, OperandRole::ClassNominalId, symbol);
-    }
-    auto seal_lowering_configuration(compiler_resolver::Session& session) -> bool {
-        if (!session.good() || session.output_count() != lowering_prelude_rows(session) - 1) {
-            setup_invalid(session);
-            return false;
-        }
-        // The bounded canonical catalog is submitted exactly once. Check its
-        // identity domains before any source-semantic decision can consume it.
-        i64 scalar_at = 2;
-        while (scalar_at < 9 && session.good()) {
-            const OutputRow row = session.view_output(scalar_at);
-            if (row.kind() != RecordKind::ScalarContract || row.operand_count() != 3) {
-                setup_invalid(session);
-                return false;
-            }
-            const i64 identity = record_signed(session, scalar_at, OperandRole::PublicDescriptorId);
-            i64 prior = 2;
-            while (prior < scalar_at && session.good()) {
-                if (identity == record_signed(session, prior, OperandRole::PublicDescriptorId)) {
-                    setup_invalid(session);
-                    return false;
-                }
-                prior = prior + 1;
-            }
-            scalar_at = scalar_at + 1;
-        }
-        i64 service_at = 9;
-        while (service_at < lowering_prelude_rows(session) - 1 && session.good()) {
-            const OutputRow row = session.view_output(service_at);
-            if (row.kind() != RecordKind::ServiceContract || row.operand_count() != 6) {
-                setup_invalid(session);
-                return false;
-            }
-            const i64 identity = record_signed(session, service_at, OperandRole::ServiceOperationId);
-            i64 prior = 9;
-            while (prior < service_at && session.good()) {
-                if (identity == record_signed(session, prior, OperandRole::ServiceOperationId)) {
-                    setup_invalid(session);
-                    return false;
-                }
-                prior = prior + 1;
-            }
-            service_at = service_at + 1;
-        }
-        const i64 last_service = lowering_prelude_rows(session) - 2;
-        const OutputRow last = session.view_output(last_service);
-        if (last.kind() != RecordKind::ServiceContract || last.operand_count() != 6) {
-            setup_invalid(session);
-            return false;
-        }
-        const i64 begin = last.operand_begin() + last.operand_count();
-        const i64 count = session.operand_count() - begin;
-        if (count < 0 || count > session.meta_count()) {
-            setup_invalid(session);
-            return false;
-        }
-        i64 at = 0;
-        while (at < count && session.good()) {
-            const OperandRow value = session.view_operand(begin + at);
-            if (value.role() != OperandRole::ClassNominalId || value.signed_value() < 0) {
-                setup_invalid(session);
-                return false;
+        at = 0;
+        while (at < compiler_catalog::operation_count() && session.good()) {
+            if (active_service_operation(groups, at)) {
+                seed_service(session, at);
             }
             at = at + 1;
         }
-        const i64 prefix = session.operand_count();
-        put_slice(session, OperandRole::InitialLayoutSymbols, begin, count);
-        return record(session, RecordKind::InitialLayoutOrder, prefix, 1) == lowering_prelude_rows(session) - 1;
+        if (seed_layout_order(session) != lowering_prelude_rows(session) - 1 || !session.good()) {
+            return setup_invalid(session);
+        }
+        return configuration;
+    }
+    auto configured(compiler_resolver::Session& session) -> bool {
+        if (!session.good() || session.output_count() < 2) {
+            setup_invalid(session);
+            return false;
+        }
+        const OutputRow row = session.view_output(1);
+        if (row.kind() != RecordKind::Configuration || row.operand_count() != 8 || session.output_count()
+            != lowering_prelude_rows(session)) {
+            setup_invalid(session);
+            return false;
+        }
+        return true;
     }
     auto configured_limit(compiler_resolver::Session& session, OperandRole role) -> i64 {
         const OutputRow row = session.view_output(1);
@@ -456,25 +283,23 @@ export namespace compiler_lowering {
         }
         return record_signed(session, 1, role);
     }
-    auto scalar_descriptor(compiler_resolver::Session& session, compiler_resolver::ResolvedTypeKind kind) -> i64 {
+    auto scalar_descriptor_row(compiler_resolver::Session& session, compiler_resolver::ResolvedTypeKind kind) -> i64 {
         i64 at = 0;
-        while (at < 7) {
-            if (kind == scalar_seed_kind(at)) {
-                return record_signed(session, at + 2, OperandRole::PublicDescriptorId);
+        while (at < compiler_catalog::scalar_count()) {
+            if (kind == compiler_catalog::scalar_kind(at)) {
+                return at + 2;
             }
             at = at + 1;
         }
         return setup_invalid(session);
     }
+    auto scalar_descriptor(compiler_resolver::Session& session, compiler_resolver::ResolvedTypeKind kind) -> i64 {
+        const i64 row = scalar_descriptor_row(session, kind);
+        return record_signed(session, row, OperandRole::PublicDescriptorId);
+    }
     auto scalar_descriptor_size(compiler_resolver::Session& session, compiler_resolver::ResolvedTypeKind kind) -> i64 {
-        i64 at = 0;
-        while (at < 7) {
-            if (kind == scalar_seed_kind(at)) {
-                return record_signed(session, at + 2, OperandRole::Size);
-            }
-            at = at + 1;
-        }
-        return setup_invalid(session);
+        const i64 row = scalar_descriptor_row(session, kind);
+        return record_signed(session, row, OperandRole::Size);
     }
     auto service_contract(compiler_resolver::Session& session, i64 ordinal) -> i64 {
         if (ordinal < 0 || ordinal >= service_contract_count(session) || session.output_count()

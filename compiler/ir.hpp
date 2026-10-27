@@ -2,13 +2,27 @@
 #include "types.hpp"
 #include "hosted_ir_metadata.hpp"
 #include "hosted_frontend_abi.hpp"
-#include "services.hpp"
 #include <map>
 #include <memory>
 #include <optional>
 #include <set>
 #include <variant>
 #include <vector>
+
+namespace aurora::service {
+// Sealed service identities are the Aurora catalog's generated enums.
+using Kind = hosted_abi::compiler_catalog::ServiceKind;
+using Operation = hosted_abi::compiler_catalog::ServiceOperation;
+// Catalog extents and the full service-group set, read once from Aurora.
+inline const hosted_abi::compiler_catalog::Summary &catalog() {
+    static const auto summary = [] {
+        hosted_abi::compiler_catalog::Summary result;
+        aurora_hosted_catalog_summary(&result);
+        return result;
+    }();
+    return summary;
+}
+} // namespace aurora::service
 
 namespace aurora::ir {
 inline constexpr int spanBytes = 56;

@@ -1,0 +1,481 @@
+export module aurora.compiler.builtin_catalog;
+import aurora.compiler.lexer;
+import aurora.compiler.resolution_kinds;
+import aurora.compiler.resolution_rows;
+import aurora.compiler.resolution_arena;
+import aurora.compiler.syntax_arena;
+import aurora.compiler.lowering_kinds;
+import aurora.compiler.lowering_errors;
+import aurora.compiler.lowering_storage;
+
+// The closed catalog of built-in types, scalar descriptors and sealed service
+// operations. The resolver seeds its descriptors and lowering its contracts
+// from these tables; the host reads only the two enums and summary().
+export namespace compiler_catalog {
+    // Case ordinals are the kind and operation codes carried by lowering
+    // operand rows and typed IR; the tables below are indexed by them.
+    enum class ServiceKind {
+        Console,
+        Display,
+        IommuEvent,
+        Call,
+        Port,
+        Serve
+    };
+    enum class ServiceOperation {
+        Next,
+        Put,
+        Pixel,
+        IommuPoll,
+        IommuAcknowledge,
+        Call,
+        PortRead8,
+        PortWrite8,
+        ServeExchange
+    };
+    // Catalog extents for the host's loose resolution quota.
+    class Summary {
+        i64 typeCount;
+        i64 textCount;
+        i64 textBytes;
+        i64 memberCount;
+        i64 operationCount;
+        i64 parameterCount;
+        i64 scalarCount;
+        i64 serviceGroups;
+    public:
+        Summary(i64 types, i64 texts, i64 bytes, i64 members, i64 operations, i64 parameters) : typeCount(types),
+            textCount(texts), textBytes(bytes), memberCount(members), operationCount(operations),
+            parameterCount(parameters), scalarCount(0), serviceGroups(0) {
+        }
+        auto set_policy(i64 scalars, i64 groups) -> bool {
+            scalarCount = scalars;
+            serviceGroups = groups;
+            return true;
+        }
+    };
+    class Word {
+        i64 first;
+        i64 count;
+    public:
+        Word(i64 begin, i64 size) : first(begin), count(size) {
+        }
+        auto begin() const -> i64 {
+            return first;
+        }
+        auto size() const -> i64 {
+            return count;
+        }
+    };
+    // Every catalog spelling fits this many bytes; summary() charges it per text.
+    auto maximum_word() -> i64 {
+        return 32;
+    }
+    auto word(builtin::span<const u8> words, i64 part) -> Word {
+        i64 at = 0;
+        i64 begin = 0;
+        i64 index = 0;
+        while (at <= words.size()) {
+            if (at == words.size() || words.at(at) == ';') {
+                if (index == part) {
+                    const Word result = Word(begin, at - begin);
+                    return result;
+                }
+                index = index + 1;
+                begin = at + 1;
+            }
+            at = at + 1;
+        }
+        const Word missing = Word(0, 0);
+        return missing;
+    }
+    // With begin < 0, appends word `part` of the ';'-separated list as Session
+    // text and returns its reference. Otherwise returns 1 when source bytes
+    // [begin, end) spell the word after its last ':' and 0 when they do not.
+    auto use_word(compiler_resolver::Session& session, builtin::span<const u8> words, i64 part, i64 begin,
+        i64 end) -> i64 {
+        const Word found = word(words, part);
+        if (found.size() < 1 || found.size() > maximum_word()) {
+            return session.fail_storage(compiler_resolver::StorageStatus::invalid);
+        }
+        if (begin < 0) {
+            return session.append_text(words.subspan(found.begin(), found.size()));
+        }
+        i64 first = found.begin();
+        i64 at = 0;
+        while (at < found.size()) {
+            if (words.at(found.begin() + at) == ':') {
+                first = found.begin() + at + 1;
+            }
+            at = at + 1;
+        }
+        const i64 count = found.begin() + found.size() - first;
+        if (end - begin != count) {
+            return 0;
+        }
+        at = 0;
+        while (at < count && session.good()) {
+            if (session.source_byte(begin + at) != words.at(first + at)) {
+                return 0;
+            }
+            at = at + 1;
+        }
+        return 1;
+    }
+
+    // Built-in types in seeding order. Types 6..11 are the capability types in
+    // ServiceKind order. Family 0 is always seeded; families 1 (Call), 2 (Port)
+    // and 3 (Serve) only when admitted syntax names one of their types.
+    auto type_count() -> i64 {
+        return 26;
+    }
+    auto type_kind(i64 type) -> compiler_resolver::ResolvedTypeKind {
+        if (type == 0) {
+            return compiler_resolver::ResolvedTypeKind::i64_value;
+        }
+        if (type == 1) {
+            return compiler_resolver::ResolvedTypeKind::u64_value;
+        }
+        if (type == 2) {
+            return compiler_resolver::ResolvedTypeKind::u8_value;
+        }
+        if (type == 3) {
+            return compiler_resolver::ResolvedTypeKind::bool_value;
+        }
+        if (type == 4) {
+            return compiler_resolver::ResolvedTypeKind::byte_region;
+        }
+        if (type == 5) {
+            return compiler_resolver::ResolvedTypeKind::owned_bytes;
+        }
+        if (type == 6) {
+            return compiler_resolver::ResolvedTypeKind::console_session;
+        }
+        if (type == 7) {
+            return compiler_resolver::ResolvedTypeKind::display_session;
+        }
+        if (type == 8) {
+            return compiler_resolver::ResolvedTypeKind::event_session;
+        }
+        if (type == 9) {
+            return compiler_resolver::ResolvedTypeKind::call_session;
+        }
+        if (type == 10) {
+            return compiler_resolver::ResolvedTypeKind::port_range;
+        }
+        if (type == 11) {
+            return compiler_resolver::ResolvedTypeKind::serve_session;
+        }
+        if (type == 12 || type == 17 || type == 21 || type == 24) {
+            return compiler_resolver::ResolvedTypeKind::class_value;
+        }
+        if (type > 12 && type < 26) {
+            return compiler_resolver::ResolvedTypeKind::enum_value;
+        }
+        return compiler_resolver::ResolvedTypeKind::invalid;
+    }
+    auto type_family(i64 type) -> i64 {
+        if (type == 9 || type == 21 || type == 22) {
+            return 1;
+        }
+        if (type == 10 || type == 23) {
+            return 2;
+        }
+        if (type == 11 || type == 24 || type == 25) {
+            return 3;
+        }
+        return 0;
+    }
+    auto nominal(i64 type) -> bool {
+        const compiler_resolver::ResolvedTypeKind kind = type_kind(type);
+        return kind == compiler_resolver::ResolvedTypeKind::class_value || kind
+            == compiler_resolver::ResolvedTypeKind::enum_value;
+    }
+    // Field or case count of a nominal type.
+    auto member_count(i64 type) -> i64 {
+        if (type == 12 || type == 19) {
+            return 3;
+        }
+        if (type == 17 || type == 18) {
+            return 4;
+        }
+        if (type == 20) {
+            return 7;
+        }
+        if (type == 22) {
+            return 3;
+        }
+        if (type == 23) {
+            return 1;
+        }
+        if (nominal(type)) {
+            return 2;
+        }
+        return 0;
+    }
+    // Catalog type of a class field.
+    auto field_type(i64 type, i64 field) -> i64 {
+        if (type == 12) {
+            if (field == 1) {
+                return 2;
+            }
+            return 3;
+        }
+        if (field > 0) {
+            return 1;
+        }
+        if (type == 17) {
+            return 18;
+        }
+        if (type == 21) {
+            return 22;
+        }
+        return 25;
+    }
+    // Words: full spelling, then for nominal types the native spelling and the
+    // field or case names in declaration order. See use_word for begin/end.
+    auto type_word(compiler_resolver::Session& session, i64 type, i64 part, i64 begin, i64 end) -> i64 {
+        if (type < 4) {
+            return use_word(session, "i64;u64;u8;bool", type, begin, end);
+        }
+        if (type < 8) {
+            return use_word(session,
+                "builtin::ByteRegion;builtin::OwnedBytes;builtin::ConsoleSession;builtin::DisplaySession", type - 4,
+                begin, end);
+        }
+        if (type < 12) {
+            return use_word(session,
+                "builtin::IommuEventSession;builtin::CallSession;builtin::Com1UartGrant;builtin::ServeSession", type
+                - 8, begin, end);
+        }
+        if (type == 12) {
+            return use_word(session, "builtin::ConsoleSample;__au_console_sample;byte_present;byte;damaged", part,
+                begin, end);
+        }
+        if (type == 13) {
+            return use_word(session, "builtin::ConsolePutResult;__au_console_put_result;success;timeout", part, begin,
+                end);
+        }
+        if (type == 14) {
+            return use_word(session, "builtin::ConsoleCompletion;__au_console_completion;requested_exit;output_failure",
+                part, begin, end);
+        }
+        if (type == 15) {
+            return use_word(session, "builtin::DisplayPutResult;__au_display_put_result;success;out_of_bounds", part,
+                begin, end);
+        }
+        if (type == 16) {
+            return use_word(session, "builtin::DisplayCompletion;__au_display_completion;rendered;output_failure", part,
+                begin, end);
+        }
+        if (type == 17) {
+            return use_word(session, "builtin::IommuEventSample;__au_iommu_event_sample;result;word0;word1;status_low",
+                part, begin, end);
+        }
+        if (type == 18) {
+            return use_word(session,
+                "builtin::EventPollResult;__au_event_poll_result;empty;record;overflow;transport_failure", part, begin,
+                end);
+        }
+        if (type == 19) {
+            return use_word(session,
+                "builtin::EventAckResult;__au_event_ack_result;committed;overflow;transport_failure", part, begin, end);
+        }
+        if (type == 20 && part < 4) {
+            return use_word(session,
+                "builtin::EventIntakeCompletion;__au_event_intake_completion;drained;budget_exhausted", part, begin,
+                end);
+        }
+        if (type == 20) {
+            return use_word(session, "loss_detected;unsupported_event;command_error;transport_failure;output_failure",
+                part - 4, begin, end);
+        }
+        if (type == 21) {
+            return use_word(session, "builtin::CallResult;__au_call_result;status;value", part, begin, end);
+        }
+        if (type == 22) {
+            return use_word(session, "builtin::CallStatus;__au_call_status;replied;cancelled;rejected", part, begin,
+                end);
+        }
+        if (type == 23) {
+            return use_word(session, "builtin::PortWriteResult;__au_port_write_result;issued", part, begin, end);
+        }
+        if (type == 24) {
+            return use_word(session, "builtin::ServeRequest;__au_serve_request;status;value", part, begin, end);
+        }
+        return use_word(session, "builtin::ServeStatus;__au_serve_status;request;cancelled", part, begin, end);
+    }
+
+    // Scalar descriptors: concrete kind, public reflection identity and size.
+    auto scalar_count() -> i64 {
+        return 7;
+    }
+    auto scalar_kind(i64 scalar) -> compiler_resolver::ResolvedTypeKind {
+        if (scalar == 0) {
+            return compiler_resolver::ResolvedTypeKind::i64_value;
+        }
+        if (scalar == 1) {
+            return compiler_resolver::ResolvedTypeKind::bool_value;
+        }
+        if (scalar == 2) {
+            return compiler_resolver::ResolvedTypeKind::owner;
+        }
+        if (scalar == 3) {
+            return compiler_resolver::ResolvedTypeKind::reference;
+        }
+        if (scalar == 4) {
+            return compiler_resolver::ResolvedTypeKind::mutable_reference;
+        }
+        if (scalar == 5) {
+            return compiler_resolver::ResolvedTypeKind::u64_value;
+        }
+        if (scalar == 6) {
+            return compiler_resolver::ResolvedTypeKind::u8_value;
+        }
+        return compiler_resolver::ResolvedTypeKind::invalid;
+    }
+    auto scalar_public_id(i64 scalar) -> i64 {
+        if (scalar == 5) {
+            return 8;
+        }
+        if (scalar == 6) {
+            return 11;
+        }
+        return scalar + 1;
+    }
+    auto scalar_size(i64 scalar) -> i64 {
+        if (scalar == 1 || scalar == 6) {
+            return 1;
+        }
+        return 8;
+    }
+
+    // Sealed service operations, indexed by ServiceOperation.
+    auto operation_count() -> i64 {
+        return 9;
+    }
+    auto operation_kind(i64 operation) -> i64 {
+        if (operation < 2) {
+            return 0;
+        }
+        if (operation == 2) {
+            return 1;
+        }
+        if (operation < 5) {
+            return 2;
+        }
+        if (operation == 5) {
+            return 3;
+        }
+        if (operation < 8) {
+            return 4;
+        }
+        return 5;
+    }
+    auto kind_receiver(i64 kind) -> compiler_resolver::ResolvedTypeKind {
+        return type_kind(6 + kind);
+    }
+    auto kind_family(i64 kind) -> i64 {
+        return type_family(6 + kind);
+    }
+    // Catalog type of the operation's result.
+    auto operation_result(i64 operation) -> i64 {
+        if (operation == 0) {
+            return 12;
+        }
+        if (operation == 1) {
+            return 13;
+        }
+        if (operation == 2) {
+            return 15;
+        }
+        if (operation == 3) {
+            return 17;
+        }
+        if (operation == 4) {
+            return 19;
+        }
+        if (operation == 5) {
+            return 21;
+        }
+        if (operation == 6) {
+            return 2;
+        }
+        if (operation == 7) {
+            return 23;
+        }
+        return 24;
+    }
+    auto parameter_count(i64 operation) -> i64 {
+        if (operation == 0 || operation == 3 || operation == 4) {
+            return 0;
+        }
+        if (operation == 2) {
+            return 5;
+        }
+        if (operation == 7) {
+            return 2;
+        }
+        return 1;
+    }
+    auto parameter_kind(i64 operation, i64 index) -> compiler_resolver::ResolvedTypeKind {
+        if (operation == 1 || (operation == 2 && index > 1) || (operation == 7 && index == 1)) {
+            return compiler_resolver::ResolvedTypeKind::u8_value;
+        }
+        return compiler_resolver::ResolvedTypeKind::u64_value;
+    }
+    auto append_spelling(compiler_resolver::Session& session, i64 operation) -> i64 {
+        return use_word(session, "next;put;pixel;poll;acknowledge;call;read8;write8;exchange", operation, -1, 0);
+    }
+
+    // Group bit 1 << m admits the capability-kind set m (bit k for kind k) in
+    // one signature: every singleton plus Console+Display and Console+IommuEvent.
+    auto base_service_groups() -> i64 {
+        return 62;
+    }
+    auto call_service_group() -> i64 {
+        return 256;
+    }
+    auto port_service_group() -> i64 {
+        return 65536;
+    }
+    auto serve_service_group() -> i64 {
+        return 4294967296;
+    }
+    auto service_groups(bool call, bool port, bool serve) -> i64 {
+        i64 groups = base_service_groups();
+        if (call) {
+            groups = groups + call_service_group();
+        }
+        if (port) {
+            groups = groups + port_service_group();
+        }
+        if (serve) {
+            groups = groups + serve_service_group();
+        }
+        return groups;
+    }
+    auto summary() -> Summary {
+        i64 texts = 0;
+        i64 members = 0;
+        i64 type = 0;
+        while (type < type_count()) {
+            texts = texts + 1;
+            if (nominal(type)) {
+                texts = texts + 1 + member_count(type);
+                members = members + member_count(type);
+            }
+            type = type + 1;
+        }
+        i64 parameters = 0;
+        i64 operation = 0;
+        while (operation < operation_count()) {
+            parameters = parameters + parameter_count(operation);
+            operation = operation + 1;
+        }
+        texts = texts + operation_count();
+        Summary result = Summary(type_count(), texts, texts * maximum_word(), members, operation_count(), parameters);
+        result.set_policy(scalar_count(), service_groups(true, true, true));
+        return result;
+    }
+}

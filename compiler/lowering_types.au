@@ -1382,39 +1382,6 @@ export namespace compiler_lowering {
         }
         return index_set(session, 80, -1, 0, count);
     }
-    auto verify_layout_order(compiler_resolver::Session& session) -> bool {
-        const i64 count = class_count(session);
-        if (initial_layout_count(session) != count) {
-            session.fail_storage(compiler_resolver::StorageStatus::invalid);
-            return false;
-        }
-        const i64 base = session.work_count();
-        i64 at = 0;
-        while (at < count && session.good()) {
-            session.append_work(compiler_resolver::WorkRow(0, 0, 0, 0, 0, 0));
-            at = at + 1;
-        }
-        at = 0;
-        while (at < count && session.good()) {
-            const i64 symbol = initial_layout_symbol(session, at);
-            const i64 public_id = session.index(73, symbol, 0, 0, 0);
-            if (public_id < 100 || public_id - 100 >= count || class_symbol(session, public_id - 100) != symbol) {
-                session.fail_storage(compiler_resolver::StorageStatus::invalid);
-            } else {
-                const i64 mark = base + public_id - 100;
-                compiler_resolver::WorkRow row = session.work(mark);
-                if (row.word(0) != 0) {
-                    session.fail_storage(compiler_resolver::StorageStatus::invalid);
-                } else {
-                    row.set_word(0, 1);
-                    session.set_work(mark, row);
-                }
-            }
-            at = at + 1;
-        }
-        session.truncate_work(base);
-        return session.good();
-    }
     auto prepare_types(compiler_resolver::Session& session) -> bool {
         if (!session.good() || session.work_count() != 0) {
             session.fail_storage(compiler_resolver::StorageStatus::invalid);
@@ -1446,9 +1413,6 @@ export namespace compiler_lowering {
             index_set(session, 73, nominal, 0, 100 + at);
             register_fields(session, nominal);
             at = at + 1;
-        }
-        if (!verify_layout_order(session)) {
-            return false;
         }
         at = 0;
         while (at < classes && session.good()) {

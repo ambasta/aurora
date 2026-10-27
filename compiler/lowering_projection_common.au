@@ -74,17 +74,11 @@ export namespace compiler_lowering_projection {
         return workspace.good();
     }
     auto service_kind(ProjectionWorkspace& workspace, i64 value) -> bool {
-        const i64 groups = workspace.count(39);
-        const bool active = value >= 0 && value <= 2 || value == 3 && compiler_lowering::has_call_service(groups)
-            || value == 4 && compiler_lowering::has_port_service(groups) || value == 5
-            && compiler_lowering::has_serve_service(groups);
+        const bool active = compiler_lowering::active_service_kind(workspace.count(39), value);
         return check(workspace, active);
     }
     auto service_operation(ProjectionWorkspace& workspace, i64 value) -> bool {
-        const i64 groups = workspace.count(39);
-        const bool active = value >= 0 && value <= 4 || value == 5 && compiler_lowering::has_call_service(groups)
-            || (value == 6 || value == 7) && compiler_lowering::has_port_service(groups) || value == 8
-            && compiler_lowering::has_serve_service(groups);
+        const bool active = compiler_lowering::active_service_operation(workspace.count(39), value);
         return check(workspace, active);
     }
     auto copy_text(ProjectionWorkspace& workspace, compiler_ir_metadata::MetadataStore& metadata, i64 source_begin,
