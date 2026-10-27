@@ -437,7 +437,7 @@ graphical_terminal_object = custom_target('graphical-terminal-painter',
     depfile: 'graphical-terminal-painter.d',
     command: [python, '-B', fixture_builder, '--compiler', aurorac, '--source', '@INPUT@',
               '--module-root', meson.project_source_root() / 'library', '--local-symbols',
-              '--referenced-reflection-only', '--emit-object', '--compose-private-object',
+              '--referenced-reflection-only', '--emit-object',
               '--bridge', files('../kernel/uefi/graphical-terminal-entry.S'),
               '--object', '@OUTPUT@', '--depfile', '@DEPFILE@'])
 graphical_terminal_host = executable('graphical-terminal-host', 'kernel-graphical-terminal.cpp',

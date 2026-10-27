@@ -37,7 +37,8 @@ cannot expose output, and allocation failure releases every owner.
 
 `private_object.au` composes frontend B/C, the ordinary UEFI console/session,
 production terminal painter and existing BIOS console, UEFI device-fixture and
-hosted UART objects. The source
+hosted UART objects. It is the only production object composer; build helpers
+have no GNU partial-link fallback or composer selector. The source
 input retains its eight-section ELF64LE x86-64 profile. Frontend wrappers use an
 explicit eight-section profile with empty readonly data, no LOCAL definitions,
 byte-aligned text and only hidden `aurora_hosted_*` exports. GNU console/UART/painter
@@ -61,7 +62,8 @@ source-object, composed-object, ABI/header and stack-fact convergence. One
 private-object test driver compares normalized wrapper and composed text,
 readonly data, symbols and relocations with GNU references, checks malformed
 recipe/ELF data and every allocation failure, and preserves source LOCAL
-identity. Console, UART and painter objects run in their existing hosted drivers and
+identity. Shared CLI input/output robustness is tested once in `diagnostics.py`.
+Console, UART and painter objects run in their existing hosted drivers and
 guest families. No checkpoint bump is needed. GNU assembler/linker and Linux
 host I/O remain dependencies for frontend A, other text output, native
 console/UART/painter adapters and final links. This adds no Aurora C ABI.

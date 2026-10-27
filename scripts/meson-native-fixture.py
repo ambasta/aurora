@@ -30,14 +30,11 @@ def main():
     parser.add_argument("--local-symbols", action="store_true")
     parser.add_argument("--referenced-reflection-only", action="store_true")
     parser.add_argument("--emit-object", action="store_true")
-    parser.add_argument("--compose-private-object", action="store_true")
     parser.add_argument("--object", required=True, type=Path)
     parser.add_argument("--depfile", required=True, type=Path)
     args = parser.parse_args()
     if args.emit_object and (args.assemble_with or args.defsym or args.keep_local_labels):
         parser.error("--emit-object does not accept assembler-only options")
-    if args.compose_private_object and not (args.emit_object and args.bridge):
-        parser.error("--compose-private-object requires --emit-object and --bridge")
     compiler = args.compiler.resolve(strict=True)
     assembly = args.object.with_suffix(".pending.o" if args.emit_object else ".s")
     command = [str(compiler)]
@@ -59,9 +56,7 @@ def main():
         validate_selected_source_abi(args.source, facts)
     if args.bridge:
         if args.emit_object:
-            compose_object_bridge(
-                assembly, args.bridge, facts, compiler=compiler if args.compose_private_object else None
-            )
+            compose_object_bridge(assembly, args.bridge, facts, compiler=compiler)
         else:
             with assembly.open("a") as output:
                 for bridge in args.bridge:

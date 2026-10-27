@@ -1113,8 +1113,8 @@ def emit(
     )
     # Symbol spellings come from this emitted module; only register moves are trusted.
     if output_mode == "object":
-        # The current compiler owns only this closed frontend composition. Other
-        # native consumers retain their existing GNU partial-link route.
+        # The current compiler composes this closed frontend directly; the pinned
+        # predecessor still uses the text route below.
         selected = sorted(abi_function_symbol(facts, "compiler_frontend::" + alias) for alias in PASS_ENTRIES)
         with tempfile.TemporaryDirectory(prefix=".aurora-frontend-", dir=output.parent) as directory:
             work = Path(directory)

@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Focused check-only CLI contract. Does not assemble, link, or execute Aurora code."""
+"""Shared diagnostic and artifact CLI contract; no assembling, linking or executing Aurora code."""
 
 import json
+import os
 from pathlib import Path
+import resource
+import signal
 import subprocess
 import sys
 import tempfile
@@ -16,9 +19,11 @@ def require(condition, message):
         raise AssertionError(message)
 
 
-def run(arguments, status, code=None, json_mode=True):
+def run(arguments, status, code=None, json_mode=True, preexec_fn=None):
     global CASES
-    result = subprocess.run([str(COMPILER), *map(str, arguments)], capture_output=True, text=True, timeout=10)
+    result = subprocess.run(
+        [str(COMPILER), *map(str, arguments)], capture_output=True, text=True, timeout=10, preexec_fn=preexec_fn
+    )
     require(result.returncode == status, f"exit {result.returncode}, expected {status}: {result.stdout}{result.stderr}")
     CASES += 1
     if not json_mode:
@@ -242,6 +247,37 @@ with tempfile.TemporaryDirectory(prefix="aurora-diagnostics-") as directory:
     require(plain.stdout == plain.stderr == "" and emitted.stat().st_size > 0, "normal emission regression")
 
     original_assembly = emitted.read_bytes()
+    # All emission modes share ArtifactWriter; exercise its output authority once.
+    alias, symlink = root / "source-alias", root / "source-symlink"
+    os.link(source, alias)
+    symlink.symlink_to(source)
+    for destination in (source, alias, symlink):
+        run([source, "-o", destination], 1, json_mode=False)
+        require(source.read_text() == good, "output alias changed source")
+
+    def output_limit():
+        signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
+        resource.setrlimit(resource.RLIMIT_FSIZE, (1, 1))
+
+    run([source, "-o", emitted], 1, json_mode=False, preexec_fn=output_limit)
+    require(emitted.read_bytes() == original_assembly, "partial write changed existing output")
+    require(not list(root.glob(".aurora-output-*.tmp")), "partial write left temporary files")
+
+    # Binary subcommands share ArtifactFile's separate 64 MiB read ceiling.
+    oversized, rejected = root / "oversized-input", root / "rejected-output"
+    with oversized.open("wb") as stream:
+        stream.truncate(64 * 1024 * 1024 + 1)
+    for previous in (None, b"previous artifact"):
+        if previous is not None:
+            rejected.write_bytes(previous)
+        result = run(["--emit-frontend-wrapper", oversized, "-o", rejected], 1, json_mode=False)
+        require("bounded artifact read limit exceeded" in result.stderr, "missing artifact-size diagnostic")
+        require(
+            (rejected.read_bytes() if rejected.exists() else None) == previous,
+            "rejected artifact input changed output",
+        )
+    oversized.unlink()
+
     facts_path = root / "good.stack.json"
     run([source, "-o", emitted, "--stack-facts", facts_path], 0, json_mode=False)
     require(emitted.read_bytes() == original_assembly, "stack facts changed ordinary assembly bytes")
