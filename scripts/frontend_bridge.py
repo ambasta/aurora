@@ -10,7 +10,7 @@ import re
 import sys
 
 # Source signature, forwarding expression (direct/copy/move), argument record
-# (name:fields[:scalar lanes]), and host policy (noexcept/discard/consume[:alias]).
+# (name:fields[:scalar lanes]), and host policy (noexcept/discard[:alias]).
 ROWS = (
     (
         "private_object_create(builtin::ByteRegion region) -> compiler_private_object::Workspace",
@@ -223,6 +223,13 @@ ROWS = (
         "",
     ),
     (
+        "parser_source(compiler_parser::AstArena& arena, builtin::span<const u8> source, "
+        "compiler_parser::AdmissionConfig configuration) -> compiler_resolver::SourceResult",
+        "copy compiler_resolver::parse_source(arena, source, configuration)",
+        "ParserSourceInput:source,configuration",
+        "",
+    ),
+    (
         "parser_release(builtin::ByteRegion region, compiler_parser::AstArena arena) -> i64",
         "direct compiler_parser::release(region, move(arena))",
         "ParserRelease:region,arena",
@@ -283,23 +290,9 @@ ROWS = (
         "",
     ),
     (
-        "resolver_ingest(builtin::ByteRegion region, compiler_resolver::Session session, "
-        "compiler_parser::AstArena parsed, i64 module_id, i64 root) -> compiler_resolver::Session",
-        "move compiler_resolver::ingest(region, move(session), move(parsed), module_id, root)",
-        "ResolverIngest:region,session,parsed,module,root",
-        "consume",
-    ),
-    (
         "resolver_release(builtin::ByteRegion region, compiler_resolver::Session session) -> i64",
         "direct compiler_resolver::release(region, move(session))",
         "ResolverRelease:region,session",
-        "discard",
-    ),
-    (
-        "resolver_release_pair(builtin::ByteRegion region, compiler_resolver::Session session, "
-        "compiler_parser::AstArena parsed) -> i64",
-        "direct compiler_resolver::release_pair(region, move(session), move(parsed))",
-        "ResolverReleasePair:region,session,parsed",
         "discard",
     ),
     (
@@ -309,16 +302,23 @@ ROWS = (
         "",
     ),
     (
+        "resolver_ingest(compiler_resolver::Session& session, const compiler_parser::AstArena& parsed) -> i64",
+        "direct compiler_resolver::ingest_source(session, parsed)",
+        "",
+        "",
+    ),
+    (
+        "resolver_name_chunk(builtin::span<const u8> source, i64 begin, i64 end, i64 offset) -> "
+        "compiler_resolver::LinkageChunk",
+        "copy compiler_resolver::name_chunk(source, begin, end, offset)",
+        "ResolverNameInput:source,begin,end,offset",
+        "",
+    ),
+    (
         "resolver_order_module(compiler_resolver::Session& session, i64 module_id, i64 order, i64 scope, bool "
         "root) -> bool",
         "direct compiler_resolver::order_module(session, module_id, order, scope, root)",
         "ResolverOrderInput:module,order,scope,root:0,1,2,3",
-        "",
-    ),
-    (
-        "resolver_bind_import(compiler_resolver::Session& session, i64 module_id, i64 node, i64 target) -> bool",
-        "direct compiler_resolver::bind_import(session, module_id, node, target)",
-        "ResolverImportInput:module,node,target:0,1,2",
         "",
     ),
     (
@@ -666,7 +666,7 @@ def declarations():
         mode, expression = forward.split(" ", 1)
         flags, _, host = policy.partition(":")
         flags = set(flags.split(",")) - {""}
-        if flags - {"noexcept", "discard", "consume"}:
+        if flags - {"noexcept", "discard"}:
             raise ValueError("unknown private bridge policy")
         record, loads = None, ()
         if transport:
@@ -677,8 +677,6 @@ def declarations():
             loads = tuple(map(int, fields[2].split(","))) if len(fields) == 3 else ()
         if any(index < 0 or index > 5 for index in loads) or len(set(loads)) != len(loads):
             raise ValueError("invalid private scalar lanes")
-        if "consume" in flags and (record is None or "discard" in flags):
-            raise ValueError("invalid private consuming record policy")
         if host and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", host):
             raise ValueError("invalid private host alias")
         entries.append(
@@ -693,7 +691,6 @@ def declarations():
                 "noexcept" in flags,
                 "discard" in flags,
                 loads,
-                "consume" in flags,
             )
         )
     if len({entry[6] for entry in entries}) != len(entries):
@@ -707,7 +704,7 @@ ENTRIES = declarations()
 def signatures():
     """Read the deliberately closed source signature spelling in the table."""
     entries = {}
-    for name, arguments, result, expression, mode, record, host, noexcept, discard, loads, consume in ENTRIES:
+    for name, arguments, result, expression, mode, record, host, noexcept, discard, loads in ENTRIES:
         roots, parameters = [], []
         for argument in arguments.split(", ") if arguments else ():
             spelling, parameter = argument.rsplit(" ", 1)
@@ -719,7 +716,7 @@ def signatures():
                 parameters.append(
                     {"builtin::ByteRegion": "region", "builtin::span<const u8>": "span"}.get(spelling, spelling)
                 )
-        if name in entries or len(roots) > 4 or (consume and roots):
+        if name in entries or len(roots) > 4:
             raise ValueError("duplicate bridge or unsupported root count")
         entries[name] = (tuple(roots), tuple(parameters), result, record, discard)
     return entries

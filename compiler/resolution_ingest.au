@@ -4,12 +4,13 @@ import aurora.compiler.resolution_kinds;
 import aurora.compiler.resolution_rows;
 import aurora.compiler.resolution_arena;
 import aurora.compiler.syntax_arena;
+import aurora.compiler.parser;
 import aurora.compiler.lowering_kinds;
 import aurora.compiler.lowering_errors;
 import aurora.compiler.lowering_storage;
 
-// Ingest copies one parsed module into Session rows and projects every token
-// coordinate to a source reference.
+// Source admission lexes, parses and admits one module; ingest then copies it
+// into Session rows and projects every token coordinate to a source reference.
 namespace compiler_resolver {
     auto translate_index(Session& session, i64 base, i64 count, i64 index) -> i64 {
         if (index == -1) {
@@ -210,20 +211,15 @@ namespace compiler_resolver {
         session.truncate_work(0);
         return session.good();
     }
-}
-
-export namespace compiler_resolver {
-    // Both owning inputs are transferred into distinct generated argument slots.
-    // Every return transfers Session and normally drops parsed, including failure.
-    auto ingest(builtin::ByteRegion region, Session session, compiler_parser::AstArena parsed, i64 module_id,
-        i64 root) -> Session {
+    // Copies the admitted forest of the last appended module into Session rows.
+    auto ingest(Session& session, const compiler_parser::AstArena& parsed, i64 module_id, i64 root) -> bool {
         if (!session.good()) {
-            return move(session);
+            return false;
         }
         if (module_id < 0 || module_id >= session.module_count() || module_id != session.module_count() - 1
             || !parsed.ok() || parsed.stack_size() != 0 || session.work_count() != 0) {
             session.fail_storage(StorageStatus::invalid);
-            return move(session);
+            return false;
         }
         MetaRow module_row = session.meta(module_id);
         const i64 expressions = parsed.size();
@@ -236,18 +232,18 @@ export namespace compiler_resolver {
             - module_row.word(0) || expressions < 0 || edges < 0 || types < 0 || declarations < 1 || expressions > bytes
             || edges > bytes || types > bytes || declarations > bytes || root < 0 || root >= declarations) {
             session.fail_storage(StorageStatus::invalid);
-            return move(session);
+            return false;
         }
         const compiler_parser::SyntaxNode parsed_root = parsed.syntax_at(root);
         if (parsed_root.kind() != compiler_parser::SyntaxKind::module_definition || parsed_root.previous() != -1) {
             session.fail_storage(StorageStatus::invalid);
-            return move(session);
+            return false;
         }
         const i64 total = expressions + edges + types + declarations;
         const i64 first = session.syntax_count();
         if (total > 9223372036854775807 - first) {
             session.fail_storage(StorageStatus::invalid);
-            return move(session);
+            return false;
         }
         const i64 expression_base = first;
         const i64 edge_base = first + expressions;
@@ -262,7 +258,7 @@ export namespace compiler_resolver {
         module_row.set_word(8, declaration_base);
         module_row.set_word(9, declarations);
         if (!session.set_meta(module_id, module_row)) {
-            return move(session);
+            return false;
         }
         i64 at = 0;
         while (at < expressions && session.good()) {
@@ -401,11 +397,254 @@ export namespace compiler_resolver {
         if (!session.good() || session.syntax_count() != first + total || !source_requests(session, first, first
             + total) || !project_sources(session, module_id)) {
             session.truncate_work(0);
-            return move(session);
+            return false;
         }
         module_row.set_word(10, declaration_base + root);
         module_row.set_kind(MetaTag::module_unit);
-        session.set_meta(module_id, module_row);
-        return move(session);
+        return session.set_meta(module_id, module_row);
+    }
+    // The coordinates of the original token with this ordinal, or of end of
+    // input: begin, end, line, line start and ordinal (-1 at end of input).
+    auto source_token(builtin::span<const u8> source, i64 ordinal) -> WorkRow {
+        i64 offset = 0;
+        i64 line = 1;
+        i64 start = 0;
+        i64 index = 0;
+        bool scanning = true;
+        while (scanning) {
+            const compiler_lexer::Cursor cursor = compiler_lexer::Cursor(offset, line, start);
+            const compiler_lexer::Lexeme lexeme = compiler_lexer::next_lexeme(source, cursor);
+            const compiler_lexer::Event kind = lexeme.kind();
+            if (kind == compiler_lexer::Event::end_of_input) {
+                return WorkRow(offset, offset, line, start, -1, 0);
+            }
+            if (kind == compiler_lexer::Event::token && index == ordinal) {
+                return WorkRow(offset, lexeme.next_offset(), line, start, index, 0);
+            }
+            if (kind == compiler_lexer::Event::token) {
+                index = index + 1;
+            } else {
+                if (kind != compiler_lexer::Event::whitespace && kind != compiler_lexer::Event::line_comment) {
+                    scanning = false;
+                }
+            }
+            offset = lexeme.next_offset();
+            line = lexeme.next_line();
+            start = lexeme.next_line_start();
+        }
+        return WorkRow(-1, -1, 0, 0, -1, 0);
+    }
+}
+
+export namespace compiler_resolver {
+    // One source admission outcome. A rejection keeps its first lexical, grammar
+    // or declaration status with copied token coordinates: the span ends, the
+    // end of the cited token (empty at end of input) and, for duplicate enum
+    // cases and unsupported fields, the bytes naming them. Success keeps the
+    // bytes and interface flag of the module header. Coordinates are
+    // diagnostic observations, never authority.
+    class SourceResult {
+        compiler_lexer::Event lexical;
+        compiler_parser::ParseStatus grammar;
+        compiler_parser::AdmissionStatus declaration;
+        compiler_parser::TypeKind field_type;
+        i64 begin;
+        i64 begin_line;
+        i64 begin_column;
+        i64 end;
+        i64 end_line;
+        i64 end_column;
+        i64 text_end;
+        i64 name_begin;
+        i64 name_end;
+        i64 detail;
+    public:
+        SourceResult() : lexical(compiler_lexer::Event::token), grammar(compiler_parser::ParseStatus::success),
+            declaration(compiler_parser::AdmissionStatus::success), field_type(compiler_parser::TypeKind::invalid),
+            begin(-1), begin_line(0), begin_column(0), end(-1), end_line(0), end_column(0), text_end(-1),
+            name_begin(-1), name_end(-1), detail(0) {
+        }
+        // Spans the first token through the last and cites the first.
+        auto cite(WorkRow first, WorkRow last) -> bool {
+            begin = first.word(0);
+            begin_line = first.word(2);
+            begin_column = first.word(0) - first.word(3) + 1;
+            end = last.word(1);
+            end_line = last.word(2);
+            end_column = last.word(1) - last.word(3) + 1;
+            text_end = first.word(1);
+            return true;
+        }
+        auto name(WorkRow first, WorkRow last) -> bool {
+            name_begin = first.word(0);
+            name_end = last.word(1);
+            return true;
+        }
+        auto reject_lexical(compiler_lexer::Event event) -> bool {
+            lexical = event;
+            return false;
+        }
+        auto reject_grammar(compiler_parser::ParseStatus status) -> bool {
+            grammar = status;
+            return false;
+        }
+        auto reject_declaration(compiler_parser::AdmissionStatus status, i64 value) -> bool {
+            declaration = status;
+            detail = value;
+            return false;
+        }
+        auto reject_field(compiler_parser::TypeKind kind) -> bool {
+            field_type = kind;
+            return false;
+        }
+        auto admit(WorkRow first, WorkRow last, i64 interface_unit) -> bool {
+            name(first, last);
+            detail = interface_unit;
+            return true;
+        }
+    };
+    // Lexes the whole source, then parses and admits it as a module in the
+    // cleared arena, whose last syntax node is then the module root. As in the
+    // former host adapter, lexical errors anywhere precede grammar errors.
+    auto parse_source(compiler_parser::AstArena& arena, builtin::span<const u8> source,
+        compiler_parser::AdmissionConfig configuration) -> SourceResult {
+        SourceResult result = SourceResult();
+        arena.clear();
+        i64 tokens = 0;
+        i64 offset = 0;
+        i64 line = 1;
+        i64 start = 0;
+        bool scanning = true;
+        while (scanning) {
+            const compiler_lexer::Cursor cursor = compiler_lexer::Cursor(offset, line, start);
+            const compiler_lexer::Lexeme lexeme = compiler_lexer::next_lexeme(source, cursor);
+            const compiler_lexer::Event kind = lexeme.kind();
+            if (kind == compiler_lexer::Event::end_of_input) {
+                scanning = false;
+            } else {
+                if (kind == compiler_lexer::Event::token) {
+                    tokens = tokens + 1;
+                } else {
+                    if (kind != compiler_lexer::Event::whitespace && kind != compiler_lexer::Event::line_comment) {
+                        const WorkRow at = WorkRow(offset, lexeme.next_offset(), line, start, 0, 0);
+                        result.cite(at, at);
+                        result.reject_lexical(kind);
+                        return result;
+                    }
+                }
+                offset = lexeme.next_offset();
+                line = lexeme.next_line();
+                start = lexeme.next_line_start();
+            }
+        }
+        const compiler_lexer::Cursor origin = compiler_lexer::Cursor(0, 1, 0);
+        const compiler_parser::TypeContext context = compiler_parser::TypeContext();
+        const compiler_parser::ParseResult parsed = compiler_parser::parse(arena, source, origin,
+            compiler_parser::Stop::module_definition, context, 0);
+        if (parsed.status() != compiler_parser::ParseStatus::success) {
+            WorkRow at = source_token(source, parsed.tokens());
+            if (parsed.half() == 1) {
+                at.set_word(0, at.word(0) + 1);
+            }
+            result.cite(at, at);
+            if (parsed.status() == compiler_parser::ParseStatus::duplicate_enum_case && parsed.tokens() > 0) {
+                const WorkRow previous = source_token(source, parsed.tokens() - 1);
+                result.name(previous, previous);
+            }
+            result.reject_grammar(parsed.status());
+            return result;
+        }
+        if (parsed.tokens() != tokens) {
+            result.reject_grammar(compiler_parser::ParseStatus::invalid);
+            return result;
+        }
+        const compiler_parser::AdmissionResult admitted = compiler_parser::admit(arena, source, parsed.root(),
+            configuration);
+        const compiler_parser::AdmissionStatus status = admitted.status();
+        if (status != compiler_parser::AdmissionStatus::success) {
+            if (status == compiler_parser::AdmissionStatus::allocation_failure || status
+                == compiler_parser::AdmissionStatus::invalid) {
+                const WorkRow first = source_token(source, 0);
+                result.cite(first, first);
+            } else {
+                result.cite(source_token(source, admitted.token()), source_token(source, admitted.end() - 1));
+            }
+            if (status == compiler_parser::AdmissionStatus::unsupported_field && admitted.type() >= 0 && admitted.type()
+                < arena.types()) {
+                const compiler_parser::TypeSyntax type = arena.type_at(admitted.type());
+                i64 named = admitted.type();
+                if (type.kind() == compiler_parser::TypeKind::value_span && type.first() >= 0) {
+                    named = type.first();
+                }
+                const compiler_parser::TypeSyntax spelled = arena.type_at(named);
+                result.name(source_token(source, spelled.token()), source_token(source, spelled.last()));
+                result.reject_field(type.kind());
+            }
+            result.reject_declaration(status, admitted.value());
+            return result;
+        }
+        const compiler_parser::SyntaxNode root = arena.syntax_at(parsed.root());
+        const compiler_parser::SyntaxNode header = arena.syntax_at(root.body());
+        if (parsed.root() != arena.syntax_size() - 1 || root.kind() != compiler_parser::SyntaxKind::module_definition
+            || header.kind() != compiler_parser::SyntaxKind::preamble) {
+            result.reject_grammar(compiler_parser::ParseStatus::invalid);
+            return result;
+        }
+        result.admit(source_token(source, header.token()), source_token(source, header.binding()),
+            header.mutable_binding());
+        return result;
+    }
+    // Ingests the admitted arena as the last appended module and returns its
+    // Session source base, or -1 after latching a storage failure.
+    auto ingest_source(Session& session, const compiler_parser::AstArena& arena) -> i64 {
+        const i64 module_id = session.module_count() - 1;
+        if (!ingest(session, arena, module_id, arena.syntax_size() - 1)) {
+            return -1;
+        }
+        const MetaRow unit = session.meta(module_id);
+        return unit.word(0);
+    }
+    // The trivia-free spelling of source[begin, end) from its byte offset on,
+    // as the host names module files and diagnostics. Invalid ranges and
+    // offsets past the spelling have size -1.
+    auto name_chunk(builtin::span<const u8> source, i64 begin, i64 end, i64 offset) -> LinkageChunk {
+        LinkageChunk result = LinkageChunk();
+        if (begin < 0 || end < begin || end > source.size() || offset < 0) {
+            result.invalidate();
+            return result;
+        }
+        i64 at = begin;
+        i64 line = 1;
+        i64 start = 0;
+        i64 skipped = 0;
+        while (at < end && result.size() < 512) {
+            const compiler_lexer::Cursor cursor = compiler_lexer::Cursor(at, line, start);
+            const compiler_lexer::Lexeme lexeme = compiler_lexer::next_lexeme(source, cursor);
+            const compiler_lexer::Event kind = lexeme.kind();
+            const i64 next = lexeme.next_offset();
+            if (next <= at || next > end || (kind != compiler_lexer::Event::token && kind
+                != compiler_lexer::Event::whitespace && kind != compiler_lexer::Event::line_comment)) {
+                result.invalidate();
+                return result;
+            }
+            if (kind == compiler_lexer::Event::token) {
+                i64 index = at;
+                while (index < next && result.size() < 512) {
+                    if (skipped < offset) {
+                        skipped = skipped + 1;
+                    } else {
+                        result.append(source.at(index));
+                    }
+                    index = index + 1;
+                }
+            }
+            at = next;
+            line = lexeme.next_line();
+            start = lexeme.next_line_start();
+        }
+        if (skipped < offset) {
+            result.invalidate();
+        }
+        return result;
     }
 }

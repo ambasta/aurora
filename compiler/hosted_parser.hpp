@@ -19,6 +19,15 @@ public:
     std::vector<Token> capacityParameters;
     bool functionTemplate = false;
 };
+// Copied admission input: host layout limits and the catalog's service set.
+hosted_abi::compiler_parser::AdmissionConfig admissionConfiguration();
+// The diagnostic of a rejected grammar status at its cursor token. `previous`
+// spells the token before it, which a duplicate enum case names.
+[[noreturn]] void rejectSyntax(Status status, Stop stop, const Token &at, const std::string &previous);
+// The diagnostic of a rejected declaration over `span`, citing `at`;
+// `fieldType` spells an unsupported field's type.
+[[noreturn]] void rejectDeclaration(
+    AdmissionStatus status, std::int64_t detail, const Token &at, const SourceSpan &span, const std::string &fieldType);
 } // namespace aurora::hosted_parser
 
 namespace aurora {
@@ -27,17 +36,9 @@ namespace aurora {
 // Aurora owns module syntax and unresolved declaration admission; the adapter
 // checks representation safety and renders the selected diagnostics.
 Program parseHostedProgram(const std::vector<Token> &tokens);
-// Private graph-loader handoff. The caller owns an already constructed arena;
-// success returns only source-backed header metadata and its untouched forest.
-class ParsedModuleSyntax {
-public:
-    std::int64_t root = -1;
-    std::string moduleName;
-    bool interfaceUnit = false;
-    std::vector<Token> imports;
-    std::vector<std::int64_t> importSyntax;
-};
-ParsedModuleSyntax parseHostedModuleSyntax(const std::vector<Token> &tokens, void *arena);
+// Parses and admits a module into the caller's already constructed arena, whose
+// untouched forest the formatter then reads; rejections throw diagnostics.
+void parseHostedModuleSyntax(const std::vector<Token> &tokens, void *arena);
 
 // Unsupported is an invalid result; no entry has a host grammar fallback.
 ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens,

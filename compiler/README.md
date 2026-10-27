@@ -16,8 +16,11 @@ also runs in Aurora. `builtin_catalog.au` is the only copy of the built-in type,
 scalar descriptor and sealed service catalog: the resolver seeds its descriptors
 and lowering its scalar, service and initial layout prelude from it, and the host
 takes service kinds/operations from the generated header and quota extents from
-`catalog_summary`. Module file loading, ABI declarations, diagnostic rendering,
-allocation and quota/report transport checks remain C++23. The Aurora-native x86-64 emitter
+`catalog_summary`. On the resolver path Aurora lexes, parses, admits and ingests
+each source and keeps its module header and imports; the host gets back only the
+header name or a rejection to render. Module file loading, ABI declarations,
+diagnostic rendering, allocation and quota/report transport checks remain C++23.
+The Aurora-native x86-64 emitter
 consumes the admitted source stores; the host retains artifact I/O.
 The same semantic traversal feeds typed x86 forms to the text backend or the
 checked relocatable-object backend selected by `--emit-object`. Object output

@@ -40,10 +40,13 @@ links the adapters with forged Aurora entries to test their fail-closed conversi
 
 ## Current boundaries
 
-Module loading advances through source-owned graph steps in the existing resolver
-Session. Transient scratch frames track active ancestry and are cleared before
-host parsing/ingestion. Completed module order/scopes and import bindings persist;
-resumption replays unfinished ancestry, bounded by 64 files and depth 16. Duplicate
+Each source is lexed, parsed, admitted and ingested by Aurora; the host receives
+only its header name and interface flag or the rejection's status and coordinates,
+which it renders with the existing messages. Module loading advances through
+source-owned graph steps in the existing resolver Session. Transient scratch frames
+track active ancestry and are cleared before ingestion. Completed module
+order/scopes and import bindings persist; resumption replays unfinished ancestry,
+bounded by 64 files and depth 16. Duplicate
 checks happen at each edge, and depth precedes active/completed checks. Host opening,
 inode authority, byte quotas, overlays and header/interface admission remain native.
 The explicit-order in-memory resolver API remains separate compatibility transport,

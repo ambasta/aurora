@@ -408,6 +408,16 @@ export namespace compiler_parser {
         auto ok() const -> bool {
             return nodes.ok() && frames.ok() && edges.ok() && type_nodes.ok() && syntax_nodes.ok();
         }
+        // Empties every pool for the next parse; storage and capacity remain.
+        auto clear() -> bool {
+            used = 0;
+            frame_count = 0;
+            error = ArenaFailure::none;
+            edge_count = 0;
+            type_count = 0;
+            syntax_count = 0;
+            return ok();
+        }
         auto size() const -> i64 {
             return used;
         }

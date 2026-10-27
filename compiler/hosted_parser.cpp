@@ -74,6 +74,9 @@ Token cursorToken(const std::vector<Token> &tokens, hosted_parser::Cursor cursor
     }
     return token;
 }
+} // namespace
+
+namespace hosted_parser {
 // Layout limits remain authoritative in the existing compiler helpers; the
 // service masks and the full supported group set come from the Aurora catalog.
 hosted_abi::compiler_parser::AdmissionConfig admissionConfiguration() {
@@ -92,6 +95,209 @@ hosted_abi::compiler_parser::AdmissionConfig admissionConfiguration() {
     configuration.service_groups = catalog.serviceGroups;
     return configuration;
 }
+[[noreturn]] void rejectSyntax(Status status, Stop stop, const Token &at, const std::string &previous) {
+    if (status == Status::allocation_failure)
+        throw Error(DiagnosticCode::Internal, "hosted parser allocation failed", at.span);
+    if (status == Status::block_nesting_limit)
+        throw Error(DiagnosticCode::NestingLimit, "block nesting exceeds 128", at.span);
+    if (status == Status::nesting_limit)
+        throw Error(DiagnosticCode::NestingLimit, "expression parser nesting exceeds 128", at.span);
+    if (status == Status::type_nesting_limit || status == Status::template_nesting_limit ||
+        status == Status::call_template_nesting_limit)
+        throw Error(DiagnosticCode::NestingLimit,
+                    status == Status::type_nesting_limit       ? "type nesting exceeds 64"
+                    : status == Status::template_nesting_limit ? "template-id nesting exceeds 4"
+                                                               : "template-id nesting exceeds 5",
+                    at.span);
+    std::string message;
+    if (status == Status::expected_expression)
+        message = "expected expression";
+    else if (status == Status::expected_close)
+        message = "expected ')'";
+    else if (status == Status::expected_index_close)
+        message = "expected ']'";
+    else if (status == Status::expected_brace_close)
+        message = "expected '}'";
+    else if (status == Status::expected_dot)
+        message = "expected '.'";
+    else if (status == Status::expected_equal)
+        message = "expected '='";
+    else if (status == Status::expected_brace_open)
+        message = "expected '{'";
+    else if (status == Status::expected_identifier)
+        message = "expected identifier";
+    else if (status == Status::reserved_identifier)
+        message = "reserved identifier";
+    else if (status == Status::reserved_builtin)
+        message = "reserved builtin storage name";
+    else if (status == Status::reserved_prefix)
+        message = "reserved compiler identifier prefix: __au_";
+    else if (status == Status::depth_limit)
+        message = "expression AST depth exceeds 128";
+    else if (status == Status::expected_angle_open)
+        message = "expected '<'";
+    else if (status == Status::expected_angle_close)
+        message = "expected '>'";
+    else if (status == Status::expected_scope)
+        message = "expected '::'";
+    else if (status == Status::expected_comma)
+        message = "expected ','";
+    else if (status == Status::expected_const)
+        message = "expected 'const'";
+    else if (status == Status::expected_u8)
+        message = "expected 'u8'";
+    else if (status == Status::expected_i64)
+        message = "expected 'i64'";
+    else if (status == Status::expected_array)
+        message = "expected 'array'";
+    else if (status == Status::reserved_type)
+        message = "unsupported or reserved type spelling";
+    else if (status == Status::expected_type)
+        message = "expected type name";
+    else if (status == Status::template_context)
+        message = "template-id references inside template definitions are not supported";
+    else if (status == Status::template_arity)
+        message = "template arguments are limited to one or two types or capacity literals";
+    else if (status == Status::template_argument)
+        message = "template arguments require scalar, named class or enum types, or capacities from 1 to 64";
+    else if (status == Status::capacity_argument)
+        message = "capacity template arguments must be decimal literals from 1 to 64";
+    else if (status == Status::nested_dependent)
+        message = "nested dependent template arguments are not supported";
+    else if (status == Status::owned_element)
+        message = "owned values require a named concrete copied class";
+    else if (status == Status::span_element)
+        message = "typed spans require a named concrete copied class";
+    else if (status == Status::array_element)
+        message = "array elements require i64, u64, u8, bool or a concrete copied class";
+    else if (status == Status::array_length)
+        message = "array length requires a decimal integer literal between 1 and 4096";
+    else if (status == Status::class_array_length)
+        message = "class-element array capacity must be between 1 and 64";
+    else if (status == Status::expected_open)
+        message = "expected '('";
+    else if (status == Status::expected_semicolon)
+        message = "expected ';'";
+    else if (status == Status::unterminated_block)
+        message = "unterminated block";
+    else if (status == Status::assignment_target)
+        message = "assignment requires a local or local field";
+    else if (status == Status::expected_auto)
+        message = "expected 'auto'";
+    else if (status == Status::expected_arrow)
+        message = "expected '->'";
+    else if (status == Status::expected_module)
+        message = "expected 'module'";
+    else if (status == Status::expected_enum)
+        message = "expected 'enum'";
+    else if (status == Status::expected_class)
+        message = "expected 'class'";
+    else if (status == Status::module_name_limit)
+        message = "module name exceeds 4096 bytes";
+    else if (status == Status::module_enum_limit)
+        message = "module exceeds 64 enum definitions";
+    else if (status == Status::empty_enum)
+        message = "enum class requires at least one named case";
+    else if (status == Status::enum_case_limit)
+        message = "enum class exceeds 256 named cases";
+    else if (status == Status::duplicate_enum_case)
+        message = "duplicate enum case: " + previous;
+    else if (status == Status::explicit_enum_value)
+        message = "enum cases cannot have explicit values";
+    else if (status == Status::expected_colon)
+        message = "expected ':'";
+    else if (status == Status::namespace_nesting_limit)
+        message = "namespace nesting exceeds 32 components";
+    else if (status == Status::export_interface_required)
+        message = "export declarations require an export module interface";
+    else if (status == Status::module_reexport)
+        message = "module reexports are not supported";
+    else if (status == Status::imports_after_declarations)
+        message = "imports must precede declarations";
+    else if (status == Status::template_parameter_limit)
+        message = "templates require one or two Scalar or Value parameters";
+    else if (status == Status::template_parameter_kind)
+        message = "template parameters require Scalar, Value or bounded i64 capacity";
+    else if (status == Status::template_parameter_name)
+        message = "duplicate or reserved template parameter";
+    else if (status == Status::template_capacity_order)
+        message = "template capacity requires a preceding Scalar parameter";
+    else if (status == Status::template_declaration_kind)
+        message = "only class or namespace-level function templates are supported";
+    else if (status == Status::function_template_capacity)
+        message = "function templates require only Scalar or Value type parameters";
+    else if (status == Status::class_template_shadow)
+        message = "class name cannot shadow a template parameter";
+    else if (status == Status::expected_end)
+        message = stop == Stop::close_parenthesis ? "expected ')'" : "expected ';'";
+    else
+        invalid();
+    throw Error(DiagnosticCode::UnexpectedToken, message + " (found '" + at.text + "')", at.span);
+}
+[[noreturn]] void rejectDeclaration(AdmissionStatus status,
+                                    std::int64_t detail,
+                                    const Token &at,
+                                    const SourceSpan &span,
+                                    const std::string &fieldType) {
+    if (status == AdmissionStatus::allocation_failure)
+        throw Error(DiagnosticCode::Internal, "hosted declaration admission allocation failed", span);
+    if (status == AdmissionStatus::unsupported_field)
+        throw Error(DiagnosticCode::UnsupportedFieldType,
+                    "unsupported class field type '" + fieldType +
+                        "': class fields require scalar, class, private fixed-array or private owned-byte storage",
+                    span);
+    std::string message;
+    switch (status) {
+    case AdmissionStatus::function_shadow:
+        message = "function name cannot shadow a template parameter";
+        break;
+    case AdmissionStatus::typed_constructor:
+        message = "constructor cannot have a return type";
+        break;
+    case AdmissionStatus::borrowed_parameter:
+        message = "borrowed parameters require a supported leading ownership reference signature on an "
+                  "ordinary function";
+        break;
+    case AdmissionStatus::const_parameter:
+        message = "const parameter spelling requires a supported owning-class reference";
+        break;
+    case AdmissionStatus::function_parameter:
+        message = "only scalar function parameters or scalar-field class values are supported";
+        break;
+    case AdmissionStatus::method_parameter:
+        message = "only scalar or enum method parameters are supported";
+        break;
+    case AdmissionStatus::function_result:
+        message = "only scalar function results or scalar-field class values are supported";
+        break;
+    case AdmissionStatus::method_result:
+        message = "only scalar, enum, class or readonly span method results are supported";
+        break;
+    case AdmissionStatus::public_array:
+        message = "array fields must be private";
+        break;
+    case AdmissionStatus::array_capacity:
+        if (detail != maximumClassScalarArrayLength && detail != maximumClassByteArrayLength)
+            invalid();
+        message = "class array field capacity must be between 1 and " + std::to_string(detail);
+        break;
+    case AdmissionStatus::public_owner:
+        message = "owned byte fields must be private";
+        break;
+    case AdmissionStatus::templated_owner:
+        message = "owning class templates are unsupported";
+        break;
+    case AdmissionStatus::missing_function:
+        message = "module must contain a function";
+        break;
+    default:
+        invalid();
+    }
+    throw Error(DiagnosticCode::UnexpectedToken, message + " (found '" + at.text + "')", span);
+}
+} // namespace hosted_parser
+
+namespace {
 class ImportedSyntax {
 public:
     ExpressionPtr expression;
@@ -103,7 +309,7 @@ public:
     std::optional<Program> preamble;
     std::optional<EnumDefinition> enumeration;
     std::optional<Program> program;
-    std::optional<ParsedModuleSyntax> moduleSyntax;
+    bool moduleAdmitted = false;
 };
 
 ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
@@ -213,150 +419,16 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
     if (result.result != Status::success) {
         if (result.root_node != -1)
             invalid();
-        if (result.result == Status::allocation_failure)
-            throw Error(DiagnosticCode::Internal, "hosted parser allocation failed", at.span);
-        if ((!body && !callable && !field && !header && !module && result.result >= Status::expected_open) ||
-            ((body || callable || field || header || module) && result.result == Status::expected_end) ||
-            (!callable && !module &&
-             (result.result == Status::expected_auto || result.result == Status::expected_arrow)))
+        if (result.result != Status::allocation_failure &&
+            ((!body && !callable && !field && !header && !module && result.result >= Status::expected_open) ||
+             ((body || callable || field || header || module) && result.result == Status::expected_end) ||
+             (!callable && !module &&
+              (result.result == Status::expected_auto || result.result == Status::expected_arrow))))
             invalid();
-        if (result.result == Status::block_nesting_limit)
-            throw Error(DiagnosticCode::NestingLimit, "block nesting exceeds 128", at.span);
-        if (result.result == Status::nesting_limit)
-            throw Error(DiagnosticCode::NestingLimit, "expression parser nesting exceeds 128", at.span);
-        if (result.result == Status::type_nesting_limit || result.result == Status::template_nesting_limit ||
-            result.result == Status::call_template_nesting_limit)
-            throw Error(DiagnosticCode::NestingLimit,
-                        result.result == Status::type_nesting_limit       ? "type nesting exceeds 64"
-                        : result.result == Status::template_nesting_limit ? "template-id nesting exceeds 4"
-                                                                          : "template-id nesting exceeds 5",
-                        at.span);
-        std::string message;
-        if (result.result == Status::expected_expression)
-            message = "expected expression";
-        else if (result.result == Status::expected_close)
-            message = "expected ')'";
-        else if (result.result == Status::expected_index_close)
-            message = "expected ']'";
-        else if (result.result == Status::expected_brace_close)
-            message = "expected '}'";
-        else if (result.result == Status::expected_dot)
-            message = "expected '.'";
-        else if (result.result == Status::expected_equal)
-            message = "expected '='";
-        else if (result.result == Status::expected_brace_open)
-            message = "expected '{'";
-        else if (result.result == Status::expected_identifier)
-            message = "expected identifier";
-        else if (result.result == Status::reserved_identifier)
-            message = "reserved identifier";
-        else if (result.result == Status::reserved_builtin)
-            message = "reserved builtin storage name";
-        else if (result.result == Status::reserved_prefix)
-            message = "reserved compiler identifier prefix: __au_";
-        else if (result.result == Status::depth_limit)
-            message = "expression AST depth exceeds 128";
-        else if (result.result == Status::expected_angle_open)
-            message = "expected '<'";
-        else if (result.result == Status::expected_angle_close)
-            message = "expected '>'";
-        else if (result.result == Status::expected_scope)
-            message = "expected '::'";
-        else if (result.result == Status::expected_comma)
-            message = "expected ','";
-        else if (result.result == Status::expected_const)
-            message = "expected 'const'";
-        else if (result.result == Status::expected_u8)
-            message = "expected 'u8'";
-        else if (result.result == Status::expected_i64)
-            message = "expected 'i64'";
-        else if (result.result == Status::expected_array)
-            message = "expected 'array'";
-        else if (result.result == Status::reserved_type)
-            message = "unsupported or reserved type spelling";
-        else if (result.result == Status::expected_type)
-            message = "expected type name";
-        else if (result.result == Status::template_context)
-            message = "template-id references inside template definitions are not supported";
-        else if (result.result == Status::template_arity)
-            message = "template arguments are limited to one or two types or capacity literals";
-        else if (result.result == Status::template_argument)
-            message = "template arguments require scalar, named class or enum types, or capacities from 1 to 64";
-        else if (result.result == Status::capacity_argument)
-            message = "capacity template arguments must be decimal literals from 1 to 64";
-        else if (result.result == Status::nested_dependent)
-            message = "nested dependent template arguments are not supported";
-        else if (result.result == Status::owned_element)
-            message = "owned values require a named concrete copied class";
-        else if (result.result == Status::span_element)
-            message = "typed spans require a named concrete copied class";
-        else if (result.result == Status::array_element)
-            message = "array elements require i64, u64, u8, bool or a concrete copied class";
-        else if (result.result == Status::array_length)
-            message = "array length requires a decimal integer literal between 1 and 4096";
-        else if (result.result == Status::class_array_length)
-            message = "class-element array capacity must be between 1 and 64";
-        else if (result.result == Status::expected_open)
-            message = "expected '('";
-        else if (result.result == Status::expected_semicolon)
-            message = "expected ';'";
-        else if (result.result == Status::unterminated_block)
-            message = "unterminated block";
-        else if (result.result == Status::assignment_target)
-            message = "assignment requires a local or local field";
-        else if (result.result == Status::expected_auto)
-            message = "expected 'auto'";
-        else if (result.result == Status::expected_arrow)
-            message = "expected '->'";
-        else if (result.result == Status::expected_module)
-            message = "expected 'module'";
-        else if (result.result == Status::expected_enum)
-            message = "expected 'enum'";
-        else if (result.result == Status::expected_class)
-            message = "expected 'class'";
-        else if (result.result == Status::module_name_limit)
-            message = "module name exceeds 4096 bytes";
-        else if (result.result == Status::module_enum_limit)
-            message = "module exceeds 64 enum definitions";
-        else if (result.result == Status::empty_enum)
-            message = "enum class requires at least one named case";
-        else if (result.result == Status::enum_case_limit)
-            message = "enum class exceeds 256 named cases";
-        else if (result.result == Status::duplicate_enum_case) {
-            if (end <= position)
-                invalid();
-            message = "duplicate enum case: " + tokens[end - 1].text;
-        } else if (result.result == Status::explicit_enum_value)
-            message = "enum cases cannot have explicit values";
-        else if (result.result == Status::expected_colon)
-            message = "expected ':'";
-        else if (result.result == Status::namespace_nesting_limit)
-            message = "namespace nesting exceeds 32 components";
-        else if (result.result == Status::export_interface_required)
-            message = "export declarations require an export module interface";
-        else if (result.result == Status::module_reexport)
-            message = "module reexports are not supported";
-        else if (result.result == Status::imports_after_declarations)
-            message = "imports must precede declarations";
-        else if (result.result == Status::template_parameter_limit)
-            message = "templates require one or two Scalar or Value parameters";
-        else if (result.result == Status::template_parameter_kind)
-            message = "template parameters require Scalar, Value or bounded i64 capacity";
-        else if (result.result == Status::template_parameter_name)
-            message = "duplicate or reserved template parameter";
-        else if (result.result == Status::template_capacity_order)
-            message = "template capacity requires a preceding Scalar parameter";
-        else if (result.result == Status::template_declaration_kind)
-            message = "only class or namespace-level function templates are supported";
-        else if (result.result == Status::function_template_capacity)
-            message = "function templates require only Scalar or Value type parameters";
-        else if (result.result == Status::class_template_shadow)
-            message = "class name cannot shadow a template parameter";
-        else if (result.result == Status::expected_end)
-            message = stop == Stop::close_parenthesis ? "expected ')'" : "expected ';'";
-        else
+        if (result.result == Status::duplicate_enum_case && end <= position)
             invalid();
-        throw Error(DiagnosticCode::UnexpectedToken, message + " (found '" + at.text + "')", at.span);
+        hosted_parser::rejectSyntax(
+            result.result, stop, at, result.result == Status::duplicate_enum_case ? tokens[end - 1].text : "");
     }
     const auto tokenCount = result.token_count + (half ? 1 : 0);
     if (result.token_count == 0 || result.node_count > result.token_count || typeCount > tokenCount ||
@@ -380,15 +452,14 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             value += text(ordinal);
         return value;
     };
-    // The production resolver consumes the Aurora forest directly. On success
-    // only import/header metadata crosses here; no unresolved host AST is built.
-    // Errors reuse the existing checked type/diagnostic conversion below.
+    // The formatter consumes the admitted Aurora forest directly; no unresolved
+    // host AST is built. Errors reuse the checked type/diagnostic conversion below.
     std::optional<hosted_abi::compiler_parser::AdmissionResult> earlyAdmission;
     if (externalArena) {
         hosted_abi::AdmissionInput admissionInput;
         admissionInput.source = input.source;
         admissionInput.root = result.root_node;
-        admissionInput.configuration = admissionConfiguration();
+        admissionInput.configuration = hosted_parser::admissionConfiguration();
         earlyAdmission.emplace();
         aurora_hosted_parser_admit(arena.data(), &admissionInput, &*earlyAdmission);
         const auto &admission = *earlyAdmission;
@@ -396,40 +467,9 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             if (admission.token_index != -1 || admission.end_token != -1 || admission.type_node != -1 ||
                 admission.detail != 0 || end + 1 != tokens.size())
                 invalid();
-            SyntaxNode root;
-            aurora_hosted_parser_syntax(arena.data(), result.root_node, &root);
-            if (root.tag != SyntaxKind::module_definition || root.body_node < 0 || root.body_node >= result.root_node)
-                invalid();
-            SyntaxNode preamble;
-            aurora_hosted_parser_syntax(arena.data(), root.body_node, &preamble);
-            if (preamble.tag != SyntaxKind::preamble || preamble.qualifier < 0 || preamble.qualifier > 1)
-                invalid();
-            ParsedModuleSyntax parsed;
-            parsed.root = result.root_node;
-            parsed.moduleName = name(preamble.token_index, preamble.binding_token);
-            parsed.interfaceUnit = preamble.qualifier != 0;
-            auto limit = root.body_node;
-            for (auto child = preamble.body_node; child != -1;) {
-                if (child < 0 || child >= limit)
-                    invalid();
-                SyntaxNode imported;
-                aurora_hosted_parser_syntax(arena.data(), child, &imported);
-                if (imported.tag != SyntaxKind::import_name || imported.end_token <= imported.token_index)
-                    invalid();
-                auto spelling = name(imported.token_index, imported.end_token - 1);
-                auto token = tokens[position + static_cast<std::size_t>(imported.token_index)];
-                token.text = std::move(spelling);
-                token.span.end = tokens[position + static_cast<std::size_t>(imported.end_token - 1)].span.end;
-                parsed.imports.push_back(std::move(token));
-                parsed.importSyntax.push_back(child);
-                limit = child;
-                child = imported.previous_node;
-            }
-            std::reverse(parsed.imports.begin(), parsed.imports.end());
-            std::reverse(parsed.importSyntax.begin(), parsed.importSyntax.end());
             ImportedSyntax imported;
             imported.next = {end, half};
-            imported.moduleSyntax.emplace(std::move(parsed));
+            imported.moduleAdmitted = true;
             return imported;
         }
     }
@@ -867,7 +907,7 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
         hosted_abi::AdmissionInput admissionInput;
         admissionInput.source = input.source;
         admissionInput.root = result.root_node;
-        admissionInput.configuration = admissionConfiguration();
+        admissionInput.configuration = hosted_parser::admissionConfiguration();
         hosted_abi::compiler_parser::AdmissionResult admission;
         if (earlyAdmission)
             admission = *earlyAdmission;
@@ -880,7 +920,7 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
                 admission.detail != 0)
                 invalid();
             if (admission.result == AdmissionStatus::allocation_failure)
-                throw Error(DiagnosticCode::Internal, "hosted declaration admission allocation failed", begin);
+                hosted_parser::rejectDeclaration(admission.result, 0, initial, begin, "");
         } else {
             if (admission.token_index < 0 || admission.token_index > result.token_count ||
                 admission.end_token <= admission.token_index || admission.end_token > result.token_count + 1)
@@ -888,68 +928,18 @@ ImportedSyntax parseHostedSyntax(const std::vector<Token> &tokens,
             const auto &at = tokens[position + static_cast<std::size_t>(admission.token_index)];
             auto span = at.span;
             span.end = tokens[position + static_cast<std::size_t>(admission.end_token) - 1].span.end;
-            if (admission.result == AdmissionStatus::unsupported_field) {
-                if (admission.type_node < 0 || admission.type_node >= typeCount || admission.detail != 0)
-                    invalid();
-                throw Error(
-                    DiagnosticCode::UnsupportedFieldType,
-                    "unsupported class field type '" +
-                        typeName(typeValues[static_cast<std::size_t>(admission.type_node)]) +
-                        "': class fields require scalar, class, private fixed-array or private owned-byte storage",
-                    span);
-            }
-            if (admission.type_node != -1 || admission.end_token != admission.token_index + 1 ||
-                (admission.result != AdmissionStatus::array_capacity && admission.detail != 0))
+            if (admission.result == AdmissionStatus::unsupported_field
+                    ? admission.type_node < 0 || admission.type_node >= typeCount || admission.detail != 0
+                    : admission.type_node != -1 || admission.end_token != admission.token_index + 1 ||
+                          (admission.result != AdmissionStatus::array_capacity && admission.detail != 0))
                 invalid();
-            std::string message;
-            switch (admission.result) {
-            case AdmissionStatus::function_shadow:
-                message = "function name cannot shadow a template parameter";
-                break;
-            case AdmissionStatus::typed_constructor:
-                message = "constructor cannot have a return type";
-                break;
-            case AdmissionStatus::borrowed_parameter:
-                message = "borrowed parameters require a supported leading ownership reference signature on an "
-                          "ordinary function";
-                break;
-            case AdmissionStatus::const_parameter:
-                message = "const parameter spelling requires a supported owning-class reference";
-                break;
-            case AdmissionStatus::function_parameter:
-                message = "only scalar function parameters or scalar-field class values are supported";
-                break;
-            case AdmissionStatus::method_parameter:
-                message = "only scalar or enum method parameters are supported";
-                break;
-            case AdmissionStatus::function_result:
-                message = "only scalar function results or scalar-field class values are supported";
-                break;
-            case AdmissionStatus::method_result:
-                message = "only scalar, enum, class or readonly span method results are supported";
-                break;
-            case AdmissionStatus::public_array:
-                message = "array fields must be private";
-                break;
-            case AdmissionStatus::array_capacity:
-                if (admission.detail != admissionInput.configuration.scalar_array_limit &&
-                    admission.detail != admissionInput.configuration.byte_array_limit)
-                    invalid();
-                message = "class array field capacity must be between 1 and " + std::to_string(admission.detail);
-                break;
-            case AdmissionStatus::public_owner:
-                message = "owned byte fields must be private";
-                break;
-            case AdmissionStatus::templated_owner:
-                message = "owning class templates are unsupported";
-                break;
-            case AdmissionStatus::missing_function:
-                message = "module must contain a function";
-                break;
-            default:
-                invalid();
-            }
-            throw Error(DiagnosticCode::UnexpectedToken, message + " (found '" + at.text + "')", span);
+            hosted_parser::rejectDeclaration(admission.result,
+                                             admission.detail,
+                                             at,
+                                             span,
+                                             admission.result == AdmissionStatus::unsupported_field
+                                                 ? typeName(typeValues[static_cast<std::size_t>(admission.type_node)])
+                                                 : "");
         }
     }
     std::vector<Edge> edges(static_cast<std::size_t>(edgeCount));
@@ -1363,13 +1353,9 @@ ParsedPreamble parseHostedPreamble(const std::vector<Token> &tokens, hosted_pars
     auto imported = parseHostedSyntax(tokens, cursor, Stop::preamble, {});
     return {std::move(*imported.preamble), imported.next};
 }
-ParsedModuleSyntax parseHostedModuleSyntax(const std::vector<Token> &tokens, void *arena) {
-    if (!arena)
+void parseHostedModuleSyntax(const std::vector<Token> &tokens, void *arena) {
+    if (!arena || !parseHostedSyntax(tokens, {}, Stop::module_definition, {}, 0, arena).moduleAdmitted)
         invalid();
-    auto imported = parseHostedSyntax(tokens, {}, Stop::module_definition, {}, 0, arena);
-    if (!imported.moduleSyntax)
-        invalid();
-    return std::move(*imported.moduleSyntax);
 }
 Program parseHostedProgram(const std::vector<Token> &tokens) {
     auto imported = parseHostedSyntax(tokens, {}, Stop::module_definition, {});

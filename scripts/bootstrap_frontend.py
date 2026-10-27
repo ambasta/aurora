@@ -234,16 +234,6 @@ def frontend_abi_entries(facts):
         if function["parameter_bytes"] != offset:
             raise ValueError(f"private bridge record changed: {source}")
         entries[alias] = symbol
-    # Cleanup receives a generated prefix of the live transfer record. Refuse
-    # layout drift before any host code can reinterpret that enclosing prefix.
-    _, ingest = abi_declaration(facts, "functions", "compiler_frontend::resolver_ingest")
-    for source, count in (("compiler_frontend::resolver_release", 2), ("compiler_frontend::resolver_release_pair", 3)):
-        _, release = abi_declaration(facts, "functions", source)
-        if (
-            release["parameters"] != ingest["parameters"][:count]
-            or release["parameter_bytes"] != ingest["parameters"][count]["offset"]
-        ):
-            raise ValueError(f"private resolver owner prefix changed: {source}")
     verification_abi(facts)
     return entries
 
@@ -891,11 +881,6 @@ def frontend_abi_header(facts, messages=None, metadata_source=None, instruction_
         "inline constexpr ::std::size_t arenaAlignment = alignof(compiler_parser::AstArena);",
         "inline constexpr ::std::size_t sessionBytes = sizeof(compiler_resolver::Session);",
         "inline constexpr ::std::size_t sessionAlignment = alignof(compiler_resolver::Session);",
-        "static_assert(offsetof(ResolverRelease, session) == offsetof(ResolverIngest, session));",
-        "static_assert(sizeof(ResolverRelease) == offsetof(ResolverIngest, parsed));",
-        "static_assert(offsetof(ResolverReleasePair, session) == offsetof(ResolverIngest, session));",
-        "static_assert(offsetof(ResolverReleasePair, parsed) == offsetof(ResolverIngest, parsed));",
-        "static_assert(sizeof(ResolverReleasePair) == offsetof(ResolverIngest, module));",
         "static_assert(sizeof(void *) == 8);",
         "}",
     ]
@@ -928,7 +913,7 @@ def frontend_recipes(facts):
     for alias, (roots, _, _, record, discard) in PASS_ENTRIES.items():
         _, function = abi_declaration(facts, "functions", "compiler_frontend::" + alias)
         parameters, result = function["parameters"], function["result"]["kind"]
-        host_alias, noexcept, _, loads, consume = policy[alias]
+        host_alias, noexcept, _, loads = policy[alias]
         host, target = "aurora_hosted_" + host_alias, abi_function_symbol(facts, "compiler_frontend::" + alias)
         moves, arguments = [], []
         if not roots:
@@ -939,7 +924,7 @@ def frontend_recipes(facts):
             else:
                 if result != "class" and not (result in scalar and discard):
                     raise ValueError("unsupported private copied transport: " + alias)
-                arguments, moves = ["void *" if discard or consume else "const void *"], [register_move("%rdi", "%r11")]
+                arguments, moves = ["void *" if discard else "const void *"], [register_move("%rdi", "%r11")]
                 if not discard:
                     arguments.append("void *")
                     moves.append(register_move("%rsi", "%r10"))

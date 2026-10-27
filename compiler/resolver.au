@@ -3657,10 +3657,10 @@ export namespace compiler_resolver {
     // One invocation is the only production source-resolution authority. Every
     // output remains tentative until the final successful context is returned.
     auto run(Session& session) -> i64 {
-        // Create resolution state only after every source module is ingested
-        // and the catalog is seeded: its syntax-count snapshot bounds subsequent
-        // template cloning.
-        if (!seed_catalog(session)) {
+        // Create resolution state only after every source module is ingested,
+        // its imports are bound and the catalog is seeded: its syntax-count
+        // snapshot bounds subsequent template cloning.
+        if (!bind_imports(session) || !seed_catalog(session)) {
             return -1;
         }
         const i64 status = state(session);
