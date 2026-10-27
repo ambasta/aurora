@@ -502,6 +502,13 @@ export namespace compiler_resolver {
             detail = interface_unit;
             return true;
         }
+        auto admitted() const -> bool {
+            return lexical == compiler_lexer::Event::token && grammar == compiler_parser::ParseStatus::success
+                && declaration == compiler_parser::AdmissionStatus::success;
+        }
+        auto lexically_rejected() const -> bool {
+            return lexical != compiler_lexer::Event::token;
+        }
     };
     // Lexes the whole source, then parses and admits it as a module in the
     // cleared arena, whose last syntax node is then the module root. As in the

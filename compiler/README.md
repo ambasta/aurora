@@ -18,7 +18,8 @@ and lowering its scalar, service and initial layout prelude from it, and the hos
 takes service kinds/operations from the generated header and quota extents from
 `catalog_summary`. On the resolver path Aurora lexes, parses, admits and ingests
 each source and keeps its module header and imports; the host gets back only the
-header name or a rejection to render. Aurora also decides module-loading policy
+header name or a rejection to render. aurora-fmt likewise parses, lays out and
+verifies its output in one Aurora call. Aurora also decides module-loading policy
 (names, relative paths, byte limits, headers and interfaces). Opening files under
 the explicit roots, ABI declarations, diagnostic rendering, allocation and
 quota/report transport checks remain C++23.
@@ -34,7 +35,7 @@ helpers with the same defining-module visibility and symbol-selection rules as
 text output. Neither backend adds reflection access to private values.
 
 Native console, UART and hosted frontend wrappers remain private bootstrap adapters.
-For frontend B/C, `frontend_wrapper.au` emits the 101 wrappers directly, using the
+For frontend B/C, `frontend_wrapper.au` emits the 102 wrappers directly, using the
 same table/ABI-derived recipe that renders predecessor frontend A and the GNU
 reference. The closed recipe admits at most 256 sorted hidden exports, 1024-byte
 identifier names and six ordered register moves or readonly record-lane loads

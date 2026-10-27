@@ -57,16 +57,17 @@ ROWS = (
         "noexcept,discard",
     ),
     (
-        "formatter_prepare(compiler_formatter::Workspace& workspace, builtin::span<const u8> source) -> bool",
-        "direct workspace.begin(source)",
-        "FormatterInput:source",
+        "formatter_prepare(compiler_formatter::Workspace& workspace, builtin::span<const u8> source, "
+        "compiler_parser::AdmissionConfig configuration) -> bool",
+        "direct workspace.begin(source, configuration)",
+        "FormatterInput:source,configuration",
         "noexcept",
     ),
     (
-        "formatter_run(compiler_formatter::Workspace& workspace, const compiler_parser::AstArena& arena, "
-        "bool format) -> i64",
-        "direct compiler_formatter::run(workspace, arena, format)",
-        "",
+        "formatter_run(builtin::ByteRegion region, compiler_formatter::Workspace workspace, bool layout) -> "
+        "compiler_formatter::Workspace",
+        "move compiler_formatter::run(region, move(workspace), layout)",
+        "FormatterRun:region,workspace,layout",
         "noexcept",
     ),
     (
@@ -78,6 +79,12 @@ ROWS = (
     (
         "formatter_finding(const compiler_formatter::Workspace& workspace, i64 index) -> compiler_formatter::Row",
         "copy workspace.read_finding(index)",
+        "",
+        "noexcept",
+    ),
+    (
+        "formatter_rejection(const compiler_formatter::Workspace& workspace) -> compiler_resolver::SourceResult",
+        "copy workspace.rejection()",
         "",
         "noexcept",
     ),

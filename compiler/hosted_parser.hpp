@@ -36,9 +36,6 @@ namespace aurora {
 // Aurora owns module syntax and unresolved declaration admission; the adapter
 // checks representation safety and renders the selected diagnostics.
 Program parseHostedProgram(const std::vector<Token> &tokens);
-// Parses and admits a module into the caller's already constructed arena, whose
-// untouched forest the formatter then reads; rejections throw diagnostics.
-void parseHostedModuleSyntax(const std::vector<Token> &tokens, void *arena);
 
 // Unsupported is an invalid result; no entry has a host grammar fallback.
 ExpressionPtr parseHostedExpression(const std::vector<Token> &tokens,

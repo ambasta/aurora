@@ -42,6 +42,11 @@ public:
     std::string name, path;
 };
 
+// Renders the first rejection of one Aurora source admission with the former
+// adapter's codes, messages and spans; returns only for an admitted module.
+void rejectSource(const std::shared_ptr<const SourceText> &source,
+                  const hosted_abi::compiler_resolver::SourceResult &result);
+
 // Owns the Aurora graph session and the immutable diagnostic source snapshots.
 // Aurora owns graph traversal and module policy; ModuleLoader retains
 // file-opening authority.
