@@ -990,7 +990,7 @@ std::uint64_t resolutionQuota() {
     const auto L = sum({S, textCount, H}), N = sum({U, L, textCount}), Q = add(B, textBytes);
     const auto P = mul(sum({mul(34, N), S, K}), D);
     const auto storage = sum({64, U, textCount, mul(2, Q), P, L, H});
-    const auto storageIndexes = sum({U, mul(2, Q), P, N, L, H, mul(2, M)});
+    const auto storageIndexes = sum({U, mul(2, Q), P, N, L, H, mul(3, M)});
     const auto primitiveKinds = static_cast<std::uint64_t>(ResolvedTypeKind::serve_session) + 1;
     const auto types = sum({mul(2, Sx), K, primitiveKinds}), categories = mul(7, M + 1);
     const auto nominals = add(Sx, K), authority = mul(I, nominals);
@@ -1236,12 +1236,14 @@ hosted_abi::BuiltinSpan span(const std::string &text) {
     result.length = static_cast<std::int64_t>(text.size());
     return result;
 }
-// The trivia-free spelling of text[begin, end), as Aurora names modules.
-std::string sourceName(const std::string &text, std::int64_t begin, std::int64_t end) {
+// The trivia-free spelling of text[begin, end), as Aurora names modules, or
+// the relative path Aurora maps that import name to.
+std::string sourceName(const std::string &text, std::int64_t begin, std::int64_t end, bool path = false) {
     hosted_abi::ResolverNameInput input;
     input.source = span(text);
     input.begin = begin;
     input.end = end;
+    input.path = path;
     std::string name;
     for (;;) {
         input.offset = static_cast<std::int64_t>(name.size());
@@ -1466,18 +1468,23 @@ public:
         if (finished || failed || graphComplete || !source || sources.size() >= 64)
             invalidResolution();
         try {
-            // Aurora lexes, parses and admits the source, then ingests it as the
-            // next module; only its header name and diagnostics cross back.
+            // Aurora charges the source against its byte limits, then lexes,
+            // parses and admits it and ingests it as the next module; only its
+            // header name and diagnostics cross back.
+            hosted_abi::ResolverSourceInput input;
+            input.source = span(source->text);
+            const auto index = aurora_hosted_resolver_append_source(owner.data(), &input);
+            if (index == -2)
+                throw Error("module file exceeds 1048576 bytes");
+            if (index == -3)
+                throw Error("module graph exceeds 4194304 bytes");
+            storage();
             hosted_abi::ParserSourceInput parse;
-            parse.source = span(source->text);
+            parse.source = input.source;
             parse.configuration = admission;
             wire::SourceResult result;
             aurora_hosted_parser_source(owner.arena(), &parse, &result);
             rejectSource(source, result);
-            hosted_abi::ResolverSourceInput input;
-            input.source = parse.source;
-            const auto index = aurora_hosted_resolver_append_source(owner.data(), &input);
-            storage();
             const std::array<const void *, 2> roots{owner.data(), owner.arena()};
             const auto base = aurora_hosted_resolver_ingest(roots.data());
             storage();
@@ -1486,7 +1493,6 @@ public:
             HostedModule header;
             header.id = sources.size();
             header.moduleName = sourceName(source->text, result.name_begin, result.name_end);
-            header.interfaceUnit = result.detail != 0;
             sources.push_back({std::move(source), header.moduleName, base});
             return header;
         } catch (...) {
@@ -1494,13 +1500,14 @@ public:
             throw;
         }
     }
-    std::optional<std::string> nextImport(std::size_t root) {
+    std::optional<HostedImport> nextImport(std::size_t root, std::size_t moduleRoots) {
         if (finished || failed || root >= sources.size() || (graphRoot && *graphRoot != root))
             invalidResolution();
         graphRoot = root;
         try {
             wire::WorkRow result;
-            aurora_hosted_resolver_graph_step(owner.data(), static_cast<std::int64_t>(root), &result);
+            aurora_hosted_resolver_graph_step(
+                owner.data(), static_cast<std::int64_t>(root), static_cast<std::int64_t>(moduleRoots), &result);
             storage();
             if (result.value0 == 0) {
                 graphComplete = true;
@@ -1516,11 +1523,29 @@ public:
             if (result.value0 == 3)
                 throw Error("module import cycle involving " + unit.moduleName);
             const auto name = sourceName(unit.source->text, result.value2, result.value3);
-            if (result.value0 == 2)
-                throw Error("duplicate import in " + unit.moduleName + ": " + name);
-            if (result.value0 != 1 || name.empty())
+            if (name.empty())
                 invalidResolution();
-            return name;
+            switch (result.value0) {
+            case 1:
+                return HostedImport{name, sourceName(unit.source->text, result.value2, result.value3, true)};
+            case 2:
+                throw Error("duplicate import in " + unit.moduleName + ": " + name);
+            case 6:
+                throw Error("imports require an explicit --module-root");
+            case 7:
+                throw Error("invalid or excessive module name");
+            case 8:
+                throw Error("invalid module path component");
+            case 9:
+                if (result.value4 < 0 || sizeValue(result.value4) >= sources.size())
+                    invalidResolution();
+                throw Error("module header mismatch: expected " + name + ", got " +
+                            sources[sizeValue(result.value4)].moduleName);
+            case 10:
+                throw Error("imported module requires an export module interface: " + name);
+            default:
+                invalidResolution();
+            }
         } catch (...) {
             failed = true;
             owner.release();
@@ -1592,8 +1617,8 @@ HostedResolution::~HostedResolution() = default;
 HostedModule HostedResolution::add(std::shared_ptr<const SourceText> source) {
     return implementation->add(std::move(source));
 }
-std::optional<std::string> HostedResolution::nextImport(std::size_t root) {
-    return implementation->nextImport(root);
+std::optional<HostedImport> HostedResolution::nextImport(std::size_t root, std::size_t moduleRoots) {
+    return implementation->nextImport(root, moduleRoots);
 }
 HostedResolvedSource HostedResolution::resolve(std::size_t root, AnalysisMode mode, bool collectAbiDeclarations) {
     return implementation->resolve({}, root, mode, collectAbiDeclarations, true);

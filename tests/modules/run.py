@@ -602,6 +602,17 @@ check(
     error="excessive module name",
 )
 check(
+    "module component length cap",
+    app("return 42;", "import " + "a" * 129 + ";"),
+    error="invalid or excessive module name",
+)
+check(
+    "import requires an interface unit",
+    app("return 42;", "import value;"),
+    {"value": "module value; auto answer()->i64{return 42;}"},
+    error="imported module requires an export module interface: value",
+)
+check(
     "invalid module preserves existing artifact",
     app("return missing();"),
     error="unknown function",

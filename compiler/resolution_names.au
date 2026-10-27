@@ -527,11 +527,106 @@ export namespace compiler_resolver {
         }
         return session.good();
     }
+    // A module path is the import name's dot-separated components, each 1-128
+    // bytes of [A-Za-z0-9_], at most 32, checked in order over the trivia-free
+    // spelling at Session bytes [begin, end): 1 when valid, 7 for an empty,
+    // long or excess component and 8 for a byte outside the component set.
+    auto path_status(Session& session, i64 begin, i64 end) -> i64 {
+        const i64 count = end - begin;
+        i64 offset = 0;
+        i64 line = 1;
+        i64 start = 0;
+        i64 length = 0;
+        i64 components = 0;
+        bool foreign = false;
+        while (offset < count && session.good()) {
+            const compiler_lexer::Cursor cursor = compiler_lexer::Cursor(offset, line, start);
+            const compiler_lexer::Lexeme lexeme = session.scan_range(begin, count, cursor);
+            const compiler_lexer::Event kind = lexeme.kind();
+            const i64 next = lexeme.next_offset();
+            if (next <= offset || next > count || (kind != compiler_lexer::Event::token && kind
+                != compiler_lexer::Event::whitespace && kind != compiler_lexer::Event::line_comment)) {
+                return session.fail_storage(StorageStatus::invalid);
+            }
+            i64 at = offset;
+            while (kind == compiler_lexer::Event::token && at < next) {
+                const u8 byte = session.source_byte(begin + at);
+                if (byte == '.') {
+                    if (length < 1 || length > 128 || components >= 32) {
+                        return 7;
+                    }
+                    if (foreign) {
+                        return 8;
+                    }
+                    components = components + 1;
+                    length = 0;
+                } else {
+                    length = length + 1;
+                    if (!compiler_lexer::word(byte)) {
+                        foreign = true;
+                    }
+                }
+                at = at + 1;
+            }
+            offset = next;
+            line = lexeme.next_line();
+            start = lexeme.next_line_start();
+        }
+        if (!session.good()) {
+            return -1;
+        }
+        if (length < 1 || length > 128 || components >= 32) {
+            return 7;
+        }
+        if (foreign) {
+            return 8;
+        }
+        return 1;
+    }
+    // The newest module answers the request index 8 recorded for it, if any:
+    // its header must spell the requested name (9) in an export module
+    // interface (10). Otherwise, or when nothing was requested, 0.
+    auto check_response(Session& session) -> WorkRow {
+        const i64 module_id = session.module_count() - 1;
+        const i64 node = session.index(8, module_id, 0, 0, 0);
+        if (node < 0) {
+            return WorkRow(0, -1, -1, -1, -1, -1);
+        }
+        const SyntaxRow imported = session.syntax(node);
+        const i64 requester = imported.word(11);
+        const MetaRow unit = session.meta(module_id);
+        if (imported.declaration_kind() != compiler_parser::SyntaxKind::import_name || requester < 0 || requester
+            >= module_id || unit.kind() != MetaTag::module_unit) {
+            session.fail_storage(StorageStatus::invalid);
+            return WorkRow(-1, -1, -1, -1, -1, -1);
+        }
+        const SyntaxRow definition = session.syntax(unit.word(10));
+        const SyntaxRow header = session.syntax(definition.word(7));
+        const MetaRow from = session.meta(requester);
+        if (definition.declaration_kind() != compiler_parser::SyntaxKind::module_definition || header.declaration_kind()
+            != compiler_parser::SyntaxKind::preamble || from.kind() != MetaTag::module_unit) {
+            session.fail_storage(StorageStatus::invalid);
+            return WorkRow(-1, -1, -1, -1, -1, -1);
+        }
+        i64 status = 0;
+        if (source_name_range(session, header.word(0), header.word(6)) != source_name_range(session, imported.word(0),
+            imported.word(6))) {
+            status = 9;
+        } else {
+            if (header.word(9) == 0) {
+                status = 10;
+            }
+        }
+        const MetaRow name_first = session.meta(imported.word(0));
+        const MetaRow name_last = session.meta(imported.word(6));
+        return WorkRow(status, requester, name_first.word(1) - from.word(0), name_last.word(2) - from.word(0),
+            module_id, -1);
+    }
     // Frames are transient scratch rows: module, next import syntax, unused,
     // entered. A host source request unwinds all frames before ingest. Replaying
     // unfinished ancestry retains only completed module order and import bindings.
     // The graph bounds (64 files, depth 16) bound this replay without another owner.
-    auto graph_walk(Session& session, i64 root) -> WorkRow {
+    auto graph_walk(Session& session, i64 root, i64 roots) -> WorkRow {
         const WorkRow initial = WorkRow(root, -1, 0, 0, -1, -1);
         session.append_work(initial);
         while (session.good() && session.work_count() > 0) {
@@ -619,7 +714,14 @@ export namespace compiler_resolver {
                         if (session.module_count() >= 64) {
                             return WorkRow(5, -1, -1, -1, -1, -1);
                         }
-                        return WorkRow(1, module_id, name_begin, name_end, -1, -1);
+                        i64 status = 6;
+                        if (roots > 0) {
+                            status = path_status(session, name_first.word(1), name_last.word(2));
+                        }
+                        if (status == 1 && session.index_insert(8, session.module_count(), 0, 0, 0, node) < 0) {
+                            return WorkRow(-1, -1, -1, -1, -1, -1);
+                        }
+                        return WorkRow(status, module_id, name_begin, name_end, -1, -1);
                     }
                     if (session.index(5, module_id, node, 0, 0) < 0) {
                         bind_import(session, module_id, node, target);
@@ -633,15 +735,24 @@ export namespace compiler_resolver {
         }
         return WorkRow(0, -1, -1, -1, -1, -1);
     }
-    // Status: complete, request source, duplicate, cycle, depth, file limit;
-    // then the module and the module-relative bytes of the import it names.
+    // Status: complete, request source, duplicate, cycle, depth, file limit,
+    // no module roots, invalid or excessive name, invalid path component,
+    // header mismatch, not an interface; then the module and the
+    // module-relative bytes of the import it names, and the mismatched module.
     // Copied coordinates are diagnostic/transport observations, not authority.
-    auto graph_step(Session& session, i64 root) -> WorkRow {
+    auto graph_step(Session& session, i64 root, i64 roots) -> WorkRow {
         if (!session.good() || session.work_count() != 0 || root < 0 || root >= session.module_count()) {
             session.fail_storage(StorageStatus::invalid);
             return WorkRow(-1, -1, -1, -1, -1, -1);
         }
-        const WorkRow result = graph_walk(session, root);
+        const WorkRow response = check_response(session);
+        if (!session.good()) {
+            return WorkRow(-1, -1, -1, -1, -1, -1);
+        }
+        if (response.word(0) != 0) {
+            return response;
+        }
+        const WorkRow result = graph_walk(session, root, roots);
         session.truncate_work(0);
         if (!session.good()) {
             return WorkRow(-1, -1, -1, -1, -1, -1);

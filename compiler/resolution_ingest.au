@@ -612,9 +612,11 @@ export namespace compiler_resolver {
         return unit.word(0);
     }
     // The trivia-free spelling of source[begin, end) from its byte offset on,
-    // as the host names module files and diagnostics. Invalid ranges and
-    // offsets past the spelling have size -1.
-    auto name_chunk(builtin::span<const u8> source, i64 begin, i64 end, i64 offset) -> LinkageChunk {
+    // as the host names modules and diagnostics, or with path the relative
+    // module file it maps a valid import name to: dots become directory
+    // separators and the name gains ".au". Invalid ranges and offsets past the
+    // spelling have size -1.
+    auto name_chunk(builtin::span<const u8> source, i64 begin, i64 end, i64 offset, bool path) -> LinkageChunk {
         LinkageChunk result = LinkageChunk();
         if (begin < 0 || end < begin || end > source.size() || offset < 0) {
             result.invalidate();
@@ -640,7 +642,11 @@ export namespace compiler_resolver {
                     if (skipped < offset) {
                         skipped = skipped + 1;
                     } else {
-                        result.append(source.at(index));
+                        if (path && source.at(index) == '.') {
+                            result.append('/');
+                        } else {
+                            result.append(source.at(index));
+                        }
                     }
                     index = index + 1;
                 }
@@ -648,6 +654,22 @@ export namespace compiler_resolver {
             at = next;
             line = lexeme.next_line();
             start = lexeme.next_line_start();
+        }
+        i64 suffix = 0;
+        while (path && at == end && suffix < 3 && result.size() < 512) {
+            u8 byte = '.';
+            if (suffix == 1) {
+                byte = 'a';
+            }
+            if (suffix == 2) {
+                byte = 'u';
+            }
+            if (skipped < offset) {
+                skipped = skipped + 1;
+            } else {
+                result.append(byte);
+            }
+            suffix = suffix + 1;
         }
         if (skipped < offset) {
             result.invalidate();

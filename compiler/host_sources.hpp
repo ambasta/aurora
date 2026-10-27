@@ -76,6 +76,7 @@ inline FileStatus regular(int descriptor) {
 inline constexpr std::size_t artifactLimit = 64 * 1024 * 1024;
 namespace detail {
 // Both input authorities use the same hardened descriptor and bounded read loop.
+// Without a limit message, a longer input returns its first limit + 1 bytes.
 inline std::string readAtMost(int descriptor, std::size_t limit, const char *limitMessage) {
     std::array<char, 4096> buffer{};
     std::string result;
@@ -90,9 +91,12 @@ inline std::string readAtMost(int descriptor, std::size_t limit, const char *lim
         }
         if (count == 0)
             return result;
-        if (static_cast<std::size_t>(count) > limit - result.size())
+        const bool beyond = static_cast<std::size_t>(count) > limit - result.size();
+        if (beyond && limitMessage)
             throw ReadLimit(limitMessage);
         result.append(buffer.data(), static_cast<std::size_t>(count));
+        if (beyond)
+            return result;
     }
 }
 } // namespace detail
@@ -120,6 +124,13 @@ public:
         if (limit > 1024 * 1024)
             throw Error("source read bound exceeds adapter limit");
         return detail::readAtMost(descriptor.get(), limit, "bounded source read limit exceeded");
+    }
+    // Captures at most limit bytes, or limit + 1 for a longer file, so the
+    // caller's byte policy rejects it.
+    std::string capture(std::size_t limit) {
+        if (limit > 1024 * 1024)
+            throw Error("source read bound exceeds adapter limit");
+        return detail::readAtMost(descriptor.get(), limit, nullptr);
     }
 };
 // Binary inputs are not source files: their independent bound is the existing

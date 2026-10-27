@@ -33,7 +33,13 @@ class HostedModule {
 public:
     std::size_t id = 0;
     std::string moduleName;
-    bool interfaceUnit = false;
+};
+
+// An import Aurora requests: its normalized name and the relative module file
+// path it maps to.
+class HostedImport {
+public:
+    std::string name, path;
 };
 
 // Renders the first rejection of one Aurora source admission with the former
@@ -42,7 +48,8 @@ void rejectSource(const std::shared_ptr<const SourceText> &source,
                   const hosted_abi::compiler_resolver::SourceResult &result);
 
 // Owns the Aurora graph session and the immutable diagnostic source snapshots.
-// Aurora owns graph traversal; ModuleLoader retains file-opening authority.
+// Aurora owns graph traversal and module policy; ModuleLoader retains
+// file-opening authority.
 class HostedResolution {
     class Impl;
     std::unique_ptr<Impl> implementation;
@@ -54,7 +61,7 @@ public:
     HostedResolution &operator=(const HostedResolution &) = delete;
     HostedModule add(std::shared_ptr<const SourceText> source);
     // Advances source-owned traversal to its next host read, or completion.
-    std::optional<std::string> nextImport(std::size_t root);
+    std::optional<HostedImport> nextImport(std::size_t root, std::size_t moduleRoots);
     HostedResolvedSource
     resolve(std::size_t root, AnalysisMode mode = AnalysisMode::Check, bool collectAbiDeclarations = false);
     // Explicit-order compatibility API for already-admitted in-memory modules.

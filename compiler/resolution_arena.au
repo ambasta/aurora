@@ -12,10 +12,11 @@ import aurora.compiler.resolution_rows;
 //
 // Storage charge ledger, before semantic rows and semantic index entries:
 // Metadata: 64 + U + E + Q + A + P + L + H.
-// Indexes: U + Q + A + P + N + L + H + 2G, in their separate typed pool.
+// Indexes: U + Q + A + P + N + L + H + 2G + R, in their separate typed pool.
 // U is sparse projected coordinates; E seeded text references; Q new identifier
 // coordinates (interned against U); A atoms; P prefixes; N name-cache entries;
-// L inclusive name ranges; H import bindings; G nonempty import lists.
+// L inclusive name ranges; H import bindings; G nonempty import lists; R
+// requested modules.
 // U <= 3*expressions + edges + 4*types + 4*declarations <= 12*source bytes.
 // Q and A are bounded by source plus seed byte counts. Each index entry and
 // every referenced range has an explicit producer charge; nothing charges a
@@ -1277,13 +1278,23 @@ export namespace compiler_resolver {
             work_used = count;
             return true;
         }
+        // Appends the next module source, or rejects one past its byte limit:
+        // -2 for the 1 MiB file limit and -3 for the 4 MiB graph limit, which
+        // takes precedence while less than a file's worth of graph remains.
         auto append_source(builtin::span<const u8> source) -> i64 {
             if (!good()) {
                 return -1;
             }
             const i64 count = source.size();
-            if (modules >= 64 || count < 0 || count > 1048576 || count > 4194304 - graph_source_used) {
+            if (modules >= 64 || count < 0) {
                 return fail_storage(StorageStatus::limit);
+            }
+            const i64 remaining = 4194304 - graph_source_used;
+            if (count > 1048576 || count > remaining) {
+                if (remaining < 1048576) {
+                    return -3;
+                }
+                return -2;
             }
             if (modules > 0) {
                 const MetaRow previous = metadata.at(modules - 1);

@@ -19,8 +19,10 @@ takes service kinds/operations from the generated header and quota extents from
 `catalog_summary`. On the resolver path Aurora lexes, parses, admits and ingests
 each source and keeps its module header and imports; the host gets back only the
 header name or a rejection to render. aurora-fmt likewise parses, lays out and
-verifies its output in one Aurora call. Module file loading, ABI declarations,
-diagnostic rendering, allocation and quota/report transport checks remain C++23.
+verifies its output in one Aurora call. Aurora also decides module-loading policy
+(names, relative paths, byte limits, headers and interfaces). Opening files under
+the explicit roots, ABI declarations, diagnostic rendering, allocation and
+quota/report transport checks remain C++23.
 The Aurora-native x86-64 emitter
 consumes the admitted source stores; the host retains artifact I/O.
 The same semantic traversal feeds typed x86 forms to the text backend or the
@@ -249,7 +251,7 @@ C1/C2 corpus diagnostics/output. No compiler binary or generated frontend is
 committed. The candidate's independent module graph pass runs in Aurora after all
 source whole-function checks and before import pruning, without a C++ graph fallback.
 Successful lowering-record projection runs in Aurora without native traversal or
-per-value callbacks. Module file loading, optional ABI declarations, diagnostics
+per-value callbacks. Module file opening, optional ABI declarations, diagnostics
 and quota/report transport remain native. Aurora now owns complete x86 text emission, including
 stack facts and ABI JSON; its host adapter lends the two admitted owners and
 copies bounded sealed output, with no native opcode fallback. Aurora owns metadata/layout,
