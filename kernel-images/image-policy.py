@@ -50,13 +50,16 @@ RULES = [
         ],
         "imports": ["__au_runtime_console_next", "__au_runtime_console_put"],
     },
-    # The storage fixture's scratchpad object reaches only Console; its snapshot
-    # producer object only the byte region.
+    # The storage scratchpad reaches only Console; the snapshot primary reaches
+    # only the byte region, in a separate bounded composition.
     {
         "profiles": ["uefi/storage-fixture"],
         "imports:language": ["__au_runtime_console_next", "__au_runtime_console_put"],
         "reachable": ["__au_runtime_namespace_input", "__au_runtime_namespace_response"],
-        "imports:producer": [
+    },
+    {
+        "profiles": ["uefi/snapshot-call-fixture"],
+        "imports:language": [
             "__au_runtime_bytes_allocate",
             "__au_runtime_bytes_at",
             "__au_runtime_bytes_drop",
@@ -112,6 +115,7 @@ RULES = [
             "uefi/runtime*",
             "uefi/service-fixture",
             "uefi/storage-fixture",
+            "uefi/snapshot-call-fixture",
             "uefi/text-fixture",
             "uefi/program-*",
             "uefi/production",
@@ -123,6 +127,7 @@ RULES = [
         "profiles": [
             "uefi/service-fixture",
             "uefi/storage-fixture",
+            "uefi/snapshot-call-fixture",
             "uefi/text-fixture",
             "uefi/program-*",
             "uefi/production",
@@ -133,6 +138,7 @@ RULES = [
         "profiles": [
             "uefi/service-fixture",
             "uefi/storage-fixture",
+            "uefi/snapshot-call-fixture",
             "uefi/text-fixture",
             "uefi/program-*",
             "uefi/production",

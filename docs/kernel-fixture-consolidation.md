@@ -5,8 +5,8 @@ Fault and hostile cases are boot-selected rows in
 separate kernel builds. Each row names a guest mode, the one test image that runs
 it and its selector value. `kernel_profiles.FIXTURE_MODES` and every oracle derive
 their mode lists from that table. `kernel_profiles` rejects the table at configure
-time unless every value is a distinct byte and each image's rows are one run of
-consecutive values (the interval `read_fixture` admits); numeric values are not pinned.
+time unless every value is a distinct byte and each image's rows match its admitted closed
+intervals; existing selector values do not change when a family moves.
 
 The source catalog went from 233 canonical images (196 UEFI, 37 BIOS) to 125
 (105 UEFI, 20 BIOS) in PR #244, to 81 (61 UEFI, 20 BIOS) in the
@@ -24,7 +24,9 @@ images into `device-fixture`, and to 22 (19 UEFI, 3 BIOS) by folding the IPC,
 budget, dispatcher, user-phase and user-resume images into `service-fixture`, and
 to 14 (11 UEFI, 3 BIOS) by folding the RAM file, RAM scratchpad, blocking-call and
 snapshot images into `storage-fixture` and the file-call, owned-text and
-console-region images into `text-fixture`. Every
+console-region images into `text-fixture`. The bounded capacity extraction now
+uses 15 (12 UEFI, 3 BIOS), separating Call/snapshot from storage without per-case
+builds or another production configuration. Every
 fault mode keeps its own guest run and exact oracle. A source image count is not a
 measured build or execution saving; the PR records those.
 
@@ -45,7 +47,7 @@ measured build or execution saving; the PR records those.
   the value into one extra handoff word (offset 128, present only in these images)
   that the payload admits only within the image's interval, so every payload case
   shares the image (see below). `display-fixture`, `device-fixture`,
-  `storage-fixture` and `text-fixture` use the same loader row
+  `storage-fixture`, `snapshot-call-fixture` and `text-fixture` use the same loader row
   (`loader-fixture.hpp`), because their subsystems differ from the loader onward
   and their interactive console sessions cannot take a serial byte. The
   `iommu-event` image reads the same file at Event entry, because its harness
@@ -154,7 +156,7 @@ values from `kernel/bootstrap-layout-values.inc`.
 | Case | Was | Same property now enforced by |
 | --- | --- | --- |
 | IPC owner/version/phase/transaction/site/unknown | hostile client images | `service-fixture`'s IPC rows alter the trapped exit before the unchanged kernel checks (site moves the trapped RIP off the return site; unknown resumes the client at the wrapper's `bad_entry` UD2, an unregistered address); `tests/kernel-uefi-ipc-smoke.py` |
-| snapshot owner, reply byte/reserved; program ordinal/owner/transaction/unknown | hostile client/service images | same exit hook in `storage-fixture`/`program-fixture` (program unknown also faults at `bad_entry`); their transcript oracles |
+| snapshot owner, reply byte/reserved; program ordinal/owner/transaction/unknown | hostile client/service images | same exit hook in `snapshot-call-fixture`/`program-fixture` (program unknown also faults at `bad_entry`); their transcript oracles |
 | stale, stale-exhausted, bad-table, bad-handoff, bad-map, wp, nx, acpi-duplicate-root | eight kernel builds | `platform-fixture`; each injection sits where its build did (bad-table still maps 0x10000 before exit, so the payload's complete-tree check is unchanged). The image includes ACPI for `acpi-duplicate-root`, so bad-handoff swaps the handoff version between its RSDP-free and RSDP-bearing forms instead of writing 2; the payload's version/content check still rejects it. `tests/kernel-uefi-smoke.py`, `tests/kernel-acpi-smoke.py`, which also require the selector echo before any exit record |
 | runtime code/stack/kernel/window/write/nx/return/unknown/syscall/sysenter | one client image per probe | probe set in `runtime-fixture`'s clean client; `tests/kernel-uefi-runtime-smoke.py` |
 | runtime terminal input/output | two kernel builds | `runtime-fixture` mutation, as the BIOS fault fixture already did |
@@ -195,14 +197,12 @@ profiles; the clock catalog and launch lists reject the retired modes.
 
 ## Still separate
 
-- `program-fixture`, `text-fixture` and `storage-fixture` cannot be fewer: the
-  program-console and file-call Aurora objects are 58.7 and 47.9 KB of
-  text+data, which with the ACPI, PCI and payload objects (21 KB) already reach
-  127.6 KB before any runtime code (the program fixture's runtime object alone
-  is 41.4 KB), so they need two images; and the storage compositions (the
-  scratchpad and producer objects, 24.6 and 12.9 KB, and a 72.6 KB runtime
-  object; memory end 148 of 152 KiB) do not fit the 28 and 12 KiB the program
-  and text fixtures leave free.
+- The protected program, text, storage and snapshot/Call compositions remain
+  separate under the unchanged 152 KiB payload reservation. The storage image
+  reached that complete mapped reservation after namespace admission; extracting
+  the snapshot producer and ordinary Call paths provides bounded capacity without
+  pruning exercised recipes or increasing caps. Actual mapped headroom and build
+  cost are qualification results, not deductions from smaller bank reservations.
 - `display-fixture` and `device-fixture` cannot share one image: their union
   (graphical console, framebuffer, console service, UART policy and owned bytes:
   the two payloads less one shared 17 KiB base, about 242 KiB) exceeds the
@@ -318,42 +318,34 @@ rejects both images' flags.
 The 60-second generic UEFI, 60-second IVRS/BAR and 180-second console deadlines are
 unchanged. Grouping does not widen user-image, stack or page admission.
 
-## Storage and text fixtures
+## Storage, snapshot/Call and text fixtures
 
-`storage-fixture` co-hosts the RAM file service (`user-ram-file`, newly a baseline
-row, and its fault rows), the RAM scratchpad console (`ram-scratchpad-console` and
-`ram-scratchpad-console-fixture`, which then takes its own ASCII probe selector),
-the blocking snapshot call (`user-call` rows) and the snapshot producer
-(`snapshot` rows); `text-fixture` co-hosts the protected file-call console
-(`program-file-call`, newly a baseline row, and its two faults), owned text and
-the console region. Both read the loader row (`loader-fixture.hpp`) and echo it;
-`select_packed_row` fixes the composition before timer admission, and every
-former compile-time choice is a row predicate (`ram_rows`, `call_rows`, `timed`;
-`owned_rows`, `console_rows`): the trap and envelope routes, the run authority,
-the epoch source, the budget, the timer and exchange gates, and the flow. Snapshot
-rows stay untimed as their image was (no LAPIC leaf, no CPL3 `INT 0x82` gate).
-The former images are build data (`kernel_profiles.FORMER_IMAGES`, `PACKED_ROWS`):
-each row runs its former image's user images, compiler options and metadata from a
-packed bank of slots of their own link-time page caps (`AURORA_RUNTIME_BANK_PAGES`,
-`images::slot_offsets`, 11 storage pages and 12 text pages), and admits its former
-image's page policy
-(`AURORA_RUNTIME_ROW_POLICY`, chosen before any domain exists), so no row's user
-image admission widens. Kernel-read sites (call/serve PCs, compiled ranges,
-owned-byte and Console sites) are per-slot records (`images::slot_sites`).
-Storage's ordinary `call-snapshot-client` has a one-page link/packing cap, separate
-from the unchanged two-page caller ceiling of the runtime Call policy. Its actual
-image already maps one page; metadata and user mappings use actual image bytes,
-not reserved slot capacity. The bank ends at arena + `0xbb000`, leaving five pages
-before the unchanged stack pool at +`0xc0000`. The three following image backings
-move down one page; virtual entries, trap sites, roots and stacks do not change.
-Future caller growth beyond one page now fails the stricter link gate; this
-contraction grants no runtime authority and establishes no new image's fit.
-The storage image's snapshot producer is a second closed Aurora object
-(`imports:producer`); the scratchpad object exports the kernel policies every row
-calls. Both images build at -Os (production keeps its own options). Payloads are
-135,960 and 128,432 bytes (memory ends 148 and 140 KiB); stack totals are 11,527
-and 11,591 of 15,360 bytes. The RAM file, call, snapshot, scratchpad, owned-text,
-console-region and file-call oracles require the loader echo with their row
-instead of a serial READY receipt at their old phase; their behavioural assertions
-are unchanged. Guards in `runtime.cpp` keep these compositions out of every other
-image, and production and the graphical terminal reject both flags.
+`storage-fixture` retains RAM-file rows 220–232, scratchpad rows 233–234 and
+protected namespace rows 250–251. `snapshot-call-fixture` carries ordinary Call
+rows 235–238 and snapshot rows 239–249. `text-fixture` retains file-call, owned-text
+and console-region rows. Each loader rejects other families before the SELECTED
+echo, then copies its admitted row into the handoff; the payload checks it again.
+The storage loader rejects its interior 235–249 gap, not just outlying values.
+
+The images compile one shared runtime source. RAM retains its caller continuation,
+INT 0x82 gate, reserved run epochs, retained allowances and ledger. Ordinary Call
+retains fresh watermark epochs and restores the caller's prior epoch on resume.
+Snapshot rows have no initialized timer, LAPIC leaf or CPL3 INT 0x82 gate, and
+initialize the shared caller owner as `none`.
+
+`FORMER_IMAGES` and `PACKED_ROWS` preserve every exercised user recipe and row
+policy. Storage has seven slots/twelve reserved pages, including the namespace's
+closed 2/3/1 policy. Snapshot/Call has four slots/four reserved pages; snapshots
+admit one page per image, and ordinary Call keeps its 2/1/1 runtime policy with
+the stricter one-page caller link/packing cap. Text keeps six slots/twelve pages.
+Every user mapping uses actual validated bytes, never reserved bank capacity.
+The 1 MiB arena, two domains, fixed tables/stack pool, 152 KiB payload cap and
+15,360-byte kernel stack bound do not change.
+
+The storage primary is the existing scratchpad/namespace console. Snapshot/Call
+uses the former snapshot primary and its existing entry bridge, with its original
+unsealed/non-closed symbol recipe and byte-region-only imports. Terminal, budget
+and IPC policy reachability is checked in both images. The snapshot producer is
+no longer a second storage object. Packed payloads build at -Os; production
+options and behavior are unchanged. Existing transcript oracles retain their
+behavioral assertions and derive the moved image from the row table.

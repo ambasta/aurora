@@ -44,12 +44,13 @@ and [storage](storage.md).
 
 Validation cleanup passed independent integrated qualification in
 [PR #244](https://github.com/ambasta/aurora/pull/244). [Fixture consolidation](kernel-fixture-consolidation.md)
-now leaves 14 canonical images (11 UEFI, 3 BIOS): every fault mode is a
+now leaves 15 canonical images (12 UEFI, 3 BIOS): every fault mode is a
 boot-selected fixture case (loader, ACPI, PCI, BAR and IVRS cases through the fw_cfg
 platform fixture; framebuffer, graphical-console, console and owned-bytes rows
 through the display and device fixtures; IPC, budget, dispatcher, user-phase and
-resume rows through the one service fixture; RAM file, RAM scratchpad, protected namespace, blocking-call
-and snapshot rows through the storage fixture; file-call, owned-text and
+resume rows through the one service fixture; RAM file, RAM scratchpad and protected
+namespace rows through the storage fixture; blocking Call and snapshot rows through
+the snapshot-call fixture; file-call, owned-text and
 console-region rows through the text fixture, each row running its former image's
 user images from a packed bank),
 test baselines are baseline selectors of their fixtures, and `uefi/production`
@@ -61,10 +62,12 @@ keeps the program fixture, the text fixture and the storage fixture apart
 ([why](kernel-fixture-consolidation.md#still-separate)). Each image
 build runs one compiler-fact stack check and one image/W^X/symbol-policy check
 in place of the former per-profile admission scripts.
-The storage bank reserves sixteen pages, including the namespace's two-page caller
-and three-page owner, with a closed 2/3/1 row policy. The small blocking-snapshot
-caller retains its one-page cap. The payload reservation, arena and domain limits
-are unchanged; the namespace adds rows, not a new canonical image.
+The storage bank reserves twelve pages for seven slots, including the namespace's
+two-page caller and three-page owner under its closed 2/3/1 row policy. The separate
+snapshot-call bank holds four one-page slots; its small Call client retains the
+stricter one-page link cap and the unchanged 2/1/1 runtime Call policy. The shared
+runtime is not forked. Payload, arena and domain limits are unchanged; this
+fixture-composition capacity prerequisite adds no product storage/restart behavior.
 The compiler-semantics runners now compile one packed program per test through
 `tests/compiler/native_runner.py`, with fixed cases as `.cases` data beside each
 runner; the token-scan, UTF-8, JSON and package library

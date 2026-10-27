@@ -56,7 +56,7 @@ auto release_call_source() -> void {
                 timer_owner && registry.active(*timer_owner) && timer_owner_epoch == timer_epoch &&
                 current_run_identity(),
             "call run");
-#ifdef AURORA_STORAGE_FIXTURE
+#ifdef AURORA_SNAPSHOT_FIXTURE
     call_fixture_entry(reinterpret_cast<U64 *>(frame));
 #endif
 #ifdef AURORA_PROGRAM_FIXTURE
@@ -106,7 +106,7 @@ auto release_call_source() -> void {
     require(ticket.has_value(), "call submit");
     call_wait.ticket = *ticket;
     ++caller.call_count;
-#ifdef AURORA_STORAGE_FIXTURE
+#ifdef AURORA_SNAPSHOT_FIXTURE
     if (fixture == Fixture::call_pending)
         force_timer_pending();
 #elif defined(AURORA_PROGRAM_FIXTURE)
@@ -314,7 +314,7 @@ auto call_execute(unsigned index, U64 source_phase, U64 first, U64 second) -> vo
     transaction = 0;
     return true;
 }
-#ifdef AURORA_STORAGE_FIXTURE
+#ifdef AURORA_SNAPSHOT_FIXTURE
 auto call_completion_controls(U64 ticket) -> void {
     auto &call_wait = caller_continuation.ordinary_checked();
     const auto original = *call_wait.authority;
