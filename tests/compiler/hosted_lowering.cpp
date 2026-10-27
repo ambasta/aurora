@@ -132,7 +132,7 @@ struct Fixture {
                 scalar(Role::MaximumByteArrayLength, 4096),
                 scalar(Role::MaximumScalarArrayLength, 64),
                 scalar(Role::AnalysisMode),
-                scalar(Role::SupportedServiceGroups, aurora::service::supportedGroupBitmap(false, false, false))});
+                scalar(Role::SupportedServiceGroups, 62)});
         for (I64 at = 0; at < 7; ++at)
             record(Kind::ScalarContract,
                    {scalar(Role::TypeId, i64Type), scalar(Role::PublicDescriptorId, at + 1), scalar(Role::Size, 8)});
@@ -754,6 +754,8 @@ void variant(Fixture &fixture, const std::string &name, const std::vector<Shape>
                 fields[other + at] = fields[begin + at];
                 break;
             }
+    } else if (name == "prelude-root") {
+        fixture.root = 14;
     } else if (name == "negative-row") {
         fixture.code.push_back(-1);
     } else if (name == "foreign-row") {

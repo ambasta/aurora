@@ -309,12 +309,6 @@ ROWS = (
         "",
     ),
     (
-        "resolver_append_text(compiler_resolver::Session& session, builtin::span<const u8> source) -> i64",
-        "direct compiler_resolver::append_text(session, source)",
-        "ResolverTextInput:text",
-        "",
-    ),
-    (
         "resolver_order_module(compiler_resolver::Session& session, i64 module_id, i64 order, i64 scope, bool "
         "root) -> bool",
         "direct compiler_resolver::order_module(session, module_id, order, scope, root)",
@@ -358,18 +352,6 @@ ROWS = (
         "",
         "",
     ),
-    (
-        "resolver_seed_builtin(compiler_resolver::Session& session, compiler_resolver::MetaRow definition) -> i64",
-        "direct compiler_resolver::seed_builtin(session, definition)",
-        "ResolverSeedBuiltinInput:definition",
-        "",
-    ),
-    (
-        "resolver_seed_member(compiler_resolver::Session& session, compiler_resolver::MetaRow definition) -> i64",
-        "direct compiler_resolver::seed_member(session, definition)",
-        "ResolverSeedMemberInput:member",
-        "",
-    ),
     ("resolver_run(compiler_resolver::Session& session) -> i64", "direct compiler_resolver::run(session)", "", ""),
     (
         "resolver_read_syntax(const compiler_resolver::Session& session, i64 index) -> compiler_resolver::SyntaxRow",
@@ -394,24 +376,6 @@ ROWS = (
         "lowering_begin(compiler_resolver::Session& session, compiler_lowering::LoweringConfig configuration) -> i64",
         "direct compiler_lowering::begin_lowering(session, configuration)",
         "LoweringBeginInput:configuration",
-        "noexcept",
-    ),
-    (
-        "lowering_seed_scalar(compiler_resolver::Session& session, compiler_lowering::ScalarSeed seed) -> i64",
-        "direct compiler_lowering::seed_scalar(session, seed)",
-        "LoweringScalarInput:seed",
-        "noexcept",
-    ),
-    (
-        "lowering_seed_service(compiler_resolver::Session& session, compiler_lowering::ServiceSeed seed) -> i64",
-        "direct compiler_lowering::seed_service(session, seed)",
-        "LoweringServiceInput:seed",
-        "noexcept",
-    ),
-    (
-        "lowering_seed_layout_symbol(compiler_resolver::Session& session, i64 symbol) -> i64",
-        "direct compiler_lowering::seed_layout_symbol(session, symbol)",
-        "",
         "noexcept",
     ),
     (
@@ -549,6 +513,12 @@ ROWS = (
     (
         "graph_retained(const compiler_ir_graph::Workspace& workspace, i64 index) -> bool",
         "direct compiler_ir_graph::retained(workspace, index)",
+        "",
+        "noexcept",
+    ),
+    (
+        "catalog_summary() -> compiler_catalog::Summary",
+        "copy compiler_catalog::summary()",
         "",
         "noexcept",
     ),

@@ -5,7 +5,6 @@
 #include "hosted_lowering_diagnostics.hpp"
 #include "ir_verify.hpp"
 #include "lexer.hpp"
-#include "services.hpp"
 #include "../runtime/hosted_bytes.hpp"
 #include <algorithm>
 #include <array>
@@ -511,15 +510,6 @@ public:
             invalidResolution();
         return native(symbol);
     }
-    std::vector<std::int64_t> layoutSymbols() {
-        auto result = declarations(2);
-        // Match the former ordered native-name map's traversal. This is the
-        // complete original class permutation, with no host legality filtering.
-        std::sort(result.begin(), result.end(), [&](auto left, auto right) {
-            return nominalName(left, DeclarationKind::class_value) < nominalName(right, DeclarationKind::class_value);
-        });
-        return result;
-    }
     AbiDeclarations abiDeclarations() {
         AbiDeclarations result;
         const auto sourceName = [&](std::int64_t symbol) {
@@ -964,29 +954,6 @@ public:
 }
 } // namespace
 namespace {
-struct BuiltinCatalog {
-    std::vector<Type> types{Type::I64,
-                            Type::U64,
-                            Type::U8,
-                            Type::Bool,
-                            Type::ByteRegion,
-                            Type::OwnedBytes,
-                            Type::ConsoleSession,
-                            Type::DisplaySession,
-                            Type::IommuEventSession,
-                            Type::CallSession,
-                            Type::Com1UartGrant,
-                            Type::ServeSession};
-    std::array<service::CopiedDefinition, 14> definitions = service::copiedDefinitions();
-    BuiltinCatalog() {
-        for (const auto &definition : definitions)
-            types.push_back(definition.type);
-    }
-};
-const BuiltinCatalog &builtinCatalog() {
-    static const BuiltinCatalog value;
-    return value;
-}
 std::uint64_t resolutionQuota() {
     const auto add = [](std::uint64_t a, std::uint64_t b) {
         if (b > std::numeric_limits<std::uint64_t>::max() - a)
@@ -1004,42 +971,24 @@ std::uint64_t resolutionQuota() {
             result = add(result, value);
         return result;
     };
-    const auto &catalog = builtinCatalog();
-    std::uint64_t textCount = 0, textBytes = 0, longest = 0, members = 0;
-    const auto text = [&](const std::string &value) {
-        textCount = add(textCount, 1);
-        textBytes = add(textBytes, value.size());
-        longest = std::max(longest, static_cast<std::uint64_t>(value.size()));
+    const auto &catalog = service::catalog();
+    const auto count = [](std::int64_t value) {
+        if (value < 0)
+            invalidResolution();
+        return static_cast<std::uint64_t>(value);
     };
-    for (const auto &type : catalog.types) {
-        text(typeName(type));
-        if (type.isClass() || type.isEnum())
-            text(type.className);
-    }
-    for (const auto &definition : catalog.definitions) {
-        for (const auto &[name, type] : definition.fields) {
-            (void)type;
-            text(name);
-            members = add(members, 1);
-        }
-        for (const auto &name : definition.cases) {
-            text(name);
-            members = add(members, 1);
-        }
-    }
-    std::uint64_t serviceParameters = 0;
-    for (const auto &operation : service::operations) {
-        text(std::string(operation.spelling));
-        serviceParameters = add(serviceParameters, operation.parameterTypes().size());
-    }
-    text("array"); // the lowerer's retained synthetic reflection diagnostic name
+    // Catalog spellings plus the lowerer's retained synthetic "array" name.
+    const auto textCount = add(count(catalog.textCount), 1), textBytes = add(count(catalog.textBytes), 5);
+    const auto members = count(catalog.memberCount), operations = count(catalog.operationCount);
+    const auto serviceParameters = count(catalog.parameterCount), scalars = count(catalog.scalarCount);
     // Existing language/file limits only. This loose ceiling is not allocated
     // eagerly. Each pool grows on demand and reports ordinary allocation failure.
     // Counts charge source projection, interned names/indexes, concrete clones,
     // signatures, public/authority/visibility links and reusable worklists.
     constexpr std::uint64_t B = 4194304, b = 1048576, M = 64, I = 256, H = 4096;
-    const auto K = static_cast<std::uint64_t>(catalog.types.size());
-    const auto S = mul(4, B), Sx = mul(I + 1, S), U = mul(12, B), D = std::max(b, longest);
+    const auto K = count(catalog.typeCount);
+    // No catalog spelling is longer than all catalog text.
+    const auto S = mul(4, B), Sx = mul(I + 1, S), U = mul(12, B), D = std::max(b, textBytes);
     const auto L = sum({S, textCount, H}), N = sum({U, L, textCount}), Q = add(B, textBytes);
     const auto P = mul(sum({mul(34, N), S, K}), D);
     const auto storage = sum({64, U, textCount, mul(2, Q), P, L, H});
@@ -1107,7 +1056,7 @@ std::uint64_t resolutionQuota() {
     // among the existing <=6 explicit ParameterTypes charged below.
     const auto receiverRows = F, classRows = add(nominals, carriers), fieldRows = add(fields, carriers);
     const auto descriptors = sum({7, nominals, X}), views = M, enums = nominals, lint = X;
-    const auto outputRows = sum({hostedLoweringPreludeRows,
+    const auto outputRows = sum({add(10, operations),
                                  1,
                                  instructions,
                                  slots,
@@ -1132,7 +1081,7 @@ std::uint64_t resolutionQuota() {
                                    mul(2, byteSlots),
                                    mul(2, ownedTypes),
                                    mul(2, spanTypes)});
-    const auto setupOperands = sum({3, 8, 7 * 3, mul(6, service::operations.size()), serviceParameters, nominals, 1});
+    const auto setupOperands = sum({3, 8, mul(3, scalars), mul(6, operations), serviceParameters, nominals, 1});
     const auto metadataOperands = sum({7,
                                        mul(11, F),
                                        mul(6, F),
@@ -1194,8 +1143,8 @@ std::uint64_t resolutionQuota() {
     // Lowering layout DFS uses at most eight WorkRows (two per depth-four
     // logical frame; physical frames use four). Name helpers retain their
     // existing <=2*D scratch above that saved base. The initial class-order
-    // permutation is a separate phase with at most one mark per nominal.
-    const auto loweringWork = std::max(nominals, add(8, mul(2, D)));
+    // sort is a separate phase with two rows per nominal.
+    const auto loweringWork = std::max(mul(2, nominals), add(8, mul(2, D)));
     // Linkage's temporary signature/prefix lists restore their caller's base.
     // Ingest holds <=12 request rows per file byte and one row per token ordinal.
     // Graph traversal needs at most 18 transient frames plus name-helper scratch,
@@ -1299,57 +1248,6 @@ hosted_abi::BuiltinSpan span(const std::string &text) {
     result.length = static_cast<std::int64_t>(text.size());
     return result;
 }
-wire::MetaRow blankMeta() {
-    wire::MetaRow value;
-    value.tag = MetaTag::context;
-    value.concrete_tag = ResolvedTypeKind::invalid;
-    value.declaration_tag = DeclarationKind::invalid;
-    value.native_tag = NativeMode::invalid;
-    value.value0 = value.value1 = value.value2 = value.value3 = value.value4 = value.value5 = value.value6 =
-        value.value7 = value.value8 = value.value9 = value.value10 = value.value11 = value.value12 = value.value13 =
-            value.value14 = -1;
-    return value;
-}
-ResolvedTypeKind wireKind(const Type &type) {
-    switch (type.kind) {
-    case TypeKind::I64:
-        return ResolvedTypeKind::i64_value;
-    case TypeKind::U64:
-        return ResolvedTypeKind::u64_value;
-    case TypeKind::U8:
-        return ResolvedTypeKind::u8_value;
-    case TypeKind::Bool:
-        return ResolvedTypeKind::bool_value;
-    case TypeKind::Own:
-        return ResolvedTypeKind::owner;
-    case TypeKind::Ref:
-        return ResolvedTypeKind::reference;
-    case TypeKind::MutRef:
-        return ResolvedTypeKind::mutable_reference;
-    case TypeKind::ByteRegion:
-        return ResolvedTypeKind::byte_region;
-    case TypeKind::OwnedBytes:
-        return ResolvedTypeKind::owned_bytes;
-    case TypeKind::ConsoleSession:
-        return ResolvedTypeKind::console_session;
-    case TypeKind::DisplaySession:
-        return ResolvedTypeKind::display_session;
-    case TypeKind::ServeSession:
-        return ResolvedTypeKind::serve_session;
-    case TypeKind::Com1UartGrant:
-        return ResolvedTypeKind::port_range;
-    case TypeKind::CallSession:
-        return ResolvedTypeKind::call_session;
-    case TypeKind::IommuEventSession:
-        return ResolvedTypeKind::event_session;
-    case TypeKind::Class:
-        return ResolvedTypeKind::class_value;
-    case TypeKind::Enum:
-        return ResolvedTypeKind::enum_value;
-    default:
-        invalidResolution();
-    }
-}
 } // namespace
 
 class HostedResolution::Impl {
@@ -1358,9 +1256,6 @@ class HostedResolution::Impl {
     bool finished = false, failed = false;
     std::optional<std::size_t> graphRoot;
     bool graphComplete = false;
-    std::map<std::string, std::int64_t> builtinIdentities;
-    std::map<service::Operation, std::int64_t> serviceSpellings;
-    std::vector<service::Kind> serviceKinds;
     wire::SessionStatus status() {
         wire::SessionStatus result;
         aurora_hosted_resolver_status(owner.data(), &result);
@@ -1373,72 +1268,6 @@ class HostedResolution::Impl {
         if (result.storage != StorageStatus::none)
             invalidResolution();
     }
-    std::int64_t text(const std::string &value) {
-        hosted_abi::ResolverTextInput input;
-        input.text = span(value);
-        const auto result = aurora_hosted_resolver_append_text(owner.data(), &input);
-        storage();
-        if (result < 0)
-            invalidResolution();
-        return result;
-    }
-    bool callFamily = false, portFamily = false, serveFamily = false;
-    void seed(int extension = 0) {
-        const auto add = [&](const Type &type) {
-            hosted_abi::ResolverSeedBuiltinInput input;
-            input.definition = blankMeta();
-            input.definition.concrete_tag = wireKind(type);
-            input.definition.value1 = text(typeName(type));
-            if (type.isClass() || type.isEnum())
-                input.definition.value3 = text(type.className);
-            const auto result = aurora_hosted_resolver_seed_builtin(owner.data(), &input);
-            storage();
-            if (result < 0 || !builtinIdentities.emplace(typeName(type), result).second)
-                invalidResolution();
-        };
-        const auto &catalog = builtinCatalog();
-        const auto family = [](const Type &type) {
-            if (type == Type::CallSession || type == service::callResultType() || type == service::callStatusType())
-                return 1;
-            if (type == Type::Com1UartGrant || type == service::portWriteResultType())
-                return 2;
-            if (type == Type::ServeSession || type == service::serveRequestType() || type == service::serveStatusType())
-                return 3;
-            return 0;
-        };
-        for (const auto &type : catalog.types)
-            if (family(type) == extension)
-                add(type);
-        const auto member = [&](std::int64_t parent, const std::string &name, std::int64_t typeOrOrdinal) {
-            hosted_abi::ResolverSeedMemberInput input;
-            input.member = blankMeta();
-            input.member.value0 = parent;
-            input.member.value1 = text(name);
-            input.member.value2 = typeOrOrdinal;
-            const auto result = aurora_hosted_resolver_seed_member(owner.data(), &input);
-            storage();
-            if (result < 0)
-                invalidResolution();
-        };
-        for (const auto &definition : catalog.definitions) {
-            if (family(definition.type) != extension)
-                continue;
-            const auto parent = builtinIdentities.at(typeName(definition.type));
-            for (const auto &[name, type] : definition.fields)
-                member(parent, name, builtinIdentities.at(typeName(type)));
-            for (std::size_t ordinal = 0; ordinal < definition.cases.size(); ++ordinal)
-                member(parent, definition.cases[ordinal], static_cast<std::int64_t>(ordinal));
-        }
-        for (const auto &[kind, type] : service::capabilityTypes) {
-            (void)type;
-            if (family(type) == extension)
-                serviceKinds.push_back(kind);
-        }
-        for (const auto &operation : service::operations)
-            if (family(service::capabilityType(operation.kind)) == extension)
-                serviceSpellings.emplace(operation.operation, text(std::string(operation.spelling)));
-    }
-
     void lowerStorage() {
         const auto value = status().storage;
         if (value == StorageStatus::allocation)
@@ -1446,7 +1275,7 @@ class HostedResolution::Impl {
         if (value != StorageStatus::none)
             invalidResolution();
     }
-    void configureLowering(AnalysisMode mode, const std::vector<std::int64_t> &layoutSymbols) {
+    void configureLowering(AnalysisMode mode) {
         hosted_abi::LoweringBeginInput configuration{};
         auto &limits = configuration.configuration;
         limits.byteLeaves = maximumCopiedByteLeaves;
@@ -1465,79 +1294,20 @@ class HostedResolution::Impl {
         default:
             invalidResolution();
         }
-        limits.serviceGroups = service::supportedGroupBitmap(callFamily, portFamily, serveFamily);
+        // Lowering publishes its scalar, service and layout prelude itself.
         if (aurora_hosted_lowering_begin(owner.data(), &configuration) != 1) {
             lowerStorage();
             invalidResolution();
         }
-        // These are the existing public scalar descriptor identities. The
-        // ordinal is never an Aurora enum conversion or a service identity.
-        const std::array scalars{Type::I64, Type::Bool, Type::Own, Type::Ref, Type::MutRef, Type::U64, Type::U8};
-        for (std::size_t index = 0; index < scalars.size(); ++index) {
-            const auto &type = scalars[index];
-            hosted_abi::LoweringScalarInput input{};
-            input.seed.concreteKind = wireKind(type);
-            input.seed.publicId = static_cast<int>(type.kind) + 1;
-            input.seed.byteSize = type == Type::Bool || type == Type::U8 ? 1 : 8;
-            if (aurora_hosted_lowering_seed_scalar(owner.data(), &input) != static_cast<std::int64_t>(index) + 2) {
-                lowerStorage();
-                invalidResolution();
-            }
-        }
-        const auto operationCount = service::operationCount(callFamily, portFamily, serveFamily);
-        if (serviceKinds.size() !=
-                service::capabilityTypes.size() - (callFamily ? 0 : 1) - (portFamily ? 0 : 1) - (serveFamily ? 0 : 1) ||
-            serviceSpellings.size() != operationCount)
-            invalidResolution();
-        std::size_t index = 0;
-        for (const auto &operation : service::operations) {
-            if (!service::active(operation.kind, callFamily, portFamily, serveFamily))
-                continue;
-            const auto kind = std::find(serviceKinds.begin(), serviceKinds.end(), operation.kind);
-            if (kind == serviceKinds.end())
-                invalidResolution();
-            const auto parameters = operation.parameterTypes();
-            if (parameters.size() > 5)
-                invalidResolution();
-            hosted_abi::LoweringServiceInput input{};
-            input.seed.receiverKind = wireKind(service::capabilityType(operation.kind));
-            input.seed.kindId = static_cast<std::int64_t>(operation.kind);
-            input.seed.operationId = static_cast<std::int64_t>(operation.operation);
-            input.seed.spellingSource = serviceSpellings.at(operation.operation);
-            const auto result = builtinIdentities.find(typeName(operation.resultType()));
-            if (result == builtinIdentities.end())
-                invalidResolution();
-            input.seed.resultType = result->second;
-            auto &types = input.seed.parameterTypes;
-            types.parameterCount = static_cast<std::int64_t>(parameters.size());
-            const std::array fields{
-                &types.firstType, &types.secondType, &types.thirdType, &types.fourthType, &types.fifthType};
-            for (std::size_t parameter = 0; parameter < fields.size(); ++parameter)
-                *fields[parameter] =
-                    parameter < parameters.size() ? wireKind(parameters[parameter]) : ResolvedTypeKind::invalid;
-            if (aurora_hosted_lowering_seed_service(owner.data(), &input) != static_cast<std::int64_t>(index) + 9) {
-                lowerStorage();
-                invalidResolution();
-            }
-            ++index;
-        }
-        for (const auto symbol : layoutSymbols)
-            if (aurora_hosted_lowering_seed_layout_symbol(owner.data(), symbol) < 0) {
-                lowerStorage();
-                invalidResolution();
-            }
         lowerStorage();
     }
     HostedResolvedSource lower(AnalysisMode mode, bool collectAbi) {
         AbiDeclarations declarations;
-        std::vector<std::int64_t> layoutSymbols;
-        {
+        if (collectAbi) {
             Projection resolved(owner.data(), sources, owner.usedBytes());
-            if (collectAbi)
-                declarations = resolved.abiDeclarations();
-            layoutSymbols = resolved.layoutSymbols();
+            declarations = resolved.abiDeclarations();
         }
-        configureLowering(mode, layoutSymbols);
+        configureLowering(mode);
         lowering::LoweringResult result;
         // Borrowed Session stays armed through execution, private projection
         // and diagnostic rendering, including their exceptional exits.
@@ -1553,8 +1323,7 @@ class HostedResolution::Impl {
         const bool success = result.result_status == lowering::LoweringStatus::success;
         if (success) {
             lowerStorage();
-            if (result.result_reason != lowering::LoweringError::none ||
-                result.root_row < hostedLoweringPrefixRows(callFamily, portFamily, serveFamily) ||
+            if (result.result_reason != lowering::LoweringError::none || result.root_row < 1 ||
                 result.diagnostic_row != 0)
                 invalidResolution();
         } else if ((result.result_status != lowering::LoweringStatus::semantic_failure &&
@@ -1615,7 +1384,6 @@ public:
     Impl() {
         storage();
         sources.reserve(64);
-        seed();
     }
     HostedModule add(std::shared_ptr<const SourceText> source) {
         if (finished || failed || graphComplete || !source || sources.size() >= 64)
@@ -1623,12 +1391,6 @@ public:
         try {
             const auto tokens = lex(source);
             const auto parsed = parseHostedModuleSyntax(tokens, owner.beginArena());
-            if (parsed.callFamily && !callFamily) {
-                seed(1);
-                callFamily = true;
-            }
-            portFamily = portFamily || parsed.portFamily;
-            serveFamily = serveFamily || parsed.serveFamily;
             hosted_abi::ResolverSourceInput input;
             input.source = span(source->text);
             const auto index = aurora_hosted_resolver_append_source(owner.data(), &input);
@@ -1761,12 +1523,6 @@ public:
                 }
             }
         }
-        // Port is appended after all optional Call descriptors, independent of
-        // import discovery order. Ingestion only retains admitted syntax.
-        if (portFamily)
-            seed(2);
-        if (serveFamily)
-            seed(3);
         const auto result = aurora_hosted_resolver_run(owner.data());
         storage();
         const auto final = status();

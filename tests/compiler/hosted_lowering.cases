@@ -97,6 +97,7 @@ accept template-nominal-identity nominal
 reject duplicate-instruction duplicate-row
 reject prefix-overlap overlap-prefix
 reject nested-list-overlap overlap-list
+reject root-in-prelude prelude-root
 reject negative-row negative-row
 reject foreign-row foreign-row
 reject malformed-prefix-range bad-range

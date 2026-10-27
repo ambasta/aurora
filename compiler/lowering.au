@@ -59,7 +59,7 @@ export namespace compiler_lowering {
         return result;
     }
     auto run_lowering(compiler_resolver::Session& session) -> LoweringResult {
-        if (!seal_lowering_configuration(session) || !prepare_types(session)) {
+        if (!configured(session) || !prepare_types(session)) {
             const LoweringResult result = failed_result(session);
             return result;
         }

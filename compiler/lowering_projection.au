@@ -247,16 +247,7 @@ export namespace compiler_lowering_projection {
             || !workspace.set_count(39, groups)) {
             return workspace.fail();
         }
-        i64 layout = 14;
-        if (compiler_lowering::has_call_service(groups)) {
-            layout = layout + 1;
-        }
-        if (compiler_lowering::has_port_service(groups)) {
-            layout = layout + 2;
-        }
-        if (compiler_lowering::has_serve_service(groups)) {
-            layout = layout + 1;
-        }
+        const i64 layout = 9 + compiler_lowering::service_operation_count(groups);
         if (layout >= session.output_count() || root <= layout || !workspace.set_count(38, layout)) {
             return workspace.fail();
         }

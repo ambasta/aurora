@@ -5,15 +5,6 @@
 #include <vector>
 
 namespace aurora {
-// Diagnostic, configuration, seven scalar contracts, layout, then service operations.
-// Each selected prelude is checked explicitly; no arbitrary prefix is exempted
-// from the output graph's ownership contract.
-inline constexpr std::int64_t hostedLoweringPreludeRows = 10 + service::operations.size();
-inline constexpr std::int64_t
-hostedLoweringPrefixRows(bool includeCall, bool includePort = false, bool includeServe = false) {
-    return 10 + service::operationCount(includeCall, includePort, includeServe);
-}
-
 // The native diagnostic renderer sees only the fixed rejection report. The
 // successful projection reads Session directly through source readonly methods.
 struct HostedLoweringInput {

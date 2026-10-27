@@ -26,7 +26,6 @@ COMPILER = shlex.split(os.environ.get("CXX", "g++"))
 HEADERS = (
     "diagnostics.hpp",
     "types.hpp",
-    "services.hpp",
     "ir.hpp",
     "ir_layout.hpp",
     "ir_verify.hpp",
