@@ -345,7 +345,7 @@ export namespace compiler_lowering {
         } else {
             put(session, OperandRole::NoReceiverSpan, 0);
         }
-        put(session, OperandRole::FrameBytes,((root.local_prefix_length() * 8 + 15) / 16) * 16);
+        put(session, OperandRole::FrameBytes, ((root.local_prefix_length() * 8 + 15) / 16) * 16);
         put_slice(session, OperandRole::Code, code_begin, code_count);
         const i64 result = emit_record(session, RecordKind::Function, begin);
         at = 0;

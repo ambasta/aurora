@@ -43,7 +43,7 @@ auto event_hex(builtin::ConsoleSession& console, u64 word, i64 digits) -> bool {
     i64 index = digits;
     while (index > 0) {
         index = index - 1;
-        const u64 nibble =(word >> (index * 4)) & 15u64;
+        const u64 nibble = (word >> (index * 4)) & 15u64;
         if (console.put(hex[i64(nibble)]) != builtin::ConsolePutResult::success) {
             return false;
         }
@@ -86,7 +86,7 @@ auto event_report(builtin::ConsoleSession& console, u64 kind, u64 word0, u64 wor
             return false;
         }
         const console::WriteResult dom_result = console::write_bytes(console, borrow_bytes(dom));
-        if (!dom_result.complete() || !event_hex(console,(word0 >> 32) & 65535u64, 4)) {
+        if (!dom_result.complete() || !event_hex(console, (word0 >> 32) & 65535u64, 4)) {
             return false;
         }
         const console::WriteResult dva_result = console::write_bytes(console, borrow_bytes(dva));

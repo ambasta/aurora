@@ -10,7 +10,9 @@ export namespace console {
     // incomplete transport to an unpublished result, never a retry.
     auto namespace_call_value(builtin::CallSession& session, u64 word) -> u64 {
         const builtin::CallResult result = session.call(word);
-        if (result.status != builtin::CallStatus::replied) { return 0u64; }
+        if (result.status != builtin::CallStatus::replied) {
+            return 0u64;
+        }
         return result.value;
     }
 
@@ -19,24 +21,36 @@ export namespace console {
     // substitute at most thirteen chunks and EOF for echo/commit (20 calls).
     auto run_namespace_command(builtin::CallSession& session, NamespaceCommand command, u64 probe) -> NamespaceResult {
         NamespaceResult result = NamespaceResult(FileEvent::unknown, 0u64);
-        array<u64, 1> fault = { 0u64 };
+        array<u64, 1> fault = {
+            0u64
+        };
         if (probe == 3u64 || probe == 4u64) {
             u64 limit = 1000000u64;
-            if (probe == 4u64) { limit = 1000000000u64; }
-            if (!namespace_fixture_wait(limit)) { return result; }
+            if (probe == 4u64) {
+                limit = 1000000000u64;
+            }
+            if (!namespace_fixture_wait(limit)) {
+                return result;
+            }
         }
-        if (!command.valid()) { return result; }
+        if (!command.valid()) {
+            return result;
+        }
         const FileName name = command.selected_name();
         const FileValue value = command.selected_value();
         const bool writing = command.selection() == NamespaceOperation::write;
         u64 tag = 1u64;
-        if (writing) { tag = 2u64; }
+        if (writing) {
+            tag = 2u64;
+        }
         u64 received = namespace_call_value(session, namespace_word(tag, u64(name.size()), u64(value.size()), 0u64));
         bool failed = received != 1u64;
         tag = 3u64;
         while (!failed && tag <= 4u64) {
             u64 length = u64(name.size());
-            if (tag == 4u64) { length = u64(value.size()); }
+            if (tag == 4u64) {
+                length = u64(value.size());
+            }
             u64 cursor = 0u64;
             while (!failed && cursor < length) {
                 const u64 count = namespace_chunk_size(length - cursor);
@@ -44,7 +58,9 @@ export namespace console {
                 u64 index = 0u64;
                 while (index < count) {
                     u8 byte = name.at(i64(cursor + index));
-                    if (tag == 4u64) { byte = value.at(i64(cursor + index)); }
+                    if (tag == 4u64) {
+                        byte = value.at(i64(cursor + index));
+                    }
                     payload = payload | (u64(byte) << i64(index * 8u64));
                     index = index + 1u64;
                 }
@@ -82,16 +98,22 @@ export namespace console {
                 cursor = cursor + 4u64;
             }
             if (!failed) {
-                if (probe == 1u64) { return NamespaceResult(FileEvent::unknown, fault[i64(probe)]); }
+                if (probe == 1u64) {
+                    return NamespaceResult(FileEvent::unknown, fault[i64(probe)]);
+                }
                 received = namespace_call_value(session, 8u64);
                 failed = received != 5u64;
                 if (!failed) {
-                    if (probe == 2u64) { return NamespaceResult(FileEvent::unknown, fault[i64(probe)]); }
+                    if (probe == 2u64) {
+                        return NamespaceResult(FileEvent::unknown, fault[i64(probe)]);
+                    }
                     result.reset(FileEvent::written, file_next_revision(revision));
                 }
             }
         } else {
-            if (!failed) { result.reset(FileEvent::read, revision); }
+            if (!failed) {
+                result.reset(FileEvent::read, revision);
+            }
             cursor = 0u64;
             bool done = false;
             bool short_chunk = false;
@@ -105,8 +127,8 @@ export namespace console {
                         done = true;
                     } else {
                         const u64 count = namespace_count(received);
-                        if (short_chunk || cursor >= 49u64 || count > 49u64 - cursor
-                            || !namespace_chunk(received, 2u64, cursor, count)) {
+                        if (short_chunk || cursor >= 49u64 || count > 49u64 - cursor || !namespace_chunk(received, 2u64,
+                            cursor, count)) {
                             failed = true;
                         } else {
                             u64 index = 0u64;
@@ -123,7 +145,9 @@ export namespace console {
                 }
             }
         }
-        if (failed) { result.reset(namespace_rejection(received), 0u64); }
+        if (failed) {
+            result.reset(namespace_rejection(received), 0u64);
+        }
         return result;
     }
 }

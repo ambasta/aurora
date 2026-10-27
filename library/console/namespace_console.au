@@ -55,8 +55,8 @@ export namespace console {
         NamespaceResult result;
         NamespaceResponseKind kind;
     public:
-        NamespaceResponse(FileName selected, u64 count, NamespaceResult outcome, NamespaceResponseKind status)
-            : name(selected), submitted_size(count), result(outcome), kind(status) {
+        NamespaceResponse(FileName selected, u64 count, NamespaceResult outcome,
+            NamespaceResponseKind status) : name(selected), submitted_size(count), result(outcome), kind(status) {
         }
         auto valid() const -> bool {
             if (!result.valid() || submitted_size > 49u64) {
@@ -66,11 +66,11 @@ export namespace console {
                 return name.valid() && !name.reserved() && result.status() != FileEvent::unknown;
             }
             return (kind == NamespaceResponseKind::ready || kind == NamespaceResponseKind::aborted || kind
-                == NamespaceResponseKind::read_failed || kind == NamespaceResponseKind::committed_caller_failed
-                || kind == NamespaceResponseKind::indeterminate_reset || kind == NamespaceResponseKind::reset
-                || kind == NamespaceResponseKind::unavailable || kind == NamespaceResponseKind::limit)
-                && name.size() == 0 && submitted_size == 0u64 && result.status() == FileEvent::unknown
-                && result.size() == 0u64 && result.revision() == 0u64;
+                == NamespaceResponseKind::read_failed || kind == NamespaceResponseKind::committed_caller_failed || kind
+                == NamespaceResponseKind::indeterminate_reset || kind == NamespaceResponseKind::reset || kind
+                == NamespaceResponseKind::unavailable || kind == NamespaceResponseKind::limit) && name.size() == 0
+                && submitted_size == 0u64 && result.status() == FileEvent::unknown && result.size() == 0u64
+                && result.revision() == 0u64;
         }
         auto status() const -> NamespaceResponseKind {
             return kind;
@@ -181,8 +181,7 @@ export namespace console {
             "AURORA_NAMESPACE_READY: four named RAM files; all data is lost on owner reset or session exit.\r\n")) {
             return false;
         }
-        if (kind == NamespaceResponseKind::aborted && !namespace_text(session,
-            "aborted: previous data retained\r\n")) {
+        if (kind == NamespaceResponseKind::aborted && !namespace_text(session, "aborted: previous data retained\r\n")) {
             return false;
         }
         if (kind == NamespaceResponseKind::read_failed && !namespace_text(session,
@@ -197,8 +196,7 @@ export namespace console {
             "commit indeterminate; owner reset: all data lost; do not retry automatically\r\n")) {
             return false;
         }
-        if (kind == NamespaceResponseKind::reset && !namespace_text(session,
-            "owner reset: all data lost\r\n")) {
+        if (kind == NamespaceResponseKind::reset && !namespace_text(session, "owner reset: all data lost\r\n")) {
             return false;
         }
         if (kind == NamespaceResponseKind::unavailable) {

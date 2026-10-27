@@ -1522,12 +1522,12 @@ export namespace compiler_x86 {
             }
             const i64 text_offset = 64;
             const i64 literal_offset = text_offset + code_size;
-            const i64 relocation_offset =(literal_offset + literalSize + 7) / 8 * 8;
+            const i64 relocation_offset = (literal_offset + literalSize + 7) / 8 * 8;
             const i64 symbol_offset = relocation_offset + relocation_count * 24;
             const i64 string_offset = symbol_offset + (objectSymbolSize + 1) * 24;
             const i64 section_string_offset = string_offset + objectNameSize;
             // Fixed section-name table below occupies 68 bytes.
-            const i64 section_offset =(section_string_offset + 68 + 7) / 8 * 8;
+            const i64 section_offset = (section_string_offset + 68 + 7) / 8 * 8;
             const i64 complete_size = section_offset + 8 * 64;
             if (complete_size > artifactLimit || complete_size < section_offset) {
                 return limit_failure();
@@ -1649,7 +1649,7 @@ export namespace compiler_x86 {
             object_zeroes(64);
             object_section(1, 1, text_offset, code_size, 0, 0);
             object_section(7, 4, relocation_offset, relocation_count * 24, 3, 1);
-            object_section(18, 2, symbol_offset,(objectSymbolSize + 1) * 24, 4, local_count + 1);
+            object_section(18, 2, symbol_offset, (objectSymbolSize + 1) * 24, 4, local_count + 1);
             object_section(26, 3, string_offset, objectNameSize, 0, 0);
             object_section(34, 3, section_string_offset, 68, 0, 0);
             object_section(44, 1, section_string_offset + 68, 0, 0, 0);

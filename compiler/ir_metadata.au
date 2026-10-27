@@ -1106,7 +1106,7 @@ export namespace compiler_ir_metadata {
             if (field_alignment != 1 && field_alignment != 8) {
                 return fail(store, MetadataError::storage_alignment);
             }
-            cursor =(cursor + field_alignment - 1) / field_alignment * field_alignment;
+            cursor = (cursor + field_alignment - 1) / field_alignment * field_alignment;
             if (field_alignment > alignment) {
                 alignment = field_alignment;
             }
@@ -1169,12 +1169,12 @@ export namespace compiler_ir_metadata {
             cursor = 8;
             alignment = 8;
         } else {
-            cursor =(cursor + alignment - 1) / alignment * alignment;
+            cursor = (cursor + alignment - 1) / alignment * alignment;
         }
         if (cursor < 0 || cursor > 65536) {
             return fail(store, MetadataError::storage_extent);
         }
-        const i64 reserved =(cursor + 7) / 8 * 8;
+        const i64 reserved = (cursor + 7) / 8 * 8;
         const IndexRange leaf_offsets = IndexRange(leaf_begin, leaf_count);
         const IndexRange field_offsets = IndexRange(field_begin, fields.count());
         const PhysicalExtent extent = PhysicalExtent(cursor, alignment, reserved);

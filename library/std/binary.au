@@ -55,7 +55,7 @@ export namespace std {
             const ByteReadResult failure = ByteReadResult(ByteReadStatus::out_of_range, 0u64);
             return failure;
         }
-        const u64 value =(u64(bytes.at(offset)) << 24) | (u64(bytes.at(offset + 1)) << 16) | (u64(bytes.at(offset + 2))
+        const u64 value = (u64(bytes.at(offset)) << 24) | (u64(bytes.at(offset + 1)) << 16) | (u64(bytes.at(offset + 2))
             << 8) | u64(bytes.at(offset + 3));
         const ByteReadResult result = ByteReadResult(ByteReadStatus::success, value);
         return result;
@@ -91,7 +91,7 @@ export namespace std {
             const ByteReadResult failure = ByteReadResult(ByteReadStatus::out_of_range, 0u64);
             return failure;
         }
-        const u64 value =(u64(bytes.at(offset)) << 8) | u64(bytes.at(offset + 1));
+        const u64 value = (u64(bytes.at(offset)) << 8) | u64(bytes.at(offset + 1));
         const ByteReadResult result = ByteReadResult(ByteReadStatus::success, value);
         return result;
     }
@@ -129,7 +129,7 @@ export namespace std {
             const ByteReadResult failure = ByteReadResult(ByteReadStatus::out_of_range, 0u64);
             return failure;
         }
-        const u64 value =(u64(bytes.at(offset)) << 56) | (u64(bytes.at(offset + 1)) << 48) | (u64(bytes.at(offset + 2))
+        const u64 value = (u64(bytes.at(offset)) << 56) | (u64(bytes.at(offset + 1)) << 48) | (u64(bytes.at(offset + 2))
             << 40) | (u64(bytes.at(offset + 3)) << 32) | (u64(bytes.at(offset + 4)) << 24) | (u64(bytes.at(offset + 5))
             << 16) | (u64(bytes.at(offset + 6)) << 8) | u64(bytes.at(offset + 7));
         const ByteReadResult result = ByteReadResult(ByteReadStatus::success, value);

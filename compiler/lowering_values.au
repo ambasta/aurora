@@ -741,7 +741,7 @@ export namespace compiler_lowering {
         while (at < session.local_count()) {
             const LocalRow local = session.local(at);
             const SnapshotRow state = local.state();
-            const bool same_root =(root == -2 && local.span_origin_kind() == SpanOriginKind::receiver) || (root >= 0
+            const bool same_root = (root == -2 && local.span_origin_kind() == SpanOriginKind::receiver) || (root >= 0
                 && local.span_origin_kind() == SpanOriginKind::local && local.origin_local_id() == root);
             if (state.live() && is_span(session, local.concrete_type_id()) && same_root && (field < 0
                 || local.span_field_index() == field)) {
@@ -880,7 +880,7 @@ export namespace compiler_lowering {
                             if (bytes < 1) {
                                 bytes = 1;
                             }
-                            words =(bytes + 7) / 8;
+                            words = (bytes + 7) / 8;
                         }
                     }
                 }
@@ -1596,7 +1596,7 @@ export namespace compiler_lowering {
                         if (byte < 128u8 || byte > 191u8) {
                             return error(session, LoweringError::invalid_byte_string_literal, reference);
                         }
-                        scalar =(scalar << 6) | (u64(byte) & 63u64);
+                        scalar = (scalar << 6) | (u64(byte) & 63u64);
                         continuation = continuation + 1;
                     }
                     if ((width == 3 && scalar < 2048u64) || (width == 4 && scalar < 65536u64) || scalar > 1114111u64

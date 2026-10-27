@@ -90,8 +90,7 @@ export namespace console {
                 end = end + 1;
             }
             if (end < count) {
-                return FileAppendRequest(file_name(command, 7, end - 7),
-                    file_value(command, end + 1, count - end - 1));
+                return FileAppendRequest(file_name(command, 7, end - 7), file_value(command, end + 1, count - end - 1));
             }
         }
         const std::BinaryBuffer64 empty = std::BinaryBuffer64();
@@ -123,8 +122,7 @@ export namespace console {
                 end = end + 1;
             }
             if (end < count) {
-                return FileWriteRequest(file_name(command, 6, end - 6),
-                    file_value(command, end + 1, count - end - 1));
+                return FileWriteRequest(file_name(command, 6, end - 6), file_value(command, end + 1, count - end - 1));
             }
         }
         const std::BinaryBuffer64 empty = std::BinaryBuffer64();

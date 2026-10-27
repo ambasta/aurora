@@ -30,8 +30,8 @@ auto present_program_response(builtin::ConsoleSession& session, console::Program
 }
 
 // One retained copied session chooses effects; native code keeps all authority.
-auto update_program_session(console::ProgramSession current, u64 event, u64 value, u64 carry)
-    -> console::ProgramSessionUpdate {
+auto update_program_session(console::ProgramSession current, u64 event, u64 value,
+    u64 carry) -> console::ProgramSessionUpdate {
     static_assert(size_of(console::ProgramSession) == 32);
     static_assert(size_of(console::ProgramSessionUpdate) == 56);
     return console::advance_program_session(current, event, value, carry);
@@ -164,8 +164,8 @@ class FileUpdate {
     u64 action;
     console::FileSelection selection;
 public:
-    FileUpdate(console::ProtectedFiles next, console::FileReply result, u64 operation, console::FileSelection selected)
-        : files(next), reply(result), action(operation), selection(selected) {
+    FileUpdate(console::ProtectedFiles next, console::FileReply result, u64 operation,
+        console::FileSelection selected) : files(next), reply(result), action(operation), selection(selected) {
     }
 };
 auto update_files(console::ProtectedFiles current, std::BinaryBuffer64 command, i64 count, u64 profile) -> FileUpdate {
