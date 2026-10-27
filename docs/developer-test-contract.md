@@ -68,8 +68,7 @@ concurrency, next to the previous main. Missing tools or skipped gates are repor
 The release suite holds IR mutation testing (`ir-exhaustive`) and the complete
 borrowed-objects sweep; everything else is in merge. Tests do not pin inventories
 of other tests or of the source tree, do not test their own oracles, and check no
-digests other than the bootstrap checkpoint's, which the frontend generator and
-initialization probe re-verify before running it.
+digests, including the bootstrap checkpoint's; C1/C2 convergence checks it.
 
 Compiler-semantics runners in `tests/compiler` register cases as data on
 `native_runner.Suite`: accepted cases are packed into one compiled program per

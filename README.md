@@ -30,8 +30,9 @@ The public dependency image pinned in `ci/image` is the supported reproducible
 development environment, with the exact tools and firmware. With Docker or
 Podman installed, start from the repository root.
 
-Select a local copy of the checkpoint compiler pinned by
-`compiler/checkpoint.json` (or rebuild it from the recorded route). Then enter
+Use a local copy of the checkpoint compiler named by `compiler/checkpoint.json`,
+or build it from source with `python3 scripts/bootstrap.py rebuild --output
+build/checkpoint-ab255328a762` (host tools and Git). Then enter
 the pinned shell with `./scripts/container.sh bash` and configure the two current
 Meson graphs with `-Dbootstrap_compiler`, as shown in the
 [source-bootstrap recipe](compiler/README.md#source-bootstrap). Meson accepts only

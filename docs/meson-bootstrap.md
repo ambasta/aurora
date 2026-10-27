@@ -15,7 +15,7 @@ Select matching real `gcc` and `g++` on PATH: a stack-guard
 runner invokes bare `gcc`. Keep one stable build directory per toolchain/configuration:
 
 ```sh
-# C0 is a local copy of the executable pinned by compiler/checkpoint.json.
+# C0 is the checkpoint compiler (scripts/bootstrap.py rebuild builds it from source).
 # PATH must already select the matching GCC 16 pair.
 CXX=g++ meson setup build/gcc16 --backend=ninja -Dlsp=false \
   "-Dbootstrap_compiler=$C0"
@@ -243,11 +243,13 @@ can be losslessly archived with exact mapping after review.
 
 ## Bootstrap stages
 
-One pinned checkpoint compiler C0 builds C1 (`aurorac`); C1 builds C2
+One checkpoint compiler C0 builds C1 (`aurorac`); C1 builds C2
 (`aurorac-stage2`); `hosted-lexer-bootstrap` requires C1/C2 convergence, like
-GCC's stage compare. `compiler/checkpoint.json` pins C0 by digest. A bump is one hop
-(`scripts/bootstrap.py hop`): build an accepted main commit with the current C0,
-check C1/C2 convergence, record its C2 as the new pin. The
+GCC's stage compare. `compiler/checkpoint.json` names C0 by source commit; no
+binary is pinned by digest, and `scripts/bootstrap.py rebuild` builds C0 from
+source. A bump is one hop (`scripts/bootstrap.py hop`): build an accepted main
+commit with the current C0, check C1/C2 convergence, name that commit as the new
+checkpoint. The
 six-stage route that produced the first checkpoint is a record in
 `compiler/bootstrap-history.json`; see the
 [source-bootstrap recipe](../compiler/README.md#source-bootstrap) for both.

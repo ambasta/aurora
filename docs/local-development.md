@@ -11,8 +11,9 @@ packages the dependency image; it does not run product validation.
 
 With Docker or Podman installed, start from the repository root.
 
-Select a local copy of the checkpoint compiler pinned by `compiler/checkpoint.json`.
-Then open the pinned shell with `./scripts/container.sh bash` and configure both
+Use a local copy of the checkpoint compiler named by `compiler/checkpoint.json`,
+or build it from source with `python3 scripts/bootstrap.py rebuild --output
+build/checkpoint-ab255328a762` (host tools and Git). Then open the pinned shell with `./scripts/container.sh bash` and configure both
 current Meson graphs with `-Dbootstrap_compiler`, following the
 [source-bootstrap recipe](../compiler/README.md#source-bootstrap). Then run:
 

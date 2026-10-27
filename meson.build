@@ -9,9 +9,9 @@ project(
 native_cpp = meson.get_compiler('cpp', native: true)
 python = find_program('python3', native: true)
 fs = import('fs')
-# compiler/checkpoint.json pins the one checkpoint compiler (C0) by digest; C0
-# compiles C1 and C1 compiles C2. Reading the pin makes a change to it
-# reconfigure; the generators check the digest just before running it.
+# compiler/checkpoint.json names the checkpoint (C0) by source commit; any C0
+# built from it compiles C1, C1 compiles C2, and hosted-lexer-bootstrap requires
+# C1 and C2 to agree (GCC's stage compare). Ninja tracks the C0 executable.
 bootstrap_driver = files('scripts/bootstrap.py')
 bootstrap_pin = files('compiler/checkpoint.json')
 bootstrap_select = run_command(python, '-B', bootstrap_driver, 'select',
@@ -19,10 +19,8 @@ bootstrap_select = run_command(python, '-B', bootstrap_driver, 'select',
 if bootstrap_select.returncode() != 0
   error(bootstrap_select.stderr().strip())
 endif
-bootstrap_selected = bootstrap_select.stdout().split('\n')
 fs.read(bootstrap_pin)
-bootstrap_compiler_path = bootstrap_selected[0]
-bootstrap_sha256 = bootstrap_selected[1]
+bootstrap_compiler_path = bootstrap_select.stdout().strip()
 bootstrap_compiler = find_program(bootstrap_compiler_path, native: true)
 bootstrap_depend_files = files(bootstrap_compiler_path) + bootstrap_driver + bootstrap_pin
 frontend_inputs = files('compiler/formatter.au', 'compiler/lexer.au', 'compiler/syntax_arena.au', 'compiler/parser.au',
@@ -61,7 +59,7 @@ bridge_table = files('scripts/frontend_bridge.py')
 frontend_assembly = custom_target(
   'hosted-frontend-assembly', input: frontend_inputs,
   output: ['hosted-frontend.s', 'hosted-frontend.generated.s', 'hosted-frontend.abi.json', 'hosted_frontend_abi.hpp'],
-  command: [python, '-B', files('scripts/bootstrap_frontend.py'), bootstrap_compiler, '--compiler-sha256', bootstrap_sha256,
+  command: [python, '-B', files('scripts/bootstrap_frontend.py'), bootstrap_compiler,
             '--output-mode', 'text', '--output', '@OUTPUT0@', '@INPUT@'],
   depend_files: bootstrap_depend_files + bridge_table,
 )
