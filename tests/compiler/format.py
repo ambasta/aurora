@@ -186,6 +186,9 @@ def main():
             [source, good],
             ["--module-root"],
             ["--module-root", modules, source],
+            ["--runtime-root", modules, source],
+            ["--lint", "--runtime-root", "", source],
+            ["--lint", "--runtime-root", modules, "--runtime-root", modules, source],
             ["--diagnostics=json", source],
             ["--diagnostics=text", "--diagnostics=json", source],
         ]:

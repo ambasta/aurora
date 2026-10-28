@@ -11,7 +11,7 @@ int main(int argc, char **argv) {
         if (option == "--compose-private-object")
             index += 3;
         else if (option == "--emit-frontend-wrapper" || option == "--module-root" || option == "-o" ||
-                 option == "--stack-facts" || option == "--abi-facts")
+                 option == "--stack-facts" || option == "--abi-facts" || option == "--runtime-root")
             ++index;
         else if (option == "--diagnostics=json")
             jsonDiagnostics = true;
@@ -35,6 +35,10 @@ int main(int argc, char **argv) {
         std::filesystem::path outputPath;
         std::filesystem::path stackFactsPath, abiFactsPath;
         std::vector<std::filesystem::path> roots;
+        // The configured runtime root unless --runtime-root names another,
+        // such as the runtime kept beside a relocated checkpoint compiler.
+        std::filesystem::path runtimeRoot = AURORA_RUNTIME_ROOT;
+        bool runtimeRootSpecified = false;
         bool checkOnly = false;
         bool localSymbols = false;
         bool referencedReflectionOnly = false;
@@ -52,6 +56,11 @@ int main(int argc, char **argv) {
                 if (++index >= argc)
                     throw argumentError("--module-root requires a directory");
                 roots.emplace_back(argv[index]);
+            } else if (option == "--runtime-root") {
+                if (++index >= argc || runtimeRootSpecified || std::string_view(argv[index]).empty())
+                    throw argumentError("--runtime-root requires exactly one nonempty directory");
+                runtimeRootSpecified = true;
+                runtimeRoot = argv[index];
             } else if (option == "-o") {
                 if (++index >= argc || outputSpecified)
                     throw argumentError("exactly one -o OUTPUT.s is required");
@@ -97,9 +106,9 @@ int main(int argc, char **argv) {
         if (inputPath.empty() || (!checkOnly && outputPath.empty())) {
             const std::string usage =
                 "usage: aurorac [--emit-object] [--local-symbols] [--referenced-reflection-only] [--module-root "
-                "DIR] INPUT.au -o OUTPUT "
+                "DIR] [--runtime-root DIR] INPUT.au -o OUTPUT "
                 "[--stack-facts OUTPUT.json] [--abi-facts OUTPUT.json]\n"
-                "       aurorac --check [--diagnostics=text|json] [--module-root DIR] INPUT.au";
+                "       aurorac --check [--diagnostics=text|json] [--module-root DIR] [--runtime-root DIR] INPUT.au";
             throw argumentError(usage);
         }
         if (checkOnly && outputSpecified)
@@ -128,8 +137,7 @@ int main(int argc, char **argv) {
         request.format = emitObject ? aurora::CodeEmission::Object : aurora::CodeEmission::Assembly;
         request.stackFacts = stackFactsSpecified;
         request.abiFacts = abiFactsSpecified;
-        auto checked =
-            aurora::checkSource(inputPath, roots, {}, aurora::AnalysisMode::Check, request, AURORA_RUNTIME_ROOT);
+        auto checked = aurora::checkSource(inputPath, roots, {}, aurora::AnalysisMode::Check, request, runtimeRoot);
         if (checkOnly) {
             if (jsonDiagnostics)
                 aurora::writeDiagnosticsJson(std::cout, {});

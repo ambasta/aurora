@@ -34,12 +34,13 @@ export namespace compiler_x86 {
     }
     // The openat2 flags of each HostFiles open mode: O_RDONLY | O_DIRECTORY,
     // O_RDONLY | O_NONBLOCK, O_PATH | O_NOFOLLOW (all O_CLOEXEC), O_WRONLY |
-    // O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, and O_RDWR.
+    // O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, O_RDWR, and mode 5 the same
+    // O_RDONLY | O_NONBLOCK | O_CLOEXEC as mode 1.
     auto host_open_flags(i64 mode) -> i64 {
         if (mode == 0) {
             return 589824;
         }
-        if (mode == 1) {
+        if (mode == 1 || mode == 5) {
             return 526336;
         }
         if (mode == 2) {

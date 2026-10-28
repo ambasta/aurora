@@ -1051,7 +1051,15 @@ export namespace compiler_lowering {
             service_call = compiler_resolver::service_kind(value_kind(session, first_type));
         }
         if (service_call) {
-            require_arity(session, frame.syntax_node(), count);
+            // A HostFiles operation is method syntax; its arguments follow the capability.
+            const compiler_resolver::ResolvedRow resolved = session.resolved(frame.syntax_node());
+            if (resolved.operation() == compiler_resolver::ResolvedOperation::host_operation) {
+                if (compiler_resolver::sw(session, frame.syntax_node(), 2) != count) {
+                    return fail(session, LoweringError::method_argument_count, reference);
+                }
+            } else {
+                require_arity(session, frame.syntax_node(), count);
+            }
         }
         if (value_kind(session, result) == compiler_resolver::ResolvedTypeKind::class_value && !binding && !inferred) {
             if (method) {

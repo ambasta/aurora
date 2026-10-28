@@ -903,6 +903,26 @@ export namespace compiler_x86 {
         }
         return w.finish_function();
     }
+    // Copies RCX bytes from RSI to RDI, RCX > 0: whole qwords when RCX is a
+    // multiple of eight, else REP MOVSB, whose startup dominates the short
+    // element copies of owner accesses. Clobbers RAX and RDX; uses local
+    // labels 0, 1 and 3, so the caller may branch to label 2.
+    auto memory_copy(EmitWorkspace& w, ObjectWorkspace& o) -> bool {
+        emit_alu_imm(w, o, AluOp::test, 7, Register::rcx);
+        emit_branch(w, o, 5, 0, 1);
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::rdx, Register::rdx);
+        emit_bind_label(w, o, 0, 0);
+        emit_indexed_load(w, o, Register::rsi, Register::rdx, indexed_address(1, 0), false);
+        emit_indexed_store(w, o, Register::rdi, Register::rdx, indexed_address(1, 0), false);
+        emit_alu_imm(w, o, AluOp::add, 8, Register::rdx);
+        emit_alu_rr(w, o, AluOp::compare, Register::rcx, Register::rdx);
+        emit_branch(w, o, 2, 0, 0);
+        emit_branch(w, o, -1, 0, 3);
+        emit_bind_label(w, o, 0, 1);
+        emit_cld(w, o);
+        emit_rep_movsb(w, o);
+        return emit_bind_label(w, o, 0, 3);
+    }
     // The frame slot -SAVE(%rbp) into the record word at +OFFSET.
     auto memory_argument(EmitWorkspace& w, ObjectWorkspace& o, i64 save, i64 offset) -> bool {
         const i64 source = w.pack_address(0, save);
@@ -1182,8 +1202,7 @@ export namespace compiler_x86 {
         emit_mov_rr(w, o, Register::rax, Register::rsi);
         emit_load(w, o, element, Register::rdi, false);
         emit_load(w, o, stride, Register::rcx, false);
-        emit_cld(w, o);
-        emit_rep_movsb(w, o);
+        memory_copy(w, o);
         memory_entry_end(w, o, entry_values_at);
         // __au_runtime_values_set(owner*, index, stride, element*): 1 written.
         const i64 entry_values_set = w.intern_runtime("__au_runtime_values_set");
@@ -1197,8 +1216,7 @@ export namespace compiler_x86 {
         emit_mov_rr(w, o, Register::rax, Register::rdi);
         emit_load(w, o, element, Register::rsi, false);
         emit_load(w, o, stride, Register::rcx, false);
-        emit_cld(w, o);
-        emit_rep_movsb(w, o);
+        memory_copy(w, o);
         emit_mov_imm(w, o, 1, Register::rax);
         emit_bind_label(w, o, 0, 2);
         memory_entry_end(w, o, entry_values_set);

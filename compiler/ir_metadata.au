@@ -574,7 +574,7 @@ export namespace compiler_ir_metadata {
             }
             at = at + 1;
         }
-        if (store.enum_count() > 64) {
+        if (store.enum_count() > 256) {
             return fail(store, MetadataError::enum_count);
         }
         at = 0;
@@ -1016,9 +1016,11 @@ export namespace compiler_ir_metadata {
             const ClassRow row = store.class_at(at);
             if (member(row, masks.class_layout())) {
                 bool valid = true;
-                if (named(store, row.name(), "__au_host_directory_result") || named(store, row.name(),
-                    "__au_host_output_result")) {
-                    valid = sealed_host_result(store, at, 2, false);
+                if (named(store, row.name(), "__au_host_directory_result")) {
+                    valid = sealed_host_result(store, at, 4, false);
+                }
+                if (named(store, row.name(), "__au_host_output_result")) {
+                    valid = sealed_host_result(store, at, 6, false);
                 }
                 if (named(store, row.name(), "__au_host_file_result")) {
                     valid = sealed_host_result(store, at, 5, false);

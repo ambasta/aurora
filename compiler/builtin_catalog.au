@@ -239,6 +239,12 @@ export namespace compiler_catalog {
         if (type == 27 || type == 33) {
             return 3;
         }
+        if (type == 30) {
+            return 4;
+        }
+        if (type == 32) {
+            return 6;
+        }
         if (type == 28) {
             return 10;
         }
@@ -379,15 +385,19 @@ export namespace compiler_catalog {
             return use_word(session, "builtin::HostStream;__au_host_stream;stdout;stderr", part, begin, end);
         }
         if (type == 30) {
-            return use_word(session, "builtin::HostDirectoryResult;__au_host_directory_result;status;id", part, begin,
-                end);
+            return use_word(session, "builtin::HostDirectoryResult;__au_host_directory_result;status;id;device;inode",
+                part, begin, end);
         }
         if (type == 31) {
             return use_word(session, "builtin::HostFileResult;__au_host_file_result;status;id;size;device;inode", part,
                 begin, end);
         }
         if (type == 32) {
-            return use_word(session, "builtin::HostOutputResult;__au_host_output_result;status;id", part, begin, end);
+            if (part < 6) {
+                return use_word(session, "builtin::HostOutputResult;__au_host_output_result;status;id;device;inode",
+                    part, begin, end);
+            }
+            return use_word(session, "directory_device;directory_inode", part - 6, begin, end);
         }
         return use_word(session, "builtin::HostChunk;__au_host_chunk;status;count;bytes", part, begin, end);
     }
@@ -565,13 +575,16 @@ export namespace compiler_catalog {
     // byte offsets of 9..20 address the session block that the hosted entry
     // reserves; 21..28 map, unmap and access the memory runtime's mappings,
     // whose table follows the session block when the entry takes a region.
-    // The eight public HostFiles operations are implemented by exported
+    // The ten public HostFiles operations are implemented by exported
     // functions of namespace host in module aurora.host; a call on the
     // capability forwards it to that function as its first argument.
     auto host_operation_count() -> i64 {
-        return 8;
+        return 10;
     }
     auto host_operation(compiler_resolver::Session& session, i64 operation, i64 begin, i64 end) -> i64 {
+        if (operation > 7) {
+            return use_word(session, "close;open_file", operation - 8, begin, end);
+        }
         return use_word(session, "open_directory;open_beneath;read;create_output;write;commit;discard;print", operation,
             begin, end);
     }
@@ -579,7 +592,8 @@ export namespace compiler_catalog {
     // (`read` and `write` themselves are reserved function names).
     auto host_runtime_name(compiler_resolver::Session& session, i64 operation, i64 begin, i64 end) -> i64 {
         if (operation > 5) {
-            return use_word(session, "files_discard;files_print", operation - 6, begin, end);
+            return use_word(session, "files_discard;files_print;files_close;files_open_file", operation - 6, begin,
+                end);
         }
         return use_word(session,
             "files_open_directory;files_open_beneath;files_read;files_create_output;files_write;files_commit",

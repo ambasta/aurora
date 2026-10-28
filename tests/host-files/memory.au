@@ -18,6 +18,9 @@ import aurora.memory;
 //   vset I X Y          set pair I
 //   vat I               pair I; an index outside the owner traps
 //   vresize N X Y       try_resize with fill (X, Y), then the new count
+//   tok                 the byte size of a triple and the triple count (COUNT)
+//   tset I X            set triple I to (X, X + 1, X + 2)
+//   tat I               triple I; an index outside the owner traps
 //   vview               count and sum of a borrowed typed view
 //   churn N BYTES       N allocations of BYTES each dropped at once: successes
 //   zero BYTES          an allocation of BYTES is all zero: true or false
@@ -27,6 +30,14 @@ class Pair {
 public:
     i64 left;
     i64 right;
+};
+
+// Three bytes: an element stride that is not a multiple of eight.
+class Triple {
+public:
+    u8 a;
+    u8 b;
+    u8 c;
 };
 
 class Buffers {
@@ -253,6 +264,12 @@ auto main(builtin::HostFiles& files, builtin::ByteRegion region,
         .right = 9
     };
     builtin::OwnedValues<Pair> values = region.try_allocate(number(arguments.subspan(c.begin(), c.count())), initial);
+    const Triple blank = Triple{
+        .a = 1u8,
+        .b = 2u8,
+        .c = 3u8
+    };
+    builtin::OwnedValues<Triple> triples = region.try_allocate(number(arguments.subspan(c.begin(), c.count())), blank);
     i64 index = 4;
     i64 ordinal = 1;
     i64 begin = 0;
@@ -356,6 +373,27 @@ auto main(builtin::HostFiles& files, builtin::ByteRegion region,
                 truth(files, values.try_resize(number(one), pair));
                 decimal(files, values.size());
                 used = 4;
+            }
+            if (is(operation, "tok")) {
+                decimal(files, size_of(Triple));
+                decimal(files, triples.size());
+                used = 1;
+            }
+            if (is(operation, "tset")) {
+                const u8 base = u8(number(two) % 250);
+                const Triple triple = Triple{
+                    .a = base,
+                    .b = base + 1u8,
+                    .c = base + 2u8
+                };
+                truth(files, triples.set(number(one), triple));
+                used = 3;
+            }
+            if (is(operation, "tat")) {
+                const Triple triple = triples.at(number(one));
+                decimal(files, i64(triple.a));
+                decimal(files, i64(triple.b));
+                decimal(files, i64(triple.c));
             }
             if (is(operation, "vview")) {
                 const builtin::span<const Pair> view = borrow_values(values);

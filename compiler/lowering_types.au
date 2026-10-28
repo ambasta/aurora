@@ -1515,7 +1515,7 @@ export namespace compiler_lowering {
         if (classes + enumerations > 999900) {
             return fail(session, LoweringError::nominal_type_id_limit, -1);
         }
-        if (enumerations > 64) {
+        if (enumerations > 256) {
             return fail(session, LoweringError::enum_declaration_limit, -1);
         }
         // Domain sentinels make later sorted traversals independent of source

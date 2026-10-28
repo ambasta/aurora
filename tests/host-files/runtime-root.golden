@@ -1,0 +1,2 @@
+"module host_rejection;\nimport aurora.host;\nauto main(builtin::HostFiles& files,builtin::span<const u8> a)->builtin::HostExit{return builtin::HostExit::success;}\n"	aurorac: error AU4001: module not found in the compiler's runtime root: aurora.host
+"module host_rejection;\nimport aurora.memory;\nauto f()->u64{return 0u64;}\n"	aurorac: error AU4001: module not found in the compiler's runtime root: aurora.memory

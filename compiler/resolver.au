@@ -934,7 +934,7 @@ export namespace compiler_resolver {
         const i64 count = mw(session, status, 2) + 1;
         set_mw(session, status, 2, count);
         const i64 node = mw(session, symbol, 5);
-        if (count > 64) {
+        if (count > 256) {
             return reject(session, SemanticError::enum_count, node, -1, -1);
         }
         const i64 cases = sw(session, node, 7);

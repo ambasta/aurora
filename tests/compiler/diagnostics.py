@@ -198,6 +198,9 @@ with tempfile.TemporaryDirectory(prefix="aurora-diagnostics-") as directory:
         ["--check", "--diagnostics=json", "", source],
         ["--diagnostics=json", source, "-o", root / "never.s"],
         ["--check", "--diagnostics=json", source, "--module-root"],
+        ["--check", "--diagnostics=json", source, "--runtime-root"],
+        ["--check", "--diagnostics=json", "--runtime-root", "", source],
+        ["--check", "--diagnostics=json", "--runtime-root", root, "--runtime-root", root, source],
         ["--check", "--diagnostics=json", source, source],
     ):
         diagnostic = run(options, 2, "AU5001")

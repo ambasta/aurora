@@ -235,10 +235,12 @@ Operations copy data only; `builtin::HostStatus` is `success`, `invalid_handle`,
 
 | Operation | Result |
 |---|---|
-| `open_directory(span path)` | `HostDirectoryResult {status, id}`; any no-symlink path |
+| `open_directory(span path)` | `HostDirectoryResult {status, id, device, inode}`; any no-symlink path |
 | `open_beneath(u64 directory, span relative)` | `HostFileResult {status, id, size, device, inode}`; regular files beneath the directory, no symlinks, `..` or absolute path |
+| `open_file(span path)` | `HostFileResult`; a regular file at any no-symlink path |
+| `close(u64 handle)` | `HostStatus`; closes a directory or file |
 | `read(u64 file, u64 offset)` | `HostChunk {status, count, bytes}`; `count == 0` at end of file |
-| `create_output(span path)` | `HostOutputResult {status, id}`; an exclusive temporary beside the destination |
+| `create_output(span path)` | `HostOutputResult {status, id, device, inode, directory_device, directory_inode}`; an exclusive temporary beside the destination |
 | `write(u64 output, span bytes)` | `HostStatus`; at most 64 MiB per output |
 | `commit(u64 output)`, `discard(u64 output)` | `HostStatus`; atomic rename into place, or removal |
 | `print(HostStream stream, span bytes)` | `HostStatus`; `stdout` or `stderr` |
@@ -251,32 +253,40 @@ numbers, `generation * 64 + slot + 1`, checked against the session's own tables:
 16 open directories and files and 4 outputs, each slot with a generation that
 advances on reuse. An id that does not name a live handle of the right kind
 (stale, foreign, mistyped or made up) yields `invalid_handle`; a full table
-yields `exhausted`. There is no close operation, so a process opens at most 16
-directories and files in total; this lifetime bound is intentional until the
-compiler adopts HostFiles, which brings close. Ids are deterministic data: guessing a live id
+yields `exhausted`. `close` frees a directory or file slot (files opened
+beneath a closed directory stay open); outputs end only by commit or discard.
+Device and inode identify what was opened: the directory, the file, and for an
+output its directory and the existing destination (0 and 0 when absent), so a
+program can refuse to replace one of its inputs or to name one destination
+twice. Ids are deterministic data: guessing a live id
 grants only what the session already holds. Uncommitted outputs are discarded
 and every descriptor closed after `main` returns, but not when the process dies
 by a signal or trap, which leaves its `.aurora-output-*` temporaries behind;
 destination names in that namespace are rejected. Committed files have mode
-0600. Like the module loader, `open_beneath` opens before it checks for a
-regular file (nonblocking, so a FIFO cannot hang it).
+0600. Like the module loader, `open_beneath` and `open_file` open before
+they check for a regular file (nonblocking, so a FIFO cannot hang them).
 
 The operations are implemented in Aurora by a binding module, imported as
 `aurora.host`. Every `aurora.*` module name is reserved to the compiler except
 its own sources (`aurora.compiler.*`, `aurora.tests.*`, which every bootstrap
 stage reads through ordinary module roots): a reserved import resolves only
 from the compiler's runtime root (`runtime/linux`, fixed when aurorac is
-configured), never from a `--module-root` or an overlay, and is rejected if a
-module root also holds it; a root module declaring a reserved name is rejected. `files.NAME(...)` calls the exported
+configured, or the directory `--runtime-root` names, as for a relocated
+checkpoint; whoever runs the compiler chooses its trusted runtime, as they
+choose the compiler: the memory entries trust the addresses `aurora.memory`
+returns, so another runtime decides the program's memory safety too, and
+nothing in the output records which root was used), never from a
+`--module-root` or an overlay, and is
+rejected if a module root also holds it; a root module declaring a reserved name is rejected. `files.NAME(...)` calls the exported
 `host::files_NAME(files, ...)` of that module (`read` and `write` are reserved
 function names) as an ordinary service-helper call. The Linux binding,
 `runtime/linux/aurora/host.au`, uses twelve private HostFiles primitives that
 only an imported module named `aurora.host` may name: `load`, `store`, `load8`
 and `store8` over the zeroed 16384-byte session block the grant addresses, and
-the system calls `system_open` (openat2 under one of five compiler-fixed open
+the system calls `system_open` (openat2 under one of six compiler-fixed open
 modes: directory, regular file, O_PATH probe and exclusive create without
-symlinks, the last three beneath their directory, and read-write for
-`/dev/null`), `system_chunk` (pread64 into a cleared
+symlinks, the last three beneath their directory, read-write for `/dev/null`,
+and regular file at any path), `system_chunk` (pread64 into a cleared
 HostChunk), `system_write`, `system_rename` (renameat), `system_unlink`
 (unlinkat), `system_close`, `system_stat` (fstat) and `system_identity`
 (getpid). The compiler emits each inline with a `syscall` instruction after
@@ -291,7 +301,7 @@ capability; a library
 importing `aurora.host` cannot name the primitives or the binding's private
 helpers. The binding is trusted code of the compiler. A binding
 over Aurora kernel services (Call/Serve or the file namespace service) would be
-another `aurora.host` with its own primitives and the same eight functions.
+another `aurora.host` with its own primitives and the same ten functions.
 
 For a hosted entry the backend emits a global `_start`: it reads argc/argv from
 the initial stack, requires the argument strings to be contiguous, reserves and
@@ -371,7 +381,9 @@ exhaustion after a successful mapping kills the process; and there are no
 metrics, test allocator or fault injection. Runtime cost is one system call per
 nonempty allocation, resize and drop and a page per nonempty allocation; the
 table makes `_start` reserve 272 KiB of stack, so a stack limit below about
-300 KiB faults before `main`.
+300 KiB faults before `main`. Element and byte accesses check the descriptor
+inline on a fast path (calls are not inlined) and copy whole qwords for
+strides that are a multiple of eight.
 
 Cases: the memory probe over `tests/host-files/memory.golden` and the
 `host-sort` example in `tests/host-files/cases.golden`; rejections (region entry,

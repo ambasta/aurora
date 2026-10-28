@@ -5,12 +5,16 @@ import aurora.host;
 // one word followed by its operands; every operation prints one line,
 // "ORDINAL OPERATION STATUS [VALUE]". An id operand is @N, the id the Nth
 // operation returned, or a decimal literal, so stale, forged and foreign ids
-// are ordinary data.
+// are ordinary data. A device and inode identity prints as a label #L: #0 for
+// none, else the order in which the identity was first seen.
 //
-//   dir PATH            open_directory
-//   open DIR PATH       open_beneath (prints the size)
+//   dir PATH            open_directory (prints the identity)
+//   open DIR PATH       open_beneath (prints the size and identity)
+//   file PATH           open_file (prints the size and identity)
+//   close ID            close
+//   churn DIR PATH N    open_beneath and close N times (prints the count done)
 //   read FILE OFFSET    read (prints the count and the bytes)
-//   create PATH         create_output
+//   create PATH         create_output (prints the destination and directory identities)
 //   write OUT TEXT      write
 //   fill OUT KIB        write KIB KiB of 'x', stopping at the first failure
 //   commit OUT          commit
@@ -172,7 +176,100 @@ auto reference(builtin::span<const u8> word) -> i64 {
     return -1;
 }
 
+// Opens and closes a file beneath a directory count times; the status of the
+// first failure, or success, and the number of rounds completed.
+auto churn(builtin::HostFiles& files, u64 directory, builtin::span<const u8> path, u64 count) -> builtin::HostStatus {
+    u64 done = 0u64;
+    builtin::HostStatus result = builtin::HostStatus::success;
+    while (result == builtin::HostStatus::success && done < count) {
+        const builtin::HostFileResult file = files.open_beneath(directory, path);
+        result = file.status;
+        if (result == builtin::HostStatus::success) {
+            result = files.close(file.id);
+            done = done + 1u64;
+        }
+    }
+    files.print(builtin::HostStream::stdout, "churn ");
+    status(files, result);
+    files.print(builtin::HostStream::stdout, " ");
+    return decimal(files, done);
+}
+
+auto label(builtin::HostFiles& files, i64 value) -> builtin::HostStatus {
+    files.print(builtin::HostStream::stdout, "#");
+    return decimal(files, u64(value));
+}
+
 auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> builtin::HostExit {
+    array<u64, 32> devices = {
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64
+    };
+    array<u64, 32> inodes = {
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64
+    };
+    i64 seen = 0;
     array<u64, 32> ids = {
         0u64,
         0u64,
@@ -232,6 +329,11 @@ auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> built
             const builtin::span<const u8> one = arguments.subspan(one_begin, one_count);
             const builtin::span<const u8> two = arguments.subspan(two_begin, two_count);
             i64 used = 2;
+            i64 identities = 0;
+            u64 first_device = 0u64;
+            u64 first_inode = 0u64;
+            u64 second_device = 0u64;
+            u64 second_inode = 0u64;
             u64 id = number(one, 0);
             const i64 named = reference(one);
             if (named >= 0) {
@@ -241,6 +343,9 @@ auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> built
                 const builtin::HostDirectoryResult result = files.open_directory(one);
                 report(files, ordinal, operation, result.status);
                 ids[ordinal] = result.id;
+                identities = 1;
+                first_device = result.device;
+                first_inode = result.inode;
             }
             if (is(operation, "open")) {
                 const builtin::HostFileResult result = files.open_beneath(id, two);
@@ -248,6 +353,32 @@ auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> built
                 decimal(files, result.size);
                 ids[ordinal] = result.id;
                 used = 3;
+                identities = 1;
+                first_device = result.device;
+                first_inode = result.inode;
+            }
+            if (is(operation, "file")) {
+                const builtin::HostFileResult result = files.open_file(one);
+                report(files, ordinal, operation, result.status);
+                decimal(files, result.size);
+                ids[ordinal] = result.id;
+                identities = 1;
+                first_device = result.device;
+                first_inode = result.inode;
+            }
+            if (is(operation, "close")) {
+                const builtin::HostStatus result = files.close(id);
+                report(files, ordinal, operation, result);
+            }
+            if (is(operation, "churn")) {
+                const Word third = argument(arguments, index + 3);
+                u64 rounds = 0u64;
+                if (third.begin() >= 0) {
+                    rounds = number(arguments.subspan(third.begin(), third.count()), 0);
+                }
+                decimal(files, u64(ordinal));
+                churn(files, id, two, rounds);
+                used = 4;
             }
             if (is(operation, "read")) {
                 decimal(files, u64(ordinal));
@@ -259,6 +390,11 @@ auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> built
                 const builtin::HostOutputResult result = files.create_output(one);
                 report(files, ordinal, operation, result.status);
                 ids[ordinal] = result.id;
+                identities = 2;
+                first_device = result.device;
+                first_inode = result.inode;
+                second_device = result.directory_device;
+                second_inode = result.directory_inode;
             }
             if (is(operation, "write")) {
                 const builtin::HostStatus result = files.write(id, two);
@@ -294,6 +430,33 @@ auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> built
                     return builtin::HostExit::usage;
                 }
                 return builtin::HostExit::success;
+            }
+            i64 printed = 0;
+            while (printed < identities) {
+                u64 device = first_device;
+                u64 inode = first_inode;
+                if (printed == 1) {
+                    device = second_device;
+                    inode = second_inode;
+                }
+                i64 found = 0;
+                if (device != 0u64 || inode != 0u64) {
+                    i64 at = 0;
+                    while (at < seen && found == 0) {
+                        if (devices[at] == device && inodes[at] == inode) {
+                            found = at + 1;
+                        }
+                        at = at + 1;
+                    }
+                    if (found == 0 && seen < 32) {
+                        devices[seen] = device;
+                        inodes[seen] = inode;
+                        seen = seen + 1;
+                        found = seen;
+                    }
+                }
+                label(files, found);
+                printed = printed + 1;
             }
             files.print(builtin::HostStream::stdout, "\n");
             index = index + used;

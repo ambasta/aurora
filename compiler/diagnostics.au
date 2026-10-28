@@ -1183,7 +1183,7 @@ export namespace compiler_resolver {
             return say(session, "duplicate or reserved class name");
         }
         if (code == SemanticError::enum_count) {
-            return say(session, "module graph exceeds 64 enum definitions");
+            return say(session, "module graph exceeds 256 enum definitions");
         }
         if (code == SemanticError::enum_cases) {
             return say(session, "enum class requires between 1 and 256 named cases");

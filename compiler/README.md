@@ -198,6 +198,13 @@ The recorded sources select their predecessor with an exact-version gate and,
 from `2fd30b2` on, a digest of the binary they were first built with; `rebuild`
 replaces those two scripts in its exported copies with this checkout's
 minimum-version gate and a `select` that accepts the compiler it is given.
+Sources from `checkpoint.json` schema 2 on keep their own script, whose
+`select` already accepts any compiler. `rebuild` and `hop` also keep the
+checkpoint's runtime root (`runtime/linux`, the `aurora.host` and
+`aurora.memory` modules) as `OUTPUT/runtime/linux`: the compiler bakes its own
+source tree's runtime root in, so a relocated checkpoint compiles hosted
+programs with `--runtime-root OUTPUT/runtime/linux`. That needs a checkpoint
+whose source has HostFiles and `--runtime-root`; the current C0 has neither.
 Keep `OUTPUT/aurorac` outside directories you delete, or rerun `rebuild`.
 
 #### Bumping the checkpoint (one hop)
@@ -214,7 +221,8 @@ python3 scripts/bootstrap.py hop --compiler "$C0" --source build/hop-src \
 
 The hop checks that the checkout's files hash to `TREE`, configures NEW with C0
 and the fixed options, builds C1 and C2, runs `hosted-lexer-bootstrap`, copies
-NEW's C2 to `OUTPUT/aurorac` and writes `OUTPUT/receipt.json` (source,
+NEW's C2 to `OUTPUT/aurorac` and its runtime root to `OUTPUT/runtime/linux`,
+and writes `OUTPUT/receipt.json` (source,
 predecessor, tool versions, commands, logs and timings). The bump commit names
 NEW in `checkpoint.json`, moves the old checkpoint to `history`, and qualifies
 with the release suite and the merge gates.
