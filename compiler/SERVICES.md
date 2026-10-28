@@ -374,7 +374,9 @@ mappings, zeroed (or filled) new bytes, a fresh id for every changed size, same
 size unchanged, prefix kept and shrunk bytes never resurfacing (a per-slot dirty
 mark zeroes the kept page's tail on regrowth), contiguous kind-0 views, and
 bounds failures as false results or traps where the adapter has them. The
-differences: faults are UD2 traps (SIGILL) without the adapter's message;
+differences: faults are UD2 traps (SIGILL) without the adapter's message; an
+element access must use the stride its allocation was made with (the adapter
+checks only that the length is a multiple of it);
 resizing moves pages with mremap instead of copying, so no staging block
 coexists; at most 16383 allocations are live (reachable only through ~16k owner
 bindings at once); physical memory is committed on first touch, so host memory

@@ -72,7 +72,7 @@ The optional language server keeps the former C++ loader (`frontend.hpp`, `host_
 
 Current limits:
 
-- 16 explicit roots
+- 16 explicit roots (in aurorac at most 15 leave a HostFiles handle for the input, and 14 for a reserved import's runtime root as well)
 - 64 files per graph, including the root
 - 16 import edges in a dependency path
 - 1 MiB per source file and 4 MiB total captured input

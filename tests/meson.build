@@ -135,10 +135,10 @@ test('scratchpad-source-native', python,
 
 # Textual IR cases (.air) run through one driver; each top-level directory of
 # tests/compiler/ir is one test. See tests/compiler/ir/README.md.
-# The test graph: the compiler's own modules plus the Aurora .air reader
-# (tools/air.au) and the initialization workspace probes, built by C1 with the
-# test-only bridge rows into its own object and header. Only test drivers link
-# it; the compiler never does.
+# The bridged test graph: the compiler's own modules plus the Aurora .air
+# reader (tools/air.au) and the initialization workspace probes, built by C1
+# into its own object and header. The C++ test drivers and the optional
+# language server link it; the compiler never does.
 subdir('air')
 air_adapter_sources = files('../compiler/hosted_resolver.cpp', '../compiler/hosted_pipeline.cpp',
                             '../runtime/hosted_bytes.cpp')

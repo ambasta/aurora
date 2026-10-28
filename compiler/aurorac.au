@@ -194,7 +194,11 @@ public:
     // The first count bytes of a read chunk.
     auto append_chunk(builtin::HostChunk chunk) -> bool {
         const i64 length = i64(chunk.count);
-        if (length < 0 || length > 504 || !reserve(length)) {
+        if (length < 0 || length > 504) {
+            failed = true;
+            return false;
+        }
+        if (!reserve(length)) {
             return false;
         }
         const array<u8, 504> payload = chunk.bytes;
@@ -328,6 +332,7 @@ class Diagnostics {
     i64 outBytes;
     i64 reportBytes;
     bool reportMore;
+    bool invalid;
     bool failed;
     auto reserve_pool(i64 extra) -> bool {
         if (failed || (poolBytes + extra > pool.size() && !pool.try_resize(grown(poolBytes + extra)))) {
@@ -497,7 +502,7 @@ class Diagnostics {
 public:
     Diagnostics(builtin::ByteRegion region) : entries(entry_pool(region)), pool(region.try_allocate(0)),
         out(region.try_allocate(0)), entryCount(0), poolBytes(0), outBytes(0), reportBytes(0), reportMore(false),
-        failed(false) {
+        invalid(false), failed(false) {
     }
     auto good() const -> bool {
         return !failed && entries.ok() && pool.ok() && out.ok();
@@ -590,6 +595,7 @@ public:
     auto report(compiler_resolver::Report first, builtin::span<const u8> path) -> bool {
         reportMore = false;
         if (first.size() < 0 || first.size() > 384) {
+            invalid = true;
             begin(internal(), false);
             return text("invalid hosted resolution result");
         }
@@ -630,6 +636,7 @@ public:
             entry.length = 0;
             replace(entry);
             reportMore = false;
+            invalid = true;
             return text("invalid hosted resolution result");
         }
         i64 at = 0;
@@ -643,6 +650,10 @@ public:
     }
     auto pending() const -> bool {
         return reportMore && !failed;
+    }
+    // Whether a copied report was malformed (and recorded as internal).
+    auto malformed() const -> bool {
+        return invalid;
     }
     auto offset() const -> i64 {
         return reportBytes;
@@ -659,6 +670,7 @@ public:
         poolBytes = 0;
         outBytes = 0;
         reportMore = false;
+        invalid = false;
         return true;
     }
     // One diagnostic as text: PATH:LINE:COLUMN or the tool, then the
@@ -1598,6 +1610,8 @@ auto compile(builtin::HostFiles& files, builtin::ByteRegion region, builtin::spa
             sources.truncate(begin + capture_limit());
         }
         source_ranges.add(begin, sources.size() - begin);
+        // A truncated source is never parsed; the failure is reported below.
+        ok = ok && sources.good() && source_ranges.good();
         if (ok) {
             // Aurora lexes, parses and admits the source, charges it against
             // its byte limits and ingests it as the next module.
@@ -1781,6 +1795,8 @@ auto compile(builtin::HostFiles& files, builtin::ByteRegion region, builtin::spa
     }
     if (!sources.good() || !source_ranges.good() || !paths.good() || !path_ranges.good() || !name.good()
         || !relative.good() || !identities.good()) {
+        // The allocation failure is the run's only diagnostic.
+        diagnostics.clear();
         failure(diagnostics, internal(), "hosted driver allocation failed");
         ok = false;
     }
@@ -1829,6 +1845,13 @@ auto compile(builtin::HostFiles& files, builtin::ByteRegion region, builtin::spa
                 const i64 at = diagnostics.offset();
                 const compiler_resolver::Report part = compiler_pipeline::diagnostic(result, lint, at);
                 diagnostics.more(part);
+            }
+            if (diagnostics.malformed()) {
+                diagnostics.clear();
+                failure(diagnostics, internal(), "invalid hosted resolution result");
+                render_failure(diagnostics, options.json, formatter);
+                print(files, diagnostics.output(), options.json && !formatter);
+                return exit_for(diagnostics, formatter);
             }
             lint = lint + 1;
         }
@@ -2097,6 +2120,13 @@ auto format(builtin::HostFiles& files, builtin::ByteRegion region, builtin::span
             const i64 at = diagnostics.offset();
             const compiler_resolver::Report part = compiler_formatter::diagnostic(done, index, at);
             diagnostics.more(part);
+        }
+        if (diagnostics.malformed()) {
+            diagnostics.clear();
+            failure(diagnostics, internal(), "invalid hosted resolution result");
+            render_failure(diagnostics, options.json, true);
+            files.print(builtin::HostStream::stderr, diagnostics.output());
+            return builtin::HostExit::usage;
         }
         diagnostics.restyle();
         index = index + 1;
