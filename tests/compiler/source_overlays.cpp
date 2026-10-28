@@ -26,8 +26,8 @@ std::shared_ptr<const aurora::SourceText> snapshot(const fs::path &path, const s
     return std::make_shared<const aurora::SourceText>(path.string(), text);
 }
 void accept(const fs::path &input, const std::vector<fs::path> &roots, const SourceOverlays &overlays = {}) {
-    const auto checked = aurora::checkSource(input, roots, overlays);
-    require(!checked.module.get().functions.empty(), "missing checked functions");
+    const auto checked = aurora::checkSource(input, roots, overlays, aurora::AnalysisMode::Check, {.emit = true});
+    require(!checked.code.empty(), "missing checked functions");
     require(!checked.sourceIdentities.empty(), "overlay lost opened-file identities");
     ++cases;
 }

@@ -72,70 +72,110 @@ def compile_codec_probe(directory):
     )
 
 
-def source_verifier_probes(directory, args):
-    # Intentional mutation-test interposition, as in the emitter probe below.
-    # Only the verifier entry is wrapped. It borrows the production-admitted
-    # metadata and structured instruction owners, never a copied stream.
-    sys.path.insert(0, str(ROOT / "scripts"))
-    import bootstrap_frontend as bootstrap
-
-    directory.mkdir(parents=True)
-    fixture = directory / "verification-probe.cpp"
-    fixture.write_text(r"""
+PIPELINE_FIXTURE = r"""
 #include "hosted_frontend_abi.hpp"
 #include <cstdlib>
-using namespace aurora;
 namespace {
 unsigned entered = 0;
 struct RequireEntry {
     ~RequireEntry() { if (entered == 0) std::abort(); }
 } requireEntry;
 }
-extern "C" std::int64_t probe_verification_run(const void *, std::int64_t) noexcept;
-extern "C" std::int64_t __wrap_aurora_hosted_verification_run(
-    const void *input, std::int64_t callable) noexcept {
-    const auto &roots = *static_cast<const hosted_abi::VerificationRunRoots *>(input);
-    if (!roots.workspace || !roots.metadata || !roots.instructions ||
-        roots.workspace == roots.metadata || roots.workspace == roots.instructions ||
-        roots.metadata == roots.instructions || callable < 0)
-        std::abort();
-    auto *const workspace = roots.workspace;
-    const auto *const metadata = roots.metadata;
-    const auto *const instructions = roots.instructions;
+extern "C" void probe_pipeline_run(const void *, void *) noexcept;
+extern "C" void __wrap_aurora_hosted_pipeline_run(const void *input, void *output) noexcept {
     ++entered;
-    const auto result = probe_verification_run(input, callable);
-    if (roots.workspace != workspace || roots.metadata != metadata || roots.instructions != instructions)
-        std::abort();
-    hosted_abi::compiler_ir_verification::VerificationReport report{};
-    aurora_hosted_verification_report(workspace, &report);
-    if (result != static_cast<std::int64_t>(report.statusValue))
-        std::abort();
-    return result;
+    probe_pipeline_run(input, output);
 }
-""")
+"""
+# The probe frontend exposes only the pipeline entry, built from mutated copies.
+PIPELINE_SOURCE = """
+export module aurora.compiler.frontend;
+import aurora.compiler.lexer;
+import aurora.compiler.syntax_arena;
+import aurora.compiler.resolution_kinds;
+import aurora.compiler.resolution_rows;
+import aurora.compiler.lowering_errors;
+import aurora.compiler.lowering_kinds;
+import aurora.compiler.lowering_storage;
+import aurora.compiler.resolution_arena;
+import aurora.compiler.ir_graph;
+import aurora.compiler.ir_metadata_storage;
+import aurora.compiler.ir_instruction_storage;
+import aurora.compiler.ir_verification_errors;
+import aurora.compiler.x86_object_storage;
+import aurora.compiler.x86_storage;
+import aurora.compiler.pipeline;
+export namespace compiler_frontend {
+    auto pipeline_run(builtin::ByteRegion region, compiler_resolver::Session session, i64 root, i64 diagnostic,
+        u64 options) -> compiler_pipeline::Result {
+        compiler_pipeline::Result result = compiler_pipeline::run(region, move(session), root, diagnostic, options);
+        return move(result);
+    }
+}
+"""
+
+
+BUILT = {}
+
+
+def pipeline_probe(bootstrap, directory, args, modules, label, fixture_object):
+    """Compile the mutated module copies into a probe pipeline and link it into
+    the real CLI, interposed on the one pipeline entry. Both probes share the
+    unchanged build."""
+    if label == "unchanged" and label in BUILT:
+        return BUILT[label]
+    source = directory / "pipeline-probe.au"
+    source.write_text(PIPELINE_SOURCE)
+    assembly = directory / (label + ".s")
+    facts_path = directory / (label + ".json")
+    command(
+        [args.compiler, "--local-symbols", "--module-root", modules, source, "--abi-facts", facts_path, "-o", assembly],
+        timeout=120,
+    )
+    facts = json.loads(facts_path.read_text())
+    original = json.loads(args.abi_facts.read_text())
+    # The real host and frontend exchange these owners with the probe pipeline.
+    for group, name in (
+        ("records", "compiler_resolver::Session"),
+        ("records", "compiler_pipeline::Result"),
+        ("functions", "compiler_frontend::pipeline_run"),
+    ):
+        if bootstrap.abi_declaration(facts, group, name) != bootstrap.abi_declaration(original, group, name):
+            raise AssertionError(label + ": pipeline probe ABI differs: " + name)
+    with mock.patch.object(bootstrap, "PASS_ENTRIES", {"pipeline_run": bootstrap.PASS_ENTRIES["pipeline_run"]}):
+        bridge = "\n".join(bootstrap.pass_bridges(facts)[1]).replace("aurora_hosted_pipeline_run", "probe_pipeline_run")
+    assembly.write_text(assembly.read_text() + "\n" + bridge + "\n")
+    executable = directory / label
+    command(
+        COMPILER
+        + [
+            fixture_object,
+            assembly,
+            args.main_library,
+            args.frontend_library,
+            "-Wl,--wrap=aurora_hosted_pipeline_run",
+            "-o",
+            executable,
+        ],
+        timeout=45,
+    )
+    BUILT[label] = executable
+    return executable
+
+
+def pipeline_fixture(directory, args):
+    fixture = directory / "pipeline-probe.cpp"
+    fixture.write_text(PIPELINE_FIXTURE)
     fixture_object = fixture.with_suffix(".o")
     command(
         COMPILER
         + ["-std=c++23", "-I", ROOT / "compiler", "-I", args.abi_header.parent, "-c", fixture, "-o", fixture_object],
         timeout=45,
     )
-    source = directory / "verification-probe.au"
-    source.write_text("""
-export module aurora.compiler.frontend;
-import aurora.compiler.ir_verification;
-import aurora.compiler.ir_verification_errors;
-import aurora.compiler.ir_verification_storage;
-import aurora.compiler.ir_metadata_storage;
-import aurora.compiler.ir_instruction_storage;
-export namespace compiler_frontend {
-    auto verification_run(compiler_ir_verification::VerificationWorkspace& workspace,
-        const compiler_ir_metadata::MetadataStore& metadata,
-        const compiler_ir_instructions::InstructionStore& instructions,
-        i64 callable) -> compiler_ir_verification::VerificationStatus {
-        return compiler_ir_verification::run(workspace, metadata, instructions, callable);
-    }
-}
-""")
+    return fixture_object
+
+
+def staged_modules(bootstrap, directory):
     modules = directory / "modules"
     bootstrap.stage_modules(
         modules,
@@ -145,9 +185,21 @@ export namespace compiler_frontend {
             ROOT / "library/std/binary.au",
         ],
     )
+    return modules
+
+
+def source_verifier_probes(directory, args):
+    # Intentional mutation-test interposition, as in the emitter probe below:
+    # the pipeline entry runs a copy whose verifier observes a hostile form or
+    # lacks a handler; every other stage is the unchanged source.
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import bootstrap_frontend as bootstrap
+
+    directory.mkdir(parents=True)
+    fixture_object = pipeline_fixture(directory, args)
+    modules = staged_modules(bootstrap, directory)
     transfer = modules / "aurora/compiler/ir_verification_transfer.au"
     original_transfer = transfer.read_text()
-    original = json.loads(args.abi_facts.read_text())
     inputs = []
     for case, parameters, result, body in (
         ("constant", "", "i64", "return 42;"),
@@ -168,62 +220,7 @@ export namespace compiler_frontend {
             # Remove the actual Constant route while preserving all other routes.
             changed = replace_once(changed, "(form >= 5 && form <= 19)", "(form >= 6 && form <= 19)")
         transfer.write_text(changed)
-        assembly = directory / (mutation + ".s")
-        facts_path = directory / (mutation + ".json")
-        command(
-            [
-                args.compiler,
-                "--local-symbols",
-                "--module-root",
-                modules,
-                source,
-                "--abi-facts",
-                facts_path,
-                "-o",
-                assembly,
-            ],
-            timeout=90,
-        )
-        facts = json.loads(facts_path.read_text())
-        # Compare the complete closed verification owner and every copied pool,
-        # report and reason with the graph used by the production native capsule.
-        for group in ("records", "enums"):
-            for entry in original[group].values():
-                name = entry["source_name"]
-                if name.startswith("compiler_ir_verification::"):
-                    if bootstrap.abi_declaration(facts, group, name) != bootstrap.abi_declaration(
-                        original, group, name
-                    ):
-                        raise AssertionError(mutation + ": verification probe ABI differs: " + name)
-        for group, name in (
-            ("records", "compiler_ir_metadata::MetadataStore"),
-            ("records", "compiler_ir_instructions::InstructionStore"),
-            ("functions", "compiler_frontend::verification_run"),
-        ):
-            if bootstrap.abi_declaration(facts, group, name) != bootstrap.abi_declaration(original, group, name):
-                raise AssertionError(mutation + ": verification paired-owner ABI differs: " + name)
-        bootstrap.verification_abi(facts)
-        with mock.patch.object(
-            bootstrap, "PASS_ENTRIES", {"verification_run": bootstrap.PASS_ENTRIES["verification_run"]}
-        ):
-            bridge = "\n".join(bootstrap.pass_bridges(facts)[1]).replace(
-                "aurora_hosted_verification_run", "probe_verification_run"
-            )
-        assembly.write_text(assembly.read_text() + "\n" + bridge + "\n")
-        executable = directory / mutation
-        command(
-            COMPILER
-            + [
-                fixture_object,
-                assembly,
-                args.main_library,
-                args.frontend_library,
-                "-Wl,--wrap=aurora_hosted_verification_run",
-                "-o",
-                executable,
-            ],
-            timeout=45,
-        )
+        executable = pipeline_probe(bootstrap, directory, args, modules, mutation, fixture_object)
         for case, path, expected in inputs:
             for existing in (False, True):
                 output = directory / (mutation + "-" + case + "-" + str(existing) + ".s")
@@ -251,40 +248,13 @@ export namespace compiler_frontend {
 
 
 def source_emitter_probes(directory, args):
-    # Reuse the built CLI main and stock admission. Only emission is wrapped,
-    # using a local-symbol source graph with the identical generated root ABI.
+    # The same interposition with the emitter's copies mutated: it observes
+    # unknown forms or operators, or loses the scalar family's handler, while
+    # admission and verification run unchanged sources.
     sys.path.insert(0, str(ROOT / "scripts"))
     import bootstrap_frontend as bootstrap
 
-    fixture = directory / "emitter-probe.cpp"
-    fixture.write_text(r"""
-#include "hosted_frontend_abi.hpp"
-#include <cstdlib>
-using namespace aurora;
-extern "C" std::int64_t probe_emitter_run(const void *, std::int64_t, std::int64_t) noexcept;
-extern "C" std::int64_t __wrap_aurora_hosted_emitter_run(
-    const void *roots, std::int64_t binding, std::int64_t reflection) noexcept {
-    const auto result = probe_emitter_run(roots, binding, reflection);
-    const auto invalid = static_cast<std::int64_t>(hosted_abi::compiler_x86::EmitStatus::invalid);
-    if (result == invalid) {
-        auto *workspace = const_cast<void *>(static_cast<const void *const *>(roots)[0]);
-        if (aurora_hosted_emitter_status(workspace) != invalid ||
-            aurora_hosted_emitter_add_retained(workspace, 0) != 0 ||
-            aurora_hosted_emitter_status(workspace) != invalid ||
-            aurora_hosted_emitter_size(workspace,
-                static_cast<std::int64_t>(hosted_abi::compiler_x86::Artifact::assembly)) != -1)
-            std::abort();
-    }
-    return result;
-}
-
-""")
-    fixture_object = fixture.with_suffix(".o")
-    command(
-        COMPILER
-        + ["-std=c++23", "-I", ROOT / "compiler", "-I", args.abi_header.parent, "-c", fixture, "-o", fixture_object],
-        timeout=45,
-    )
+    fixture_object = pipeline_fixture(directory, args)
     # The constant positive control checks successful handler admission here;
     # packed numeric execution and GNU-reference tests check its value/encoding.
     inputs = {}
@@ -317,100 +287,32 @@ extern "C" std::int64_t __wrap_aurora_hosted_emitter_run(
         path = directory / (case + ".au")
         path.write_text(f"module emitter_probe_fixture; auto test({parameters})->{result} {{ return {expression}; }}\n")
         inputs[case] = (path, "")
-    original = json.loads(args.abi_facts.read_text())
-    source = directory / "emitter-probe.au"
-    source.write_text("""
-export module aurora.compiler.frontend;
-import aurora.compiler.x86_module;
-import aurora.compiler.x86_storage;
-import aurora.compiler.x86_object_storage;
-import aurora.compiler.ir_metadata_storage;
-import aurora.compiler.ir_instruction_storage;
-export namespace compiler_frontend {
-    auto emitter_run(compiler_x86::EmitWorkspace& workspace, compiler_x86::ObjectWorkspace& object,
-        const compiler_ir_metadata::MetadataStore& metadata,
-        const compiler_ir_instructions::InstructionStore& instructions,
-        i64 binding, i64 reflection) -> compiler_x86::EmitStatus {
-        return compiler_x86::run(workspace, object, metadata, instructions, binding, reflection);
-    }
-}
-""")
-    modules = directory / "modules"
-    bootstrap.stage_modules(
-        modules,
-        [
-            *sorted((ROOT / "compiler").glob("*.au")),
-            ROOT / "library/std/decimal_digits.au",
-            ROOT / "library/std/binary.au",
-        ],
-    )
-    storage = modules / "aurora/compiler/ir_instruction_storage.au"
+    modules = staged_modules(bootstrap, directory)
+    emitters = sorted((modules / "aurora/compiler").glob("x86_*.au"))
+    originals = {path: path.read_text() for path in emitters}
     scalar = modules / "aurora/compiler/x86_scalar.au"
-    storage_original, scalar_original = storage.read_text(), scalar.read_text()
     for mutation, cases in (
         ("unchanged", tuple(inputs)),
         ("unknown-form", ("constant",)),
         ("unknown-operators", ("unary", "binary", "comparison")),
         ("missing-handler", ("constant",)),
     ):
-        storage.write_text(storage_original)
-        scalar.write_text(scalar_original)
-        if mutation == "unknown-form":
-            storage.write_text(replace_once(storage_original, "return instructionForm;", "return 999;"))
-        elif mutation == "unknown-operators":
-            changed = storage_original
-            for field in ("unaryOperation", "binaryOperation", "comparisonOperation"):
-                changed = replace_once(changed, "return " + field + ";", "return 999;")
-            storage.write_text(changed)
-        elif mutation == "missing-handler":
+        for path, text in originals.items():
+            changed = text
+            if mutation == "unknown-form":
+                # Every form the emitter reads, in every emitter module, is unknown.
+                changed = text.replace(".form()", ".form() * 0 + 999")
+            elif mutation == "unknown-operators":
+                for accessor in ("unary_operation", "binary_operation", "comparison_operation"):
+                    changed = changed.replace("." + accessor + "()", "." + accessor + "() * 0 + 999")
+            path.write_text(changed)
+        if mutation == "unknown-form" and all(originals[path] == path.read_text() for path in emitters):
+            raise AssertionError("probe mutation found no emitter form read")
+        if mutation == "missing-handler":
             # Remove one real family, not an independently enumerated form list.
-            prefix, signature = scalar_original.split("    auto emit_scalar(", 1)
+            prefix, signature = originals[scalar].split("    auto emit_scalar(", 1)
             scalar.write_text(prefix + "    auto emit_scalar(" + signature.split("{", 1)[0] + "{ return false; }\n}\n")
-        assembly = directory / (mutation + ".s")
-        facts_path = directory / (mutation + ".json")
-        command(
-            [
-                args.compiler,
-                "--local-symbols",
-                "--module-root",
-                modules,
-                source,
-                "--abi-facts",
-                facts_path,
-                "-o",
-                assembly,
-            ],
-            timeout=90,
-        )
-        facts = json.loads(facts_path.read_text())
-        for group, name in (
-            ("records", "compiler_x86::EmitWorkspace"),
-            ("records", "compiler_x86::ObjectWorkspace"),
-            ("records", "compiler_ir_metadata::MetadataStore"),
-            ("records", "compiler_ir_instructions::InstructionStore"),
-            ("functions", "compiler_frontend::emitter_run"),
-        ):
-            if bootstrap.abi_declaration(facts, group, name) != bootstrap.abi_declaration(original, group, name):
-                raise AssertionError(mutation + ": emitter probe ABI differs: " + name)
-        with mock.patch.object(bootstrap, "PASS_ENTRIES", {"emitter_run": bootstrap.PASS_ENTRIES["emitter_run"]}):
-            bridge = "\n".join(bootstrap.pass_bridges(facts)[1]).replace(
-                "aurora_hosted_emitter_run", "probe_emitter_run"
-            )
-        assembly.write_text(assembly.read_text() + "\n" + bridge + "\n")
-        executable = directory / mutation
-        command(
-            COMPILER
-            + [
-                fixture_object,
-                assembly,
-                args.main_library,
-                args.frontend_library,
-                "-Wl,--wrap=aurora_hosted_emitter_run",
-                "-o",
-                executable,
-            ],
-            timeout=45,
-        )
+        executable = pipeline_probe(bootstrap, directory, args, modules, mutation, fixture_object)
         for case in cases:
             path, expected = inputs[case]
             for existing in (True,) if mutation == "unchanged" else (False, True):

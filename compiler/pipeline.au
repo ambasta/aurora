@@ -1,0 +1,604 @@
+export module aurora.compiler.pipeline;
+import aurora.compiler.lexer;
+import aurora.compiler.syntax_arena;
+import aurora.compiler.resolution_kinds;
+import aurora.compiler.resolution_rows;
+import aurora.compiler.lowering_errors;
+import aurora.compiler.lowering_kinds;
+import aurora.compiler.lowering_storage;
+import aurora.compiler.resolution_arena;
+import aurora.compiler.lowering_projection_storage;
+import aurora.compiler.lowering_projection_identity;
+import aurora.compiler.lowering_projection;
+import aurora.compiler.ir_graph;
+import aurora.compiler.ir_metadata_storage;
+import aurora.compiler.ir_metadata;
+import aurora.compiler.ir_instruction_storage;
+import aurora.compiler.ir_instructions;
+import aurora.compiler.ir_verification_errors;
+import aurora.compiler.ir_verification_storage;
+import aurora.compiler.ir_verification;
+import aurora.compiler.x86_object_storage;
+import aurora.compiler.x86_storage;
+import aurora.compiler.x86_helpers;
+import aurora.compiler.x86_module;
+import aurora.compiler.x86_facts;
+import aurora.compiler.pipeline_declarations;
+
+// One compilation after successful lowering: project the lowering records into
+// pending metadata and instruction stores, admit and structure them, verify
+// every function, check the call graph and select retained functions, publish,
+// then emit code and the requested stack and ABI facts. Every store lives in
+// the Session's region. The host gets back one Result: the artifacts, the
+// lint references, or the first failure for it to render.
+export namespace compiler_pipeline {
+    // Option bits of a run request.
+    auto emit_option() -> u64 {
+        return 1u64;
+    }
+    auto local_option() -> u64 {
+        return 2u64;
+    }
+    auto referenced_option() -> u64 {
+        return 4u64;
+    }
+    auto object_option() -> u64 {
+        return 8u64;
+    }
+    auto stack_option() -> u64 {
+        return 16u64;
+    }
+    auto abi_option() -> u64 {
+        return 32u64;
+    }
+    auto selected(u64 options, u64 option) -> bool {
+        return (options & option) != 0u64;
+    }
+    // Where a run stopped. Each failure keeps the message the host rendered for it.
+    enum class Stage {
+        complete,
+        allocation,
+        projection_allocation,
+        projection,
+        metadata_allocation,
+        metadata_transport,
+        metadata,
+        instruction_allocation,
+        instruction_transport,
+        instruction,
+        body_count,
+        verification,
+        graph,
+        declarations,
+        emission
+    };
+    // The failing store's reason; the emitter statuses are read when emission stops.
+    class Failure {
+        compiler_ir_metadata::MetadataError metadataValue;
+        compiler_ir_instructions::InstructionError instructionValue;
+        compiler_ir_verification::VerificationError verificationValue;
+        compiler_ir_graph::GraphStatus graphValue;
+        compiler_x86::EmitStatus emitterValue;
+        compiler_x86::EmitStatus objectValue;
+    public:
+        Failure(compiler_ir_metadata::MetadataError metadata, compiler_ir_instructions::InstructionError instruction,
+            compiler_ir_verification::VerificationError verification, compiler_ir_graph::GraphStatus graph,
+            compiler_x86::EmitStatus emitter, compiler_x86::EmitStatus object) : metadataValue(metadata),
+            instructionValue(instruction), verificationValue(verification), graphValue(graph), emitterValue(emitter),
+            objectValue(object) {
+        }
+    };
+    // Byte counts of each produced artifact and the number of lint references.
+    class Sizes {
+        i64 codeBytes;
+        i64 stackBytes;
+        i64 abiBytes;
+        i64 lintCount;
+    public:
+        Sizes(i64 code, i64 stack, i64 abi, i64 lints) : codeBytes(code), stackBytes(stack), abiBytes(abi),
+            lintCount(lints) {
+        }
+    };
+    class Report {
+        Stage stageValue;
+        Failure failureValue;
+        Sizes sizesValue;
+    public:
+        Report(Stage stage, Failure failure, Sizes sizes) : stageValue(stage), failureValue(failure),
+            sizesValue(sizes) {
+        }
+    };
+    auto lint_pool(builtin::ByteRegion region) -> builtin::OwnedValues<compiler_resolver::MetaRow> {
+        const compiler_resolver::MetaRow fill = compiler_resolver::MetaRow(compiler_resolver::MetaTag::invalid);
+        builtin::OwnedValues<compiler_resolver::MetaRow> result = region.try_allocate(0, fill);
+        return move(result);
+    }
+    // Code, then stack facts, then ABI facts, each present only when produced.
+    class Result {
+        builtin::OwnedBytes artifacts;
+        builtin::OwnedValues<compiler_resolver::MetaRow> lints;
+        Stage stageValue;
+        compiler_ir_metadata::MetadataError metadataValue;
+        compiler_ir_instructions::InstructionError instructionValue;
+        compiler_ir_verification::VerificationError verificationValue;
+        compiler_ir_graph::GraphStatus graphValue;
+        compiler_x86::EmitStatus emitterValue;
+        compiler_x86::EmitStatus objectValue;
+        i64 codeBytes;
+        i64 stackBytes;
+        i64 abiBytes;
+        i64 lintCount;
+
+        auto artifact_begin(compiler_x86::Artifact artifact) const -> i64 {
+            if (artifact == compiler_x86::Artifact::assembly) {
+                return 0;
+            }
+            if (artifact == compiler_x86::Artifact::stack) {
+                return codeBytes;
+            }
+            return codeBytes + stackBytes;
+        }
+        auto artifact_size(compiler_x86::Artifact artifact) const -> i64 {
+            if (artifact == compiler_x86::Artifact::assembly) {
+                return codeBytes;
+            }
+            if (artifact == compiler_x86::Artifact::stack) {
+                return stackBytes;
+            }
+            return abiBytes;
+        }
+    public:
+        Result(builtin::ByteRegion region,
+            compiler_ir_verification::VerificationError none) : artifacts(region.try_allocate(0)),
+            lints(lint_pool(region)), stageValue(Stage::complete),
+            metadataValue(compiler_ir_metadata::MetadataError::none),
+            instructionValue(compiler_ir_instructions::InstructionError::none), verificationValue(none),
+            graphValue(compiler_ir_graph::GraphStatus::success), emitterValue(compiler_x86::EmitStatus::pending),
+            objectValue(compiler_x86::EmitStatus::pending), codeBytes(0), stackBytes(0), abiBytes(0), lintCount(0) {
+        }
+        auto allocated() const -> bool {
+            return artifacts.ok() && lints.ok();
+        }
+        auto complete() const -> bool {
+            return stageValue == Stage::complete;
+        }
+        auto stop(Stage stage) -> bool {
+            if (stageValue == Stage::complete) {
+                stageValue = stage;
+            }
+            return false;
+        }
+        auto metadata_failure(compiler_ir_metadata::MetadataError reason) -> bool {
+            metadataValue = reason;
+            return stop(Stage::metadata);
+        }
+        auto instruction_failure(compiler_ir_instructions::InstructionError reason) -> bool {
+            instructionValue = reason;
+            return stop(Stage::instruction);
+        }
+        auto verification_failure(compiler_ir_verification::VerificationError reason) -> bool {
+            verificationValue = reason;
+            return stop(Stage::verification);
+        }
+        auto graph_failure(compiler_ir_graph::GraphStatus status) -> bool {
+            graphValue = status;
+            return stop(Stage::graph);
+        }
+        auto emission_failure(compiler_x86::EmitStatus emitter, compiler_x86::EmitStatus object) -> bool {
+            emitterValue = emitter;
+            objectValue = object;
+            return stop(Stage::emission);
+        }
+        auto add_lint(compiler_resolver::MetaRow row) -> bool {
+            if (lintCount == lints.size()) {
+                const compiler_resolver::MetaRow fill = compiler_resolver::MetaRow(compiler_resolver::MetaTag::invalid);
+                i64 capacity = 8;
+                if (lintCount > 4) {
+                    capacity = lintCount * 2;
+                }
+                if (!lints.try_resize(capacity, fill)) {
+                    return stop(Stage::allocation);
+                }
+            }
+            lints.set(lintCount, row);
+            lintCount = lintCount + 1;
+            return true;
+        }
+        auto lint(i64 index) const -> compiler_resolver::MetaRow {
+            if (index < 0 || index >= lintCount) {
+                const compiler_resolver::MetaRow invalid = compiler_resolver::MetaRow(
+                    compiler_resolver::MetaTag::invalid);
+                return invalid;
+            }
+            const compiler_resolver::MetaRow result = lints.at(index);
+            return result;
+        }
+        // Artifacts are appended once each, in assembly, stack, ABI order.
+        auto append(compiler_x86::Artifact artifact, builtin::span<const u8> bytes) -> bool {
+            const i64 used = codeBytes + stackBytes + abiBytes;
+            if (bytes.size() > 9223372036854775807 - used || !artifacts.try_resize(used + bytes.size())) {
+                return stop(Stage::allocation);
+            }
+            i64 at = 0;
+            while (at < bytes.size()) {
+                artifacts.set(used + at, bytes.at(at));
+                at = at + 1;
+            }
+            if (artifact == compiler_x86::Artifact::assembly) {
+                codeBytes = bytes.size();
+            }
+            if (artifact == compiler_x86::Artifact::stack) {
+                stackBytes = bytes.size();
+            }
+            if (artifact == compiler_x86::Artifact::abi) {
+                abiBytes = bytes.size();
+            }
+            return true;
+        }
+        auto chunk(compiler_x86::Artifact artifact, i64 offset) const -> compiler_x86::EmitChunk {
+            compiler_x86::EmitChunk result = compiler_x86::EmitChunk();
+            const i64 size = artifact_size(artifact);
+            if (!complete() || offset < 0 || offset > size) {
+                result.invalidate();
+                return result;
+            }
+            i64 count = size - offset;
+            if (count > 512) {
+                count = 512;
+            }
+            const builtin::span<const u8> all = borrow_bytes(artifacts);
+            const i64 first = artifact_begin(artifact) + offset;
+            i64 at = 0;
+            while (at < count) {
+                result.append(all.at(first + at));
+                at = at + 1;
+            }
+            return result;
+        }
+        auto report() const -> Report {
+            const compiler_ir_verification::VerificationError verification = verificationValue;
+            const Failure failure = Failure(metadataValue, instructionValue, verification, graphValue, emitterValue,
+                objectValue);
+            const Sizes sizes = Sizes(codeBytes, stackBytes, abiBytes, lintCount);
+            const Report result = Report(stageValue, failure, sizes);
+            return result;
+        }
+    };
+
+    auto zero_counts() -> compiler_ir_metadata::InputCounts {
+        return compiler_ir_metadata::InputCounts(compiler_ir_metadata::CoreCounts(0, 0, 0, 0, 0),
+            compiler_ir_metadata::MapCounts(0, 0, 0, 0, 0));
+    }
+    auto call_form(i64 form) -> bool {
+        return form == 4 || form == 19 || form == 20 || form == 38 || form == 75 || form == 83;
+    }
+    auto call_count(const compiler_ir_instructions::InstructionStore& instructions) -> i64 {
+        i64 result = 0;
+        i64 callable = 0;
+        while (callable < instructions.body_count()) {
+            const compiler_ir_instructions::BodyRow body = instructions.body_at(callable);
+            i64 position = 0;
+            while (position < body.count()) {
+                const compiler_ir_instructions::CodeRow code = instructions.code_at(body.begin() + position);
+                const compiler_ir_instructions::RawInstructionRow row = instructions.instruction_at(code.id());
+                if (call_form(row.form())) {
+                    result = result + 1;
+                }
+                position = position + 1;
+            }
+            callable = callable + 1;
+        }
+        return result;
+    }
+    auto service_entry(const compiler_ir_metadata::MetadataStore& metadata,
+        compiler_ir_metadata::CallableRow declaration) -> bool {
+        i64 at = 0;
+        while (at < declaration.value_parameter_count()) {
+            const compiler_ir_metadata::RawTypeRow type = metadata.type_at(declaration.value_parameter_begin() + at);
+            if (compiler_ir_metadata::service_type(type)) {
+                return true;
+            }
+            at = at + 1;
+        }
+        return false;
+    }
+    // Graph ordinals are callable IDs: every body is a graph function, and
+    // its edges are its calls in normalized code order.
+    auto graph_input(compiler_ir_graph::Input& input, const compiler_ir_metadata::MetadataStore& metadata,
+        const compiler_ir_instructions::InstructionStore& instructions) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
+        i64 edge = 0;
+        i64 callable = 0;
+        while (callable < instructions.body_count()) {
+            const compiler_ir_instructions::BodyRow body = instructions.body_at(callable);
+            const compiler_ir_metadata::CallableRow declaration = metadata.callable_at(callable);
+            const i64 first = edge;
+            i64 position = 0;
+            while (position < body.count()) {
+                const compiler_ir_instructions::CodeRow code = instructions.code_at(body.begin() + position);
+                const compiler_ir_instructions::RawInstructionRow row = instructions.instruction_at(code.id());
+                if (call_form(row.form())) {
+                    const i64 target = compiler_x86::instruction_target(metadata, instructions, code.id());
+                    if (target < 0 || !compiler_ir_graph::set_edge(input, edge, target)) {
+                        return false;
+                    }
+                    edge = edge + 1;
+                }
+                position = position + 1;
+            }
+            const bool receiver = declaration.borrowed_root_count() != 0
+                || compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver());
+            const compiler_ir_graph::FunctionRow function = compiler_ir_graph::FunctionRow(first, edge - first,
+                receiver, service_entry(metadata, declaration), declaration.scope() == 0);
+            if (!compiler_ir_graph::set_function(input, callable, function)) {
+                return false;
+            }
+            callable = callable + 1;
+        }
+        return true;
+    }
+    auto verification_success(compiler_ir_verification::VerificationReport report) -> bool {
+        const compiler_ir_verification::VerificationError error = report.error();
+        return report.status() == compiler_ir_verification::VerificationStatus::success && error.first()
+            == compiler_ir_verification::VerificationErrorFirst::none && error.second()
+            == compiler_ir_verification::VerificationErrorSecond::none;
+    }
+
+    auto run(builtin::ByteRegion region, compiler_resolver::Session session, i64 root, i64 diagnostic,
+        u64 options) -> Result {
+        const compiler_ir_verification::VerificationError none = compiler_ir_verification::first_error(
+            compiler_ir_verification::VerificationErrorFirst::none);
+        Result result = Result(region, none);
+        Declarations declarations = Declarations(region);
+        if (!result.allocated() || !declarations.ok()) {
+            result.stop(Stage::allocation);
+            return move(result);
+        }
+        const i64 names = compiler_lowering_projection::name_capacity(session);
+        if (names < 0) {
+            result.stop(Stage::projection);
+            return move(result);
+        }
+        compiler_lowering_projection::ProjectionWorkspace projection = compiler_lowering_projection::create(region,
+            session.output_count(), session.operand_count(), session.meta_count(), names);
+        // Counting borrows an empty pending pair for its typed roots; it writes no payload.
+        compiler_ir_metadata::MetadataStore empty_metadata = compiler_ir_metadata::create(region);
+        empty_metadata.initialize(zero_counts(), 0, 0, 0);
+        compiler_ir_instructions::InstructionStore empty_instructions = compiler_ir_instructions::create(region, 0, 0,
+            0, 0);
+        if (!empty_metadata.allocated()) {
+            result.stop(Stage::metadata_allocation);
+            return move(result);
+        }
+        if (!empty_instructions.allocated()) {
+            result.stop(Stage::instruction_allocation);
+            return move(result);
+        }
+        const i64 measured = compiler_lowering_projection::measure(session, projection, empty_metadata,
+            empty_instructions, root, diagnostic);
+        compiler_ir_metadata::release(region, move(empty_metadata));
+        compiler_ir_instructions::release(region, move(empty_instructions));
+        if (measured == 4) {
+            result.stop(Stage::projection_allocation);
+            return move(result);
+        }
+        if (measured != 1) {
+            result.stop(Stage::projection);
+            return move(result);
+        }
+        const compiler_ir_metadata::InputCounts counts = compiler_lowering_projection::metadata_counts(projection);
+        const compiler_ir_instructions::InstructionCounts code = compiler_lowering_projection::instruction_counts(
+            projection);
+        const i64 callables = projection.count(10);
+        if (code.body_count() != callables || !compiler_ir_instructions::valid_counts(code)) {
+            result.stop(Stage::instruction_transport);
+            return move(result);
+        }
+        compiler_ir_metadata::MetadataStore metadata = compiler_ir_metadata::create(region);
+        const bool initialized = metadata.initialize(counts, callables, projection.count(11), projection.count(12));
+        if (!initialized && metadata.status() != compiler_ir_metadata::MetadataStatus::allocation) {
+            result.stop(Stage::metadata_transport);
+            return move(result);
+        }
+        if (!metadata.allocated()) {
+            result.stop(Stage::metadata_allocation);
+            return move(result);
+        }
+        compiler_ir_instructions::InstructionStore instructions = compiler_ir_instructions::create(region,
+            code.instruction_count(), code.operand_count(), code.literal_count(), code.body_count());
+        if (!instructions.allocated()) {
+            result.stop(Stage::instruction_allocation);
+            return move(result);
+        }
+        const i64 filled = compiler_lowering_projection::fill(session, projection, metadata, instructions);
+        if (filled == 4) {
+            result.stop(Stage::projection_allocation);
+            return move(result);
+        }
+        if (filled != 2) {
+            result.stop(Stage::projection);
+            return move(result);
+        }
+        i64 lint = 0;
+        while (lint < projection.count(37)) {
+            const i64 reference = compiler_lowering_projection::lint(projection, lint);
+            if (reference < 0 || reference >= session.meta_count()) {
+                result.stop(Stage::projection);
+                return move(result);
+            }
+            const compiler_resolver::MetaRow row = session.view_meta(reference);
+            if (!result.add_lint(row)) {
+                return move(result);
+            }
+            lint = lint + 1;
+        }
+        compiler_lowering_projection::release(region, move(projection));
+        const compiler_ir_metadata::MetadataStatus admitted = compiler_ir_metadata::run(metadata);
+        if (admitted == compiler_ir_metadata::MetadataStatus::allocation && metadata.error()
+            == compiler_ir_metadata::MetadataError::none) {
+            result.stop(Stage::metadata_allocation);
+            return move(result);
+        }
+        if (admitted == compiler_ir_metadata::MetadataStatus::invalid && metadata.error()
+            != compiler_ir_metadata::MetadataError::none) {
+            result.metadata_failure(metadata.error());
+            return move(result);
+        }
+        if (admitted != compiler_ir_metadata::MetadataStatus::success || metadata.error()
+            != compiler_ir_metadata::MetadataError::none) {
+            result.stop(Stage::metadata_transport);
+            return move(result);
+        }
+        // Declarations are read while the Session lives and found in the admitted
+        // metadata by linkage name: every record and enum, any declared callable.
+        i64 category = 0;
+        bool collected = true;
+        while (collected && selected(options, abi_option()) && category < 3) {
+            collected = gather(session, declarations, category);
+            i64 at = 0;
+            while (collected && at < declarations.work_count()) {
+                const Declared item = declarations.work_at(at);
+                const compiler_ir_metadata::ByteRange name = native_name(session, item.symbol());
+                const i64 key = metadata.spelled_position(category, session.source_view(name.begin(), name.count()));
+                collected = name.begin() >= 0 && (category == 2 || key >= 0) && declarations.set_key(at, key);
+                at = at + 1;
+            }
+            collected = collected && emit_category(session, metadata, declarations, category);
+            category = category + 1;
+        }
+        if (!collected) {
+            result.stop(Stage::declarations);
+            return move(result);
+        }
+        compiler_resolver::release(region, move(session));
+        compiler_ir_instructions::InstructionStatus status = compiler_ir_instructions::admit_instruction_storage(
+            instructions, metadata);
+        if (status == compiler_ir_instructions::InstructionStatus::admitted) {
+            status = compiler_ir_instructions::admit_instruction_bodies(instructions, metadata);
+        }
+        if (status == compiler_ir_instructions::InstructionStatus::allocation && instructions.error()
+            == compiler_ir_instructions::InstructionError::none) {
+            result.stop(Stage::instruction_allocation);
+            return move(result);
+        }
+        if (status == compiler_ir_instructions::InstructionStatus::invalid && instructions.error()
+            != compiler_ir_instructions::InstructionError::none) {
+            result.instruction_failure(instructions.error());
+            return move(result);
+        }
+        if (status != compiler_ir_instructions::InstructionStatus::structured || instructions.error()
+            != compiler_ir_instructions::InstructionError::none) {
+            result.stop(Stage::instruction_transport);
+            return move(result);
+        }
+        if (instructions.body_count() != metadata.callable_count()) {
+            result.stop(Stage::body_count);
+            return move(result);
+        }
+        // Every function is verified in declaration order, unused ones included,
+        // before the graph check and publication.
+        i64 callable = 0;
+        while (callable < instructions.body_count()) {
+            compiler_ir_verification::VerificationWorkspace verifier = compiler_ir_verification::create(region);
+            compiler_ir_verification::run(verifier, metadata, instructions, callable);
+            const compiler_ir_verification::VerificationReport report = verifier.report();
+            compiler_ir_verification::release(region, move(verifier));
+            if (!verification_success(report)) {
+                const compiler_ir_verification::VerificationError error = report.error();
+                result.verification_failure(error);
+                return move(result);
+            }
+            callable = callable + 1;
+        }
+        const i64 calls = call_count(instructions);
+        compiler_ir_graph::Input input = compiler_ir_graph::create_input(region, instructions.body_count(), calls);
+        compiler_ir_graph::Workspace graph = compiler_ir_graph::create_workspace(region, instructions.body_count(),
+            calls);
+        if (!graph_input(input, metadata, instructions)) {
+            result.graph_failure(compiler_ir_graph::GraphStatus::invalid);
+            return move(result);
+        }
+        const compiler_ir_graph::GraphStatus checked = compiler_ir_graph::run(graph, input);
+        if (checked != compiler_ir_graph::GraphStatus::success) {
+            result.graph_failure(checked);
+            return move(result);
+        }
+        compiler_ir_graph::release_input(region, move(input));
+        if (!instructions.publish()) {
+            result.stop(Stage::instruction_transport);
+            return move(result);
+        }
+        if (!selected(options, emit_option())) {
+            return move(result);
+        }
+        compiler_x86::EmitWorkspace workspace = compiler_x86::create(region);
+        compiler_x86::ObjectWorkspace object = compiler_x86::object_create(region);
+        bool emitted = !selected(options, object_option()) || object.enable_object();
+        callable = 0;
+        while (emitted && callable < instructions.body_count()) {
+            if (compiler_ir_graph::retained(graph, callable)) {
+                emitted = workspace.add_retained(callable);
+            }
+            callable = callable + 1;
+        }
+        compiler_ir_graph::release_workspace(region, move(graph));
+        i64 binding = 0;
+        if (selected(options, local_option())) {
+            binding = 1;
+        }
+        i64 reflection = 0;
+        if (selected(options, referenced_option())) {
+            reflection = 1;
+        }
+        if (emitted) {
+            emitted = compiler_x86::run(workspace, object, metadata, instructions, binding, reflection)
+                == compiler_x86::EmitStatus::complete;
+        }
+        // Code, then the requested stack and ABI facts; each is copied once sealed.
+        i64 kind = 0;
+        while (kind < 3) {
+            compiler_x86::Artifact artifact = compiler_x86::Artifact::assembly;
+            bool wanted = true;
+            if (kind == 1) {
+                artifact = compiler_x86::Artifact::stack;
+                wanted = selected(options, stack_option());
+            }
+            if (kind == 2) {
+                artifact = compiler_x86::Artifact::abi;
+                wanted = selected(options, abi_option());
+            }
+            if (wanted) {
+                if (emitted && kind != 0) {
+                    emitted = workspace.prepare_facts(artifact);
+                }
+                // The emitter's ABI facts take the declaration spellings after it prepared them.
+                i64 at = 0;
+                while (emitted && kind == 2 && at < declarations.row_count()) {
+                    const compiler_x86::AbiNameRow value = declarations.row_at(at);
+                    const i64 begin = workspace.append_name(declarations.spelling(at));
+                    const compiler_x86::AbiNameRow copied = compiler_x86::AbiNameRow(value.category(), value.identity(),
+                        value.member(), begin, value.count());
+                    emitted = begin >= 0 && workspace.add_abi_name(copied);
+                    at = at + 1;
+                }
+                if (emitted && kind != 0) {
+                    emitted = compiler_x86::emitter_facts(workspace, metadata, artifact)
+                        == compiler_x86::EmitStatus::complete;
+                }
+                const i64 size = workspace.artifact_size(artifact);
+                if (!emitted || size < 0 || (kind != 1 && size > 67108864)) {
+                    result.emission_failure(workspace.status(), object.status());
+                    return move(result);
+                }
+                if (!result.append(artifact, workspace.artifact_bytes(artifact))) {
+                    return move(result);
+                }
+            }
+            kind = kind + 1;
+        }
+        return move(result);
+    }
+    auto release(builtin::ByteRegion region, Result result) -> i64 {
+        return 0;
+    }
+}

@@ -1,6 +1,5 @@
 #include "frontend.hpp"
 #include "hosted_private_object.hpp"
-#include "x86.hpp"
 #include <iostream>
 
 int main(int argc, char **argv) {
@@ -121,34 +120,36 @@ int main(int argc, char **argv) {
             throw argumentError("--check does not accept --referenced-reflection-only");
         if (jsonDiagnostics && !checkOnly)
             throw argumentError("--diagnostics=json requires --check");
-        auto checked = aurora::checkSource(inputPath, roots, {}, aurora::AnalysisMode::Check, abiFactsSpecified);
+        aurora::EmissionRequest request;
+        request.emit = !checkOnly;
+        request.binding = localSymbols ? aurora::SymbolBinding::Local : aurora::SymbolBinding::Default;
+        request.reflection =
+            referencedReflectionOnly ? aurora::ReflectionEmission::Referenced : aurora::ReflectionEmission::All;
+        request.format = emitObject ? aurora::CodeEmission::Object : aurora::CodeEmission::Assembly;
+        request.stackFacts = stackFactsSpecified;
+        request.abiFacts = abiFactsSpecified;
+        auto checked = aurora::checkSource(inputPath, roots, {}, aurora::AnalysisMode::Check, request);
         if (checkOnly) {
             if (jsonDiagnostics)
                 aurora::writeDiagnosticsJson(std::cout, {});
             return 0;
         }
-        aurora::X86Emitter emitter;
-        auto result = emitter.emit(checked.module,
-                                   localSymbols ? aurora::SymbolBinding::Local : aurora::SymbolBinding::Default,
-                                   referencedReflectionOnly ? aurora::ReflectionEmission::Referenced
-                                                            : aurora::ReflectionEmission::All,
-                                   emitObject ? aurora::CodeEmission::Object : aurora::CodeEmission::Assembly);
         aurora::host::ArtifactWriter output(outputPath, checked.sourceIdentities);
         std::optional<aurora::host::ArtifactWriter> stackFacts;
         if (stackFactsSpecified) {
             stackFacts.emplace(stackFactsPath, checked.sourceIdentities);
             if (output.sameDestination(*stackFacts))
                 throw argumentError("assembly and stack facts require different output paths");
-            stackFacts->write(emitter.stackFactsJson(checked.module));
+            stackFacts->write(checked.stackFacts);
         }
         std::optional<aurora::host::ArtifactWriter> abiFacts;
         if (abiFactsSpecified) {
             abiFacts.emplace(abiFactsPath, checked.sourceIdentities);
             if (output.sameDestination(*abiFacts) || (stackFacts && stackFacts->sameDestination(*abiFacts)))
                 throw argumentError("assembly, stack facts and ABI facts require different output paths");
-            abiFacts->write(emitter.abiFactsJson(checked.module, checked.abiDeclarations));
+            abiFacts->write(checked.abiFacts);
         }
-        output.write(result);
+        output.write(checked.code);
         if (abiFacts)
             abiFacts->commit();
         if (stackFacts)

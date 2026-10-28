@@ -17,10 +17,10 @@ void check(const std::filesystem::path &input) {
     const SourceOverlays overlays{{path, snapshot}};
     const auto checked = checkSource(path, {}, overlays);
     require(checked.lintDiagnostics.empty(), "default checking enabled lint");
-    const auto linted = checkSource(path, {}, overlays, AnalysisMode::Lint);
+    const auto linted = checkSource(path, {}, overlays, AnalysisMode::Lint, {.emit = true});
     require(linted.lintDiagnostics.size() == 1, "missing overlay warning");
     require(linted.sourceIdentities == checked.sourceIdentities, "lint lost opened-file identities");
-    require(!linted.module.get().functions.empty(), "lint skipped validated IR");
+    require(!linted.code.empty(), "lint skipped validated IR");
     const auto &warning = linted.lintDiagnostics.at(0);
     require(warning.code == DiagnosticCode::UnreadLocal && warning.severity == DiagnosticSeverity::Warning,
             "explicit warning code and severity");

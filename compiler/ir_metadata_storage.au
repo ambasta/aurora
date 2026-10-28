@@ -1324,6 +1324,89 @@ export namespace compiler_ir_metadata {
             }
             return i64(bytes.at(index));
         }
+        // Byte order of a sorted name (0 classes, 1 enums, 2 the callable name
+        // index) against `name`; 2 when the row or its range is malformed.
+        auto spelled_order(i64 category, i64 key, builtin::span<const u8> name) const -> i64 {
+            i64 begin = -1;
+            i64 count = 0;
+            if (category == 0) {
+                const ClassRow row = classes.at(key);
+                const ByteRange range = row.name();
+                begin = range.begin();
+                count = range.count();
+            }
+            if (category == 1) {
+                const EnumRow row = enums.at(key);
+                const ByteRange range = row.name();
+                begin = range.begin();
+                count = range.count();
+            }
+            if (category == 2) {
+                const IndexRow id = indices.at(inputIndices - callables.size() + key);
+                if (id.value() < 0 || id.value() >= callables.size()) {
+                    return 2;
+                }
+                const CallableRow row = callables.at(id.value());
+                const ByteRange range = row.name();
+                begin = range.begin();
+                count = range.count();
+            }
+            const builtin::span<const u8> text = borrow_bytes(bytes);
+            if (begin < 0 || count < 0 || begin > text.size() || count > text.size() - begin) {
+                return 2;
+            }
+            i64 at = 0;
+            while (at < count && at < name.size()) {
+                const i64 left = i64(text.at(begin + at));
+                const i64 right = i64(name.at(at));
+                if (left != right) {
+                    if (left < right) {
+                        return -1;
+                    }
+                    return 1;
+                }
+                at = at + 1;
+            }
+            if (count < name.size()) {
+                return -1;
+            }
+            if (count > name.size()) {
+                return 1;
+            }
+            return 0;
+        }
+        // First sorted position spelled `name`, or -1 when absent or malformed.
+        auto spelled_position(i64 category, builtin::span<const u8> name) const -> i64 {
+            i64 size = classes.size();
+            if (category == 1) {
+                size = enums.size();
+            }
+            if (category == 2) {
+                size = callables.size();
+            }
+            if (!bytes.ok() || !classes.ok() || !enums.ok() || !callables.ok() || !indices.ok() || (category == 2
+                && inputIndices < size) || inputIndices > indices.size()) {
+                return -1;
+            }
+            i64 low = 0;
+            i64 high = size;
+            while (low < high) {
+                const i64 middle = low + (high - low) / 2;
+                const i64 order = spelled_order(category, middle, name);
+                if (order == 2) {
+                    return -1;
+                }
+                if (order < 0) {
+                    low = middle + 1;
+                } else {
+                    high = middle;
+                }
+            }
+            if (low < size && spelled_order(category, low, name) == 0) {
+                return low;
+            }
+            return -1;
+        }
         // Keep byte_at's signed bounds, failed-owner sentinel and checked reads,
         // but observe immutable owner facts once for this bounded comparison.
         auto compare_bytes(i64 left, i64 right, i64 count) const -> i64 {

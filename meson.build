@@ -48,6 +48,7 @@ frontend_inputs = files('compiler/formatter.au', 'compiler/lexer.au', 'compiler/
                         'compiler/lowering_projection_storage.au', 'compiler/lowering_projection_identity.au',
                         'compiler/lowering_projection_common.au', 'compiler/lowering_projection_instructions.au',
                         'compiler/lowering_projection.au',
+                        'compiler/pipeline_declarations.au', 'compiler/pipeline.au',
                         )
 frontend_forwarders = custom_target(
   'frontend-forwarders', input: 'compiler/frontend.au', output: 'frontend.au',
@@ -67,19 +68,17 @@ frontend_object = custom_target(
   'hosted-frontend-object', input: frontend_assembly[0], output: 'hosted-frontend.o',
   command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '@INPUT@', '-o', '@OUTPUT@'],
 )
-# The resolver-through-IR adapters; hosted-parser-invalid links these objects alone.
+# The resolver-through-pipeline adapters; hosted-parser-invalid links these objects alone.
 frontend_adapter_sources = files('compiler/hosted_parser.cpp', 'compiler/hosted_resolver.cpp',
-                                 'compiler/hosted_lowering.cpp', 'compiler/hosted_lowering_diagnostics.cpp',
-                                 'compiler/hosted_ir_metadata.cpp', 'compiler/hosted_ir_instructions.cpp',
-                                 'compiler/ir_verify.cpp', 'runtime/hosted_bytes.cpp')
-frontend_host_sources = frontend_adapter_sources + files('compiler/hosted_graph.cpp', 'compiler/hosted_x86.cpp',
-                                                         'compiler/hosted_private_object.cpp')
+                                 'compiler/hosted_pipeline.cpp', 'compiler/hosted_lowering_diagnostics.cpp',
+                                 'runtime/hosted_bytes.cpp')
+frontend_host_sources = frontend_adapter_sources + files('compiler/hosted_private_object.cpp')
 frontend_library = static_library(
   'hosted-frontend', [frontend_host_sources, frontend_object, frontend_assembly[3]],
   native: true, install: false,
 )
 # Operator enums are source-defined. Header-only IR consumers need the generated
-# declarations; every executable calling validate also links hosted_frontend.
+# declarations; every executable calling into Aurora also links hosted_frontend.
 frontend_headers = declare_dependency(sources: frontend_assembly[3],
                                      include_directories: include_directories('.'))
 hosted_frontend = declare_dependency(link_with: frontend_library, dependencies: frontend_headers)

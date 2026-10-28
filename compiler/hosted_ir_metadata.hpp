@@ -34,7 +34,6 @@ class Instructions;
 namespace detail {
 class MetadataWriter;
 class InstructionWriter;
-class LoweringIngress;
 } // namespace detail
 
 // All ranges borrow the immovable Metadata capsule. Dereferencing copies a
@@ -327,8 +326,8 @@ public:
     using ClassId = std::size_t;
     using EnumId = std::size_t;
     using CallableId = std::size_t;
-    // Hostile fixtures import raw maps. Production supplies a pending owning
-    // ingress; both paths independently verify before publishing any view.
+    // Hostile fixtures import raw maps into a pending owning ingress, which is
+    // independently verified before any view is published.
     // These are canonical declaration/shape views, not executable authority.
     // Constructor mutability/I64 policy is completed by source instruction
     // admission; only final validate can publish an executable module.
@@ -392,7 +391,6 @@ private:
     friend class MetadataIngress;
     friend class detail::MetadataWriter;
     friend class detail::InstructionWriter;
-    friend class detail::LoweringIngress;
     friend class TypeRange;
     friend class FieldRange;
     friend class IndexRange;
@@ -409,7 +407,6 @@ class MetadataIngress final {
     friend class detail::MetadataWriter;
     friend class InstructionIngress;
     friend class detail::InstructionWriter;
-    friend class detail::LoweringIngress;
     friend ValidatedModule validate(InstructionIngress pending, verification::Metrics *metrics);
 
 public:
@@ -427,7 +424,6 @@ class InstructionIngress final {
     MetadataIngress metadata_;
     std::unique_ptr<Instructions> instructions_;
     friend class detail::InstructionWriter;
-    friend class detail::LoweringIngress;
     friend ValidatedModule validate(InstructionIngress pending, verification::Metrics *metrics);
 
 public:

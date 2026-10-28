@@ -1,5 +1,4 @@
 #include "hosted_ir_metadata_writer.hpp"
-#include "hosted_lowering_ingress.hpp"
 #include "ir.hpp"
 #include "../runtime/hosted_bytes.hpp"
 #include <algorithm>
@@ -378,32 +377,6 @@ MetadataIngress::MetadataIngress() = default;
 MetadataIngress::~MetadataIngress() = default;
 MetadataIngress::MetadataIngress(MetadataIngress &&) noexcept = default;
 MetadataIngress &MetadataIngress::operator=(MetadataIngress &&) noexcept = default;
-void detail::LoweringIngress::allocateMetadata(const wire::InputCounts &counts,
-                                               std::int64_t callableCount,
-                                               std::int64_t slotCount,
-                                               std::int64_t instructionBegin,
-                                               bytes::Allocator allocator) {
-    // Source counts are untrusted transport. Recheck arithmetic and the raw
-    // declaration/type partition before granting the existing exact capacities.
-    if (metadata_.state_ || callableCount < 0 || slotCount < 0 || instructionBegin < 0 ||
-        instructionBegin > counts.coreCounts.types ||
-        add(counts.coreCounts.fields, counts.coreCounts.leaves) > instructionBegin)
-        invalidTransport();
-    const auto limits = capacities(counts, callableCount, slotCount);
-    (void)quota(limits);
-    metadata_.state_ =
-        std::make_unique<Metadata::State>(counts, callableCount, slotCount, limits, instructionBegin, allocator);
-    const auto allocated = aurora_hosted_metadata_allocated(metadata_.state_->owner.data());
-    if (allocated == 0)
-        allocationFailure();
-    if (allocated != 1)
-        invalidTransport();
-}
-void *detail::LoweringIngress::metadataOwner() {
-    if (!metadata_.state_)
-        invalidTransport();
-    return metadata_.state_->owner.data();
-}
 std::unique_ptr<Metadata> MetadataIngress::finish() && {
     if (!state_)
         invalidTransport();

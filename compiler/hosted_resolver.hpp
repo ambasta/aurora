@@ -1,7 +1,7 @@
 #pragma once
-#include "ir.hpp"
+#include "hosted_pipeline.hpp"
+#include "types.hpp"
 #include <cstddef>
-#include <map>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -11,21 +11,10 @@ enum class AnalysisMode {
     Check,
     Lint
 };
-// Source declarations are observations only. Physical extents remain authority
-// of the independently validated module and backend.
-class AbiDeclaration {
-public:
-    std::string sourceName;
-    std::vector<std::string> members;
-};
-class AbiDeclarations {
-public:
-    std::map<std::string, AbiDeclaration> records, enums, functions;
-};
+// Lint warnings and the requested artifacts of one verified compilation.
 struct HostedResolvedSource {
-    ir::ValidatedModule module;
     std::vector<Diagnostic> lintDiagnostics;
-    AbiDeclarations abiDeclarations;
+    std::string code, stackFacts, abiFacts;
 };
 // Only the copied module header leaves an admitted source before resolution;
 // Aurora keeps its imports and finds them by name.
@@ -63,11 +52,11 @@ public:
     // Advances source-owned traversal to its next host read, or completion.
     std::optional<HostedImport> nextImport(std::size_t root, std::size_t moduleRoots);
     HostedResolvedSource
-    resolve(std::size_t root, AnalysisMode mode = AnalysisMode::Check, bool collectAbiDeclarations = false);
+    resolve(std::size_t root, AnalysisMode mode = AnalysisMode::Check, const EmissionRequest &request = {});
     // Explicit-order compatibility API for already-admitted in-memory modules.
     HostedResolvedSource resolve(const std::vector<std::size_t> &dependencyOrder,
                                  std::size_t root,
                                  AnalysisMode mode = AnalysisMode::Check,
-                                 bool collectAbiDeclarations = false);
+                                 const EmissionRequest &request = {});
 };
 } // namespace aurora

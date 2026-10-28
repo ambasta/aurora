@@ -20,8 +20,8 @@ public:
         std::size_t root = 0;
         std::set<host::Identity> sourceIdentities;
         std::unique_ptr<HostedResolution> resolution = std::make_unique<HostedResolution>();
-        HostedResolvedSource resolve(AnalysisMode mode = AnalysisMode::Check, bool collectAbiDeclarations = false) {
-            return resolution->resolve(root, mode, collectAbiDeclarations);
+        HostedResolvedSource resolve(AnalysisMode mode = AnalysisMode::Check, const EmissionRequest &request = {}) {
+            return resolution->resolve(root, mode, request);
         }
     };
 

@@ -1,6 +1,5 @@
 #include "x86.hpp"
 #include "hosted_ir_instructions.hpp"
-#include "hosted_resolver.hpp"
 #include "../runtime/hosted_bytes.hpp"
 #include <algorithm>
 #include <array>

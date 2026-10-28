@@ -4,6 +4,7 @@
 #include <iostream>
 #include <iterator>
 #include <random>
+#include <set>
 
 namespace {
 void require(bool condition, const std::string &message) {

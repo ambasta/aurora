@@ -1778,6 +1778,21 @@ export namespace compiler_x86 {
             }
             return -1;
         }
+        // A view of one sealed artifact; empty when it is not complete.
+        auto artifact_bytes(Artifact artifact) const -> builtin::span<const u8> {
+            i64 count = artifact_size(artifact);
+            i64 first = 0;
+            if (artifact != Artifact::assembly) {
+                first = assemblySize;
+            }
+            if (count < 0) {
+                count = 0;
+                first = 0;
+            }
+            const builtin::span<const u8> all = borrow_bytes(output);
+            const builtin::span<const u8> result = all.subspan(first, count);
+            return result;
+        }
         auto chunk(Artifact artifact, i64 offset) const -> EmitChunk {
             EmitChunk result = EmitChunk();
             i64 count = artifact_size(artifact);

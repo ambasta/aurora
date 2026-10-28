@@ -11,18 +11,21 @@ candidate independently checks normalized module call graphs and
 selects retained functions. Aurora also owns independent metadata/layout, callable
 and frame admission, structural CFG normalization, entry-parameter and static
 call-site admission and whole-function value, lifetime and provenance verification.
-Successful lowering-record projection into pending metadata and instruction owners
-also runs in Aurora. `builtin_catalog.au` is the only copy of the built-in type,
-scalar descriptor and sealed service catalog: the resolver seeds its descriptors
-and lowering its scalar, service and initial layout prelude from it, and the host
+After lowering, one Aurora call (`pipeline.au`) consumes the resolver Session and
+projects it into metadata and instruction owners, admits and verifies them, checks
+the call graph, publishes and emits code plus any requested stack and ABI facts;
+the host copies out the artifacts or renders the first failure.
+`builtin_catalog.au` is the only copy of the built-in type, scalar descriptor and
+sealed service catalog: the resolver seeds its descriptors and lowering its scalar, service and initial layout prelude from it, and the host
 takes service kinds/operations from the generated header and quota extents from
 `catalog_summary`. On the resolver path Aurora lexes, parses, admits and ingests
 each source and keeps its module header and imports; the host gets back only the
 header name or a rejection to render. aurora-fmt likewise parses, lays out and
 verifies its output in one Aurora call. Aurora also decides module-loading policy
 (names, relative paths, byte limits, headers and interfaces). Opening files under
-the explicit roots, ABI declarations, diagnostic rendering, allocation and
-quota/report transport checks remain C++23.
+the explicit roots, diagnostic rendering, allocation and artifact transport remain
+C++23, as does the textual-IR fixture path (`ir::validate`, `X86Emitter`), now test
+tooling outside the compiler's library.
 The Aurora-native x86-64 emitter
 consumes the admitted source stores; the host retains artifact I/O.
 The same semantic traversal feeds typed x86 forms to the text backend or the
@@ -35,7 +38,7 @@ helpers with the same defining-module visibility and symbol-selection rules as
 text output. Neither backend adds reflection access to private values.
 
 Native console, UART and hosted frontend wrappers remain private bootstrap adapters.
-For frontend B/C, `frontend_wrapper.au` emits the 102 wrappers directly, using the
+For frontend B/C, `frontend_wrapper.au` emits the 104 wrappers directly, using the
 same table/ABI-derived recipe that renders predecessor frontend A and the GNU
 reference. The closed recipe admits at most 256 sorted hidden exports, 1024-byte
 identifier names and six ordered register moves or readonly record-lane loads
@@ -133,10 +136,10 @@ make -C compiler test
 ```
 
 Compiler-only testing uses the canonical Meson graph and is not root `full`.
-`ir-exhaustive` (release suite only) retains codec inventory checks and runs the source verifier and
-emitter against admitted fixtures with unknown observations and a removed
-handler in temporary copies. Aurora dispatch rejects these at runtime; it does
-not provide the former C++ visitor's compile-time exhaustiveness guarantee.
+`ir-exhaustive` (release suite only) retains codec inventory checks and runs the CLI
+with temporary copies of the verifier or emitter, interposed on the pipeline entry,
+that observe unknown forms or operators or lack a handler. Aurora dispatch
+rejects these at runtime; it does not provide the former C++ visitor's compile-time exhaustiveness guarantee.
 [Development and qualification](../docs/developer-test-contract.md) defines exact
 routes, selected-artifact identity, explicit pinned compatibility and merge gates.
 The optional [language server](lsp/README.md) has its own dependency and suite.
