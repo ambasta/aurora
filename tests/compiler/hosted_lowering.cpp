@@ -47,7 +47,7 @@ struct Shape {
     std::vector<I64> roles;
 };
 struct Fixture {
-    std::vector<resolver::MetaRow> metadataRows{64};
+    std::vector<resolver::MetaRow> metadataRows{256};
     std::vector<wire::OutputRow> rows;
     std::vector<wire::OperandRow> operands;
     std::string source;

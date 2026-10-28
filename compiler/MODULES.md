@@ -50,7 +50,7 @@ Runtime class type IDs remain local to the complete compilation graph, while qua
 
 ## Reflection does not widen imports
 
-Each lowered function has its defining module scope. Runtime size/field-count queries use that module's descriptor view, containing its own class types and directly imported exported class types. Builtin/scalar-array shapes remain available independently of named-class privacy.
+Each lowered function has its defining module scope. Runtime size/field-count queries use that module's descriptor view, containing its own class types and directly imported exported class types. Builtin/scalar-array shapes remain available independently of named-class privacy. The resolver records each (class or enum, scope) pair it shows as its own index key rather than a per-class scope bitset, so views, scopes (0..255) and their `__au_reflect_s<scope>_*` helpers scale to the 256-file graph.
 
 Guessing a private or otherwise unavailable class's numeric type ID returns zero from another module, matching the existing unknown-ID rule. An unavailable type cannot be named through static reflection either. A callee does not inherit its caller's private type visibility. The typed-IR verifier rejects a query whose scope differs from its containing function's defining scope or names an unknown view; emitted helpers do not accept a caller-supplied scope selector.
 
@@ -73,7 +73,9 @@ The optional language server keeps the former C++ loader (`frontend.hpp`, `host_
 Current limits:
 
 - 16 explicit roots
-- 64 files per graph, including the root
+- 256 files per graph, including the root (module ids are the Session's 256 reserved
+  metadata rows; header names and each module's bound import names are indexed, so
+  each import the graph walk visits costs index lookups, not a scan of the graph)
 - 16 import edges in a dependency path
 - 1 MiB per source file and 4 MiB total captured input
 - 32 module path components, each at most 128 bytes

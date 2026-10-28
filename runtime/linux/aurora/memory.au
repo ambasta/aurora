@@ -42,7 +42,11 @@ namespace memory {
     // when never used), the element stride while that allocation is live (1
     // for bytes, 0 when free), the byte length (or, when free, the next free
     // slot) and the dirty mark, an end below which bytes beyond the length may
-    // be nonzero. Slot 0's own record stays zero, so it is never live.
+    // be nonzero. Slot 0's own record stays zero, so it is never live. The
+    // compiler-emitted entries read the id, stride and length words directly
+    // on their inline fast path (compiler/x86_helpers.au, host_memory_record),
+    // so this layout is a contract with the compiler: change both together.
+    // The fast paths below spell record(slot) inline, since calls are not.
     auto state_bytes() -> u64 {
         return 64u64 + 32u64 * slots();
     }

@@ -480,22 +480,50 @@ export namespace compiler_resolver {
                 return false;
             }
         }
+        // Index 11 keeps the first bound import of each name, for the graph
+        // walk's duplicate check.
+        const i64 name = source_name(session, reference);
+        if (name < 0 || session.index_insert(11, module_id, name, 0, 0, import_node) < 0) {
+            return false;
+        }
         return session.index_insert(5, module_id, import_node, 0, 0, result) == result;
     }
-    // The last module whose header spells this normalized name, or -1.
+    // The last module whose header spells this normalized name, or -1. Index
+    // 10 maps each header name to it, extended in module order up to the
+    // module count (key -1, -1 holds how many modules it covers), so the graph
+    // walk's lookups stay constant time as the graph grows.
     auto module_named(Session& session, i64 name) -> i64 {
-        i64 target = -1;
-        i64 at = 0;
+        i64 at = session.index(10, -1, -1, 0, 0);
+        if (at < 0) {
+            at = 0;
+        }
+        const i64 begin = at;
         while (at < session.module_count() && session.good()) {
             const MetaRow candidate = session.meta(at);
+            if (candidate.kind() != MetaTag::module_unit) {
+                return session.fail_storage(StorageStatus::invalid);
+            }
             const SyntaxRow candidate_root = session.syntax(candidate.word(10));
             const SyntaxRow header = session.syntax(candidate_root.word(7));
-            if (source_name_range(session, header.word(0), header.word(6)) == name) {
-                target = at;
+            const i64 spelled = source_name_range(session, header.word(0), header.word(6));
+            if (session.index(10, spelled, 0, 0, 0) < 0) {
+                session.index_insert(10, spelled, 0, 0, 0, at);
+            } else {
+                session.index_replace(10, spelled, 0, 0, 0, at);
             }
             at = at + 1;
         }
-        return target;
+        if (at != begin) {
+            if (begin == 0) {
+                session.index_insert(10, -1, -1, 0, 0, at);
+            } else {
+                session.index_replace(10, -1, -1, 0, 0, at);
+            }
+        }
+        if (!session.good()) {
+            return -1;
+        }
+        return session.index(10, name, 0, 0, 0);
     }
     // Orders an explicitly ordered in-memory module, whose header name no
     // later module may repeat, as the graph walk guarantees for its own.
@@ -668,7 +696,7 @@ export namespace compiler_resolver {
     // Frames are transient scratch rows: module, next import syntax, unused,
     // entered. A host source request unwinds all frames before ingest. Replaying
     // unfinished ancestry retains only completed module order and import bindings.
-    // The graph bounds (64 files, depth 16) bound this replay without another owner.
+    // The graph bounds (256 files, depth 16) bound this replay without another owner.
     auto graph_walk(Session& session, i64 root, i64 roots) -> WorkRow {
         const WorkRow initial = WorkRow(root, -1, 0, 0, -1, -1);
         session.append_work(initial);
@@ -740,21 +768,14 @@ export namespace compiler_resolver {
                     const MetaRow name_last = session.meta(imported.word(6));
                     const i64 name_begin = name_first.word(1) - unit.word(0);
                     const i64 name_end = name_last.word(2) - unit.word(0);
-                    i64 previous = import_head(session, module_id);
-                    while (previous >= 0 && session.good()) {
-                        const MetaRow bound = session.meta(previous);
-                        if (bound.kind() != MetaTag::import_name) {
-                            session.fail_storage(StorageStatus::invalid);
-                            return WorkRow(-1, -1, -1, -1, -1, -1);
-                        }
-                        if (bound.word(2) < node && source_name(session, bound.word(3)) == name) {
-                            return WorkRow(2, module_id, name_begin, name_end, -1, -1);
-                        }
-                        previous = bound.word(4);
+                    // An earlier bound import of the same name is a duplicate.
+                    const i64 earlier = session.index(11, module_id, name, 0, 0);
+                    if (earlier >= 0 && earlier < node) {
+                        return WorkRow(2, module_id, name_begin, name_end, -1, -1);
                     }
                     const i64 target = module_named(session, name);
                     if (target < 0) {
-                        if (session.module_count() >= 64) {
+                        if (session.module_count() >= 256) {
                             return WorkRow(5, -1, -1, -1, -1, -1);
                         }
                         // A reserved name is requested from the runtime root only.

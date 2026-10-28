@@ -1755,7 +1755,7 @@ export namespace compiler_resolver {
             say(session, "module import depth exceeds 16");
         }
         if (status == 5) {
-            say(session, "module graph exceeds 64 files");
+            say(session, "module graph exceeds 256 files");
         }
         if (status == 6) {
             say(session, "imports require an explicit --module-root");

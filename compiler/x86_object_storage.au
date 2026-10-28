@@ -285,7 +285,8 @@ export namespace compiler_x86 {
         builtin::OwnedValues<ObjectLabelRow> objectLabels;
         builtin::OwnedValues<ObjectFixupRow> objectFixups;
         builtin::OwnedValues<ObjectIndexRow> callableSymbols;
-        // Runtime identities occupy [0, 64); scope/query identities occupy [64, 192).
+        // Runtime identities occupy [0, 64); kind-4 identities follow: scope * 2 +
+        // query for the 256 module scopes, then _start at 512.
         builtin::OwnedValues<ObjectIndexRow> generatedSymbols;
         builtin::OwnedValues<ObjectIndexRow> literalSymbols;
         builtin::OwnedValues<ObjectIndexRow> trapPositions;
@@ -348,7 +349,7 @@ export namespace compiler_x86 {
                 return fail();
             }
             const ObjectIndexRow missing = ObjectIndexRow(-1);
-            if (!callableSymbols.try_resize(functions, missing) || !generatedSymbols.try_resize(193, missing)
+            if (!callableSymbols.try_resize(functions, missing) || !generatedSymbols.try_resize(577, missing)
                 || !literalSymbols.try_resize(instructions + 1, missing) || !trapPositions.try_resize(4, missing)) {
                 return allocation_failure();
             }
@@ -424,7 +425,7 @@ export namespace compiler_x86 {
                 const ObjectIndexRow row = generatedSymbols.at(identity);
                 return row.index();
             }
-            if (kind == 4 && identity < 129) {
+            if (kind == 4 && identity < 513) {
                 const ObjectIndexRow row = generatedSymbols.at(64 + identity);
                 return row.index();
             }
@@ -463,7 +464,7 @@ export namespace compiler_x86 {
             if (row.kind() == 1 && row.identity() >= 0 && row.identity() < 64) {
                 stored = generatedSymbols.set(row.identity(), index);
             }
-            if (row.kind() == 4 && row.identity() >= 0 && row.identity() < 129) {
+            if (row.kind() == 4 && row.identity() >= 0 && row.identity() < 513) {
                 stored = generatedSymbols.set(64 + row.identity(), index);
             }
             if (row.kind() == 3 && row.identity() > 0 && row.identity() < literalSymbols.size()) {

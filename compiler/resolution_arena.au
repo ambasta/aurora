@@ -573,7 +573,7 @@ export namespace compiler_resolver {
             builtin::OwnedValues<MetaRow> meta, builtin::OwnedValues<ResolvedRow> resolved,
             builtin::OwnedValues<WorkRow> work) : sources(move(bytes)), forest(move(syntax)), metadata(move(meta)),
             resolutions(move(resolved)), scratch(move(work)), indexes(make_index_pool(region)), source_used(0),
-            graph_source_used(0), syntax_used(0), meta_used(64), resolved_used(0), work_used(0), index_used(0),
+            graph_source_used(0), syntax_used(0), meta_used(256), resolved_used(0), work_used(0), index_used(0),
             modules(0), index_root(-1), failure(StorageStatus::none), diagnostic(SemanticError::none),
             diagnostic_node(-1), diagnostic_first(-1), diagnostic_second(-1),
             outputRows(compiler_lowering::make_output_pool(region)),
@@ -592,7 +592,7 @@ export namespace compiler_resolver {
         }
         auto storage_status() const -> StorageStatus {
             if (failure == StorageStatus::none && (!sources.ok() || !forest.ok() || !metadata.ok() || metadata.size()
-                < 64 || !resolutions.ok() || !scratch.ok() || !indexes.ok() || !outputRows.ok() || !outputOperands.ok()
+                < 256 || !resolutions.ok() || !scratch.ok() || !indexes.ok() || !outputRows.ok() || !outputOperands.ok()
                 || !loweringLocals.ok() || !loweringSnapshots.ok() || !loweringContinuations.ok())) {
                 return StorageStatus::allocation;
             }
@@ -1292,12 +1292,14 @@ export namespace compiler_resolver {
         }
         // Whether the next module source of count bytes fits: 0, or -2 past
         // the 1 MiB file limit and -3 past the 4 MiB graph limit, which takes
-        // precedence while less than a file's worth of graph remains.
+        // precedence while less than a file's worth of graph remains. Module
+        // ids are the metadata rows 0..255 reserved at creation, so a graph
+        // holds at most 256 files.
         auto source_limit(i64 count) -> i64 {
             if (!good()) {
                 return -1;
             }
-            if (modules >= 64 || count < 0) {
+            if (modules >= 256 || count < 0) {
                 return fail_storage(StorageStatus::limit);
             }
             const i64 remaining = 4194304 - graph_source_used;
@@ -1775,7 +1777,7 @@ export namespace compiler_resolver {
         const SyntaxRow syntax_fill = SyntaxRow(SyntaxTag::invalid);
         builtin::OwnedValues<SyntaxRow> syntax = region.try_allocate(0, syntax_fill);
         const MetaRow meta_fill = MetaRow(MetaTag::invalid);
-        builtin::OwnedValues<MetaRow> meta = region.try_allocate(64, meta_fill);
+        builtin::OwnedValues<MetaRow> meta = region.try_allocate(256, meta_fill);
         const ResolvedRow resolved_fill = ResolvedRow();
         builtin::OwnedValues<ResolvedRow> resolved = region.try_allocate(0, resolved_fill);
         const WorkRow work_fill = WorkRow(-1, -1, -1, -1, -1, -1);

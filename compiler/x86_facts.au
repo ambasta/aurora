@@ -202,7 +202,7 @@ export namespace compiler_x86 {
             return identity < metadata.callable_count();
         }
         if (kind == 1) {
-            if (identity >= 128) {
+            if (identity >= 512) {
                 return false;
             }
             i64 at = 0;

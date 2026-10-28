@@ -2084,7 +2084,7 @@ void rawResolutionOwnership() {
         require(allocations.attempted == 11 && allocations.successful == 11 &&
                     initialBytes == std::array<std::size_t, 11>{emptyOwner,
                                                                 emptyOwner,
-                                                                emptyOwner + 64 * sizeof(Wire::MetaRow),
+                                                                emptyOwner + 256 * sizeof(Wire::MetaRow),
                                                                 emptyOwner,
                                                                 emptyOwner,
                                                                 emptyOwner,

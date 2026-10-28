@@ -561,7 +561,7 @@ export namespace compiler_ir_metadata {
         at = 0;
         while (at < store.view_count()) {
             const ViewRow row = store.view_at(at);
-            if (row.scope() < 0 || row.scope() >= 64) {
+            if (row.scope() < 0 || row.scope() >= 256) {
                 return fail(store, MetadataError::scope);
             }
             i64 entry = 0;

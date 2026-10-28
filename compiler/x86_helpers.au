@@ -32,6 +32,23 @@ export namespace compiler_x86 {
     auto host_memory_block_bytes() -> i64 {
         return host_session_self() + 16;
     }
+    // The memory runtime's state layout, the contract between the byte runtime
+    // entries' inline fast path (x86_module.au) and runtime/linux/aurora/memory.au,
+    // whose state comment defines the same layout; change both together. The
+    // state is slot 0's mapping of host_memory_state_bytes(): a 64-byte header,
+    // then one 32-byte record per slot whose word 0 is the id of the slot's
+    // latest allocation, word 1 the element stride while it is live (0 when
+    // free) and word 2 its byte length; WORD's offset in the record of SLOT is
+    // 32 * SLOT + host_memory_record(WORD).
+    auto host_memory_record_shift() -> i64 {
+        return 5;
+    }
+    auto host_memory_record(i64 word) -> i64 {
+        return 64 + 8 * word;
+    }
+    auto host_memory_state_bytes() -> i64 {
+        return host_memory_record(0) + 32 * host_memory_slots();
+    }
     // The openat2 flags of each HostFiles open mode: O_RDONLY | O_DIRECTORY,
     // O_RDONLY | O_NONBLOCK, O_PATH | O_NOFOLLOW (all O_CLOEXEC), O_WRONLY |
     // O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, O_RDWR, and mode 5 the same
@@ -451,7 +468,7 @@ export namespace compiler_x86 {
         return metadata_text(workspace, o, metadata, name.begin(), name.count());
     }
     auto query_name(EmitWorkspace& workspace, ObjectWorkspace& o, i64 query, i64 scope) -> bool {
-        if (scope < 0 || scope >= 64 || query < 0 || query >= 2) {
+        if (scope < 0 || scope >= 256 || query < 0 || query >= 2) {
             return workspace.fail();
         }
         if (scope == 0) {
@@ -467,8 +484,11 @@ export namespace compiler_x86 {
                 workspace.text("__au_reflect_s");
             }
             if (o.object_mode()) {
+                if (scope >= 100) {
+                    o.object_name_byte(u8(48 + scope / 100));
+                }
                 if (scope >= 10) {
-                    o.object_name_byte(u8(48 + scope / 10));
+                    o.object_name_byte(u8(48 + scope / 10 % 10));
                 }
                 o.object_name_byte(u8(48 + scope % 10));
             } else {

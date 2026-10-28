@@ -711,7 +711,8 @@ export namespace compiler_x86 {
         }
         if (o.object_mode()) {
             o.begin_function_labels(4);
-            o.begin_object_symbol(4, 128, false);
+            // _start follows the 512 reflection query identities.
+            o.begin_object_symbol(4, 512, false);
             o.object_name_text("_start");
             o.end_object_symbol_name();
             emit_object_status(w, o);
@@ -839,7 +840,10 @@ export namespace compiler_x86 {
     // words as scalars, traps on its fail-stop result (u64 max), and stores the
     // results or copies elements to and from the addresses it returns. The
     // frame keeps the five arguments at -8..-40(%rbp), three temporaries at
-    // -48..-64 and the 64-byte record at 0(%rsp).
+    // -48..-64 and the 64-byte record at 0(%rsp). The hot accesses (bytes at,
+    // set and borrow_span, values at and set) first try an inline fast path
+    // without a frame or call (memory_fast_owner) and take that ordinary path
+    // only when it does not apply.
     // The runtime name SYMBOL, as object symbol-name or assembly text bytes.
     auto memory_entry_name(EmitWorkspace& w, ObjectWorkspace& o, i64 symbol) -> bool {
         const NameRow name = w.runtime_name(symbol);
@@ -855,12 +859,14 @@ export namespace compiler_x86 {
         }
         return w.ok();
     }
-    auto memory_entry_begin(EmitWorkspace& w, ObjectWorkspace& o, i64 symbol) -> bool {
+    // Begins entry SYMBOL with local labels 0..7, of which an inline fast path
+    // takes 4..7 (label 7 is the ordinary path through the runtime).
+    auto memory_entry_symbol(EmitWorkspace& w, ObjectWorkspace& o, i64 symbol) -> bool {
         if (symbol < 0 || !w.begin_function(2, symbol, -1)) {
             return w.fail();
         }
         if (o.object_mode()) {
-            o.begin_function_labels(4);
+            o.begin_function_labels(8);
             o.begin_object_symbol(1, symbol, true);
             memory_entry_name(w, o, symbol);
             o.end_object_symbol_name();
@@ -874,6 +880,10 @@ export namespace compiler_x86 {
             memory_entry_name(w, o, symbol);
             w.text(":\n");
         }
+        return w.ok();
+    }
+    // The entry's frame, which keeps the five arguments for the runtime call.
+    auto memory_entry_frame(EmitWorkspace& w, ObjectWorkspace& o) -> bool {
         emit_push_register(w, o, Register::rbp);
         w.grow_stack(8);
         emit_mov_rr(w, o, Register::rsp, Register::rbp);
@@ -888,6 +898,10 @@ export namespace compiler_x86 {
         emit_store(w, o, Register::rcx, fourth, false);
         const i64 fifth = w.pack_address(0, 40);
         return emit_store(w, o, Register::r8, fifth, false);
+    }
+    auto memory_entry_begin(EmitWorkspace& w, ObjectWorkspace& o, i64 symbol) -> bool {
+        memory_entry_symbol(w, o, symbol);
+        return memory_entry_frame(w, o);
     }
     auto memory_entry_end(EmitWorkspace& w, ObjectWorkspace& o, i64 symbol) -> bool {
         emit_leave_instruction(w, o);
@@ -906,22 +920,22 @@ export namespace compiler_x86 {
     // Copies RCX bytes from RSI to RDI, RCX > 0: whole qwords when RCX is a
     // multiple of eight, else REP MOVSB, whose startup dominates the short
     // element copies of owner accesses. Clobbers RAX and RDX; uses local
-    // labels 0, 1 and 3, so the caller may branch to label 2.
-    auto memory_copy(EmitWorkspace& w, ObjectWorkspace& o) -> bool {
+    // labels FIRST, FIRST + 1 and FIRST + 2.
+    auto memory_copy(EmitWorkspace& w, ObjectWorkspace& o, i64 first) -> bool {
         emit_alu_imm(w, o, AluOp::test, 7, Register::rcx);
-        emit_branch(w, o, 5, 0, 1);
+        emit_branch(w, o, 5, 0, first + 1);
         emit_alu_rr(w, o, AluOp::bit_xor, Register::rdx, Register::rdx);
-        emit_bind_label(w, o, 0, 0);
+        emit_bind_label(w, o, 0, first);
         emit_indexed_load(w, o, Register::rsi, Register::rdx, indexed_address(1, 0), false);
         emit_indexed_store(w, o, Register::rdi, Register::rdx, indexed_address(1, 0), false);
         emit_alu_imm(w, o, AluOp::add, 8, Register::rdx);
         emit_alu_rr(w, o, AluOp::compare, Register::rcx, Register::rdx);
-        emit_branch(w, o, 2, 0, 0);
-        emit_branch(w, o, -1, 0, 3);
-        emit_bind_label(w, o, 0, 1);
+        emit_branch(w, o, 2, 0, first);
+        emit_branch(w, o, -1, 0, first + 2);
+        emit_bind_label(w, o, 0, first + 1);
         emit_cld(w, o);
         emit_rep_movsb(w, o);
-        return emit_bind_label(w, o, 0, 3);
+        return emit_bind_label(w, o, 0, first + 2);
     }
     // The frame slot -SAVE(%rbp) into the record word at +OFFSET.
     auto memory_argument(EmitWorkspace& w, ObjectWorkspace& o, i64 save, i64 offset) -> bool {
@@ -1057,6 +1071,115 @@ export namespace compiler_x86 {
         emit_store_imm(w, o, 1, success, false);
         return memory_call(w, o, m, 3);
     }
+    // The inline fast path of an owner access, before the entry's frame. It
+    // makes the checks of the runtime's own fast path (memory::at, set,
+    // element and payload) and of the access primitive behind it, reading the
+    // runtime's state through the layout contract in x86_helpers.au, and
+    // branches to label 7, the entry's ordinary path through the runtime,
+    // unless: the owner in RDI succeeded; its region word names the session;
+    // slot 0's mapping holds the whole state; and the record of the slot of
+    // the owner's allocation id has that id, the owner's length and a stride
+    // of STRIDE, or the stride in RDX when STRIDE is 0, or any live stride
+    // when STRIDE is -1. It then leaves the owner's length in R8 and the
+    // slot's mapping-table entry at R10 + host_session_bytes(), clobbers RAX,
+    // R9 and R11 and keeps the argument registers for label 7.
+    auto memory_fast_owner(EmitWorkspace& w, ObjectWorkspace& o, i64 stride) -> bool {
+        emit_mov_rr(w, o, Register::rdi, Register::r10);
+        const i64 success = w.pack_address(2, 24);
+        emit_alu_mem_imm(w, o, AluOp::compare, 1, success);
+        emit_branch(w, o, 5, 0, 7);
+        const i64 region = w.pack_address(2, 0);
+        emit_load(w, o, region, Register::rax, false);
+        const i64 self = w.pack_address(4, host_session_self());
+        emit_alu_load(w, o, AluOp::compare, self, Register::rax);
+        emit_branch(w, o, 5, 0, 7);
+        const i64 state_length = w.pack_address(4, host_session_bytes() + 8);
+        emit_alu_mem_imm(w, o, AluOp::compare, host_memory_state_bytes(), state_length);
+        emit_branch(w, o, 2, 0, 7);
+        const i64 allocation = w.pack_address(2, 8);
+        emit_load(w, o, allocation, Register::r9, false);
+        const i64 length = w.pack_address(2, 16);
+        emit_load(w, o, length, Register::r8, false);
+        emit_mov_rr(w, o, Register::r9, Register::r10);
+        emit_alu_imm(w, o, AluOp::bit_and, host_memory_slots() - 1, Register::r10);
+        emit_mov_rr(w, o, Register::r10, Register::r11);
+        emit_shift_imm(w, o, true, host_memory_record_shift(), Register::r11);
+        const i64 state = w.pack_address(4, host_session_bytes());
+        emit_alu_load(w, o, AluOp::add, state, Register::r11);
+        emit_shift_imm(w, o, true, 4, Register::r10);
+        emit_alu_rr(w, o, AluOp::add, Register::rax, Register::r10);
+        const i64 identity = w.pack_address(3, host_memory_record(0));
+        emit_alu_load(w, o, AluOp::compare, identity, Register::r9);
+        emit_branch(w, o, 5, 0, 7);
+        const i64 recorded = w.pack_address(3, host_memory_record(2));
+        emit_alu_load(w, o, AluOp::compare, recorded, Register::r8);
+        emit_branch(w, o, 5, 0, 7);
+        const i64 live = w.pack_address(3, host_memory_record(1));
+        if (stride == 0) {
+            // A free record's stride is 0, so this also proves liveness: RDX
+            // is an owner element size, which typed IR admits only in 1..520.
+            emit_alu_load(w, o, AluOp::compare, live, Register::rdx);
+            return emit_branch(w, o, 5, 0, 7);
+        }
+        if (stride < 0) {
+            emit_alu_mem_imm(w, o, AluOp::compare, 0, live);
+            return emit_branch(w, o, 4, 0, 7);
+        }
+        emit_alu_mem_imm(w, o, AluOp::compare, stride, live);
+        return emit_branch(w, o, 5, 0, 7);
+    }
+    // After memory_fast_owner(0): RAX = the address of element RSI of RDX
+    // bytes, checked as memory::element and memory_address check it: index
+    // below the length, index * stride (no overflow: the length is within
+    // the quota and the stride the record's) below it, and the element within
+    // the slot's mapping.
+    auto memory_fast_element(EmitWorkspace& w, ObjectWorkspace& o) -> bool {
+        emit_alu_rr(w, o, AluOp::compare, Register::r8, Register::rsi);
+        emit_branch(w, o, 3, 0, 7);
+        emit_mov_rr(w, o, Register::rsi, Register::rax);
+        emit_alu_rr(w, o, AluOp::multiply, Register::rdx, Register::rax);
+        emit_alu_rr(w, o, AluOp::compare, Register::r8, Register::rax);
+        emit_branch(w, o, 3, 0, 7);
+        const i64 mapped = w.pack_address(2, host_session_bytes() + 8);
+        emit_load(w, o, mapped, Register::r9, false);
+        emit_alu_rr(w, o, AluOp::compare, Register::r9, Register::rax);
+        emit_branch(w, o, 7, 0, 7);
+        emit_alu_rr(w, o, AluOp::subtract, Register::rax, Register::r9);
+        emit_alu_rr(w, o, AluOp::compare, Register::r9, Register::rdx);
+        emit_branch(w, o, 7, 0, 7);
+        const i64 base = w.pack_address(2, host_session_bytes());
+        return emit_alu_load(w, o, AluOp::add, base, Register::rax);
+    }
+    // After memory_fast_owner(1): R9 = the slot's base once index RSI is
+    // below the length and the mapping's (as memory::at and memory_load8).
+    auto memory_fast_byte(EmitWorkspace& w, ObjectWorkspace& o) -> bool {
+        emit_alu_rr(w, o, AluOp::compare, Register::r8, Register::rsi);
+        emit_branch(w, o, 3, 0, 7);
+        const i64 mapped = w.pack_address(2, host_session_bytes() + 8);
+        emit_alu_load(w, o, AluOp::compare, mapped, Register::rsi);
+        emit_branch(w, o, 3, 0, 7);
+        const i64 base = w.pack_address(2, host_session_bytes());
+        return emit_load(w, o, base, Register::r9, false);
+    }
+    // The kind-0 view at R10 of the payload at RAX of LENGTH bytes.
+    auto memory_view(EmitWorkspace& w, ObjectWorkspace& o, Register length) -> bool {
+        i64 word = 0;
+        while (word < 56) {
+            const i64 lane = w.pack_address(2, word);
+            emit_store_imm(w, o, 0, lane, false);
+            word = word + 8;
+        }
+        const i64 view_base = w.pack_address(2, 8);
+        emit_store(w, o, Register::rax, view_base, false);
+        const i64 view_length = w.pack_address(2, 48);
+        return emit_store(w, o, length, view_length, false);
+    }
+    // Ends a fast path and opens the ordinary one, label 7, with the frame.
+    auto memory_fast_end(EmitWorkspace& w, ObjectWorkspace& o) -> bool {
+        emit_return_instruction(w, o);
+        emit_bind_label(w, o, 0, 7);
+        return memory_entry_frame(w, o);
+    }
     auto module_emit_memory_entries(EmitWorkspace& w, ObjectWorkspace& o,
         const compiler_ir_metadata::MetadataStore& m) -> bool {
         const i64 owner = w.pack_address(0, 8);
@@ -1108,34 +1231,48 @@ export namespace compiler_x86 {
         memory_entry_end(w, o, entry_bytes_borrow_length);
         // __au_runtime_bytes_borrow_span(owner*, span*): a contiguous kind-0 view.
         const i64 entry_bytes_borrow_span = w.intern_runtime("__au_runtime_bytes_borrow_span");
-        memory_entry_begin(w, o, entry_bytes_borrow_span);
+        memory_entry_symbol(w, o, entry_bytes_borrow_span);
+        memory_fast_owner(w, o, -1);
+        emit_alu_rr(w, o, AluOp::test, Register::r8, Register::r8);
+        emit_branch(w, o, 14, 0, 7);
+        const i64 mapped = w.pack_address(2, host_session_bytes() + 8);
+        emit_alu_load(w, o, AluOp::compare, mapped, Register::r8);
+        emit_branch(w, o, 7, 0, 7);
+        const i64 base = w.pack_address(2, host_session_bytes());
+        emit_load(w, o, base, Register::rax, false);
+        emit_mov_rr(w, o, Register::rsi, Register::r10);
+        memory_view(w, o, Register::r8);
+        memory_fast_end(w, o);
         memory_record(w, o, 8, true);
         memory_call(w, o, m, 3);
         emit_load(w, o, owner, Register::r10, false);
         emit_load(w, o, owner_length, Register::rdx, false);
         const i64 view = w.pack_address(0, 16);
         emit_load(w, o, view, Register::r10, false);
-        i64 word = 0;
-        while (word < 56) {
-            const i64 lane = w.pack_address(2, word);
-            emit_store_imm(w, o, 0, lane, false);
-            word = word + 8;
-        }
-        const i64 view_base = w.pack_address(2, 8);
-        emit_store(w, o, Register::rax, view_base, false);
-        const i64 view_length = w.pack_address(2, 48);
-        emit_store(w, o, Register::rdx, view_length, false);
+        memory_view(w, o, Register::rdx);
         memory_entry_end(w, o, entry_bytes_borrow_span);
         // __au_runtime_bytes_at(owner*, index)
         const i64 entry_bytes_at = w.intern_runtime("__au_runtime_bytes_at");
-        memory_entry_begin(w, o, entry_bytes_at);
+        memory_entry_symbol(w, o, entry_bytes_at);
+        memory_fast_owner(w, o, 1);
+        memory_fast_byte(w, o);
+        emit_indexed_load(w, o, Register::r9, Register::rsi, indexed_address(1, 0), true);
+        memory_fast_end(w, o);
         memory_record(w, o, 8, true);
         memory_argument(w, o, 16, 40);
         memory_call(w, o, m, 4);
         memory_entry_end(w, o, entry_bytes_at);
         // __au_runtime_bytes_set(owner*, index, value)
         const i64 entry_bytes_set = w.intern_runtime("__au_runtime_bytes_set");
-        memory_entry_begin(w, o, entry_bytes_set);
+        memory_entry_symbol(w, o, entry_bytes_set);
+        memory_fast_owner(w, o, 1);
+        emit_alu_imm(w, o, AluOp::compare, 255, Register::rdx);
+        emit_branch(w, o, 7, 0, 7);
+        memory_fast_byte(w, o);
+        emit_mov_rr(w, o, Register::rdx, Register::rax);
+        emit_indexed_store(w, o, Register::r9, Register::rsi, indexed_address(1, 0), true);
+        emit_mov_imm(w, o, 1, Register::rax);
+        memory_fast_end(w, o);
         memory_record(w, o, 8, true);
         memory_argument(w, o, 16, 40);
         memory_argument(w, o, 24, 48);
@@ -1192,7 +1329,14 @@ export namespace compiler_x86 {
         const i64 element = w.pack_address(0, 32);
         const i64 stride = w.pack_address(0, 24);
         const i64 entry_values_at = w.intern_runtime("__au_runtime_values_at");
-        memory_entry_begin(w, o, entry_values_at);
+        memory_entry_symbol(w, o, entry_values_at);
+        memory_fast_owner(w, o, 0);
+        memory_fast_element(w, o);
+        emit_mov_rr(w, o, Register::rax, Register::rsi);
+        emit_mov_rr(w, o, Register::rcx, Register::rdi);
+        emit_mov_rr(w, o, Register::rdx, Register::rcx);
+        memory_copy(w, o, 4);
+        memory_fast_end(w, o);
         memory_record(w, o, 8, true);
         memory_argument(w, o, 16, 40);
         memory_argument(w, o, 24, 48);
@@ -1202,23 +1346,31 @@ export namespace compiler_x86 {
         emit_mov_rr(w, o, Register::rax, Register::rsi);
         emit_load(w, o, element, Register::rdi, false);
         emit_load(w, o, stride, Register::rcx, false);
-        memory_copy(w, o);
+        memory_copy(w, o, 0);
         memory_entry_end(w, o, entry_values_at);
         // __au_runtime_values_set(owner*, index, stride, element*): 1 written.
         const i64 entry_values_set = w.intern_runtime("__au_runtime_values_set");
-        memory_entry_begin(w, o, entry_values_set);
+        memory_entry_symbol(w, o, entry_values_set);
+        memory_fast_owner(w, o, 0);
+        memory_fast_element(w, o);
+        emit_mov_rr(w, o, Register::rax, Register::rdi);
+        emit_mov_rr(w, o, Register::rcx, Register::rsi);
+        emit_mov_rr(w, o, Register::rdx, Register::rcx);
+        memory_copy(w, o, 4);
+        emit_mov_imm(w, o, 1, Register::rax);
+        memory_fast_end(w, o);
         memory_record(w, o, 8, true);
         memory_argument(w, o, 16, 40);
         memory_argument(w, o, 24, 48);
         memory_call(w, o, m, 6);
         emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
-        emit_branch(w, o, 4, 0, 2);
+        emit_branch(w, o, 4, 0, 3);
         emit_mov_rr(w, o, Register::rax, Register::rdi);
         emit_load(w, o, element, Register::rsi, false);
         emit_load(w, o, stride, Register::rcx, false);
-        memory_copy(w, o);
+        memory_copy(w, o, 0);
         emit_mov_imm(w, o, 1, Register::rax);
-        emit_bind_label(w, o, 0, 2);
+        emit_bind_label(w, o, 0, 3);
         memory_entry_end(w, o, entry_values_set);
         // __au_runtime_bytes_drop(owner*): a pristine descriptor is inert.
         const i64 entry_bytes_drop = w.intern_runtime("__au_runtime_bytes_drop");
@@ -1228,7 +1380,7 @@ export namespace compiler_x86 {
         memory_record(w, o, 8, true);
         memory_call(w, o, m, 8);
         emit_load(w, o, owner, Register::r10, false);
-        word = 0;
+        i64 word = 0;
         while (word < 32) {
             const i64 lane = w.pack_address(2, word);
             emit_store_imm(w, o, 0, lane, false);
