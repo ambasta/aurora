@@ -1476,8 +1476,9 @@ export namespace compiler_pipeline {
             }
             const bool receiver = declaration.borrowed_root_count() != 0
                 || compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver());
-            // The hosted entry calls host::finish after main, so it is a root too.
-            const bool root = declaration.scope() == 0 || compiler_x86::hosted_finish(metadata, callable);
+            // The hosted entry calls host::start and host::finish, so they are roots.
+            const bool root = declaration.scope() == 0 || compiler_x86::hosted_hook(metadata, callable, 0)
+                || compiler_x86::hosted_hook(metadata, callable, 1);
             const compiler_ir_graph::FunctionRow function = compiler_ir_graph::FunctionRow(first, edge - first,
                 receiver, service_entry(metadata, declaration), root);
             if (!compiler_ir_graph::set_function(input, callable, function)) {

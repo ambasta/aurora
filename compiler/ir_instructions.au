@@ -2172,6 +2172,16 @@ export namespace compiler_ir_instructions {
         }
         return result;
     }
+    auto host_runtime_callable(const compiler_ir_metadata::MetadataStore& metadata, i64 callable) -> bool {
+        const compiler_ir_metadata::CallableRow row = metadata.callable_at(callable);
+        const compiler_ir_metadata::ByteRange name = row.name();
+        if (name.count() < 23) {
+            return false;
+        }
+        return compiler_ir_metadata::named(metadata, compiler_ir_metadata::ByteRange(name.begin(), 5), "__au_")
+            && compiler_ir_metadata::named(metadata, compiler_ir_metadata::ByteRange(name.begin() + 6, 17),
+            "_m2_6aurora4host_");
+    }
     auto verify_service_instruction(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 callable, i64 instruction, u64 result_enums) -> bool {
         const RawInstructionRow row = store.instruction_at(instruction);
@@ -2226,6 +2236,11 @@ export namespace compiler_ir_instructions {
             return fail(store, InstructionError::service_operation_root);
         }
         const i64 result_offset = call_value(store, instruction, 2);
+        // The Linux binding's primitives belong to functions of module aurora.host
+        // only, whose native names are __au_<mode>_m2_6aurora4host_...
+        if (operation > 8 && !host_runtime_callable(metadata, callable)) {
+            return fail(store, InstructionError::service_operation);
+        }
         if (operation > 8 && operation != 14) {
             if (result_offset != 0) {
                 return fail(store, InstructionError::service_operation);

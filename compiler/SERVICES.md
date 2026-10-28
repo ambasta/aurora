@@ -247,9 +247,16 @@ with a public array; a program copies it to a local (`const array<u8, 504> bytes
 = chunk.bytes;`), and only the read primitive produces a chunk. Ids are plain
 numbers, `generation * 64 + slot + 1`, checked against the session's own tables:
 16 open directories and files and 4 outputs, each slot with a generation that
-advances on reuse. A stale, forged, foreign or wrong-kind id yields
-`invalid_handle`; a full table yields `exhausted`. Uncommitted outputs are
-discarded and every descriptor closed after `main` returns.
+advances on reuse. An id that does not name a live handle of the right kind
+(stale, foreign, mistyped or made up) yields `invalid_handle`; a full table
+yields `exhausted`. There is no close operation, so a process opens at most 16
+directories and files in total. Ids are deterministic data: guessing a live id
+grants only what the session already holds. Uncommitted outputs are discarded
+and every descriptor closed after `main` returns, but not when the process dies
+by a signal or trap, which leaves its `.aurora-output-*` temporaries behind;
+destination names in that namespace are rejected. Committed files have mode
+0600. Like the module loader, `open_beneath` opens before it checks for a
+regular file (nonblocking, so a FIFO cannot hang it).
 
 The operations are implemented in Aurora by a binding module, imported as
 `aurora.host` and selected by module root. `files.NAME(...)` calls the exported
@@ -258,19 +265,30 @@ function names) as an ordinary service-helper call. The Linux binding,
 `runtime/linux/aurora/host.au`, uses twelve private HostFiles primitives that
 only an imported module named `aurora.host` may name: `load`, `store`, `load8`
 and `store8` over the zeroed 16384-byte session block the grant addresses, and
-the system calls `system_open` (openat2), `system_chunk` (pread64 into a cleared
+the system calls `system_open` (openat2 under one of five compiler-fixed open
+modes: directory, regular file, O_PATH probe and exclusive create without
+symlinks, the last three beneath their directory, and read-write for
+`/dev/null`), `system_chunk` (pread64 into a cleared
 HostChunk), `system_write`, `system_rename` (renameat), `system_unlink`
 (unlinkat), `system_close`, `system_stat` (fstat) and `system_identity`
 (getpid). The compiler emits each inline with a `syscall` instruction after
 checking every offset and length against the session block (failure traps);
-paths are NUL-terminated in the block, and only scalar results return. A binding
+paths are NUL-terminated in the block, and only scalar results return. The
+typed-IR verifier admits the primitives only in functions whose native name
+belongs to module `aurora.host`. The binding is selected by module name from
+the build's module roots, so it is trusted code: a substitute binding cannot
+leave the session block or the fixed open modes, but holds the user's file
+authority as `main` does. A binding
 over Aurora kernel services (Call/Serve or the file namespace service) would be
 another `aurora.host` with its own primitives and the same eight functions.
 
 For a hosted entry the backend emits a global `_start`: it reads argc/argv from
 the initial stack, requires the argument strings to be contiguous, reserves and
-zeroes the session block, calls `main` with the grant and the arguments span,
-calls `host::finish`, and exits with `exit_group`. One aurorac object therefore
+zeroes the session block, calls `host::start` (which puts `/dev/null` in place
+of a closed descriptor 0, 1 or 2, so no output can take a standard stream's
+number; failure exits 1), then `main` with the grant and the arguments span,
+then `host::finish`, and exits with `exit_group`. A hosted `main` whose graph
+lacks the runtime hooks is rejected. One aurorac object therefore
 links with `ld -static -e _start` and no C or C++ startup, libc or runtime (see
 `hosted_programs` in `meson.build`); programs that also use ByteRegion or
 OwnedBytes still need the C++ byte adapter. Stack facts record a

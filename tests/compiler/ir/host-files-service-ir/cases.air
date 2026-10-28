@@ -1,14 +1,15 @@
 ; HostFiles (type kind 22, service kind 6) and its Linux-binding primitives,
-; spelled as integers: 9 load, 12 store8, 14 system_chunk, 18 system_close,
-; 20 system_identity.
+; spelled as integers: 9 load, 14 system_chunk, 20 system_identity. They are
+; admitted only in functions of module aurora.host (native names
+; __au_<mode>_m2_6aurora4host_...).
 
 ; CASE: accepted host primitives
 ; RUN: emit
 ; CHECK: syscall
 ; CHECK-NOT: __au_runtime_
 ; RUN: stack-facts
-; CHECK-JSON: functions.host_ir_identity.calls {"__au_linux_system_call":64}
-function host_ir_identity
+; CHECK-JSON: functions.__au_v_m2_6aurora4host_n1_4host_d8identity.calls {"__au_linux_system_call":64}
+function __au_v_m2_6aurora4host_n1_4host_d8identity
   result i64
   params [22]
   frame 32
@@ -17,7 +18,7 @@ function host_ir_identity
     ServiceOperation 16 20 0 6
     Return
 end
-function host_ir_word
+function __au_v_m2_6aurora4host_n1_4host_d4word
   result u64
   params [22]
   frame 32
@@ -27,6 +28,14 @@ function host_ir_word
     ServiceOperation 16 9 0 6
     Return
 end
+
+; CASE: rejected: primitive outside the runtime module
+; BASE: accepted host primitives
+; RUN: verify
+; EXPECT-ERROR: service operation
+@@ -1 +1 @@
+-function __au_v_m2_6aurora4host_n1_4host_d8identity
++function __au_v_m2_5other4host_n1_4host_d8identity
 
 ; CASE: rejected: primitive under another kind
 ; BASE: accepted host primitives
@@ -74,7 +83,7 @@ end
 layout __au_host_chunk [(enum __au_host_status display=builtin::HostStatus) u64 u8*504]
 fields __au_host_chunk [((enum __au_host_status display=builtin::HostStatus) 0 1 false) (u64 1 1 false) (u8 2 504 true)]
 enum __au_host_status 10
-function host_ir_chunk
+function __au_v_m2_6aurora4host_n1_4host_d5chunk
   result u64
   params [22]
   frame 560

@@ -17,6 +17,24 @@ export namespace compiler_x86 {
     auto host_session_bytes() -> i64 {
         return 16384;
     }
+    // The openat2 flags of each HostFiles open mode: O_RDONLY | O_DIRECTORY,
+    // O_RDONLY | O_NONBLOCK, O_PATH | O_NOFOLLOW (all O_CLOEXEC), O_WRONLY |
+    // O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, and O_RDWR.
+    auto host_open_flags(i64 mode) -> i64 {
+        if (mode == 0) {
+            return 589824;
+        }
+        if (mode == 1) {
+            return 526336;
+        }
+        if (mode == 2) {
+            return 2752512;
+        }
+        if (mode == 3) {
+            return 655553;
+        }
+        return 2;
+    }
     // The hosted entry: root-module main(builtin::HostFiles&, builtin::span<const u8>)
     // -> builtin::HostExit, whose exact signature lowering already admitted.
     auto hosted_entry(const compiler_ir_metadata::MetadataStore& metadata) -> i64 {
@@ -41,17 +59,23 @@ export namespace compiler_x86 {
         }
         return -1;
     }
-    // The runtime's host::finish(builtin::HostFiles&), which the hosted entry
-    // calls after main to discard uncommitted outputs and close descriptors.
-    auto hosted_finish(const compiler_ir_metadata::MetadataStore& metadata, i64 callable) -> bool {
+    // The runtime's hooks host::start(builtin::HostFiles&) (hook 0), which the
+    // hosted entry calls before main, and host::finish (hook 1), called after
+    // main to discard uncommitted outputs and close descriptors.
+    auto hosted_hook(const compiler_ir_metadata::MetadataStore& metadata, i64 callable, i64 hook) -> bool {
         const compiler_ir_metadata::CallableRow row = metadata.callable_at(callable);
-        return row.scope() != 0 && row.value_parameter_count() == 1 && compiler_ir_metadata::named(metadata, row.name(),
-            "__au_v_m2_6aurora4host_n1_4host_d6finish");
+        if (row.scope() == 0 || row.value_parameter_count() != 1) {
+            return false;
+        }
+        if (hook == 0) {
+            return compiler_ir_metadata::named(metadata, row.name(), "__au_v_m2_6aurora4host_n1_4host_d5start");
+        }
+        return compiler_ir_metadata::named(metadata, row.name(), "__au_v_m2_6aurora4host_n1_4host_d6finish");
     }
-    auto hosted_finish_callable(const compiler_ir_metadata::MetadataStore& metadata) -> i64 {
+    auto hosted_hook_callable(const compiler_ir_metadata::MetadataStore& metadata, i64 hook) -> i64 {
         i64 at = 0;
         while (at < metadata.callable_count()) {
-            if (hosted_finish(metadata, at)) {
+            if (hosted_hook(metadata, at, hook)) {
                 return at;
             }
             at = at + 1;

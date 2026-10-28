@@ -275,14 +275,34 @@ export namespace compiler_x86 {
             return emit_indexed_store(workspace, object, Register::rcx, Register::rdx, indexed_address(1, 0), operation
                 == 12);
         }
-        if (operation == 13) { // openat2(directory, path, &open_how, 24)
+        if (operation == 13) { // openat2(directory, path, &open_how, 24) under a closed open mode
             emit_pop(workspace, object, Register::r9);
-            emit_pop(workspace, object, Register::r8);
             emit_pop(workspace, object, Register::rdx);
             emit_pop(workspace, object, Register::rsi);
             emit_pop(workspace, object, Register::rdi);
+            host_bound(workspace, object, Register::r9, 4);
             emit_load(workspace, object, grant, Register::r10, false);
             host_path(workspace, object, Register::r10, Register::rsi, Register::rdx);
+            // Mode 0 directory, 1 regular file, 2 O_PATH probe, 3 exclusive
+            // create and 4 read-write (/dev/null for a closed standard stream)
+            // select fixed flags; modes 1..3 resolve beneath the directory and
+            // every mode refuses symlinks and magic links. Branch-free:
+            // flags = sum(mode == i) * flags_i, resolve = 6 + 8 * beneath.
+            emit_alu_rr(workspace, object, AluOp::bit_xor, Register::r8, Register::r8);
+            emit_mov_imm(workspace, object, 6, Register::r11);
+            i64 selector = 0;
+            while (selector < 5) {
+                emit_alu_rr(workspace, object, AluOp::bit_xor, Register::rcx, Register::rcx);
+                emit_alu_imm(workspace, object, AluOp::compare, selector, Register::r9);
+                emit_set_condition(workspace, object, 4, Register::rcx);
+                emit_imul_imm(workspace, object, host_open_flags(selector), Register::rcx, Register::rdx);
+                emit_alu_rr(workspace, object, AluOp::add, Register::rdx, Register::r8);
+                if (selector > 0 && selector < 4) {
+                    emit_imul_imm(workspace, object, 8, Register::rcx, Register::rdx);
+                    emit_alu_rr(workspace, object, AluOp::add, Register::rdx, Register::r11);
+                }
+                selector = selector + 1;
+            }
             emit_reserve_stack(workspace, object, 32);
             const i64 how = workspace.pack_address(1, 0);
             emit_store(workspace, object, Register::r8, how, false);
@@ -293,7 +313,7 @@ export namespace compiler_x86 {
             const i64 mode = workspace.pack_address(1, 8);
             emit_store(workspace, object, Register::rax, mode, false);
             const i64 resolve = workspace.pack_address(1, 16);
-            emit_store(workspace, object, Register::r9, resolve, false);
+            emit_store(workspace, object, Register::r11, resolve, false);
             emit_lea(workspace, object, how, Register::rdx);
             emit_mov_imm(workspace, object, 24, Register::r10);
             host_system_call(workspace, object, 437);

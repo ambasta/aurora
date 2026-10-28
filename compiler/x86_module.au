@@ -677,17 +677,20 @@ export namespace compiler_x86 {
     // one contiguous block of NUL-terminated bytes (each argv[i] must follow the
     // previous string's NUL, or the entry traps), which main receives as its
     // readonly `arguments` span. The zeroed session block below the record is
-    // the HostFiles grant. After main returns, host::finish discards uncommitted
-    // outputs and closes descriptors; exit_group reports the HostExit ordinal
-    // (success 0, failure 1, usage 2). No C runtime or loader code is involved.
+    // the HostFiles grant. host::start first replaces closed standard streams
+    // (a failure exits 1 without main); after main, host::finish discards
+    // uncommitted outputs and closes descriptors; exit_group reports the
+    // HostExit ordinal (success 0, failure 1, usage 2). No C runtime or loader
+    // code is involved.
     auto module_emit_hosted_entry(EmitWorkspace& w, ObjectWorkspace& o,
         const compiler_ir_metadata::MetadataStore& m) -> bool {
         const i64 entry = hosted_entry(m);
         if (entry < 0) {
             return w.ok();
         }
-        const i64 finish = hosted_finish_callable(m);
-        if (finish < 0) {
+        const i64 start = hosted_hook_callable(m, 0);
+        const i64 finish = hosted_hook_callable(m, 1);
+        if (start < 0 || finish < 0) {
             return w.fail();
         }
         const i64 name = w.intern_runtime("_start");
@@ -695,7 +698,7 @@ export namespace compiler_x86 {
             return false;
         }
         if (o.object_mode()) {
-            o.begin_function_labels(3);
+            o.begin_function_labels(4);
             o.begin_object_symbol(4, 128, false);
             o.object_name_text("_start");
             o.end_object_symbol_name();
@@ -759,12 +762,18 @@ export namespace compiler_x86 {
         emit_store(w, o, Register::r9, address, false);
         const i64 length = w.pack_address(1, 64);
         emit_store(w, o, Register::r10, length, false);
+        const i64 status = w.pack_address(1, 72);
+        emit_store_imm(w, o, 1, status, false);
+        emit_mov_rr(w, o, Register::rsp, Register::r11);
+        direct_target(w, o, m, start);
+        emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
+        emit_branch(w, o, 5, 0, 3);
         emit_mov_rr(w, o, Register::rsp, Register::r11);
         direct_target(w, o, m, entry);
         emit_alu_imm(w, o, AluOp::compare, 2, Register::rax);
         emit_branch(w, o, 7, 4, 0);
-        const i64 status = w.pack_address(1, 72);
         emit_store(w, o, Register::rax, status, false);
+        emit_bind_label(w, o, 0, 3);
         emit_mov_rr(w, o, Register::rsp, Register::r11);
         direct_target(w, o, m, finish);
         emit_load(w, o, status, Register::rdi, false);

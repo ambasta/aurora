@@ -1074,6 +1074,27 @@ export namespace compiler_lowering {
             && !parameter_const(session, symbol, 0) && parameter_kind(session, symbol, 1)
             == compiler_resolver::ResolvedTypeKind::byte_span && !parameter_borrowed(session, symbol, 1);
     }
+    // Whether the runtime module defines host::LEAF, a hook the hosted entry calls.
+    auto host_runtime_hook(compiler_resolver::Session& session, builtin::span<const u8> leaf) -> bool {
+        i64 unit = 0;
+        while (unit < session.module_count() && session.good()) {
+            if (host_runtime_unit(session, unit)) {
+                i64 symbol = compiler_resolver::first_symbol(session, unit,
+                    compiler_resolver::DeclarationKind::function);
+                while (symbol >= 0 && session.good()) {
+                    const i64 name = compiler_resolver::mw(session, symbol, 3);
+                    const i64 parent = compiler_resolver::prefix_parent(session, name);
+                    if (compiler_resolver::leaf_is(session, name, leaf) && compiler_resolver::plain_is(session, parent,
+                        "host")) {
+                        return true;
+                    }
+                    symbol = compiler_resolver::mw(session, symbol, 14);
+                }
+            }
+            unit = unit + 1;
+        }
+        return false;
+    }
     auto service_result(compiler_resolver::Session& session, i64 result) -> bool {
         if (compiler_resolver::scalar_value_kind(tk(session, result))) {
             return true;
@@ -1190,6 +1211,14 @@ export namespace compiler_lowering {
         }
         if (!hosted_entry_admitted(session, symbol)) {
             return fail(session, LoweringError::hosted_entry_signature, source);
+        }
+        const i64 entry_unit = tm(session, symbol, 1);
+        const i64 entry_name = tm(session, symbol, 3);
+        if (count > 0 && parameter_kind(session, symbol, 0) == compiler_resolver::ResolvedTypeKind::host_files
+            && entry_unit >= 0 && compiler_resolver::mw(session, entry_unit, 13) == 0
+            && compiler_resolver::plain_is(session, entry_name, "main") && (!host_runtime_hook(session, "start")
+            || !host_runtime_hook(session, "finish"))) {
+            return fail(session, LoweringError::host_operation_requires_runtime_module, source);
         }
         if (borrowed > 0 && !service) {
             const i64 first = parameter_type(session, symbol, 0);

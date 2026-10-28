@@ -29,6 +29,7 @@
 "module host_rejection;\nauto main(builtin::HostFiles& files,u64 count)->builtin::HostExit{return builtin::HostExit::success;}\n"	2:6: error AU3001: hosted entry must be auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> builtin::HostExit
 "module host_rejection;\nauto main()->builtin::HostExit{return builtin::HostExit::success;}\n"	2:6: error AU3001: hosted entry must be auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> builtin::HostExit
 "module host_rejection;\nauto main(builtin::HostFiles& files,builtin::span<const u8> a,u64 b)->builtin::HostExit{return builtin::HostExit::usage;}\n"	2:6: error AU3001: hosted entry must be auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> builtin::HostExit
+"module host_rejection;\nauto main(builtin::HostFiles& files,builtin::span<const u8> arguments)->builtin::HostExit{return builtin::HostExit::success;}\n"	2:6: error AU3001: HostFiles operation requires the hosted runtime module aurora.host
 "module host_rejection;\nauto f(builtin::HostFiles& files)->u64{const u64 x=files.frobnicate();return x;}\n"	2:58: error AU3001: unknown operation for sealed service kind
 "module host_rejection;\nauto f(builtin::HostFiles& files)->u64{return files.load(0u64);}\n"	2:53: error AU3001: HostFiles system primitive is private to the hosted runtime module aurora.host
 "module host_rejection;\nimport aurora.host;\nauto f(builtin::HostFiles& files)->i64{return files.system_identity();}\n"	3:53: error AU3001: HostFiles system primitive is private to the hosted runtime module aurora.host
@@ -41,7 +42,7 @@
 "module host_rejection;\nimport aurora.host;\nauto f(builtin::HostFiles& files)->u64{const builtin::HostStatus s=files.print(1u64,\"x\");return 0u64;}\n"	3:80: error AU3001: expected builtin::HostStream, got u64
 "module host_rejection;\nauto f(builtin::HostChunk c)->builtin::HostChunk{const array<u8,504> b=c.bytes;const builtin::HostChunk d=builtin::HostChunk{.status=c.status,.count=0u64,.bytes=b};return d;}\n"	2:162: error AU3001: array values are only supported in local initializers and indexing
 "module host_rejection;\nauto f(builtin::HostChunk c)->u8{return c.bytes[0];}\n"	2:43: error AU3001: indexing requires an array local or implicit private receiver field
-"module aurora.host;\nauto main(builtin::HostFiles& files,builtin::span<const u8> a)->builtin::HostExit{const u64 x=files.load(0u64);return builtin::HostExit::success;}\n"	2:101: error AU3001: HostFiles system primitive is private to the hosted runtime module aurora.host
+"module aurora.host;\nauto main(builtin::HostFiles& files,builtin::span<const u8> a)->builtin::HostExit{const u64 x=files.load(0u64);return builtin::HostExit::success;}\n"	2:6: error AU3001: HostFiles operation requires the hosted runtime module aurora.host
 "module host_rejection;\nauto f(builtin::HostChunk c)->u64{c.count=1u64;return c.count;}\n"	2:35: error AU3001: field assignment requires a mutable class local
 "module host_rejection;\nauto f()->builtin::HostExit{return builtin::HostStatus::success;}\n"	2:29: error AU3001: expected builtin::HostExit, got builtin::HostStatus
 "module host_rejection;\nauto f()->u64{const builtin::HostStream s=builtin::HostStream::stdin;return 0u64;}\n"	aurorac: error AU4001: unknown sealed service enum case: builtin::HostStream::stdin

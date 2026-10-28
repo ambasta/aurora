@@ -66,23 +66,22 @@ namespace host_session {
     auto current_directory() -> i64 {
         return -100;
     }
-    auto open_directory_flags() -> u64 {
-        return 589824u64; // O_RDONLY | O_DIRECTORY | O_CLOEXEC
+    // system_open modes; the compiler fixes each mode's flags. No mode follows
+    // symlinks; modes 1..3 also stay beneath their directory.
+    auto open_directory_mode() -> u64 {
+        return 0u64; // O_RDONLY | O_DIRECTORY | O_CLOEXEC
     }
-    auto open_file_flags() -> u64 {
-        return 526336u64; // O_RDONLY | O_NONBLOCK | O_CLOEXEC
+    auto open_file_mode() -> u64 {
+        return 1u64; // O_RDONLY | O_NONBLOCK | O_CLOEXEC, beneath
     }
-    auto open_path_flags() -> u64 {
-        return 2752512u64; // O_PATH | O_NOFOLLOW | O_CLOEXEC
+    auto open_path_mode() -> u64 {
+        return 2u64; // O_PATH | O_NOFOLLOW | O_CLOEXEC, beneath
     }
-    auto create_flags() -> u64 {
-        return 655553u64; // O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC
+    auto create_mode() -> u64 {
+        return 3u64; // O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, mode 0600, beneath
     }
-    auto resolve_plain() -> u64 {
-        return 6u64; // RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS
-    }
-    auto resolve_beneath() -> u64 {
-        return 14u64; // ... | RESOLVE_BENEATH
+    auto standard_stream_mode() -> u64 {
+        return 4u64; // O_RDWR, for /dev/null in place of a closed standard stream
     }
     auto status_of(i64 error) -> builtin::HostStatus {
         if (error == -2 || error == -20) {
@@ -266,9 +265,8 @@ namespace host_session {
     // Appends bytes to an output through the data buffer; false on failure.
     auto buffer_bytes(builtin::HostFiles& files, u64 slot, builtin::span<const u8> bytes) -> bool {
         if (files.load(counters() + 16u64) != slot + 1u64) {
-            if (!flush(files)) {
-                return false;
-            }
+            // A failed flush of another output already failed that output.
+            flush(files);
             files.store(counters() + 16u64, slot + 1u64);
         }
         u64 count = files.load(counters() + 24u64);
@@ -341,6 +339,22 @@ namespace host_session {
         at = append_decimal(files, at, sequence);
         return append_text(files, at, borrow_bytes(suffix));
     }
+    // A leaf in the temporary namespace, which outputs must never replace.
+    auto temporary_leaf(builtin::span<const u8> path, i64 begin) -> bool {
+        const array<u8, 15> prefix = ".aurora-output-";
+        const builtin::span<const u8> expected = borrow_bytes(prefix);
+        if (path.size() - begin < expected.size()) {
+            return false;
+        }
+        i64 at = 0;
+        while (at < expected.size()) {
+            if (path.at(begin + at) != expected.at(at)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return true;
+    }
     // Copies an output's leaf name to the path buffer and returns its length.
     auto output_leaf(builtin::HostFiles& files, u64 entry) -> u64 {
         const u64 length = files.load(entry + 48u64);
@@ -349,7 +363,7 @@ namespace host_session {
     // The destination leaf under the output's directory must be absent or a
     // regular file, never a symlink or directory.
     auto destination_status(builtin::HostFiles& files, i64 directory, u64 length) -> builtin::HostStatus {
-        const i64 existing = files.system_open(directory, path_buffer(), length, open_path_flags(), resolve_beneath());
+        const i64 existing = files.system_open(directory, path_buffer(), length, open_path_mode());
         if (existing == -2) {
             return builtin::HostStatus::success;
         }
@@ -393,7 +407,7 @@ export namespace host {
             } else {
                 const u64 length = host_session::store_bytes(files, host_session::path_buffer(), path);
                 const i64 descriptor = files.system_open(host_session::current_directory(), host_session::path_buffer(),
-                    length, host_session::open_directory_flags(), host_session::resolve_plain());
+                    length, host_session::open_directory_mode());
                 if (descriptor < 0) {
                     status = host_session::status_of(descriptor);
                     if (descriptor == -20) {
@@ -434,7 +448,7 @@ export namespace host {
                         const i64 base = i64(files.load(host_session::handle_entry(parent) + 8u64));
                         const u64 length = host_session::store_bytes(files, host_session::path_buffer(), relative);
                         const i64 descriptor = files.system_open(base, host_session::path_buffer(), length,
-                            host_session::open_file_flags(), host_session::resolve_beneath());
+                            host_session::open_file_mode());
                         if (descriptor < 0) {
                             status = host_session::status_of(descriptor);
                         } else {
@@ -492,7 +506,8 @@ export namespace host {
         }
         const i64 leaf = path.size() - split - 1;
         if (!host_session::valid_path(path) || leaf < 1 || leaf > host_session::leaf_limit() || (leaf == 1
-            && path.at(split + 1) == '.') || (leaf == 2 && path.at(split + 1) == '.' && path.at(split + 2) == '.')) {
+            && path.at(split + 1) == '.') || (leaf == 2 && path.at(split + 1) == '.' && path.at(split + 2) == '.')
+            || host_session::temporary_leaf(path, split + 1)) {
             status = builtin::HostStatus::invalid_path;
         } else {
             if (slot == host_session::output_slots()) {
@@ -510,7 +525,7 @@ export namespace host {
                     }
                 }
                 const i64 directory = files.system_open(host_session::current_directory(), host_session::path_buffer(),
-                    parent_length, host_session::open_directory_flags(), host_session::resolve_plain());
+                    parent_length, host_session::open_directory_mode());
                 if (directory < 0) {
                     status = host_session::status_of(directory);
                 } else {
@@ -525,7 +540,7 @@ export namespace host {
                         files.store(host_session::counters(), sequence);
                         const u64 count = host_session::temporary_name(files, sequence);
                         temporary = files.system_open(directory, host_session::name_buffer(), count,
-                            host_session::create_flags(), host_session::resolve_beneath());
+                            host_session::create_mode());
                         attempts = attempts + 1;
                     }
                     if (status == builtin::HostStatus::success && temporary < 0) {
@@ -621,6 +636,24 @@ export namespace host {
             return builtin::HostStatus::failed;
         }
         return builtin::HostStatus::success;
+    }
+    // Called by the hosted entry before main: a closed standard stream (0, 1
+    // or 2) is replaced by /dev/null, so no session descriptor can take its
+    // number and receive printed bytes. Nonzero makes the entry exit 1.
+    auto start(builtin::HostFiles& files) -> u64 {
+        i64 descriptor = 0;
+        while (descriptor < 3) {
+            if (files.system_stat(descriptor, host_session::stat_buffer()) == -9) {
+                const u64 length = host_session::store_bytes(files, host_session::path_buffer(), "/dev/null");
+                const i64 opened = files.system_open(host_session::current_directory(), host_session::path_buffer(),
+                    length, host_session::standard_stream_mode());
+                if (opened != descriptor) {
+                    return 1u64;
+                }
+            }
+            descriptor = descriptor + 1;
+        }
+        return 0u64;
     }
     // Called by the hosted entry after main: discards every uncommitted output
     // and closes every descriptor the session opened.

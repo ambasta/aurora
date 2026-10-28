@@ -7,8 +7,9 @@ Each `case<TAB>result` line of GOLDEN names a program and its arguments. The
 program runs in a fresh fixture directory holding `tree/` (regular files, a
 subdirectory, a symlink, a directory symlink and a FIFO); the result is the
 exit status, stdout and stderr as in golden.py, then the sorted entries of
-`tree/` afterwards, so committed and discarded outputs and leftover
-temporaries are visible. Cases run concurrently.
+`tree/` afterwards with the size of each regular file, so committed and
+discarded outputs and leftover temporaries are visible. A case starting with
+`!closed` runs with stdout closed. Cases run concurrently.
 """
 
 import argparse
@@ -36,15 +37,25 @@ def fixture(root):
     os.mkfifo(tree / "fifo")
 
 
+def entry(path):
+    if path.is_symlink() or not path.is_file():
+        return path.name
+    return f"{path.name}:{path.stat().st_size}"
+
+
 def run(programs, case, timeout):
     words = shlex.split(case)
+    closed = words[0] == "!closed"
+    if closed:
+        words = words[1:]
     with tempfile.TemporaryDirectory(prefix="aurora-host-files-") as directory:
         root = Path(directory)
         fixture(root)
         try:
-            result = subprocess.run(
-                [programs[words[0]], *words[1:]], cwd=root, capture_output=True, timeout=timeout, check=False
-            )
+            argv = [programs[words[0]], *words[1:]]
+            if closed:
+                argv = ["/bin/sh", "-c", 'exec "$0" "$@" >&-', *argv]
+            result = subprocess.run(argv, cwd=root, capture_output=True, timeout=timeout, check=False)
         except subprocess.TimeoutExpired:
             return f"timeout after {timeout}s"
         status = f"signal {-result.returncode}" if result.returncode < 0 else f"exit {result.returncode}"
@@ -53,7 +64,8 @@ def run(programs, case, timeout):
             text.append("stdout: " + flat(result.stdout))
         if result.stderr:
             text.append("stderr: " + flat(result.stderr))
-        text.append("tree: " + " ".join(sorted(path.name for path in (root / "tree").iterdir())))
+        entries = sorted((root / "tree").iterdir())
+        text.append("tree: " + " ".join(entry(path) for path in entries))
         return " | ".join(text)
 
 

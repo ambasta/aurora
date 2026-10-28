@@ -31,8 +31,11 @@ export namespace compiler_ir_verification {
         if (operation == 20) {
             return 0;
         }
-        if (operation == 13 || operation == 16) {
+        if (operation == 16) {
             return 5;
+        }
+        if (operation == 13) {
+            return 4;
         }
         if (operation == 10 || operation == 12 || operation == 14 || operation == 19) {
             return 2;
