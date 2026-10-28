@@ -339,7 +339,16 @@ namespace `memory` with the session as its HostFiles grant and the descriptor's
 words as scalars, traps (UD2) on its fail-stop result `u64` max, and then
 updates the descriptor or copies one element (or the fill, element by element)
 to or from the address the runtime returned. The runtime decides everything
-else: descriptor validation, quotas, ids and mappings. The entries trust the
+else: descriptor validation, quotas, ids and mappings. The hot entries (bytes
+`at`, `set` and `borrow_span`, values `at` and `set`) first take an inline fast
+path with no frame or call: it makes exactly the checks of the runtime's own
+fast path and of the access primitive behind it (success word, session
+self-word, the state mapping's length, the slot record's id, length and stride
+or liveness, index and element bounds against the length and the slot's
+mapping), reading the runtime's state directly, and otherwise falls through to
+the call above, which validates again and traps or fails as before. The state
+layout it reads is one contract, `host_memory_record` in `x86_helpers.au` and
+the state comment in `memory.au`. The entries trust the
 addresses the runtime returns and the region word of the descriptor they are
 given (a word that does not name a session faults or traps on the self-word
 read): like `aurora.host`, `aurora.memory` and these entries are trusted code
@@ -384,15 +393,18 @@ exhaustion after a successful mapping kills the process; and there are no
 metrics, test allocator or fault injection. Runtime cost is one system call per
 nonempty allocation, resize and drop and a page per nonempty allocation; the
 table makes `_start` reserve 272 KiB of stack, so a stack limit below about
-300 KiB faults before `main`. Element and byte accesses match the descriptor's
-id, length and stride against the slot's record inline on a fast path (calls
-are not inlined) and copy whole qwords for strides that are a multiple of
-eight. Each access still costs a call into the runtime with the checks above,
-which makes aurorac about 1.6x slower than over the C++ adapter (see the
-change that made it an Aurora program); inlining the check into the
-compiler-emitted entries reaches C1 only at the next checkpoint bump.
+300 KiB faults before `main`. Element copies move whole qwords for strides that
+are a multiple of eight. With the entries' fast path a compiler built by this
+emitter compiles the compiler in 0.57x the instructions and 0.63x the cycles
+of one built without it; C1 is built by the checkpoint's emitter, so it gains
+this (and aurorac stops being about 1.6x slower than over the C++ adapter)
+only at the next checkpoint bump. `memory.au` keeps its own fast paths until then.
 
-Cases: the memory probe over `tests/host-files/memory.golden` and the
+Cases: the memory probe over `tests/host-files/memory.golden` (every fast path,
+including a three-byte stride, and the fall-through of bytes `set`, `borrow_span`
+and values `set` for failed owners, indices outside an owner and empty views;
+generated code bounds-checks `at` before the call, so its fall-through is
+reached only by a descriptor source cannot make) and the
 `host-sort` example in `tests/host-files/cases.golden`; rejections (region entry,
 prefix, primitives, private runtime functions) in `rejections.golden`; and the
 memory-primitive IR cases in `tests/compiler/ir/host-files-service-ir/`. The C++
