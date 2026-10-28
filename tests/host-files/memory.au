@@ -1,0 +1,385 @@
+module host_memory_probe;
+import aurora.host;
+import aurora.memory;
+
+// The hosted memory runtime's test driver: host-memory-probe FIRST SECOND
+// COUNT OPERATION... allocates byte owners of FIRST and SECOND bytes and COUNT
+// pairs filled with (7, 9) from main's region, then runs a script of
+// operations, each one word followed by its operands; every operation prints
+// one line, "ORDINAL OPERATION RESULT". A and B name the byte owners.
+//
+//   ok A|B              whether the allocation succeeded
+//   set A|B I V         set byte I to V (true or false)
+//   at A|B I            the byte at I; an index outside the owner traps
+//   fill A|B V          set every byte to V
+//   resize A|B N        try_resize, then the new size
+//   view A|B            size, sum and the first 16 bytes of a borrowed view
+//   vok                 whether the pair allocation succeeded, and its count
+//   vset I X Y          set pair I
+//   vat I               pair I; an index outside the owner traps
+//   vresize N X Y       try_resize with fill (X, Y), then the new count
+//   vview               count and sum of a borrowed typed view
+//   churn N BYTES       N allocations of BYTES each dropped at once: successes
+//   zero BYTES          an allocation of BYTES is all zero: true or false
+//   exit success|failure
+
+class Pair {
+public:
+    i64 left;
+    i64 right;
+};
+
+class Buffers {
+    builtin::OwnedBytes first;
+    builtin::OwnedBytes second;
+public:
+    Buffers(builtin::ByteRegion region, i64 a, i64 b) : first(make(region, a)), second(region.try_allocate(b)) {
+    }
+    auto ok(i64 which) const -> bool {
+        if (which == 0) {
+            return first.ok();
+        }
+        return second.ok();
+    }
+    auto size(i64 which) const -> i64 {
+        if (which == 0) {
+            return first.size();
+        }
+        return second.size();
+    }
+    auto set(i64 which, i64 index, u8 value) -> bool {
+        if (which == 0) {
+            return first.set(index, value);
+        }
+        return second.set(index, value);
+    }
+    auto at(i64 which, i64 index) const -> u8 {
+        if (which == 0) {
+            return first.at(index);
+        }
+        return second.at(index);
+    }
+    auto resize(i64 which, i64 length) -> bool {
+        if (which == 0) {
+            return first.try_resize(length);
+        }
+        return second.try_resize(length);
+    }
+    auto first_view() const -> builtin::span<const u8> {
+        return borrow_bytes(first);
+    }
+    auto second_view() const -> builtin::span<const u8> {
+        return borrow_bytes(second);
+    }
+};
+
+// An owner returned through an ordinary call.
+auto make(builtin::ByteRegion region, i64 length) -> builtin::OwnedBytes {
+    builtin::OwnedBytes bytes = region.try_allocate(length);
+    return move(bytes);
+}
+
+// Allocates and drops COUNT owners of LENGTH bytes in turn; the successes.
+auto churn(builtin::ByteRegion region, i64 count, i64 length) -> i64 {
+    i64 done = 0;
+    i64 at = 0;
+    while (at < count) {
+        builtin::OwnedBytes bytes = region.try_allocate(length);
+        if (bytes.ok() && bytes.set(length - 1, 1u8)) {
+            done = done + 1;
+        }
+        at = at + 1;
+    }
+    return done;
+}
+
+// Whether a fresh owner of LENGTH bytes reads as zeros, sampled every 4093 bytes.
+auto zero(builtin::ByteRegion region, i64 length) -> bool {
+    builtin::OwnedBytes bytes = region.try_allocate(length);
+    if (!bytes.ok()) {
+        return false;
+    }
+    const builtin::span<const u8> view = borrow_bytes(bytes);
+    i64 at = 0;
+    while (at < view.size()) {
+        if (view.at(at) != 0u8) {
+            return false;
+        }
+        at = at + 4093;
+    }
+    return view.size() == 0 || view.at(view.size() - 1) == 0u8;
+}
+
+class Word {
+    i64 first;
+    i64 length;
+public:
+    Word(i64 begin, i64 count) : first(begin), length(count) {
+    }
+    auto begin() const -> i64 {
+        return first;
+    }
+    auto count() const -> i64 {
+        return length;
+    }
+};
+
+auto argument(builtin::span<const u8> arguments, i64 index) -> Word {
+    i64 at = 0;
+    i64 begin = 0;
+    i64 ordinal = 0;
+    while (at < arguments.size()) {
+        if (arguments.at(at) == 0u8) {
+            if (ordinal == index) {
+                const Word result = Word(begin, at - begin);
+                return result;
+            }
+            ordinal = ordinal + 1;
+            begin = at + 1;
+        }
+        at = at + 1;
+    }
+    const Word missing = Word(-1, 0);
+    return missing;
+}
+
+auto is(builtin::span<const u8> word, builtin::span<const u8> text) -> bool {
+    if (word.size() != text.size()) {
+        return false;
+    }
+    i64 at = 0;
+    while (at < word.size()) {
+        if (word.at(at) != text.at(at)) {
+            return false;
+        }
+        at = at + 1;
+    }
+    return true;
+}
+
+// A decimal operand, optionally negative; saturates rather than overflowing.
+auto number(builtin::span<const u8> word) -> i64 {
+    i64 value = 0;
+    i64 at = 0;
+    if (word.size() > 0 && word.at(0) == '-') {
+        at = 1;
+    }
+    while (at < word.size() && word.at(at) >= '0' && word.at(at) <= '9') {
+        if (value > 922337203685477579) {
+            value = 9223372036854775807;
+        } else {
+            value = value * 10 + i64(word.at(at) - '0');
+        }
+        at = at + 1;
+    }
+    if (word.size() > 0 && word.at(0) == '-') {
+        return 0 - value;
+    }
+    return value;
+}
+
+auto decimal(builtin::HostFiles& files, i64 value) -> builtin::HostStatus {
+    array<u8, 21> digits = "000000000000000000000";
+    i64 at = 20;
+    digits[20] = ' ';
+    u64 rest = u64(value);
+    if (value < 0) {
+        rest = u64(0 - value);
+    }
+    while (at == 20 || rest > 0u64) {
+        at = at - 1;
+        digits[at] = u8(48u64 + rest % 10u64);
+        rest = rest / 10u64;
+    }
+    if (value < 0) {
+        at = at - 1;
+        digits[at] = '-';
+    }
+    const builtin::span<const u8> all = borrow_bytes(digits);
+    const builtin::span<const u8> text = all.subspan(at, 21 - at);
+    return files.print(builtin::HostStream::stdout, text);
+}
+
+auto truth(builtin::HostFiles& files, bool value) -> builtin::HostStatus {
+    if (value) {
+        return files.print(builtin::HostStream::stdout, "true ");
+    }
+    return files.print(builtin::HostStream::stdout, "false ");
+}
+
+// The size, sum and first 16 bytes of a view.
+auto show(builtin::HostFiles& files, builtin::span<const u8> view) -> builtin::HostStatus {
+    decimal(files, view.size());
+    i64 sum = 0;
+    i64 at = 0;
+    while (at < view.size()) {
+        sum = sum + i64(view.at(at));
+        at = at + 1;
+    }
+    decimal(files, sum);
+    at = 0;
+    while (at < view.size() && at < 16) {
+        decimal(files, i64(view.at(at)));
+        at = at + 1;
+    }
+    return builtin::HostStatus::success;
+}
+
+// The sum of both fields of every pair in a view.
+auto pair_sum(builtin::span<const Pair> view) -> i64 {
+    i64 sum = 0;
+    i64 at = 0;
+    while (at < view.size()) {
+        const Pair pair = view.at(at);
+        sum = sum + pair.left + pair.right;
+        at = at + 1;
+    }
+    return sum;
+}
+
+auto main(builtin::HostFiles& files, builtin::ByteRegion region,
+    builtin::span<const u8> arguments) -> builtin::HostExit {
+    const Word a = argument(arguments, 1);
+    const Word b = argument(arguments, 2);
+    const Word c = argument(arguments, 3);
+    if (c.begin() < 0) {
+        files.print(builtin::HostStream::stderr, "usage: host-memory-probe FIRST SECOND COUNT OPERATION...");
+        return builtin::HostExit::usage;
+    }
+    Buffers buffers = Buffers(region, number(arguments.subspan(a.begin(), a.count())),
+        number(arguments.subspan(b.begin(), b.count())));
+    const Pair initial = Pair{
+        .left = 7,
+        .right = 9
+    };
+    builtin::OwnedValues<Pair> values = region.try_allocate(number(arguments.subspan(c.begin(), c.count())), initial);
+    i64 index = 4;
+    i64 ordinal = 1;
+    i64 begin = 0;
+    while (begin >= 0) {
+        const Word head = argument(arguments, index);
+        const Word first = argument(arguments, index + 1);
+        const Word second = argument(arguments, index + 2);
+        const Word third = argument(arguments, index + 3);
+        begin = head.begin();
+        if (begin >= 0) {
+            const builtin::span<const u8> operation = arguments.subspan(head.begin(), head.count());
+            i64 one_begin = 0;
+            i64 one_count = 0;
+            i64 two_begin = 0;
+            i64 two_count = 0;
+            i64 three_begin = 0;
+            i64 three_count = 0;
+            if (first.begin() >= 0) {
+                one_begin = first.begin();
+                one_count = first.count();
+            }
+            if (second.begin() >= 0) {
+                two_begin = second.begin();
+                two_count = second.count();
+            }
+            if (third.begin() >= 0) {
+                three_begin = third.begin();
+                three_count = third.count();
+            }
+            const builtin::span<const u8> one = arguments.subspan(one_begin, one_count);
+            const builtin::span<const u8> two = arguments.subspan(two_begin, two_count);
+            const builtin::span<const u8> three = arguments.subspan(three_begin, three_count);
+            i64 which = 1;
+            if (is(one, "A")) {
+                which = 0;
+            }
+            i64 used = 2;
+            decimal(files, ordinal);
+            files.print(builtin::HostStream::stdout, operation);
+            files.print(builtin::HostStream::stdout, " ");
+            if (is(operation, "ok")) {
+                truth(files, buffers.ok(which));
+                decimal(files, buffers.size(which));
+            }
+            if (is(operation, "set")) {
+                truth(files, buffers.set(which, number(two), u8(number(three) % 256)));
+                used = 4;
+            }
+            if (is(operation, "at")) {
+                decimal(files, i64(buffers.at(which, number(two))));
+                used = 3;
+            }
+            if (is(operation, "fill")) {
+                const u8 value = u8(number(two) % 256);
+                i64 at = 0;
+                i64 written = 0;
+                while (at < buffers.size(which)) {
+                    if (buffers.set(which, at, value)) {
+                        written = written + 1;
+                    }
+                    at = at + 1;
+                }
+                decimal(files, written);
+                used = 3;
+            }
+            if (is(operation, "resize")) {
+                truth(files, buffers.resize(which, number(two)));
+                decimal(files, buffers.size(which));
+                used = 3;
+            }
+            if (is(operation, "view")) {
+                if (which == 0) {
+                    show(files, buffers.first_view());
+                } else {
+                    show(files, buffers.second_view());
+                }
+            }
+            if (is(operation, "vok")) {
+                truth(files, values.ok());
+                decimal(files, values.size());
+                used = 1;
+            }
+            if (is(operation, "vset")) {
+                const Pair pair = Pair{
+                    .left = number(two),
+                    .right = number(three)
+                };
+                truth(files, values.set(number(one), pair));
+                used = 4;
+            }
+            if (is(operation, "vat")) {
+                const Pair pair = values.at(number(one));
+                decimal(files, pair.left);
+                decimal(files, pair.right);
+            }
+            if (is(operation, "vresize")) {
+                const Pair pair = Pair{
+                    .left = number(two),
+                    .right = number(three)
+                };
+                truth(files, values.try_resize(number(one), pair));
+                decimal(files, values.size());
+                used = 4;
+            }
+            if (is(operation, "vview")) {
+                const builtin::span<const Pair> view = borrow_values(values);
+                decimal(files, view.size());
+                decimal(files, pair_sum(view));
+                used = 1;
+            }
+            if (is(operation, "churn")) {
+                decimal(files, churn(region, number(one), number(two)));
+                used = 3;
+            }
+            if (is(operation, "zero")) {
+                truth(files, zero(region, number(one)));
+            }
+            if (is(operation, "exit")) {
+                if (is(one, "failure")) {
+                    return builtin::HostExit::failure;
+                }
+                return builtin::HostExit::success;
+            }
+            files.print(builtin::HostStream::stdout, "\n");
+            index = index + used;
+            ordinal = ordinal + 1;
+        }
+    }
+    return builtin::HostExit::success;
+}

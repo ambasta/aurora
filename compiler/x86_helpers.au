@@ -60,17 +60,15 @@ export namespace compiler_x86 {
             const compiler_ir_metadata::ByteRange name = row.name();
             const i64 suffix = name.count() - 11;
             const i64 count = row.value_parameter_count();
-            if (row.scope() == 0 && (count == 2 || count == 3) && suffix > 0
-                && compiler_ir_metadata::named(metadata, compiler_ir_metadata::ByteRange(name.begin() + suffix, 11),
-                "_n0__d4main")) {
+            if (row.scope() == 0 && (count == 2 || count == 3) && suffix > 0 && compiler_ir_metadata::named(metadata,
+                compiler_ir_metadata::ByteRange(name.begin() + suffix, 11), "_n0__d4main")) {
                 const compiler_ir_metadata::RawTypeRow first = metadata.type_at(row.value_parameter_begin());
                 const compiler_ir_metadata::RawTypeRow middle = metadata.type_at(row.value_parameter_begin() + 1);
-                const compiler_ir_metadata::RawTypeRow last = metadata.type_at(row.value_parameter_begin() + count
-                    - 1);
+                const compiler_ir_metadata::RawTypeRow last = metadata.type_at(row.value_parameter_begin() + count - 1);
                 const compiler_ir_metadata::IndexRange types = row.types();
                 const compiler_ir_metadata::RawTypeRow result = metadata.type_at(types.begin());
-                if (first.kind() == 22 && (count == 2 || middle.kind() == 12) && last.kind() == 11 && result.kind()
-                    == 9 && compiler_ir_metadata::named(metadata, result.name(), "__au_host_exit")) {
+                if (first.kind() == 22 && (count == 2 || middle.kind() == 12) && last.kind() == 11 && result.kind() == 9
+                    && compiler_ir_metadata::named(metadata, result.name(), "__au_host_exit")) {
                     return at;
                 }
             }
@@ -132,16 +130,13 @@ export namespace compiler_x86 {
             return compiler_ir_metadata::named(metadata, row.name(), "__au_v_m2_6aurora6memory_n1_6memory_d5start");
         }
         if (hook == 1) {
-            return compiler_ir_metadata::named(metadata, row.name(),
-                "__au_v_m2_6aurora6memory_n1_6memory_d6finish");
+            return compiler_ir_metadata::named(metadata, row.name(), "__au_v_m2_6aurora6memory_n1_6memory_d6finish");
         }
         if (hook == 2) {
-            return compiler_ir_metadata::named(metadata, row.name(),
-                "__au_v_m2_6aurora6memory_n1_6memory_d8allocate");
+            return compiler_ir_metadata::named(metadata, row.name(), "__au_v_m2_6aurora6memory_n1_6memory_d8allocate");
         }
         if (hook == 3) {
-            return compiler_ir_metadata::named(metadata, row.name(),
-                "__au_v_m2_6aurora6memory_n1_6memory_d7payload");
+            return compiler_ir_metadata::named(metadata, row.name(), "__au_v_m2_6aurora6memory_n1_6memory_d7payload");
         }
         if (hook == 4) {
             return compiler_ir_metadata::named(metadata, row.name(), "__au_v_m2_6aurora6memory_n1_6memory_d2at");
@@ -150,12 +145,10 @@ export namespace compiler_x86 {
             return compiler_ir_metadata::named(metadata, row.name(), "__au_v_m2_6aurora6memory_n1_6memory_d3set");
         }
         if (hook == 6) {
-            return compiler_ir_metadata::named(metadata, row.name(),
-                "__au_v_m2_6aurora6memory_n1_6memory_d7element");
+            return compiler_ir_metadata::named(metadata, row.name(), "__au_v_m2_6aurora6memory_n1_6memory_d7element");
         }
         if (hook == 7) {
-            return compiler_ir_metadata::named(metadata, row.name(),
-                "__au_v_m2_6aurora6memory_n1_6memory_d6resize");
+            return compiler_ir_metadata::named(metadata, row.name(), "__au_v_m2_6aurora6memory_n1_6memory_d6resize");
         }
         return hook == 8 && compiler_ir_metadata::named(metadata, row.name(),
             "__au_v_m2_6aurora6memory_n1_6memory_d4drop");

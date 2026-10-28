@@ -143,7 +143,9 @@ hosted_runtime_sources = files('runtime/linux/aurora/host.au', 'runtime/linux/au
 hosted_linker = find_program('ld', native: true)
 hosted_programs = {}
 foreach name, source : {'host-files-cat': 'examples/host-files-cat.au',
-                        'host-files-probe': 'tests/host-files/probe.au'}
+                        'host-files-probe': 'tests/host-files/probe.au',
+                        'host-sort': 'examples/host-sort.au',
+                        'host-memory-probe': 'tests/host-files/memory.au'}
   hosted_object = custom_target(name + '-object', input: source, output: name + '.o',
       command: [aurorac, '--emit-object', '@INPUT@', '-o', '@OUTPUT@'],
       depend_files: hosted_runtime_sources)

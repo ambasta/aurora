@@ -1080,8 +1080,8 @@ export namespace compiler_lowering {
         // The optional region follows the capability: main(files, region, arguments).
         const i64 span = count - 1;
         return (count == 2 || (count == 3 && parameter_kind(session, symbol, 1)
-            == compiler_resolver::ResolvedTypeKind::byte_region && !parameter_borrowed(session, symbol, 1)))
-            && result == exit && parameter_kind(session, symbol, 0) == compiler_resolver::ResolvedTypeKind::host_files
+            == compiler_resolver::ResolvedTypeKind::byte_region && !parameter_borrowed(session, symbol, 1))) && result
+            == exit && parameter_kind(session, symbol, 0) == compiler_resolver::ResolvedTypeKind::host_files
             && parameter_borrowed(session, symbol, 0) && !parameter_const(session, symbol, 0) && parameter_kind(session,
             symbol, span) == compiler_resolver::ResolvedTypeKind::byte_span && !parameter_borrowed(session, symbol,
             span);

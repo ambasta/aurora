@@ -454,7 +454,7 @@ export namespace compiler_x86 {
         const i64 length = workspace.pack_address(3, host_session_bytes() + 8);
         const i64 saved_entry = workspace.pack_address(1, 0);
         const i64 saved_length = workspace.pack_address(1, 8);
-        if (operation == 21) { // mmap(0, pages, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE)
+        if (operation == 21) { // mmap(0, pages, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS)
             emit_pop(workspace, object, Register::rax);
             emit_pop(workspace, object, Register::rcx);
             memory_entry(workspace, object, grant);
@@ -470,7 +470,7 @@ export namespace compiler_x86 {
             memory_pages(workspace, object, Register::rsi);
             emit_alu_rr(workspace, object, AluOp::bit_xor, Register::rdi, Register::rdi);
             emit_mov_imm(workspace, object, 3, Register::rdx);
-            emit_mov_imm(workspace, object, 16418, Register::r10);
+            emit_mov_imm(workspace, object, 34, Register::r10);
             emit_mov_imm(workspace, object, -1, Register::r8);
             emit_alu_rr(workspace, object, AluOp::bit_xor, Register::r9, Register::r9);
             host_system_call(workspace, object, 9);

@@ -1,0 +1,240 @@
+module host_sort;
+import aurora.host;
+import aurora.memory;
+
+// host-sort DIRECTORY OUTPUT FILE...
+//
+// Sorts the lines of the FILEs, read beneath DIRECTORY and taken together,
+// bytewise into OUTPUT, which is replaced atomically only when every file was
+// read. The sorted line lengths are reported on stdout and each failure on
+// stderr.
+// Exits success (0), failure (1) or usage (2).
+//
+// The bytes live in one growing OwnedBytes and the line ranges in a growing
+// OwnedValues, both from main's region: a hosted program with no C or C++
+// runtime under it.
+
+// A [begin, begin + count) range of the arguments block.
+class Word {
+    i64 first;
+    i64 length;
+public:
+    Word(i64 begin, i64 count) : first(begin), length(count) {
+    }
+    auto begin() const -> i64 {
+        return first;
+    }
+    auto count() const -> i64 {
+        return length;
+    }
+};
+
+// One line of the text, without its newline.
+class Line {
+public:
+    i64 begin;
+    i64 length;
+};
+
+// The NUL-terminated argument at ordinal `index`, or an empty range at -1.
+auto argument(builtin::span<const u8> arguments, i64 index) -> Word {
+    i64 at = 0;
+    i64 begin = 0;
+    i64 ordinal = 0;
+    while (at < arguments.size()) {
+        if (arguments.at(at) == 0u8) {
+            if (ordinal == index) {
+                const Word result = Word(begin, at - begin);
+                return result;
+            }
+            ordinal = ordinal + 1;
+            begin = at + 1;
+        }
+        at = at + 1;
+    }
+    const Word missing = Word(-1, 0);
+    return missing;
+}
+
+auto decimal(builtin::HostFiles& files, u64 value) -> builtin::HostStatus {
+    array<u8, 20> digits = "00000000000000000000";
+    i64 at = 20;
+    u64 rest = value;
+    while (at == 20 || rest > 0u64) {
+        at = at - 1;
+        digits[at] = u8(48u64 + rest % 10u64);
+        rest = rest / 10u64;
+    }
+    const builtin::span<const u8> all = borrow_bytes(digits);
+    const builtin::span<const u8> text = all.subspan(at, 20 - at);
+    return files.print(builtin::HostStream::stdout, text);
+}
+
+auto complain(builtin::HostFiles& files, builtin::span<const u8> what, builtin::span<const u8> name) -> bool {
+    files.print(builtin::HostStream::stderr, what);
+    files.print(builtin::HostStream::stderr, name);
+    files.print(builtin::HostStream::stderr, "\n");
+    return false;
+}
+
+// Whether line `a` sorts before line `b`, comparing bytes.
+auto before(builtin::span<const u8> text, Line a, Line b) -> bool {
+    i64 at = 0;
+    while (at < a.length && at < b.length) {
+        const u8 left = text.at(a.begin + at);
+        const u8 right = text.at(b.begin + at);
+        if (left != right) {
+            return left < right;
+        }
+        at = at + 1;
+    }
+    return a.length < b.length;
+}
+
+// Reads the files named by the arguments from ordinal 3 on, sorts their lines
+// and writes them to the output. The owners are dropped on return.
+auto sort_lines(builtin::HostFiles& files, builtin::ByteRegion region, u64 directory, u64 output,
+    builtin::span<const u8> arguments) -> bool {
+    builtin::OwnedBytes text = region.try_allocate(0);
+    i64 size = 0;
+    bool complete = text.ok();
+    i64 index = 3;
+    const Word first = argument(arguments, index);
+    i64 name_begin = first.begin();
+    i64 name_count = first.count();
+    while (complete && name_begin >= 0) {
+        const builtin::span<const u8> name = arguments.subspan(name_begin, name_count);
+        const builtin::HostFileResult file = files.open_beneath(directory, name);
+        complete = file.status == builtin::HostStatus::success || complain(files, "cannot open ", name);
+        u64 offset = 0u64;
+        bool reading = complete;
+        while (reading) {
+            const builtin::HostChunk chunk = files.read(file.id, offset);
+            const i64 count = i64(chunk.count);
+            if (chunk.status != builtin::HostStatus::success) {
+                complete = complain(files, "cannot read ", name);
+                reading = false;
+            } else {
+                if (count == 0) {
+                    reading = false;
+                } else {
+                    // Grow geometrically; a failed resize keeps the old bytes.
+                    if (size + count > text.size() && !text.try_resize(2 * (size + count))) {
+                        complete = complain(files, "out of memory reading ", name);
+                        reading = false;
+                    } else {
+                        const array<u8, 504> bytes = chunk.bytes;
+                        i64 at = 0;
+                        while (at < count) {
+                            text.set(size + at, bytes[at]);
+                            at = at + 1;
+                        }
+                        size = size + count;
+                        offset = offset + chunk.count;
+                    }
+                }
+            }
+        }
+        index = index + 1;
+        const Word next = argument(arguments, index);
+        name_begin = next.begin();
+        name_count = next.count();
+    }
+    // Drop the spare capacity.
+    if (!complete || !text.try_resize(size)) {
+        return false;
+    }
+    const Line none = Line{
+        .begin = 0,
+        .length = 0
+    };
+    builtin::OwnedValues<Line> lines = region.try_allocate(4, none);
+    i64 total = 0;
+    const builtin::span<const u8> view = borrow_bytes(text);
+    i64 begin = 0;
+    i64 at = 0;
+    while (complete && at <= size) {
+        if (at == size || view.at(at) == '\n') {
+            if (at > begin || at < size) {
+                if (total == lines.size() && !lines.try_resize(2 * total, none)) {
+                    complete = complain(files, "out of memory", "");
+                }
+                const Line line = Line{
+                    .begin = begin,
+                    .length = at - begin
+                };
+                complete = complete && lines.set(total, line);
+                total = total + 1;
+            }
+            begin = at + 1;
+        }
+        at = at + 1;
+    }
+    // Insertion sort, stable.
+    i64 next = 1;
+    while (complete && next < total) {
+        const Line key = lines.at(next);
+        i64 slot = next;
+        bool moving = true;
+        while (moving && slot > 0) {
+            const Line previous = lines.at(slot - 1);
+            if (before(view, key, previous)) {
+                lines.set(slot, previous);
+                slot = slot - 1;
+            } else {
+                moving = false;
+            }
+        }
+        lines.set(slot, key);
+        next = next + 1;
+    }
+    if (complete) {
+        decimal(files, u64(total));
+        files.print(builtin::HostStream::stdout, " lines:");
+    }
+    i64 written = 0;
+    while (complete && written < total) {
+        const Line line = lines.at(written);
+        complete = files.write(output, view.subspan(line.begin, line.length)) == builtin::HostStatus::success
+            && files.write(output, "\n") == builtin::HostStatus::success;
+        files.print(builtin::HostStream::stdout, " ");
+        decimal(files, u64(line.length));
+        written = written + 1;
+    }
+    if (complete) {
+        files.print(builtin::HostStream::stdout, "\n");
+    }
+    return complete;
+}
+
+auto main(builtin::HostFiles& files, builtin::ByteRegion region,
+    builtin::span<const u8> arguments) -> builtin::HostExit {
+    const Word directory_word = argument(arguments, 1);
+    const Word output_word = argument(arguments, 2);
+    const Word first_word = argument(arguments, 3);
+    if (first_word.begin() < 0) {
+        files.print(builtin::HostStream::stderr, "usage: host-sort DIRECTORY OUTPUT FILE...\n");
+        return builtin::HostExit::usage;
+    }
+    const builtin::span<const u8> directory_path = arguments.subspan(directory_word.begin(), directory_word.count());
+    const builtin::HostDirectoryResult directory = files.open_directory(directory_path);
+    if (directory.status != builtin::HostStatus::success) {
+        files.print(builtin::HostStream::stderr, "cannot open directory\n");
+        return builtin::HostExit::failure;
+    }
+    const builtin::span<const u8> output_path = arguments.subspan(output_word.begin(), output_word.count());
+    const builtin::HostOutputResult output = files.create_output(output_path);
+    if (output.status != builtin::HostStatus::success) {
+        files.print(builtin::HostStream::stderr, "cannot create output\n");
+        return builtin::HostExit::failure;
+    }
+    if (!sort_lines(files, region, directory.id, output.id, arguments)) {
+        files.discard(output.id);
+        return builtin::HostExit::failure;
+    }
+    if (files.commit(output.id) != builtin::HostStatus::success) {
+        files.print(builtin::HostStream::stderr, "cannot commit output\n");
+        return builtin::HostExit::failure;
+    }
+    return builtin::HostExit::success;
+}

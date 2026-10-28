@@ -84,12 +84,19 @@ test('volatile-file-source-native', python,
     depends: [aurorac] + record_host_targets, suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'],
     env: oracle_env, workdir: meson.current_build_dir(), timeout: 120, is_parallel: true)
 
-# HostFiles: the example tool and the hostile-case driver, each compiled and
+# HostFiles: the example tools and the hostile-case drivers, each compiled and
 # linked once with no C or C++ runtime; cases and rejections are golden data.
 test('host-files', python,
      args: ['-B', files('host_files.py'), files('host-files/cases.golden'),
             'cat=' + hosted_programs['host-files-cat'].full_path(),
-            'probe=' + hosted_programs['host-files-probe'].full_path()],
+            'probe=' + hosted_programs['host-files-probe'].full_path(),
+            'sort=' + hosted_programs['host-sort'].full_path()],
+     depends: hosted_programs.values(), suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
+# The Aurora byte runtime (aurora.memory) under a hosted program's region:
+# owners, views, quota and limits, failures and traps.
+test('host-memory', python,
+     args: ['-B', files('host_files.py'), files('host-files/memory.golden'),
+            'memory=' + hosted_programs['host-memory-probe'].full_path()],
      depends: hosted_programs.values(), suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
 # The 64 MiB per-output limit costs real writes; limits run in the release suite.
 test('host-files-limits', python,

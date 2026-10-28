@@ -1,7 +1,10 @@
 ; HostFiles (type kind 22, service kind 6) and its Linux-binding primitives,
 ; spelled as integers: 9 load, 14 system_chunk, 20 system_identity. They are
 ; admitted only in functions of module aurora.host (native names
-; __au_<mode>_m2_6aurora4host_...).
+; __au_<mode>_m2_6aurora4host_...). The memory primitives 21..28 (23
+; unmap_memory, 24 memory_load, 27 memory_store8) belong to aurora.memory
+; (__au_<mode>_m2_6aurora6memory_...) and are emitted only for a hosted entry
+; that takes a region.
 
 ; CASE: accepted host primitives
 ; RUN: emit
@@ -51,7 +54,7 @@ end
 ; EXPECT-ERROR: service operation
 @@ -7 +7 @@
 -    ServiceOperation 16 20 0 6
-+    ServiceOperation 16 21 0 6
++    ServiceOperation 16 29 0 6
 
 ; CASE: rejected: scalar primitive with a result object
 ; BASE: accepted host primitives
@@ -134,3 +137,81 @@ end
 @@ -3 +3 @@
 -enum __au_host_status 10
 +enum __au_host_status 9
+
+; CASE: accepted memory primitives
+; RUN: verify
+function __au_v_m2_6aurora6memory_n1_6memory_d4load
+  result u64
+  params [22]
+  frame 32
+  service 16
+    BindServiceParameter 0 16 6
+    Constant 0 u64
+    Push
+    Constant 8 u64
+    Push
+    ServiceOperation 16 24 0 6
+    Return
+end
+function __au_v_m2_6aurora6memory_n1_6memory_d5store
+  result u8
+  params [22]
+  frame 32
+  service 16
+    BindServiceParameter 0 16 6
+    Constant 1 u64
+    Push
+    Constant 0 u64
+    Push
+    Constant 7 u8
+    Push
+    ServiceOperation 16 27 0 6
+    Return
+end
+function __au_v_m2_6aurora6memory_n1_6memory_d5unmap
+  result i64
+  params [22]
+  frame 32
+  service 16
+    BindServiceParameter 0 16 6
+    Constant 1 u64
+    ServiceOperation 16 23 0 6
+    Return
+end
+
+; CASE: rejected: memory primitive in the files binding
+; BASE: accepted memory primitives
+; RUN: verify
+; EXPECT-ERROR: service operation
+@@ -1 +1 @@
+-function __au_v_m2_6aurora6memory_n1_6memory_d4load
++function __au_v_m2_6aurora4host_n1_6memory_d4load
+
+; CASE: rejected: memory primitive outside the runtime modules
+; BASE: accepted memory primitives
+; RUN: verify
+; EXPECT-ERROR: service operation
+@@ -1 +1 @@
+-function __au_v_m2_6aurora6memory_n1_6memory_d4load
++function __au_v_m2_6memory6aurora_n1_6memory_d4load
+
+; CASE: rejected: system primitive in the memory runtime
+; BASE: accepted memory primitives
+; RUN: verify
+; EXPECT-ERROR: service operation
+@@ -36 +36 @@
+-    ServiceOperation 16 23 0 6
++    ServiceOperation 16 9 0 6
+
+; CASE: rejected: mistyped memory store byte
+; BASE: accepted memory primitives
+; RUN: verify
+; EXPECT-ERROR: scalar
+@@ -24 +24 @@
+-    Constant 7 u8
++    Constant 7 u64
+
+; CASE: rejected: memory primitive without a region entry
+; BASE: accepted memory primitives
+; RUN: emit
+; EXPECT-ERROR: emission

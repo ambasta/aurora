@@ -25,3 +25,9 @@ probe exit usage	exit 2 | tree: a.txt:6 big.txt:1500 dirlink empty.txt:0 fifo li
 probe print 'two words' exit success	exit 0 | stdout: two words1 print success | tree: a.txt:6 big.txt:1500 dirlink empty.txt:0 fifo link sub
 probe create tree/.aurora-output-1-1.tmp create tree/.aurora-output	exit 0 | stdout: 1 create invalid_path  / 2 create success | tree: a.txt:6 big.txt:1500 dirlink empty.txt:0 fifo link sub
 !closed probe create tree/x.txt write @1 data print leak commit @1 eprint done	exit 0 | stderr: done | tree: a.txt:6 big.txt:1500 dirlink empty.txt:0 fifo link sub x.txt:4
+sort tree tree/out.txt sub/b.txt a.txt big.txt a.txt	exit 0 | stdout: 3 lines: 1505 5 9 | tree: a.txt:6 big.txt:1500 dirlink empty.txt:0 fifo link out.txt:1522 sub
+sort tree tree/out.txt big.txt big.txt big.txt	exit 0 | stdout: 1 lines: 4500 | tree: a.txt:6 big.txt:1500 dirlink empty.txt:0 fifo link out.txt:4501 sub
+sort tree tree/out.txt empty.txt	exit 0 | stdout: 0 lines: | tree: a.txt:6 big.txt:1500 dirlink empty.txt:0 fifo link out.txt:0 sub
+sort tree tree/out.txt a.txt missing.txt	exit 1 | stderr: cannot open missing.txt | tree: a.txt:6 big.txt:1500 dirlink empty.txt:0 fifo link sub
+sort tree tree/out.txt	exit 2 | stderr: usage: host-sort DIRECTORY OUTPUT FILE... | tree: a.txt:6 big.txt:1500 dirlink empty.txt:0 fifo link sub
+sort missing tree/out.txt a.txt	exit 1 | stderr: cannot open directory | tree: a.txt:6 big.txt:1500 dirlink empty.txt:0 fifo link sub
