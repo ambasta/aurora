@@ -30,6 +30,8 @@ public:
     CodeEmission format = CodeEmission::Assembly;
     bool stackFacts = false;
     bool abiFacts = false;
+    // A listing of the published IR replaces the code; nothing is emitted.
+    bool listing = false;
 };
 class PipelineOutput {
 public:
@@ -43,6 +45,26 @@ using ReportSource = std::function<std::shared_ptr<const SourceText>(std::int64_
 // message offset on. Throws Internal on a malformed or inconsistent report.
 Diagnostic copyReport(const std::function<hosted_abi::compiler_resolver::Report(std::int64_t)> &read,
                       const ReportSource &source);
+std::uint64_t pipelineOptions(const EmissionRequest &request);
+// Storage for one Aurora pipeline Result. The caller runs exactly one entry
+// into data(); destruction releases that Result.
+class PipelineResult {
+    hosted_abi::PipelineRelease release_{};
+
+public:
+    explicit PipelineResult(std::uint64_t region);
+    ~PipelineResult();
+    PipelineResult(const PipelineResult &) = delete;
+    PipelineResult &operator=(const PipelineResult &) = delete;
+    void *data();
+    hosted_abi::compiler_pipeline::Report report();
+    // The requested artifacts of a complete run.
+    PipelineOutput output(const hosted_abi::compiler_pipeline::Report &report,
+                          const EmissionRequest &request,
+                          const ReportSource &sources = {});
+};
+// The first failure of an incomplete run, with its former message and code.
+[[noreturn]] void rejectPipeline(const hosted_abi::compiler_pipeline::Report &report);
 
 // One Aurora call projects the lowered Session, admits, structures and verifies
 // every function, checks the call graph, publishes and emits the requested

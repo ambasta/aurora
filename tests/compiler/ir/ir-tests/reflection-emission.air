@@ -176,3 +176,49 @@ end
 ; EXPECT-ERROR: empty module
 descriptor 100 16 1
 views [(0 [100])]
+
+; Object symbols select the same reflection helpers as text labels.
+; CASE: object reflection helpers follow text selection
+; BASE: referenced reflection retains referenced helper bodies and facts
+; RUN: emit object
+; CHECK-DAG: aurora_reflect_size
+; CHECK-DAG: aurora_reflect_field_count
+; CHECK-DAG: __au_reflect_s1_size
+; CHECK-DAG: __au_reflect_s1_field_count
+; CHECK-DAG: __au_reflect_s2_size
+; CHECK-DAG: __au_reflect_s2_field_count
+; RUN: emit object
+; CHECK-NOT: __au_reflect_s63_field_count
+; CHECK-NOT: __au_reflect_s63_size
+; RUN: emit referenced object
+; CHECK-DAG: aurora_reflect_size
+; CHECK-DAG: __au_reflect_s1_field_count
+; RUN: emit referenced object
+; CHECK-NOT: __au_reflect_s1_size
+; CHECK-NOT: __au_reflect_s2_field_count
+; CHECK-NOT: __au_reflect_s2_size
+; CHECK-NOT: __au_reflect_s63_field_count
+; CHECK-NOT: __au_reflect_s63_size
+; CHECK-NOT: aurora_reflect_field_count
+
+; CASE: object sparse reflection helpers follow text selection
+; BASE: sparse reflection views exceed code length
+; RUN: emit object
+; CHECK-DAG: aurora_reflect_size
+; CHECK-DAG: aurora_reflect_field_count
+; CHECK-DAG: __au_reflect_s2_size
+; CHECK-DAG: __au_reflect_s2_field_count
+; CHECK-DAG: __au_reflect_s63_size
+; CHECK-DAG: __au_reflect_s63_field_count
+; RUN: emit object
+; CHECK-NOT: __au_reflect_s1_field_count
+; CHECK-NOT: __au_reflect_s1_size
+; RUN: emit referenced object
+; CHECK-NOT: __au_reflect_s1_field_count
+; CHECK-NOT: __au_reflect_s1_size
+; CHECK-NOT: __au_reflect_s2_field_count
+; CHECK-NOT: __au_reflect_s2_size
+; CHECK-NOT: __au_reflect_s63_field_count
+; CHECK-NOT: __au_reflect_s63_size
+; CHECK-NOT: aurora_reflect_field_count
+; CHECK-NOT: aurora_reflect_size

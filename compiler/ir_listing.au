@@ -1,0 +1,569 @@
+export module aurora.compiler.ir_listing;
+import aurora.compiler.ir_graph;
+import aurora.compiler.ir_metadata_storage;
+import aurora.compiler.ir_metadata;
+import aurora.compiler.ir_instruction_storage;
+
+// A line-per-fact listing of published IR: canonical class storage, enums,
+// callables with their typed frames and storage origins, the retained set and
+// every retained body's normalized code with stable instruction IDs and flow.
+// Textual IR cases check it; it reads only admitted, published owners.
+export namespace compiler_ir_listing {
+    class Listing {
+        builtin::OwnedBytes text;
+        i64 used;
+        bool valid;
+    public:
+        Listing(builtin::ByteRegion region) : text(region.try_allocate(0)), used(0), valid(true) {
+        }
+        auto ok() const -> bool {
+            return valid && text.ok();
+        }
+        auto byte(u8 value) -> bool {
+            if (!ok() || used == 9223372036854775807) {
+                valid = false;
+                return false;
+            }
+            if (used == text.size()) {
+                i64 capacity = 4096;
+                if (used >= 4096) {
+                    capacity = used * 2;
+                }
+                if (!text.try_resize(capacity)) {
+                    valid = false;
+                    return false;
+                }
+            }
+            text.set(used, value);
+            used = used + 1;
+            return true;
+        }
+        auto word(builtin::span<const u8> value) -> bool {
+            i64 at = 0;
+            while (at < value.size()) {
+                if (!byte(value.at(at))) {
+                    return false;
+                }
+                at = at + 1;
+            }
+            return ok();
+        }
+        auto natural(u64 value) -> bool {
+            u64 place = 1u64;
+            while (value / place >= 10u64) {
+                place = place * 10u64;
+            }
+            while (place > 0u64) {
+                if (!byte(u8(48u64 + value / place % 10u64))) {
+                    return false;
+                }
+                place = place / 10u64;
+            }
+            return true;
+        }
+        auto number(i64 value) -> bool {
+            if (value < 0) {
+                return byte('-') && natural(u64(-(value + 1)) + 1u64);
+            }
+            return natural(u64(value));
+        }
+        auto size() const -> i64 {
+            return used;
+        }
+        auto view() const -> builtin::span<const u8> {
+            const builtin::span<const u8> all = borrow_bytes(text);
+            const builtin::span<const u8> result = all.subspan(0, used);
+            return result;
+        }
+        auto byte_at(i64 at) const -> i64 {
+            if (at < 0 || at >= used) {
+                return -1;
+            }
+            return i64(text.at(at));
+        }
+        // The first byte of the ordinal-th space-separated word, or -1.
+        auto word_begin(i64 ordinal) const -> i64 {
+            if (ordinal < 0) {
+                return -1;
+            }
+            i64 at = 0;
+            i64 seen = 0;
+            while (at < used && seen < ordinal) {
+                if (text.at(at) == ' ') {
+                    seen = seen + 1;
+                }
+                at = at + 1;
+            }
+            if (at >= used) {
+                return -1;
+            }
+            return at;
+        }
+        auto word_end(i64 begin) const -> i64 {
+            i64 at = begin;
+            while (at >= 0 && at < used && text.at(at) != ' ') {
+                at = at + 1;
+            }
+            return at;
+        }
+    };
+    auto create(builtin::ByteRegion region) -> Listing {
+        Listing result = Listing(region);
+        return move(result);
+    }
+    auto release(builtin::ByteRegion region, Listing listing) -> i64 {
+        return 0;
+    }
+    auto form_count() -> i64 {
+        return 85;
+    }
+    // Instruction form spellings in compiler_lowering::InstructionForm order,
+    // then type kind spellings in compiler_ir_metadata::MetadataTypeKind order.
+    auto spellings(Listing& out) -> bool {
+        return out.word("BindServiceParameter AcquireServiceLoan ReleaseServiceLoan ServiceOperation ServiceCall ")
+            && out.word("Constant EnumConstant Load Store Push Pop UnaryValue BinaryValue Convert Compare ")
+            && out.word("BoundsGuard IndexLoad IndexStore BorrowHandle Call AggregateCall BeginObject ")
+            && out.word("InitializeEmptyObject EndObject CopyObject ObjectFieldCopy AssignObjectField ")
+            && out.word("InitializeObjectField InitializeClassArray ClassArrayBoundsGuard ClassArrayCopy ")
+            && out.word("ClassArrayAssign ReceiverLoad ReceiverStore ReceiverArrayZero ReceiverBoundsGuard ")
+            && out.word("ReceiverIndexLoad ReceiverIndexStore MethodCall MetadataQuery Label Jump BranchFalse ")
+            && out.word("Return ReturnObject BindParameter BindObjectParameter BeginArray EndArray BorrowSpan ")
+            && out.word("BorrowReceiverArraySpan BorrowLiteralSpan BorrowOwnedSpan ReturnSpan ReborrowSpan ")
+            && out.word("Subspan EndSpan SpanLength SpanLoad BindSpanParameter BeginBytes AllocateBytes ")
+            && out.word("AllocateValues ValuesLoad ValuesStore ValuesResize MoveBytes BytesOk BytesLength ")
+            && out.word("BytesLoad BytesStore BytesResize EndBytes BindRegionParameter BindBytesParameter ")
+            && out.word("ResourceCall ReturnBytes InitializeBytesField MoveObject BindOwnedObjectParameter ")
+            && out.word("ReturnOwnedObject AcquireObjectLoan ReleaseObjectLoan BorrowedCall SpanValuesLoad ")
+            && out.word("i64 bool own ref mutref class array u64 param enum u8 span region bytes console display ")
+            && out.word("iommu values call uart serve spanof");
+    }
+    auto metadata_name(Listing& out, const compiler_ir_metadata::MetadataStore& metadata, i64 begin,
+        i64 count) -> bool {
+        i64 at = 0;
+        while (at < count) {
+            const i64 value = metadata.byte_at(begin + at);
+            if (value < 0 || value > 255 || !out.byte(u8(value))) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return out.ok();
+    }
+    // A spelling word, or the ordinal itself outside the table.
+    auto spelling(Listing& out, const Listing& table, i64 ordinal, i64 first, i64 count) -> bool {
+        if (ordinal < 0 || ordinal >= count) {
+            return out.number(ordinal);
+        }
+        const i64 begin = table.word_begin(first + ordinal);
+        if (begin < 0) {
+            return out.number(ordinal);
+        }
+        const i64 end = table.word_end(begin);
+        i64 at = begin;
+        while (at < end) {
+            if (!out.byte(u8(table.byte_at(at)))) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return out.ok();
+    }
+    auto kind_text(Listing& out, const Listing& table, i64 kind) -> bool {
+        return spelling(out, table, kind, form_count(), 22);
+    }
+    auto type_text(Listing& out, const Listing& table, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 index) -> bool {
+        if (index < 0 || index >= metadata.type_count()) {
+            return out.word("<invalid>");
+        }
+        const compiler_ir_metadata::RawTypeRow row = metadata.type_at(index);
+        const compiler_ir_metadata::ByteRange name = row.name();
+        const compiler_ir_metadata::RawTypeTail tail = row.tail();
+        if (name.count() == 0 && tail.element_kind() == 0 && tail.length() == 0) {
+            return kind_text(out, table, row.kind());
+        }
+        if (!out.byte('(') || !kind_text(out, table, row.kind())) {
+            return false;
+        }
+        if (name.count() != 0 && (!out.byte(' ') || !metadata_name(out, metadata, name.begin(), name.count()))) {
+            return false;
+        }
+        if (tail.element_kind() != 0 && (!out.word(" elem=") || !kind_text(out, table, tail.element_kind()))) {
+            return false;
+        }
+        if (tail.length() != 0 && (!out.word(" len=") || !out.number(tail.length()))) {
+            return false;
+        }
+        return out.byte(')');
+    }
+    auto list_role(i64 role) -> bool {
+        return role == 8 || role == 9 || role == 21 || role == 25 || role == 37 || role == 102;
+    }
+    auto type_role(i64 role) -> bool {
+        return role == 12 || role == 14 || role == 15 || role == 16 || role == 18 || role == 20;
+    }
+    // Service arguments print as (loan kind), borrowed roots as (root loan
+    // field), every other nested list as its values.
+    auto nested(Listing& out, const compiler_ir_instructions::InstructionStore& instructions, i64 role, i64 begin,
+        i64 count) -> bool {
+        i64 width = 1;
+        if (role == 9) {
+            width = 2;
+        }
+        if (role == 102) {
+            width = 3;
+        }
+        if (!out.byte('[')) {
+            return false;
+        }
+        i64 at = 0;
+        while (at < count) {
+            if (at != 0 && !out.byte(' ')) {
+                return false;
+            }
+            if (width > 1 && at % width == 0 && !out.byte('(')) {
+                return false;
+            }
+            const compiler_ir_instructions::RawOperandRow value = instructions.operand_at(begin + at);
+            if (!out.number(value.signed_value())) {
+                return false;
+            }
+            if (width > 1 && at % width == width - 1 && !out.byte(')')) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return out.byte(']');
+    }
+    auto hex_digit(i64 value) -> u8 {
+        if (value < 10) {
+            return u8(48 + value);
+        }
+        return u8(87 + value);
+    }
+    auto literal(Listing& out, const compiler_ir_instructions::InstructionStore& instructions, i64 begin,
+        i64 count) -> bool {
+        if (!out.byte('"')) {
+            return false;
+        }
+        i64 at = 0;
+        while (at < count) {
+            const i64 value = instructions.literal_at(begin + at);
+            if (value >= 32 && value < 127 && value != 34 && value != 92) {
+                if (!out.byte(u8(value))) {
+                    return false;
+                }
+            } else {
+                if (value < 0 || value > 255 || !out.word("\\x") || !out.byte(hex_digit(value / 16))
+                    || !out.byte(hex_digit(value % 16))) {
+                    return false;
+                }
+            }
+            at = at + 1;
+        }
+        return out.byte('"');
+    }
+    auto operand(Listing& out, const Listing& table, const compiler_ir_metadata::MetadataStore& metadata,
+        const compiler_ir_instructions::InstructionStore& instructions, i64 index) -> bool {
+        const compiler_ir_instructions::RawOperandRow value = instructions.operand_at(index);
+        const i64 role = value.role();
+        if (!out.byte(' ')) {
+            return false;
+        }
+        if (type_role(role)) {
+            return type_text(out, table, metadata, value.signed_value());
+        }
+        if (role == 100 || role == 101) {
+            return metadata_name(out, metadata, value.begin(), value.count());
+        }
+        if (list_role(role)) {
+            return nested(out, instructions, role, value.begin(), value.count());
+        }
+        if (role == 33) {
+            return literal(out, instructions, value.begin(), value.count());
+        }
+        if (role == 11) {
+            return out.natural(value.unsigned_value());
+        }
+        return out.number(value.signed_value());
+    }
+    // The form's spelling, its operation if it has one, then every prefix operand.
+    auto instruction(Listing& out, const Listing& table, const compiler_ir_metadata::MetadataStore& metadata,
+        const compiler_ir_instructions::InstructionStore& instructions, i64 id) -> bool {
+        const compiler_ir_instructions::RawInstructionRow row = instructions.instruction_at(id);
+        const i64 form = row.form();
+        if (!spelling(out, table, form, 0, form_count())) {
+            return false;
+        }
+        i64 operation = -1;
+        if (form == 11) {
+            operation = row.unary_operation();
+        }
+        if (form == 12) {
+            operation = row.binary_operation();
+        }
+        if (form == 14) {
+            operation = row.comparison_operation();
+        }
+        if (form == 39) {
+            operation = row.query();
+        }
+        if (operation != -1 && (!out.byte(' ') || !out.number(operation))) {
+            return false;
+        }
+        i64 at = 0;
+        while (at < row.operand_count()) {
+            if (!operand(out, table, metadata, instructions, row.operand_begin() + at)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return out.ok();
+    }
+    auto storage_text(Listing& out, const compiler_ir_metadata::MetadataStore& metadata, i64 begin, i64 count) -> bool {
+        if (!out.byte('[')) {
+            return false;
+        }
+        i64 at = 0;
+        while (at < count) {
+            const compiler_ir_metadata::IndexRow value = metadata.index_at(begin + at);
+            if ((at != 0 && !out.byte(' ')) || !out.number(value.value())) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return out.byte(']');
+    }
+    auto owning(const compiler_ir_metadata::MetadataStore& metadata, i64 class_index) -> bool {
+        const compiler_ir_metadata::ClassResultRow result = metadata.result_at(class_index);
+        const compiler_ir_metadata::IndexRange fields = result.fields();
+        i64 at = 0;
+        while (at < fields.count()) {
+            const compiler_ir_metadata::FieldRow field = metadata.field_at(fields.begin() + at);
+            const compiler_ir_metadata::RawTypeRow type = metadata.type_at(field.type());
+            if (type.kind() == 13 || type.kind() == 17) {
+                return true;
+            }
+            at = at + 1;
+        }
+        return false;
+    }
+    auto classes(Listing& out, const compiler_ir_metadata::MetadataStore& metadata) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::flag_masks();
+        i64 at = 0;
+        while (at < metadata.class_count()) {
+            const compiler_ir_metadata::ClassRow row = metadata.class_at(at);
+            const compiler_ir_metadata::ByteRange name = row.name();
+            const compiler_ir_metadata::ClassResultRow result = metadata.result_at(at);
+            const compiler_ir_metadata::StorageRow storage = metadata.storage_at(result.canonical_storage());
+            const compiler_ir_metadata::PhysicalExtent extent = storage.extent();
+            const compiler_ir_metadata::IndexRange leaves = storage.leaf_offsets();
+            const compiler_ir_metadata::IndexRange fields = storage.field_offsets();
+            if (!out.word("class ") || !metadata_name(out, metadata, name.begin(), name.count())
+                || !out.word(" storage ") || !storage_text(out, metadata, leaves.begin(), leaves.count())
+                || !out.byte(' ') || !storage_text(out, metadata, fields.begin(), fields.count()) || !out.byte(' ')
+                || !out.number(extent.size_bytes()) || !out.byte(' ') || !out.number(extent.alignment())
+                || !out.byte(' ') || !out.number(extent.reserved_bytes())) {
+                return false;
+            }
+            if (owning(metadata, at) && !out.word(" owning")) {
+                return false;
+            }
+            if (compiler_ir_metadata::member(row, masks.class_array_carrier()) && !out.word(" carrier")) {
+                return false;
+            }
+            if (!out.byte('\n')) {
+                return false;
+            }
+            at = at + 1;
+        }
+        at = 0;
+        while (at < metadata.enum_count()) {
+            const compiler_ir_metadata::EnumRow row = metadata.enum_at(at);
+            const compiler_ir_metadata::ByteRange name = row.name();
+            if (!out.word("enum ") || !metadata_name(out, metadata, name.begin(), name.count()) || !out.byte(' ')
+                || !out.number(row.cases()) || !out.byte('\n')) {
+                return false;
+            }
+            at = at + 1;
+        }
+        return out.ok();
+    }
+    // "KEYWORD CALLABLE OFFSET" for one slot.
+    auto slot_head(Listing& out, const compiler_ir_metadata::MetadataStore& metadata, i64 callable, i64 kind,
+        i64 offset) -> bool {
+        const compiler_ir_metadata::CallableRow row = metadata.callable_at(callable);
+        const compiler_ir_metadata::ByteRange name = row.name();
+        bool written = true;
+        if (kind == 10) {
+            written = out.word("slot ");
+        }
+        if (kind == 11) {
+            written = out.word("object ");
+        }
+        if (kind == 12) {
+            written = out.word("array ");
+        }
+        if (kind == 13) {
+            written = out.word("span ");
+        }
+        if (kind == 14) {
+            written = out.word("service ");
+        }
+        if (kind == 15) {
+            written = out.word("region ");
+        }
+        if (kind == 16) {
+            written = out.word("bytes ");
+        }
+        if (kind == 17) {
+            written = out.word("values ");
+        }
+        if (kind == 27) {
+            written = out.word("spanvalues ");
+        }
+        return written && metadata_name(out, metadata, name.begin(), name.count()) && out.byte(' ')
+            && out.number(offset);
+    }
+    auto slot(Listing& out, const Listing& table, const compiler_ir_metadata::MetadataStore& metadata, i64 callable,
+        i64 index) -> bool {
+        const compiler_ir_metadata::SlotRow row = metadata.slot_at(index);
+        const i64 kind = row.kind();
+        if (!slot_head(out, metadata, callable, kind, row.offset())) {
+            return false;
+        }
+        if (kind == 10 && (!out.byte(' ') || !type_text(out, table, metadata, row.type()))) {
+            return false;
+        }
+        if (kind == 11 || kind == 17 || kind == 27) {
+            const compiler_ir_metadata::RawTypeRow type = metadata.type_at(row.type());
+            const compiler_ir_metadata::ByteRange name = type.name();
+            if (!out.byte(' ') || !metadata_name(out, metadata, name.begin(), name.count())) {
+                return false;
+            }
+        }
+        if (kind == 12 && (!out.byte(' ') || !out.number(row.length()))) {
+            return false;
+        }
+        if ((kind == 11 || kind == 16) && row.mutable_value() != 0 && !out.word(" mutable")) {
+            return false;
+        }
+        return out.byte('\n');
+    }
+    auto origin(Listing& out, const compiler_ir_metadata::MetadataStore& metadata, i64 callable, i64 offset) -> bool {
+        const compiler_ir_metadata::CallableRow row = metadata.callable_at(callable);
+        const compiler_ir_metadata::ByteRange name = row.name();
+        const i64 object = compiler_ir_metadata::object_leaf_root(metadata, callable, offset);
+        const i64 bytes = compiler_ir_metadata::byte_array_element_root(metadata, callable, offset);
+        if (!out.word("origin ") || !metadata_name(out, metadata, name.begin(), name.count()) || !out.byte(' ')
+            || !out.number(offset) || !out.word(" object ")) {
+            return false;
+        }
+        if ((object < 0 && !out.byte('-')) || (object >= 0 && !out.number(object)) || !out.word(" byte ")) {
+            return false;
+        }
+        if ((bytes < 0 && !out.byte('-')) || (bytes >= 0 && !out.number(bytes))) {
+            return false;
+        }
+        return out.byte('\n');
+    }
+    auto callable(Listing& out, const Listing& table, const compiler_ir_metadata::MetadataStore& metadata,
+        i64 id) -> bool {
+        const compiler_ir_metadata::CallableRow row = metadata.callable_at(id);
+        const compiler_ir_metadata::ByteRange name = row.name();
+        const compiler_ir_metadata::IndexRange types = row.types();
+        if (!out.word("callable ") || !out.number(id) || !out.byte(' ') || !metadata_name(out, metadata, name.begin(),
+            name.count()) || !out.word(" scope ") || !out.number(row.scope()) || !out.word(" result ")
+            || !type_text(out, table, metadata, types.begin()) || !out.word(" frame ") || !out.number(row.frame_bytes())
+            || !out.byte('\n')) {
+            return false;
+        }
+        const compiler_ir_metadata::IndexRange slots = row.slots();
+        i64 at = 0;
+        while (at < slots.count()) {
+            if (!slot(out, table, metadata, id, slots.begin() + at)) {
+                return false;
+            }
+            at = at + 1;
+        }
+        // Storage origins of every frame byte and the extreme offsets.
+        if (!origin(out, metadata, id, -2147483648)) {
+            return false;
+        }
+        i64 offset = -1;
+        while (offset <= row.frame_bytes() + 1) {
+            if (!origin(out, metadata, id, offset)) {
+                return false;
+            }
+            offset = offset + 1;
+        }
+        return origin(out, metadata, id, 2147483647);
+    }
+    auto body(Listing& out, const Listing& table, const compiler_ir_metadata::MetadataStore& metadata,
+        const compiler_ir_instructions::InstructionStore& instructions, i64 id) -> bool {
+        const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::flag_masks();
+        const compiler_ir_metadata::CallableRow row = metadata.callable_at(id);
+        const compiler_ir_metadata::ByteRange name = row.name();
+        const compiler_ir_instructions::BodyRow code = instructions.body_at(id);
+        if (!out.word("body ") || !metadata_name(out, metadata, name.begin(), name.count()) || !out.byte(' ')
+            || !out.number(id) || !out.byte('\n')) {
+            return false;
+        }
+        i64 position = 0;
+        while (position < code.count()) {
+            const compiler_ir_instructions::CodeRow flow = instructions.code_at(code.begin() + position);
+            if (!out.word("code ") || !metadata_name(out, metadata, name.begin(), name.count()) || !out.byte(' ')
+                || !out.number(position) || !out.word(" id ") || !out.number(flow.id())) {
+                return false;
+            }
+            if (flow.target() != -1 && (!out.word(" target ") || !out.number(flow.target()))) {
+                return false;
+            }
+            if (flow.has_flow(masks.flow_fallthrough()) && !out.word(" falls")) {
+                return false;
+            }
+            if (flow.has_flow(masks.flow_leader()) && !out.word(" entry")) {
+                return false;
+            }
+            if (code.unreachable_after() != 0 && code.unreachable_after() == position + 1 && !out.word(" dead")) {
+                return false;
+            }
+            if (!out.word(" : ") || !instruction(out, table, metadata, instructions, flow.id()) || !out.byte('\n')) {
+                return false;
+            }
+            position = position + 1;
+        }
+        return out.ok();
+    }
+    auto retained(Listing& out, const compiler_ir_metadata::MetadataStore& metadata,
+        const compiler_ir_graph::Workspace& graph) -> bool {
+        if (!out.word("retained")) {
+            return false;
+        }
+        i64 id = 0;
+        while (id < metadata.callable_count()) {
+            const compiler_ir_metadata::CallableRow row = metadata.callable_at(id);
+            const compiler_ir_metadata::ByteRange name = row.name();
+            if (compiler_ir_graph::retained(graph, id) && (!out.byte(' ') || !metadata_name(out, metadata, name.begin(),
+                name.count()))) {
+                return false;
+            }
+            id = id + 1;
+        }
+        return out.byte('\n');
+    }
+    // Classes, enums and callables with their frames; `table` holds the spellings.
+    auto declarations(Listing& out, const Listing& table, const compiler_ir_metadata::MetadataStore& metadata) -> bool {
+        if (!classes(out, metadata)) {
+            return false;
+        }
+        i64 id = 0;
+        while (id < metadata.callable_count()) {
+            if (!callable(out, table, metadata, id)) {
+                return false;
+            }
+            id = id + 1;
+        }
+        return out.ok();
+    }
+}

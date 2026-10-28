@@ -1,9 +1,10 @@
 // Runs textual IR (.air) cases: verify, emit and fact checks over one module
-// per case. The file format is described in tests/compiler/ir/README.md.
-#include "ir_text.hpp"
-#include "ir_verify.hpp"
-#include "hosted_resolver.hpp"
-#include "x86.hpp"
+// per case. The file format is described in tests/compiler/ir/README.md. The
+// Aurora reader (tests/tools/air.au) reads each module into the compiler's
+// pending stores and runs its own pipeline stages; this driver resolves cases,
+// transports text and matches the output.
+#include "hosted_pipeline.hpp"
+#include "../../runtime/hosted_bytes.hpp"
 #include "../compiler/json_fragments.hpp"
 #include "air_cases.hpp"
 #include <algorithm>
@@ -20,7 +21,6 @@
 #include <vector>
 
 using namespace aurora;
-using namespace aurora::ir;
 using namespace aurora::test::air;
 
 namespace {
@@ -32,22 +32,6 @@ std::vector<std::string> words(const std::string &text) {
         result.push_back(word);
     return result;
 }
-AbiDeclarations declarations(const Run &item) {
-    // ; ABI: function|record|enum <symbol> <source name> [member...]
-    AbiDeclarations result;
-    for (const auto &line : item.abi) {
-        auto fields = words(line);
-        if (fields.size() < 3)
-            throw Error("ABI declaration needs kind, symbol and source name: " + line);
-        AbiDeclaration declaration{fields[2], {fields.begin() + 3, fields.end()}};
-        auto &group = fields[0] == "function" ? result.functions
-                      : fields[0] == "record" ? result.records
-                      : fields[0] == "enum"   ? result.enums
-                                              : throw Error("unknown ABI declaration kind " + fields[0]);
-        group[fields[1]] = std::move(declaration);
-    }
-    return result;
-}
 std::string quotedJson(std::string_view text) {
     std::string out = "\"";
     for (const char character : text) {
@@ -57,107 +41,115 @@ std::string quotedJson(std::string_view text) {
     }
     return out + '"';
 }
-template <class Range> std::string integers(const Range &values) {
-    std::string out = "[";
-    for (const auto value : values)
-        out += (out.size() > 1 ? " " : "") + std::to_string(value);
-    return out + "]";
+// A module the reader rejects; the case fails rather than expecting an error.
+class ReadError : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+// One Aurora reader in the case's region, consumed by check or run.
+class Reader {
+    hosted_abi::AirRelease owner_{};
+    bool live_ = true;
+
+public:
+    explicit Reader(std::uint64_t region) {
+        owner_.region = region;
+        hosted_abi::AirStart start{};
+        start.region = region;
+        aurora_hosted_air_start(&start, owner_.reader.storage.data());
+    }
+    ~Reader() {
+        if (live_)
+            aurora_hosted_air_release(&owner_);
+    }
+    Reader(const Reader &) = delete;
+    Reader &operator=(const Reader &) = delete;
+    bool read(const std::string &module, const std::string &abi) {
+        hosted_abi::AirRead input{};
+        input.source.backing = module.data();
+        input.source.length = static_cast<std::int64_t>(module.size());
+        input.abi.backing = abi.data();
+        input.abi.length = static_cast<std::int64_t>(abi.size());
+        return aurora_hosted_air_read(owner_.reader.storage.data(), &input) == 1;
+    }
+    // The first line the reader rejects; consumes the reader.
+    std::int64_t check() {
+        live_ = false;
+        hosted_abi::AirCheck input{};
+        input.region = owner_.region;
+        input.reader = owner_.reader;
+        hosted_abi::compiler_ir_metadata::IndexRow line{};
+        aurora_hosted_air_check(&input, &line);
+        return line.indexValue;
+    }
+    void run(PipelineResult &result, std::uint64_t options) {
+        live_ = false;
+        hosted_abi::AirRun input{};
+        input.region = owner_.region;
+        input.reader = owner_.reader;
+        input.options = options;
+        aurora_hosted_air_run(&input, result.data());
+    }
+};
+// The verifier outcome and metrics of the last function that started.
+class Measured {
+public:
+    bool started = false;
+    hosted_abi::compiler_ir_verification::MetricsRow metrics{};
+};
+constexpr std::uint64_t regionQuota = std::uint64_t{16} << 30;
+[[noreturn]] void unreadable(const std::string &module, const std::string &abi) {
+    hosted::bytes::Region region(regionQuota);
+    Reader reader(region.id());
+    reader.read(module, abi);
+    throw ReadError("air:" + std::to_string(reader.check()) + ": invalid module text");
 }
-std::string optionalText(const std::optional<int> &value) {
-    return value ? std::to_string(*value) : "-";
+// The pipeline output for one request, or its first failure; metrics come back either way.
+PipelineOutput
+compile(const std::string &module, const std::string &abi, const EmissionRequest &request, Measured &measured) {
+    hosted::bytes::Region region(regionQuota);
+    Reader reader(region.id());
+    if (!reader.read(module, abi))
+        unreadable(module, abi);
+    PipelineResult result(region.id());
+    reader.run(result, pipelineOptions(request));
+    const auto report = result.report();
+    measured.started = report.metricsStarted != 0;
+    measured.metrics = report.metricsValue;
+    if (report.stageValue == hosted_abi::compiler_pipeline::Stage::projection)
+        unreadable(module, abi);
+    return result.output(report, request);
 }
-// Published metadata of a validated module, one fact per line, for CHECK lines.
-std::string metadataText(const ValidatedModule &checked) {
-    const auto &metadata = checked.metadata();
+// ; ABI: function|record|enum <symbol> <source name> [member...], one per line.
+std::string declarations(const Run &item) {
     std::string out;
-    for (std::size_t index = 0; index < metadata.classCount(); ++index) {
-        const auto id = metadata.classAt(index);
-        const auto storage = metadata.storage(id);
-        out += "class " + metadata.className(id) + " storage " + integers(storage.leafOffsets) + ' ' +
-               integers(storage.fieldOffsets) + ' ' + std::to_string(storage.sizeBytes) + ' ' +
-               std::to_string(storage.alignment) + ' ' + std::to_string(storage.reservedBytes) +
-               (metadata.isOwning(id) ? " owning" : "") + (metadata.isCarrier(id) ? " carrier" : "") + '\n';
-    }
-    for (std::size_t index = 0; index < metadata.enumCount(); ++index) {
-        const auto id = metadata.enumAt(index);
-        out += "enum " + metadata.enumName(id) + ' ' + std::to_string(metadata.enumCases(id)) + '\n';
-    }
-    for (std::size_t id = 0; id < metadata.callableCount(); ++id) {
-        const auto callable = metadata.callable(id);
-        const auto name = callable.name();
-        const auto frame = metadata.frame(id);
-        out += "callable " + std::to_string(id) + ' ' + name + " scope " + std::to_string(callable.moduleScope()) +
-               " result " + text::printType(callable.result()) + " frame " + std::to_string(frame.frameBytes()) + '\n';
-        for (const auto &[offset, type] : frame.scalarSlots())
-            out += "slot " + name + ' ' + std::to_string(offset) + ' ' + text::printType(type) + '\n';
-        for (const auto &[offset, slot] : frame.objectSlots())
-            out += "object " + name + ' ' + std::to_string(offset) + ' ' + slot.className +
-                   (slot.mutableValue ? " mutable" : "") + '\n';
-        for (const auto &[offset, length] : frame.arraySlots())
-            out += "array " + name + ' ' + std::to_string(offset) + ' ' + std::to_string(length) + '\n';
-        for (const auto offset : frame.spanSlots())
-            out += "span " + name + ' ' + std::to_string(offset) + '\n';
-        for (const auto offset : frame.serviceSlots())
-            out += "service " + name + ' ' + std::to_string(offset) + '\n';
-        for (const auto offset : frame.regionSlots())
-            out += "region " + name + ' ' + std::to_string(offset) + '\n';
-        for (const auto &[offset, mutableValue] : frame.byteSlots())
-            out += "bytes " + name + ' ' + std::to_string(offset) + (mutableValue ? " mutable" : "") + '\n';
-        for (const auto &[offset, className] : frame.ownedValueTypes())
-            out += "values " + name + ' ' + std::to_string(offset) + ' ' + className + '\n';
-        for (const auto &[offset, className] : frame.spanValueTypes())
-            out += "spanvalues " + name + ' ' + std::to_string(offset) + ' ' + className + '\n';
-        // Storage origins of every frame byte and the extreme offsets.
-        std::vector<int> offsets{INT_MIN};
-        for (int offset = -1; offset <= frame.frameBytes() + 1; ++offset)
-            offsets.push_back(offset);
-        offsets.push_back(INT_MAX);
-        for (const auto offset : offsets)
-            out += "origin " + name + ' ' + std::to_string(offset) + " object " +
-                   optionalText(metadata.objectLeafRoot(id, offset)) + " byte " +
-                   optionalText(metadata.byteArrayElementRoot(id, offset)) + '\n';
-    }
-    out += "retained";
-    for (const auto &body : checked.get().functions)
-        out += ' ' + metadata.callable(body.callableId).name();
-    out += '\n';
-    // Retained bodies: code position, stable instruction ID and operation.
-    for (const auto &body : checked.get().functions) {
-        const auto name = metadata.callable(body.callableId).name();
-        out += "body " + name + ' ' + std::to_string(body.callableId) + '\n';
-        for (std::size_t position = 0; position < body.code.size(); ++position) {
-            const auto flow = body.code.flowAt(position);
-            out += "code " + name + ' ' + std::to_string(position) + " id " + std::to_string(body.code.idAt(position)) +
-                   (flow.target ? " target " + std::to_string(*flow.target) : "") +
-                   (flow.fallsThrough ? " falls" : "") + (flow.blockEntry ? " entry" : "") +
-                   (flow.unreachableSemanticAfter ? " dead" : "") + " : " +
-                   text::printInstruction(body.code[position]) + '\n';
-        }
+    for (const auto &line : item.abi) {
+        const auto fields = words(line);
+        if (fields.size() < 3 || (fields[0] != "function" && fields[0] != "record" && fields[0] != "enum"))
+            throw Error("ABI declaration needs kind, symbol and source name: " + line);
+        out += line + '\n';
     }
     return out;
 }
 // Runs the case action; returns its textual output for CHECK lines.
-std::string execute(const Run &item, Module module) {
+std::string execute(const Run &item, const std::string &module) {
     const auto run = words(item.action);
     if (run.empty())
         throw Error("empty RUN");
     const auto &action = run[0];
+    Measured measured;
+    EmissionRequest request;
     if (action == "verify") {
-        auto checked = validate(std::move(module));
-        (void)checked;
+        compile(module, {}, request, measured);
         return {};
     }
     if (action == "metrics") {
-        // Verifier metrics after real ingress; "null" passes no metrics object and
-        // the sentinels show whether the verifier started.
-        verification::Metrics sentinel{1000000001, 1000000002, 1000000003, 1000000004, 1000000005};
-        auto metrics = sentinel;
+        // Verifier metrics after real ingress; "null" requests none, and the
+        // sentinels show whether the verifier started.
         const bool null = run.size() > 1 && run[1] == "null";
         std::string outcome;
         try {
-            auto ingress = InstructionIngress::import(std::move(module));
-            auto checked = validate(std::move(ingress), null ? nullptr : &metrics);
-            (void)checked;
+            compile(module, {}, request, measured);
             outcome = "\"outcome\":\"accepted\",\"diagnostic\":null";
         } catch (const Error &error) {
             outcome = "\"outcome\":\"rejected\",\"diagnostic\":{\"code\":" +
@@ -167,43 +159,46 @@ std::string execute(const Run &item, Module module) {
         }
         if (null)
             return "{" + outcome + ",\"metrics_started\":null,\"metrics\":null}\n";
-        const bool started =
-            metrics.snapshots != sentinel.snapshots || metrics.peakOperandDepth != sentinel.peakOperandDepth ||
-            metrics.peakRetainedOperandFacts != sentinel.peakRetainedOperandFacts ||
-            metrics.peakRetainedValueFacts != sentinel.peakRetainedValueFacts ||
-            metrics.peakRetainedInitializationPayloadBytes != sentinel.peakRetainedInitializationPayloadBytes;
-        return "{" + outcome + ",\"metrics_started\":" + (started ? "true" : "false") +
-               ",\"metrics\":{\"snapshots\":" + std::to_string(metrics.snapshots) +
-               ",\"peakOperandDepth\":" + std::to_string(metrics.peakOperandDepth) +
-               ",\"peakRetainedOperandFacts\":" + std::to_string(metrics.peakRetainedOperandFacts) +
-               ",\"peakRetainedValueFacts\":" + std::to_string(metrics.peakRetainedValueFacts) +
+        const auto &values = measured.metrics;
+        const auto value = [&](std::int64_t observed, std::int64_t sentinel) {
+            return std::to_string(measured.started ? observed : sentinel);
+        };
+        return "{" + outcome + ",\"metrics_started\":" + (measured.started ? "true" : "false") +
+               ",\"metrics\":{\"snapshots\":" + value(values.snapshotsValue, 1000000001) +
+               ",\"peakOperandDepth\":" + value(values.peakOperandDepth, 1000000002) +
+               ",\"peakRetainedOperandFacts\":" + value(values.peakRetainedOperandFacts, 1000000003) +
+               ",\"peakRetainedValueFacts\":" + value(values.peakRetainedValueFacts, 1000000004) +
                ",\"peakRetainedInitializationPayloadBytes\":" +
-               std::to_string(metrics.peakRetainedInitializationPayloadBytes) + "}}\n";
+               value(values.peakRetainedInitializationPayloadBytes, 1000000005) + "}}\n";
     }
     if (action == "metadata") {
-        const auto checked = validate(std::move(module));
-        return metadataText(checked);
+        request.listing = true;
+        return compile(module, {}, request, measured).code;
     }
     if (action == "emit" || action == "emit-object" || action == "stack-facts" || action == "abi-facts") {
-        auto binding = SymbolBinding::Default;
-        auto reflection = action == "emit-object" ? ReflectionEmission::Referenced : ReflectionEmission::All;
+        request.emit = true;
+        if (action == "emit-object") {
+            request.reflection = ReflectionEmission::Referenced;
+            request.format = CodeEmission::Object;
+        }
         for (std::size_t index = 1; index < run.size(); ++index) {
             if (run[index] == "local")
-                binding = SymbolBinding::Local;
+                request.binding = SymbolBinding::Local;
             else if (run[index] == "referenced")
-                reflection = ReflectionEmission::Referenced;
+                request.reflection = ReflectionEmission::Referenced;
+            else if (run[index] == "object")
+                request.format = CodeEmission::Object;
             else
                 throw Error("unknown emit option " + run[index]);
         }
-        const auto checked = validate(std::move(module));
-        X86Emitter emitter;
-        auto assembly = emitter.emit(
-            checked, binding, reflection, action == "emit-object" ? CodeEmission::Object : CodeEmission::Assembly);
+        request.stackFacts = action == "stack-facts";
+        request.abiFacts = action == "abi-facts";
+        const auto output = compile(module, request.abiFacts ? declarations(item) : std::string(), request, measured);
         if (action == "stack-facts")
-            return emitter.stackFactsJson(checked);
+            return output.stackFacts;
         if (action == "abi-facts")
-            return emitter.abiFactsJson(checked, declarations(item));
-        return assembly;
+            return output.abiFacts;
+        return output.code;
     }
     throw Error("unknown RUN action '" + action + "'");
 }
@@ -804,18 +799,16 @@ std::string runOnce(const Run &run,
                     const std::vector<std::string> &moduleLines,
                     std::vector<std::string> &outputs,
                     Variables &variables) {
-    Module module;
-    try {
-        module = text::read(join(moduleLines));
-    } catch (const Error &error) {
-        return std::string("cannot read module: ") + error.what();
-    }
+    const auto module = join(moduleLines);
     const bool expectsError = !run.errors.empty() || run.message || run.code;
     if (expectsError && run.expectOk)
         return "EXPECT-OK conflicts with an expected error";
     std::string output;
     try {
-        output = execute(run, std::move(module));
+        output = execute(run, module);
+    } catch (const ReadError &error) {
+        outputs.emplace_back();
+        return std::string("cannot read module: ") + error.what();
     } catch (const Error &error) {
         outputs.emplace_back();
         if (!expectsError)
@@ -887,21 +880,15 @@ int runFile(const std::string &path) {
 int main(int argc, char **argv) {
     try {
         const std::vector<std::string> args(argv + 1, argv + argc);
-        // --module FILE CASE prints the resolved, reprinted module; --output
-        // FILE CASE [DEST] writes the first RUN action's output (for example
-        // assembly) to stdout or DEST.
-        if ((args.size() == 3 || args.size() == 4) && (args[0] == "--module" || args[0] == "--output")) {
+        // --output FILE CASE [DEST] writes the first RUN action's output (for
+        // example assembly) to stdout or DEST.
+        if ((args.size() == 3 || args.size() == 4) && args[0] == "--output") {
             const auto file = parse(args[1]);
             std::vector<std::string> moduleLines;
             const auto &item = findCase(file, args[2], moduleLines);
-            auto module = text::read(join(moduleLines));
-            std::string output;
-            if (args[0] == "--module")
-                output = text::print(module);
-            else if (item.runs.empty())
+            if (item.runs.empty())
                 throw Error("case has no RUN line");
-            else
-                output = execute(item.runs.front(), std::move(module));
+            const auto output = execute(item.runs.front(), join(moduleLines));
             if (args.size() == 3) {
                 std::cout << output;
                 return std::cout ? 0 : 2;
@@ -914,7 +901,7 @@ int main(int argc, char **argv) {
             return 0;
         }
         if (args.empty() || args[0].starts_with("--")) {
-            std::cerr << "usage: aurora-ir-check FILE.air... | --module|--output FILE.air CASE [DEST]\n";
+            std::cerr << "usage: aurora-ir-check FILE.air... | --output FILE.air CASE [DEST]\n";
             return 2;
         }
         int failures = 0;

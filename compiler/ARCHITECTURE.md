@@ -12,15 +12,15 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 | Formatting | Aurora owns syntax roles, layout and findings; native host retains source transport and token/comment/reparse/idempotence checks | Final-source qualification required |
 | Lexing and parsing | Aurora | Complete final-source predecessor/current convergence |
 | Resolution, immutable linkage spelling and typed lowering | Aurora; after lowering one Aurora call runs projection through emission and ABI declaration spelling; Aurora renders resolver, lowering, lint and source diagnostics and the host only prints them | Validate final integrated behavior and paired compile-time/output gates |
-| Metadata, callable and frame admission | Aurora owns frame size and disjoint slot domains; successful source projection writes pending raw declarations | Retain independent admission; move the hand-built IR fixture ingress and its native orchestration onto the Aurora pipeline |
+| Metadata, callable and frame admission | Aurora owns frame size and disjoint slot domains; successful source projection, or the textual-IR test reader, writes pending raw declarations | Retain independent admission |
 | Instruction storage and static admission | Aurora owns service argument-vector shape and copied-argument contracts | Preserve admission before whole-function verification |
 | Initialization and synchronous service loans | Aurora verification workspace | Final integrated allocation, cleanup and semantic qualification |
 | Current values, operand stacks, bounds evidence | Aurora whole-function verifier | Final-source qualification; no native fallback |
 | Ownership, provenance and worklist | Aurora whole-function verifier over the original paired source stores | Preserve diagnostic priority, declaration order, bounded FIFO work and nominal type identity |
-| Call graph | Aurora, including edge construction for compilations | The textual-IR fixture path still builds its edges natively |
+| Call graph | Aurora, including edge construction | Preserve retained-set order |
 | x86 emission | Aurora, fixed native transport | Byte-identical C1/C2 (`hosted-lexer-bootstrap`); inlines single-field getters; owned-value bounds checks and sizes use multiplies, not divq; no register allocation yet |
 | Direct class fields | Aurora source and independent metadata admission share an 8,192-field cap, including empty, nested, resource and array fields | Existing leaf, byte, depth and array-element limits still apply |
-| Private host bridge | One 104-entry table generates Aurora forwarders, host transport declarations and a closed wrapper recipe; compiler facts supply layouts, symbols and raw enum validation | Preserve fail-closed conversion; native replacement remains incomplete |
+| Private host bridge | One 77-entry table generates Aurora forwarders, host transport declarations and a closed wrapper recipe; compiler facts supply layouts, symbols and raw enum validation. A test graph adds 43 rows (textual-IR reader, initialization probes) for test tools only | Preserve fail-closed conversion; native replacement remains incomplete |
 | Bootstrap route | One digest-pinned checkpoint (C2 of `d4cbabb`, one hop from the C2 of `2fd30b2`, which the recorded six-stage source route built), then current C1/C2 with convergence | Bump in one hop: build an accepted main commit with the current checkpoint, pass C1/C2 convergence, then the release gates ([recipe](README.md#bumping-the-checkpoint-one-hop)) |
 | Assembly, linking and hosted runtime | External bootstrap tools/C++ | Native replacements remain incomplete |
 
@@ -67,7 +67,10 @@ failure: a stage and the failing store's reason, which the host renders with the
 former messages and codes. Every store shares the Session region's existing
 loose ceiling; the separate grants the host used to derive for projection,
 metadata, instructions, each function's verification, the graph and emission are
-gone from compilations (the textual-IR fixture path still computes its own).
+gone. Textual IR (`tests/tools/air.au`, test tooling) enters at the same point:
+its reader fills the pending stores, admits the metadata, gathers the case's ABI
+declarations and calls `compiler_pipeline::stages`, which runs everything from
+instruction admission on and can list the published IR instead of emitting.
 
 Projection borrows the readonly resolver Session and one mutable
 `ProjectionWorkspace`. Aurora checks row ownership, exclusive operand
@@ -120,13 +123,9 @@ There are no parent/child links, heights or free-list records. Existing owner ac
 active-fact checks, initialization epochs and allocation limits remain. These logical
 operation counts do not imply constant-cost indexed access through the runtime owner.
 
-The pipeline stops at the first unsuccessful report. The fixture path's private
-host bridge admits the complete source report, including when no metrics pointer
-was requested. It checks transport/status/error/metric bounds, not the semantic
-truth of a successful report. A started report publishes partial
-metrics before rejection; a not-started failure preserves the caller's metrics.
-RAII releases the actual eleven source owners before destroying their region.
-Allocation and integrity failures remain Internal; semantic errors retain their
+The pipeline stops at the first unsuccessful report. A started report publishes
+its metrics into the `Result` before rejection; a not-started failure keeps the
+previous function's. Allocation and integrity failures remain Internal; semantic errors retain their
 exact typed-IR diagnostic text. The source allocation label is now
 `hosted IR verification allocation failed`, rather than the retired initializer's
 `hosted IR initialization allocation failed`.
@@ -179,12 +178,10 @@ image, stack and authority checks.
 ## Aurora emission boundary
 
 `x86_module.au` consumes one mutable `EmitWorkspace` and the existing readonly
-`MetadataStore` and `InstructionStore`. In a compilation the pipeline adds the
-retained callable IDs in graph order and the declaration spellings itself; no
-host transport remains between publication and the sealed artifacts. The
-textual-IR fixture driver (`X86Emitter`, test tooling) still lends a validated
-fixture's pair, transfers retained IDs and ABI names, and checks that both stores
-are the original admitted pair. Neither serializes another instruction inventory.
+`MetadataStore` and `InstructionStore`. The pipeline adds the retained callable
+IDs in graph order and the declaration spellings itself; no host transport
+remains between publication and the sealed artifacts, for compilations and
+textual-IR fixtures alike.
 
 `x86_scalar.au`, `x86_objects.au` and `x86_resources.au` select all 85 instruction
 forms. Shared source helpers own widths, payload-only copies, owner transfers,
@@ -192,8 +189,6 @@ padding, stack probes and private argument records. The source driver owns both
 peepholes, linkage, reflection ordering, literal IDs and traps. `x86_facts.au`
 serializes stack and ABI JSON, including invalid-byte escaping. Both are explicit
 optional artifact requests; a compilation seals and copies each in turn.
-The internal C++ `stackFacts()` compatibility map and JSON decoder are removed;
-`stackFactsJson(validated)` follows the same ownership contract as ABI requests.
 Tests inspect the requested JSON independently. No JSON is serialized or decoded
 on an ordinary compile without a sidecar request, and no IR owner is retained.
 
@@ -214,22 +209,8 @@ executable and source facts. Failed executable emission requires a fresh workspa
 Incomplete/failed artifacts are not extractable. The host reads copied 512-byte
 chunks; `ArtifactWriter` retains its single-write 64 MiB limit and atomic replacement.
 A compilation copies code, stack facts and ABI facts into its `Result` as each is
-sealed. For fixtures, the original emitted module must remain alive while
-requesting sidecars; moving its validated owner is supported. Before using
-cached roots, the host checks the supplied live instruction owner's unique, non-wrapping region generation and its
-original metadata pairing. A later module cannot revive stale roots through
-allocator-address reuse. This retains no source owners or metadata snapshot.
-
-For fixtures, workspace extents and the region's final logical payload quota are
-checked and count-derived from retained functions, reflection views and published
-instructions;
-there is no fixed million-row limit or bitmap sized by pruned callables. Optional
-ABI-name rows/bytes are bounded by their minimum contribution to the requested
-64 MiB JSON artifact, with a separate runtime-name allowance. Requested stack
-JSON has a checked bound of twice assembly bytes plus conservative per-function/
-per-call overhead. Actual elapsed time and peak RSS, including transient resizing
-and native copied strings, remain unmeasured for this source draft.
-`x86.hpp` contains the public interface only; no production fallback remains.
+sealed. Requested stack JSON has a checked bound of twice assembly bytes plus
+conservative per-function/per-call overhead.
 
 Each checkpoint bump builds with the pinned checkpoint from
 [the bootstrap recipe](README.md#source-bootstrap), checks the existing backend/host
@@ -239,11 +220,11 @@ final-source merge and release suites, every guest family and normal BIOS/UEFI.
 ## Compile speed
 
 The nine `ir_verification*.au` modules implement whole-function verification.
-Compilations run admission, verification, graph checks and publication in
-`pipeline.au`; `ir_verify.cpp` keeps the same orchestration natively only for
-textual-IR fixtures, and `ir_verify.hpp` exposes their metrics.
-The obsolete native dynamic verifier and production initialization adapter are
-removed. The retired historical emitter corpus remains in Git history, not as
+Admission, verification, graph checks and publication run in `pipeline.au`
+(`stages`), for compilations and textual-IR fixtures alike; its `Result` carries
+the last started function's verifier metrics. There is no C++ IR model: the
+obsolete native dynamic verifier, production initialization adapter and the
+fixture-side `ir::Module` reader, codec, owners and orchestration are removed. The retired historical emitter corpus remains in Git history, not as
 a production fallback or current-verifier proof.
 Test-only source probes exercise the current workspace without a production
 friend, accessor or widened publication boundary. Final-source generation,

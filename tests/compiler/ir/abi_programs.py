@@ -3,8 +3,8 @@
 
 Each program is a loop over call shapes, as the C++ producers it replaces were;
 the output is one case file whose first case is the program for
-`aurora-ir-check --output FILE CASE`. Modules are written in plain form; the
-reader's printer is the canonical spelling.
+`aurora-ir-check --output FILE CASE`. Modules are written in plain form
+(tests/compiler/ir/README.md).
 
 usage: abi_programs.py method-spans|borrowed-objects|logical-spans|sector-values|short-circuit OUT
 """

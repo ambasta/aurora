@@ -94,55 +94,39 @@ test('scratchpad-source-native', python,
     suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'],
     env: oracle_env, workdir: meson.current_build_dir(), timeout: 180, is_parallel: true)
 
-# Model and ownership checks use one standalone source graph. No production
-# friendship, synthesized workspace descriptor or overlapping frontend graph is linked.
-initialization_probe = custom_target(
-    'initialization-probe',
-    input: files('compiler/initialization_probe.au', '../compiler/ir_verification_errors.au',
-                 '../compiler/ir_verification_storage.au', '../compiler/ir_verification_initialization.au',
-                 '../compiler/ir_metadata_storage.au', '../compiler/ir_metadata.au'),
-    output: ['initialization-probe.s', 'initialization-probe.generated.s',
-             'initialization-probe.abi.json', 'initialization_probe_abi.hpp'],
-    command: [python, '-B', files('compiler/initialization_probe.py'), bootstrap_compiler,
-              '--output', '@OUTPUT0@', '--frontend-facts', frontend_assembly[2], '@INPUT@'],
-    depend_files: bootstrap_depend_files + files('../scripts/bootstrap_frontend.py', '../scripts/frontend_bridge.py'),
-)
-initialization_probe_object = custom_target(
-    'initialization-probe-object', input: initialization_probe[0], output: 'initialization-probe.o',
-    command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '@INPUT@', '-o', '@OUTPUT@'],
-)
-initialization_facts = executable(
-    'initialization-facts',
-    ['compiler/initialization_facts.cpp', 'compiler/initialization_workspace.cpp',
-     'compiler/initialization_ownership.cpp', '../runtime/hosted_bytes.cpp',
-     initialization_probe_object, initialization_probe[3]],
-    dependencies: frontend_headers,
-    include_directories: include_directories('.', '../compiler'),
-    native: true, override_options: fixture_options,
-    install: false,
-)
-test(
-    'initialization-facts',
-    initialization_facts,
-    suite: ['full', 'merge', 'dev', 'core', 'compiler'],
-    timeout: 120,
-)
 
 
 # Textual IR cases (.air) run through one driver; each top-level directory of
 # tests/compiler/ir is one test. See tests/compiler/ir/README.md.
-# The textual IR model is test tooling: its printer/reader, the fixture
-# metadata/instruction owners, validate and the fixture emitter driver. Compilations
-# run the Aurora pipeline instead, so aurorac (and every image built by it) never
-# waits for it.
-ir_text = static_library('ir-text', files('../compiler/ir_text.cpp', '../compiler/hosted_ir_metadata.cpp',
-                                          '../compiler/hosted_ir_instructions.cpp', '../compiler/ir_verify.cpp',
-                                          '../compiler/hosted_graph.cpp', '../compiler/hosted_x86.cpp'),
-    dependencies: hosted_frontend, native: true, override_options: fixture_options, install: false)
-aurora_ir_check = executable('aurora-ir-check', 'tools/aurora_ir_check.cpp',
-    dependencies: hosted_frontend, link_with: ir_text, include_directories: include_directories('../compiler'),
+# The textual IR test graph: the compiler's own modules plus the Aurora .air
+# reader (tools/air.au) and the initialization workspace probes, built by C1
+# with the test bridge rows into its own object and header. Only test tools
+# link it; the compiler never does.
+air_forwarders = custom_target('air-frontend-forwarders', input: 'tools/frontend.au', output: 'frontend.au',
+    command: [python, '-B', bridge_table, '@INPUT@', '@OUTPUT@'])
+air_frontend = custom_target('air-frontend',
+    input: frontend_modules + files('tools/air.au', 'compiler/initialization_probe.au') + [air_forwarders],
+    output: ['hosted-frontend.o', 'hosted-frontend.generated.o', 'hosted-frontend.abi.json',
+             'hosted_frontend_abi.hpp', 'hosted-frontend.stack.json'],
+    command: [python, '-B', files('../scripts/bootstrap_frontend.py'), aurorac, '--output-mode', 'object',
+              '--test-entries', '--output', '@OUTPUT0@', '@INPUT@'],
+    depend_files: bridge_table)
+air_frontend_library = static_library('air-frontend',
+    [air_frontend[0], air_frontend[3], files('../compiler/hosted_pipeline.cpp', '../runtime/hosted_bytes.cpp')],
+    include_directories: include_directories('.', '../compiler'), native: true, override_options: fixture_options,
+    install: false)
+air_frontend_dep = declare_dependency(link_with: air_frontend_library, sources: air_frontend[3],
+                                      include_directories: include_directories('.', '../compiler'))
+aurora_ir_check = executable('aurora-ir-check', 'tools/aurora_ir_check.cpp', dependencies: air_frontend_dep,
     native: true, override_options: fixture_options, install: false)
 air_lit = files('tools/air_lit.py')
+# The initialization workspace against standard-library reference sets, through
+# the Aurora probes and metadata read from textual IR by the same reader.
+initialization_facts = executable('initialization-facts',
+    ['compiler/initialization_facts.cpp', 'compiler/initialization_workspace.cpp',
+     'compiler/initialization_ownership.cpp'],
+    dependencies: air_frontend_dep, native: true, override_options: fixture_options, install: false)
+test('initialization-facts', initialization_facts, suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
 # The large native-ABI programs are loops over call shapes; abi_programs.py
 # writes each as one case file per build for its directory test and runner.
 abi_air = {}
@@ -179,13 +163,6 @@ foreach entry : [
          args: ['-B', air_lit, aurora_ir_check, meson.current_source_dir() / 'compiler' / 'ir' / entry[0]] + generated,
          depends: [aurora_ir_check] + generated, suite: entry[1], timeout: 120)
 endforeach
-# Owner, view, writer and emitter API unit tests over modules from the same cases.
-ir_api = executable('ir-api', 'compiler/ir_api.cpp',
-    dependencies: hosted_frontend, link_with: ir_text, include_directories: include_directories('../compiler'),
-    native: true, override_options: fixture_options, install: false)
-test('ir-api', ir_api, args: [meson.current_source_dir() / 'compiler' / 'ir'],
-     suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 120)
-
 
 # One driver consumes existing IR data and one preassembled wrapper; malformed
 # inputs and allocation failures reuse that admitted pair without recompilation.
@@ -194,7 +171,7 @@ private_object_wrapper = custom_target(
     command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '-Wa,-mx86-used-note=no', '@INPUT@', '-o', '@OUTPUT@'],
 )
 private_object_test = executable('private-object-test', 'compiler/private_object.cpp',
-    dependencies: hosted_frontend, link_with: ir_text, include_directories: include_directories('../compiler'),
+    dependencies: hosted_frontend, include_directories: include_directories('../compiler'),
     native: true, override_options: fixture_options, install: false)
 
 test(
@@ -584,9 +561,9 @@ subdir('native')
 
 test('private-object', python,
      args: ['-B', files('compiler/private_object.py'), private_object_test, aurorac, private_object_wrapper,
-            '--frontend', frontend_stage2_output[1], frontend_stage2_output[0], frontend_stage2_output[2],
+            aurora_ir_check, '--frontend', frontend_stage2_output[1], frontend_stage2_output[0], frontend_stage2_output[2],
             '--uart', native_uart_object, '--terminal', graphical_terminal_object],
-     depends: [private_object_test, private_object_wrapper, aurorac, frontend_stage2_output,
+     depends: [private_object_test, private_object_wrapper, aurorac, aurora_ir_check, frontend_stage2_output,
                native_uart_object, graphical_terminal_object],
      suite: ['full', 'merge', 'dev', 'core', 'compiler'], env: oracle_env, timeout: 120)
 

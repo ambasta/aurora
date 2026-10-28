@@ -1,17 +1,18 @@
 # Textual IR cases (.air)
 
-Hand-built `ir::Module` fixtures are data. Each `.air` file holds one or more
-cases; `tests/tools/aurora-ir-check` (one driver, built once) runs them and
+Hand-built IR modules are data. Each `.air` file holds one or more cases;
+`tests/tools/aurora-ir-check` (one driver, built once) runs them and
 `tests/tools/air_lit.py` runs every file below one directory in parallel. Each
-top-level directory here is one Meson test with the suites of the fixture it
-replaced, so `meson test ir-tests` or `--suite core` select as before.
-`tests/compiler/ir_api.cpp` keeps the C++ API unit tests (owner moves, views,
-metadata writers, emitter reuse) and loads its modules from these files.
+top-level directory here is one Meson test, so `meson test ir-tests` or
+`--suite core` select a family.
 
 ## Module text
 
-`compiler/ir_text.{hpp,cpp}` print and read `ir::Module`. The reader checks
-syntax only and never validates, so malformed modules can be written down.
+`tests/tools/air.au` reads module text in Aurora straight into the pending
+metadata and instruction stores lowering's projection fills, then runs the
+compiler's own `compiler_pipeline::stages` on them. The reader checks syntax
+only and never validates, so malformed modules can be written down; source
+admission rejects them as it would a projection's.
 
 ```
 layout Pair [i64 bool]                 ; classLayouts
@@ -32,12 +33,15 @@ function test
 end
 ```
 
-Instructions are the operation variant's class names; operands follow the field
-order of `compiler/ir_instruction_codec.hpp`, and omitted trailing operands keep
-their default-constructed values. Types are kind words (`i64`, `u8`, `span`,
-`bytes`, `console`, ...) or `(kind name key=value...)` with keys `display`,
-`resolved`, `elem`, `len`, `eparam`, `lparam`, `targs`. Names that are not plain
-words are quoted with C escapes. Out-of-range enumerators print as integers.
+Instructions are the `compiler_lowering::InstructionForm` names; operands follow
+the reader's per-form codec (`codec` in `tests/tools/air.au`), and omitted
+trailing operands keep their defaults (zero, or -1 for optional field indices).
+Types are kind words (`i64`, `u8`, `span`, `bytes`, `console`, ...) or
+`(kind name key=value...)` with keys `display`, `resolved`, `elem`, `len`,
+`eparam`, `lparam`, `targs`; only the kind, name, element kind, length and the
+parameter/argument extents reach metadata. Names that are not plain words are
+quoted with C escapes. Every enumerator may also be spelled as an integer, so
+out-of-range values reach admission.
 
 Repetition is input sugar: a list item `x*N` repeats an item, and `{a,s}` inside
 it spells `a + s*i` for repetition `i`; lines between `repeat N` and `endrepeat`
@@ -49,7 +53,8 @@ expand the same way.
 ; CASE: name                  starts a case; the lines before the first CASE are
 ;                             the file's header module
 ; BASE: other name            optional: patch against an earlier case
-; RUN: verify | emit [local] [referenced] | emit-object [local] | stack-facts | abi-facts | metadata | metrics [null]
+; RUN: verify | emit [local] [referenced] [object] | emit-object [local] | stack-facts [...] | abi-facts [...]
+;      | metadata | metrics [null]
 ; EXPECT-OK / EXPECT-ERROR: substring of what() / EXPECT-MESSAGE: exact message / EXPECT-CODE: AU0000
 ; ABI: function|record|enum SYMBOL SOURCE-NAME [MEMBER...]   (declarations for abi-facts)
 ; CHECK: / CHECK-NEXT: / CHECK-SAME: / CHECK-NOT: / CHECK-DAG: on the RUN output
@@ -79,9 +84,13 @@ facts can be compared with the emitted code, for example
 A case body is either a full module or zero-context unified hunks
 (`@@ -a,b +c,d @@`, as `diff -U0` writes them) against its base; `-` lines must
 match the base exactly. Several RUN lines may follow one another; expectations
-attach to the latest RUN. `metadata` prints the published metadata, retained
-bodies, instruction IDs and control flow; `metrics` prints the verifier outcome
-and metrics after real ingress, with sentinel inputs (`null` passes none). CHECK
+attach to the latest RUN. `metadata` prints the pipeline's listing of the
+published IR (`compiler/ir_listing.au`): canonical class storage, enums,
+callables with their typed frames and storage origins, the retained set and each
+retained body's code with instruction IDs and control flow; operands print
+generically, types as kind words or tuples. `metrics` prints the verifier outcome
+and the last started function's metrics, with sentinels when none started
+(`null` prints none). `object` selects object emission for any emitting action. CHECK
 patterns may contain `\n`, and `{{...}}` spans are regular expressions.
 
 Expectations state the property under test, not the current output: a bound,

@@ -68,6 +68,7 @@ def main():
     parser.add_argument("driver", type=Path)
     parser.add_argument("compiler", type=Path)
     parser.add_argument("wrapper", type=Path)
+    parser.add_argument("ir_check", type=Path)
     parser.add_argument("--frontend", nargs=3, type=Path, metavar=("SOURCE", "COMPOSED", "FACTS"))
     parser.add_argument("--uart", type=Path, metavar="COMPOSED")
     parser.add_argument("--terminal", type=Path, metavar="COMPOSED")
@@ -75,9 +76,18 @@ def main():
     args.driver, args.compiler, args.wrapper = (path.resolve() for path in (args.driver, args.compiler, args.wrapper))
     with tempfile.TemporaryDirectory(prefix="aurora-private-object-") as temporary:
         directory = Path(temporary)
+        # The source object is the Aurora pipeline's emission of one textual IR case.
+        native = directory / "native.o"
+        run(
+            args.ir_check.resolve(),
+            "--output",
+            ROOT / "tests/compiler/ir/ir-tests/object.air",
+            "native object values",
+            native,
+        )
         run(
             args.driver,
-            ROOT / "tests/compiler/ir/ir-tests/object.air",
+            native,
             ROOT / "tests/compiler/private_object.cases",
             args.wrapper,
             directory,

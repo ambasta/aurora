@@ -1,7 +1,7 @@
 // Case files for textual IR (.air): directives, cases and zero-context
 // patches against a named base case. See tests/compiler/ir/README.md.
 #pragma once
-#include "ir_text.hpp"
+#include "diagnostics.hpp"
 #include <charconv>
 #include <fstream>
 #include <map>
@@ -257,12 +257,5 @@ inline const Case &findCase(const CaseFile &file, const std::string &name, std::
         resolved.emplace(file.cases[index].name, std::move(current));
     }
     throw Error(file.path + ": no case named '" + name + "'");
-}
-// The resolved module of one named case, read without validation.
-inline ir::Module loadCase(const std::string &path, const std::string &name) {
-    const auto file = parse(path);
-    std::vector<std::string> moduleLines;
-    findCase(file, name, moduleLines);
-    return ir::text::read(join(moduleLines));
 }
 } // namespace aurora::test::air

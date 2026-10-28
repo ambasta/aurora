@@ -597,3 +597,14 @@ function object_constant_u64_18446744073709551615
     Constant -1 u64
     Return
 end
+
+; CASE: object emission keeps stack and ABI facts
+; BASE: native object values
+; RUN: stack-facts local referenced
+; RUN: stack-facts local referenced object
+; CHECK-RUN-EQUAL: 1
+; RUN: abi-facts local referenced
+; ABI: function object_minimum object_minimum
+; RUN: abi-facts local referenced object
+; ABI: function object_minimum object_minimum
+; CHECK-RUN-EQUAL: 3

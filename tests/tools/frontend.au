@@ -1,0 +1,47 @@
+export module aurora.compiler.frontend;
+import aurora.compiler.lexer;
+import aurora.compiler.private_object;
+import aurora.compiler.frontend_wrapper;
+import aurora.compiler.formatter;
+import aurora.compiler.syntax_arena;
+import aurora.compiler.parser;
+import aurora.compiler.resolution_kinds;
+import aurora.compiler.resolution_arena;
+import aurora.compiler.resolution_rows;
+import aurora.compiler.resolution_names;
+import aurora.compiler.resolution_linkage;
+import aurora.compiler.resolution_ingest;
+import aurora.compiler.diagnostics;
+import aurora.compiler.builtin_catalog;
+import aurora.compiler.lowering_kinds;
+import aurora.compiler.lowering_errors;
+import aurora.compiler.lowering_storage;
+import aurora.compiler.lowering_configuration;
+import aurora.compiler.lowering;
+import aurora.compiler.lowering_projection_storage;
+import aurora.compiler.lowering_projection_identity;
+import aurora.compiler.lowering_projection_common;
+import aurora.compiler.lowering_projection_instructions;
+import aurora.compiler.lowering_projection;
+import aurora.compiler.resolver;
+import aurora.compiler.ir_graph;
+import aurora.compiler.ir_metadata_storage;
+import aurora.compiler.ir_metadata;
+import aurora.compiler.ir_instruction_storage;
+import aurora.compiler.ir_instructions;
+import aurora.compiler.ir_verification_errors;
+import aurora.compiler.ir_verification_storage;
+import aurora.compiler.ir_verification;
+import aurora.compiler.x86_storage;
+import aurora.compiler.x86_object_storage;
+import aurora.compiler.x86_module;
+import aurora.compiler.x86_facts;
+import aurora.compiler.pipeline_declarations;
+import aurora.compiler.pipeline;
+import aurora.tests.air;
+import aurora.tests.initialization_probe;
+
+// The textual IR test graph: the compiler frontend plus the .air reader.
+// Private bridge forwarders, test rows included, come from scripts/frontend_bridge.py.
+// This import scaffold is test tooling, never linked into the compiler.
+// @generated-test-forwarders

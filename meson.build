@@ -23,7 +23,7 @@ fs.read(bootstrap_pin)
 bootstrap_compiler_path = bootstrap_select.stdout().strip()
 bootstrap_compiler = find_program(bootstrap_compiler_path, native: true)
 bootstrap_depend_files = files(bootstrap_compiler_path) + bootstrap_driver + bootstrap_pin
-frontend_inputs = files('compiler/formatter.au', 'compiler/lexer.au', 'compiler/syntax_arena.au', 'compiler/parser.au',
+frontend_modules = files('compiler/formatter.au', 'compiler/lexer.au', 'compiler/syntax_arena.au', 'compiler/parser.au',
                         'compiler/resolution_kinds.au', 'compiler/lowering_errors.au', 'compiler/lowering_kinds.au',
                         'compiler/lowering_storage.au', 'compiler/resolution_rows.au', 'compiler/resolution_arena.au',
                         'compiler/resolution_names.au', 'compiler/resolution_linkage.au',
@@ -49,13 +49,13 @@ frontend_inputs = files('compiler/formatter.au', 'compiler/lexer.au', 'compiler/
                         'compiler/lowering_projection_storage.au', 'compiler/lowering_projection_identity.au',
                         'compiler/lowering_projection_common.au', 'compiler/lowering_projection_instructions.au',
                         'compiler/lowering_projection.au',
-                        'compiler/pipeline_declarations.au', 'compiler/pipeline.au',
+                        'compiler/ir_listing.au', 'compiler/pipeline_declarations.au', 'compiler/pipeline.au',
                         )
 frontend_forwarders = custom_target(
   'frontend-forwarders', input: 'compiler/frontend.au', output: 'frontend.au',
   command: [python, '-B', files('scripts/frontend_bridge.py'), '@INPUT@', '@OUTPUT@'],
 )
-frontend_inputs += [frontend_forwarders]
+frontend_inputs = frontend_modules + [frontend_forwarders]
 bridge_table = files('scripts/frontend_bridge.py')
 
 frontend_assembly = custom_target(
