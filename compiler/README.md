@@ -204,7 +204,7 @@ meson setup build/meson . "-Dbootstrap_compiler=$C0" "-Duefi_ld=$UEFI_LD"
 Before the seed, a checkpoint compiler named by commit was rebuilt by replaying
 a historical C++ seed, five Aurora stages and every checkpoint hop since
 (`scripts/bootstrap.py`, `compiler/checkpoint.json` and
-`compiler/bootstrap-history.json` in Git history up to `47732eba`).
+`compiler/bootstrap-history.json` in Git history up to `13826581`).
 
 #### The seed
 
@@ -229,15 +229,21 @@ the compiler emits for them. Owners are native and have the observable behaviour
 of `aurora.memory`: a 4 GiB payload quota, at most 16383 live allocations,
 zeroed or filled storage, prefix-preserving resize and inert failures; ids,
 mappings and that runtime's own state are not modelled. Values have a packed
-layout of the seed's own, which the subset cannot observe (it has no
-reflection). The compiler's sources may use a construct only once the seed
+layout of the seed's own, no larger than the compiler's: the subset has no
+reflection, so only the quota could tell, for allocations within a packing
+margin of 4 GiB, which the compiler never comes near. Names resolve as the
+compiler resolves them: within a module and from the modules it imports.
+As compiled `_start` does, the seed runs `host::start` (status 1 if it
+fails), `main`, a check that no allocation outlived `main` (status 4), and
+`host::finish`. The compiler's sources may use a construct only once the seed
 runs it.
 
-`tests/seed/cases.golden` runs the seed on a semantics program (whose output
-the compiled program also prints), traps and rejections; `seed-bootstrap` is its
-real test. The seed is built at -O1, runs on the build machine only and is
-never installed. On this compiler it takes about 80 s on one core, against
-15-19 s for C1 doing the same work (4.9 times C1's cycles).
+`tests/seed/semantics.golden` is the reviewed output of a semantics program,
+which `seed-semantics` checks under the seed and `seed-semantics-compiled`
+compiled; `tests/seed/cases.golden` holds traps and rejections. `seed-bootstrap`
+is the seed's real test. The seed is built at -O1, runs on the build machine only and is
+never installed. On this compiler it takes about 66 s on one core, against 9 s
+for C1 doing the same work (7.8 times its cycles).
 
 The bridged test graph the C++ test drivers link is emitted by C1 with
 `aurorac --local-symbols --abi-facts`, which binds every generated function and

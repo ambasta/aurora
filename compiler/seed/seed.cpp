@@ -142,9 +142,18 @@ void declare(const std::string &space, const std::string &name, const Entity &en
     spaces[space][name].push_back(entity);
 }
 
+// Whether an entity is visible from a module: its own, a builtin, or exported
+// by a module it imports directly.
+bool visible_from(const Entity &entity, const Module *module) {
+    if (entity.module == module || entity.module == nullptr) {
+        return true;
+    }
+    return entity.exported &&
+           std::find(module->imports.begin(), module->imports.end(), entity.module->name) != module->imports.end();
+}
+
 // The visible entities a possibly qualified name denotes, searched from the
-// innermost namespace outwards; an entity is visible in its own module or when
-// exported.
+// innermost namespace outwards.
 std::vector<const Entity *>
 find(const std::vector<std::string> &path, size_t count, bool global, const Module *module, const std::string &space) {
     std::vector<std::string> scopes;
@@ -175,7 +184,7 @@ find(const std::vector<std::string> &path, size_t count, bool global, const Modu
         }
         std::vector<const Entity *> visible;
         for (const Entity &entity : entry->second) {
-            if (entity.module == module || entity.exported) {
+            if (visible_from(entity, module)) {
                 visible.push_back(&entity);
             }
         }
@@ -298,6 +307,9 @@ Type *class_type(ClassDecl *decl) {
             type->owners.push_back(type->size + owner);
         }
         type->size += field_type->size;
+    }
+    if (type->size == 0) {
+        type->size = 8; // an empty class still has eight bytes of storage
     }
     decl->size = type->size;
     decl->type = type;
@@ -457,8 +469,14 @@ constexpr int64_t slot_limit = 16383;
 uint64_t used_bytes = 0;
 int64_t live_owners = 0;
 
-inline Owner *owner_at(const uint8_t *word) {
-    return reinterpret_cast<Owner *>(read8(word));
+[[noreturn]] void trap(const Node *node, const char *what);
+
+inline Owner *owner_at(const Node *node, const uint8_t *word) {
+    Owner *owner = reinterpret_cast<Owner *>(read8(word));
+    if (owner == nullptr) {
+        trap(node, "use of a moved owner");
+    }
+    return owner;
 }
 
 // The byte length of count elements, or -1.
@@ -530,7 +548,7 @@ bool resize(Owner *owner, int64_t count, const uint8_t *fill) {
 }
 
 void drop_word(uint8_t *word) {
-    Owner *owner = owner_at(word);
+    Owner *owner = reinterpret_cast<Owner *>(read8(word));
     if (owner != nullptr && owner != &failed_owner) {
         used_bytes -= static_cast<uint64_t>(owner->count * owner->stride);
         --live_owners;
@@ -624,7 +642,9 @@ int64_t invoke(const Node *node, Frame &frame, uint8_t *destination) {
         write8(base + word, 0);
     }
     Frame callee{base, self, destination, 0};
-    exec(function->code, callee);
+    if (exec(function->code, callee) == Flow::normal && function->result_type != nullptr) {
+        trap(node, "function ended without a return");
+    }
     for (const int64_t word : function->exit_drop) {
         drop_word(base + word);
     }
@@ -1030,15 +1050,15 @@ int64_t run_to_u8_unsigned(const Node *node, Frame &frame, uint8_t *) {
 // ---- owners and spans
 
 int64_t run_owner_ok(const Node *node, Frame &frame, uint8_t *) {
-    return owner_at(place(node->a, frame))->ok;
+    return owner_at(node, place(node->a, frame))->ok;
 }
 int64_t run_owner_size(const Node *node, Frame &frame, uint8_t *) {
-    return owner_at(place(node->a, frame))->count;
+    return owner_at(node, place(node->a, frame))->count;
 }
 int64_t run_bytes_at(const Node *node, Frame &frame, uint8_t *) {
     const uint8_t *word = place(node->a, frame);
     const int64_t index = eval(node->b, frame);
-    const Owner *owner = owner_at(word);
+    const Owner *owner = owner_at(node, word);
     if (!owner->ok || index < 0 || index >= owner->count) {
         trap(node, "owner index");
     }
@@ -1048,7 +1068,7 @@ int64_t run_bytes_set(const Node *node, Frame &frame, uint8_t *) {
     uint8_t *word = place(node->a, frame);
     const int64_t index = eval(node->b, frame);
     const int64_t value = eval(node->c, frame);
-    Owner *owner = owner_at(word);
+    Owner *owner = owner_at(node, word);
     if (!owner->ok || index < 0 || index >= owner->count) {
         return 0;
     }
@@ -1058,7 +1078,7 @@ int64_t run_bytes_set(const Node *node, Frame &frame, uint8_t *) {
 int64_t run_bytes_resize(const Node *node, Frame &frame, uint8_t *) {
     uint8_t *word = place(node->a, frame);
     const int64_t count = eval(node->b, frame);
-    return resize(owner_at(word), count, nullptr);
+    return resize(owner_at(node, word), count, nullptr);
 }
 int64_t run_allocate_bytes(const Node *node, Frame &frame, uint8_t *) {
     return address(reinterpret_cast<const uint8_t *>(allocate(eval(node->a, frame), 1, nullptr)));
@@ -1069,7 +1089,7 @@ int64_t run_values_set(const Node *node, Frame &frame, uint8_t *) {
     const int64_t index = eval(node->b, frame);
     uint8_t *snapshot = frame.base + node->offset;
     eval_into(node->c, frame, snapshot);
-    Owner *owner = owner_at(word);
+    Owner *owner = owner_at(node, word);
     if (!owner->ok || index < 0 || index >= owner->count) {
         return 0;
     }
@@ -1081,7 +1101,7 @@ int64_t run_values_resize(const Node *node, Frame &frame, uint8_t *) {
     const int64_t count = eval(node->b, frame);
     uint8_t *fill = frame.base + node->offset;
     eval_into(node->c, frame, fill);
-    return resize(owner_at(word), count, fill);
+    return resize(owner_at(node, word), count, fill);
 }
 int64_t run_allocate_values(const Node *node, Frame &frame, uint8_t *) {
     const int64_t count = eval(node->a, frame);
@@ -1129,7 +1149,7 @@ int64_t run_designated(const Node *node, Frame &frame, uint8_t *destination) {
 int64_t run_values_at(const Node *node, Frame &frame, uint8_t *destination) {
     const uint8_t *word = place(node->a, frame);
     const int64_t index = eval(node->b, frame);
-    const Owner *owner = owner_at(word);
+    const Owner *owner = owner_at(node, word);
     if (!owner->ok || index < 0 || index >= owner->count) {
         trap(node, "owner index");
     }
@@ -1142,7 +1162,7 @@ int64_t run_span_at(const Node *node, Frame &frame, uint8_t *destination) {
 }
 // A failed owner cannot be borrowed; an empty one gives an empty view.
 int64_t run_borrow_owner(const Node *node, Frame &frame, uint8_t *destination) {
-    const Owner *owner = owner_at(place(node->a, frame));
+    const Owner *owner = owner_at(node, place(node->a, frame));
     if (!owner->ok) {
         trap(node, "borrow of a failed owner");
     }
@@ -1439,6 +1459,9 @@ Node *as_scalar(const Value &value, const Loc &loc) {
     if (!scalar(value.type)) {
         fail(loc, "expected a scalar, found " + value.type->name);
     }
+    if (value.cat == Cat::place && !value.type->owners.empty()) {
+        fail(loc, "an owner moves only by move()");
+    }
     return value.cat == Cat::place ? load(value.node, value.type) : value.node;
 }
 
@@ -1448,6 +1471,9 @@ Node *as_object(const Value &value, const Loc &loc) {
     }
     if (value.cat != Cat::place) {
         return value.node;
+    }
+    if (!value.type->owners.empty()) {
+        fail(loc, "an owner moves only by move()");
     }
     Node *node = make(run_copy, loc);
     node->a = value.node;
@@ -1642,7 +1668,8 @@ Value method_call(const Value &object, const Expr *expr, Context &context) {
                          ? as_place(Value{as_object(object, loc), type, Cat::object}, context, loc)
                          : as_place(object, context, loc);
     if (getter(method)) {
-        return Value{field_place(receiver, method->getter_offset), method->getter_type, Cat::place, true};
+        const Value field{field_place(receiver, method->getter_offset), method->getter_type, Cat::place, true};
+        return scalar(field.type) ? field : Value{as_object(field, loc), field.type, Cat::object};
     }
     if (Node *body = expression_body(method)) {
         Node *node = make(run_receiver_expression, loc);
@@ -2419,6 +2446,9 @@ void compile(Function *function) {
             const Init *init = nullptr;
             for (const Init &candidate : function->inits) {
                 if (candidate.field == decl->fields[field].name) {
+                    if (init != nullptr) {
+                        fail(candidate.loc, "repeated initializer of field " + candidate.field);
+                    }
                     init = &candidate;
                 }
             }
@@ -2427,7 +2457,7 @@ void compile(Function *function) {
                 fail(function->loc, "constructor leaves field " + decl->fields[field].name + " uninitialized");
             }
             if (init->braces) {
-                if (type->kind == K::object && !type->object->constructors.empty()) {
+                if (!type->owners.empty() || (type->kind == K::object && !type->object->constructors.empty())) {
                     fail(init->loc, "unsupported braced field of a class with constructors");
                 }
                 continue; // the constructed value starts zeroed
@@ -2689,19 +2719,20 @@ int main(int argc, char **argv) {
     write8(span, reinterpret_cast<int64_t>(arguments.data()));
     write8(span + 8, static_cast<int64_t>(arguments.size()));
 
-    if (run_entry(start, {files}, nullptr) != 0) {
-        std::_Exit(1);
+    int64_t status = 1;
+    if (run_entry(start, {files}, nullptr) == 0) {
+        std::vector<int64_t> scalars{files};
+        if (count == 3) {
+            scalars.push_back(0);
+        }
+        status = run_entry(entry, scalars, span);
+        if (live_owners != 0) {
+            std::fprintf(
+                stderr, "aurora-seed: trap: %lld allocations outlived main\n", static_cast<long long>(live_owners));
+            std::_Exit(4);
+        }
     }
-    std::vector<int64_t> scalars{files};
-    if (count == 3) {
-        scalars.push_back(0);
-    }
-    const int64_t status = run_entry(entry, scalars, span);
     run_entry(finish, {files}, nullptr);
-    if (live_owners != 0) {
-        std::fprintf(stderr, "aurora-seed: %lld allocations outlived main\n", static_cast<long long>(live_owners));
-        std::_Exit(4);
-    }
     if (profiling) {
         profile();
     }

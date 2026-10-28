@@ -1,0 +1,36 @@
+module seed_invalid;
+import aurora.host;
+import aurora.memory;
+
+// Ownership errors the compiler rejects: the seed refuses them too (status 3)
+// rather than run them. Argument c or i selects one.
+
+class Box {
+    i64 value;
+public:
+    Box(i64 first, i64 second) : value(first), value(second) {
+    }
+};
+
+auto copy(builtin::ByteRegion region) -> i64 {
+    builtin::OwnedBytes bytes = region.try_allocate(1);
+    builtin::OwnedBytes other = bytes;
+    return other.size();
+}
+
+auto initialize() -> i64 {
+    const Box box = Box(1, 2);
+    return 0;
+}
+
+auto main(builtin::HostFiles& files, builtin::ByteRegion region,
+    builtin::span<const u8> arguments) -> builtin::HostExit {
+    const u8 selected = arguments.at(arguments.size() - 2);
+    if (selected == 'c') {
+        copy(region);
+    }
+    if (selected == 'i') {
+        initialize();
+    }
+    return builtin::HostExit::failure;
+}

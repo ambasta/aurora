@@ -13,7 +13,7 @@ no tests of tests. This page says how to run things today.
 ./scripts/container.sh bash           # pinned GCC 16 / QEMU / OVMF environment
 meson setup build/meson -Dbootstrap_compiler=... -Duefi_ld=...
 make test                            # nproc build/test jobs with memory watchdog
-make test-release                    # opt-in: releases and compiler bumps
+make test-release                    # opt-in: releases, compiler and seed changes
 ```
 
 Guest smokes run QEMU through `scripts/kernel-uefi-smoke.sh MODE`,

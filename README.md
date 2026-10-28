@@ -163,7 +163,7 @@ export MESON_BUILD_DIR=build/gcc16
 meson test -C build/gcc16 --suite dev  # optional focused feedback
 make test                    # merge suite, nproc jobs with memory watchdog; no QEMU
 make run && make run-uefi     # normal BIOS/UEFI smokes; also run affected guest families
-# Releases and compiler bumps only:
+# Releases, compiler and seed changes only:
 make test-release
 make smoke-all               # complete emulator matrix; QEMU and firmware required
 ```

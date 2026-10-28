@@ -1,7 +1,7 @@
 # Canonical incremental native tests
 
 Meson/Ninja is the canonical complete native graph. Every merge requires the
-`merge` suite, and every release or compiler bump the `release` suite, on the
+`merge` suite, and every release or compiler or seed change the `release` suite, on the
 final integrated source with GCC 16 (`full` is their union),
 plus the separate applicable image and actual guest gates. GCC 14 is optional
 targeted compatibility evidence. Previous snapshots do not qualify a new tree.
@@ -23,7 +23,7 @@ export MESON_BUILD_DIR=build/gcc16
 # Optional quick feedback while developing; merge below includes these tests.
 meson test -C build/gcc16 --suite dev
 make test
-make test-release  # opt-in: releases and compiler bumps
+make test-release  # opt-in: releases, compiler and seed changes
 ```
 
 These commands build prerequisites and run tests at `nproc` concurrency under
@@ -36,8 +36,7 @@ configuration needs a separate directory. The Make shortcuts check the selected
 compiler, binutils, Meson and Ninja versions before setup or build work, with a
 short blocked reason and the container command when tools are unsupported.
 Direct Meson setup checks the same tool versions.
-Missing or unsupported tools are blocked. Checkpoint admission verifies the
-pinned executable digests at configure time; after replacing tools in place,
+Missing or unsupported tools are blocked. After replacing tools in place,
 configure a fresh build directory. Unset `CPATH`, `CPLUS_INCLUDE_PATH`, `C_INCLUDE_PATH` and
 `LIBRARY_PATH`, including empty definitions; use explicit Meson include/link flags
 instead. Use a clean directory for bootstrap

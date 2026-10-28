@@ -106,14 +106,23 @@ private:
             text_[at_] == '0' && at_ + 1 < text_.size() && (text_[at_ + 1] == 'b' || text_[at_ + 1] == 'B');
         const uint64_t base = binary ? 2 : 10;
         at_ += binary ? 2 : 0;
+        const size_t first = at_;
         while (at_ < text_.size() &&
                (binary ? text_[at_] == '0' || text_[at_] == '1' || text_[at_] == '\'' : digit(text_[at_]))) {
+            // A separator stands between two binary digits.
+            if (text_[at_] == '\'' &&
+                (at_ == first || at_ + 1 >= text_.size() || (text_[at_ + 1] != '0' && text_[at_ + 1] != '1'))) {
+                error("invalid digit separator");
+            }
             if (text_[at_] != '\'' &&
                 (__builtin_mul_overflow(value, base, &value) ||
                  __builtin_add_overflow(value, static_cast<uint64_t>(text_[at_] - '0'), &value))) {
                 error("integer literal out of range");
             }
             ++at_;
+        }
+        if (at_ == first) {
+            error("integer literal without digits");
         }
         token.value = value;
         if (text_.compare(at_, 3, "u64") == 0) {

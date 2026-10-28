@@ -286,7 +286,7 @@ open-file guarantees.
 ## Choosing tests and consoles
 
 - `make test`: the `merge` suite; `make test-release`: the opt-in `release`
-  suite (releases, compiler bumps); `make -C compiler test`
+  suite (releases, compiler and seed changes); `make -C compiler test`
   and `scripts/compiler-test.sh` select the same compiler-only Meson suite.
 - `make test-exhaustive`: the separate whole-space UTF-8 library sweeps; see
   [normal and exhaustive scope](meson-bootstrap.md#coverage-and-limits).

@@ -44,7 +44,7 @@ fixture_builder = files('../scripts/meson-native-fixture.py')
 # objects (1.8 GiB in total), while -O1 cuts compile CPU by about a quarter.
 
 # Every test in full is also in exactly one of merge (run on every merge) or
-# release (opt-in: releases and compiler bumps). dev/slow/core/bytes are focused
+# release (opt-in: releases, compiler and seed changes). dev/slow/core/bytes are focused
 # selections; explicit library enumeration is separate in exhaustive.
 foreach entry : [
     ['frontend', 'compiler/run.py', 'core'],
@@ -610,11 +610,19 @@ test('hosted-lexer-bootstrap', find_program('cmp', native: true),
 seed_suites = from_seed ? ['full', 'merge', 'dev', 'core', 'compiler', 'release'] : ['full', 'release']
 test('seed-bootstrap', find_program('cmp', native: true), args: [aurorac_seed_object, aurorac_stage2_object],
      depends: [aurorac_seed_object, aurorac_stage2_object], suite: seed_suites, timeout: 30)
-# The seed's own cases, with reviewed results: semantics, traps and fail-closed
-# rejections of constructs outside its subset.
+# The seed's own cases, with reviewed results: traps, fail-closed rejections of
+# constructs outside its subset and of invalid ownership.
 test('seed-cases', python, args: ['-B', golden_runner, files('seed/cases.golden'), '--modes', '--', aurora_seed],
      depends: [aurora_seed], workdir: meson.project_source_root(), suite: ['full', 'merge', 'dev', 'core', 'compiler'],
      timeout: 60)
+# The semantics case's reviewed output is what the compiled program prints too.
+foreach name, command : {'seed-semantics': [aurora_seed, '--runtime-root', hosted_runtime_root,
+                                            files('seed/semantics.au')],
+                         'seed-semantics-compiled': [hosted_programs['seed-semantics'].full_path()]}
+  test(name, python, args: ['-B', golden_runner, files('seed/semantics.golden'), '--'] + command,
+       depends: [aurora_seed, hosted_programs['seed-semantics']], suite: ['full', 'merge', 'dev', 'core', 'compiler'],
+       timeout: 60)
+endforeach
 
 format_fixture = executable('format-fixture', 'compiler/format.cpp', dependencies: air_frontend_dep,
                             native: true, override_options: fixture_options, install: false)
