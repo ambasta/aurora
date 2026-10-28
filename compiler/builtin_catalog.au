@@ -44,7 +44,15 @@ export namespace compiler_catalog {
         HostUnlink,
         HostClose,
         HostStat,
-        HostIdentity
+        HostIdentity,
+        MemoryMap,
+        MemoryRemap,
+        MemoryUnmap,
+        MemoryLoad,
+        MemoryStore,
+        MemoryLoad8,
+        MemoryStore8,
+        MemoryAddress
     };
     // Catalog extents for the host's loose resolution quota.
     class Summary {
@@ -430,7 +438,7 @@ export namespace compiler_catalog {
 
     // Sealed service operations, indexed by ServiceOperation.
     auto operation_count() -> i64 {
-        return 21;
+        return 29;
     }
     auto operation_kind(i64 operation) -> i64 {
         if (operation < 2) {
@@ -495,10 +503,10 @@ export namespace compiler_catalog {
         if (operation == 8) {
             return 24;
         }
-        if (operation == 9 || operation == 10) {
+        if (operation == 9 || operation == 10 || operation == 24 || operation == 25 || operation == 28) {
             return 1;
         }
-        if (operation == 11 || operation == 12) {
+        if (operation == 11 || operation == 12 || operation == 26 || operation == 27) {
             return 2;
         }
         if (operation == 14) {
@@ -516,17 +524,18 @@ export namespace compiler_catalog {
         if (operation == 13) {
             return 4;
         }
-        if (operation == 7 || operation == 10 || operation == 12 || operation == 14 || operation == 19) {
+        if (operation == 7 || operation == 10 || operation == 12 || operation == 14 || operation == 19 || operation
+            == 21 || operation == 22 || operation == 24 || operation == 26) {
             return 2;
         }
-        if (operation == 15 || operation == 17) {
+        if (operation == 15 || operation == 17 || operation == 25 || operation == 27 || operation == 28) {
             return 3;
         }
         return 1;
     }
     auto parameter_kind(i64 operation, i64 index) -> compiler_resolver::ResolvedTypeKind {
         if (operation == 1 || (operation == 2 && index > 1) || (operation == 7 && index == 1) || (operation == 12
-            && index == 1)) {
+            && index == 1) || (operation == 27 && index == 2)) {
             return compiler_resolver::ResolvedTypeKind::u8_value;
         }
         if (operation > 12 && operation < 20 && index == 0) {
@@ -535,6 +544,11 @@ export namespace compiler_catalog {
         return compiler_resolver::ResolvedTypeKind::u64_value;
     }
     auto append_spelling(compiler_resolver::Session& session, i64 operation) -> i64 {
+        if (operation > 20) {
+            return use_word(session,
+                "map_memory;remap_memory;unmap_memory;memory_load;memory_store;memory_load8;memory_store8;memory_address",
+                operation - 21, -1, 0);
+        }
         if (operation > 14) {
             return use_word(session,
                 "system_write;system_rename;system_unlink;system_close;system_stat;system_identity", operation - 15, -1,
@@ -546,9 +560,11 @@ export namespace compiler_catalog {
         return use_word(session, "next;put;pixel;poll;acknowledge;call;read8;write8;exchange", operation, -1, 0);
     }
 
-    // HostFiles operations 9..20 are the Linux binding's private primitives,
-    // admitted only inside the designated runtime module aurora.host. Their
-    // byte offsets address the session block that the hosted entry reserves.
+    // HostFiles operations 9..28 are the Linux binding's private primitives,
+    // admitted only inside the designated runtime module aurora.host. The
+    // byte offsets of 9..20 address the session block that the hosted entry
+    // reserves; 21..28 map, unmap and access the memory runtime's mappings,
+    // whose table follows the session block when the entry takes a region.
     // The eight public HostFiles operations are implemented by exported
     // functions of namespace host in module aurora.host; a call on the
     // capability forwards it to that function as its first argument.

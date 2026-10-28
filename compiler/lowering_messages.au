@@ -297,14 +297,20 @@ export namespace compiler_lowering {
             return say(session, "unknown operation for sealed service kind");
         }
         if (reason == LoweringError::hosted_entry_signature) {
-            say(session, "hosted entry must be auto main(builtin::HostFiles& files, builtin::span<const u8> ");
-            return say(session, "arguments) -> builtin::HostExit");
+            say(session, "hosted entry must be auto main(builtin::HostFiles& files, [builtin::ByteRegion region,] ");
+            return say(session, "builtin::span<const u8> arguments) -> builtin::HostExit");
         }
         if (reason == LoweringError::host_operation_requires_runtime_module) {
             return say(session, "HostFiles operation requires the hosted runtime module aurora.host");
         }
         if (reason == LoweringError::host_runtime_operation_outside_runtime) {
             return say(session, "HostFiles system primitive is private to the hosted runtime module aurora.host");
+        }
+        if (reason == LoweringError::memory_runtime_operation_outside_runtime) {
+            return say(session, "memory primitive is private to the hosted runtime module aurora.memory");
+        }
+        if (reason == LoweringError::hosted_region_requires_memory_runtime) {
+            return say(session, "hosted entry taking a region requires the hosted runtime module aurora.memory");
         }
         if (reason == LoweringError::typed_owner_operation_requires_named_owner) {
             return say(session, "typed owner operation requires a named owner");

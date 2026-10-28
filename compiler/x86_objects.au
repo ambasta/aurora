@@ -394,7 +394,195 @@ export namespace compiler_x86 {
         if (operation == 20) { // getpid()
             return host_system_call(workspace, object, 39);
         }
+        if (operation > 20 && operation < 29 && workspace.hosted_memory()) {
+            return emit_memory_operation(workspace, object, grant, operation);
+        }
         return workspace.fail();
+    }
+    // Leaves in R11 the session address plus 16 * SLOT, so that the slot's
+    // mapping-table entry (base, then length) is at R11 + host_session_bytes().
+    // Traps unless SLOT (in RCX) is below host_memory_slots(). Clobbers R10.
+    auto memory_entry(EmitWorkspace& workspace, ObjectWorkspace& object, i64 grant) -> bool {
+        host_bound(workspace, object, Register::rcx, host_memory_slots() - 1);
+        emit_load(workspace, object, grant, Register::r10, false);
+        emit_mov_rr(workspace, object, Register::rcx, Register::r11);
+        emit_shift_imm(workspace, object, true, 4, Register::r11);
+        return emit_alu_rr(workspace, object, AluOp::add, Register::r10, Register::r11);
+    }
+    // VALUE = (VALUE + 4095) & -4096 for a value below 2^46.
+    auto memory_pages(EmitWorkspace& workspace, ObjectWorkspace& object, Register value) -> bool {
+        emit_alu_imm(workspace, object, AluOp::add, 4095, value);
+        return emit_alu_imm(workspace, object, AluOp::bit_and, -4096, value);
+    }
+    // Traps unless 0 < LENGTH < 2^46; RDX is scratch.
+    auto memory_length(EmitWorkspace& workspace, ObjectWorkspace& object, Register length) -> bool {
+        emit_alu_rr(workspace, object, AluOp::test, length, length);
+        emit_branch(workspace, object, 4, 4, 0);
+        emit_mov_rr(workspace, object, length, Register::rdx);
+        emit_shift_imm(workspace, object, false, 46, Register::rdx);
+        return emit_branch(workspace, object, 5, 4, 0);
+    }
+    // RCX = all ones when the system call in RAX failed (a value in -4095..-1),
+    // otherwise zero.
+    auto memory_failure_mask(EmitWorkspace& workspace, ObjectWorkspace& object) -> bool {
+        emit_alu_rr(workspace, object, AluOp::bit_xor, Register::rcx, Register::rcx);
+        emit_alu_imm(workspace, object, AluOp::compare, -4096, Register::rax);
+        emit_set_condition(workspace, object, 7, Register::rcx);
+        return emit_unary(workspace, object, UnaryOp::negate, Register::rcx);
+    }
+    // The table word at R11 + DISPLACEMENT becomes (VALUE & ~RCX) | (word & RCX):
+    // VALUE on success, unchanged on failure. RSI and RDI are scratch.
+    auto memory_commit(EmitWorkspace& workspace, ObjectWorkspace& object, Register value, i64 displacement) -> bool {
+        const i64 word = workspace.pack_address(3, displacement);
+        emit_mov_rr(workspace, object, Register::rcx, Register::rsi);
+        emit_unary(workspace, object, UnaryOp::bit_not, Register::rsi);
+        emit_alu_rr(workspace, object, AluOp::bit_and, value, Register::rsi);
+        emit_load(workspace, object, word, Register::rdi, false);
+        emit_alu_rr(workspace, object, AluOp::bit_and, Register::rcx, Register::rdi);
+        emit_alu_rr(workspace, object, AluOp::bit_or, Register::rdi, Register::rsi);
+        return emit_store(workspace, object, Register::rsi, word, false);
+    }
+    // The memory runtime's primitives (operations 21..28), emitted only when the
+    // hosted entry takes a region and so reserves the mapping table after the
+    // session block: one (base, length) entry per slot, written only here. A
+    // mapping is private, anonymous and read-write; access checks every offset
+    // and width against the slot's length, so the runtime reaches only memory
+    // it mapped. map, remap and unmap return 0 or the negative errno and change
+    // the entry only on success.
+    auto emit_memory_operation(EmitWorkspace& workspace, ObjectWorkspace& object, i64 grant, i64 operation) -> bool {
+        const i64 base = workspace.pack_address(3, host_session_bytes());
+        const i64 length = workspace.pack_address(3, host_session_bytes() + 8);
+        const i64 saved_entry = workspace.pack_address(1, 0);
+        const i64 saved_length = workspace.pack_address(1, 8);
+        if (operation == 21) { // mmap(0, pages, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS)
+            emit_pop(workspace, object, Register::rax);
+            emit_pop(workspace, object, Register::rcx);
+            memory_entry(workspace, object, grant);
+            emit_alu_mem_imm(workspace, object, AluOp::compare, 0, base);
+            emit_branch(workspace, object, 5, 4, 0);
+            emit_alu_mem_imm(workspace, object, AluOp::compare, 0, length);
+            emit_branch(workspace, object, 5, 4, 0);
+            memory_length(workspace, object, Register::rax);
+            emit_reserve_stack(workspace, object, 16);
+            emit_store(workspace, object, Register::r11, saved_entry, false);
+            emit_store(workspace, object, Register::rax, saved_length, false);
+            emit_mov_rr(workspace, object, Register::rax, Register::rsi);
+            memory_pages(workspace, object, Register::rsi);
+            emit_alu_rr(workspace, object, AluOp::bit_xor, Register::rdi, Register::rdi);
+            emit_mov_imm(workspace, object, 3, Register::rdx);
+            emit_mov_imm(workspace, object, 34, Register::r10);
+            emit_mov_imm(workspace, object, -1, Register::r8);
+            emit_alu_rr(workspace, object, AluOp::bit_xor, Register::r9, Register::r9);
+            host_system_call(workspace, object, 9);
+            emit_load(workspace, object, saved_entry, Register::r11, false);
+            emit_load(workspace, object, saved_length, Register::rdx, false);
+            emit_release_stack(workspace, object, 16);
+            memory_failure_mask(workspace, object);
+            memory_commit(workspace, object, Register::rax, host_session_bytes());
+            memory_commit(workspace, object, Register::rdx, host_session_bytes() + 8);
+            return emit_alu_rr(workspace, object, AluOp::bit_and, Register::rcx, Register::rax);
+        }
+        if (operation == 22) { // mremap(base, pages, new pages, MREMAP_MAYMOVE)
+            emit_pop(workspace, object, Register::rax);
+            emit_pop(workspace, object, Register::rcx);
+            memory_entry(workspace, object, grant);
+            emit_load(workspace, object, length, Register::rsi, false);
+            emit_alu_rr(workspace, object, AluOp::test, Register::rsi, Register::rsi);
+            emit_branch(workspace, object, 4, 4, 0);
+            memory_length(workspace, object, Register::rax);
+            emit_reserve_stack(workspace, object, 16);
+            emit_store(workspace, object, Register::r11, saved_entry, false);
+            emit_store(workspace, object, Register::rax, saved_length, false);
+            emit_load(workspace, object, base, Register::rdi, false);
+            memory_pages(workspace, object, Register::rsi);
+            emit_mov_rr(workspace, object, Register::rax, Register::rdx);
+            memory_pages(workspace, object, Register::rdx);
+            emit_mov_imm(workspace, object, 1, Register::r10);
+            emit_alu_rr(workspace, object, AluOp::bit_xor, Register::r8, Register::r8);
+            host_system_call(workspace, object, 25);
+            emit_load(workspace, object, saved_entry, Register::r11, false);
+            emit_load(workspace, object, saved_length, Register::rdx, false);
+            emit_release_stack(workspace, object, 16);
+            memory_failure_mask(workspace, object);
+            memory_commit(workspace, object, Register::rax, host_session_bytes());
+            memory_commit(workspace, object, Register::rdx, host_session_bytes() + 8);
+            return emit_alu_rr(workspace, object, AluOp::bit_and, Register::rcx, Register::rax);
+        }
+        if (operation == 23) { // munmap(base, pages)
+            emit_mov_rr(workspace, object, Register::rax, Register::rcx);
+            memory_entry(workspace, object, grant);
+            emit_load(workspace, object, length, Register::rsi, false);
+            emit_alu_rr(workspace, object, AluOp::test, Register::rsi, Register::rsi);
+            emit_branch(workspace, object, 4, 4, 0);
+            emit_load(workspace, object, base, Register::rdi, false);
+            memory_pages(workspace, object, Register::rsi);
+            emit_reserve_stack(workspace, object, 16);
+            emit_store(workspace, object, Register::r11, saved_entry, false);
+            host_system_call(workspace, object, 11);
+            emit_load(workspace, object, saved_entry, Register::r11, false);
+            emit_release_stack(workspace, object, 16);
+            // Success (zero) clears the entry; a failure leaves it unchanged.
+            emit_alu_rr(workspace, object, AluOp::bit_xor, Register::rcx, Register::rcx);
+            emit_alu_rr(workspace, object, AluOp::test, Register::rax, Register::rax);
+            emit_set_condition(workspace, object, 5, Register::rcx);
+            emit_unary(workspace, object, UnaryOp::negate, Register::rcx);
+            emit_load(workspace, object, base, Register::rdi, false);
+            emit_alu_rr(workspace, object, AluOp::bit_and, Register::rcx, Register::rdi);
+            emit_store(workspace, object, Register::rdi, base, false);
+            emit_load(workspace, object, length, Register::rdi, false);
+            emit_alu_rr(workspace, object, AluOp::bit_and, Register::rcx, Register::rdi);
+            return emit_store(workspace, object, Register::rdi, length, false);
+        }
+        if (operation == 24 || operation == 26) { // load and load8: offset + width <= length
+            emit_pop(workspace, object, Register::rax);
+            emit_pop(workspace, object, Register::rcx);
+            memory_entry(workspace, object, grant);
+            emit_load(workspace, object, length, Register::rdx, false);
+            if (operation == 24) {
+                emit_alu_imm(workspace, object, AluOp::subtract, 8, Register::rdx);
+                emit_branch(workspace, object, 2, 4, 0);
+                emit_alu_rr(workspace, object, AluOp::compare, Register::rdx, Register::rax);
+                emit_branch(workspace, object, 7, 4, 0);
+            } else {
+                emit_alu_rr(workspace, object, AluOp::compare, Register::rdx, Register::rax);
+                emit_branch(workspace, object, 3, 4, 0);
+            }
+            emit_load(workspace, object, base, Register::rcx, false);
+            return emit_indexed_load(workspace, object, Register::rcx, Register::rax, indexed_address(1, 0), operation
+                == 26);
+        }
+        if (operation == 25 || operation == 27) { // store and store8: offset + width <= length
+            emit_pop(workspace, object, Register::rax);
+            emit_pop(workspace, object, Register::rdx);
+            emit_pop(workspace, object, Register::rcx);
+            memory_entry(workspace, object, grant);
+            emit_load(workspace, object, length, Register::r9, false);
+            if (operation == 25) {
+                emit_alu_imm(workspace, object, AluOp::subtract, 8, Register::r9);
+                emit_branch(workspace, object, 2, 4, 0);
+                emit_alu_rr(workspace, object, AluOp::compare, Register::r9, Register::rdx);
+                emit_branch(workspace, object, 7, 4, 0);
+            } else {
+                emit_alu_rr(workspace, object, AluOp::compare, Register::r9, Register::rdx);
+                emit_branch(workspace, object, 3, 4, 0);
+            }
+            emit_load(workspace, object, base, Register::r8, false);
+            return emit_indexed_store(workspace, object, Register::r8, Register::rdx, indexed_address(1, 0), operation
+                == 27);
+        }
+        // address(slot, offset, count): offset <= length, count <= length - offset.
+        emit_pop(workspace, object, Register::rax);
+        emit_pop(workspace, object, Register::rdx);
+        emit_pop(workspace, object, Register::rcx);
+        memory_entry(workspace, object, grant);
+        emit_load(workspace, object, length, Register::r9, false);
+        emit_alu_rr(workspace, object, AluOp::compare, Register::r9, Register::rdx);
+        emit_branch(workspace, object, 7, 4, 0);
+        emit_alu_rr(workspace, object, AluOp::subtract, Register::rdx, Register::r9);
+        emit_alu_rr(workspace, object, AluOp::compare, Register::r9, Register::rax);
+        emit_branch(workspace, object, 7, 4, 0);
+        emit_load(workspace, object, base, Register::rax, false);
+        return emit_alu_rr(workspace, object, AluOp::add, Register::rdx, Register::rax);
     }
     auto emit_service_operation(EmitWorkspace& workspace, ObjectWorkspace& object,
         const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> bool {

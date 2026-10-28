@@ -40,10 +40,11 @@ Native operations retain exact canonical report types; Display has no host input
 or copied class-report operation. Duplicate kinds, non-leading capabilities and
 forwarding one kind into a formal of the other kind are rejected.
 
-One mixed capability prefix is accepted: `builtin::ConsoleSession& session,
-builtin::ByteRegion region`, followed by the same copied values or readonly byte
-spans. The order and kinds are exact; other services, service pairs, repeated or
-misplaced regions and owner parameters/results remain rejected. Ordinary helpers
+Two mixed capability prefixes are accepted: `builtin::ConsoleSession& session,
+builtin::ByteRegion region` and `builtin::HostFiles& files, builtin::ByteRegion
+region`, followed by the same copied values or readonly byte spans. The order and
+kinds are exact; other services, service pairs, repeated or misplaced regions and
+owner parameters/results remain rejected. Ordinary helpers
 may forward this prefix, call Console-only helpers or call region-only helpers.
 Local owners retain their original region identity across these calls; service
 loans remain exclusive and cannot escape. The region has an explicit authenticated
@@ -217,8 +218,9 @@ methods consume copied observations; no mixed object/service borrowing is added.
 
 `builtin::HostFiles` is a sealed service kind for hosted programs. The entry is
 exactly `auto main(builtin::HostFiles& files, builtin::span<const u8> arguments)
--> builtin::HostExit` in the root module; any root `main` naming HostFiles or
-HostExit with another signature is rejected. `arguments` is the command line as
+-> builtin::HostExit` in the root module, or the same with a
+`builtin::ByteRegion region` after `files` ([hosted memory](#hosted-memory));
+any root `main` naming HostFiles or HostExit with another signature is rejected. `arguments` is the command line as
 one readonly block of NUL-terminated arguments (data, not authority).
 `builtin::HostExit` is `success`, `failure`, `usage`, the exit status 0, 1, 2.
 The ordinary service rules apply: one leading exclusive `&` formal, no
@@ -282,8 +284,10 @@ checking every offset and length against the session block (failure traps);
 paths are NUL-terminated in the block, and only scalar results return. The
 typed-IR verifier admits the primitives only in functions whose native name
 belongs to module `aurora.host`. Every primitive is an operation on a held
-HostFiles loan, which only `main` receives, so even the binding reaches the
-system only on behalf of a program that was handed the capability; a library
+HostFiles loan, which only `main` receives (and the compiler's byte runtime
+entries, from `main`'s region, for [hosted memory](#hosted-memory)), so even the
+binding reaches the system only on behalf of a program that was handed the
+capability; a library
 importing `aurora.host` cannot name the primitives or the binding's private
 helpers. The binding is trusted code of the compiler. A binding
 over Aurora kernel services (Call/Serve or the file namespace service) would be
@@ -297,11 +301,84 @@ number; failure exits 1), then `main` with the grant and the arguments span,
 then `host::finish`, and exits with `exit_group`. A hosted `main` whose graph
 lacks the runtime hooks is rejected. One aurorac object therefore
 links with `ld -static -e _start` and no C or C++ startup, libc or runtime (see
-`hosted_programs` in `meson.build`); programs that also use ByteRegion or
-OwnedBytes still need the C++ byte adapter. Stack facts record a
+`hosted_programs` in `meson.build`), including programs whose owners use the
+[hosted memory runtime](#hosted-memory). Stack facts record a
 `__au_linux_system_call` call for every function that makes one, and
 `kernel_stack_check.py` rejects it in every kernel and user image profile.
 The compiler's own sources do not use HostFiles until a checkpoint bump.
+
+## Hosted memory
+
+A hosted `main(builtin::HostFiles& files, builtin::ByteRegion region,
+builtin::span<const u8> arguments)` receives one region with a fixed quota of
+4 GiB of payload; the program must import `aurora.memory`, the memory runtime
+(`runtime/linux/aurora/memory.au`), as it imports `aurora.host`. The region follows the
+ordinary [ownership rules](OWNERSHIP.md): only parameter binding introduces it,
+helpers take it first or after `files` in the mixed prefix above, and owners stay
+in the generated code's 32-byte descriptors. The region word is the session
+block's address; nothing else can name the session.
+
+Generated owner code is unchanged: it still calls the private C-convention
+entries `__au_runtime_bytes_{allocate,at,set,resize,drop,borrow_length,borrow_span}`
+and `__au_runtime_values_{allocate,at,set,resize}`. For a hosted entry with a
+region the compiler defines them locally in the program (`x86_module.au`). Each
+entry checks that the descriptor's region word names the session (the word at
+`host_session_self()` from it is itself), calls one function of the private
+namespace `memory` with the session as its HostFiles grant and the descriptor's
+words as scalars, traps (UD2) on its fail-stop result `u64` max, and then
+updates the descriptor or copies one element (or the fill, element by element)
+to or from the address the runtime returned. The runtime decides everything
+else: descriptor validation, quotas, ids and mappings. The entries trust the
+addresses the runtime returns and the region word of the descriptor they are
+given (a word that does not name a session faults or traps on the self-word
+read): like `aurora.host`, `aurora.memory` and these entries are trusted code
+of the compiler, and source and typed IR cannot forge a descriptor, a region
+or a runtime function (the verifier admits the primitives by the runtime's
+native names, and `aurora.*` modules load only from the runtime root).
+
+Each nonempty allocation is its own private anonymous read-write mapping; empty
+ones have none. `_start` reserves, after the session block, a table of 16384
+(base, length) entries and the session's own address, which only the memory
+primitives write. HostFiles operations 21..28 are those primitives, admitted (in
+lowering and in typed IR) only in functions of `aurora.memory` and emitted only
+when the entry takes a region: `map_memory(slot, length)` (mmap),
+`remap_memory(slot, length)` (mremap with MREMAP_MAYMOVE), `unmap_memory(slot)`
+(munmap), which return 0 or the negative errno and change the entry only on
+success, and `memory_load`, `memory_store`, `memory_load8`, `memory_store8` and
+`memory_address(slot, offset, count)`, which trap unless the slot is below 16384
+and offset plus width lies within the slot's length. Session primitives cannot
+reach the table (their offsets stay below 16384), so the runtime reaches only
+memory it mapped. Slot 0 maps the runtime's state: bytes in use, live count, the
+free-slot list and one record (generation, liveness, length, dirty mark) per
+slot. An allocation id is `generation * 16384 + slot`; the generation advances
+on every allocation and resize of the slot and a slot whose generation is
+exhausted is retired, so ids are never reused and a stale or forged descriptor
+traps. `memory::start` (after `host::start`) maps the state, failing the
+process with exit 1 before main; after main, a live allocation traps.
+
+Semantics are those of the [hosted adapter](OWNERSHIP.md#hosted-bootstrap-boundary):
+the same final-logical-quota checks for allocation and resize, inert failures for
+negative, unrepresentable or over-quota sizes, exhausted slots and failed
+mappings, zeroed (or filled) new bytes, a fresh id for every changed size, same
+size unchanged, prefix kept and shrunk bytes never resurfacing (a per-slot dirty
+mark zeroes the kept page's tail on regrowth), contiguous kind-0 views, and
+bounds failures as false results or traps where the adapter has them. The
+differences: faults are UD2 traps (SIGILL) without the adapter's message;
+resizing moves pages with mremap instead of copying, so no staging block
+coexists; at most 16383 allocations are live (reachable only through ~16k owner
+bindings at once); physical memory is committed on first touch, so host memory
+exhaustion after a successful mapping kills the process; and there are no
+metrics, test allocator or fault injection. Runtime cost is one system call per
+nonempty allocation, resize and drop and a page per nonempty allocation; the
+table makes `_start` reserve 272 KiB of stack, so a stack limit below about
+300 KiB faults before `main`.
+
+Cases: the memory probe over `tests/host-files/memory.golden` and the
+`host-sort` example in `tests/host-files/cases.golden`; rejections (region entry,
+prefix, primitives, private runtime functions) in `rejections.golden`; and the
+memory-primitive IR cases in `tests/compiler/ir/host-files-service-ir/`. The C++
+adapter `runtime/hosted_bytes.cpp` remains linked only into the C++-hosted
+aurorac and aurora-fmt and the C++ test drivers and hosts.
 
 ## Typed IR and private native boundary
 

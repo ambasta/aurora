@@ -17,6 +17,21 @@ export namespace compiler_x86 {
     auto host_session_bytes() -> i64 {
         return 16384;
     }
+    // When the hosted entry takes a region, the session block is followed by
+    // the memory runtime's mapping table, one 16-byte (base, length) entry per
+    // slot, and then by the session's own address: a region word names a live
+    // session only if the word at this offset from it equals the region word.
+    // HostFiles session primitives cannot reach either (their offsets stay
+    // below host_session_bytes()).
+    auto host_memory_slots() -> i64 {
+        return 16384;
+    }
+    auto host_session_self() -> i64 {
+        return host_session_bytes() + 16 * host_memory_slots();
+    }
+    auto host_memory_block_bytes() -> i64 {
+        return host_session_self() + 16;
+    }
     // The openat2 flags of each HostFiles open mode: O_RDONLY | O_DIRECTORY,
     // O_RDONLY | O_NONBLOCK, O_PATH | O_NOFOLLOW (all O_CLOEXEC), O_WRONLY |
     // O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, and O_RDWR.
@@ -35,22 +50,24 @@ export namespace compiler_x86 {
         }
         return 2;
     }
-    // The hosted entry: root-module main(builtin::HostFiles&, builtin::span<const u8>)
-    // -> builtin::HostExit, whose exact signature lowering already admitted.
+    // The hosted entry: root-module main(builtin::HostFiles&, [builtin::ByteRegion,]
+    // builtin::span<const u8>) -> builtin::HostExit, whose exact signature
+    // lowering already admitted.
     auto hosted_entry(const compiler_ir_metadata::MetadataStore& metadata) -> i64 {
         i64 at = 0;
         while (at < metadata.callable_count()) {
             const compiler_ir_metadata::CallableRow row = metadata.callable_at(at);
             const compiler_ir_metadata::ByteRange name = row.name();
             const i64 suffix = name.count() - 11;
-            if (row.scope() == 0 && row.value_parameter_count() == 2 && suffix > 0
-                && compiler_ir_metadata::named(metadata, compiler_ir_metadata::ByteRange(name.begin() + suffix, 11),
-                "_n0__d4main")) {
+            const i64 count = row.value_parameter_count();
+            if (row.scope() == 0 && (count == 2 || count == 3) && suffix > 0 && compiler_ir_metadata::named(metadata,
+                compiler_ir_metadata::ByteRange(name.begin() + suffix, 11), "_n0__d4main")) {
                 const compiler_ir_metadata::RawTypeRow first = metadata.type_at(row.value_parameter_begin());
-                const compiler_ir_metadata::RawTypeRow second = metadata.type_at(row.value_parameter_begin() + 1);
+                const compiler_ir_metadata::RawTypeRow middle = metadata.type_at(row.value_parameter_begin() + 1);
+                const compiler_ir_metadata::RawTypeRow last = metadata.type_at(row.value_parameter_begin() + count - 1);
                 const compiler_ir_metadata::IndexRange types = row.types();
                 const compiler_ir_metadata::RawTypeRow result = metadata.type_at(types.begin());
-                if (first.kind() == 22 && second.kind() == 11 && result.kind() == 9
+                if (first.kind() == 22 && (count == 2 || middle.kind() == 12) && last.kind() == 11 && result.kind() == 9
                     && compiler_ir_metadata::named(metadata, result.name(), "__au_host_exit")) {
                     return at;
                 }
@@ -58,6 +75,16 @@ export namespace compiler_x86 {
             at = at + 1;
         }
         return -1;
+    }
+    // Whether the hosted entry takes a ByteRegion, which the entry mints over
+    // the memory runtime of aurora.host.
+    auto hosted_region(const compiler_ir_metadata::MetadataStore& metadata) -> bool {
+        const i64 entry = hosted_entry(metadata);
+        if (entry < 0) {
+            return false;
+        }
+        const compiler_ir_metadata::CallableRow row = metadata.callable_at(entry);
+        return row.value_parameter_count() == 3;
     }
     // The runtime's hooks host::start(builtin::HostFiles&) (hook 0), which the
     // hosted entry calls before main, and host::finish (hook 1), called after
@@ -71,6 +98,81 @@ export namespace compiler_x86 {
             return compiler_ir_metadata::named(metadata, row.name(), "__au_v_m2_6aurora4host_n1_4host_d5start");
         }
         return compiler_ir_metadata::named(metadata, row.name(), "__au_v_m2_6aurora4host_n1_4host_d6finish");
+    }
+    // The memory runtime's functions host_memory::NAME(builtin::HostFiles&, ...)
+    // of aurora.host that the hosted entry and the byte runtime entries call,
+    // with their parameter counts: start 1, finish 1, allocate 3, payload 4,
+    // at 5, set 6, element 6, resize 6 and drop 4.
+    auto memory_hook_count() -> i64 {
+        return 9;
+    }
+    auto memory_hook_parameters(i64 hook) -> i64 {
+        if (hook < 2) {
+            return 1;
+        }
+        if (hook == 2) {
+            return 3;
+        }
+        if (hook == 3 || hook == 8) {
+            return 4;
+        }
+        if (hook == 4) {
+            return 5;
+        }
+        return 6;
+    }
+    auto memory_hook(const compiler_ir_metadata::MetadataStore& metadata, i64 callable, i64 hook) -> bool {
+        const compiler_ir_metadata::CallableRow row = metadata.callable_at(callable);
+        if (row.scope() == 0 || row.value_parameter_count() != memory_hook_parameters(hook)) {
+            return false;
+        }
+        if (hook == 0) {
+            return compiler_ir_metadata::named(metadata, row.name(), "__au_v_m2_6aurora6memory_n1_6memory_d5start");
+        }
+        if (hook == 1) {
+            return compiler_ir_metadata::named(metadata, row.name(), "__au_v_m2_6aurora6memory_n1_6memory_d6finish");
+        }
+        if (hook == 2) {
+            return compiler_ir_metadata::named(metadata, row.name(), "__au_v_m2_6aurora6memory_n1_6memory_d8allocate");
+        }
+        if (hook == 3) {
+            return compiler_ir_metadata::named(metadata, row.name(), "__au_v_m2_6aurora6memory_n1_6memory_d7payload");
+        }
+        if (hook == 4) {
+            return compiler_ir_metadata::named(metadata, row.name(), "__au_v_m2_6aurora6memory_n1_6memory_d2at");
+        }
+        if (hook == 5) {
+            return compiler_ir_metadata::named(metadata, row.name(), "__au_v_m2_6aurora6memory_n1_6memory_d3set");
+        }
+        if (hook == 6) {
+            return compiler_ir_metadata::named(metadata, row.name(), "__au_v_m2_6aurora6memory_n1_6memory_d7element");
+        }
+        if (hook == 7) {
+            return compiler_ir_metadata::named(metadata, row.name(), "__au_v_m2_6aurora6memory_n1_6memory_d6resize");
+        }
+        return hook == 8 && compiler_ir_metadata::named(metadata, row.name(),
+            "__au_v_m2_6aurora6memory_n1_6memory_d4drop");
+    }
+    // Whether CALLABLE is one of the memory runtime's functions.
+    auto memory_runtime(const compiler_ir_metadata::MetadataStore& metadata, i64 callable) -> bool {
+        i64 hook = 0;
+        while (hook < memory_hook_count()) {
+            if (memory_hook(metadata, callable, hook)) {
+                return true;
+            }
+            hook = hook + 1;
+        }
+        return false;
+    }
+    auto memory_hook_callable(const compiler_ir_metadata::MetadataStore& metadata, i64 hook) -> i64 {
+        i64 at = 0;
+        while (at < metadata.callable_count()) {
+            if (memory_hook(metadata, at, hook)) {
+                return at;
+            }
+            at = at + 1;
+        }
+        return -1;
     }
     auto hosted_hook_callable(const compiler_ir_metadata::MetadataStore& metadata, i64 hook) -> i64 {
         i64 at = 0;

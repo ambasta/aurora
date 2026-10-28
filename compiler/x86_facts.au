@@ -127,7 +127,7 @@ export namespace compiler_x86 {
                 service = true;
             } else {
                 if (!fact_scalar_kind(kind) && !(kind == 12 && at == 1
-                    && compiler_ir_metadata::console_region_signature(metadata, metadata.callable_at(callable)))) {
+                    && compiler_ir_metadata::service_region_signature(metadata, metadata.callable_at(callable)))) {
                     return 0;
                 }
             }
@@ -1098,7 +1098,7 @@ export namespace compiler_x86 {
             workspace.number(argument_bytes(metadata, type));
             workspace.byte(',');
             fact_emit_type(workspace, metadata, type);
-            if ((at < 2 && compiler_ir_metadata::console_region_signature(metadata, row)) || type_kind(metadata, type)
+            if ((at < 2 && compiler_ir_metadata::service_region_signature(metadata, row)) || type_kind(metadata, type)
                 == 19 || type_kind(metadata, type) == 20 || type_kind(metadata, type) == 22) {
                 workspace.text(",\"type_name\":");
                 fact_emit_service_kind(workspace, type_kind(metadata, type));

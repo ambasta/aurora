@@ -682,6 +682,12 @@ export namespace compiler_x86 {
     // uncommitted outputs and closes descriptors; exit_group reports the
     // HostExit ordinal (success 0, failure 1, usage 2). No C runtime or loader
     // code is involved.
+    //
+    // When main also takes a region, the block holds the memory runtime's
+    // mapping table and the session's own address after the session, the
+    // region is that address, host_memory::start maps the runtime's state
+    // after host::start (a failure exits 1 without main) and
+    // host_memory::finish checks after main that no allocation is live.
     auto module_emit_hosted_entry(EmitWorkspace& w, ObjectWorkspace& o,
         const compiler_ir_metadata::MetadataStore& m) -> bool {
         const i64 entry = hosted_entry(m);
@@ -691,6 +697,12 @@ export namespace compiler_x86 {
         const i64 start = hosted_hook_callable(m, 0);
         const i64 finish = hosted_hook_callable(m, 1);
         if (start < 0 || finish < 0) {
+            return w.fail();
+        }
+        const bool memory = w.hosted_memory();
+        const i64 memory_start = memory_hook_callable(m, 0);
+        const i64 memory_finish = memory_hook_callable(m, 1);
+        if (memory && (memory_start < 0 || memory_finish < 0)) {
             return w.fail();
         }
         const i64 name = w.intern_runtime("_start");
@@ -737,7 +749,10 @@ export namespace compiler_x86 {
         emit_bind_label(w, o, 0, 1);
         // R9 is the block address and R10 its length (both zero without argv).
         emit_alu_imm(w, o, AluOp::bit_and, -16, Register::rsp);
-        const i64 session = host_session_bytes();
+        i64 session = host_session_bytes();
+        if (memory) {
+            session = host_memory_block_bytes();
+        }
         emit_reserve_stack(w, o, session);
         emit_mov_rr(w, o, Register::rsp, Register::rdi);
         emit_alu_rr(w, o, AluOp::bit_xor, Register::rax, Register::rax);
@@ -745,34 +760,58 @@ export namespace compiler_x86 {
         emit_cld(w, o);
         emit_rep_stosb(w, o);
         emit_mov_rr(w, o, Register::rsp, Register::r8);
-        // Private record: grant, generation, then the 56-byte arguments span;
-        // the exit status is kept at +72.
-        emit_reserve_stack(w, o, 80);
+        // Private record: grant, generation, [region,] then the 56-byte
+        // arguments span; the exit status follows it.
+        i64 span = 16;
+        i64 record = 80;
+        if (memory) {
+            const i64 self = w.pack_address(1, host_session_self());
+            emit_store(w, o, Register::r8, self, false);
+            span = 24;
+            record = 96;
+        }
+        emit_reserve_stack(w, o, record);
         const i64 grant = w.pack_address(1, 0);
         emit_store(w, o, Register::r8, grant, false);
         const i64 generation = w.pack_address(1, 8);
         emit_store_imm(w, o, 1, generation, false);
         i64 word = 16;
-        while (word < 72) {
+        while (word < span + 56) {
             const i64 lane = w.pack_address(1, word);
             emit_store_imm(w, o, 0, lane, false);
             word = word + 8;
         }
-        const i64 address = w.pack_address(1, 24);
+        if (memory) {
+            const i64 region = w.pack_address(1, 16);
+            emit_store(w, o, Register::r8, region, false);
+        }
+        const i64 address = w.pack_address(1, span + 8);
         emit_store(w, o, Register::r9, address, false);
-        const i64 length = w.pack_address(1, 64);
+        const i64 length = w.pack_address(1, span + 48);
         emit_store(w, o, Register::r10, length, false);
-        const i64 status = w.pack_address(1, 72);
+        const i64 status = w.pack_address(1, span + 56);
         emit_store_imm(w, o, 1, status, false);
         emit_mov_rr(w, o, Register::rsp, Register::r11);
         direct_target(w, o, m, start);
         emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
         emit_branch(w, o, 5, 0, 3);
+        if (memory) {
+            emit_mov_rr(w, o, Register::rsp, Register::r11);
+            direct_target(w, o, m, memory_start);
+            emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
+            emit_branch(w, o, 5, 0, 3);
+        }
         emit_mov_rr(w, o, Register::rsp, Register::r11);
         direct_target(w, o, m, entry);
         emit_alu_imm(w, o, AluOp::compare, 2, Register::rax);
         emit_branch(w, o, 7, 4, 0);
         emit_store(w, o, Register::rax, status, false);
+        if (memory) {
+            emit_mov_rr(w, o, Register::rsp, Register::r11);
+            direct_target(w, o, m, memory_finish);
+            emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
+            emit_branch(w, o, 5, 4, 0);
+        }
         emit_bind_label(w, o, 0, 3);
         emit_mov_rr(w, o, Register::rsp, Register::r11);
         direct_target(w, o, m, finish);
@@ -787,7 +826,398 @@ export namespace compiler_x86 {
         } else {
             w.text(".size _start, .-_start\n");
         }
+        if (!w.finish_function() || !memory) {
+            return w.ok();
+        }
+        return module_emit_memory_entries(w, o, m);
+    }
+    // The byte runtime entries of a hosted program with a region: the private
+    // C-convention calls generated owner code makes (RDI, RSI, RDX, RCX, R8;
+    // result in RAX), bound locally to these definitions. Each checks that the
+    // descriptor's region word names the session, calls one host_memory
+    // function with the session as the HostFiles grant and the descriptor's
+    // words as scalars, traps on its fail-stop result (u64 max), and stores the
+    // results or copies elements to and from the addresses it returns. The
+    // frame keeps the five arguments at -8..-40(%rbp), three temporaries at
+    // -48..-64 and the 64-byte record at 0(%rsp).
+    // The runtime name SYMBOL, as object symbol-name or assembly text bytes.
+    auto memory_entry_name(EmitWorkspace& w, ObjectWorkspace& o, i64 symbol) -> bool {
+        const NameRow name = w.runtime_name(symbol);
+        i64 at = 0;
+        while (at < name.count() && w.ok()) {
+            const i64 value = w.name_byte(name.begin() + at);
+            if (o.object_mode()) {
+                o.object_name_byte(u8(value));
+            } else {
+                w.byte(u8(value));
+            }
+            at = at + 1;
+        }
+        return w.ok();
+    }
+    auto memory_entry_begin(EmitWorkspace& w, ObjectWorkspace& o, i64 symbol) -> bool {
+        if (symbol < 0 || !w.begin_function(2, symbol, -1)) {
+            return w.fail();
+        }
+        if (o.object_mode()) {
+            o.begin_function_labels(4);
+            o.begin_object_symbol(1, symbol, true);
+            memory_entry_name(w, o, symbol);
+            o.end_object_symbol_name();
+            emit_object_status(w, o);
+        } else {
+            w.text(".local ");
+            memory_entry_name(w, o, symbol);
+            w.text("\n.type ");
+            memory_entry_name(w, o, symbol);
+            w.text(", @function\n");
+            memory_entry_name(w, o, symbol);
+            w.text(":\n");
+        }
+        emit_push_register(w, o, Register::rbp);
+        w.grow_stack(8);
+        emit_mov_rr(w, o, Register::rsp, Register::rbp);
+        emit_reserve_stack(w, o, 128);
+        const i64 first = w.pack_address(0, 8);
+        emit_store(w, o, Register::rdi, first, false);
+        const i64 second = w.pack_address(0, 16);
+        emit_store(w, o, Register::rsi, second, false);
+        const i64 third = w.pack_address(0, 24);
+        emit_store(w, o, Register::rdx, third, false);
+        const i64 fourth = w.pack_address(0, 32);
+        emit_store(w, o, Register::rcx, fourth, false);
+        const i64 fifth = w.pack_address(0, 40);
+        return emit_store(w, o, Register::r8, fifth, false);
+    }
+    auto memory_entry_end(EmitWorkspace& w, ObjectWorkspace& o, i64 symbol) -> bool {
+        emit_leave_instruction(w, o);
+        emit_return_instruction(w, o);
+        if (o.object_mode()) {
+            o.end_object_symbol();
+        } else {
+            w.text(".size ");
+            memory_entry_name(w, o, symbol);
+            w.text(", .-");
+            memory_entry_name(w, o, symbol);
+            w.text("\n");
+        }
         return w.finish_function();
+    }
+    // The frame slot -SAVE(%rbp) into the record word at +OFFSET.
+    auto memory_argument(EmitWorkspace& w, ObjectWorkspace& o, i64 save, i64 offset) -> bool {
+        const i64 source = w.pack_address(0, save);
+        emit_load(w, o, source, Register::rcx, false);
+        const i64 lane = w.pack_address(1, offset);
+        return emit_store(w, o, Register::rcx, lane, false);
+    }
+    // RAX = the region word in -SAVE(%rbp) (an owner's first word when OWNER),
+    // which must name the session: the word at host_session_self() from it is
+    // itself. The record gets the grant and generation 1, and an owner's
+    // allocation, length and success words; R10 keeps the owner address.
+    auto memory_record(EmitWorkspace& w, ObjectWorkspace& o, i64 save, bool owner) -> bool {
+        const i64 source = w.pack_address(0, save);
+        emit_load(w, o, source, Register::rax, false);
+        if (owner) {
+            emit_mov_rr(w, o, Register::rax, Register::r10);
+            const i64 region = w.pack_address(2, 0);
+            emit_load(w, o, region, Register::rax, false);
+        }
+        const i64 self = w.pack_address(4, host_session_self());
+        emit_load(w, o, self, Register::rcx, false);
+        emit_alu_rr(w, o, AluOp::compare, Register::rax, Register::rcx);
+        emit_branch(w, o, 5, 4, 0);
+        const i64 grant = w.pack_address(1, 0);
+        emit_store(w, o, Register::rax, grant, false);
+        const i64 generation = w.pack_address(1, 8);
+        emit_store_imm(w, o, 1, generation, false);
+        if (!owner) {
+            return w.ok();
+        }
+        i64 word = 8;
+        while (word < 32) {
+            const i64 field = w.pack_address(2, word);
+            emit_load(w, o, field, Register::rcx, false);
+            const i64 lane = w.pack_address(1, word + 8);
+            emit_store(w, o, Register::rcx, lane, false);
+            word = word + 8;
+        }
+        return w.ok();
+    }
+    // Calls memory runtime function HOOK with the record and traps on its
+    // fail-stop result.
+    auto memory_call(EmitWorkspace& w, ObjectWorkspace& o, const compiler_ir_metadata::MetadataStore& m,
+        i64 hook) -> bool {
+        const i64 callable = memory_hook_callable(m, hook);
+        if (callable < 0) {
+            return w.fail();
+        }
+        emit_mov_rr(w, o, Register::rsp, Register::r11);
+        direct_target(w, o, m, callable);
+        emit_alu_imm(w, o, AluOp::compare, -1, Register::rax);
+        return emit_branch(w, o, 4, 4, 0);
+    }
+    // R10 = the owner address in -SAVE(%rbp); RCX = its four words or-ed, so
+    // the zero flag marks a pristine (all-zero) descriptor.
+    auto memory_pristine(EmitWorkspace& w, ObjectWorkspace& o, i64 save) -> bool {
+        const i64 source = w.pack_address(0, save);
+        emit_load(w, o, source, Register::r10, false);
+        const i64 region = w.pack_address(2, 0);
+        emit_load(w, o, region, Register::rcx, false);
+        i64 word = 8;
+        while (word < 32) {
+            const i64 field = w.pack_address(2, word);
+            emit_alu_load(w, o, AluOp::bit_or, field, Register::rcx);
+            word = word + 8;
+        }
+        return w.ok();
+    }
+    // Writes the descriptor at -SAVE(%rbp): the region word from -REGION(%rbp),
+    // then the allocation id in RAX with the length in -LENGTH(%rbp) and
+    // success 1, or zeros for a failed allocation (RAX zero).
+    auto memory_descriptor(EmitWorkspace& w, ObjectWorkspace& o, i64 save, i64 region, i64 length) -> bool {
+        const i64 target = w.pack_address(0, save);
+        emit_load(w, o, target, Register::r10, false);
+        const i64 source = w.pack_address(0, region);
+        emit_load(w, o, source, Register::rcx, false);
+        const i64 first = w.pack_address(2, 0);
+        emit_store(w, o, Register::rcx, first, false);
+        const i64 allocation = w.pack_address(2, 8);
+        emit_store(w, o, Register::rax, allocation, false);
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::rdx, Register::rdx);
+        emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
+        emit_set_condition(w, o, 5, Register::rdx);
+        const i64 success = w.pack_address(2, 24);
+        emit_store(w, o, Register::rdx, success, false);
+        emit_unary(w, o, UnaryOp::negate, Register::rdx);
+        const i64 bytes = w.pack_address(0, length);
+        emit_alu_load(w, o, AluOp::bit_and, bytes, Register::rdx);
+        const i64 size = w.pack_address(2, 16);
+        return emit_store(w, o, Register::rdx, size, false);
+    }
+    // Copies the element at -SOURCE(%rbp) to each stride (-24(%rbp)) bytes of
+    // [RAX + -FROM(%rbp), RAX + -TO(%rbp)), with labels 0 and 1.
+    auto memory_fill(EmitWorkspace& w, ObjectWorkspace& o, i64 source, i64 from, i64 to) -> bool {
+        emit_mov_rr(w, o, Register::rax, Register::rdi);
+        const i64 begin = w.pack_address(0, from);
+        emit_alu_load(w, o, AluOp::add, begin, Register::rdi);
+        emit_mov_rr(w, o, Register::rax, Register::rdx);
+        const i64 end = w.pack_address(0, to);
+        emit_alu_load(w, o, AluOp::add, end, Register::rdx);
+        emit_cld(w, o);
+        emit_bind_label(w, o, 0, 0);
+        emit_alu_rr(w, o, AluOp::compare, Register::rdx, Register::rdi);
+        emit_branch(w, o, 3, 0, 1);
+        const i64 element = w.pack_address(0, source);
+        emit_load(w, o, element, Register::rsi, false);
+        const i64 stride = w.pack_address(0, 24);
+        emit_load(w, o, stride, Register::rcx, false);
+        emit_rep_movsb(w, o);
+        emit_branch(w, o, -1, 0, 0);
+        return emit_bind_label(w, o, 0, 1);
+    }
+    // -SAVE(%rbp) = count (-16(%rbp)) * stride (-24(%rbp)), which the runtime
+    // already checked fits.
+    auto memory_bytes(EmitWorkspace& w, ObjectWorkspace& o, i64 save) -> bool {
+        const i64 count = w.pack_address(0, 16);
+        emit_load(w, o, count, Register::rax, false);
+        const i64 stride = w.pack_address(0, 24);
+        emit_load(w, o, stride, Register::rcx, false);
+        emit_unary(w, o, UnaryOp::unsigned_multiply, Register::rcx);
+        const i64 target = w.pack_address(0, save);
+        return emit_store(w, o, Register::rax, target, false);
+    }
+    // RAX = the payload address of the live allocation in RAX of -LENGTH(%rbp)
+    // bytes; the record's grant and generation are already set.
+    auto memory_payload(EmitWorkspace& w, ObjectWorkspace& o, const compiler_ir_metadata::MetadataStore& m,
+        i64 length) -> bool {
+        const i64 allocation = w.pack_address(1, 16);
+        emit_store(w, o, Register::rax, allocation, false);
+        memory_argument(w, o, length, 24);
+        const i64 success = w.pack_address(1, 32);
+        emit_store_imm(w, o, 1, success, false);
+        return memory_call(w, o, m, 3);
+    }
+    auto module_emit_memory_entries(EmitWorkspace& w, ObjectWorkspace& o,
+        const compiler_ir_metadata::MetadataStore& m) -> bool {
+        const i64 owner = w.pack_address(0, 8);
+        const i64 identity = w.pack_address(0, 48);
+        const i64 old = w.pack_address(0, 64);
+        const i64 owner_allocation = w.pack_address(2, 8);
+        const i64 owner_length = w.pack_address(2, 16);
+        const i64 single = w.pack_address(1, 24);
+        // __au_runtime_bytes_allocate(region, length, owner*)
+        const i64 entry_bytes_allocate = w.intern_runtime("__au_runtime_bytes_allocate");
+        memory_entry_begin(w, o, entry_bytes_allocate);
+        memory_pristine(w, o, 24);
+        emit_branch(w, o, 5, 4, 0);
+        memory_record(w, o, 8, false);
+        memory_argument(w, o, 16, 16);
+        emit_store_imm(w, o, 1, single, false);
+        memory_call(w, o, m, 2);
+        memory_descriptor(w, o, 24, 8, 16);
+        memory_entry_end(w, o, entry_bytes_allocate);
+        // __au_runtime_values_allocate(region, count, stride, fill*, owner*):
+        // every element is a copy of the fill.
+        const i64 entry_values_allocate = w.intern_runtime("__au_runtime_values_allocate");
+        memory_entry_begin(w, o, entry_values_allocate);
+        memory_pristine(w, o, 40);
+        emit_branch(w, o, 5, 4, 0);
+        memory_record(w, o, 8, false);
+        memory_argument(w, o, 16, 16);
+        memory_argument(w, o, 24, 24);
+        memory_call(w, o, m, 2);
+        emit_store(w, o, Register::rax, identity, false);
+        emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
+        emit_branch(w, o, 4, 0, 2);
+        memory_bytes(w, o, 56);
+        emit_store_imm(w, o, 0, old, false);
+        emit_load(w, o, identity, Register::rax, false);
+        memory_payload(w, o, m, 56);
+        memory_fill(w, o, 32, 64, 56);
+        emit_bind_label(w, o, 0, 2);
+        emit_load(w, o, identity, Register::rax, false);
+        memory_descriptor(w, o, 40, 8, 56);
+        memory_entry_end(w, o, entry_values_allocate);
+        // __au_runtime_bytes_borrow_length(owner*)
+        const i64 entry_bytes_borrow_length = w.intern_runtime("__au_runtime_bytes_borrow_length");
+        memory_entry_begin(w, o, entry_bytes_borrow_length);
+        memory_record(w, o, 8, true);
+        memory_call(w, o, m, 3);
+        emit_load(w, o, owner, Register::r10, false);
+        emit_load(w, o, owner_length, Register::rax, false);
+        memory_entry_end(w, o, entry_bytes_borrow_length);
+        // __au_runtime_bytes_borrow_span(owner*, span*): a contiguous kind-0 view.
+        const i64 entry_bytes_borrow_span = w.intern_runtime("__au_runtime_bytes_borrow_span");
+        memory_entry_begin(w, o, entry_bytes_borrow_span);
+        memory_record(w, o, 8, true);
+        memory_call(w, o, m, 3);
+        emit_load(w, o, owner, Register::r10, false);
+        emit_load(w, o, owner_length, Register::rdx, false);
+        const i64 view = w.pack_address(0, 16);
+        emit_load(w, o, view, Register::r10, false);
+        i64 word = 0;
+        while (word < 56) {
+            const i64 lane = w.pack_address(2, word);
+            emit_store_imm(w, o, 0, lane, false);
+            word = word + 8;
+        }
+        const i64 view_base = w.pack_address(2, 8);
+        emit_store(w, o, Register::rax, view_base, false);
+        const i64 view_length = w.pack_address(2, 48);
+        emit_store(w, o, Register::rdx, view_length, false);
+        memory_entry_end(w, o, entry_bytes_borrow_span);
+        // __au_runtime_bytes_at(owner*, index)
+        const i64 entry_bytes_at = w.intern_runtime("__au_runtime_bytes_at");
+        memory_entry_begin(w, o, entry_bytes_at);
+        memory_record(w, o, 8, true);
+        memory_argument(w, o, 16, 40);
+        memory_call(w, o, m, 4);
+        memory_entry_end(w, o, entry_bytes_at);
+        // __au_runtime_bytes_set(owner*, index, value)
+        const i64 entry_bytes_set = w.intern_runtime("__au_runtime_bytes_set");
+        memory_entry_begin(w, o, entry_bytes_set);
+        memory_record(w, o, 8, true);
+        memory_argument(w, o, 16, 40);
+        memory_argument(w, o, 24, 48);
+        memory_call(w, o, m, 5);
+        memory_entry_end(w, o, entry_bytes_set);
+        // __au_runtime_bytes_resize(owner*, length): 1 resized, 0 unchanged.
+        const i64 entry_bytes_resize = w.intern_runtime("__au_runtime_bytes_resize");
+        memory_entry_begin(w, o, entry_bytes_resize);
+        memory_record(w, o, 8, true);
+        memory_argument(w, o, 16, 40);
+        const i64 unit = w.pack_address(1, 48);
+        emit_store_imm(w, o, 1, unit, false);
+        memory_call(w, o, m, 7);
+        emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
+        emit_branch(w, o, 4, 0, 2);
+        emit_load(w, o, owner, Register::r10, false);
+        emit_store(w, o, Register::rax, owner_allocation, false);
+        const i64 requested = w.pack_address(0, 16);
+        emit_load(w, o, requested, Register::rcx, false);
+        emit_store(w, o, Register::rcx, owner_length, false);
+        emit_mov_imm(w, o, 1, Register::rax);
+        emit_bind_label(w, o, 0, 2);
+        memory_entry_end(w, o, entry_bytes_resize);
+        // __au_runtime_values_resize(owner*, count, stride, fill*): elements
+        // past the old count are copies of the fill.
+        const i64 entry_values_resize = w.intern_runtime("__au_runtime_values_resize");
+        memory_entry_begin(w, o, entry_values_resize);
+        emit_load(w, o, owner, Register::r10, false);
+        emit_load(w, o, owner_length, Register::rcx, false);
+        emit_store(w, o, Register::rcx, old, false);
+        memory_record(w, o, 8, true);
+        memory_argument(w, o, 16, 40);
+        memory_argument(w, o, 24, 48);
+        memory_call(w, o, m, 7);
+        emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
+        emit_branch(w, o, 4, 0, 2);
+        emit_store(w, o, Register::rax, identity, false);
+        memory_bytes(w, o, 56);
+        emit_load(w, o, owner, Register::r10, false);
+        emit_load(w, o, identity, Register::rax, false);
+        emit_store(w, o, Register::rax, owner_allocation, false);
+        const i64 resized = w.pack_address(0, 56);
+        emit_load(w, o, resized, Register::rcx, false);
+        emit_store(w, o, Register::rcx, owner_length, false);
+        emit_alu_load(w, o, AluOp::compare, old, Register::rcx);
+        emit_branch(w, o, 6, 0, 3);
+        memory_payload(w, o, m, 56);
+        memory_fill(w, o, 32, 64, 56);
+        emit_bind_label(w, o, 0, 3);
+        emit_mov_imm(w, o, 1, Register::rax);
+        emit_bind_label(w, o, 0, 2);
+        memory_entry_end(w, o, entry_values_resize);
+        // __au_runtime_values_at(owner*, index, stride, element*)
+        const i64 element = w.pack_address(0, 32);
+        const i64 stride = w.pack_address(0, 24);
+        const i64 entry_values_at = w.intern_runtime("__au_runtime_values_at");
+        memory_entry_begin(w, o, entry_values_at);
+        memory_record(w, o, 8, true);
+        memory_argument(w, o, 16, 40);
+        memory_argument(w, o, 24, 48);
+        memory_call(w, o, m, 6);
+        emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
+        emit_branch(w, o, 4, 4, 0);
+        emit_mov_rr(w, o, Register::rax, Register::rsi);
+        emit_load(w, o, element, Register::rdi, false);
+        emit_load(w, o, stride, Register::rcx, false);
+        emit_cld(w, o);
+        emit_rep_movsb(w, o);
+        memory_entry_end(w, o, entry_values_at);
+        // __au_runtime_values_set(owner*, index, stride, element*): 1 written.
+        const i64 entry_values_set = w.intern_runtime("__au_runtime_values_set");
+        memory_entry_begin(w, o, entry_values_set);
+        memory_record(w, o, 8, true);
+        memory_argument(w, o, 16, 40);
+        memory_argument(w, o, 24, 48);
+        memory_call(w, o, m, 6);
+        emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
+        emit_branch(w, o, 4, 0, 2);
+        emit_mov_rr(w, o, Register::rax, Register::rdi);
+        emit_load(w, o, element, Register::rsi, false);
+        emit_load(w, o, stride, Register::rcx, false);
+        emit_cld(w, o);
+        emit_rep_movsb(w, o);
+        emit_mov_imm(w, o, 1, Register::rax);
+        emit_bind_label(w, o, 0, 2);
+        memory_entry_end(w, o, entry_values_set);
+        // __au_runtime_bytes_drop(owner*): a pristine descriptor is inert.
+        const i64 entry_bytes_drop = w.intern_runtime("__au_runtime_bytes_drop");
+        memory_entry_begin(w, o, entry_bytes_drop);
+        memory_pristine(w, o, 8);
+        emit_branch(w, o, 4, 0, 2);
+        memory_record(w, o, 8, true);
+        memory_call(w, o, m, 8);
+        emit_load(w, o, owner, Register::r10, false);
+        word = 0;
+        while (word < 32) {
+            const i64 lane = w.pack_address(2, word);
+            emit_store_imm(w, o, 0, lane, false);
+            word = word + 8;
+        }
+        emit_bind_label(w, o, 0, 2);
+        return memory_entry_end(w, o, entry_bytes_drop);
     }
     auto module_retained_integrity(EmitWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
         const compiler_ir_instructions::InstructionStore& s) -> bool {
@@ -815,7 +1245,7 @@ export namespace compiler_x86 {
         }
         const bool resources = module_resource_graph(w, m, s);
         const bool private_graph = resources || module_service_graph(w, m);
-        w.set_owned_span_runtime(resources);
+        w.set_runtime_mode(resources, hosted_region(m));
         if (!o.object_mode()) {
             w.text("# Aurora compiler output: validated typed IR, x86-64 bootstrap\n.text\n");
         }

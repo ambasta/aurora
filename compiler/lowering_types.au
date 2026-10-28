@@ -1034,6 +1034,14 @@ export namespace compiler_lowering {
     // The designated hosted runtime module aurora.host, an imported unit (never
     // the root) whose functions alone may use the HostFiles system primitives.
     auto host_runtime_unit(compiler_resolver::Session& session, i64 unit) -> bool {
+        return runtime_unit(session, unit, "host");
+    }
+    // The hosted memory runtime aurora.memory, whose functions alone may use
+    // the memory primitives.
+    auto memory_runtime_unit(compiler_resolver::Session& session, i64 unit) -> bool {
+        return runtime_unit(session, unit, "memory");
+    }
+    auto runtime_unit(compiler_resolver::Session& session, i64 unit, builtin::span<const u8> leaf) -> bool {
         if (unit < 0 || unit >= session.module_count() || compiler_resolver::mw(session, unit, 13) == 0) {
             return false;
         }
@@ -1041,7 +1049,7 @@ export namespace compiler_lowering {
         const compiler_resolver::SyntaxRow definition = session.syntax(row.word(10));
         const compiler_resolver::SyntaxRow header = session.syntax(definition.word(7));
         const i64 name = compiler_resolver::source_name_range(session, header.word(0), header.word(6));
-        if (name < 0 || !compiler_resolver::leaf_is(session, name, "host")) {
+        if (name < 0 || !compiler_resolver::leaf_is(session, name, leaf)) {
             return false;
         }
         const i64 parent = compiler_resolver::prefix_parent(session, name);
@@ -1069,23 +1077,46 @@ export namespace compiler_lowering {
         if (!hosted) {
             return true;
         }
-        return count == 2 && result == exit && parameter_kind(session, symbol, 0)
-            == compiler_resolver::ResolvedTypeKind::host_files && parameter_borrowed(session, symbol, 0)
-            && !parameter_const(session, symbol, 0) && parameter_kind(session, symbol, 1)
-            == compiler_resolver::ResolvedTypeKind::byte_span && !parameter_borrowed(session, symbol, 1);
+        // The optional region follows the capability: main(files, region, arguments).
+        const i64 span = count - 1;
+        return (count == 2 || (count == 3 && parameter_kind(session, symbol, 1)
+            == compiler_resolver::ResolvedTypeKind::byte_region && !parameter_borrowed(session, symbol, 1))) && result
+            == exit && parameter_kind(session, symbol, 0) == compiler_resolver::ResolvedTypeKind::host_files
+            && parameter_borrowed(session, symbol, 0) && !parameter_const(session, symbol, 0) && parameter_kind(session,
+            symbol, span) == compiler_resolver::ResolvedTypeKind::byte_span && !parameter_borrowed(session, symbol,
+            span);
     }
     // Whether the runtime module defines host::LEAF, a hook the hosted entry calls.
     auto host_runtime_hook(compiler_resolver::Session& session, builtin::span<const u8> leaf) -> bool {
+        return host_runtime_defines(session, false, "host", leaf);
+    }
+    // Whether the memory runtime module defines the functions a hosted entry
+    // taking a region reaches: memory::start, finish, allocate, payload, at,
+    // set, element, resize and drop.
+    auto host_memory_runtime(compiler_resolver::Session& session) -> bool {
+        return memory_runtime_defines(session, "start") && memory_runtime_defines(session, "finish")
+            && memory_runtime_defines(session, "allocate") && memory_runtime_defines(session, "payload")
+            && memory_runtime_defines(session, "at") && memory_runtime_defines(session, "set")
+            && memory_runtime_defines(session, "element") && memory_runtime_defines(session, "resize")
+            && memory_runtime_defines(session, "drop");
+    }
+    auto memory_runtime_defines(compiler_resolver::Session& session, builtin::span<const u8> leaf) -> bool {
+        return host_runtime_defines(session, true, "memory", leaf);
+    }
+    // Whether runtime module aurora.host (aurora.memory for MEMORY) defines
+    // SPACE::LEAF.
+    auto host_runtime_defines(compiler_resolver::Session& session, bool memory, builtin::span<const u8> space,
+        builtin::span<const u8> leaf) -> bool {
         i64 unit = 0;
         while (unit < session.module_count() && session.good()) {
-            if (host_runtime_unit(session, unit)) {
+            if ((!memory && host_runtime_unit(session, unit)) || (memory && memory_runtime_unit(session, unit))) {
                 i64 symbol = compiler_resolver::first_symbol(session, unit,
                     compiler_resolver::DeclarationKind::function);
                 while (symbol >= 0 && session.good()) {
                     const i64 name = compiler_resolver::mw(session, symbol, 3);
                     const i64 parent = compiler_resolver::prefix_parent(session, name);
                     if (compiler_resolver::leaf_is(session, name, leaf) && compiler_resolver::plain_is(session, parent,
-                        "host")) {
+                        space)) {
                         return true;
                     }
                     symbol = compiler_resolver::mw(session, symbol, 14);
@@ -1147,8 +1178,10 @@ export namespace compiler_lowering {
             const i64 first_type = parameter_type(session, symbol, 0);
             service = compiler_resolver::service_kind(tk(session, first_type));
         }
-        const bool console_region = service && count >= 2 && parameter_kind(session, symbol, 0)
-            == compiler_resolver::ResolvedTypeKind::console_session && parameter_kind(session, symbol, 1)
+        // The mixed prefixes ConsoleSession& or HostFiles&, then one ByteRegion.
+        const bool console_region = service && count >= 2 && (parameter_kind(session, symbol, 0)
+            == compiler_resolver::ResolvedTypeKind::console_session || parameter_kind(session, symbol, 0)
+            == compiler_resolver::ResolvedTypeKind::host_files) && parameter_kind(session, symbol, 1)
             == compiler_resolver::ResolvedTypeKind::byte_region;
         if (service) {
             i64 services = 0;
@@ -1219,6 +1252,11 @@ export namespace compiler_lowering {
             && compiler_resolver::plain_is(session, entry_name, "main") && (!host_runtime_hook(session, "start")
             || !host_runtime_hook(session, "finish"))) {
             return fail(session, LoweringError::host_operation_requires_runtime_module, source);
+        }
+        if (count == 3 && parameter_kind(session, symbol, 0) == compiler_resolver::ResolvedTypeKind::host_files
+            && entry_unit >= 0 && compiler_resolver::mw(session, entry_unit, 13) == 0
+            && compiler_resolver::plain_is(session, entry_name, "main") && !host_memory_runtime(session)) {
+            return fail(session, LoweringError::hosted_region_requires_memory_runtime, source);
         }
         if (borrowed > 0 && !service) {
             const i64 first = parameter_type(session, symbol, 0);

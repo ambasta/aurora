@@ -1,0 +1,9 @@
+export module reach.memory;
+import aurora.memory;
+
+// A library that imports the memory runtime cannot use its primitives.
+export namespace reach {
+    auto peek(builtin::HostFiles& files) -> u64 {
+        return files.memory_load(0u64, 0u64);
+    }
+}

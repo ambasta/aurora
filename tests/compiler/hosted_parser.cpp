@@ -2663,7 +2663,7 @@ void rawInstructionAdmission() {
         services.push_back({{{acquire(id)}}, Reason::service_loan_identity});
         services.push_back({{{release(id)}}, Reason::service_release});
     }
-    // Kinds 0..6 (HostFiles is 6) and operations 0..20 are the closed tables.
+    // Kinds 0..6 (HostFiles is 6) and operations 0..28 are the closed tables.
     for (const auto kind : {std::int64_t{-1}, std::int64_t{7}, INT64_MAX}) {
         services.push_back({{{acquire(1, 16, kind)}}, Reason::service_loan_root});
         services.push_back({{{release(1, kind)}}, Reason::service_release});
@@ -2677,7 +2677,7 @@ void rawInstructionAdmission() {
     services.push_back({{{operation(1, 5)}}, Reason::service_operation_kind});
     services.push_back({{{operation(8, 0)}}, Reason::service_operation_kind});
     services.push_back({{{operation(9, 0)}}, Reason::service_operation_kind});
-    for (const auto op : {INT64_MIN, std::int64_t{-1}, std::int64_t{21}, INT64_MAX})
+    for (const auto op : {INT64_MIN, std::int64_t{-1}, std::int64_t{29}, INT64_MAX})
         services.push_back({{{operation(op, 0)}}, Reason::service_operation});
     for (const auto &[op, kind, offset, reason] :
          std::vector<std::tuple<std::int64_t, std::int64_t, std::int64_t, Reason>>{
