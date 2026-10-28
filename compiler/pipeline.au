@@ -180,6 +180,8 @@ export namespace compiler_ir_metadata {
         value.typed(r == MetadataError::span_element_leaves, "typed span element exceeds copied class leaf limits");
         value.typed(r == MetadataError::span_element_storage, "typed span element storage exceeds 520 bytes");
         value.typed(r == MetadataError::span_value_spill, "typed span metadata requires exact span spill");
+        value.typed(r == MetadataError::host_layout, "noncanonical sealed HostFiles result layout");
+        value.typed(r == MetadataError::host_fields, "noncanonical sealed HostFiles result fields");
         return value;
     }
 }
@@ -1474,8 +1476,11 @@ export namespace compiler_pipeline {
             }
             const bool receiver = declaration.borrowed_root_count() != 0
                 || compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver());
+            // The hosted entry calls host::start and host::finish, so they are roots.
+            const bool root = declaration.scope() == 0 || compiler_x86::hosted_hook(metadata, callable, 0)
+                || compiler_x86::hosted_hook(metadata, callable, 1);
             const compiler_ir_graph::FunctionRow function = compiler_ir_graph::FunctionRow(first, edge - first,
-                receiver, service_entry(metadata, declaration), declaration.scope() == 0);
+                receiver, service_entry(metadata, declaration), root);
             if (!compiler_ir_graph::set_function(input, callable, function)) {
                 return false;
             }

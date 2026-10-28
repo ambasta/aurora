@@ -83,7 +83,7 @@ def tree_files(suffixes=(".py", *CPP_SUFFIXES), directories=None):
 
 
 # Aurora product sources; test drivers and fixtures keep their own layout.
-AURORA_DIRECTORIES = ("compiler", "library", "kernel", "examples")
+AURORA_DIRECTORIES = ("compiler", "library", "kernel", "examples", "runtime")
 
 
 def aurora_check(formatter):

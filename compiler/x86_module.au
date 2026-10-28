@@ -672,6 +672,123 @@ export namespace compiler_x86 {
         }
         return w.ok();
     }
+    // The hosted process entry `_start`, emitted for a root-module hosted main.
+    // The Linux initial stack holds argc, then argv; the argument strings form
+    // one contiguous block of NUL-terminated bytes (each argv[i] must follow the
+    // previous string's NUL, or the entry traps), which main receives as its
+    // readonly `arguments` span. The zeroed session block below the record is
+    // the HostFiles grant. host::start first replaces closed standard streams
+    // (a failure exits 1 without main); after main, host::finish discards
+    // uncommitted outputs and closes descriptors; exit_group reports the
+    // HostExit ordinal (success 0, failure 1, usage 2). No C runtime or loader
+    // code is involved.
+    auto module_emit_hosted_entry(EmitWorkspace& w, ObjectWorkspace& o,
+        const compiler_ir_metadata::MetadataStore& m) -> bool {
+        const i64 entry = hosted_entry(m);
+        if (entry < 0) {
+            return w.ok();
+        }
+        const i64 start = hosted_hook_callable(m, 0);
+        const i64 finish = hosted_hook_callable(m, 1);
+        if (start < 0 || finish < 0) {
+            return w.fail();
+        }
+        const i64 name = w.intern_runtime("_start");
+        if (!w.begin_function(2, name, -1)) {
+            return false;
+        }
+        if (o.object_mode()) {
+            o.begin_function_labels(4);
+            o.begin_object_symbol(4, 128, false);
+            o.object_name_text("_start");
+            o.end_object_symbol_name();
+            emit_object_status(w, o);
+        } else {
+            w.text(".globl _start\n.type _start, @function\n_start:\n");
+        }
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::rbp, Register::rbp);
+        const i64 argc = w.pack_address(1, 0);
+        emit_load(w, o, argc, Register::rcx, false);
+        const i64 argv = w.pack_address(1, 8);
+        emit_lea(w, o, argv, Register::rsi);
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::rdx, Register::rdx);
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::r9, Register::r9);
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::r10, Register::r10);
+        emit_alu_rr(w, o, AluOp::test, Register::rcx, Register::rcx);
+        emit_branch(w, o, 4, 0, 1);
+        // RDX stays zero as the index register; R8 walks the block.
+        emit_indexed_load(w, o, Register::rsi, Register::rdx, indexed_address(1, 0), false);
+        emit_mov_rr(w, o, Register::rax, Register::r9);
+        emit_mov_rr(w, o, Register::rax, Register::r8);
+        emit_bind_label(w, o, 0, 0);
+        emit_indexed_load(w, o, Register::rsi, Register::rdx, indexed_address(1, 0), false);
+        emit_alu_rr(w, o, AluOp::compare, Register::rax, Register::r8);
+        emit_branch(w, o, 5, 4, 0);
+        emit_bind_label(w, o, 0, 2);
+        emit_indexed_load(w, o, Register::r8, Register::rdx, indexed_address(1, 0), true);
+        emit_alu_imm(w, o, AluOp::add, 1, Register::r8);
+        emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
+        emit_branch(w, o, 5, 0, 2);
+        emit_alu_imm(w, o, AluOp::add, 8, Register::rsi);
+        emit_alu_imm(w, o, AluOp::subtract, 1, Register::rcx);
+        emit_branch(w, o, 5, 0, 0);
+        emit_mov_rr(w, o, Register::r8, Register::r10);
+        emit_alu_rr(w, o, AluOp::subtract, Register::r9, Register::r10);
+        emit_bind_label(w, o, 0, 1);
+        // R9 is the block address and R10 its length (both zero without argv).
+        emit_alu_imm(w, o, AluOp::bit_and, -16, Register::rsp);
+        const i64 session = host_session_bytes();
+        emit_reserve_stack(w, o, session);
+        emit_mov_rr(w, o, Register::rsp, Register::rdi);
+        emit_alu_rr(w, o, AluOp::bit_xor, Register::rax, Register::rax);
+        emit_mov_imm(w, o, session, Register::rcx);
+        emit_cld(w, o);
+        emit_rep_stosb(w, o);
+        emit_mov_rr(w, o, Register::rsp, Register::r8);
+        // Private record: grant, generation, then the 56-byte arguments span;
+        // the exit status is kept at +72.
+        emit_reserve_stack(w, o, 80);
+        const i64 grant = w.pack_address(1, 0);
+        emit_store(w, o, Register::r8, grant, false);
+        const i64 generation = w.pack_address(1, 8);
+        emit_store_imm(w, o, 1, generation, false);
+        i64 word = 16;
+        while (word < 72) {
+            const i64 lane = w.pack_address(1, word);
+            emit_store_imm(w, o, 0, lane, false);
+            word = word + 8;
+        }
+        const i64 address = w.pack_address(1, 24);
+        emit_store(w, o, Register::r9, address, false);
+        const i64 length = w.pack_address(1, 64);
+        emit_store(w, o, Register::r10, length, false);
+        const i64 status = w.pack_address(1, 72);
+        emit_store_imm(w, o, 1, status, false);
+        emit_mov_rr(w, o, Register::rsp, Register::r11);
+        direct_target(w, o, m, start);
+        emit_alu_rr(w, o, AluOp::test, Register::rax, Register::rax);
+        emit_branch(w, o, 5, 0, 3);
+        emit_mov_rr(w, o, Register::rsp, Register::r11);
+        direct_target(w, o, m, entry);
+        emit_alu_imm(w, o, AluOp::compare, 2, Register::rax);
+        emit_branch(w, o, 7, 4, 0);
+        emit_store(w, o, Register::rax, status, false);
+        emit_bind_label(w, o, 0, 3);
+        emit_mov_rr(w, o, Register::rsp, Register::r11);
+        direct_target(w, o, m, finish);
+        emit_load(w, o, status, Register::rdi, false);
+        emit_mov_imm(w, o, 231, Register::rax);
+        const i64 marker = w.intern_runtime("__au_linux_system_call");
+        w.record_call(2, marker);
+        emit_system_call(w, o);
+        emit_trap_instruction(w, o);
+        if (o.object_mode()) {
+            o.end_object_symbol();
+        } else {
+            w.text(".size _start, .-_start\n");
+        }
+        return w.finish_function();
+    }
     auto module_retained_integrity(EmitWorkspace& w, const compiler_ir_metadata::MetadataStore& m,
         const compiler_ir_instructions::InstructionStore& s) -> bool {
         if (m.status() != compiler_ir_metadata::MetadataStatus::success || s.status()
@@ -709,6 +826,7 @@ export namespace compiler_x86 {
             at = at + 1;
         }
         module_emit_reflection(w, o, m, s, binding, reflection);
+        module_emit_hosted_entry(w, o, m);
         i64 trap = 0;
         while (trap < 4) {
             emit_bind_label(w, o, 4, trap);

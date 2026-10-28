@@ -1,0 +1,2 @@
+"module host_rejection;\nimport aurora.host;\nauto main(builtin::HostFiles& files,builtin::span<const u8> a)->builtin::HostExit{return builtin::HostExit::success;}\n"	aurorac: error AU4001: reserved compiler module found in a module root: aurora.host (aurora.* modules load only from the compiler's runtime root)
+"module host_rejection;\nimport aurora.tools;\nauto f()->u64{return tools::answer();}\n"	aurorac: error AU4001: reserved compiler module found in a module root: aurora.tools (aurora.* modules load only from the compiler's runtime root)

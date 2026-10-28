@@ -1,0 +1,136 @@
+; HostFiles (type kind 22, service kind 6) and its Linux-binding primitives,
+; spelled as integers: 9 load, 14 system_chunk, 20 system_identity. They are
+; admitted only in functions of module aurora.host (native names
+; __au_<mode>_m2_6aurora4host_...).
+
+; CASE: accepted host primitives
+; RUN: emit
+; CHECK: syscall
+; CHECK-NOT: __au_runtime_
+; RUN: stack-facts
+; CHECK-JSON: functions.__au_v_m2_6aurora4host_n1_4host_d8identity.calls {"__au_linux_system_call":64}
+function __au_v_m2_6aurora4host_n1_4host_d8identity
+  result i64
+  params [22]
+  frame 32
+  service 16
+    BindServiceParameter 0 16 6
+    ServiceOperation 16 20 0 6
+    Return
+end
+function __au_v_m2_6aurora4host_n1_4host_d4word
+  result u64
+  params [22]
+  frame 32
+  service 16
+    BindServiceParameter 0 16 6
+    Constant 8 u64
+    ServiceOperation 16 9 0 6
+    Return
+end
+
+; CASE: rejected: primitive outside the runtime module
+; BASE: accepted host primitives
+; RUN: verify
+; EXPECT-ERROR: service operation
+@@ -1 +1 @@
+-function __au_v_m2_6aurora4host_n1_4host_d8identity
++function __au_v_m2_5other4host_n1_4host_d8identity
+
+; CASE: rejected: primitive under another kind
+; BASE: accepted host primitives
+; RUN: verify
+; EXPECT-ERROR: service operation
+@@ -7 +7 @@
+-    ServiceOperation 16 20 0 6
++    ServiceOperation 16 20 0 5
+
+; CASE: rejected: unknown primitive
+; BASE: accepted host primitives
+; RUN: verify
+; EXPECT-ERROR: service operation
+@@ -7 +7 @@
+-    ServiceOperation 16 20 0 6
++    ServiceOperation 16 21 0 6
+
+; CASE: rejected: scalar primitive with a result object
+; BASE: accepted host primitives
+; RUN: verify
+; EXPECT-ERROR: service operation
+@@ -7 +7 @@
+-    ServiceOperation 16 20 0 6
++    ServiceOperation 16 20 8 6
+
+; CASE: rejected: mistyped primitive offset
+; BASE: accepted host primitives
+; RUN: verify
+; EXPECT-ERROR: current value
+@@ -16 +16 @@
+-    Constant 8 u64
++    Constant 8 i64
+
+; CASE: rejected: primitive without its capability
+; BASE: accepted host primitives
+; RUN: verify
+; EXPECT-ERROR: service
+@@ -6 +6 @@
+-    BindServiceParameter 0 16 6
++    Constant 0 i64
+
+; CASE: accepted chunk read
+; RUN: emit
+; CHECK: syscall
+layout __au_host_chunk [(enum __au_host_status display=builtin::HostStatus) u64 u8*504]
+fields __au_host_chunk [((enum __au_host_status display=builtin::HostStatus) 0 1 false) (u64 1 1 false) (u8 2 504 true)]
+enum __au_host_status 10
+function __au_v_m2_6aurora4host_n1_4host_d5chunk
+  result u64
+  params [22]
+  frame 560
+  slot 560 (enum __au_host_status display=builtin::HostStatus)
+  slot 552 u64
+repeat 504
+  slot {544,-1} u8
+endrepeat
+  object 560 __au_host_chunk false
+  service 16
+    BindServiceParameter 0 16 6
+    BeginObject 560
+    Constant -1 i64
+    Push
+    Constant 0 u64
+    Push
+    ServiceOperation 16 14 560 6
+    EndObject 560
+    Constant 0 u64
+    Return
+end
+
+; CASE: rejected: chunk over an initialized result
+; BASE: accepted chunk read
+; RUN: verify
+; EXPECT-ERROR: sample
+@@ -21 +21 @@
+-    ServiceOperation 16 14 560 6
++    ServiceOperation 16 14 16 6
+
+; CASE: rejected: noncanonical chunk layout
+; BASE: accepted chunk read
+; RUN: verify
+; EXPECT-ERROR: noncanonical sealed HostFiles result layout
+@@ -1,2 +1,2 @@
+-layout __au_host_chunk [(enum __au_host_status display=builtin::HostStatus) u64 u8*504]
+-fields __au_host_chunk [((enum __au_host_status display=builtin::HostStatus) 0 1 false) (u64 1 1 false) (u8 2 504 true)]
++layout __au_host_chunk [u64 u64 u8*504]
++fields __au_host_chunk [(u64 0 1 false) (u64 1 1 false) (u8 2 504 true)]
+@@ -8 +8 @@
+-  slot 560 (enum __au_host_status display=builtin::HostStatus)
++  slot 560 u64
+
+; CASE: rejected: noncanonical status enum
+; BASE: accepted chunk read
+; RUN: verify
+; EXPECT-ERROR: sealed service enum
+@@ -3 +3 @@
+-enum __au_host_status 10
++enum __au_host_status 9

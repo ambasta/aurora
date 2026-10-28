@@ -1,0 +1,304 @@
+module host_files_probe;
+import aurora.host;
+
+// The HostFiles test driver. Its arguments are a script of operations, each
+// one word followed by its operands; every operation prints one line,
+// "ORDINAL OPERATION STATUS [VALUE]". An id operand is @N, the id the Nth
+// operation returned, or a decimal literal, so stale, forged and foreign ids
+// are ordinary data.
+//
+//   dir PATH            open_directory
+//   open DIR PATH       open_beneath (prints the size)
+//   read FILE OFFSET    read (prints the count and the bytes)
+//   create PATH         create_output
+//   write OUT TEXT      write
+//   fill OUT KIB        write KIB KiB of 'x', stopping at the first failure
+//   commit OUT          commit
+//   discard OUT         discard
+//   print TEXT          print to stdout; eprint TEXT prints to stderr
+//   exit success|failure|usage
+
+class Word {
+    i64 first;
+    i64 length;
+public:
+    Word(i64 begin, i64 count) : first(begin), length(count) {
+    }
+    auto begin() const -> i64 {
+        return first;
+    }
+    auto count() const -> i64 {
+        return length;
+    }
+};
+
+auto argument(builtin::span<const u8> arguments, i64 index) -> Word {
+    i64 at = 0;
+    i64 begin = 0;
+    i64 ordinal = 0;
+    while (at < arguments.size()) {
+        if (arguments.at(at) == 0u8) {
+            if (ordinal == index) {
+                const Word result = Word(begin, at - begin);
+                return result;
+            }
+            ordinal = ordinal + 1;
+            begin = at + 1;
+        }
+        at = at + 1;
+    }
+    const Word missing = Word(-1, 0);
+    return missing;
+}
+
+auto is(builtin::span<const u8> word, builtin::span<const u8> text) -> bool {
+    if (word.size() != text.size()) {
+        return false;
+    }
+    i64 at = 0;
+    while (at < word.size()) {
+        if (word.at(at) != text.at(at)) {
+            return false;
+        }
+        at = at + 1;
+    }
+    return true;
+}
+
+auto number(builtin::span<const u8> word, i64 first) -> u64 {
+    u64 value = 0u64;
+    i64 at = first;
+    while (at < word.size() && word.at(at) >= '0' && word.at(at) <= '9') {
+        value = value * 10u64 + u64(word.at(at) - '0');
+        at = at + 1;
+    }
+    return value;
+}
+
+auto decimal(builtin::HostFiles& files, u64 value) -> builtin::HostStatus {
+    array<u8, 21> digits = "000000000000000000000";
+    i64 at = 20;
+    digits[20] = ' ';
+    u64 rest = value;
+    while (at == 20 || rest > 0u64) {
+        at = at - 1;
+        digits[at] = u8(48u64 + rest % 10u64);
+        rest = rest / 10u64;
+    }
+    const builtin::span<const u8> all = borrow_bytes(digits);
+    const builtin::span<const u8> text = all.subspan(at, 21 - at);
+    return files.print(builtin::HostStream::stdout, text);
+}
+
+auto status(builtin::HostFiles& files, builtin::HostStatus value) -> builtin::HostStatus {
+    if (value == builtin::HostStatus::success) {
+        return files.print(builtin::HostStream::stdout, "success");
+    }
+    if (value == builtin::HostStatus::invalid_handle) {
+        return files.print(builtin::HostStream::stdout, "invalid_handle");
+    }
+    if (value == builtin::HostStatus::not_found) {
+        return files.print(builtin::HostStream::stdout, "not_found");
+    }
+    if (value == builtin::HostStatus::denied) {
+        return files.print(builtin::HostStream::stdout, "denied");
+    }
+    if (value == builtin::HostStatus::escape) {
+        return files.print(builtin::HostStream::stdout, "escape");
+    }
+    if (value == builtin::HostStatus::not_regular) {
+        return files.print(builtin::HostStream::stdout, "not_regular");
+    }
+    if (value == builtin::HostStatus::exhausted) {
+        return files.print(builtin::HostStream::stdout, "exhausted");
+    }
+    if (value == builtin::HostStatus::too_large) {
+        return files.print(builtin::HostStream::stdout, "too_large");
+    }
+    if (value == builtin::HostStatus::invalid_path) {
+        return files.print(builtin::HostStream::stdout, "invalid_path");
+    }
+    return files.print(builtin::HostStream::stdout, "failed");
+}
+
+// Begins an output line: "ORDINAL OPERATION STATUS ".
+auto report(builtin::HostFiles& files, i64 ordinal, builtin::span<const u8> operation,
+    builtin::HostStatus value) -> builtin::HostStatus {
+    decimal(files, u64(ordinal));
+    files.print(builtin::HostStream::stdout, operation);
+    files.print(builtin::HostStream::stdout, " ");
+    status(files, value);
+    return files.print(builtin::HostStream::stdout, " ");
+}
+
+auto chunk_line(builtin::HostFiles& files, u64 file, u64 offset) -> builtin::HostStatus {
+    const builtin::HostChunk chunk = files.read(file, offset);
+    status(files, chunk.status);
+    files.print(builtin::HostStream::stdout, " ");
+    decimal(files, chunk.count);
+    const array<u8, 504> bytes = chunk.bytes;
+    const builtin::span<const u8> all = borrow_bytes(bytes);
+    i64 shown = i64(chunk.count);
+    if (shown > 32) {
+        shown = 32;
+    }
+    const builtin::span<const u8> part = all.subspan(0, shown);
+    return files.print(builtin::HostStream::stdout, part);
+}
+
+auto fill(builtin::HostFiles& files, u64 output, u64 kibibytes) -> builtin::HostStatus {
+    const array<u8, 64> block = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+    const builtin::span<const u8> bytes = borrow_bytes(block);
+    u64 written = 0u64;
+    while (written < kibibytes * 16u64) {
+        const builtin::HostStatus result = files.write(output, bytes);
+        if (result != builtin::HostStatus::success) {
+            return result;
+        }
+        written = written + 1u64;
+    }
+    return builtin::HostStatus::success;
+}
+
+// The operation ordinal an @N operand names, or -1 for a literal.
+auto reference(builtin::span<const u8> word) -> i64 {
+    if (word.size() > 1 && word.at(0) == '@') {
+        const u64 ordinal = number(word, 1);
+        if (ordinal < 32u64) {
+            return i64(ordinal);
+        }
+        return 0;
+    }
+    return -1;
+}
+
+auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> builtin::HostExit {
+    array<u64, 32> ids = {
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64,
+        0u64
+    };
+    i64 index = 1;
+    i64 ordinal = 1;
+    i64 begin = 0;
+    while (begin >= 0 && ordinal < 32) {
+        const Word head = argument(arguments, index);
+        const Word first = argument(arguments, index + 1);
+        const Word second = argument(arguments, index + 2);
+        begin = head.begin();
+        if (begin >= 0) {
+            const builtin::span<const u8> operation = arguments.subspan(head.begin(), head.count());
+            i64 one_begin = 0;
+            i64 one_count = 0;
+            i64 two_begin = 0;
+            i64 two_count = 0;
+            if (first.begin() >= 0) {
+                one_begin = first.begin();
+                one_count = first.count();
+            }
+            if (second.begin() >= 0) {
+                two_begin = second.begin();
+                two_count = second.count();
+            }
+            const builtin::span<const u8> one = arguments.subspan(one_begin, one_count);
+            const builtin::span<const u8> two = arguments.subspan(two_begin, two_count);
+            i64 used = 2;
+            u64 id = number(one, 0);
+            const i64 named = reference(one);
+            if (named >= 0) {
+                id = ids[named];
+            }
+            if (is(operation, "dir")) {
+                const builtin::HostDirectoryResult result = files.open_directory(one);
+                report(files, ordinal, operation, result.status);
+                ids[ordinal] = result.id;
+            }
+            if (is(operation, "open")) {
+                const builtin::HostFileResult result = files.open_beneath(id, two);
+                report(files, ordinal, operation, result.status);
+                decimal(files, result.size);
+                ids[ordinal] = result.id;
+                used = 3;
+            }
+            if (is(operation, "read")) {
+                decimal(files, u64(ordinal));
+                files.print(builtin::HostStream::stdout, "read ");
+                chunk_line(files, id, number(two, 0));
+                used = 3;
+            }
+            if (is(operation, "create")) {
+                const builtin::HostOutputResult result = files.create_output(one);
+                report(files, ordinal, operation, result.status);
+                ids[ordinal] = result.id;
+            }
+            if (is(operation, "write")) {
+                const builtin::HostStatus result = files.write(id, two);
+                report(files, ordinal, operation, result);
+                used = 3;
+            }
+            if (is(operation, "fill")) {
+                const builtin::HostStatus result = fill(files, id, number(two, 0));
+                report(files, ordinal, operation, result);
+                used = 3;
+            }
+            if (is(operation, "commit")) {
+                const builtin::HostStatus result = files.commit(id);
+                report(files, ordinal, operation, result);
+            }
+            if (is(operation, "discard")) {
+                const builtin::HostStatus result = files.discard(id);
+                report(files, ordinal, operation, result);
+            }
+            if (is(operation, "print")) {
+                const builtin::HostStatus result = files.print(builtin::HostStream::stdout, one);
+                report(files, ordinal, operation, result);
+            }
+            if (is(operation, "eprint")) {
+                const builtin::HostStatus result = files.print(builtin::HostStream::stderr, one);
+                report(files, ordinal, operation, result);
+            }
+            if (is(operation, "exit")) {
+                if (is(one, "failure")) {
+                    return builtin::HostExit::failure;
+                }
+                if (is(one, "usage")) {
+                    return builtin::HostExit::usage;
+                }
+                return builtin::HostExit::success;
+            }
+            files.print(builtin::HostStream::stdout, "\n");
+            index = index + used;
+            ordinal = ordinal + 1;
+        }
+    }
+    return builtin::HostExit::success;
+}

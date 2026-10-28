@@ -1,0 +1,9 @@
+export module reach.primitive;
+import aurora.host;
+
+// A library that imports the runtime cannot use its private primitives.
+export namespace reach {
+    auto peek(builtin::HostFiles& files) -> u64 {
+        return files.load(0u64);
+    }
+}

@@ -86,7 +86,7 @@ export namespace compiler_x86 {
             return false;
         }
         const i64 kind = type_kind(metadata, parameter_type(metadata, callable, 0));
-        return kind == 19 || kind == 20;
+        return kind == 19 || kind == 20 || kind == 22;
     }
     auto port_service_record_bytes(const compiler_ir_metadata::MetadataStore& metadata, i64 callable) -> i64 {
         const i64 result = result_type(metadata, callable);
@@ -407,8 +407,9 @@ export namespace compiler_x86 {
         i64 at = 0;
         while (at < workspace.function_count()) {
             const FunctionFact row = workspace.function_at(at);
-            if ((row.kind() != 0 && row.kind() != 1) || !fact_name_valid(workspace, metadata, row.kind(), row.symbol())
-                || row.local() < 8) {
+            // Kind 2 is the hosted entry `_start`, named in the runtime table.
+            if ((row.kind() != 0 && row.kind() != 1 && row.kind() != 2) || !fact_name_valid(workspace, metadata,
+                row.kind(), row.symbol()) || row.local() < 8) {
                 return workspace.fail();
             }
             if (row.kind() == 0) {
@@ -634,6 +635,9 @@ export namespace compiler_x86 {
         }
         if (kind == 20) {
             return workspace.text("\"builtin::ServeSession\"");
+        }
+        if (kind == 22) {
+            return workspace.text("\"builtin::HostFiles\"");
         }
         if (kind == 12) {
             return workspace.text("\"builtin::ByteRegion\"");
@@ -1095,7 +1099,7 @@ export namespace compiler_x86 {
             workspace.byte(',');
             fact_emit_type(workspace, metadata, type);
             if ((at < 2 && compiler_ir_metadata::console_region_signature(metadata, row)) || type_kind(metadata, type)
-                == 19 || type_kind(metadata, type) == 20) {
+                == 19 || type_kind(metadata, type) == 20 || type_kind(metadata, type) == 22) {
                 workspace.text(",\"type_name\":");
                 fact_emit_service_kind(workspace, type_kind(metadata, type));
             }

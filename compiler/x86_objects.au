@@ -206,11 +206,204 @@ export namespace compiler_x86 {
         emit_mov_rr(workspace, object, Register::rsp, Register::r11);
         return bytes;
     }
+    // Traps unless the unsigned value in VALUE is at most LIMIT.
+    auto host_bound(EmitWorkspace& workspace, ObjectWorkspace& object, Register value, i64 limit) -> bool {
+        emit_alu_imm(workspace, object, AluOp::compare, limit, value);
+        return emit_branch(workspace, object, 7, 4, 0);
+    }
+    // Checks a session path [path, path + length) with room for its NUL, writes
+    // that NUL and leaves the absolute path address in PATH. BASE holds the
+    // session address; RCX and RAX are scratch.
+    auto host_path(EmitWorkspace& workspace, ObjectWorkspace& object, Register base, Register path,
+        Register length) -> bool {
+        const i64 last = host_session_bytes() - 1;
+        host_bound(workspace, object, path, last);
+        host_bound(workspace, object, length, last);
+        emit_indexed_lea(workspace, object, path, length, 0, Register::rcx);
+        host_bound(workspace, object, Register::rcx, last);
+        emit_alu_rr(workspace, object, AluOp::bit_xor, Register::rax, Register::rax);
+        emit_indexed_store(workspace, object, base, Register::rcx, indexed_address(1, 0), true);
+        return emit_indexed_lea(workspace, object, base, path, 0, path);
+    }
+    // Checks a session buffer [buffer, buffer + length) and leaves its absolute
+    // address in BUFFER. BASE holds the session address; RAX is scratch.
+    auto host_buffer(EmitWorkspace& workspace, ObjectWorkspace& object, Register base, Register buffer,
+        Register length) -> bool {
+        const i64 size = host_session_bytes();
+        host_bound(workspace, object, buffer, size);
+        host_bound(workspace, object, length, size);
+        emit_indexed_lea(workspace, object, buffer, length, 0, Register::rax);
+        host_bound(workspace, object, Register::rax, size);
+        return emit_indexed_lea(workspace, object, base, buffer, 0, buffer);
+    }
+    auto host_system_call(EmitWorkspace& workspace, ObjectWorkspace& object, i64 number) -> bool {
+        emit_mov_imm(workspace, object, number, Register::rax);
+        const i64 marker = workspace.intern_runtime("__au_linux_system_call");
+        workspace.record_call(2, marker);
+        return emit_system_call(workspace, object);
+    }
+    // The Linux binding's HostFiles primitives (operations 9..20). The grant at
+    // the spill is the session block's address; every offset and length is
+    // checked against host_session_bytes() first. System calls are emitted
+    // inline and return the raw kernel result (negative errno) in RAX.
+    auto emit_host_operation(EmitWorkspace& workspace, ObjectWorkspace& object,
+        const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> bool {
+        const i64 offset = operand_value(store, instruction, 0);
+        const i64 operation = operand_value(store, instruction, 1);
+        const i64 result = operand_value(store, instruction, 2);
+        const i64 grant = workspace.pack_address(0, offset);
+        const i64 size = host_session_bytes();
+        if (operation == 9 || operation == 11) {
+            i64 width = 8;
+            if (operation == 11) {
+                width = 1;
+            }
+            host_bound(workspace, object, Register::rax, size - width);
+            emit_load(workspace, object, grant, Register::rcx, false);
+            return emit_indexed_load(workspace, object, Register::rcx, Register::rax, indexed_address(1, 0), operation
+                == 11);
+        }
+        if (operation == 10 || operation == 12) {
+            i64 width = 8;
+            if (operation == 12) {
+                width = 1;
+            }
+            emit_pop(workspace, object, Register::rax);
+            emit_pop(workspace, object, Register::rdx);
+            host_bound(workspace, object, Register::rdx, size - width);
+            emit_load(workspace, object, grant, Register::rcx, false);
+            return emit_indexed_store(workspace, object, Register::rcx, Register::rdx, indexed_address(1, 0), operation
+                == 12);
+        }
+        if (operation == 13) { // openat2(directory, path, &open_how, 24) under a closed open mode
+            emit_pop(workspace, object, Register::r9);
+            emit_pop(workspace, object, Register::rdx);
+            emit_pop(workspace, object, Register::rsi);
+            emit_pop(workspace, object, Register::rdi);
+            host_bound(workspace, object, Register::r9, 4);
+            emit_load(workspace, object, grant, Register::r10, false);
+            host_path(workspace, object, Register::r10, Register::rsi, Register::rdx);
+            // Mode 0 directory, 1 regular file, 2 O_PATH probe, 3 exclusive
+            // create and 4 read-write (/dev/null for a closed standard stream)
+            // select fixed flags; modes 1..3 resolve beneath the directory and
+            // every mode refuses symlinks and magic links. Branch-free:
+            // flags = sum(mode == i) * flags_i, resolve = 6 + 8 * beneath.
+            emit_alu_rr(workspace, object, AluOp::bit_xor, Register::r8, Register::r8);
+            emit_mov_imm(workspace, object, 6, Register::r11);
+            i64 selector = 0;
+            while (selector < 5) {
+                emit_alu_rr(workspace, object, AluOp::bit_xor, Register::rcx, Register::rcx);
+                emit_alu_imm(workspace, object, AluOp::compare, selector, Register::r9);
+                emit_set_condition(workspace, object, 4, Register::rcx);
+                emit_imul_imm(workspace, object, host_open_flags(selector), Register::rcx, Register::rdx);
+                emit_alu_rr(workspace, object, AluOp::add, Register::rdx, Register::r8);
+                if (selector > 0 && selector < 4) {
+                    emit_imul_imm(workspace, object, 8, Register::rcx, Register::rdx);
+                    emit_alu_rr(workspace, object, AluOp::add, Register::rdx, Register::r11);
+                }
+                selector = selector + 1;
+            }
+            emit_reserve_stack(workspace, object, 32);
+            const i64 how = workspace.pack_address(1, 0);
+            emit_store(workspace, object, Register::r8, how, false);
+            // O_CREAT (0x40) alone selects mode 0600 (0x180); otherwise mode 0.
+            emit_mov_rr(workspace, object, Register::r8, Register::rax);
+            emit_alu_imm(workspace, object, AluOp::bit_and, 64, Register::rax);
+            emit_imul_imm(workspace, object, 6, Register::rax, Register::rax);
+            const i64 mode = workspace.pack_address(1, 8);
+            emit_store(workspace, object, Register::rax, mode, false);
+            const i64 resolve = workspace.pack_address(1, 16);
+            emit_store(workspace, object, Register::r11, resolve, false);
+            emit_lea(workspace, object, how, Register::rdx);
+            emit_mov_imm(workspace, object, 24, Register::r10);
+            host_system_call(workspace, object, 437);
+            return emit_release_stack(workspace, object, 32);
+        }
+        if (operation == 14) { // pread64(file, chunk.bytes, 504, offset) into a cleared HostChunk
+            emit_pop(workspace, object, Register::r8);
+            emit_pop(workspace, object, Register::r9);
+            const i64 base = workspace.pack_address(0, result);
+            emit_lea(workspace, object, base, Register::rdi);
+            emit_alu_rr(workspace, object, AluOp::bit_xor, Register::rax, Register::rax);
+            emit_mov_imm(workspace, object, 520, Register::rcx);
+            emit_cld(workspace, object);
+            emit_rep_stosb(workspace, object);
+            emit_mov_rr(workspace, object, Register::r9, Register::rdi);
+            const i64 bytes = workspace.pack_address(0, result - 16);
+            emit_lea(workspace, object, bytes, Register::rsi);
+            emit_mov_imm(workspace, object, 504, Register::rdx);
+            emit_mov_rr(workspace, object, Register::r8, Register::r10);
+            host_system_call(workspace, object, 17);
+            // A count above the 504 requested bytes is a broken kernel contract.
+            emit_alu_imm(workspace, object, AluOp::compare, 504, Register::rax);
+            emit_branch(workspace, object, 15, 4, 0);
+            // Negative errno: status failed (9), count 0. Otherwise success, count.
+            emit_alu_rr(workspace, object, AluOp::bit_xor, Register::rcx, Register::rcx);
+            emit_alu_rr(workspace, object, AluOp::test, Register::rax, Register::rax);
+            emit_set_condition(workspace, object, 8, Register::rcx);
+            emit_imul_imm(workspace, object, 9, Register::rcx, Register::rdx);
+            emit_store(workspace, object, Register::rdx, base, false);
+            emit_unary(workspace, object, UnaryOp::negate, Register::rcx);
+            emit_unary(workspace, object, UnaryOp::bit_not, Register::rcx);
+            emit_alu_rr(workspace, object, AluOp::bit_and, Register::rcx, Register::rax);
+            const i64 count = workspace.pack_address(0, result - 8);
+            return emit_store(workspace, object, Register::rax, count, false);
+        }
+        if (operation == 15) { // write(file, buffer, length)
+            emit_pop(workspace, object, Register::rdx);
+            emit_pop(workspace, object, Register::rsi);
+            emit_pop(workspace, object, Register::rdi);
+            emit_load(workspace, object, grant, Register::r10, false);
+            host_buffer(workspace, object, Register::r10, Register::rsi, Register::rdx);
+            return host_system_call(workspace, object, 1);
+        }
+        if (operation == 16) { // renameat(directory, from, directory, to)
+            emit_pop(workspace, object, Register::r9);
+            emit_pop(workspace, object, Register::r8);
+            emit_pop(workspace, object, Register::rdx);
+            emit_pop(workspace, object, Register::rsi);
+            emit_pop(workspace, object, Register::rdi);
+            emit_load(workspace, object, grant, Register::r10, false);
+            host_path(workspace, object, Register::r10, Register::rsi, Register::rdx);
+            host_path(workspace, object, Register::r10, Register::r8, Register::r9);
+            emit_mov_rr(workspace, object, Register::rdi, Register::rdx);
+            emit_mov_rr(workspace, object, Register::r8, Register::r10);
+            return host_system_call(workspace, object, 264);
+        }
+        if (operation == 17) { // unlinkat(directory, path, 0)
+            emit_pop(workspace, object, Register::rdx);
+            emit_pop(workspace, object, Register::rsi);
+            emit_pop(workspace, object, Register::rdi);
+            emit_load(workspace, object, grant, Register::r10, false);
+            host_path(workspace, object, Register::r10, Register::rsi, Register::rdx);
+            emit_alu_rr(workspace, object, AluOp::bit_xor, Register::rdx, Register::rdx);
+            return host_system_call(workspace, object, 263);
+        }
+        if (operation == 18) { // close(file)
+            emit_mov_rr(workspace, object, Register::rax, Register::rdi);
+            return host_system_call(workspace, object, 3);
+        }
+        if (operation == 19) { // fstat(file, buffer) into 144 session bytes
+            emit_pop(workspace, object, Register::rsi);
+            emit_pop(workspace, object, Register::rdi);
+            host_bound(workspace, object, Register::rsi, size - 144);
+            emit_load(workspace, object, grant, Register::r10, false);
+            emit_indexed_lea(workspace, object, Register::r10, Register::rsi, 0, Register::rsi);
+            return host_system_call(workspace, object, 5);
+        }
+        if (operation == 20) { // getpid()
+            return host_system_call(workspace, object, 39);
+        }
+        return workspace.fail();
+    }
     auto emit_service_operation(EmitWorkspace& workspace, ObjectWorkspace& object,
         const compiler_ir_instructions::InstructionStore& store, i64 instruction) -> bool {
         const i64 offset = operand_value(store, instruction, 0);
         const i64 operation = operand_value(store, instruction, 1);
         const i64 result = operand_value(store, instruction, 2);
+        if (operation > 8) {
+            return emit_host_operation(workspace, object, store, instruction);
+        }
         const i64 address_token3 = workspace.pack_address(0, offset);
         emit_load(workspace, object, address_token3, Register::rdi, false);
         const i64 address_token4 = workspace.pack_address(0, offset - 8);

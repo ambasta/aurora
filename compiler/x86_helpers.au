@@ -9,7 +9,78 @@ import aurora.compiler.lowering_kinds;
 
 export namespace compiler_x86 {
     auto service_type_kind(i64 kind) -> bool {
-        return kind == 14 || kind == 15 || kind == 16 || kind == 18 || kind == 19 || kind == 20;
+        return kind == 14 || kind == 15 || kind == 16 || kind == 18 || kind == 19 || kind == 20 || kind == 22;
+    }
+    // The zeroed session block the hosted entry reserves for the Linux binding
+    // and lends to it as the HostFiles grant. Every HostFiles primitive checks
+    // its byte offsets against this size before touching memory.
+    auto host_session_bytes() -> i64 {
+        return 16384;
+    }
+    // The openat2 flags of each HostFiles open mode: O_RDONLY | O_DIRECTORY,
+    // O_RDONLY | O_NONBLOCK, O_PATH | O_NOFOLLOW (all O_CLOEXEC), O_WRONLY |
+    // O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, and O_RDWR.
+    auto host_open_flags(i64 mode) -> i64 {
+        if (mode == 0) {
+            return 589824;
+        }
+        if (mode == 1) {
+            return 526336;
+        }
+        if (mode == 2) {
+            return 2752512;
+        }
+        if (mode == 3) {
+            return 655553;
+        }
+        return 2;
+    }
+    // The hosted entry: root-module main(builtin::HostFiles&, builtin::span<const u8>)
+    // -> builtin::HostExit, whose exact signature lowering already admitted.
+    auto hosted_entry(const compiler_ir_metadata::MetadataStore& metadata) -> i64 {
+        i64 at = 0;
+        while (at < metadata.callable_count()) {
+            const compiler_ir_metadata::CallableRow row = metadata.callable_at(at);
+            const compiler_ir_metadata::ByteRange name = row.name();
+            const i64 suffix = name.count() - 11;
+            if (row.scope() == 0 && row.value_parameter_count() == 2 && suffix > 0
+                && compiler_ir_metadata::named(metadata, compiler_ir_metadata::ByteRange(name.begin() + suffix, 11),
+                "_n0__d4main")) {
+                const compiler_ir_metadata::RawTypeRow first = metadata.type_at(row.value_parameter_begin());
+                const compiler_ir_metadata::RawTypeRow second = metadata.type_at(row.value_parameter_begin() + 1);
+                const compiler_ir_metadata::IndexRange types = row.types();
+                const compiler_ir_metadata::RawTypeRow result = metadata.type_at(types.begin());
+                if (first.kind() == 22 && second.kind() == 11 && result.kind() == 9
+                    && compiler_ir_metadata::named(metadata, result.name(), "__au_host_exit")) {
+                    return at;
+                }
+            }
+            at = at + 1;
+        }
+        return -1;
+    }
+    // The runtime's hooks host::start(builtin::HostFiles&) (hook 0), which the
+    // hosted entry calls before main, and host::finish (hook 1), called after
+    // main to discard uncommitted outputs and close descriptors.
+    auto hosted_hook(const compiler_ir_metadata::MetadataStore& metadata, i64 callable, i64 hook) -> bool {
+        const compiler_ir_metadata::CallableRow row = metadata.callable_at(callable);
+        if (row.scope() == 0 || row.value_parameter_count() != 1) {
+            return false;
+        }
+        if (hook == 0) {
+            return compiler_ir_metadata::named(metadata, row.name(), "__au_v_m2_6aurora4host_n1_4host_d5start");
+        }
+        return compiler_ir_metadata::named(metadata, row.name(), "__au_v_m2_6aurora4host_n1_4host_d6finish");
+    }
+    auto hosted_hook_callable(const compiler_ir_metadata::MetadataStore& metadata, i64 hook) -> i64 {
+        i64 at = 0;
+        while (at < metadata.callable_count()) {
+            if (hosted_hook(metadata, at, hook)) {
+                return at;
+            }
+            at = at + 1;
+        }
+        return -1;
     }
     auto operand_value(const compiler_ir_instructions::InstructionStore& store, i64 instruction, i64 field) -> i64 {
         return compiler_ir_instructions::call_value(store, instruction, field);

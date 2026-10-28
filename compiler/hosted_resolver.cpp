@@ -204,7 +204,8 @@ public:
                 reject();
             const auto &text = module(step.value1)->text;
             return HostedImport{sourceName(text, step.value2, step.value3, false),
-                                sourceName(text, step.value2, step.value3, true)};
+                                sourceName(text, step.value2, step.value3, true),
+                                step.value4 == 1};
         } catch (...) {
             failed = true;
             owner.release();

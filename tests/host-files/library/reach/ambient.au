@@ -1,0 +1,9 @@
+export module reach.ambient;
+import aurora.host;
+
+// Without a HostFiles loan there is nothing to pass to the runtime.
+export namespace reach {
+    auto finish() -> u64 {
+        return host::finish();
+    }
+}

@@ -426,8 +426,14 @@ export namespace compiler_lowering {
     auto is_method_expression(compiler_resolver::Session& session, i64 node) -> bool {
         const compiler_resolver::SyntaxRow syntax = session.syntax(node);
         const compiler_resolver::ResolvedRow resolved = session.resolved(node);
-        return syntax.expression_kind() == compiler_parser::NodeKind::method_call || resolved.operation()
+        return (syntax.expression_kind() == compiler_parser::NodeKind::method_call && resolved.operation()
+            != compiler_resolver::ResolvedOperation::host_operation) || resolved.operation()
             == compiler_resolver::ResolvedOperation::implicit_method_call;
+    }
+    // A method-syntax HostFiles operation forwarded to its runtime function.
+    auto is_host_operation(compiler_resolver::Session& session, i64 node) -> bool {
+        const compiler_resolver::ResolvedRow resolved = session.resolved(node);
+        return resolved.operation() == compiler_resolver::ResolvedOperation::host_operation;
     }
     auto is_constructor_expression(compiler_resolver::Session& session, i64 node) -> bool {
         const compiler_resolver::ResolvedRow resolved = session.resolved(node);

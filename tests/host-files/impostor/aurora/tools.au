@@ -1,0 +1,8 @@
+export module aurora.tools;
+
+// Every aurora.* name outside the compiler's own sources is reserved.
+export namespace tools {
+    auto answer() -> u64 {
+        return 42u64;
+    }
+}

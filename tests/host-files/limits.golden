@@ -1,0 +1,1 @@
+probe create tree/big.out fill @1 65536 fill @1 1 commit @1	exit 0 | stdout: 1 create success  / 2 fill success  / 3 fill too_large  / 4 commit failed | tree: a.txt:6 big.txt:1500 dirlink empty.txt:0 fifo link sub

@@ -298,6 +298,9 @@ export namespace compiler_lowering_projection {
         if (kind == compiler_resolver::ResolvedTypeKind::serve_session) {
             return 20;
         }
+        if (kind == compiler_resolver::ResolvedTypeKind::host_files) {
+            return 22;
+        }
         return -1;
     }
     auto push_type(ProjectionWorkspace& workspace, i64 identity, i64 base) -> bool {
