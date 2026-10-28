@@ -1,14 +1,16 @@
 export module aurora.memory;
 
-// The memory runtime of a hosted program's ByteRegion. When main takes a
-// region, the entry mints it over the session and the compiler emits the byte
+// The Linux memory runtime of a hosted program's ByteRegion. When main takes
+// a region (and the root module imports this module), the hosted entry mints
+// the region over its HostFiles session and the compiler defines the byte
 // runtime entries (__au_runtime_bytes_* and __au_runtime_values_*) that
 // generated owner code calls. Each entry checks that the descriptor's region
 // word names the session, passes the session as the HostFiles grant and the
-// descriptor's words as scalars to one function below, and copies elements
-// to and from the addresses those functions return. Nothing else can call
-// them: the namespace is private and the compiler's entries hold the only
-// grant made from a region.
+// descriptor's words as scalars to one function below, and copies elements to
+// and from the addresses those functions return. Nothing else can call them:
+// the namespace is private and the entries hold the only grant made from a
+// region. The semantics are those of the C++ adapter runtime/hosted_bytes.cpp
+// (see compiler/SERVICES.md, hosted memory).
 //
 // Every nonempty allocation is its own private anonymous mapping, slot 1..16383
 // of the compiler's mapping table, reached only through the memory primitives

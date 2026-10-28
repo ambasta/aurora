@@ -213,8 +213,12 @@ bridge uses the source/IR-reserved runtime prefix. Fixed generated reflection
 helpers also have verifier-reserved names and cannot name allocator dependencies.
 
 Scalar-only generated programs retain their old symbol visibility and gain no
-runtime symbols. Resource programs link the explicit hosted adapter; those host
-dependencies have not been removed.
+runtime symbols. Resource programs link the explicit hosted adapter, except a
+hosted program whose `main` takes a region: the compiler defines the same
+entries in it over the Aurora memory runtime `aurora.memory`, with the semantics
+above and the differences listed under [hosted memory](SERVICES.md#hosted-memory),
+so it links no C++. The C++ adapter remains under the C++-hosted compiler,
+formatter and test drivers.
 
 ## Runtime-sized copied-class ownership
 
