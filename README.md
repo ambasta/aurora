@@ -30,14 +30,13 @@ The public dependency image pinned in `ci/image` is the supported reproducible
 development environment, with the exact tools and firmware. With Docker or
 Podman installed, start from the repository root.
 
-Use a local copy of the checkpoint compiler named by `compiler/checkpoint.json`,
-or build it from source with `python3 scripts/bootstrap.py rebuild --output
-build/checkpoint-a62c3c45d8d3` (host tools and Git). Then enter
-the pinned shell with `./scripts/container.sh bash` and configure the two current
-Meson graphs with `-Dbootstrap_compiler`, as shown in the
-[source-bootstrap recipe](compiler/README.md#source-bootstrap). Meson accepts only
-the pinned executable digests rather than trusting a compiler path alone.
-Then run:
+Enter the pinned shell with `./scripts/container.sh bash`. The compiler builds
+from source with GCC alone: without `-Dbootstrap_compiler`, a small C++
+interpreter runs the compiler's sources to make the first compiler. The merge
+loop configures the two current Meson graphs with a cached compiler
+(`-Dbootstrap_compiler`), as shown in the
+[source-bootstrap recipe](compiler/README.md#source-bootstrap); the stage
+compares check it. Then run:
 
 ```sh
 make
@@ -164,14 +163,14 @@ export MESON_BUILD_DIR=build/gcc16
 meson test -C build/gcc16 --suite dev  # optional focused feedback
 make test                    # merge suite, nproc jobs with memory watchdog; no QEMU
 make run && make run-uefi     # normal BIOS/UEFI smokes; also run affected guest families
-# Releases and compiler bumps only:
+# Releases, compiler and seed changes only:
 make test-release
 make smoke-all               # complete emulator matrix; QEMU and firmware required
 ```
 
 For direct Meson commands, configure a separate [build](docs/meson-bootstrap.md)
 for each toolchain, with matching `gcc`/`g++` on PATH. `make test` and the
-compiler-only shortcuts reuse an explicitly checkpoint-configured build
+compiler-only shortcuts reuse an explicitly configured build
 incrementally. `make test` runs the `merge` suite; `make test-release` runs the
 opt-in `release` suite (mutation testing, complete subset sweeps); `full` is their union. Named `dev`, `slow`, `integration`, `boot`,
 `core` and `bytes` suites support focused work. A merge requires the final-source

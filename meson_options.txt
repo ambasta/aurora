@@ -7,4 +7,4 @@ option('kernel_images', type: 'boolean', value: true,
 option('kernel_compiler', type: 'string', value: '',
        description: 'Optional absolute prebuilt aurorac for kernel images; empty builds the native compiler')
 option('bootstrap_compiler', type: 'string', value: '',
-       description: 'Required absolute checkpoint aurorac pinned by compiler/checkpoint.json; see compiler/README.md')
+       description: 'Absolute path of a cached aurorac to build C1 with; empty builds it from source with aurora-seed')

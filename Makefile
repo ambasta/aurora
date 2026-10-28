@@ -53,7 +53,7 @@ help:
 	  'make smoke-console    Build and verify BIOS console PTY acceptance' \
 	  'make smoke-console-uefi  Build and verify UEFI console PTY acceptance' \
 	  'make test             Build and run the merge suite (every merge)' \
-	  'make test-release     Run the opt-in release suite (releases, compiler bumps)' \
+	  'make test-release     Run the opt-in release suite (releases, compiler and seed changes)' \
 	  'make test-exhaustive  Run the separate complete combinatorial library sweeps' \
 	  'make smoke-all        Run the full emulator suite, including both consoles' \
 	  'make clean-dry-run    Show Meson product cleanup commands; MESON_BUILD_DIR selects one build' \

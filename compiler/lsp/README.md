@@ -11,8 +11,9 @@ The ordinary compiler does not require JSON. Enable the separate LSP target
 explicitly with an externally installed `nlohmann_json >= 3.11.3` development
 package and the normal Meson/Ninja tools:
 
-First select the checkpoint compiler with the
-[source-bootstrap recipe](../README.md#source-bootstrap); `C0` below is its path.
+`C0` below is a cached first compiler from the
+[source-bootstrap recipe](../README.md#source-bootstrap); without
+`-Dbootstrap_compiler` the build makes one with the seed.
 
 ```sh
 meson setup build/lsp -Dlsp=true \

@@ -127,12 +127,12 @@ object-loan provenance, bounds evidence and the bounded FIFO worklist, with no
 native semantic fallback. Bounded multi-owner borrowing enables the emitter
 workspace to read instruction and metadata owners together; the formatter
 shares append through exclusive mutable typed-buffer borrows.
-One pinned checkpoint builds current C1/C2 with convergence; execution and ABI
+The seed, or a cached first compiler, builds current C1/C2 with convergence; execution and ABI
 tests qualify emission without a production fallback or historical-emitter dependency.
 Qualification requires final-source pinned-container `merge`, normal BIOS/UEFI
-and affected guest gates; releases and compiler bumps also run `release` and
-every guest family, including the
-[source-bootstrap gates](../compiler/README.md#source-bootstrap) for bumps.
+and affected guest gates; releases and compiler or seed changes also run `release`
+and every guest family, which includes the
+[seed's bootstrap check](../compiler/README.md#source-bootstrap).
 Successful lowering-record projection now runs in Aurora, preserving exact
 identity/ordering and filling pending metadata/instruction owners before independent
 admission. The compiler is a hosted Aurora program: source file I/O, diagnostics

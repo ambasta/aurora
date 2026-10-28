@@ -9,20 +9,6 @@ project(
 native_cpp = meson.get_compiler('cpp', native: true)
 python = find_program('python3', native: true)
 fs = import('fs')
-# compiler/checkpoint.json names the checkpoint (C0) by source commit; any C0
-# built from it compiles C1, C1 compiles C2, and hosted-lexer-bootstrap requires
-# C1 and C2 to agree (GCC's stage compare). Ninja tracks the C0 executable.
-bootstrap_driver = files('scripts/bootstrap.py')
-bootstrap_pin = files('compiler/checkpoint.json')
-bootstrap_select = run_command(python, '-B', bootstrap_driver, 'select',
-                               '--compiler', get_option('bootstrap_compiler'), check: false)
-if bootstrap_select.returncode() != 0
-  error(bootstrap_select.stderr().strip())
-endif
-fs.read(bootstrap_pin)
-bootstrap_compiler_path = bootstrap_select.stdout().strip()
-bootstrap_compiler = find_program(bootstrap_compiler_path, native: true)
-bootstrap_depend_files = files(bootstrap_compiler_path) + bootstrap_driver + bootstrap_pin
 frontend_modules = files('compiler/formatter.au', 'compiler/lexer.au', 'compiler/syntax_arena.au', 'compiler/parser.au',
                         'compiler/resolution_kinds.au', 'compiler/lowering_errors.au', 'compiler/lowering_kinds.au',
                         'compiler/lowering_storage.au', 'compiler/resolution_rows.au', 'compiler/resolution_arena.au',
@@ -71,16 +57,46 @@ compiler_driver = configure_file(input: 'compiler/aurorac.au', output: 'aurorac.
                                  configuration: {'AURORA_RUNTIME_ROOT': hosted_runtime_root})
 compiler_stage = [python, '-B', files('scripts/bootstrap_frontend.py')]
 compiler_link = [hosted_linker, '-static', '-e', '_start', '-o', '@OUTPUT@', '@INPUT@']
-aurorac_object = custom_target(
-  'aurorac-object', input: [compiler_driver] + frontend_modules, output: 'aurorac.o',
-  command: compiler_stage + [bootstrap_compiler, '--program', hosted_runtime_root, '--output', '@OUTPUT@', '@INPUT@'],
-  depend_files: bootstrap_depend_files + hosted_runtime_sources,
+
+# The first compiler. From source, GCC builds aurora-seed, an interpreter of
+# the Aurora subset the compiler is written in (compiler/seed); it runs
+# aurorac.au on the compiler's sources to emit X, the object of the current
+# compiler, and C1 (aurorac) is X linked. seed-bootstrap requires the object C1
+# emits of the compiler to equal X: GCC's stage compare, one stage early.
+# -Dbootstrap_compiler names a cached C0 instead, as the merge loop does: any
+# aurorac that compiles these sources. C0 compiles C1, C1 compiles C2, and
+# hosted-lexer-bootstrap requires C1 and C2 to agree; seed-bootstrap (release
+# suite) still requires X to equal C1's object. Ninja tracks the C0 executable.
+aurora_seed = executable('aurora-seed', 'compiler/seed/seed.cpp', 'compiler/seed/syntax.cpp', native: true,
+                         install: false, build_by_default: false, override_options: ['optimization=1'])
+aurorac_seed_object = custom_target(
+  'aurorac-seed-object', input: [compiler_driver] + frontend_modules, output: 'aurorac-seed.o',
+  command: compiler_stage + [aurora_seed, '--seed', '--program', hosted_runtime_root, '--output', '@OUTPUT@',
+                             '@INPUT@'],
+  depend_files: hosted_runtime_sources, build_by_default: false,
 )
+from_seed = get_option('bootstrap_compiler') == ''
+if from_seed
+  aurorac_object = aurorac_seed_object
+else
+  if not fs.is_absolute(get_option('bootstrap_compiler'))
+    error('bootstrap_compiler must be the absolute path of a cached aurorac; leave it empty to build one with ' +
+          'aurora-seed (compiler/README.md#source-bootstrap)')
+  endif
+  bootstrap_compiler = find_program(get_option('bootstrap_compiler'), native: true)
+  aurorac_object = custom_target(
+    'aurorac-object', input: [compiler_driver] + frontend_modules, output: 'aurorac.o',
+    command: compiler_stage + [bootstrap_compiler, '--program', hosted_runtime_root, '--output', '@OUTPUT@',
+                               '@INPUT@'],
+    depend_files: files(get_option('bootstrap_compiler')) + hosted_runtime_sources,
+  )
+endif
 aurorac = custom_target('aurorac', input: aurorac_object, output: 'aurorac', command: compiler_link,
                         build_by_default: true)
 aurora_fmt = custom_target('aurora-fmt', input: aurorac_object, output: 'aurora-fmt', command: compiler_link,
                            build_by_default: true)
-# These stages stay outside the default build unless the stage compare is selected.
+# These stages stay outside the default build unless a stage compare is selected;
+# a seed build needs no third stage.
 aurorac_stage2_object = custom_target(
   'aurorac-stage2-object', input: [compiler_driver] + frontend_modules, output: 'aurorac-stage2.o',
   command: compiler_stage + [aurorac, '--program', hosted_runtime_root, '--output', '@OUTPUT@', '@INPUT@'],
@@ -88,11 +104,13 @@ aurorac_stage2_object = custom_target(
 )
 aurorac_stage2 = custom_target('aurorac-stage2', input: aurorac_stage2_object, output: 'aurorac-stage2',
                                command: compiler_link, build_by_default: false)
-aurorac_stage3_object = custom_target(
-  'aurorac-stage3-object', input: [compiler_driver] + frontend_modules, output: 'aurorac-stage3.o',
-  command: compiler_stage + [aurorac_stage2, '--program', hosted_runtime_root, '--output', '@OUTPUT@', '@INPUT@'],
-  depend_files: hosted_runtime_sources, build_by_default: false,
-)
+if not from_seed
+  aurorac_stage3_object = custom_target(
+    'aurorac-stage3-object', input: [compiler_driver] + frontend_modules, output: 'aurorac-stage3.o',
+    command: compiler_stage + [aurorac_stage2, '--program', hosted_runtime_root, '--output', '@OUTPUT@', '@INPUT@'],
+    depend_files: hosted_runtime_sources, build_by_default: false,
+  )
+endif
 
 # These existing native oracles use Linux/x86-64 syscalls and GNU binutils.
 if build_machine.system() != 'linux' or build_machine.cpu_family() != 'x86_64'
@@ -108,7 +126,8 @@ hosted_programs = {}
 foreach name, source : {'host-files-cat': 'examples/host-files-cat.au',
                         'host-files-probe': 'tests/host-files/probe.au',
                         'host-sort': 'examples/host-sort.au',
-                        'host-memory-probe': 'tests/host-files/memory.au'}
+                        'host-memory-probe': 'tests/host-files/memory.au',
+                        'seed-semantics': 'tests/seed/semantics.au'}
   hosted_object = custom_target(name + '-object', input: source, output: name + '.o',
       command: [aurorac, '--emit-object', '@INPUT@', '-o', '@OUTPUT@'],
       depend_files: hosted_runtime_sources)

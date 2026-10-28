@@ -724,7 +724,7 @@ With two or more roots, trailing parameters and the result are scalar/enum value
 The single-root copied/span argument and copied-result rules above are unchanged.
 This supports two independent mutable workspaces alongside readonly instruction
 and metadata owners without increasing the owning-class layout limit. Compiler
-source adoption still requires a separately qualified checkpoint hop.
+source adoption also requires the seed to run it.
 
 Every actual root is complete, named and pairwise distinct, even when all borrows
 are readonly or the classes are empty. Different instances of the same class are

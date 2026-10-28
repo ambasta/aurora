@@ -13,7 +13,7 @@ no tests of tests. This page says how to run things today.
 ./scripts/container.sh bash           # pinned GCC 16 / QEMU / OVMF environment
 meson setup build/meson -Dbootstrap_compiler=... -Duefi_ld=...
 make test                            # nproc build/test jobs with memory watchdog
-make test-release                    # opt-in: releases and compiler bumps
+make test-release                    # opt-in: releases, compiler and seed changes
 ```
 
 Guest smokes run QEMU through `scripts/kernel-uefi-smoke.sh MODE`,
@@ -58,7 +58,7 @@ image trap sites are verified again by the kernel itself at load time
 | --- | --- |
 | Development | incremental build, focused tests; a native host build directory is fine for feedback |
 | Every merge | pinned container, final source: build, merge suite, the guest families the change touches, normal BIOS and UEFI smokes |
-| Releases, compiler bumps | release suite, every guest family; a bump is one checkpoint hop ([compiler/README.md](../compiler/README.md#bumping-the-checkpoint-one-hop)) |
+| Releases, compiler or seed changes | release suite, every guest family; it builds the first compiler with the seed ([compiler/README.md](../compiler/README.md#source-bootstrap)) |
 
 Report the wall time of `make test` in a fresh build directory, at full
 concurrency, next to the previous main. Missing tools or skipped gates are reported, never passed.
@@ -68,7 +68,7 @@ concurrency, next to the previous main. Missing tools or skipped gates are repor
 The release suite holds IR mutation testing (`ir-exhaustive`) and the complete
 borrowed-objects sweep; everything else is in merge. Tests do not pin inventories
 of other tests or of the source tree, do not test their own oracles, and check no
-digests, including the bootstrap checkpoint's; C1/C2 convergence checks it.
+digests, including the cached first compiler's; the stage compares check it.
 
 Compiler-semantics runners in `tests/compiler` register cases as data on
 `native_runner.Suite`: accepted cases are packed into one compiled program per

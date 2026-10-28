@@ -1,0 +1,33 @@
+module seed_unsupported;
+import aurora.host;
+
+// Valid Aurora outside the seed's subset: the seed rejects each construct
+// (status 3) when it first lowers the function that uses it: argument r or o
+// selects one.
+
+class Record {
+public:
+    i64 value;
+};
+
+auto reflection() -> i64 {
+    return size_of(Record);
+}
+
+auto scalar_owner() -> i64 {
+    own<i64> seed = own(40);
+    return read(seed);
+}
+
+auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> builtin::HostExit {
+    const u8 selected = arguments.at(arguments.size() - 2);
+    if (selected == 'r') {
+        reflection();
+        return builtin::HostExit::failure;
+    }
+    if (selected == 'o') {
+        scalar_owner();
+        return builtin::HostExit::failure;
+    }
+    return builtin::HostExit::success;
+}

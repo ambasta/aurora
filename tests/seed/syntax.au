@@ -1,0 +1,11 @@
+module seed_syntax;
+import aurora.host;
+
+// A declaration the seed's grammar lacks: rejected while the module is parsed.
+template <Scalar T> auto identity(T value) -> T {
+    return value;
+}
+
+auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> builtin::HostExit {
+    return builtin::HostExit::success;
+}

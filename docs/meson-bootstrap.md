@@ -1,7 +1,7 @@
 # Canonical incremental native tests
 
 Meson/Ninja is the canonical complete native graph. Every merge requires the
-`merge` suite, and every release or compiler bump the `release` suite, on the
+`merge` suite, and every release or compiler or seed change the `release` suite, on the
 final integrated source with GCC 16 (`full` is their union),
 plus the separate applicable image and actual guest gates. GCC 14 is optional
 targeted compatibility evidence. Previous snapshots do not qualify a new tree.
@@ -15,7 +15,7 @@ Select matching real `gcc` and `g++` on PATH: a stack-guard
 runner invokes bare `gcc`. Keep one stable build directory per toolchain/configuration:
 
 ```sh
-# C0 is the checkpoint compiler (scripts/bootstrap.py rebuild builds it from source).
+# C0 is a cached aurorac; without -Dbootstrap_compiler the seed builds one.
 # PATH must already select the matching GCC 16 pair.
 CXX=g++ meson setup build/gcc16 --backend=ninja -Dlsp=false \
   "-Dbootstrap_compiler=$C0"
@@ -23,7 +23,7 @@ export MESON_BUILD_DIR=build/gcc16
 # Optional quick feedback while developing; merge below includes these tests.
 meson test -C build/gcc16 --suite dev
 make test
-make test-release  # opt-in: releases and compiler bumps
+make test-release  # opt-in: releases, compiler and seed changes
 ```
 
 These commands build prerequisites and run tests at `nproc` concurrency under
@@ -36,8 +36,7 @@ configuration needs a separate directory. The Make shortcuts check the selected
 compiler, binutils, Meson and Ninja versions before setup or build work, with a
 short blocked reason and the container command when tools are unsupported.
 Direct Meson setup checks the same tool versions.
-Missing or unsupported tools are blocked. Checkpoint admission verifies the
-pinned executable digests at configure time; after replacing tools in place,
+Missing or unsupported tools are blocked. After replacing tools in place,
 configure a fresh build directory. Unset `CPATH`, `CPLUS_INCLUDE_PATH`, `C_INCLUDE_PATH` and
 `LIBRARY_PATH`, including empty definitions; use explicit Meson include/link flags
 instead. Use a clean directory for bootstrap
@@ -56,15 +55,15 @@ never sweep historical, failed, kept or user-owned review output automatically.
 
 `make test` invokes the same `merge` selection; `make test-release` selects `release`. `make -C compiler test` and
 `scripts/compiler-test.sh` select `compiler`. Set `MESON_BUILD_DIR` to a
-matching checkpoint-configured directory, or omit it for `build/meson` (normal
+matching configured directory, or omit it for `build/meson` (normal
 image-enabled work) or `build/meson-compiler` (hosted-only compiler work).
-First configure these directories with the checkpoint and oracle paths using the
-[source-bootstrap recipe](../compiler/README.md#source-bootstrap). A missing
-checkpoint selection rejects with that recipe rather than creating a raw seed.
+First configure these directories with a cached compiler and oracle paths using the
+[source-bootstrap recipe](../compiler/README.md#source-bootstrap); without
+`-Dbootstrap_compiler` a directory builds its first compiler with the seed.
 The shortcuts stop on build/test failure and reject mismatched compiler/flag
 selections or missing project options. Reconfigure an older chosen build
 explicitly with the `-Dbootstrap_compiler` option, or configure a fresh matching directory.
-The wrapper does not invent a checkpoint or automatically migrate configurations.
+The wrapper does not invent a compiler or automatically migrate configurations.
 
 Focused checks use exact Meson test names rather than compiler-consuming Make
 aliases. For example, in a configured compiler build:
@@ -79,7 +78,7 @@ meson test -C build/meson-compiler --list
 ```
 
 `make clean` still preserves configuration.
-Make targets and `scripts/bootstrap.py hop` run Meson at `nproc` jobs under
+Make targets run Meson at `nproc` jobs under
 `scripts/watchdog.sh`. It runs the command in its own process group and stops
 the group (TERM, then KILL after two seconds) when MemAvailable falls below
 `AURORA_MEMORY_RESERVE_MIB` (default 2048). It is a best-effort guard, not
@@ -243,13 +242,10 @@ can be losslessly archived with exact mapping after review.
 
 ## Bootstrap stages
 
-One checkpoint compiler C0 builds C1 (`aurorac`); C1 builds C2
-(`aurorac-stage2`); `hosted-lexer-bootstrap` requires C1/C2 convergence, like
-GCC's stage compare. `compiler/checkpoint.json` names C0 by source commit; no
-binary is pinned by digest, and `scripts/bootstrap.py rebuild` builds C0 from
-source. A bump is one hop (`scripts/bootstrap.py hop`): build an accepted main
-commit with the current C0, check C1/C2 convergence, name that commit as the new
-checkpoint. The
-six-stage route that produced the first checkpoint is a record in
-`compiler/bootstrap-history.json`; see the
-[source-bootstrap recipe](../compiler/README.md#source-bootstrap) for both.
+Without `-Dbootstrap_compiler`, GCC builds `aurora-seed` (`compiler/seed`), which
+interprets the compiler compiling itself; the object it writes, X, linked is C1
+(`aurorac`), and `seed-bootstrap` requires C1's object of the compiler to equal
+X. `-Dbootstrap_compiler` names a cached C0 instead, any aurorac that compiles
+the current sources. C0 builds C1; C1 builds C2 (`aurorac-stage2`);
+`hosted-lexer-bootstrap` requires C1/C2 convergence, like GCC's stage compare. No binary is committed or
+pinned; see the [source-bootstrap recipe](../compiler/README.md#source-bootstrap).
