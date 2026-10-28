@@ -311,8 +311,8 @@ The compiler's own sources do not use HostFiles until a checkpoint bump.
 
 A hosted `main(builtin::HostFiles& files, builtin::ByteRegion region,
 builtin::span<const u8> arguments)` receives one region with a fixed quota of
-4 GiB of payload; the root module must import `aurora.memory`, the memory runtime
-(`runtime/linux/aurora/memory.au`), like `aurora.host`. The region follows the
+4 GiB of payload; the program must import `aurora.memory`, the memory runtime
+(`runtime/linux/aurora/memory.au`), as it imports `aurora.host`. The region follows the
 ordinary [ownership rules](OWNERSHIP.md): only parameter binding introduces it,
 helpers take it first or after `files` in the mixed prefix above, and owners stay
 in the generated code's 32-byte descriptors. The region word is the session
@@ -328,7 +328,13 @@ namespace `memory` with the session as its HostFiles grant and the descriptor's
 words as scalars, traps (UD2) on its fail-stop result `u64` max, and then
 updates the descriptor or copies one element (or the fill, element by element)
 to or from the address the runtime returned. The runtime decides everything
-else: descriptor validation, quotas, ids and mappings.
+else: descriptor validation, quotas, ids and mappings. The entries trust the
+addresses the runtime returns and the region word of the descriptor they are
+given (a word that does not name a session faults or traps on the self-word
+read): like `aurora.host`, `aurora.memory` and these entries are trusted code
+of the compiler, and source and typed IR cannot forge a descriptor, a region
+or a runtime function (the verifier admits the primitives by the runtime's
+native names, and `aurora.*` modules load only from the runtime root).
 
 Each nonempty allocation is its own private anonymous read-write mapping; empty
 ones have none. `_start` reserves, after the session block, a table of 16384
@@ -363,7 +369,9 @@ coexists; at most 16383 allocations are live (reachable only through ~16k owner
 bindings at once); physical memory is committed on first touch, so host memory
 exhaustion after a successful mapping kills the process; and there are no
 metrics, test allocator or fault injection. Runtime cost is one system call per
-nonempty allocation, resize and drop and a page per nonempty allocation.
+nonempty allocation, resize and drop and a page per nonempty allocation; the
+table makes `_start` reserve 272 KiB of stack, so a stack limit below about
+300 KiB faults before `main`.
 
 Cases: the memory probe over `tests/host-files/memory.golden` and the
 `host-sort` example in `tests/host-files/cases.golden`; rejections (region entry,
