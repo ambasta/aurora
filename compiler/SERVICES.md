@@ -271,8 +271,13 @@ The operations are implemented in Aurora by a binding module, imported as
 its own sources (`aurora.compiler.*`, `aurora.tests.*`, which every bootstrap
 stage reads through ordinary module roots): a reserved import resolves only
 from the compiler's runtime root (`runtime/linux`, fixed when aurorac is
-configured), never from a `--module-root` or an overlay, and is rejected if a
-module root also holds it; a root module declaring a reserved name is rejected. `files.NAME(...)` calls the exported
+configured, or the directory `--runtime-root` names, as for a relocated
+checkpoint; whoever runs the compiler chooses its trusted runtime, as they
+choose the compiler: the memory entries trust the addresses `aurora.memory`
+returns, so another runtime decides the program's memory safety too, and
+nothing in the output records which root was used), never from a
+`--module-root` or an overlay, and is
+rejected if a module root also holds it; a root module declaring a reserved name is rejected. `files.NAME(...)` calls the exported
 `host::files_NAME(files, ...)` of that module (`read` and `write` are reserved
 function names) as an ordinary service-helper call. The Linux binding,
 `runtime/linux/aurora/host.au`, uses twelve private HostFiles primitives that

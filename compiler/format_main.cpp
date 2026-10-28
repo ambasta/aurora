@@ -41,7 +41,7 @@ int main(int argc, char **argv) {
     bool json = false;
     for (int index = 1; index < argc; ++index) {
         const std::string option = argv[index];
-        if (option == "--module-root")
+        if (option == "--module-root" || option == "--runtime-root")
             ++index;
         else if (option == "--diagnostics=json")
             json = true;
@@ -49,7 +49,8 @@ int main(int argc, char **argv) {
     try {
         std::filesystem::path input;
         std::vector<std::filesystem::path> roots;
-        bool check = false, lint = false, formatSpecified = false;
+        std::filesystem::path runtimeRoot = AURORA_RUNTIME_ROOT;
+        bool check = false, lint = false, formatSpecified = false, runtimeRootSpecified = false;
         const auto argumentError = [](const std::string &message) {
             return aurora::Error(aurora::DiagnosticCode::CommandLine, message);
         };
@@ -63,6 +64,11 @@ int main(int argc, char **argv) {
                 if (++index >= argc)
                     throw argumentError("--module-root requires a directory");
                 roots.emplace_back(argv[index]);
+            } else if (option == "--runtime-root") {
+                if (++index >= argc || runtimeRootSpecified || std::string_view(argv[index]).empty())
+                    throw argumentError("--runtime-root requires exactly one nonempty directory");
+                runtimeRootSpecified = true;
+                runtimeRoot = argv[index];
             } else if ((option == "--diagnostics=json" || option == "--diagnostics=text") && !formatSpecified) {
                 formatSpecified = true;
             } else if (!option.starts_with("-") && input.empty()) {
@@ -73,13 +79,13 @@ int main(int argc, char **argv) {
         }
         if (input.empty())
             throw argumentError("usage: aurora-fmt [--check [--diagnostics=text|json]] INPUT.au\n"
-                                "       aurora-fmt --lint [--diagnostics=text|json] [--module-root DIR] INPUT.au");
-        if ((check && lint) || (!lint && !roots.empty()) || (json && !check && !lint))
-            throw argumentError(
-                "--check and --lint are separate modes; --module-root requires --lint; JSON requires a check mode");
+                                "       aurora-fmt --lint [--diagnostics=text|json] [--module-root DIR] "
+                                "[--runtime-root DIR] INPUT.au");
+        if ((check && lint) || (!lint && (!roots.empty() || runtimeRootSpecified)) || (json && !check && !lint))
+            throw argumentError("--check and --lint are separate modes; --module-root and --runtime-root require "
+                                "--lint; JSON requires a check mode");
         if (lint) {
-            const auto checked =
-                aurora::checkSource(input, roots, {}, aurora::AnalysisMode::Lint, {}, AURORA_RUNTIME_ROOT);
+            const auto checked = aurora::checkSource(input, roots, {}, aurora::AnalysisMode::Lint, {}, runtimeRoot);
             if (json)
                 aurora::writeDiagnosticsJson(std::cerr, checked.lintDiagnostics);
             else

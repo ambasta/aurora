@@ -141,6 +141,16 @@ def stage(source, build, compiler, targets, logs, jobs, extra=()):
     return [run_logged(argv, logs / f"{index}.log") for index, argv in enumerate(commands)]
 
 
+def keep_runtime(source, output):
+    """Keep the checkpoint's runtime root (aurora.host, aurora.memory) beside it.
+
+    The compiler bakes its source tree's runtime root in; a relocated
+    checkpoint names this copy with --runtime-root to compile hosted programs."""
+    runtime = Path(source) / "runtime/linux"
+    if runtime.is_dir():
+        shutil.copytree(runtime, Path(output) / "runtime/linux")
+
+
 def hop(args):
     """Build SOURCE with COMPILER, check C1/C2 convergence, record."""
     jobs = str(args.jobs or os.cpu_count())
@@ -153,6 +163,7 @@ def hop(args):
     records = stage(source, output / "build", args.compiler.resolve(), CHECKPOINT_TARGETS, output, jobs)
     require(git_tree(source) == tree, "source checkout changed during the hop")
     shutil.copy2(output / "build/aurorac-stage2", output / "aurorac")
+    keep_runtime(source, output)
     receipt = {
         "schema": 2,
         "source": {"commit": args.commit, "tree": tree},
@@ -170,6 +181,8 @@ def hop(args):
 # version gate and this select, which accepts the compiler actually given. It
 # prints each era's lines: compiler and its digest, then the historical oracle and
 # its digest, which is the receipt's borrow stage (2fd30b2) or --oracle (d4cbabb).
+# Sources from schema 2 of checkpoint.json on select by stage compare alone and
+# keep their own script.
 RECORDED_SELECT = """import hashlib, sys
 def digest(path):
     return hashlib.sha256(open(path, "rb").read()).hexdigest() if path else ""
@@ -195,7 +208,9 @@ def export(commit, tree, directory):
             bundle.extractall(directory, filter="tar")
     require(git_tree(directory) == tree, f"{commit}: exported tree differs from {tree}")
     shutil.copy2(ROOT / "scripts/meson_toolchain.py", directory / "scripts/meson_toolchain.py")
-    if (directory / "compiler/checkpoint.json").exists() or (directory / "compiler/bootstrap-route.json").exists():
+    pinned = directory / "compiler/checkpoint.json"
+    digest_era = pinned.exists() and json.loads(pinned.read_text()).get("schema", 0) < 2
+    if digest_era or (directory / "compiler/bootstrap-route.json").exists():
         (directory / "scripts/bootstrap.py").write_text(RECORDED_SELECT)
     return directory
 
@@ -232,10 +247,12 @@ def rebuild(args):
         compiler = build / "aurorac-stage2"
         print(f"Built checkpoint {name}", flush=True)
     shutil.copy2(compiler, output / "aurorac")
-    # Keep the checkpoint, receipt and logs; every source and build is reproducible.
+    keep_runtime(output / value["checkpoint"]["commit"][:12] / "source", output)
+    # Keep the checkpoint, its runtime, receipt and logs; every source and build is reproducible.
     for directory in output.glob("*/"):
-        shutil.rmtree(directory / "source")
-        shutil.rmtree(directory / "build")
+        if directory.name != "runtime":
+            shutil.rmtree(directory / "source")
+            shutil.rmtree(directory / "build")
     (output / "stages.json").unlink()
     result = {"schema": 2, "source": value["checkpoint"], "tools": identity, "commands": records}
     (output / "receipt.json").write_text(json.dumps(result, indent=2, sort_keys=True, default=str) + "\n")

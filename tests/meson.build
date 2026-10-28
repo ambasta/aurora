@@ -108,6 +108,12 @@ test('host-files-rejections', python,
             '--module-root', 'tests/host-files/library'],
      depends: [aurorac], workdir: meson.project_source_root(), suite: ['full', 'merge', 'dev', 'core', 'compiler'],
      timeout: 120)
+# --runtime-root replaces the configured runtime root (here one without aurora.*).
+test('host-files-runtime-root', python,
+     args: ['-B', golden_runner, files('host-files/runtime-root.golden'), '--reject', '--', aurorac, '--check',
+            '--runtime-root', 'tests/host-files/library'],
+     depends: [aurorac], workdir: meson.project_source_root(), suite: ['full', 'merge', 'dev', 'core', 'compiler'],
+     timeout: 120)
 # A user module root that supplies its own aurora.host cannot replace the runtime.
 test('host-files-impostor', python,
      args: ['-B', golden_runner, files('host-files/impostor.golden'), '--reject', '--', aurorac, '--check',
