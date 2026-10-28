@@ -15,7 +15,7 @@ Select matching real `gcc` and `g++` on PATH: a stack-guard
 runner invokes bare `gcc`. Keep one stable build directory per toolchain/configuration:
 
 ```sh
-# C0 is the checkpoint compiler (scripts/bootstrap.py rebuild builds it from source).
+# C0 is a cached aurorac; without -Dbootstrap_compiler the seed builds one.
 # PATH must already select the matching GCC 16 pair.
 CXX=g++ meson setup build/gcc16 --backend=ninja -Dlsp=false \
   "-Dbootstrap_compiler=$C0"
@@ -56,15 +56,15 @@ never sweep historical, failed, kept or user-owned review output automatically.
 
 `make test` invokes the same `merge` selection; `make test-release` selects `release`. `make -C compiler test` and
 `scripts/compiler-test.sh` select `compiler`. Set `MESON_BUILD_DIR` to a
-matching checkpoint-configured directory, or omit it for `build/meson` (normal
+matching configured directory, or omit it for `build/meson` (normal
 image-enabled work) or `build/meson-compiler` (hosted-only compiler work).
-First configure these directories with the checkpoint and oracle paths using the
-[source-bootstrap recipe](../compiler/README.md#source-bootstrap). A missing
-checkpoint selection rejects with that recipe rather than creating a raw seed.
+First configure these directories with a cached compiler and oracle paths using the
+[source-bootstrap recipe](../compiler/README.md#source-bootstrap); without
+`-Dbootstrap_compiler` a directory builds its first compiler with the seed.
 The shortcuts stop on build/test failure and reject mismatched compiler/flag
 selections or missing project options. Reconfigure an older chosen build
 explicitly with the `-Dbootstrap_compiler` option, or configure a fresh matching directory.
-The wrapper does not invent a checkpoint or automatically migrate configurations.
+The wrapper does not invent a compiler or automatically migrate configurations.
 
 Focused checks use exact Meson test names rather than compiler-consuming Make
 aliases. For example, in a configured compiler build:
@@ -79,7 +79,7 @@ meson test -C build/meson-compiler --list
 ```
 
 `make clean` still preserves configuration.
-Make targets and `scripts/bootstrap.py hop` run Meson at `nproc` jobs under
+Make targets run Meson at `nproc` jobs under
 `scripts/watchdog.sh`. It runs the command in its own process group and stops
 the group (TERM, then KILL after two seconds) when MemAvailable falls below
 `AURORA_MEMORY_RESERVE_MIB` (default 2048). It is a best-effort guard, not
@@ -245,14 +245,8 @@ can be losslessly archived with exact mapping after review.
 
 Without `-Dbootstrap_compiler`, GCC builds `aurora-seed` (`compiler/seed`), which
 interprets the compiler compiling itself; the object it writes, X, is C0, and
-`seed-bootstrap` requires it to equal C1's object of C2. Otherwise one
-checkpoint compiler C0 builds C1 (`aurorac`); C1 builds C2
-(`aurorac-stage2`); `hosted-lexer-bootstrap` requires C1/C2 convergence, like
-GCC's stage compare. `compiler/checkpoint.json` names C0 by source commit; no
-binary is pinned by digest, and `scripts/bootstrap.py rebuild` builds C0 from
-source. A bump is one hop (`scripts/bootstrap.py hop`): build an accepted main
-commit with the current C0, check C1/C2 convergence, name that commit as the new
-checkpoint. The
-six-stage route that produced the first checkpoint is a record in
-`compiler/bootstrap-history.json`; see the
-[source-bootstrap recipe](../compiler/README.md#source-bootstrap) for both.
+`seed-bootstrap` requires it to equal C1's object of C2. `-Dbootstrap_compiler`
+names a cached C0 instead, any aurorac that compiles the current sources. C0
+builds C1 (`aurorac`); C1 builds C2 (`aurorac-stage2`); `hosted-lexer-bootstrap`
+requires C1/C2 convergence, like GCC's stage compare. No binary is committed or
+pinned; see the [source-bootstrap recipe](../compiler/README.md#source-bootstrap).

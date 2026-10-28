@@ -62,10 +62,10 @@ compiler_link = [hosted_linker, '-static', '-e', '_start', '-o', '@OUTPUT@', '@I
 # of the Aurora subset the compiler is written in (compiler/seed); it runs
 # aurorac.au on the compiler's sources to emit X, the object of the current
 # compiler. -Dbootstrap_compiler names a cached C0 instead, as the merge loop
-# does: an earlier compiler built from the checkpoint compiler/checkpoint.json
-# names. Either way C0 compiles C1, C1 compiles C2, and hosted-lexer-bootstrap
-# requires C1 and C2 to agree (GCC's stage compare); seed-bootstrap requires
-# X to equal C1's object of the compiler. Ninja tracks the C0 executable.
+# does: any aurorac that compiles these sources. Either way C0 compiles C1, C1
+# compiles C2, and hosted-lexer-bootstrap requires C1 and C2 to agree (GCC's
+# stage compare); seed-bootstrap requires X to equal C1's object of the
+# compiler. Ninja tracks the C0 executable.
 aurora_seed = executable('aurora-seed', 'compiler/seed/seed.cpp', 'compiler/seed/syntax.cpp', native: true,
                          install: false, build_by_default: false, override_options: ['optimization=1'])
 aurorac_seed_object = custom_target(
@@ -80,17 +80,12 @@ if from_seed
                                      command: compiler_link, build_by_default: false)
   bootstrap_depend_files = []
 else
-  bootstrap_driver = files('scripts/bootstrap.py')
-  bootstrap_pin = files('compiler/checkpoint.json')
-  bootstrap_select = run_command(python, '-B', bootstrap_driver, 'select',
-                                 '--compiler', get_option('bootstrap_compiler'), check: false)
-  if bootstrap_select.returncode() != 0
-    error(bootstrap_select.stderr().strip())
+  if not fs.is_absolute(get_option('bootstrap_compiler'))
+    error('bootstrap_compiler must be the absolute path of a cached aurorac; leave it empty to build one with ' +
+          'aurora-seed (compiler/README.md#source-bootstrap)')
   endif
-  fs.read(bootstrap_pin)
-  bootstrap_compiler_path = bootstrap_select.stdout().strip()
-  bootstrap_compiler = find_program(bootstrap_compiler_path, native: true)
-  bootstrap_depend_files = files(bootstrap_compiler_path) + bootstrap_driver + bootstrap_pin
+  bootstrap_compiler = find_program(get_option('bootstrap_compiler'), native: true)
+  bootstrap_depend_files = files(get_option('bootstrap_compiler'))
 endif
 aurorac_object = custom_target(
   'aurorac-object', input: [compiler_driver] + frontend_modules, output: 'aurorac.o',

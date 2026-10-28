@@ -4,7 +4,7 @@ Aurora is an intentionally incompatible safe C++-inspired language. It has no
 C header/macro layer, raw-pointer escape, unsafe block or C ABI. The hosted build
 uses an Aurora-written [lexer](LEXER.md) and a bounded
 [syntax parser](ARCHITECTURE.md#hosted-aurora-parser),
-bootstrapped with an explicitly selected predecessor compiler.
+bootstrapped from source through a small C++ interpreter, the [seed](#the-seed).
 Complete module syntax, declaration admission, module/template resolution and
 resolved type/lifetime analysis through typed IR run in Aurora. The `ir_graph.au`
 candidate independently checks normalized module call graphs and
@@ -139,8 +139,8 @@ commit messages for each step).
 
 A fresh checkout builds from source with GCC: `meson setup build/seed .`
 without `-Dbootstrap_compiler` builds the [seed](#the-seed) and the first
-compiler from it. The merge loop configures a cached compiler instead, using the
-[setup commands](#source-bootstrap) below. The ordinary shortcuts reuse the
+compiler from it. The merge loop configures a cached first compiler instead,
+using the [setup commands](#source-bootstrap) below. The ordinary shortcuts reuse the
 configured graph:
 
 ```sh
@@ -161,14 +161,11 @@ The optional [language server](lsp/README.md) has its own dependency and suite.
 
 ### Bootstrap evolution policy
 
-New language features land first with independent library or product consumers.
-Compiler adoption waits for a scheduled checkpoint bump: every input the
-checkpoint compiles, including compiler-imported library helpers, must stay
-within its supported language subset. Batch bumps at milestones or for a
-justified set of compiler adoptions, rather than one bump per feature. A bump
-reviews the new pin, its hop receipt, the release suite and the batched adoption
-together. Keep every checkpoint commit reachable from main, with its receipt in
-the bump PR, so each one can be rebuilt from the one before it.
+The compiler's sources, including the library helpers they import, stay within
+the subset the [seed](#the-seed) runs. A new language feature lands first with
+independent library or product consumers; the compiler adopts it in the change
+that teaches the seed to run it, with the seed's cases. A cached C0 that
+predates the change cannot compile the new sources: rebuild it from the seed.
 
 ### Source bootstrap
 
@@ -185,48 +182,29 @@ hosted-lexer-bootstrap: B and C identical
 Without `-Dbootstrap_compiler`, Meson takes this route: the [seed](#the-seed)
 interprets the compiler compiling itself, and X, the object it writes, is the
 current compiler. Since C1 and C2 compile the same sources, the two compares
-make X, C1 and C2 one fixed point. `-Dbootstrap_compiler` names a cached C0
-instead, the merge loop's fast path; the release suite still builds X there
-and runs `seed-bootstrap`.
+make X, C1 and C2 one fixed point. No compiler binary is committed, downloaded,
+pinned or replayed from history.
 
-[`checkpoint.json`](checkpoint.json) names a cached C0 by source commit and tree. C0 is
-the C2 of main commit `a62c3c45` (the Aurora-hosted driver, inline hosted
-memory accesses and the 256-file module graph), built in one hop from the C2 of
-`6ad78f7d`; `history` lists the
-earlier checkpoints. No compiler binary is committed, downloaded or pinned by
-digest. Any C0 built from that source with the supported tools (GCC 16.2.0 or
-newer, binutils 2.47 or newer) is accepted, and `hosted-lexer-bootstrap` checks
-it the way GCC's `make compare` does: the compiler object C1 emits must equal the
-one C2 emits. Every stage compiles the current sources with the current runtime
-root (`runtime/linux`), so C0 needs only its own compiler, not its runtime copy.
-Meson's `bootstrap_compiler` option names the executable; Ninja tracks it, so
-replacing it rebuilds C1.
-
-To build C0 from source with no binary at all (host tools and Git):
+`-Dbootstrap_compiler` names a cached C0 instead, the merge loop's fast path:
+any aurorac that compiles the current sources, such as an earlier build's
+`aurorac-seed` or `aurorac` copied out of its build directory. Nothing pins it:
+the stage compare checks C1 and C2 whatever C0 was, and the release suite still
+builds X there and runs `seed-bootstrap`. Every stage compiles the current
+sources with the current runtime root (`runtime/linux`), so C0 needs only its
+executable; Ninja tracks it, so replacing it rebuilds C1.
 
 ```sh
-python3 scripts/bootstrap.py rebuild --output build/checkpoint-a62c3c45d8d3
-C0=$PWD/build/checkpoint-a62c3c45d8d3/aurorac
+meson setup build/seed . -Dkernel_images=false
+meson compile -C build/seed aurorac-seed        # X, from GCC and the sources
+install -D -m 755 build/seed/aurorac-seed build/c0/aurorac
+C0=$PWD/build/c0/aurorac
 meson setup build/meson . "-Dbootstrap_compiler=$C0" "-Duefi_ld=$UEFI_LD"
-meson setup build/meson-compiler . -Dkernel_images=false "-Dbootstrap_compiler=$C0"
-meson test -C build/meson-compiler hosted-lexer-bootstrap
 ```
 
-`rebuild` builds the historical C++ seed and Aurora stages
-([below](#historical-route)), then every checkpoint in `history` and the current
-one, each with the previous compiler and each passing its stage compare. Every
-source is exported with `git archive` and verified against its recorded tree.
-The recorded sources select their predecessor with an exact-version gate and,
-from `2fd30b2` on, a digest of the binary they were first built with; `rebuild`
-replaces those two scripts in its exported copies with this checkout's
-minimum-version gate and a `select` that accepts the compiler it is given.
-Sources from `checkpoint.json` schema 2 on keep their own script, whose
-`select` already accepts any compiler. `rebuild` and `hop` also keep the
-checkpoint's runtime root (`runtime/linux`, the `aurora.host` and
-`aurora.memory` modules) as `OUTPUT/runtime/linux`: the compiler bakes its own
-source tree's runtime root in, so a relocated checkpoint compiles hosted
-programs with `--runtime-root OUTPUT/runtime/linux`.
-Keep `OUTPUT/aurorac` outside directories you delete, or rerun `rebuild`.
+Before the seed, a checkpoint compiler named by commit was rebuilt by replaying
+a historical C++ seed, five Aurora stages and every checkpoint hop since
+(`scripts/bootstrap.py`, `compiler/checkpoint.json` and
+`compiler/bootstrap-history.json` in Git history up to `47732eba`).
 
 #### The seed
 
@@ -258,51 +236,8 @@ runs it.
 `tests/seed/cases.golden` runs the seed on a semantics program (whose output
 the compiled program also prints), traps and rejections; `seed-bootstrap` is its
 real test. The seed is built at -O1, runs on the build machine only and is
-never installed. On this compiler it takes about 80 s on one core, against 9 s
-for the checkpoint compiler and 19 s for C1 doing the same work.
-
-#### Bumping the checkpoint (one hop)
-
-Pick an accepted main commit `NEW` whose compiler adopts the batched features.
-Its `checkpoint.json` still names the current C0, so its own Meson graph accepts
-C0:
-
-```sh
-git worktree add --detach build/hop-src NEW
-python3 scripts/bootstrap.py hop --compiler "$C0" --source build/hop-src \
-  --commit NEW --tree "$(git rev-parse NEW^{tree})" --output build/checkpoint-NEW
-```
-
-The hop checks that the checkout's files hash to `TREE`, configures NEW with C0
-and the fixed options, builds C1 and C2, runs `hosted-lexer-bootstrap`, copies
-NEW's C2 to `OUTPUT/aurorac` and its runtime root to `OUTPUT/runtime/linux`,
-and writes `OUTPUT/receipt.json` (source,
-predecessor, tool versions, commands, logs and timings). The bump commit names
-NEW in `checkpoint.json`, moves the old checkpoint to `history`, and qualifies
-with the release suite and the merge gates.
-
-#### Historical route
-
-The first checkpoint came from the six-stage source route kept in
-[`bootstrap-history.json`](bootstrap-history.json): a GNU C++ seed and five
-Aurora stages, each built by the previous one, ending at the `borrow` stage
-`672821f`, whose C1 built the first checkpoint `2fd30b2`.
-
-| Stage | Immutable source | Required predecessor capability |
-|---|---|---|
-| Historical seed | `bdf646f09d5e14c88124c4bc9e4f998beda16183` | GNU C++ source build; no Aurora predecessor |
-| ABI facts | `17f4f1440e6faa9cdaf8711c04400854bdb60d9e` | Historical seed; adds compiler facts |
-| Copied arguments | `c0ef02cc105de2b7699d8565f6a53f1dea9e1205` | ABI-facts compiler |
-| Owner-field initialization | `bbf18f40d73b0f7b862a4b23d77b03dfb3f3d0e4` | Copied arguments used by its frontend |
-| Paired roots | `052f79d7995be93053f73659bcfc37687b00b341` | Region-backed owner-field initialization |
-| Multiple roots and mutable typed buffers (`borrow`, oracle) | `672821f70f37b185c46690791bd00d74d4414403` | Paired-root frontend signature and ordered ABI facts |
-| First checkpoint | `2fd30b2c252afda5fbf6e78c399bca1cae7bd04e` (its C2) | Three borrowed roots for the Aurora emitter; mutable typed-buffer borrows |
-| Checkpoint C0 | `d4cbabbb692a5553d8b14641e145a2f5ddc6ca93` (its C2) | Readonly typed views, used by the compiler's own sources |
-
-Direct skips between historical stages failed before producing comparable
-frontend assembly (missing `--abi-facts`, incomplete class-argument names,
-`move(named_local)` transfers, and a second or third borrowed root); the
-commands and identities are in the corresponding PRs.
+never installed. On this compiler it takes about 80 s on one core, against
+15-19 s for C1 doing the same work (4.9 times C1's cycles).
 
 The bridged test graph the C++ test drivers link is emitted by C1 with
 `aurorac --local-symbols --abi-facts`, which binds every generated function and
@@ -447,9 +382,9 @@ specified in [architecture](ARCHITECTURE.md#hosted-aurora-parser).
 The replaced C++ grammar, syntax adapter and reference lexer are removed. Unresolved
 declaration admission, module visibility, template resolution and resolved
 type/lifetime analysis run in Aurora. Production lowers the resolved Session
-directly to typed IR, without a resolved C++ AST round trip. The
-pinned checkpoint remains the bootstrap starting point; this does not
-establish whole-compiler self-hosting.
+directly to typed IR, without a resolved C++ AST round trip. The compiler
+builds itself from source through the [seed](#the-seed); that is not yet a
+self-hosting toolchain (assembler, linker and runtime remain GNU and Linux).
 
 CFG joins require exact source lifetime, provenance and operand-stack agreement
 before weakening the retained current value. An already unknown current stays

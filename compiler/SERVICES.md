@@ -272,7 +272,7 @@ its own sources (`aurora.compiler.*`, `aurora.tests.*`, which every bootstrap
 stage reads through ordinary module roots): a reserved import resolves only
 from the compiler's runtime root (`runtime/linux`, fixed when aurorac is
 configured, or the directory `--runtime-root` names, as for a relocated
-checkpoint; whoever runs the compiler chooses its trusted runtime, as they
+compiler; whoever runs the compiler chooses its trusted runtime, as they
 choose the compiler: the memory entries trust the addresses `aurora.memory`
 returns, so another runtime decides the program's memory safety too, and
 nothing in the output records which root was used), never from a
@@ -396,9 +396,10 @@ table makes `_start` reserve 272 KiB of stack, so a stack limit below about
 300 KiB faults before `main`. Element copies move whole qwords for strides that
 are a multiple of eight. With the entries' fast path a compiler built by this
 emitter compiles the compiler in 0.57x the instructions and 0.63x the cycles
-of one built without it; C1 is built by the checkpoint's emitter, so it gains
-this (and aurorac stops being about 1.6x slower than over the C++ adapter)
-only at the next checkpoint bump. `memory.au` keeps its own fast paths until then.
+of one built without it. C1 gains this (and aurorac stops being about 1.6x
+slower than over the C++ adapter) when its first compiler has it: always from
+the seed, and from a cached compiler built from `a62c3c45` or later.
+`memory.au` keeps its own fast paths for older ones.
 
 Cases: the memory probe over `tests/host-files/memory.golden` (every fast path,
 including a three-byte stride, and the fall-through of bytes `set`, `borrow_span`

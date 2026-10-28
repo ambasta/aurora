@@ -11,10 +11,10 @@ packages the dependency image; it does not run product validation.
 
 With Docker or Podman installed, start from the repository root.
 
-Use a local copy of the checkpoint compiler named by `compiler/checkpoint.json`,
-or build it from source with `python3 scripts/bootstrap.py rebuild --output
-build/checkpoint-a62c3c45d8d3` (host tools and Git). Then open the pinned shell with `./scripts/container.sh bash` and configure both
-current Meson graphs with `-Dbootstrap_compiler`, following the
+Open the pinned shell with `./scripts/container.sh bash`. A build without
+`-Dbootstrap_compiler` makes its first compiler from source with the seed; the
+merge loop configures both current Meson graphs with a cached one
+(`-Dbootstrap_compiler`), following the
 [source-bootstrap recipe](../compiler/README.md#source-bootstrap). Then run:
 
 ```sh
@@ -301,7 +301,7 @@ open-file guarantees.
 - `make test-developer-commands` checks command routing with fake tools, without
   compiling Aurora or starting a real guest. It is not native acceptance.
 
-Developer shortcuts reuse the matching checkpoint-configured dependency graph. Setup, compile and test failures stop the command. Raw test logs stay in
+Developer shortcuts reuse the matching configured dependency graph. Setup, compile and test failures stop the command. Raw test logs stay in
 `<build>/meson-logs`; a selected compiler hash proves stability, not a fresh-build
 or external-pin claim. The [test contract](developer-test-contract.md) defines
 identity, bounds and the historical receipt boundary.

@@ -21,7 +21,7 @@ still needs its own full, convergence and BIOS/UEFI qualification.
 | x86 emission | Aurora, fixed native transport | Byte-identical C1/C2 (`hosted-lexer-bootstrap`); inlines single-field getters; owned-value bounds checks and sizes use multiplies, not divq; no register allocation yet |
 | Direct class fields | Aurora source and independent metadata admission share an 8,192-field cap, including empty, nested, resource and array fields | Existing leaf, byte, depth and array-element limits still apply |
 | Private host bridge | One 38-entry table generates Aurora forwarders, host transport declarations and a closed wrapper recipe; compiler facts supply layouts and symbols. A test graph adds 82 rows (readers of internal rows, the textual-IR reader, initialization probes) for test drivers only | Preserve fail-closed conversion; native replacement remains incomplete |
-| Bootstrap route | One digest-pinned checkpoint (C2 of `d4cbabb`, one hop from the C2 of `2fd30b2`, which the recorded six-stage source route built), then current C1/C2 with convergence | Bump in one hop: build an accepted main commit with the current checkpoint, pass C1/C2 convergence, then the release gates ([recipe](README.md#bumping-the-checkpoint-one-hop)) |
+| Bootstrap route | GCC builds the seed, a C++ interpreter that runs the compiler on its own sources to make X; X builds C1, C1 builds C2, and X, C1 and C2 agree (`seed-bootstrap`, `hosted-lexer-bootstrap`); a cached compiler may stand in for X | The compiler's sources stay within the seed's subset ([recipe](README.md#source-bootstrap)) |
 | Assembly, linking and hosted runtime | External bootstrap tools/C++ | Native replacements remain incomplete |
 
 ## Hosted Aurora parser
@@ -221,10 +221,9 @@ A compilation copies code, stack facts and ABI facts into its `Result` as each i
 sealed. Requested stack JSON has a checked bound of twice assembly bytes plus
 conservative per-function/per-call overhead.
 
-Each checkpoint bump builds with the pinned checkpoint from
-[the bootstrap recipe](README.md#source-bootstrap), checks the existing backend/host
-artifact gates and C1/C2 convergence, records timings and limits, then runs the
-final-source merge and release suites, every guest family and normal BIOS/UEFI.
+A change to the seed runs the release suite, which builds X from
+[the bootstrap recipe](README.md#source-bootstrap) and checks it with
+`seed-bootstrap`, with the merge gates.
 
 ## Compile speed
 
@@ -281,8 +280,7 @@ headers and transient old/new resizing storage; process peak memory is separate.
 A shared `append_row` helper synchronously borrows each mutable typed row buffer
 for growth and storage. Callers snapshot receiver-derived arguments before the
 exclusive field loan and update counts afterward; ownership and cleanup remain
-with the workspace. The replacement sixth source-bootstrap checkpoint supplies
-this capability without adding a stage. Qualification still requires the final
+with the workspace. Qualification still requires the final
 integrated-source `full` and applicable boot/emulator gates.
 
 The host keeps the 1 MiB bound, copies completed chunks and validated finding
