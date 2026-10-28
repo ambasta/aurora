@@ -25,7 +25,7 @@ export namespace compiler_ir_verification {
         }
         return TypeKey(-1, -1);
     }
-    // An independent copy of the HostFiles primitive signatures (operations 9..20):
+    // An independent copy of the HostFiles primitive signatures (operations 9..28):
     // argument and result kinds in MetadataTypeKind ordinals (I64 0, U64 7, U8 10).
     auto host_argument_count(i64 operation) -> i64 {
         if (operation == 20) {
@@ -37,28 +37,29 @@ export namespace compiler_ir_verification {
         if (operation == 13) {
             return 4;
         }
-        if (operation == 10 || operation == 12 || operation == 14 || operation == 19) {
+        if (operation == 10 || operation == 12 || operation == 14 || operation == 19 || operation == 21 || operation
+            == 22 || operation == 24 || operation == 26) {
             return 2;
         }
-        if (operation == 15 || operation == 17) {
+        if (operation == 15 || operation == 17 || operation == 25 || operation == 27 || operation == 28) {
             return 3;
         }
         return 1;
     }
     auto host_argument_kind(i64 operation, i64 index) -> i64 {
-        if (operation == 12 && index == 1) {
+        if ((operation == 12 && index == 1) || (operation == 27 && index == 2)) {
             return 10;
         }
-        if (operation > 12 && index == 0) {
+        if (operation > 12 && operation < 21 && index == 0) {
             return 0;
         }
         return 7;
     }
     auto host_result_kind(i64 operation) -> i64 {
-        if (operation == 9 || operation == 10) {
+        if (operation == 9 || operation == 10 || operation == 24 || operation == 25 || operation == 28) {
             return 7;
         }
-        if (operation == 11 || operation == 12) {
+        if (operation == 11 || operation == 12 || operation == 26 || operation == 27) {
             return 10;
         }
         return 0;
@@ -137,7 +138,7 @@ export namespace compiler_ir_verification {
                     VerificationErrorSecond::service_operation_requires_active_unsuspended_capability_provenance));
             }
             const i64 operation = transfer_value(s, id, 1);
-            if (operation > 8 && operation < 21) {
+            if (operation > 8 && operation < 29) {
                 return transfer_host(w, m, s, id, operation);
             }
             if (operation == 2) {

@@ -478,8 +478,10 @@ export namespace compiler_x86 {
             objectSymbolSize = objectSymbolSize + 1;
             return true;
         }
+        // Kind 1 defines a runtime symbol in this object, such as a hosted
+        // program's byte runtime entry; its calls then bind locally.
         auto begin_object_symbol(i64 kind, i64 identity, bool local) -> bool {
-            if (!objectMode || objectNameCapture || identity < 0 || (kind != 0 && kind != 4)) {
+            if (!objectMode || objectNameCapture || identity < 0 || (kind != 0 && kind != 1 && kind != 4)) {
                 return fail();
             }
             i64 binding = 0;
@@ -1611,7 +1613,7 @@ export namespace compiler_x86 {
                         i64 section = 0;
                         i64 value = 0;
                         if (row.position() >= 0) {
-                            if (row.kind() == 0 || row.kind() == 4) {
+                            if (row.kind() == 0 || row.kind() == 1 || row.kind() == 4) {
                                 info = info + 2;
                             }
                             section = 1;

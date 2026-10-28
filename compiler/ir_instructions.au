@@ -332,7 +332,7 @@ export namespace compiler_ir_instructions {
             const i64 expected = expected_parameter_form(metadata, type);
             const RawInstructionRow row = entry_instruction(store, callable, position);
             if (row.form() != expected || entry_value(store, row, 0) != position || (expected == 73 && position != 0
-                && !(position == 1 && compiler_ir_metadata::console_region_signature(metadata, declaration)))) {
+                && !(position == 1 && compiler_ir_metadata::service_region_signature(metadata, declaration)))) {
                 return fail(store, prefix_error(expected));
             }
             const i64 offset = entry_value(store, row, 1);
@@ -1585,7 +1585,7 @@ export namespace compiler_ir_instructions {
             return fail(store, InstructionError::service_signature);
         }
         const i64 parameters = declaration.value_parameter_count();
-        const bool mixed = compiler_ir_metadata::console_region_signature(metadata, declaration);
+        const bool mixed = compiler_ir_metadata::service_region_signature(metadata, declaration);
         const i64 region = call_value(store, instruction, 7);
         if (mixed) {
             if (!call_exact_slot(store, metadata, caller, 15, region, InstructionError::call_region_slot)) {
@@ -2182,6 +2182,16 @@ export namespace compiler_ir_instructions {
             && compiler_ir_metadata::named(metadata, compiler_ir_metadata::ByteRange(name.begin() + 6, 17),
             "_m2_6aurora4host_");
     }
+    auto memory_runtime_callable(const compiler_ir_metadata::MetadataStore& metadata, i64 callable) -> bool {
+        const compiler_ir_metadata::CallableRow row = metadata.callable_at(callable);
+        const compiler_ir_metadata::ByteRange name = row.name();
+        if (name.count() < 25) {
+            return false;
+        }
+        return compiler_ir_metadata::named(metadata, compiler_ir_metadata::ByteRange(name.begin(), 5), "__au_")
+            && compiler_ir_metadata::named(metadata, compiler_ir_metadata::ByteRange(name.begin() + 6, 19),
+            "_m2_6aurora6memory_");
+    }
     auto verify_service_instruction(InstructionStore& store, const compiler_ir_metadata::MetadataStore& metadata,
         i64 callable, i64 instruction, u64 result_enums) -> bool {
         const RawInstructionRow row = store.instruction_at(instruction);
@@ -2205,7 +2215,7 @@ export namespace compiler_ir_instructions {
             return true;
         } // BindServiceParameter and ServiceCall were admitted in earlier phases.
         const i64 operation = call_value(store, instruction, 1);
-        if (operation < 0 || operation > 20) {
+        if (operation < 0 || operation > 28) {
             return fail(store, InstructionError::service_operation);
         }
         i64 expected_kind = 0; // Console: Next, Put
@@ -2237,8 +2247,12 @@ export namespace compiler_ir_instructions {
         }
         const i64 result_offset = call_value(store, instruction, 2);
         // The Linux binding's primitives belong to functions of module aurora.host
-        // only, whose native names are __au_<mode>_m2_6aurora4host_...
-        if (operation > 8 && !host_runtime_callable(metadata, callable)) {
+        // only, whose native names are __au_<mode>_m2_6aurora4host_..., and the
+        // memory primitives (21..28) to those of aurora.memory.
+        if (operation > 8 && operation < 21 && !host_runtime_callable(metadata, callable)) {
+            return fail(store, InstructionError::service_operation);
+        }
+        if (operation > 20 && !memory_runtime_callable(metadata, callable)) {
             return fail(store, InstructionError::service_operation);
         }
         if (operation > 8 && operation != 14) {

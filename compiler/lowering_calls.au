@@ -813,9 +813,15 @@ export namespace compiler_lowering {
                 return fail(session, LoweringError::unknown_service_operation, reference);
             }
             if (record_signed(session, target, OperandRole::ServiceKindId) == 6) {
+                // System primitives belong to aurora.host, memory primitives
+                // (operations 21..28) to aurora.memory.
                 const i64 caller = body_function(session);
                 const i64 caller_unit = compiler_resolver::mw(session, caller, 1);
-                if (!host_runtime_unit(session, caller_unit)) {
+                const bool memory = record_signed(session, target, OperandRole::ServiceOperationId) > 20;
+                if (memory && !memory_runtime_unit(session, caller_unit)) {
+                    return fail(session, LoweringError::memory_runtime_operation_outside_runtime, reference);
+                }
+                if (!memory && !host_runtime_unit(session, caller_unit)) {
                     return fail(session, LoweringError::host_runtime_operation_outside_runtime, reference);
                 }
             }

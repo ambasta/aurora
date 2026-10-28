@@ -1455,6 +1455,9 @@ export namespace compiler_pipeline {
     auto graph_input(compiler_ir_graph::Input& input, const compiler_ir_metadata::MetadataStore& metadata,
         const compiler_ir_instructions::InstructionStore& instructions) -> bool {
         const compiler_ir_metadata::FlagMasks masks = compiler_ir_metadata::FlagMasks();
+        // A hosted entry taking a region also reaches the memory runtime,
+        // through the byte runtime entries the backend emits.
+        const bool memory = compiler_x86::hosted_region(metadata);
         i64 edge = 0;
         i64 callable = 0;
         while (callable < instructions.body_count()) {
@@ -1478,7 +1481,8 @@ export namespace compiler_pipeline {
                 || compiler_ir_metadata::callable_flag(declaration, masks.callable_receiver());
             // The hosted entry calls host::start and host::finish, so they are roots.
             const bool root = declaration.scope() == 0 || compiler_x86::hosted_hook(metadata, callable, 0)
-                || compiler_x86::hosted_hook(metadata, callable, 1);
+                || compiler_x86::hosted_hook(metadata, callable, 1) || (memory && compiler_x86::memory_runtime(metadata,
+                callable));
             const compiler_ir_graph::FunctionRow function = compiler_ir_graph::FunctionRow(first, edge - first,
                 receiver, service_entry(metadata, declaration), root);
             if (!compiler_ir_graph::set_function(input, callable, function)) {

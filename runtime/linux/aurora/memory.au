@@ -1,0 +1,286 @@
+export module aurora.memory;
+
+// The memory runtime of a hosted program's ByteRegion. When main takes a
+// region, the entry mints it over the session and the compiler emits the byte
+// runtime entries (__au_runtime_bytes_* and __au_runtime_values_*) that
+// generated owner code calls. Each entry checks that the descriptor's region
+// word names the session, passes the session as the HostFiles grant and the
+// descriptor's words as scalars to one function below, and copies elements
+// to and from the addresses those functions return. Nothing else can call
+// them: the namespace is private and the compiler's entries hold the only
+// grant made from a region.
+//
+// Every nonempty allocation is its own private anonymous mapping, slot 1..16383
+// of the compiler's mapping table, reached only through the memory primitives
+// map_memory, remap_memory, unmap_memory, memory_load, memory_store,
+// memory_load8, memory_store8 and memory_address, which check every slot,
+// offset and width against the table. Slot 0 maps this runtime's own state.
+// An allocation id is generation * 16384 + slot; a slot's generation advances
+// on every allocation and resize, so an id names one allocation only and is
+// never reused. A fail-stop result is u64 max, on which the entry traps.
+namespace memory {
+    auto slots() -> u64 {
+        return 16384u64;
+    }
+    // The region quota, in payload bytes: 4 GiB.
+    auto quota() -> u64 {
+        return 4294967296u64;
+    }
+    // A slot whose generation reaches this is retired, so ids stay below
+    // 2^64 - slots() and never equal trap().
+    auto last_generation() -> u64 {
+        return 1125899906842622u64;
+    }
+    auto trap() -> u64 {
+        return 18446744073709551615u64;
+    }
+    // State, slot 0: payload bytes in use at 0, live allocations at 8, the
+    // first never-used slot at 16 and the head of the free-slot list at 24;
+    // then one 32-byte record per slot: generation, live (1) or free (0), the
+    // byte length (or, when free, the next free slot) and the dirty mark, an
+    // end below which bytes beyond the length may be nonzero.
+    auto state_bytes() -> u64 {
+        return 64u64 + 32u64 * slots();
+    }
+    auto record(u64 slot) -> u64 {
+        return 64u64 + 32u64 * slot;
+    }
+    auto word(builtin::HostFiles& files, u64 offset) -> u64 {
+        return files.memory_load(0u64, offset);
+    }
+    auto set_word(builtin::HostFiles& files, u64 offset, u64 value) -> u64 {
+        return files.memory_store(0u64, offset, value);
+    }
+    auto valid_stride(i64 stride) -> bool {
+        return stride > 0 && stride <= 520;
+    }
+    // The byte length of count elements of stride bytes, or -1.
+    auto byte_length(i64 count, i64 stride) -> i64 {
+        if (count < 0 || count > 9223372036854775807 / stride) {
+            return -1;
+        }
+        return count * stride;
+    }
+    // The end of the last page of a mapping of length bytes.
+    auto page_end(u64 length) -> u64 {
+        return (length + 4095u64) / 4096u64 * 4096u64;
+    }
+    // The slot of a live descriptor, 0 for a canonical failed one, or trap()
+    // for any other descriptor: stale, forged or of a changed length.
+    auto lookup(builtin::HostFiles& files, u64 allocation, i64 length, u64 success) -> u64 {
+        if (success == 0u64) {
+            if (allocation != 0u64 || length != 0) {
+                return trap();
+            }
+            return 0u64;
+        }
+        if (success != 1u64 || allocation == 0u64 || length < 0) {
+            return trap();
+        }
+        const u64 slot = allocation % slots();
+        if (slot == 0u64 || slot >= word(files, 16u64)) {
+            return trap();
+        }
+        const u64 entry = record(slot);
+        if (word(files, entry) != allocation / slots() || word(files, entry + 8u64) != 1u64 || word(files, entry
+            + 16u64) != u64(length)) {
+            return trap();
+        }
+        return slot;
+    }
+    // Maps the state; nonzero makes the entry exit 1 before main.
+    auto start(builtin::HostFiles& files) -> u64 {
+        if (files.map_memory(0u64, state_bytes()) != 0) {
+            return 1u64;
+        }
+        set_word(files, 16u64, 1u64);
+        return 0u64;
+    }
+    // After main every owner has been dropped; a live allocation is a broken
+    // invariant.
+    auto finish(builtin::HostFiles& files) -> u64 {
+        if (word(files, 8u64) != 0u64) {
+            return trap();
+        }
+        return 0u64;
+    }
+    // A new zeroed allocation of count * stride bytes: its id, or 0 for an
+    // invalid count, the quota, no free slot or a failed mapping.
+    auto allocate(builtin::HostFiles& files, i64 count, i64 stride) -> u64 {
+        if (!valid_stride(stride)) {
+            return trap();
+        }
+        const i64 length = byte_length(count, stride);
+        const u64 used = word(files, 0u64);
+        if (length < 0 || u64(length) > quota() - used) {
+            return 0u64;
+        }
+        const u64 head = word(files, 24u64);
+        const u64 unused = word(files, 16u64);
+        u64 slot = head;
+        if (slot == 0u64) {
+            if (unused == slots()) {
+                return 0u64;
+            }
+            slot = unused;
+        }
+        if (length > 0 && files.map_memory(slot, u64(length)) != 0) {
+            return 0u64;
+        }
+        const u64 entry = record(slot);
+        if (head != 0u64) {
+            const u64 next = word(files, entry + 16u64);
+            set_word(files, 24u64, next);
+        } else {
+            set_word(files, 16u64, unused + 1u64);
+        }
+        const u64 generation = word(files, entry) + 1u64;
+        set_word(files, entry, generation);
+        set_word(files, entry + 8u64, 1u64);
+        set_word(files, entry + 16u64, u64(length));
+        set_word(files, entry + 24u64, u64(length));
+        set_word(files, 0u64, used + u64(length));
+        const u64 live = word(files, 8u64);
+        set_word(files, 8u64, live + 1u64);
+        return generation * slots() + slot;
+    }
+    // The payload address of a live owner (0 when it is empty); a failed owner
+    // cannot be borrowed.
+    auto payload(builtin::HostFiles& files, u64 allocation, i64 length, u64 success) -> u64 {
+        const u64 slot = lookup(files, allocation, length, success);
+        if (slot == 0u64 || slot == trap()) {
+            return trap();
+        }
+        if (length == 0) {
+            return 0u64;
+        }
+        return files.memory_address(slot, 0u64, u64(length));
+    }
+    auto at(builtin::HostFiles& files, u64 allocation, i64 length, u64 success, i64 index) -> u64 {
+        const u64 slot = lookup(files, allocation, length, success);
+        if (slot == 0u64 || slot == trap() || index < 0 || index >= length) {
+            return trap();
+        }
+        return u64(files.memory_load8(slot, u64(index)));
+    }
+    // 1 when written; 0 for a failed owner or an index outside the length.
+    auto set(builtin::HostFiles& files, u64 allocation, i64 length, u64 success, i64 index, u64 value) -> u64 {
+        const u64 slot = lookup(files, allocation, length, success);
+        if (slot == trap() || value > 255u64) {
+            return trap();
+        }
+        if (slot == 0u64 || index < 0 || index >= length) {
+            return 0u64;
+        }
+        files.memory_store8(slot, u64(index), u8(value));
+        return 1u64;
+    }
+    // The address of element index of stride bytes, or 0 for a failed owner or
+    // an index outside the count.
+    auto element(builtin::HostFiles& files, u64 allocation, i64 length, u64 success, i64 index, i64 stride) -> u64 {
+        const u64 slot = lookup(files, allocation, length, success);
+        if (slot == trap() || !valid_stride(stride) || length % stride != 0) {
+            return trap();
+        }
+        if (slot == 0u64 || index < 0 || index >= length / stride) {
+            return 0u64;
+        }
+        return files.memory_address(slot, u64(index * stride), u64(stride));
+    }
+    // Zeroes bytes [from, end) of a slot's mapping.
+    auto clear_tail(builtin::HostFiles& files, u64 slot, u64 from, u64 end) -> u64 {
+        u64 at = from;
+        while (at < end) {
+            files.memory_store8(slot, at, 0u8);
+            at = at + 1u64;
+        }
+        return end;
+    }
+    // Replaces an allocation by one of count * stride bytes that keeps the
+    // common prefix and zeroes the rest: the new id, the same id for the same
+    // length, or 0 with nothing changed for a failed owner, an invalid count,
+    // the quota, a retired slot or a failed mapping.
+    auto resize(builtin::HostFiles& files, u64 allocation, i64 length, u64 success, i64 count, i64 stride) -> u64 {
+        const u64 slot = lookup(files, allocation, length, success);
+        if (slot == trap() || !valid_stride(stride) || length % stride != 0) {
+            return trap();
+        }
+        const i64 target = byte_length(count, stride);
+        if (slot == 0u64 || target < 0) {
+            return 0u64;
+        }
+        if (target == length) {
+            return allocation;
+        }
+        const u64 entry = record(slot);
+        const u64 generation = word(files, entry);
+        const u64 other = word(files, 0u64) - u64(length);
+        if (generation == last_generation() || u64(target) > quota() - other) {
+            return 0u64;
+        }
+        u64 dirty = word(files, entry + 24u64);
+        if (length == 0) {
+            if (files.map_memory(slot, u64(target)) != 0) {
+                return 0u64;
+            }
+            dirty = 0u64;
+        } else {
+            if (target == 0) {
+                if (files.unmap_memory(slot) != 0) {
+                    return 0u64;
+                }
+                dirty = 0u64;
+            } else {
+                if (files.remap_memory(slot, u64(target)) != 0) {
+                    return 0u64;
+                }
+                if (target > length) {
+                    // The kept last page may hold bytes an earlier shrink discarded.
+                    u64 end = dirty;
+                    if (end > u64(target)) {
+                        end = u64(target);
+                    }
+                    clear_tail(files, slot, u64(length), end);
+                } else {
+                    // Pages past the new last page are gone; later growth maps zeroes.
+                    if (dirty > page_end(u64(target))) {
+                        dirty = page_end(u64(target));
+                    }
+                }
+            }
+        }
+        if (dirty < u64(target)) {
+            dirty = u64(target);
+        }
+        set_word(files, entry, generation + 1u64);
+        set_word(files, entry + 16u64, u64(target));
+        set_word(files, entry + 24u64, dirty);
+        set_word(files, 0u64, other + u64(target));
+        return (generation + 1u64) * slots() + slot;
+    }
+    // Releases a live owner; a canonical failed owner has nothing to release.
+    auto drop(builtin::HostFiles& files, u64 allocation, i64 length, u64 success) -> u64 {
+        const u64 slot = lookup(files, allocation, length, success);
+        if (slot == trap()) {
+            return trap();
+        }
+        if (slot == 0u64) {
+            return 0u64;
+        }
+        if (length > 0 && files.unmap_memory(slot) != 0) {
+            return trap();
+        }
+        const u64 entry = record(slot);
+        set_word(files, entry + 8u64, 0u64);
+        const u64 used = word(files, 0u64);
+        set_word(files, 0u64, used - u64(length));
+        const u64 live = word(files, 8u64);
+        set_word(files, 8u64, live - 1u64);
+        if (word(files, entry) < last_generation()) {
+            const u64 head = word(files, 24u64);
+            set_word(files, entry + 16u64, head);
+            set_word(files, 24u64, slot);
+        }
+        return 0u64;
+    }
+}

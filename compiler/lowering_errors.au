@@ -265,7 +265,9 @@ export namespace compiler_lowering {
         typed_span_access_requires_copied_destination,
         hosted_entry_signature,
         host_operation_requires_runtime_module,
-        host_runtime_operation_outside_runtime
+        host_runtime_operation_outside_runtime,
+        memory_runtime_operation_outside_runtime,
+        hosted_region_requires_memory_runtime
     };
 
     // Four eight-byte words in this order. Failure never publishes a module

@@ -213,7 +213,9 @@ export namespace compiler_x86 {
         i64 copyDestinationFirst;
         bool directResult;
         bool leftInRcx;
-        bool ownedSpanRuntime;
+        // Bit 0: owner-backed spans may be fragmented (kind 1); bit 1: the
+        // hosted memory runtime (the class is at its 520-byte bound).
+        i64 runtimeMode;
         bool objectMode;
         i64 objectNameWidth;
     public:
@@ -225,7 +227,7 @@ export namespace compiler_x86 {
             loanSize(0), runtimeSize(0), abiNameSize(0), currentCallable(-1), currentFunction(-1), functionIndex(0),
             divisionIndex(0), stackDepth(0), liveStackBytes(8), receiverSave(0), callRecordSave(0), resultSave(0),
             copySource(0), copyDestination(0), copySourceFirst(0), copyDestinationFirst(0), directResult(false),
-            leftInRcx(false), ownedSpanRuntime(false), objectMode(false), objectNameWidth(0) {
+            leftInRcx(false), runtimeMode(0), objectMode(false), objectNameWidth(0) {
         }
         auto allocated() const -> bool {
             return output.ok() && names.ok() && retained.ok() && functions.ok() && calls.ok() && loans.ok()
@@ -1177,10 +1179,21 @@ export namespace compiler_x86 {
             return ok();
         }
         auto owned_span_runtime() const -> bool {
-            return ownedSpanRuntime;
+            return runtimeMode % 2 == 1;
         }
-        auto set_owned_span_runtime(bool value) -> bool {
-            ownedSpanRuntime = value;
+        // Whether the hosted entry takes a region, so the entry reserves the
+        // memory runtime's mapping table and emits the byte runtime entries.
+        auto hosted_memory() const -> bool {
+            return runtimeMode / 2 == 1;
+        }
+        auto set_runtime_mode(bool owned_spans, bool hosted_memory) -> bool {
+            runtimeMode = 0;
+            if (owned_spans) {
+                runtimeMode = 1;
+            }
+            if (hosted_memory) {
+                runtimeMode = runtimeMode + 2;
+            }
             return ok();
         }
         auto set_saves(i64 receiver, i64 record, i64 result) -> bool {
