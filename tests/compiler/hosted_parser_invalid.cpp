@@ -78,8 +78,9 @@ std::shared_ptr<const aurora::SourceText> resolutionFixture() {
 }
 // Resolves the fixture, mutated once its source is admitted, and returns the
 // diagnostic it reports.
-std::optional<aurora::Diagnostic> resolveFixture(const std::shared_ptr<const aurora::SourceText> &source,
-                                                 const std::function<void()> &mutate = [] {}) {
+std::optional<aurora::Diagnostic> resolveFixture(
+    const std::shared_ptr<const aurora::SourceText> &source, const std::function<void()> &mutate = [] {
+    }) {
     const aurora::EmissionRequest abiFacts{.emit = true, .abiFacts = true};
     try {
         aurora::HostedResolution resolution;

@@ -139,7 +139,8 @@ Diagnostic sourceDiagnostic(const std::shared_ptr<const SourceText> &source,
         });
 }
 void rejectSource(const std::shared_ptr<const SourceText> &source, const wire::SourceResult &result) {
-    if (result.lexical != hosted_abi::compiler_lexer::Event::token || result.grammar != hosted_parser::Status::success ||
+    if (result.lexical != hosted_abi::compiler_lexer::Event::token ||
+        result.grammar != hosted_parser::Status::success ||
         result.declaration != hosted_parser::AdmissionStatus::success)
         throw Error(sourceDiagnostic(source, result));
     if (result.name_begin < 0 || result.name_end <= result.name_begin ||
@@ -246,10 +247,14 @@ class HostedResolution::Impl {
         if (!success)
             reject();
         // The rest of the compilation is one Aurora call that consumes the Session.
-        auto output = runHostedPipeline(
-            owner.regionId(), owner.consume(), result.root_row, result.diagnostic_row, request, [this](std::int64_t index) {
-                return module(index);
-            });
+        auto output = runHostedPipeline(owner.regionId(),
+                                        owner.consume(),
+                                        result.root_row,
+                                        result.diagnostic_row,
+                                        request,
+                                        [this](std::int64_t index) {
+                                            return module(index);
+                                        });
         HostedResolvedSource resolved;
         resolved.lintDiagnostics = std::move(output.lints);
         resolved.code = std::move(output.code);
