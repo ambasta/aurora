@@ -372,7 +372,8 @@ A module or namespace can declare `enum class Status { ready, failed };`.
 inequality, initialized local/field values, and function/method parameters and
 results. There is no integer or boolean conversion, ordering, arithmetic,
 explicit case ordinal, unspecified default value or source address conversion.
-The graph permits at most 64 enum declarations, each with 1..256 unique cases.
+The graph permits at most 256 enum declarations (each module at most 64), each
+with 1..256 unique cases; the enums of activated builtin service families count.
 
 Value explicitly accepts closed enum types as well as numeric/bool and named
 concrete class types. Scalar is exactly i64/u64/u8/bool and excludes enums. Builtin arrays and

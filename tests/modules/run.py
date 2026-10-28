@@ -566,6 +566,49 @@ check(
     {f"item{i}": f"export module item{i};" for i in range(64)},
     error="graph exceeds 64",
 )
+enum_modules = {
+    f"enums{m}": f"export module enums{m}; export namespace n{m} {{"
+    + "".join(f"enum class E{i} {{ a, b }};" for i in range(64))
+    + "}"
+    for m in range(4)
+}
+check(
+    "exactly 256 graph enums accepted",
+    app(
+        "const n3::E63 last = n3::E63::b; if (last == n3::E63::b) { return 42; } return 0;",
+        "".join(f"import enums{m};" for m in range(4)),
+    ),
+    enum_modules,
+)
+check(
+    "graph enum cap",
+    app("return 42;", "".join(f"import enums{m};" for m in range(4)) + "enum class Extra { a };"),
+    enum_modules,
+    error="module graph exceeds 256 enum definitions",
+)
+# A hosted main activates ten builtin enums: the seven of the base service
+# family and HostExit, HostStatus and HostStream.
+check(
+    "exactly 256 graph enums accepted with activated builtin enums",
+    "module app; import aurora.host; import enums0; import enums1; import enums2; import tail;"
+    + "auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> builtin::HostExit {"
+    + " return builtin::HostExit::success; }",
+    {
+        **{name: text for name, text in enum_modules.items() if name != "enums3"},
+        "tail": "export module tail;" + "".join(f"enum class T{i} {{ a }};" for i in range(54)),
+    },
+    check_only=True,
+)
+check(
+    "graph enum cap counts activated builtin enums",
+    "module app; import aurora.host;"
+    + "".join(f"import enums{m};" for m in range(4))
+    + "auto main(builtin::HostFiles& files, builtin::span<const u8> arguments) -> builtin::HostExit {"
+    + " return builtin::HostExit::success; }",
+    enum_modules,
+    check_only=True,
+    error="module graph exceeds 256 enum declarations",
+)
 chain = {f"level{i}": f"export module level{i}; import level{i + 1};" for i in range(16)}
 chain["level16"] = "export module level16;"
 check("import depth cap", app("return 42;", "import level0;"), chain, error="depth exceeds 16")

@@ -682,7 +682,7 @@ export namespace compiler_lowering {
             return say(session, "too many class types for bootstrap type IDs");
         }
         if (reason == LoweringError::enum_declaration_limit) {
-            return say(session, "module graph exceeds 64 enum declarations");
+            return say(session, "module graph exceeds 256 enum declarations");
         }
         if (reason == LoweringError::enum_name_or_case_count) {
             return say(session, "enum requires a unique name and 1 to 256 cases");
