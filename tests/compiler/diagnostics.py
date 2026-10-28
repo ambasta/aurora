@@ -67,12 +67,6 @@ def text_matches(result, diagnostic, tool):
     require(result.stdout == "" and result.stderr == expected, f"shared text/JSON payload mismatch: {result.stderr!r}")
 
 
-if len(sys.argv) > 2:
-    frontend = subprocess.run([str(Path(sys.argv[2]).resolve())], capture_output=True, text=True, timeout=10)
-    require(frontend.returncode == 0, f"frontend tests failed: {frontend.stdout}{frontend.stderr}")
-    require(json.loads(frontend.stdout) == '"\\\n\r\t\0 café 😀 ÿÀí\xa0\x80', "adversarial JSON round trip")
-    print(frontend.stderr.strip())
-
 with tempfile.TemporaryDirectory(prefix="aurora-diagnostics-") as directory:
     root = Path(directory)
     source = root / 'café-"-\\-\n.au'
@@ -113,6 +107,13 @@ with tempfile.TemporaryDirectory(prefix="aurora-diagnostics-") as directory:
     source.write_text(bad)
     diagnostic = check(source, 1, "AU1001")
     require(diagnostic["path"] == str(source), "escaped Unicode source path")
+    # Valid UTF-8 in a path is kept and every ill-formed byte escaped alone,
+    # so any path renders as valid JSON.
+    adversarial = root / os.fsdecode(b'"\\\n\r\t caf\xc3\xa9 \xf0\x9f\x98\x80 \xff\xc0\xed\xa0\x80.au')
+    adversarial.write_text(bad)
+    escaped = run(["--check", "--diagnostics=json", adversarial], 1, "AU1001")
+    require(escaped["path"] == str(root) + '/"\\\n\r\t café 😀 ÿÀí\xa0\x80.au', f"adversarial JSON path: {escaped}")
+    adversarial.unlink()
     offset = len(bad[: bad.index("@")].encode("utf-8"))
     require(
         diagnostic["range"]
@@ -229,8 +230,8 @@ with tempfile.TemporaryDirectory(prefix="aurora-diagnostics-") as directory:
     plain = run(["--check", "--line 4: literal", source], 2, json_mode=False)
     text_matches(plain, diagnostic, "aurorac")
 
-    if len(sys.argv) > 3:
-        formatter = str(Path(sys.argv[3]).resolve())
+    if len(sys.argv) > 2:
+        formatter = str(Path(sys.argv[2]).resolve())
         source.write_text("module demo;\n@")
         for mode in ("--check", "--lint"):
             command = [formatter, mode, "--diagnostics=json", str(source)]

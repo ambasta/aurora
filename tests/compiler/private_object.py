@@ -17,6 +17,7 @@ from bootstrap_frontend import (  # noqa: E402
     frontend_wrapper_recipe,
     encode_frontend_recipes,
     render_frontend_recipes,
+    use_test_entries,
 )
 from meson_aurora_assembly import compose_object_bridge, render_bridge  # noqa: E402
 
@@ -114,6 +115,8 @@ def main():
         if cli.read_bytes() != composed.read_bytes():
             raise RuntimeError("CLI and in-process private object differ")
         if args.frontend:
+            # The bridged test graph, which also bridges the test-only rows.
+            use_test_entries()
             raw, actual, facts_path = (path.resolve() for path in args.frontend)
             facts = json.loads(facts_path.read_text())
             assembly, wrapper, names = (directory / name for name in ("frontend.s", "frontend.o", "frontend.names"))

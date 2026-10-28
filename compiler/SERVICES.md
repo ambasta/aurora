@@ -315,7 +315,8 @@ links with `ld -static -e _start` and no C or C++ startup, libc or runtime (see
 [hosted memory runtime](#hosted-memory). Stack facts record a
 `__au_linux_system_call` call for every function that makes one, and
 `kernel_stack_check.py` rejects it in every kernel and user image profile.
-The compiler's own sources do not use HostFiles until a checkpoint bump.
+aurorac itself is such a program (`compiler/aurorac.au`, see
+[README](README.md)), with a region.
 
 ## Hosted memory
 
@@ -359,8 +360,8 @@ success, and `memory_load`, `memory_store`, `memory_load8`, `memory_store8` and
 and offset plus width lies within the slot's length. Session primitives cannot
 reach the table (their offsets stay below 16384), so the runtime reaches only
 memory it mapped. Slot 0 maps the runtime's state: bytes in use, live count, the
-free-slot list and one record (generation, liveness, length, dirty mark) per
-slot. An allocation id is `generation * 16384 + slot`; the generation advances
+free-slot list and one record (latest id, stride while live, length, dirty
+mark) per slot. An allocation id is `generation * 16384 + slot`; the generation advances
 on every allocation and resize of the slot and a slot whose generation is
 exhausted is retired, so ids are never reused and a stale or forged descriptor
 traps. `memory::start` (after `host::start`) maps the state, failing the
@@ -381,16 +382,20 @@ exhaustion after a successful mapping kills the process; and there are no
 metrics, test allocator or fault injection. Runtime cost is one system call per
 nonempty allocation, resize and drop and a page per nonempty allocation; the
 table makes `_start` reserve 272 KiB of stack, so a stack limit below about
-300 KiB faults before `main`. Element and byte accesses check the descriptor
-inline on a fast path (calls are not inlined) and copy whole qwords for
-strides that are a multiple of eight.
+300 KiB faults before `main`. Element and byte accesses match the descriptor's
+id, length and stride against the slot's record inline on a fast path (calls
+are not inlined) and copy whole qwords for strides that are a multiple of
+eight. Each access still costs a call into the runtime with the checks above,
+which makes aurorac about 1.6x slower than over the C++ adapter (see the
+change that made it an Aurora program); inlining the check into the
+compiler-emitted entries reaches C1 only at the next checkpoint bump.
 
 Cases: the memory probe over `tests/host-files/memory.golden` and the
 `host-sort` example in `tests/host-files/cases.golden`; rejections (region entry,
 prefix, primitives, private runtime functions) in `rejections.golden`; and the
 memory-primitive IR cases in `tests/compiler/ir/host-files-service-ir/`. The C++
-adapter `runtime/hosted_bytes.cpp` remains linked only into the C++-hosted
-aurorac and aurora-fmt and the C++ test drivers and hosts.
+adapter `runtime/hosted_bytes.cpp` remains only in the C++ test drivers, their
+hosts and the optional language server.
 
 ## Typed IR and private native boundary
 

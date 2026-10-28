@@ -51,79 +51,47 @@ frontend_modules = files('compiler/formatter.au', 'compiler/lexer.au', 'compiler
                         'compiler/lowering_projection.au',
                         'compiler/ir_listing.au', 'compiler/pipeline_declarations.au', 'compiler/pipeline.au',
                         )
-frontend_forwarders = custom_target(
-  'frontend-forwarders', input: 'compiler/frontend.au', output: 'frontend.au',
-  command: [python, '-B', files('scripts/frontend_bridge.py'), '@INPUT@', '@OUTPUT@'],
-)
-frontend_inputs = frontend_modules + [frontend_forwarders]
+# The bridge table the C++ test drivers' graph is generated from (tests/air).
 bridge_table = files('scripts/frontend_bridge.py')
 
-frontend_assembly = custom_target(
-  'hosted-frontend-assembly', input: frontend_inputs,
-  output: ['hosted-frontend.s', 'hosted-frontend.generated.s', 'hosted-frontend.abi.json', 'hosted_frontend_abi.hpp'],
-  command: [python, '-B', files('scripts/bootstrap_frontend.py'), bootstrap_compiler,
-            '--output-mode', 'text', '--output', '@OUTPUT0@', '@INPUT@'],
-  depend_files: bootstrap_depend_files + bridge_table,
-)
-frontend_object = custom_target(
-  'hosted-frontend-object', input: frontend_assembly[0], output: 'hosted-frontend.o',
-  command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '@INPUT@', '-o', '@OUTPUT@'],
-)
-# The resolver-through-pipeline adapters; hosted-parser-invalid links these objects alone.
-frontend_adapter_sources = files('compiler/hosted_resolver.cpp',
-                                 'compiler/hosted_pipeline.cpp', 'runtime/hosted_bytes.cpp')
-frontend_host_sources = frontend_adapter_sources + files('compiler/hosted_private_object.cpp')
-frontend_library = static_library(
-  'hosted-frontend', [frontend_host_sources, frontend_object, frontend_assembly[3]],
-  native: true, install: false,
-)
-# Operator enums are source-defined. Header-only IR consumers need the generated
-# declarations; every executable calling into Aurora also links hosted_frontend.
-frontend_headers = declare_dependency(sources: frontend_assembly[3],
-                                     include_directories: include_directories('.'))
-hosted_frontend = declare_dependency(link_with: frontend_library, dependencies: frontend_headers)
-# The compiler's own runtime root: reserved aurora.* imports such as the
-# HostFiles binding aurora.host resolve only here, never from a --module-root.
+# The compiler is one hosted Aurora program, compiler/aurorac.au (configured
+# with its runtime root) over the compiler modules; run as aurora-fmt it is the
+# formatter. C0 compiles C1 (aurorac), C1 compiles C2 (aurorac-stage2) and C2
+# compiles the object hosted-lexer-bootstrap compares with C1's (GCC's stage
+# compare). Every stage compiles with this tree's runtime root (runtime/linux:
+# aurora.host and aurora.memory) and links with ld alone: no C or C++ objects,
+# startup or libc.
 hosted_runtime_root = meson.current_source_dir() / 'runtime/linux'
-runtime_root_define = '-DAURORA_RUNTIME_ROOT="@0@"'.format(hosted_runtime_root)
-aurorac = executable('aurorac', 'compiler/main.cpp', dependencies: hosted_frontend, cpp_args: runtime_root_define,
-                     native: true, install: false)
-aurora_fmt = executable('aurora-fmt', 'compiler/format_main.cpp', dependencies: hosted_frontend,
-                        cpp_args: runtime_root_define, native: true, install: false)
-
-# C0 emits text frontend A; C1 emits direct-object B, which current C2 links.
-# Reuse only current host C++ objects. The old checkpoint needs no object support.
-# These prerequisites stay outside the default build unless the test is selected.
-frontend_stage2_output = custom_target(
-  'hosted-frontend-stage2-output', input: frontend_inputs + [frontend_assembly[3]],
-  output: ['hosted-frontend-stage2.o', 'hosted-frontend-stage2.generated.o',
-           'hosted-frontend-stage2.abi.json', 'hosted_frontend_stage2_abi.hpp',
-           'hosted-frontend-stage2.stack.json'],
-  command: [python, '-B', files('scripts/bootstrap_frontend.py'), aurorac,
-            '--output-mode', 'object', '--output', '@OUTPUT0@', '@INPUT@'],
-  depend_files: bridge_table,
-  build_by_default: false,
+if hosted_runtime_root.contains('"') or hosted_runtime_root.contains('\\')
+  error('aurorac embeds its runtime root as a byte string: the source path must not contain " or a backslash.')
+endif
+hosted_runtime_sources = files('runtime/linux/aurora/host.au', 'runtime/linux/aurora/memory.au')
+hosted_linker = find_program('ld', native: true)
+compiler_driver = configure_file(input: 'compiler/aurorac.au', output: 'aurorac.au',
+                                 configuration: {'AURORA_RUNTIME_ROOT': hosted_runtime_root})
+compiler_stage = [python, '-B', files('scripts/bootstrap_frontend.py')]
+compiler_link = [hosted_linker, '-static', '-e', '_start', '-o', '@OUTPUT@', '@INPUT@']
+aurorac_object = custom_target(
+  'aurorac-object', input: [compiler_driver] + frontend_modules, output: 'aurorac.o',
+  command: compiler_stage + [bootstrap_compiler, '--program', hosted_runtime_root, '--output', '@OUTPUT@', '@INPUT@'],
+  depend_files: bootstrap_depend_files + hosted_runtime_sources,
 )
-frontend_stage2_library = static_library(
-  'hosted-frontend-stage2', frontend_stage2_output[0],
-  objects: frontend_library.extract_objects(frontend_host_sources),
-  native: true, install: false, build_by_default: false,
+aurorac = custom_target('aurorac', input: aurorac_object, output: 'aurorac', command: compiler_link,
+                        build_by_default: true)
+aurora_fmt = custom_target('aurora-fmt', input: aurorac_object, output: 'aurora-fmt', command: compiler_link,
+                           build_by_default: true)
+# These stages stay outside the default build unless the stage compare is selected.
+aurorac_stage2_object = custom_target(
+  'aurorac-stage2-object', input: [compiler_driver] + frontend_modules, output: 'aurorac-stage2.o',
+  command: compiler_stage + [aurorac, '--program', hosted_runtime_root, '--output', '@OUTPUT@', '@INPUT@'],
+  depend_files: hosted_runtime_sources, build_by_default: false,
 )
-aurorac_stage2 = executable(
-  'aurorac-stage2', objects: aurorac.extract_objects('compiler/main.cpp'),
-  link_with: frontend_stage2_library, link_language: 'cpp',
-  native: true, install: false, build_by_default: false,
-)
-# C2 emits frontend C; hosted-lexer-bootstrap compares it with B (stage compare).
-frontend_stage3_output = custom_target(
-  'hosted-frontend-stage3-output', input: frontend_inputs + [frontend_assembly[3]],
-  output: ['hosted-frontend-stage3.o', 'hosted-frontend-stage3.generated.o',
-           'hosted-frontend-stage3.abi.json', 'hosted_frontend_stage3_abi.hpp',
-           'hosted-frontend-stage3.stack.json'],
-  command: [python, '-B', files('scripts/bootstrap_frontend.py'), aurorac_stage2,
-            '--output-mode', 'object', '--output', '@OUTPUT0@', '@INPUT@'],
-  depend_files: bridge_table,
-  build_by_default: false,
+aurorac_stage2 = custom_target('aurorac-stage2', input: aurorac_stage2_object, output: 'aurorac-stage2',
+                               command: compiler_link, build_by_default: false)
+aurorac_stage3_object = custom_target(
+  'aurorac-stage3-object', input: [compiler_driver] + frontend_modules, output: 'aurorac-stage3.o',
+  command: compiler_stage + [aurorac_stage2, '--program', hosted_runtime_root, '--output', '@OUTPUT@', '@INPUT@'],
+  depend_files: hosted_runtime_sources, build_by_default: false,
 )
 
 # These existing native oracles use Linux/x86-64 syscalls and GNU binutils.
@@ -135,12 +103,7 @@ foreach tool : ['as', 'ld', 'nm', 'objdump', 'objcopy']
 endforeach
 
 # Hosted Aurora programs: a root main(builtin::HostFiles&, builtin::span<const u8>)
-# -> builtin::HostExit gets a compiler-emitted _start, and the Linux binding
-# aurora.host (runtime/linux, aurorac's runtime root) makes its system calls
-# inline, so one aurorac object links statically with ld alone: no C or C++
-# runtime, startup or libc.
-hosted_runtime_sources = files('runtime/linux/aurora/host.au', 'runtime/linux/aurora/memory.au')
-hosted_linker = find_program('ld', native: true)
+# -> builtin::HostExit gets a compiler-emitted _start and links like aurorac.
 hosted_programs = {}
 foreach name, source : {'host-files-cat': 'examples/host-files-cat.au',
                         'host-files-probe': 'tests/host-files/probe.au',
@@ -149,8 +112,7 @@ foreach name, source : {'host-files-cat': 'examples/host-files-cat.au',
   hosted_object = custom_target(name + '-object', input: source, output: name + '.o',
       command: [aurorac, '--emit-object', '@INPUT@', '-o', '@OUTPUT@'],
       depend_files: hosted_runtime_sources)
-  hosted_programs += {name: custom_target(name, input: hosted_object, output: name,
-      command: [hosted_linker, '-static', '-e', '_start', '-o', '@OUTPUT@', '@INPUT@'])}
+  hosted_programs += {name: custom_target(name, input: hosted_object, output: name, command: compiler_link)}
 endforeach
 
 # Preserve the configured compiler command (including wrappers and quoted paths)
@@ -186,21 +148,22 @@ if toolchain_check.returncode() != 0
   error(diagnostic + '\nUse ./scripts/container.sh make test for the supported pinned environment; see docs/local-development.md.')
 endif
 
-# The JSON dependency belongs only to the explicitly enabled language server.
+if get_option('kernel_images')
+  subdir('kernel-images')
+endif
+subdir('tests')
+subdir('library/examples')
+
+# The optional language server, a separate C++ tool over the bridged test
+# graph (tests/air); the JSON dependency belongs only to it.
 if get_option('lsp')
   lsp_json = dependency('nlohmann_json', version: '>=3.11.3', native: true, required: true)
   aurora_lsp = executable(
     'aurora-lsp', ['compiler/lsp/main.cpp', 'compiler/lsp/check.cpp'],
-    dependencies: [lsp_json, hosted_frontend], native: true, install: false,
+    dependencies: [lsp_json, air_frontend_dep], native: true, install: false,
   )
   lsp_units = executable('lsp-units', 'tests/lsp-units.cpp', native: true, install: false)
   test('lsp-units', lsp_units, suite: 'lsp', timeout: 30)
   test('lsp-protocol', python, args: ['-B', files('tests/lsp-protocol.py'), aurora_lsp],
        depends: aurora_lsp, suite: 'lsp', timeout: 120)
 endif
-
-if get_option('kernel_images')
-  subdir('kernel-images')
-endif
-subdir('tests')
-subdir('library/examples')

@@ -33,13 +33,13 @@ record_host_targets = record_hosts.values()
 test('style', python, args: ['-B', files('../scripts/style.py'), 'check', '--tree'],
      suite: ['full', 'merge', 'dev'], timeout: 120)
 # aurora-fmt over every tracked Aurora product source (compiler, library, kernel, examples).
-test('aurora-style', python, args: ['-B', files('../scripts/style.py'), 'aurora', '--formatter', aurora_fmt],
+test('aurora-style', python, args: ['-B', files('../scripts/style.py'), 'aurora', '--formatter', aurora_fmt.full_path()],
      depends: aurora_fmt, suite: ['full', 'merge', 'dev'], timeout: 120)
 # Shared drivers: golden-output comparison and Aurora fixture objects built once.
 golden_runner = files('golden.py')
 fixture_builder = files('../scripts/meson-native-fixture.py')
-# Test drivers and fixtures are not performance-critical; the code under test in
-# hosted_frontend keeps the project optimization level. -O1, not -O0: with GCC 16
+# Test drivers and fixtures are not performance-critical; the code under test
+# is Aurora, compiled by aurorac. -O1, not -O0: with GCC 16
 # these template-heavy fixtures compile no faster at -O0 and emit ~24x larger
 # objects (1.8 GiB in total), while -O1 cuts compile CPU by about a quarter.
 
@@ -65,7 +65,7 @@ foreach entry : [
     ['sector-values', 'compiler/sector_values.py', 'bytes'],
 ]
     feedback = 'dev'
-    runner_args = ['-B', '-O', files(entry[1]), aurorac]
+    runner_args = ['-B', '-O', files(entry[1]), aurorac.full_path()]
     test(
         entry[0],
         python,
@@ -80,7 +80,7 @@ foreach entry : [
 endforeach
 
 test('volatile-file-source-native', python,
-    args: ['-B', '-O', files('compiler/volatile_file.py'), aurorac],
+    args: ['-B', '-O', files('compiler/volatile_file.py'), aurorac.full_path()],
     depends: [aurorac] + record_host_targets, suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'],
     env: oracle_env, workdir: meson.current_build_dir(), timeout: 120, is_parallel: true)
 
@@ -104,19 +104,19 @@ test('host-files-limits', python,
             'probe=' + hosted_programs['host-files-probe'].full_path()],
      depends: hosted_programs.values(), suite: ['full', 'release', 'compiler'], timeout: 120)
 test('host-files-rejections', python,
-     args: ['-B', golden_runner, files('host-files/rejections.golden'), '--reject', '--', aurorac, '--check',
+     args: ['-B', golden_runner, files('host-files/rejections.golden'), '--reject', '--', aurorac.full_path(), '--check',
             '--module-root', 'tests/host-files/library'],
      depends: [aurorac], workdir: meson.project_source_root(), suite: ['full', 'merge', 'dev', 'core', 'compiler'],
      timeout: 120)
 # --runtime-root replaces the configured runtime root (here one without aurora.*).
 test('host-files-runtime-root', python,
-     args: ['-B', golden_runner, files('host-files/runtime-root.golden'), '--reject', '--', aurorac, '--check',
+     args: ['-B', golden_runner, files('host-files/runtime-root.golden'), '--reject', '--', aurorac.full_path(), '--check',
             '--runtime-root', 'tests/host-files/library'],
      depends: [aurorac], workdir: meson.project_source_root(), suite: ['full', 'merge', 'dev', 'core', 'compiler'],
      timeout: 120)
 # A user module root that supplies its own aurora.host cannot replace the runtime.
 test('host-files-impostor', python,
-     args: ['-B', golden_runner, files('host-files/impostor.golden'), '--reject', '--', aurorac, '--check',
+     args: ['-B', golden_runner, files('host-files/impostor.golden'), '--reject', '--', aurorac.full_path(), '--check',
             '--module-root', 'tests/host-files/impostor'],
      depends: [aurorac], workdir: meson.project_source_root(), suite: ['full', 'merge', 'dev', 'core', 'compiler'],
      timeout: 120)
@@ -126,7 +126,7 @@ scratchpad_host = static_library('scratchpad-host',
     ['compiler/scratchpad_host.cpp', 'compiler/service_group_abi.S'],
     native: true, override_options: fixture_options)
 test('scratchpad-source-native', python,
-    args: ['-B', '-O', files('compiler/scratchpad.py'), aurorac, '--host', scratchpad_host.full_path()],
+    args: ['-B', '-O', files('compiler/scratchpad.py'), aurorac.full_path(), '--host', scratchpad_host.full_path()],
     depends: [aurorac, scratchpad_host] + record_host_targets,
     suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'],
     env: oracle_env, workdir: meson.current_build_dir(), timeout: 180, is_parallel: true)
@@ -140,13 +140,14 @@ test('scratchpad-source-native', python,
 # test-only bridge rows into its own object and header. Only test drivers link
 # it; the compiler never does.
 subdir('air')
-air_frontend_library = static_library('air-frontend',
-    [air_frontend[0], air_frontend[3],
-     files('../compiler/hosted_resolver.cpp', '../compiler/hosted_pipeline.cpp', '../runtime/hosted_bytes.cpp')],
+air_adapter_sources = files('../compiler/hosted_resolver.cpp', '../compiler/hosted_pipeline.cpp',
+                            '../runtime/hosted_bytes.cpp')
+air_frontend_library = static_library('air-frontend', [air_frontend[0], air_frontend[3], air_adapter_sources],
     include_directories: include_directories('air', '.', '../compiler'), native: true,
     override_options: fixture_options, install: false)
-air_frontend_dep = declare_dependency(link_with: air_frontend_library, sources: air_frontend[3],
-                                      include_directories: include_directories('air', '.', '../compiler'))
+air_frontend_headers = declare_dependency(sources: air_frontend[3],
+                                          include_directories: include_directories('air', '.', '../compiler'))
+air_frontend_dep = declare_dependency(link_with: air_frontend_library, dependencies: air_frontend_headers)
 aurora_ir_check = executable('aurora-ir-check', 'tools/aurora_ir_check.cpp', dependencies: air_frontend_dep,
     native: true, override_options: fixture_options, install: false)
 air_lit = files('tools/air_lit.py')
@@ -202,8 +203,7 @@ private_object_wrapper = custom_target(
     command: native_cpp.cmd_array() + ['-c', '-x', 'assembler', '-Wa,-mx86-used-note=no', '@INPUT@', '-o', '@OUTPUT@'],
 )
 private_object_test = executable('private-object-test', 'compiler/private_object.cpp',
-    dependencies: hosted_frontend, include_directories: include_directories('../compiler'),
-    native: true, override_options: fixture_options, install: false)
+    dependencies: air_frontend_dep, native: true, override_options: fixture_options, install: false)
 
 test(
     'owned-mutation-abi',
@@ -228,14 +228,9 @@ test(
 )
 
 # Standalone behavioral runners participate in the ordinary full graph.
-lint_fixture = executable(
-    'lint-fixture', 'compiler/lint.cpp',
-    include_directories: include_directories('../compiler'), dependencies: hosted_frontend,
-    native: true, override_options: fixture_options, install: false,
-)
 test('semantic-lint', python,
-     args: ['-B', files('compiler/lint.py'), aurora_fmt, aurorac, lint_fixture],
-     depends: [aurora_fmt, aurorac, lint_fixture] + record_host_targets, suite: ['full', 'merge', 'dev', 'compiler'],
+     args: ['-B', files('compiler/lint.py'), aurora_fmt.full_path(), aurorac.full_path()],
+     depends: [aurora_fmt, aurorac] + record_host_targets, suite: ['full', 'merge', 'dev', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 
 
@@ -260,7 +255,7 @@ test(
 
 # Logical owner views share the established readonly-span source type.
 test('owned-spans-source', python,
-     args: ['-B', '-O', files('compiler/owned_spans_source.py'), aurorac],
+     args: ['-B', '-O', files('compiler/owned_spans_source.py'), aurorac.full_path()],
      depends: [aurorac] + record_host_targets, suite: ['full', 'merge', 'dev', 'core', 'bytes', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 180)
 owned_spans_kernel_host = static_library('owned-spans-kernel-host',
@@ -268,7 +263,7 @@ owned_spans_kernel_host = static_library('owned-spans-kernel-host',
     cpp_args: ['-DNDEBUG', '-fno-exceptions', '-fno-rtti'], pic: false,
     native: true, override_options: fixture_options, install: false)
 foreach mode : ['standalone', 'receiver']
-    span_kernel_args = ['-B', '-O', files('compiler/owned_spans_kernel.py'), aurorac, '--host', owned_spans_kernel_host]
+    span_kernel_args = ['-B', '-O', files('compiler/owned_spans_kernel.py'), aurorac.full_path(), '--host', owned_spans_kernel_host]
     if mode == 'receiver'
         span_kernel_args += ['--receiver-bound']
     endif
@@ -289,11 +284,11 @@ test('method-spans-abi', python,
 # Keep routine borrowed-object feedback small; full owner/helper and literal ABI
 # sweeps remain explicit slow coverage. Full/unfiltered runs retain every gate.
 test('borrowed-objects-smoke', python,
-     args: ['-B', '-O', files('compiler/borrowed_objects.py'), aurorac, '--smoke'],
+     args: ['-B', '-O', files('compiler/borrowed_objects.py'), aurorac.full_path(), '--smoke'],
      depends: [aurorac] + record_host_targets, suite: ['full', 'merge', 'dev', 'bytes', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 120, is_parallel: true)
 test('borrowed-objects', python,
-     args: ['-B', '-O', files('compiler/borrowed_objects.py'), aurorac],
+     args: ['-B', '-O', files('compiler/borrowed_objects.py'), aurorac.full_path()],
      depends: [aurorac] + record_host_targets, suite: ['full', 'release', 'bytes', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300, is_parallel: true)
 test('borrowed-objects-abi', python,
@@ -322,7 +317,7 @@ foreach name, host : console_service_hosts
   console_service_args += ['--' + name + '-host', host.full_path()]
 endforeach
 test('console-service-source-native', python,
-     args: ['-B', '-O', files('compiler/console_service.py'), aurorac] + console_service_args,
+     args: ['-B', '-O', files('compiler/console_service.py'), aurorac.full_path()] + console_service_args,
      depends: [aurorac] + console_service_hosts.values() + record_host_targets,
      suite: ['full', 'merge', 'slow', 'core', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
@@ -332,19 +327,19 @@ test('display-service-abi', python,
      args: ['-B', '-O', files('compiler/service_group_ir_abi.py'), aurora_ir_check.full_path()],
      depends: [aurora_ir_check] + record_host_targets, suite: ['full', 'merge', 'dev', 'core', 'compiler'], env: oracle_env, timeout: 120)
 test('display-service-source-native', python,
-     args: ['-B', '-O', files('compiler/display_service.py'), aurorac],
+     args: ['-B', '-O', files('compiler/display_service.py'), aurorac.full_path()],
      depends: [aurorac] + record_host_targets, suite: ['full', 'merge', 'slow', 'core', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
 
 # Port remains a sealed singleton with fixed hosted mocks, never native I/O.
 test('port-service-source-native', python,
-     args: ['-B', '-O', files('compiler/port_service.py'), aurorac, aurora_ir_check.full_path()],
+     args: ['-B', '-O', files('compiler/port_service.py'), aurorac.full_path(), aurora_ir_check.full_path()],
      depends: [aurorac, aurora_ir_check] + record_host_targets, suite: ['full', 'merge', 'slow', 'core', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
 
 # Serve keeps an exact copied two-register result and singleton grant.
 test('serve-service-source-native', python,
-     args: ['-B', '-O', files('compiler/serve_service.py'), aurorac, aurora_ir_check.full_path()],
+     args: ['-B', '-O', files('compiler/serve_service.py'), aurorac.full_path(), aurora_ir_check.full_path()],
      depends: [aurorac, aurora_ir_check] + record_host_targets, suite: ['full', 'merge', 'slow', 'core', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
 
@@ -389,7 +384,7 @@ foreach program : [['consumer', 'compiler/iommu_event_service_host.cpp', 'consum
        suite: ['full', 'merge', 'slow', 'core', 'compiler'], depends: record_host_targets, env: oracle_env, timeout: 60)
 endforeach
 test('iommu-event-rejections', python,
-     args: ['-B', golden_runner, files('compiler/iommu_event_service_rejections.golden'), '--reject', '--', aurorac,
+     args: ['-B', golden_runner, files('compiler/iommu_event_service_rejections.golden'), '--reject', '--', aurorac.full_path(),
             '--check'],
      depends: [aurorac] + record_host_targets, suite: ['full', 'merge', 'slow', 'core', 'compiler'], env: oracle_env, timeout: 60)
 iommu_event_session = executable('iommu-event-session', 'kernel-iommu-event-session.cpp', native: true, override_options: fixture_options, install: false)
@@ -477,7 +472,7 @@ foreach runner : [
   'method_values', 'u8_numeric', 'readonly_spans',
   'integer_oracle', 'unsigned_oracle',
 ]
-  runner_args = ['-B', '-O', files('compiler/' + runner + '.py'), aurorac]
+  runner_args = ['-B', '-O', files('compiler/' + runner + '.py'), aurorac.full_path()]
   test(runner.replace('_', '-'), python,
        args: runner_args,
        depends: [aurorac] + record_host_targets, suite: ['full', 'merge', 'slow', 'compiler'], env: oracle_env,
@@ -487,35 +482,28 @@ endforeach
 
 # Remaining compiler-native coverage. Fixtures are build targets, not commands
 # hidden inside each test invocation; Ninja tracks C++ header dependencies.
-compiler_fixtures = {}
-foreach fixture : [
-    'diagnostics', 'source_overlays',
-]
-    compiler_fixtures += {fixture: executable(
-        fixture.replace('_', '-') + '-fixture', 'compiler/' + fixture + '.cpp',
-        dependencies: hosted_frontend,
-        include_directories: include_directories('../compiler'), native: true, override_options: fixture_options, install: false,
-    )}
-endforeach
-
 test('diagnostics', python,
-     args: ['-B', '-O', files('compiler/diagnostics.py'), aurorac, compiler_fixtures['diagnostics']],
-     depends: [aurorac, compiler_fixtures['diagnostics']] + record_host_targets, suite: ['full', 'merge', 'slow', 'compiler'],
+     args: ['-B', '-O', files('compiler/diagnostics.py'), aurorac.full_path(), aurora_fmt.full_path()],
+     depends: [aurorac, aurora_fmt] + record_host_targets, suite: ['full', 'merge', 'slow', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
-test('source-overlays', python,
-     args: ['-B', '-O', files('compiler/source_overlays.py'), compiler_fixtures['source_overlays']],
-     depends: [compiler_fixtures['source_overlays']] + record_host_targets, suite: ['full', 'merge', 'slow', 'compiler'],
-     env: oracle_env, workdir: meson.current_build_dir(), timeout: 120)
-# Reuse the real CLI entry object for alternate-emitter mutation probes.
-# No duplicate compiler/IR translation unit or production entry is added.
-emitter_probe_main = static_library('emitter-probe-main',
-    objects: aurorac.extract_all_objects(recursive: false), native: true, build_by_default: false)
+# The C++ source overlays and lint API the optional language server uses.
+if get_option('lsp')
+    source_overlays_fixture = executable('source-overlays-fixture', 'compiler/source_overlays.cpp',
+        dependencies: air_frontend_dep, native: true, override_options: fixture_options, install: false)
+    test('source-overlays', python,
+         args: ['-B', '-O', files('compiler/source_overlays.py'), source_overlays_fixture],
+         depends: [source_overlays_fixture] + record_host_targets, suite: 'lsp',
+         env: oracle_env, workdir: meson.current_build_dir(), timeout: 120)
+    lint_fixture = executable('lint-fixture', 'compiler/lint.cpp',
+        dependencies: air_frontend_dep, native: true, override_options: fixture_options, install: false)
+    test('lint-overlays', lint_fixture, args: files('../examples/kernel.au'), suite: 'lsp', timeout: 60)
+endif
+# Mutated copies of the verifier and emitter, each built into a whole probe
+# compiler from the staged sources and its configured driver.
 test('ir-exhaustive', python,
-     args: ['-B', files('compiler/ir_exhaustive.py'), aurora_ir_check,
-            '--abi-header', frontend_assembly[3], '--abi-facts', frontend_assembly[2],
-            '--compiler', aurorac, '--frontend-library', frontend_library,
-            '--main-library', emitter_probe_main],
-     depends: [aurora_ir_check, frontend_assembly, frontend_library, aurorac, emitter_probe_main] + record_host_targets, suite: ['full', 'release', 'compiler'],
+     args: ['-B', files('compiler/ir_exhaustive.py'), aurora_ir_check, '--compiler', aurorac.full_path(),
+            '--driver', compiler_driver, '--runtime-root', hosted_runtime_root],
+     depends: [aurora_ir_check, aurorac] + record_host_targets, suite: ['full', 'release', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 600)
 test('stack-guards', python,
      args: ['-B', '-O', files('compiler/sector_values_abi.py'), aurora_ir_check, '--stack-guards'],
@@ -527,11 +515,11 @@ test('method-values-abi', python,
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 foreach family : ['readonly_windows', 'short_circuit']
     test(family.replace('_', '-'), python,
-         args: ['-B', '-O', files('compiler/' + family + '.py'), aurorac],
+         args: ['-B', '-O', files('compiler/' + family + '.py'), aurorac.full_path()],
          depends: [aurorac] + record_host_targets, suite: ['full', 'merge', 'slow', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
     generated = family == 'short_circuit' ? [abi_air['short-circuit']] : []
-    source_compiler = family == 'readonly_windows' ? ['--compiler', aurorac] : []
+    source_compiler = family == 'readonly_windows' ? ['--compiler', aurorac.full_path()] : []
     test(family.replace('_', '-') + '-ir-native', python,
          args: ['-B', '-O', files('compiler/' + family + '_ir_native.py'), aurora_ir_check] + (generated.length() > 0 ? ['--air'] + generated : []) + source_compiler,
          depends: [aurora_ir_check, aurorac] + generated + record_host_targets, suite: ['full', 'merge', 'slow', 'compiler'],
@@ -541,7 +529,7 @@ endforeach
 # compiler/runtime_records_host.cpp and fed every case as a data record.
 foreach family : ['token_scan', 'utf8', 'utf8_range', 'utf8_lines', 'utf8_text']
     test(family.replace('_', '-'), python,
-         args: ['-B', files('compiler/' + family + '.py'), '--compiler', aurorac],
+         args: ['-B', files('compiler/' + family + '.py'), '--compiler', aurorac.full_path()],
          depends: [aurorac] + record_host_targets, suite: ['full', 'merge', 'dev', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
 endforeach
@@ -549,19 +537,19 @@ endforeach
 # owned-bytes program per surface, every case streamed as a record or row.
 foreach family : ['json_library', 'json_owned', 'json_string_read', 'json_string_write']
     test(family.replace('_', '-'), python,
-         args: ['-B', files('compiler/' + family + '.py'), '--compiler', aurorac],
+         args: ['-B', files('compiler/' + family + '.py'), '--compiler', aurorac.full_path()],
          depends: [aurorac] + record_host_targets, suite: ['full', 'merge', 'dev', 'bytes', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
 endforeach
 # Every two-byte input and a native sweep of all code points through the same driver.
 test('utf8-exhaustive', python,
-     args: ['-B', files('compiler/utf8.py'), '--compiler', aurorac, '--profile', 'exhaustive'],
+     args: ['-B', files('compiler/utf8.py'), '--compiler', aurorac.full_path(), '--profile', 'exhaustive'],
      depends: [aurorac] + record_host_targets, suite: ['exhaustive'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 300)
 # Package identity, manifest and graph: one driver each over golden cases.
 foreach family : ['identity', 'manifest', 'graph']
     test('package-' + family, python,
-         args: ['-B', files('compiler/package_' + family + '.py'), '--compiler', aurorac],
+         args: ['-B', files('compiler/package_' + family + '.py'), '--compiler', aurorac.full_path()],
          depends: [aurorac] + record_host_targets, suite: ['full', 'merge', 'dev', 'packages', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
 endforeach
@@ -569,13 +557,13 @@ endforeach
 # compared with the golden file beside it (tests/compiler/storage).
 foreach family : ['byte_storage', 'storage_binary', 'block_io', 'xfs_geometry', 'xfs_root', 'xfs_file']
     test(family.replace('_', '-'), python,
-         args: ['-B', files('compiler/storage/' + family + '.py'), aurorac],
+         args: ['-B', files('compiler/storage/' + family + '.py'), aurorac.full_path()],
          depends: [aurorac] + record_host_targets, suite: ['full', 'merge', 'dev', 'bytes', 'compiler'],
          env: oracle_env, workdir: meson.current_build_dir(), timeout: 120)
 endforeach
 test('xfs-offline-native', python,
      args: ['-B', '-O', files('../fixtures/xfs-offline/verify_native.py'),
-            '--compiler', aurorac],
+            '--compiler', aurorac.full_path()],
      depends: [aurorac] + record_host_targets, suite: ['full', 'merge', 'slow', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
 foreach family : ['host_sources_tests', 'host_output_tests']
@@ -591,10 +579,10 @@ endforeach
 subdir('native')
 
 test('private-object', python,
-     args: ['-B', files('compiler/private_object.py'), private_object_test, aurorac, private_object_wrapper,
-            aurora_ir_check, '--frontend', frontend_stage2_output[1], frontend_stage2_output[0], frontend_stage2_output[2],
+     args: ['-B', files('compiler/private_object.py'), private_object_test, aurorac.full_path(), private_object_wrapper,
+            aurora_ir_check, '--frontend', air_frontend[1], air_frontend[0], air_frontend[2],
             '--uart', native_uart_object, '--terminal', graphical_terminal_object],
-     depends: [private_object_test, private_object_wrapper, aurorac, aurora_ir_check, frontend_stage2_output,
+     depends: [private_object_test, private_object_wrapper, aurorac, aurora_ir_check, air_frontend,
                native_uart_object, graphical_terminal_object],
      suite: ['full', 'merge', 'dev', 'core', 'compiler'], env: oracle_env, timeout: 120)
 
@@ -611,16 +599,17 @@ hosted_lexer_test = executable(
 )
 test('hosted-lexer', hosted_lexer_test, args: files('compiler/golden/hosted_lexer.golden'),
      suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 180)
-test('hosted-lexer-bootstrap', python,
-     args: ['-B', files('compiler/hosted_lexer_bootstrap.py'), frontend_assembly[0], frontend_stage2_output[0],
-            frontend_stage3_output[0]],
-     depends: [frontend_stage2_output, frontend_stage3_output] + record_host_targets, suite: ['full', 'merge', 'dev', 'core', 'compiler'],
-     env: oracle_env, timeout: 30)
+# Stage compare (GCC's compare-stage): the compiler object C1 emitted and the
+# one C2 emitted are identical.
+test('hosted-lexer-bootstrap', find_program('cmp', native: true),
+     args: [aurorac_stage2_object, aurorac_stage3_object],
+     depends: [aurorac_stage2_object, aurorac_stage3_object], suite: ['full', 'merge', 'dev', 'core', 'compiler'],
+     timeout: 30)
 
 format_fixture = executable('format-fixture', 'compiler/format.cpp', dependencies: air_frontend_dep,
                             native: true, override_options: fixture_options, install: false)
 test('hosted-lexer-format', format_fixture, suite: ['full', 'merge', 'dev', 'compiler'], timeout: 180)
-test('hosted-lexer-format-cli', python, args: ['-B', '-O', files('compiler/format.py'), aurora_fmt],
+test('hosted-lexer-format-cli', python, args: ['-B', '-O', files('compiler/format.py'), aurora_fmt.full_path()],
      depends: [aurora_fmt] + record_host_targets, suite: ['full', 'merge', 'dev', 'compiler'], env: oracle_env,
      workdir: meson.current_build_dir(), timeout: 180)
 
@@ -652,9 +641,8 @@ test('hosted-lowering', hosted_lowering_test, args: files('compiler/hosted_lower
 # frontend object itself is never linked.
 hosted_parser_invalid = executable(
     'hosted-parser-invalid', 'compiler/hosted_parser_invalid.cpp',
-    objects: frontend_library.extract_objects(frontend_adapter_sources),
-    dependencies: frontend_headers, include_directories: include_directories('../compiler'),
-    native: true, override_options: fixture_options, install: false,
+    objects: air_frontend_library.extract_objects(air_adapter_sources),
+    dependencies: air_frontend_headers, native: true, override_options: fixture_options, install: false,
 )
 test('hosted-parser-invalid', hosted_parser_invalid,
      suite: ['full', 'merge', 'dev', 'core', 'compiler'], timeout: 30)

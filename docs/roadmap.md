@@ -135,13 +135,12 @@ every guest family, including the
 [source-bootstrap gates](../compiler/README.md#source-bootstrap) for bumps.
 Successful lowering-record projection now runs in Aurora, preserving exact
 identity/ordering and filling pending metadata/instruction owners before independent
-admission. Host allocation/quota/report transport, ABI/layout seeding, diagnostics
-and authorized source file I/O remain native dependencies; module traversal and
-x86 text emission also run in Aurora.
-The bounded frontend B/C, ordinary UEFI console/session, production terminal painter
+admission. The compiler is a hosted Aurora program: source file I/O, diagnostics
+and artifact output run over `HostFiles`, allocation over the Aurora memory runtime.
+The bounded test graph, ordinary UEFI console/session, production terminal painter
 and existing console/hosted UART object composer now runs
 in Aurora: it appends generated wrapper text and remaps selected private references
-without changing source symbol bindings. Frontend B/C also emit their bounded
+without changing source symbol bindings. The test graph also emits its bounded
 register-move/tail-jump wrappers directly from the same table/ABI-derived recipe
 used by predecessor/reference text; console/UART/painter wrappers still use GNU as.
 The painter emits its source object directly and retains its existing Display-only

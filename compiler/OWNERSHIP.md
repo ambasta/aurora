@@ -217,8 +217,8 @@ runtime symbols. Resource programs link the explicit hosted adapter, except a
 hosted program whose `main` takes a region: the compiler defines the same
 entries in it over the Aurora memory runtime `aurora.memory`, with the semantics
 above and the differences listed under [hosted memory](SERVICES.md#hosted-memory),
-so it links no C++. The C++ adapter remains under the C++-hosted compiler,
-formatter and test drivers.
+so it links no C++; aurorac and aurora-fmt are such programs. The C++ adapter
+remains under the C++ test drivers and the optional language server.
 
 ## Runtime-sized copied-class ownership
 

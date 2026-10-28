@@ -180,8 +180,8 @@ reduce that independent budget: up to 65,536 retained local-state snapshots
 dominate it, and pools allocate on demand rather than reserving the ceiling.
 
 The verifier protects the backend against malformed internal IR. It is not a
-verified compiler or a proof of Rust-equivalent safety. C++ host code, generated
-bridges and Aurora emission remain trusted. Kernel execution also needs its separate
+verified compiler or a proof of Rust-equivalent safety. The hosted runtime
+(`aurora.host`, `aurora.memory`), the driver and Aurora emission remain trusted. Kernel execution also needs its separate
 image, stack and authority checks.
 
 ## Aurora emission boundary

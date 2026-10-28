@@ -1299,6 +1299,15 @@ export namespace compiler_pipeline {
             const compiler_resolver::MetaRow result = lints.at(index);
             return result;
         }
+        auto lint_count() const -> i64 {
+            return lintCount;
+        }
+        // The bytes of one artifact of a complete run.
+        auto artifact_view(compiler_x86::Artifact artifact) const -> builtin::span<const u8> {
+            const builtin::span<const u8> all = borrow_bytes(artifacts);
+            const builtin::span<const u8> result = all.subspan(artifact_begin(artifact), artifact_size(artifact));
+            return result;
+        }
         auto lint_text() const -> builtin::span<const u8> {
             const builtin::span<const u8> text = borrow_bytes(notes);
             const builtin::span<const u8> result = text.subspan(0, noteBytes);

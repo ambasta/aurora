@@ -13,8 +13,7 @@ and frame admission, structural CFG normalization, entry-parameter and static
 call-site admission and whole-function value, lifetime and provenance verification.
 After lowering, one Aurora call (`pipeline.au`) consumes the resolver Session and
 projects it into metadata and instruction owners, admits and verifies them, checks
-the call graph, publishes and emits code plus any requested stack and ABI facts;
-the host copies out the artifacts or the rendered first failure.
+the call graph, publishes and emits code plus any requested stack and ABI facts.
 `builtin_catalog.au` is the only copy of the built-in type, scalar descriptor and
 sealed service catalog: the resolver seeds its descriptors, admission its service
 set and lowering its scalar, service and initial layout prelude from it. On the
@@ -24,28 +23,39 @@ output in one Aurora call. Aurora decides module-loading policy (names, relative
 paths, byte limits, headers and interfaces), owns the admission and layout limits
 and renders every module-loading, source, resolver, lowering, pipeline, formatter
 and lint diagnostic (`diagnostics.au`, `lowering_messages.au`, `pipeline.au`,
-`formatter.au`): code, message and span, copied out 384 bytes at a time. The C++23
-host only parses command lines, opens files under the explicit roots (naming a
-missing, ambiguous or unreadable module), prints diagnostics, provides the byte
-runtime and copies Aurora's results and artifacts.
+`formatter.au`): code, message and span, copied out 384 bytes at a time.
+
+aurorac is itself one hosted Aurora program: `aurorac.au`, whose `main` receives
+`builtin::HostFiles` and a `ByteRegion` ([SERVICES.md](SERVICES.md#hosted-files)),
+over the compiler modules and the Linux runtime root (`aurora.host`,
+`aurora.memory`). It parses the command line, opens the input and each import
+Aurora requests beneath the explicit roots (naming a missing, ambiguous,
+reserved or unreadable module), runs the modules above, renders text and JSON
+diagnostics and writes every artifact atomically, refusing an output that would
+replace a source or share another output's destination. Run under the name
+`aurora-fmt` (a second link of the same object) it is the formatter. It links
+with `ld -static -e _start` and contains no C or C++ code, startup or libc.
+The build configures `aurorac.au` with its runtime root (`runtime/linux` of the
+source tree) as a byte string; `--runtime-root` names another.
 Textual-IR test cases are read in Aurora (`tests/tools/air.au`, built into a
 test-only graph) straight into the same stores and run the same pipeline stages;
-there is no C++ IR model.
+there is no C++ IR model. That bridged test graph, with the C++ adapters
+`hosted_resolver.cpp`, `hosted_pipeline.cpp` and `runtime/hosted_bytes.cpp`, is
+what the C++ test drivers and the optional [language server](lsp/README.md) link.
 The Aurora-native x86-64 emitter
-consumes the admitted source stores; the host retains artifact I/O.
+consumes the admitted source stores.
 The same semantic traversal feeds typed x86 forms to the text backend or the
 checked relocatable-object backend selected by `--emit-object`. Object output
 uses a separate typed workspace for code, symbols, labels and relocations. It
 supports the source UART, ordinary UEFI console/session, production terminal painter
-and hosted frontend forms, including readonly
+and compiler forms, including readonly
 literal data and RIP-relative references, plus size/public-field-count reflection
 helpers with the same defining-module visibility and symbol-selection rules as
 text output. Neither backend adds reflection access to private values.
 
-Native console, UART and hosted frontend wrappers remain private bootstrap adapters.
-For frontend B/C, `frontend_wrapper.au` emits the 38 wrappers directly, using the
-same table/ABI-derived recipe that renders predecessor frontend A and the GNU
-reference. The closed recipe admits at most 256 sorted hidden exports, 1024-byte
+Native console, UART and test-graph wrappers remain private bootstrap adapters.
+For the bridged test graph, `frontend_wrapper.au` emits its wrappers directly,
+using the same table/ABI-derived recipe that renders the GNU reference. The closed recipe admits at most 256 sorted hidden exports, 1024-byte
 identifier names and six ordered register moves or readonly record-lane loads
 per wrapper, followed by one symbolic PLT32 tail jump. It has no assembly parser,
 stack operations, stores, calls, conditional branches or arbitrary external resolution.
@@ -53,7 +63,7 @@ The existing `ObjectWorkspace` owns encoding, fixups and ELF output; native code
 only lends recipe bytes and transports the result. Invalid/reused workspaces
 cannot expose output, and allocation failure releases every owner.
 
-`private_object.au` composes frontend B/C, the ordinary UEFI console/session,
+`private_object.au` composes the bridged test graph, the ordinary UEFI console/session,
 production terminal painter and existing BIOS console, UEFI device-fixture and
 hosted UART objects. It is the only production object composer; build helpers
 have no GNU partial-link fallback or composer selector. The source
@@ -74,17 +84,13 @@ output protects all input identities; language-source reads remain limited to
 entry ABI and only its existing Display pixel runtime import; no console, UART
 or timer authority moves with object production.
 
-The pinned predecessor still emits frontend A as text. C1 emits frontend B and
-its wrappers directly as objects linked into C2; C2 emits frontend C for
-source-object, composed-object, ABI/header and stack-fact convergence. One
-private-object test driver compares normalized wrapper and composed text,
+One private-object test driver compares normalized wrapper and composed text,
 readonly data, symbols and relocations with GNU references, checks malformed
 recipe/ELF data and every allocation failure, and preserves source LOCAL
 identity. Shared CLI input/output robustness is tested once in `diagnostics.py`.
 Console, UART and painter objects run in their existing hosted drivers and
-guest families. No checkpoint bump is needed. GNU assembler/linker and Linux
-host I/O remain dependencies for frontend A, other text output, native
-console/UART/painter adapters and final links. This adds no Aurora C ABI.
+guest families. GNU assembler/linker remain dependencies for other text output,
+native console/UART/painter adapters and final links. This adds no Aurora C ABI.
 
 The verifier keeps active facts in a flat, sorted owner-backed prefix and restores
 canonical snapshots directly, without rebuilding a search tree. Binary searches
@@ -166,8 +172,8 @@ The build has one predecessor stage and a self-check, like GCC's
 bootstrap-and-compare:
 
 ```text
-checkpoint C0 --compiles--> C1 (aurorac) --compiles--> C2 (aurorac-stage2) --compiles--> frontend C
-                            hosted-lexer-bootstrap: C1's frontend B and C2's frontend C identical
+checkpoint C0 --compiles--> C1 (aurorac) --compiles--> C2 (aurorac-stage2) --compiles--> object C
+                            hosted-lexer-bootstrap: C1's object of C2 (B) and C2's object C identical
 ```
 
 [`checkpoint.json`](checkpoint.json) names C0 by source commit and tree. C0 is
@@ -177,9 +183,11 @@ hosted memory runtime and `--runtime-root`), built in one hop from the C2 of
 earlier checkpoints. No compiler binary is committed, downloaded or pinned by
 digest. Any C0 built from that source with the supported tools (GCC 16.2.0 or
 newer, binutils 2.47 or newer) is accepted, and `hosted-lexer-bootstrap` checks
-it the way GCC's `make compare` does: C1's frontend B must equal C2's frontend C.
+it the way GCC's `make compare` does: the compiler object C1 emits must equal the
+one C2 emits. Every stage compiles the current sources with the current runtime
+root (`runtime/linux`), so C0 needs only its own compiler, not its runtime copy.
 Meson's `bootstrap_compiler` option names the executable; Ninja tracks it, so
-replacing it regenerates the frontend.
+replacing it rebuilds C1.
 
 To build C0 from source with no binary at all (host tools and Git):
 
@@ -250,34 +258,19 @@ frontend assembly (missing `--abi-facts`, incomplete class-argument names,
 `move(named_local)` transfers, and a second or third borrowed root); the
 commands and identities are in the corresponding PRs.
 
-The checkpoint emits frontend A for current compiler C1; C1 emits B for current
-compiler C2. The same compilation emits `--abi-facts` metadata for collected
-resolved declarations and the exact emitted module. The closed private bootstrap
-adapter generates its record layouts, enum values and bridge symbol targets from
-those facts; this is not a general exported ABI. Frontends are emitted with
-`aurorac --local-symbols`, which binds every generated function and reflection
-entry locally without changing ABI or instructions (`--check` rejects it), so
-only the wrappers are external. Initialization and emission use
-one closed entry table in the existing bootstrap adapter for root authority,
-argument-record names, host declarations and the five fixed register transports.
-The facts normalizer accepts up to four distinct concrete owning roots, each
-independently mutable or readonly. Tuple storage does not imply pointee mutability or prove
-distinct ownership. Aurora forwards and owner lifetime/semantic checks remain
-unchanged. Both stages generate their own facts and header. The existing bootstrap
-test checks current C1/C2 assembly, object,
-facts and header convergence, binds B to the frontend actually linked into C2, and compares current
-C1/C2 corpus diagnostics/output. No compiler binary or generated frontend is
-committed. The candidate's independent module graph pass runs in Aurora after all
-source whole-function checks and before import pruning, without a C++ graph fallback.
-Successful lowering-record projection runs in Aurora without native traversal or
-per-value callbacks. Module file opening, diagnostic printing and report
-transport remain native. Aurora now owns complete x86 text emission, including
-stack facts and ABI JSON; its host adapter lends the two admitted owners and
-copies bounded sealed output, with no native opcode fallback. Aurora owns metadata/layout,
-callable/frame admission, durable instruction storage, structural CFG checks and
-entry-parameter and static call-site admission.
-Source verification and emission consume the same normalized storage; these
-migrations still await execution qualification.
+The bridged test graph the C++ test drivers link is emitted by C1 with
+`aurorac --local-symbols --abi-facts`, which binds every generated function and
+reflection entry locally without changing ABI or instructions (`--check` rejects
+it), so only the wrappers are external. The closed private bootstrap adapter
+(`scripts/bootstrap_frontend.py` over the `scripts/frontend_bridge.py` table)
+generates its record layouts, enum values and bridge symbol targets from those
+facts; this is not a general exported ABI. The facts normalizer accepts up to four
+distinct concrete owning roots, each independently mutable or readonly. Tuple
+storage does not imply pointee mutability or prove distinct ownership. No compiler
+binary or generated object is committed. The candidate's independent module graph
+pass runs in Aurora after all source whole-function checks and before import
+pruning, without a C++ graph fallback. Aurora owns complete x86 text and object
+emission, including stack facts and ABI JSON, with no native opcode fallback.
 
 ## Emitter qualification
 
@@ -382,7 +375,7 @@ retention; queried helper bodies and scope visibility are unchanged. The default
 keeps all existing external reflection symbols. Closed images must not rely on
 handwritten/native calls to helpers that source queries do not retain. Closed
 supervisors and their packed fixtures, source UART objects, the ordinary UEFI
-console/session and the hosted frontend opt in, as do selected closed user images.
+console/session, the compiler and its bridged test graph opt in, as do selected closed user images.
 Other outputs retain their existing default inventories. Object composition
 requires this closed reflection inventory and LOCAL source definitions. The compiler
 retains queried helpers; image admission still checks imports, W^X and mixed-stack
