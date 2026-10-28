@@ -42,6 +42,9 @@ test-only graph) straight into the same stores and run the same pipeline stages;
 there is no C++ IR model. That bridged test graph, with the C++ adapters
 `hosted_resolver.cpp`, `hosted_pipeline.cpp` and `runtime/hosted_bytes.cpp`, is
 what the C++ test drivers and the optional [language server](lsp/README.md) link.
+The C++ left in `compiler/` (`diagnostics.hpp`, `hosted_resolver.*`,
+`hosted_pipeline.*`, `format.hpp`, and the server's loader `frontend.hpp` and
+`host_sources.hpp`) serves only them; none of it is part of aurorac.
 The Aurora-native x86-64 emitter
 consumes the admitted source stores.
 The same semantic traversal feeds typed x86 forms to the text backend or the

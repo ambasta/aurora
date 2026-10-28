@@ -28,14 +28,6 @@ ENTRIES, render, signatures = _bridge.ENTRIES, _bridge.render, _bridge.signature
 PASS_ENTRIES = signatures()
 
 
-def use_test_entries():
-    """Bridge the test-only rows too, as the test graph (tests/air) does."""
-    global ENTRIES
-    ENTRIES = _bridge.TEST_ENTRIES
-    PASS_ENTRIES.clear()
-    PASS_ENTRIES.update(signatures(ENTRIES))
-
-
 def abi_declaration(facts, group, source_name):
     """Find a resolved declaration; source spelling is never a mangling recipe."""
     if (
@@ -869,7 +861,7 @@ def stage_modules(module_root, modules):
         destination = module_root.joinpath(*parts[:-1])
         destination.mkdir(parents=True, exist_ok=True)
         content = source.read_bytes()
-        if b"// @generated-forwarders" in content or b"// @generated-test-forwarders" in content:
+        if b"// @generated-forwarders" in content:
             content = render(content.decode()).encode()
         (destination / (parts[-1] + ".au")).write_bytes(content)
 
@@ -920,15 +912,11 @@ def emit(compiler, source, output, module_root):
 
 
 def main():
-    # COMPILER [--test-entries] --output OUTPUT INPUT...: the bridged test graph
-    # of the compiler modules, whose scaffold is frontend.au. --test-entries
-    # also bridges the test-only rows.
+    # COMPILER --output OUTPUT INPUT...: the bridged test graph of the compiler
+    # modules, whose scaffold is frontend.au.
     # COMPILER --program RUNTIME --output OUTPUT ROOT INPUT...: the hosted
     # program ROOT over the compiler modules, as one object.
     arguments = sys.argv[1:]
-    if "--test-entries" in arguments:
-        arguments.remove("--test-entries")
-        use_test_entries()
     runtime = None
     if len(arguments) > 2 and arguments[1] == "--program":
         runtime = arguments[2]

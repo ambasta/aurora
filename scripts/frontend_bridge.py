@@ -250,9 +250,9 @@ ROWS = (
     ),
 )
 
-# Rows only test drivers call, over internal rows: the test graph (tests/tools/frontend.au)
-# exports them; the compiler never does.
-TEST_ROWS = (
+# Rows over internal stores that only the IR, lexer, parser and lowering test
+# drivers call.
+ROWS += (
     (
         "lexer_next(builtin::span<const u8> source, compiler_lexer::Cursor cursor) -> compiler_lexer::Lexeme",
         "copy compiler_lexer::next_lexeme(source, cursor)",
@@ -608,7 +608,7 @@ INITIALIZATION_PROBES = (
     ("array_first_missing", _PAIR, "i64 offset, i64 length, i64 width", "i64"),
     ("clear_array", _PAIR, "i64 offset, i64 length, i64 width", "bool"),
 )
-TEST_ROWS += tuple(
+ROWS += tuple(
     (
         f"initialization_{name}({roots}{', ' + tail if tail else ''}) -> {result}",
         "direct compiler_initialization_probe::"
@@ -670,7 +670,6 @@ def declarations(rows=ROWS):
 
 
 ENTRIES = declarations()
-TEST_ENTRIES = declarations(ROWS + TEST_ROWS)
 
 
 def signatures(table=ENTRIES):
@@ -695,11 +694,8 @@ def signatures(table=ENTRIES):
 
 
 def render(source):
-    """Expand only the explicit scaffold marker; existing source/probes stay exact.
-    The test marker also forwards the textual IR test rows."""
-    table, marker = TEST_ENTRIES, "// @generated-test-forwarders"
-    if marker not in source:
-        table, marker = ENTRIES, "// @generated-forwarders"
+    """Expand only the explicit scaffold marker; existing source/probes stay exact."""
+    table, marker = ENTRIES, "// @generated-forwarders"
     if marker not in source:
         return source
     lines = ["export namespace compiler_frontend {"]

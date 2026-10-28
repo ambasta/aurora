@@ -251,7 +251,7 @@ with tempfile.TemporaryDirectory(prefix="aurora-diagnostics-") as directory:
     require(plain.stdout == plain.stderr == "" and emitted.stat().st_size > 0, "normal emission regression")
 
     original_assembly = emitted.read_bytes()
-    # All emission modes share ArtifactWriter; exercise its output authority once.
+    # All emission modes share one output path; exercise its authority once.
     alias, symlink = root / "source-alias", root / "source-symlink"
     os.link(source, alias)
     symlink.symlink_to(source)
@@ -267,7 +267,7 @@ with tempfile.TemporaryDirectory(prefix="aurora-diagnostics-") as directory:
     require(emitted.read_bytes() == original_assembly, "partial write changed existing output")
     require(not list(root.glob(".aurora-output-*.tmp")), "partial write left temporary files")
 
-    # Binary subcommands share ArtifactFile's separate 64 MiB read ceiling.
+    # Binary subcommands share a separate 64 MiB artifact read ceiling.
     oversized, rejected = root / "oversized-input", root / "rejected-output"
     with oversized.open("wb") as stream:
         stream.truncate(64 * 1024 * 1024 + 1)

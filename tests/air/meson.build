@@ -9,5 +9,5 @@ air_frontend = custom_target('air-frontend',
     output: ['hosted-frontend.o', 'hosted-frontend.generated.o', 'hosted-frontend.abi.json',
              'hosted_frontend_abi.hpp', 'hosted-frontend.stack.json'],
     command: [python, '-B', files('../../scripts/bootstrap_frontend.py'), aurorac,
-              '--test-entries', '--output', '@OUTPUT0@', '@INPUT@'],
+              '--output', '@OUTPUT0@', '@INPUT@'],
     depend_files: bridge_table)

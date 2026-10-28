@@ -126,15 +126,7 @@ void run(const fs::path &directory) {
                 std::set<aurora::host::Identity>{aurora::host::SourceFile::explicitPath(hard).identity},
             "overlay must retain the opened physical inode identity");
     ++cases;
-    try {
-        aurora::host::ArtifactWriter writer(hard, hardChecked.sourceIdentities);
-        require(false, "artifact writer accepted a hard-link alias of an overlaid source");
-    } catch (const aurora::Error &error) {
-        require(std::string(error.what()).find("aliases a root or imported source") != std::string::npos,
-                "wrong hard-link output rejection");
-        ++cases;
-    }
-    require(read(app) == good && read(hard) == good, "output-alias rejection changed disk bytes");
+    require(read(app) == good && read(hard) == good, "overlays changed disk bytes");
     const auto repeatedSeparator = fs::path(directory.string() + "//app.au");
     reject(app,
            {},

@@ -486,7 +486,7 @@ test('diagnostics', python,
      args: ['-B', '-O', files('compiler/diagnostics.py'), aurorac.full_path(), aurora_fmt.full_path()],
      depends: [aurorac, aurora_fmt] + record_host_targets, suite: ['full', 'merge', 'slow', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
-# The C++ source overlays and lint API the optional language server uses.
+# The C++ source overlays, lint API and loader the optional language server uses.
 if get_option('lsp')
     source_overlays_fixture = executable('source-overlays-fixture', 'compiler/source_overlays.cpp',
         dependencies: air_frontend_dep, native: true, override_options: fixture_options, install: false)
@@ -497,6 +497,13 @@ if get_option('lsp')
     lint_fixture = executable('lint-fixture', 'compiler/lint.cpp',
         dependencies: air_frontend_dep, native: true, override_options: fixture_options, install: false)
     test('lint-overlays', lint_fixture, args: files('../examples/kernel.au'), suite: 'lsp', timeout: 60)
+    # Its C++ loader's descriptor policy (compiler/host_sources.hpp).
+    host_sources_fixture = executable('host-sources-tests', 'modules/host_sources_tests.cpp',
+        include_directories: include_directories('../compiler'),
+        dependencies: dependency('threads'), native: true, override_options: fixture_options, install: false)
+    test('host-sources-tests', python, args: ['-B', files('modules/host_sources.py'), host_sources_fixture],
+         depends: [host_sources_fixture] + record_host_targets, suite: 'lsp',
+         env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
 endif
 # Mutated copies of the verifier and emitter, each built into a whole probe
 # compiler from the staged sources and its configured driver.
@@ -566,15 +573,6 @@ test('xfs-offline-native', python,
             '--compiler', aurorac.full_path()],
      depends: [aurorac] + record_host_targets, suite: ['full', 'merge', 'slow', 'compiler'],
      env: oracle_env, workdir: meson.current_build_dir(), timeout: 300)
-foreach family : ['host_sources_tests', 'host_output_tests']
-    host_fixture = executable(family.replace('_', '-'), 'modules/' + family + '.cpp',
-        include_directories: include_directories('../compiler'),
-        dependencies: dependency('threads'), native: true, override_options: fixture_options, install: false)
-    test(family.replace('_', '-'), python,
-         args: ['-B', files('modules/host_sources.py'), host_fixture],
-         depends: [host_fixture] + record_host_targets, suite: ['full', 'merge', 'slow', 'compiler'],
-         env: oracle_env, workdir: meson.current_build_dir(), timeout: 180)
-endforeach
 
 subdir('native')
 

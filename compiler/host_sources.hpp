@@ -1,15 +1,14 @@
 #pragma once
-// Trusted Linux-host bootstrap adapter. These OS interfaces are not exposed to Aurora.
+// The language server's Linux source adapter (aurorac reads through HostFiles).
+// These OS interfaces are not exposed to Aurora.
 #include "diagnostics.hpp"
 #include <algorithm>
 #include <array>
-#include <atomic>
 #include <cerrno>
 #include <fcntl.h>
 #include <filesystem>
 #include <linux/openat2.h>
 #include <optional>
-#include <set>
 #include <string_view>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -73,9 +72,8 @@ inline FileStatus regular(int descriptor) {
         throw Error("source is not a regular file");
     return status;
 }
-inline constexpr std::size_t artifactLimit = 64 * 1024 * 1024;
 namespace detail {
-// Both input authorities use the same hardened descriptor and bounded read loop.
+// Source reads use the hardened descriptor and one bounded read loop.
 // Without a limit message, a longer input returns its first limit + 1 bytes.
 inline std::string readAtMost(int descriptor, std::size_t limit, const char *limitMessage) {
     std::array<char, 4096> buffer{};
@@ -133,27 +131,7 @@ public:
         return detail::readAtMost(descriptor.get(), limit, nullptr);
     }
 };
-// Binary inputs are not source files: their independent bound is the existing
-// artifact ceiling, while SourceFile remains capped at 1 MiB.
-class ArtifactFile {
-    Handle descriptor;
-
-public:
-    Identity identity;
-    explicit ArtifactFile(const std::filesystem::path &path) : descriptor(openPolicy(AT_FDCWD, path, false, false)) {
-        if (descriptor.get() < 0)
-            throw Error("cannot open artifact input under no-symlink policy: " + systemMessage(errno));
-        const auto status = regular(descriptor.get());
-        identity = {static_cast<std::uint64_t>(status.st_dev), static_cast<std::uint64_t>(status.st_ino)};
-    }
-    std::string readAtMost(std::size_t limit = artifactLimit) {
-        if (limit > artifactLimit)
-            throw Error("artifact read bound exceeds adapter limit");
-        return detail::readAtMost(descriptor.get(), limit, "bounded artifact read limit exceeded");
-    }
-};
 class Directory {
-    friend class ArtifactWriter;
     Handle descriptor;
 
 public:
@@ -186,144 +164,6 @@ public:
             throw Error("cannot open module under beneath-root source policy: " + systemMessage(error));
         }
         return SourceFile(Handle(file), displayPath / relative);
-    }
-};
-// Atomic artifact replacement uses a separate caller-selected directory authority.
-// Existing files are never opened for writing or truncated.
-class ArtifactWriter {
-    Directory parent;
-    std::string leaf;
-    std::set<Identity> sourceIdentities;
-    std::optional<Handle> temporary;
-    std::string temporaryLeaf;
-    Identity temporaryIdentity{};
-    enum class Phase {
-        Empty,
-        Failed,
-        Ready,
-        Committed
-    };
-    Phase phase = Phase::Empty;
-    static inline std::atomic<std::uint64_t> sequence{0};
-    static constexpr std::size_t maxArtifactBytes = artifactLimit;
-    static Identity identityOf(const FileStatus &status) {
-        return {static_cast<std::uint64_t>(status.st_dev), static_cast<std::uint64_t>(status.st_ino)};
-    }
-    std::optional<FileStatus> entry(const std::string &name) const {
-        FileStatus status{};
-        if (::fstatat(parent.descriptor.get(), name.c_str(), &status, AT_SYMLINK_NOFOLLOW) == 0)
-            return status;
-        if (errno == ENOENT)
-            return std::nullopt;
-        throw Error("cannot inspect artifact entry: " + systemMessage(errno));
-    }
-    void destination() const {
-        if (const auto status = entry(leaf)) {
-            if (!S_ISREG(status->st_mode))
-                throw Error("artifact destination must be a regular file, not a symlink or directory");
-            if (sourceIdentities.contains(identityOf(*status)))
-                throw Error("artifact destination aliases a root or imported source file");
-        }
-    }
-    bool ownsTemporaryName() const {
-        const auto status = entry(temporaryLeaf);
-        return status && S_ISREG(status->st_mode) && identityOf(*status) == temporaryIdentity;
-    }
-    void cleanup() noexcept {
-        if (phase == Phase::Committed || !temporary || temporaryLeaf.empty())
-            return;
-        try {
-            // Do not remove a replacement entry belonging to another writer. A hostile
-            // same-authority directory writer remains outside artifact-integrity guarantees.
-            if (ownsTemporaryName())
-                ::unlinkat(parent.descriptor.get(), temporaryLeaf.c_str(), 0);
-        } catch (...) {
-        } // Never replace the original I/O failure with a cleanup error.
-    }
-
-public:
-    ArtifactWriter(const std::filesystem::path &path, std::set<Identity> sources)
-        : parent(path.parent_path().empty() ? std::filesystem::path(".") : path.parent_path()),
-          leaf(path.filename().string()), sourceIdentities(std::move(sources)) {
-        if (leaf.empty() || leaf == "." || leaf == ".." || leaf.find('/') != std::string::npos ||
-            leaf.find('\0') != std::string::npos)
-            throw Error("artifact output requires one filename leaf");
-        destination();
-        for (int attempt = 0; attempt < 32; ++attempt) {
-            const auto candidate =
-                ".aurora-output-" + std::to_string(::getpid()) + "-" + std::to_string(sequence.fetch_add(1)) + ".tmp";
-            if (candidate == leaf)
-                continue; // Never expose the destination as its own temporary.
-            open_how policy{};
-            policy.flags = O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW;
-            policy.mode = 0600;
-            policy.resolve = RESOLVE_BENEATH | RESOLVE_NO_SYMLINKS | RESOLVE_NO_MAGICLINKS;
-            const auto file =
-                ::syscall(SYS_openat2, parent.descriptor.get(), candidate.c_str(), &policy, sizeof(policy));
-            if (file < 0) {
-                if (errno == EEXIST)
-                    continue;
-                throw Error("cannot create exclusive artifact temporary: " + systemMessage(errno));
-            }
-            Handle owned(static_cast<int>(file));
-            temporaryIdentity = identityOf(regular(owned.get()));
-            temporaryLeaf = candidate;
-            temporary.emplace(std::move(owned));
-            return;
-        }
-        throw Error("artifact temporary-name retry limit exceeded");
-    }
-    ArtifactWriter(const ArtifactWriter &) = delete;
-    ArtifactWriter &operator=(const ArtifactWriter &) = delete;
-    ~ArtifactWriter() {
-        cleanup();
-    }
-    bool sameDestination(const ArtifactWriter &other) const {
-        return parent.identity == other.parent.identity && leaf == other.leaf;
-    }
-    const std::string &temporaryName() const {
-        return temporaryLeaf;
-    }
-    void write(std::string_view bytes) {
-        if (phase != Phase::Empty) {
-            if (phase != Phase::Committed)
-                phase = Phase::Failed;
-            throw Error("artifact bytes may be supplied exactly once");
-        }
-        phase = Phase::Failed; // Any exception permanently poisons this transaction.
-        if (bytes.size() > maxArtifactBytes)
-            throw Error("artifact exceeds 67108864 bytes");
-        std::size_t offset = 0;
-        int calls = 0, interruptions = 0;
-        while (offset < bytes.size()) {
-            if (++calls > 8192)
-                throw Error("artifact write-call budget exceeded");
-            const auto count =
-                ::write(temporary->get(), bytes.data() + offset, std::min<std::size_t>(65536, bytes.size() - offset));
-            if (count < 0) {
-                if (errno == EINTR && ++interruptions <= 128)
-                    continue;
-                throw Error("cannot write artifact temporary: " + systemMessage(errno));
-            }
-            if (count == 0)
-                throw Error("artifact write made no progress");
-            offset += static_cast<std::size_t>(count);
-        }
-        phase = Phase::Ready;
-    }
-    void commit() {
-        if (phase != Phase::Ready) {
-            if (phase != Phase::Committed)
-                phase = Phase::Failed;
-            throw Error("artifact commit requires one complete write");
-        }
-        phase = Phase::Failed;
-        destination();
-        if (!ownsTemporaryName())
-            throw Error("artifact temporary entry changed before commit");
-        if (::renameat(parent.descriptor.get(), temporaryLeaf.c_str(), parent.descriptor.get(), leaf.c_str()) < 0)
-            throw Error("cannot atomically replace artifact: " + systemMessage(errno));
-        phase = Phase::Committed;
     }
 };
 } // namespace aurora::host
