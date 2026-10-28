@@ -1,6 +1,5 @@
 #include "hosted_pipeline.hpp"
 #include <algorithm>
-#include <format>
 #include <limits>
 #include <tuple>
 
@@ -167,7 +166,9 @@ Diagnostic copyReport(const std::function<hosted_abi::compiler_resolver::Report(
     if (first.warning < 0 || first.warning > 1 || first.source < -1)
         internal("invalid hosted resolution result");
     // Aurora names the code by its number; the host keeps the family table.
-    while (diagnosticCode(result.code) != std::format("AU{:04}", first.family)) {
+    const auto number = std::to_string(first.family);
+    const auto name = "AU" + std::string(number.size() < 4 ? 4 - number.size() : 0, '0') + number;
+    while (diagnosticCode(result.code) != name) {
         if (result.code == DiagnosticCode::UnreadLocal)
             internal("invalid hosted resolution result");
         result.code = static_cast<DiagnosticCode>(static_cast<int>(result.code) + 1);
