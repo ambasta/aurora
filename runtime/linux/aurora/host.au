@@ -83,6 +83,9 @@ namespace host_session {
     auto standard_stream_mode() -> u64 {
         return 4u64; // O_RDWR, for /dev/null in place of a closed standard stream
     }
+    auto any_file_mode() -> u64 {
+        return 5u64; // O_RDONLY | O_NONBLOCK | O_CLOEXEC, at any path
+    }
     auto status_of(i64 error) -> builtin::HostStatus {
         if (error == -2 || error == -20) {
             return builtin::HostStatus::not_found;
@@ -215,6 +218,19 @@ namespace host_session {
         files.store(entry + 16u64, generation);
         return make_id(generation, slot);
     }
+    // The device and inode recorded by the last fstat into the stat buffer.
+    auto stat_device(builtin::HostFiles& files) -> u64 {
+        return files.load(stat_buffer());
+    }
+    auto stat_inode(builtin::HostFiles& files) -> u64 {
+        return files.load(stat_buffer() + 8u64);
+    }
+    auto destination_device() -> u64 {
+        return counters() + 32u64;
+    }
+    auto destination_inode() -> u64 {
+        return counters() + 40u64;
+    }
     // The file type bits of the fstat record at the stat buffer.
     auto regular_stat(builtin::HostFiles& files, i64 descriptor) -> bool {
         if (files.system_stat(descriptor, stat_buffer()) != 0) {
@@ -222,6 +238,50 @@ namespace host_session {
         }
         const u64 mode = files.load(stat_buffer() + 24u64) % 4294967296u64;
         return mode / 4096u64 % 16u64 == 8u64;
+    }
+    auto no_file(builtin::HostStatus status) -> builtin::HostFileResult {
+        const builtin::HostFileResult result = builtin::HostFileResult{
+            .status = status,
+            .id = 0u64,
+            .size = 0u64,
+            .device = 0u64,
+            .inode = 0u64
+        };
+        return result;
+    }
+    // Opens a valid path under a file open mode, relative to the descriptor
+    // base, and claims a handle for it when it names a regular file.
+    auto open_regular(builtin::HostFiles& files, i64 base, builtin::span<const u8> path,
+        u64 mode) -> builtin::HostFileResult {
+        const u64 slot = free_handle(files);
+        builtin::HostStatus status = builtin::HostStatus::success;
+        i64 descriptor = -1;
+        if (slot == handle_slots()) {
+            status = builtin::HostStatus::exhausted;
+        } else {
+            const u64 length = store_bytes(files, path_buffer(), path);
+            descriptor = files.system_open(base, path_buffer(), length, mode);
+            if (descriptor < 0) {
+                status = status_of(descriptor);
+            } else {
+                if (!regular_stat(files, descriptor)) {
+                    files.system_close(descriptor);
+                    status = builtin::HostStatus::not_regular;
+                }
+            }
+        }
+        if (status != builtin::HostStatus::success) {
+            const builtin::HostFileResult failure = no_file(status);
+            return failure;
+        }
+        const builtin::HostFileResult result = builtin::HostFileResult{
+            .status = builtin::HostStatus::success,
+            .id = claim_handle(files, slot, 2u64, descriptor),
+            .size = files.load(stat_buffer() + 48u64),
+            .device = stat_device(files),
+            .inode = stat_inode(files)
+        };
+        return result;
     }
     // Writes count bytes of the data buffer to a descriptor; false on failure.
     auto write_buffer(builtin::HostFiles& files, i64 descriptor, u64 count) -> bool {
@@ -361,8 +421,11 @@ namespace host_session {
         return copy_session(files, entry + 64u64, path_buffer(), length);
     }
     // The destination leaf under the output's directory must be absent or a
-    // regular file, never a symlink or directory.
+    // regular file, never a symlink or directory. Its device and inode (0 and
+    // 0 when absent) are left at destination_device and destination_inode.
     auto destination_status(builtin::HostFiles& files, i64 directory, u64 length) -> builtin::HostStatus {
+        files.store(destination_device(), 0u64);
+        files.store(destination_inode(), 0u64);
         const i64 existing = files.system_open(directory, path_buffer(), length, open_path_mode());
         if (existing == -2) {
             return builtin::HostStatus::success;
@@ -375,6 +438,8 @@ namespace host_session {
         if (!regular) {
             return builtin::HostStatus::not_regular;
         }
+        files.store(destination_device(), stat_device(files));
+        files.store(destination_inode(), stat_inode(files));
         return builtin::HostStatus::success;
     }
     // Removes the temporary, closes both descriptors and frees the slot.
@@ -398,6 +463,8 @@ export namespace host {
     auto files_open_directory(builtin::HostFiles& files, builtin::span<const u8> path) -> builtin::HostDirectoryResult {
         builtin::HostStatus status = builtin::HostStatus::success;
         u64 id = 0u64;
+        u64 device = 0u64;
+        u64 inode = 0u64;
         const u64 slot = host_session::free_handle(files);
         if (!host_session::valid_path(path)) {
             status = builtin::HostStatus::invalid_path;
@@ -414,25 +481,29 @@ export namespace host {
                         status = builtin::HostStatus::not_regular;
                     }
                 } else {
-                    id = host_session::claim_handle(files, slot, 1u64, descriptor);
+                    if (files.system_stat(descriptor, host_session::stat_buffer()) != 0) {
+                        files.system_close(descriptor);
+                        status = builtin::HostStatus::failed;
+                    } else {
+                        device = host_session::stat_device(files);
+                        inode = host_session::stat_inode(files);
+                        id = host_session::claim_handle(files, slot, 1u64, descriptor);
+                    }
                 }
             }
         }
         const builtin::HostDirectoryResult result = builtin::HostDirectoryResult{
             .status = status,
-            .id = id
+            .id = id,
+            .device = device,
+            .inode = inode
         };
         return result;
     }
     auto files_open_beneath(builtin::HostFiles& files, u64 directory,
         builtin::span<const u8> relative) -> builtin::HostFileResult {
-        builtin::HostStatus status = builtin::HostStatus::success;
-        u64 id = 0u64;
-        u64 size = 0u64;
-        u64 device = 0u64;
-        u64 inode = 0u64;
         const u64 parent = host_session::handle_slot(files, directory, 1u64);
-        const u64 slot = host_session::free_handle(files);
+        builtin::HostStatus status = builtin::HostStatus::success;
         if (parent == host_session::handle_slots()) {
             status = builtin::HostStatus::invalid_handle;
         } else {
@@ -441,38 +512,27 @@ export namespace host {
             } else {
                 if (host_session::escapes(relative)) {
                     status = builtin::HostStatus::escape;
-                } else {
-                    if (slot == host_session::handle_slots()) {
-                        status = builtin::HostStatus::exhausted;
-                    } else {
-                        const i64 base = i64(files.load(host_session::handle_entry(parent) + 8u64));
-                        const u64 length = host_session::store_bytes(files, host_session::path_buffer(), relative);
-                        const i64 descriptor = files.system_open(base, host_session::path_buffer(), length,
-                            host_session::open_file_mode());
-                        if (descriptor < 0) {
-                            status = host_session::status_of(descriptor);
-                        } else {
-                            if (!host_session::regular_stat(files, descriptor)) {
-                                files.system_close(descriptor);
-                                status = builtin::HostStatus::not_regular;
-                            } else {
-                                size = files.load(host_session::stat_buffer() + 48u64);
-                                device = files.load(host_session::stat_buffer());
-                                inode = files.load(host_session::stat_buffer() + 8u64);
-                                id = host_session::claim_handle(files, slot, 2u64, descriptor);
-                            }
-                        }
-                    }
                 }
             }
         }
-        const builtin::HostFileResult result = builtin::HostFileResult{
-            .status = status,
-            .id = id,
-            .size = size,
-            .device = device,
-            .inode = inode
-        };
+        if (status != builtin::HostStatus::success) {
+            const builtin::HostFileResult failure = host_session::no_file(status);
+            return failure;
+        }
+        const i64 base = i64(files.load(host_session::handle_entry(parent) + 8u64));
+        const builtin::HostFileResult result = host_session::open_regular(files, base, relative,
+            host_session::open_file_mode());
+        return result;
+    }
+    // Opens a regular file at any path without following a symlink, as
+    // open_directory opens a directory.
+    auto files_open_file(builtin::HostFiles& files, builtin::span<const u8> path) -> builtin::HostFileResult {
+        if (!host_session::valid_path(path)) {
+            const builtin::HostFileResult failure = host_session::no_file(builtin::HostStatus::invalid_path);
+            return failure;
+        }
+        const builtin::HostFileResult result = host_session::open_regular(files, host_session::current_directory(),
+            path, host_session::any_file_mode());
         return result;
     }
     auto files_read(builtin::HostFiles& files, u64 file, u64 offset) -> builtin::HostChunk {
@@ -490,6 +550,10 @@ export namespace host {
     auto files_create_output(builtin::HostFiles& files, builtin::span<const u8> path) -> builtin::HostOutputResult {
         builtin::HostStatus status = builtin::HostStatus::success;
         u64 id = 0u64;
+        u64 device = 0u64;
+        u64 inode = 0u64;
+        u64 directory_device = 0u64;
+        u64 directory_inode = 0u64;
         u64 slot = 0u64;
         while (slot < host_session::output_slots() && files.load(host_session::output_entry(slot)) != 0u64) {
             slot = slot + 1u64;
@@ -529,9 +593,19 @@ export namespace host {
                 if (directory < 0) {
                     status = host_session::status_of(directory);
                 } else {
+                    if (files.system_stat(directory, host_session::stat_buffer()) != 0) {
+                        status = builtin::HostStatus::failed;
+                    } else {
+                        directory_device = host_session::stat_device(files);
+                        directory_inode = host_session::stat_inode(files);
+                    }
                     const builtin::span<const u8> name = path.subspan(split + 1, leaf);
                     const u64 length = host_session::store_bytes(files, host_session::path_buffer(), name);
-                    status = host_session::destination_status(files, directory, length);
+                    if (status == builtin::HostStatus::success) {
+                        status = host_session::destination_status(files, directory, length);
+                        device = files.load(host_session::destination_device());
+                        inode = files.load(host_session::destination_inode());
+                    }
                     i64 temporary = -17;
                     u64 sequence = 0u64;
                     i64 attempts = 0;
@@ -564,9 +638,20 @@ export namespace host {
                 }
             }
         }
+        // A failed creation names nothing, as a failed open does.
+        if (status != builtin::HostStatus::success) {
+            device = 0u64;
+            inode = 0u64;
+            directory_device = 0u64;
+            directory_inode = 0u64;
+        }
         const builtin::HostOutputResult result = builtin::HostOutputResult{
             .status = status,
-            .id = id
+            .id = id,
+            .device = device,
+            .inode = inode,
+            .directory_device = directory_device,
+            .directory_inode = directory_inode
         };
         return result;
     }
@@ -635,6 +720,22 @@ export namespace host {
         if (!host_session::write_all(files, descriptor, bytes)) {
             return builtin::HostStatus::failed;
         }
+        return builtin::HostStatus::success;
+    }
+    // Closes an open directory or file and frees its slot; the slot's next id
+    // has a new generation, so the closed id stays invalid. Files opened
+    // beneath a closed directory stay open.
+    auto files_close(builtin::HostFiles& files, u64 handle) -> builtin::HostStatus {
+        u64 slot = host_session::handle_slot(files, handle, 1u64);
+        if (slot == host_session::handle_slots()) {
+            slot = host_session::handle_slot(files, handle, 2u64);
+        }
+        if (slot == host_session::handle_slots()) {
+            return builtin::HostStatus::invalid_handle;
+        }
+        const u64 entry = host_session::handle_entry(slot);
+        files.system_close(i64(files.load(entry + 8u64)));
+        files.store(entry, 0u64);
         return builtin::HostStatus::success;
     }
     // Called by the hosted entry before main: a closed standard stream (0, 1

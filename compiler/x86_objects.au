@@ -280,18 +280,19 @@ export namespace compiler_x86 {
             emit_pop(workspace, object, Register::rdx);
             emit_pop(workspace, object, Register::rsi);
             emit_pop(workspace, object, Register::rdi);
-            host_bound(workspace, object, Register::r9, 4);
+            host_bound(workspace, object, Register::r9, 5);
             emit_load(workspace, object, grant, Register::r10, false);
             host_path(workspace, object, Register::r10, Register::rsi, Register::rdx);
             // Mode 0 directory, 1 regular file, 2 O_PATH probe, 3 exclusive
-            // create and 4 read-write (/dev/null for a closed standard stream)
-            // select fixed flags; modes 1..3 resolve beneath the directory and
-            // every mode refuses symlinks and magic links. Branch-free:
-            // flags = sum(mode == i) * flags_i, resolve = 6 + 8 * beneath.
+            // create, 4 read-write (/dev/null for a closed standard stream)
+            // and 5 regular file at any path select fixed flags; modes 1..3
+            // resolve beneath the directory and every mode refuses symlinks
+            // and magic links. Branch-free: flags = sum(mode == i) * flags_i,
+            // resolve = 6 + 8 * beneath.
             emit_alu_rr(workspace, object, AluOp::bit_xor, Register::r8, Register::r8);
             emit_mov_imm(workspace, object, 6, Register::r11);
             i64 selector = 0;
-            while (selector < 5) {
+            while (selector < 6) {
                 emit_alu_rr(workspace, object, AluOp::bit_xor, Register::rcx, Register::rcx);
                 emit_alu_imm(workspace, object, AluOp::compare, selector, Register::r9);
                 emit_set_condition(workspace, object, 4, Register::rcx);
