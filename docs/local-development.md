@@ -13,7 +13,7 @@ With Docker or Podman installed, start from the repository root.
 
 Use a local copy of the checkpoint compiler named by `compiler/checkpoint.json`,
 or build it from source with `python3 scripts/bootstrap.py rebuild --output
-build/checkpoint-6ad78f7d6fc0` (host tools and Git). Then open the pinned shell with `./scripts/container.sh bash` and configure both
+build/checkpoint-a62c3c45d8d3` (host tools and Git). Then open the pinned shell with `./scripts/container.sh bash` and configure both
 current Meson graphs with `-Dbootstrap_compiler`, following the
 [source-bootstrap recipe](../compiler/README.md#source-bootstrap). Then run:
 

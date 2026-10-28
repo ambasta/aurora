@@ -180,9 +180,9 @@ checkpoint C0 --compiles--> C1 (aurorac) --compiles--> C2 (aurorac-stage2) --com
 ```
 
 [`checkpoint.json`](checkpoint.json) names C0 by source commit and tree. C0 is
-the C2 of main commit `6ad78f7d` (HostFiles with close and open_file, the
-hosted memory runtime and `--runtime-root`), built in one hop from the C2 of
-`ab255328`; `history` lists the
+the C2 of main commit `a62c3c45` (the Aurora-hosted driver, inline hosted
+memory accesses and the 256-file module graph), built in one hop from the C2 of
+`6ad78f7d`; `history` lists the
 earlier checkpoints. No compiler binary is committed, downloaded or pinned by
 digest. Any C0 built from that source with the supported tools (GCC 16.2.0 or
 newer, binutils 2.47 or newer) is accepted, and `hosted-lexer-bootstrap` checks
@@ -195,8 +195,8 @@ replacing it rebuilds C1.
 To build C0 from source with no binary at all (host tools and Git):
 
 ```sh
-python3 scripts/bootstrap.py rebuild --output build/checkpoint-6ad78f7d6fc0
-C0=$PWD/build/checkpoint-6ad78f7d6fc0/aurorac
+python3 scripts/bootstrap.py rebuild --output build/checkpoint-a62c3c45d8d3
+C0=$PWD/build/checkpoint-a62c3c45d8d3/aurorac
 meson setup build/meson . "-Dbootstrap_compiler=$C0" "-Duefi_ld=$UEFI_LD"
 meson setup build/meson-compiler . -Dkernel_images=false "-Dbootstrap_compiler=$C0"
 meson test -C build/meson-compiler hosted-lexer-bootstrap
